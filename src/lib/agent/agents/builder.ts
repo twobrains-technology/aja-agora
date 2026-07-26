@@ -167,6 +167,16 @@ export function buildAgent(
 		 * (stable, 1º item, único com ephemeral) fica intacto.
 		 */
 		extraSystemBlocks?: string[];
+		/**
+		 * FIX-368: este turno é a primeira mensagem do usuário desde que
+		 * retomou a conversa (sinal propagado desde `theater-chat.tsx` →
+		 * `route.ts` → `runner.ts`/`resolveAgent`). Combinado com
+		 * `contractClosedInfo`, dispara a seção dinâmica que instrui o
+		 * modelo a reconhecer a reserva já feita na PRIMEIRA frase da
+		 * retomada. Default false — comportamento atual em qualquer
+		 * caller que não passe o sinal.
+		 */
+		isResumeGreeting?: boolean;
 	} = {},
 ): ToolLoopAgent {
 	const isConcierge = row.role === "concierge";
@@ -189,6 +199,8 @@ export function buildAgent(
 				// qualificação não carrega as regras de reveal/fechamento. Sem meta
 				// (paths ad-hoc), cai no default "terminal" = prompt inteiro.
 				opts.meta ? promptPhaseFromMeta(opts.meta) : undefined,
+				// FIX-368: turno de retomada pós-fechamento.
+				opts.isResumeGreeting ?? false,
 			);
 
 	// Factory per-build: tools sensíveis (save_contact_name, save_contact_whatsapp,

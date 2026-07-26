@@ -549,8 +549,14 @@ export async function pipeUserTurn(args: {
 	contactName: string | null;
 	writer: Writer;
 	userKey?: string | null;
+	/**
+	 * FIX-368: este turno é a primeira mensagem do usuário desde que retomou
+	 * a conversa (sinalizado pelo cliente — ver `theater-chat.tsx`). Repassado
+	 * até `resolveAgent` pra disparar o reconhecimento da reserva já feita.
+	 */
+	isResumeGreeting?: boolean;
 }): Promise<void> {
-	const { conversationId, userText, contactName, writer, userKey } = args;
+	const { conversationId, userText, contactName, writer, userKey, isResumeGreeting } = args;
 	const events = runTurn({
 		channel: "web",
 		conversationId,
@@ -559,6 +565,7 @@ export async function pipeUserTurn(args: {
 		contactName,
 		skipLeadCollection: true,
 		userKey,
+		isResumeGreeting,
 	});
 	await pipeOrchestratorToWriter(events, writer, conversationId);
 }

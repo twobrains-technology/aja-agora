@@ -32,7 +32,7 @@ type ChatContextValue = {
 	status: "submitted" | "streaming" | "ready" | "error";
 	error: Error | undefined;
 	handoff: HandoffState;
-	sendUserMessage: (text: string) => Promise<void>;
+	sendUserMessage: (text: string, opts?: { isResumeGreeting?: boolean }) => Promise<void>;
 	sendAction: (action: ChatAction, label: string) => Promise<void>;
 	regenerate: () => Promise<void>;
 	reset: () => void;
@@ -101,6 +101,18 @@ export function ChatProvider({
 		[conversationId],
 	);
 
+	// FIX-373: achado ao vivo (persona "carro", gate lance-embutido) — a busca
+	// dupla sem/com embutido + ranking levou 48-86s reais, acima do teto do
+	// watchdog abaixo, e o cliente matou o stream com "Tentar novamente" mesmo
+	// o backend tendo respondido 200 no fim. O `batimento` de `web/adapter.ts`
+	// (data-tool "keepalive" a cada 8s, `transient: true`) existe exatamente pra
+	// provar que a conexão segue viva durante esperas longas — mas parts
+	// transientes não tocam `chat.messages` (por design do AI SDK), e o
+	// watchdog só ouvia `[chat.messages, chat.status]`. `onData` é o único
+	// callback que dispara pra QUALQUER data-part, transiente ou não; por isso
+	// a ref precisa existir antes do `useChat` pra ser referenciada aqui.
+	const lastActivityRef = useRef<number>(Date.now());
+
 	const chat = useChat<AjaUIMessage>({
 		id: conversationId,
 		transport,
@@ -114,6 +126,9 @@ export function ChatProvider({
 		// registramos pra observabilidade.
 		onError: (err) => {
 			console.error("[chat] erro no stream:", err);
+		},
+		onData: () => {
+			lastActivityRef.current = Date.now();
 		},
 	});
 
@@ -129,7 +144,6 @@ export function ChatProvider({
 	const [watchdogError, setWatchdogError] = useState<Error | undefined>(undefined);
 	const chatRef = useRef(chat);
 	chatRef.current = chat;
-	const lastActivityRef = useRef<number>(Date.now());
 	// biome-ignore lint/correctness/useExhaustiveDependencies: chat.messages é TRIGGER de atividade (cada delta reseta o relógio do watchdog), não dependência do corpo
 	useEffect(() => {
 		lastActivityRef.current = Date.now();
@@ -214,8 +228,11 @@ export function ChatProvider({
 	}, [handoff.status, conversationId]);
 
 	const sendUserMessage = useCallback(
-		async (text: string) => {
-			await chat.sendMessage({ text });
+		async (text: string, opts?: { isResumeGreeting?: boolean }) => {
+			await chat.sendMessage(
+				{ text },
+				opts?.isResumeGreeting ? { body: { isResumeGreeting: true } } : undefined,
+			);
 		},
 		[chat],
 	);

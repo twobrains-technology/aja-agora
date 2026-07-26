@@ -1,15 +1,55 @@
 ---
 id: FIX-368
 titulo: "Turno 'Voltei' pós-fechamento não reconhece a proposta fechada nem direciona pro WhatsApp"
-status: inbox
+status: done
+commit: 9aa0cb55801679a09baec11a6507ee4d5fcc632c
+executado_em: 2026-07-22
 severidade: alta
 projeto: aja-agora
 arquivos:
   - src/lib/agent/system-prompt.ts
   - src/lib/agent/agents/index.ts (deriveContractClosedInfo — sem mudança de dado, só de consumo)
-  - src/components/chat/theater/theater-chat.tsx (contexto — NÃO é o bug)
+  - src/lib/agent/agents/builder.ts
+  - src/lib/agent/orchestrator/runner.ts
+  - src/lib/agent/orchestrator/types.ts
+  - src/lib/agent/orchestrator/index.ts
+  - src/lib/web/adapter.ts
+  - src/app/api/chat/route.ts
+  - src/lib/chat/provider.tsx
+  - src/components/chat/theater/theater-chat.tsx
 rodada: 2026-07-22 — campanha vendedor-matador-consorcio (loop-de-goal), rodada 1, veredito do juiz
 ---
+
+## Execução (rodada 2, bloco-j)
+
+Implementado exatamente como a correção proposta descreveu: sinal explícito
+`isResumeGreeting` propagado desde o seed sintético "Voltei" em
+`theater-chat.tsx` (só quando a retomada hidrata SEM nada digitado pelo
+cliente) → `provider.tsx` (`sendUserMessage` aceita `opts.isResumeGreeting`,
+vira `body.isResumeGreeting` no POST) → `route.ts` (`ChatRequestBody`) →
+`pipeUserTurn`/`TurnInput` → `runTurnVercel` → `runAgentTurn` →
+`resolveAgent`/`buildAgent` → `buildSpecialistPrompt`. Nova função
+`resumeAfterCloseSection` (system-prompt.ts) dispara só quando
+`contractClosedInfo` existe E `isResumeGreeting` é true — nunca por heurística
+de texto no servidor. Cache key de `resolveAgent` ganhou o hash `rg-` pra não
+reusar agent de turno normal num turno de retomada (e vice-versa).
+
+Testes (TDD — vistos falhando antes do fix, revertendo `system-prompt.ts`
+via `git stash` e rodando de novo):
+- `src/lib/agent/system-prompt.resume-after-close.test.ts` — a seção só
+  aparece no bloco `dynamic` quando as duas condições batem; some quando
+  falta contrato fechado OU falta o sinal de retomada; `contractClosedSection`
+  (FIX-11) continua intacta.
+- `src/components/chat/theater/theater-chat.resume-greeting.test.tsx` — o
+  seed sintético "Voltei" sai com `{isResumeGreeting: true}`; seed digitado
+  (fresco ou retomada) sai com `{isResumeGreeting: false}`; chip de categoria
+  numa conversa já retomada cai no mesmo caminho do "Voltei" sintético.
+- `src/components/chat/theater/chat-theater.test.tsx` — 2 testes pré-existentes
+  atualizados pra nova assinatura de `sendUserMessage(text, opts)`.
+
+A validação E2E das 3 personas (que este achado exige pra fechar de verdade)
+fica pra próxima rodada do loop, no orquestrador — não rodei smoke/browser
+neste bloco (instrução explícita do prompt de execução).
 
 ## Palavras do operador
 > "qd volto para uma proposta ja finalizada o agente entende que eu estava num passo anterior e

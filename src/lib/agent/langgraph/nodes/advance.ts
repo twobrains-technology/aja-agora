@@ -285,6 +285,12 @@ export async function advanceFunnelNode(
 					// Só o da cota resolvida. Ausente é melhor que errado: sem ele o
 					// `blocoLance` não é montado e o modelo não cita lance médio nenhum.
 					avgBidValue: mencionada.avgBidValue,
+					// FIX-375: mesma regra do avgBidValue acima — só o da cota resolvida
+					// (nunca herda do grupo antigo). Sem isto, a re-âncora por menção
+					// ("Bora fechar com o Itaú") apagava o `availableSlots` real que
+					// `discovery.ts` já tinha propagado no reveal (FIX-374), e o card de
+					// escassez pós-fechamento (FIX-372) nunca tinha o que mostrar.
+					availableSlots: mencionada.availableSlots,
 				} as FunnelState["recommendedOffer"],
 			};
 			escolhaPorMencao = true;

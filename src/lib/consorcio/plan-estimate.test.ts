@@ -101,11 +101,11 @@ describe("FIX-3 — computePlanEstimate (estimativa de mercado)", () => {
 
 	it("clamps: mês-alvo nunca passa do prazo estimado", () => {
 		const e = computePlanEstimate({
-			category: "servicos",
-			assetValue: 30_000,
+			category: "imovel",
+			assetValue: 300_000,
 			targetMonth: 999,
 		});
-		expect(e.termMonths).toBe(TYPICAL_TERM_MONTHS.servicos);
+		expect(e.termMonths).toBe(TYPICAL_TERM_MONTHS.imovel);
 	});
 });
 

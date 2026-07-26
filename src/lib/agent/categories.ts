@@ -5,11 +5,10 @@ export type CategoryMeta = {
 	emoji: string | null;
 };
 
-export const CATEGORY_META: Record<"imovel" | "auto" | "moto" | "servicos", CategoryMeta> = {
+export const CATEGORY_META: Record<"imovel" | "auto" | "moto", CategoryMeta> = {
 	imovel: { label: "Imóvel", emoji: "🏠" },
 	auto: { label: "Automóvel", emoji: "🚗" },
 	moto: { label: "Moto", emoji: "🏍" },
-	servicos: { label: "Serviços", emoji: "🛠" },
 };
 
 const CONCIERGE_META: CategoryMeta = { label: "geral", emoji: null };

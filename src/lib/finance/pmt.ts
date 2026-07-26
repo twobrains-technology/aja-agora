@@ -33,7 +33,6 @@ export const DEFAULT_FINANCING_RATES: Record<ConsorcioCategory, number> = {
 	imovel: 10,
 	auto: 22,
 	moto: 28,
-	servicos: 25,
 };
 
 export interface FinancingComparisonInput {

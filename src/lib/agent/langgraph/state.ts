@@ -109,6 +109,9 @@ export type FunnelState = {
 	simulatorOfferDispatched?: boolean;
 	simulatorOfferAnswered?: boolean;
 	decisionDispatched: boolean;
+	/** FIX-372: idempotência do card `scarcity`, separada de `decisionDispatched`
+	 * — ver `ConversationMetadata.scarcityDispatched`. */
+	scarcityDispatched?: boolean;
 	/** A cota que o cliente escolheu — ver `ConversationMetadata.escolha`. */
 	escolha?: ConversationMetadata["escolha"];
 	/** O agente pediu atendimento humano. Sem isto no slice, a promessa "já
@@ -179,6 +182,7 @@ export const FUNNEL_KEYS = {
 	simulatorOfferDispatched: true,
 	simulatorOfferAnswered: true,
 	decisionDispatched: true,
+	scarcityDispatched: true,
 	escolha: true,
 	handoffSuggested: true,
 	handoffReason: true,
@@ -231,6 +235,7 @@ export function funnelFromMeta(meta: ConversationMetadata): FunnelState {
 		simulatorOfferDispatched: meta.simulatorOfferDispatched,
 		simulatorOfferAnswered: meta.simulatorOfferAnswered,
 		decisionDispatched: meta.decisionDispatched ?? false,
+		scarcityDispatched: meta.scarcityDispatched,
 		escolha: meta.escolha,
 		handoffSuggested: meta.handoffSuggested,
 		handoffReason: meta.handoffReason,
@@ -247,6 +252,14 @@ export const AgentGraphState = Annotation.Root({
 	contactName: Annotation<string | null>(),
 	isUserTurn: Annotation<boolean>(),
 	userText: Annotation<string>(),
+	// FIX-368 (rodada 2, veredito do juiz): este turno é a primeira mensagem do
+	// usuário desde que retomou a conversa (seed sintético "Voltei" do teatro,
+	// ver `theater-chat.tsx`) — propagado desde `route.ts`/`TurnInput` pra
+	// disparar, em `converse.ts`, o reconhecimento da reserva já feita. Sem
+	// reducer custom = default "última escrita vence": cada turno reafirma seu
+	// próprio valor (true só no turno de retomada, false nos demais), nunca
+	// "gruda" de um turno pro outro.
+	isResumeGreeting: Annotation<boolean>(),
 
 	// ── Snapshot completo do meta persistido — `projectToMeta` faz merge do
 	// `funnel` por cima disto no fim do turno (nunca perde campos que este

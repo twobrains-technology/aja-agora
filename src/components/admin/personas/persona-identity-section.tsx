@@ -21,7 +21,6 @@ const CATEGORY_LABEL: Record<string, string> = {
 	imovel: "Imóvel",
 	auto: "Automóvel",
 	moto: "Moto",
-	servicos: "Serviços",
 };
 
 export function PersonaIdentitySection({ persona }: { persona: PersonaRow }) {
@@ -61,7 +60,6 @@ export function PersonaIdentitySection({ persona }: { persona: PersonaRow }) {
 									<SelectItem value="imovel">Imóvel</SelectItem>
 									<SelectItem value="auto">Automóvel</SelectItem>
 									<SelectItem value="moto">Moto</SelectItem>
-									<SelectItem value="servicos">Serviços</SelectItem>
 								</SelectContent>
 							</Select>
 						) : (

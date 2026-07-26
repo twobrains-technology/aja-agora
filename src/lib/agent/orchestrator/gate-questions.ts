@@ -27,7 +27,7 @@ export const LANCE_EMBUTIDO_ASK = "Quer considerar esse tipo de lance nas suas s
 /** FIX-312 — "esse"/"essa" concordando com o `desiredItem` referenciado no
  * gate `credit`. Prioridade 1: o PRÓPRIO artigo indefinido que o analyzer já
  * capturou junto do item ("um Corolla", "uma casa") — sinal mais confiável
- * que a categoria sozinha, porque `imovel`/`servicos` têm itens de género
+ * que a categoria sozinha, porque `imovel` tem itens de género
  * variável ("um apartamento" vs. "uma casa"). Sem artigo no texto, cai no
  * default por categoria (auto/imovel = masculino do "carro"/"imóvel", moto =
  * feminino da "moto"). Sem isso, "esse " + "um Corolla" (artigo cru, sem
@@ -38,7 +38,6 @@ const CREDIT_DEMONSTRATIVE_FALLBACK_BY_CATEGORY: Record<Category, "esse" | "essa
 	imovel: "esse",
 	auto: "esse",
 	moto: "essa",
-	servicos: "esse",
 };
 
 function creditItemDemonstrative(
@@ -64,7 +63,6 @@ const TIMEFRAME_QUESTIONS: Record<Category, string> = {
 	imovel: "Em quanto tempo você quer estar com o seu imóvel?",
 	auto: "Em quanto tempo você quer estar com o carro novo?",
 	moto: "Em quanto tempo você quer estar com a moto nova?",
-	servicos: "Em quanto tempo você quer realizar isso?",
 };
 
 /** FIX-233 (handoff agente-vendas-consorcio, 2026-07-09) — gate `desire`, não
@@ -75,7 +73,6 @@ const DESIRE_QUESTIONS: Record<Category, string> = {
 	imovel: "Qual imóvel você tem em mente?",
 	auto: "Qual carro você tem em mente?",
 	moto: "Qual moto você tem em mente?",
-	servicos: "O que você tem em mente pra realizar?",
 };
 
 export function gateQuestion(

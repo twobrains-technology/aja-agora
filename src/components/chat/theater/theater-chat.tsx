@@ -175,6 +175,10 @@ export function TheaterChat({ seed, seedOrigin = "digitada", settled }: TheaterC
 
 	const retomando = Boolean(resume.messages?.length);
 	const seedDoCliente = seedOrigin === "chip" && retomando ? "" : seed.trim();
+	// FIX-368: só é o seed SINTÉTICO "Voltei" quando não veio nada digitado do
+	// cliente — sinaliza pro backend (`isResumeGreeting`) que este é o turno de
+	// retomada, sem depender de heurística de texto no servidor.
+	const isVolteiSintetico = !seedDoCliente && retomando;
 	const seedDeAbertura = seedDoCliente || (retomando ? "Voltei" : "");
 
 	return (
@@ -187,7 +191,11 @@ export function TheaterChat({ seed, seedOrigin = "digitada", settled }: TheaterC
 			    carro.") não é fala do cliente: é só o botão pelo qual ele reentrou.
 			    Reenviá-la fazia a conversa parecer reiniciada no meio do funil —
 			    quem volta diz "Voltei". Só o que ele DIGITOU sobrevive à retomada. */}
-			<TheaterChatBody seed={seedDeAbertura} settled={settled} />
+			<TheaterChatBody
+				seed={seedDeAbertura}
+				settled={settled}
+				isResumeGreeting={isVolteiSintetico}
+			/>
 		</ChatProvider>
 	);
 }
@@ -208,7 +216,11 @@ function TheaterStage({ settled, children }: { settled: boolean; children?: Reac
 	);
 }
 
-function TheaterChatBody({ seed, settled }: TheaterChatProps) {
+function TheaterChatBody({
+	seed,
+	settled,
+	isResumeGreeting,
+}: TheaterChatProps & { isResumeGreeting: boolean }) {
 	const { messages, status, regenerate, error, sendUserMessage } = useChatContext();
 	const isStreaming = status === "submitted" || status === "streaming";
 	// `sendUserMessage` muda de identidade a cada render (depende do objeto do
@@ -221,11 +233,12 @@ function TheaterChatBody({ seed, settled }: TheaterChatProps) {
 	// Semente → próxima mensagem do usuário, depois do morph assentar. Vale tanto
 	// pra conversa fresca (1ª mensagem) quanto pra retomada (continua a conversa).
 	// Depende só de `seed` (estável durante a sessão do teatro), então roda uma vez.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: isResumeGreeting é derivado do MESMO snapshot de retomada que `seed` — estável durante a sessão do teatro, não precisa re-disparar o effect sozinho.
 	useEffect(() => {
 		const trimmed = seed.trim();
 		if (!trimmed) return;
 		const timer = setTimeout(() => {
-			void sendRef.current(trimmed);
+			void sendRef.current(trimmed, { isResumeGreeting });
 		}, 480);
 		return () => clearTimeout(timer);
 	}, [seed]);

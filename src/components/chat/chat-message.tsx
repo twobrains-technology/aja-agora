@@ -1,15 +1,6 @@
 "use client";
 
-import {
-	AlertCircle,
-	Bike,
-	Briefcase,
-	Car,
-	Headset,
-	Home,
-	type LucideIcon,
-	RotateCcw,
-} from "lucide-react";
+import { AlertCircle, Bike, Car, Headset, Home, type LucideIcon, RotateCcw } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
@@ -33,7 +24,7 @@ import { WelcomeCategories } from "./artifacts/welcome-categories";
 import { RevealSelectionProvider } from "./reveal-selection";
 import { StreamingDots } from "./streaming-dots";
 
-type Category = "imovel" | "auto" | "moto" | "servicos";
+type Category = "imovel" | "auto" | "moto";
 
 interface ChatMessageProps {
 	message: AjaUIMessage;
@@ -407,7 +398,6 @@ const CATEGORY_BADGE_COLOR: Record<Category, string> = {
 	imovel: "var(--cat-imovel)",
 	auto: "var(--cat-auto)",
 	moto: "var(--cat-moto)",
-	servicos: "var(--cat-servicos)",
 };
 
 export function AssistantAvatar({ category }: { category?: Category | null } = {}) {
@@ -439,13 +429,12 @@ export function AssistantAvatar({ category }: { category?: Category | null } = {
 }
 
 const CATEGORY_TRANSITION: Record<
-	"imovel" | "auto" | "moto" | "servicos",
+	"imovel" | "auto" | "moto",
 	{ icon: LucideIcon; short: string; role: string }
 > = {
 	imovel: { icon: Home, short: "imóveis", role: "Especialista em imóveis" },
 	auto: { icon: Car, short: "automóveis", role: "Especialista em automóveis" },
 	moto: { icon: Bike, short: "motos", role: "Especialista em motos" },
-	servicos: { icon: Briefcase, short: "serviços", role: "Especialista em serviços" },
 };
 
 function TransitionDivider({ data }: { data: TransitionPartData }) {

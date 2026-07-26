@@ -63,6 +63,7 @@ export function projectToMeta(state: AgentGraphStateType): ConversationMetadata 
 		simulatorOfferDispatched: funnel.simulatorOfferDispatched,
 		simulatorOfferAnswered: funnel.simulatorOfferAnswered,
 		decisionDispatched: funnel.decisionDispatched,
+		scarcityDispatched: funnel.scarcityDispatched,
 		escolha: funnel.escolha,
 		// O encaminhamento pro atendente humano PRECISA sobreviver ao turno: é o
 		// que o painel lê pra alguém assumir a conversa.

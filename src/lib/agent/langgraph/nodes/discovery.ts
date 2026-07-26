@@ -32,13 +32,37 @@ import {
 	indexRevealGroups,
 	pickBestRankedGroup,
 	type RevealGroupIndex,
+	type RevealGroupLike,
 	usableRevealGroupCount,
 } from "@/lib/agent/orchestrator/recommendation-payload";
-import { scoringInputFromMeta } from "@/lib/agent/orchestrator/runner";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import type { Category } from "@/lib/agent/personas";
+import { scoringInputFromMeta } from "@/lib/agent/scoring-input";
 import { loadAdministradoraLogoMap } from "@/lib/consorcio/administradora-logo-repo";
 import { projectToMeta } from "../emit";
+
+/** FIX-374 — snapshot do grupo REAL ranqueado (`best`) que sobrevive no meta
+ * pra emissão server-side pós-reveal (`recommendedOffer`, personas.ts). Extraída
+ * como função pura (mesmo padrão do FIX-368/372) pra ser testável sem montar o
+ * nó inteiro (Bevi real + logo map). `availableSlots` existe em `RevealGroupLike`
+ * desde o FIX-367, mas este write-site nunca o copiava — `buildScarcityCard`
+ * (server-cards.ts) lê exatamente este campo, então o card de escassez pós-
+ * reveal nunca tinha o que mostrar mesmo com a Bevi trazendo o dado real. */
+export function buildRecommendedOfferSnapshot(
+	best: RevealGroupLike,
+	category: Category,
+): NonNullable<FunnelState["recommendedOffer"]> {
+	return {
+		administradora: best.administradora,
+		category,
+		creditValue: best.creditValue ?? 0,
+		termMonths: best.termMonths ?? 0,
+		monthlyPayment: best.monthlyPayment ?? 0,
+		groupId: best.id,
+		avgBidValue: best.avgBidValue,
+		availableSlots: best.availableSlots,
+	};
+}
 
 /** Prazo-alvo (meses) de quem quer a MENOR PARCELA. Não é um número novo: é o
  * mesmo horizonte da opção "Sem pressa, quero menor parcela"
@@ -163,15 +187,7 @@ export async function discoveryNode(
 			pendingRecommendationCard = payload;
 		}
 		recommendedAdministradora = best.administradora;
-		recommendedOffer = {
-			administradora: best.administradora,
-			category: category as Category,
-			creditValue: best.creditValue ?? 0,
-			termMonths: best.termMonths ?? 0,
-			monthlyPayment: best.monthlyPayment ?? 0,
-			groupId: best.id,
-			avgBidValue: best.avgBidValue,
-		};
+		recommendedOffer = buildRecommendedOfferSnapshot(best, category as Category);
 	}
 
 	// Os ARTIFACTS não saem aqui — quem entrega é o `converse` (entre os dois

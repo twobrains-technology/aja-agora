@@ -298,7 +298,7 @@ foi REMOVIDO):
 
 Com valor + identidade prontos, o sistema busca e mostra as opções DIRETO — SEM perguntar sobre lance antes (Ata 2026-07-04: "todo consórcio tem lance; perguntar na largada não faz sentido"). A conversa de lance (tem reserva? / valor do lance / lance embutido) só acontece DEPOIS que o usuário JÁ VIU as opções reais — ver seção "Lance e lance embutido" mais abaixo.
 
-NÃO existe mais gate de prazo de contemplação na entrada (FIX-103). NUNCA pergunte "em quanto tempo você quer o bem?" / "qual prazo de contemplação?" na qualificação. Vale pras 4 specialists (auto/imovel/moto/servicos) sem exceção. Bug tb-dev 2026-05-18 confirmado em DUAS conversas reais (Helena/Monique 6c0ca4cf-cae6 — imovel; Rafael — auto): agent saudou com nome e foi DIRETO pra "Qual faixa de crédito?" / "Me passa o valor da carta?" — antecipando o valor e pulando a coleta. Resultado: perfil incompleto, eval invalida, recommend pifa.
+NÃO existe mais gate de prazo de contemplação na entrada (FIX-103). NUNCA pergunte "em quanto tempo você quer o bem?" / "qual prazo de contemplação?" na qualificação. Vale pras 3 specialists (auto/imovel/moto) sem exceção. Bug tb-dev 2026-05-18 confirmado em DUAS conversas reais (Helena/Monique 6c0ca4cf-cae6 — imovel; Rafael — auto): agent saudou com nome e foi DIRETO pra "Qual faixa de crédito?" / "Me passa o valor da carta?" — antecipando o valor e pulando a coleta. Resultado: perfil incompleto, eval invalida, recommend pifa.
 
 **Não pule etapas.** Falar de valor/parcela/carta no mesmo turno em que capturou o nome atropela o rapport (o cliente ainda nem disse o que quer nem por quê) e some com o desejo — que é justamente onde a venda se constrói. O seletor de valor e a busca você não dispara por conta própria.
 
@@ -344,7 +344,7 @@ Nas binárias, não liste as opções em texto (o botão já faz isso) — mas v
 
 Após saudar com o nome do usuário no turn de save_contact_name, você NUNCA pode terminar o turn com frase afirmativa genérica de "vamos fazer X juntos" — isso mata o turn no vazio, o usuário fica esperando uma resposta que não vem, e ele precisa digitar "oi" pra reativar (bug tb-dev 2026-05-18: agent disse "Beleza, [nome]! Prazer, [nome]! Vamos achar a opção certa pra você." [finish sem tool] → turn morto).
 
-Vale pras 4 specialists (auto/imovel/moto/servicos). Após a saudação curta, OBRIGATORIAMENTE o turn precisa terminar com tool/gate concreta — o orchestrator dispara o gate de experience em seguida, mas SÓ se você não tiver enchido o turn de frase afirmativa vazia que parece encerrar.
+Vale pras 3 specialists (auto/imovel/moto). Após a saudação curta, OBRIGATORIAMENTE o turn precisa terminar com tool/gate concreta — o orchestrator dispara o gate de experience em seguida, mas SÓ se você não tiver enchido o turn de frase afirmativa vazia que parece encerrar.
 
 **Lista de 9 variantes proibidas que encerram turn sem ação** (lista NÃO exaustiva — qualquer parafrase dessa familia e proibida):
 - "Vamos achar a opção certa"
@@ -392,6 +392,8 @@ Depois que a qualificação fecha, o sistema manda um nudge (mensagem começando
 Esta conversa acontece DEPOIS que o cliente já viu as opções reais — nunca antes ("todo consórcio tem lance; perguntar na largada não faz sentido").
 
 Quando ele diz que tem reserva pra lance, o sistema dispara em seguida a explicação de *lance embutido*. Não repita o que o card vai dizer — mas reaja de verdade ao que ele contou (quanto tem, de onde veio, o que isso muda pra ele).
+
+**Sem aporte agora → OFEREÇA o lance embutido, não espere ele perguntar.** Quando ele disser que não tem reserva pra dar de lance ("por enquanto não", "não tenho esse dinheiro agora", "não sei se consigo"), é o MOMENTO de agir como vendedor de verdade, não de aceitar o "não" e seguir reto pros cenários padrão. Puxe o assunto você: "Cara, tem uma opção aqui pra te ajudar — você já ouviu falar de lance embutido?" (ou equivalente, na sua voz) e explique a vantagem real: ele usa uma fatia da PRÓPRIA carta como lance, sem tirar nada do bolso hoje, e isso antecipa a contemplação. Deixe claro o trade-off completo, nas DUAS pontas — nunca só a vantagem: (1) a parcela segue no valor normal até ele ser contemplado; (2) depois de contemplado, o lance total (embutido + eventual dinheiro) amortiza o saldo e a parcela cai; (3) em troca, ele recebe uma carta líquida menor agora (por isso mirar uma carta MAIOR compensa a diferença). Isso normalmente já está pré-buscado (o sistema busca em paralelo/background as ofertas com e sem embutido assim que ele informa o valor, sem atrasar a resposta principal) — use os números reais que vierem no contexto, nunca invente um percentual ou valor. Se ele topar, siga com o card de lance embutido; se não quiser saber, respeite e siga com os cenários padrão sem insistir — vendedor bom não empurra o que o cliente já disse que não quer.
 
 Se ele perguntar o que é lance embutido, explique como quem entende: usar parte da própria carta de crédito como lance, sem precisar ter o valor todo em dinheiro hoje — melhora as chances de contemplação. **Nunca prometa contemplação garantida nem prazo de contemplação** (é proibido por regulação, além de ser mentira).
 
@@ -911,10 +913,8 @@ function brlNoCents(n: number): string {
 	});
 }
 
-export function contractClosedSection(info: ContractClosedInfo | null): string {
-	if (!info) return "";
-	const administradora = info.administradora ?? "a administradora escolhida";
-	const plano = [
+function planoDescricao(info: ContractClosedInfo): string {
+	return [
 		info.grupo ? `grupo ${info.grupo}` : null,
 		typeof info.creditValue === "number" ? `crédito de ${brlNoCents(info.creditValue)}` : null,
 		typeof info.monthlyPayment === "number"
@@ -923,6 +923,12 @@ export function contractClosedSection(info: ContractClosedInfo | null): string {
 	]
 		.filter(Boolean)
 		.join(" · ");
+}
+
+export function contractClosedSection(info: ContractClosedInfo | null): string {
+	if (!info) return "";
+	const administradora = info.administradora ?? "a administradora escolhida";
+	const plano = planoDescricao(info);
 	const statusLabel =
 		info.proposalStatus === "documentos"
 			? "documentos recebidos — a proposta está com a administradora"
@@ -935,6 +941,31 @@ REGRAS DURAS deste estado:
 - PROIBIDO re-rodar a descoberta: NÃO chame search_groups/recommend_groups, NÃO apresente recommendation_card, simulation_result, comparison_table nem contemplation_dial, e NUNCA ofereça OUTRA administradora ou "novas opções" — o plano já foi reservado com a ${administradora}.
 - Pergunta de status ("qual o status da proposta?", "como tá minha proposta?") → chame check_proposal_status (consulta a administradora AO VIVO — regra FIX-14 acima) e responda com base na userMessage dela. Se a tool falhar, responda DESTE estado: proposta com a ${administradora}${info.grupo ? `, grupo ${info.grupo}` : ""}, ${statusLabel}. Diga que a Aja Agora acompanha cada passo e avisa o usuário.
 - Se o usuário quiser OUTRO consórcio (nova cota/novo bem), diga que é possível iniciar um novo consórcio — uma nova jornada — a qualquer momento: a reserva já está concluída nesta conversa. NÃO reabra a qualificação.`;
+}
+
+/** FIX-368 (rodada 2, veredito do juiz — 3/3 personas): a primeira mensagem do
+ * usuário após retomar a conversa (`"Voltei"`, disparado automaticamente pelo
+ * teatro no reload/retomada — ver `theater-chat.tsx`) precisa reconhecer de
+ * cara que a proposta já foi fechada e reforçar o encaminhamento pro WhatsApp.
+ * `contractClosedSection` cobre CONTESTAÇÃO e PERGUNTA DE STATUS — nenhuma das
+ * duas instrui a ABERTURA da retomada, então o modelo tratava "Voltei" como
+ * início de conversa comum (cada persona "inventou" uma etapa pendente
+ * diferente: formulário travado / decisão não tomada / contratação pendente).
+ * Só dispara no turno sinalizado como retomada (`isResumeGreeting`, propagado
+ * desde `theater-chat.tsx` → `route.ts` → `runner.ts`/`resolveAgent`) — nunca
+ * por heurística de texto (não trava em regex de "Voltei"), e nunca em turnos
+ * normais pós-fechamento (aí quem cobre é `contractClosedSection` acima). */
+export function resumeAfterCloseSection(
+	info: ContractClosedInfo | null,
+	isResumeGreeting: boolean,
+): string {
+	if (!info || !isResumeGreeting) return "";
+	const administradora = info.administradora ?? "a administradora escolhida";
+	const plano = planoDescricao(info);
+	return `## Retomada pós-fechamento — primeira frase reconhece a reserva (FIX-368)
+Esta é a PRIMEIRA mensagem do usuário desde que ele voltou pra conversa — e a proposta JÁ está fechada: consórcio da ${administradora}${plano ? ` (${plano})` : ""}.
+
+REGRA DURA: a PRIMEIRA frase da sua resposta reconhece explicitamente que a reserva já está confirmada e com a administradora, e reforça que um atendente da Aja Agora fala com ele pelo WhatsApp em breve (pra pedir documentos/seguir os próximos passos). NUNCA trate esta retomada como se a jornada ainda estivesse em aberto: não pergunte se ele travou em alguma parte do formulário, não re-pergunte uma decisão que já foi tomada (ex.: qual cenário de lance embutido), não convide a "seguir com a contratação" — isso tudo já aconteceu. Escreva com SUAS próprias palavras (isto não é um texto fixo) — o fato determinístico é só o que está descrito acima.`;
 }
 
 /** FIX-233 (handoff agente-vendas-consorcio, 2026-07-09) — o gate `desire`
@@ -998,11 +1029,16 @@ function buildSpecialistDynamicBlocks(
 	// FIX-285: o gate `desire` foi respondido mesmo sem um `desiredItem`
 	// específico — variante genérica da 2ª pergunta (motivo).
 	desireAnswered = false,
+	// FIX-368: turno sinalizado como a primeira mensagem pós-retomada
+	// (ver `resumeAfterCloseSection` acima) — default false preserva o
+	// comportamento atual em paths que não derivam do sinal.
+	isResumeGreeting = false,
 ): string {
 	return [
 		buildSpecialistDynamic(expertise),
 		whatsappOptinSection(whatsappStage),
 		contractClosedSection(contractClosedInfo),
+		resumeAfterCloseSection(contractClosedInfo, isResumeGreeting),
 		motivationMirrorSection(motivation, desiredItem),
 		desireFollowUpSection(desiredItem, motivation, desireAnswered),
 	]
@@ -1098,6 +1134,10 @@ export function buildSpecialistPrompt(
 	// contrato). Default "terminal" = tudo, preservando o comportamento de
 	// qualquer chamador que não passe a fase (testes, admin, paths antigos).
 	phase: ToolPhase = "terminal",
+	// FIX-368: este turno é a primeira mensagem do usuário desde que retomou a
+	// conversa (sinal propagado desde `theater-chat.tsx`) — default false
+	// preserva o comportamento atual em paths que não derivam do sinal.
+	isResumeGreeting = false,
 ): PromptBlocks {
 	// `currentDate` permite que o caller (orchestrator/runner ou buildAgent)
 	// passe a data corrente — em time-travel, é `simulatorNow()` capturado
@@ -1196,6 +1236,7 @@ ${renderSharedExamples(SHARED_SPECIALIST_EXAMPLES)}
 			motivation,
 			desiredItem,
 			desireAnswered,
+			isResumeGreeting,
 		),
 	};
 }

@@ -16,8 +16,8 @@ import { z } from "zod";
 // não-numérica ("abc") continua falhando — não tem número pra inventar ali.
 export const searchGroupsInput = z.object({
 	category: z
-		.enum(["imovel", "auto", "moto", "servicos"])
-		.describe("Categoria do bem: imóvel, automóvel ou serviços"),
+		.enum(["imovel", "auto", "moto"])
+		.describe("Categoria do bem: imóvel, automóvel ou moto"),
 	creditMin: z.coerce.number().min(0).optional().describe("Valor mínimo de crédito em reais"),
 	creditMax: z.coerce.number().positive().optional().describe("Valor máximo de crédito em reais"),
 });
@@ -32,7 +32,7 @@ export const getRatesInput = z.object({
 		.string()
 		.optional()
 		.describe("Nome da administradora (opcional, retorna todas se vazio)"),
-	category: z.enum(["imovel", "auto", "moto", "servicos"]).optional().describe("Categoria do bem"),
+	category: z.enum(["imovel", "auto", "moto"]).optional().describe("Categoria do bem"),
 });
 
 export const getGroupDetailsInput = z.object({

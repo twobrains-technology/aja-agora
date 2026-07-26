@@ -39,7 +39,7 @@ export function createRunTurnLangGraph(deps?: {
 	};
 
 	return async function* runTurnLangGraphImpl(input: TurnInput): AsyncGenerator<TurnEvent> {
-		const { channel, conversationId, userText, isUserTurn, contactName } = input;
+		const { channel, conversationId, userText, isUserTurn, contactName, isResumeGreeting } = input;
 		if (!conversationId) throw new Error("[langgraph] conversationId is required");
 
 		const graph = await getGraph();
@@ -82,6 +82,10 @@ export function createRunTurnLangGraph(deps?: {
 					// cravava `isUserTurn: true` e directive de servidor virava fala do
 					// cliente no banco e na tela.
 					isUserTurn,
+					// FIX-368: reafirmado A CADA turno (não só quando true) — sem
+					// reducer custom, "esquecer" de mandar `false` explícito deixaria o
+					// último valor gravado no checkpointer vazar pro turno seguinte.
+					isResumeGreeting: isResumeGreeting === true,
 					baseMeta,
 					funnel: funnelFromMeta(baseMeta),
 					contactName: contactName ?? conv?.contactName ?? null,
@@ -95,6 +99,7 @@ export function createRunTurnLangGraph(deps?: {
 				channel,
 				contactName: contactName ?? conv?.contactName ?? null,
 				isUserTurn,
+				isResumeGreeting: isResumeGreeting === true,
 				userText,
 				baseMeta,
 				intent: undefined,

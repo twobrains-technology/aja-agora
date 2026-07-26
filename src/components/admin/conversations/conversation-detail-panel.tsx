@@ -55,7 +55,6 @@ const STATUS_LABELS: Record<Detail["conversation"]["status"], string> = {
 const CATEGORY_LABELS: Record<string, string> = {
 	imovel: "Imóvel",
 	auto: "Automóvel",
-	servicos: "Serviços",
 };
 
 const STATUS_VARIANTS: Record<

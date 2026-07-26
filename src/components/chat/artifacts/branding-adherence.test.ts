@@ -20,7 +20,9 @@ describe("Artifacts — aderência à marca (sem cor Tailwind crua)", () => {
 
 	it("group-card mapeia categorias aos tokens --cat-*, não a azul/verde/laranja/roxo crus", () => {
 		const src = read("group-card.tsx");
-		for (const cat of ["imovel", "auto", "moto", "servicos"]) {
+		// FIX-363: "servicos" foi removida do enum de categorias (nunca mais
+		// oferecida em nenhum canal) — a lista aqui reflete as categorias vivas.
+		for (const cat of ["imovel", "auto", "moto"]) {
 			expect(src, `falta token cat-${cat}`).toMatch(new RegExp(`cat-${cat}`));
 		}
 		expect(src).not.toMatch(/bg-(blue|green|orange|purple)-500/);

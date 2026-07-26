@@ -284,6 +284,45 @@ describe("BeviSelfContractAdapter — busca com/sem lance embutido (FIX-219)", (
 });
 
 // ════════════════════════════════════════════════════════════════════════════
+// FIX-366 (bloco-i, investigação) — a Bevi opera com 1 proposta ativa, re-PATCH
+// SEQUENCIAL (cookbook §3, comentário em ensureOffers/offersForValue). As duas
+// variantes de offersForValue (sem/com embutido) mutam a MESMA proposta via
+// `setSegment`/`client.simulate` — sem evidência de que a Bevi tolera 2
+// PATCHes concorrentes na mesma proposta, paralelizar com Promise.all arrisca
+// corromper o resultado (ex.: as duas respostas refletindo o MESMO PATCH
+// vencedor, misturando "sem" com "com"). Decisão técnica (sem acesso a
+// sandbox/token pra testar ao vivo): MANTER sequencial — o ganho de latência
+// de paralelizar não justifica o risco de corromper uma oferta financeira
+// real mostrada ao cliente. Este teste tranca essa invariante: se alguém no
+// futuro "otimizar" pra Promise.all sem verificar a Bevi antes, o teste falha
+// aqui em vez de quebrar em produção.
+// ════════════════════════════════════════════════════════════════════════════
+describe("BeviSelfContractAdapter — FIX-366: sem/com embutido NUNCA rodam concorrentes", () => {
+	it("client.simulate das duas variantes (sem/com) nunca se sobrepõe no tempo", async () => {
+		let inFlight = 0;
+		let sawOverlap = false;
+		const client = makeClient();
+		client.simulate = vi.fn(
+			async ({ embeddedPercentage }: { embeddedPercentage?: "30" | "50" }) => {
+				inFlight++;
+				if (inFlight > 1) sawOverlap = true;
+				await new Promise((resolve) => setTimeout(resolve, 20));
+				inFlight--;
+				return embeddedPercentage === "30"
+					? [makeOffer("q-com", "BANCO DO BRASIL", 100000)]
+					: [makeOffer("q-sem", "ITAÚ", 100000)];
+			},
+		);
+		const adapter = makeAdapter(client, { prefs: { embeddedPercentage: "30" } });
+
+		await adapter.searchGroups({ category: "auto", creditMax: 100000 });
+
+		expect(client.simulate).toHaveBeenCalledTimes(2);
+		expect(sawOverlap).toBe(false);
+	});
+});
+
+// ════════════════════════════════════════════════════════════════════════════
 // FIX-70 — Sweep sequencial multi-faixa na descoberta
 // ════════════════════════════════════════════════════════════════════════════
 

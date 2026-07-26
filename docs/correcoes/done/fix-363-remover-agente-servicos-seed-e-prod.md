@@ -1,9 +1,12 @@
 ---
 id: FIX-363
 titulo: "Apagar a modalidade 'Serviços' de todas as camadas (seed, banco de prod, detecção em texto livre, tipo/enum)"
-status: todo
+status: done
 severidade: alta
 projeto: aja-agora
+bloco: bloco-g-remove-servicos
+commit: e3d1c4df
+executado_em: 2026-07-22
 arquivos:
   - drizzle/ (nova migration)
   - src/db/schema.ts

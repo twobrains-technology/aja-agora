@@ -25,10 +25,6 @@ const CATEGORY_STYLES: Record<GroupCardPayload["category"], { label: string; cla
 			label: "Moto",
 			className: "bg-cat-moto-soft text-cat-moto border-cat-moto/30",
 		},
-		servicos: {
-			label: "Serviços",
-			className: "bg-cat-servicos-soft text-cat-servicos border-cat-servicos/30",
-		},
 	};
 
 // Defensivo por decisão: desde que o `group_card` passou a ser coagido
@@ -52,7 +48,7 @@ const formatPercent = (value: number | undefined | null): string | null =>
 const cardSpring = { type: "spring" as const, stiffness: 400, damping: 17 };
 
 export function GroupCard({ payload }: { payload: GroupCardPayload }) {
-	const category = CATEGORY_STYLES[payload.category] ?? CATEGORY_STYLES.servicos;
+	const category = CATEGORY_STYLES[payload.category] ?? CATEGORY_STYLES.auto;
 	const prefersReduced = useReducedMotion();
 	const { sendAction, status } = useChatContext();
 	const isStreaming = status === "submitted" || status === "streaming";

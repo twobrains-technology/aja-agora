@@ -33,15 +33,45 @@ export function buildEmbeddedBidCard(meta: ConversationMetadata): ServerCard {
 
 /** Sem `groupId` ancorado (reveal anterior ao FIX-246, ou nenhuma oferta
  * recomendada ainda) não fabrica — mesmo comportamento de "sem grupo
- * utilizável" do `coerceScarcityPayload` (nunca inventa `availableSlots`). */
+ * utilizável" do `coerceScarcityPayload` (nunca inventa `availableSlots`).
+ *
+ * FIX-367: o snapshot (`meta.recommendedOffer`) precisa carregar
+ * `availableSlots` (ver dial-payload.ts) — sem repassá-lo aqui pro índice, o
+ * card ficava IMPOSSÍVEL de mostrar um número real mesmo quando a oferta Bevi
+ * trazia o dado (o `RevealGroupLike` construído aqui é a ÚNICA fonte que
+ * `coerceScarcityPayload` enxerga pós-reveal).
+ *
+ * FIX-369 (rodada 2, root cause real — 0/3 personas nunca viram o card):
+ * `coerceScarcityPayload` já devolve `availableSlots: undefined` quando a
+ * Bevi não trouxe o dado pro grupo — e o componente (`Scarcity`, scarcity.tsx)
+ * já renderiza `null` nesse caso ("melhor card nenhum que número inventado").
+ * Mas ESTA função devolvia um `ServerCard` não-nulo mesmo assim (só checava
+ * `groupId`), então `dispatchDecisionCascade`/`pipeClosingCeremony` (que só
+ * testam `if (scarcityCard)`) seguiam EMITINDO o artifact — persistido no
+ * banco, mandado no stream, e invisível na tela. Nenhum bug de bypass/tool-
+ * call: o card "existia" tecnicamente mas nunca aparecia, porque a condição
+ * de "vale a pena emitir" morava só no componente React, duplicada (e
+ * desalinhada) da condição real. Espelha aqui a MESMA checagem do componente
+ * ANTES de devolver o card — invariante único, não duas cópias divergentes. */
 export function buildScarcityCard(meta: ConversationMetadata): ServerCard | null {
 	const offer = meta.recommendedOffer;
 	const groupId = offer?.groupId;
 	if (!groupId) return null;
 	const index: RevealGroupIndex = new Map<string, RevealGroupLike>([
-		[groupId, { id: groupId, administradora: offer.administradora }],
+		[
+			groupId,
+			{
+				id: groupId,
+				administradora: offer.administradora,
+				availableSlots: offer.availableSlots,
+			},
+		],
 	]);
-	return { payload: coerceScarcityPayload({ groupId }, index) };
+	const payload = coerceScarcityPayload({ groupId }, index);
+	if (typeof payload.availableSlots !== "number" || !Number.isFinite(payload.availableSlots)) {
+		return null;
+	}
+	return { payload };
 }
 
 /** FIX-253 (rodada 4, veredito Fable FINAL §3, causa-raiz do 0-scarcity no

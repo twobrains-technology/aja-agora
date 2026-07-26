@@ -104,6 +104,39 @@ próximo passo estruturado, ele te avisa (ferramenta liberada ou card na
 tela).`;
 }
 
+/** FIX-368 (rodada 2, veredito do juiz — 3/3 personas reproduziram): o
+ * `blocoFechamento` (montado em `createConverseNode`) cobre CONTESTAÇÃO e
+ * PERGUNTA DE STATUS, mas nenhuma seção instruía a ABERTURA da retomada — o
+ * modelo tratava "Voltei" como início de conversa comum e cada persona
+ * "inventou" uma etapa pendente diferente (formulário travado / decisão não
+ * tomada / contratação pendente). Dispara SÓ no turno sinalizado como
+ * retomada (`isResumeGreeting`, ver `theater-chat.tsx`/`run-turn.ts`) — nunca
+ * por heurística de texto (não trava em regex de "Voltei"). Extraída como
+ * função pura (rodada 3) pra ser testável sem montar o grafo inteiro — o
+ * card original já pedia "é assertable que a SEÇÃO existe no prompt final
+ * quando as condições batem" como regressão exigida. */
+export function resumeAfterCloseSection(
+	contractClosed: boolean,
+	isResumeGreeting: boolean,
+	administradora: string | null | undefined,
+): string | null {
+	if (!contractClosed || !isResumeGreeting) return null;
+	const admin = administradora ?? "administradora escolhida";
+	return (
+		`## Retomada pós-fechamento — primeira frase reconhece a reserva (FIX-368)\n` +
+		`Esta é a PRIMEIRA mensagem do usuário desde que ele voltou pra conversa — e a ` +
+		`proposta JÁ está fechada, com a ${admin}.\n\n` +
+		`REGRA DURA: a PRIMEIRA frase da sua resposta reconhece explicitamente que a reserva ` +
+		`já está confirmada e com a administradora, e reforça que um atendente da Aja Agora ` +
+		`fala com ele pelo WhatsApp em breve (pra pedir documentos/seguir os próximos ` +
+		`passos). NUNCA trate esta retomada como se a jornada ainda estivesse em aberto: não ` +
+		`pergunte se ele travou em alguma parte do formulário, não re-pergunte uma decisão ` +
+		`que já foi tomada (ex.: qual cenário de lance embutido), não convide a "seguir com a ` +
+		`contratação" — isso tudo já aconteceu. Escreva com SUAS próprias palavras (isto não ` +
+		`é um texto fixo) — o fato determinístico é só o que está descrito acima.`
+	);
+}
+
 function toBaseMessage(m: { role: "user" | "assistant"; content: string }): BaseMessage {
 	return m.role === "user" ? new HumanMessage(m.content) : new AIMessage(m.content);
 }
@@ -606,6 +639,9 @@ export function createConverseNode(model: BaseChatModel) {
 					...(blocoOfertas ? [{ type: "text" as const, text: blocoOfertas }] : []),
 					...(blocoOpcoesNaTela ? [{ type: "text" as const, text: blocoOpcoesNaTela }] : []),
 					...(blocoFechamento ? [{ type: "text" as const, text: blocoFechamento }] : []),
+					...(blocoRetomadaPosFechamento
+						? [{ type: "text" as const, text: blocoRetomadaPosFechamento }]
+						: []),
 					...(blocoNovato ? [{ type: "text" as const, text: blocoNovato }] : []),
 					...(blocoEscolha ? [{ type: "text" as const, text: blocoEscolha }] : []),
 					...(blocoGrupoTrocado ? [{ type: "text" as const, text: blocoGrupoTrocado }] : []),
@@ -666,6 +702,12 @@ export function createConverseNode(model: BaseChatModel) {
 				`você, responda o que ele perguntar, com naturalidade. Nunca prometa prazo de ` +
 				`contemplação nem diga que a cota está reservada.`
 			: null;
+
+		const blocoRetomadaPosFechamento = resumeAfterCloseSection(
+			state.baseMeta.contractClosed === true,
+			state.isResumeGreeting === true,
+			state.funnel.recommendedAdministradora,
+		);
 
 		const systemBeat1 = montarSystem(
 			revealEmDoisTempos
@@ -911,6 +953,12 @@ export function createConverseNode(model: BaseChatModel) {
 									termMonths: prazo,
 									...(typeof p.groupId === "string" ? { groupId: p.groupId } : {}),
 									...(num(p.avgBidValue) != null ? { avgBidValue: num(p.avgBidValue) } : {}),
+									// FIX-375: mesma lacuna do FIX-374/375 — sem isto, a re-âncora
+									// via tool-result (present_recommendation_card/simulate_quota)
+									// apagava o `availableSlots` real que `discovery.ts` já tinha
+									// propagado no reveal, e o card de escassez pós-fechamento
+									// (FIX-372) nunca tinha o que mostrar.
+									...(num(p.availableSlots) != null ? { availableSlots: num(p.availableSlots) } : {}),
 								};
 							}
 						}
@@ -1067,6 +1115,11 @@ export function createConverseNode(model: BaseChatModel) {
 											// lance médio do grupo anterior fazia a conversa citar um número
 											// que não pertencia a esta cota.
 											avgBidValue: escolhaRef.cota.avgBidValue,
+											// FIX-375: mesma regra do avgBidValue acima — sem isto, escolher
+											// uma cota aqui apagava o `availableSlots` real propagado no
+											// reveal (FIX-374), e o card de escassez pós-fechamento (FIX-372)
+											// nunca tinha o que mostrar.
+											availableSlots: escolhaRef.cota.availableSlots,
 										} as FunnelState["recommendedOffer"],
 										...(escolhaRef.cota.administradora
 											? { recommendedAdministradora: escolhaRef.cota.administradora }

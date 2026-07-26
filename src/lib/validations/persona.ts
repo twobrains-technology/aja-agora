@@ -36,7 +36,7 @@ export const personaForbiddenTopicSchema = z.object({
 // Enums espelhados de qualify-state.ts e personas.ts — Zod precisa do literal,
 // não da `type`. Mantidos sync com as definições canônicas.
 const expertiseLevelEnum = z.enum(["leigo", "expert", "neutro"]);
-const categoryEnum = z.enum(["imovel", "auto", "moto", "servicos"]);
+const categoryEnum = z.enum(["imovel", "auto", "moto"]);
 const channelEnum = z.enum(["web", "whatsapp"]);
 const userIntentEnum = z.enum([
 	"ready_to_proceed",
@@ -94,7 +94,7 @@ export const updatePersonaSchema = z
 
 export const createPersonaSchema = z.object({
 	displayName: z.string().min(1, "Nome obrigatório").max(50),
-	category: z.enum(["imovel", "auto", "moto", "servicos"], { message: "Selecione uma categoria" }),
+	category: z.enum(["imovel", "auto", "moto"], { message: "Selecione uma categoria" }),
 	expertise: z
 		.string()
 		.max(50)
@@ -126,7 +126,7 @@ export const previewPersonaSchema = z.object({
 // que o agente precisa pra rodar (não há baseline no DB).
 export const previewPersonaDraftSchema = z.object({
 	displayName: z.string().min(1).max(50),
-	category: z.enum(["imovel", "auto", "moto", "servicos"]),
+	category: z.enum(["imovel", "auto", "moto"]),
 	expertise: z
 		.string()
 		.max(50)

@@ -6,7 +6,7 @@ export type Persona = string;
 
 // The 3 specialist categories the consórcio platform supports.
 // Concierge persona has category=null.
-export type Category = "imovel" | "auto" | "moto" | "servicos";
+export type Category = "imovel" | "auto" | "moto";
 
 export type ExpertiseLevel = "leigo" | "expert" | "neutro";
 export type ExperiencePrev = "first" | "returning" | "doubts";
@@ -200,6 +200,16 @@ export type ConversationMetadata = {
 	 * (contratar) é conversacional. Sem isso o agent re-disparava o reveal em
 	 * loop (BUG-REVEAL-LOOP, 2026-06-02). */
 	decisionDispatched?: boolean;
+	/** FIX-372 (rodada 4, achado ao vivo pelo orquestrador na verificação final):
+	 * idempotência do card `scarcity`, DESACOPLADA de `decisionDispatched` — o
+	 * card de escassez precisa de uma chance de aparecer mesmo quando o gate
+	 * `decision` nunca dispara (cliente decidido cedo, `escolha` ancorada por
+	 * "afirmação" antes do gate `decision` rodar, `nextGate` pula ele
+	 * silenciosamente — ver `qualify-state.ts:421`). Sem este flag, a única
+	 * forma de mostrar escassez dependia de o cliente NÃO ter decidido ainda —
+	 * exatamente o perfil de cliente que MENOS precisa do empurrão de urgência,
+	 * e o que MAIS precisa (o decidido/com pressa) nunca via o card. */
+	scarcityDispatched?: boolean;
 	/** FIX-297 (rodada 10, 2026-07-12) — gate `reco-consent` ("Posso te mostrar
 	 * a opção que eu recomendo?") já foi disparado nesta conversa. Mesmo padrão
 	 * de `simulatorOfferDispatched`: marcado na EMISSÃO, não na resposta —
@@ -260,6 +270,12 @@ export type ConversationMetadata = {
 		 * R$ 183 mil e ninguém ligava os dois pontos. Nunca vira promessa de
 		 * contemplação — só comparação factual de posição. */
 		avgBidValue?: number;
+		/** FIX-367: vagas reais do grupo (Bevi `monthlyAwardedQuotas`), como veio
+		 * no recommendation_card/group_card do reveal — fonte ÚNICA do card de
+		 * escassez pós-reveal (buildScarcityCard). `simulate_quota` NUNCA devolve
+		 * esse campo; sem propagar aqui, o card ficava impossível de mostrar um
+		 * número real mesmo com a Bevi trazendo o dado. Nunca fabricado. */
+		availableSlots?: number;
 	};
 	/** A ESCOLHA está feita: o cliente já resolveu qual cota quer.
 	 *
@@ -370,5 +386,4 @@ export const ROUTABLE_CATEGORIES = [
 	"imovel",
 	"auto",
 	"moto",
-	"servicos",
 ] as const satisfies readonly Category[];

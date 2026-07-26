@@ -27,9 +27,30 @@ import {
 	buildTwoPathsCard,
 } from "@/lib/agent/orchestrator/server-cards";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
+import type { Gate } from "@/lib/agent/qualify-state";
 import { loadIdentity } from "@/lib/conversation/identity";
 import { projectToMeta } from "../emit";
-import type { AgentGraphStateType } from "../state";
+import type { AgentGraphStateType, FunnelState } from "../state";
+
+/** FIX-372 (rodada 4): condição pura da rede de segurança de escassez — cliente
+ * DECIDIDO (`intent === "ready_to_proceed"`) ancora `escolha` no nó `advance`
+ * antes deste nó rodar, e `nextGate` (qualify-state.ts:421) pula o gate
+ * `decision` pra sempre a partir daí (`!meta.escolha` nunca mais é true). Sem
+ * esta rede, quem decide rápido (o perfil que MAIS se beneficia do empurrão de
+ * urgência) nunca vê o card de escassez — só quem ainda está indeciso o vê,
+ * exatamente o oposto do que a rubrica pedia. Extraída como função pura
+ * (mesmo padrão do FIX-368) pra ser testável sem montar o grafo inteiro. */
+export function shouldEmitLateScarcity(
+	gate: Gate | undefined,
+	funnel: Pick<FunnelState, "scarcityDispatched" | "qualifyAnswers">,
+): boolean {
+	return (
+		gate === "contract" &&
+		!funnel.scarcityDispatched &&
+		funnel.qualifyAnswers.hasLance !== "so_parcela"
+	);
+}
+
 import { artifactAllowed, type GuardContext } from "./guarded-artifact";
 
 export async function emitCardNode(
@@ -148,6 +169,7 @@ export async function emitCardNode(
 					toolCallId: crypto.randomUUID(),
 				});
 				turnArtifactTypes.push("scarcity");
+				funnel = { ...funnel, scarcityDispatched: true };
 			}
 		}
 
@@ -164,6 +186,37 @@ export async function emitCardNode(
 			});
 		}
 		funnel = { ...funnel, decisionDispatched: true };
+	}
+
+	// FIX-372 (rodada 4, achado ao vivo pelo orquestrador): cliente DECIDIDO
+	// (`intent === "ready_to_proceed"`, ex. "bora fechar", clique em "Tenho
+	// interesse") ancora `escolha` no nó `advance` ANTES deste nó rodar —
+	// `nextGate` (qualify-state.ts:421) então PULA o gate `decision` pra sempre
+	// (`!meta.escolha` nunca mais é true), e o bloco de escassez acima nunca
+	// dispara. Resultado observado ao vivo: em 7 conversas reais de teste desta
+	// campanha, 0 viram o card de escassez — não por falta de dado da Bevi (a
+	// oferta ancorada tinha `availableSlots` real em todas), mas porque o
+	// cliente decidido nunca passa pelo gate que o mostra. É exatamente o
+	// perfil "com pressa" que mais se beneficiaria do empurrão de urgência.
+	// Rede de segurança: se chegou até aqui (`gate === "contract"`, prestes a
+	// mostrar o formulário) e a escassez ainda não foi mostrada nesta conversa,
+	// mostra AGORA — reforço, não pergunta, então não atrasa o fechamento nem
+	// pede confirmação de novo. Mesma regra de nunca fabricar: `buildScarcityCard`
+	// retorna `null` sem `groupId`/`availableSlots` reais ancorados.
+	if (shouldEmitLateScarcity(state.gate, funnel) && artifactAllowed(guardCtx, "scarcity")) {
+		const meta = projectToMeta({ ...state, funnel });
+		const scarcity = buildScarcityCard(meta);
+		if (scarcity) {
+			events.push({ type: "text-boundary" });
+			events.push({
+				type: "artifact",
+				artifactType: "scarcity",
+				payload: scarcity.payload,
+				toolCallId: crypto.randomUUID(),
+			});
+			turnArtifactTypes.push("scarcity");
+			funnel = { ...funnel, scarcityDispatched: true };
+		}
 	}
 
 	// PASSO 5 — o formulário que cria a proposta REAL. Era o buraco do fecho: no

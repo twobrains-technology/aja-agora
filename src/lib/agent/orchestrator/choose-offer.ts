@@ -23,6 +23,12 @@ export interface ChosenOffer {
 	 * herdado pelo novo: daí "ainda falta R$ 106.013" numa cota onde faltavam
 	 * ~R$ 23.000. Campo de cota não pode existir só no card. */
 	avgBidValue?: number;
+	/** FIX-375: vagas reais do grupo (Bevi `monthlyAwardedQuotas`), como veio no
+	 * artifact persistido — fonte do card de escassez quando a re-âncora por
+	 * menção ("Bora fechar com o Itaú") reconstrói `recommendedOffer` a partir
+	 * daqui. Sem ele, a re-âncora por menção sempre apagava o `availableSlots`
+	 * que `discovery.ts` tinha propagado corretamente no reveal (FIX-374). */
+	availableSlots?: number;
 }
 
 interface ArtifactRow {
@@ -44,6 +50,7 @@ function pickOffer(p: Record<string, unknown>, groupId: string): ChosenOffer {
 		termMonths: typeof p.termMonths === "number" ? p.termMonths : undefined,
 		monthlyPayment: typeof p.monthlyPayment === "number" ? p.monthlyPayment : undefined,
 		avgBidValue: typeof p.avgBidValue === "number" ? p.avgBidValue : undefined,
+		availableSlots: typeof p.availableSlots === "number" ? p.availableSlots : undefined,
 	};
 }
 

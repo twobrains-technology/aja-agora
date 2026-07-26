@@ -9,7 +9,7 @@ import { z } from "zod";
 
 // Enums espelhados de qualify-state.ts/personas.ts (Zod precisa do literal).
 const expertiseLevelEnum = z.enum(["leigo", "expert", "neutro"]);
-const categoryEnum = z.enum(["imovel", "auto", "moto", "servicos"]);
+const categoryEnum = z.enum(["imovel", "auto", "moto"]);
 const channelEnum = z.enum(["web", "whatsapp"]);
 const userIntentEnum = z.enum([
 	"ready_to_proceed",
