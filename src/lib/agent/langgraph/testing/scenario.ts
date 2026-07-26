@@ -19,6 +19,7 @@ import type { AnalyzeResult } from "@/lib/agent/orchestrator/analyze";
 import type { Channel, TurnEvent } from "@/lib/agent/orchestrator/types";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import type { UserIntent } from "@/lib/agent/qualify-state";
+import type { BuscaGrupos } from "../nodes/discovery";
 import { createRunTurnLangGraph } from "../run-turn";
 import { type ScriptedBeat, ScriptedChatModel } from "./scripted-model";
 
@@ -93,16 +94,24 @@ export async function runScenario(opts: {
 	metaInicial?: Partial<ConversationMetadata>;
 	channel?: Channel;
 	contactName?: string | null;
+	/** Resultado da busca na Bevi. Sem isto o cenário chamaria a rede de verdade
+	 * — e não daria pra exercitar "voltou vazia", que é o caminho de falha mais
+	 * importante do reveal. */
+	busca?: BuscaGrupos;
 }): Promise<ScenarioResult> {
 	const channel = opts.channel ?? "web";
 	const cursor = { i: 0 };
+	// `null` EXPLÍCITO tem que sobreviver: é o estado "ainda não sei o nome", que
+	// é o que faz `nextGate` devolver o gate `name`. Com `??` o null virava um
+	// nome default e o primeiro gate do funil ficava impossível de testar.
+	const contactName = "contactName" in opts ? (opts.contactName ?? null) : "Cliente Cenário";
 
 	const [conv] = await db
 		.insert(conversations)
 		.values({
 			channel,
 			status: "active",
-			contactName: opts.contactName ?? "Cliente Cenário",
+			contactName,
 			metadata: (opts.metaInicial ?? {}) as Record<string, unknown>,
 		})
 		.returning({ id: conversations.id });
@@ -118,6 +127,7 @@ export async function runScenario(opts: {
 	const runTurn = createRunTurnLangGraph({
 		model,
 		analyze: analyzerDoRoteiro(opts.turns, cursor) as never,
+		busca: opts.busca,
 	});
 
 	const turns: TurnOutcome[] = [];
@@ -129,7 +139,7 @@ export async function runScenario(opts: {
 			conversationId: conv.id,
 			userText: turno.user,
 			isUserTurn: turno.isUserTurn ?? true,
-			contactName: opts.contactName ?? "Cliente Cenário",
+			contactName,
 		})) {
 			events.push(ev);
 		}

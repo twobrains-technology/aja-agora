@@ -21,6 +21,7 @@ import { loadConversationHistory } from "@/lib/conversation/messages";
 import { metaOf } from "@/lib/conversation/meta";
 import { type AgentGraph, buildAgentGraph } from "./graph";
 import type { AnalyzeFn } from "./nodes/analyze";
+import type { BuscaGrupos } from "./nodes/discovery";
 import { type AgentGraphStateType, funnelFromMeta } from "./state";
 
 function toBaseMessage(m: { role: "user" | "assistant"; content: string }): BaseMessage {
@@ -34,6 +35,8 @@ export function createRunTurnLangGraph(deps?: {
 	/** Fronteira LLM do `analyze` — injetada junto com `model` pelos cenários
 	 * determinísticos (testing/scenario.ts). Ver `buildAgentGraph`. */
 	analyze?: AnalyzeFn;
+	/** Fronteira externa da busca (Bevi) — ver `buildAgentGraph`. */
+	busca?: BuscaGrupos;
 }): (input: TurnInput) => AsyncGenerator<TurnEvent> {
 	// Build lazy/assíncrono — `buildAgentGraph` awaita o checkpointer Postgres.
 	let graphPromise: Promise<AgentGraph> | null = null;

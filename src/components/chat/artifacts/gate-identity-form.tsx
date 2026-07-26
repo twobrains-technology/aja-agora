@@ -38,6 +38,13 @@ export function GateIdentityForm({
 	const submittingRef = useRef(false);
 	const [submitted, setSubmitted] = useState(false);
 
+	// FIX-381 — card do HISTÓRICO (`active={false}`, calculado como `isLast` em
+	// chat-message.tsx) é registro do que aconteceu, não formulário a preencher.
+	// Antes `active` só desligava o autoFocus e o botão: os inputs seguiam
+	// digitáveis, então na retomada apareciam DOIS formulários aparentemente
+	// vivos e dava pra preencher o morto (aconteceu no smoke).
+	const inerte = isStreaming || submitted || !active;
+
 	const cpfDigits = onlyDigits(cpf);
 	const phoneDigits = onlyDigits(phone);
 	const valid =
@@ -79,7 +86,7 @@ export function GateIdentityForm({
 					placeholder="000.000.000-00"
 					value={cpf}
 					onChange={(e) => setCpf(maskCpf(e.target.value))}
-					disabled={isStreaming || submitted}
+					disabled={inerte}
 					// FIX-17: autofocus padronizado nos forms do funil (mobile-first) —
 					// só quando ativo, pra não roubar foco de um card antigo no histórico.
 					// biome-ignore lint/a11y/noAutofocus: intencional — só quando active=true, não rouba foco de cards históricos
@@ -100,7 +107,7 @@ export function GateIdentityForm({
 					placeholder="(11) 99999-9999"
 					value={phone}
 					onChange={(e) => setPhone(maskPhone(e.target.value))}
-					disabled={isStreaming || submitted}
+					disabled={inerte}
 					data-testid="identify-phone"
 					className="h-[46px] border border-input rounded-xl px-[13px] bg-card text-base text-foreground placeholder:text-muted-foreground outline-none transition-[border-color,box-shadow] focus:border-[var(--ring)] focus:shadow-[var(--shadow-focus)] disabled:opacity-50 disabled:cursor-not-allowed"
 				/>
@@ -112,7 +119,7 @@ export function GateIdentityForm({
 				<Checkbox
 					checked={lgpd}
 					onCheckedChange={(v) => setLgpd(v === true)}
-					disabled={isStreaming || submitted}
+					disabled={inerte}
 					data-testid="identify-lgpd"
 					className="mt-0.5 shrink-0"
 				/>

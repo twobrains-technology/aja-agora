@@ -75,9 +75,27 @@ import type { AgentGraphStateType, FunnelState } from "../state";
 import { buildLangGraphTools } from "../tool-adapter";
 import { artifactAllowed, type GuardContext } from "./guarded-artifact";
 
+/** Fronteira EXTERNA do nó: a busca real na Bevi. Injetável pelo mesmo motivo
+ * do modelo e do analyzer — sem isso um cenário determinístico não consegue
+ * exercitar "a Bevi voltou vazia", que é justamente o caminho que produzia
+ * silêncio e retry infinito (FIX-380). */
+export type BuscaGrupos = (args: {
+	category: Category;
+	creditMin?: number;
+	creditMax?: number;
+	budget: number;
+	desiredTermMonths: number;
+}) => Promise<unknown>;
+
+export function createDiscoveryNode(buscaInjetada?: BuscaGrupos) {
+	return (state: AgentGraphStateType, config?: LangGraphRunnableConfig) =>
+		discoveryNode(state, config, buscaInjetada);
+}
+
 export async function discoveryNode(
 	state: AgentGraphStateType,
 	config?: LangGraphRunnableConfig,
+	buscaInjetada?: BuscaGrupos,
 ): Promise<Partial<AgentGraphStateType>> {
 	const { funnel, conversationId, channel, isUserTurn } = state;
 	const category = funnel.currentCategory;
@@ -103,7 +121,9 @@ export async function discoveryNode(
 		toolCallId: crypto.randomUUID(),
 	});
 
-	const tools = buildLangGraphTools({ conversationId, channel });
+	const buscar: BuscaGrupos =
+		buscaInjetada ??
+		((args) => buildLangGraphTools({ conversationId, channel }).recommend_groups.invoke(args));
 	// "Sem pressa, quero a menor parcela" é um pedido de PRAZO MAIOR — parcela
 	// menor não existe sem prazo mais longo. O ranking recebia `desiredTermMonths:
 	// 0` (sem preferência) sempre, então o cliente pedia parcela leve e o agente
@@ -113,7 +133,7 @@ export async function discoveryNode(
 	const querMenorParcela =
 		funnel.qualifyAnswers.objetivo === "investimento" ||
 		(funnel.qualifyAnswers.prazoMeses ?? 0) >= 120;
-	const result = await tools.recommend_groups.invoke({
+	const result = await buscar({
 		category,
 		creditMin: funnel.qualifyAnswers.creditMin,
 		creditMax: funnel.qualifyAnswers.creditMax,
@@ -126,11 +146,27 @@ export async function discoveryNode(
 	const discoveryCount = usableRevealGroupCount(index);
 
 	if (discoveryCount === 0) {
-		// Descoberta falhou/degradou (Bevi fora, faixa sem grupo real) — NÃO
-		// marca searchDispatched, mesma regra do runtime Vercel
-		// ([discovery-degraded] em index.ts): retry liberado num turno seguinte,
-		// nunca trava em "já buscado" sobre um resultado vazio.
-		return { events: [] };
+		// FIX-380 — busca vazia deixa de ser SILÊNCIO.
+		//
+		// Antes: `return { events: [] }` e nada mais. A intenção era boa (não
+		// travar em "já buscado" sobre resultado vazio, então `searchDispatched`
+		// segue false e o retry fica liberado). Só que sem sinal nenhum, o modelo
+		// nunca sabia que a busca falhou: ele prometia "vou pesquisar agora",
+		// o turno seguinte tentava de novo, voltava vazio de novo — loop
+		// perpétuo, e a venda morria em silêncio (visto ao vivo, 2026-07-26).
+		//
+		// O retry continua permitido (a Bevi cai de verdade), mas agora fica
+		// REGISTRADO: `discoveryEmptyStreak` conta as tentativas em vazio e é o
+		// que permite ao funil parar de prometer e pedir outro valor. O código
+		// não fabrica número nenhum — só deixa de esconder a falha.
+		const streak = (funnel.discoveryEmptyStreak ?? 0) + 1;
+		console.log(
+			`[discovery-empty] busca sem resultado (streak=${streak}, creditMax=${funnel.qualifyAnswers.creditMax}, conv=${conversationId})`,
+		);
+		return {
+			events: [],
+			funnel: { ...funnel, discoveryEmptyStreak: streak },
+		};
 	}
 
 	const logos = await loadAdministradoraLogoMap();
@@ -200,6 +236,9 @@ export async function discoveryNode(
 			...funnel,
 			searchDispatched: true,
 			revealCompleted: true,
+			// FIX-380 — achou: zera a contagem de vazio, senão uma falha antiga
+			// ficaria pesando sobre uma busca que deu certo.
+			discoveryEmptyStreak: 0,
 			// FIX-360 — snapshot do valor-alvo REALMENTE buscado (equivalente a
 			// `discoveredCreditTarget`, tool-policy.ts) — permite ao `route`
 			// distinguir troca de faixa (re-descoberta legítima) de afirmativo

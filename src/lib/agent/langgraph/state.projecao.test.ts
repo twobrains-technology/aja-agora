@@ -47,6 +47,7 @@ const FUNIL_COMPLETO: FunnelState = {
 	},
 	identityCollected: true,
 	searchDispatched: true,
+	discoveryEmptyStreak: 0,
 	discoveredCreditTarget: 555_000,
 	revealCompleted: true,
 	recommendedAdministradora: "Canopus",

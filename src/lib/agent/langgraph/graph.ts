@@ -23,7 +23,7 @@ import { advanceFunnelNode } from "./nodes/advance";
 import { type AnalyzeFn, createAnalyzeNode } from "./nodes/analyze";
 import { captureAnswerNode } from "./nodes/capture";
 import { createConverseNode } from "./nodes/converse";
-import { discoveryNode } from "./nodes/discovery";
+import { type BuscaGrupos, createDiscoveryNode } from "./nodes/discovery";
 import { emitCardNode } from "./nodes/emit-card";
 import { persistNode } from "./nodes/persist";
 import { routeNode, routeToDiscovery } from "./nodes/route";
@@ -65,11 +65,15 @@ export async function buildAgentGraph(deps?: {
 	 * motivo do `model`: sem ela, um cenário determinístico ainda faria UMA
 	 * chamada de rede por turno e deixaria de ser determinístico. */
 	analyze?: AnalyzeFn;
+	/** Fronteira EXTERNA da busca (Bevi). Injetável pra um cenário poder
+	 * exercitar "voltou vazia" — o caminho que produzia silêncio + retry. */
+	busca?: BuscaGrupos;
 	checkpointer?: unknown;
 }) {
 	const model = deps?.model ?? makeLangGraphModel();
 	const converseNode = createConverseNode(model);
 	const analyzeNode = createAnalyzeNode(deps?.analyze);
+	const discoveryNode = createDiscoveryNode(deps?.busca);
 	// O grafo TEM um nó `human` com `interrupt()`, e `interrupt` exige
 	// checkpointer — sem ele o Pregel lança `No checkpointer set` assim que o
 	// fluxo chega no `human`. Deixar os testes (que injetam `model`) sem

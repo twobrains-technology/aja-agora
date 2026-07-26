@@ -68,6 +68,11 @@ export type FunnelState = {
 	qualifyAnswers: FunnelQualifyAnswers;
 	identityCollected: boolean;
 	searchDispatched: boolean;
+	/** FIX-380 — quantas buscas seguidas voltaram VAZIAS. A busca vazia devolvia
+	 * silêncio (sem marcar `searchDispatched`, pra liberar retry) e o modelo
+	 * prometia buscar pra sempre. Contar as tentativas é o que permite parar de
+	 * prometer e pedir outro valor. */
+	discoveryEmptyStreak?: number;
 	// FIX-360 — snapshot do `creditMax` efetivamente buscado na última
 	// descoberta (equivalente a `discoveredCreditTarget` do runtime Vercel,
 	// tool-policy.ts `revealValueTargetChanged`) — permite ao `route` decidir
@@ -168,6 +173,7 @@ export const FUNNEL_KEYS = {
 	qualifyAnswers: true,
 	identityCollected: true,
 	searchDispatched: true,
+	discoveryEmptyStreak: true,
 	discoveredCreditTarget: true,
 	revealCompleted: true,
 	recommendedAdministradora: true,
@@ -222,6 +228,7 @@ export function funnelFromMeta(meta: ConversationMetadata): FunnelState {
 		},
 		identityCollected: meta.identityCollected ?? false,
 		searchDispatched: meta.searchDispatched ?? false,
+		discoveryEmptyStreak: meta.discoveryEmptyStreak,
 		discoveredCreditTarget: meta.discoveredCreditTarget,
 		revealCompleted: meta.revealCompleted ?? false,
 		recommendedAdministradora: meta.recommendedAdministradora,

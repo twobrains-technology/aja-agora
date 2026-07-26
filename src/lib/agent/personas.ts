@@ -185,6 +185,9 @@ export type ConversationMetadata = {
 	identityEnc?: string;
 	/** Idempotency guard — prevents re-firing the summary + search reveal. */
 	searchDispatched?: boolean;
+	/** FIX-380 — buscas seguidas em vazio (ver `FunnelState`). Persistido pra
+	 * sobreviver ao ciclo: o loop acontecia ENTRE turnos. */
+	discoveryEmptyStreak?: number;
 	/** Set once the reveal turn produced a simulation_result/recommendation_card
 	 * (passo 4 da jornada — o usuário já viu o plano + detalhamento). Habilita o
 	 * gate "decision" ("Esse plano faz sentido?"). */

@@ -291,6 +291,12 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	// "vou pesquisar agora" para sempre. Voltar pro gate `credit` é o oposto de
 	// fabricar dado — é pedir o número de novo, com o mínimo real na mão.
 	if (!creditoBuscavel(q.creditMax, q.creditoMinimoInformado)) return "credit";
+	// FIX-380 — a busca JÁ tentou e voltou vazia nesta faixa. O retry seguia
+	// liberado em silêncio e o modelo prometia buscar a cada turno; com a
+	// tentativa registrada, o funil volta a pedir o valor (o agente explica que
+	// não achou e pede outro) em vez de prometer de novo. Um vazio é acidente
+	// (Bevi instável); dois é a faixa.
+	if ((meta.discoveryEmptyStreak ?? 0) >= 2 && !meta.searchDispatched) return "credit";
 	if (!meta.identityCollected) return "identify";
 
 	// FIX-215 (Refino Ata 2026-07-04, item 1 — P0): o funil pula DIRETO de
