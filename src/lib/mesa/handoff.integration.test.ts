@@ -96,9 +96,12 @@ describeIfDb("FIX-64 — createMesaHandoff (integration)", () => {
 	it("cria mesa_handoffs com FKs certos e administradora resolvida pela proposta", async () => {
 		// phone único deste arquivo (evita colidir com mesa-attendants no DB compartilhado — A3)
 		const attendant = await seedAttendant("Atendente Um", "5562988880101");
-		const admin = await seedAdministradora("Canopus", "canopus");
+		// nome/slug únicos deste arquivo: `administradoras.nome` é UNIQUE e a resolução
+		// casa por lower(nome), então um nome genérico colide com outro teste de integração
+		// rodando em paralelo no mesmo banco (era o caso de mesa-flow.e2e — A3).
+		const admin = await seedAdministradora("Canopus Handoff", "canopus-handoff");
 		const { conversationId, leadId, proposalId } = await seedLeadWithProposal({
-			administradoraVarchar: "CANOPUS", // varchar da Bevi (case difere) → casa por nome
+			administradoraVarchar: "CANOPUS HANDOFF", // varchar da Bevi (case difere) → casa por nome
 		});
 
 		const result = await createMesaHandoff({
@@ -119,7 +122,7 @@ describeIfDb("FIX-64 — createMesaHandoff (integration)", () => {
 		expect(row.conversationId).toBe(conversationId);
 		expect(row.beviProposalId).toBe(proposalId);
 		expect(row.mesaAttendantId).toBe(attendant.id);
-		expect(row.administradoraId).toBe(admin.id); // resolvida via varchar "CANOPUS" → entidade "Canopus"
+		expect(row.administradoraId).toBe(admin.id); // resolvida via varchar "CANOPUS HANDOFF" → entidade "Canopus Handoff"
 		expect(row.status).toBe("aberto");
 	});
 
@@ -177,7 +180,7 @@ describeIfDb("FIX-64 — createMesaHandoff (integration)", () => {
 
 	it("atendente inativo → attendant_not_found", async () => {
 		const inactive = await seedAttendant("Atendente Inativo", "5562944443333", false);
-		const { leadId } = await seedLeadWithProposal({ administradoraVarchar: "Canopus" });
+		const { leadId } = await seedLeadWithProposal({ administradoraVarchar: "Canopus Handoff" });
 		const result = await createMesaHandoff({ leadId, mesaAttendantId: inactive.id });
 		expect(result.ok).toBe(false);
 		if (result.ok) return;

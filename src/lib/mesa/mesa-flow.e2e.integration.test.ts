@@ -173,8 +173,12 @@ describeIfDb(
 		it("caminho do admin: transbordo cria handoff SEM dono + broadcast → claim de A move a raia p/ em_atendimento → B é sombreado → mensagem ao cliente persiste", async () => {
 			const a = await seedAttendant("Ana E2E");
 			const b = await seedAttendant("Bruno E2E");
-			await seedAdministradora("Canopus", "canopus");
-			const { conversationId, leadId, waId } = await seedLead({ administradoraVarchar: "CANOPUS" });
+			// nome/slug únicos deste arquivo — `administradoras.nome` é UNIQUE e o banco de
+			// integração é compartilhado entre arquivos rodando em paralelo (A3).
+			await seedAdministradora("Canopus Mesa E2E", "canopus-mesa-e2e");
+			const { conversationId, leadId, waId } = await seedLead({
+				administradoraVarchar: "CANOPUS MESA E2E",
+			});
 
 			// 1) TRANSBORDO (rota real) — nasce sem dono, status aberto
 			const tRes = await transbordoPOST(jsonReq({}), { params: Promise.resolve({ id: leadId }) });
@@ -284,7 +288,9 @@ describeIfDb(
 		it("reatribuir: POST /mesa/handoffs/[id]/reassign muda o dono e notifica antigo + novo", async () => {
 			const a = await seedAttendant("Ana RC");
 			const b = await seedAttendant("Bruno RC");
-			const { leadId, conversationId } = await seedLead({ administradoraVarchar: "CANOPUS" });
+			const { leadId, conversationId } = await seedLead({
+				administradoraVarchar: "CANOPUS MESA E2E",
+			});
 			const [h] = await db
 				.insert(schema.mesaHandoffs)
 				.values({ leadId, conversationId, mesaAttendantId: a.id, status: "em_andamento" })

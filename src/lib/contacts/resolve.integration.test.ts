@@ -93,7 +93,10 @@ describeIfDb("FIX-42 — backfillContacts (integration)", () => {
 	let encryptIdentity: typeof import("@/lib/conversation/identity").encryptIdentity;
 
 	const BF_P = "62991190010";
-	const BF_CPF = "39053344705"; // CPF válido distinto
+	// CPF válido EXCLUSIVO deste arquivo: `backfillContacts` varre o banco inteiro e
+	// deduplica por CPF, então qualquer outro teste que persista o mesmo CPF em paralelo
+	// entra neste contato e quebra a contagem de conversas religadas.
+	const BF_CPF = "98765432029";
 	const convIds: string[] = [];
 
 	beforeAll(async () => {
