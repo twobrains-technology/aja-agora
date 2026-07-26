@@ -1,12 +1,16 @@
-# Override que roda o app contra o gateway de LLM LOCAL (Qwen 3.5 4b no LM
-# Studio), em vez do gateway da VPC atrás do túnel SSM.
+# Override que roda o app contra o gateway de LLM local COMPARTILHADO
+# (`tb-litellm-shared`, em `~/.tb-local/_shared/`), em vez do gateway da VPC
+# atrás do túnel SSM.
 #
-#   docker compose -f docker-compose.shared.yml --profile local-llm up -d litellm
+#   cd ~/.tb-local/_shared && docker compose -f docker-compose.litellm.yml \
+#     --env-file .env.shared.litellm up -d
 #   docker compose -f docker-compose.yml -f docker-compose.local-llm.yml \
 #     --profile containerized up -d app
 #
-# Voltar pro Sonnet real: subir o app SEM este arquivo (o `.env.local` volta a
-# mandar) e reabrir o túnel na 4100.
+# Voltar pro Sonnet via VPC: subir o app SEM este arquivo (o `.env.local` volta
+# a mandar) e reabrir o túnel na 4100. Alternativa sem túnel: manter este
+# override e trocar `AI_MODEL` pra `claude-sonnet-5`, que o gateway
+# compartilhado também serve.
 #
 # É um override versionado de propósito — a alternativa seria editar
 # `.env.local`, que não é versionado e vive na máquina de uma pessoa só. Assim
@@ -14,7 +18,7 @@
 services:
   app:
     environment:
-      LITELLM_BASE_URL: http://aja-shared-litellm:4000
+      LITELLM_BASE_URL: http://tb-litellm-shared:4000
       LITELLM_API_KEY: sk-local-dev
       AI_MODEL: qwen-local
       # DIVISÃO DE TRABALHO, achada rodando a jornada de verdade: a CONVERSA

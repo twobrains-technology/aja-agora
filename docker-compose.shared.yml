@@ -72,43 +72,10 @@ services:
       tb.project: aja-agora
       tb.role: shared-minio
 
-  litellm:
-    # Gateway de LLM LOCAL (perfil `local-llm`, não sobe por default). Traduz
-    # o dialeto Anthropic (`/v1/messages`, o que o runtime LangGraph fala) pro
-    # LM Studio rodando no host — assim o agente conversa sem túnel SSM e sem
-    # cota. Config e o porquê: `litellm-local.config.yaml`.
-    #
-    # Ligar: docker compose -f docker-compose.shared.yml --profile local-llm up -d litellm
-    # Usar:  LITELLM_BASE_URL=http://aja-shared-litellm:4000 + AI_MODEL=qwen-local
-    profiles: ["local-llm"]
-    image: ghcr.io/berriai/litellm:main-stable
-    container_name: aja-shared-litellm
-    restart: unless-stopped
-    command: ["--config", "/app/config.yaml", "--port", "4000"]
-    volumes:
-      - ./litellm-local.config.yaml:/app/config.yaml:ro
-    environment:
-      LITELLM_MASTER_KEY: sk-local-dev
-      # Chave da Anthropic pro modelo `claude-haiku-4-5` do config. Vem do
-      # SHELL (nunca de arquivo versionado, nunca do config.yaml):
-      #   ANTHROPIC_API_KEY=sk-ant-... docker compose -f docker-compose.shared.yml \
-      #     --profile local-llm up -d litellm
-      # Vazia = só o modelo local (`qwen-local`) funciona.
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-    extra_hosts:
-      # Alcança o LM Studio (127.0.0.1:1234 no Mac) de dentro do container.
-      - "host.docker.internal:host-gateway"
-    networks:
-      - tb-local-net
-    labels:
-      dev.orbstack.domains: litellm.aja-shared.orb.local
-      tb.project: aja-agora
-      tb.role: shared-litellm
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')\""]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+# O gateway de LLM local NÃO vive aqui: é compartilhado entre PROJETOS, junto
+# do Letta, em `~/.tb-local/_shared/docker-compose.litellm.yml`. O LM Studio é
+# um só na máquina — um gateway por projeto seria N containers competindo pelo
+# mesmo backend, com a config duplicada em cada repo. Ver skill `local-dev`.
 
 volumes:
   aja-shared-pgdata:
