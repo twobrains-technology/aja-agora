@@ -74,6 +74,10 @@ export function projectToMeta(state: AgentGraphStateType): ConversationMetadata 
 			...baseMeta.qualifyAnswers,
 			creditMin: funnel.qualifyAnswers.creditMin,
 			creditMax: funnel.qualifyAnswers.creditMax,
+			// FIX-377 — o piso que a Bevi informou tem que sobreviver ao ciclo:
+			// sem ele, o turno seguinte volta a usar o default e pode barrar (ou
+			// liberar) uma faixa pelo número errado.
+			creditoMinimoInformado: funnel.qualifyAnswers.creditoMinimoInformado,
 			desiredItem: funnel.qualifyAnswers.desiredItem,
 			motivation: funnel.qualifyAnswers.motivation,
 			prazoMeses: funnel.qualifyAnswers.prazoMeses,

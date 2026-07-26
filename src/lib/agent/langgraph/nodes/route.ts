@@ -7,13 +7,21 @@
 // dispara sem identidade + valor" — vira PREDICADO PURO exportado pra teste
 // direto (TDD strict), não side-effect escondido dentro do nó.
 import { decideShowGate, nextGate, shouldAskMotive } from "@/lib/agent/qualify-state";
+import { creditoBuscavel } from "@/lib/consorcio/credito-minimo";
 import { projectToMeta } from "../emit";
 import type { AgentGraphStateType, FunnelState } from "../state";
 
 export function readyForDiscovery(funnel: FunnelState): boolean {
 	const base =
 		funnel.identityCollected &&
-		funnel.qualifyAnswers.creditMax !== undefined &&
+		// FIX-377 — não basta EXISTIR: tem que ser buscável. Faixa abaixo do piso
+		// da Bevi volta vazia sempre, e o `discovery` tratava vazio com silêncio +
+		// retry liberado — o que virava loop de "vou pesquisar agora". Barrar aqui
+		// economiza a chamada e devolve o funil pro gate `credit`.
+		creditoBuscavel(
+			funnel.qualifyAnswers.creditMax,
+			funnel.qualifyAnswers.creditoMinimoInformado,
+		) &&
 		Boolean(funnel.currentCategory);
 	if (!base) return false;
 	if (!funnel.searchDispatched) return true;

@@ -32,6 +32,7 @@ const FUNIL_COMPLETO: FunnelState = {
 	qualifyAnswers: {
 		creditMin: 111_000,
 		creditMax: 222_000,
+		creditoMinimoInformado: 20_000,
 		desiredItem: "apartamento na praia",
 		motivation: "sair do aluguel",
 		prazoMeses: 180,

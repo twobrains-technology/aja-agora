@@ -1,3 +1,4 @@
+import { creditoBuscavel } from "@/lib/consorcio/credito-minimo";
 import { revealValueTargetChanged } from "./orchestrator/tool-policy";
 import type { ConversationMetadata, QualifyAnswers } from "./personas";
 import { objetivoForPrazo } from "./qualify-config";
@@ -283,6 +284,13 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	// dados, sem abrir mão do pré-requisito de identidade pro search.
 	const q = meta.qualifyAnswers ?? {};
 	if (q.creditMax === undefined) return "credit";
+	// FIX-377 — valor ABAIXO DO PISO conta como valor ausente: a busca nessa
+	// faixa volta vazia toda vez, e o `discovery` tratava vazio devolvendo
+	// silêncio sem marcar `searchDispatched` ("retry liberado num turno
+	// seguinte"). Sem limite nem sinal, o retry virava loop: o modelo prometia
+	// "vou pesquisar agora" para sempre. Voltar pro gate `credit` é o oposto de
+	// fabricar dado — é pedir o número de novo, com o mínimo real na mão.
+	if (!creditoBuscavel(q.creditMax, q.creditoMinimoInformado)) return "credit";
 	if (!meta.identityCollected) return "identify";
 
 	// FIX-215 (Refino Ata 2026-07-04, item 1 — P0): o funil pula DIRETO de

@@ -28,6 +28,9 @@ export type RuntimeAdapter = (input: TurnInput) => AsyncGenerator<TurnEvent>;
 export type FunnelQualifyAnswers = {
 	creditMin?: number;
 	creditMax?: number;
+	/** FIX-377 — piso informado pela Bevi (`MinCreditError.minCredit`). Precede
+	 * o default do código ao decidir se a faixa é buscável. */
+	creditoMinimoInformado?: number;
 	desiredItem?: string;
 	motivation?: string;
 	// FIX-360 (funil completo, Rodada 1) — campos dos gates pós-reveal
@@ -143,6 +146,7 @@ export type FunnelState = {
 export const FUNNEL_QUALIFY_KEYS = {
 	creditMin: true,
 	creditMax: true,
+	creditoMinimoInformado: true,
 	desiredItem: true,
 	motivation: true,
 	prazoMeses: true,
@@ -203,6 +207,7 @@ export function funnelFromMeta(meta: ConversationMetadata): FunnelState {
 		qualifyAnswers: {
 			creditMin: meta.qualifyAnswers?.creditMin,
 			creditMax: meta.qualifyAnswers?.creditMax,
+			creditoMinimoInformado: meta.qualifyAnswers?.creditoMinimoInformado,
 			desiredItem: meta.qualifyAnswers?.desiredItem,
 			motivation: meta.qualifyAnswers?.motivation,
 			prazoMeses: meta.qualifyAnswers?.prazoMeses,

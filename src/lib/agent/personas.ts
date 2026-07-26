@@ -19,6 +19,11 @@ export type Objetivo = "contemplacao_rapida" | "investimento";
 export type QualifyAnswers = {
 	creditMin?: number;
 	creditMax?: number;
+	/** FIX-377 — piso de crédito que a Bevi INFORMOU nesta conversa
+	 * (`MinCreditError.minCredit`). Tem precedência sobre o default do código
+	 * (`CREDITO_MINIMO_PADRAO`): é o número real da administradora, e evita que
+	 * o funil barre uma faixa que a Bevi aceitaria. undefined = usa o default. */
+	creditoMinimoInformado?: number;
 	/** FIX-33 — valor do bem ORIGINAL pedido por texto livre quando ficou FORA
 	 * da faixa da categoria e foi clampado pro teto/piso. Sinaliza ao agente pra
 	 * confrontar a faixa real ("auto vai até R$ 300 mil"). undefined = sem clamp. */
