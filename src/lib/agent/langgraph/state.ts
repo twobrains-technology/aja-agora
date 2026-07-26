@@ -117,6 +117,8 @@ export type FunnelState = {
 	simulatorOfferDispatched?: boolean;
 	simulatorOfferAnswered?: boolean;
 	decisionDispatched: boolean;
+	/** FIX-386 — aceite REAL do plano (ver `ConversationMetadata`). */
+	decisionAccepted?: boolean;
 	/** FIX-372: idempotência do card `scarcity`, separada de `decisionDispatched`
 	 * — ver `ConversationMetadata.scarcityDispatched`. */
 	scarcityDispatched?: boolean;
@@ -192,6 +194,7 @@ export const FUNNEL_KEYS = {
 	simulatorOfferDispatched: true,
 	simulatorOfferAnswered: true,
 	decisionDispatched: true,
+	decisionAccepted: true,
 	scarcityDispatched: true,
 	escolha: true,
 	handoffSuggested: true,
@@ -247,6 +250,7 @@ export function funnelFromMeta(meta: ConversationMetadata): FunnelState {
 		simulatorOfferDispatched: meta.simulatorOfferDispatched,
 		simulatorOfferAnswered: meta.simulatorOfferAnswered,
 		decisionDispatched: meta.decisionDispatched ?? false,
+		decisionAccepted: meta.decisionAccepted,
 		scarcityDispatched: meta.scarcityDispatched,
 		escolha: meta.escolha,
 		handoffSuggested: meta.handoffSuggested,

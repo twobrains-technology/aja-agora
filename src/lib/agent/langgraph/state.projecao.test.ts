@@ -74,6 +74,7 @@ const FUNIL_COMPLETO: FunnelState = {
 	simulatorOfferDispatched: true,
 	simulatorOfferAnswered: true,
 	decisionDispatched: true,
+	decisionAccepted: true,
 	scarcityDispatched: true,
 	escolha: {
 		groupId: "grupo-escolhido-9",

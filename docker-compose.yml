@@ -36,6 +36,18 @@ services:
     environment:
       NODE_ENV: development
       pnpm_config_store_dir: /pnpm/store
+      # O pnpm, ao achar `node_modules` fora de sincronia com o lockfile, quer
+      # APAGAR o diretório e pede confirmação interativa. Sem TTY (é o caso de
+      # todo `docker exec`/entrypoint) ele aborta com
+      # ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY — e o entrypoint entra em
+      # loop de install falhado, derrubando o container. Já custou uma parada
+      # de stack no meio de uma bateria de teste (2026-07-26).
+      #
+      # `false` = não purga sozinho, e principalmente não fica esperando um
+      # "s/n" que ninguém vai digitar. Preferido a `CI=true`, que resolveria o
+      # mesmo sintoma mas mudaria de tabela vários outros comportamentos do
+      # pnpm (frozen-lockfile implícito, saída não-interativa).
+      pnpm_config_confirm_modules_purge: "false"
       CHOKIDAR_USEPOLLING: "true"
       WATCHPACK_POLLING: "true"
       # migrate-guard libera destrutivas em local.

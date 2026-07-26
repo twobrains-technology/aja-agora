@@ -208,6 +208,12 @@ export type ConversationMetadata = {
 	 * (contratar) é conversacional. Sem isso o agent re-disparava o reveal em
 	 * loop (BUG-REVEAL-LOOP, 2026-06-02). */
 	decisionDispatched?: boolean;
+	/** FIX-386 — o cliente ACEITOU o plano (respondeu afirmativo ao card de
+	 * decisão, ou ancorou uma cota). Distinto de `decisionDispatched`, que só
+	 * diz que o card APARECEU: sem essa separação, o formulário de contratação
+	 * saía no turno seguinte ao card mesmo pra quem disse "deixa eu pensar".
+	 * Contratar é compromisso — precisa de um sim, não da ausência de um não. */
+	decisionAccepted?: boolean;
 	/** FIX-372 (rodada 4, achado ao vivo pelo orquestrador na verificação final):
 	 * idempotência do card `scarcity`, DESACOPLADA de `decisionDispatched` — o
 	 * card de escassez precisa de uma chance de aparecer mesmo quando o gate

@@ -441,6 +441,19 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 		// cota três turnos seguidos. Com a escolha em estado, o próximo passo é
 		// fechar.
 		if (!meta.escolha && !meta.decisionDispatched) return "decision";
+		// FIX-386 (decisão do Kairo, 2026-07-26) — CONTRATAR EXIGE UM SIM.
+		//
+		// Antes, `decisionDispatched` (o card ter APARECIDO) bastava pra cascata
+		// seguir pro `contract`: quem respondia "deixa eu pensar ainda" recebia o
+		// formulário de contratação no turno seguinte. O FIX-364 tinha um motivo
+		// real — sem avançar, a cascata caía no terminal mudo e a venda morria
+		// com o agente se despedindo educadamente. A saída não é empurrar o
+		// formulário: é REANCORAR a decisão, que mantém a conversa viva sem
+		// transformar dúvida em compromisso.
+		//
+		// `escolha` ancorada continua valendo como aceite (o cliente nomeou a
+		// cota que quer — mais forte que um "sim").
+		if (!meta.escolha && !meta.decisionAccepted) return "decision";
 		// O funil NÃO termina num estado mudo. Enquanto o formulário de
 		// contratação não apareceu, o próximo passo É ele — sem isto, a cascata
 		// caía em "search" (sem card, sem condução) e o agente encerrava a

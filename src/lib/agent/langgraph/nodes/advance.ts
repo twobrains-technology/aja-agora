@@ -102,6 +102,22 @@ export async function advanceFunnelNode(
 		}
 	}
 
+	// ── decision: o ACEITE do plano, capturado de verdade (FIX-386) ──
+	// O card já marcava `decisionDispatched` na emissão (emit-card.ts). Faltava
+	// registrar a RESPOSTA: sem isso, `nextGate` seguia pro `contract` só porque
+	// o card tinha aparecido, e quem dizia "deixa eu pensar ainda" recebia o
+	// formulário de contratação no turno seguinte. Contratar é compromisso —
+	// precisa de um sim, não da ausência de um não.
+	//
+	// Só o SIM avança. "Não/ainda não" mantém o gate `decision` reancorado (a
+	// conversa continua viva, sem virar terminal mudo — que era a preocupação
+	// legítima do FIX-364), e é o modelo que trata a dúvida em português.
+	if (state.gate === "decision" && !funnel.decisionAccepted) {
+		if (detectYesNoText(state.userText, intent) === true) {
+			funnel = { ...funnel, decisionAccepted: true };
+		}
+	}
+
 	// ── simulator-offer: dispatch na EMISSÃO (mesmo padrão do runtime
 	// Vercel, comentário em qualify-state.ts:200) — `nextGate` só consulta
 	// `simulatorOfferDispatched` (nunca `simulatorOfferAnswered`), então o
