@@ -28,6 +28,23 @@ model_list:
       # LM Studio não valida a chave, mas o SDK exige o campo preenchido.
       api_key: lm-studio
 
+  # Haiku REAL (Anthropic direta, sem passar pelo gateway da VPC). Existe pra
+  # cobrir o que o 4B local não dá conta: extração estruturada. Na primeira
+  # jornada local o analyzer não extraiu "uns 90 mil" e o funil travou no gate
+  # `credit` — com o Haiku aqui, `AI_ANALYZER_MODEL=claude-haiku-4-5` resolve
+  # isso mantendo a CONVERSA no modelo local (que é o caro em volume).
+  #
+  # O nome bate com o default do código (`turn-analyzer.ts:9` usa
+  # `AI_ANALYZER_MODEL ?? "claude-haiku-4-5"`), então funciona mesmo sem a env.
+  #
+  # ⚠️ A chave NUNCA entra aqui — este arquivo é versionado. Vem do ambiente
+  # do container (`ANTHROPIC_API_KEY`), passado no `up`. Guardar no vault:
+  # `secrets.sh edit aja-agora`.
+  - model_name: claude-haiku-4-5
+    litellm_params:
+      model: anthropic/claude-haiku-4-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+
 litellm_settings:
   # Sem telemetria pra fora numa stack local.
   telemetry: false

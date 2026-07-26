@@ -89,6 +89,12 @@ services:
       - ./litellm-local.config.yaml:/app/config.yaml:ro
     environment:
       LITELLM_MASTER_KEY: sk-local-dev
+      # Chave da Anthropic pro modelo `claude-haiku-4-5` do config. Vem do
+      # SHELL (nunca de arquivo versionado, nunca do config.yaml):
+      #   ANTHROPIC_API_KEY=sk-ant-... docker compose -f docker-compose.shared.yml \
+      #     --profile local-llm up -d litellm
+      # Vazia = só o modelo local (`qwen-local`) funciona.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     extra_hosts:
       # Alcança o LM Studio (127.0.0.1:1234 no Mac) de dentro do container.
       - "host.docker.internal:host-gateway"

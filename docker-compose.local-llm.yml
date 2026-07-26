@@ -17,9 +17,12 @@ services:
       LITELLM_BASE_URL: http://aja-shared-litellm:4000
       LITELLM_API_KEY: sk-local-dev
       AI_MODEL: qwen-local
-      # OBRIGATÓRIO junto com AI_MODEL: o `turn-analyzer` (src/lib/agent/
-      # turn-analyzer.ts:9) usa `AI_ANALYZER_MODEL ?? "claude-haiku-4-5"`. Sem
-      # esta linha ele pede um modelo que não existe no gateway local e TODO
-      # turno morre na classificação — com o agente parecendo travado, não
-      # com um erro que aponte pra cá.
-      AI_ANALYZER_MODEL: qwen-local
+      # DIVISÃO DE TRABALHO, achada rodando a jornada de verdade: a CONVERSA
+      # fica no modelo local (é o que gasta volume), mas a EXTRAÇÃO vai pro
+      # Haiku real. Com o analyzer no 4B, "quero um carro de uns 90 mil" não
+      # virava `creditMax` e o funil ficava preso no gate `credit` — o agente
+      # conversava bem e a jornada não andava.
+      #
+      # Pra rodar 100% local (sem chave, sem custo): trocar por `qwen-local`,
+      # aceitando que a extração falha e o funil trava.
+      AI_ANALYZER_MODEL: claude-haiku-4-5
