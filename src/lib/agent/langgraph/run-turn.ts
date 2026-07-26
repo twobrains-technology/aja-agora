@@ -20,6 +20,7 @@ import type { TurnEvent, TurnInput } from "@/lib/agent/orchestrator/types";
 import { loadConversationHistory } from "@/lib/conversation/messages";
 import { metaOf } from "@/lib/conversation/meta";
 import { type AgentGraph, buildAgentGraph } from "./graph";
+import type { AnalyzeFn } from "./nodes/analyze";
 import { type AgentGraphStateType, funnelFromMeta } from "./state";
 
 function toBaseMessage(m: { role: "user" | "assistant"; content: string }): BaseMessage {
@@ -30,6 +31,9 @@ const _LIVE_EVENT_TYPES: ReadonlySet<TurnEvent["type"]> = new Set(["text-delta",
 
 export function createRunTurnLangGraph(deps?: {
 	model?: BaseChatModel;
+	/** Fronteira LLM do `analyze` — injetada junto com `model` pelos cenários
+	 * determinísticos (testing/scenario.ts). Ver `buildAgentGraph`. */
+	analyze?: AnalyzeFn;
 }): (input: TurnInput) => AsyncGenerator<TurnEvent> {
 	// Build lazy/assíncrono — `buildAgentGraph` awaita o checkpointer Postgres.
 	let graphPromise: Promise<AgentGraph> | null = null;

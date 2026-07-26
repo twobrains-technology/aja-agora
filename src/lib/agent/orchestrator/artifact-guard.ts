@@ -244,6 +244,20 @@ export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
 			if (meta.experiencePrev !== undefined) return false;
 			if (meta.recoConsentAnswered === true) return false;
 			if (artifactType === "recommendation_card") return true;
+			// FIX-376 (Kairo, web ao vivo 2026-07-25): `group_card` recebe o MESMO
+			// hold. O system-prompt oferece `present_group_card` como caminho
+			// alternativo pra destacar UM grupo ("após present_recommendation_card
+			// OU present_group_card", system-prompt.ts:578), então segurar só o
+			// `recommendation_card` deixava a porta do lado aberta — e o modelo
+			// entrava por ela. Efeito na tela: o agente perguntava "é sua primeira
+			// vez fazendo consórcio?" e um card GRANDE da carta do Itaú caía entre
+			// a pergunta e os chips de resposta, separando uma da outra.
+			//
+			// O `reveal-loop` já barrava esse card em turno de USUÁRIO; o reveal,
+			// porém, entra por directive de servidor (`isUserTurn: false`), onde
+			// aquele guard não se aplica — este aqui é a única linha de defesa no
+			// exato turno em que o problema aparece.
+			if (artifactType === "group_card") return true;
 			if (artifactType === "simulation_result") return (discoveryCount ?? 0) >= 2;
 			return false;
 		},

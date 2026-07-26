@@ -20,7 +20,7 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { Command, interrupt, MemorySaver, START, StateGraph } from "@langchain/langgraph";
 import { getCheckpointer } from "./checkpointer";
 import { advanceFunnelNode } from "./nodes/advance";
-import { analyzeNode } from "./nodes/analyze";
+import { type AnalyzeFn, createAnalyzeNode } from "./nodes/analyze";
 import { captureAnswerNode } from "./nodes/capture";
 import { createConverseNode } from "./nodes/converse";
 import { discoveryNode } from "./nodes/discovery";
@@ -59,9 +59,17 @@ function humanNode(_state: AgentGraphStateType): Command {
 	});
 }
 
-export async function buildAgentGraph(deps?: { model?: BaseChatModel; checkpointer?: unknown }) {
+export async function buildAgentGraph(deps?: {
+	model?: BaseChatModel;
+	/** Fronteira LLM do `analyze` (Haiku, `turn-analyzer`). Injetável pelo mesmo
+	 * motivo do `model`: sem ela, um cenário determinístico ainda faria UMA
+	 * chamada de rede por turno e deixaria de ser determinístico. */
+	analyze?: AnalyzeFn;
+	checkpointer?: unknown;
+}) {
 	const model = deps?.model ?? makeLangGraphModel();
 	const converseNode = createConverseNode(model);
+	const analyzeNode = createAnalyzeNode(deps?.analyze);
 	// O grafo TEM um nó `human` com `interrupt()`, e `interrupt` exige
 	// checkpointer — sem ele o Pregel lança `No checkpointer set` assim que o
 	// fluxo chega no `human`. Deixar os testes (que injetam `model`) sem
