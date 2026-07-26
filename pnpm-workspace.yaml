@@ -1,12 +1,18 @@
 # aja-agora — single-package (não monorepo). Arquivo existe pra fixar a config
 # de build-scripts da arquitetura dev local TwoBrains (anti-fritar Mac).
 #
-# NB: este projeto usa node-linker=hoisted (.npmrc) — node_modules flat, exigido
-# por esbuild (binário auto-extraído) + Next 16 Turbopack/standalone. Por isso
-# NÃO se usa `enableGlobalVirtualStore` (é do layout isolado/symlinkado, mutuamente
-# exclusivo com hoisted). O anti-fritar é mantido pelo store content-addressable
-# compartilhado (tb-pnpm-store-shared): o node_modules flat hardlinka do store →
-# 1 cópia física global, ~zero disco extra por workspace.
+# node_modules flat, exigido por esbuild (binário auto-extraído) + Next 16
+# Turbopack/standalone. Por isso NÃO se usa `enableGlobalVirtualStore` (é do
+# layout isolado/symlinkado, mutuamente exclusivo com hoisted). O anti-fritar é
+# mantido pelo store content-addressable compartilhado (tb-pnpm-store-shared):
+# o node_modules flat hardlinka do store → 1 cópia física, ~zero disco extra.
+#
+# ⚠️ Esta linha MORA AQUI, não no .npmrc. Do pnpm 10 em diante o .npmrc só vale
+# para auth/registry — `node-linker` posto lá é ignorado EM SILÊNCIO (sem erro,
+# sem warning). Ficou assim até 26/07/2026: `pnpm config get node-linker` dentro
+# do container devolvia `undefined` e o node_modules estava isolado (com .pnpm),
+# ou seja, os três motivos acima nunca foram atendidos de fato.
+nodeLinker: hoisted
 
 # pnpm 10+ exige allowlist explícita de pacotes que rodam build script (postinstall).
 # esbuild          → binário nativo do bundle do migrate-guard (db:migrate:bundle) + evals.
