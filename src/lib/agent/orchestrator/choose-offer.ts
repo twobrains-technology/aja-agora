@@ -241,9 +241,35 @@ const NEGATION_TRIGGER = /\b(PRA LA|DE LADO|ESQUECE|ESQUECA|CANCELA|CANCELE|NAO 
  * continua resolvendo — regressão FIX-252). PURO. */
 function extractNegatedAdministradoras(text: string, offers: ChosenOffer[]): Set<string> {
 	const negated = new Set<string>();
-	for (const clause of text.split(/[.!?;]/)) {
+	for (const clause of text.split(/[.!?;,]/)) {
 		const normalizedClause = normalizeAdministradora(clause);
-		if (!NEGATION_TRIGGER.test(normalizedClause)) continue;
+		// FIX-402 (7ª revisão independente) — a lista literal de gatilhos
+		// (`NEGATION_TRIGGER`) reconhecia só sete formas de recusar, e seis formas
+		// naturais passavam batido: "de jeito nenhum quero a Itaú", "nem pensar em
+		// ficar com a Itaú", "jamais escolheria a Itaú", "não gostei da Itaú", "a
+		// Itaú não me atende", "nunca ficaria com a Itaú" — todas ancoravam
+		// justamente a marca recusada.
+		//
+		// O FIX-401 blindou a função IRMÃ (`resolveOfertaPorCriterio`) e não esta —
+		// que é o caminho tentado PRIMEIRO em
+		// `resolveAdministradoraMentionForConversation`. Como o nome resolve antes,
+		// a correção do critério nunca era alcançada nesses casos.
+		//
+		// Aqui se reusa `detectYesNoText`, a MESMA peça que o critério usa: uma
+		// fonte de verdade pra "isto é uma negativa", não duas listas divergindo com
+		// o tempo. Ela já lê recusa explícita, adversativa e condicional. O
+		// `NEGATION_TRIGGER` fica como complemento — cobre "esquece a X"/"deixa a X
+		// pra lá", que não têm marcador de negação clássico e o `detectYesNoText`
+		// não pega.
+		//
+		// A vírgula entrou no split de cláusulas junto: sem ela, "não gostei da
+		// Itaú, quero a Canopus" era uma cláusula só e a negativa contaminava a
+		// marca afirmada.
+		const ehNegativa =
+			NEGATION_TRIGGER.test(normalizedClause) ||
+			detectYesNoText(clause, "neutral") === false ||
+			/\b(de jeito nenhum|nem pensar|jamais|nunca|de forma alguma|detesto|odeio)\b/i.test(clause);
+		if (!ehNegativa) continue;
 		for (const o of offers) {
 			if (
 				o.administradora &&
