@@ -9,7 +9,7 @@
 // ancorando a administradora + prazo pro fechamento fechar NO GRUPO CERTO — sem
 // re-busca, sem re-resolução, sem meta-narrativa (CONTRATO com bloco-b, adendo B8).
 
-import { detectYesNoText, falaRecusa } from "./yes-no";
+import { falaRecusa } from "./yes-no";
 
 // FIX-403/407 — `falaRecusa`, o predicado ÚNICO de recusa, nasceu aqui e MUDOU
 // para `yes-no.ts`. O motivo da mudança é o mesmo que o motivo de ele existir:

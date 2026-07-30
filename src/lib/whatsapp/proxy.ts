@@ -237,6 +237,19 @@ export async function handlePendingHandoffText(from: string, text: string): Prom
 		const escolhida = await resolveAdministradoraMentionForConversation(
 			handoff.conversationId,
 			text,
+			// FIX-409 — `permitirCriterio: false`, o mesmo que o grafo passa.
+			//
+			// O default do parâmetro é `true`, e este atalho o omitia: "a de menor
+			// parcela, quero fechar" resolvia por CRITÉRIO e era gravado com
+			// `origem: "mencao"` — mentira no banco, já que `criterio` é justamente a
+			// origem que o FIX-400 removeu por não ser verificável. O `advance.ts:270`
+			// carrega um comentário longo explicando por que critério não pode ser
+			// determinístico; o proxy não o obedecia por esquecimento de um argumento.
+			//
+			// Achado pela 9ª revisão independente. Aqui a restrição é ainda mais
+			// estrita que no grafo: lá o critério vale quando o turno não é pergunta
+			// aberta; aqui não há analyzer nenhum pra dizer se é, então não vale nunca.
+			{ permitirCriterio: false },
 		).catch(() => null);
 		const trocouDeAdministradora =
 			escolhida?.administradora &&
@@ -269,40 +282,26 @@ export async function handlePendingHandoffText(from: string, text: string): Prom
 					}
 				: typedMeta;
 		if (!metaAncorado.decisionDispatched || !metaAncorado.escolha || metaAncorado !== typedMeta) {
-			const ancora = metaAncorado.recommendedOffer;
 			await persistMeta(handoff.conversationId, {
 				...metaAncorado,
 				decisionDispatched: true,
-				// "Bora fechar" sobre uma cota ancorada É a escolha. Sem registrá-la
-				// aqui, o turno seguinte voltava pelo grafo com o gate `decision` em
-				// aberto e o agente pedia confirmação do que ele já tinha fechado.
-				// FIX-401 — `escolha` só nasce de MENÇÃO resolvida, nunca de texto de
-				// interesse. Antes, qualquer fala que casasse `isInterestExpression`
-				// ("bora fechar", "topei", "fechado") gravava `origem: "afirmacao"`
-				// aqui — regex pura, fora do grafo, sem analyzer e sem gate nenhum.
+				// FIX-409 — `escolha` NÃO nasce mais aqui. O bloco removido gravava a
+				// cota como escolhida quando uma menção resolvia, com
+				// `origem: "mencao"`.
 				//
-				// O FIX-400 tinha removido essa origem do `advance.ts` e o commit
-				// declarou que ela não existia mais; era verdade no grafo e falso no
-				// sistema. A 6ª revisão independente achou esta porta, e ela é a que
-				// mais importa: o WhatsApp é onde está o volume de vendas.
+				// O FIX-406 removeu essa mesma escrita do grafo, e o commit afirmou que
+				// só clique de card e a tool passavam a assinar. Era verdade no grafo e
+				// falso no sistema — exatamente o que já tinha acontecido no FIX-400 e
+				// que a 6ª revisão apontou. A 9ª achou este bloco intacto, no canal de
+				// maior volume, e tem razão: enquanto os dois canais discordarem sobre o
+				// que assina um contrato, o que vale é o mais permissivo.
 				//
-				// O que sobra é `mencao` — o cliente NOMEIA outra administradora que
-				// ele viu, e a resolução é lookup contra o conjunto fechado de ofertas
-				// desta conversa. Sem menção resolvida, `decisionDispatched` segue
-				// marcado (o cliente demonstrou interesse e o funil avança), mas a
-				// COTA não é dada como escolhida — o card de decisão pergunta.
-				...(ancora && escolhida && trocouDeAdministradora
-					? {
-							escolha: {
-								...(ancora.groupId ? { groupId: ancora.groupId } : {}),
-								administradora: ancora.administradora,
-								creditValue: ancora.creditValue,
-								termMonths: ancora.termMonths,
-								monthlyPayment: ancora.monthlyPayment,
-								origem: "mencao",
-							} as const,
-						}
-					: {}),
+				// O que PERMANECE, e é o ponto: `recommendedAdministradora` e
+				// `recommendedOffer` seguem re-ancorando pela menção (o bloco acima). O
+				// cliente que diz "a da Canopus me atende, bora fechar" continua sendo
+				// atendido na Canopus — a conversa acompanha a atenção dele. E
+				// `decisionDispatched` segue marcado: o funil avança, o card de decisão
+				// pergunta, e a resposta a ELE é o que fecha.
 			});
 		}
 		await runDirectiveWithOrchestrator({
