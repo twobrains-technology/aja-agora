@@ -19,7 +19,7 @@ import { listShownOffersForConversation } from "@/lib/agent/orchestrator/choose-
 import { EphemeralTextFilter } from "@/lib/agent/orchestrator/sanitizer";
 import { buildGateContextText } from "@/lib/agent/orchestrator/system-context";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
-import { detectYesNoText } from "@/lib/agent/orchestrator/yes-no";
+import { detectYesNoText, falaRecusa } from "@/lib/agent/orchestrator/yes-no";
 import { LANCE_EMBUTIDO_DEFAULT_PERCENT } from "@/lib/agent/qualify-config";
 import { querAntecipar, shouldAskMotive } from "@/lib/agent/qualify-state";
 import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
@@ -860,8 +860,27 @@ export function createConverseNode(model: BaseChatModel) {
 						// recusa determinística — e `converse` roda DEPOIS do `advance`,
 						// sobrescrevendo `funnel.escolha`, então sem este veto ele desfazia
 						// uma decisão correta tomada no mesmo turno.
+						// FIX-410 — o predicado INTEIRO, não metade dele.
+						//
+						// A 1ª versão deste veto usava só `detectYesNoText(...) === false`, e
+						// recusa sem a palavra "não" devolve `null`, não `false`:
+						//
+						//   detectYesNoText("de jeito nenhum", "ready_to_proceed") → null
+						//
+						// Ou seja: "de jeito nenhum", "nem pensar", "jamais", "esquece" e
+						// "deixa pra lá" NÃO vetavam, e a tool ancorava a cota. Confirmado no
+						// grafo real (`cenario-tool-escolher-cota.fix-410.test.ts`), com
+						// controle positivo provando que o caminho está vivo — a 9ª revisão
+						// independente listou isto como hipótese que não conseguiu reproduzir.
+						//
+						// É a terceira vez que reusar METADE de `falaRecusa` produz o mesmo
+						// defeito (proxy do WhatsApp no FIX-407, `extractNegatedAdministradoras`
+						// no FIX-408, aqui). `detectYesNoText` fica junto porque é o único que
+						// enxerga o rótulo `declines` do analyzer; `falaRecusa` cobre o léxico
+						// que não depende da palavra "não".
+						const texto = state.userText ?? "";
 						const recusouNesteTurno =
-							detectYesNoText(state.userText ?? "", state.intent ?? "neutral") === false;
+							detectYesNoText(texto, state.intent ?? "neutral") === false || falaRecusa(texto);
 						const gid = (call.args as { groupId?: unknown })?.groupId;
 						if (!recusouNesteTurno && typeof gid === "string" && gid.trim()) {
 							const exibidas = await listShownOffersForConversation(state.conversationId).catch(
