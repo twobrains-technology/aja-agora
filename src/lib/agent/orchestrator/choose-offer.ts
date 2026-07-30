@@ -27,6 +27,29 @@ import { detectYesNoText } from "./yes-no";
  * indefinido significa "o gate pergunta de novo" — saída segura. Aqui não há gate
  * pra reabrir, e um falso positivo ancora uma cota que o cliente dispensou. Então
  * qualquer marcador de recusa basta pra desistir. */
+/** Nenhuma cláusula da fala é um pedido — só então desistir.
+ *
+ * FIX-405: aplicar `falaRecusa` à frase INTEIRA gerava falso positivo. "nunca fiz
+ * consórcio antes, mas quero a Itaú" tem uma cláusula negativa (sobre a
+ * experiência dele) e uma afirmativa (o pedido) — bloquear tudo por causa da
+ * primeira mata a venda. Desiste-se só quando não sobra nenhuma cláusula pedindo
+ * algo. */
+/** Só o que a fala PEDE, sem as cláusulas que ela recusa — minúsculo, pronto pra
+ * casar critério. FIX-405. */
+function clausulasAfirmativas(text: string): string {
+	return (text ?? "")
+		.split(/[.!?;,]|\bmas\b|\bpor[ée]m\b/i)
+		.filter((c) => c.trim() && !falaRecusa(c))
+		.join(" ")
+		.toLowerCase();
+}
+
+function todasAsClausulasRecusam(text: string): boolean {
+	const clausulas = (text ?? "").split(/[.!?;,]|\bmas\b|\bpor[ée]m\b/i).filter((c) => c.trim());
+	if (clausulas.length === 0) return false;
+	return clausulas.every((c) => falaRecusa(c) || !/[a-zà-ú]/i.test(c));
+}
+
 function falaRecusa(text: string): boolean {
 	const t = text ?? "";
 	if (!t.trim()) return false;
@@ -266,7 +289,33 @@ const NEGATION_TRIGGER = /\b(PRA LA|DE LADO|ESQUECE|ESQUECA|CANCELA|CANCELE|NAO 
  * continua resolvendo — regressão FIX-252). PURO. */
 function extractNegatedAdministradoras(text: string, offers: ChosenOffer[]): Set<string> {
 	const negated = new Set<string>();
-	for (const clause of text.split(/[.!?;,]/)) {
+	// FIX-405: a adversativa separa cláusula tanto quanto a vírgula — "nunca fiz
+	// consórcio antes mas quero a Itaú" tem a negação numa oração e o pedido na
+	// outra, sem nenhuma pontuação entre elas.
+	const clausulas = text.split(/[.!?;,]|\bmas\b|\bpor[ée]m\b/i);
+	// FIX-405 — uma cláusula pode NOMEAR a marca e a SEGUINTE recusá-la:
+	// "Itaú, não obrigado" é das formas mais naturais de dizer não em chat. Antes,
+	// nome e gatilho precisavam estar na MESMA cláusula, então a vírgula salvava a
+	// marca e ela era ancorada. Agora uma cláusula puramente negativa (que não cita
+	// marca nenhuma) contamina a marca citada na cláusula ANTERIOR.
+	for (const [i, clause] of clausulas.entries()) {
+		if (!falaRecusa(clause)) continue;
+		const citaMarca = offers.some(
+			(o) =>
+				o.administradora &&
+				normalizeAdministradora(clause).includes(normalizeAdministradora(o.administradora)),
+		);
+		if (citaMarca) continue; // resolvida no laço abaixo, com o nome junto
+		const anterior = clausulas[i - 1];
+		if (!anterior) continue;
+		const normAnterior = normalizeAdministradora(anterior);
+		for (const o of offers) {
+			if (o.administradora && normAnterior.includes(normalizeAdministradora(o.administradora))) {
+				negated.add(normalizeAdministradora(o.administradora));
+			}
+		}
+	}
+	for (const clause of clausulas) {
 		const normalizedClause = normalizeAdministradora(clause);
 		// FIX-402 (7ª revisão independente) — a lista literal de gatilhos
 		// (`NEGATION_TRIGGER`) reconhecia só sete formas de recusar, e seis formas
@@ -412,7 +461,7 @@ export function resolveOfferByMention(offers: ChosenOffer[], text: string): Chos
 	// casamento por VALOR, PARCELA e PRAZO não olhava negação nenhuma —
 	// "não quero a de 721 mil" ancorava justamente ela. Negação vale pra qualquer
 	// forma de apontar a cota, não só pra marca.
-	if (falaRecusa(text)) return null;
+	if (todasAsClausulasRecusam(text)) return null;
 	const normalizedText = normalizeAdministradora(text);
 	const negated = extractNegatedAdministradoras(text, offers);
 
@@ -477,7 +526,18 @@ export function resolveOfferByMention(offers: ChosenOffer[], text: string): Chos
  * adivinhar intenção, é aplicar o critério que ele nomeou sobre as cotas que
  * ele viu. Sem critério reconhecido, devolve null e nada se ancora. */
 export function resolveOfertaPorCriterio(offers: ChosenOffer[], text: string): ChosenOffer | null {
-	const t = (text ?? "").toLowerCase();
+	// FIX-405 — o critério só vale nas cláusulas AFIRMATIVAS.
+	//
+	// Antes o casamento ("carta maior", "menor parcela") varria a frase inteira:
+	// "não quero a carta maior, prefiro a menor mesmo" resolvia A MAIOR — justamente
+	// a recusada. O guard de recusa não salvava, porque a segunda cláusula É um
+	// pedido, então a frase passava inteira e a regex casava a primeira metade.
+	//
+	// Descartar as cláusulas negativas ANTES de procurar critério resolve os dois
+	// lados: a recusa não contamina o pedido, e o pedido não se perde por causa da
+	// recusa ao lado.
+	const t = clausulasAfirmativas(text ?? "");
+	if (!t.trim()) return null;
 	if (offers.length === 0) return null;
 	// FIX-401 (6ª revisão independente) — RECUSA não resolve critério.
 	//
@@ -496,7 +556,7 @@ export function resolveOfertaPorCriterio(offers: ChosenOffer[], text: string): C
 	// `detectYesNoText` já sabe ler recusa, adversativa e condicional; reusá-lo
 	// evita reinventar (mal) a mesma análise aqui. `intent: "neutral"` porque só
 	// interessa o TEXTO — o rótulo do turno é decidido rio acima.
-	if (falaRecusa(t)) return null;
+	if (todasAsClausulasRecusam(t)) return null;
 	/** Extremo (menor/maior) de um campo NUMÉRICO entre as cotas que têm o campo.
 	 * Devolve o valor junto com a cota pra o comparador nunca precisar reafirmar
 	 * que o campo existe — quem filtrou já provou. */
@@ -541,11 +601,19 @@ export function resolveAdministradoraMention(
 	text: string,
 ): ChosenOffer | null {
 	if (!text || offers.length === 0) return null;
-	// FIX-403: mesmo guard de classe. `extractNegatedAdministradoras` abaixo já
-	// exclui a MARCA negada cláusula por cláusula (o que permite "não gostei da
-	// Itaú, quero a Canopus" resolver Canopus); este aqui é a rede de fora, pra
-	// recusa que não nomeia marca alguma.
-	if (falaRecusa(text) && !/,/.test(text)) return null;
+	// FIX-405 — o guard de FRASE INTEIRA saiu daqui.
+	//
+	// Ele existia como rede de fora, com uma exceção de vírgula (`&& !/,/`) pra não
+	// bloquear "não gostei da Itaú, quero a Canopus". A 8ª revisão mostrou os dois
+	// lados do estrago: a exceção deixava "Itaú, não obrigado" ancorar a Itaú, e o
+	// guard sem exceção bloqueava "nunca fiz consórcio antes mas quero a Itaú" —
+	// falso positivo que mata venda legítima, porque "nunca" ali descreve
+	// inexperiência, não recusa.
+	//
+	// A regra coerente é uma só: negação se avalia POR CLÁUSULA, e é
+	// `extractNegatedAdministradoras` que faz isso — inclusive contaminando a marca
+	// da cláusula vizinha quando a recusa vem depois da vírgula. Sem rede de fora,
+	// sem exceção.
 	const normalizedText = normalizeAdministradora(text);
 	const negadas = extractNegatedAdministradoras(text, offers);
 	const citadas = offers.filter(

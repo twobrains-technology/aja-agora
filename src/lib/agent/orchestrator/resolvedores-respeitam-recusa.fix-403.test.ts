@@ -92,4 +92,52 @@ describe("FIX-403 — invariante: nenhum resolvedor ancora oferta recusada", () 
 			resolveAdministradoraMention(OFERTAS, "não gostei da Itaú, quero a Canopus")?.groupId,
 		).toBe("canopus");
 	});
+
+	// ── FIX-405 — os três furos que a 8ª revisão achou na própria correção ──
+	//
+	// 1. VÍRGULA SEPARANDO nome e recusa. Eu tinha posto `&& !/,/.test(text)` no
+	//    guard de `resolveAdministradoraMention` pra deixar passar "não gostei da
+	//    Itaú, quero a Canopus". O efeito colateral: "Itaú, não obrigado" — uma das
+	//    formas mais naturais de recusar em chat — ancorava a Itaú, porque o nome e
+	//    o gatilho caíam em cláusulas diferentes e a marca nunca entrava no Set de
+	//    negadas. O `?? citadas[0]` no fim engolia o `null` correto.
+	//
+	// 2. FALSO POSITIVO. `falaRecusa` rodava sobre a frase INTEIRA, então "nunca"
+	//    descrevendo inexperiência ("nunca fiz consórcio antes, mas quero a Itaú")
+	//    ou entusiasmo ("nunca vi parcela tão boa") bloqueava venda legítima.
+	//
+	// A raiz dos dois é a mesma, e é minha: apliquei a negação à frase inteira num
+	// lugar e por cláusula noutro, e a exceção de vírgula foi o remendo pra
+	// conciliar. A regra coerente é uma só — analisar POR CLÁUSULA, sempre: a marca
+	// (ou o critério) é recusada quando a cláusula ONDE ELA APARECE é negativa.
+	describe("FIX-405 — negação é avaliada por CLÁUSULA, nunca pela frase inteira", () => {
+		it.each([
+			"Itaú, não obrigado",
+			"Itaú, de jeito nenhum",
+			"a Itaú, nem pensar",
+			"Itaú, pelo amor de Deus não",
+		])("vírgula não salva a marca recusada: %s", (fala) => {
+			expect(resolveAdministradoraMention(OFERTAS, fala)).toBeNull();
+		});
+
+		it.each([
+			"nunca fiz consórcio antes mas quero a Itaú",
+			"nunca fiz consórcio antes, mas quero a Itaú",
+		])("negação em OUTRA cláusula não bloqueia o pedido: %s", (fala) => {
+			expect(resolveAdministradoraMention(OFERTAS, fala)?.groupId).toBe("itau");
+		});
+
+		it("entusiasmo com 'nunca' não bloqueia critério", () => {
+			expect(
+				resolveOfertaPorCriterio(OFERTAS, "nunca imaginei parcela tão boa, quero a menor parcela")
+					?.groupId,
+			).toBe("canopus");
+		});
+
+		it("recusar uma e pedir outra segue resolvendo a pedida", () => {
+			expect(
+				resolveAdministradoraMention(OFERTAS, "não gostei da Itaú, quero a Canopus")?.groupId,
+			).toBe("canopus");
+		});
+	});
 });

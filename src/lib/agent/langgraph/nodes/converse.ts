@@ -19,6 +19,7 @@ import { listShownOffersForConversation } from "@/lib/agent/orchestrator/choose-
 import { EphemeralTextFilter } from "@/lib/agent/orchestrator/sanitizer";
 import { buildGateContextText } from "@/lib/agent/orchestrator/system-context";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
+import { detectYesNoText } from "@/lib/agent/orchestrator/yes-no";
 import { LANCE_EMBUTIDO_DEFAULT_PERCENT } from "@/lib/agent/qualify-config";
 import { querAntecipar, shouldAskMotive } from "@/lib/agent/qualify-state";
 import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
@@ -843,8 +844,26 @@ export function createConverseNode(model: BaseChatModel) {
 					// que não apareceu em card nenhum não ancora nada — a tool já devolve
 					// erro ao modelo, e aqui a escolha simplesmente não acontece.
 					if (call.name === "escolher_cota") {
+						// FIX-405 — o VETO de recusa também vale pra tool.
+						//
+						// Este é o 3º escritor de `escolha`, e o mais discricionário: quem
+						// decide chamar `escolher_cota` é o MODELO, lendo o texto. O
+						// `groupId` é verificado (tem que ser uma cota exibida), mas a
+						// INTENÇÃO do turno nunca era. Um turno em que o cliente diz "não
+						// quero essa" podia virar uma chamada com groupId válido e ancorar —
+						// mesma classe das oito portas anteriores, com roupa melhor: em vez
+						// do servidor inferir por regex, é o modelo inferindo e o servidor
+						// obedecendo sem checar.
+						//
+						// A conversa segue sendo do modelo: ele chama a tool quando quiser. O
+						// que o código faz é vetar o EFEITO quando o texto do cliente é uma
+						// recusa determinística — e `converse` roda DEPOIS do `advance`,
+						// sobrescrevendo `funnel.escolha`, então sem este veto ele desfazia
+						// uma decisão correta tomada no mesmo turno.
+						const recusouNesteTurno =
+							detectYesNoText(state.userText ?? "", state.intent ?? "neutral") === false;
 						const gid = (call.args as { groupId?: unknown })?.groupId;
-						if (typeof gid === "string" && gid.trim()) {
+						if (!recusouNesteTurno && typeof gid === "string" && gid.trim()) {
 							const exibidas = await listShownOffersForConversation(state.conversationId).catch(
 								() => [],
 							);
