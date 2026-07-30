@@ -138,7 +138,18 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 	const handleInterest = () => {
 		if (isStreaming) return;
 		const label = "Tenho interesse";
-		void sendAction({ kind: "interest", administradora, label }, label);
+		// FIX-419 — leva o groupId REAL (o mesmo que o `choose_offer` acima usa).
+		// Sem ele o servidor tinha que adivinhar a cota pela marca, e não conseguia
+		// sempre que a mesma administradora aparecia em duas cotas na tela.
+		void sendAction(
+			{
+				kind: "interest",
+				administradora,
+				...(cota?.groupId ? { groupId: cota.groupId } : {}),
+				label,
+			},
+			label,
+		);
 	};
 
 	return (

@@ -60,7 +60,13 @@ export type ChatAction =
 			termMonths: number;
 			label: string;
 	  }
-	| { kind: "interest"; administradora: string; label: string }
+	// FIX-419 — `groupId` no clique. A 14ª revisão independente mediu, contra 53
+	// conversas REAIS do banco, que sem ele o servidor não consegue resolver a cota
+	// em 68,8% dos casos (duas ou mais cotas da mesma administradora exibidas →
+	// `findOfferByAdministradora` devolve null por ambiguidade, corretamente). O
+	// componente SEMPRE teve o id em mãos — o `choose_offer` do mesmo card já o usa
+	// — e o `interest` o descartava. O WhatsApp já fazia certo (`interest_<groupId>`).
+	| { kind: "interest"; administradora: string; groupId?: string; label: string }
 	// FIX-195/196 (reveal hero+seletor, adendo B8): o seletor de cotas emite a escolha
 	// ESTRUTURADA client-side carregando o `groupId` REAL já resolvido (quotaId opaco).
 	// O handler server-side (route.ts, bloco-a) resolve o grupo pelo groupId, ancora o

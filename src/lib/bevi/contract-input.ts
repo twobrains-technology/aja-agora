@@ -7,6 +7,7 @@
 // decifrados). Esta função não loga, não persiste — só monta o objeto pro gateway.
 
 import { categoryToBeviSegment } from "@/lib/adapters/bevi/offer-mapper";
+import { MAX_CREDIT_DEVIATION } from "@/lib/adapters/bevi/partner-offer-mapper";
 import { normalizeAdministradora } from "@/lib/agent/orchestrator/choose-offer";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import type { StartContractInput } from "./fulfillment";
@@ -142,10 +143,26 @@ export function buildStartContractInput(
 	// card, aquele número é a decisão mais recente e vale mesmo acima do teto
 	// antigo. Limitar ali seria ignorar a ação estruturada que a parede inteira
 	// existe pra privilegiar.
+	// FIX-419 — o cap ganha TOLERÂNCIA. Cap duro era pior que não ter cap.
+	//
+	// A 14ª revisão independente mediu a distribuição real e ela derruba a premissa
+	// do FIX-418: de 67 cartas exibidas, 54 (80,6%) estão ACIMA do teto declarado —
+	// e 83% desse excesso cabe em 0-10%. Isso NÃO é resíduo de what-if, é como
+	// consórcio funciona: o cliente diz "uns 90 mil" e o grupo real da administradora
+	// é 92.902. O cap duro estragava 53 cartas legítimas pra pegar 1 resíduo, e o
+	// efeito medido foi mandar 120.000 à Bevi para quem tinha clicado num card de
+	// 150.000 — o mesmo bait-and-switch do FIX-73, agora pra baixo.
+	//
+	// Eu tinha testado a regra contra UM fixture e aplicado a uma população que não
+	// olhei. A tolerância certa já existe no repo (`MAX_CREDIT_DEVIATION`, a mesma
+	// que decide se uma oferta serve): preserva as cartas reais e ainda barra o caso
+	// que motivou o cap (300.000 sobre teto de 180.000 = +66%).
 	const tetoDeclarado = q.creditMax ?? q.creditMin;
+	const tetoComFolga =
+		tetoDeclarado === undefined ? undefined : tetoDeclarado * (1 + MAX_CREDIT_DEVIATION);
 	const cartaExibida = ofertaConsistente ? meta.recommendedOffer?.creditValue : undefined;
 	const dicaDentroDoTeto =
-		cartaExibida !== undefined && (tetoDeclarado === undefined || cartaExibida <= tetoDeclarado)
+		cartaExibida !== undefined && (tetoComFolga === undefined || cartaExibida <= tetoComFolga)
 			? cartaExibida
 			: undefined;
 	const valor = meta.contractOffer?.creditValue ?? dicaDentroDoTeto ?? tetoDeclarado ?? 50000;

@@ -188,7 +188,21 @@ export async function startContract(
 		// truthy, então o aviso seguia MUDO e o cliente lia "Confirmei com a ITAÚ"
 		// com RODOBENS na tela. A 13ª revisão provou que era vácuo: revertendo o
 		// FIX-417, ZERO testes falhavam.
-		previousAdministradora: administradoraChanged ? marcaNaTela : null,
+		// FIX-419 — REVERTIDO, e isto é correção, não recuo.
+		//
+		// O FIX-418 fez este campo vir de `marcaNaTela` pro aviso "parar de emudecer".
+		// A 14ª revisão rodou até a TELA e mostrou o que o cliente passou a ler:
+		// "A RODOBENS não tem grupo disponível nessa faixa agora" — com a RODOBENS
+		// TENDO grupo na faixa. A causalidade que a copy afirma nunca foi estabelecida
+		// pelo código: sem `administradoraPreferida`, o gateway não PROCUROU a
+		// RODOBENS; ele caiu em `best(offers)` por proximidade de valor.
+		//
+		// Trocar silêncio por afirmação falsa sobre o catálogo de uma administradora,
+		// num contrato de consórcio, não é upgrade. O aviso volta a falar só quando
+		// houve preferência de verdade — aí a frase é verdadeira. Fazer o aviso contar
+		// o que REALMENTE aconteceu ("a busca trouxe a mais próxima do valor") é
+		// mudança de COPY, e copy é decisão do Kairo.
+		previousAdministradora: administradoraChanged ? input.administradoraPreferida : null,
 	};
 }
 

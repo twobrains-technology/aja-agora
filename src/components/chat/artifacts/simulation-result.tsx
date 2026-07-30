@@ -38,7 +38,17 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 	const handleInterest = () => {
 		if (isStreaming) return;
 		const label = "Tenho interesse";
-		void sendAction({ kind: "interest", administradora: payload.administradora, label }, label);
+		// FIX-419 — o payload da simulação já carrega o `groupId`; mandá-lo torna a
+		// resolução da cota determinística no servidor.
+		void sendAction(
+			{
+				kind: "interest",
+				administradora: payload.administradora,
+				...(payload.groupId ? { groupId: payload.groupId } : {}),
+				label,
+			},
+			label,
+		);
 	};
 
 	// FIX-29: o kind vem do INTENT da action (não mais "interest" pra tudo).

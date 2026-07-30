@@ -61,7 +61,30 @@ describe("FIX-418 — a carta exibida é dica, o teto declarado é limite", () =
 		expect(input.valor).toBe(171_000);
 	});
 
-	it("carta ACIMA do teto NÃO vale — resíduo de what-if recusado não vira pedido", () => {
+	it.each([
+		// FIX-419 — o caso que é 80,6% da população REAL, e que o cap duro do FIX-418
+		// estragava. A 14ª revisão independente mediu contra 53 conversas do banco: de
+		// 67 cartas exibidas, 54 estão acima do teto declarado, e 83% desse excesso
+		// cabe em 0-10%. Não é resíduo — é como consórcio funciona. O cliente diz "uns
+		// 90 mil"; o grupo real da administradora é 92.902; o card mostra 92.902.
+		//
+		// Medido com o cap duro: cliente clicava num card de 150.000 e a Bevi recebia
+		// 120.000. O mesmo bait-and-switch do FIX-73, agora pra baixo.
+		[90_000, 92_902], // +3,2% — o caso típico
+		[180_000, 190_000], // +5,6%
+		[100_000, 119_000], // +19% — ainda dentro da folga (MAX_CREDIT_DEVIATION)
+	])("carta ligeiramente acima do teto (%i) vale: %i", (teto, carta) => {
+		const input = buildStartContractInput(
+			meta({
+				recommendedOffer: { administradora: "RODOBENS", creditValue: carta, termMonths: 96 },
+				qualifyAnswers: { creditMax: teto },
+			}),
+			IDENT,
+		);
+		expect(input.valor).toBe(carta);
+	});
+
+	it("carta MUITO acima do teto NÃO vale — resíduo de what-if recusado não vira pedido", () => {
 		// O caso que a 13ª revisão mediu. O cliente declarou 180 mil; um what-if de
 		// 300 mil que ele recusou ficou em `recommendedOffer`. Mandar 300 mil é pedir
 		// 66% acima do que ele disse — com CPF e consulta de bureau no fim.

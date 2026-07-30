@@ -573,9 +573,27 @@ export async function POST(req: NextRequest) {
 							// REALMENTE exibidas nesta conversa (artifacts persistidos). Sem
 							// correspondência, ancora só a marca: melhor uma cota incompleta que
 							// o funil completa perguntando do que quatro números inventados.
-							const cotaExibida = marcaDoCard
-								? await resolveOfferForAdministradora(conversationId, marcaDoCard).catch(() => null)
-								: null;
+							// FIX-419 — `groupId` primeiro, marca só como fallback.
+							//
+							// A 14ª revisão independente mediu contra 53 conversas REAIS: sem o
+							// groupId, `findOfferByAdministradora` não resolve em 68,8% dos casos
+							// (duas ou mais cotas da mesma administradora na tela → devolve null
+							// por ambiguidade, e faz certo em não chutar). O resultado era
+							// `contractOffer = { administradora }` sem crédito e sem prazo, e o
+							// contrato saía com o teto e sem desempate de prazo — PIOR que copiar
+							// a oferta, que era o defeito que eu tinha acabado de corrigir.
+							//
+							// `resolveChosenOffer` é o mesmo resolvedor do `choose_offer` logo
+							// abaixo: lookup por id contra os artifacts REAIS. Determinístico,
+							// sem ambiguidade possível.
+							const idDoCard = body.action.groupId;
+							const cotaExibida = idDoCard
+								? await resolveChosenOffer(conversationId, idDoCard).catch(() => null)
+								: marcaDoCard
+									? await resolveOfferForAdministradora(conversationId, marcaDoCard).catch(
+											() => null,
+										)
+									: null;
 							const ancoraDoClique = !marcaDoCard
 								? undefined
 								: cotaExibida

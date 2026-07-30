@@ -100,7 +100,12 @@ export const normalizeAdmin = (s: string) =>
 /** Acima desta distância relativa (crédito), o pick abre mão da fidelidade de
  * marca (BUG-ADMIN-TROCADA-NO-FECHAMENTO) em favor da faixa pedida — compliance
  * (CDC art. 30, FIX-240) pesa mais que continuidade de administradora. */
-const MAX_CREDIT_DEVIATION = 0.2;
+/** Tolerância de desvio de crédito — quanto uma oferta real pode ficar longe do
+ * pedido e ainda servir. Exportada no FIX-419: o `contract-input` passou a usá-la
+ * como folga do teto declarado, em vez de um cap duro que rebaixava 80,6% das
+ * cartas reais (o grupo da administradora quase nunca bate o número redondo que o
+ * cliente falou). Uma constante só pros dois usos, que são o mesmo julgamento. */
+export const MAX_CREDIT_DEVIATION = 0.2;
 
 /** Escolhe, dentre as ofertas reais, a mais próxima do crédito que o usuário viu na
  * Descoberta (pra costurar o seam indicativo→real sem trocar o "plano" debaixo dele).
