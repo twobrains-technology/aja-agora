@@ -10,6 +10,7 @@ import { FinancingComparison } from "./artifacts/financing-comparison";
 import { GroupCard } from "./artifacts/group-card";
 import { LeadForm } from "./artifacts/lead-form";
 import { ProposalDoc } from "./artifacts/proposal-doc";
+import { QuickReply } from "./artifacts/quick-reply";
 import { RecommendationCard } from "./artifacts/recommendation-card";
 import { Scarcity } from "./artifacts/scarcity";
 import { Scenarios } from "./artifacts/scenarios";
@@ -27,7 +28,7 @@ export function ArtifactRenderer({
 	artifact: Artifact;
 	active?: boolean;
 }) {
-	const inner = renderArtifact(artifact);
+	const inner = renderArtifact(artifact, active);
 	// FIX-49: só o turno ATIVO é interativo. Card do histórico (mensagem antiga ou
 	// hidratada da retomada) fica selado: pointer-events-none + aria-disabled +
 	// inert (read-only de verdade) e levemente esmaecido. Preserva o histórico
@@ -48,7 +49,7 @@ export function ArtifactRenderer({
 	);
 }
 
-function renderArtifact(artifact: Artifact) {
+function renderArtifact(artifact: Artifact, active: boolean) {
 	switch (artifact.type) {
 		case "group_card":
 			return <GroupCard payload={artifact.payload} />;
@@ -93,6 +94,6 @@ function renderArtifact(artifact: Artifact) {
 		case "scarcity":
 			return <Scarcity payload={artifact.payload} />;
 		case "quick_reply":
-			return null;
+			return <QuickReply payload={artifact.payload} active={active} />;
 	}
 }

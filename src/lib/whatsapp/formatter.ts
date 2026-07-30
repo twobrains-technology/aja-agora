@@ -1314,9 +1314,47 @@ export function artifactToWhatsApp(
 			return twoPathsToWhatsApp(payload);
 		case "scarcity":
 			return scarcityToWhatsApp(payload);
+		case "quick_reply":
+			return quickReplyToWhatsApp(payload);
 		default:
 			return null;
 	}
+}
+
+/** Atalhos de resposta pra pergunta que o agente acabou de fazer.
+ *
+ * No WhatsApp eles importam ainda mais que na web: digitar no celular é o maior
+ * atrito da conversa. Vira botão de resposta nativo (`reply`), que o cliente
+ * toca e o texto volta como mensagem dele — mesma semântica da web.
+ *
+ * O corpo é um travessão invisível de propósito: a PERGUNTA já foi a mensagem
+ * de texto anterior, e repeti-la aqui faria o cliente ler duas vezes. O
+ * WhatsApp exige `body` não-vazio no interativo, então vai o mínimo. */
+export function quickReplyToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse | null {
+	const options = payload.options as Array<{ label?: unknown }> | undefined;
+	if (!Array.isArray(options) || options.length === 0) return null;
+
+	const buttons = options
+		.map((o) => (typeof o?.label === "string" ? o.label.trim() : ""))
+		.filter((label) => label.length > 0)
+		// 3 é o teto do WhatsApp pra botões de resposta, e 20 chars é o teto do
+		// título. O schema da tool já limita, mas o formatter não pode confiar num
+		// limite que vive do outro lado do modelo.
+		.slice(0, 3)
+		.map((label, i) => ({
+			type: "reply" as const,
+			reply: { id: `qr_${i}`, title: label.slice(0, 20) },
+		}));
+	if (buttons.length === 0) return null;
+
+	return {
+		type: "interactive",
+		interactive: {
+			type: "button",
+			body: { text: "Responda por aqui:" },
+			action: { buttons },
+		},
+	};
 }
 
 /** Card de decisão (jornada do .docx etapa 4). 3 botões, TODOS com handler

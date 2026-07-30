@@ -47,6 +47,11 @@ const BASE = [
 	"save_contact_name",
 	"save_contact_whatsapp",
 	"check_proposal_status",
+	// Atalhos de resposta pra pergunta do próprio modelo. Entra no BASE porque
+	// não existe fase do funil em que facilitar a resposta do cliente atrapalhe:
+	// o payload não carrega valor estruturado, então nada nele pode ancorar cota
+	// ou fechar contrato — é texto, como se ele tivesse digitado.
+	"present_quick_reply",
 ];
 
 /** Descoberta completa + cards do reveal — o passo 3+4 acontece na fase

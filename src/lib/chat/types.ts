@@ -144,7 +144,10 @@ export interface LeadFormPayload {
 
 export interface QuickReplyOption {
 	label: string;
-	value: string;
+	/** Opcional: o `present_quick_reply` do modelo só manda `label`, porque o
+	 * atalho é TEXTO — o que vai pro servidor é o rótulo, como se o cliente
+	 * tivesse digitado. Quem carrega valor estruturado é card de oferta. */
+	value?: string;
 	emoji?: string;
 }
 

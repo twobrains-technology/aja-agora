@@ -22,7 +22,7 @@ export function QuickReplies({ payload, onSelect, disabled }: QuickRepliesProps)
 		>
 			{payload.options.map((option) => (
 				<motion.button
-					key={option.value}
+					key={option.value ?? option.label}
 					type="button"
 					variants={{
 						hidden: { opacity: 0, y: 8, scale: 0.95 },
@@ -35,7 +35,7 @@ export function QuickReplies({ payload, onSelect, disabled }: QuickRepliesProps)
 					}}
 					whileHover={disabled ? undefined : { scale: 1.03, y: -2 }}
 					whileTap={disabled ? undefined : { scale: 0.97 }}
-					onClick={() => !disabled && onSelect(option.value)}
+					onClick={() => !disabled && onSelect(option.value ?? option.label)}
 					disabled={disabled}
 					className="inline-flex items-center gap-[9px] h-[36px] px-[12px] border border-[rgb(5_36_64/.4)] rounded-full bg-transparent text-sm font-semibold text-[var(--aja-ink)] cursor-pointer transition-colors hover:bg-[var(--aja-sand)] disabled:cursor-default disabled:opacity-50"
 				>

@@ -209,6 +209,35 @@ export const scarcitySchema = z.object({
 		),
 });
 
+// Atalhos de resposta pra pergunta que o agente ACABOU de fazer.
+//
+// Visto ao vivo (Kairo, 2026-07-30): o agente explicou o lance embutido e
+// fechou com "quer que eu busque esses grupos?" — e o cliente ficou com um
+// campo de texto vazio pra responder "sim". Os gates do funil têm chips; a
+// pergunta que o modelo faz por conta própria não tinha nada.
+//
+// Quem escolhe as PALAVRAS é o modelo (é a fala dele que está sendo
+// respondida); o código só desenha os botões e devolve o rótulo como se o
+// cliente tivesse digitado. Por isso o payload não carrega valor estruturado
+// nenhum: atalho de texto NUNCA ancora cota, escolha ou contrato — isso
+// continua exigindo clique em card de oferta.
+export const quickReplySchema = z.object({
+	options: z
+		.array(
+			z.object({
+				label: z
+					.string()
+					.max(24)
+					.describe(
+						"O texto do botão, do jeito que o CLIENTE responderia: 'Pode buscar', 'Prefiro a de 190 mil', 'Me explica melhor'. Curto (até 24 caracteres) e em primeira pessoa.",
+					),
+			}),
+		)
+		.min(2)
+		.max(3)
+		.describe("2 ou 3 respostas possíveis. Nunca mais de 3."),
+});
+
 /**
  * Schema do `present_lead_form` no REGISTRY ESTÁTICO (compat com PRESENTATION_TOOLS
  * + testes legados). Versão exposta ao MODELO pelo builder vem da factory
@@ -825,6 +854,15 @@ export const consorcioTools = {
 		},
 	}),
 
+	present_quick_reply: tool({
+		description:
+			"Oferece 2 ou 3 botões de resposta rápida para a pergunta que VOCÊ acabou de fazer nesta mesma mensagem. Use sempre que sua pergunta tiver respostas previsíveis ('quer que eu busque?', 'prefere qual das duas?', 'faz sentido pra você?') — poupa o cliente de digitar e mantém a conversa andando, no chat e no WhatsApp. Os rótulos são as respostas na VOZ DO CLIENTE ('Pode buscar', 'Me explica melhor'), nunca comandos ('Buscar grupos'). NÃO use para o cliente escolher uma cota/oferta (isso é o botão do card) nem para pedir dado pessoal. Se a pergunta é aberta ('o que você achou?'), não use: deixe ele escrever.",
+		inputSchema: quickReplySchema,
+		execute: async () => {
+			return "[Atalhos de resposta apresentados ao usuário]";
+		},
+	}),
+
 	present_lead_form: tool({
 		description:
 			"Apresenta o formulario inline de captura de dados do lead (nome, telefone, email) no chat. Use quando o usuario demonstrar interesse em uma recomendacao de consorcio.",
@@ -1166,6 +1204,7 @@ export const PRESENTATION_TOOLS = new Set([
 	"present_embedded_bid",
 	"present_two_paths",
 	"present_scarcity",
+	"present_quick_reply",
 ]);
 
 // ============================================================================
