@@ -34,6 +34,39 @@ export type AnalyzeResult = {
 	stuckGateDefaultApplied: Gate | null;
 };
 
+/** O item é só a CATEGORIA, sem modelo nenhum? ("um carro", "uma moto", "imóvel")
+ *
+ * Allowlist estreita de propósito: qualquer coisa fora desta lista conta como
+ * específico e NÃO é sobrescrita. Errar pro lado de "é específico" só mantém o
+ * comportamento antigo; errar pro outro lado apagaria o desejo que o cliente
+ * descreveu. */
+export function itemGenerico(item: string): boolean {
+	const limpo = item
+		.toLowerCase()
+		.normalize("NFD")
+		.replace(/[\u0300-\u036f]/g, "")
+		.replace(/^(um|uma|o|a|meu|minha)\s+/, "")
+		// O analyzer costuma grudar o VALOR no item ("um carro de 90 mil"), e sem
+		// tirar isso a comparação nunca casava: o campo ficava genérico pra sempre e
+		// o agente reperguntava o modelo que o cliente já tinha dito. Só corta o
+		// complemento quando ele tem DÍGITO — "carro de luxo" continua específico.
+		.replace(/\s+(de|ate|por|com|em|na|até)\s+[^\d]*\d.*$/, "")
+		.trim();
+	return [
+		"carro",
+		"veiculo",
+		"automovel",
+		"auto",
+		"moto",
+		"motocicleta",
+		"imovel",
+		"casa",
+		"apartamento",
+		"apto",
+		"terreno",
+	].includes(limpo);
+}
+
 export async function analyzeAndMerge(
 	text: string,
 	currentPersona: Persona,
@@ -277,7 +310,23 @@ export async function analyzeAndMerge(
 	// desiredItem/motivation por texto livre — o gate não bloqueia o funil se
 	// eles nunca chegarem, mas quando o usuário os menciona (aqui ou em
 	// qualquer turno posterior), salva a primeira ocorrência.
-	if (analysis.desiredItem && !q.desiredItem) {
+	// O ITEM GENÉRICO CEDE LUGAR AO ESPECÍFICO — senão o agente repergunta o que
+	// o cliente acabou de responder.
+	//
+	// Visto ao vivo (Kairo, 2026-07-30): "quero um carro de 90 mil" grava
+	// `desiredItem: "um carro"`. O agente então pergunta "qual carro você tem em
+	// mente?", o cliente responde "um Corolla" — e como a captura era só da
+	// PRIMEIRA ocorrência, o campo continuava "um carro". No turno seguinte o
+	// contexto do prompt afirmava "o cliente já disse o que tem em mente: um
+	// carro", e o modelo, lendo um item genérico, perguntou de novo qual carro.
+	// A pergunta duplicada não era teimosia do modelo: era o estado mentindo pra
+	// ele.
+	//
+	// A trava original existe por um motivo real (não deixar um turno posterior
+	// atropelar o desejo original), e ela FICA: só cede quando o que está gravado
+	// é genérico — a própria categoria com artigo, sem modelo nenhum. "Corolla"
+	// nunca sobrescreve "Corolla híbrido 2026"; "um carro" sim.
+	if (analysis.desiredItem && (!q.desiredItem || itemGenerico(q.desiredItem))) {
 		q.desiredItem = analysis.desiredItem;
 		meta.qualifyAnswers = q;
 		metaChanged = true;

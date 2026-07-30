@@ -500,6 +500,54 @@ export function normalizeEmojiToPunctuation(text: string): string {
 	});
 }
 
+/** O travessão de pausa é a assinatura de texto escrito por IA.
+ *
+ * "Uma saída boa é o lance embutido — ele sai da própria carta" (visto ao vivo,
+ * Kairo 2026-07-30). Nenhum vendedor escreve assim no WhatsApp; modelo escreve,
+ * e o cliente sente o robô antes de ler o número.
+ *
+ * A regra está no prompt, mas prompt não segura sob carga (mesma razão do
+ * FIX-188): quando o modelo está explicando algo denso, o travessão volta. Aqui
+ * é a rede determinística.
+ *
+ * Não é "apagar o travessão": é escolher a pontuação que um humano usaria no
+ * lugar. Se o que vem depois é uma PERGUNTA (ou a frase já está longa), o
+ * natural é fechar e começar outra frase; no resto dos casos, vírgula.
+ *
+ * Só pega travessão CERCADO DE ESPAÇO — o de pausa. Hífen colado ("guarda-
+ * chuva", "12-15") e intervalo numérico não são tocados. */
+export function semTravessaoDeIA(text: string): string {
+	if (!text) return text;
+	const PAUSA = /\s+(?:[—–]|--)\s+/;
+	let out = "";
+	let resto = text;
+	for (;;) {
+		const m = PAUSA.exec(resto);
+		if (!m) break;
+		const antes = resto.slice(0, m.index);
+		let depois = resto.slice(m.index + m[0].length);
+		// Números dos dois lados = intervalo ("R$ 100 — R$ 200"), não pausa.
+		if (/\d\s*$/.test(antes) && /^\s*(?:R\$\s*)?\d/.test(depois)) {
+			out += `${antes}${m[0]}`;
+			resto = depois;
+			continue;
+		}
+		const primeiraFrase = depois.split(/(?<=[.!?])/)[0] ?? depois;
+		if (/[.!?…]$/.test(antes.trimEnd())) {
+			out += `${antes.trimEnd()} `;
+		} else if (/\?/.test(primeiraFrase) || antes.length > 90) {
+			out += `${antes.trimEnd().replace(/[,;:]$/, "")}. `;
+			depois = depois.charAt(0).toUpperCase() + depois.slice(1);
+		} else if (/[,;:]$/.test(antes.trimEnd())) {
+			out += `${antes.trimEnd()} `;
+		} else {
+			out += `${antes.trimEnd()}, `;
+		}
+		resto = depois;
+	}
+	return out + resto;
+}
+
 /** Rede RESIDUAL: tira o que sobrou de emoji depois da normalização. Não
  * colapsa espaço nem apara borda — quem repõe pontuação é
  * `normalizeEmojiToPunctuation`. FIX-299. */
@@ -909,7 +957,7 @@ export function stripProcessPreamble(text: string, ctx?: StateVerificationContex
 	const kept = survivors.filter((seg, i) => !isInterrogativeSentence(seg) || i === lastQuestion);
 	// FIX-299: strip de emoji determinístico, independe do modelo obedecer a
 	// regra de parcimônia do prompt. FIX-337: scrub de CPF, mesma garantia.
-	return scrubCpf(stripEmoji(kept.join("")));
+	return semTravessaoDeIA(scrubCpf(stripEmoji(kept.join(""))));
 }
 
 /** FIX-248: mesma guarda de dígito do splitSegments — no STREAM, um "." colado
@@ -1091,7 +1139,7 @@ export class EphemeralTextFilter {
 			}
 			out = emendar(out, seg);
 		}
-		const limpo = scrubCpf(stripEmoji(out));
+		const limpo = semTravessaoDeIA(scrubCpf(stripEmoji(out)));
 		if (!limpo) return "";
 		const emendado = emendar(this.ultimoEmitido, limpo);
 		// `emendar` devolve o texto INTEIRO (anterior + atual); o cliente já tem o
