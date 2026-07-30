@@ -64,6 +64,39 @@ describe("FIX-406 — recusa não vira expressão de interesse no WhatsApp", () 
 		expect(isInterestExpression(fala), fala).toBe(true);
 	});
 
+	// ── FIX-407: os dois erros da PRIMEIRA versão deste veto ──
+	//
+	// A 9ª revisão independente mediu o predicado de produção com 50 falas e achou
+	// que o veto `detectYesNoText(...) === false` errava nos DOIS sentidos. As duas
+	// baterias abaixo são as falas exatas que ela reportou. Elas ficam aqui, e não
+	// numa nota de commit, porque foi a ausência delas que deixou o defeito passar:
+	// os 8 "fechamentos legítimos" acima são todos de 1-3 palavras e não tocam
+	// nenhum destes caminhos.
+
+	it.each([
+		// O "não" que INTENSIFICA. Barrar estes mata a venda no canal de volume —
+		// pior que o defeito que o veto foi corrigir.
+		"não vejo a hora, quero fechar",
+		"não tenho dúvida, quero fechar",
+		"não quero perder essa, bora fechar",
+		"não aguento mais esperar, quero fechar",
+		"não pensei duas vezes, fechado",
+	])("entusiasmo com 'não' continua fechando: %s", (fala) => {
+		expect(isInterestExpression(fala), fala).toBe(true);
+	});
+
+	it.each([
+		// Recusa SEM a palavra "não" — a metade do predicado que a 1ª versão do
+		// veto não enxergava, e que fazia o fluxo de contrato disparar.
+		"de jeito nenhum, quero fechar",
+		"jamais, topei",
+		"deixa pra lá, quero fechar",
+		"esquece, tenho interesse",
+		"nem pensar, bora fechar",
+	])("recusa sem 'não' também barra o contrato: %s", (fala) => {
+		expect(isInterestExpression(fala), fala).toBe(false);
+	});
+
 	it("segue rejeitando o falso-positivo que a âncora sempre protegeu (FIX-336)", () => {
 		// "tenho interesse em saber sobre lance" é curiosidade, não fechamento — é
 		// o caso que motivou a âncora `^…$` por segmento. A correção da recusa não

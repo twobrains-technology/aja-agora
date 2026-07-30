@@ -88,7 +88,29 @@ export function detectYesNoText(text: string, intent: UserIntent): boolean | nul
 function avaliarOracao(t: string): boolean | null {
 	// "não sei" é HESITAÇÃO, não recusa — quem diz "não sei, pode mostrar sim"
 	// está aceitando.
-	const semHesitacao = t.replace(/\bn[ãa]o\s+sei\b/gi, " ");
+	//
+	// FIX-407 — a mesma figura, do lado do ENTUSIASMO. O português usa a negação
+	// como intensificador positivo, e a regra de "quem aparece primeiro governa"
+	// (abaixo) lia o "não" inicial como recusa:
+	//
+	//   "não vejo a hora, quero fechar"  → false
+	//   "não pensei duas vezes, fechado" → false
+	//
+	// Achado pela 9ª revisão independente medindo o predicado de produção: seis
+	// falas reais de FECHAMENTO eram lidas como recusa. Vale nos dois canais — no
+	// gate da web, quem respondia "não vejo a hora" a "quer seguir?" era
+	// registrado como tendo recusado.
+	//
+	// Lista lexical, e não regra em bloco, pelo motivo que a linha 21 já
+	// argumenta: cada entrada é uma locução FIXA e inequívoca, em que o "não" não
+	// nega o verbo seguinte. Fora delas, "não" continua negando — "não quero" é
+	// recusa, e tem que seguir sendo.
+	const semHesitacao = t
+		.replace(/\bn[ãa]o\s+sei\b/gi, " ")
+		.replace(
+			/\bn[ãa]o\s+(?:vejo\s+a\s+hora|tenho\s+d[úu]vidas?|quero\s+perder|aguento\s+mais|pensei\s+duas\s+vezes|[ée]\s+[àa]\s+toa)\b/gi,
+			" ",
+		);
 	const nao = semHesitacao.match(NO_TEXT_MARKERS);
 	const sim = semHesitacao.match(YES_TEXT_MARKERS);
 	const base: boolean | null = !nao
@@ -114,4 +136,35 @@ function avaliarOracao(t: string): boolean | null {
 	// menor" enuncia uma condição, não um sim.
 	if (/\b(seria|ficaria|se fosse|se der|se tiver|se você)\b/i.test(t)) return null;
 	return true;
+}
+
+/** A fala RECUSA? Predicado ÚNICO de recusa do sistema.
+ *
+ * FIX-407 — ele nasceu privado em `choose-offer.ts`. Quando o FIX-406 precisou de
+ * um veto de recusa no atalho de fechamento do WhatsApp, usou só METADE dele
+ * (`detectYesNoText`) e deixou passar a família inteira que recusa SEM a palavra
+ * "não": "de jeito nenhum, quero fechar" e "esquece, tenho interesse" disparavam
+ * o fluxo de contrato. A 9ª revisão independente mediu e apontou a ironia — o
+ * commit dizia estar evitando "uma nona regex" ao reusar o primitivo, e criou a
+ * divergência ao reusar metade dele.
+ *
+ * Mora aqui, junto de `detectYesNoText`, porque este módulo é o lugar NEUTRO que
+ * os dois runtimes e os dois canais já importam sem criar ciclo (ver o cabeçalho).
+ * Predicado de recusa duplicado é como a cópia do `yes-no` no grafo ficou para
+ * trás; uma cópia só não tem como divergir. */
+export function falaRecusa(text: string): boolean {
+	const t = text ?? "";
+	if (!t.trim()) return false;
+	return (
+		detectYesNoText(t, "neutral") === false ||
+		// ⚠️ A borda final é `(?![\wà-úÀ-Ú])`, NUNCA `\b`. Em JS, `\b` é definido
+		// sobre `[A-Za-z0-9_]`: depois de vogal acentuada ele casa no lugar errado,
+		// e `\bdeixa pra lá\b` simplesmente não encontra "deixa pra lá". Esta
+		// armadilha já custou dois defeitos neste repo (o léxico de SIM e o
+		// `pediuParaFechar`) — o `YES_TEXT_MARKERS` acima usa a mesma lookahead
+		// pelo mesmo motivo.
+		/\b(de jeito nenhum|nem pensar|jamais|nunca|de forma alguma|detesto|odeio|esquece|deixa pra l[áa])(?![\wà-úÀ-Ú])/i.test(
+			t,
+		)
+	);
 }

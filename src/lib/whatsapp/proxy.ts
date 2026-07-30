@@ -16,7 +16,7 @@ import { conversations, leads, user as userTable } from "@/db/schema";
 import { applyTrackedStageToLead } from "@/lib/admin/lead-stage-tracker";
 import { transitionLeadStage } from "@/lib/admin/lead-transitions";
 import { buildAdvanceToContractDirective } from "@/lib/agent/orchestrator/directives";
-import { detectYesNoText } from "@/lib/agent/orchestrator/yes-no";
+import { falaRecusa } from "@/lib/agent/orchestrator/yes-no";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { publishMessage } from "@/lib/chat/message-bus";
 import { triggerEvalScoring } from "@/lib/eval/trigger";
@@ -72,21 +72,33 @@ export function isInterestExpression(text: string): boolean {
 	// `buildAdvanceToContractDirective` DIRETO, fora do grafo — ou seja, sem o
 	// veto de recusa do FIX-405 e sem gate nenhum, no canal onde está o volume.
 	//
-	// `detectYesNoText` é o primitivo que já resolve isto (regra de rebaixamento
-	// por oração, FIX-399d): recusa em qualquer oração é terminal. Reusá-lo em vez
-	// de escrever uma nona regex é o ponto — duas cópias da mesma heurística
-	// sempre divergem, e foi assim que a cópia do `yes-no` no grafo ficou para
-	// trás (`advance.ts:17`).
+	// FIX-407 — o veto é `falaRecusa`, POR CLÁUSULA, e não `detectYesNoText` na
+	// frase inteira. A 9ª revisão independente mediu a primeira versão deste veto
+	// e achou os dois erros que ela cometia ao mesmo tempo:
 	//
-	// Só o `false` explícito barra. `null` (indefinido — "tenho interesse" não tem
-	// marcador de sim nem de não) segue para a regex, que é quem sabe reconhecer
-	// as frases de fechamento.
-	if (detectYesNoText(text, "neutral") === false) return false;
-
+	//   · barrava SEIS fechamentos legítimos — "não vejo a hora, quero fechar",
+	//     "não pensei duas vezes, fechado" — porque `detectYesNoText` lia o "não"
+	//     entusiasmado como recusa (corrigido no primitivo, FIX-407);
+	//   · deixava passar SEIS recusas — "de jeito nenhum, quero fechar",
+	//     "esquece, tenho interesse" — porque `detectYesNoText` sozinho só enxerga
+	//     recusa que tenha a palavra "não".
+	//
+	// O predicado completo (`falaRecusa`) sempre existiu; ele estava privado em
+	// `choose-offer.ts` e eu reusei metade dele. Reusar METADE de um primitivo é a
+	// mesma divergência que reescrevê-lo — o argumento do commit anterior estava
+	// certo e a execução, não. Ele agora mora em `yes-no.ts`, um só, importado
+	// pelos dois canais.
+	//
+	// Por CLÁUSULA porque é assim que o `some` abaixo decide: se um pedaço da
+	// frase pode fechar a venda sozinho, o pedaço que recusa também tem que poder
+	// barrá-la sozinho. Simetria — sem ela, a vírgula favorece sempre o lado que
+	// compromete dinheiro.
 	const segments = text
 		.split(/[,;.!?]+/)
 		.map((s) => s.trim())
 		.filter(Boolean);
+	if (segments.some((seg) => falaRecusa(seg))) return false;
+
 	return segments.some((seg) => INTEREST_RE.test(seg));
 }
 

@@ -9,7 +9,7 @@
 // ancorando a administradora + prazo pro fechamento fechar NO GRUPO CERTO — sem
 // re-busca, sem re-resolução, sem meta-narrativa (CONTRATO com bloco-b, adendo B8).
 
-import { detectYesNoText } from "./yes-no";
+import { detectYesNoText, falaRecusa } from "./yes-no";
 
 /** A fala é uma RECUSA? Um lugar só, usado por TODOS os resolvedores.
  *
@@ -48,15 +48,6 @@ function todasAsClausulasRecusam(text: string): boolean {
 	const clausulas = (text ?? "").split(/[.!?;,]|\bmas\b|\bpor[ée]m\b/i).filter((c) => c.trim());
 	if (clausulas.length === 0) return false;
 	return clausulas.every((c) => falaRecusa(c) || !/[a-zà-ú]/i.test(c));
-}
-
-function falaRecusa(text: string): boolean {
-	const t = text ?? "";
-	if (!t.trim()) return false;
-	return (
-		detectYesNoText(t, "neutral") === false ||
-		/\b(de jeito nenhum|nem pensar|jamais|nunca|de forma alguma|detesto|odeio)\b/i.test(t)
-	);
 }
 
 /** Campos ancorados da cota escolhida — alimentam recommendedAdministradora +
