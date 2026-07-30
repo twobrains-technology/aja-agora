@@ -1125,25 +1125,39 @@ export function createConverseNode(model: BaseChatModel) {
 			// contexto do gate NÃO entra neste beat — sem ele, o modelo não tem como
 			// puxar a pergunta de experiência, e a âncora nasce do que ele acabou de
 			// mostrar. As palavras continuam dele.
-			await pausaDeConversa(RITMO.cardParaFala);
-			const deixaDaAncora = new HumanMessage(
-				"[instrução do sistema — o cliente NÃO vê este texto, não o repita] Feche o turno " +
-					"com a âncora, em mensagem separada e curta.",
-			);
-			filter.liberarPerguntas();
-			newMessages.push(deixaDaAncora);
-			loopMessages = [
-				montarSystem(
-					`Os cards com as opções JÁ estão na tela, logo abaixo da sua mensagem. Feche com ` +
-						`UMA frase curta convidando o cliente a reagir ao que ele está vendo — qual delas ` +
-						`chamou a atenção dele, o que achou. É só isso: não puxe assunto novo, não peça ` +
-						`dado nenhum, não pergunte sobre a experiência dele com consórcio e não repita os ` +
-						`números que você já disse.`,
-				),
-				...loopMessages.slice(1),
-				deixaDaAncora,
-			];
-			await executarBeat(false);
+			// A ÂNCORA NÃO ROLA ENQUANTO O FUNIL AINDA PRECISA COLETAR UM DADO.
+			//
+			// Visto em PRODUÇÃO, no WhatsApp (Kairo, 2026-07-30): com o gate de coleta
+			// ainda aberto, este beat "completou" a frase amputada do beat 1 pedindo o
+			// CPF — que o cliente já tinha mandado dois minutos antes. Pedir de novo um
+			// documento que a pessoa acabou de entregar é o pior tipo de repetição:
+			// parece que o sistema perdeu o dado dela.
+			//
+			// Nesses gates quem conduz é o funil, com pergunta própria e determinística;
+			// uma segunda fala do modelo aqui só tem como atrapalhar. Nos demais casos
+			// (o normal pós-reveal) a âncora continua fechando o turno.
+			const GATES_DE_COLETA = new Set(["name", "identify", "credit", "desire"]);
+			if (!GATES_DE_COLETA.has(String(gateAtivo ?? ""))) {
+				await pausaDeConversa(RITMO.cardParaFala);
+				const deixaDaAncora = new HumanMessage(
+					"[instrução do sistema — o cliente NÃO vê este texto, não o repita] Feche o turno " +
+						"com a âncora, em mensagem separada e curta.",
+				);
+				filter.liberarPerguntas();
+				newMessages.push(deixaDaAncora);
+				loopMessages = [
+					montarSystem(
+						`Os cards com as opções JÁ estão na tela, logo abaixo da sua mensagem. Feche com ` +
+							`UMA frase curta convidando o cliente a reagir ao que ele está vendo — qual delas ` +
+							`chamou a atenção dele, o que achou. É só isso: não puxe assunto novo, não peça ` +
+							`dado nenhum, não pergunte sobre a experiência dele com consórcio e não repita os ` +
+							`números que você já disse.`,
+					),
+					...loopMessages.slice(1),
+					deixaDaAncora,
+				];
+				await executarBeat(false);
+			}
 		}
 
 		// O card só cala a pergunta canônica quando o MODELO já perguntou. Olhar só

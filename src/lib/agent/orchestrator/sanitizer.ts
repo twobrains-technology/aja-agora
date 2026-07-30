@@ -516,6 +516,18 @@ export function normalizeEmojiToPunctuation(text: string): string {
  *
  * Só pega travessão CERCADO DE ESPAÇO — o de pausa. Hífen colado ("guarda-
  * chuva", "12-15") e intervalo numérico não são tocados. */
+/** Tira do fim do texto a frase que só existia pra apresentar uma pergunta que
+ * foi descartada — a que termina em dois-pontos ("Me diz só:").
+ *
+ * Conservadora de propósito: só age quando o texto TERMINA em `:`, e só corta
+ * até o fim da frase anterior. Texto que termina em ponto final não é tocado. */
+export function apararDeixaDePergunta(texto: string): string {
+	const t = texto.trimEnd();
+	if (!t.endsWith(":")) return texto;
+	const corte = Math.max(t.lastIndexOf("."), t.lastIndexOf("!"), t.lastIndexOf("?"));
+	return corte >= 0 ? t.slice(0, corte + 1) : "";
+}
+
 export function semTravessaoDeIA(text: string): string {
 	if (!text) return text;
 	const PAUSA = /\s+(?:[—–]|--)\s+/;
@@ -1133,6 +1145,18 @@ export class EphemeralTextFilter {
 				// diante, dropa (é o mesmo invariante do FIX-298, por outro caminho).
 				if (this.perguntasProibidas || this.jaPerguntou) {
 					this.droppedReasons.add("pergunta-extra");
+					// DESCARTAR A PERGUNTA TEM QUE LEVAR A DEIXA JUNTO.
+					//
+					// Visto em PRODUÇÃO, no WhatsApp (Kairo, 2026-07-30): o modelo escreveu
+					// "Encontrei ótimas opções na sua faixa! Me diz só: qual é o seu CPF?".
+					// A interrogativa foi dropada aqui e o cliente recebeu o texto amputado
+					// — "…na sua faixa! Me diz só:" — anunciando uma pergunta que nunca
+					// veio. Pior: o beat seguinte "completou" com o pedido de CPF, dado que
+					// ele JÁ tinha mandado dois minutos antes.
+					//
+					// A frase que introduz uma pergunta ("Me diz só:", "Só me diz o
+					// seguinte:") não sobrevive sozinha. Se a pergunta cai, ela cai junto.
+					out = apararDeixaDePergunta(out);
 					continue;
 				}
 				this.jaPerguntou = true;
