@@ -127,19 +127,21 @@ describe("buildStartContractInput — derivação canônica (FIX-25, CA-10)", ()
 			currentCategory: "auto",
 			recommendedAdministradora: "ÂNCORA",
 			qualifyAnswers: { creditMax: 100_000, objetivo: "contemplacao_rapida" },
-			// FIX-414 — o invariante do FIX-73 continua valendo, mudou a FONTE: o
-			// crédito vem da cota que o cliente CONTRATOU, não do teto re-derivado.
-			// Antes vinha de `recommendedOffer`, que o texto podia mover.
+			// ⚠️ Os TRÊS números divergem de propósito. A 12ª revisão independente
+			// achou que eu tinha reescrito este fixture com `contractOffer` e
+			// `recommendedOffer` no MESMO 70.000 — e aí o teste passava em qualquer
+			// versão do código, provando nada. Teste que não pode falhar é pior que
+			// cobertura ausente: a ausência a gente enxerga.
 			contractOffer: {
 				administradora: "ÂNCORA",
-				creditValue: 70_000,
+				creditValue: 70_000, // a cota CONTRATADA — é esta que tem que vencer
 				termMonths: 100,
 				monthlyPayment: 900,
 			},
 			recommendedOffer: {
 				administradora: "ÂNCORA",
 				category: "auto",
-				creditValue: 70_000,
+				creditValue: 85_000, // a cota EM FOCO na conversa — não é o contrato
 				termMonths: 80,
 				monthlyPayment: 892.48,
 			},
@@ -148,6 +150,37 @@ describe("buildStartContractInput — derivação canônica (FIX-25, CA-10)", ()
 		const input = buildStartContractInput(meta, { ...identity, lgpd: true });
 
 		expect(input.valor).toBe(70_000);
+	});
+
+	it("FIX-417 — sem cota CONTRATADA, o valor é o da carta que o cliente VIU, não o teto", () => {
+		// O FIX-414 fez `valor` cair direto no `creditMax` quando não havia cota
+		// ancorada, e a 12ª revisão independente mostrou que isso reabriu o FIX-73
+		// palavra por palavra: o cliente vê uma carta de 171.000, o teto que ele
+		// falou é 180.000, e a Bevi recebe 180.000 — devolvendo uma cota NOVA,
+		// diferente da que o card anunciou. É o bait-and-switch que o comentário do
+		// FIX-73 descreve (jornada AUTO, 2026-07-02).
+		//
+		// A distinção que resolve, e que eu não tinha feito: `valor` é DICA DE
+		// MATCHING, `administradoraPreferida` é VÍNCULO. Só o vínculo precisa da
+		// parede — usar a carta exibida como dica de matching não compromete o
+		// cliente com marca nenhuma, e é o único número que ele de fato viu.
+		const meta: ConversationMetadata = {
+			currentCategory: "auto",
+			recommendedAdministradora: "ÂNCORA",
+			qualifyAnswers: { creditMax: 180_000 },
+			recommendedOffer: {
+				administradora: "ÂNCORA",
+				creditValue: 171_000,
+				termMonths: 96,
+				monthlyPayment: 2_719,
+			},
+		} as ConversationMetadata;
+
+		const input = buildStartContractInput(meta, { ...identity, lgpd: true });
+
+		expect(input.valor).toBe(171_000);
+		// …e a marca continua SEM vínculo: a parede do FIX-414 não regride.
+		expect(input.administradoraPreferida).toBeNull();
 	});
 
 	it("FIX-73: sem recommendedOffer (defensivo), cai de volta no creditMax/creditMin (comportamento anterior)", () => {

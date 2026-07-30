@@ -95,13 +95,41 @@ export function buildStartContractInput(
 	// inconsistência que só existia porque a marca vinha de um campo e o número de
 	// outro.
 	//
-	// FIX-414 — o crédito vem da cota CONTRATADA, nunca da cota conversada.
+	// FIX-417 — `valor` é DICA DE MATCHING; `administradoraPreferida` é VÍNCULO.
+	// Só o vínculo precisa da parede, e confundir os dois foi o erro do FIX-414.
 	//
-	// `recommendedOffer` é escrita por resolução de TEXTO (é ela que faz o agente
-	// acompanhar a atenção do cliente). Usá-la aqui fazia o contrato sair com a
-	// carta de uma oferta que ele só OLHOU. Sem cota contratada, cai pro teto que
-	// ele pediu — que é a mesma regra do FIX-73, agora aplicada ao campo certo.
-	const valor = meta.contractOffer?.creditValue ?? q.creditMax ?? q.creditMin ?? 50000;
+	// Ao mandar `valor` cair direto no `creditMax` sem cota ancorada, eu reabri o
+	// FIX-73 palavra por palavra: o cliente vê uma carta de 171.000, o teto que ele
+	// falou é 180.000, a Bevi recebe 180.000 e devolve uma cota NOVA — diferente da
+	// que o card anunciou. Bait-and-switch, o defeito que aquele fix nomeou na
+	// jornada AUTO de 2026-07-02. A 12ª revisão independente mediu e apontou.
+	//
+	// A carta EXIBIDA é o único número que o cliente de fato viu, e usá-la como
+	// dica de matching não o compromete com administradora nenhuma — a marca
+	// continua vindo só de ação estruturada (abaixo). `creditMax` fica como
+	// fallback defensivo, pra quando não houve reveal (caso já barrado a montante).
+	//
+	// ⚠️ E o guard do FIX-251 VOLTA aqui, porque ele protegia algo real e eu o
+	// apaguei rápido demais no FIX-414: quando a marca do `recommendedOffer`
+	// diverge da que a conversa confirmou, aquela carta é de uma oferta ABANDONADA
+	// (o caso do what-if rejeitado — ITAÚ 161.258 sobrevivendo depois de o cliente
+	// reconfirmar RODOBENS 90.000). Usá-la como dica de matching mandaria a Bevi
+	// procurar perto de um número que o cliente dispensou.
+	//
+	// Ele é desnecessário para a MARCA (que hoje vem de uma cota inteira, ancorada
+	// de uma vez) e continua necessário para o VALOR — que é justamente a
+	// distinção que eu não tinha feito.
+	const ofertaConsistente =
+		!meta.recommendedOffer?.administradora ||
+		!meta.recommendedAdministradora ||
+		normalizeAdministradora(meta.recommendedOffer.administradora) ===
+			normalizeAdministradora(meta.recommendedAdministradora);
+	const valor =
+		meta.contractOffer?.creditValue ??
+		(ofertaConsistente ? meta.recommendedOffer?.creditValue : undefined) ??
+		q.creditMax ??
+		q.creditMin ??
+		50000;
 	// FIX-281 (r9 onda 2, gap G-A): âncora do aviso de divergência CDC no
 	// `real_offer` — o pedido ORIGINAL do cliente, MESMA precedência do hero
 	// (runner.ts:656-665, FIX-261). Campo NOVO e independente de `valor` acima
@@ -149,6 +177,10 @@ export function buildStartContractInput(
 		// tem que repetir o contrato que existe, não inaugurar um segundo.
 		administradoraPreferida:
 			meta.contractOffer?.administradora ?? links.registeredAdministradora ?? null,
+		// FIX-417 — a marca da TELA, só pro aviso de divergência. Nunca entra no
+		// matching: quem vincula é `administradoraPreferida`, acima.
+		administradoraExibida:
+			meta.contractOffer?.administradora ?? meta.recommendedOffer?.administradora ?? null,
 		// E o MESMO prazo que ele viu — desempata o matching dentro da admin
 		// (matching preparatório 2026-06-28). O snapshot da oferta ativa traz o
 		// prazo — mesma checagem de consistência do `valor` acima.

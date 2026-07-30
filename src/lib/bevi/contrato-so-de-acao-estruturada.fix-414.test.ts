@@ -29,6 +29,8 @@
 // Este teste existe no nível da FUNÇÃO PURA de propósito: é o último ponto antes
 // da chamada real, é consumido pelos DOIS canais, e não depende de harness
 // nenhum. Se a parede vale, ela vale aqui.
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { buildStartContractInput } from "./contract-input";
@@ -92,25 +94,36 @@ describe("FIX-414 — a Bevi só recebe administradora vinda de ação estrutura
 		expect(input.valor).toBe(170_000);
 	});
 
-	it("o valor NÃO herda a carta da conversa quando não há cota contratada", () => {
-		// Sem ação estruturada, o crédito cai pro teto que o cliente pediu — nunca
-		// pra carta de uma oferta que ele só olhou. Mesma regra do FIX-73, aplicada
-		// ao campo certo.
-		expect(buildStartContractInput(SO_TEXTO, IDENT).valor).toBe(180_000);
+	it("CORRIGIDO PELO FIX-417: o valor É a carta exibida, e só a MARCA fica sem vínculo", () => {
+		// ⚠️ Este teste afirmava o contrário e estava ERRADO. Ele codificava como
+		// invariante justamente o bait-and-switch que o FIX-73 documenta: cair no
+		// `creditMax` faz a Bevi devolver uma cota NOVA, diferente da que o card
+		// anunciou (cliente vê 171.000, teto 180.000, contrato pede 180.000).
+		//
+		// A distinção que faltava: `valor` é DICA DE MATCHING, `administradoraPreferida`
+		// é VÍNCULO. Só o vínculo precisa da parede. A carta exibida é o único número
+		// que o cliente de fato viu, e usá-la não o compromete com marca nenhuma.
+		const input = buildStartContractInput(SO_TEXTO, IDENT);
+		expect(input.valor).toBe(171_000);
+		expect(input.administradoraPreferida).toBeNull();
 	});
 
-	it("vale para os DOIS canais — é a mesma função", () => {
-		// `contract-input.ts` é o módulo único consumido por `route.ts` (web) e
-		// `whatsapp/contract-capture.ts`. Testar aqui é testar os dois; foi por não
-		// olhar este arquivo que a parede do FIX-413 nasceu só na web, e mesmo lá
-		// só no rótulo.
+	it("vale para os DOIS canais — provado pelas IMPORTAÇÕES, não por tautologia", () => {
+		// ⚠️ A 1ª versão deste teste chamava `buildStartContractInput` DUAS VEZES e
+		// comparava os resultados entre si. Ele passava com a correção revertida — a
+		// 12ª revisão independente o listou como vácuo, e o próprio comentário que eu
+		// tinha escrito admitia ("continua passando e mentindo"). Comparar uma função
+		// pura com ela mesma não prova paridade de canal; prova que ela é
+		// determinística.
 		//
-		// Sentinela: se algum dia esta função deixar de ser a única derivação, este
-		// teste continua passando e mentindo. O guard de allowlist
-		// (`quem-assina-contrato.guard`) é quem cobre esse flanco.
-		const web = buildStartContractInput(COM_ACAO_ESTRUTURADA, IDENT, { leadId: "lead-1" });
-		const zap = buildStartContractInput(COM_ACAO_ESTRUTURADA, IDENT, { leadId: "lead-2" });
-		expect(web.administradoraPreferida).toBe(zap.administradoraPreferida);
-		expect(web.prazoPreferido).toBe(zap.prazoPreferido);
+		// O que de fato sustenta a afirmação é estrutural: os dois canais IMPORTAM
+		// esta função. Se algum deles passar a derivar o input por conta própria,
+		// esta asserção quebra — e é exatamente aí que a parede rachou no FIX-413.
+		const web = readFileSync(join(process.cwd(), "src/app/api/chat/route.ts"), "utf8");
+		const zap = readFileSync(join(process.cwd(), "src/lib/whatsapp/contract-capture.ts"), "utf8");
+		expect(web, "a rota web precisa usar a derivação canônica").toContain(
+			"buildStartContractInput",
+		);
+		expect(zap, "o WhatsApp precisa usar a MESMA derivação").toContain("buildStartContractInput");
 	});
 });

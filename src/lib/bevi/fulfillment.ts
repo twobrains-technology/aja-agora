@@ -48,6 +48,19 @@ export interface StartContractInput {
 	tipoSimulacao?: SimulationType;
 	lanceEmbutido?: LanceEmbutido;
 	leadId?: string | null;
+	/** A marca que o cliente VIU na tela — só pra detectar divergência e AVISAR.
+	 *
+	 * FIX-417 — nunca entra no matching; é campo de OBSERVABILIDADE. Existe porque
+	 * o FIX-414 fez `administradoraPreferida` virar `null` no caminho sem clique
+	 * (correto: texto não vincula dinheiro) e, de quebra, emudeceu o aviso do
+	 * FIX-259 — que exigia a preferência preenchida pra comparar. Resultado medido
+	 * pela 12ª revisão independente: o gateway escolhia por proximidade de valor e
+	 * o cliente não era avisado de nada.
+	 *
+	 * Tirar o VÍNCULO era o objetivo; tirar o AVISO foi dano colateral. Os dois
+	 * campos existem justamente porque são coisas diferentes: um compromete, o
+	 * outro só conta o que aconteceu. */
+	administradoraExibida?: string | null;
 	/** Administradora recomendada na Descoberta — o fechamento prefere a MESMA
 	 * marca que o usuário decidiu (BUG-ADMIN-TROCADA-NO-FECHAMENTO). */
 	administradoraPreferida?: string | null;
@@ -129,10 +142,15 @@ export async function startContract(
 	// fechamento sem ela na faixa → pickClosestOffer cai pro global best). Detecta
 	// pela comparação final (normalizada) — cobre QUALQUER caminho que produziu a
 	// divergência, sem duplicar a lógica interna do clamp.
+	// FIX-417 — compara contra o que o cliente VIU, e só cai na preferência quando
+	// não há tela a citar. Antes exigia `administradoraPreferida`, e com ela nula
+	// (jornada sem clique, o caso comum pós-FIX-414) o aviso simplesmente não saía:
+	// a marca mudava em silêncio.
+	const marcaNaTela = input.administradoraExibida ?? input.administradoraPreferida;
 	const administradoraChanged =
-		!!input.administradoraPreferida &&
+		!!marcaNaTela &&
 		!!offer &&
-		normalizeAdmin(offer.administradora) !== normalizeAdmin(input.administradoraPreferida);
+		normalizeAdmin(offer.administradora) !== normalizeAdmin(marcaNaTela);
 
 	const snapshot = {
 		proposalId,
