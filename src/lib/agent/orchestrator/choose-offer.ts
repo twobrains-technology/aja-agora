@@ -266,24 +266,43 @@ export function isCreditValueMentioned(text: string, creditValue: number): boole
 
 const NEGATION_TRIGGER = /\b(PRA LA|DE LADO|ESQUECE|ESQUECA|CANCELA|CANCELE|NAO QUERO)\b/;
 
-/** A família da EXCLUSÃO — FIX-408, 9ª revisão independente.
+/** A cláusula EXCLUI esta marca especificamente? — FIX-412.
  *
- * Depois de ver seis cards, o gesto natural do cliente não é negar: é ELIMINAR
- * da lista. "qualquer uma menos a Rodobens", "sem a Rodobens", "a Rodobens tá
- * fora". Nenhuma dessas formas tem marcador de negação clássico, então nem
- * `NEGATION_TRIGGER` nem `falaRecusa` as enxergavam — e a marca EXCLUÍDA era
- * ancorada e seguia até o `contract_form`, medido no grafo real.
+ * A 1ª versão (FIX-408) era um gatilho de CLÁUSULA: se a cláusula contivesse
+ * `SEM (A|O)` em qualquer posição, toda marca citada nela — ou na cláusula
+ * vizinha — era dada como excluída. A 10ª revisão independente mediu e mostrou
+ * que isso recriou, dentro da correção, o bug que este arquivo documenta em
+ * `resolveOfertaPorCriterio` ("o cliente escolheu a Canopus e o contrato saiu
+ * Itaú, sem uma palavra sobre a troca"):
  *
- * Isto não é caçada a sinônimos (a ressalva do FIX-402 segue valendo): exclusão
- * é uma família SINTÁTICA fechada — preposição de exclusão + marca —, não um
- * sentimento a interpretar. Mesma natureza da lista de afirmações do `yes-no`:
- * cada entrada é inequívoca.
+ *   "quero a RODOBENS, sem a menor dúvida"    → contrato saía CANOPUS
+ *   "quero a RODOBENS, sem a burocracia toda" → contrato saía CANOPUS
  *
- * Casa sobre texto JÁ normalizado (maiúsculas, sem acento), por isso `TA FORA` e
- * não `TÁ FORA`. As bordas são estritas de propósito: `\bMENOS (A|O)\b` não pega
- * "MENOR", e `\bSEM (A|O)\b` não pega "SEM ALARDE". */
-const EXCLUSION_TRIGGER =
-	/\b(MENOS (A|O)|SEM (A|O)|EXCETO|TIRANDO|TIREI|DESCARTO|DESCARTEI|DESCARTAR|TA FORA|ESTA FORA|FORA DA LISTA|CARA DEMAIS|CARO DEMAIS)\b/;
+ * Ênfase virou recusa porque "sem" é preposição comum e o gatilho não olhava do
+ * que ela estava excluindo. A correção é ADJACÊNCIA: a exclusão só conta quando
+ * incide sobre a MARCA — "menos a Rodobens", "sem ser a Rodobens", "a Rodobens
+ * tá fora". Isso é precisão, não mais uma palavra na lista.
+ *
+ * ⚠️ Também saíram `CARA DEMAIS|CARO DEMAIS`: objeção de preço é SENTIMENTO, e a
+ * própria justificativa do FIX-408 dizia que exclusão é família sintática, não
+ * sentimento. Manter aquilo tornava arbitrária a ausência de "salgada", "pesa no
+ * bolso", "muito cara" — que foi exatamente o que a 10ª revisão apontou.
+ *
+ * Opera sobre texto normalizado (maiúsculas, sem acento). */
+function excluiMarca(clauseNormalizada: string, marcaNormalizada: string): boolean {
+	const M = marcaNormalizada.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	const artigo = "(?:A|O|AS|OS|ESSA|ESSE|ESTA|ESTE|DA|DO|DE|DAS|DOS)?";
+	/** Exclusão ANTES da marca: "menos a X", "sem ser a X", "exceto a X". */
+	const antes = new RegExp(
+		`\\b(?:MENOS|SEM SER|SEM|EXCETO|EXCECAO|TIRANDO|TIRA|TIREI|FORA|EXCLUI|EXCLUINDO|NAO SEJA|NAO SER|DESCARTO|DESCARTEI|ELIMINEI|ELIMINANDO)\\s+${artigo}\\s*${M}\\b`,
+	);
+	/** Exclusão DEPOIS da marca: "a X tá fora", "a X eu descarto", "a X foi
+	 * eliminada" — a mesma família, com a marca à esquerda. */
+	const depois = new RegExp(
+		`\\b${M}\\b[^.!?;,]{0,24}?\\b(?:TA FORA|ESTA FORA|FORA DA LISTA|DESCARTADA|DESCARTADO|ELIMINADA|ELIMINADO|DESCARTO|DESCARTEI|ELIMINEI|EXCLUI)\\b`,
+	);
+	return antes.test(clauseNormalizada) || depois.test(clauseNormalizada);
+}
 
 /** A cláusula recusa/exclui? Predicado ÚNICO usado pelos DOIS laços de
  * `extractNegatedAdministradoras`. FIX-408.
@@ -297,10 +316,11 @@ const EXCLUSION_TRIGGER =
  * Duas noções de recusa dentro de uma função é a versão em miniatura do que
  * aconteceu no sistema inteiro por nove rodadas. Uma só. */
 function clausulaRecusa(clause: string): boolean {
-	const normalizada = normalizeAdministradora(clause);
-	return (
-		NEGATION_TRIGGER.test(normalizada) || EXCLUSION_TRIGGER.test(normalizada) || falaRecusa(clause)
-	);
+	// FIX-412 — a EXCLUSÃO saiu daqui de propósito. Ela agora é avaliada por
+	// MARCA (`excluiMarca`), não por cláusula: como gatilho de cláusula ela
+	// contaminava a marca da cláusula VIZINHA, e "quero a Rodobens, sem a menor
+	// dúvida" mandava o contrato pra outra administradora.
+	return NEGATION_TRIGGER.test(normalizeAdministradora(clause)) || falaRecusa(clause);
 }
 
 /** Administradoras mencionadas dentro de uma cláusula com gatilho de negação
@@ -365,13 +385,15 @@ function extractNegatedAdministradoras(text: string, offers: ChosenOffer[]): Set
 		// como cada rodada anterior ganhou uma noção diferente de "isto é um não".
 		// FIX-408 — `EXCLUSION_TRIGGER` cobre a família que ELIMINA da lista em vez
 		// de negar ("menos a X", "sem a X", "a X tá fora").
-		if (!clausulaRecusa(clause)) continue;
+		const recusaAClausulaInteira = clausulaRecusa(clause);
 		for (const o of offers) {
-			if (
-				o.administradora &&
-				normalizedClause.includes(normalizeAdministradora(o.administradora))
-			) {
-				negated.add(normalizeAdministradora(o.administradora));
+			if (!o.administradora) continue;
+			const marca = normalizeAdministradora(o.administradora);
+			if (!normalizedClause.includes(marca)) continue;
+			// Ou a cláusula toda é uma recusa (e a marca citada nela cai junto), ou a
+			// exclusão incide sobre ESTA marca especificamente. FIX-412.
+			if (recusaAClausulaInteira || excluiMarca(normalizedClause, marca)) {
+				negated.add(marca);
 			}
 		}
 	}

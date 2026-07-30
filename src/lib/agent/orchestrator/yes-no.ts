@@ -105,12 +105,32 @@ function avaliarOracao(t: string): boolean | null {
 	// argumenta: cada entrada é uma locução FIXA e inequívoca, em que o "não" não
 	// nega o verbo seguinte. Fora delas, "não" continua negando — "não quero" é
 	// recusa, e tem que seguir sendo.
+	// FIX-412 — o idioma entusiasmado NEUTRALIZA, nunca AFIRMA.
+	//
+	// A 10ª revisão independente mediu a 1ª versão desta regra e achou o defeito
+	// que ela criava: removido o "não" da locução, sobrava um marcador de SIM e a
+	// frase virava ACEITE — inclusive quando o verbo restante era de desistência,
+	// porque "quero" está no léxico do SIM e "cancelar"/"desistir" não estão no do
+	// NÃO:
+	//
+	//   "não quero perder tempo, pode deixar"     → true → decisionAccepted
+	//   "não aguento mais, quero cancelar"        → true → decisionAccepted
+	//
+	// E `decisionAccepted` abre o gate `contract` (advance.ts): o cliente pedindo
+	// pra cancelar recebia o formulário de contratação. Eu tinha corrigido uma
+	// leitura errada e criado uma pior.
+	//
+	// A correção é a assimetria que este módulo já aplica ao condicional e ao "não
+	// sei se": a locução só pode DERRUBAR um falso, nunca CRIAR um verdadeiro. O
+	// resultado vira `null` — indefinido —, e indefinido significa "o gate pergunta
+	// de novo", que é a saída segura. Perder um "não vejo a hora, quero fechar"
+	// custa uma pergunta repetida; ganhá-lo errado custa um contrato.
+	const IDIOMA_ENTUSIASMADO =
+		/\bn[ãa]o\s+(?:vejo\s+a\s+hora|tenho\s+d[úu]vidas?|quero\s+perder|aguento\s+mais|pensei\s+duas\s+vezes|[ée]\s+[àa]\s+toa)\b/i;
+	const temIdioma = IDIOMA_ENTUSIASMADO.test(t);
 	const semHesitacao = t
 		.replace(/\bn[ãa]o\s+sei\b/gi, " ")
-		.replace(
-			/\bn[ãa]o\s+(?:vejo\s+a\s+hora|tenho\s+d[úu]vidas?|quero\s+perder|aguento\s+mais|pensei\s+duas\s+vezes|[ée]\s+[àa]\s+toa)\b/gi,
-			" ",
-		);
+		.replace(new RegExp(IDIOMA_ENTUSIASMADO.source, "gi"), " ");
 	const nao = semHesitacao.match(NO_TEXT_MARKERS);
 	const sim = semHesitacao.match(YES_TEXT_MARKERS);
 	const base: boolean | null = !nao
@@ -129,6 +149,8 @@ function avaliarOracao(t: string): boolean | null {
 	// embutido, seria dinheiro jogado fora" ia de `false` pra `null` e deixava de
 	// fechar o gate. Recusa nunca é apagada por uma condicional.
 	if (base !== true) return base;
+	// FIX-412: veio de uma locução entusiasmada? Então é INDEFINIDO, não aceite.
+	if (temIdioma) return null;
 	// "não sei SE <afirmação>" é dúvida sobre a própria coisa — o strip de "não sei"
 	// acima transformava isso em aceite depois que o léxico cresceu.
 	if (/\bn[ãa]o sei se\b/i.test(t)) return null;
@@ -166,5 +188,39 @@ export function falaRecusa(text: string): boolean {
 		/\b(de jeito nenhum|nem pensar|jamais|nunca|de forma alguma|detesto|odeio|esquece|deixa pra l[áa])(?![\wà-úÀ-Ú])/i.test(
 			t,
 		)
+	);
+}
+
+/** O SEGMENTO, sozinho, É uma recusa — em oposição a apenas CONTER uma palavra
+ * de recusa usada como advérbio.
+ *
+ * FIX-412 — a 10ª revisão independente mediu o veto por cláusula que eu tinha
+ * acabado de pôr no proxy do WhatsApp (`segments.some(falaRecusa)`) e achou que
+ * ele barrava DOZE fechamentos legítimos no canal de maior volume:
+ *
+ *   "nunca tive tanta certeza, quero fechar"   → BARRAVA
+ *   "jamais vi oferta melhor, bora fechar"     → BARRAVA
+ *   "de jeito nenhum eu perco essa, quero fechar" → BARRAVA
+ *
+ * A palavra de recusa estava lá, mas como INTENSIFICADOR de uma afirmação — a
+ * mesma figura que o `IDIOMA_ENTUSIASMADO` trata do outro lado. Matar venda é
+ * defeito pior que o que o veto foi corrigir.
+ *
+ * A distinção que funciona é a âncora, e ela já é o instrumento que o
+ * `INTEREST_RE` do proxy usa pro lado positivo: o pedaço da frase É a coisa, não
+ * apenas a contém. "de jeito nenhum" recusa; "de jeito nenhum eu perco essa" não.
+ *
+ * ⚠️ Isto NÃO substitui `falaRecusa` — os dois têm usos diferentes. `falaRecusa`
+ * responde "há recusa aqui?" (usado pra decidir se uma marca foi rejeitada, onde
+ * errar pra mais custa uma pergunta). `recusaIsolada` responde "este pedaço é uma
+ * recusa inteira?" (usado onde errar pra mais MATA A VENDA). */
+export function recusaIsolada(segmento: string): boolean {
+	const t = (segmento ?? "").trim();
+	if (!t) return false;
+	// Recusa com a palavra "não" continua valendo por `detectYesNoText`, que já
+	// entende oração e adversativa — "não quero fechar" é recusa mesmo sem âncora.
+	if (detectYesNoText(t, "neutral") === false) return true;
+	return /^(de jeito nenhum|nem pensar|jamais|nunca|de forma alguma|detesto|odeio|esquece|esque[çc]a|deixa pra l[áa]|cancela|cancele|desisti|desisto|t[ôóo]u?\s*fora|passo|deixa quieto|nem a pau|nem morto)[!.…]*$/i.test(
+		t,
 	);
 }

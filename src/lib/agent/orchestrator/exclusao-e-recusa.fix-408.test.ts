@@ -69,14 +69,31 @@ describe("FIX-408 — exclusão explícita não ancora a marca excluída", () =>
 		expect(resolveAdministradoraMention(OFERTAS, fala)?.administradora, fala).not.toBe("RODOBENS");
 	});
 
-	it.each([
-		// Objeção de PREÇO sobre a marca. Quem reclama do preço de uma cota não
-		// está escolhendo essa cota — e o card de decisão perguntar é o desfecho
-		// correto aqui.
-		"a Rodobens tá cara demais",
-		"a Rodobens é caro demais pra mim",
-	])("objeção de preço sobre a marca não a ancora: %s", (fala) => {
-		expect(resolveAdministradoraMention(OFERTAS, fala)?.administradora, fala).not.toBe("RODOBENS");
+	it("RESÍDUO CONHECIDO E ASSUMIDO: objeção de preço ainda ancora a marca", () => {
+		// ⚠️ Este teste documenta um defeito que NÃO está corrigido. Ele existe para
+		// que o próximo leitor não descubra isso por acidente numa conversa real.
+		//
+		// A 1ª versão do FIX-408 tinha `CARA DEMAIS|CARO DEMAIS` no gatilho, e a 10ª
+		// revisão independente derrubou o argumento: exclusão é família SINTÁTICA
+		// ("preposição de exclusão + marca"), objeção de preço é SENTIMENTO. Com
+		// duas entradas de sentimento na lista, a ausência de "salgada", "pesa no
+		// bolso", "não cabe no meu orçamento", "muito cara" vira arbitrária — e foi
+		// exatamente assim que as nove listas anteriores morreram: cada rodada
+		// fechava as formas que alguém nomeou e deixava as que ninguém nomeou.
+		//
+		// Então a escolha aqui é deliberada: NÃO ampliar a lista. Reclamar do preço
+		// de uma cota não é escolhê-la, e o cliente que diz "a Rodobens tá cara
+		// demais, quero fechar" ainda recebe o formulário com a Rodobens.
+		//
+		// Isto não se fecha com léxico. Fecha-se separando "cota em foco" (conversa,
+		// texto pode mexer) de "cota do contrato" (dinheiro, só ação estruturada) —
+		// decisão de jornada, do Kairo, registrada como pendente no cabeçalho do
+		// guard `quem-assina-contrato.guard.fix-411.test.ts`. Enquanto ela não vier,
+		// este teste falha de propósito se alguém "consertar" com mais uma palavra:
+		// o remendo lexical é justamente o que precisa parar.
+		expect(resolveAdministradoraMention(OFERTAS, "a Rodobens tá cara demais")?.administradora).toBe(
+			"RODOBENS",
+		);
 	});
 
 	it("exclui UMA e afirma a OUTRA: resolve para a afirmada", () => {

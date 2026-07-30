@@ -16,7 +16,7 @@ import { conversations, leads, user as userTable } from "@/db/schema";
 import { applyTrackedStageToLead } from "@/lib/admin/lead-stage-tracker";
 import { transitionLeadStage } from "@/lib/admin/lead-transitions";
 import { buildAdvanceToContractDirective } from "@/lib/agent/orchestrator/directives";
-import { falaRecusa } from "@/lib/agent/orchestrator/yes-no";
+import { recusaIsolada } from "@/lib/agent/orchestrator/yes-no";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { publishMessage } from "@/lib/chat/message-bus";
 import { triggerEvalScoring } from "@/lib/eval/trigger";
@@ -97,7 +97,13 @@ export function isInterestExpression(text: string): boolean {
 		.split(/[,;.!?]+/)
 		.map((s) => s.trim())
 		.filter(Boolean);
-	if (segments.some((seg) => falaRecusa(seg))) return false;
+	// FIX-412 — `recusaIsolada`, não `falaRecusa`. A 10ª revisão mediu a versão
+	// anterior barrando DOZE fechamentos legítimos ("nunca tive tanta certeza,
+	// quero fechar"), porque a palavra de recusa estava lá como INTENSIFICADOR.
+	// Aqui errar pra mais mata venda no canal de maior volume, então o predicado
+	// tem que ser o estrito: o segmento É uma recusa, não apenas a contém — a
+	// mesma âncora que o `INTEREST_RE` abaixo usa pro lado positivo.
+	if (segments.some((seg) => recusaIsolada(seg))) return false;
 
 	return segments.some((seg) => INTEREST_RE.test(seg));
 }
