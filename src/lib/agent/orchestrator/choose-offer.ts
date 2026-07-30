@@ -11,22 +11,24 @@
 
 import { detectYesNoText, falaRecusa } from "./yes-no";
 
-/** A fala é uma RECUSA? Um lugar só, usado por TODOS os resolvedores.
- *
- * FIX-403 — sete revisões independentes acharam sete portas da mesma família, e o
- * padrão do erro foi sempre fechar a porta apontada sem varrer as irmãs: o grafo
- * sem o proxy, o critério sem o nome, o nome sem o valor/parcela/prazo. Cada
- * correção criava uma cópia nova da lógica de negação, e a cópia seguinte
- * divergia.
- *
- * Aqui a lógica existe UMA vez. `detectYesNoText` já lê recusa explícita,
- * adversativa e condicional; a lista complementa com as recusas que não têm
- * marcador clássico ("de jeito nenhum", "jamais", "detesto").
- *
- * A assimetria é mais estrita que a do `detectYesNoText` de propósito: lá,
- * indefinido significa "o gate pergunta de novo" — saída segura. Aqui não há gate
- * pra reabrir, e um falso positivo ancora uma cota que o cliente dispensou. Então
- * qualquer marcador de recusa basta pra desistir. */
+// FIX-403/407 — `falaRecusa`, o predicado ÚNICO de recusa, nasceu aqui e MUDOU
+// para `yes-no.ts`. O motivo da mudança é o mesmo que o motivo de ele existir:
+// sete revisões acharam sete portas da mesma família porque cada correção criava
+// uma cópia nova da lógica de negação. Quando o proxy do WhatsApp precisou dela,
+// não pôde importar deste módulo e acabou reusando METADE (só `detectYesNoText`).
+// Em `yes-no.ts` — o módulo neutro que os dois runtimes e os dois canais já
+// importam sem criar ciclo — não há como isso se repetir.
+
+/** Só o que a fala PEDE, sem as cláusulas que ela recusa — minúsculo, pronto pra
+ * casar critério. FIX-405. */
+function clausulasAfirmativas(text: string): string {
+	return (text ?? "")
+		.split(/[.!?;,]|\bmas\b|\bpor[ée]m\b/i)
+		.filter((c) => c.trim() && !clausulaRecusa(c))
+		.join(" ")
+		.toLowerCase();
+}
+
 /** Nenhuma cláusula da fala é um pedido — só então desistir.
  *
  * FIX-405: aplicar `falaRecusa` à frase INTEIRA gerava falso positivo. "nunca fiz
@@ -34,20 +36,10 @@ import { detectYesNoText, falaRecusa } from "./yes-no";
  * experiência dele) e uma afirmativa (o pedido) — bloquear tudo por causa da
  * primeira mata a venda. Desiste-se só quando não sobra nenhuma cláusula pedindo
  * algo. */
-/** Só o que a fala PEDE, sem as cláusulas que ela recusa — minúsculo, pronto pra
- * casar critério. FIX-405. */
-function clausulasAfirmativas(text: string): string {
-	return (text ?? "")
-		.split(/[.!?;,]|\bmas\b|\bpor[ée]m\b/i)
-		.filter((c) => c.trim() && !falaRecusa(c))
-		.join(" ")
-		.toLowerCase();
-}
-
 function todasAsClausulasRecusam(text: string): boolean {
 	const clausulas = (text ?? "").split(/[.!?;,]|\bmas\b|\bpor[ée]m\b/i).filter((c) => c.trim());
 	if (clausulas.length === 0) return false;
-	return clausulas.every((c) => falaRecusa(c) || !/[a-zà-ú]/i.test(c));
+	return clausulas.every((c) => clausulaRecusa(c) || !/[a-zà-ú]/i.test(c));
 }
 
 /** Campos ancorados da cota escolhida — alimentam recommendedAdministradora +
@@ -274,6 +266,43 @@ export function isCreditValueMentioned(text: string, creditValue: number): boole
 
 const NEGATION_TRIGGER = /\b(PRA LA|DE LADO|ESQUECE|ESQUECA|CANCELA|CANCELE|NAO QUERO)\b/;
 
+/** A família da EXCLUSÃO — FIX-408, 9ª revisão independente.
+ *
+ * Depois de ver seis cards, o gesto natural do cliente não é negar: é ELIMINAR
+ * da lista. "qualquer uma menos a Rodobens", "sem a Rodobens", "a Rodobens tá
+ * fora". Nenhuma dessas formas tem marcador de negação clássico, então nem
+ * `NEGATION_TRIGGER` nem `falaRecusa` as enxergavam — e a marca EXCLUÍDA era
+ * ancorada e seguia até o `contract_form`, medido no grafo real.
+ *
+ * Isto não é caçada a sinônimos (a ressalva do FIX-402 segue valendo): exclusão
+ * é uma família SINTÁTICA fechada — preposição de exclusão + marca —, não um
+ * sentimento a interpretar. Mesma natureza da lista de afirmações do `yes-no`:
+ * cada entrada é inequívoca.
+ *
+ * Casa sobre texto JÁ normalizado (maiúsculas, sem acento), por isso `TA FORA` e
+ * não `TÁ FORA`. As bordas são estritas de propósito: `\bMENOS (A|O)\b` não pega
+ * "MENOR", e `\bSEM (A|O)\b` não pega "SEM ALARDE". */
+const EXCLUSION_TRIGGER =
+	/\b(MENOS (A|O)|SEM (A|O)|EXCETO|TIRANDO|TIREI|DESCARTO|DESCARTEI|DESCARTAR|TA FORA|ESTA FORA|FORA DA LISTA|CARA DEMAIS|CARO DEMAIS)\b/;
+
+/** A cláusula recusa/exclui? Predicado ÚNICO usado pelos DOIS laços de
+ * `extractNegatedAdministradoras`. FIX-408.
+ *
+ * Antes havia duas noções diferentes de "isto é um não" dentro da MESMA função:
+ * o laço da contaminação usava só `falaRecusa`, o laço do nome usava
+ * `NEGATION_TRIGGER` + `falaRecusa` copiado inline. "Rodobens, tá fora" escapava
+ * exatamente por essa fresta — a exclusão vinha na cláusula seguinte, e o laço
+ * que trata esse caso não sabia reconhecer exclusão.
+ *
+ * Duas noções de recusa dentro de uma função é a versão em miniatura do que
+ * aconteceu no sistema inteiro por nove rodadas. Uma só. */
+function clausulaRecusa(clause: string): boolean {
+	const normalizada = normalizeAdministradora(clause);
+	return (
+		NEGATION_TRIGGER.test(normalizada) || EXCLUSION_TRIGGER.test(normalizada) || falaRecusa(clause)
+	);
+}
+
 /** Administradoras mencionadas dentro de uma cláusula com gatilho de negação
  * explícito ("deixa a X pra lá", "esquece a X", "cancela a X") — nunca conta
  * um uso afirmativo de "deixa" sem o gatilho ("Deixa a X que você recomendou"
@@ -290,7 +319,7 @@ function extractNegatedAdministradoras(text: string, offers: ChosenOffer[]): Set
 	// marca e ela era ancorada. Agora uma cláusula puramente negativa (que não cita
 	// marca nenhuma) contamina a marca citada na cláusula ANTERIOR.
 	for (const [i, clause] of clausulas.entries()) {
-		if (!falaRecusa(clause)) continue;
+		if (!clausulaRecusa(clause)) continue;
 		const citaMarca = offers.some(
 			(o) =>
 				o.administradora &&
@@ -330,11 +359,13 @@ function extractNegatedAdministradoras(text: string, offers: ChosenOffer[]): Set
 		// A vírgula entrou no split de cláusulas junto: sem ela, "não gostei da
 		// Itaú, quero a Canopus" era uma cláusula só e a negativa contaminava a
 		// marca afirmada.
-		const ehNegativa =
-			NEGATION_TRIGGER.test(normalizedClause) ||
-			detectYesNoText(clause, "neutral") === false ||
-			/\b(de jeito nenhum|nem pensar|jamais|nunca|de forma alguma|detesto|odeio)\b/i.test(clause);
-		if (!ehNegativa) continue;
+		// FIX-407 — as duas últimas condições eram `falaRecusa` copiado inline.
+		// Agora que ele é o predicado ÚNICO (yes-no.ts), esta é a mesma peça que o
+		// laço acima e que o proxy do WhatsApp usam. Cópia de predicado de recusa é
+		// como cada rodada anterior ganhou uma noção diferente de "isto é um não".
+		// FIX-408 — `EXCLUSION_TRIGGER` cobre a família que ELIMINA da lista em vez
+		// de negar ("menos a X", "sem a X", "a X tá fora").
+		if (!clausulaRecusa(clause)) continue;
 		for (const o of offers) {
 			if (
 				o.administradora &&
