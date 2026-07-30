@@ -24,6 +24,7 @@ import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta } from "@/lib/conversation/meta";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { projectToMeta } from "../emit";
+import { pausaDeConversa, RITMO } from "../ritmo";
 import type { AgentGraphStateType } from "../state";
 
 /** Texto com cara de directive interno (nunca é o cliente digitando). */
@@ -239,6 +240,10 @@ export async function persistNode(
 		// ir pra tela nem pelo banco nem ao vivo — é o botão "Tenho interesse" da
 		// cota errada que o cliente clicaria.
 		if (contradizAncora(ev)) continue;
+		// Respiro entre os blocos: fala do agente, card e chips caindo no mesmo
+		// instante viravam um bloco só, ilegível (visto ao vivo, 2026-07-30).
+		if (ev.type === "artifact") await pausaDeConversa(RITMO.falaParaCard);
+		else if (ev.type === "gate") await pausaDeConversa(RITMO.antesDosChips);
 		config?.writer?.(ev);
 	}
 	for (const ev of events) config?.writer?.(ev);

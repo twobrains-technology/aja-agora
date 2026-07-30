@@ -81,7 +81,15 @@ export async function emitCardNode(
 	// ao chamador. Resultado: o cliente recebia só `text-delta`/`tool-call` (que
 	// já iam pelo writer) e NENHUM card jamais renderizava. O writer entrega na
 	// ordem em que é chamado, então a ordem do turno é preservada.
-	if (state.gate) {
+	// CHIPS SÓ ONDE HÁ PERGUNTA.
+	//
+	// No turno do reveal o `converse` agora apenas APRESENTA (fala + cards) e não
+	// faz a pergunta do gate — ela é do turno seguinte. Emitir os chips aqui os
+	// deixaria pendurados embaixo dos cards sem nenhuma pergunta acima, que é
+	// exatamente o "badge fora de ordem" visto ao vivo (Kairo, 2026-07-30). O gate
+	// continua ATIVO no estado (`pendingGate` inclusive), então nada se perde: no
+	// próximo turno ele pergunta e os chips saem colados na pergunta.
+	if (state.gate && !state.apresentaOfertaNesteTurno) {
 		// `modelAsked`: o `converse` agora é CIENTE do gate (via `GATE_INTENT`) e
 		// faz a pergunta com as palavras dele. Se produziu texto neste turno, o
 		// adapter NÃO deve reinjetar a pergunta canônica (`gateQuestion`) — senão

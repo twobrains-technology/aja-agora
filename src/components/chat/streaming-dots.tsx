@@ -74,7 +74,22 @@ function currentStage(stages: ToolLabelStage[], elapsedMs: number): ToolLabelSta
 	return stage;
 }
 
-export function StreamingDots({ tool }: { tool?: string } = {}) {
+export function StreamingDots({
+	tool,
+	emBalao = false,
+}: {
+	tool?: string;
+	/** Envolve os pontinhos no BALÃO do assistente, em vez de deixá-los soltos.
+	 *
+	 * É o "digitando" de mensageiro, e existe porque o respiro entre os blocos do
+	 * turno (ritmo.ts) sem indicador nenhum lia como travamento — "parece que o
+	 * sistema está lento" (Kairo, 2026-07-30). Solto, o ponto flutuando embaixo de
+	 * um card não diz que ele está escrevendo; dentro do balão, diz.
+	 *
+	 * Não vale quando há RÓTULO de tool: ali a pill branca já é o próprio
+	 * container, e aninhar os dois viraria balão dentro de balão. */
+	emBalao?: boolean;
+} = {}) {
 	// FIX-288: timer reseta sempre que `tool` muda (novo tool-call chegou) —
 	// nunca continua contando do tool anterior. Tick a cada 1s só enquanto
 	// houver mais de 1 estágio pra essa tool (tools de 1 estágio só não agendam
@@ -142,7 +157,20 @@ export function StreamingDots({ tool }: { tool?: string } = {}) {
 		);
 	}
 
-	// Balão puro de "typing" — três pontos dentro do estilo do balão do assistente
+	// Balão de "digitando" — mesmo desenho do balão de fala do assistente
+	// (card + borda + rabicho superior-esquerdo), pra o respiro entre os blocos
+	// ler como "ele está escrevendo", não como tela travada.
+	if (emBalao) {
+		return (
+			<output
+				className="w-fit max-w-full rounded-2xl rounded-tl-[5px] border border-border bg-card px-[14px] py-[10px] shadow-[0_1px_2px_rgba(5,36,64,0.05),0_8px_20px_-14px_rgba(5,36,64,0.2)]"
+				aria-label="Digitando..."
+			>
+				{Dots}
+			</output>
+		);
+	}
+
 	return (
 		<output className="flex items-center gap-[5px] py-[2px]" aria-label="Processando...">
 			{Dots}

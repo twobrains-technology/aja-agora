@@ -30,6 +30,7 @@ import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import type { ArtifactType } from "@/lib/chat/types";
 import { projectToMeta } from "../emit";
 import { cacheableSystemBlock } from "../provider";
+import { pausaDeConversa, RITMO } from "../ritmo";
 import type { AgentGraphStateType, FunnelState } from "../state";
 import { buildLangGraphTools } from "../tool-adapter";
 import { artifactAllowed, type GuardContext } from "./guarded-artifact";
@@ -71,6 +72,12 @@ const WHAT_IF_TOOL_NAMES = [
 	"present_group_card",
 	"present_comparison_table",
 	"present_financing_comparison",
+	// Atalhos de resposta pra pergunta que o próprio modelo acabou de fazer. Sem
+	// ela, "quer que eu busque esses grupos?" deixava o cliente com um campo de
+	// texto vazio, enquanto os gates do funil tinham chips. É a fala DELE sendo
+	// respondida, então é ele quem escreve os rótulos; o payload não carrega valor
+	// estruturado nenhum, então nenhum atalho daqui ancora cota ou fecha contrato.
+	"present_quick_reply",
 	// `present_contemplation_dial` NÃO entra: a agulha é o passo do gate
 	// `simulator-offer`, que vem DEPOIS do lance embutido na cascata. Como tool
 	// discricionária, o modelo a chamava assim que ouvia um valor de lance e
@@ -634,17 +641,24 @@ export function createConverseNode(model: BaseChatModel) {
 				],
 			});
 
-		// ── REVEAL EM DOIS TEMPOS ──
+		// ── TURNO DE APRESENTAÇÃO: MOSTRA, ANCORA, E DEIXA A PERGUNTA DO FUNIL PRO TURNO SEGUINTE ──
 		// No turno em que a busca acabou de rodar, o modelo recebia ao mesmo tempo
 		// "apresente as ofertas" e "descubra a experiência do cliente" — e resolvia
 		// as duas coisas numa frase só ("Encontrei ótimas opções! E me conta: você
 		// já fez consórcio antes?"), com os cards e os atalhos pendurados embaixo.
-		// Um vendedor não faz isso: ele mostra o que achou, deixa a pessoa ver, e
-		// SÓ ENTÃO pergunta o que precisa saber pra recomendar uma delas. São dois
-		// balões, com os cards no meio. Aqui só a ESTRUTURA é do código (quantos
-		// beats, em que ordem, o que cada um sabe) — as palavras são todas do
-		// modelo, nos dois.
-		const revealEmDoisTempos = Boolean(state.apresentaOfertaNesteTurno && blocoOfertas);
+		//
+		// A primeira tentativa foi partir isso em DOIS BALÕES no mesmo turno, com os
+		// cards no meio. Não resolveu: na tela (Kairo, 2026-07-30) o resultado foi o
+		// agente indicando a carta do Itaú no primeiro balão e, logo abaixo,
+		// perguntando "ANTES de eu te indicar a melhor opção...". Ele se contradizia
+		// dentro do próprio turno.
+		//
+		// Agora o turno da busca fala de UM assunto só: as opções que ele achou.
+		// Apresenta → cards → âncora ("alguma te chamou atenção?"). A pergunta do
+		// FUNIL (experiência, prazo, lance) é do turno seguinte. Aqui só a ESTRUTURA
+		// é do código (o que sai, em que ordem, com que respiro) — as palavras são
+		// todas do modelo, nos dois balões.
+		const turnoDeApresentacao = Boolean(state.apresentaOfertaNesteTurno && blocoOfertas);
 		// O turno mostra a RECOMENDAÇÃO (hero liberado pelo `advance`) ou a LISTA
 		// recém-buscada? Muda o que o vendedor tem a dizer no primeiro balão.
 		const ehRecomendacao = state.events.some(
@@ -693,7 +707,7 @@ export function createConverseNode(model: BaseChatModel) {
 		);
 
 		const systemBeat1 = montarSystem(
-			revealEmDoisTempos
+			turnoDeApresentacao
 				? `Esta MENSAGEM é só a apresentação. ${
 						ehRecomendacao
 							? `Você está RECOMENDANDO uma opção — a ${oferta?.administradora}. Diga que é a sua ` +
@@ -702,10 +716,9 @@ export function createConverseNode(model: BaseChatModel) {
 							: `Conte o que encontrou como um vendedor experiente contaria — o que chamou sua ` +
 								`atenção nesses números e por quê.`
 					} ` +
-						`Termine SEM pergunta: nenhuma frase sua pode terminar em "?" aqui. A regra de nunca ` +
-						`encerrar sem um próximo passo vale pro TURNO, e o próximo passo vem na sua PRÓXIMA ` +
-						`mensagem, que você escreve logo em seguida — os cards aparecem entre as duas. ` +
-						`Seja breve.`
+						`Termine SEM pergunta: nenhuma frase sua pode terminar em "?" aqui, e não anuncie ` +
+						`que vai perguntar algo em seguida. Os CARDS com as opções aparecem logo abaixo da ` +
+						`sua mensagem, e são eles o próximo passo — deixe o cliente olhar. Seja breve.`
 				: gateContextText,
 		);
 		let loopMessages: BaseMessage[] = [
@@ -748,6 +761,10 @@ export function createConverseNode(model: BaseChatModel) {
 		};
 		const filter = new EphemeralTextFilter(ctxDeFatos);
 		const events: TurnEvent[] = [];
+		/** Ids dos artifacts que JÁ foram pra tela ao vivo neste nó — o `persist`
+		 * pula estes pra não desenhar o mesmo card duas vezes. Declarado AQUI (e não
+		 * depois dos beats) porque o `executarBeat` também emite ao vivo agora. */
+		const streamedArtifactIds: string[] = [];
 
 		/** Um "beat" de fala: streama o modelo, resolve as tool-calls e devolve. É a
 		 * mesma máquina do turno inteiro — o reveal só a executa duas vezes, com
@@ -968,13 +985,34 @@ export function createConverseNode(model: BaseChatModel) {
 								call.args,
 								state.funnel.escolha,
 							);
-							events.push({ type: "text-boundary" });
-							events.push({
+							// O CARD SAI AGORA, COLADO NA FALA QUE O ANUNCIOU.
+							//
+							// Visto ao vivo (Kairo, 2026-07-30): o agente apresentava a carta do
+							// Itaú, o carrossel aparecia, ele perguntava "você já fez consórcio
+							// antes?" — e SÓ ENTÃO caía o card daquela carta, entre a pergunta e
+							// os chips de resposta dela. É o FIX-376 por outra porta: lá o card
+							// intruso era um `group_card` não-guardado; aqui é o card LEGÍTIMO,
+							// no lugar errado.
+							//
+							// Causa: só os artifacts que já estavam em `state.events` (os do nó
+							// `discovery`) eram empurrados ao vivo entre os balões. Os que o
+							// PRÓPRIO beat criava por tool ficavam só no `events` de retorno, e
+							// quem os entregava era o `persist` — o último nó do turno, depois
+							// de toda a fala. O card nascia no meio da frase e chegava no fim.
+							const artifactId = call.id ?? crypto.randomUUID();
+							const fechaBalao: TurnEvent = { type: "text-boundary" };
+							const cardDaTool: TurnEvent = {
 								type: "artifact",
 								artifactType,
 								payload: payloadFinal,
-								toolCallId: call.id ?? crypto.randomUUID(),
-							});
+								toolCallId: artifactId,
+							};
+							events.push(fechaBalao);
+							events.push(cardDaTool);
+							config.writer?.(fechaBalao);
+							await pausaDeConversa(RITMO.falaParaCard);
+							config.writer?.(cardDaTool);
+							streamedArtifactIds.push(artifactId);
 							// A COTA NA TELA É A COTA ANCORADA.
 							//
 							// O estado guardava a PRIMEIRA simulação e nunca acompanhava a
@@ -1029,25 +1067,30 @@ export function createConverseNode(model: BaseChatModel) {
 			}
 		};
 
-		// No reveal em dois tempos, o PRIMEIRO beat só apresenta — nenhuma pergunta
-		// pode sair nele (ela é o segundo balão, depois dos cards). Como a pergunta
-		// agora sai na ORDEM em que o modelo escreve (e não guardada pro fim), o
-		// bloqueio precisa estar ligado ANTES do beat, não depois.
-		if (revealEmDoisTempos) filter.descartarPerguntaSegurada();
+		// No turno do reveal o beat é ÚNICO e só apresenta — nenhuma pergunta pode
+		// sair nele. Como a pergunta sai na ORDEM em que o modelo escreve (e não
+		// guardada pro fim), o bloqueio precisa estar ligado ANTES do beat.
+		if (turnoDeApresentacao) filter.descartarPerguntaSegurada();
 		await executarBeat();
 
-		const streamedArtifactIds: string[] = [];
-		if (revealEmDoisTempos) {
-			// Fecha o balão do anúncio e joga os CARDS na tela AGORA, entre as duas
-			// falas — é o que o cliente vê antes da pergunta. Emitir aqui (e não no
-			// `persist`) é seguro porque `artifact` é o único evento que os adapters
-			// desenham sem reler a meta do banco; `gate`/`meta-update` continuam
-			// esperando a escrita. O `persist` grava todos e pula os já emitidos.
+		if (turnoDeApresentacao) {
+			// O TURNO DA BUSCA SÓ APRESENTA. A PERGUNTA É DO TURNO SEGUINTE.
+			//
+			// Visto ao vivo (Kairo, 2026-07-30): o mesmo turno dizia "Encontrei uma
+			// excelente opção pra você: carta de R$ 180.339 no Itaú" e, três linhas
+			// abaixo, "ANTES de eu te indicar a melhor opção, você já fez consórcio
+			// antes?". As duas falas se contradizem — ele já tinha indicado. Um
+			// vendedor mostra o que achou, deixa a pessoa OLHAR, e pergunta na próxima
+			// vez que abre a boca.
+			//
+			// Então o segundo beat (a pergunta do gate) SAIU daqui. O gate segue ativo
+			// no estado: `emitCard` não emite os chips neste turno (senão eles caem
+			// órfãos, sem pergunta nenhuma acima), e no turno seguinte o funil pergunta
+			// normalmente, com os chips colados na pergunta.
+			//
 			// `flushPending` (não `flush`): libera a cauda MAS não a pergunta segurada
 			// — e logo em seguida a descartamos. A instrução "não pergunte agora" não
-			// bastava; o modelo emendava a pergunta no fim do anúncio e ela saía duas
-			// vezes (uma aqui, outra no balão de baixo). Quem garante a estrutura é o
-			// código; o texto continua todo dele.
+			// bastava; o modelo emendava a pergunta no fim do anúncio.
 			const cauda = filter.flushPending();
 			if (cauda) {
 				const ev: TurnEvent = { type: "text-delta", text: cauda };
@@ -1056,31 +1099,49 @@ export function createConverseNode(model: BaseChatModel) {
 			}
 			config.writer?.({ type: "text-boundary" });
 			events.push({ type: "text-boundary" });
+			// Os CARDS entram AGORA, logo abaixo da fala que os anunciou — e um de
+			// cada vez, com respiro entre eles. Emitir aqui (e não no `persist`) é
+			// seguro porque `artifact` é o único evento que os adapters desenham sem
+			// reler a meta do banco; `gate`/`meta-update` continuam esperando a
+			// escrita. O `persist` grava todos e pula os já emitidos.
+			let primeiro = true;
 			for (const ev of state.events) {
 				if (ev.type !== "artifact") continue;
+				await pausaDeConversa(primeiro ? RITMO.falaParaCard : RITMO.cardParaCard);
+				primeiro = false;
 				config.writer?.(ev);
 				streamedArtifactIds.push(ev.toolCallId);
 			}
 
-			// Segundo balão: agora sim a condução do funil. O modelo sabe que acabou
-			// de mostrar as opções — a pergunta nasce dessa deixa ("antes de te
-			// recomendar uma delas..."), com as palavras dele.
-			const deixaDoSegundoBeat = new HumanMessage(
-				"[instrução do sistema — o cliente NÃO vê este texto, não o repita] Siga para a " +
-					"pergunta, em mensagem separada.",
+			// A ÂNCORA: o turno não pode fechar largando os cards e sumindo.
+			//
+			// Visto ao vivo (Kairo, 2026-07-30): tirar a pergunta do funil daqui
+			// resolveu a contradição, mas deixou o turno terminar no carrossel, sem
+			// nada convidando o cliente a reagir. Vendedor não faz isso — ele mostra e
+			// pergunta "alguma dessas te chamou atenção?".
+			//
+			// A diferença pro que estava errado antes é o ASSUNTO da pergunta: aqui ela
+			// é sobre o que ESTÁ NA TELA, não sobre o histórico do cliente. Por isso o
+			// contexto do gate NÃO entra neste beat — sem ele, o modelo não tem como
+			// puxar a pergunta de experiência, e a âncora nasce do que ele acabou de
+			// mostrar. As palavras continuam dele.
+			await pausaDeConversa(RITMO.cardParaFala);
+			const deixaDaAncora = new HumanMessage(
+				"[instrução do sistema — o cliente NÃO vê este texto, não o repita] Feche o turno " +
+					"com a âncora, em mensagem separada e curta.",
 			);
-			// Segundo balão: aqui a pergunta é justamente o ponto.
 			filter.liberarPerguntas();
-			newMessages.push(deixaDoSegundoBeat);
+			newMessages.push(deixaDaAncora);
 			loopMessages = [
 				montarSystem(
-					`Você ACABOU de apresentar as opções encontradas e os cards já estão na tela. ` +
-						`Agora, numa mensagem NOVA e curta, emende o próximo passo: antes de recomendar ` +
-						`UMA delas, você precisa saber isso. ` +
-						`${buildGateContextText(gateAtivo, Boolean(state.gate)) ?? ""}`,
+					`Os cards com as opções JÁ estão na tela, logo abaixo da sua mensagem. Feche com ` +
+						`UMA frase curta convidando o cliente a reagir ao que ele está vendo — qual delas ` +
+						`chamou a atenção dele, o que achou. É só isso: não puxe assunto novo, não peça ` +
+						`dado nenhum, não pergunte sobre a experiência dele com consórcio e não repita os ` +
+						`números que você já disse.`,
 				),
 				...loopMessages.slice(1),
-				deixaDoSegundoBeat,
+				deixaDaAncora,
 			];
 			await executarBeat(false);
 		}

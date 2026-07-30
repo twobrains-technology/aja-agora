@@ -86,11 +86,24 @@ function classifyParts(message: AjaUIMessage): RenderablePart[] {
 	return out;
 }
 
+/** O rótulo de status ("Comparando grupos") só vale enquanto NADA saiu depois
+ * dele. Antes, a busca varria as parts até achar qualquer `data-tool` — então,
+ * já com o carrossel e a fala na tela, o chip continuava anunciando uma busca
+ * que tinha acabado. Status vencido é pior que status nenhum: é ele que faz o
+ * respiro entre os blocos parecer sistema pendurado. */
 function latestToolName(message: AjaUIMessage): string | undefined {
 	for (let i = message.parts.length - 1; i >= 0; i--) {
 		const part = message.parts[i];
 		if (part.type === "data-tool") {
 			return (part.data as ToolStatusPartData).tool;
+		}
+		if (part.type === "text" && part.text.trim().length > 0) return undefined;
+		if (
+			part.type === "data-artifact" ||
+			part.type === "data-gate" ||
+			part.type === "data-welcome"
+		) {
+			return undefined;
 		}
 	}
 	return undefined;
@@ -232,12 +245,18 @@ export function ChatMessage({
 	const hasNonTextVisuals = inlineSegments.some((s) => s.kind !== "text");
 	const isStreamingEmpty = isStreaming && isLast && totalTextLength === 0 && !hasNonTextVisuals;
 	const currentTool = latestToolName(message);
+	// O TURNO NÃO PODE FICAR MUDO NO MEIO.
+	//
+	// `!hasNonTextVisuals` matava o indicador assim que o primeiro card entrava —
+	// e é justamente DEPOIS do card que o turno respira (ritmo.ts) antes da fala
+	// seguinte. O cliente via card, silêncio e tela parada: "parece que o sistema
+	// está lento" (Kairo, 2026-07-30). Enquanto o turno está aberto e é o último
+	// da lista, o agente está trabalhando — e isso tem que aparecer.
 	const showInflightDots =
 		isStreaming &&
 		isLast &&
 		!isStreamingEmpty &&
-		!hasNonTextVisuals &&
-		(currentTool !== undefined || totalTextLength > 20);
+		(currentTool !== undefined || hasNonTextVisuals || totalTextLength > 20);
 
 	const firstTransition = transitionParts[0]?.data;
 
@@ -371,7 +390,10 @@ export function ChatMessage({
 
 					{showInflightDots && (
 						<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-							<StreamingDots tool={currentTool} />
+							{/* Sem tool em voo, o indicador é o BALÃO de digitando — o mesmo
+							    desenho da fala do assistente. Com tool, a pill de status já é
+							    o container e se basta. */}
+							<StreamingDots tool={currentTool} emBalao={currentTool === undefined} />
 						</motion.div>
 					)}
 
