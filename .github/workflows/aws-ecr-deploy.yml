@@ -270,28 +270,30 @@ jobs:
               --query 'services[0].deployments | length(@)' \
               --output text)
             echo "[$i/30] PRIMARY rolloutState=$state deployments=$count"
-            if [ "$state" = "COMPLETED" ] && [ "$count" = "1" ]; then
-              tasks=$(aws ecs list-tasks --cluster "$CLUSTER" --service-name "$SERVICE" \
-                --desired-status RUNNING --region "${{ env.AWS_REGION }}" \
-                --query 'taskArns' --output text)
-              if [ -z "$tasks" ]; then
-                echo "::error::rollout COMPLETED mas nenhuma task RUNNING no service"
-                exit 1
-              fi
-              running=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks $tasks \
+            # O ROLLBACK APARECE NOS EVENTOS, E SÓ ALI.
+            #
+            # `ecs:ListTasks`/`DescribeTasks` seriam a prova mais direta (comparar o
+            # digest em execucao com o esperado), mas a role `gha-ecs-deploy` NAO tem
+            # essas permissoes — tentar isso quebrou o deploy 3abb5c3 com
+            # AccessDeniedException DEPOIS de a imagem ja ter subido. Os eventos vem
+            # no mesmo `describe-services` que o loop ja chama, sem IAM novo.
+            rollback=$(aws ecs describe-services \
+              --cluster "$CLUSTER" --services "$SERVICE" \
+              --region "${{ env.AWS_REGION }}" \
+              --query 'services[0].events[0:12].message' --output text \
+              | grep -c -i "rolling back\|deployment failed" || true)
+            if [ "$rollback" != "0" ]; then
+              echo "::error::DEPLOY REVERTIDO — o ECS derrubou a task nova e voltou pra anterior."
+              echo "::error::esperado em execucao: $TAG ($EXPECTED)"
+              echo "Cheque por que a task nova morreu (log group /ecs/tb/${{ steps.vars.outputs.env }}):"
+              echo "  causa mais comum: migration destrutiva pendente barrada pelo migrate-guard."
+              aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
                 --region "${{ env.AWS_REGION }}" \
-                --query 'tasks[].containers[0].imageDigest' --output text)
-              echo "Digest(s) em execucao: $running"
-              for d in $running; do
-                if [ "$d" != "$EXPECTED" ]; then
-                  echo "::error::DEPLOY REVERTIDO — o ECS voltou pra imagem anterior."
-                  echo "::error::esperado $EXPECTED ($TAG), rodando $d"
-                  echo "Cheque por que a task nova morreu (log group /ecs/tb/${{ steps.vars.outputs.env }}):"
-                  echo "  causa mais comum: migration destrutiva pendente barrada pelo migrate-guard."
-                  exit 1
-                fi
-              done
-              echo "Rollout completed — imagem do commit ${{ steps.vars.outputs.sha_short }} em execucao."
+                --query 'services[0].events[0:6].[createdAt,message]' --output text
+              exit 1
+            fi
+            if [ "$state" = "COMPLETED" ] && [ "$count" = "1" ]; then
+              echo "Rollout completed — sem rollback nos eventos; esperado $TAG ($EXPECTED)."
               exit 0
             fi
             if [ "$state" = "FAILED" ]; then
