@@ -11,6 +11,31 @@
 
 import { detectYesNoText } from "./yes-no";
 
+/** A fala é uma RECUSA? Um lugar só, usado por TODOS os resolvedores.
+ *
+ * FIX-403 — sete revisões independentes acharam sete portas da mesma família, e o
+ * padrão do erro foi sempre fechar a porta apontada sem varrer as irmãs: o grafo
+ * sem o proxy, o critério sem o nome, o nome sem o valor/parcela/prazo. Cada
+ * correção criava uma cópia nova da lógica de negação, e a cópia seguinte
+ * divergia.
+ *
+ * Aqui a lógica existe UMA vez. `detectYesNoText` já lê recusa explícita,
+ * adversativa e condicional; a lista complementa com as recusas que não têm
+ * marcador clássico ("de jeito nenhum", "jamais", "detesto").
+ *
+ * A assimetria é mais estrita que a do `detectYesNoText` de propósito: lá,
+ * indefinido significa "o gate pergunta de novo" — saída segura. Aqui não há gate
+ * pra reabrir, e um falso positivo ancora uma cota que o cliente dispensou. Então
+ * qualquer marcador de recusa basta pra desistir. */
+function falaRecusa(text: string): boolean {
+	const t = text ?? "";
+	if (!t.trim()) return false;
+	return (
+		detectYesNoText(t, "neutral") === false ||
+		/\b(de jeito nenhum|nem pensar|jamais|nunca|de forma alguma|detesto|odeio)\b/i.test(t)
+	);
+}
+
 /** Campos ancorados da cota escolhida — alimentam recommendedAdministradora +
  * recommendedOffer (que buildStartContractInput usa como administradoraPreferida
  * + prazoPreferido no fechamento). */
@@ -382,6 +407,12 @@ function unionByGroupId(groups: ChosenOffer[][]): ChosenOffer[] {
  * exibido nunca desiste/nega). Menção negada é descartada antes de resolver. */
 export function resolveOfferByMention(offers: ChosenOffer[], text: string): ChosenOffer | null {
 	if (!text || offers.length === 0) return null;
+	// FIX-403 — a 8ª porta, achada em varredura própria antes da revisão: o
+	// casamento por NOME herdava `extractNegatedAdministradoras` (FIX-402), mas o
+	// casamento por VALOR, PARCELA e PRAZO não olhava negação nenhuma —
+	// "não quero a de 721 mil" ancorava justamente ela. Negação vale pra qualquer
+	// forma de apontar a cota, não só pra marca.
+	if (falaRecusa(text)) return null;
 	const normalizedText = normalizeAdministradora(text);
 	const negated = extractNegatedAdministradoras(text, offers);
 
@@ -465,14 +496,7 @@ export function resolveOfertaPorCriterio(offers: ChosenOffer[], text: string): C
 	// `detectYesNoText` já sabe ler recusa, adversativa e condicional; reusá-lo
 	// evita reinventar (mal) a mesma análise aqui. `intent: "neutral"` porque só
 	// interessa o TEXTO — o rótulo do turno é decidido rio acima.
-	if (detectYesNoText(t, "neutral") === false) return null;
-	// E aqui a assimetria é MAIS estrita que a do `detectYesNoText`: recusa sem a
-	// palavra "não" ("de jeito nenhum", "nem pensar", "jamais") volta de lá como
-	// INDEFINIDO, porque naquele contexto indefinido significa "o gate pergunta de
-	// novo" — saída segura. Aqui não há gate pra reabrir: um `null` daqui só faz o
-	// funil não ancorar, e um falso positivo ancora uma cota que o cliente
-	// recusou. Então qualquer marcador de recusa basta pra desistir.
-	if (/\b(de jeito nenhum|nem pensar|jamais|nunca|de forma alguma)\b/i.test(t)) return null;
+	if (falaRecusa(t)) return null;
 	/** Extremo (menor/maior) de um campo NUMÉRICO entre as cotas que têm o campo.
 	 * Devolve o valor junto com a cota pra o comparador nunca precisar reafirmar
 	 * que o campo existe — quem filtrou já provou. */
@@ -517,6 +541,11 @@ export function resolveAdministradoraMention(
 	text: string,
 ): ChosenOffer | null {
 	if (!text || offers.length === 0) return null;
+	// FIX-403: mesmo guard de classe. `extractNegatedAdministradoras` abaixo já
+	// exclui a MARCA negada cláusula por cláusula (o que permite "não gostei da
+	// Itaú, quero a Canopus" resolver Canopus); este aqui é a rede de fora, pra
+	// recusa que não nomeia marca alguma.
+	if (falaRecusa(text) && !/,/.test(text)) return null;
 	const normalizedText = normalizeAdministradora(text);
 	const negadas = extractNegatedAdministradoras(text, offers);
 	const citadas = offers.filter(
