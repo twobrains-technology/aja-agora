@@ -60,6 +60,16 @@ const FUNIL_COMPLETO: FunnelState = {
 		groupId: "grupo-teste-1",
 		avgBidValue: 99_000,
 	},
+	// FIX-413 — a cota do CONTRATO é um campo à parte da cota EM FOCO, e o valor
+	// aqui é DIFERENTE de propósito: se a projeção confundisse os dois, este
+	// fixture não acusaria nada com os dois iguais.
+	contractOffer: {
+		administradora: "Rodobens",
+		creditValue: 171_000,
+		termMonths: 96,
+		monthlyPayment: 2_719,
+		groupId: "grupo-teste-2",
+	},
 	motivationAsked: true,
 	motivationMirrored: true,
 	experiencePrev: "doubts",

@@ -82,6 +82,8 @@ export type FunnelState = {
 	revealCompleted: boolean;
 	recommendedAdministradora?: string;
 	recommendedOffer?: ConversationMetadata["recommendedOffer"];
+	/** A cota do CONTRATO — só de ação estruturada. Ver personas.ts (FIX-413). */
+	contractOffer?: ConversationMetadata["contractOffer"];
 	// FIX-360 — rapport (motivo + espelho, `qualify-state.ts` `shouldAskMotive`/
 	// `shouldMirrorMotivation`, reusados tal-e-qual): marca que o beat de cada
 	// turno-próprio já rodou, pra não repetir a pergunta/o espelho.
@@ -180,6 +182,7 @@ export const FUNNEL_KEYS = {
 	revealCompleted: true,
 	recommendedAdministradora: true,
 	recommendedOffer: true,
+	contractOffer: true,
 	motivationAsked: true,
 	motivationMirrored: true,
 	experiencePrev: true,
@@ -253,6 +256,7 @@ export function funnelFromMeta(meta: ConversationMetadata): FunnelState {
 		decisionAccepted: meta.decisionAccepted,
 		scarcityDispatched: meta.scarcityDispatched,
 		escolha: meta.escolha,
+		contractOffer: meta.contractOffer,
 		handoffSuggested: meta.handoffSuggested,
 		handoffReason: meta.handoffReason,
 		contractFormDispatched: meta.contractFormDispatched,

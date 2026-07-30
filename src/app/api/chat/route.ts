@@ -539,9 +539,25 @@ export async function POST(req: NextRequest) {
 						// de novo aqui.
 						if (body.action?.kind === "interest") {
 							const fresh = await reloadMeta(conversationId);
-							const administradora = fresh.recommendedAdministradora ?? body.action.administradora;
-							if (!fresh.decisionDispatched) {
-								await persistMeta(conversationId, { ...fresh, decisionDispatched: true });
+							// FIX-413 — a marca vem do PAYLOAD DO CARD que o cliente tocou, e
+							// só cai pra meta se o card não a trouxer. Era o contrário: a meta
+							// (escrita por resolução de TEXTO) ganhava do dado do clique, então
+							// até o caminho estruturado herdava o palpite do parser.
+							const administradora = body.action.administradora ?? fresh.recommendedAdministradora;
+							const ancoraDoClique =
+								administradora && fresh.recommendedOffer?.administradora === administradora
+									? fresh.recommendedOffer
+									: administradora
+										? ({ administradora } as typeof fresh.contractOffer)
+										: undefined;
+							if (!fresh.decisionDispatched || (ancoraDoClique && !fresh.contractOffer)) {
+								await persistMeta(conversationId, {
+									...fresh,
+									decisionDispatched: true,
+									// O clique É a ação estruturada — é ele que pode amarrar
+									// dinheiro. Ver personas.ts `contractOffer` (FIX-413).
+									...(ancoraDoClique ? { contractOffer: ancoraDoClique } : {}),
+								});
 							}
 							if (fresh.contractFormDispatched === true) {
 								await writeAndSaveText(
@@ -595,6 +611,23 @@ export async function POST(req: NextRequest) {
 								...fresh,
 								...(administradora ? { recommendedAdministradora: administradora } : {}),
 								...(recommendedOffer ? { recommendedOffer } : {}),
+								// FIX-413 — este é o caminho estruturado por excelência: o
+								// `groupId` veio do card que o cliente TOCOU e foi resolvido
+								// contra os artifacts REAIS já exibidos (`resolveChosenOffer`).
+								// Só amarra o contrato quando a cota foi de fato resolvida —
+								// cair pra `recommendedAdministradora` aqui reintroduziria o
+								// texto no caminho do dinheiro.
+								...(chosen?.administradora
+									? {
+											contractOffer: {
+												...(chosen.groupId ? { groupId: chosen.groupId } : {}),
+												administradora: chosen.administradora,
+												creditValue: chosen.creditValue,
+												termMonths: chosen.termMonths,
+												monthlyPayment: chosen.monthlyPayment,
+											} as typeof fresh.contractOffer,
+										}
+									: {}),
 								// Libera present_contract_form na fase closing da tool-policy
 								// (mesma marca do clique "Tenho interesse", FIX-38).
 								decisionDispatched: true,
@@ -710,7 +743,10 @@ export async function POST(req: NextRequest) {
 							if (
 								administradoraConflictsWithRegisteredProposal(
 									existingProposal?.administradora,
-									freshMeta.recommendedAdministradora,
+									// FIX-413 — compara contra a cota do CONTRATO. Comparar com
+									// `recommendedAdministradora` fazia a trava disparar (ou não)
+									// conforme o último palpite do parser sobre o texto.
+									freshMeta.contractOffer?.administradora ?? freshMeta.recommendedAdministradora,
 								)
 							) {
 								await writeAndSaveText(

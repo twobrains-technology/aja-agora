@@ -170,16 +170,20 @@ describeIfDb("FIX-406 — nomear cota move a conversa, não assina contrato", ()
 		expect(trilha.some((t) => t.includes("decision"))).toBe(true);
 	});
 
-	it("o formulário de contrato leva a cota que o cliente NOMEOU — o invariante de dinheiro", async () => {
-		// Este é o teste que fecha a distância entre "não gravou `escolha`" e "não
-		// comprometeu dinheiro errado" — que NÃO são a mesma coisa, e confundi-las
-		// foi o que deixou as rodadas anteriores parecerem resolvidas.
+	it("SUPERADO PELO FIX-413: nomear NÃO leva mais a cota ao formulário", async () => {
+		// ⚠️ Este teste afirmava o CONTRÁRIO até o FIX-413, e a inversão é o registro
+		// mais honesto do que aconteceu nesta campanha.
 		//
-		// Quem chega ao contrato é `recommendedAdministradora` (emit-card.ts, PASSO
-		// 5), não `escolha`. Ou seja: mesmo com a inferência de escolha removida, se
-		// a re-âncora de conversa seguisse uma marca errada, o cliente receberia o
-		// formulário da cota errada — o bug de dinheiro inteiro, intacto, num campo
-		// diferente. Por isso a re-âncora é testada aqui pelo que ela ENTREGA.
+		// Eu escrevi aqui: "quem chega ao contract_form é recommendedAdministradora,
+		// não escolha — confundir os dois é o que fez as rodadas anteriores parecerem
+		// resolvidas". Estava certo no diagnóstico e ERRADO na conclusão: em vez de
+		// tirar o texto do caminho do dinheiro, eu passei a EXIGIR que o texto
+		// acertasse a marca. Ou seja, transformei o bug num requisito, e blindei-o
+		// com um teste.
+		//
+		// Duas revisões independentes depois, a separação chegou: `contractOffer` só
+		// nasce de ação estruturada, e o formulário lê apenas ela. Nomear uma marca
+		// continua movendo a CONVERSA (o teste acima), e deixou de amarrar dinheiro.
 		const r = await runScenario({
 			busca: buscaDoMock(96),
 			metaInicial: ANTES_DA_BUSCA,
@@ -198,9 +202,10 @@ describeIfDb("FIX-406 — nomear cota move a conversa, não assina contrato", ()
 			.flatMap((t) => t.events)
 			.find((e) => e.type === "artifact" && e.artifactType === "contract_form");
 		expect(form, "o formulário precisa ter saído — senão o teste não prova nada").toBeDefined();
-		expect((form as { payload: { administradora?: string } }).payload.administradora).toBe(
-			"RODOBENS",
-		);
+		expect(
+			(form as { payload: { administradora?: string } }).payload.administradora,
+		).toBeUndefined();
+		expect(r.meta.contractOffer).toBeUndefined();
 	});
 
 	it("recusar a marca nomeada não ancora coisa nenhuma (a 8ª revisão, in loco)", async () => {

@@ -255,6 +255,22 @@ export type ConversationMetadata = {
 	 * card de decisão e do passo 5 (contratar). Capturada do recommendation_card/
 	 * simulation_result quando revealCompleted é setado. */
 	recommendedAdministradora?: string;
+	/** A COTA DO CONTRATO — FIX-413. Distinta de `recommendedOffer`, que é a cota
+	 * EM FOCO na conversa.
+	 *
+	 * `recommendedOffer` é escrita por resolução de TEXTO de propósito: é ela que
+	 * faz o agente acompanhar a atenção do cliente ("e a Rodobens?"). Errar ali
+	 * custa uma frase confusa. Este campo é o oposto: nasce SÓ de ação estruturada
+	 * — clique no card (`choose_offer` resolve o groupId contra os artifacts REAIS;
+	 * `interest` traz a marca no payload do card) ou da tool `escolher_cota`
+	 * (groupId conferido + veto de recusa). Errar aqui custa dinheiro.
+	 *
+	 * Dez revisões independentes acharam a mesma classe de defeito porque o
+	 * `contract_form` lia `recommendedAdministradora` — ou seja, o contrato era
+	 * amarrado pelo campo que o texto escreve. A separação é o que encerra isso:
+	 * as heurísticas de linguagem continuam imperfeitas, mas o pior desfecho delas
+	 * passa a ser uma conversa errada, não um contrato errado. */
+	contractOffer?: ConversationMetadata["recommendedOffer"];
 	/** FIX-68 — valor-alvo (creditMax) usado na ÚLTIMA descoberta que produziu o
 	 * reveal. Baseline pra distinguir "trocar de faixa de valor" (re-buscar é
 	 * legítimo) de "re-revelar a MESMA faixa em loop" (BUG-REVEAL-LOOP, que NÃO

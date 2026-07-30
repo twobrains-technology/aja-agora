@@ -1151,6 +1151,20 @@ export function createConverseNode(model: BaseChatModel) {
 											monthlyPayment: escolhaRef.cota.monthlyPayment,
 											origem: "mencao" as const,
 										},
+										// FIX-413 — a COTA DO CONTRATO. Este é um dos dois caminhos
+										// autorizados a amarrar dinheiro: o `groupId` veio da tool,
+										// foi conferido contra as ofertas REALMENTE exibidas nesta
+										// conversa, e o efeito é vetado em turno de recusa
+										// (FIX-405/410). O outro caminho é o clique de card
+										// (route.ts). Texto livre não escreve aqui — é essa a
+										// parede que dez revisões pediram.
+										contractOffer: {
+											...(escolhaRef.cota.groupId ? { groupId: escolhaRef.cota.groupId } : {}),
+											administradora: escolhaRef.cota.administradora,
+											creditValue: escolhaRef.cota.creditValue,
+											termMonths: escolhaRef.cota.termMonths,
+											monthlyPayment: escolhaRef.cota.monthlyPayment,
+										} as FunnelState["contractOffer"],
 									}
 								: {}),
 						},

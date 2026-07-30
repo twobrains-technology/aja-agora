@@ -19,13 +19,18 @@
 // falha por padrão e precisa ser declarado aqui, com justificativa. É a diferença
 // entre "esqueci de varrer as irmãs" e "o teste me obrigou a olhar".
 //
-// ⚠️ O QUE ESTE GUARD **NÃO** RESOLVE, e precisa ser dito: `escolha` não é o
-// campo que move dinheiro. Quem chega ao `contract_form` é
-// `recommendedAdministradora` (emit-card.ts, PASSO 5). Este guard trava a
-// declaração formal de escolha; a separação estrutural entre "cota em foco"
-// (conversa, texto pode mexer) e "cota do contrato" (dinheiro, só ação
-// estruturada) é uma decisão de jornada em aberto, do Kairo. Um guard que promete
-// mais do que entrega seria pior que nenhum.
+// ── ATUALIZADO PELO FIX-413 ──
+//
+// A 1ª versão deste arquivo trazia uma ressalva honesta: "`escolha` não é o campo
+// que move dinheiro; quem chega ao contract_form é `recommendedAdministradora`, e
+// a separação estrutural é decisão de jornada em aberto". A décima revisão
+// independente confirmou a ressalva medindo NOVE falas que amarravam o contrato
+// na marca errada, e a separação foi feita.
+//
+// Agora o guard cobre os DOIS campos, e `contractOffer` é o que importa: ele é o
+// único que o `contract_form` lê (emit-card.ts, PASSO 5). `recommendedOffer`
+// segue livre pro texto mexer — ela é a cota EM FOCO na conversa, e errar ali
+// custa uma frase confusa, não um contrato.
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -35,6 +40,13 @@ const RAIZ = join(process.cwd(), "src");
 /** Quem pode CRIAR uma `escolha`. Cada entrada precisa de um porquê que sobreviva
  * à pergunta "isto é ação estruturada do cliente, ou interpretação de texto?". */
 const AUTORIZADOS = new Map<string, string>([
+	[
+		"app/api/chat/route.ts",
+		// Cliques de card: `choose_offer` resolve o groupId contra os artifacts
+		// REAIS já exibidos (`resolveChosenOffer`); `interest` traz a marca no
+		// payload do próprio card. Os dois são dado do servidor, não texto.
+		"cliques de card (choose_offer / interest) — payload estruturado",
+	],
 	[
 		"lib/agent/langgraph/nodes/converse.ts",
 		// A tool `escolher_cota`: o modelo aponta QUAL cota, o servidor confere que
@@ -47,7 +59,7 @@ const AUTORIZADOS = new Map<string, string>([
 /** Cria uma `escolha` do zero (literal de objeto), em oposição a PROJETAR uma que
  * já existe (`escolha: funnel.escolha`, `escolha: meta.escolha`) — que é o que
  * `emit.ts` e `state.ts` legitimamente fazem ao copiar estado entre camadas. */
-const CRIA_ESCOLHA = /\bescolha:\s*\{/;
+const CRIA_ESCOLHA = /\b(escolha|contractOffer):\s*\{/;
 
 function arquivosTs(dir: string): string[] {
 	const saida: string[] = [];

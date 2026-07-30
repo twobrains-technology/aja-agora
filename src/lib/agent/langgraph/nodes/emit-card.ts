@@ -239,8 +239,19 @@ export async function emitCardNode(
 			payload: enrichContractFormPayload(
 				{
 					conversationId: state.conversationId,
-					...(funnel.recommendedAdministradora
-						? { administradora: funnel.recommendedAdministradora }
+					// FIX-413 — o formulário lê a COTA DO CONTRATO, nunca a cota em
+					// FOCO. `recommendedAdministradora` é escrita por resolução de
+					// texto (é ela que faz a conversa acompanhar o cliente), e era
+					// exatamente por ler esse campo aqui que dez revisões
+					// independentes acharam a mesma classe de defeito: uma frase mal
+					// interpretada amarrava o contrato na marca errada.
+					//
+					// Sem ação estruturada o formulário sai SEM administradora — o
+					// cliente escolhe — em vez de sair amarrado no palpite do parser.
+					// Ausente é melhor que errado, a mesma regra que o `avgBidValue`
+					// já segue (FIX-375).
+					...(funnel.contractOffer?.administradora
+						? { administradora: funnel.contractOffer.administradora }
 						: {}),
 				},
 				identity,

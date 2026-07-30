@@ -67,6 +67,7 @@ export function projectToMeta(state: AgentGraphStateType): ConversationMetadata 
 		decisionAccepted: funnel.decisionAccepted,
 		scarcityDispatched: funnel.scarcityDispatched,
 		escolha: funnel.escolha,
+		contractOffer: funnel.contractOffer,
 		// O encaminhamento pro atendente humano PRECISA sobreviver ao turno: é o
 		// que o painel lê pra alguém assumir a conversa.
 		...(funnel.handoffSuggested ? { handoffSuggested: true } : {}),
