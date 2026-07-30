@@ -62,10 +62,17 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe("show_others — 'Ver outras opções' do card da recomendada (FIX-108)", () => {
-	it("conduz pra comparação via agente e registra o clique", async () => {
+	it("conduz pra comparação DETERMINÍSTICA e registra o clique", async () => {
+		// ⚠️ Asserção TROCADA em 2026-07-30 (FIX-398), de propósito e não por
+		// conveniência: este caso afirmava `processText(…, "Quero ver outras
+		// opções")` — ou seja, cimentava o anti-padrão de mandar a frase pro MODELO.
+		// O comparativo das ofertas reais é montado pelo SERVIDOR
+		// (`buildOtherOptions`); delegando ao modelo, ele anuncia opções que não tem
+		// como mostrar. O nome antigo do teste era "via agente", que já dizia isso.
+		// Cobertura do caminho novo: `interactive-handlers.todas-portas.fix-398`.
 		const handled = await dispatch("show_others", "Ver outras opções");
 		expect(handled).toBe(true);
-		expect(mocks.processText).toHaveBeenCalledWith(WA, "Quero ver outras opções", undefined);
+		expect(mocks.processText).not.toHaveBeenCalled();
 		expect(mocks.saveMessage).toHaveBeenCalledWith(
 			CONV_ID,
 			"user",

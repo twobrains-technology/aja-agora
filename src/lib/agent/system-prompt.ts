@@ -770,7 +770,12 @@ const SHARED_CONCIERGE_EXAMPLES: ExamplePair[] = [
 		context: "Primeira saudação",
 		userMessage: "oi",
 		assistantResponse:
-			"Oi! Aqui você conecta com especialistas pra imóvel, automóvel ou serviços. Em que posso te ajudar hoje?",
+			// FIX-389: dizia "imóvel, automóvel ou serviços" — e serviços foi extinto
+			// (o `turn-analyzer.ts:25` já sabe disso; este exemplo não sabia). Como é
+			// few-shot, o modelo IMITAVA a oferta e abria a porta pra um segmento que
+			// o schema recusa depois — a esposa do Bernardo simulou uma carta de
+			// serviços em 22/07 e levou "tive um problema na integração".
+			"Oi! Aqui você conecta com especialistas pra imóvel, carro ou moto. Em que posso te ajudar hoje?",
 	},
 	{
 		context: "Usuário explicito sobre categoria — sistema vai rotear, você não finge",

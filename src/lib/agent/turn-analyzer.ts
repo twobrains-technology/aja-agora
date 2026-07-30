@@ -12,6 +12,18 @@ const ANALYZER_MODEL = process.env.AI_ANALYZER_MODEL ?? "claude-haiku-4-5";
 // 6s permite Haiku completar com folga; usuário nem percebe diferença.
 const ANALYZER_TIMEOUT_MS = 6000;
 
+export const userIntentAnalyzerEnum = z.enum([
+	"ready_to_proceed",
+	"declines",
+	"wants_more_options",
+	"asking_question",
+	"providing_info",
+	"expressing_doubt",
+	"confused",
+	"off_topic",
+	"neutral",
+]);
+
 export const turnAnalysisSchema = z.object({
 	reasoning: z
 		.string()
@@ -94,29 +106,23 @@ export const turnAnalysisSchema = z.object({
 		.describe(
 			"FIX-241 (âncora de dinheiro, vertical imóvel): valor de FGTS disponível que o usuário pode usar como lance embutido na compra do imóvel (ex: 'tenho uns 15 mil de FGTS', 'posso usar meu FGTS de 20 mil'). Só relevante pra imóvel. null se não mencionado.",
 		),
-	userIntent: z
-		.enum([
-			"ready_to_proceed",
-			"wants_more_options",
-			"asking_question",
-			"providing_info",
-			"expressing_doubt",
-			"confused",
-			"off_topic",
-			"neutral",
-		])
-		.describe(
-			"Intenção da mensagem atual, usada pra decidir se mostra botões estruturados ou deixa fluir conversa livre. " +
-				"ready_to_proceed = quer AVANÇAR no funil / prosseguir pra próxima etapa ('bora', 'vamos', 'pode ir', 'ok seguir', 'quero começar'). " +
-				"wants_more_options = quer ver MAIS/TODAS/OUTRAS opções ALÉM das que já foram mostradas ('quero ver todos', 'ver todas as opções', 'tem mais opções?', 'mostra as outras', 'quero ver mais', 'só essas?'). NÃO confundir com ready_to_proceed: aqui o usuário NÃO quer decidir/avançar, quer AMPLIAR o que viu. Só use quando já houve uma apresentação de opções antes. " +
-				"asking_question = pergunta sobre o produto/processo ('como funciona o lance?', 'e o seguro?', 'quanto custa a taxa?'). " +
-				"providing_info = já respondeu/colaborou com dado concreto ('uns 200 mil', '2 anos', 'tenho reserva'). " +
-				"expressing_doubt = HESITANDO sobre uma decisão que ENTENDE, ainda avaliando ('não sei', 'to em dúvida', 'depende', 'tenho que pensar', 'deixa eu pensar aqui'). NÃO usar quando o usuário não entendeu a pergunta/card em si — isso é confused. " +
-				"confused = NÃO ENTENDEU a pergunta/card/opção que acabou de ver, pede pra reexplicar mais simples ('não entendi', 'como assim?', 'não sei do que você tá falando', 'que isso quer dizer?', 'oi?'). Diferente de expressing_doubt: aqui a pessoa entende a pergunta mas ainda não decidiu; confused é quando a PRÓPRIA PERGUNTA não ficou clara. " +
-				"off_topic = assunto fora do consórcio ('você e robô?', 'tudo bem?', piadas, smalltalk). " +
-				"neutral = afirmação curta de acolhimento sem direção clara ('entendi', 'ah ta', 'legal', 'show'). " +
-				"Em dúvida, prefira neutral.",
-		),
+	// Exportado pro teste de amarra dos espelhos (enum-intent-espelhos.fix-399c) —
+	// este É o que a LLM de fato emite; se ele divergir de `UserIntent`, o
+	// modelo nunca consegue produzir o rótulo novo, e é o espelho mais silencioso
+	// de todos porque nada mais depende dele em compile-time.
+	userIntent: userIntentAnalyzerEnum.describe(
+		"Intenção da mensagem atual, usada pra decidir se mostra botões estruturados ou deixa fluir conversa livre. " +
+			"ready_to_proceed = quer AVANÇAR no funil / prosseguir pra próxima etapa ('bora', 'vamos', 'pode ir', 'ok seguir', 'quero começar'), OU confirma/aceita o que acabou de ser perguntado. " +
+			"declines = RECUSA o que foi oferecido/perguntado — diz não, dispensa, descarta ('não quero', 'prefiro usar só o meu dinheiro', 'de jeito nenhum', 'nem pensar', 'achei caro', 'fora do meu orçamento', 'deixa pra outra vez'). Use SEMPRE que a resposta for negativa, INCLUSIVE quando a palavra 'não' não aparece. NUNCA use ready_to_proceed pra uma recusa: recusar é uma decisão, mas não é avançar — quem recusa continua onde está, e tratar isso como avanço faz o sistema vender o que a pessoa dispensou. " +
+			"wants_more_options = quer ver MAIS/TODAS/OUTRAS opções ALÉM das que já foram mostradas ('quero ver todos', 'ver todas as opções', 'tem mais opções?', 'mostra as outras', 'quero ver mais', 'só essas?'). NÃO confundir com ready_to_proceed: aqui o usuário NÃO quer decidir/avançar, quer AMPLIAR o que viu. Só use quando já houve uma apresentação de opções antes. " +
+			"asking_question = pergunta sobre o produto/processo ('como funciona o lance?', 'e o seguro?', 'quanto custa a taxa?'). " +
+			"providing_info = já respondeu/colaborou com dado concreto ('uns 200 mil', '2 anos', 'tenho reserva'). " +
+			"expressing_doubt = HESITANDO sobre uma decisão que ENTENDE, ainda avaliando ('não sei', 'to em dúvida', 'depende', 'tenho que pensar', 'deixa eu pensar aqui'). NÃO usar quando o usuário não entendeu a pergunta/card em si — isso é confused. " +
+			"confused = NÃO ENTENDEU a pergunta/card/opção que acabou de ver, pede pra reexplicar mais simples ('não entendi', 'como assim?', 'não sei do que você tá falando', 'que isso quer dizer?', 'oi?'). Diferente de expressing_doubt: aqui a pessoa entende a pergunta mas ainda não decidiu; confused é quando a PRÓPRIA PERGUNTA não ficou clara. " +
+			"off_topic = assunto fora do consórcio ('você e robô?', 'tudo bem?', piadas, smalltalk). " +
+			"neutral = afirmação curta de acolhimento sem direção clara ('entendi', 'ah ta', 'legal', 'show'). " +
+			"Em dúvida, prefira neutral.",
+	),
 });
 
 export type TurnAnalysis = z.infer<typeof turnAnalysisSchema>;
@@ -192,6 +198,10 @@ Exemplos:
 - "como funciona o lance livre?" -> { userIntent: "asking_question" }
 - "uns 200 mil então" -> { userIntent: "providing_info", creditMax: 200000 }
 - "ainda não sei direito" -> { userIntent: "expressing_doubt" }
+- "prefiro usar só o meu dinheiro" -> { userIntent: "declines" }  // recusa SEM a palavra "não"
+- "de jeito nenhum" / "nem pensar" -> { userIntent: "declines" }
+- "achei caro" / "fora do meu orçamento" -> { userIntent: "declines" }
+- "faz sentido" / "concordo" (respondendo a uma pergunta) -> { userIntent: "ready_to_proceed" }
 - "não entendi" -> { userIntent: "confused" }
 - "como assim?" -> { userIntent: "confused" }
 - "você e um robô?" -> { userIntent: "off_topic" }
@@ -253,10 +263,21 @@ export async function analyzeTurn(
 	// ("não", "uns 70 mil", "pode ser") — que fora de contexto é ambígua e dentro
 	// de contexto é óbvia.
 	const anchorLines: string[] = [];
-	if (turnAnchor?.lastAssistantText?.trim()) {
-		anchorLines.push(
-			`O agente acabou de dizer: "${turnAnchor.lastAssistantText.trim().slice(0, 400)}"`,
-		);
+	const ultimaFalaDoAgente = turnAnchor?.lastAssistantText?.trim();
+	if (ultimaFalaDoAgente) {
+		anchorLines.push(`O agente acabou de dizer: "${ultimaFalaDoAgente.slice(0, 400)}"`);
+		// FIX-387 — quando a fala anterior FOI uma pergunta, concordar com ela é
+		// AVANÇAR, não acolher. O Bernardo respondeu "faz sentido" a um "Faz
+		// sentido pra você?" (28/07 16:07) e isso caía em `neutral` — a descrição
+		// de `neutral` reivindica exatamente as afirmações curtas ("legal",
+		// "show"). Com o intent errado, o aceite do gate não era registrado e o
+		// agente confirmou a carta antiga. A âncora precisa dizer que responder
+		// não é a mesma coisa que reagir.
+		if (ultimaFalaDoAgente.includes("?")) {
+			anchorLines.push(
+				`Essa fala continha uma PERGUNTA. Concordar com ela é RESPONDER, não apenas acolher: uma mensagem que confirma/aceita o que foi perguntado é "ready_to_proceed" MESMO SEM as palavras "sim"/"quero" ("faz sentido", "concordo", "perfeito", "por mim tá ótimo", "é isso", "acho bom", "melhor assim"). Uma que discorda/recusa é "declines" — nunca "ready_to_proceed". Só use "neutral" para acolhimento que NÃO responde à pergunta ("entendi", "ah ta").`,
+			);
+		}
 	}
 	if (turnAnchor?.activeGate) {
 		anchorLines.push(

@@ -17,7 +17,7 @@ import { ToolNode } from "@langchain/langgraph/prebuilt";
 import type { ChosenOffer } from "@/lib/agent/orchestrator/choose-offer";
 import { listShownOffersForConversation } from "@/lib/agent/orchestrator/choose-offer";
 import { EphemeralTextFilter } from "@/lib/agent/orchestrator/sanitizer";
-import { GATE_INTENT } from "@/lib/agent/orchestrator/system-context";
+import { buildGateContextText } from "@/lib/agent/orchestrator/system-context";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { LANCE_EMBUTIDO_DEFAULT_PERCENT } from "@/lib/agent/qualify-config";
 import { querAntecipar, shouldAskMotive } from "@/lib/agent/qualify-state";
@@ -148,27 +148,6 @@ function toBaseMessage(m: { role: "user" | "assistant"; content: string }): Base
 function apartirDaPrimeiraFalaDoUsuario(msgs: BaseMessage[]): BaseMessage[] {
 	const i = msgs.findIndex((m) => m.getType() === "human");
 	return i <= 0 ? (i === 0 ? msgs : []) : msgs.slice(i);
-}
-
-/** Injeta a INTENÇÃO do gate ativo (o que o funil quer descobrir AGORA) pro
- * modelo perguntar com as palavras dele — UMA pergunta, sobre ISSO, sem pular
- * etapa. Reusa `GATE_INTENT` (fonte canônica, `system-context.ts`) e espelha a
- * instrução do `buildSystemContext` do runtime Vercel. Gate ausente (usuário
- * desviou / `decideShowGate` suprimiu) → null: o modelo conversa livre. */
-function buildGateContextText(gate: string | undefined, temCard: boolean): string | null {
-	if (!gate) return null;
-	const intent = GATE_INTENT[gate];
-	if (!intent) return null;
-	return (
-		`Próximo passo do funil: descobrir ${intent}. Faça VOCÊ essa pergunta, com as suas ` +
-		`palavras e de forma calorosa — ` +
-		(temCard
-			? `o sistema mostra o campo/os botões logo depois e NÃO vai repetir a pergunta. `
-			: `NÃO vai aparecer nenhum botão nem campo na tela: quem conduz é a sua fala. `) +
-		`Faça UMA pergunta só, sobre ISSO; não pule etapas nem pergunte sobre ` +
-		`outra coisa. Se o usuário puxar o assunto pra outro lado, atenda ele primeiro e emende a ` +
-		`pergunta no fim — o turno NUNCA termina sem um próximo passo pro cliente.`
-	);
 }
 
 /** Remove blocos `thinking`/`redacted_thinking` que o acúmulo do streaming
@@ -958,7 +937,9 @@ export function createConverseNode(model: BaseChatModel) {
 									// apagava o `availableSlots` real que `discovery.ts` já tinha
 									// propagado no reveal, e o card de escassez pós-fechamento
 									// (FIX-372) nunca tinha o que mostrar.
-									...(num(p.availableSlots) != null ? { availableSlots: num(p.availableSlots) } : {}),
+									...(num(p.availableSlots) != null
+										? { availableSlots: num(p.availableSlots) }
+										: {}),
 								};
 							}
 						}

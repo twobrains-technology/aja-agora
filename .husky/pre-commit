@@ -1,6 +1,23 @@
 #!/usr/bin/env sh
 # 2026-07-21 — a suíte de regressão de IA (3 camadas) foi REMOVIDA: travava a
 # evolução do agente cimentando copy e frases do prompt. O gate agora é o Kairo
-# validando ao vivo. Só o lint/format automático fica, porque é barato.
+# validando ao vivo.
+#
+# 2026-07-30 (3ª revisão independente) — o `package.json` já tinha um script
+# `test:pre-commit` (lint + test:unit) que NADA chamava: nem hook, nem CI. Foi
+# marcado como "gate fechado" numa rodada de correções sem o gate existir de
+# verdade. Isto aqui é a correção — mas com uma distinção importante em relação
+# à suíte removida em 21/07: o `test:unit` de hoje verifica INVARIANTE DE
+# CÓDIGO (allowlist de categoria, aceite/recusa, atribuição de número), nunca
+# frase/copy do agente — os revisores independentes da rodada de 30/07
+# confirmaram isso teste por teste. Não é a cimentação de prosa que motivou a
+# remoção original.
+#
+# `test:unit` PRECISA da stack local de pé (Postgres — skill local-dev) pra
+# rodar os cenários de jornada; sem ela, esses cenários pulam via
+# `describeIfDb` e o resto da suíte roda igual. Se até o biome/tsc travarem por
+# ambiente quebrado, é sinal de configuração — não de motivo pra pular o gate.
 npx biome check --write --no-errors-on-unmatched --files-ignore-unknown=true $(git diff --cached --name-only --diff-filter=ACM) 2>/dev/null || true
 git add -u 2>/dev/null || true
+
+pnpm test:pre-commit

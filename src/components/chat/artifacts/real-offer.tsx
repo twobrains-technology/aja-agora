@@ -24,7 +24,7 @@ const CREDIBILITY_CHIPS = [
 // Oferta REAL confirmada pela administradora (re-simulação Bevi). O usuário confirma
 // antes do choose_offer — fecha o gap indicativo×real da Descoberta.
 export function RealOffer({ payload }: { payload: RealOfferPayload }) {
-	const { sendAction, sendUserMessage, status } = useChatContext();
+	const { sendAction, status } = useChatContext();
 	const isStreaming = status === "submitted" || status === "streaming";
 
 	return (
@@ -143,7 +143,17 @@ export function RealOffer({ payload }: { payload: RealOfferPayload }) {
 						variant="ghost"
 						size="sm"
 						className="w-full rounded-full min-h-[44px]"
-						onClick={() => !isStreaming && void sendUserMessage("Quero ver outras opções")}
+						// FIX-390: mesma correção do `proposal-doc.tsx` — o comparativo das
+						// outras ofertas é montado pelo SERVIDOR (`route.ts:632`), então o
+						// botão despacha a action; mandar texto deixava o modelo anunciar
+						// opções que ele não tinha como mostrar.
+						onClick={() =>
+							!isStreaming &&
+							void sendAction(
+								{ kind: "show-other-options", label: "Quero ver outras opções" },
+								"Quero ver outras opções",
+							)
+						}
 						disabled={isStreaming}
 						data-testid="offer-reject"
 					>

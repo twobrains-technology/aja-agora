@@ -11,8 +11,13 @@ import { z } from "zod";
 const expertiseLevelEnum = z.enum(["leigo", "expert", "neutro"]);
 const categoryEnum = z.enum(["imovel", "auto", "moto"]);
 const channelEnum = z.enum(["web", "whatsapp"]);
-const userIntentEnum = z.enum([
+/** Exportado pro teste de amarra dos espelhos (enum-intent-espelhos.fix-399c). */
+export const diagnoseUserIntentEnum = z.enum([
 	"ready_to_proceed",
+	// FIX-399c: sincronizado com `UserIntent`. Sem isto o diagnóstico nunca sugeria
+	// exemplo de persona pra RECUSA — e o `tsc` não pega esta divergência (só a de
+	// `validations/persona.ts`, que é tipada no form). Amarrado por teste.
+	"declines",
 	// FIX-183: "quero ver todos/mais opções" — deve casar com UserIntent (qualify-state.ts).
 	"wants_more_options",
 	"asking_question",
@@ -31,7 +36,7 @@ export const suggestedExampleSchema = z.object({
 	whenCategory: z.array(categoryEnum).optional(),
 	whenChannel: channelEnum.optional(),
 	// .min(1) ignorado pelo AI SDK 6→JSON Schema; validado por prompt + pós-processamento
-	whenIntent: z.array(userIntentEnum).optional(),
+	whenIntent: z.array(diagnoseUserIntentEnum).optional(),
 	// .min(3) ignorado pelo AI SDK 6→JSON Schema; validado por prompt + pós-processamento
 	userMessage: z.string().describe("Mensagem realista do usuário (1-2 frases)."),
 	// .min(3) ignorado pelo AI SDK 6→JSON Schema; validado por prompt + pós-processamento

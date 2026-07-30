@@ -37,7 +37,7 @@ function trilhaCompleta(r: ScenarioResult): string[] {
 
 /** Índice do primeiro aparecimento de um marco (-1 = nunca apareceu). */
 function quando(trilha: string[], marco: string): number {
-	return trilha.findIndex((t) => t === marco);
+	return trilha.indexOf(marco);
 }
 
 describeIfDb("FIX-385 — jornada completa: marcos e dependências", () => {

@@ -106,13 +106,34 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 					<div
 						className="rounded-[11px] px-[13px] py-[11px]"
 						style={{ background: "var(--aja-cream, #f2f2db)" }}
+						data-testid="cenario-com-lance"
 					>
 						<p className="text-[10px] font-semibold uppercase tracking-[.06em] text-muted-foreground m-0">
 							Cenário com lance
 						</p>
+						{/* FIX-391 — a frase era "Com lance de {X}% do valor do bem,
+						    expectativa de contemplação em ~{N} meses": sem SUJEITO. O
+						    percentual vem de `offer-mapper.ts:245` (`offer.bidPercentage`, o
+						    nível de lance da OFERTA na Bevi) e o prazo é a expectativa PARA
+						    AQUELE nível — nada disso é do cliente. Lida do jeito antigo, a
+						    frase convidava o leitor a se apropriar do lance: o Bernardo tinha
+						    declarado R$ 200 mil (27,7% de uma carta de 721 mil) e o agente
+						    narrou os 87,57% como se fossem dele, prometendo 6 meses. Atribuir
+						    o número à sua fonte é o mesmo dever do disclaimer de premissa do
+						    comparativo de financiamento (D11 / CDC art. 37).
+
+						    Revisão independente (2026-07-30) pegou dois erros na 1ª versão deste
+						    fix, os dois corrigidos aqui: (a) o denominador era "do valor do BEM"
+						    e é da CARTA — 631.379,70 / 721.000 = 87,57%, que é o número do print;
+						    sobre o bem daria 90,20%, e os dois divergem exatamente quando há
+						    embutido, que é o cenário deste card; (b) "o lance que COSTUMA
+						    contemplar" é afirmação de frequência que `bidPercentage` não sustenta
+						    (o campo é "lance TOTAL necessário", offer-mapper.ts:42) — mesma classe
+						    do `taxaContemplacao`, que este repo já proíbe citar. */}
 						<p className="text-xs mt-1 leading-[1.45]">
-							Com lance de {payload.lanceScenario.lancePercent}% do valor do bem, expectativa de
-							contemplação em ~{payload.lanceScenario.expectedTermMonths} meses{" "}
+							Neste grupo, o lance necessário pra contemplar é de{" "}
+							{payload.lanceScenario.lancePercent}% da carta de crédito — quem oferta esse nível tem
+							expectativa de contemplação em ~{payload.lanceScenario.expectedTermMonths} meses{" "}
 							<span className="text-muted-foreground">(estimativa, não garantia)</span>.
 						</p>
 						{/* FIX-8: só com dado real (> 0). FIX-30: movido pra cá — é o lance

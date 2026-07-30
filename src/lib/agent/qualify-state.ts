@@ -206,6 +206,14 @@ export function dinheiroDeclaradoPeloCliente(
 
 export type UserIntent =
 	| "ready_to_proceed"
+	// FIX-396 (2026-07-30, revisão independente) — RECUSA precisava de rótulo
+	// próprio. Sem ele, o analyzer não tinha onde pôr "não quero": media a fala
+	// certa (extraía `hasLance: no`) e rotulava o intent como `ready_to_proceed`,
+	// porque "o cliente decidiu, o funil avança". Medido 3/3 no Haiku real.
+	// Consumidores então liam avanço onde havia negativa — e a recusa sem a
+	// palavra "não" ("de jeito nenhum", "prefiro usar só o meu dinheiro") não
+	// tinha NENHUM sinal determinístico. Com o rótulo, a negativa vira dado.
+	| "declines"
 	// FIX-183 (Mirella, PROD conv 69a38af1): "quero ver todos/mais opções" — o
 	// usuário quer AMPLIAR o conjunto já mostrado, NÃO avançar/decidir. Sem essa
 	// categoria caía em ready_to_proceed e empurrava o funil pra decisão sobre um
@@ -225,6 +233,35 @@ export type UserIntent =
 	| "confused"
 	| "off_topic"
 	| "neutral";
+
+// FIX-399f (2026-07-30, 3ª revisão independente) — a amarra dos espelhos
+// (`validations/persona.ts`, `diagnose/types.ts`, `turn-analyzer.ts`) comparava
+// contra uma LISTA TRANSCRITA À MÃO, que não derivava do tipo acima. Revertendo
+// só `qualify-state.ts` pra HEAD, o teste de amarra ficava verde — ele não
+// checava a FONTE, só os espelhos entre si. Este array é verificado em tempo de
+// COMPILAÇÃO contra `UserIntent`: `satisfies` garante que nenhum valor aqui é
+// inválido; `_UserIntentCompleto` garante que nenhum valor de `UserIntent` ficou
+// de fora (se sobrar, `Exclude<>` não é `never` e a atribuição abaixo quebra o
+// `tsc`). Intent novo que não entrar aqui já não compila — não depende de
+// alguém lembrar de atualizar um teste.
+export const USER_INTENT_VALUES = [
+	"ready_to_proceed",
+	"declines",
+	"wants_more_options",
+	"asking_question",
+	"providing_info",
+	"expressing_doubt",
+	"confused",
+	"off_topic",
+	"neutral",
+] as const satisfies readonly UserIntent[];
+
+type _UserIntentCompleto = Exclude<UserIntent, (typeof USER_INTENT_VALUES)[number]> extends never
+	? true
+	: never;
+// (sem uso em runtime — existe só pro `tsc` avaliar `_UserIntentCompleto` acima;
+// o prefixo `_` já basta pro biome não reclamar de variável não usada.)
+const _checkUserIntentCompleto: _UserIntentCompleto = true;
 
 /** O cliente quer ANTECIPAR a contemplação? É o que separa quem passa pela
  * conversa de lance (valor → embutido → simulador) de quem vai direto ao fecho.
@@ -689,6 +726,16 @@ export function decideShowGate(args: {
 		// deadlock: a cliente perguntou três vezes o que fazer, o agente respondeu
 		// "os próximos passos já vão aparecer pra você" e o card nunca vinha,
 		// porque a própria pergunta é que o bloqueava (visto ao vivo, 2026-07-21).
+		// FIX-399c — `declines` NUNCA abre o formulário de contratação.
+		//
+		// A 2ª revisão independente mostrou o buraco com a fala "achei caro, prefiro
+		// usar só o meu dinheiro" classificada como `declines`: a trilha saía
+		// `["text","gate:contract","artifact:contract_form"]` — formulário de
+		// contratação na cara de quem acabou de recusar. Não era regressão (antes o
+		// rótulo vinha como `ready_to_proceed`, com o mesmo desfecho), mas o rótulo
+		// novo só valia em `detectYesNoText`; aqui ele era ignorado. Rótulo de recusa
+		// que não fecha porta nenhuma não é dado, é decoração.
+		if (intent === "declines") return false;
 		if (meta.escolha) {
 			return !(intent === "expressing_doubt" || intent === "confused" || intent === "off_topic");
 		}
@@ -704,6 +751,9 @@ export function decideShowGate(args: {
 	// Server-authored já retornou true acima; em turno do usuário, mesmo
 	// critério do decision: afirmativo avança, pergunta/dúvida deixa conversar.
 	if (gate === "simulator-offer") {
+		// FIX-399c: `declines` cai fora junto com o resto — não é `ready_to_proceed`
+		// nem `neutral`, então já não passava; explícito pra não voltar por descuido.
+		if (intent === "declines") return false;
 		return intent === "ready_to_proceed" || intent === "neutral";
 	}
 
@@ -780,6 +830,9 @@ export function decideShowGate(args: {
 	}
 
 	if (intent === "asking_question") return false;
+	// FIX-399c: recusa não avança o funil. Quem recusa continua onde está — insistir
+	// com o card seguinte é perguntar o que ele acabou de responder.
+	if (intent === "declines") return false;
 	if (intent === "expressing_doubt") return false;
 	if (intent === "confused") return false;
 	if (intent === "off_topic") return false;

@@ -38,8 +38,14 @@ export const personaForbiddenTopicSchema = z.object({
 const expertiseLevelEnum = z.enum(["leigo", "expert", "neutro"]);
 const categoryEnum = z.enum(["imovel", "auto", "moto"]);
 const channelEnum = z.enum(["web", "whatsapp"]);
-const userIntentEnum = z.enum([
+// ⚠️ Espelha `UserIntent` (qualify-state.ts). O `tsc` pega a divergência (o
+// form de persona tipa `whenIntent` por aqui), então este é o lugar certo pra
+// lembrar: intent novo entra nos DOIS.
+/** Exportado pro teste de amarra dos espelhos (enum-intent-espelhos.fix-399c). */
+export const personaUserIntentEnum = z.enum([
 	"ready_to_proceed",
+	// FIX-396: recusa tem rótulo próprio — ver o porquê em qualify-state.ts.
+	"declines",
 	// FIX-183: "quero ver todos/mais opções" — deve casar com UserIntent (qualify-state.ts).
 	"wants_more_options",
 	"asking_question",
@@ -61,7 +67,7 @@ export const personaExampleSchema = z.object({
 	whenExpertise: z.array(expertiseLevelEnum).min(1).optional(),
 	whenCategory: z.array(categoryEnum).min(1).optional(),
 	whenChannel: channelEnum.optional(),
-	whenIntent: z.array(userIntentEnum).min(1).optional(),
+	whenIntent: z.array(personaUserIntentEnum).min(1).optional(),
 
 	tags: z.array(z.string().min(1).max(40)).max(10).optional(),
 

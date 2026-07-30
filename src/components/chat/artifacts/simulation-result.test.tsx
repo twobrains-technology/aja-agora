@@ -41,9 +41,27 @@ describe("SimulationResult — campos essenciais (docx passo 4)", () => {
 		document.body.innerHTML = "";
 	});
 
-	it("renderiza o valor do bem (FIX-2: linguagem leiga, sem 'crédito' seco)", () => {
+	it("renderiza o valor da carta com rótulo em linguagem de cliente (FIX-2)", () => {
+		// ⚠️ 2026-07-30 — esta asserção estava passando POR ACIDENTE. Ela procurava
+		// "valor do bem" em qualquer lugar do card, e o único lugar onde a frase
+		// existia era a do "Cenário com lance": "Com lance de X% do valor do bem" —
+		// justamente a frase cujo DENOMINADOR estava errado (é % da carta, não do
+		// bem; 631.379,70/721.000 = 87,57%, o número do print). Corrigido o
+		// denominador no FIX-391, a asserção ficou sem nada pra casar.
+		//
+		// O rótulo real do valor neste card é "Carta de crédito" (linha ~99), e o
+		// card irmão (`real-offer.tsx`) chama o MESMO campo de "Valor do bem". Os
+		// dois discordam hoje. Qual copy vale é decisão de produto — e tem um
+		// detalhe de correção no meio: a carta PODE exceder o bem quando há lance
+		// embutido, então "valor do bem" é impreciso pra `creditValue`.
+		//
+		// PENDENTE-KAIRO: unificar o rótulo entre os dois cards.
+		//
+		// Enquanto isso, o que este teste protege é o que o FIX-2 queria de fato:
+		// o valor aparece com um rótulo legível, não como número solto.
 		render(<SimulationResult payload={basePayload} />);
-		expect(screen.getAllByText(/valor do bem/i).length).toBeGreaterThan(0);
+		expect(screen.getAllByText(/carta de cr[ée]dito|valor do bem/i).length).toBeGreaterThan(0);
+		expect(screen.getByText(/R\$\s*900\.000/)).toBeDefined();
 	});
 
 	it("renderiza prazo em meses", () => {

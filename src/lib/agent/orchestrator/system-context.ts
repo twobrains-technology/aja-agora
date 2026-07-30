@@ -21,6 +21,37 @@ export function looksLikeIdentityResendComplaint(text: string): boolean {
 
 /** O que cada gate precisa descobrir — em INTENÇÃO, não em frase pronta. O
  * modelo escolhe as palavras; nós só dizemos o que falta saber. */
+/** Injeta a INTENÇÃO do gate ativo (o que o funil quer descobrir AGORA) pro
+ * modelo perguntar com as palavras dele — UMA pergunta, sobre ISSO, sem pular
+ * etapa. Gate ausente/desconhecido (usuário desviou, `decideShowGate` suprimiu)
+ * → null: o modelo conversa livre.
+ *
+ * Morava em `langgraph/nodes/converse.ts` como função local; subiu pra cá
+ * (FIX-393) porque a única dependência dela é o `GATE_INTENT` logo abaixo — e
+ * porque um contexto que decide o que o cliente lê merece teste próprio. */
+export function buildGateContextText(gate: string | undefined, temCard: boolean): string | null {
+	if (!gate) return null;
+	const intent = GATE_INTENT[gate];
+	if (!intent) return null;
+	return (
+		`Próximo passo do funil: descobrir ${intent}. Faça VOCÊ essa pergunta, com as suas ` +
+		`palavras e de forma calorosa — ` +
+		(temCard
+			? // FIX-393: antes dizia só que o campo aparece depois. Faltava amarrar a
+				// fala ÀQUELE card: o agente perguntou "quanto de entrada?" enquanto o
+				// formulário de CPF entrava na tela, e o cliente ficou com duas
+				// perguntas diferentes sem poder responder nenhuma (Bernardo, 28/07).
+				`o sistema mostra o campo/os botões logo depois e NÃO vai repetir a pergunta. Sua ` +
+				`pergunta tem que ser exatamente a DESSE card — é PROIBIDO fazer uma segunda pergunta ` +
+				`neste turno, sobre qualquer outro assunto, porque o campo entra na tela junto com a ` +
+				`sua fala e atropela o que ele fosse responder. `
+			: `NÃO vai aparecer nenhum botão nem campo na tela: quem conduz é a sua fala. `) +
+		`Faça UMA pergunta só, sobre ISSO; não pule etapas nem pergunte sobre ` +
+		`outra coisa. Se o usuário puxar o assunto pra outro lado, atenda ele primeiro e emende a ` +
+		`pergunta no fim — o turno NUNCA termina sem um próximo passo pro cliente.`
+	);
+}
+
 export const GATE_INTENT: Record<string, string> = {
 	name: "como ele quer ser chamado",
 	// UMA coisa só. Pedir bem + motivo no mesmo balão fazia o agente disparar duas
@@ -29,10 +60,28 @@ export const GATE_INTENT: Record<string, string> = {
 	desire:
 		'qual bem específico ele tem em mente — o modelo, só isso. NÃO pergunte versão/ano (não muda nada no consórcio) e NÃO presuma nada que ele não disse (se ele não falou "novo" ou "zero", não diga)',
 	credit: "quanto custa o bem que ele quer",
+	// FIX-393: a instrução dizia o que PEDIR e nada sobre não abrir outro assunto.
+	// O Bernardo recebeu "quanto conseguiria dar de entrada?" no MESMO turno em
+	// que o formulário de CPF entrou na tela (28/07) — duas perguntas diferentes
+	// de uma vez, e ele não teve como responder a da fala. Pior: "entrada" é
+	// conversa de LANCE, que saiu do meio do funil (FIX-215) e vive pós-reveal.
 	identify:
-		"o CPF e o celular dele — diga POR QUE precisa (a administradora exige pra trazer as ofertas reais) e que os dados ficam protegidos pela LGPD, numa frase só, sem soar burocrático",
+		"o CPF e o celular dele — diga POR QUE precisa (a administradora exige pra trazer as ofertas reais) e que os dados ficam protegidos pela LGPD, numa frase só, sem soar burocrático. NÃO pergunte mais nada neste turno: nada de entrada, valor de lance ou prazo — o lance só entra na conversa DEPOIS das ofertas reais aparecerem, e uma segunda pergunta aqui atropela o formulário que está entrando na tela",
+	// FIX-392: a instrução antiga era 'se ele já fez consórcio antes. Se ele
+	// disser que é a primeira vez, EXPLIQUE o mecanismo no MESMO turno (…)'. Era
+	// uma condicional cuja condição o modelo NÃO podia avaliar — o gate está
+	// justamente perguntando aquilo. Pra obedecer literalmente, ele adivinhava a
+	// resposta: a Bruna recebeu "Já que é sua primeira vez com consórcio, deixa eu
+	// explicar…" seguido de "Você já fez consórcio antes?" no MESMO balão
+	// (27/07), com a explicação sendo a lista desta instrução item por item — e
+	// falando de "carro" numa conversa que não era de carro.
+	//
+	// O que se preserva: o motivo original, que era impedir o "te explico no
+	// caminho" (promessa que nunca vinha). A explicação continua OBRIGATÓRIA —
+	// só deixa de ser antecipada: ela acontece no turno seguinte, quando a
+	// resposta existir de verdade.
 	experience:
-		'se ele já fez consórcio antes. Se ele disser que é a primeira vez, EXPLIQUE o mecanismo no MESMO turno (grupo de pessoas, parcela sem juros, contemplação por sorteio ou lance, carta pra comprar à vista) — nunca prometa "te explico no caminho" e siga pro pitch',
+		'se ele já fez consórcio antes. Você AINDA NÃO SABE a resposta — então NÃO presuma nem afirme qual é ("já que é sua primeira vez", "como você já conhece"): só pergunte. Se no próximo turno ele responder que é a primeira vez, aí EXPLIQUE o mecanismo por completo (grupo de pessoas, parcela sem juros, contemplação por sorteio ou lance, carta pra comprar o bem à vista), usando o bem DESTA conversa — nunca prometa "te explico no caminho" e siga pro pitch',
 	"reco-consent": "se ele topa ver a opção que a gente recomenda",
 	timeframe: "em quanto tempo ele quer estar com o bem",
 	lance: "se ele teria como dar um lance pra antecipar a contemplação",

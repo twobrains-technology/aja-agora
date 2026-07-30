@@ -696,7 +696,13 @@ async function executeRecommendGroups(
 export const consorcioTools = {
 	search_groups: tool({
 		description:
-			"Busca grupos de consorcio disponiveis por categoria e faixa de credito. Use quando o usuario mencionar o que quer comprar (carro, casa, servico) ou quanto quer gastar. " +
+			// FIX-389: a enumeracao dizia "(carro, casa, servico)" e `servico` NAO e
+			// vendido — os schemas sempre foram allowlist (`imovel|auto|moto`), mas a
+			// DESCRICAO convidava o modelo a tentar. Convite + recusa do schema = a
+			// falha de validacao virava "tive um problema na integracao" na cara do
+			// cliente (visto ao vivo 22/07, esposa do Bernardo simulou "servicos").
+			// Aqui a lista de exemplos passa a citar SO o que existe.
+			"Busca grupos de consorcio disponiveis por categoria e faixa de credito. Use quando o usuario mencionar o que quer comprar (imovel/casa, carro, moto) ou quanto quer gastar. " +
 			"A busca ja cobre automaticamente os cenarios com e sem lance embutido (FIX-219) — nao precisa perguntar sobre lance antes de buscar.",
 		inputSchema: searchGroupsInput,
 		execute: async (_args: z.infer<typeof searchGroupsInput>) => DISCOVERY_NO_CONTEXT,

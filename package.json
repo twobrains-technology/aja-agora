@@ -32,8 +32,11 @@
 		"test:funil": "vitest run --reporter=verbose --no-file-parallelism 'src/lib/agent/orchestrator/**/*.integration.test.ts' 'src/lib/agent/langgraph/**/*.integration.test.ts'",
 		"test:integration": "vitest run --reporter=verbose --no-file-parallelism route. integration.test builder.",
 		"test:e2e": "playwright test",
-		"test:pre-commit": "pnpm test:unit",
-		"prepare": "husky"
+		"test:pre-commit": "pnpm lint && pnpm test:unit",
+		"prepare": "husky",
+		"sonda:intent": "tsx scripts/sonda-intent-aceite.ts",
+		"test:jornada": "bash scripts/test-jornada.sh",
+		"sonda:conversa": "tsx scripts/sonda-conversa-real.ts"
 	},
 	"dependencies": {
 		"@ai-sdk/anthropic": "^3.0.69",

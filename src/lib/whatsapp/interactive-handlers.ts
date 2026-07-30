@@ -148,8 +148,10 @@ async function handleContractCancel(ctx: Ctx): Promise<boolean> {
 	await persistMeta(ctx.conversationId, cleared);
 	const { CONTRACT_CANCELLED_REPLY } = await import("./contract-capture");
 	await sendTextMessage(ctx.from, CONTRACT_CANCELLED_REPLY);
-	await ctx.processTextMessage(ctx.from, "Quero ver outras opções", ctx.contactName);
-	return true;
+	// FIX-398: o aviso de cancelamento vem PRIMEIRO (o cliente clicou em cancelar;
+	// receber uma lista sem confirmação parece que o clique foi ignorado), e o
+	// comparativo vem do servidor, não do modelo.
+	return handleDecisionOutras(ctx);
 }
 
 // ── Passo 5 "Contratar" (fechamento Bevi) — botões do real_offer ──
@@ -274,9 +276,12 @@ export async function finalizarOfertaReal(from: string, conversationId: string):
 
 async function handleOfferReject(ctx: Ctx): Promise<boolean> {
 	await recordUserClick(ctx);
-	// "ver outras opções" — deixa o agente conduzir pelo fluxo de texto.
-	await ctx.processTextMessage(ctx.from, "Quero ver outras opções", ctx.contactName);
-	return true;
+	// FIX-398: era `processTextMessage("Quero ver outras opções")` — texto pro
+	// modelo, que não tem como montar o comparativo (quem monta é o servidor, via
+	// `buildOtherOptions`). O resultado era o agente anunciar opções e não mostrar
+	// nenhuma, o mesmo defeito que o FIX-390 fechou na web. `decision_outras` já
+	// fazia certo desde o FIX-119; aqui é só reusar o mesmo caminho.
+	return handleDecisionOutras(ctx);
 }
 
 // ---- Handlers ----
@@ -695,8 +700,10 @@ async function handleDetail(ctx: Ctx): Promise<boolean> {
 // ser a ÚNICA via de abrir as alternativas).
 async function handleShowOthers(ctx: Ctx): Promise<boolean> {
 	await recordUserClick(ctx);
-	await ctx.processTextMessage(ctx.from, "Quero ver outras opções", ctx.contactName);
-	return true;
+	// FIX-398: mesma correção do `handleOfferReject`. O comentário acima dizia que
+	// esta seria "a ÚNICA via" quando o contrato do reveal mudasse — e continuava
+	// delegando ao modelo justamente a montagem que é do servidor.
+	return handleDecisionOutras(ctx);
 }
 
 // FIX-119 (D22): "Ver outras opções" do CARD DE DECISÃO (decision_outras). O

@@ -112,7 +112,11 @@ describe("contract_cancel — recusa (CA-4)", () => {
 		expect(mocks.fireContract).not.toHaveBeenCalled();
 		const lastPersist = mocks.persistMeta.mock.calls.at(-1)?.[1] as ConversationMetadata;
 		expect(lastPersist.contractCollection).toBeUndefined();
-		expect(mocks.processText).toHaveBeenCalledWith(WA, "Quero ver outras opções", undefined);
+		// ⚠️ Asserção TROCADA em 2026-07-30 (FIX-398): afirmava delegação da frase ao
+		// modelo (`processText`). O que este caso protege — cancelar limpa a coleta e
+		// leva o cliente às alternativas — segue igual; o que mudou é QUEM monta as
+		// alternativas: o servidor, não o modelo.
+		expect(mocks.processText).not.toHaveBeenCalled();
 	});
 });
 

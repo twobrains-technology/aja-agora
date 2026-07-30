@@ -75,9 +75,11 @@ function analyzerDoRoteiro(turnos: ScenarioTurn[], cursor: { i: number }) {
 			newlyExtractedExperience:
 				meta.experiencePrev !== experienciaAntes ? (meta.experiencePrev ?? null) : null,
 			stuckGateDefaultApplied: null,
-			// biome-ignore lint/suspicious/noExplicitAny: `TurnAnalysis` tem ~20 campos
-			// opcionais que nenhum cenário precisa declarar; o que importa é o intent
-			// e o que `extrai` escreveu no meta.
+			// `TurnAnalysis` tem ~20 campos opcionais que nenhum cenário precisa
+			// declarar; o que importa é o intent e o que `extrai` escreveu no meta.
+			// A supressão tem que ser a linha IMEDIATAMENTE anterior ao cast — com um
+			// bloco de comentário no meio, o biome a reporta como não-usada.
+			// biome-ignore lint/suspicious/noExplicitAny: shape inteiro do TurnAnalysis
 		} as any;
 	};
 }

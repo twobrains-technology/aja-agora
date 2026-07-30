@@ -50,7 +50,7 @@ const JORNADA = [
 ] as const;
 
 export function ProposalDoc({ payload }: { payload: RealOfferPayload }) {
-	const { sendAction, sendUserMessage, status } = useChatContext();
+	const { sendAction, status } = useChatContext();
 	const isStreaming = status === "submitted" || status === "streaming";
 
 	const hasPayment = Number.isFinite(payload.monthlyPayment);
@@ -370,7 +370,18 @@ export function ProposalDoc({ payload }: { payload: RealOfferPayload }) {
 					variant="ghost"
 					size="sm"
 					className="min-h-[44px] w-full rounded-full"
-					onClick={() => !isStreaming && void sendUserMessage("Quero ver outras opções")}
+					// FIX-390: era `sendUserMessage`, e o clique virava TEXTO pro modelo
+					// interpretar — ele respondia "aqui estão outras opções!" e não vinha
+					// card nenhum, porque quem monta o comparativo das ofertas reais é o
+					// servidor (`route.ts:632`, `buildOtherOptions`). Visto ao vivo em
+					// 28/07 (Bernardo: "pedi outras opções e não veio").
+					onClick={() =>
+						!isStreaming &&
+						void sendAction(
+							{ kind: "show-other-options", label: "Quero ver outras opções" },
+							"Quero ver outras opções",
+						)
+					}
 					disabled={isStreaming}
 					data-testid="offer-reject"
 				>
