@@ -132,6 +132,42 @@ describeIfDb("FIX-410 — o veto da tool `escolher_cota` usa o predicado INTEIRO
 		expect(r.meta.contractOffer, fala).toBeUndefined();
 	});
 
+	it.each([
+		// FIX-416 — o 12º vazamento, medido pela 12ª revisão independente no grafo
+		// real: uma PERGUNTA ancorava o campo que a Bevi consome.
+		//
+		// O veto era blocklist ("o cliente recusou?"), e ausência de recusa não é
+		// prova de escolha. Quem decide chamar a tool é o MODELO, lendo texto livre;
+		// o servidor só conferia que o `groupId` existe. Perguntar o preço de uma
+		// cota comprometia o cliente com ela — violação direta da lei do projeto
+		// (`arquitetura-agentes-ia.md`: allowlist, não blocklist).
+		"quanto fica a parcela da Rodobens?",
+		"me explica melhor essa da Rodobens",
+		"como funciona o lance na Rodobens",
+		"qual a taxa da Rodobens",
+	])("pergunta sobre a cota NÃO ancora contrato: %s", async (fala) => {
+		const r = await comToolCall(fala, "ready_to_proceed");
+		criadas.push(r.conversationId);
+		// Intent `ready_to_proceed` de propósito: a sonda `pnpm sonda:intent` mostrou
+		// que o analyzer real rotula assim até recusas (FIX-388). Se a trava
+		// dependesse do rótulo, ela não seria trava.
+		expect(r.meta.escolha, fala).toBeUndefined();
+		expect(r.meta.contractOffer, fala).toBeUndefined();
+	});
+
+	it.each([
+		// A contraprova, e ela é o que impede o allowlist de matar a venda: fala
+		// afirmativa de escolha continua ancorando.
+		"é essa que eu quero",
+		"quero a Rodobens",
+		"bora fechar com a Rodobens",
+		"pode ser essa mesmo",
+	])("decisão afirmativa segue ancorando: %s", async (fala) => {
+		const r = await comToolCall(fala, "ready_to_proceed");
+		criadas.push(r.conversationId);
+		expect(r.meta.contractOffer?.administradora, fala).toBe("RODOBENS");
+	});
+
 	it("recusa clássica segue vetada (o FIX-405 não regride)", async () => {
 		const r = await comToolCall("não quero essa", "declines");
 		criadas.push(r.conversationId);

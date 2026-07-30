@@ -23,6 +23,17 @@ export interface ContractIdentityInput {
  * raia trava em `qualificado` (createBeviProposal pula a transição). */
 export interface ContractLinkInput {
 	leadId?: string | null;
+	/** Administradora da proposta JÁ REGISTRADA nesta conversa, quando existe.
+	 *
+	 * FIX-415 — é o que torna um retry seguro. Sem cota ancorada por clique, a
+	 * preferência iria `null` e o gateway escolheria por proximidade de valor
+	 * (`pickClosestOffer` → `best(offers)`): num retry legítimo, isso podia
+	 * produzir uma SEGUNDA proposta real numa administradora diferente da
+	 * primeira. Com este campo, qualquer nova tentativa numa conversa que já tem
+	 * proposta vai para a MESMA administradora, por construção — e o guard
+	 * anti-refazer (`administradoraConflictsWithRegisteredProposal`) enxerga
+	 * igual contra igual, em vez de desconhecido. */
+	registeredAdministradora?: string | null;
 }
 
 /** Re-ancora o estado na cota REAL que a administradora devolveu no fechamento.
@@ -133,7 +144,11 @@ export function buildStartContractInput(
 		// Sem ela, `null`: a Bevi não recebe preferência nenhuma, em vez de receber
 		// o palpite do parser. Ausente é melhor que errado — a mesma regra que o
 		// `avgBidValue` já segue (FIX-375).
-		administradoraPreferida: meta.contractOffer?.administradora ?? null,
+		// FIX-415 — sem cota ancorada, cai pra administradora da proposta JÁ
+		// registrada (quando existe). Nunca pro campo que o texto escreve: o retry
+		// tem que repetir o contrato que existe, não inaugurar um segundo.
+		administradoraPreferida:
+			meta.contractOffer?.administradora ?? links.registeredAdministradora ?? null,
 		// E o MESMO prazo que ele viu — desempata o matching dentro da admin
 		// (matching preparatório 2026-06-28). O snapshot da oferta ativa traz o
 		// prazo — mesma checagem de consistência do `valor` acima.
@@ -167,6 +182,18 @@ export function administradoraConflictsWithRegisteredProposal(
 	registeredAdministradora: string | null | undefined,
 	requestedAdministradora: string | null | undefined,
 ): boolean {
+	// FIX-415 — `sem marca pedida → não conflita` CONTINUA CERTO, e a razão mudou.
+	//
+	// Antes era "não há o que comparar". Hoje é mais forte: quando não há marca
+	// pedida, `buildStartContractInput` manda a administradora da proposta JÁ
+	// REGISTRADA (via `links.registeredAdministradora`) — ou seja, uma tentativa
+	// sem âncora vira necessariamente um retry do MESMO contrato, não uma segunda
+	// proposta. Não há conflito porque não há como haver.
+	//
+	// Quem chama passa `contractOffer?.administradora ?? recommendedAdministradora`
+	// (route.ts): o guard olha também o FOCO da conversa, de propósito. Ser mais
+	// estrito que a ação é seguro — bloquear a mais custa uma mensagem; bloquear a
+	// menos custa uma consulta de bureau no CPF de alguém.
 	if (!registeredAdministradora || !requestedAdministradora) return false;
 	return (
 		normalizeAdministradora(registeredAdministradora) !==

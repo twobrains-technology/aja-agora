@@ -96,12 +96,19 @@ const ESCREVE = new RegExp(
 );
 /** Projeção pura: copia o MESMO campo de outro objeto, sem construir nada. */
 const PROJETA = new RegExp(`["']?\\b${CAMPOS}["']?\\s*:\\s*\\w+\\.${CAMPOS}\\s*[,;)]`);
+/** LIMPEZA — `campo: undefined`. Isenta por natureza: apagar a âncora reduz
+ * compromisso, nunca o cria. É o que `discovery.ts` faz numa busca nova, e o
+ * guard tem que deixar passar, senão desincentiva exatamente a higiene que a 12ª
+ * revisão independente cobrou (o campo não tinha ciclo de vida: ninguém o
+ * limpava, e um clique de duas buscas atrás fechava contrato numa cota que já
+ * havia sumido da tela). */
+const LIMPA = new RegExp(`["']?\\b${CAMPOS}["']?\\s*:\\s*undefined\\s*[,;)]`);
 /** Declaração de tipo/chave booleana de canal — não é escrita de valor. */
 const DECLARA = new RegExp(`\\b${CAMPOS}\\??\\s*:\\s*(?:true|ConversationMetadata|FunnelState)`);
 
 function tocaCampo(linha: string): boolean {
 	if (!ESCREVE.test(linha)) return false;
-	return !PROJETA.test(linha) && !DECLARA.test(linha);
+	return !PROJETA.test(linha) && !DECLARA.test(linha) && !LIMPA.test(linha);
 }
 
 const CRIA_ESCOLHA = { test: (fonte: string) => fonte.split("\n").some(tocaCampo) };
@@ -179,5 +186,9 @@ describe("FIX-411 — allowlist de quem assina contrato", () => {
 		expect(CRIA_ESCOLHA.test('"…ou pedir que ele confirme a escolha: isso já aconteceu",')).toBe(
 			false,
 		);
+		// Limpeza: apagar a âncora reduz compromisso, nunca o cria (FIX-415).
+		expect(CRIA_ESCOLHA.test("contractOffer: undefined,")).toBe(false);
+		// …mas escrever um valor logo ao lado continua contando.
+		expect(CRIA_ESCOLHA.test('contractOffer: { administradora: "X" },')).toBe(true);
 	});
 });

@@ -22,7 +22,7 @@ import {
 import { EphemeralTextFilter } from "@/lib/agent/orchestrator/sanitizer";
 import { buildGateContextText } from "@/lib/agent/orchestrator/system-context";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
-import { detectYesNoText, falaRecusa } from "@/lib/agent/orchestrator/yes-no";
+import { detectYesNoText } from "@/lib/agent/orchestrator/yes-no";
 import { LANCE_EMBUTIDO_DEFAULT_PERCENT } from "@/lib/agent/qualify-config";
 import { querAntecipar, shouldAskMotive } from "@/lib/agent/qualify-state";
 import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
@@ -882,10 +882,31 @@ export function createConverseNode(model: BaseChatModel) {
 						// enxerga o rótulo `declines` do analyzer; `falaRecusa` cobre o léxico
 						// que não depende da palavra "não".
 						const texto = state.userText ?? "";
-						const recusouNesteTurno =
-							detectYesNoText(texto, state.intent ?? "neutral") === false || falaRecusa(texto);
+						// ── FIX-416: ALLOWLIST, não blocklist ──
+						//
+						// O 12º vazamento, medido pela 12ª revisão independente no grafo real:
+						//
+						//   "quanto fica a parcela da Rodobens?" → contractOffer = RODOBENS
+						//   "me explica melhor essa da Rodobens" → contractOffer = RODOBENS
+						//
+						// Uma PERGUNTA sobre preço amarrava o cliente à cota. O veto era
+						// blocklist ("o cliente recusou?"), e ausência de recusa não é prova de
+						// escolha — o `~/.claude/reference/arquitetura-agentes-ia.md` diz isso
+						// com todas as letras (allowlist, não blocklist) e este era o lugar do
+						// sistema onde a lei mais importava.
+						//
+						// Quem decide chamar a tool é o MODELO, lendo texto livre. O `groupId`
+						// ser real prova que a cota EXISTE, não que ela foi ESCOLHIDA. Agora o
+						// servidor exige o sinal positivo: `detectYesNoText === true`, ou seja,
+						// uma afirmação reconhecida ("quero", "bora", "pode ser", "é essa que eu
+						// quero"). Pergunta e dúvida devolvem `null` e não ancoram nada.
+						//
+						// Perder um aceite que o léxico não reconhece custa uma pergunta
+						// repetida — o card de decisão aparece. Ganhar um falso aceite custa um
+						// contrato. É a mesma assimetria que o `yes-no.ts:21` argumenta.
+						const decidiuNesteTurno = detectYesNoText(texto, state.intent ?? "neutral") === true;
 						const gid = (call.args as { groupId?: unknown })?.groupId;
-						if (!recusouNesteTurno && typeof gid === "string" && gid.trim()) {
+						if (decidiuNesteTurno && typeof gid === "string" && gid.trim()) {
 							const exibidas = await listShownOffersForConversation(state.conversationId).catch(
 								() => [],
 							);

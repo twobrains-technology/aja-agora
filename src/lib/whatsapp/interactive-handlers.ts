@@ -599,6 +599,17 @@ async function anchorRecommendedOffer(
 		monthlyPayment: number;
 	},
 	groupId: string,
+	/** O clique COMPROMETE a cota (fecha), ou só muda o assunto (explora)?
+	 *
+	 * FIX-415 — a 12ª revisão independente achou que o FIX-414 pôs a escrita de
+	 * `contractOffer` aqui dentro, e esta função é chamada por DOIS botões:
+	 * "Escolher" (`handleGroupSelected`) e "Simular" (`handleSimulate`). O commit
+	 * declarou só o primeiro. Resultado: explorar uma cota virou comprometer-se
+	 * com ela — o oposto exato do que a parede existe pra fazer.
+	 *
+	 * A âncora de CONVERSA vale pros dois (o cliente tocou naquela cota, o assunto
+	 * é ela — FIX-340c). A âncora de CONTRATO é só do botão que fecha. */
+	ancoraContrato: boolean,
 ): Promise<void> {
 	const meta = await loadMeta(conversationId);
 	await persistMeta(conversationId, {
@@ -612,7 +623,7 @@ async function anchorRecommendedOffer(
 			monthlyPayment: details.monthlyPayment,
 			groupId,
 		},
-		// FIX-414 — o clique de grupo é a AÇÃO ESTRUTURADA do WhatsApp.
+		// FIX-414/415 — a âncora de CONTRATO, só quando o botão é o de FECHAR.
 		//
 		// O canal não tem card clicável como a web, mas tem botão interativo: este
 		// handler responde a um `group_<id>` que o cliente TOCOU, com os números
@@ -622,13 +633,17 @@ async function anchorRecommendedOffer(
 		// Sem esta linha o WhatsApp jamais teria contrato ancorado, e a parede do
 		// FIX-413/414 valeria só no canal de MENOR volume — que é precisamente o
 		// erro que o FIX-400 e o FIX-406 cometeram, os dois esquecendo este canal.
-		contractOffer: {
-			administradora: details.administradora,
-			creditValue: details.creditValue,
-			termMonths: details.termMonths,
-			monthlyPayment: details.monthlyPayment,
-			groupId,
-		},
+		...(ancoraContrato
+			? {
+					contractOffer: {
+						administradora: details.administradora,
+						creditValue: details.creditValue,
+						termMonths: details.termMonths,
+						monthlyPayment: details.monthlyPayment,
+						groupId,
+					},
+				}
+			: {}),
 	});
 }
 
@@ -638,7 +653,7 @@ async function handleGroupSelected(ctx: Ctx): Promise<boolean> {
 	try {
 		const details = await getDiscoveryAdapter(conversationId).getGroupDetails({ groupId });
 		await recordUserClick(ctx);
-		await anchorRecommendedOffer(conversationId, details, groupId);
+		await anchorRecommendedOffer(conversationId, details, groupId, true);
 		await runAgentDirective(
 			from,
 			conversationId,
@@ -667,7 +682,8 @@ async function handleSimulate(ctx: Ctx): Promise<boolean> {
 		await recordUserClick(ctx);
 		// FIX-340(c): mesma âncora determinística de handleGroupSelected — este
 		// botão ("Simular") também é clique real, não what-if hipotético.
-		await anchorRecommendedOffer(conversationId, details, groupId);
+		// "Simular" EXPLORA: muda o assunto da conversa, não compromete dinheiro.
+		await anchorRecommendedOffer(conversationId, details, groupId, false);
 		await runAgentDirective(
 			from,
 			conversationId,

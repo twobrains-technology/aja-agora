@@ -252,6 +252,24 @@ export async function discoveryNode(
 			discoveredCreditTarget: funnel.qualifyAnswers.creditMax,
 			recommendedAdministradora,
 			recommendedOffer,
+			// FIX-415 — busca NOVA invalida a cota do contrato.
+			//
+			// A 12ª revisão independente achou que `contractOffer` não tinha ciclo de
+			// vida: ninguém o limpava, nunca. Medido na rota real — cliente escolhe a
+			// cota A, conversa, o funil re-busca e mostra outras ofertas, ele clica
+			// numa nova de R$ 300 mil, e o contrato saía na de R$ 120 mil de duas
+			// buscas atrás, que já nem estava na tela.
+			//
+			// Ancorar por ação estruturada só vale enquanto a ação continua fazendo
+			// sentido. Uma busca nova substitui o conjunto inteiro de ofertas
+			// exibidas: a escolha anterior deixa de existir como opção, e mantê-la é
+			// a mesma classe de defeito que este campo foi criado pra impedir — só
+			// que pelo eixo do TEMPO em vez do eixo do TEXTO.
+			//
+			// O custo é o cliente ter que clicar de novo depois de uma re-busca. É o
+			// mesmo custo que o Kairo já aceitou ("o preço da segurança"), e a
+			// alternativa é fechar contrato numa cota que sumiu da tela.
+			contractOffer: undefined,
 			pendingRecommendationCard,
 		},
 		events,

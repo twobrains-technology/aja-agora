@@ -559,7 +559,12 @@ export async function POST(req: NextRequest) {
 											normalizeAdministradora(marcaDoCard)
 									? fresh.recommendedOffer
 									: ({ administradora: marcaDoCard } as typeof fresh.contractOffer);
-							if (!fresh.decisionDispatched || (ancoraDoClique && !fresh.contractOffer)) {
+							// FIX-415 — clique NOVO sempre reancora. A condição anterior
+							// (`&& !fresh.contractOffer`) fazia o PRIMEIRO clique ganhar pra
+							// sempre: quem escolhia a cota A, mudava de ideia e clicava na B
+							// fechava contrato na A. Ação estruturada mais recente é a decisão
+							// mais recente — é o sentido inteiro de ancorar por ação.
+							if (!fresh.decisionDispatched || ancoraDoClique) {
 								await persistMeta(conversationId, {
 									...fresh,
 									decisionDispatched: true,
@@ -752,6 +757,11 @@ export async function POST(req: NextRequest) {
 							if (
 								administradoraConflictsWithRegisteredProposal(
 									existingProposal?.administradora,
+									// FIX-415 — compara contra o que será EFETIVAMENTE enviado.
+									// Sem cota ancorada, o input cai pra administradora da
+									// proposta registrada (contract-input.ts), então o guard
+									// precisa comparar contra a mesma coisa — senão volta a
+									// checar A e executar B, que foi o defeito do FIX-414.
 									// FIX-414 — SEM fallback pro campo de texto.
 									//
 									// A 11ª revisão independente achou aqui um P0 que eu mesmo
@@ -768,7 +778,13 @@ export async function POST(req: NextRequest) {
 									//
 									// Agora guard e ação leem o MESMO campo — o único que o
 									// contrato consome (contract-input.ts, FIX-414).
-									freshMeta.contractOffer?.administradora,
+									// FIX-415 — o guard olha a cota ancorada E o foco da conversa.
+									// Incluir o campo de texto AQUI é seguro porque ele só torna o
+									// guard mais ESTRITO: se a conversa está em ITAÚ e há proposta
+									// RODOBENS registrada, bloqueia e avisa, em vez de mandar
+									// RODOBENS calado — que seria a troca silenciosa que este repo
+									// combate desde o FIX-195.
+									freshMeta.contractOffer?.administradora ?? freshMeta.recommendedAdministradora,
 								)
 							) {
 								await writeAndSaveText(
@@ -834,7 +850,9 @@ export async function POST(req: NextRequest) {
 										// entre os dois é mais uma fresta da mesma família.
 										freshMeta,
 										{ cpf, celular, lgpd: body.action.lgpd },
-										{ leadId },
+										// FIX-415 — o retry vai pra MESMA administradora da
+										// proposta que já existe, nunca pro sorteio do gateway.
+										{ leadId, registeredAdministradora: existingProposal?.administradora },
 									),
 								);
 								// Copy/artifacts do passo 5 vivem em closing-presentation.ts
