@@ -179,7 +179,16 @@ export async function startContract(
 		noOffer: !chosen,
 		requestedCreditValue: input.originalRequestedCreditValue ?? input.valor,
 		administradoraChanged,
-		previousAdministradora: administradoraChanged ? input.administradoraPreferida : null,
+		// FIX-418 — a marca ANTERIOR é a que estava na TELA, não a preferência.
+		//
+		// O FIX-417 trocou a fonte de `administradoraChanged` pra `marcaNaTela` e
+		// esqueceu esta linha: `administradoraPreferida` é nula justamente na jornada
+		// sem clique — o caso que aquele commit dizia estar corrigindo. Os dois
+		// consumidores (`closing-presentation.ts`, `contract-capture.ts`) exigem valor
+		// truthy, então o aviso seguia MUDO e o cliente lia "Confirmei com a ITAÚ"
+		// com RODOBENS na tela. A 13ª revisão provou que era vácuo: revertendo o
+		// FIX-417, ZERO testes falhavam.
+		previousAdministradora: administradoraChanged ? marcaNaTela : null,
 	};
 }
 

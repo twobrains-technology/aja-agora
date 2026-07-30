@@ -12,8 +12,8 @@ import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors
 import { getLeadIdForConversation } from "@/lib/admin/lead-stage-tracker";
 import { reengageQuestionForGate } from "@/lib/agent/gate-reengage";
 import {
-	normalizeAdministradora,
 	resolveChosenOffer,
+	resolveOfferForAdministradora,
 	resolveOfferMentionForConversation,
 } from "@/lib/agent/orchestrator/choose-offer";
 import {
@@ -552,12 +552,40 @@ export async function POST(req: NextRequest) {
 							const administradora = marcaDoCard ?? fresh.recommendedAdministradora;
 							// Normaliza pra comparar (ITAÚ vs ITAU) — o resto do arquivo já faz
 							// isso, e comparar cru era outro achado da 11ª revisão.
+							// FIX-418 — a cota é RECONSTRUÍDA do que foi exibido, nunca copiada
+							// de `recommendedOffer`.
+							//
+							// A 13ª revisão independente mediu este handler na rota real e achou
+							// o buraco: o clique carrega SÓ a marca (`{kind:"interest",
+							// administradora}`), e eu copiava o OBJETO INTEIRO — herdando
+							// crédito, prazo e parcela de um campo que o texto escreve. Medido:
+							// cliente declarou teto de 180.000, `recommendedOffer` estava em
+							// 300.000 (resíduo de what-if), um clique em "Tenho interesse" e a
+							// Bevi recebia 300.000. A ação estruturada validava UM campo e
+							// herdava QUATRO.
+							//
+							// O padrão certo já existia 60 linhas abaixo, no `choose_offer`, cujo
+							// próprio comentário diz que cair pro campo de texto "reintroduziria
+							// o texto no caminho do dinheiro". Era o que este handler fazia — e
+							// ele é o CTA principal dos cards.
+							//
+							// `resolveOfferForAdministradora` procura a marca entre as ofertas
+							// REALMENTE exibidas nesta conversa (artifacts persistidos). Sem
+							// correspondência, ancora só a marca: melhor uma cota incompleta que
+							// o funil completa perguntando do que quatro números inventados.
+							const cotaExibida = marcaDoCard
+								? await resolveOfferForAdministradora(conversationId, marcaDoCard).catch(() => null)
+								: null;
 							const ancoraDoClique = !marcaDoCard
 								? undefined
-								: fresh.recommendedOffer?.administradora &&
-										normalizeAdministradora(fresh.recommendedOffer.administradora) ===
-											normalizeAdministradora(marcaDoCard)
-									? fresh.recommendedOffer
+								: cotaExibida
+									? ({
+											...(cotaExibida.groupId ? { groupId: cotaExibida.groupId } : {}),
+											administradora: cotaExibida.administradora ?? marcaDoCard,
+											creditValue: cotaExibida.creditValue,
+											termMonths: cotaExibida.termMonths,
+											monthlyPayment: cotaExibida.monthlyPayment,
+										} as typeof fresh.contractOffer)
 									: ({ administradora: marcaDoCard } as typeof fresh.contractOffer);
 							// FIX-415 — clique NOVO sempre reancora. A condição anterior
 							// (`&& !fresh.contractOffer`) fazia o PRIMEIRO clique ganhar pra

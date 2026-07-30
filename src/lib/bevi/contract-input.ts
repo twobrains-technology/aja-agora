@@ -124,12 +124,31 @@ export function buildStartContractInput(
 		!meta.recommendedAdministradora ||
 		normalizeAdministradora(meta.recommendedOffer.administradora) ===
 			normalizeAdministradora(meta.recommendedAdministradora);
-	const valor =
-		meta.contractOffer?.creditValue ??
-		(ofertaConsistente ? meta.recommendedOffer?.creditValue : undefined) ??
-		q.creditMax ??
-		q.creditMin ??
-		50000;
+	// FIX-418 — a carta exibida é DICA, o teto declarado é LIMITE.
+	//
+	// A 13ª revisão independente mediu o pior caso do FIX-417 e mostrou que ele era
+	// PIOR que a versão anterior: com um what-if de 300.000 que o cliente RECUSOU
+	// parado em `recommendedOffer`, e teto declarado de 180.000, o input saía com
+	// 300.000 — 66% acima do que ele pediu, e o próprio payload carregava o 180.000
+	// em `originalRequestedCreditValue`. O sistema sabia e mandava assim.
+	//
+	// Minha premissa era que "a carta exibida" sempre respeita "o que o cliente
+	// pediu". Não respeita: `recommendedOffer` não tem teto, e um what-if recusado
+	// deixa lá uma carta que ele nunca quis. Erro LIMITADO pelo teto que ele
+	// declarou é ruim; erro ILIMITADO é outra categoria — no fim disso há CPF e
+	// consulta de bureau.
+	//
+	// A cota ANCORADA por clique é a única exceção, e é deliberada: se ele tocou o
+	// card, aquele número é a decisão mais recente e vale mesmo acima do teto
+	// antigo. Limitar ali seria ignorar a ação estruturada que a parede inteira
+	// existe pra privilegiar.
+	const tetoDeclarado = q.creditMax ?? q.creditMin;
+	const cartaExibida = ofertaConsistente ? meta.recommendedOffer?.creditValue : undefined;
+	const dicaDentroDoTeto =
+		cartaExibida !== undefined && (tetoDeclarado === undefined || cartaExibida <= tetoDeclarado)
+			? cartaExibida
+			: undefined;
+	const valor = meta.contractOffer?.creditValue ?? dicaDentroDoTeto ?? tetoDeclarado ?? 50000;
 	// FIX-281 (r9 onda 2, gap G-A): âncora do aviso de divergência CDC no
 	// `real_offer` — o pedido ORIGINAL do cliente, MESMA precedência do hero
 	// (runner.ts:656-665, FIX-261). Campo NOVO e independente de `valor` acima
