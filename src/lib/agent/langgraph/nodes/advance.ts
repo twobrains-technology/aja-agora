@@ -250,9 +250,10 @@ export async function advanceFunnelNode(
 		intent === "off_topic" ||
 		intent === "wants_more_options";
 
-	/** O cliente nomeou uma cota já exibida NESTE turno — ancoragem determinística
-	 * (nunca classificação de intenção), e portanto uma escolha feita. */
-	let escolhaPorMencao = false;
+	/** O cliente nomeou uma cota já exibida NESTE turno → a conversa passa a ser
+	 * sobre ELA: cota em foco, números do balão e card acompanham o que ele
+	 * nomeou. É ancoragem determinística de ASSUNTO, nunca de decisão — a menção
+	 * deixou de gravar `escolha` no FIX-406 (ver o bloco no fim desta função). */
 	if (funnel.revealCompleted && state.userText?.trim()) {
 		const mencionada = await resolveAdministradoraMentionForConversation(
 			state.conversationId,
@@ -309,121 +310,38 @@ export async function advanceFunnelNode(
 					availableSlots: mencionada.availableSlots,
 				} as FunnelState["recommendedOffer"],
 			};
-			escolhaPorMencao = true;
 		}
 	}
 
-	// ── A ESCOLHA É UM FATO, NÃO UMA PERGUNTA EM ABERTO ──
-	// O gate `decision` só se dava por resolvido quando o CARD de decisão saía —
-	// e o card é suprimido justamente quando o cliente responde com informação
-	// ("quero a de menor parcela", "pode ser a que você recomendou"). O funil não
-	// registrava nada, o gate seguia ativo e o sistema mandava o modelo perguntar
-	// de novo: três confirmações da MESMA cota em três turnos seguidos.
+	// ── NOMEAR MOVE A CONVERSA; SÓ O CLIQUE ASSINA (FIX-406, 2026-07-30) ──
 	//
-	// Aqui a escolha vira estado quando ela é VERIFICÁVEL — nunca adivinhada:
-	// (a) o cliente nomeou uma cota que já foi exibida (resolvida acima), ou
-	// (b) o critério que decide já está capturado no funil e existe uma única
-	//     oferta ancorada — não há o que perguntar.
-	// Como a fala disso é feita, com que palavra, continua sendo do modelo.
-	if (funnel.revealCompleted && funnel.recommendedOffer && !meta.contractClosed) {
-		const _criterioJaCapturado =
-			funnel.qualifyAnswers.objetivo !== undefined ||
-			funnel.qualifyAnswers.prazoMeses !== undefined;
-		// FIX-388 — o turno em que o cliente RECUSA algo não ancora escolha por
-		// nenhuma via inferida.
-		//
-		// Achado pela sonda `pnpm sonda:intent` (2026-07-29) rodando o analyzer
-		// REAL: "não, prefiro usar só o meu dinheiro" volta do claude-haiku-4-5
-		// como `ready_to_proceed` — o raciocínio dele diz "rejeita explicitamente"
-		// e ele extrai `hasLance: no` certo, mas o RÓTULO sai como avanço. Com isso
-		// o cliente recusava o EMBUTIDO e o funil registrava que ele havia
-		// ESCOLHIDO A COTA. Mesma classe do FIX-385/386: exige um SIM, não a
-		// ausência de um não.
-		//
-		// Vale pras DUAS origens inferidas, não só pra `afirmacao`: barrar apenas
-		// o intent fazia o turno cair em `criterio` (basta `prazoMeses` existir) e
-		// a escolha era ancorada de novo — provado em
-		// `cenario-escolha-recusa.fix-388.test.ts`. `mencao` fica de fora de
-		// propósito: nomear uma cota exibida é ato POSITIVO do cliente, não
-		// inferência nossa.
-		const _recusouNesteTurno = detectYesNoText(state.userText ?? "", intent) === false;
-		// FIX-395 — enquanto o funil TEM pergunta na mesa, uma afirmação responde a
-		// ELA, não escolhe a cota.
-		//
-		// Achado por conversa real (`pnpm sonda:conversa`, conversa 042e04ec,
-		// conferido no banco): o agente propôs "mirar cartas maiores, na casa de R$ 1
-		// milhão" e, no mesmo balão, perguntou o prazo. O cliente disse "faz
-		// sentido" — concordando com a ESTRATÉGIA — e o funil gravou
-		// `escolha: { origem: "afirmacao", creditValue: 721000 }`: a cota que o
-		// agente acabara de dizer que NÃO serve.
-		//
-		// É regressão do FIX-387. Antes, "faz sentido" não casava com a lista de SIM
-		// e nada acontecia; virar um SIM legítimo (e deve ser) destravou este
-		// caminho pra qualquer afirmação da conversa. `perguntaAberta` não protege:
-		// ela olha se o USUÁRIO perguntou, não se o AGENTE tem pergunta pendente.
-		//
-		// O gate ativo É a pergunta na mesa. Com gate aberto, o "sim" pertence a
-		// ele; a escolha por afirmação fica pro momento em que não há mais nada a
-		// cobrar. Mesma assimetria de sempre: errar pra menos devolve a pergunta,
-		// errar pra mais grava uma escolha que o cliente não fez.
-		// FIX-399b — o critério NÃO é "tem gate aberto", é O QUE o cliente disse.
-		//
-		// A 1ª versão do FIX-395 usava `Boolean(state.gate) && state.gate !==
-		// "decision"`. Segunda revisão independente mostrou que `state.gate` vem como
-		// `showGate ? gate : undefined` e que, com `ready_to_proceed`, o
-		// `decideShowGate` devolve true em quase todo gate — então a condição era
-		// quase sempre verdadeira e `origem: "afirmacao"` virou código quase morto.
-		// Consequência medida: "quero fechar essa", "bora contratar" e "pode seguir
-		// com a contratação" NÃO ancoravam nada. Isso é o defeito que o comentário
-		// abaixo descreve ("pedia pra fechar três vezes ouvindo que não havia
-		// proposta"), e `nextGate` já declara a precedência oposta — `escolha` vence
-		// `timeframe`.
-		//
-		// A distinção correta é semântica e verificável no texto DELE: pedido de
-		// fechamento fala da OFERTA ("fechar", "contratar", "seguir com essa"); um
-		// "faz sentido" respondendo pergunta de prazo não fala da oferta nenhuma. Só
-		// o primeiro registra escolha — e aí o gate aberto deixa de importar, porque
-		// quem pede pra fechar já respondeu tudo que interessa.
-		// FIX-400 (decisão do Kairo, 2026-07-30) — `escolha` só nasce de ação
-		// VERIFICÁVEL. As origens `afirmacao` e `criterio` foram REMOVIDAS: as duas
-		// inferiam consentimento financeiro a partir de texto livre, e cinco
-		// revisões independentes acharam cinco vazamentos diferentes na mesma
-		// arquitetura (substring, oferta stale, gate suprimido, ambiguidade léxica,
-		// adversativa criando aceite). Cada rodada fechava a porta achada e a
-		// seguinte achava outra — o espaço de sinal textual que pode vazar é, na
-		// prática, infinito, exatamente como `yes-no.ts:21` já documenta pro lado
-		// negativo.
-		//
-		// Sobra o que é verificável: `mencao` — o cliente NOMEIA uma cota que já foi
-		// exibida, e a resolução é um lookup contra o conjunto FECHADO de ofertas da
-		// tela (ou o nome bate, ou não bate; não há interpretação). O resto do
-		// fechamento vem de CLIQUE de card, cujo payload é dado do servidor.
-		//
-		// Conversa segue livre pra tudo — ela só perde o poder de assinar contrato
-		// no lugar do cliente. É a lei-mãe do projeto onde ela mais importa:
-		// comprometer alguém com uma cota é invariante verificável, e invariante
-		// verificável vira código, não heurística sobre linguagem natural.
-		const origem: NonNullable<FunnelState["escolha"]>["origem"] | null = escolhaPorMencao
-			? "mencao"
-			: null;
-		if (origem) {
-			funnel = {
-				...funnel,
-				escolha: {
-					...(funnel.recommendedOffer.groupId ? { groupId: funnel.recommendedOffer.groupId } : {}),
-					administradora: funnel.recommendedOffer.administradora,
-					creditValue: funnel.recommendedOffer.creditValue,
-					termMonths: funnel.recommendedOffer.termMonths,
-					monthlyPayment: funnel.recommendedOffer.monthlyPayment,
-					origem,
-				},
-				// Coerência de fase: `phaseFromMeta` (tool-policy.ts) vira `closing`
-				// por este flag. Resolver a decisão sem marcá-lo deixaria a política
-				// de tools presa no regime de `reveal`, com o funil já no fecho.
-				decisionDispatched: true,
-			};
-		}
-	}
+	// Aqui existia o último caminho pelo qual TEXTO gravava `escolha`. O FIX-400 já
+	// havia removido `afirmacao` e `criterio` e mantido `mencao`, porque a 5ª
+	// revisão a classificou como verificável: o nome ou bate com uma oferta da tela,
+	// ou não bate. O DADO é verificável mesmo — o erro foi concluir que a INTENÇÃO
+	// também era. Entre "o cliente pronunciou a marca X" e "o cliente escolheu X"
+	// existe interpretação de linguagem, e foi exatamente ali que as três revisões
+	// seguintes vazaram: o proxy do WhatsApp ancorando por regex fora do grafo (6ª),
+	// o casamento por nome ignorando recusa (7ª) e "Itaú, não obrigado" ancorando o
+	// Itaú por causa de uma vírgula (8ª).
+	//
+	// Oito rodadas fecharam oito portas da mesma classe, cada uma mais fina que a
+	// anterior. A conclusão é a que o `yes-no.ts:21` já registra pro lado negativo e
+	// que agora vale pro positivo: o espaço de sinal textual que pode vazar é, na
+	// prática, infinito. Não se fecha porta a porta — fecha-se a parede.
+	//
+	// A decisão do Kairo, que já cobria este caso: "escolha e decisionDispatched só
+	// via clique no card. Texto livre é para conversa, não para comprometer
+	// dinheiro."
+	//
+	// O que sobra escrevendo `escolha`: clique de card (`select-group`, `interest`,
+	// `choose_offer`), cujo payload é dado do servidor, e a tool `escolher_cota`,
+	// cujo efeito é vetado em turno de recusa (FIX-405).
+	//
+	// ⚠️ O QUE **NÃO** MUDOU, e é o ponto do fix: a re-âncora logo acima continua
+	// viva. Nomear uma marca segue trocando a cota em foco, os números do balão e o
+	// card exibido — o agente acompanha a atenção do cliente como um vendedor
+	// acompanharia. Nomear perdeu só o poder de assinar no lugar dele.
 
 	return liberaHero ? { funnel, events, apresentaOfertaNesteTurno: true } : { funnel };
 }

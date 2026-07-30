@@ -16,6 +16,7 @@ import { conversations, leads, user as userTable } from "@/db/schema";
 import { applyTrackedStageToLead } from "@/lib/admin/lead-stage-tracker";
 import { transitionLeadStage } from "@/lib/admin/lead-transitions";
 import { buildAdvanceToContractDirective } from "@/lib/agent/orchestrator/directives";
+import { detectYesNoText } from "@/lib/agent/orchestrator/yes-no";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { publishMessage } from "@/lib/chat/message-bus";
 import { triggerEvalScoring } from "@/lib/eval/trigger";
@@ -58,7 +59,30 @@ const INTEREST_RE =
  * cobre frases reais do dossiê de QA ("bora, tenho interesse", "tenho
  * interesse, quero fechar") sem abrir mão da âncora (evita falso-positivo
  * tipo "tenho interesse em saber sobre lance"). FIX-336. */
-function isInterestExpression(text: string): boolean {
+export function isInterestExpression(text: string): boolean {
+	// FIX-406 — a recusa manda, e ela é avaliada na frase INTEIRA antes de
+	// qualquer fatiamento.
+	//
+	// O `some` abaixo aceita se QUALQUER segmento, sozinho, for interesse. A
+	// âncora `^…$` protege o caso colado ("não quero fechar" não casa, o "não"
+	// está no mesmo segmento) — mas a vírgula desfaz essa proteção: "não, quero
+	// fechar" vira ["não", "quero fechar"] e o segundo pedaço passa limpo. É a
+	// mesma vírgula que a 8ª revisão independente achou fazendo "Itaú, não
+	// obrigado" ancorar o Itaú, agora no ramo que chama
+	// `buildAdvanceToContractDirective` DIRETO, fora do grafo — ou seja, sem o
+	// veto de recusa do FIX-405 e sem gate nenhum, no canal onde está o volume.
+	//
+	// `detectYesNoText` é o primitivo que já resolve isto (regra de rebaixamento
+	// por oração, FIX-399d): recusa em qualquer oração é terminal. Reusá-lo em vez
+	// de escrever uma nona regex é o ponto — duas cópias da mesma heurística
+	// sempre divergem, e foi assim que a cópia do `yes-no` no grafo ficou para
+	// trás (`advance.ts:17`).
+	//
+	// Só o `false` explícito barra. `null` (indefinido — "tenho interesse" não tem
+	// marcador de sim nem de não) segue para a regex, que é quem sabe reconhecer
+	// as frases de fechamento.
+	if (detectYesNoText(text, "neutral") === false) return false;
+
 	const segments = text
 		.split(/[,;.!?]+/)
 		.map((s) => s.trim())
