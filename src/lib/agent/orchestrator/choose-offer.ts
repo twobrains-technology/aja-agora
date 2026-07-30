@@ -9,6 +9,8 @@
 // ancorando a administradora + prazo pro fechamento fechar NO GRUPO CERTO — sem
 // re-busca, sem re-resolução, sem meta-narrativa (CONTRATO com bloco-b, adendo B8).
 
+import { detectYesNoText } from "./yes-no";
+
 /** Campos ancorados da cota escolhida — alimentam recommendedAdministradora +
  * recommendedOffer (que buildStartContractInput usa como administradoraPreferida
  * + prazoPreferido no fechamento). */
@@ -420,6 +422,31 @@ export function resolveOfferByMention(offers: ChosenOffer[], text: string): Chos
 export function resolveOfertaPorCriterio(offers: ChosenOffer[], text: string): ChosenOffer | null {
 	const t = (text ?? "").toLowerCase();
 	if (offers.length === 0) return null;
+	// FIX-401 (6ª revisão independente) — RECUSA não resolve critério.
+	//
+	// Esta função casava "carta maior" em qualquer ponto da frase e ignorava tudo
+	// em volta: "de jeito nenhum quero essa carta maior" e "não quero a carta
+	// maior, prefiro a menor" devolviam A CARTA MAIOR. A irmã dela,
+	// `resolveAdministradoraMention`, já trata negação desde sempre
+	// (`extractNegatedAdministradoras`) — o caminho por critério nunca ganhou o
+	// mesmo cuidado.
+	//
+	// Importa especialmente depois do FIX-400: aquele fix tirou `afirmacao` e
+	// `criterio` do `advance.ts`, mas esta função segue alcançável DENTRO de
+	// `origem: "mencao"` — o caminho que o FIX-400 manteve por ser verificável.
+	// Verificável era; imune a negação, não.
+	//
+	// `detectYesNoText` já sabe ler recusa, adversativa e condicional; reusá-lo
+	// evita reinventar (mal) a mesma análise aqui. `intent: "neutral"` porque só
+	// interessa o TEXTO — o rótulo do turno é decidido rio acima.
+	if (detectYesNoText(t, "neutral") === false) return null;
+	// E aqui a assimetria é MAIS estrita que a do `detectYesNoText`: recusa sem a
+	// palavra "não" ("de jeito nenhum", "nem pensar", "jamais") volta de lá como
+	// INDEFINIDO, porque naquele contexto indefinido significa "o gate pergunta de
+	// novo" — saída segura. Aqui não há gate pra reabrir: um `null` daqui só faz o
+	// funil não ancorar, e um falso positivo ancora uma cota que o cliente
+	// recusou. Então qualquer marcador de recusa basta pra desistir.
+	if (/\b(de jeito nenhum|nem pensar|jamais|nunca|de forma alguma)\b/i.test(t)) return null;
 	/** Extremo (menor/maior) de um campo NUMÉRICO entre as cotas que têm o campo.
 	 * Devolve o valor junto com a cota pra o comparador nunca precisar reafirmar
 	 * que o campo existe — quem filtrou já provou. */

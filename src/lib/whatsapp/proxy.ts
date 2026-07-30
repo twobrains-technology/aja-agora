@@ -240,7 +240,22 @@ export async function handlePendingHandoffText(from: string, text: string): Prom
 				// "Bora fechar" sobre uma cota ancorada É a escolha. Sem registrá-la
 				// aqui, o turno seguinte voltava pelo grafo com o gate `decision` em
 				// aberto e o agente pedia confirmação do que ele já tinha fechado.
-				...(ancora
+				// FIX-401 — `escolha` só nasce de MENÇÃO resolvida, nunca de texto de
+				// interesse. Antes, qualquer fala que casasse `isInterestExpression`
+				// ("bora fechar", "topei", "fechado") gravava `origem: "afirmacao"`
+				// aqui — regex pura, fora do grafo, sem analyzer e sem gate nenhum.
+				//
+				// O FIX-400 tinha removido essa origem do `advance.ts` e o commit
+				// declarou que ela não existia mais; era verdade no grafo e falso no
+				// sistema. A 6ª revisão independente achou esta porta, e ela é a que
+				// mais importa: o WhatsApp é onde está o volume de vendas.
+				//
+				// O que sobra é `mencao` — o cliente NOMEIA outra administradora que
+				// ele viu, e a resolução é lookup contra o conjunto fechado de ofertas
+				// desta conversa. Sem menção resolvida, `decisionDispatched` segue
+				// marcado (o cliente demonstrou interesse e o funil avança), mas a
+				// COTA não é dada como escolhida — o card de decisão pergunta.
+				...(ancora && escolhida && trocouDeAdministradora
 					? {
 							escolha: {
 								...(ancora.groupId ? { groupId: ancora.groupId } : {}),
@@ -248,7 +263,7 @@ export async function handlePendingHandoffText(from: string, text: string): Prom
 								creditValue: ancora.creditValue,
 								termMonths: ancora.termMonths,
 								monthlyPayment: ancora.monthlyPayment,
-								origem: escolhida && trocouDeAdministradora ? "mencao" : "afirmacao",
+								origem: "mencao",
 							} as const,
 						}
 					: {}),
