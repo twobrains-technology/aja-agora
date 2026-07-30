@@ -272,9 +272,15 @@ async function main() {
 			console.error("");
 			console.error("  Pra aplicar essas migrations em prod:");
 			console.error("  1. Aprovação humana (DBA/sênior) no PR.");
-			console.error("  2. aws secretsmanager update-secret-value-edition em");
-			console.error("     tb/prod/<app>/env adicionando ALLOW_DESTRUCTIVE_MIGRATION=true");
-			console.error("  3. Re-deploy. Após sucesso, REMOVER a flag do secret.");
+			console.error("  2. Adicionar ALLOW_DESTRUCTIVE_MIGRATION=true no secret");
+			console.error("     tb/prod/<app>/env (put-secret-value com o JSON completo).");
+			console.error("  3. ⚠️  SÓ ISSO NÃO BASTA: a task definition do ECS injeta as");
+			console.error("     chaves do secret UMA A UMA (containerDefinitions[].secrets).");
+			console.error("     Sem incluir ALLOW_DESTRUCTIVE_MIGRATION lá, o container NÃO");
+			console.error("     enxerga a flag e você vê este mesmo erro de novo. Registre uma");
+			console.error("     revisão nova da TD com a chave e aponte o service pra ela.");
+			console.error("  4. Re-deploy. Após sucesso, REVERTER OS DOIS: remover a chave do");
+			console.error("     secret E voltar o service pra uma TD sem ela.");
 			console.error("");
 			console.error("  Detalhes: reference/conventions.md → Migrations.");
 			process.exit(1);

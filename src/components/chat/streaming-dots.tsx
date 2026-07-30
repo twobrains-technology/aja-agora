@@ -160,10 +160,14 @@ export function StreamingDots({
 	// Balão de "digitando" — mesmo desenho do balão de fala do assistente
 	// (card + borda + rabicho superior-esquerdo), pra o respiro entre os blocos
 	// ler como "ele está escrevendo", não como tela travada.
+	//
+	// `inline-flex` não é enfeite: `<output>` é INLINE por padrão, e sem display
+	// próprio o balão colapsava numa faixa estreita e alta, com os pontinhos
+	// vazando pra fora da borda (visto ao vivo, Kairo 2026-07-30).
 	if (emBalao) {
 		return (
 			<output
-				className="w-fit max-w-full rounded-2xl rounded-tl-[5px] border border-border bg-card px-[14px] py-[10px] shadow-[0_1px_2px_rgba(5,36,64,0.05),0_8px_20px_-14px_rgba(5,36,64,0.2)]"
+				className="inline-flex w-fit max-w-full items-center rounded-2xl rounded-tl-[5px] border border-border bg-card px-[14px] py-[10px] shadow-[0_1px_2px_rgba(5,36,64,0.05),0_8px_20px_-14px_rgba(5,36,64,0.2)]"
 				aria-label="Digitando..."
 			>
 				{Dots}

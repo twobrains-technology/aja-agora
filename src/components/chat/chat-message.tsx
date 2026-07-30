@@ -245,18 +245,18 @@ export function ChatMessage({
 	const hasNonTextVisuals = inlineSegments.some((s) => s.kind !== "text");
 	const isStreamingEmpty = isStreaming && isLast && totalTextLength === 0 && !hasNonTextVisuals;
 	const currentTool = latestToolName(message);
-	// O TURNO NÃO PODE FICAR MUDO NO MEIO.
+	// O "DIGITANDO" SÓ EXISTE ANTES DA PRIMEIRA PALAVRA DO TURNO.
 	//
-	// `!hasNonTextVisuals` matava o indicador assim que o primeiro card entrava —
-	// e é justamente DEPOIS do card que o turno respira (ritmo.ts) antes da fala
-	// seguinte. O cliente via card, silêncio e tela parada: "parece que o sistema
-	// está lento" (Kairo, 2026-07-30). Enquanto o turno está aberto e é o último
-	// da lista, o agente está trabalhando — e isso tem que aparecer.
-	const showInflightDots =
-		isStreaming &&
-		isLast &&
-		!isStreamingEmpty &&
-		(currentTool !== undefined || hasNonTextVisuals || totalTextLength > 20);
+	// Tentei duas vezes fazer ele viver no meio do turno e as duas deram errado
+	// na tela (Kairo, 2026-07-30): primeiro apareceu EMBAIXO do texto que estava
+	// sendo escrito (onde o cursor já sinaliza), depois apareceu ENTRE os chips de
+	// resposta e o card seguinte, virando um balãozinho órfão no meio da conversa.
+	//
+	// A leitura certa é a do mensageiro: "digitando" é o que aparece DEPOIS que
+	// você manda a mensagem e ANTES da primeira letra da resposta. Passou disso, o
+	// que está na tela já conta a história — texto tem cursor, card é conteúdo,
+	// chips esperam clique. Quem cobre esse único momento é o `isStreamingEmpty`
+	// (o balão de dots logo abaixo), então este segundo indicador não deve existir.
 
 	const firstTransition = transitionParts[0]?.data;
 
@@ -387,15 +387,6 @@ export function ChatMessage({
 							})()}
 						</AnimatePresence>
 					</RevealSelectionProvider>
-
-					{showInflightDots && (
-						<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-							{/* Sem tool em voo, o indicador é o BALÃO de digitando — o mesmo
-							    desenho da fala do assistente. Com tool, a pill de status já é
-							    o container e se basta. */}
-							<StreamingDots tool={currentTool} emBalao={currentTool === undefined} />
-						</motion.div>
-					)}
 
 					{onRetry && (
 						<Button

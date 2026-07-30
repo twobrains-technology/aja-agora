@@ -314,6 +314,38 @@ export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
 		logLine: ({ artifactType, conversationId }) =>
 			`[card-dup-intraturn] guard: suprimindo ${artifactType} duplicado no mesmo turno (conv=${conversationId})`,
 	},
+	// ATALHO DE RESPOSTA NÃO CONVIVE COM CARD DE PESO NO MESMO TURNO.
+	//
+	// Visto ao vivo (Kairo, 2026-07-30): o agente explicou o lance, perguntou
+	// e ofereceu "Tenho essa grana" / "Prefiro lance menor" — e logo abaixo
+	// caiu o card grande da recomendação do Itaú. O card enterra a pergunta:
+	// o cliente é convidado a responder e, no mesmo fôlego, recebe outra coisa
+	// pra olhar. "Matou totalmente o de cima", nas palavras dele.
+	//
+	// É a mesma classe do defeito que o turno de apresentação já resolveu
+	// (mostrar e perguntar no mesmo turno), agora pela porta dos atalhos. Quando
+	// o turno traz conteúdo de peso, ELE é o assunto; a pergunta com atalhos
+	// fica pro turno seguinte, quando o cliente já olhou o card.
+	{
+		name: "quick-reply-com-card-de-peso",
+		applies: ({ artifactType, turnArtifactTypes }) =>
+			artifactType === "quick_reply" &&
+			(turnArtifactTypes ?? []).some((t) =>
+				[
+					"recommendation_card",
+					"comparison_table",
+					"group_card",
+					"simulation_result",
+					"decision_prompt",
+					"contract_form",
+					"two_paths",
+					"embedded_bid",
+					"contemplation_dial",
+				].includes(t),
+			),
+		logLine: ({ conversationId, turnArtifactTypes }) =>
+			`[quick-reply-com-card-de-peso] guard: suprimindo atalhos — o turno já traz ${turnArtifactTypes?.join("+")}, que é o assunto (conv=${conversationId})`,
+	},
 	// FIX-300 (P6, loop-de-goal r10 — card alucinado no gate `decision`): o
 	// print real mostrava um topic_picker com chips "a"/"b" no lugar do card
 	// "Esse plano faz sentido?" — o gate `decision` tecnicamente ainda é fase
