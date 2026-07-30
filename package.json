@@ -32,7 +32,7 @@
 		"test:funil": "vitest run --reporter=verbose --no-file-parallelism 'src/lib/agent/orchestrator/**/*.integration.test.ts' 'src/lib/agent/langgraph/**/*.integration.test.ts'",
 		"test:integration": "vitest run --reporter=verbose --no-file-parallelism route. integration.test builder.",
 		"test:e2e": "playwright test",
-		"test:caminho-do-dinheiro": "RUN_DB_TESTS=1 vitest run --reporter=dot --silent=true --no-file-parallelism route. integration.test --exclude='**/mesa-flow.e2e.integration.test.ts' --exclude='**/route.identify-celular-ddi.integration.test.ts' --exclude='**/interactive-reply/route.test.ts'",
+		"test:caminho-do-dinheiro": "RUN_DB_TESTS=1 vitest run --reporter=dot --silent=true --no-file-parallelism --testTimeout=240000 route. integration.test",
 		"test:pre-commit": "pnpm lint && pnpm test:unit && pnpm test:caminho-do-dinheiro",
 		"prepare": "husky",
 		"sonda:intent": "tsx scripts/sonda-intent-aceite.ts",

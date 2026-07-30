@@ -1,51 +1,51 @@
-# Três testes de integração travam (20s+), fora do gate do caminho do dinheiro
+# ~~Três testes de integração travam~~ — DIAGNÓSTICO ERRADO, RESOLVIDO
 
-**Status:** aberto · **Severidade:** média · **Achado em:** 2026-07-30
+**Status:** RESOLVIDO em 2026-07-30 · **Achado em:** 2026-07-30
 
-## O quê
+## O que eu escrevi aqui, e que era falso
 
-Três arquivos de integração travam — não demoram, travam — quando rodam contra o
-Postgres local:
+A primeira versão deste card afirmava duas coisas, e a 15ª revisão independente
+derrubou as duas com medição:
 
-- `src/lib/mesa/mesa-flow.e2e.integration.test.ts`
-- `src/app/api/chat/route.identify-celular-ddi.integration.test.ts`
-- `src/app/api/admin/simulator/attendant/[attendantId]/interactive-reply/route.test.ts`
+1. **"Com `--testTimeout=90000` ainda falha → TRAVAM, não são lentos."**
+   Falso. Com `--testTimeout=240000` os três passam: 3 arquivos, 10 testes,
+   289,93 s. Não travam — são lentos. Meu limite é que era curto.
 
-Eles estão **EXCLUÍDOS** do script `test:caminho-do-dinheiro` (package.json), que
-roda no pre-commit. A exclusão é explícita e está registrada aqui para não virar
-cobertura fantasma: quem lê o gate verde precisa saber o que ele NÃO cobre.
+2. **"O `route.identify-celular-ddi` afirma não precisar de LLM, então a hipótese
+   do gateway caído não explica."**
+   Falso. O comentário do teste é de 2026-07-01, anterior à migração para
+   LangGraph. O runtime imprime `gate=desire`, não `credit`. O `turn-trace` fecha
+   o caso: `toolsCalled: 14× keepalive`, `textChars: 0`, e o último chunk é
+   `500 litellm.InternalServerError ... Cannot connect to host
+   host.docker.internal:4100`.
 
-## O que foi provado
+## A causa raiz (que eu declarei não ter descoberto)
 
-- Falham **igual em `65bf1301`** (antes das mudanças que os expuseram) — não são
-  regressão do FIX-417/418/419.
-- Falham **com e sem** as mudanças da árvore de trabalho.
-- O número de falhas **varia entre 3 e 4** de execução para execução.
-- Postgres **sem locks** e **sem transação pendurada** (`pg_locks`,
-  `pg_stat_activity` conferidos).
-- Com `--testTimeout=90000` ainda falha em 90.034 ms → **travam**, não são lentos.
-- O `route.identify-celular-ddi` afirma no próprio comentário não precisar de LLM
-  ("nextGate = credit, pipeGatePrompt, SEM LLM"), então a hipótese do gateway
-  caído não explica.
+**O túnel SSM da porta 4100 estava caído.** O AI SDK reenvia com backoff por ~2
+minutos antes de desistir — daí o "trava". Não era pool de conexões, nem handle no
+teardown, nem estado de outro teste.
 
-## O que NÃO foi provado
+Minhas duas tentativas de subir o túnel falharam por erro MEU e eu não reli a
+saída: a primeira sem `--region`, a segunda com credencial SSO expirada. Concluí
+"não é o gateway" a partir de um comando que nunca rodou.
 
-**A causa raiz.** As evidências acima descartam regressão de produto e locks de
-banco, mas não apontam o culpado. Suspeitas não verificadas: pool de conexões,
-handle aberto no teardown do route handler, ou dependência de estado deixada por
-outro teste na mesma execução.
+## O que foi feito
 
-## Por que a exclusão, e não "deixa vermelho"
+- Túnel restabelecido (`aws sso login --profile tb-prod` + port-forward, skill
+  `tunel-litellm`).
+- Os três arquivos **VOLTARAM** ao gate `test:caminho-do-dinheiro`, que agora roda
+  com `--testTimeout=240000`. Com o túnel de pé: **55 arquivos / 234 testes em
+  64,8 s** — o tempo alto só aparece quando o gateway está fora.
+- A exclusão que eu tinha feito no `package.json` foi revertida.
 
-O gate foi criado no FIX-415 porque um teste vermelho passou despercebido — o
-`test:unit` excluía `route*` e `*.integration*`, ou seja, o caminho do dinheiro
-inteiro. Um gate permanentemente vermelho por ambiente é desligado na primeira
-sexta-feira, e aí o buraco volta inteiro.
+## A lição, que é a que importa
 
-Os testes do caminho do DINHEIRO seguem dentro do gate e verdes:
-`route.fix-263-antirefazer`, `contract-input`, `fulfillment.integration`.
+Eu enfraqueci o gate do caminho do dinheiro — 10 testes de mesa, identify e
+simulador fora do pre-commit **para sempre** — com base num diagnóstico que uma
+medição de dez minutos derrubava. O card anterior dizia "gate permanentemente
+vermelho por ambiente é desligado na primeira sexta-feira"; eu desliguei o
+ambiente do gate em vez de consertar o ambiente.
 
-## Próximo passo
-
-Instrumentar um dos três com log de progresso para descobrir em que await ele
-para. Enquanto isso, rodar manualmente antes de mexer em mesa/handoff/identify.
+Regra prática: gate vermelho por ambiente é para consertar o ambiente. Excluir
+teste é a última opção, não a primeira, e exige causa raiz PROVADA — não a
+ausência de uma.
