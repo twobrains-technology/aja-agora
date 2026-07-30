@@ -116,6 +116,22 @@ describeIfDb("FIX-410 — o veto da tool `escolher_cota` usa o predicado INTEIRO
 		expect(r.meta.escolha, fala).toBeUndefined();
 	});
 
+	it.each([
+		// FIX-414 — EXCLUSÃO da marca também veta, não só recusa genérica. A 11ª
+		// revisão independente mediu a tool ancorando RODOBENS nestas três, e cravou
+		// a ironia: `resolveAdministradoraMention` — o resolvedor de TEXTO, o
+		// "inseguro" — já rejeitava todas. O caminho criado pra ser a parede era o
+		// mais permissivo do sistema.
+		"qualquer uma menos a Rodobens, quero fechar",
+		"a Rodobens tá fora, bora fechar",
+		"com exceção da Rodobens, quero fechar",
+	])("exclusão da marca veta a gravação: %s", async (fala) => {
+		const r = await comToolCall(fala, "ready_to_proceed");
+		criadas.push(r.conversationId);
+		expect(r.meta.escolha, fala).toBeUndefined();
+		expect(r.meta.contractOffer, fala).toBeUndefined();
+	});
+
 	it("recusa clássica segue vetada (o FIX-405 não regride)", async () => {
 		const r = await comToolCall("não quero essa", "declines");
 		criadas.push(r.conversationId);

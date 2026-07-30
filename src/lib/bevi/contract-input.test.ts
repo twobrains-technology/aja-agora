@@ -16,6 +16,8 @@ describe("buildStartContractInput — derivação canônica (FIX-25, CA-10)", ()
 		const meta: ConversationMetadata = {
 			currentCategory: "auto",
 			recommendedAdministradora: "ANCORA",
+			// FIX-414: o que vai pro contrato nasce de ação estruturada.
+			contractOffer: { administradora: "ANCORA", creditValue: 80000 },
 			qualifyAnswers: {
 				creditMax: 80000,
 				objetivo: "contemplacao_rapida",
@@ -41,6 +43,15 @@ describe("buildStartContractInput — derivação canônica (FIX-25, CA-10)", ()
 		const meta: ConversationMetadata = {
 			currentCategory: "auto",
 			recommendedAdministradora: "ANCORA",
+			// FIX-414 — o contrato lê `contractOffer`; `recommendedOffer` virou a cota
+			// EM FOCO na conversa. A fixture carrega as duas porque o cenário é o
+			// normal: o cliente clicou na cota que estava sendo conversada.
+			contractOffer: {
+				administradora: "ANCORA",
+				creditValue: 80000,
+				termMonths: 84,
+				monthlyPayment: 1000,
+			},
 			recommendedOffer: {
 				administradora: "ANCORA",
 				category: "auto",
@@ -116,6 +127,15 @@ describe("buildStartContractInput — derivação canônica (FIX-25, CA-10)", ()
 			currentCategory: "auto",
 			recommendedAdministradora: "ÂNCORA",
 			qualifyAnswers: { creditMax: 100_000, objetivo: "contemplacao_rapida" },
+			// FIX-414 — o invariante do FIX-73 continua valendo, mudou a FONTE: o
+			// crédito vem da cota que o cliente CONTRATOU, não do teto re-derivado.
+			// Antes vinha de `recommendedOffer`, que o texto podia mover.
+			contractOffer: {
+				administradora: "ÂNCORA",
+				creditValue: 70_000,
+				termMonths: 100,
+				monthlyPayment: 900,
+			},
 			recommendedOffer: {
 				administradora: "ÂNCORA",
 				category: "auto",
@@ -140,23 +160,25 @@ describe("buildStartContractInput — derivação canônica (FIX-25, CA-10)", ()
 		expect(input.valor).toBe(100_000);
 	});
 
-	// FIX-251 (P0, veredito Fable FINAL §N-A, 2026-07-10): defesa em profundidade
-	// do fechamento. Sequência real (Fluxo B):
-	//  1. Reveal recomenda RODOBENS 90.000 / R$ 1.218,92.
-	//  2. What-if "quero a ITAÚ" → 161.258 — o runner (à época) re-ancorava
-	//     meta.recommendedOffer no artifact do what-if.
-	//  3. Usuário REJEITA e reconfirma RODOBENS por texto (sem nova tool-call —
-	//     sem novo simulation_result pra re-ancorar).
-	//  4. contract-submit usava valor = meta.recommendedOffer.creditValue =
-	//     161.258 (a oferta STALE vencia o creditMax falado) → clamp de 20%
-	//     EXCLUÍA a RODOBENS 90k (-44%) e fechava ITAU 161.258 — proposta REAL
-	//     errada na Bevi, 79% acima do pedido.
-	// O runner (runner.ts, contract_form + what-if) já re-ancora os dois campos
-	// JUNTOS nos caminhos cobertos — este bloco é a defesa em profundidade pra
-	// qualquer caminho não coberto: se administradora/offer divergirem, NUNCA
-	// usa o creditValue de uma administradora abandonada.
-	describe("FIX-251 — nunca usa creditValue de administradora abandonada (defesa em profundidade)", () => {
-		it("recommendedOffer (ITAÚ, stale) diverge de recommendedAdministradora (RODOBENS, confirmada) → cai pro creditMax, NUNCA 161.258", () => {
+	// FIX-251 → SUPERADO ESTRUTURALMENTE PELO FIX-414. Vale contar por quê.
+	//
+	// O bloco original era uma defesa em profundidade contra DIVERGÊNCIA entre dois
+	// campos: se `recommendedOffer.administradora` (ITAÚ, stale de um what-if
+	// rejeitado) discordasse de `recommendedAdministradora` (RODOBENS, reconfirmada
+	// por texto), o fechamento não podia usar o `creditValue` da abandonada — senão
+	// fechava ITAÚ 161.258 pra quem tinha reconfirmado RODOBENS 90.000.
+	//
+	// Essa divergência só era POSSÍVEL porque a marca vinha de um campo e o número
+	// de outro, os dois escritos por resolução de texto em momentos diferentes. O
+	// FIX-414 fez o contrato ler `contractOffer` — UMA cota inteira, ancorada de uma
+	// vez por ação estruturada, com administradora/crédito/prazo do MESMO grupo. Não
+	// há dois campos pra divergir.
+	//
+	// Os casos ficam, com as asserções INVERTIDAS, porque o que eles agora provam é
+	// mais forte: estado inconsistente produzido por texto não chega ao contrato de
+	// jeito nenhum — nem o certo, nem o errado.
+	describe("FIX-251/414 — estado escrito por TEXTO não alimenta o contrato", () => {
+		it("divergência stale (ITAÚ vs RODOBENS) não manda NADA pra Bevi", () => {
 			const meta: ConversationMetadata = {
 				currentCategory: "auto",
 				qualifyAnswers: { creditMax: 90000 },
@@ -171,13 +193,21 @@ describe("buildStartContractInput — derivação canônica (FIX-25, CA-10)", ()
 
 			const input = buildStartContractInput(meta, { ...identity, lgpd: true });
 
+			// O número da administradora abandonada segue barrado — era o ponto do
+			// FIX-251 e ele não pode regredir.
 			expect(input.valor).not.toBe(161258);
 			expect(input.valor).toBe(90000);
-			expect(input.administradoraPreferida).toBe("RODOBENS");
+			// E agora nem a marca "reconfirmada por texto" passa: reconfirmar por texto
+			// não é ação estruturada. O cliente decide no card, e aí sim vai.
+			expect(input.administradoraPreferida).toBeNull();
 			expect(input.prazoPreferido).toBeNull();
 		});
 
-		it("administradora/offer CONSISTENTES (fluxo normal) → usa o snapshot normalmente", () => {
+		it("campos CONSISTENTES entre si, mas ambos de texto, também não passam", () => {
+			// Este é o caso que mais importa dos três: consistência entre dois campos
+			// escritos por texto NÃO é evidência de que o cliente escolheu. Onze
+			// revisões independentes acharam a mesma classe de defeito exatamente por
+			// tratar "os dois campos concordam" como "o cliente decidiu".
 			const meta: ConversationMetadata = {
 				currentCategory: "auto",
 				qualifyAnswers: { creditMax: 90000 },
@@ -192,27 +222,31 @@ describe("buildStartContractInput — derivação canônica (FIX-25, CA-10)", ()
 
 			const input = buildStartContractInput(meta, { ...identity, lgpd: true });
 
-			expect(input.valor).toBe(90000);
-			expect(input.prazoPreferido).toBe(180);
+			expect(input.administradoraPreferida).toBeNull();
+			expect(input.prazoPreferido).toBeNull();
+			expect(input.valor).toBe(90000); // o teto que ele pediu, não a carta que olhou
 		});
 
-		it("acento/caixa não disparam falso-positivo de divergência (ITAÚ === Itau)", () => {
+		it("com a cota ancorada por AÇÃO, tudo passa — e junto", () => {
+			// A contraprova. Sem ela este bloco viraria "o contrato nunca leva nada",
+			// que quebraria a venda em vez de protegê-la.
 			const meta: ConversationMetadata = {
 				currentCategory: "auto",
-				qualifyAnswers: {},
-				recommendedOffer: {
-					administradora: "Itau",
-					creditValue: 161258,
-					termMonths: 200,
-					monthlyPayment: 2984.38,
+				qualifyAnswers: { creditMax: 90000 },
+				recommendedAdministradora: "ITAU", // o texto levou a conversa pra cá…
+				contractOffer: {
+					administradora: "RODOBENS", // …mas o clique foi aqui.
+					creditValue: 90000,
+					termMonths: 180,
+					monthlyPayment: 1218.92,
 				},
-				recommendedAdministradora: "ITAÚ",
 			} as ConversationMetadata;
 
 			const input = buildStartContractInput(meta, { ...identity, lgpd: true });
 
-			expect(input.valor).toBe(161258);
-			expect(input.prazoPreferido).toBe(200);
+			expect(input.administradoraPreferida).toBe("RODOBENS");
+			expect(input.prazoPreferido).toBe(180);
+			expect(input.valor).toBe(90000);
 		});
 	});
 
@@ -234,10 +268,19 @@ describe("buildStartContractInput — derivação canônica (FIX-25, CA-10)", ()
 					creditClampedFrom: 250_000,
 					objetivo: "contemplacao_rapida",
 				},
+				// FIX-414 — a cota CONTRATADA é a fonte do `valor`. O invariante do
+				// FIX-281 é sobre outro campo (`originalRequestedCreditValue`) e segue
+				// intocado: ele carrega o PEDIDO do cliente, nunca a carta da oferta.
+				contractOffer: {
+					administradora: "ÂNCORA",
+					creditValue: 260_173, // carta real contratada — diverge do pedido
+					termMonths: 200,
+					monthlyPayment: 3271.5,
+				},
 				recommendedOffer: {
 					administradora: "ÂNCORA",
 					category: "auto",
-					creditValue: 260_173, // creditValue do REVEAL anterior — diverge do pedido
+					creditValue: 260_173,
 					termMonths: 200,
 					monthlyPayment: 3271.5,
 				},

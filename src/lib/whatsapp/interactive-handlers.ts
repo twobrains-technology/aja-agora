@@ -612,6 +612,23 @@ async function anchorRecommendedOffer(
 			monthlyPayment: details.monthlyPayment,
 			groupId,
 		},
+		// FIX-414 — o clique de grupo é a AÇÃO ESTRUTURADA do WhatsApp.
+		//
+		// O canal não tem card clicável como a web, mas tem botão interativo: este
+		// handler responde a um `group_<id>` que o cliente TOCOU, com os números
+		// vindos do grupo resolvido — dado do servidor, não texto. É o equivalente
+		// exato do `choose_offer` da web.
+		//
+		// Sem esta linha o WhatsApp jamais teria contrato ancorado, e a parede do
+		// FIX-413/414 valeria só no canal de MENOR volume — que é precisamente o
+		// erro que o FIX-400 e o FIX-406 cometeram, os dois esquecendo este canal.
+		contractOffer: {
+			administradora: details.administradora,
+			creditValue: details.creditValue,
+			termMonths: details.termMonths,
+			monthlyPayment: details.monthlyPayment,
+			groupId,
+		},
 	});
 }
 

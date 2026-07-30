@@ -323,6 +323,32 @@ function clausulaRecusa(clause: string): boolean {
 	return NEGATION_TRIGGER.test(normalizeAdministradora(clause)) || falaRecusa(clause);
 }
 
+/** A fala RECUSA/EXCLUI esta administradora especificamente? — FIX-414.
+ *
+ * Existe porque a tool `escolher_cota` (converse.ts) era o caminho mais
+ * PERMISSIVO do sistema, apesar de ser o "estruturado": ela vetava recusa
+ * genérica (`falaRecusa`) e não sabia nada de EXCLUSÃO. Medido pela 11ª revisão
+ * independente, no grafo real:
+ *
+ *   "qualquer uma menos a Rodobens, quero fechar" → tool ancorava RODOBENS
+ *
+ * A ironia que fechou o argumento: `resolveAdministradoraMention` — o resolvedor
+ * de TEXTO, o "inseguro" — REJEITA essas mesmas falas. O campo criado pra ser a
+ * parede era mais frouxo que o campo que ele substituiu.
+ *
+ * Reusa `extractNegatedAdministradoras`, a mesma peça que o caminho de texto usa.
+ * Não é uma lista nova. */
+export function administradoraFoiRecusada(
+	text: string,
+	offers: ChosenOffer[],
+	administradora: string | undefined,
+): boolean {
+	if (!administradora) return false;
+	return extractNegatedAdministradoras(text ?? "", offers).has(
+		normalizeAdministradora(administradora),
+	);
+}
+
 /** Administradoras mencionadas dentro de uma cláusula com gatilho de negação
  * explícito ("deixa a X pra lá", "esquece a X", "cancela a X") — nunca conta
  * um uso afirmativo de "deixa" sem o gatilho ("Deixa a X que você recomendou"

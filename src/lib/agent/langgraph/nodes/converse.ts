@@ -15,7 +15,10 @@ import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages
 import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import type { ChosenOffer } from "@/lib/agent/orchestrator/choose-offer";
-import { listShownOffersForConversation } from "@/lib/agent/orchestrator/choose-offer";
+import {
+	administradoraFoiRecusada,
+	listShownOffersForConversation,
+} from "@/lib/agent/orchestrator/choose-offer";
 import { EphemeralTextFilter } from "@/lib/agent/orchestrator/sanitizer";
 import { buildGateContextText } from "@/lib/agent/orchestrator/system-context";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
@@ -887,7 +890,19 @@ export function createConverseNode(model: BaseChatModel) {
 								() => [],
 							);
 							const cota = exibidas.find((o) => o.groupId === gid);
-							if (cota) escolhaRef.cota = cota;
+							// FIX-414 — o veto também cobre EXCLUSÃO da marca, não só recusa
+							// genérica. A 11ª revisão mediu a tool ancorando RODOBENS em
+							// "qualquer uma menos a Rodobens, quero fechar" — ou seja, o
+							// caminho "estruturado", que existe pra ser a parede, era mais
+							// permissivo que o resolvedor de texto que ele substitui.
+							//
+							// Quem decide chamar a tool é o MODELO, lendo o mesmo texto. O
+							// `groupId` ser real não diz nada sobre a intenção: confere-se a
+							// intenção contra a fala, com a MESMA peça que o caminho de texto
+							// usa (`extractNegatedAdministradoras`), não com uma lista nova.
+							if (cota && !administradoraFoiRecusada(texto, exibidas, cota.administradora)) {
+								escolhaRef.cota = cota;
+							}
 						}
 					}
 

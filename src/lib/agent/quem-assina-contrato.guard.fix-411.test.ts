@@ -48,6 +48,13 @@ const AUTORIZADOS = new Map<string, string>([
 		"cliques de card (choose_offer / interest) — payload estruturado",
 	],
 	[
+		"lib/whatsapp/interactive-handlers.ts",
+		// O WhatsApp não tem card, mas tem BOTÃO interativo: `handleGroupSelected`
+		// responde a um `group_<id>` que o cliente TOCOU, com os números do grupo
+		// resolvido. É o equivalente exato do `choose_offer` da web (FIX-414).
+		"clique de grupo no WhatsApp — botão interativo, números do grupo resolvido",
+	],
+	[
 		"lib/agent/langgraph/nodes/converse.ts",
 		// A tool `escolher_cota`: o modelo aponta QUAL cota, o servidor confere que
 		// ela foi exibida nesta conversa (`listShownOffersForConversation`) e VETA o
@@ -56,10 +63,48 @@ const AUTORIZADOS = new Map<string, string>([
 	],
 ]);
 
-/** Cria uma `escolha` do zero (literal de objeto), em oposição a PROJETAR uma que
- * já existe (`escolha: funnel.escolha`, `escolha: meta.escolha`) — que é o que
- * `emit.ts` e `state.ts` legitimamente fazem ao copiar estado entre camadas. */
-const CRIA_ESCOLHA = /\b(escolha|contractOffer):\s*\{/;
+/** Toca o campo de forma que NÃO seja uma projeção pura.
+ *
+ * FIX-414 — a 1ª versão era `/\b(escolha|contractOffer):\s*\{/`, e a 11ª revisão
+ * independente mostrou três bypasses triviais, todos medidos com arquivos-sonda:
+ *
+ *   contractOffer: variavel        → não pegava
+ *   "contractOffer": { … }         → não pegava
+ *   meta.contractOffer = { … }     → não pegava
+ *
+ * E o pior: o handler de `interest` em `route.ts` — escritor VIVO — já era
+ * invisível, porque usa `...(x ? { contractOffer: x } : {})`. O guard passava só
+ * porque o handler irmão (`choose_offer`) tinha o literal.
+ *
+ * A regra correta é a inversa: qualquer ESCRITA conta, e só a PROJEÇÃO
+ * reconhecida é isenta. Projeção é copiar o campo de uma camada pra outra
+ * (`escolha: funnel.escolha`) — o que `emit.ts` e `state.ts` legitimamente fazem.
+ *
+ * Regex ainda não é AST, e a 11ª revisão tem razão ao pedir AST. Mas a inversão
+ * do default (allowlist de FORMA, não blocklist) fecha a família inteira de
+ * bypass por sintaxe, que era o buraco real. */
+const CAMPOS = "(?:escolha|contractOffer)";
+/** Escrita: `campo:` em POSIÇÃO DE CHAVE (início de linha, ou após `{ , ( ;`),
+ * ou atribuição `x.campo =`.
+ *
+ * A exigência de POSIÇÃO não é preciosismo. Sem ela, `system-context.ts` era
+ * acusado por uma frase em português dentro de uma string — "…ou pedir que ele
+ * confirme a escolha: isso já aconteceu". Guard que acusa prosa é guard que
+ * alguém desliga na primeira sexta-feira. */
+const ESCREVE = new RegExp(
+	`(?:(?:^|[{,(;])\\s*["']?${CAMPOS}["']?\\s*:)|(?:\\.${CAMPOS}\\s*=[^=])`,
+);
+/** Projeção pura: copia o MESMO campo de outro objeto, sem construir nada. */
+const PROJETA = new RegExp(`["']?\\b${CAMPOS}["']?\\s*:\\s*\\w+\\.${CAMPOS}\\s*[,;)]`);
+/** Declaração de tipo/chave booleana de canal — não é escrita de valor. */
+const DECLARA = new RegExp(`\\b${CAMPOS}\\??\\s*:\\s*(?:true|ConversationMetadata|FunnelState)`);
+
+function tocaCampo(linha: string): boolean {
+	if (!ESCREVE.test(linha)) return false;
+	return !PROJETA.test(linha) && !DECLARA.test(linha);
+}
+
+const CRIA_ESCOLHA = { test: (fonte: string) => fonte.split("\n").some(tocaCampo) };
 
 function arquivosTs(dir: string): string[] {
 	const saida: string[] = [];
@@ -108,13 +153,31 @@ describe("FIX-411 — allowlist de quem assina contrato", () => {
 		}
 	});
 
-	it("o detector distingue CRIAR de PROJETAR — senão o guard seria inútil", () => {
-		// Sem esta prova, `CRIA_ESCOLHA` poderia estar quebrada (nunca casando) e os
-		// dois testes acima passariam para sempre. Já aconteceu neste repo: um teste
-		// de espelhos comparava listas entre si e ficou verde com a fonte revertida.
+	it("o detector pega as formas de ESCRITA, inclusive as três que burlavam", () => {
+		// Sem esta prova o detector poderia estar quebrado (nunca casando) e os dois
+		// testes acima passariam para sempre. Já aconteceu neste repo: um teste de
+		// espelhos comparava listas entre si e ficou verde com a fonte revertida.
 		expect(CRIA_ESCOLHA.test('escolha: { administradora: "X", origem: "mencao" }')).toBe(true);
+		// Os três bypasses que a 11ª revisão mediu com arquivos-sonda.
+		expect(CRIA_ESCOLHA.test("contractOffer: ancoraDoClique,")).toBe(true);
+		expect(CRIA_ESCOLHA.test('"contractOffer": { administradora: "X" },')).toBe(true);
+		expect(CRIA_ESCOLHA.test('meta.contractOffer = { administradora: "X" };')).toBe(true);
+		// E a forma do spread, que era o escritor VIVO invisível ao guard.
+		expect(CRIA_ESCOLHA.test("...(x ? { contractOffer: x } : {}),")).toBe(true);
+	});
+
+	it("o detector ISENTA projeção e declaração — senão o guard viraria ruído", () => {
+		// A contraprova. Um guard que acusa `emit.ts` e `state.ts` a cada rodada é
+		// um guard que alguém desliga.
 		expect(CRIA_ESCOLHA.test("escolha: funnel.escolha,")).toBe(false);
-		expect(CRIA_ESCOLHA.test("escolha: meta.escolha,")).toBe(false);
+		expect(CRIA_ESCOLHA.test("contractOffer: meta.contractOffer,")).toBe(false);
 		expect(CRIA_ESCOLHA.test("escolha: true,")).toBe(false);
+		expect(CRIA_ESCOLHA.test('contractOffer?: ConversationMetadata["contractOffer"];')).toBe(false);
+		// Prosa em português dentro de string — o falso positivo REAL que a versão
+		// endurecida produziu em `system-context.ts` antes da exigência de posição
+		// de chave. Guard que acusa prosa é guard que alguém desliga.
+		expect(CRIA_ESCOLHA.test('"…ou pedir que ele confirme a escolha: isso já aconteceu",')).toBe(
+			false,
+		);
 	});
 });

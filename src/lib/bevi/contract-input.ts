@@ -72,31 +72,25 @@ export function buildStartContractInput(
 ): StartContractInput {
 	const q = meta.qualifyAnswers ?? {};
 	const segmento = categoryToBeviSegment(meta.currentCategory ?? null);
-	// FIX-251 (P0, veredito Fable FINAL §N-A, defesa em profundidade): o
-	// runner já re-ancora recommendedOffer/recommendedAdministradora juntos no
-	// fechamento (contract_form) e no what-if (choose-offer.ts), mas se por
-	// algum caminho não coberto os dois campos divergirem — snapshot de UMA
-	// administradora, recommendedAdministradora de OUTRA — o creditValue do
-	// snapshot é de uma oferta que o usuário JÁ abandonou. Nunca usa esse
-	// número stale: cai pro teto pedido (creditMax/creditMin), nunca pra
-	// carta de uma administradora diferente da confirmada.
-	const offerMatchesCurrentAdmin =
-		!meta.recommendedOffer?.administradora ||
-		!meta.recommendedAdministradora ||
-		normalizeAdministradora(meta.recommendedOffer.administradora) ===
-			normalizeAdministradora(meta.recommendedAdministradora);
-	// FIX-73: o fechamento reusa o crédito da oferta REAL recomendada
-	// (snapshot persistido no reveal — FIX-6/FIX-C2), NUNCA re-deriva de
-	// creditMax (teto que o usuário pediu, não a oferta que ele viu). Sem
-	// isso a Bevi devolvia uma cota nova baseada no teto, divergindo do
-	// número que o card de recomendação anunciou (bait-and-switch, jornada
-	// AUTO 2026-07-02). creditMax/creditMin seguem como fallback defensivo
-	// (fechamento sem reveal já é bloqueado a montante pelo guard revealCompleted).
-	const valor =
-		(offerMatchesCurrentAdmin ? meta.recommendedOffer?.creditValue : undefined) ??
-		q.creditMax ??
-		q.creditMin ??
-		50000;
+	// FIX-251 vivia aqui: um guard de "defesa em profundidade" que detectava
+	// `recommendedOffer.administradora` divergindo de `recommendedAdministradora`
+	// e, nesse caso, recusava o `creditValue` do snapshot por ser de uma oferta
+	// abandonada.
+	//
+	// FIX-414 o tornou desnecessário, e a razão é boa: o contrato deixou de ler os
+	// dois campos. Ele lê `contractOffer`, que é UMA cota inteira ancorada de uma
+	// vez por ação estruturada — administradora, crédito e prazo viajam juntos, do
+	// mesmo grupo, e não há como divergirem. O guard protegia contra uma
+	// inconsistência que só existia porque a marca vinha de um campo e o número de
+	// outro.
+	//
+	// FIX-414 — o crédito vem da cota CONTRATADA, nunca da cota conversada.
+	//
+	// `recommendedOffer` é escrita por resolução de TEXTO (é ela que faz o agente
+	// acompanhar a atenção do cliente). Usá-la aqui fazia o contrato sair com a
+	// carta de uma oferta que ele só OLHOU. Sem cota contratada, cai pro teto que
+	// ele pediu — que é a mesma regra do FIX-73, agora aplicada ao campo certo.
+	const valor = meta.contractOffer?.creditValue ?? q.creditMax ?? q.creditMin ?? 50000;
 	// FIX-281 (r9 onda 2, gap G-A): âncora do aviso de divergência CDC no
 	// `real_offer` — o pedido ORIGINAL do cliente, MESMA precedência do hero
 	// (runner.ts:656-665, FIX-261). Campo NOVO e independente de `valor` acima
@@ -121,14 +115,33 @@ export function buildStartContractInput(
 		originalRequestedCreditValue,
 		objetivo,
 		lanceEmbutido,
-		// Fechamento prefere a MESMA administradora que o usuário decidiu
-		// (BUG-ADMIN-TROCADA-NO-FECHAMENTO).
-		administradoraPreferida: meta.recommendedAdministradora ?? null,
+		// ── FIX-414: A PAREDE, NO LUGAR ONDE O DINHEIRO PASSA ──
+		//
+		// Este campo lia `recommendedAdministradora` — escrita por resolução de
+		// TEXTO. Onze revisões independentes acharam a mesma classe de defeito, e a
+		// 11ª mostrou por que o FIX-413 não a fechou: eu levantei a parede no
+		// `emit-card.ts`, que decide o RÓTULO do formulário, e não aqui, que decide
+		// o que a Bevi RECEBE. Medido: "a Rodobens é muito cara, quero fechar" saía
+		// com o formulário mudo e `administradoraPreferida: "RODOBENS"`.
+		//
+		// Pior: antes do FIX-413 o formulário ao menos EXIBIA a marca e o cliente
+		// podia ver o erro. Ausente-na-tela + presente-no-request é pior que
+		// errado-na-tela — a correção tinha reduzido a observabilidade do defeito.
+		//
+		// Agora só a cota ancorada por AÇÃO ESTRUTURADA (clique de card nos dois
+		// canais, ou tool `escolher_cota` com groupId conferido) chega ao contrato.
+		// Sem ela, `null`: a Bevi não recebe preferência nenhuma, em vez de receber
+		// o palpite do parser. Ausente é melhor que errado — a mesma regra que o
+		// `avgBidValue` já segue (FIX-375).
+		administradoraPreferida: meta.contractOffer?.administradora ?? null,
 		// E o MESMO prazo que ele viu — desempata o matching dentro da admin
 		// (matching preparatório 2026-06-28). O snapshot da oferta ativa traz o
 		// prazo — mesma checagem de consistência do `valor` acima.
-		prazoPreferido:
-			(offerMatchesCurrentAdmin ? meta.recommendedOffer?.termMonths : undefined) ?? null,
+		// FIX-414 — mesma fonte da administradora. O prazo desempata o matching
+		// DENTRO da administradora: mandá-lo sem ela vincularia o contrato pela
+		// porta dos fundos, que é exatamente o tipo de fresta que esta campanha
+		// vem encontrando.
+		prazoPreferido: meta.contractOffer?.termMonths ?? null,
 		// FIX-48: vincula a proposta ao lead já existente da conversa pra a raia
 		// avançar (qualificado→proposta_enviada). null explícito (nunca undefined).
 		leadId: links.leadId ?? null,

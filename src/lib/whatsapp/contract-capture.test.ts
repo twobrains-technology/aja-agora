@@ -103,6 +103,16 @@ const REVEAL_DONE: ConversationMetadata = {
 	revealCompleted: true,
 	identityCollected: true,
 	recommendedAdministradora: "ANCORA",
+	// FIX-414 — no WhatsApp a ação estruturada é o BOTÃO de grupo
+	// (`handleGroupSelected` → `anchorRecommendedOffer`), que ancora esta cota.
+	// Sem ela o contrato sai sem administradora preferida, de propósito: a marca
+	// não pode vir de `recommendedAdministradora`, que o texto escreve.
+	contractOffer: {
+		administradora: "ANCORA",
+		creditValue: 80000,
+		termMonths: 84,
+		monthlyPayment: 1000,
+	},
 	qualifyAnswers: { creditMax: 80000, objetivo: "contemplacao_rapida" },
 } as ConversationMetadata;
 

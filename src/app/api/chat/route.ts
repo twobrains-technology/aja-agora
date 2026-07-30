@@ -12,6 +12,7 @@ import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors
 import { getLeadIdForConversation } from "@/lib/admin/lead-stage-tracker";
 import { reengageQuestionForGate } from "@/lib/agent/gate-reengage";
 import {
+	normalizeAdministradora,
 	resolveChosenOffer,
 	resolveOfferMentionForConversation,
 } from "@/lib/agent/orchestrator/choose-offer";
@@ -543,13 +544,21 @@ export async function POST(req: NextRequest) {
 							// só cai pra meta se o card não a trouxer. Era o contrário: a meta
 							// (escrita por resolução de TEXTO) ganhava do dado do clique, então
 							// até o caminho estruturado herdava o palpite do parser.
-							const administradora = body.action.administradora ?? fresh.recommendedAdministradora;
-							const ancoraDoClique =
-								administradora && fresh.recommendedOffer?.administradora === administradora
+							// FIX-414 — a marca do contrato vem SÓ do payload do card. O
+							// fallback pra `fresh.recommendedAdministradora` (texto) alimentava
+							// `contractOffer` e reabria a porta que a parede fecha; ele
+							// sobrevive apenas pra DIRETIVA, que é fala, não dinheiro.
+							const marcaDoCard = body.action.administradora;
+							const administradora = marcaDoCard ?? fresh.recommendedAdministradora;
+							// Normaliza pra comparar (ITAÚ vs ITAU) — o resto do arquivo já faz
+							// isso, e comparar cru era outro achado da 11ª revisão.
+							const ancoraDoClique = !marcaDoCard
+								? undefined
+								: fresh.recommendedOffer?.administradora &&
+										normalizeAdministradora(fresh.recommendedOffer.administradora) ===
+											normalizeAdministradora(marcaDoCard)
 									? fresh.recommendedOffer
-									: administradora
-										? ({ administradora } as typeof fresh.contractOffer)
-										: undefined;
+									: ({ administradora: marcaDoCard } as typeof fresh.contractOffer);
 							if (!fresh.decisionDispatched || (ancoraDoClique && !fresh.contractOffer)) {
 								await persistMeta(conversationId, {
 									...fresh,
@@ -743,10 +752,23 @@ export async function POST(req: NextRequest) {
 							if (
 								administradoraConflictsWithRegisteredProposal(
 									existingProposal?.administradora,
-									// FIX-413 — compara contra a cota do CONTRATO. Comparar com
-									// `recommendedAdministradora` fazia a trava disparar (ou não)
-									// conforme o último palpite do parser sobre o texto.
-									freshMeta.contractOffer?.administradora ?? freshMeta.recommendedAdministradora,
+									// FIX-414 — SEM fallback pro campo de texto.
+									//
+									// A 11ª revisão independente achou aqui um P0 que eu mesmo
+									// criei no FIX-413: o guard conferia
+									// `contractOffer ?? recommendedAdministradora` e a ação
+									// (`buildStartContractInput`, abaixo) agia sobre
+									// `recommendedAdministradora`. Checa A, executa B — com uma
+									// proposta CANOPUS registrada e o texto tendo movido a conversa
+									// pra ITAÚ, o guard comparava CANOPUS×CANOPUS, não bloqueava, e
+									// o `startContract` rodava com ITAÚ: SEGUNDA proposta real na
+									// Bevi (CPF + consulta de bureau) na mesma conversa. É
+									// exatamente o que o FIX-263 existe pra impedir, reaberto pela
+									// correção que devia fechar a classe.
+									//
+									// Agora guard e ação leem o MESMO campo — o único que o
+									// contrato consome (contract-input.ts, FIX-414).
+									freshMeta.contractOffer?.administradora,
 								)
 							) {
 								await writeAndSaveText(
@@ -806,7 +828,11 @@ export async function POST(req: NextRequest) {
 								} = await startContract(
 									conversationId,
 									buildStartContractInput(
-										meta,
+										// FIX-414 — `freshMeta`, não `meta`. O `meta` é o snapshot
+										// do começo do request; o guard acima já relê. Se vale
+										// reler pra CONFERIR, vale reler pra AGIR — senão a janela
+										// entre os dois é mais uma fresta da mesma família.
+										freshMeta,
 										{ cpf, celular, lgpd: body.action.lgpd },
 										{ leadId },
 									),
