@@ -25,8 +25,13 @@ import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors
 import { getLeadIdForConversation } from "@/lib/admin/lead-stage-tracker";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { querAntecipar } from "@/lib/agent/qualify-state";
-import { ancorarOfertaReal, buildStartContractInput } from "@/lib/bevi/contract-input";
+import {
+	administradoraConflictsWithRegisteredProposal,
+	ancorarOfertaReal,
+	buildStartContractInput,
+} from "@/lib/bevi/contract-input";
 import { startContract } from "@/lib/bevi/fulfillment";
+import { getLatestBeviProposal } from "@/lib/bevi/proposal-repo";
 import { loadIdentity, storeIdentity } from "@/lib/conversation/identity";
 import { saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
@@ -240,6 +245,36 @@ export async function fireContract(from: string, conversationId: string): Promis
 		// handoff antes do fechamento). Antes o polling resgatava via conversationId
 		// — manter o leadId explícito blinda a raia sem depender do resgate.
 		const leadId = await getLeadIdForConversation(conversationId);
+		// ── FIX-420: o guard ANTI-REFAZER chega ao WhatsApp ──
+		//
+		// A 13ª e a 14ª revisões independentes acharam isto aberto, e a 14ª o
+		// classificou como o dano mais caro de todos os achados: este canal chamava
+		// `startContract` SEM `administradoraConflictsWithRegisteredProposal` e sem
+		// passar `registeredAdministradora`. As duas proteções existiam só na web
+		// (`route.ts`), e o WhatsApp é onde está o volume.
+		//
+		// Consequência medida por elas: cliente fecha RODOBENS; o polling grava o
+		// status humano da Bevi; cliente pede ITAÚ e fecha → `createProposal` de
+		// verdade → SEGUNDA proposta real, SEGUNDA consulta de bureau no mesmo CPF.
+		// É exatamente o cenário que o FIX-263 existe pra impedir, aberto no canal
+		// principal desde sempre.
+		//
+		// A ironia que fica registrada: a mensagem do FIX-409 acusa o FIX-400 e o
+		// FIX-406 de "os dois esquecendo este canal", e eu repeti no FIX-415.
+		const propostaRegistrada = await getLatestBeviProposal(conversationId).catch(() => null);
+		const marcaPretendida = meta.contractOffer?.administradora ?? meta.recommendedAdministradora;
+		if (
+			administradoraConflictsWithRegisteredProposal(
+				propostaRegistrada?.administradora,
+				marcaPretendida,
+			)
+		) {
+			await sendTextMessage(
+				from,
+				`Você já tem uma proposta registrada com a ${propostaRegistrada?.administradora} — não dá pra abrir uma segunda com outra administradora por aqui. Quer que eu confira o status dessa proposta pra você?`,
+			);
+			return;
+		}
 		const input = buildStartContractInput(
 			meta,
 			{
@@ -247,7 +282,9 @@ export async function fireContract(from: string, conversationId: string): Promis
 				celular: identity.celular,
 				lgpd: true, // aceite explícito = consentimento LGPD do passo 5
 			},
-			{ leadId },
+			// FIX-420 — sem cota ancorada, o retry vai pra MESMA administradora já
+			// registrada, nunca pro sorteio do gateway. Paridade com `route.ts:855`.
+			{ leadId, registeredAdministradora: propostaRegistrada?.administradora },
 		);
 		// FIX-247 (rodada 3, Fable r2, gap #2): requestedCreditValue aciona o
 		// aviso de ajuste (FIX-240) quando a carta real diverge do pedido —
