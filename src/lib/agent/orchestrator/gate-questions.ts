@@ -22,6 +22,10 @@ const formatCredit0 = (n: number) =>
  * a carta REAL que o cliente está vendo na tela. Um consultor de verdade usa
  * o número do cliente, não um exemplo genérico. Sem carta real (chamador que
  * ainda não tem o snapshot) → mantém o exemplo honesto de "R$ 100 mil". */
+/** Só a PERGUNTA — a educação NÃO mora aqui (FIX-212: nada de aula enlatada no
+ * gate). Quem explica é o card `embedded_bid` ou o modelo, com o contexto real da
+ * conta. O que garante que ela nunca chegue sozinha é o `emitCard`, que suprime
+ * este gate quando a educação não saiu nem vai sair no turno. */
 export const LANCE_EMBUTIDO_ASK = "Quer considerar esse tipo de lance nas suas simulações?";
 
 /** FIX-312 — "esse"/"essa" concordando com o `desiredItem` referenciado no

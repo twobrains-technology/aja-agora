@@ -169,3 +169,41 @@ qualidade e estabilidade, quando terminar suba tudo para prod"*.
 - 21:50 — postura de vendedor (D6) + guard FIX-411 (D7)
 - 21:44 — suíte COMPLETA 2385/2385
 - 21:45 — deploy `970746c6` em produção, digest conferido
+
+---
+
+## Continuação — itens #3 e #4 (os que eu tinha deixado abertos)
+
+### D8 · 22:10 — Card com CTA é a pergunta do turno; o gate espera
+- **Contexto:** print do WhatsApp 21:02 — card "Simulação de Cota" com [Tenho
+  interesse!] [Ajustar valor] e, logo abaixo, "Você já fez consórcio antes?" com
+  três chips. Cinco botões, duas perguntas, um turno.
+- **Reproduzi antes de corrigir** (lição do dia): cenário
+  `cenario-dois-gates-no-turno.fix-424` devolveu exatamente
+  `text → artifact:simulation_result → gate:experience`.
+- **Decidi:** no `emitCard`, se `turnArtifactTypes` (o que saiu ANTES deste nó:
+  discovery + tools do `converse`) tem card que pede ação, o gate de pergunta espera
+  o próximo turno. Cards emitidos pelo PRÓPRIO `emitCard` (embedded_bid,
+  decision_prompt) não entram na conta — eles SÃO o gate.
+- **Reversibilidade:** fácil. **Evidência:** cenários 117/117.
+
+### D9 · 22:18 — Pergunta do embutido não sai sem a educação (e a educação NÃO virou copy de gate)
+- **Contexto:** Kairo: "falou pra considerar lance embutido sem nem falar o que é".
+  O card `embedded_bid` sai UMA vez por conversa (`embeddedBidDispatched`), mas a
+  PERGUNTA reaparece sempre que o gate está ativo — então ela pode chegar sozinha.
+- **Primeira tentativa, REVERTIDA:** enriqueci a copy do `LANCE_EMBUTIDO_ASK` com a
+  explicação. O teste do FIX-212 ("só a pergunta, sem aula enlatada") derrubou, e
+  estava certo: enlatar educação no gate é exatamente o que aquele fix proibiu.
+- **Decidi:** atacar a ordem, não a copy. Sem educação na conversa e sem card saindo
+  no turno, o gate `lance-embutido` é suprimido e espera. É decisão que REDUZ o
+  crédito recebido — não se toma no escuro.
+- **Reversibilidade:** fácil. **Evidência:** suíte completa 2387/2387.
+
+## Relatório final (atualizado 22:20)
+- **Critério de pronto:** ATINGIDO nos 5 itens da fila. Suíte completa **2387/2387**
+  (351 arquivos), typecheck limpo.
+- **Continua PENDENTE-KAIRO:** submeter o template `mesa_novo_caso` à Meta (publicação
+  externa). Até lá o atendente só recebe com janela aberta; o caso vai pro board igual.
+- **Revisar primeiro:** D5 (move o lead no board), D4 (template da mesa), D9 (o gate do
+  embutido agora pode ESPERAR um turno — se o card for suprimido por guard, a pergunta
+  atrasa em vez de sair sem contexto).

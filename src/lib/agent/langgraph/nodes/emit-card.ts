@@ -104,8 +104,55 @@ export async function emitCardNode(
 	// junto atrasava em um turno inteiro quem chega decidido, que é exatamente o
 	// cliente que a gente menos pode fazer esperar.
 	const GATES_DE_ACAO = new Set(["decision", "contract"]);
+
+	// UM TURNO, UMA PERGUNTA — vale também pro card que o MODELO emitiu.
+	//
+	// Visto ao vivo (Kairo, 2026-07-30), WhatsApp: card "Simulação de Cota" com
+	// [Tenho interesse!] [Ajustar valor] e, logo abaixo, "Você já fez consórcio
+	// antes?" com [É a primeira vez] [Já conheço] [Tenho dúvidas]. Cinco botões,
+	// duas perguntas, um turno — responder uma joga a outra fora.
+	//
+	// `turnArtifactTypes` traz o que já saiu ANTES deste nó (discovery + tools do
+	// `converse`). Se algum deles pede ação do cliente, ELE é a pergunta do turno e
+	// o gate espera o próximo. Os cards que o próprio `emitCard` emite (embedded_bid,
+	// decision_prompt) não entram nessa conta: eles SÃO o gate, não competem com ele.
+	const CARDS_QUE_PEDEM_ACAO = new Set([
+		"simulation_result",
+		"recommendation_card",
+		"group_card",
+		"decision_prompt",
+		"contract_form",
+		"two_paths",
+		"contemplation_dial",
+	]);
+	const turnoJaPedeAcao = turnArtifactTypes.some((t) => CARDS_QUE_PEDEM_ACAO.has(t));
+
+	// NINGUÉM DECIDE SOBRE O EMBUTIDO SEM SABER O QUE ELE É.
+	//
+	// Visto ao vivo (Kairo, 2026-07-30): "Quer considerar esse tipo de lance nas
+	// suas simulações? [Sim, considerar] [Sem lance embutido]" — sem que ninguém
+	// tivesse explicado o que é lance embutido. O "esse tipo de lance" pressupõe uma
+	// explicação que nem sempre chega: o card `embedded_bid` sai UMA vez por conversa
+	// e a PERGUNTA reaparece sempre que o gate está ativo.
+	//
+	// A educação NÃO vem pra cá (FIX-212: nada de aula enlatada no gate). O que muda
+	// é a ordem de precedência: sem educação na conversa e sem card saindo agora, a
+	// pergunta espera. É uma decisão que REDUZ o crédito que o cliente recebe — ela
+	// não pode ser tomada no escuro.
+	const educacaoDoEmbutidoSaiNesteTurno =
+		state.gate === "lance-embutido" &&
+		funnel.qualifyAnswers.lanceEmbutido === undefined &&
+		!funnel.qualifyAnswers.embeddedBidDispatched &&
+		artifactAllowed(guardCtx, "embedded_bid");
+	const perguntaEmbutidoNoEscuro =
+		state.gate === "lance-embutido" &&
+		!funnel.qualifyAnswers.embeddedBidDispatched &&
+		!educacaoDoEmbutidoSaiNesteTurno;
+
 	const gateDoTurno =
-		state.apresentaOfertaNesteTurno && !GATES_DE_ACAO.has(String(state.gate ?? ""))
+		((state.apresentaOfertaNesteTurno || turnoJaPedeAcao) &&
+			!GATES_DE_ACAO.has(String(state.gate ?? ""))) ||
+		perguntaEmbutidoNoEscuro
 			? undefined
 			: state.gate;
 	if (gateDoTurno) {
@@ -156,12 +203,9 @@ export async function emitCardNode(
 	// FIX-360 — `embedded_bid`: educação + opt-in do lance embutido, emitido
 	// enquanto o gate segue sem resposta (o nó `advance` já consome a
 	// resposta de texto livre ANTES deste nó rodar — sem loop, FIX-260).
-	if (
-		gateDoTurno === "lance-embutido" &&
-		funnel.qualifyAnswers.lanceEmbutido === undefined &&
-		!funnel.qualifyAnswers.embeddedBidDispatched &&
-		artifactAllowed(guardCtx, "embedded_bid")
-	) {
+	// Reusa a decisão tomada lá em cima (evita chamar o guard duas vezes e
+	// duplicar o log): se a educação sai neste turno, o gate saiu junto.
+	if (gateDoTurno === "lance-embutido" && educacaoDoEmbutidoSaiNesteTurno) {
 		const meta = projectToMeta({ ...state, funnel });
 		events.push({ type: "text-boundary" });
 		events.push({
