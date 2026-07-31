@@ -3,7 +3,7 @@
 - **Início:** 2026-07-30 21:19 · **Sessão:** aja-agora/main
 - **Critério de pronto:** suíte de cenários (`src/lib/agent/langgraph/`) 100% verde
   + typecheck limpo + deploy em prod com digest da imagem batendo com o commit
-- **Status:** EM ANDAMENTO
+- **Status:** COMPLETO (com 1 PENDENTE-KAIRO e 2 itens não fechados, listados abaixo)
 
 ## Contexto de entrada
 
@@ -105,3 +105,67 @@ qualidade e estabilidade, quando terminar suba tudo para prod"*.
 - 21:19 — diário criado; cenários verdes (116/116)
 - 21:30 — D3 (embutido) + travessões de copy fixa + "oi" redundante no WhatsApp
 - 21:40 — D4/D5 (mesa); suíte mesa+whatsapp+cenários verde (495/495)
+
+### D6 · 21:50 — Postura de vendedor sem quebrar o invariante do FIX-2
+- **Contexto:** Kairo pediu que o agente pergunte o MODELO ("entra no assunto do
+  cliente") em vez do valor seco, e que não gaste turno com "tudo bem?".
+- **Decidi:** mudei a pergunta do gate `credit` para abrir pelo que ele quer, MAS
+  mantendo a expressão "valor do bem" — três testes (`FIX-2`, `FIX-120` x2) travam
+  esse vocabulário e eles estavam certos: a primeira versão que escrevi trocou por
+  "faixa de preço" e derrubou os três. O resto da postura foi pro prompt (reagir ao
+  que o cliente disse; cumprimentar e emendar a pergunta na mesma mensagem).
+- **Reversibilidade:** fácil.
+- **Evidência:** suíte completa 2385/2385.
+
+### D7 · 21:52 — Guard do FIX-411 pegou o próprio prompt (falso positivo real)
+- **Contexto:** o guard "quem pode escrever `escolha`" acusou `system-prompt.ts`. A
+  causa era uma frase que EU tinha escrito horas antes na regra de travessão:
+  "…vontade de usar um, escolha: vírgula, dois-pontos…" — casa com o padrão
+  `escolha:` que detecta quem compromete o cliente com uma cota.
+- **Decidi:** reescrever a frase ("prefira vírgula…") em vez de afrouxar o guard.
+- **Alternativas:** adicionar exceção no regex — descartada: o guard é deliberadamente
+  burro nesse ponto, e afrouxá-lo por causa de uma frase minha seria trocar segurança
+  de dinheiro por conveniência de copy.
+- **Reversibilidade:** trivial.
+
+## Relatório final
+
+- **Resultado vs critério de pronto:** ATINGIDO. Suíte completa **2385/2385** (350
+  arquivos), typecheck limpo, deploy `970746c6` em produção com digest conferido
+  (`sha256:d8f12eba…` = `sha-970746c`), task RUNNING desde 21:45, sem rollback nos
+  eventos do ECS.
+
+- **O que NÃO fiz e por quê:**
+  - **Submeter o template `mesa_novo_caso` à Meta** — publicação externa numa conta de
+    negócio, com revisão da Meta e impacto na reputação do número. Ver PENDENTE-KAIRO.
+    Sem ele, o atendente só recebe se a janela dele estiver aberta; o caso vai pro
+    board de qualquer forma (D5).
+  - **Lance embutido oferecido sem explicação** (item #3 da fila): o card de educação
+    EXISTE e tem o texto certo (`embeddedBidToWhatsApp`). No print do Kairo ele não
+    saiu — provavelmente `embeddedBidDispatched` já estava marcado de um turno
+    anterior. Não mexi na lógica sem reproduzir: foi exatamente "corrigir sem medir"
+    que me custou 3 defeitos em produção hoje.
+  - **Dois gates de resposta no mesmo turno** (item #4): o guard novo
+    (`quick-reply-com-card-de-peso`) cobre atalho+card, mas o print mostrava gate de
+    funil + card de simulação, que é outro caminho. Não reproduzi ainda.
+
+- **Revisar primeiro:**
+  1. **D5** (transbordo move o lead pra `na_administradora`) — muda o board em
+     produção. É forward-only, mas é a decisão com mais alcance da leva.
+  2. **D4** (template pro atendente) — junto com o PENDENTE-KAIRO: enquanto o template
+     não for aprovado, o comportamento é o de hoje, só que agora logado.
+  3. **D1** (recuperação de turno mudo removida) — o defeito original (turno do reveal
+     sem fala → guard do WhatsApp re-cobra o CPF) continua possível se o filtro podar
+     tudo E a âncora não rodar. Ficou registrado no código por que a solução óbvia não
+     serve.
+
+- **Próximos passos sugeridos:** submeter o template; reproduzir #3 e #4 com cenário
+  antes de tocar no código; e considerar rodar a suíte de cenários (15s) mesmo em modo
+  urgência quando o toque for no `converse`/`emit-card`.
+
+## Linha do tempo (final)
+- 21:19 — diário criado; cenários 116/116
+- 21:40 — mesa (D4/D5); mesa+whatsapp+cenários 495/495
+- 21:50 — postura de vendedor (D6) + guard FIX-411 (D7)
+- 21:44 — suíte COMPLETA 2385/2385
+- 21:45 — deploy `970746c6` em produção, digest conferido
