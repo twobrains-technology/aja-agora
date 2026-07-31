@@ -89,17 +89,37 @@ qualidade e estabilidade, quando terminar suba tudo para prod"*.
   worker já tiver movido adiante, isto é no-op e não regride.
 - **Evidência:** `src/lib/mesa/dispatch.ts`.
 
-### ⚠️ PENDENTE-KAIRO · 21:40 — Submeter o template `mesa_novo_caso` à Meta
-- **O que é:** cadastrar em /admin/whatsapp/templates um template com
+### ~~⚠️ PENDENTE-KAIRO · 21:40 — Submeter o template `mesa_novo_caso` à Meta~~ → RESOLVIDO em D10
+- **O que era:** cadastrar em /admin/whatsapp/templates um template com
   `usageKey = "mesa_novo_caso"`, 1 variável de corpo (a linha de identificação do caso),
   e submeter à Meta (`POST /api/admin/whatsapp/templates/[id]/submit`).
-  Sugestão de corpo: "Novo caso na mesa: {{1}}. Abra o painel para assumir."
-- **Por que não fiz:** criar template numa conta WhatsApp Business é publicação EXTERNA,
-  passa por revisão da Meta e afeta a reputação do número. Está fora do que eu executo
-  sozinho (§4 da skill), mesmo com autonomia de execução.
-- **Como destrava:** cadastrar + submeter pelo admin. Enquanto não estiver `APPROVED`,
-  o código loga `sem template aprovado` e tenta o interativo; o caso continua indo pro
-  board (D5), então nada se perde.
+- **Por que não fiz na hora:** criar template numa conta WhatsApp Business é publicação
+  EXTERNA, passa por revisão da Meta e afeta a reputação do número. Estava fora do que
+  eu executo sozinho (§4 da skill), mesmo com autonomia de execução.
+- **Destravado:** o Kairo autorizou explicitamente ("vamos bolar uma mensagem para mesa e
+  solicitar o template ao whats"). Ver D10.
+
+### D10 · 22:50 — Template da mesa submetido, aprovado e sem depender de clique
+- **Contexto:** com a autorização do Kairo, submeti `aja_agora_mesa_novo_caso` à Meta
+  (WABA 2536995250087380). Aprovado às 01:57 UTC, id `910556708148286`, UTILITY/pt_BR.
+  Ao ir gravar, esbarrei em dois furos estruturais que tornariam a entrega frágil.
+- **Decidi:** (a) a linha de `whatsapp_templates` com `usage_key = mesa_novo_caso` nasce da
+  **migration 0036**, não de cadastro no admin — senão toda base nova (e o próximo reset)
+  volta a ficar muda em silêncio; (b) a promoção pra `APPROVED` deixou de depender só do
+  webhook: `reconciliarSePendente` pergunta o status à Meta no próprio caminho de envio,
+  com throttle de 5 min, antes de desistir e enfileirar.
+- **Alternativas:** cadastrar pelo admin em cada ambiente (é o clique manual que a regra
+  proíbe); INSERT à mão no banco de prod (proibido, e não se propaga); deixar só o webhook
+  (foi exatamente o que falhou — a Meta aprovou antes de a linha local existir, então o
+  evento não teria onde pousar).
+- **Reversibilidade:** média. A migration é idempotente e não sobrescreve template que já
+  tenha `meta_template_id`; a reconciliação é aditiva e falha da Graph nunca derruba envio.
+  Desfazer o template na Meta exige deletá-lo no Business Manager.
+- **Evidência:** commit `f98b8e96`; suíte 2391/2391 + typecheck limpos antes do push;
+  teste `mesa-template-sem-cadastro-manual.test.ts` (9 casos, vermelho antes da migration);
+  prova contra a Meta real no banco local — `PENDING → reconciliou → APPROVED` com
+  `approvedAt` gravado. `WHATSAPP_MESA_TEMPLATE_NAME`/`_ID` gravados em
+  `tb/prod/aja-agora/env` e `tb/dev/aja-agora/env` (37 → 39 chaves em cada).
 
 ## Linha do tempo
 - 21:19 — diário criado; cenários verdes (116/116)
@@ -136,10 +156,9 @@ qualidade e estabilidade, quando terminar suba tudo para prod"*.
   eventos do ECS.
 
 - **O que NÃO fiz e por quê:**
-  - **Submeter o template `mesa_novo_caso` à Meta** — publicação externa numa conta de
-    negócio, com revisão da Meta e impacto na reputação do número. Ver PENDENTE-KAIRO.
-    Sem ele, o atendente só recebe se a janela dele estiver aberta; o caso vai pro
-    board de qualquer forma (D5).
+  - ~~**Submeter o template `mesa_novo_caso` à Meta**~~ — **feito em D10**, depois de o
+    Kairo autorizar. Aprovado pela Meta; a linha do banco vem da migration e o status se
+    reconcilia sozinho.
   - **Lance embutido oferecido sem explicação** (item #3 da fila): o card de educação
     EXISTE e tem o texto certo (`embeddedBidToWhatsApp`). No print do Kairo ele não
     saiu — provavelmente `embeddedBidDispatched` já estava marcado de um turno
@@ -199,11 +218,15 @@ qualidade e estabilidade, quando terminar suba tudo para prod"*.
   crédito recebido — não se toma no escuro.
 - **Reversibilidade:** fácil. **Evidência:** suíte completa 2387/2387.
 
-## Relatório final (atualizado 22:20)
-- **Critério de pronto:** ATINGIDO nos 5 itens da fila. Suíte completa **2387/2387**
-  (351 arquivos), typecheck limpo.
-- **Continua PENDENTE-KAIRO:** submeter o template `mesa_novo_caso` à Meta (publicação
-  externa). Até lá o atendente só recebe com janela aberta; o caso vai pro board igual.
-- **Revisar primeiro:** D5 (move o lead no board), D4 (template da mesa), D9 (o gate do
-  embutido agora pode ESPERAR um turno — se o card for suprimido por guard, a pergunta
-  atrasa em vez de sair sem contexto).
+## Relatório final (atualizado 23:00)
+- **Critério de pronto:** ATINGIDO nos 5 itens da fila **e no template da mesa** (D10).
+  Suíte completa **2391/2391**, typecheck limpo, lint limpo.
+- **Sem PENDENTE-KAIRO em aberto.** O único que havia (submeter o template à Meta) foi
+  autorizado pelo Kairo e executado: `aja_agora_mesa_novo_caso` está APPROVED.
+- **Revisar primeiro:** D5 (move o lead no board), D10 (dado de template versionado em
+  migration + reconciliação de status no caminho de envio), D9 (o gate do embutido agora
+  pode ESPERAR um turno — se o card for suprimido por guard, a pergunta atrasa em vez de
+  sair sem contexto).
+- **O que ainda merece olho, sem ser bloqueio:** ninguém disparou o template pra um
+  atendente real ainda — a prova foi de estado (PENDING → APPROVED no banco), não de
+  entrega. A primeira notificação real é a validação de ponta a ponta.
