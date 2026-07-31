@@ -61,7 +61,14 @@ const defaultConfigured = () =>
  * presentation.ts) condicionar o texto. */
 export async function sendFechoPedirOi(
 	conversationId: string,
-	deps: FechoPedirOiDeps = {},
+	deps: FechoPedirOiDeps & {
+		/** A conversa JÁ acontece no WhatsApp? Então a janela de 24h está aberta e
+		 * pedir o "oi" é ruído: o cliente acabou de falar com o agente ali mesmo
+		 * (Kairo, 2026-07-30 — "no whats isso aqui não precisa porque a janela de
+		 * contexto já está ok"). O acionamento da MESA continua acontecendo — o que
+		 * some é só a mensagem, que existia pra abrir a janela. */
+		janelaJaAberta?: boolean;
+	} = {},
 ): Promise<{ sent: boolean; channel?: ResolveAndSendResult["channel"] }> {
 	const loadIdentityImpl = deps.loadIdentityImpl ?? loadIdentity;
 	const getLeadIdImpl = deps.getLeadIdImpl ?? getLeadIdForConversation;
@@ -85,7 +92,17 @@ export async function sendFechoPedirOi(
 
 	let sent = false;
 	let channel: ResolveAndSendResult["channel"] | undefined;
-	if (configured()) {
+	if (deps.janelaJaAberta) {
+		console.log(
+			JSON.stringify({
+				level: "info",
+				source: "fecho-pedir-oi",
+				conversation_id: conversationId,
+				status: "skipped",
+				reason: "janela-ja-aberta-conversa-e-no-whatsapp",
+			}),
+		);
+	} else if (configured()) {
 		try {
 			const to = `55${identity.celular.replace(/\D/g, "")}`;
 			const result = await resolveAndSendImpl({

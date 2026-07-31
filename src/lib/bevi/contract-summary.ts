@@ -38,7 +38,7 @@ export function buildContractSummaryText(args: {
 	signatureLink: string | null;
 }): string {
 	const lines = [
-		"Resumo da sua contratação — Aja Agora ✅",
+		"Resumo da sua contratação · Aja Agora ✅",
 		"",
 		`Administradora: ${args.administradora}`,
 		...(args.grupo ? [`Grupo: ${args.grupo}`] : []),
@@ -49,7 +49,7 @@ export function buildContractSummaryText(args: {
 		...(hasMoney(args.monthlyPayment) ? [`Parcela mensal: ${brl2(args.monthlyPayment)}`] : []),
 		...(args.signatureLink ? ["", `Sua proposta: ${args.signatureLink}`] : []),
 		"",
-		"A Aja Agora segue com você até a contemplação — e depois dela.",
+		"A Aja Agora segue com você até a contemplação, e depois dela.",
 	];
 	return lines.join("\n");
 }

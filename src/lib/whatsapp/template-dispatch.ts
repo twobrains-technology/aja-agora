@@ -91,7 +91,10 @@ function alertAdminTemplatePending(info: {
 	);
 }
 
-async function findTemplateByUsageKey(usageKey: string) {
+/** Exportado pro broadcast da mesa (mesa/notify.ts): o atendente precisa do
+ * MESMO mecanismo de template que o cliente, e a resolução por `usageKey` é
+ * fonte única. */
+export async function findTemplateByUsageKey(usageKey: string) {
 	const [row] = await db
 		.select()
 		.from(whatsappTemplates)

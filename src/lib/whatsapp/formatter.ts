@@ -213,7 +213,20 @@ export function simulationResultToWhatsApp(payload: Record<string, unknown>): Wh
 	const eb = p.embeddedBid as
 		| { percent: number; receivedCredit: number; necessaryBidToContemplate?: number | null }
 		| undefined;
-	if (eb) {
+	// SÓ MOSTRA O EMBUTIDO QUANDO A CONTA FECHA.
+	//
+	// Visto em PRODUÇÃO (Kairo, 2026-07-30): "Com lance embutido (30%): Valor que
+	// você recebe: R$ 200.000" — sobre uma carta de R$ 200.000. Com 30% embutido o
+	// cliente recebe 140 mil, não a carta cheia; o número dizia o contrário na tela
+	// dele, e isso é dinheiro.
+	//
+	// A causa é a Bevi devolver `receivedCredit` igual à carta quando não há
+	// embutido real na oferta. A WEB já trata isso (`receivedCredit < creditValue`,
+	// simulation-result.tsx) e o mapper já documenta a regra ("o card OMITE a seção
+	// quando o recebido não fecha") — só o WhatsApp, que é o canal de MAIOR volume,
+	// imprimia a seção de qualquer jeito. Mesma regra nos dois canais agora.
+	const embutidoFecha = eb !== undefined && eb.receivedCredit < (p.creditValue as number);
+	if (eb && embutidoFecha) {
 		lines.push(
 			"",
 			`*Com lance embutido (${eb.percent}%):*`,
@@ -1139,7 +1152,7 @@ export function documentNoConversationToWhatsApp(): WhatsAppResponse {
 // usuário diz o mês-alvo, o agente recalcula via computeContemplationDial e
 // devolve o CENÁRIO. Aqui só FORMATAMOS o cenário — nunca recalculamos.
 const SIMULATOR_DISCLAIMER =
-	"_Estimativa a partir dos dados da oferta — contemplação não é garantida._";
+	"_Estimativa a partir dos dados da oferta; contemplação não é garantida._";
 
 /** Visão mínima do cenário calculado (ContemplationDialResult) que o agente
  * devolve por iteração. Lido defensivamente do payload (não recalcula). */
@@ -1224,7 +1237,7 @@ export function embeddedBidToWhatsApp(payload: Record<string, unknown>): WhatsAp
 	return {
 		type: "text",
 		text:
-			"*Lance embutido — sem tirar do bolso*\n\n" +
+			"*Lance embutido, sem tirar do bolso*\n\n" +
 			"Você usa parte da própria carta como lance e antecipa a contemplação, sem desembolsar.\n\n" +
 			`*Lance embutido:* ${brlWa(embeddedBidValue)}\n*Valor que você recebe:* ${brlWa(netCredit)}\n\n` +
 			"O embutido sai da carta, então o crédito recebido diminui um pouco (estimativa, não garantia).",
@@ -1243,8 +1256,8 @@ export function twoPathsToWhatsApp(payload: Record<string, unknown>): WhatsAppRe
 			body: {
 				text:
 					"Dois caminhos possíveis, sem lance:\n\n" +
-					`*Esperar o sorteio* — paga só a parcela de ${brlWa(monthlyPayment)} e concorre todo mês.\n\n` +
-					"*Lance pequeno lá na frente* — se sobrar um extra, um lance modesto melhora as chances.\n\n" +
+					`*Esperar o sorteio*: paga só a parcela de ${brlWa(monthlyPayment)} e concorre todo mês.\n\n` +
+					"*Lance pequeno lá na frente*: se sobrar um extra, um lance modesto melhora as chances.\n\n" +
 					"Não tem certo ou errado — depende de você ter pressa ou não.",
 			},
 			action: {

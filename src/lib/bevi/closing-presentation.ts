@@ -210,7 +210,7 @@ export function closingPresentation(
 				// `closing-presentation.test.ts`). A copy sai DEPOIS do offer-confirm,
 				// não antes. Só mexer com decisão explícita do Kairo.
 				`Perfeito! Sua cota da ${administradora} está reservada, escolhida pela Aja Agora ` +
-				"para o seu perfil — e a Aja Agora segue com você até a contemplação, e depois dela. " +
+				"para o seu perfil. A Aja Agora segue com você até a contemplação, e depois dela. " +
 				"Você não paga nada agora: a primeira parcela só vence quando o boleto chegar na sua casa.",
 		},
 		// A NOSSA proposta. Sem ela, nenhum card — nunca o link da administradora.
@@ -240,7 +240,7 @@ export function closingPresentation(
 		// regulatório do produto, não conversa — por isso é copy determinística.
 		{
 			kind: "text",
-			text: "Só pra deixar claro desde já: a contemplação acontece por sorteio ou lance, e não tem data garantida — ninguém pode prometer isso. O que a gente garante é te acompanhar até lá.",
+			text: "Só pra deixar claro desde já: a contemplação acontece por sorteio ou lance, e não tem data garantida: ninguém pode prometer isso. O que a gente garante é te acompanhar até lá.",
 		},
 		// O "oi" no WhatsApp tem função TÉCNICA (abre a janela de 24h,
 		// whatsapp/window.ts) — sem ele, o envio do atendente cai na fila de

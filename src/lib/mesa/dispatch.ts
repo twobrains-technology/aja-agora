@@ -34,6 +34,35 @@ export async function dispatchAutoTransbordo(
 		return { created: false, reason: result.reason };
 	}
 
+	// O CASO TEM QUE CAIR NA RAIA DA MESA, NÃO SÓ EXISTIR.
+	//
+	// Reportado por Kairo (2026-07-30): proposta fechada no WhatsApp não apareceu
+	// pro atendente. Uma das duas causas era esta — o handoff era criado, mas o LEAD
+	// continuava na raia anterior do board, então o card não aparecia onde a mesa
+	// olha.
+	//
+	// O desenho original contava com o worker de polling (FIX-44) mover o lead pra
+	// `na_administradora` e SÓ ENTÃO transbordar. Só que o fecho passou a transbordar
+	// na hora (FIX-235), e o worker "pode levar dias" (comentário do próprio
+	// fecho-pedir-oi) — nesse intervalo o caso existia sem estar na raia.
+	//
+	// `transitionLeadStage` é forward-only por padrão: se o worker já tiver movido o
+	// lead adiante, isto é no-op e não regride nada.
+	try {
+		const { transitionLeadStage } = await import("@/lib/admin/lead-transitions");
+		await transitionLeadStage(leadId, "na_administradora", { type: "system" });
+	} catch (err) {
+		console.error(
+			JSON.stringify({
+				level: "error",
+				source: "mesa-auto-transbordo",
+				lead_id: leadId,
+				error: err instanceof Error ? err.message : String(err),
+				note: "falha ao mover o lead pra na_administradora (handoff mantido)",
+			}),
+		);
+	}
+
 	try {
 		await broadcastCaseToAttendants(result.handoff.id, {
 			lead: result.lead,

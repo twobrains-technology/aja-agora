@@ -139,6 +139,10 @@ describe("BUG WhatsApp: artifacts orfaos no canal WhatsApp (apresentacao 13h)", 
 				contemplationRate: 1.2,
 			},
 			comparison_table: { groups: [] },
+			// FIX-422: atalhos de resposta. O mapper devolve `null` sem `options` (nada
+			// a desenhar), então a amostra precisa trazer pelo menos um rótulo — igual
+			// aos demais tipos aqui.
+			quick_reply: { options: [{ label: "Pode buscar" }, { label: "Me explica melhor" }] },
 			simulation_result: {
 				groupId: "g1",
 				creditValue: 30000,

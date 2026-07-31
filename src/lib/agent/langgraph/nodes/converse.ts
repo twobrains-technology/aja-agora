@@ -88,6 +88,24 @@ const WHAT_IF_TOOL_NAMES = [
 
 const MAX_TOOL_LOOP_ITERATIONS = 4;
 
+/** Depois de executar estas tools, o modelo tem algo NOVO pra dizer?
+ *
+ * O `converse` roda em loop enquanto a resposta trouxer tool_calls. Isso é certo
+ * pra tool de DADO (`simulate_quota`, `get_rates`): ela devolve número que o
+ * agente precisa explicar, e sem a fala seguinte ele chamaria a simulação e
+ * ficaria mudo sobre o resultado.
+ *
+ * Mas tool de APRESENTAÇÃO só desenha um card a partir do que o modelo JÁ sabia.
+ * Não traz informação nova — e mesmo assim devolvia ToolMessage, o loop dava
+ * outra volta e o modelo falava de novo, do mesmo contexto. Ao vivo (Kairo,
+ * 2026-07-30) isso saiu como gagueira literal: dois balões abrindo com "Boa
+ * escolha, Corolla é sucesso de vendas!", um com os atalhos e outro com o
+ * slider. O card É a resposta; depois dele o turno se encerra. */
+export function pedeFalaDepoisDasTools(nomes: readonly string[]): boolean {
+	if (nomes.length === 0) return false;
+	return nomes.some((nome) => !PRESENTATION_TOOLS.has(nome));
+}
+
 /** `SYSTEM_PROMPT` (system-prompt.ts) MENOS a seção "## Fluxo de Vendas
  * (siga esta ordem)" — o grafo é a ordem agora (elimina o drift
  * prompt×código, fix MÉDIA do crítico). Reusa a MESMA fonte de compliance
@@ -1064,6 +1082,9 @@ export function createConverseNode(model: BaseChatModel) {
 				const { messages: toolMessages } = await toolNode.invoke({ messages: [aiMessage] });
 				loopMessages = [...loopMessages, ...toolMessages];
 				newMessages.push(...toolMessages);
+				// Só volta pro modelo se alguma das tools trouxe informação nova. Ver
+				// `pedeFalaDepoisDasTools`: card não pede comentário, dado pede.
+				if (!pedeFalaDepoisDasTools(aiMessage.tool_calls.map((c) => c.name))) break;
 			}
 		};
 
@@ -1097,6 +1118,23 @@ export function createConverseNode(model: BaseChatModel) {
 				config.writer?.(ev);
 				events.push(ev);
 			}
+
+				// ⚠️ AQUI MORAVA UMA "RECUPERAÇÃO DE TURNO MUDO" QUE EU REMOVI.
+				//
+				// A ideia era: se o beat de apresentação não produziu texto, repetir o
+				// beat instruindo o modelo a só apresentar — porque turno mudo no
+				// WhatsApp aciona o `empty-turn-guard` (adapter.ts), que re-cobra o gate
+				// de coleta e faz o agente pedir o CPF de novo.
+				//
+				// MEDIDO antes de commitar: ela disparava em 19 de 19 cenários do
+				// `escolher_cota` (o filtro poda a fala do beat 1 com muito mais
+				// frequência do que eu supus) e COMIA a chamada seguinte do modelo — a
+				// que trazia a tool. Resultado: `escolha: undefined`, 5 testes vermelhos,
+				// e em produção uma chamada de LLM extra em todo reveal.
+				//
+			// Fica registrado pra não ser reinventado: o turno mudo é real, mas a
+			// solução não é falar mais — é o guard do canal não tratar um turno que
+			// ENTREGOU CARDS como se ninguém tivesse dito nada.
 			config.writer?.({ type: "text-boundary" });
 			events.push({ type: "text-boundary" });
 			// Os CARDS entram AGORA, logo abaixo da fala que os anunciou — e um de

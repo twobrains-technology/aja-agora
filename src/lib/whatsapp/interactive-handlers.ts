@@ -262,10 +262,16 @@ export async function finalizarOfertaReal(from: string, conversationId: string):
 		} catch (err) {
 			console.error(`[offer-confirm] envio da proposta PDF falhou (conv=${conversationId})`, err);
 		}
-		// FIX-235 (D8): fecho — pede o "oi" (abre a janela de 24h) e aciona a mesa
-		// (especialista em cadastros) NA HORA. Best-effort, nunca quebra o fechamento.
+		// FIX-235 (D8): fecho — aciona a mesa (especialista em cadastros) NA HORA.
+		// Best-effort, nunca quebra o fechamento.
+		//
+		// `janelaJaAberta`: este caller É o WhatsApp. O cliente acabou de clicar num
+		// botão aqui, então a janela de 24h está aberta e pedir um "oi" pra abri-la é
+		// ruído puro no fim do fechamento (Kairo, 2026-07-30). Pela WEB (route.ts) a
+		// mensagem continua saindo — lá o WhatsApp é canal novo e a janela está mesmo
+		// fechada. O transbordo pra mesa acontece nos dois casos.
 		const { sendFechoPedirOi } = await import("@/lib/bevi/fecho-pedir-oi");
-		await sendFechoPedirOi(conversationId).catch(() => {});
+		await sendFechoPedirOi(conversationId, { janelaJaAberta: true }).catch(() => {});
 	} catch {
 		await sendTextMessage(
 			from,

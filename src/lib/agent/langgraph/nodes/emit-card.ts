@@ -81,15 +81,34 @@ export async function emitCardNode(
 	// ao chamador. Resultado: o cliente recebia só `text-delta`/`tool-call` (que
 	// já iam pelo writer) e NENHUM card jamais renderizava. O writer entrega na
 	// ordem em que é chamado, então a ordem do turno é preservada.
-	// CHIPS SÓ ONDE HÁ PERGUNTA.
+	// NO TURNO DO REVEAL O GATE NÃO É NEM EMITIDO NEM CONSUMIDO.
 	//
-	// No turno do reveal o `converse` agora apenas APRESENTA (fala + cards) e não
-	// faz a pergunta do gate — ela é do turno seguinte. Emitir os chips aqui os
-	// deixaria pendurados embaixo dos cards sem nenhuma pergunta acima, que é
-	// exatamente o "badge fora de ordem" visto ao vivo (Kairo, 2026-07-30). O gate
-	// continua ATIVO no estado (`pendingGate` inclusive), então nada se perde: no
-	// próximo turno ele pergunta e os chips saem colados na pergunta.
-	if (state.gate && !state.apresentaOfertaNesteTurno) {
+	// O `converse` apenas APRESENTA nesse turno (fala + cards); a pergunta do gate
+	// é do turno seguinte. Emitir os chips aqui os deixaria pendurados embaixo dos
+	// cards sem pergunta nenhuma acima — o "badge fora de ordem" visto ao vivo
+	// (Kairo, 2026-07-30).
+	//
+	// ⚠️ Só suprimir a EMISSÃO não bastava, e isso custou uma regressão em
+	// produção: os blocos abaixo continuavam CONSUMINDO o gate — marcavam
+	// `decisionDispatched: true` e emitiam scarcity/decision_prompt no mesmo turno
+	// do reveal, onde eles também sumiam. O gate era gasto sem nada aparecer, e no
+	// turno seguinte a cascata já tinha pulado pra `contract`: o cliente dizia
+	// "bora fechar" e nunca via o card de decisão (cenario-nomear-nao-assina).
+	//
+	// Então o gate de PERGUNTA fica para o próximo turno. Nada se perde: ele
+	// continua ativo no estado (`pendingGate` inclusive) e é recalculado lá.
+	//
+	// `decision` e `contract` são a EXCEÇÃO, e a distinção importa: eles não fazem
+	// pergunta com chips concorrendo com os cards — são o próximo passo do que
+	// acabou de ser mostrado ("esse plano faz sentido?" / o formulário). Suspendê-los
+	// junto atrasava em um turno inteiro quem chega decidido, que é exatamente o
+	// cliente que a gente menos pode fazer esperar.
+	const GATES_DE_ACAO = new Set(["decision", "contract"]);
+	const gateDoTurno =
+		state.apresentaOfertaNesteTurno && !GATES_DE_ACAO.has(String(state.gate ?? ""))
+			? undefined
+			: state.gate;
+	if (gateDoTurno) {
 		// `modelAsked`: o `converse` agora é CIENTE do gate (via `GATE_INTENT`) e
 		// faz a pergunta com as palavras dele. Se produziu texto neste turno, o
 		// adapter NÃO deve reinjetar a pergunta canônica (`gateQuestion`) — senão
@@ -101,7 +120,7 @@ export async function emitCardNode(
 		// fala social sem pergunta ("Prazer em te ajudar!") calava a pergunta
 		// canônica do card — as duas redes caíam juntas e o turno terminava sem
 		// ninguém perguntando nada.
-		events.push({ type: "gate", gate: state.gate, modelAsked: state.modelAskedQuestion });
+		events.push({ type: "gate", gate: gateDoTurno, modelAsked: state.modelAskedQuestion });
 	}
 
 	// A liberação do hero pendente MUDOU DE LUGAR: vive no `advance`, que roda
@@ -121,7 +140,7 @@ export async function emitCardNode(
 	// + "Escolha uma opção: Ver tópicos", os dois juntos). Sem gate no turno, ele
 	// sai normal; com gate, espera — `topicPickerDispatched` só é marcado quando
 	// de fato saiu.
-	if (!state.gate && funnel.experiencePrev === "first" && !funnel.topicPickerDispatched) {
+	if (!gateDoTurno && funnel.experiencePrev === "first" && !funnel.topicPickerDispatched) {
 		if (artifactAllowed(guardCtx, "topic_picker")) {
 			events.push({
 				type: "artifact",
@@ -138,7 +157,7 @@ export async function emitCardNode(
 	// enquanto o gate segue sem resposta (o nó `advance` já consome a
 	// resposta de texto livre ANTES deste nó rodar — sem loop, FIX-260).
 	if (
-		state.gate === "lance-embutido" &&
+		gateDoTurno === "lance-embutido" &&
 		funnel.qualifyAnswers.lanceEmbutido === undefined &&
 		!funnel.qualifyAnswers.embeddedBidDispatched &&
 		artifactAllowed(guardCtx, "embedded_bid")
@@ -158,7 +177,7 @@ export async function emitCardNode(
 		};
 	}
 
-	if (state.gate === "decision" && !funnel.decisionDispatched) {
+	if (gateDoTurno === "decision" && !funnel.decisionDispatched) {
 		const meta = projectToMeta({ ...state, funnel });
 		const soParcela = funnel.qualifyAnswers.hasLance === "so_parcela";
 
@@ -211,7 +230,7 @@ export async function emitCardNode(
 	// mostra AGORA — reforço, não pergunta, então não atrasa o fechamento nem
 	// pede confirmação de novo. Mesma regra de nunca fabricar: `buildScarcityCard`
 	// retorna `null` sem `groupId`/`availableSlots` reais ancorados.
-	if (shouldEmitLateScarcity(state.gate, funnel) && artifactAllowed(guardCtx, "scarcity")) {
+	if (shouldEmitLateScarcity(gateDoTurno, funnel) && artifactAllowed(guardCtx, "scarcity")) {
 		const meta = projectToMeta({ ...state, funnel });
 		const scarcity = buildScarcityCard(meta);
 		if (scarcity) {
@@ -235,7 +254,7 @@ export async function emitCardNode(
 	// gate `identify`, então o card vem como CONFIRMAÇÃO (CPF mascarado — o
 	// número completo nunca volta pro browser).
 	if (
-		state.gate === "contract" &&
+		gateDoTurno === "contract" &&
 		!funnel.contractFormDispatched &&
 		artifactAllowed(guardCtx, "contract_form")
 	) {

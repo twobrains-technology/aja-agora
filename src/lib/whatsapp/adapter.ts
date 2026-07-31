@@ -397,7 +397,10 @@ async function consumeEvents(
 					// agora — só um instante." duplicado, colado.
 					avisouDaBusca = true;
 					await flushText();
-					const ok = await sendText(from, "Consultando as administradoras agora — só um instante.");
+					// Sem travessão: é texto FIXO do servidor, não passa pelo sanitizer
+					// (`semTravessaoDeIA`), e o travessão de pausa é a assinatura de IA que
+					// o cliente reconhece na hora (Kairo, 2026-07-30).
+					const ok = await sendText(from, "Consultando as administradoras agora, só um instante.");
 					hasSent = hasSent || ok;
 					lastWasInteractive = false;
 				}

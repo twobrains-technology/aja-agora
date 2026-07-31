@@ -138,9 +138,15 @@ export function gateQuestion(
 					? `Só retomando: quanto custa ${demonstrative} ${item}, mais ou menos?`
 					: `E quanto custa ${demonstrative} ${item} hoje?`;
 			}
+			// Sem item específico, um vendedor não pergunta "qual o valor do bem" —
+			// ele entra no assunto do cliente e pergunta o QUE ele quer, que já traz
+			// o valor junto (Kairo, 2026-07-30: "sempre perguntando o carro e não o
+			// modelo, pra dar aquele ar mais de vendedor").
+			// Mantém "valor do bem" (invariante do FIX-2 — nada de jargão seco tipo
+			// "faixa de crédito") mas abre com o que o cliente QUER, não com o preço.
 			return isReask
-				? "Voltando aqui: qual valor você tem em mente pro bem?"
-				: "Qual valor do bem faz mais sentido pra você?";
+				? "Voltando aqui: já tem um modelo em mente, ou me diz o valor do bem que você pensa?"
+				: "Já tem algum modelo em mente? Se ainda não, me diz o valor do bem que você tem em vista.";
 		}
 		case "timeframe":
 			return category ? TIMEFRAME_QUESTIONS[category] : null;
