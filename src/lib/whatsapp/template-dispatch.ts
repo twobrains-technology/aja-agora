@@ -136,6 +136,13 @@ export async function resolveAndSend(args: ResolveAndSendArgs): Promise<ResolveA
 		return { channel: "free_text" };
 	}
 
+	// Janela fechada: o template é a única saída. Se ele ainda consta em análise,
+	// pergunta à Meta antes de desistir — a aprovação pode ter saído e o webhook
+	// ter se perdido. Import dinâmico porque template-sync depende deste módulo
+	// (flushOutboundQueue) e o ciclo estático quebraria o bundle.
+	const { reconciliarSePendente } = await import("./template-sync");
+	await reconciliarSePendente(usageKey);
+
 	const template = await findTemplateByUsageKey(usageKey);
 	if (template && template.status === "APPROVED") {
 		const result = await sendTemplate(

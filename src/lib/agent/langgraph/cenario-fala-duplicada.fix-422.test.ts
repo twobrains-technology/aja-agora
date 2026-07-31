@@ -92,7 +92,6 @@ describeIfDb("FIX-422 — uma tool de apresentação não pede uma segunda fala"
 			`o agente falou ${blocosDeTexto(turno.trilha)}x no mesmo turno — trilha: ${turno.trilha.join(" → ")}`,
 		).toBe(1);
 	});
-
 });
 
 /** A OUTRA METADE — a que impede o fix de virar "o agente emudece".

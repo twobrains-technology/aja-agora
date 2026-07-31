@@ -16,9 +16,17 @@ export async function notifyMesaAttendant(phone: string, text: string): Promise<
 	publishToAttendant(phone, text);
 }
 
-/** Chave lógica do template que avisa o atendente de um caso novo. Cadastrar em
- * /admin/whatsapp/templates com esta `usageKey` e submeter à Meta. */
+/** Chave lógica do template que avisa o atendente de um caso novo. A linha do
+ * banco nasce da migration `0036_mesa_novo_caso_template` — não depende de
+ * cadastro manual no admin em nenhum ambiente. */
 export const MESA_NOVO_CASO_USAGE_KEY = "mesa_novo_caso";
+
+/** Identidade do template na Meta (WABA 2536995250087380), submetido em
+ * 2026-07-30. Fonte de verdade do envio continua sendo a linha do banco
+ * resolvida por `usageKey`; estas constantes existem pra rastrear qual template
+ * é esse sem abrir o Business Manager, e para o teste travar o vínculo. */
+export const MESA_NOVO_CASO_TEMPLATE_NAME = "aja_agora_mesa_novo_caso";
+export const MESA_NOVO_CASO_TEMPLATE_ID = "910556708148286";
 
 export async function notifyMesaAttendantButtons(
 	phone: string,
@@ -50,6 +58,10 @@ export async function notifyMesaAttendantButtons(
 	// qualquer forma, então nenhum caso se perde por causa disto.
 	try {
 		const { findTemplateByUsageKey } = await import("@/lib/whatsapp/template-dispatch");
+		const { reconciliarSePendente } = await import("@/lib/whatsapp/template-sync");
+		// Template recém-submetido pode ter sido aprovado sem o webhook chegar —
+		// pergunta à Meta antes de concluir que o atendente ficará sem aviso.
+		await reconciliarSePendente(MESA_NOVO_CASO_USAGE_KEY);
 		const template = await findTemplateByUsageKey(MESA_NOVO_CASO_USAGE_KEY);
 		if (template && template.status === "APPROVED") {
 			const { sendTemplate } = await import("@/lib/whatsapp/api");

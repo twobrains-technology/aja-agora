@@ -253,6 +253,13 @@
 			"when": 1784760198688,
 			"tag": "0035_remove_servicos_category",
 			"breakpoints": true
+		},
+		{
+			"idx": 36,
+			"version": "7",
+			"when": 1784846598688,
+			"tag": "0036_mesa_novo_caso_template",
+			"breakpoints": true
 		}
 	]
 }

@@ -143,6 +143,58 @@ export async function applyTemplateStatusUpdate(
 	};
 }
 
+/** Espaço mínimo entre duas reconciliações disparadas pelo caminho de envio.
+ * Segura a mão contra bater na Meta a cada mensagem enquanto um template está
+ * em análise, sem atrasar o destravamento de forma perceptível. */
+const RECONCILIACAO_THROTTLE_MS = 5 * 60 * 1000;
+
+/**
+ * Puxa da Meta o status de um template ainda em análise, ANTES de decidir que
+ * não dá pra enviar. Retorna `true` quando de fato foi buscar.
+ *
+ * Por que existe (2026-07-30): a promoção pra `APPROVED` dependia de o webhook
+ * `message_template_status_update` chegar. Se ele se perder — ou se a Meta
+ * aprovar antes de a linha local existir, como acontece com template submetido
+ * fora do app — o status local congela em `PENDING` e a única saída era um
+ * humano abrir o admin e clicar "sincronizar". Fila parada esperando clique é
+ * exatamente o que a regra do projeto proíbe.
+ *
+ * Só busca no estado em que a resposta pode mudar o desfecho (`PENDING`,
+ * `PAUSED`): `APPROVED` não tem o que melhorar, e `DRAFT`/`REJECTED`/`DISABLED`
+ * só mudam por uma ação nossa. Falha da Meta nunca derruba o envio — loga e
+ * segue pro caminho de fila, que é o mesmo de antes.
+ */
+export async function reconciliarSePendente(usageKey: string): Promise<boolean> {
+	try {
+		const [row] = await db
+			.select()
+			.from(whatsappTemplates)
+			.where(eq(whatsappTemplates.usageKey, usageKey))
+			.limit(1);
+		if (!row) return false;
+		if (row.status !== "PENDING" && row.status !== "PAUSED") return false;
+
+		const desdeUltimaSync = row.lastSyncedAt
+			? Date.now() - row.lastSyncedAt.getTime()
+			: Number.POSITIVE_INFINITY;
+		if (desdeUltimaSync < RECONCILIACAO_THROTTLE_MS) return false;
+
+		await reconcileTemplateStatuses();
+		return true;
+	} catch (err) {
+		console.warn(
+			JSON.stringify({
+				level: "warn",
+				source: "template-sync",
+				event: "reconciliacao_sob_demanda_falhou",
+				usage_key: usageKey,
+				error: err instanceof Error ? err.message : String(err),
+			}),
+		);
+		return false;
+	}
+}
+
 export interface ReconcileResult {
 	checked: number;
 	updated: number;

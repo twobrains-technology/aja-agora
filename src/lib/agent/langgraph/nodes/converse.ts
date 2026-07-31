@@ -1119,19 +1119,19 @@ export function createConverseNode(model: BaseChatModel) {
 				events.push(ev);
 			}
 
-				// ⚠️ AQUI MORAVA UMA "RECUPERAÇÃO DE TURNO MUDO" QUE EU REMOVI.
-				//
-				// A ideia era: se o beat de apresentação não produziu texto, repetir o
-				// beat instruindo o modelo a só apresentar — porque turno mudo no
-				// WhatsApp aciona o `empty-turn-guard` (adapter.ts), que re-cobra o gate
-				// de coleta e faz o agente pedir o CPF de novo.
-				//
-				// MEDIDO antes de commitar: ela disparava em 19 de 19 cenários do
-				// `escolher_cota` (o filtro poda a fala do beat 1 com muito mais
-				// frequência do que eu supus) e COMIA a chamada seguinte do modelo — a
-				// que trazia a tool. Resultado: `escolha: undefined`, 5 testes vermelhos,
-				// e em produção uma chamada de LLM extra em todo reveal.
-				//
+			// ⚠️ AQUI MORAVA UMA "RECUPERAÇÃO DE TURNO MUDO" QUE EU REMOVI.
+			//
+			// A ideia era: se o beat de apresentação não produziu texto, repetir o
+			// beat instruindo o modelo a só apresentar — porque turno mudo no
+			// WhatsApp aciona o `empty-turn-guard` (adapter.ts), que re-cobra o gate
+			// de coleta e faz o agente pedir o CPF de novo.
+			//
+			// MEDIDO antes de commitar: ela disparava em 19 de 19 cenários do
+			// `escolher_cota` (o filtro poda a fala do beat 1 com muito mais
+			// frequência do que eu supus) e COMIA a chamada seguinte do modelo — a
+			// que trazia a tool. Resultado: `escolha: undefined`, 5 testes vermelhos,
+			// e em produção uma chamada de LLM extra em todo reveal.
+			//
 			// Fica registrado pra não ser reinventado: o turno mudo é real, mas a
 			// solução não é falar mais — é o guard do canal não tratar um turno que
 			// ENTREGOU CARDS como se ninguém tivesse dito nada.
