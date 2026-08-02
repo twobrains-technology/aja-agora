@@ -185,9 +185,24 @@ export async function emitCardNode(
 	// Nunca no MESMO turno de um gate: o picker de tópicos é um convite lateral e
 	// competia com a pergunta do funil ("Posso te mostrar a opção que recomendo?"
 	// + "Escolha uma opção: Ver tópicos", os dois juntos). Sem gate no turno, ele
-	// sai normal; com gate, espera — `topicPickerDispatched` só é marcado quando
-	// de fato saiu.
-	if (!gateDoTurno && funnel.experiencePrev === "first" && !funnel.topicPickerDispatched) {
+	// sai normal; com gate, espera.
+	//
+	// FIX-425 (Kairo, produção 2026-08-02): a mesma competição existia contra o
+	// CONTEÚDO, não só contra o gate. No print, o cliente pediu "Ver outras opções"
+	// e o que apareceu foi este menu de dúvidas. Convite lateral não divide turno
+	// com o que a pessoa pediu — havendo qualquer card no turno, ele espera o
+	// próximo. Turno calmo (sem card e sem gate) continua levando o convite.
+	//
+	// A marcação de `topicPickerDispatched` desceu pra dentro do `artifactAllowed`:
+	// o comentário sempre disse "só é marcado quando de fato saiu", mas o código
+	// marcava mesmo quando o guard suprimia — e aí o convite não saía nunca mais.
+	const turnoCalmo = turnArtifactTypes.length === 0;
+	if (
+		!gateDoTurno &&
+		turnoCalmo &&
+		funnel.experiencePrev === "first" &&
+		!funnel.topicPickerDispatched
+	) {
 		if (artifactAllowed(guardCtx, "topic_picker")) {
 			events.push({
 				type: "artifact",
@@ -196,8 +211,8 @@ export async function emitCardNode(
 				toolCallId: crypto.randomUUID(),
 			});
 			turnArtifactTypes.push("topic_picker");
+			funnel = { ...funnel, topicPickerDispatched: true };
 		}
-		funnel = { ...funnel, topicPickerDispatched: true };
 	}
 
 	// FIX-360 — `embedded_bid`: educação + opt-in do lance embutido, emitido

@@ -191,8 +191,21 @@ describeIfDb(
 			expect(tBody.handoff.status).toBe("aberto");
 			const handoffId = tBody.handoff.id;
 
-			// broadcast do botão "Vou atender" foi pros MEUS 2 atendentes (DB é compartilhado → filtra)
-			const broadcasted = sendReplyButtons.mock.calls
+			// O broadcast chegou aos MEUS 2 atendentes (DB é compartilhado → filtra).
+			//
+			// O CANAL mudou em 2026-07-30: era `sendReplyButtons` (texto livre com o
+			// botão "Vou atender"), que a Meta só entrega dentro da janela de 24h — e a
+			// janela do atendente está fechada quase sempre, porque ele não conversa com
+			// o próprio sistema. Resultado real reportado pelo Kairo: proposta fechada no
+			// WhatsApp e ninguém avisado. Agora vai por template aprovado
+			// (`mesa_novo_caso`), que chega sempre.
+			//
+			// Custo aceito conscientemente (decisão do Kairo, 2026-08-02): template não
+			// tem botão, então o claim de 1 clique pelo WhatsApp deixou de existir — o
+			// atendente assume pelo painel, e o corpo do template diz isso. O claim
+			// atômico em si continua exercitado logo abaixo (`handleMesaClaim`), que é o
+			// invariante que importa: dois atendentes, um só dono.
+			const broadcasted = sendTemplate.mock.calls
 				.map((c) => c[0] as string)
 				.filter((p) => [a.whatsapp, b.whatsapp].includes(p));
 			expect(broadcasted.sort()).toEqual([a.whatsapp, b.whatsapp].sort());

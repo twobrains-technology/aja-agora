@@ -146,6 +146,49 @@ describeIfDb("FIX-425 — pedir outras opções por texto tem que MOSTRAR as op�
 		);
 	});
 
+	it("o card de dúvidas não divide o turno com o que o cliente pediu", async () => {
+		// No print, quem apareceu no lugar das ofertas foi o menu de dúvidas ("o que
+		// é lance?", "como funciona o sorteio?"). Ele é convite LATERAL: sai sozinho
+		// num turno calmo, nunca competindo com o conteúdo que o cliente pediu.
+		// Mesma regra que já valia contra o gate do funil (FIX-360).
+		const r = await runScenario({
+			channel: "web",
+			metaInicial: { ...RETOMADA_POS_REVEAL, experiencePrev: "first" as const },
+			turns: [
+				{ user: "Ver outras opções", intent: "wants_more_options", beats: BEAT_COM_COMPARATIVO },
+			],
+		});
+		criadas.push(r.conversationId);
+
+		const turno = r.turns[0];
+		expect(turno.artifacts, `trilha: ${turno.trilha.join(" → ")}`).toContain("comparison_table");
+		expect(
+			turno.artifacts,
+			`o menu de dúvidas roubou o turno — trilha: ${turno.trilha.join(" → ")}`,
+		).not.toContain("topic_picker");
+	});
+
+	it("mas num turno calmo o card de dúvidas continua saindo — o convite não some", async () => {
+		// A metade que impede isto de virar "o novato nunca mais vê os tópicos":
+		// turno de conversa pura, sem card e sem gate, o convite sai normalmente.
+		const r = await runScenario({
+			channel: "web",
+			metaInicial: { ...RETOMADA_POS_REVEAL, experiencePrev: "first" as const },
+			turns: [
+				{
+					user: "consórcio tem juros?",
+					intent: "asking_question",
+					beats: [{ text: "Não tem juros, só a taxa de administração." }],
+				},
+			],
+		});
+		criadas.push(r.conversationId);
+
+		expect(r.turns[0].artifacts, `trilha: ${r.turns[0].trilha.join(" → ")}`).toContain(
+			"topic_picker",
+		);
+	});
+
 	it("afirmativo curto pós-reveal continua barrado — o BUG-REVEAL-LOOP fica de pé", async () => {
 		// O guard existe porque "bora"/"ta ótimo" re-abria a descoberta em loop e a
 		// conversa nunca cruzava pro fechamento. Isso NÃO pode voltar.
