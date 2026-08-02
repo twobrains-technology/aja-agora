@@ -153,6 +153,31 @@ export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
 		logLine: ({ conversationId, userIntent }) =>
 			`[premature-decision] guard: suprimindo decision_prompt — qualificação pós-reveal (experience/timeframe/lance) ainda não resolvida (conv=${conversationId}, intent=${userIntent})`,
 	},
+	// FIX-426 (Kairo, WhatsApp 2026-07-30): "não faz sentido o simulador antes de
+	// mostrar a nova carta com lance embutido".
+	//
+	// O funil já manda `lance-embutido` ANTES de `simulator-offer` (nextGate), mas a
+	// tool-policy libera `present_contemplation_dial` em todo o pós-reveal e o modelo
+	// chamava quando queria. Na tela: "o lance fica em torno de 30% (R$ 60.000), você
+	// recebe R$ 140.000" chegando antes de a pessoa ler o que é lance embutido e de
+	// onde sai esse dinheiro.
+	//
+	// Mesma família do FIX-425 (ninguém decide o embutido no escuro), pelo lado do
+	// simulador: número de lance é justamente aquilo sobre o que ela vai decidir.
+	// Escopado ao intervalo exato — só enquanto o gate estrutural ativo AINDA é
+	// `lance-embutido` e a educação não saiu. Entregue o card, o simulador roda
+	// livre; e quem não vai dar lance nenhum nunca passa por `lance-embutido`
+	// (`querAntecipar` em qualify-state), então não é afetado.
+	{
+		name: "simulador-antes-do-embutido",
+		applies: ({ artifactType, meta }) => {
+			if (artifactType !== "contemplation_dial") return false;
+			if (meta.qualifyAnswers?.embeddedBidDispatched === true) return false;
+			return nextGate(meta, { hasContactName: true }) === "lance-embutido";
+		},
+		logLine: ({ conversationId }) =>
+			`[simulador-antes-do-embutido] guard: suprimindo contemplation_dial — a educação do lance embutido ainda não saiu (conv=${conversationId})`,
+	},
 	// BUG-REVEAL-LOOP (2026-06-02): pós-reveal, num turno de usuário o agent
 	// re-emitia os cards de DESCOBERTA a cada afirmativo ("ta otimo", "bora") —
 	// loop que nunca cruzava pro passo 5. Chave em revealCompleted (não

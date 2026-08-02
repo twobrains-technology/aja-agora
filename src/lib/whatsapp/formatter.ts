@@ -1163,6 +1163,9 @@ interface DialScenarioView {
 	requiredLanceValue?: number;
 	receivedCredit?: number;
 	paymentAfterContemplation?: number;
+	/** Parcela ATUAL do plano — a referência que dá sentido à queda. Vem do
+	 * `monthlyPayment` do payload da oferta; ausente em cenários antigos. */
+	paymentBeforeContemplation?: number;
 }
 
 /** Extrai o cenário JÁ calculado pelo agente. Aceita tanto `payload.scenario`
@@ -1185,11 +1188,37 @@ function readDialScenario(payload: Record<string, unknown>): DialScenarioView | 
 		requiredLanceValue: num(raw.requiredLanceValue),
 		receivedCredit: num(raw.receivedCredit),
 		paymentAfterContemplation: num(raw.paymentAfterContemplation),
+		// A parcela de ANTES pode vir com nome próprio no cenário ou ser o
+		// `monthlyPayment` do plano que veio junto no payload — aceita os dois.
+		paymentBeforeContemplation:
+			num(raw.paymentBeforeContemplation) ??
+			num(raw.monthlyPayment) ??
+			num((payload as Record<string, unknown>).monthlyPayment),
 	};
 }
 
+/** Saídas do simulador no WhatsApp. `simoffer_yes` reabre o loop (o agente
+ * volta a perguntar o mês-alvo) e `decision_contratar` é o MESMO caminho do
+ * "Tenho interesse" — os dois já têm handler provado em interactive-handlers. */
+const SIMULATOR_ACTIONS = [
+	{ id: "simoffer_yes", title: "Testar outro prazo" },
+	{ id: "decision_contratar", title: "Quero esse plano" },
+];
+
 /** Formata UMA iteração do simulador conversacional (o cenário recalculado pelo
- * agente). Só apresentação — o cálculo vem de computeContemplationDial. */
+ * agente). Só apresentação — o cálculo vem de computeContemplationDial.
+ *
+ * FIX-426 (Kairo, 2026-07-30: "o simulador do WhatsApp tem que ter uma UX de
+ * WhatsApp, do jeito que ficou ficou péssimo"). Duas coisas mudaram:
+ *
+ *  1. o turno FECHAVA SEM SAÍDA — três linhas de número e ponto final. Num chat
+ *     sem slider, a pessoa que não sabe o que responder simplesmente para. Agora
+ *     sai com as duas ações que fazem sentido ali: testar outro prazo ou seguir.
+ *  2. a parcela pós-contemplação vinha sozinha ("fica em ~R$ 1.980/mês"), sem o
+ *     valor de antes — o número que dá sentido à queda. Quando o payload traz a
+ *     parcela atual, mostramos o de-para; quando não traz, o texto degrada pro
+ *     valor sozinho em vez de inventar comparação.
+ */
 function simulatorScenarioToWhatsApp(s: DialScenarioView): WhatsAppResponse {
 	const monthLabel = `${s.targetMonth} ${s.targetMonth === 1 ? "mês" : "meses"}`;
 	const lines: string[] = [`*Contemplação em ${monthLabel}*`, ""];
@@ -1198,22 +1227,36 @@ function simulatorScenarioToWhatsApp(s: DialScenarioView): WhatsAppResponse {
 	if (isSorteio) {
 		lines.push("Nesse prazo dá pra contar mais com o sorteio — lance opcional e parcela menor.");
 	} else {
+		const pct = s.requiredLancePct !== undefined ? ` — ${s.requiredLancePct}% da carta` : "";
 		const lanceStr =
 			s.requiredLanceValue !== undefined
-				? `*${s.requiredLancePct}%* (${brlWa(s.requiredLanceValue)})`
-				: `*${s.requiredLancePct}%*`;
-		lines.push(`Pra antecipar pra esse mês, o lance fica em torno de ${lanceStr}.`);
-		if (s.receivedCredit !== undefined) {
-			lines.push(`Você recebe ${brlWa(s.receivedCredit)} de crédito.`);
-		}
-		if (s.paymentAfterContemplation !== undefined) {
-			lines.push(
-				`Depois da contemplação, a parcela fica em ~${brlWa(s.paymentAfterContemplation)}/mês.`,
-			);
-		}
+				? `*${brlWa(s.requiredLanceValue)}*${pct}`
+				: `*${s.requiredLancePct}%* da carta`;
+		lines.push(`Pra chegar lá, o lance fica em torno de ${lanceStr}.`, "");
+
+		const recebe = s.receivedCredit !== undefined ? `Você recebe *${brlWa(s.receivedCredit)}*` : "";
+		const parcela =
+			s.paymentAfterContemplation !== undefined
+				? s.paymentBeforeContemplation !== undefined
+					? `a parcela cai de ${brlWa(s.paymentBeforeContemplation)} pra ~*${brlWa(s.paymentAfterContemplation)}*/mês`
+					: `a parcela fica em ~*${brlWa(s.paymentAfterContemplation)}*/mês`
+				: "";
+		if (recebe && parcela) lines.push(`${recebe}, e ${parcela}.`);
+		else if (recebe) lines.push(`${recebe} de crédito.`);
+		else if (parcela) lines.push(`${parcela[0].toUpperCase()}${parcela.slice(1)}.`);
 	}
 	lines.push("", SIMULATOR_DISCLAIMER);
-	return { type: "text", text: lines.join("\n") };
+	return {
+		type: "interactive",
+		text: lines.join("\n"),
+		interactive: {
+			type: "button",
+			body: { text: lines.join("\n") },
+			action: {
+				buttons: SIMULATOR_ACTIONS.map((b) => ({ type: "reply", reply: b })),
+			},
+		},
+	};
 }
 
 export function contemplationDialToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
