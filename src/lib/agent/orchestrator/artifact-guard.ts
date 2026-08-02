@@ -171,8 +171,27 @@ export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
 			// a tool-policy já reabilitou search/recommend nesse caso. O afirmativo
 			// curto na MESMA faixa (revealValueTargetChanged=false) continua caindo no
 			// guard (BUG-REVEAL-LOOP intacto).
+			// FIX-425 (Kairo, produção 2026-08-02, conversa retomada dias depois): o
+			// cliente pediu "Ver outras opções", o agente respondeu "vou trazer as
+			// melhores opções pra você" e NENHUM card saiu. Ele reclamou ("nao vi
+			// nenhuma"), o agente prometeu de novo e engoliu de novo — e ainda
+			// perguntou "qual delas te interessou?" sobre uma lista que nunca apareceu.
+			// Prometer e não entregar é pior que não responder.
+			//
+			// O guard estava certo no que foi criado pra pegar (afirmativo curto —
+			// "bora", "tá ótimo" — re-abrindo a descoberta em loop) e errado ao tratar
+			// como re-reveal quem PEDE a lista. Os dois casos já têm rótulo próprio no
+			// analyzer, então a distinção é dado, não heurística nova:
+			//   `wants_more_options` — "mostra as outras", "ver todas" (FIX-183);
+			//   `confused`           — não entendeu/não enxergou o que foi mostrado, e
+			//                          reancorar é o comportamento certo (FIX-301).
+			// Afirmativo segue sendo `ready_to_proceed`/`neutral` → continua barrado.
+			const pedeParaVer = userIntent === "wants_more_options" || userIntent === "confused";
 			const revealLoopActive =
-				meta.revealCompleted === true && isUserTurn && !revealValueTargetChanged(meta);
+				meta.revealCompleted === true &&
+				isUserTurn &&
+				!revealValueTargetChanged(meta) &&
+				!pedeParaVer;
 			const isRereveal =
 				revealLoopActive &&
 				(artifactType === "comparison_table" ||
