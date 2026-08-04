@@ -34,6 +34,15 @@ COPY . .
 # resolver node_modules.
 RUN pnpm db:migrate:bundle
 
+# `NEXT_PUBLIC_*` é ASSADO no bundle em build-time — não adianta pôr no task
+# definition. O pipeline (.github/workflows/aws-ecr-deploy.yml) lê os `ARG`
+# declarados aqui e monta um build-arg pra cada um com o valor do Secrets
+# Manager (`tb/<env>/aja-agora/env`). Sem o ARG, o passo não gera build-arg
+# nenhum e a variável nunca chega na imagem — o secret ficaria preenchido e o
+# pixel simplesmente não apareceria, sem erro em lugar algum.
+ARG NEXT_PUBLIC_META_PIXEL_ID=""
+ENV NEXT_PUBLIC_META_PIXEL_ID=$NEXT_PUBLIC_META_PIXEL_ID
+
 # DATABASE_URL dummy só em build-time — Next 16 "Collecting page data" carrega
 # api routes que importam src/db/index.ts (que lança se a env não existe).
 # Em runtime, ECS task definition sobreescreve com o valor real do Secrets Manager.
