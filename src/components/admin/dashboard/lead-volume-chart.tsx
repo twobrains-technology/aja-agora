@@ -37,7 +37,7 @@ export function LeadVolumeChart({ data }: { data: DailyVolume[] }) {
 			<CardContent>
 				{isEmpty ? (
 					<div className="flex items-center justify-center h-[300px] text-muted-foreground text-sm">
-						Sem dados no periodo
+						Sem dados no período
 					</div>
 				) : (
 					<ChartContainer config={chartConfig} className="h-[300px] w-full">

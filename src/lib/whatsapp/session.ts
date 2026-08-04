@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations, leads } from "@/db/schema";
+import { findUnclaimedWhatsAppVisit } from "@/lib/attribution/visit-store";
 import { attachContact } from "@/lib/contacts";
 import {
 	loadConversationHistory,
@@ -33,10 +34,20 @@ export async function getOrCreateConversation(
 	// mas marcar aqui garante isolamento de qualquer caminho.
 	const isSimulated = isSimulatedWaId(waId);
 
+	// Origem do anúncio Click-to-WhatsApp: o webhook já gravou a visita quando a
+	// primeira mensagem trouxe `referral`. Aqui a conversa a reivindica. Conversa
+	// simulada nunca reivindica — atribuição de teste sujaria o relatório da
+	// campanha, que é o que decide onde a verba vai.
+	const visitId = isSimulated ? null : await findUnclaimedWhatsAppVisit(waId);
+
 	const [conv] = await db
 		.insert(conversations)
-		.values({ waId, channel: "whatsapp", isSimulated })
+		.values({ waId, channel: "whatsapp", isSimulated, visitId })
 		.returning();
+
+	if (visitId) {
+		console.log(`[whatsapp-session] Conversa ${conv.id} atribuída à visita ${visitId} (anúncio)`);
+	}
 
 	// B-03: cria lead JÁ no início, só com phone. Sem isso, conversa que
 	// abandona antes de handoff/interest fica invisível no kanban (bug

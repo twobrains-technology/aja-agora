@@ -56,5 +56,16 @@ export async function transitionLeadStage(
 		actorId: actor.id ?? null,
 	});
 
+	// Marco de mídia. Só alguns estágios viram sinal pro algoritmo de anúncio
+	// (ver ESTAGIO_PARA_EVENTO); o registro é idempotente e NUNCA faz rede aqui
+	// — o envio à Meta é assíncrono e vive atrás da feature flag. Falhar aqui
+	// não pode desfazer uma transição de funil que já aconteceu.
+	try {
+		const { registrarConversaoDoEstagio } = await import("@/lib/conversions/registry");
+		await registrarConversaoDoEstagio(leadId, toStage, now);
+	} catch (err) {
+		console.error("[lead-transitions] falha ao registrar conversão de mídia:", err);
+	}
+
 	return { ...lead, stage: toStage, updatedAt: now };
 }

@@ -1,35 +1,26 @@
 "use client";
 
-import { subDays } from "date-fns";
-import { parseAsIsoDate, useQueryState } from "nuqs";
-import { Suspense, useCallback, useEffect, useState } from "react";
-import { ChannelBreakdownChart } from "@/components/admin/dashboard/channel-breakdown-chart";
-import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter";
-import { FunnelChart } from "@/components/admin/dashboard/funnel-chart";
-import { KpiCards } from "@/components/admin/dashboard/kpi-cards";
-import { LeadVolumeChart } from "@/components/admin/dashboard/lead-volume-chart";
+import { RefreshCwIcon } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { ConversasAoVivo } from "@/components/admin/agora/conversas-ao-vivo";
+import { PulsoCards } from "@/components/admin/agora/pulso-cards";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { DashboardResponse } from "@/lib/admin/dashboard-types";
+import type { AgoraResponse } from "@/lib/admin/agora-types";
 
-function defaultFrom() {
-	return subDays(new Date(), 30);
-}
+/** De quanto em quanto tempo a sala de guerra se atualiza sozinha. */
+const INTERVALO_MS = 15_000;
 
-function defaultTo() {
-	return new Date();
-}
-
-function KpiSkeleton() {
+function PulsoSkeleton() {
 	return (
 		<div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-			{["credito", "leads", "conversas", "conversao"].map((slot) => (
+			{["visitas", "conversas", "espera", "mesa", "leads", "fechados"].map((slot) => (
 				<Card key={slot}>
 					<CardHeader className="pb-2">
-						<Skeleton className="h-4 w-24" />
+						<Skeleton className="h-4 w-28" />
 					</CardHeader>
 					<CardContent>
-						<Skeleton className="h-8 w-16 mb-2" />
+						<Skeleton className="h-8 w-12 mb-2" />
 						<Skeleton className="h-3 w-32" />
 					</CardContent>
 				</Card>
@@ -38,116 +29,75 @@ function KpiSkeleton() {
 	);
 }
 
-function ChartSkeleton(_props: { title: string }) {
-	return (
-		<Card>
-			<CardHeader>
-				<Skeleton className="h-5 w-40" />
-			</CardHeader>
-			<CardContent>
-				<Skeleton className="h-[300px] w-full" />
-			</CardContent>
-		</Card>
-	);
+function horaDe(iso: string): string {
+	return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
-function DashboardContent() {
-	const [from] = useQueryState("from", parseAsIsoDate.withDefault(defaultFrom()));
-	const [to] = useQueryState("to", parseAsIsoDate.withDefault(defaultTo()));
+export default function AgoraPage() {
+	const [data, setData] = useState<AgoraResponse | null>(null);
+	const [erro, setErro] = useState<string | null>(null);
+	const [atualizando, setAtualizando] = useState(false);
 
-	const [data, setData] = useState<DashboardResponse | null>(null);
-	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState<string | null>(null);
-
-	const fetchDashboard = useCallback(async () => {
-		setLoading(true);
-		setError(null);
-
+	const carregar = useCallback(async () => {
+		setAtualizando(true);
 		try {
-			const params = new URLSearchParams();
-			if (from) params.set("from", from.toISOString());
-			if (to) params.set("to", to.toISOString());
-
-			const res = await fetch(`/api/admin/dashboard?${params.toString()}`);
-			if (!res.ok) {
-				throw new Error(`Erro ao carregar dashboard: ${res.status}`);
-			}
-			const json: DashboardResponse = await res.json();
-			setData(json);
+			const res = await fetch("/api/admin/agora", { cache: "no-store" });
+			if (!res.ok) throw new Error(`Erro ao carregar o painel: ${res.status}`);
+			setData((await res.json()) as AgoraResponse);
+			setErro(null);
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Erro desconhecido");
+			// Mantém o último retrato na tela e avisa que ele envelheceu — tela de
+			// plantão em branco é pior que tela com dado de um minuto atrás rotulado.
+			setErro(err instanceof Error ? err.message : "Erro desconhecido");
 		} finally {
-			setLoading(false);
+			setAtualizando(false);
 		}
-	}, [from, to]);
+	}, []);
 
 	useEffect(() => {
-		fetchDashboard();
-	}, [fetchDashboard]);
+		carregar();
+		const timer = setInterval(carregar, INTERVALO_MS);
+		return () => clearInterval(timer);
+	}, [carregar]);
 
 	return (
 		<div className="space-y-6">
-			{/* Header */}
 			<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
 				<div>
-					<h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-					<p className="text-muted-foreground text-sm mt-1">Visão geral do funil de vendas</p>
+					<h1 className="text-2xl font-bold tracking-tight">Agora</h1>
+					<p className="text-muted-foreground text-sm mt-1">
+						O que está acontecendo neste minuto e o que precisa de gente
+					</p>
 				</div>
-				<DateRangeFilter />
+				<div className="flex items-center gap-2 text-xs text-muted-foreground">
+					<RefreshCwIcon
+						className={`size-3.5 ${atualizando ? "animate-spin" : ""}`}
+						aria-hidden="true"
+					/>
+					{data ? `Atualizado às ${horaDe(data.geradoEm)}` : "Carregando…"}
+				</div>
 			</div>
 
-			{/* Error state */}
-			{error && (
+			{erro && (
 				<div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-800 text-sm">
-					{error}
+					{erro} — os números abaixo são do último carregamento que deu certo.
 				</div>
 			)}
 
-			{/* KPI Cards */}
-			{loading || !data ? <KpiSkeleton /> : <KpiCards kpis={data.kpis} />}
+			{data ? <PulsoCards pulso={data.pulso} /> : <PulsoSkeleton />}
 
-			{/* Funnel Chart */}
-			{loading || !data ? (
-				<ChartSkeleton title="Funil de Conversão" />
+			{data ? (
+				<ConversasAoVivo conversas={data.conversas} />
 			) : (
-				<FunnelChart stages={data.funnel_stages} />
+				<Card>
+					<CardHeader>
+						<Skeleton className="h-5 w-40" />
+					</CardHeader>
+					<CardContent>
+						<Skeleton className="h-[200px] w-full" />
+					</CardContent>
+				</Card>
 			)}
-
-			{/* Bottom charts: side-by-side on desktop, stacked on mobile */}
-			<div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-				{loading || !data ? (
-					<>
-						<ChartSkeleton title="Volume de Leads" />
-						<ChartSkeleton title="Canais" />
-					</>
-				) : (
-					<>
-						<LeadVolumeChart data={data.daily_volume} />
-						<ChannelBreakdownChart data={data.channel_breakdown} />
-					</>
-				)}
-			</div>
 		</div>
-	);
-}
-
-function DashboardFallback() {
-	return (
-		<div className="space-y-6">
-			<div>
-				<Skeleton className="h-8 w-48" />
-				<Skeleton className="h-4 w-64 mt-2" />
-			</div>
-			<KpiSkeleton />
-			<ChartSkeleton title="Funil" />
-		</div>
-	);
-}
-
-export default function AdminDashboardPage() {
-	return (
-		<Suspense fallback={<DashboardFallback />}>
-			<DashboardContent />
-		</Suspense>
 	);
 }

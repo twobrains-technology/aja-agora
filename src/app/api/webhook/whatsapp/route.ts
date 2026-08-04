@@ -1,6 +1,8 @@
 import { createHmac } from "node:crypto";
 import { type NextRequest, NextResponse } from "next/server";
 import { updateLastInboundAt } from "@/app/actions/whatsapp";
+import { parseCtwaReferral } from "@/lib/attribution/referral";
+import { recordWhatsAppVisit } from "@/lib/attribution/visit-store";
 import { markAsRead } from "@/lib/whatsapp/api";
 import { withConversationLock } from "@/lib/whatsapp/conversation-lock";
 import { handleDocumentInbound } from "@/lib/whatsapp/document-inbound";
@@ -120,6 +122,19 @@ export async function POST(req: NextRequest) {
 			updateLastInboundAt(from, message.id).catch((err) =>
 				console.error("[whatsapp] Update lastInboundAt failed:", err),
 			);
+
+			// Click-to-WhatsApp: a Meta manda a origem do anúncio SÓ aqui, junto da
+			// primeira mensagem depois do clique. Não há segunda chance — se não
+			// gravarmos agora, a conversa fica sem origem pra sempre e a campanha
+			// de CTWA vira gasto sem leitura. Com `await` de propósito: o
+			// processador cria a conversa logo abaixo e precisa achar esta visita.
+			const referral = parseCtwaReferral(message.referral);
+			if (referral) {
+				console.log(
+					`[whatsapp] Veio de anúncio | ad: ${referral.sourceId ?? "?"} | ctwa_clid: ${referral.ctwaClid ? "sim" : "não"}`,
+				);
+				await recordWhatsAppVisit(from, referral);
+			}
 
 			switch (msgType) {
 				case "text": {

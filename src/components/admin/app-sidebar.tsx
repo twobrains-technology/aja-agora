@@ -1,6 +1,7 @@
 "use client";
 
 import {
+	ActivityIcon,
 	BotIcon,
 	BuildingIcon,
 	ChartPieIcon,
@@ -37,7 +38,10 @@ const settingsItems = [
 export function AppSidebar() {
 	const pathname = usePathname();
 
-	const menuItems = [{ title: "Dashboard", href: "/admin", icon: ChartPieIcon }];
+	const menuItems = [
+		{ title: "Agora", href: "/admin", icon: ActivityIcon },
+		{ title: "Performance", href: "/admin/performance", icon: ChartPieIcon },
+	];
 	const applicationItems = [
 		{ title: "Pipeline", href: "/admin/pipeline", icon: KanbanIcon },
 		{ title: "Conversas", href: "/admin/conversations", icon: MessageSquareTextIcon },

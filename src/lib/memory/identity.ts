@@ -6,10 +6,15 @@
 
 import { randomBytes } from "node:crypto";
 
+import { VISITOR_COOKIE, VISITOR_COOKIE_MAX_AGE_SECONDS } from "@/lib/attribution/visit-cookie";
 import type { UserIdentity } from "./types";
 
-export const COOKIE_NAME = "aja_uid";
-export const COOKIE_MAX_AGE_SECONDS = 90 * 24 * 60 * 60; // 90 dias
+// Nome e validade do cookie moram em `@/lib/attribution/visit-cookie` porque o
+// proxy (`src/proxy.ts`) passou a criar este cookie já na primeira visita à
+// landing, antes de existir qualquer conversa. Reexportado aqui pra não quebrar
+// os imports existentes, mas o valor tem UMA fonte só.
+export const COOKIE_NAME = VISITOR_COOKIE;
+export const COOKIE_MAX_AGE_SECONDS = VISITOR_COOKIE_MAX_AGE_SECONDS;
 export const ENGAGEMENT_THRESHOLD = 3; // turnos antes de criar memória web anônima
 
 /**

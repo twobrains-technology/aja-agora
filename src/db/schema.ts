@@ -54,6 +54,24 @@ export const leadStageEnum = pgEnum("lead_stage", [
 
 export const actorTypeEnum = pgEnum("actor_type", ["system", "admin"]);
 
+// ─── Conversões devolvidas à mídia (CAPI) ────────────────────────────────────
+// Os marcos que valem sinal pro algoritmo de anúncio. Poucos e de propósito:
+// evento demais ensina o algoritmo a buscar curioso, não comprador.
+export const conversionEventNameEnum = pgEnum("conversion_event_name", [
+	"lead_qualificado",
+	"proposta_criada",
+	"contrato_fechado",
+]);
+
+export const conversionDestinationEnum = pgEnum("conversion_destination", ["meta"]);
+
+export const conversionStatusEnum = pgEnum("conversion_status", [
+	"pending",
+	"sent",
+	"failed",
+	"skipped",
+]);
+
 export const insightTypeEnum = pgEnum("insight_type", [
 	"summary",
 	"intent",
@@ -265,6 +283,54 @@ export const contacts = pgTable(
 	],
 );
 
+// ─── Visitas (origem/atribuição de mídia) ────────────────────────────────────
+// Design: docs/design/specs/2026-08-03-dashboard-operacao-venda-design.md.
+// A corrente que faltava: visita → conversa → lead → proposta → contrato. Sem
+// isto a campanha roda às cegas (gap 🔴 de docs/visao/gap-analysis.md:20) — o
+// GA4 sabe quem chegou, o nosso banco sabe quem conversou, e ninguém liga os dois.
+//
+// Uma linha por CHEGADA (não por pageview): o middleware só abre visita nova
+// quando o visitante traz sinal de campanha ou quando a última passou de 30min.
+// Gravada server-side, então bloqueador de anúncio e JS desligado não apagam a
+// origem — diferente do GA4, que perde de 20% a 30%.
+export const visits = pgTable(
+	"visits",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		// Âncora do visitante: cookie `aja_uid` no web, wa_id no WhatsApp. Não é
+		// FK — o mesmo campo guarda duas naturezas de identificador de propósito.
+		visitorId: text("visitor_id").notNull(),
+		channel: channelEnum().default("web").notNull(),
+		landingPath: text("landing_path"),
+		referrer: text(),
+		// UTM — o padrão que Meta, Google e todo gerenciador de anúncio emitem.
+		utmSource: text("utm_source"),
+		utmMedium: text("utm_medium"),
+		utmCampaign: text("utm_campaign"),
+		utmContent: text("utm_content"),
+		utmTerm: text("utm_term"),
+		// Click IDs: sobrevivem quando o anunciante esquece de marcar UTM, e são
+		// o que Meta/Google exigem de volta pra casar conversão (CAPI/Enhanced).
+		gclid: text(),
+		fbclid: text(),
+		// Click-to-WhatsApp (Meta): chega em `message.referral` na PRIMEIRA
+		// mensagem depois do clique no anúncio — captura única, sem segunda chance.
+		ctwaClid: text("ctwa_clid"),
+		ctwaSourceId: text("ctwa_source_id"),
+		ctwaSourceUrl: text("ctwa_source_url"),
+		ctwaSourceType: text("ctwa_source_type"),
+		ctwaHeadline: text("ctwa_headline"),
+		userAgent: text("user_agent"),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [
+		index("visits_visitor_id_idx").on(table.visitorId),
+		index("visits_created_at_idx").on(table.createdAt),
+		// A pergunta que a dashboard faz o tempo todo: "quanto a campanha X trouxe".
+		index("visits_utm_campaign_idx").on(table.utmCampaign),
+	],
+);
+
 // Conversations
 export const conversations = pgTable(
 	"conversations",
@@ -273,6 +339,10 @@ export const conversations = pgTable(
 		waId: varchar("wa_id", { length: 50 }),
 		// Cliente unificado (FIX-41) — nullable até a identidade ser resolvida.
 		contactId: uuid("contact_id").references(() => contacts.id, { onDelete: "set null" }),
+		// Visita que ORIGINOU esta conversa (last-touch). Nullable: conversa de
+		// simulador, de teste e a que nasce antes da visita ser registrada não têm
+		// origem. First-touch continua derivável pelo `visitorId` da visita.
+		visitId: uuid("visit_id").references(() => visits.id, { onDelete: "set null" }),
 		channel: channelEnum().default("web").notNull(),
 		status: conversationStatusEnum().default("active").notNull(),
 		handedOffUserId: text("handed_off_user_id").references(() => user.id),
@@ -925,6 +995,66 @@ export const whatsappOutboundQueue = pgTable(
 //     conversa; nos turnos seguintes quem fala é o modelo.
 //   `click:<conversationId>:<replyId>` — guard de clique duplo (janela curta):
 //     botão do WhatsApp não desabilita depois do clique.
+// ─── Conversões devolvidas à mídia ───────────────────────────────────────────
+// Design: docs/design/specs/2026-08-03-atribuicao-de-midia-e-marco-zero-design.md.
+//
+// O fato de negócio é registrado SEMPRE, mesmo com o envio desligado pela flag.
+// É o que permite ligar a chave depois e reenviar o histórico acumulado (a Meta
+// aceita evento com `event_time` de até 7 dias) — o loop de otimização nasce
+// com estoque em vez de nascer vazio.
+//
+// 🔒 Nunca guarda PII crua: e-mail e telefone entram JÁ hasheados em SHA-256,
+// que é o formato que a Meta exige. Esta tabela não é uma segunda cópia do
+// cadastro do cliente.
+export const conversionEvents = pgTable(
+	"conversion_events",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		leadId: uuid("lead_id").references(() => leads.id, { onDelete: "cascade" }),
+		conversationId: uuid("conversation_id").references(() => conversations.id, {
+			onDelete: "cascade",
+		}),
+		visitId: uuid("visit_id").references(() => visits.id, { onDelete: "set null" }),
+
+		eventName: conversionEventNameEnum("event_name").notNull(),
+		destination: conversionDestinationEnum("destination").notNull(),
+		/** Chave estável do fato — vai como `event_id` e é o que dedupe no destino. */
+		eventKey: text("event_key").notNull(),
+		/** Quando o marco ACONTECEU (não quando foi enviado). */
+		occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+
+		value: numeric("value", { precision: 12, scale: 2 }),
+		currency: varchar("currency", { length: 3 }).default("BRL").notNull(),
+
+		// Já hasheados (SHA-256), nunca o valor cru.
+		hashedEmail: text("hashed_email"),
+		hashedPhone: text("hashed_phone"),
+		// A Meta exige estes SEM hash — são identificadores de clique, não PII.
+		fbc: text(),
+		fbp: text(),
+		ctwaClid: text("ctwa_clid"),
+		/** `website` ou `business_messaging` (Click-to-WhatsApp). */
+		actionSource: varchar("action_source", { length: 30 }).notNull(),
+
+		status: conversionStatusEnum("status").default("pending").notNull(),
+		attempts: integer().default(0).notNull(),
+		lastError: text("last_error"),
+		sentAt: timestamp("sent_at", { withTimezone: true }),
+
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull(),
+	},
+	(table) => [
+		// Idempotência dura: o mesmo marco do mesmo lead nunca vira dois sinais
+		// pro mesmo destino, nem quando a transição de estágio dispara duas vezes.
+		uniqueIndex("conversion_events_key_idx").on(table.eventKey, table.destination),
+		index("conversion_events_status_idx").on(table.status, table.createdAt),
+	],
+);
+
 export const whatsappOnceKeys = pgTable(
 	"whatsapp_once_keys",
 	{
@@ -999,6 +1129,29 @@ export const conversationsRelations = relations(conversations, ({ one, many }) =
 	handedOffUser: one(user, {
 		fields: [conversations.handedOffUserId],
 		references: [user.id],
+	}),
+	visit: one(visits, {
+		fields: [conversations.visitId],
+		references: [visits.id],
+	}),
+}));
+
+export const visitsRelations = relations(visits, ({ many }) => ({
+	conversations: many(conversations),
+}));
+
+export const conversionEventsRelations = relations(conversionEvents, ({ one }) => ({
+	lead: one(leads, {
+		fields: [conversionEvents.leadId],
+		references: [leads.id],
+	}),
+	conversation: one(conversations, {
+		fields: [conversionEvents.conversationId],
+		references: [conversations.id],
+	}),
+	visit: one(visits, {
+		fields: [conversionEvents.visitId],
+		references: [visits.id],
 	}),
 }));
 

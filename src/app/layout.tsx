@@ -8,6 +8,12 @@ import "./globals.css";
 // Tags do time de anúncio (IDs públicos, não são segredo).
 const GTM_ID = "GTM-KZXWKBZ3";
 const GA4_ID = "G-SD0XH0VHED";
+// Meta Pixel — por env var porque o ID muda por ambiente e ainda não existe em
+// dev. Sem a variável, nada é renderizado: melhor não ter pixel do que ter um
+// pixel apontando pra conta de anúncio errada. A atribuição do nosso lado não
+// depende dele (é gravada server-side em `visits`); o pixel serve pra Meta
+// otimizar entrega e montar público.
+const META_PIXEL_ID = process.env.NEXT_PUBLIC_META_PIXEL_ID;
 
 const poppins = Poppins({
 	variable: "--font-sans",
@@ -77,6 +83,20 @@ function gtag(){dataLayer.push(arguments);}
 gtag('js', new Date());
 gtag('config', '${GA4_ID}');`}
 				</Script>
+				{META_PIXEL_ID && (
+					<Script id="meta-pixel" strategy="afterInteractive">
+						{`!function(f,b,e,v,n,t,s)
+{if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];
+s.parentNode.insertBefore(t,s)}(window,document,'script',
+'https://connect.facebook.net/en_US/fbevents.js');
+fbq('init', '${META_PIXEL_ID}');
+fbq('track', 'PageView');`}
+					</Script>
+				)}
 			</head>
 			<body className="min-h-full flex flex-col">
 				<noscript>
@@ -87,6 +107,16 @@ gtag('config', '${GA4_ID}');`}
 						style={{ display: "none", visibility: "hidden" }}
 						title="Google Tag Manager"
 					/>
+					{META_PIXEL_ID && (
+						// biome-ignore lint/performance/noImgElement: pixel de rastreio 1x1 — next/image aqui quebraria o propósito
+						<img
+							height="1"
+							width="1"
+							style={{ display: "none" }}
+							alt=""
+							src={`https://www.facebook.com/tr?id=${META_PIXEL_ID}&ev=PageView&noscript=1`}
+						/>
+					)}
 				</noscript>
 				{/* App é light-only — tema escuro removido a pedido do produto. */}
 				<ThemeProvider attribute="class" forcedTheme="light" disableTransitionOnChange>

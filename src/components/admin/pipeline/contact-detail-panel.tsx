@@ -18,23 +18,11 @@ import {
 	SheetTitle,
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { rotuloDoEstagio } from "@/lib/admin/lead-stages";
 import { ClientChatBox } from "./client-chat-box";
 import type { LeadActiveHandoff } from "./lead-card";
 import { MesaResponsavel } from "./mesa-responsavel";
 import { MesaTransbordoDialog } from "./mesa-transbordo-dialog";
-
-const STAGE_LABELS: Record<string, string> = {
-	novo: "Novo",
-	engajado: "Engajado",
-	qualificado: "Qualificado",
-	em_negociacao: "Em Negociação",
-	proposta_enviada: "Proposta Enviada",
-	na_administradora: "Na Administradora",
-	em_atendimento: "Em Atendimento",
-	aguardando_pagamento: "Aguardando Pagamento",
-	fechado_ganho: "Fechado Ganho",
-	perdido: "Perdido",
-};
 
 const PROPOSAL_STATUS_LABELS: Record<string, string> = {
 	simulacao: "Simulação",
@@ -201,7 +189,7 @@ export function ContactDetailPanel({
 						<div className="flex flex-wrap items-center gap-2 mt-1">
 							{detail.currentStage && (
 								<Badge variant="secondary" className="text-xs">
-									{STAGE_LABELS[detail.currentStage] ?? detail.currentStage}
+									{rotuloDoEstagio(detail.currentStage)}
 								</Badge>
 							)}
 							{detail.channels.map((ch) => (
@@ -330,8 +318,8 @@ export function ContactDetailPanel({
 									{format(new Date(e.createdAt), "dd/MM HH:mm", { locale: ptBR })}
 								</span>
 								<span>
-									{e.fromStage ? `${STAGE_LABELS[e.fromStage] ?? e.fromStage} → ` : ""}
-									<strong>{STAGE_LABELS[e.toStage] ?? e.toStage}</strong>
+									{e.fromStage ? `${rotuloDoEstagio(e.fromStage)} → ` : ""}
+									<strong>{rotuloDoEstagio(e.toStage)}</strong>
 								</span>
 								<Badge variant="outline" className="text-[10px] h-4 px-1">
 									{e.actorType}

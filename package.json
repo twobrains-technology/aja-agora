@@ -22,6 +22,7 @@
 		"db:backfill:contacts": "tsx scripts/backfill-contacts.ts",
 		"db:backfill:contacts:bundle": "esbuild scripts/backfill-contacts.ts --bundle --platform=node --target=node22 --format=cjs --packages=bundle --tsconfig=tsconfig.json --outfile=scripts/backfill-contacts.bundle.cjs",
 		"db:backfill:contacts:runtime": "node scripts/backfill-contacts.bundle.cjs",
+		"crm:reset": "tsx scripts/reset-crm.ts",
 		"db:push": "drizzle-kit push",
 		"db:studio": "drizzle-kit studio",
 		"test": "vitest run",

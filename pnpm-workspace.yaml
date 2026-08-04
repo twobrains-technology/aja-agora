@@ -14,6 +14,18 @@
 # ou seja, os três motivos acima nunca foram atendidos de fato.
 nodeLinker: hoisted
 
+# O pnpm, ao achar `node_modules` fora de sincronia com o lockfile, quer removê-lo
+# e PERGUNTA "s/n". Sem TTY (todo boot de container) ele aborta com
+# ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY, o entrypoint entra em loop de
+# install falhado e o container fica em restart eterno.
+#
+# ⚠️ Mora AQUI, não no docker-compose. A env `pnpm_config_confirm_modules_purge`
+# estava no compose desde 2026-07-26 e é DECORATIVA no pnpm 11: verificado em
+# 2026-08-03 no próprio container (11.20.0), `pnpm config get
+# confirm-modules-purge` devolvia `undefined` com a env e devolve `false` com
+# esta linha. Mesma armadilha do `nodeLinker` no `.npmrc` — ignorado em silêncio.
+confirmModulesPurge: false
+
 # pnpm 10+ exige allowlist explícita de pacotes que rodam build script (postinstall).
 # esbuild          → binário nativo do bundle do migrate-guard (db:migrate:bundle) + evals.
 # sharp            → otimização de imagem do Next em runtime (prod).

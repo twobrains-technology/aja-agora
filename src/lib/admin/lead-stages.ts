@@ -21,3 +21,27 @@ export const STAGE_ORDER = [
 ] as const;
 
 export type LeadStage = (typeof STAGE_ORDER)[number];
+
+/**
+ * Nome de cada estágio na tela. Mora aqui — junto da ordem canônica — porque
+ * antes vivia copiado dentro de um componente: qualquer estágio novo entrava no
+ * enum e aparecia cru (`aguardando_pagamento`) em toda tela que não tinha a
+ * cópia. Uma fonte só, client-safe.
+ */
+export const STAGE_LABELS: Record<LeadStage, string> = {
+	novo: "Novo",
+	engajado: "Engajado",
+	qualificado: "Qualificado",
+	em_negociacao: "Em Negociação",
+	proposta_enviada: "Proposta Enviada",
+	na_administradora: "Na Administradora",
+	em_atendimento: "Em Atendimento",
+	aguardando_pagamento: "Aguardando Pagamento",
+	fechado_ganho: "Fechado Ganho",
+	perdido: "Perdido",
+};
+
+export function rotuloDoEstagio(stage: string | null | undefined): string {
+	if (!stage) return "Sem estágio";
+	return STAGE_LABELS[stage as LeadStage] ?? stage;
+}

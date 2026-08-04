@@ -34,6 +34,8 @@ import {
 	prazoMesesForIntent,
 } from "@/lib/agent/qualify-config";
 import { nextGate } from "@/lib/agent/qualify-state";
+import { VISIT_COOKIE } from "@/lib/attribution/visit-cookie";
+import { resolveVisitIdFromCookie } from "@/lib/attribution/visit-store";
 import {
 	type ClosingItem,
 	closingPresentation,
@@ -268,6 +270,13 @@ export async function POST(req: NextRequest) {
 		);
 	}
 
+	// Visita que trouxe esta pessoa (cookie carimbado pelo middleware da landing).
+	// Só vale na CRIAÇÃO da conversa: a conversa pertence à visita que a
+	// originou, e um clique posterior em outro anúncio não reescreve essa
+	// origem — senão a última campanha levaria o crédito de uma venda que outra
+	// começou.
+	const visitId = await resolveVisitIdFromCookie(req.cookies.get(VISIT_COOKIE)?.value);
+
 	let conversationId: string;
 	let contactName: string | null = null;
 	const conv = providedId
@@ -284,7 +293,7 @@ export async function POST(req: NextRequest) {
 	if (providedId && !conv) {
 		const [created] = await db
 			.insert(conversations)
-			.values({ id: providedId, metadata: { webCookie: userKey } })
+			.values({ id: providedId, visitId, metadata: { webCookie: userKey } })
 			.returning();
 		conversationId = created.id;
 	} else if (conv) {
@@ -306,7 +315,7 @@ export async function POST(req: NextRequest) {
 	} else {
 		const [created] = await db
 			.insert(conversations)
-			.values({ metadata: { webCookie: userKey } })
+			.values({ visitId, metadata: { webCookie: userKey } })
 			.returning();
 		conversationId = created.id;
 	}

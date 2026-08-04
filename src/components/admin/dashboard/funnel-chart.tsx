@@ -31,7 +31,7 @@ export function FunnelChart({ stages }: { stages: FunnelStage[] }) {
 			<CardContent>
 				{allEmpty ? (
 					<div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
-						Sem dados no periodo
+						Sem dados no período
 					</div>
 				) : (
 					<>

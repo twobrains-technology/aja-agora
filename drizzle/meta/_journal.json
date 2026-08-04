@@ -260,6 +260,20 @@
 			"when": 1784846598688,
 			"tag": "0036_mesa_novo_caso_template",
 			"breakpoints": true
+		},
+		{
+			"idx": 37,
+			"version": "7",
+			"when": 1785797328411,
+			"tag": "0037_light_marvel_zombies",
+			"breakpoints": true
+		},
+		{
+			"idx": 38,
+			"version": "7",
+			"when": 1785800347085,
+			"tag": "0038_giant_morbius",
+			"breakpoints": true
 		}
 	]
 }
