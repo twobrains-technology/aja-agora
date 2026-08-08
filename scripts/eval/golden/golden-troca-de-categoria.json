@@ -1,0 +1,43 @@
+{
+	"cenario": "golden-troca-de-categoria",
+	"descricao": "Troca explícita de categoria no meio do funil gera transição limpa (sem estado vazado da categoria anterior).",
+	"caRefs": ["CA-2", "FIX multi-persona"],
+	"asserts": {
+		"turns": [
+			null,
+			{
+				"expectArtifacts": ["transition:imovel", "gate:name"]
+			},
+			null,
+			{
+				"expectArtifacts": ["transition:moto"]
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi",
+			"expect": "welcome."
+		},
+		{
+			"type": "action",
+			"action": {
+				"kind": "category",
+				"category": "imovel"
+			},
+			"label": "Imóvel",
+			"expect": "transição + gate name."
+		},
+		{
+			"type": "text",
+			"text": "Lia",
+			"expect": "saudação + desire."
+		},
+		{
+			"type": "text",
+			"text": "Pensando melhor, na verdade eu quero uma moto, não imóvel",
+			"expect": "transição pra persona de moto (transition), sem re-perguntar o nome."
+		}
+	]
+}

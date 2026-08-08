@@ -1,6 +1,8 @@
 import { generateObject } from "ai";
 import { z } from "zod";
 import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
+import { isLangfuseConfigured } from "@/lib/observability/langfuse/env";
+import { fetchManagedPrompt, PROMPT_NAMES } from "@/lib/observability/langfuse/prompts";
 import type { Category, ConversationMetadata } from "./personas";
 import { listExpertisesByCategory } from "./personas-repo";
 
@@ -296,15 +298,28 @@ export async function analyzeTurn(
 	const controller = new AbortController();
 	const timeoutId = setTimeout(() => controller.abort(), ANALYZER_TIMEOUT_MS);
 	try {
+		// Prompt Management: base do system pode vir do Langfuse (label
+		// `production`, cache 60s); fallback é a constante do código, sempre.
+		// A seção de sub-tópicos é dinâmica (vem do DB) — continua código.
+		const managedSystem = await fetchManagedPrompt(PROMPT_NAMES.analyzer, BASE_SYSTEM_INSTRUCTION);
 		const result = await generateObject({
 			model: anthropic(ANALYZER_MODEL),
 			schema: turnAnalysisSchema,
-			system: BASE_SYSTEM_INSTRUCTION + renderSubTopicSection(subTopics),
+			system: managedSystem.text + renderSubTopicSection(subTopics),
 			prompt: `Persona ativa atualmente: ${currentPersona}${anchorHint}
 Mensagem do usuário: "${text}"${contextHint}
 
 Analise conforme o schema. Use null em campos sem sinal claro.`,
 			abortSignal: controller.signal,
+			// Spans OTel do AI SDK aninham no trace do turno (withLangfuseTurn) —
+			// é assim que o classificador aparece no mesmo trace do converse.
+			experimental_telemetry: {
+				isEnabled: isLangfuseConfigured(),
+				functionId: "turn-analyzer",
+				...(managedSystem.lfPrompt
+					? { metadata: { langfusePrompt: managedSystem.lfPrompt.toJSON() } }
+					: {}),
+			},
 		});
 
 		const elapsed = Date.now() - start;

@@ -119,6 +119,11 @@ services:
       # Bevi é a fonte ÚNICA (mock em runtime PROIBIDO — docs/jornada/CONTEXT.md).
       BEVI_SELFCONTRACT_BASE_URL: ${BEVI_SELFCONTRACT_BASE_URL:-}
       PROPOSAL_GATEWAY: ${PROPOSAL_GATEWAY:-bevi}
+      # Observabilidade Langfuse — vazio = no-op (o código usa `?.trim() ||`,
+      # então a string vazia que o `:-` materializa é segura).
+      LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
     networks:
       - tb-local-net
     labels:

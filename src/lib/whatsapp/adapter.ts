@@ -1,3 +1,6 @@
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { conversations } from "@/db/schema";
 import { recordStageReached } from "@/lib/admin/lead-stage-tracker";
 import {
 	isConversationPausedOrTerminal,
@@ -12,6 +15,7 @@ import type { Category, ConversationMetadata, Persona } from "@/lib/agent/person
 import { type Gate, nextGate } from "@/lib/agent/qualify-state";
 import { EMPTY_TURN_FALLBACK } from "@/lib/chat/empty-turn-guard";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
+import { withLangfuseTurn } from "@/lib/observability/langfuse/turn";
 import { traceTurnEvents } from "@/lib/telemetry/turn-trace";
 import { sendInteractiveMessage, sendTextMessage } from "./api";
 import {
@@ -251,11 +255,38 @@ async function gateContextBeat(gate: Gate, _conversationId: string): Promise<str
 	return null;
 }
 
+/** Wrapper Langfuse do funil WhatsApp — o consumo do generator acontece DENTRO
+ * do trace (mesmo requisito do canal web): é o que mantém os spans do grafo no
+ * contexto. `isSimulated` vem do banco (best-effort; falha ⇒ false). */
 async function consumeEvents(
 	from: string,
 	conversationId: string,
 	events: AsyncIterable<TurnEvent>,
-	opts?: { guardEmptyTurn?: boolean },
+	opts?: { guardEmptyTurn?: boolean; userText?: string | null },
+): Promise<void> {
+	const conv = await db.query.conversations
+		.findFirst({
+			where: eq(conversations.id, conversationId),
+			columns: { isSimulated: true },
+		})
+		.catch(() => null);
+	await withLangfuseTurn(
+		{
+			conversationId,
+			channel: "whatsapp",
+			isSimulated: conv?.isSimulated === true,
+			userId: `wa:${from}`,
+			userText: opts?.userText ?? null,
+		},
+		() => consumeEventsInner(from, conversationId, events, opts),
+	);
+}
+
+async function consumeEventsInner(
+	from: string,
+	conversationId: string,
+	events: AsyncIterable<TurnEvent>,
+	opts?: { guardEmptyTurn?: boolean; userText?: string | null },
 ): Promise<void> {
 	// FIX-21: este é o funil único de consumo de TurnEvents do canal WhatsApp
 	// (todos os run*WithOrchestrator passam por aqui). Tap passthrough fecha 1
@@ -644,7 +675,7 @@ export async function processWithOrchestrator(
 	// guardEmptyTurn: SÓ no user-turn (paridade com o web) — o agente SEMPRE deve
 	// responder algo ao usuário. Directives (runDirective/Transition) podem ser
 	// silenciosos por design, então NÃO recebem o guard. FIX-172.
-	await consumeEvents(from, conversationId, events, { guardEmptyTurn: true });
+	await consumeEvents(from, conversationId, events, { guardEmptyTurn: true, userText: text });
 }
 
 export async function runDirectiveWithOrchestrator(args: {
@@ -669,7 +700,7 @@ export async function runDirectiveWithOrchestrator(args: {
 		skipLeadCollection: true,
 	});
 
-	await consumeEvents(from, conversationId, events, { guardEmptyTurn });
+	await consumeEvents(from, conversationId, events, { guardEmptyTurn, userText: directive });
 }
 
 export async function runTransitionWithOrchestrator(args: {

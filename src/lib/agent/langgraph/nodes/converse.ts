@@ -12,6 +12,7 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { AIMessageChunk, BaseMessage } from "@langchain/core/messages";
 import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { RunnablePassthrough, RunnableSequence } from "@langchain/core/runnables";
 import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import type { ChosenOffer } from "@/lib/agent/orchestrator/choose-offer";
@@ -28,6 +29,7 @@ import { querAntecipar, shouldAskMotive } from "@/lib/agent/qualify-state";
 import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import type { ArtifactType } from "@/lib/chat/types";
+import { fetchManagedPrompt, PROMPT_NAMES } from "@/lib/observability/langfuse/prompts";
 import { projectToMeta } from "../emit";
 import { cacheableSystemBlock } from "../provider";
 import { pausaDeConversa, RITMO } from "../ritmo";
@@ -114,14 +116,14 @@ export function pedeFalaDepoisDasTools(nomes: readonly string[]): boolean {
  * `buildConciergePrompt` completos (exemplos por persona, injeção de
  * identidade da persona DB) — esta fundação usa o prompt base genérico.
  */
-export function leanSystemPrompt(): string {
+export function leanSystemPrompt(base: string = SYSTEM_PROMPT): string {
 	const flowHeading = "## Fluxo de Vendas";
 	const nextHeading = "## Regras de Ouro";
-	const flowStart = SYSTEM_PROMPT.indexOf(flowHeading);
-	const nextStart = SYSTEM_PROMPT.indexOf(nextHeading);
-	if (flowStart === -1 || nextStart === -1) return SYSTEM_PROMPT;
-	const before = SYSTEM_PROMPT.slice(0, flowStart);
-	const after = SYSTEM_PROMPT.slice(nextStart);
+	const flowStart = base.indexOf(flowHeading);
+	const nextStart = base.indexOf(nextHeading);
+	if (flowStart === -1 || nextStart === -1) return base;
+	const before = base.slice(0, flowStart);
+	const after = base.slice(nextStart);
 	return `${before}${after}
 
 ## Ordem do funil
@@ -633,10 +635,21 @@ export function createConverseNode(model: BaseChatModel) {
 			.filter(Boolean)
 			.join(" ");
 
+		// Prompt Management: o texto-base pode vir do Langfuse (label `production`,
+		// cache 60s) — fallback OBRIGATÓRIO é o SYSTEM_PROMPT do código. O
+		// `llmConfig` linka a VERSÃO usada em cada generation (métrica por versão).
+		const { text: baseSystemText, lfPrompt } = await fetchManagedPrompt(
+			PROMPT_NAMES.system,
+			SYSTEM_PROMPT,
+		);
+		const llmConfig = lfPrompt
+			? { ...config, metadata: { ...config.metadata, langfusePrompt: lfPrompt } }
+			: config;
+
 		const montarSystem = (conducao: string | null) =>
 			new SystemMessage({
 				content: [
-					cacheableSystemBlock(leanSystemPrompt()),
+					cacheableSystemBlock(leanSystemPrompt(baseSystemText)),
 					...(blocoIdentidade ? [{ type: "text" as const, text: blocoIdentidade }] : []),
 					...(blocoCartaMenor ? [{ type: "text" as const, text: blocoCartaMenor }] : []),
 					...(blocoBuscaVazia ? [{ type: "text" as const, text: blocoBuscaVazia }] : []),
@@ -794,7 +807,22 @@ export function createConverseNode(model: BaseChatModel) {
 				// os turnos de reveal chegaram a 53s ao vivo, tempo em que o cliente vê
 				// tela parada e acha que o agente morreu. Sem tools o modelo também não
 				// tem como se distrair chamando algo no meio da pergunta.
-				const stream = await (comTools ? boundModel : model).stream(loopMessages);
+				// `llmConfig` no call leva os callbacks do turno (Langfuse) e o link de
+				// versão do prompt até o modelo — a auto-propagação por ALS do
+				// @langchain/core não é garantida através deste generator.
+				// Com prompt gerenciado, o modelo vai embrulhado num RunnableSequence:
+				// o mecanismo do @langfuse/langchain só linka a VERSÃO na generation
+				// quando um chain-IRMÃO carrega `metadata.langfusePrompt` (o
+				// passthrough cumpre esse papel; sem isso o link simplesmente não
+				// acontece em chamada direta de modelo). Sem Langfuse: caminho idêntico
+				// ao original.
+				const runnableDoBeat = comTools ? boundModel : model;
+				const stream = lfPrompt
+					? await RunnableSequence.from([
+							new RunnablePassthrough<typeof loopMessages>(),
+							runnableDoBeat,
+						]).stream(loopMessages, llmConfig)
+					: await runnableDoBeat.stream(loopMessages, llmConfig);
 				let merged: AIMessageChunk | undefined;
 				for await (const chunk of stream as AsyncIterable<AIMessageChunk>) {
 					merged = merged ? merged.concat(chunk) : chunk;
@@ -1079,7 +1107,7 @@ export function createConverseNode(model: BaseChatModel) {
 				// erro (status "error"). É a garantia estrutural de "0 NoSuchToolError"
 				// desta fundação (crítico ALTA-2): o toolset what-if é fechado e
 				// pequeno, mas mesmo uma alucinação de nome de tool não derruba o turno.
-				const { messages: toolMessages } = await toolNode.invoke({ messages: [aiMessage] });
+				const { messages: toolMessages } = await toolNode.invoke({ messages: [aiMessage] }, config);
 				loopMessages = [...loopMessages, ...toolMessages];
 				newMessages.push(...toolMessages);
 				// Só volta pro modelo se alguma das tools trouxe informação nova. Ver

@@ -1,0 +1,43 @@
+{
+	"cenario": "golden-pede-humano",
+	"descricao": "Rubrica missedHandoff: pedido explícito de atendente humano gera handoff (artifact), não insistência do bot.",
+	"caRefs": ["rubrica missedHandoff", "CA-33"],
+	"asserts": {
+		"turns": [
+			null,
+			{
+				"expectArtifacts": ["transition:auto", "gate:name"]
+			},
+			null,
+			{
+				"expectArtifacts": ["handoff"]
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi",
+			"expect": "welcome."
+		},
+		{
+			"type": "action",
+			"action": {
+				"kind": "category",
+				"category": "auto"
+			},
+			"label": "Automóvel",
+			"expect": "transição + gate name."
+		},
+		{
+			"type": "text",
+			"text": "Pedro",
+			"expect": "saudação + desire."
+		},
+		{
+			"type": "text",
+			"text": "Olha, prefiro falar com um atendente humano de verdade, pode me transferir?",
+			"expect": "handoff sugerido/executado (artifact handoff) — não insiste em continuar sozinho."
+		}
+	]
+}

@@ -1,0 +1,33 @@
+{
+	"cenario": "golden-fora-de-escopo",
+	"descricao": "Pergunta fora do produto (empréstimo consignado) não pode gerar busca nem quebrar o fluxo; o agente re-ancora no consórcio.",
+	"caRefs": ["CA-36 tom consultivo"],
+	"asserts": {
+		"turns": [
+			null,
+			{
+				"forbidArtifacts": ["comparison_table", "recommendation_card"]
+			},
+			{
+				"forbidArtifacts": ["comparison_table", "recommendation_card"]
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi",
+			"expect": "welcome."
+		},
+		{
+			"type": "text",
+			"text": "Vocês fazem empréstimo consignado?",
+			"expect": "esclarece que o produto é consórcio (sem inventar produto novo) e re-ancora."
+		},
+		{
+			"type": "text",
+			"text": "Ah tá. E financiamento de carro vocês têm?",
+			"expect": "idem — re-ancora no consórcio de auto se o cliente quiser."
+		}
+	]
+}

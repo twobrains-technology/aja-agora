@@ -5,7 +5,14 @@ const nextConfig: NextConfig = {
 	// @react-pdf/renderer (geração da proposta em PDF, server-side) é ESM-only e
 	// carrega deps nativas/WASM (yoga-layout, fontkit). Deixar como externo evita
 	// que o bundler (Turbopack/webpack) tente empacotá-lo e quebre no build.
-	serverExternalPackages: ["@react-pdf/renderer"],
+	// OTel/Langfuse: mesmo motivo do PostgresSaver (checkpointer.ts) — o SDK usa
+	// APIs de node que o Turbopack empacota mal; externo resolve.
+	serverExternalPackages: [
+		"@react-pdf/renderer",
+		"@langfuse/otel",
+		"@langfuse/tracing",
+		"@opentelemetry/sdk-trace-node",
+	],
 	allowedDevOrigins: [
 		"aja-agora.twobrainstechnology.com",
 		// HMR via DNS local OrbStack (padrão dev-stack DNS-first).
