@@ -97,6 +97,12 @@ export type ToolStatusPartData = {
 	tool: string;
 };
 
+/** Id do trace Langfuse do turno — transient (não entra no histórico); a UI
+ * usa pra amarrar feedback (👍/👎) ao trace certo. */
+export type TracePartData = {
+	traceId: string;
+};
+
 export type AjaDataParts = {
 	artifact: ArtifactPartData;
 	gate: GatePartData;
@@ -104,6 +110,7 @@ export type AjaDataParts = {
 	welcome: WelcomePartData;
 	handoff: HandoffPartData;
 	tool: ToolStatusPartData;
+	trace: TracePartData;
 };
 
 /** FIX-49 — metadados por mensagem. `resumed` marca o que veio da HIDRATAÇÃO da

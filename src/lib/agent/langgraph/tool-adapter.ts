@@ -6,6 +6,7 @@
 // `execute` do objeto AI-SDK e delega pro `execute` ORIGINAL — mesma lógica
 // de negócio, mesmo acesso a Bevi/DB, zero duplicação.
 import { DynamicStructuredTool } from "@langchain/core/tools";
+import { startActiveObservation } from "@langfuse/tracing";
 import type { Tool as AiSdkTool } from "ai";
 import type { z } from "zod";
 import { buildConsorcioTools, type ConsorcioToolsContext } from "@/lib/agent/tools/ai-sdk";
@@ -33,7 +34,21 @@ export function toLangChainTool(name: string, aiSdkTool: AiSdkTool): DynamicStru
 		name,
 		description: aiSdkTool.description ?? name,
 		schema: aiSdkTool.inputSchema as unknown as z.ZodTypeAny,
-		func: async (input) => execute(input as never, fakeToolExecutionOptions()),
+		// Span Langfuse por invocação — ESTE é o único ponto por onde toda tool
+		// de negócio passa (ToolNode do converse E a chamada direta do discovery),
+		// então é aqui que input/output de tool entram no trace. Sem provider OTel
+		// registrado o span é non-recording: custo zero, nenhuma rede.
+		func: async (input) =>
+			startActiveObservation(
+				name,
+				async (span) => {
+					span.update({ input });
+					const out = await execute(input as never, fakeToolExecutionOptions());
+					span.update({ output: out });
+					return out;
+				},
+				{ asType: "tool" },
+			),
 	});
 }
 

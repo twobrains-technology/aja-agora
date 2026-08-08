@@ -70,6 +70,8 @@ import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { normalizePhoneBR } from "@/lib/leads/phone";
 import { COOKIE_MAX_AGE_SECONDS, COOKIE_NAME, generateCookieValue } from "@/lib/memory/identity";
 import { checkRateLimit } from "@/lib/middleware/rate-limit";
+import { withLangfuseTurn } from "@/lib/observability/langfuse/turn";
+import { collectAgentText } from "@/lib/observability/langfuse/ui-writer";
 import { instrumentWriter, TurnTrace } from "@/lib/telemetry/turn-trace";
 import { isUuid } from "@/lib/utils/id";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
@@ -393,1023 +395,1066 @@ export async function POST(req: NextRequest) {
 					channel: "web",
 					persona: meta.currentPersona ?? null,
 				});
-				const writer = instrumentWriter(rawWriter, trace);
-				try {
-					await withSimulatorClockIfNeeded(conv ?? null, async () => {
-						if (body.action?.kind === "category") {
-							if (!(ROUTABLE_CATEGORIES as readonly string[]).includes(body.action.category))
-								return;
-							const fromPersona: Persona = meta.currentPersona ?? "concierge";
-							// Push snapshot do estado atual no nav stack pra suportar "voltar" (#06).
-							const nextStack = pushNavState(meta.navigationStack ?? [], {
-								persona: fromPersona,
-								category: meta.currentCategory ?? null,
-								expertiseLevel: meta.expertiseLevel,
-								experiencePrev: meta.experiencePrev ?? null,
-								qualifyAnswers: meta.qualifyAnswers,
+				// Trace Langfuse do turno — o consumo do stream inteiro acontece DENTRO
+				// do wrapper (mesmo requisito do simulator-clock): é o que mantém os
+				// spans do grafo/tools/analyzer no contexto do trace.
+				await withLangfuseTurn(
+					{
+						conversationId,
+						channel: "web",
+						isSimulated: conv?.isSimulated === true,
+						persona: meta.currentPersona ?? null,
+						userId: userKey ?? null,
+						userText: actionLabel ?? body.action?.kind ?? null,
+					},
+					async (lfTurn) => {
+						const { writer, getText } = collectAgentText(instrumentWriter(rawWriter, trace));
+						if (lfTurn.traceId) {
+							writer.write({
+								type: "data-trace",
+								data: { traceId: lfTurn.traceId },
+								transient: true,
 							});
-							await persistMeta(conversationId, { ...meta, navigationStack: nextStack });
-							await pipeTransitionTurn({
-								conversationId,
-								fromPersona,
-								toCategory: body.action.category,
-								contactName,
-								writer,
-								userKey,
-							});
-							return;
 						}
+						try {
+							await withSimulatorClockIfNeeded(conv ?? null, async () => {
+								if (body.action?.kind === "category") {
+									if (!(ROUTABLE_CATEGORIES as readonly string[]).includes(body.action.category))
+										return;
+									const fromPersona: Persona = meta.currentPersona ?? "concierge";
+									// Push snapshot do estado atual no nav stack pra suportar "voltar" (#06).
+									const nextStack = pushNavState(meta.navigationStack ?? [], {
+										persona: fromPersona,
+										category: meta.currentCategory ?? null,
+										expertiseLevel: meta.expertiseLevel,
+										experiencePrev: meta.experiencePrev ?? null,
+										qualifyAnswers: meta.qualifyAnswers,
+									});
+									await persistMeta(conversationId, { ...meta, navigationStack: nextStack });
+									await pipeTransitionTurn({
+										conversationId,
+										fromPersona,
+										toCategory: body.action.category,
+										contactName,
+										writer,
+										userKey,
+									});
+									return;
+								}
 
-						if (body.action?.kind === "select-group") {
-							const { groupId, administradora, creditValue, termMonths } = body.action;
-							await pipeDirectiveTurn({
-								conversationId,
-								directive: buildGroupSelectedDirective(
-									administradora,
-									groupId,
-									creditValue,
-									termMonths,
-								),
-								contactName,
-								writer,
-								userKey,
-							});
-							return;
-						}
-
-						if (body.action?.kind === "whatsapp_optin") {
-							const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
-							const result = await saveContactWhatsapp(conversationId, body.action.phone);
-							if (result.ok) {
-								const greetName = contactName ? `, ${contactName}` : "";
-								await persistMeta(conversationId, {
-									...meta,
-									whatsappOptinShown: true,
-								});
-								await writeAndSaveText(
-									writer,
-									conversationId,
-									meta.currentPersona ?? null,
-									`Show${greetName}! Anotei seu WhatsApp. Se algo acontecer aqui, te chamo por lá. ✅`,
-								);
-							} else {
-								await writeAndSaveText(
-									writer,
-									conversationId,
-									meta.currentPersona ?? null,
-									"Hmm, não consegui registrar esse número. Pode conferir e mandar de novo?",
-								);
-							}
-							return;
-						}
-
-						if (body.action?.kind === "whatsapp_optin_confirm") {
-							// FIX-27: número JÁ informado (lead form/identify) — confirma o
-							// canal sem re-digitar. Lê o telefone real já salvo (lead →
-							// identity) e marca o consentimento (LGPD: aceite explícito).
-							const greetName = contactName ? `, ${contactName}` : "";
-							const lead = await db.query.leads.findFirst({
-								where: eq(leads.conversationId, conversationId),
-								columns: { phone: true },
-							});
-							const phone =
-								lead?.phone ?? (await loadIdentity(conversationId).catch(() => null))?.celular;
-							if (phone) {
-								const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
-								await saveContactWhatsapp(conversationId, phone);
-							}
-							await persistMeta(conversationId, { ...meta, whatsappOptinShown: true });
-							await writeAndSaveText(
-								writer,
-								conversationId,
-								meta.currentPersona ?? null,
-								`Perfeito${greetName}! Pode deixar — se precisar, te chamo no seu WhatsApp. ✅`,
-							);
-							return;
-						}
-
-						if (body.action?.kind === "whatsapp_optin_decline") {
-							await persistMeta(conversationId, {
-								...meta,
-								whatsappOptinShown: true,
-								whatsappOptinDeclined: true,
-							});
-							await writeAndSaveText(
-								writer,
-								conversationId,
-								meta.currentPersona ?? null,
-								"Sem problema, seguimos por aqui mesmo.",
-							);
-							return;
-						}
-
-						// FIX-313 (rodada 10, onda 4 — achado na Rodada A.3 de verificação):
-						// clique num chip do `topic_picker` (menu de dúvidas pós-experience)
-						// reusa `kind: "interest"` com `administradora: "topic-picker"`
-						// (topic-picker.tsx) — SEM este branch, caía no handler genérico
-						// abaixo (avanço ao fechamento), disparando decisionDispatched +
-						// present_contract_form + WhatsApp opt-in NO MEIO de uma pergunta de
-						// dúvida (achado real: texto com "Posso te mostrar a opção que eu
-						// recomendo?" repetido 3-4x colado, contract_form disparando cedo
-						// demais). Este branch responde SÓ a dúvida específica — a cascata
-						// de reco-consent segue pelo caminho normal de `nextGateToFire`
-						// (idempotente, já disparado no turno anterior).
-						if (body.action?.kind === "interest" && body.action.administradora === "topic-picker") {
-							const label = body.action.label;
-							await pipeDirectiveTurn({
-								conversationId,
-								directive:
-									label === "voltar"
-										? buildTopicPickerBackDirective()
-										: buildTopicPickerAnswerDirective(label),
-								contactName,
-								writer,
-								userKey,
-							});
-							return;
-						}
-
-						// FIX-29/FIX-34/FIX-38: "Tenho interesse" pós-reveal é AVANÇO no
-						// funil canônico (contratação self-service), NUNCA captura de lead
-						// pra consultor humano. O clique é o sinal EXPLÍCITO de avanço — JÁ
-						// é a decisão —, então segue direto pro passo 5
-						// (present_contract_form). FIX-311 (r10-4, investigação de
-						// causa-raiz): REVERTE a suposição do FIX-38 de que o avanço
-						// dispensa a cerimônia — "aceitar de cara" não é dispensa de
-						// cuidado, é só um caminho mais curto até a mesma decisão; quem
-						// aceita direto merece a MESMA cerimônia de segurança/urgência
-						// (scarcity→decision_prompt) de quem hesitou, não menos (achado real:
-						// os 2 dossiês limpos investigados nunca mostravam scarcity/
-						// decision_prompt porque este fast-path pulava direto pro fecho).
-						// Marca decisionDispatched ANTES de dirigir o avanço: a tool-policy
-						// só libera present_contract_form na fase "closing"
-						// (decisionDispatched===true) — sem a marca o avanço cairia na fase
-						// "reveal" e a tool seria filtrada. Idempotência: quem já viu a
-						// cerimônia por outro caminho (ex.: gate simulator-offer) não a vê
-						// de novo aqui.
-						if (body.action?.kind === "interest") {
-							const fresh = await reloadMeta(conversationId);
-							// FIX-413 — a marca vem do PAYLOAD DO CARD que o cliente tocou, e
-							// só cai pra meta se o card não a trouxer. Era o contrário: a meta
-							// (escrita por resolução de TEXTO) ganhava do dado do clique, então
-							// até o caminho estruturado herdava o palpite do parser.
-							// FIX-414 — a marca do contrato vem SÓ do payload do card. O
-							// fallback pra `fresh.recommendedAdministradora` (texto) alimentava
-							// `contractOffer` e reabria a porta que a parede fecha; ele
-							// sobrevive apenas pra DIRETIVA, que é fala, não dinheiro.
-							const marcaDoCard = body.action.administradora;
-							const administradora = marcaDoCard ?? fresh.recommendedAdministradora;
-							// Normaliza pra comparar (ITAÚ vs ITAU) — o resto do arquivo já faz
-							// isso, e comparar cru era outro achado da 11ª revisão.
-							// FIX-418 — a cota é RECONSTRUÍDA do que foi exibido, nunca copiada
-							// de `recommendedOffer`.
-							//
-							// A 13ª revisão independente mediu este handler na rota real e achou
-							// o buraco: o clique carrega SÓ a marca (`{kind:"interest",
-							// administradora}`), e eu copiava o OBJETO INTEIRO — herdando
-							// crédito, prazo e parcela de um campo que o texto escreve. Medido:
-							// cliente declarou teto de 180.000, `recommendedOffer` estava em
-							// 300.000 (resíduo de what-if), um clique em "Tenho interesse" e a
-							// Bevi recebia 300.000. A ação estruturada validava UM campo e
-							// herdava QUATRO.
-							//
-							// O padrão certo já existia 60 linhas abaixo, no `choose_offer`, cujo
-							// próprio comentário diz que cair pro campo de texto "reintroduziria
-							// o texto no caminho do dinheiro". Era o que este handler fazia — e
-							// ele é o CTA principal dos cards.
-							//
-							// `resolveOfferForAdministradora` procura a marca entre as ofertas
-							// REALMENTE exibidas nesta conversa (artifacts persistidos). Sem
-							// correspondência, ancora só a marca: melhor uma cota incompleta que
-							// o funil completa perguntando do que quatro números inventados.
-							// FIX-419 — `groupId` primeiro, marca só como fallback.
-							//
-							// A 14ª revisão independente mediu contra 53 conversas REAIS: sem o
-							// groupId, `findOfferByAdministradora` não resolve em 68,8% dos casos
-							// (duas ou mais cotas da mesma administradora na tela → devolve null
-							// por ambiguidade, e faz certo em não chutar). O resultado era
-							// `contractOffer = { administradora }` sem crédito e sem prazo, e o
-							// contrato saía com o teto e sem desempate de prazo — PIOR que copiar
-							// a oferta, que era o defeito que eu tinha acabado de corrigir.
-							//
-							// `resolveChosenOffer` é o mesmo resolvedor do `choose_offer` logo
-							// abaixo: lookup por id contra os artifacts REAIS. Determinístico,
-							// sem ambiguidade possível.
-							const idDoCard = body.action.groupId;
-							const cotaExibida = idDoCard
-								? await resolveChosenOffer(conversationId, idDoCard).catch(() => null)
-								: marcaDoCard
-									? await resolveOfferForAdministradora(conversationId, marcaDoCard).catch(
-											() => null,
-										)
-									: null;
-							const ancoraDoClique = !marcaDoCard
-								? undefined
-								: cotaExibida
-									? ({
-											...(cotaExibida.groupId ? { groupId: cotaExibida.groupId } : {}),
-											administradora: cotaExibida.administradora ?? marcaDoCard,
-											creditValue: cotaExibida.creditValue,
-											termMonths: cotaExibida.termMonths,
-											monthlyPayment: cotaExibida.monthlyPayment,
-										} as typeof fresh.contractOffer)
-									: ({ administradora: marcaDoCard } as typeof fresh.contractOffer);
-							// FIX-415 — clique NOVO sempre reancora. A condição anterior
-							// (`&& !fresh.contractOffer`) fazia o PRIMEIRO clique ganhar pra
-							// sempre: quem escolhia a cota A, mudava de ideia e clicava na B
-							// fechava contrato na A. Ação estruturada mais recente é a decisão
-							// mais recente — é o sentido inteiro de ancorar por ação.
-							if (!fresh.decisionDispatched || ancoraDoClique) {
-								await persistMeta(conversationId, {
-									...fresh,
-									decisionDispatched: true,
-									// O clique É a ação estruturada — é ele que pode amarrar
-									// dinheiro. Ver personas.ts `contractOffer` (FIX-413).
-									...(ancoraDoClique ? { contractOffer: ancoraDoClique } : {}),
-								});
-							}
-							if (fresh.contractFormDispatched === true) {
-								await writeAndSaveText(
-									writer,
-									conversationId,
-									fresh.currentPersona ?? null,
-									"Você já viu o formulário aqui em cima — é só preencher pra eu seguir!",
-								);
-								return;
-							}
-							await pipeDirectiveTurn({
-								conversationId,
-								directive: buildAdvanceToContractDirective({ administradora }),
-								contactName,
-								writer,
-								userKey,
-							});
-							return;
-						}
-
-						// FIX-195 (P0): o seletor de cotas do reveal emitiu a escolha
-						// ESTRUTURADA. Resolve o grupo pelo groupId (choose-offer.ts, a partir
-						// dos artifacts REAIS já exibidos), RE-ANCORA o fechamento nele
-						// (administradora + prazo → administradoraPreferida/prazoPreferido do
-						// buildStartContractInput) e avança direto ao contrato — SEM re-busca,
-						// SEM re-resolução pelo agente, SEM meta-narrativa (raiz do loop do P0).
-						if (body.action?.kind === "choose_offer") {
-							const { groupId } = body.action;
-							const fresh = await reloadMeta(conversationId);
-							const chosen = await resolveChosenOffer(conversationId, groupId);
-							const administradora = chosen?.administradora ?? fresh.recommendedAdministradora;
-							// Re-ancora no grupo ESCOLHIDO (não no hero) — só grava a oferta
-							// quando os 3 números estão presentes (RecommendedOfferSnapshot).
-							const prev = fresh.recommendedOffer;
-							const creditValue = chosen?.creditValue ?? prev?.creditValue;
-							const termMonths = chosen?.termMonths ?? prev?.termMonths;
-							const monthlyPayment = chosen?.monthlyPayment ?? prev?.monthlyPayment;
-							const recommendedOffer =
-								typeof creditValue === "number" &&
-								typeof termMonths === "number" &&
-								typeof monthlyPayment === "number"
-									? {
-											...prev,
-											administradora: administradora ?? prev?.administradora,
+								if (body.action?.kind === "select-group") {
+									const { groupId, administradora, creditValue, termMonths } = body.action;
+									await pipeDirectiveTurn({
+										conversationId,
+										directive: buildGroupSelectedDirective(
+											administradora,
+											groupId,
 											creditValue,
 											termMonths,
-											monthlyPayment,
-										}
-									: prev;
-							await persistMeta(conversationId, {
-								...fresh,
-								...(administradora ? { recommendedAdministradora: administradora } : {}),
-								...(recommendedOffer ? { recommendedOffer } : {}),
-								// FIX-413 — este é o caminho estruturado por excelência: o
-								// `groupId` veio do card que o cliente TOCOU e foi resolvido
-								// contra os artifacts REAIS já exibidos (`resolveChosenOffer`).
-								// Só amarra o contrato quando a cota foi de fato resolvida —
-								// cair pra `recommendedAdministradora` aqui reintroduziria o
-								// texto no caminho do dinheiro.
-								...(chosen?.administradora
-									? {
-											contractOffer: {
-												...(chosen.groupId ? { groupId: chosen.groupId } : {}),
-												administradora: chosen.administradora,
-												creditValue: chosen.creditValue,
-												termMonths: chosen.termMonths,
-												monthlyPayment: chosen.monthlyPayment,
-											} as typeof fresh.contractOffer,
-										}
-									: {}),
-								// Libera present_contract_form na fase closing da tool-policy
-								// (mesma marca do clique "Tenho interesse", FIX-38).
-								decisionDispatched: true,
-							});
-							await pipeDirectiveTurn({
-								conversationId,
-								directive: buildChooseOfferDirective({ administradora }),
-								contactName,
-								writer,
-								userKey,
-							});
-							return;
-						}
+										),
+										contactName,
+										writer,
+										userKey,
+									});
+									return;
+								}
 
-						// FIX-29: "Ajustar valor"/"Nova simulação" reabre o what-if (perguntar
-						// o novo valor) — NUNCA inicia fechamento. O directive proíbe lead_form/
-						// contract_form/decision neste turno.
-						if (body.action?.kind === "adjust-value") {
-							await pipeDirectiveTurn({
-								conversationId,
-								directive: buildAdjustValueDirective({
-									administradora: body.action.administradora,
-									currentCreditValue: body.action.creditValue,
-								}),
-								contactName,
-								writer,
-								userKey,
-							});
-							return;
-						}
+								if (body.action?.kind === "whatsapp_optin") {
+									const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
+									const result = await saveContactWhatsapp(conversationId, body.action.phone);
+									if (result.ok) {
+										const greetName = contactName ? `, ${contactName}` : "";
+										await persistMeta(conversationId, {
+											...meta,
+											whatsappOptinShown: true,
+										});
+										await writeAndSaveText(
+											writer,
+											conversationId,
+											meta.currentPersona ?? null,
+											`Show${greetName}! Anotei seu WhatsApp. Se algo acontecer aqui, te chamo por lá. ✅`,
+										);
+									} else {
+										await writeAndSaveText(
+											writer,
+											conversationId,
+											meta.currentPersona ?? null,
+											"Hmm, não consegui registrar esse número. Pode conferir e mandar de novo?",
+										);
+									}
+									return;
+								}
 
-						// docx passo 4: "Quero ver outras opções" — surfacing DETERMINÍSTICO
-						// das outras ofertas reais da descoberta (other-options.ts — módulo
-						// único produção+eval). Zero free-run do modelo, zero dado inventado.
-						if (body.action?.kind === "show-other-options") {
-							try {
-								const { buildOtherOptions } = await import("@/lib/bevi/other-options");
-								const others = await buildOtherOptions(conversationId, meta);
-								await writeAndSaveText(
-									writer,
-									conversationId,
-									meta.currentPersona ?? null,
-									others.text,
-								);
-								writer.write({
-									type: "data-artifact",
-									id: crypto.randomUUID(),
-									data: {
-										type: "comparison_table",
-										payload: { groups: others.groups },
-									},
-								});
-							} catch {
-								await writeAndSaveText(
-									writer,
-									conversationId,
-									meta.currentPersona ?? null,
-									"Deixa eu refazer a busca pra te mostrar as outras opções — me dá um instante e pede de novo?",
-								);
-							}
-							return;
-						}
+								if (body.action?.kind === "whatsapp_optin_confirm") {
+									// FIX-27: número JÁ informado (lead form/identify) — confirma o
+									// canal sem re-digitar. Lê o telefone real já salvo (lead →
+									// identity) e marca o consentimento (LGPD: aceite explícito).
+									const greetName = contactName ? `, ${contactName}` : "";
+									const lead = await db.query.leads.findFirst({
+										where: eq(leads.conversationId, conversationId),
+										columns: { phone: true },
+									});
+									const phone =
+										lead?.phone ?? (await loadIdentity(conversationId).catch(() => null))?.celular;
+									if (phone) {
+										const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
+										await saveContactWhatsapp(conversationId, phone);
+									}
+									await persistMeta(conversationId, { ...meta, whatsappOptinShown: true });
+									await writeAndSaveText(
+										writer,
+										conversationId,
+										meta.currentPersona ?? null,
+										`Perfeito${greetName}! Pode deixar — se precisar, te chamo no seu WhatsApp. ✅`,
+									);
+									return;
+								}
 
-						// ── Passo 5 "Contratar" (fechamento Bevi) ──
-						if (body.action?.kind === "contract-submit") {
-							// FIX-12 (defesa em profundidade): sem reveal, NUNCA criar proposta
-							// real — o guard do runner já suprime o contract_form pré-reveal,
-							// mas o POST continua acessível (form antigo na tela, API direta).
-							// Criar proposta na Bevi = CPF + consulta de bureau; a ordem da
-							// jornada (identify → busca → reveal → decisão → passo 5) é
-							// validada AQUI pelo estado do servidor, não pelo modelo.
-							const freshMeta = await reloadMeta(conversationId);
-							if (freshMeta.revealCompleted !== true) {
-								await writeAndSaveText(
-									writer,
-									conversationId,
-									meta.currentPersona ?? null,
-									"Calma, a gente tá quase lá! Antes de seguir eu te mostro as opções reais das administradoras — vamos só concluir essa etapa primeiro:",
-								);
-								await pipeGatePrompt({
-									conversationId,
-									gate: nextGate(freshMeta, { hasContactName: Boolean(contactName) }),
-									writer,
-								});
-								return;
-							}
-							// FIX-244 (rodada 2, Fable r1, gap #9): defesa em profundidade
-							// GÊMEA da acima — sem o present_contract_form ter aparecido
-							// nesta conversa, contract-submit NÃO pode criar proposta real
-							// (CPF + consulta de bureau não pode ficar a um POST cru de
-							// distância). Achado ao vivo: o Fable fechou uma proposta
-							// atirando contract-submit numa conversa que nunca viu o form.
-							if (freshMeta.contractFormDispatched !== true) {
-								await writeAndSaveText(
-									writer,
-									conversationId,
-									meta.currentPersona ?? null,
-									"Antes de eu confirmar seu plano, deixa eu te mostrar o formulário rapidinho — me diz que quer seguir?",
-								);
-								return;
-							}
-							// FIX-263 (P1, veredito Fable r5, seam PARCIAL): anti-refazer em
-							// CÓDIGO — o achado ao vivo foi o agente negando a proposta REAL já
-							// registrada (RODOBENS) e reabrindo o contract_form de outra
-							// administradora (ITAÚ) sob contestação, a 1 clique de criar uma 2ª
-							// proposta real (CPF + consulta de bureau). Nunca confia no que o
-							// modelo afirma sobre o estado — consulta a proposta REGISTRADA
-							// (bevi_proposals) e bloqueia ANTES do gateway quando o fechamento
-							// em curso pede uma administradora DIFERENTE da já registrada.
-							// Status sempre via check_proposal_status (nunca aqui, é o próprio
-							// texto que direciona o usuário pra pedir o status).
-							const existingProposal = await getLatestBeviProposal(conversationId);
-							if (
-								administradoraConflictsWithRegisteredProposal(
-									existingProposal?.administradora,
-									// FIX-415 — compara contra o que será EFETIVAMENTE enviado.
-									// Sem cota ancorada, o input cai pra administradora da
-									// proposta registrada (contract-input.ts), então o guard
-									// precisa comparar contra a mesma coisa — senão volta a
-									// checar A e executar B, que foi o defeito do FIX-414.
-									// FIX-414 — SEM fallback pro campo de texto.
+								if (body.action?.kind === "whatsapp_optin_decline") {
+									await persistMeta(conversationId, {
+										...meta,
+										whatsappOptinShown: true,
+										whatsappOptinDeclined: true,
+									});
+									await writeAndSaveText(
+										writer,
+										conversationId,
+										meta.currentPersona ?? null,
+										"Sem problema, seguimos por aqui mesmo.",
+									);
+									return;
+								}
+
+								// FIX-313 (rodada 10, onda 4 — achado na Rodada A.3 de verificação):
+								// clique num chip do `topic_picker` (menu de dúvidas pós-experience)
+								// reusa `kind: "interest"` com `administradora: "topic-picker"`
+								// (topic-picker.tsx) — SEM este branch, caía no handler genérico
+								// abaixo (avanço ao fechamento), disparando decisionDispatched +
+								// present_contract_form + WhatsApp opt-in NO MEIO de uma pergunta de
+								// dúvida (achado real: texto com "Posso te mostrar a opção que eu
+								// recomendo?" repetido 3-4x colado, contract_form disparando cedo
+								// demais). Este branch responde SÓ a dúvida específica — a cascata
+								// de reco-consent segue pelo caminho normal de `nextGateToFire`
+								// (idempotente, já disparado no turno anterior).
+								if (
+									body.action?.kind === "interest" &&
+									body.action.administradora === "topic-picker"
+								) {
+									const label = body.action.label;
+									await pipeDirectiveTurn({
+										conversationId,
+										directive:
+											label === "voltar"
+												? buildTopicPickerBackDirective()
+												: buildTopicPickerAnswerDirective(label),
+										contactName,
+										writer,
+										userKey,
+									});
+									return;
+								}
+
+								// FIX-29/FIX-34/FIX-38: "Tenho interesse" pós-reveal é AVANÇO no
+								// funil canônico (contratação self-service), NUNCA captura de lead
+								// pra consultor humano. O clique é o sinal EXPLÍCITO de avanço — JÁ
+								// é a decisão —, então segue direto pro passo 5
+								// (present_contract_form). FIX-311 (r10-4, investigação de
+								// causa-raiz): REVERTE a suposição do FIX-38 de que o avanço
+								// dispensa a cerimônia — "aceitar de cara" não é dispensa de
+								// cuidado, é só um caminho mais curto até a mesma decisão; quem
+								// aceita direto merece a MESMA cerimônia de segurança/urgência
+								// (scarcity→decision_prompt) de quem hesitou, não menos (achado real:
+								// os 2 dossiês limpos investigados nunca mostravam scarcity/
+								// decision_prompt porque este fast-path pulava direto pro fecho).
+								// Marca decisionDispatched ANTES de dirigir o avanço: a tool-policy
+								// só libera present_contract_form na fase "closing"
+								// (decisionDispatched===true) — sem a marca o avanço cairia na fase
+								// "reveal" e a tool seria filtrada. Idempotência: quem já viu a
+								// cerimônia por outro caminho (ex.: gate simulator-offer) não a vê
+								// de novo aqui.
+								if (body.action?.kind === "interest") {
+									const fresh = await reloadMeta(conversationId);
+									// FIX-413 — a marca vem do PAYLOAD DO CARD que o cliente tocou, e
+									// só cai pra meta se o card não a trouxer. Era o contrário: a meta
+									// (escrita por resolução de TEXTO) ganhava do dado do clique, então
+									// até o caminho estruturado herdava o palpite do parser.
+									// FIX-414 — a marca do contrato vem SÓ do payload do card. O
+									// fallback pra `fresh.recommendedAdministradora` (texto) alimentava
+									// `contractOffer` e reabria a porta que a parede fecha; ele
+									// sobrevive apenas pra DIRETIVA, que é fala, não dinheiro.
+									const marcaDoCard = body.action.administradora;
+									const administradora = marcaDoCard ?? fresh.recommendedAdministradora;
+									// Normaliza pra comparar (ITAÚ vs ITAU) — o resto do arquivo já faz
+									// isso, e comparar cru era outro achado da 11ª revisão.
+									// FIX-418 — a cota é RECONSTRUÍDA do que foi exibido, nunca copiada
+									// de `recommendedOffer`.
 									//
-									// A 11ª revisão independente achou aqui um P0 que eu mesmo
-									// criei no FIX-413: o guard conferia
-									// `contractOffer ?? recommendedAdministradora` e a ação
-									// (`buildStartContractInput`, abaixo) agia sobre
-									// `recommendedAdministradora`. Checa A, executa B — com uma
-									// proposta CANOPUS registrada e o texto tendo movido a conversa
-									// pra ITAÚ, o guard comparava CANOPUS×CANOPUS, não bloqueava, e
-									// o `startContract` rodava com ITAÚ: SEGUNDA proposta real na
-									// Bevi (CPF + consulta de bureau) na mesma conversa. É
-									// exatamente o que o FIX-263 existe pra impedir, reaberto pela
-									// correção que devia fechar a classe.
+									// A 13ª revisão independente mediu este handler na rota real e achou
+									// o buraco: o clique carrega SÓ a marca (`{kind:"interest",
+									// administradora}`), e eu copiava o OBJETO INTEIRO — herdando
+									// crédito, prazo e parcela de um campo que o texto escreve. Medido:
+									// cliente declarou teto de 180.000, `recommendedOffer` estava em
+									// 300.000 (resíduo de what-if), um clique em "Tenho interesse" e a
+									// Bevi recebia 300.000. A ação estruturada validava UM campo e
+									// herdava QUATRO.
 									//
-									// Agora guard e ação leem o MESMO campo — o único que o
-									// contrato consome (contract-input.ts, FIX-414).
-									// FIX-415 — o guard olha a cota ancorada E o foco da conversa.
-									// Incluir o campo de texto AQUI é seguro porque ele só torna o
-									// guard mais ESTRITO: se a conversa está em ITAÚ e há proposta
-									// RODOBENS registrada, bloqueia e avisa, em vez de mandar
-									// RODOBENS calado — que seria a troca silenciosa que este repo
-									// combate desde o FIX-195.
-									freshMeta.contractOffer?.administradora ?? freshMeta.recommendedAdministradora,
-								)
-							) {
-								await writeAndSaveText(
-									writer,
-									conversationId,
-									meta.currentPersona ?? null,
-									`Você já tem uma proposta registrada com a ${existingProposal?.administradora} — não dá pra abrir uma segunda com outra administradora por aqui. Quer que eu confira o status dessa proposta pra você?`,
-								);
-								return;
-							}
-							// FIX-9: identidade já coletada no identify — o form confirma e o
-							// CPF completo NUNCA volta do browser. useStoredIdentity (ou campos
-							// ausentes) → resolve via loadIdentity. Dados digitados NOVOS
-							// atualizam o storage (cifrado) pra manter a fonte única.
-							let cpf = body.action.cpf;
-							let celular = body.action.celular;
-							if (body.action.useStoredIdentity === true || !cpf || !celular) {
-								const stored = await loadIdentity(conversationId).catch(() => null);
-								cpf = cpf || stored?.cpf;
-								celular = celular || stored?.celular;
-							} else if (cpf && celular) {
-								await storeIdentity(conversationId, { cpf, celular });
-							}
-							if (!cpf || !celular) {
-								await writeAndSaveText(
-									writer,
-									conversationId,
-									meta.currentPersona ?? null,
-									"Não encontrei seus dados aqui — preenche o CPF e o celular no formulário pra eu seguir com a proposta?",
-								);
-								return;
-							}
-							try {
-								// FIX-48: resolve o leadId da conversa AQUI (a ponta primária) e
-								// injeta no input — sem ele a proposta nasce órfã e a raia trava
-								// em `qualificado` (createBeviProposal pula a transição). O lead
-								// já existe (gate identify/qualify criou) no caminho web.
-								const leadId = await getLeadIdForConversation(conversationId);
-								// FIX-25: derivação canônica do input (segmento/valor/objetivo/lance
-								// + administradoraPreferida) — módulo único compartilhado com o
-								// canal WhatsApp (contract-input.ts). administradoraPreferida resolve
-								// BUG-ADMIN-TROCADA-NO-FECHAMENTO (E2E real 2026-06-04).
-								// FIX-247 (rodada 3, Fable r2, gap #2): requestedCreditValue NÃO
-								// pode sair do destructuring — é o campo que aciona o aviso de
-								// ajuste (FIX-197/240) quando a carta real diverge do pedido.
-								// FIX-259 (P1, veredito Fable r4): administradoraChanged/
-								// previousAdministradora NÃO podem sair do destructuring — é o
-								// mesmo bug de classe do FIX-247 (rawCreditValue descartado),
-								// agora pro aviso de troca de marca (nunca em silêncio).
-								const {
-									proposalId,
-									offer,
-									noOffer,
-									requestedCreditValue,
-									administradoraChanged,
-									previousAdministradora,
-								} = await startContract(
-									conversationId,
-									buildStartContractInput(
-										// FIX-414 — `freshMeta`, não `meta`. O `meta` é o snapshot
-										// do começo do request; o guard acima já relê. Se vale
-										// reler pra CONFERIR, vale reler pra AGIR — senão a janela
-										// entre os dois é mais uma fresta da mesma família.
-										freshMeta,
-										{ cpf, celular, lgpd: body.action.lgpd },
-										// FIX-415 — o retry vai pra MESMA administradora da
-										// proposta que já existe, nunca pro sorteio do gateway.
-										{ leadId, registeredAdministradora: existingProposal?.administradora },
-									),
-								);
-								// Copy/artifacts do passo 5 vivem em closing-presentation.ts
-								// (módulo único — eval valida o MESMO copy de produção).
-								await pipeAndSaveClosingItems(
-									// FIX-40: o lance declarado na qualificação habilita a frase de
-									// posição factual vs o lance médio do grupo (sem promessa).
-									realOfferPresentation(
-										{
+									// O padrão certo já existia 60 linhas abaixo, no `choose_offer`, cujo
+									// próprio comentário diz que cair pro campo de texto "reintroduziria
+									// o texto no caminho do dinheiro". Era o que este handler fazia — e
+									// ele é o CTA principal dos cards.
+									//
+									// `resolveOfferForAdministradora` procura a marca entre as ofertas
+									// REALMENTE exibidas nesta conversa (artifacts persistidos). Sem
+									// correspondência, ancora só a marca: melhor uma cota incompleta que
+									// o funil completa perguntando do que quatro números inventados.
+									// FIX-419 — `groupId` primeiro, marca só como fallback.
+									//
+									// A 14ª revisão independente mediu contra 53 conversas REAIS: sem o
+									// groupId, `findOfferByAdministradora` não resolve em 68,8% dos casos
+									// (duas ou mais cotas da mesma administradora na tela → devolve null
+									// por ambiguidade, e faz certo em não chutar). O resultado era
+									// `contractOffer = { administradora }` sem crédito e sem prazo, e o
+									// contrato saía com o teto e sem desempate de prazo — PIOR que copiar
+									// a oferta, que era o defeito que eu tinha acabado de corrigir.
+									//
+									// `resolveChosenOffer` é o mesmo resolvedor do `choose_offer` logo
+									// abaixo: lookup por id contra os artifacts REAIS. Determinístico,
+									// sem ambiguidade possível.
+									const idDoCard = body.action.groupId;
+									const cotaExibida = idDoCard
+										? await resolveChosenOffer(conversationId, idDoCard).catch(() => null)
+										: marcaDoCard
+											? await resolveOfferForAdministradora(conversationId, marcaDoCard).catch(
+													() => null,
+												)
+											: null;
+									const ancoraDoClique = !marcaDoCard
+										? undefined
+										: cotaExibida
+											? ({
+													...(cotaExibida.groupId ? { groupId: cotaExibida.groupId } : {}),
+													administradora: cotaExibida.administradora ?? marcaDoCard,
+													creditValue: cotaExibida.creditValue,
+													termMonths: cotaExibida.termMonths,
+													monthlyPayment: cotaExibida.monthlyPayment,
+												} as typeof fresh.contractOffer)
+											: ({ administradora: marcaDoCard } as typeof fresh.contractOffer);
+									// FIX-415 — clique NOVO sempre reancora. A condição anterior
+									// (`&& !fresh.contractOffer`) fazia o PRIMEIRO clique ganhar pra
+									// sempre: quem escolhia a cota A, mudava de ideia e clicava na B
+									// fechava contrato na A. Ação estruturada mais recente é a decisão
+									// mais recente — é o sentido inteiro de ancorar por ação.
+									if (!fresh.decisionDispatched || ancoraDoClique) {
+										await persistMeta(conversationId, {
+											...fresh,
+											decisionDispatched: true,
+											// O clique É a ação estruturada — é ele que pode amarrar
+											// dinheiro. Ver personas.ts `contractOffer` (FIX-413).
+											...(ancoraDoClique ? { contractOffer: ancoraDoClique } : {}),
+										});
+									}
+									if (fresh.contractFormDispatched === true) {
+										await writeAndSaveText(
+											writer,
+											conversationId,
+											fresh.currentPersona ?? null,
+											"Você já viu o formulário aqui em cima — é só preencher pra eu seguir!",
+										);
+										return;
+									}
+									await pipeDirectiveTurn({
+										conversationId,
+										directive: buildAdvanceToContractDirective({ administradora }),
+										contactName,
+										writer,
+										userKey,
+									});
+									return;
+								}
+
+								// FIX-195 (P0): o seletor de cotas do reveal emitiu a escolha
+								// ESTRUTURADA. Resolve o grupo pelo groupId (choose-offer.ts, a partir
+								// dos artifacts REAIS já exibidos), RE-ANCORA o fechamento nele
+								// (administradora + prazo → administradoraPreferida/prazoPreferido do
+								// buildStartContractInput) e avança direto ao contrato — SEM re-busca,
+								// SEM re-resolução pelo agente, SEM meta-narrativa (raiz do loop do P0).
+								if (body.action?.kind === "choose_offer") {
+									const { groupId } = body.action;
+									const fresh = await reloadMeta(conversationId);
+									const chosen = await resolveChosenOffer(conversationId, groupId);
+									const administradora = chosen?.administradora ?? fresh.recommendedAdministradora;
+									// Re-ancora no grupo ESCOLHIDO (não no hero) — só grava a oferta
+									// quando os 3 números estão presentes (RecommendedOfferSnapshot).
+									const prev = fresh.recommendedOffer;
+									const creditValue = chosen?.creditValue ?? prev?.creditValue;
+									const termMonths = chosen?.termMonths ?? prev?.termMonths;
+									const monthlyPayment = chosen?.monthlyPayment ?? prev?.monthlyPayment;
+									const recommendedOffer =
+										typeof creditValue === "number" &&
+										typeof termMonths === "number" &&
+										typeof monthlyPayment === "number"
+											? {
+													...prev,
+													administradora: administradora ?? prev?.administradora,
+													creditValue,
+													termMonths,
+													monthlyPayment,
+												}
+											: prev;
+									await persistMeta(conversationId, {
+										...fresh,
+										...(administradora ? { recommendedAdministradora: administradora } : {}),
+										...(recommendedOffer ? { recommendedOffer } : {}),
+										// FIX-413 — este é o caminho estruturado por excelência: o
+										// `groupId` veio do card que o cliente TOCOU e foi resolvido
+										// contra os artifacts REAIS já exibidos (`resolveChosenOffer`).
+										// Só amarra o contrato quando a cota foi de fato resolvida —
+										// cair pra `recommendedAdministradora` aqui reintroduziria o
+										// texto no caminho do dinheiro.
+										...(chosen?.administradora
+											? {
+													contractOffer: {
+														...(chosen.groupId ? { groupId: chosen.groupId } : {}),
+														administradora: chosen.administradora,
+														creditValue: chosen.creditValue,
+														termMonths: chosen.termMonths,
+														monthlyPayment: chosen.monthlyPayment,
+													} as typeof fresh.contractOffer,
+												}
+											: {}),
+										// Libera present_contract_form na fase closing da tool-policy
+										// (mesma marca do clique "Tenho interesse", FIX-38).
+										decisionDispatched: true,
+									});
+									await pipeDirectiveTurn({
+										conversationId,
+										directive: buildChooseOfferDirective({ administradora }),
+										contactName,
+										writer,
+										userKey,
+									});
+									return;
+								}
+
+								// FIX-29: "Ajustar valor"/"Nova simulação" reabre o what-if (perguntar
+								// o novo valor) — NUNCA inicia fechamento. O directive proíbe lead_form/
+								// contract_form/decision neste turno.
+								if (body.action?.kind === "adjust-value") {
+									await pipeDirectiveTurn({
+										conversationId,
+										directive: buildAdjustValueDirective({
+											administradora: body.action.administradora,
+											currentCreditValue: body.action.creditValue,
+										}),
+										contactName,
+										writer,
+										userKey,
+									});
+									return;
+								}
+
+								// docx passo 4: "Quero ver outras opções" — surfacing DETERMINÍSTICO
+								// das outras ofertas reais da descoberta (other-options.ts — módulo
+								// único produção+eval). Zero free-run do modelo, zero dado inventado.
+								if (body.action?.kind === "show-other-options") {
+									try {
+										const { buildOtherOptions } = await import("@/lib/bevi/other-options");
+										const others = await buildOtherOptions(conversationId, meta);
+										await writeAndSaveText(
+											writer,
+											conversationId,
+											meta.currentPersona ?? null,
+											others.text,
+										);
+										writer.write({
+											type: "data-artifact",
+											id: crypto.randomUUID(),
+											data: {
+												type: "comparison_table",
+												payload: { groups: others.groups },
+											},
+										});
+									} catch {
+										await writeAndSaveText(
+											writer,
+											conversationId,
+											meta.currentPersona ?? null,
+											"Deixa eu refazer a busca pra te mostrar as outras opções — me dá um instante e pede de novo?",
+										);
+									}
+									return;
+								}
+
+								// ── Passo 5 "Contratar" (fechamento Bevi) ──
+								if (body.action?.kind === "contract-submit") {
+									// FIX-12 (defesa em profundidade): sem reveal, NUNCA criar proposta
+									// real — o guard do runner já suprime o contract_form pré-reveal,
+									// mas o POST continua acessível (form antigo na tela, API direta).
+									// Criar proposta na Bevi = CPF + consulta de bureau; a ordem da
+									// jornada (identify → busca → reveal → decisão → passo 5) é
+									// validada AQUI pelo estado do servidor, não pelo modelo.
+									const freshMeta = await reloadMeta(conversationId);
+									if (freshMeta.revealCompleted !== true) {
+										await writeAndSaveText(
+											writer,
+											conversationId,
+											meta.currentPersona ?? null,
+											"Calma, a gente tá quase lá! Antes de seguir eu te mostro as opções reais das administradoras — vamos só concluir essa etapa primeiro:",
+										);
+										await pipeGatePrompt({
+											conversationId,
+											gate: nextGate(freshMeta, { hasContactName: Boolean(contactName) }),
+											writer,
+										});
+										return;
+									}
+									// FIX-244 (rodada 2, Fable r1, gap #9): defesa em profundidade
+									// GÊMEA da acima — sem o present_contract_form ter aparecido
+									// nesta conversa, contract-submit NÃO pode criar proposta real
+									// (CPF + consulta de bureau não pode ficar a um POST cru de
+									// distância). Achado ao vivo: o Fable fechou uma proposta
+									// atirando contract-submit numa conversa que nunca viu o form.
+									if (freshMeta.contractFormDispatched !== true) {
+										await writeAndSaveText(
+											writer,
+											conversationId,
+											meta.currentPersona ?? null,
+											"Antes de eu confirmar seu plano, deixa eu te mostrar o formulário rapidinho — me diz que quer seguir?",
+										);
+										return;
+									}
+									// FIX-263 (P1, veredito Fable r5, seam PARCIAL): anti-refazer em
+									// CÓDIGO — o achado ao vivo foi o agente negando a proposta REAL já
+									// registrada (RODOBENS) e reabrindo o contract_form de outra
+									// administradora (ITAÚ) sob contestação, a 1 clique de criar uma 2ª
+									// proposta real (CPF + consulta de bureau). Nunca confia no que o
+									// modelo afirma sobre o estado — consulta a proposta REGISTRADA
+									// (bevi_proposals) e bloqueia ANTES do gateway quando o fechamento
+									// em curso pede uma administradora DIFERENTE da já registrada.
+									// Status sempre via check_proposal_status (nunca aqui, é o próprio
+									// texto que direciona o usuário pra pedir o status).
+									const existingProposal = await getLatestBeviProposal(conversationId);
+									if (
+										administradoraConflictsWithRegisteredProposal(
+											existingProposal?.administradora,
+											// FIX-415 — compara contra o que será EFETIVAMENTE enviado.
+											// Sem cota ancorada, o input cai pra administradora da
+											// proposta registrada (contract-input.ts), então o guard
+											// precisa comparar contra a mesma coisa — senão volta a
+											// checar A e executar B, que foi o defeito do FIX-414.
+											// FIX-414 — SEM fallback pro campo de texto.
+											//
+											// A 11ª revisão independente achou aqui um P0 que eu mesmo
+											// criei no FIX-413: o guard conferia
+											// `contractOffer ?? recommendedAdministradora` e a ação
+											// (`buildStartContractInput`, abaixo) agia sobre
+											// `recommendedAdministradora`. Checa A, executa B — com uma
+											// proposta CANOPUS registrada e o texto tendo movido a conversa
+											// pra ITAÚ, o guard comparava CANOPUS×CANOPUS, não bloqueava, e
+											// o `startContract` rodava com ITAÚ: SEGUNDA proposta real na
+											// Bevi (CPF + consulta de bureau) na mesma conversa. É
+											// exatamente o que o FIX-263 existe pra impedir, reaberto pela
+											// correção que devia fechar a classe.
+											//
+											// Agora guard e ação leem o MESMO campo — o único que o
+											// contrato consome (contract-input.ts, FIX-414).
+											// FIX-415 — o guard olha a cota ancorada E o foco da conversa.
+											// Incluir o campo de texto AQUI é seguro porque ele só torna o
+											// guard mais ESTRITO: se a conversa está em ITAÚ e há proposta
+											// RODOBENS registrada, bloqueia e avisa, em vez de mandar
+											// RODOBENS calado — que seria a troca silenciosa que este repo
+											// combate desde o FIX-195.
+											freshMeta.contractOffer?.administradora ??
+												freshMeta.recommendedAdministradora,
+										)
+									) {
+										await writeAndSaveText(
+											writer,
+											conversationId,
+											meta.currentPersona ?? null,
+											`Você já tem uma proposta registrada com a ${existingProposal?.administradora} — não dá pra abrir uma segunda com outra administradora por aqui. Quer que eu confira o status dessa proposta pra você?`,
+										);
+										return;
+									}
+									// FIX-9: identidade já coletada no identify — o form confirma e o
+									// CPF completo NUNCA volta do browser. useStoredIdentity (ou campos
+									// ausentes) → resolve via loadIdentity. Dados digitados NOVOS
+									// atualizam o storage (cifrado) pra manter a fonte única.
+									let cpf = body.action.cpf;
+									let celular = body.action.celular;
+									if (body.action.useStoredIdentity === true || !cpf || !celular) {
+										const stored = await loadIdentity(conversationId).catch(() => null);
+										cpf = cpf || stored?.cpf;
+										celular = celular || stored?.celular;
+									} else if (cpf && celular) {
+										await storeIdentity(conversationId, { cpf, celular });
+									}
+									if (!cpf || !celular) {
+										await writeAndSaveText(
+											writer,
+											conversationId,
+											meta.currentPersona ?? null,
+											"Não encontrei seus dados aqui — preenche o CPF e o celular no formulário pra eu seguir com a proposta?",
+										);
+										return;
+									}
+									try {
+										// FIX-48: resolve o leadId da conversa AQUI (a ponta primária) e
+										// injeta no input — sem ele a proposta nasce órfã e a raia trava
+										// em `qualificado` (createBeviProposal pula a transição). O lead
+										// já existe (gate identify/qualify criou) no caminho web.
+										const leadId = await getLeadIdForConversation(conversationId);
+										// FIX-25: derivação canônica do input (segmento/valor/objetivo/lance
+										// + administradoraPreferida) — módulo único compartilhado com o
+										// canal WhatsApp (contract-input.ts). administradoraPreferida resolve
+										// BUG-ADMIN-TROCADA-NO-FECHAMENTO (E2E real 2026-06-04).
+										// FIX-247 (rodada 3, Fable r2, gap #2): requestedCreditValue NÃO
+										// pode sair do destructuring — é o campo que aciona o aviso de
+										// ajuste (FIX-197/240) quando a carta real diverge do pedido.
+										// FIX-259 (P1, veredito Fable r4): administradoraChanged/
+										// previousAdministradora NÃO podem sair do destructuring — é o
+										// mesmo bug de classe do FIX-247 (rawCreditValue descartado),
+										// agora pro aviso de troca de marca (nunca em silêncio).
+										const {
 											proposalId,
 											offer,
 											noOffer,
 											requestedCreditValue,
 											administradoraChanged,
 											previousAdministradora,
-										},
-										{
-											declaredLanceValue: meta.qualifyAnswers?.lanceValue,
-											clientName: contactName,
-											cartaMaiorPorEmbutido: meta.qualifyAnswers?.lanceEmbutido === true,
-											// O plano que ele aprovou — pro card avisar se a carta real
-											// voltou com outra parcela/prazo.
-											ofertaVista: meta.recommendedOffer
-												? {
-														monthlyPayment: meta.recommendedOffer.monthlyPayment,
-														termMonths: meta.recommendedOffer.termMonths,
-													}
-												: null,
-										},
-									),
-									writer,
-									conversationId,
-									meta.currentPersona ?? null,
-								);
-								// FIX-27: proposta criada → telefone capturado (mascarado) p/ o
-								// opt-in virar confirmação; limpa retry pendente de tentativa anterior.
-								const okMeta = await reloadMeta(conversationId);
-								await persistMeta(conversationId, {
-									...okMeta,
-									contactPhone: maskPhoneForDisplay(celular),
-									contractRetryPending: false,
-									// A cota REAL passa a ser a âncora: o meta guardava a simulada e
-									// o agente seguia citando lance médio/prazo do grupo que não é
-									// o contratado.
-									...(offer ? ancorarOfertaReal(okMeta, offer) : {}),
-								});
-							} catch (err) {
-								// Bug dev 2026-06-11: erro engolido sem log → CloudWatch vazio,
-								// diagnóstico impossível. Logar SEMPRE o erro original (lição
-								// empty-env-compose: tool errors logados). CPF nunca no log.
-								console.error(
-									`[contract-submit] startContract falhou (conv=${conversationId})`,
-									err,
-								);
-								const delta =
-									err instanceof MinCreditError
-										? `O valor mínimo pra esse tipo é ${brl(err.minCredit)}. Quer aumentar pra eu simular?`
-										: err instanceof BeviConfigError
-											? "Estamos concluindo a habilitação com a administradora — nosso time te chama pra finalizar. 🙏"
-											: "Tive um problema ao falar com a administradora agora. Pode tentar de novo em instantes?";
-								await writeAndSaveText(writer, conversationId, meta.currentPersona ?? null, delta);
-								// FIX-27: erro genérico de fechamento (não config/min-credit) →
-								// retry pendente (o opt-in não atropela a re-tentativa) + telefone
-								// capturado (mascarado) pra confirmação posterior.
-								if (!(err instanceof MinCreditError) && !(err instanceof BeviConfigError)) {
-									const fresh = await reloadMeta(conversationId);
-									await persistMeta(conversationId, {
-										...fresh,
-										contactPhone: maskPhoneForDisplay(celular),
-										contractRetryPending: true,
-									});
-								}
-							}
-							return;
-						}
-
-						if (body.action?.kind === "offer-confirm") {
-							try {
-								const res = await confirmOffer(conversationId);
-								// A NOSSA proposta em PDF, gerada ANTES da copy do fecho: ela é o
-								// card "Sua proposta está pronta" (que substituiu o link da
-								// administradora em domínio de terceiro). Best-effort — falhou,
-								// o fecho segue sem o card; nunca derruba a contratação.
-								const proposta = await import("@/lib/proposal/entrega")
-									.then((m) => m.prepararPropostaParaEnvio(conversationId))
-									.catch((err) => {
+										} = await startContract(
+											conversationId,
+											buildStartContractInput(
+												// FIX-414 — `freshMeta`, não `meta`. O `meta` é o snapshot
+												// do começo do request; o guard acima já relê. Se vale
+												// reler pra CONFERIR, vale reler pra AGIR — senão a janela
+												// entre os dois é mais uma fresta da mesma família.
+												freshMeta,
+												{ cpf, celular, lgpd: body.action.lgpd },
+												// FIX-415 — o retry vai pra MESMA administradora da
+												// proposta que já existe, nunca pro sorteio do gateway.
+												{ leadId, registeredAdministradora: existingProposal?.administradora },
+											),
+										);
+										// Copy/artifacts do passo 5 vivem em closing-presentation.ts
+										// (módulo único — eval valida o MESMO copy de produção).
+										await pipeAndSaveClosingItems(
+											// FIX-40: o lance declarado na qualificação habilita a frase de
+											// posição factual vs o lance médio do grupo (sem promessa).
+											realOfferPresentation(
+												{
+													proposalId,
+													offer,
+													noOffer,
+													requestedCreditValue,
+													administradoraChanged,
+													previousAdministradora,
+												},
+												{
+													declaredLanceValue: meta.qualifyAnswers?.lanceValue,
+													clientName: contactName,
+													cartaMaiorPorEmbutido: meta.qualifyAnswers?.lanceEmbutido === true,
+													// O plano que ele aprovou — pro card avisar se a carta real
+													// voltou com outra parcela/prazo.
+													ofertaVista: meta.recommendedOffer
+														? {
+																monthlyPayment: meta.recommendedOffer.monthlyPayment,
+																termMonths: meta.recommendedOffer.termMonths,
+															}
+														: null,
+												},
+											),
+											writer,
+											conversationId,
+											meta.currentPersona ?? null,
+										);
+										// FIX-27: proposta criada → telefone capturado (mascarado) p/ o
+										// opt-in virar confirmação; limpa retry pendente de tentativa anterior.
+										const okMeta = await reloadMeta(conversationId);
+										await persistMeta(conversationId, {
+											...okMeta,
+											contactPhone: maskPhoneForDisplay(celular),
+											contractRetryPending: false,
+											// A cota REAL passa a ser a âncora: o meta guardava a simulada e
+											// o agente seguia citando lance médio/prazo do grupo que não é
+											// o contratado.
+											...(offer ? ancorarOfertaReal(okMeta, offer) : {}),
+										});
+									} catch (err) {
+										// Bug dev 2026-06-11: erro engolido sem log → CloudWatch vazio,
+										// diagnóstico impossível. Logar SEMPRE o erro original (lição
+										// empty-env-compose: tool errors logados). CPF nunca no log.
 										console.error(
-											`[offer-confirm] preparo da proposta PDF falhou (conv=${conversationId})`,
+											`[contract-submit] startContract falhou (conv=${conversationId})`,
 											err,
 										);
-										return null;
+										const delta =
+											err instanceof MinCreditError
+												? `O valor mínimo pra esse tipo é ${brl(err.minCredit)}. Quer aumentar pra eu simular?`
+												: err instanceof BeviConfigError
+													? "Estamos concluindo a habilitação com a administradora — nosso time te chama pra finalizar. 🙏"
+													: "Tive um problema ao falar com a administradora agora. Pode tentar de novo em instantes?";
+										await writeAndSaveText(
+											writer,
+											conversationId,
+											meta.currentPersona ?? null,
+											delta,
+										);
+										// FIX-27: erro genérico de fechamento (não config/min-credit) →
+										// retry pendente (o opt-in não atropela a re-tentativa) + telefone
+										// capturado (mascarado) pra confirmação posterior.
+										if (!(err instanceof MinCreditError) && !(err instanceof BeviConfigError)) {
+											const fresh = await reloadMeta(conversationId);
+											await persistMeta(conversationId, {
+												...fresh,
+												contactPhone: maskPhoneForDisplay(celular),
+												contractRetryPending: true,
+											});
+										}
+									}
+									return;
+								}
+
+								if (body.action?.kind === "offer-confirm") {
+									try {
+										const res = await confirmOffer(conversationId);
+										// A NOSSA proposta em PDF, gerada ANTES da copy do fecho: ela é o
+										// card "Sua proposta está pronta" (que substituiu o link da
+										// administradora em domínio de terceiro). Best-effort — falhou,
+										// o fecho segue sem o card; nunca derruba a contratação.
+										const proposta = await import("@/lib/proposal/entrega")
+											.then((m) => m.prepararPropostaParaEnvio(conversationId))
+											.catch((err) => {
+												console.error(
+													`[offer-confirm] preparo da proposta PDF falhou (conv=${conversationId})`,
+													err,
+												);
+												return null;
+											});
+										// Estado TERMINAL: pós-confirmação o fechamento está feito — o
+										// agente não re-apresenta contract_form (merge sobre meta atual).
+										const fresh = await reloadMeta(conversationId);
+										await persistMeta(conversationId, { ...fresh, contractClosed: true });
+										// FIX-235 (D8): fecho — pede o "oi" (abre a janela de 24h) e aciona
+										// a mesa (especialista em cadastros) NA HORA. Nunca quebra o
+										// fechamento (best-effort, mesmo padrão de sendContractSummary).
+										// FIX-265 (menor #3, veredito Fable r5, N7): disparado ANTES da
+										// copy (abaixo) pra ela saber o CANAL real (free_text/template
+										// enviado agora × queued só enfileirado) — "acabei de te mandar"
+										// era dito mesmo quando só enfileirou (mentira observável).
+										// PENDENTE-KAIRO: o retorno ({ sent, channel }) NÃO é consumido — a
+										// copy abaixo continua sem saber se foi enviado agora ou só
+										// enfileirado, que é exatamente o que este FIX-265 dizia resolver.
+										// Ligar exige um parâmetro novo em closingPresentation e mexe na
+										// copy ao cliente (decisão de produto), então fica marcado aqui.
+										await sendFechoPedirOi(conversationId);
+										// docx passo 5: reforços literais → assinatura + docs → "Parabéns!"
+										// (closing-presentation.ts — módulo único produção+eval).
+										await pipeAndSaveClosingItems(
+											// FIX-344: canal ATUAL é web — o beat "te mandei mensagem no
+											// WhatsApp, responde com um oi" segue fazendo sentido aqui
+											// (é o único canal em que o cliente de fato precisa ir até o
+											// WhatsApp pra continuar).
+											closingPresentation(res, {
+												channel: "web",
+												propostaUrl: proposta?.url ?? null,
+											}),
+											writer,
+											conversationId,
+											meta.currentPersona ?? null,
+										);
+										// A proposta em PDF entra como CARD (signature_handoff, acima) —
+										// não mais como uma URL assinada crua no meio do texto, com 400
+										// caracteres de assinatura AWS aparecendo pro cliente.
+										// docx passo 5 (linha 52): resumo da contratação por WhatsApp.
+										// Nunca quebra o fechamento — falha vira contractSummaryPending.
+										await sendContractSummary(conversationId);
+									} catch (err) {
+										// Achado no QA autônomo (E2E de tela ao vivo, 2026-07-01): este catch
+										// engolia o erro sem logar — mesma lição de empty-env-compose (tool
+										// errors sempre logados). Sem isso, "Tive um problema..." aparecia pro
+										// usuário sem NENHUM rastro no servidor pra diagnosticar (D10-like:
+										// Trilho A instável no chooseOffer/getDocumentLinks).
+										console.error(
+											`[offer-confirm] confirmOffer falhou (conv=${conversationId})`,
+											err,
+										);
+										await writeAndSaveText(
+											writer,
+											conversationId,
+											meta.currentPersona ?? null,
+											"Tive um problema ao gerar sua proposta. Pode tentar confirmar de novo?",
+										);
+									}
+									return;
+								}
+
+								// FIX-10: conclusão explícita do envio de documentos — copy reflete
+								// o que de fato subiu (uploads são silenciosos via /api/chat/document).
+								if (body.action?.kind === "documents-done") {
+									const sent = new Set(body.action.sentSlots ?? []);
+									const hasFrente = sent.has("identidade_frente");
+									const hasVerso = sent.has("identidade_verso");
+									await writeAndSaveText(
+										writer,
+										conversationId,
+										meta.currentPersona ?? null,
+										hasFrente && hasVerso
+											? "Recebi seus documentos ✅. É isso — sua reserva está confirmada! Agora é com a administradora; te aviso de cada passo."
+											: hasFrente
+												? "Recebi a frente ✅. Quando puder, manda o verso também — sem pressa, sua reserva de cota já está confirmada e eu te acompanho."
+												: "Recebi o verso ✅. Quando puder, manda a frente também — sem pressa, sua reserva de cota já está confirmada e eu te acompanho.",
+									);
+									return;
+								}
+
+								// Caminho LEGADO (upload via turno de chat) — mantido por
+								// robustez/compat; o componente web usa /api/chat/document.
+								if (body.action?.kind === "document-upload") {
+									const action = body.action;
+									let delta: string;
+									try {
+										const file = Buffer.from(action.fileBase64, "base64");
+										const { ok, fallbackLink } = await uploadContractDocument(conversationId, {
+											slot: action.slot,
+											file,
+											filename: action.filename,
+											mimeType: action.mimeType,
+										});
+										delta = ok
+											? "Recebi seu documento ✅. É isso — sua reserva está confirmada! Agora é com a administradora; te aviso de cada passo."
+											: `Não consegui anexar por aqui. Finaliza rapidinho neste link: ${fallbackLink}`;
+									} catch {
+										delta = "Tive um problema com o upload. Pode tentar enviar de novo?";
+									}
+									await writeAndSaveText(
+										writer,
+										conversationId,
+										meta.currentPersona ?? null,
+										delta,
+									);
+									return;
+								}
+
+								if (body.action?.kind === "document-skip") {
+									await writeAndSaveText(
+										writer,
+										conversationId,
+										meta.currentPersona ?? null,
+										"Sem problema — os documentos são opcionais e você pode enviar depois. Sua reserva de cota já está confirmada! 🎉",
+									);
+									return;
+								}
+
+								if (body.action?.kind !== "gate") return;
+								const action = body.action;
+
+								// FIX-17: nome enviado pelo card focado (passo 1). Persiste DIRETO
+								// (sem tool) e saúda — o caminho texto-livre (save_contact_name
+								// forçado no orchestrator) segue valendo em paralelo. Os dois
+								// convergem em conversations.contactName.
+								if (action.gate === "name") {
+									const { saveContactName } = await import("@/lib/leads/contact-capture");
+									const res = await saveContactName(conversationId, action.value.name);
+									if (!res.ok) {
+										await writeAndSaveText(
+											writer,
+											conversationId,
+											meta.currentPersona ?? null,
+											"Pode me dizer como prefere ser chamado(a)? Pode ser só o primeiro nome.",
+										);
+										await pipeGatePrompt({ conversationId, gate: "name", writer });
+										return;
+									}
+									const fresh = await db.query.conversations.findFirst({
+										where: eq(conversations.id, conversationId),
+										columns: { contactName: true },
 									});
-								// Estado TERMINAL: pós-confirmação o fechamento está feito — o
-								// agente não re-apresenta contract_form (merge sobre meta atual).
-								const fresh = await reloadMeta(conversationId);
-								await persistMeta(conversationId, { ...fresh, contractClosed: true });
-								// FIX-235 (D8): fecho — pede o "oi" (abre a janela de 24h) e aciona
-								// a mesa (especialista em cadastros) NA HORA. Nunca quebra o
-								// fechamento (best-effort, mesmo padrão de sendContractSummary).
-								// FIX-265 (menor #3, veredito Fable r5, N7): disparado ANTES da
-								// copy (abaixo) pra ela saber o CANAL real (free_text/template
-								// enviado agora × queued só enfileirado) — "acabei de te mandar"
-								// era dito mesmo quando só enfileirou (mentira observável).
-								// PENDENTE-KAIRO: o retorno ({ sent, channel }) NÃO é consumido — a
-								// copy abaixo continua sem saber se foi enviado agora ou só
-								// enfileirado, que é exatamente o que este FIX-265 dizia resolver.
-								// Ligar exige um parâmetro novo em closingPresentation e mexe na
-								// copy ao cliente (decisão de produto), então fica marcado aqui.
-								await sendFechoPedirOi(conversationId);
-								// docx passo 5: reforços literais → assinatura + docs → "Parabéns!"
-								// (closing-presentation.ts — módulo único produção+eval).
-								await pipeAndSaveClosingItems(
-									// FIX-344: canal ATUAL é web — o beat "te mandei mensagem no
-									// WhatsApp, responde com um oi" segue fazendo sentido aqui
-									// (é o único canal em que o cliente de fato precisa ir até o
-									// WhatsApp pra continuar).
-									closingPresentation(res, {
-										channel: "web",
-										propostaUrl: proposta?.url ?? null,
-									}),
-									writer,
-									conversationId,
-									meta.currentPersona ?? null,
-								);
-								// A proposta em PDF entra como CARD (signature_handoff, acima) —
-								// não mais como uma URL assinada crua no meio do texto, com 400
-								// caracteres de assinatura AWS aparecendo pro cliente.
-								// docx passo 5 (linha 52): resumo da contratação por WhatsApp.
-								// Nunca quebra o fechamento — falha vira contractSummaryPending.
-								await sendContractSummary(conversationId);
-							} catch (err) {
-								// Achado no QA autônomo (E2E de tela ao vivo, 2026-07-01): este catch
-								// engolia o erro sem logar — mesma lição de empty-env-compose (tool
-								// errors sempre logados). Sem isso, "Tive um problema..." aparecia pro
-								// usuário sem NENHUM rastro no servidor pra diagnosticar (D10-like:
-								// Trilho A instável no chooseOffer/getDocumentLinks).
-								console.error(`[offer-confirm] confirmOffer falhou (conv=${conversationId})`, err);
-								await writeAndSaveText(
-									writer,
-									conversationId,
-									meta.currentPersona ?? null,
-									"Tive um problema ao gerar sua proposta. Pode tentar confirmar de novo?",
-								);
-							}
-							return;
-						}
+									const savedName = fresh?.contactName ?? action.value.name;
+									await pipeDirectiveTurn({
+										conversationId,
+										directive: buildNameCapturedDirective(savedName),
+										contactName: savedName,
+										writer,
+										userKey,
+									});
+									return;
+								}
 
-						// FIX-10: conclusão explícita do envio de documentos — copy reflete
-						// o que de fato subiu (uploads são silenciosos via /api/chat/document).
-						if (body.action?.kind === "documents-done") {
-							const sent = new Set(body.action.sentSlots ?? []);
-							const hasFrente = sent.has("identidade_frente");
-							const hasVerso = sent.has("identidade_verso");
-							await writeAndSaveText(
-								writer,
-								conversationId,
-								meta.currentPersona ?? null,
-								hasFrente && hasVerso
-									? "Recebi seus documentos ✅. É isso — sua reserva está confirmada! Agora é com a administradora; te aviso de cada passo."
-									: hasFrente
-										? "Recebi a frente ✅. Quando puder, manda o verso também — sem pressa, sua reserva de cota já está confirmada e eu te acompanho."
-										: "Recebi o verso ✅. Quando puder, manda a frente também — sem pressa, sua reserva de cota já está confirmada e eu te acompanho.",
-							);
-							return;
-						}
+								if (action.gate === "experience") {
+									const choice = action.value;
+									await persistMeta(conversationId, {
+										...meta,
+										experiencePrev: choice,
+										doubtsAddressed: choice === "doubts" ? false : meta.doubtsAddressed,
+									});
+									// LANGGRAPH: o dado do clique já está persistido acima; daqui pra
+									// frente quem conduz é o GRAFO. Um turno de servidor faz o grafo
+									// recalcular o gate, emitir o card certo e o modelo FALAR sobre o
+									// que o cliente acabou de escolher. O rótulo do clique já foi
+									// salvo como fala do usuário (linha ~484), por isso aqui é
+									// directive e não `pipeUserTurn` — senão duplicaria.
+									await pipeDirectiveTurn({
+										conversationId,
+										directive: `O cliente respondeu "${action.label ?? "—"}" no passo "${action.gate}". Reaja ao que ele escolheu e conduza o próximo passo, com as suas palavras.`,
+										contactName,
+										writer,
+										userKey,
+									});
+									return;
+								}
 
-						// Caminho LEGADO (upload via turno de chat) — mantido por
-						// robustez/compat; o componente web usa /api/chat/document.
-						if (body.action?.kind === "document-upload") {
-							const action = body.action;
-							let delta: string;
-							try {
-								const file = Buffer.from(action.fileBase64, "base64");
-								const { ok, fallbackLink } = await uploadContractDocument(conversationId, {
-									slot: action.slot,
-									file,
-									filename: action.filename,
-									mimeType: action.mimeType,
-								});
-								delta = ok
-									? "Recebi seu documento ✅. É isso — sua reserva está confirmada! Agora é com a administradora; te aviso de cada passo."
-									: `Não consegui anexar por aqui. Finaliza rapidinho neste link: ${fallbackLink}`;
-							} catch {
-								delta = "Tive um problema com o upload. Pode tentar enviar de novo?";
-							}
-							await writeAndSaveText(writer, conversationId, meta.currentPersona ?? null, delta);
-							return;
-						}
+								if (action.gate === "credit") {
+									const credit = action.value.credit;
+									const creditMin = Math.round((credit * 0.85) / 1000) * 1000;
+									// "Planeje sua conquista" (re-UX guiada por intenção): o picker entrega
+									// valor + prazo + a INTENÇÃO ("o que mais importa") e, conforme ela,
+									// mês-alvo OU lance. A parcela (monthlyBudget) é o RESULTADO calculado.
+									// Esses campos preenchem os gates seguintes e o funil pula o que já veio.
+									// O `objetivo` da Bevi sai da intenção (fallback: do mês-alvo, p/ o
+									// caminho de texto livre que não tem intenção).
+									const v = action.value;
+									// Prazo de contemplação: o mês-alvo escolhido (intenção "receber
+									// rápido") OU o implícito da intenção — preenche prazoMeses pro funil
+									// PULAR o gate timeframe (sem re-perguntar o que a intenção já disse).
+									const prazoMeses =
+										typeof v.targetMonth === "number"
+											? v.targetMonth
+											: v.intent != null
+												? prazoMesesForIntent(v.intent)
+												: undefined;
+									const objetivo =
+										v.intent != null
+											? objetivoForIntent(v.intent)
+											: typeof v.targetMonth === "number"
+												? objetivoForPrazo(v.targetMonth)
+												: undefined;
+									const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
+										...(meta.qualifyAnswers ?? {}),
+										creditMin,
+										creditMax: credit,
+										monthlyBudget: v.monthlyBudget,
+										...(prazoMeses != null ? { prazoMeses } : {}),
+										...(objetivo ? { objetivo } : {}),
+										...(typeof v.lanceValue === "number"
+											? v.lanceValue > 0
+												? { hasLance: "yes" as const, lanceValue: v.lanceValue }
+												: { hasLance: "no" as const }
+											: {}),
+										...(typeof v.lanceEmbutido === "boolean"
+											? { lanceEmbutido: v.lanceEmbutido }
+											: {}),
+									};
+									await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
+									// LANGGRAPH: valor guardado, o grafo conduz.
+									await pipeDirectiveTurn({
+										conversationId,
+										directive: `O cliente informou o valor do bem (${action.label ?? "valor enviado no card"}). Reaja e siga o próximo passo, com as suas palavras.`,
+										contactName,
+										writer,
+										userKey,
+									});
+									return;
+								}
 
-						if (body.action?.kind === "document-skip") {
-							await writeAndSaveText(
-								writer,
-								conversationId,
-								meta.currentPersona ?? null,
-								"Sem problema — os documentos são opcionais e você pode enviar depois. Sua reserva de cota já está confirmada! 🎉",
-							);
-							return;
-						}
+								if (action.gate === "timeframe") {
+									const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
+										...(meta.qualifyAnswers ?? {}),
+										prazoMeses: action.value.prazoMeses,
+										objetivo: objetivoForPrazo(action.value.prazoMeses),
+									};
+									await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
+									if (!meta.currentCategory) return;
+									// LANGGRAPH: o dado do clique já está persistido acima; daqui pra
+									// frente quem conduz é o GRAFO. Um turno de servidor faz o grafo
+									// recalcular o gate, emitir o card certo e o modelo FALAR sobre o
+									// que o cliente acabou de escolher. O rótulo do clique já foi
+									// salvo como fala do usuário (linha ~484), por isso aqui é
+									// directive e não `pipeUserTurn` — senão duplicaria.
+									await pipeDirectiveTurn({
+										conversationId,
+										directive: `O cliente respondeu "${action.label ?? "—"}" no passo "${action.gate}". Reaja ao que ele escolheu e conduza o próximo passo, com as suas palavras.`,
+										contactName,
+										writer,
+										userKey,
+									});
+									return;
+								}
 
-						if (body.action?.kind !== "gate") return;
-						const action = body.action;
+								if (action.gate === "lance") {
+									const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
+										...(meta.qualifyAnswers ?? {}),
+										hasLance: action.value,
+									};
+									await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
+									if (!meta.currentCategory) return;
+									// LANGGRAPH: o dado do clique já está persistido acima; daqui pra
+									// frente quem conduz é o GRAFO. Um turno de servidor faz o grafo
+									// recalcular o gate, emitir o card certo e o modelo FALAR sobre o
+									// que o cliente acabou de escolher. O rótulo do clique já foi
+									// salvo como fala do usuário (linha ~484), por isso aqui é
+									// directive e não `pipeUserTurn` — senão duplicaria.
+									await pipeDirectiveTurn({
+										conversationId,
+										directive: `O cliente respondeu "${action.label ?? "—"}" no passo "${action.gate}". Reaja ao que ele escolheu e conduza o próximo passo, com as suas palavras.`,
+										contactName,
+										writer,
+										userKey,
+									});
+									return;
+								}
 
-						// FIX-17: nome enviado pelo card focado (passo 1). Persiste DIRETO
-						// (sem tool) e saúda — o caminho texto-livre (save_contact_name
-						// forçado no orchestrator) segue valendo em paralelo. Os dois
-						// convergem em conversations.contactName.
-						if (action.gate === "name") {
-							const { saveContactName } = await import("@/lib/leads/contact-capture");
-							const res = await saveContactName(conversationId, action.value.name);
-							if (!res.ok) {
-								await writeAndSaveText(
-									writer,
-									conversationId,
-									meta.currentPersona ?? null,
-									"Pode me dizer como prefere ser chamado(a)? Pode ser só o primeiro nome.",
-								);
-								await pipeGatePrompt({ conversationId, gate: "name", writer });
-								return;
-							}
-							const fresh = await db.query.conversations.findFirst({
-								where: eq(conversations.id, conversationId),
-								columns: { contactName: true },
+								// docx passo 4: resposta à oferta do simulador (conceito do Bernardo).
+								// "yes" → directive do dial + cerimônia scarcity→decision_prompt no
+								// MESMO turno (FIX-311, ver nota abaixo); "no" → cerimônia direto
+								// ("Esse plano faz sentido?").
+								if (action.gate === "simulator-offer") {
+									// FIX-265 (menor #4, veredito Fable r5, N4): o clique JÁ É a
+									// resposta ao simulator-offer — marca simulatorOfferAnswered
+									// aqui (não só no texto afirmativo subsequente, index.ts) pra
+									// não re-emitir o dial no 1º "sim" do turno seguinte.
+									const refreshed = {
+										...meta,
+										simulatorOfferDispatched: true,
+										simulatorOfferAnswered: true,
+									};
+									await persistMeta(conversationId, refreshed);
+									// LANGGRAPH: o dado do clique já está persistido acima; daqui pra
+									// frente quem conduz é o GRAFO. Um turno de servidor faz o grafo
+									// recalcular o gate, emitir o card certo e o modelo FALAR sobre o
+									// que o cliente acabou de escolher. O rótulo do clique já foi
+									// salvo como fala do usuário (linha ~484), por isso aqui é
+									// directive e não `pipeUserTurn` — senão duplicaria.
+									await pipeDirectiveTurn({
+										conversationId,
+										directive: `O cliente respondeu "${action.label ?? "—"}" no passo "${action.gate}". Reaja ao que ele escolheu e conduza o próximo passo, com as suas palavras.`,
+										contactName,
+										writer,
+										userKey,
+									});
+									return;
+								}
+
+								// Gate "identify" (D1): valida server-side, persiste CIFRADO e libera a
+								// busca real. A Bevi não simula sem CPF+celular+LGPD — sem isso, o
+								// pipeSearchSummaryTurn re-emite este gate (tripwire).
+								if (action.gate === "identify") {
+									const { cpf, celular, lgpd } = action.value;
+									// FIX-172: normaliza o DDI ("55" opcional) igual ao canal WhatsApp
+									// (waIdToCelular) — sem isso, um celular digitado COM "55" (formato
+									// plausível, é como o WhatsApp exibe o próprio número) é cifrado
+									// cru e a Bevi rejeita no contract-submit ("CELULAR inválido").
+									const celularDigits = normalizePhoneBR(celular ?? "") ?? "";
+									if (!lgpd || !isValidCpf(cpf) || celularDigits.length < 10) {
+										await writeAndSaveText(
+											writer,
+											conversationId,
+											meta.currentPersona ?? null,
+											!isValidCpf(cpf)
+												? "Esse CPF não confere — dá uma olhadinha nos números?"
+												: "Preciso do celular completo (com DDD) e do aceite pra seguir, tá?",
+										);
+										await pipeGatePrompt({ conversationId, gate: "identify", writer });
+										return;
+									}
+									await storeIdentity(conversationId, { cpf, celular: celularDigits });
+									// Celular vira contato do lead (mesma régua do whatsapp_optin).
+									const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
+									await saveContactWhatsapp(conversationId, celularDigits).catch(() => {});
+									// FIX-53: identidade vem ANTES do valor. NÃO revela aqui — segue a
+									// qualificação despachando o próximo gate (credit/value picker). O
+									// reveal continua sendo disparado por pipeSearchSummaryTurn no fim da
+									// qualificação (o tripwire de identidade agora sempre passa). Se a
+									// qualificação já estava completa (dados volunteered), nextGate=search
+									// e revelamos direto.
+									// LANGGRAPH: identidade guardada, o grafo assume. Ele já dispara a
+									// descoberta sozinho quando identidade + valor estão prontos
+									// (`readyForDiscovery`), emite o status de busca AO VIVO e
+									// apresenta as ofertas em dois tempos.
+									await pipeDirectiveTurn({
+										conversationId,
+										directive:
+											"O cliente acabou de enviar CPF e celular com o aceite de LGPD. " +
+											"Siga o próximo passo do funil com as suas palavras.",
+										contactName,
+										writer,
+										userKey,
+									});
+									return;
+								}
+
+								// docx passo 2: "Qual valor aproximado?" — o valor do lance vem do
+								// USUÁRIO (gate lance-value), nunca derivado silencioso (auditoria
+								// 2026-06-04). Persiste e dispara o próximo gate (lance-embutido).
+								if (action.gate === "lance-value") {
+									const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
+										...(meta.qualifyAnswers ?? {}),
+										lanceValue: action.value.lanceValue,
+									};
+									await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
+									// LANGGRAPH: o dado do clique já está persistido acima; daqui pra
+									// frente quem conduz é o GRAFO. Um turno de servidor faz o grafo
+									// recalcular o gate, emitir o card certo e o modelo FALAR sobre o
+									// que o cliente acabou de escolher. O rótulo do clique já foi
+									// salvo como fala do usuário (linha ~484), por isso aqui é
+									// directive e não `pipeUserTurn` — senão duplicaria.
+									await pipeDirectiveTurn({
+										conversationId,
+										directive: `O cliente respondeu "${action.label ?? "—"}" no passo "${action.gate}". Reaja ao que ele escolheu e conduza o próximo passo, com as suas palavras.`,
+										contactName,
+										writer,
+										userKey,
+									});
+									return;
+								}
+
+								if (action.gate === "lance-embutido") {
+									// FIX-272 (rodada 8, veredito Fable r7, achado novo D3): dup-click
+									// (clique repetido antes do botão desabilitar) reprocessava um
+									// gate JÁ respondido — o estado já tinha avançado (ex.:
+									// simulatorOfferDispatched=true do click #1), então nextGate
+									// recomputava "decision", que pipeGatePrompt não sabe renderizar
+									// (gatePartData/gateQuestion retornam null) → turno 100% vazio,
+									// ar morto (não passa pelo guard de empty-turn, que só roda no
+									// turno de TEXTO-livre). O click #1 já emitiu a resposta certa —
+									// o replay não tem nada NOVO a fazer.
+									if (meta.qualifyAnswers?.lanceEmbutido !== undefined) {
+										console.log(
+											`[dup-click-guard] gate=lance-embutido ignorado (já respondido, conv=${conversationId})`,
+										);
+										return;
+									}
+									// LANGGRAPH: o clique vira TURNO DE USUÁRIO e o grafo conduz — inclui
+									// o nó `advance`, onde mora a regra de que aceitar o embutido MUDA
+									// O ALVO DA BUSCA (carta maior), e o `readyForDiscovery`, que
+									// re-dispara a descoberta sozinho pra apresentar os grupos da faixa
+									// nova.
+									await pipeUserTurn({
+										conversationId,
+										userText:
+											action.value === "yes"
+												? "Sim, considerar lance embutido"
+												: "Não, prefiro sem lance embutido",
+										contactName,
+										writer,
+										userKey,
+									});
+									return;
+								}
 							});
-							const savedName = fresh?.contactName ?? action.value.name;
-							await pipeDirectiveTurn({
-								conversationId,
-								directive: buildNameCapturedDirective(savedName),
-								contactName: savedName,
-								writer,
-								userKey,
-							});
-							return;
+							// FIX-269 (rodada 7, veredito Fable r6): só aplica o default "ok"
+							// quando NENHUM finishReason real chegou do orquestrador (ex.: um
+							// turno CONTIDO por tool-error já setou "tool-error-recovered" via
+							// o TurnEvent "finish", adapter.ts) — sem o guard, este default
+							// sobrescrevia cegamente qualquer razão real.
+							if (!trace.hasFinish()) trace.setFinish("ok");
+						} finally {
+							const falaFinal = getText();
+							if (falaFinal) lfTurn.setOutput(falaFinal);
+							trace.finalize();
 						}
-
-						if (action.gate === "experience") {
-							const choice = action.value;
-							await persistMeta(conversationId, {
-								...meta,
-								experiencePrev: choice,
-								doubtsAddressed: choice === "doubts" ? false : meta.doubtsAddressed,
-							});
-							// LANGGRAPH: o dado do clique já está persistido acima; daqui pra
-							// frente quem conduz é o GRAFO. Um turno de servidor faz o grafo
-							// recalcular o gate, emitir o card certo e o modelo FALAR sobre o
-							// que o cliente acabou de escolher. O rótulo do clique já foi
-							// salvo como fala do usuário (linha ~484), por isso aqui é
-							// directive e não `pipeUserTurn` — senão duplicaria.
-							await pipeDirectiveTurn({
-								conversationId,
-								directive: `O cliente respondeu "${action.label ?? "—"}" no passo "${action.gate}". Reaja ao que ele escolheu e conduza o próximo passo, com as suas palavras.`,
-								contactName,
-								writer,
-								userKey,
-							});
-							return;
-						}
-
-						if (action.gate === "credit") {
-							const credit = action.value.credit;
-							const creditMin = Math.round((credit * 0.85) / 1000) * 1000;
-							// "Planeje sua conquista" (re-UX guiada por intenção): o picker entrega
-							// valor + prazo + a INTENÇÃO ("o que mais importa") e, conforme ela,
-							// mês-alvo OU lance. A parcela (monthlyBudget) é o RESULTADO calculado.
-							// Esses campos preenchem os gates seguintes e o funil pula o que já veio.
-							// O `objetivo` da Bevi sai da intenção (fallback: do mês-alvo, p/ o
-							// caminho de texto livre que não tem intenção).
-							const v = action.value;
-							// Prazo de contemplação: o mês-alvo escolhido (intenção "receber
-							// rápido") OU o implícito da intenção — preenche prazoMeses pro funil
-							// PULAR o gate timeframe (sem re-perguntar o que a intenção já disse).
-							const prazoMeses =
-								typeof v.targetMonth === "number"
-									? v.targetMonth
-									: v.intent != null
-										? prazoMesesForIntent(v.intent)
-										: undefined;
-							const objetivo =
-								v.intent != null
-									? objetivoForIntent(v.intent)
-									: typeof v.targetMonth === "number"
-										? objetivoForPrazo(v.targetMonth)
-										: undefined;
-							const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
-								...(meta.qualifyAnswers ?? {}),
-								creditMin,
-								creditMax: credit,
-								monthlyBudget: v.monthlyBudget,
-								...(prazoMeses != null ? { prazoMeses } : {}),
-								...(objetivo ? { objetivo } : {}),
-								...(typeof v.lanceValue === "number"
-									? v.lanceValue > 0
-										? { hasLance: "yes" as const, lanceValue: v.lanceValue }
-										: { hasLance: "no" as const }
-									: {}),
-								...(typeof v.lanceEmbutido === "boolean" ? { lanceEmbutido: v.lanceEmbutido } : {}),
-							};
-							await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
-							// LANGGRAPH: valor guardado, o grafo conduz.
-							await pipeDirectiveTurn({
-								conversationId,
-								directive: `O cliente informou o valor do bem (${action.label ?? "valor enviado no card"}). Reaja e siga o próximo passo, com as suas palavras.`,
-								contactName,
-								writer,
-								userKey,
-							});
-							return;
-						}
-
-						if (action.gate === "timeframe") {
-							const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
-								...(meta.qualifyAnswers ?? {}),
-								prazoMeses: action.value.prazoMeses,
-								objetivo: objetivoForPrazo(action.value.prazoMeses),
-							};
-							await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
-							if (!meta.currentCategory) return;
-							// LANGGRAPH: o dado do clique já está persistido acima; daqui pra
-							// frente quem conduz é o GRAFO. Um turno de servidor faz o grafo
-							// recalcular o gate, emitir o card certo e o modelo FALAR sobre o
-							// que o cliente acabou de escolher. O rótulo do clique já foi
-							// salvo como fala do usuário (linha ~484), por isso aqui é
-							// directive e não `pipeUserTurn` — senão duplicaria.
-							await pipeDirectiveTurn({
-								conversationId,
-								directive: `O cliente respondeu "${action.label ?? "—"}" no passo "${action.gate}". Reaja ao que ele escolheu e conduza o próximo passo, com as suas palavras.`,
-								contactName,
-								writer,
-								userKey,
-							});
-							return;
-						}
-
-						if (action.gate === "lance") {
-							const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
-								...(meta.qualifyAnswers ?? {}),
-								hasLance: action.value,
-							};
-							await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
-							if (!meta.currentCategory) return;
-							// LANGGRAPH: o dado do clique já está persistido acima; daqui pra
-							// frente quem conduz é o GRAFO. Um turno de servidor faz o grafo
-							// recalcular o gate, emitir o card certo e o modelo FALAR sobre o
-							// que o cliente acabou de escolher. O rótulo do clique já foi
-							// salvo como fala do usuário (linha ~484), por isso aqui é
-							// directive e não `pipeUserTurn` — senão duplicaria.
-							await pipeDirectiveTurn({
-								conversationId,
-								directive: `O cliente respondeu "${action.label ?? "—"}" no passo "${action.gate}". Reaja ao que ele escolheu e conduza o próximo passo, com as suas palavras.`,
-								contactName,
-								writer,
-								userKey,
-							});
-							return;
-						}
-
-						// docx passo 4: resposta à oferta do simulador (conceito do Bernardo).
-						// "yes" → directive do dial + cerimônia scarcity→decision_prompt no
-						// MESMO turno (FIX-311, ver nota abaixo); "no" → cerimônia direto
-						// ("Esse plano faz sentido?").
-						if (action.gate === "simulator-offer") {
-							// FIX-265 (menor #4, veredito Fable r5, N4): o clique JÁ É a
-							// resposta ao simulator-offer — marca simulatorOfferAnswered
-							// aqui (não só no texto afirmativo subsequente, index.ts) pra
-							// não re-emitir o dial no 1º "sim" do turno seguinte.
-							const refreshed = {
-								...meta,
-								simulatorOfferDispatched: true,
-								simulatorOfferAnswered: true,
-							};
-							await persistMeta(conversationId, refreshed);
-							// LANGGRAPH: o dado do clique já está persistido acima; daqui pra
-							// frente quem conduz é o GRAFO. Um turno de servidor faz o grafo
-							// recalcular o gate, emitir o card certo e o modelo FALAR sobre o
-							// que o cliente acabou de escolher. O rótulo do clique já foi
-							// salvo como fala do usuário (linha ~484), por isso aqui é
-							// directive e não `pipeUserTurn` — senão duplicaria.
-							await pipeDirectiveTurn({
-								conversationId,
-								directive: `O cliente respondeu "${action.label ?? "—"}" no passo "${action.gate}". Reaja ao que ele escolheu e conduza o próximo passo, com as suas palavras.`,
-								contactName,
-								writer,
-								userKey,
-							});
-							return;
-						}
-
-						// Gate "identify" (D1): valida server-side, persiste CIFRADO e libera a
-						// busca real. A Bevi não simula sem CPF+celular+LGPD — sem isso, o
-						// pipeSearchSummaryTurn re-emite este gate (tripwire).
-						if (action.gate === "identify") {
-							const { cpf, celular, lgpd } = action.value;
-							// FIX-172: normaliza o DDI ("55" opcional) igual ao canal WhatsApp
-							// (waIdToCelular) — sem isso, um celular digitado COM "55" (formato
-							// plausível, é como o WhatsApp exibe o próprio número) é cifrado
-							// cru e a Bevi rejeita no contract-submit ("CELULAR inválido").
-							const celularDigits = normalizePhoneBR(celular ?? "") ?? "";
-							if (!lgpd || !isValidCpf(cpf) || celularDigits.length < 10) {
-								await writeAndSaveText(
-									writer,
-									conversationId,
-									meta.currentPersona ?? null,
-									!isValidCpf(cpf)
-										? "Esse CPF não confere — dá uma olhadinha nos números?"
-										: "Preciso do celular completo (com DDD) e do aceite pra seguir, tá?",
-								);
-								await pipeGatePrompt({ conversationId, gate: "identify", writer });
-								return;
-							}
-							await storeIdentity(conversationId, { cpf, celular: celularDigits });
-							// Celular vira contato do lead (mesma régua do whatsapp_optin).
-							const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
-							await saveContactWhatsapp(conversationId, celularDigits).catch(() => {});
-							// FIX-53: identidade vem ANTES do valor. NÃO revela aqui — segue a
-							// qualificação despachando o próximo gate (credit/value picker). O
-							// reveal continua sendo disparado por pipeSearchSummaryTurn no fim da
-							// qualificação (o tripwire de identidade agora sempre passa). Se a
-							// qualificação já estava completa (dados volunteered), nextGate=search
-							// e revelamos direto.
-							// LANGGRAPH: identidade guardada, o grafo assume. Ele já dispara a
-							// descoberta sozinho quando identidade + valor estão prontos
-							// (`readyForDiscovery`), emite o status de busca AO VIVO e
-							// apresenta as ofertas em dois tempos.
-							await pipeDirectiveTurn({
-								conversationId,
-								directive:
-									"O cliente acabou de enviar CPF e celular com o aceite de LGPD. " +
-									"Siga o próximo passo do funil com as suas palavras.",
-								contactName,
-								writer,
-								userKey,
-							});
-							return;
-						}
-
-						// docx passo 2: "Qual valor aproximado?" — o valor do lance vem do
-						// USUÁRIO (gate lance-value), nunca derivado silencioso (auditoria
-						// 2026-06-04). Persiste e dispara o próximo gate (lance-embutido).
-						if (action.gate === "lance-value") {
-							const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
-								...(meta.qualifyAnswers ?? {}),
-								lanceValue: action.value.lanceValue,
-							};
-							await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
-							// LANGGRAPH: o dado do clique já está persistido acima; daqui pra
-							// frente quem conduz é o GRAFO. Um turno de servidor faz o grafo
-							// recalcular o gate, emitir o card certo e o modelo FALAR sobre o
-							// que o cliente acabou de escolher. O rótulo do clique já foi
-							// salvo como fala do usuário (linha ~484), por isso aqui é
-							// directive e não `pipeUserTurn` — senão duplicaria.
-							await pipeDirectiveTurn({
-								conversationId,
-								directive: `O cliente respondeu "${action.label ?? "—"}" no passo "${action.gate}". Reaja ao que ele escolheu e conduza o próximo passo, com as suas palavras.`,
-								contactName,
-								writer,
-								userKey,
-							});
-							return;
-						}
-
-						if (action.gate === "lance-embutido") {
-							// FIX-272 (rodada 8, veredito Fable r7, achado novo D3): dup-click
-							// (clique repetido antes do botão desabilitar) reprocessava um
-							// gate JÁ respondido — o estado já tinha avançado (ex.:
-							// simulatorOfferDispatched=true do click #1), então nextGate
-							// recomputava "decision", que pipeGatePrompt não sabe renderizar
-							// (gatePartData/gateQuestion retornam null) → turno 100% vazio,
-							// ar morto (não passa pelo guard de empty-turn, que só roda no
-							// turno de TEXTO-livre). O click #1 já emitiu a resposta certa —
-							// o replay não tem nada NOVO a fazer.
-							if (meta.qualifyAnswers?.lanceEmbutido !== undefined) {
-								console.log(
-									`[dup-click-guard] gate=lance-embutido ignorado (já respondido, conv=${conversationId})`,
-								);
-								return;
-							}
-							// LANGGRAPH: o clique vira TURNO DE USUÁRIO e o grafo conduz — inclui
-							// o nó `advance`, onde mora a regra de que aceitar o embutido MUDA
-							// O ALVO DA BUSCA (carta maior), e o `readyForDiscovery`, que
-							// re-dispara a descoberta sozinho pra apresentar os grupos da faixa
-							// nova.
-							await pipeUserTurn({
-								conversationId,
-								userText:
-									action.value === "yes"
-										? "Sim, considerar lance embutido"
-										: "Não, prefiro sem lance embutido",
-								contactName,
-								writer,
-								userKey,
-							});
-							return;
-						}
-					});
-					// FIX-269 (rodada 7, veredito Fable r6): só aplica o default "ok"
-					// quando NENHUM finishReason real chegou do orquestrador (ex.: um
-					// turno CONTIDO por tool-error já setou "tool-error-recovered" via
-					// o TurnEvent "finish", adapter.ts) — sem o guard, este default
-					// sobrescrevia cegamente qualquer razão real.
-					if (!trace.hasFinish()) trace.setFinish("ok");
-				} finally {
-					trace.finalize();
-				}
+					},
+				);
 			},
 			// FIX-110: onError uniforme via helper único (era inline).
 			onError: streamErrorMessage,
@@ -1466,85 +1511,114 @@ export async function POST(req: NextRequest) {
 				channel: "web",
 				persona: meta.currentPersona ?? null,
 			});
-			const writer = instrumentWriter(rawWriter, trace);
-			try {
-				await withSimulatorClockIfNeeded(conv ?? null, async () => {
-					await pipeUserTurn({
-						conversationId,
-						userText,
-						contactName,
-						writer,
-						userKey,
-						isResumeGreeting: body.isResumeGreeting === true,
-					});
-				});
-				// FIX-110: o turno de texto-livre fechava 'ok' SEM emitir nenhuma part
-				// visível (agente mudo) — o usuário esperava e nada vinha, só destravava
-				// no input seguinte. Se nada foi emitido, manda um fallback honesto
-				// (persistido) pra nunca deixar o turno mudo. Diferente dos handlers de
-				// action, aqui o agente SEMPRE deveria responder algo.
-				if (isTurnEmpty(trace.toRecord())) {
-					// FIX-208 (rede final): se o turno de texto fecharia mudo com um gate de
-					// qualify PENDENTE (ex.: o gate de VALOR — usuário digitou "200" e nada
-					// visível saiu), re-emite a PERGUNTA do gate em vez do "me perdi". Nunca
-					// deixa a coleta muda. Paridade com o guard do WhatsApp (adapter.ts).
-					const freshMeta = await reloadMeta(conversationId);
-					const gate = nextGate(freshMeta, { hasContactName: Boolean(contactName) });
-					// FIX-245: carta real (pós-reveal) no lugar do exemplo genérico.
-					const reengage = reengageQuestionForGate(
-						gate,
-						freshMeta.currentCategory,
-						undefined,
-						freshMeta.recommendedOffer?.creditValue,
-						freshMeta.qualifyAnswers?.creditMentionedAtDesire,
-					);
-					// FIX-271 (rodada 8, veredito Fable r7, mesma família do FIX-266): sem
-					// gate pendente pra reengajar, o fallback enlatado pedia "manda de
-					// novo" mesmo quando o usuário JÁ tinha nomeado uma oferta exibida no
-					// turno que fechou mudo (ao vivo: finishReason="length", 52.9s) —
-					// contenção sem resolução. Roda o MESMO resolver do FIX-266 (contra os
-					// grupos já exibidos) antes de desistir; quando resolve, reafirma os
-					// dados da oferta em vez de pedir de novo.
-					const mentionedOffer = reengage
-						? null
-						: await resolveOfferMentionForConversation(conversationId, userText);
-					// FIX-347: rede final antes do "Acho que me perdi" — se ele JÁ
-					// apareceu antes nesta conversa, a mesma frase 2x soa quebrado
-					// (mesma classe do FIX-266/332, que já resolveu isso pro fallback
-					// de tool-error). Varre TODO o histórico do assistant, não só o
-					// último turno (mesmo motivo do FIX-332: dois turnos vazios não
-					// precisam ser consecutivos pra repetir a frase).
-					const emptyFallbackAlreadyUsed =
-						!reengage &&
-						!mentionedOffer &&
-						(await loadConversationHistory(conversationId)).some(
-							(m) => m.role === "assistant" && m.content === EMPTY_TURN_FALLBACK,
-						);
-					const fallbackText = reengage
-						? reengage
-						: mentionedOffer
-							? buildToolErrorRecoveryResolvedFallback({ name: contactName, offer: mentionedOffer })
-							: pickEmptyTurnFallback(emptyFallbackAlreadyUsed);
-					await writeAndSaveText(writer, conversationId, meta.currentPersona ?? null, fallbackText);
-					trace.setFinish(
-						reengage
-							? "empty-turn-reengage"
-							: mentionedOffer
-								? "empty-turn-resolved"
-								: "empty-turn-fallback",
-					);
-					// FIX-269 (rodada 7, veredito Fable r6): só aplica o default "ok"
-					// quando NENHUM finishReason real chegou do orquestrador (ex.: um
-					// turno CONTIDO por tool-error já setou "tool-error-recovered" via
-					// o TurnEvent "finish", adapter.ts) — sem o guard, este default
-					// sobrescrevia cegamente qualquer razão real (o achado do
-					// veredito: fallback determinístico saiu, mas o log dizia "ok").
-				} else if (!trace.hasFinish()) {
-					trace.setFinish("ok");
-				}
-			} finally {
-				trace.finalize();
-			}
+			await withLangfuseTurn(
+				{
+					conversationId,
+					channel: "web",
+					isSimulated: conv?.isSimulated === true,
+					persona: meta.currentPersona ?? null,
+					userId: userKey ?? null,
+					userText,
+				},
+				async (lfTurn) => {
+					const { writer, getText } = collectAgentText(instrumentWriter(rawWriter, trace));
+					if (lfTurn.traceId) {
+						writer.write({
+							type: "data-trace",
+							data: { traceId: lfTurn.traceId },
+							transient: true,
+						});
+					}
+					try {
+						await withSimulatorClockIfNeeded(conv ?? null, async () => {
+							await pipeUserTurn({
+								conversationId,
+								userText,
+								contactName,
+								writer,
+								userKey,
+								isResumeGreeting: body.isResumeGreeting === true,
+							});
+						});
+						// FIX-110: o turno de texto-livre fechava 'ok' SEM emitir nenhuma part
+						// visível (agente mudo) — o usuário esperava e nada vinha, só destravava
+						// no input seguinte. Se nada foi emitido, manda um fallback honesto
+						// (persistido) pra nunca deixar o turno mudo. Diferente dos handlers de
+						// action, aqui o agente SEMPRE deveria responder algo.
+						if (isTurnEmpty(trace.toRecord())) {
+							// FIX-208 (rede final): se o turno de texto fecharia mudo com um gate de
+							// qualify PENDENTE (ex.: o gate de VALOR — usuário digitou "200" e nada
+							// visível saiu), re-emite a PERGUNTA do gate em vez do "me perdi". Nunca
+							// deixa a coleta muda. Paridade com o guard do WhatsApp (adapter.ts).
+							const freshMeta = await reloadMeta(conversationId);
+							const gate = nextGate(freshMeta, { hasContactName: Boolean(contactName) });
+							// FIX-245: carta real (pós-reveal) no lugar do exemplo genérico.
+							const reengage = reengageQuestionForGate(
+								gate,
+								freshMeta.currentCategory,
+								undefined,
+								freshMeta.recommendedOffer?.creditValue,
+								freshMeta.qualifyAnswers?.creditMentionedAtDesire,
+							);
+							// FIX-271 (rodada 8, veredito Fable r7, mesma família do FIX-266): sem
+							// gate pendente pra reengajar, o fallback enlatado pedia "manda de
+							// novo" mesmo quando o usuário JÁ tinha nomeado uma oferta exibida no
+							// turno que fechou mudo (ao vivo: finishReason="length", 52.9s) —
+							// contenção sem resolução. Roda o MESMO resolver do FIX-266 (contra os
+							// grupos já exibidos) antes de desistir; quando resolve, reafirma os
+							// dados da oferta em vez de pedir de novo.
+							const mentionedOffer = reengage
+								? null
+								: await resolveOfferMentionForConversation(conversationId, userText);
+							// FIX-347: rede final antes do "Acho que me perdi" — se ele JÁ
+							// apareceu antes nesta conversa, a mesma frase 2x soa quebrado
+							// (mesma classe do FIX-266/332, que já resolveu isso pro fallback
+							// de tool-error). Varre TODO o histórico do assistant, não só o
+							// último turno (mesmo motivo do FIX-332: dois turnos vazios não
+							// precisam ser consecutivos pra repetir a frase).
+							const emptyFallbackAlreadyUsed =
+								!reengage &&
+								!mentionedOffer &&
+								(await loadConversationHistory(conversationId)).some(
+									(m) => m.role === "assistant" && m.content === EMPTY_TURN_FALLBACK,
+								);
+							const fallbackText = reengage
+								? reengage
+								: mentionedOffer
+									? buildToolErrorRecoveryResolvedFallback({
+											name: contactName,
+											offer: mentionedOffer,
+										})
+									: pickEmptyTurnFallback(emptyFallbackAlreadyUsed);
+							await writeAndSaveText(
+								writer,
+								conversationId,
+								meta.currentPersona ?? null,
+								fallbackText,
+							);
+							trace.setFinish(
+								reengage
+									? "empty-turn-reengage"
+									: mentionedOffer
+										? "empty-turn-resolved"
+										: "empty-turn-fallback",
+							);
+							// FIX-269 (rodada 7, veredito Fable r6): só aplica o default "ok"
+							// quando NENHUM finishReason real chegou do orquestrador (ex.: um
+							// turno CONTIDO por tool-error já setou "tool-error-recovered" via
+							// o TurnEvent "finish", adapter.ts) — sem o guard, este default
+							// sobrescrevia cegamente qualquer razão real (o achado do
+							// veredito: fallback determinístico saiu, mas o log dizia "ok").
+						} else if (!trace.hasFinish()) {
+							trace.setFinish("ok");
+						}
+					} finally {
+						const falaFinal = getText();
+						if (falaFinal) lfTurn.setOutput(falaFinal);
+						trace.finalize();
+					}
+				},
+			);
 		},
 		// FIX-110: onError uniforme via helper único (era inline).
 		onError: streamErrorMessage,

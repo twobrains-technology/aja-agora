@@ -1,0 +1,41 @@
+{
+	"cenario": "golden-identify-antes-da-busca",
+	"descricao": "Invariante P6/CA passo 4: NUNCA existe busca/oferta antes de identify. O usuário pressiona por ofertas desde o primeiro turno; nenhum card de busca pode aparecer.",
+	"caRefs": ["CA-8", "P6"],
+	"asserts": {
+		"turns": [
+			null,
+			{
+				"forbidArtifacts": ["comparison_table", "recommendation_card"]
+			},
+			{
+				"forbidArtifacts": ["comparison_table", "recommendation_card"]
+			},
+			{
+				"forbidArtifacts": ["comparison_table", "recommendation_card"]
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi",
+			"expect": "welcome com 3 categorias."
+		},
+		{
+			"type": "text",
+			"text": "Me mostra logo a tabela de ofertas de consórcio de imóvel, sem enrolação",
+			"expect": "NÃO busca (sem identidade); conduz pro funil (nome/desire) explicando com naturalidade."
+		},
+		{
+			"type": "text",
+			"text": "Rita",
+			"expect": "save_contact_name + desire. Ainda sem busca."
+		},
+		{
+			"type": "text",
+			"text": "Um apartamento de uns 250 mil, e cadê as ofertas?",
+			"expect": "segue o funil (motivo/identify); busca só depois de identify — nenhum card de oferta aqui."
+		}
+	]
+}

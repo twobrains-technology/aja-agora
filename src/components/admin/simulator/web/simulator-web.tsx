@@ -145,7 +145,10 @@ function EmbeddedChatBody() {
 
 	return (
 		<>
-			<div className="flex-1 overflow-hidden">
+			{/* Precisa ser flex-col (como o chat-layout real): o MessageList é
+			    `flex-1 overflow-y-auto` e, dentro de um pai display:block, cresce
+			    com o conteúdo — conversa longa ficava sem scroll (clip no hidden). */}
+			<div className="flex min-h-0 flex-1 flex-col overflow-hidden">
 				<MessageList messages={messages} isStreaming={isStreaming} hasError={Boolean(error)} />
 			</div>
 			<div className="border-t bg-background">

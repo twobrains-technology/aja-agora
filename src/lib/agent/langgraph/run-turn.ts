@@ -19,6 +19,7 @@ import { conversations } from "@/db/schema";
 import type { TurnEvent, TurnInput } from "@/lib/agent/orchestrator/types";
 import { loadConversationHistory } from "@/lib/conversation/messages";
 import { metaOf } from "@/lib/conversation/meta";
+import { makeLangfuseCallbackHandler } from "@/lib/observability/langfuse/langchain";
 import { type AgentGraph, buildAgentGraph } from "./graph";
 import type { AnalyzeFn } from "./nodes/analyze";
 import type { BuscaGrupos } from "./nodes/discovery";
@@ -120,8 +121,17 @@ export function createRunTurnLangGraph(deps?: {
 			} satisfies AgentGraphStateType;
 		}
 
+		// Handler Langfuse POR TURNO (nunca global — contexto não vaza entre
+		// turnos concorrentes). `undefined` quando desligado → spread vazio.
+		// O LangGraph propaga `callbacks` do config aos nós; o repasse até o
+		// `.stream()` do modelo é explícito em converse.ts (config no call).
+		const lfHandler = makeLangfuseCallbackHandler();
 		// biome-ignore lint/suspicious/noExplicitAny: input é estado-inicial completo OU Command(resume)
-		const stream = await graph.stream(streamInput as any, { ...config, streamMode });
+		const stream = await graph.stream(streamInput as any, {
+			...config,
+			streamMode,
+			...(lfHandler ? { callbacks: [lfHandler], runName: "agent-graph" } : {}),
+		});
 
 		// Os nós emitem TODOS os eventos ao vivo via `config.writer` (streamMode
 		// "custom"), então aqui é só repasse. O drain do `values` final foi
