@@ -4,7 +4,14 @@
 
 import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { administradoras, beviProposals, leads, mesaAttendants, mesaHandoffs } from "@/db/schema";
+import {
+	administradoras,
+	beviProposals,
+	conversations,
+	leads,
+	mesaAttendants,
+	mesaHandoffs,
+} from "@/db/schema";
 import { transitionLeadStage } from "@/lib/admin/lead-transitions";
 
 // Um lead tem no máximo UM handoff ativo por vez (idempotência — §3 das decisões).
@@ -188,6 +195,8 @@ export async function claimMesaHandoff(
 		.where(and(eq(mesaHandoffs.id, handoffId), isNull(mesaHandoffs.mesaAttendantId)))
 		.returning();
 	if (claimed) {
+		// A partir daqui quem fala com o cliente é o ATENDENTE, não o agente.
+		await silenciarAgente(claimed);
 		// FIX-126: claim = o caso está sendo tocado por um humano → raia em_atendimento.
 		try {
 			await transitionLeadStage(
@@ -222,6 +231,77 @@ export async function claimMesaHandoff(
 
 function isActiveHandoffStatus(status: string): boolean {
 	return status === "aberto" || status === "em_andamento";
+}
+
+/**
+ * Cala o AGENTE na conversa do caso — quem fala com o cliente agora é o humano.
+ *
+ * Sem isto (achado em 2026-08-10), o claim marcava dono e movia a raia, mas
+ * `conversations.status` continuava `active`. O `processor.ts` só desvia pro
+ * humano quando o status é `handed_off`, então o cliente respondia e o AGENTE
+ * respondia de volta — com o atendente escrevendo pelo painel ao mesmo tempo.
+ * Duas vozes na mesma conversa, no mesmo número, e o cliente sem saber com quem
+ * está falando.
+ *
+ * `handedOffUserId` fica NULL de propósito: quem assumiu é atendente de MESA
+ * (`mesa_attendants`), que não é `user` — a FK não comporta, e o dono real já
+ * está em `mesa_handoffs.mesa_attendant_id`.
+ *
+ * Best-effort: o claim é a fonte de verdade e não pode ser desfeito porque o
+ * status da conversa falhou. Falha aqui vira log, alto, pra não passar batido.
+ */
+async function silenciarAgente(handoff: HandoffRow): Promise<void> {
+	try {
+		const conversationId = await resolveConversationId(handoff);
+		if (!conversationId) return;
+		await db
+			.update(conversations)
+			.set({ status: "handed_off" })
+			.where(eq(conversations.id, conversationId));
+	} catch (err) {
+		console.error(
+			JSON.stringify({
+				level: "error",
+				source: "mesa-handoff",
+				handoff_id: handoff.id,
+				error: err instanceof Error ? err.message : String(err),
+				note: "não consegui pôr a conversa em handed_off — o AGENTE pode responder junto com o atendente",
+			}),
+		);
+	}
+}
+
+/** Devolve a conversa ao agente quando o atendimento humano termina. */
+async function devolverAoAgente(handoff: HandoffRow): Promise<void> {
+	try {
+		const conversationId = await resolveConversationId(handoff);
+		if (!conversationId) return;
+		await db
+			.update(conversations)
+			.set({ status: "active" })
+			.where(eq(conversations.id, conversationId));
+	} catch (err) {
+		console.error(
+			JSON.stringify({
+				level: "error",
+				source: "mesa-handoff",
+				handoff_id: handoff.id,
+				error: err instanceof Error ? err.message : String(err),
+				note: "não consegui reativar a conversa — o agente segue calado nela",
+			}),
+		);
+	}
+}
+
+/** `mesa_handoffs.conversation_id` é nullable; o lead sempre tem a conversa. */
+async function resolveConversationId(handoff: HandoffRow): Promise<string | null> {
+	if (handoff.conversationId) return handoff.conversationId;
+	const [lead] = await db
+		.select({ conversationId: leads.conversationId })
+		.from(leads)
+		.where(eq(leads.id, handoff.leadId))
+		.limit(1);
+	return lead?.conversationId ?? null;
 }
 
 export type ReassignMesaHandoffResult =
@@ -290,6 +370,11 @@ export async function reassignMesaHandoff(
 		.returning();
 	if (!updated) return { ok: false, reason: "handoff_encerrado" }; // corrida: encerrou no meio
 
+	// Vale pro reassign também: o caso segue nas mãos de um humano (agora outro),
+	// então o agente continua calado. Reatribuir a partir de "aberto" equivale ao
+	// claim, e é justamente o caminho em que a conversa ainda estava com o agente.
+	await silenciarAgente(updated);
+
 	const [lead] = await db.select().from(leads).where(eq(leads.id, updated.leadId)).limit(1);
 
 	// Estava sem dono (aberto) → reatribuir equivale ao claim: o caso passa a estar em atendimento.
@@ -350,6 +435,10 @@ export async function closeMesaHandoff(
 		)
 		.returning();
 	if (!closed) return { ok: false, reason: "handoff_encerrado" };
+
+	// Atendimento humano acabou → o agente volta a atender a conversa. Sem isto,
+	// a conversa ficaria `handed_off` pra sempre e o cliente falaria sozinho.
+	await devolverAoAgente(closed);
 
 	const [lead] = await db.select().from(leads).where(eq(leads.id, closed.leadId)).limit(1);
 	try {

@@ -20,6 +20,10 @@ interface TemplateRow {
 }
 type ApprovedTemplate = Omit<TemplateRow, "status">;
 
+/** Template de retomada do atendente (`atendente_retomada`) — o padrão quando a
+ *  janela de 24h fecha. Casado por `metaName` porque é o que a listagem devolve. */
+const TEMPLATE_PRINCIPAL = "aja_agora_atendente_retomada";
+
 const FIELD_CLASS =
 	"w-full rounded border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50";
 
@@ -113,16 +117,22 @@ export function ClientChatBox({
 			.then((r) => (r.ok ? r.json() : { templates: [] }))
 			.then((d: { templates?: TemplateRow[] }) => {
 				if (!alive) return;
-				setTemplates(
-					(d.templates ?? [])
-						.filter((t) => t.status === "APPROVED")
-						.map(({ id, metaName, language, bodyPreview }) => ({
-							id,
-							metaName,
-							language,
-							bodyPreview,
-						})),
-				);
+				const aprovados = (d.templates ?? [])
+					.filter((t) => t.status === "APPROVED")
+					.map(({ id, metaName, language, bodyPreview }) => ({
+						id,
+						metaName,
+						language,
+						bodyPreview,
+					}));
+				setTemplates(aprovados);
+
+				// Pré-seleciona o template de RETOMADA do atendente — é o que ele quer
+				// em 99% dos casos. Sem isto o atendente abre um seletor em branco e
+				// precisa adivinhar qual dos templates serve pra retomar a conversa.
+				const principal = aprovados.find((t) => t.metaName === TEMPLATE_PRINCIPAL);
+				if (principal) setSelectedTemplateId(principal.id);
+				else if (aprovados.length === 1) setSelectedTemplateId(aprovados[0].id);
 			})
 			.catch(() => {
 				if (alive) setTemplates([]);
@@ -234,10 +244,17 @@ export function ClientChatBox({
 					</select>
 					{!loadingTemplates && templates.length === 0 && (
 						<p className="text-xs text-muted-foreground">
-							Nenhum template aprovado disponível. Cadastre e aprove um em Admin → WhatsApp →
-							Templates.
+							Nenhum template <strong>aprovado pela Meta</strong> ainda — por isso a lista está
+							vazia. Enquanto a aprovação não sai, não há como reabrir esta conversa: fora da janela
+							de 24h a Meta só entrega template. Acompanhe em Admin → WhatsApp → Templates.
 						</p>
 					)}
+					{/* Anexo fora da janela: a Meta não entrega mídia sem a conversa aberta.
+					    Dizer isso é melhor do que sumir com o botão — foi o que fez o
+					    operador procurar onde manda arquivo e não achar. */}
+					<p className="text-xs text-muted-foreground">
+						Envio de anexo fica disponível assim que o cliente responder e a conversa reabrir.
+					</p>
 					{selectedTemplate?.bodyPreview && (
 						<p className="text-xs text-muted-foreground italic">"{selectedTemplate.bodyPreview}"</p>
 					)}
