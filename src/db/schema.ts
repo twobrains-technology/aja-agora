@@ -377,6 +377,20 @@ export const messages = pgTable(
 		// Persona slug que produziu este turno; NULL para user/system e mensagens
 		// históricas. Usado pelo eval pra segmentar transcript multi-persona.
 		personaId: text("persona_id"),
+		// ─── Anexo (2026-08-10) ───────────────────────────────────────────────
+		// Até aqui `messages` só guardava texto: a foto do RG que o cliente mandava
+		// era processada e SUMIA do histórico, e o atendente não tinha como devolver
+		// um boleto ou um contrato pelo painel. Tudo nullable — a esmagadora maioria
+		// das mensagens continua sendo só texto.
+		//
+		// `mediaKey` é a CHAVE no S3, nunca a URL: URL assinada expira, e gravar uma
+		// expirada no banco produziria histórico com anexo quebrado em algumas horas.
+		// Quem exibe assina na hora.
+		mediaKey: text("media_key"),
+		/** `image` | `document` | `audio` — validado no app (mesma razão de `artifacts.type`). */
+		mediaType: varchar("media_type", { length: 16 }),
+		mediaMimeType: varchar("media_mime_type", { length: 128 }),
+		mediaFilename: varchar("media_filename", { length: 255 }),
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	},
 	(table) => [index("messages_conversation_persona_idx").on(table.conversationId, table.personaId)],
@@ -770,7 +784,7 @@ export const administradoraDocs = pgTable(
 	(table) => [index("administradora_docs_administradora_id_idx").on(table.administradoraId)],
 );
 
-// Atendente de mesa — cadastro SIMPLES (nome + whatsapp, SEM login). Distinto do
+// Atendente de mesa — cadastro SIMPLES (nome + whatsapp). Distinto do
 // user role=attendant (handoff de chat). whatsapp = chave de roteamento do copiloto.
 export const mesaAttendants = pgTable(
 	"mesa_attendants",
@@ -779,6 +793,14 @@ export const mesaAttendants = pgTable(
 		nome: varchar("nome", { length: 100 }).notNull(),
 		// E.164 sem '+' (ex.: 5562999998888) — chave única de roteamento WhatsApp
 		whatsapp: varchar("whatsapp", { length: 32 }).notNull().unique(),
+		// 2026-08-10 — login opcional da mesa externa (role `mesa_externa`).
+		// NULLABLE de propósito: o atendente continua podendo existir só com
+		// WhatsApp, como sempre foi — o copiloto roteia por número e não sabe nada
+		// de conta. Quem ganha login passa a enxergar, no painel, os casos que ELE
+		// assumiu. UNIQUE nos dois sentidos: uma conta = um atendente.
+		userId: text("user_id")
+			.unique()
+			.references(() => user.id, { onDelete: "set null" }),
 		isActive: boolean("is_active").default(true).notNull(),
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -786,7 +808,10 @@ export const mesaAttendants = pgTable(
 			.$onUpdate(() => new Date())
 			.notNull(),
 	},
-	(table) => [index("mesa_attendants_whatsapp_idx").on(table.whatsapp)],
+	(table) => [
+		index("mesa_attendants_whatsapp_idx").on(table.whatsapp),
+		index("mesa_attendants_user_id_idx").on(table.userId),
+	],
 );
 
 // Transbordo — registro de um caso enviado do kanban pra um atendente de mesa.

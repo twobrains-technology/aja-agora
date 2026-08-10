@@ -1,8 +1,9 @@
 "use client";
 
-import { Send } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Paperclip, Send, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { validarAnexo } from "@/lib/whatsapp/media-kind";
 
 // FIX-87 + templates HSM: caixa de mensagem do operador → WhatsApp oficial.
 // Compartilhada entre LeadDetailPanel e ContactDetailPanel (aba Atendimento) pra não
@@ -36,6 +37,8 @@ export function ClientChatBox({
 	const [templates, setTemplates] = useState<ApprovedTemplate[]>([]);
 	const [loadingTemplates, setLoadingTemplates] = useState(false);
 	const [selectedTemplateId, setSelectedTemplateId] = useState("");
+	const [anexo, setAnexo] = useState<File | null>(null);
+	const inputArquivo = useRef<HTMLInputElement>(null);
 
 	// Reset ao trocar de conversa (não vazar rascunho/estado entre cards).
 	// biome-ignore lint/correctness/useExhaustiveDependencies: conversationId é o gatilho do reset
@@ -44,7 +47,62 @@ export function ClientChatBox({
 		setError(null);
 		setWindowClosed(false);
 		setSelectedTemplateId("");
+		setAnexo(null);
 	}, [conversationId]);
+
+	/** Valida com a MESMA regra do servidor (`media-kind.ts`): o atendente
+	 *  descobre que o arquivo é grande demais na hora de escolher, não depois de
+	 *  esperar o upload subir pra ser recusado. */
+	function escolherAnexo(file: File | null) {
+		setError(null);
+		if (!file) {
+			setAnexo(null);
+			return;
+		}
+		const v = validarAnexo({ mimeType: file.type, tamanho: file.size, nome: file.name });
+		if (!v.ok) {
+			setError(v.motivo);
+			setAnexo(null);
+			if (inputArquivo.current) inputArquivo.current.value = "";
+			return;
+		}
+		setAnexo(file);
+	}
+
+	async function enviarAnexo() {
+		if (!conversationId || !anexo) return;
+		setSending(true);
+		setError(null);
+		try {
+			const form = new FormData();
+			form.append("file", anexo);
+			if (message.trim()) form.append("caption", message.trim());
+
+			const res = await fetch(`/api/admin/conversations/${conversationId}/attachment`, {
+				method: "POST",
+				body: form,
+			});
+			const data = await res.json().catch(() => ({}));
+
+			if (res.status === 429 && data.error === "WindowClosed") {
+				setWindowClosed(true);
+				setError(data.message ?? "A janela de 24h está fechada. Reabra com um template.");
+				return;
+			}
+			if (!res.ok) {
+				setError(data.message ?? "Falha ao enviar o anexo");
+				return;
+			}
+			setAnexo(null);
+			setMessage("");
+			if (inputArquivo.current) inputArquivo.current.value = "";
+			onSent?.();
+		} catch {
+			setError("Erro de conexão. Tente novamente.");
+		} finally {
+			setSending(false);
+		}
+	}
 
 	// Ao detectar a janela fechada, busca os templates APPROVED (uma vez por abertura).
 	useEffect(() => {
@@ -197,17 +255,61 @@ export function ClientChatBox({
 			) : (
 				<div className="space-y-2">
 					<textarea
-						placeholder="Digite sua mensagem para o cliente..."
+						placeholder={
+							anexo ? "Legenda do anexo (opcional)…" : "Digite sua mensagem para o cliente..."
+						}
 						value={message}
 						onChange={(e) => setMessage(e.target.value)}
 						rows={3}
 						className={`resize-none ${FIELD_CLASS}`}
 						disabled={sending}
 					/>
-					<div className="flex justify-end">
-						<Button size="sm" onClick={handleSendText} disabled={!message.trim() || sending}>
+
+					{anexo && (
+						<div className="flex items-center gap-2 rounded border bg-muted/40 px-2 py-1.5 text-xs">
+							<Paperclip className="size-3.5 shrink-0" aria-hidden />
+							<span className="min-w-0 flex-1 truncate">{anexo.name}</span>
+							<span className="shrink-0 text-muted-foreground">
+								{(anexo.size / 1024 / 1024).toFixed(1)} MB
+							</span>
+							<button
+								type="button"
+								onClick={() => escolherAnexo(null)}
+								aria-label="Remover anexo"
+								className="shrink-0 rounded p-0.5 hover:bg-accent"
+								disabled={sending}
+							>
+								<X className="size-3.5" aria-hidden />
+							</button>
+						</div>
+					)}
+
+					<input
+						ref={inputArquivo}
+						type="file"
+						className="sr-only"
+						data-testid="input-anexo"
+						accept="image/jpeg,image/png,application/pdf,audio/*,.doc,.docx,.xls,.xlsx"
+						onChange={(e) => escolherAnexo(e.target.files?.[0] ?? null)}
+					/>
+
+					<div className="flex justify-between gap-2">
+						<Button
+							size="sm"
+							variant="outline"
+							onClick={() => inputArquivo.current?.click()}
+							disabled={sending}
+						>
+							<Paperclip className="size-4 mr-2" />
+							Anexo
+						</Button>
+						<Button
+							size="sm"
+							onClick={anexo ? enviarAnexo : handleSendText}
+							disabled={sending || (!anexo && !message.trim())}
+						>
 							<Send className="size-4 mr-2" />
-							{sending ? "Enviando..." : "Enviar"}
+							{sending ? "Enviando..." : anexo ? "Enviar anexo" : "Enviar"}
 						</Button>
 					</div>
 				</div>

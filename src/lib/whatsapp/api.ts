@@ -132,6 +132,36 @@ export async function sendDocumentMessage(
 	});
 }
 
+/** Envia uma IMAGEM por link, mesmo contrato do documento: a Meta busca o
+ * arquivo na URL, então ela tem que ser pública ou pré-assinada. */
+export async function sendImageMessage(to: string, link: string, caption?: string) {
+	const maskedTo = to.length > 6 ? `${to.slice(0, 4)}…${to.slice(-2)}` : to;
+	console.log(`[whatsapp-out:image] to=${maskedTo} caption=${JSON.stringify(caption ?? "")}`);
+	if (isSimulatedWaId(to)) {
+		publishToClient(to, { type: "text", text: `${caption ? `${caption}\n` : ""}${link}` });
+		return simulatedAck();
+	}
+	const { accessToken, phoneNumberId } = getConfig();
+	return callApi(phoneNumberId, accessToken, {
+		to,
+		type: "image",
+		image: { link, ...(caption ? { caption } : {}) },
+	});
+}
+
+/** Envia ÁUDIO por link. A Meta não aceita `caption` em áudio — mandar o campo
+ * faz a requisição inteira falhar, então ele nem existe na assinatura. */
+export async function sendAudioMessage(to: string, link: string) {
+	const maskedTo = to.length > 6 ? `${to.slice(0, 4)}…${to.slice(-2)}` : to;
+	console.log(`[whatsapp-out:audio] to=${maskedTo}`);
+	if (isSimulatedWaId(to)) {
+		publishToClient(to, { type: "text", text: `[áudio] ${link}` });
+		return simulatedAck();
+	}
+	const { accessToken, phoneNumberId } = getConfig();
+	return callApi(phoneNumberId, accessToken, { to, type: "audio", audio: { link } });
+}
+
 export async function sendReplyButtons(
 	to: string,
 	body: string,

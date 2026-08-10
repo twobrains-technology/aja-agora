@@ -2,6 +2,8 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations, messages } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
+import { isMesaExterna } from "@/lib/admin/role-scope";
+import { conversaPertenceAoAtendente, getMesaAttendantByUserId } from "@/lib/mesa/handoff";
 import { sendTemplate, sendTextMessage } from "@/lib/whatsapp/api";
 import { isWindowOpen } from "@/lib/whatsapp/window";
 
@@ -21,10 +23,26 @@ import { isWindowOpen } from "@/lib/whatsapp/window";
  * @body { templateName: string, languageCode: string } — template HSM (janela fechada)
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-	const { error } = await requireRole("admin", "attendant");
+	const { error, session, role } = await requireRole("admin", "attendant", "mesa_externa");
 	if (error) return error;
 
 	const { id: conversationId } = await params;
+
+	// A mesa externa fala com o cliente — é o trabalho dela. Mas só com o cliente
+	// DELA: sem esta checagem, trocar o id na URL mandaria WhatsApp em nome da
+	// empresa pro lead de qualquer colega.
+	if (isMesaExterna(role)) {
+		const atendente = await getMesaAttendantByUserId(session.user.id);
+		if (!atendente || !atendente.isActive) {
+			return Response.json({ error: "Forbidden" }, { status: 403 });
+		}
+		if (!(await conversaPertenceAoAtendente(conversationId, atendente.id))) {
+			return Response.json(
+				{ error: "Forbidden", reason: "conversa_de_outro_atendente" },
+				{ status: 403 },
+			);
+		}
+	}
 
 	let body: unknown;
 	try {
