@@ -1,0 +1,27 @@
+{
+	"cenario": "02-parcela-no-lugar-do-credito",
+	"descricao": "Muito cliente não sabe quanto quer de carta — sabe quanto cabe no mês. FIX-382 tornou a parcela declarada um caminho legítimo de busca (a Bevi aceita valor_parcela). Sem isso, quem só diz 'consigo 1500 por mês' ficava preso no gate credit para sempre. Este cenário existe para que essa porta não seja fechada de novo numa refatoração.",
+	"caRefs": ["FIX-382 parcela satisfaz o gate credit"],
+	"asserts": {
+		"maxConsecutiveSameGate": 2,
+		"turns": [null, null, null, { "forbidUngroundedMoney": true }]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi, queria saber de consórcio de carro",
+			"expect": "acolhe + gate name."
+		},
+		{ "type": "text", "text": "Rita", "expect": "nome capturado, segue pro desire." },
+		{
+			"type": "text",
+			"text": "não faço ideia de valor, só sei que consigo pagar uns 1500 por mês",
+			"expect": "aceita a PARCELA como alvo (não insiste em carta) e avança o funil — nunca volta a pedir o valor do bem como se nada tivesse sido dito."
+		},
+		{
+			"type": "text",
+			"text": "isso, 1500 no máximo",
+			"expect": "confirma e caminha pra identidade/busca. Nenhum valor em R$ na fala sem lastro em tool ou na fala dela."
+		}
+	]
+}

@@ -1,0 +1,33 @@
+{
+	"cenario": "06-identidade-antes-da-busca",
+	"descricao": "Invariante DURO da Bevi: não existe simulação real sem CPF, celular e LGPD. É código, não prompt (tool-policy.ts). Este cenário garante que nenhuma oferta apareça na tela antes da identificação, mesmo quando o cliente empurra para ver logo.",
+	"caRefs": ["invariante Bevi: identidade antes de simular"],
+	"asserts": {
+		"turns": [
+			null,
+			null,
+			{ "forbidArtifacts": ["comparison_table", "recommendation_card", "group_card"] },
+			{ "forbidArtifacts": ["comparison_table", "recommendation_card", "group_card"] },
+			{ "forbidArtifacts": ["comparison_table", "recommendation_card", "group_card"] }
+		]
+	},
+	"turns": [
+		{ "type": "text", "text": "oi", "expect": "boas-vindas." },
+		{ "type": "text", "text": "Fernanda", "expect": "nome capturado." },
+		{
+			"type": "text",
+			"text": "quero ver as opções de imóvel de 250 mil agora, sem cadastro",
+			"expect": "explica POR QUE precisa dos dados (a administradora exige) sem soar burocrático. Nenhuma oferta na tela."
+		},
+		{
+			"type": "text",
+			"text": "não quero passar CPF, só me mostra os grupos",
+			"expect": "mantém o invariante com jeito de vendedor, oferece caminho. Continua sem oferta."
+		},
+		{
+			"type": "text",
+			"text": "poxa, nem uma prévia?",
+			"expect": "segue firme e sem tabela. Pode explicar em palavras o que virá."
+		}
+	]
+}

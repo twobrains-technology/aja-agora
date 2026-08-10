@@ -1,0 +1,38 @@
+{
+	"cenario": "01-funil-nao-trava-no-gate",
+	"descricao": "O invariante mais básico da venda: o funil ANDA. Nasceu do report da Bruna no WhatsApp em 05/08 ('Não saio do lugar') e da reprodução de 09/08, em que o agente pediu o nome em 4 turnos seguidos — inclusive DEPOIS de save_contact_name ter rodado. Vigia trajetória (gate), não prosa: o modelo reformula a pergunta a cada turno, então comparar texto não pegaria o defeito e ainda violaria a regra de que fala é do modelo.",
+	"caRefs": ["funil anda", "report 05/08 Bruna"],
+	"asserts": {
+		"maxConsecutiveSameGate": 2,
+		"turns": [
+			null,
+			null,
+			{ "forbidRepeatedAgentText": true },
+			{ "forbidRepeatedAgentText": true },
+			{ "forbidRepeatedAgentText": true }
+		]
+	},
+	"turns": [
+		{ "type": "text", "text": "oi", "expect": "boas-vindas + gate name." },
+		{
+			"type": "text",
+			"text": "Carlos",
+			"expect": "save_contact_name roda; o funil SAI do gate name e vai pro desire. Nunca mais pergunta o nome."
+		},
+		{
+			"type": "text",
+			"text": "quero um apartamento",
+			"expect": "reconhece o bem e segue — segunda pergunta do desire (o motivo), em turno próprio."
+		},
+		{
+			"type": "text",
+			"text": "to pagando aluguel e cansei",
+			"expect": "espelha o motivo UMA vez e avança pro valor. Não repete bloco de fala anterior."
+		},
+		{
+			"type": "text",
+			"text": "uns 300 mil",
+			"expect": "captura creditMax=300000 e avança pra identidade. O gate credit não pode se repetir."
+		}
+	]
+}

@@ -1,0 +1,46 @@
+{
+	"cenario": "07-menor-lance-nao-encolhe-carta",
+	"descricao": "Report de 05/08, literal: 'esse não seria o grupo com menor lance' e 'não diminuir a minha carta'. Ao pedirem o grupo de menor lance, o agente encolheu a carta de 200k para 144k em vez de escolher OUTRO grupo. Duas coisas se vigiam: a recomendação é a melhor no eixo pedido, e o crédito não cai abaixo do que o cliente pediu. REQUER identidade real.",
+	"caRefs": ["report 05/08 menor lance", "report 05/08 carta encolhida"],
+	"requiresEnv": ["E2E_TEST_CPF", "E2E_TEST_CELULAR"],
+	"asserts": {
+		"turns": [
+			null,
+			null,
+			null,
+			null,
+			{ "forbidDuplicateOffers": true, "minCreditValue": 200000 },
+			{
+				"forbidDuplicateOffers": true,
+				"minCreditValue": 200000,
+				"recommendationMustMinimize": "avgBidValue"
+			}
+		]
+	},
+	"turns": [
+		{ "type": "text", "text": "oi", "expect": "boas-vindas." },
+		{ "type": "text", "text": "Paulo", "expect": "nome capturado." },
+		{ "type": "text", "text": "quero um imóvel de 200 mil", "expect": "captura creditMax=200000." },
+		{
+			"type": "text",
+			"text": "é pra sair do aluguel",
+			"expect": "espelha o motivo e caminha pra identidade."
+		},
+		{
+			"type": "action",
+			"action": {
+				"kind": "gate",
+				"gate": "identify",
+				"value": { "cpf": "${E2E_TEST_CPF}", "celular": "${E2E_TEST_CELULAR}", "lgpd": true }
+			},
+			"label": "CPF e celular",
+			"expect": "identidade aceita → busca real na faixa de 200 mil → lista. Nenhuma oferta abaixo de 200k.",
+			"timeoutMs": 120000
+		},
+		{
+			"type": "text",
+			"text": "qual desses tem o menor lance?",
+			"expect": "escolhe o grupo de MENOR lance entre os que estão na tela — sem encolher a carta pra caber."
+		}
+	]
+}

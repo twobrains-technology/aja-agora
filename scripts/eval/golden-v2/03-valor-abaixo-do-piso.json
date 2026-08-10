@@ -1,0 +1,30 @@
+{
+	"cenario": "03-valor-abaixo-do-piso",
+	"descricao": "Faixa que a administradora não atende. FIX-377/380: a busca voltava vazia, o agente não marcava searchDispatched e prometia 'vou pesquisar agora' a cada turno, em loop. O comportamento certo é pedir outro valor com o mínimo real na mão — o oposto de fabricar oferta. Aqui se vigia justamente que ele NÃO promete em looping nem inventa carta.",
+	"caRefs": ["FIX-377 piso", "FIX-380 empty streak"],
+	"asserts": {
+		"maxConsecutiveSameGate": 3,
+		"turns": [
+			null,
+			null,
+			null,
+			{ "forbidUngroundedMoney": true, "forbidRepeatedAgentText": true },
+			{ "forbidUngroundedMoney": true, "forbidRepeatedAgentText": true }
+		]
+	},
+	"turns": [
+		{ "type": "text", "text": "oi", "expect": "boas-vindas." },
+		{ "type": "text", "text": "Jorge", "expect": "nome capturado." },
+		{ "type": "text", "text": "quero uma moto de 8 mil reais", "expect": "reconhece o desejo." },
+		{
+			"type": "text",
+			"text": "isso, 8 mil",
+			"expect": "explica com honestidade que a faixa não é atendida e pede um valor viável, citando o mínimo REAL. Não promete buscar de novo sem buscar."
+		},
+		{
+			"type": "text",
+			"text": "e não tem nada nessa faixa mesmo?",
+			"expect": "mantém a resposta, sem repetir o mesmo bloco de fala e sem inventar uma carta que não existe."
+		}
+	]
+}

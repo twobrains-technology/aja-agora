@@ -1,0 +1,23 @@
+{
+	"cenario": "05-comparacao-com-financiamento",
+	"descricao": "Objeção nº2: 'melhor financiar'. Existe tool própria (compare_with_financing) e é ela que tem que sustentar qualquer número — o agente comparando de cabeça é exatamente o defeito 'a IA tá chapada' do report de 05/08. Vigia que a comparação aconteça com lastro.",
+	"caRefs": ["report 05/08 número sem lastro"],
+	"asserts": {
+		"maxConsecutiveSameGate": 3,
+		"turns": [null, null, null, { "forbidUngroundedMoney": true }]
+	},
+	"turns": [
+		{ "type": "text", "text": "oi, quero um carro", "expect": "acolhe + gate name." },
+		{ "type": "text", "text": "Bia", "expect": "nome capturado." },
+		{
+			"type": "text",
+			"text": "uns 80 mil, mas tô achando que financiar sai melhor",
+			"expect": "captura o valor E trata a objeção; não ignora nenhum dos dois."
+		},
+		{
+			"type": "text",
+			"text": "no financiamento o juros é alto mesmo?",
+			"expect": "compara com honestidade. Todo número em R$ vem de tool ou da fala dela — nada de taxa inventada."
+		}
+	]
+}

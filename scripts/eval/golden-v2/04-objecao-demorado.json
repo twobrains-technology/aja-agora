@@ -1,0 +1,28 @@
+{
+	"cenario": "04-objecao-demorado",
+	"descricao": "A objeção nº1 de consórcio. O alvo do produto é um vendedor que TRATA a objeção — não um FAQ que despeja cartilha e volta pro formulário. Depois da decisão de 2026-08-10, falar de prazo e de lance como forma de antecipar é papel dele; o que não pode é o número sair da cabeça do modelo. Por isso o assert é forbidUngroundedMoney e não proibição de assunto.",
+	"caRefs": ["CLAUDE.md 2026-08-10 prazo é do vendedor"],
+	"asserts": {
+		"maxConsecutiveSameGate": 3,
+		"turns": [
+			null,
+			null,
+			{ "forbidUngroundedMoney": true, "forbidRepeatedAgentText": true },
+			{ "forbidUngroundedMoney": true, "forbidRepeatedAgentText": true }
+		]
+	},
+	"turns": [
+		{ "type": "text", "text": "oi", "expect": "boas-vindas." },
+		{ "type": "text", "text": "Marcelo", "expect": "nome capturado." },
+		{
+			"type": "text",
+			"text": "mas consórcio não é muito demorado? posso ficar anos esperando",
+			"expect": "trata a objeção como vendedor: reconhece a preocupação, explica lance/contemplação com propriedade e PODE estimar prazo. O funil não trava — ele volta a conduzir."
+		},
+		{
+			"type": "text",
+			"text": "e se eu quiser antes? dá pra apressar?",
+			"expect": "explica lance como forma de antecipar, sem prometer garantia e sem citar número sem lastro. Segue conduzindo pro próximo passo."
+		}
+	]
+}

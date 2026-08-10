@@ -1,0 +1,36 @@
+{
+	"cenario": "08-quer-fechar-agora",
+	"descricao": "Fechar é passo do funil, não favor do modelo. Antes do gate `contract`, quem dizia 'bora fechar' ouvia 'fico por aqui então' e não via nada na tela — o funil terminava mudo em `search`. Este cenário garante que a intenção de compra encontre um caminho. REQUER identidade real.",
+	"caRefs": ["gate contract"],
+	"requiresEnv": ["E2E_TEST_CPF", "E2E_TEST_CELULAR"],
+	"asserts": {
+		"maxConsecutiveSameGate": 3,
+		"turns": [null, null, null, null, null, { "forbidRepeatedAgentText": true }]
+	},
+	"turns": [
+		{ "type": "text", "text": "oi", "expect": "boas-vindas." },
+		{ "type": "text", "text": "Sandra", "expect": "nome capturado." },
+		{ "type": "text", "text": "quero um carro de 60 mil", "expect": "captura o valor." },
+		{
+			"type": "text",
+			"text": "é pra trabalhar de app",
+			"expect": "espelha e caminha pra identidade."
+		},
+		{
+			"type": "action",
+			"action": {
+				"kind": "gate",
+				"gate": "identify",
+				"value": { "cpf": "${E2E_TEST_CPF}", "celular": "${E2E_TEST_CELULAR}", "lgpd": true }
+			},
+			"label": "CPF e celular",
+			"expect": "identidade aceita → busca real → lista de grupos.",
+			"timeoutMs": 120000
+		},
+		{
+			"type": "text",
+			"text": "gostei, bora fechar",
+			"expect": "conduz ao fechamento — nunca encerra a conversa sem dar caminho a quem quer comprar."
+		}
+	]
+}
