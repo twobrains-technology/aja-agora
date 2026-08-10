@@ -13,6 +13,9 @@
 // (`lead-transitions.ts` só logava a falha do registro de mídia). Dava pra
 // contar contrato no Postgres, mas não pra cruzar com a conversa que o gerou.
 import { getLangfuseClient } from "./client";
+// O LangfuseClient não aceita `environment` no construtor — precisa ir score a
+// score, senão marco de negócio cai em "default" e some do filtro de produção.
+import { ambienteLangfuse } from "./env";
 
 /** Estágio terminal de sucesso — a única transição que é dinheiro no bolso. */
 const ESTAGIO_GANHO = "fechado_ganho";
@@ -48,6 +51,7 @@ export function registrarMarcoDeNegocio(marco: MarcoDeNegocio): void {
 			value: marco.estagio,
 			dataType: "CATEGORICAL",
 			sessionId: marco.conversationId,
+			environment: ambienteLangfuse(),
 			comment: `${marco.estagioAnterior} → ${marco.estagio}`,
 		});
 
@@ -59,6 +63,7 @@ export function registrarMarcoDeNegocio(marco: MarcoDeNegocio): void {
 				value: 1,
 				dataType: "BOOLEAN",
 				sessionId: marco.conversationId,
+				environment: ambienteLangfuse(),
 			});
 			if (typeof marco.valor === "number" && Number.isFinite(marco.valor) && marco.valor > 0) {
 				client.score.create({
@@ -66,6 +71,7 @@ export function registrarMarcoDeNegocio(marco: MarcoDeNegocio): void {
 					value: marco.valor,
 					dataType: "NUMERIC",
 					sessionId: marco.conversationId,
+					environment: ambienteLangfuse(),
 				});
 			}
 		}

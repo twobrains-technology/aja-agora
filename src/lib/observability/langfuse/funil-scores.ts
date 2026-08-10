@@ -23,6 +23,7 @@
 // no-op sem credencial.
 import type { TurnTraceRecord } from "@/lib/telemetry/turn-trace";
 import { getLangfuseClient } from "./client";
+import { ambienteLangfuse } from "./env";
 
 /**
  * Régua de profundidade do funil, para a métrica "quão longe a conversa foi".
@@ -154,8 +155,16 @@ export function publicarFunilNoLangfuse(record: TurnTraceRecord): void {
 	const client = getLangfuseClient();
 	if (!client) return;
 	try {
+		// `environment` explícito em CADA score, e não é redundância: o
+		// LangfuseSpanProcessor recebe o ambiente na construção e carimba os
+		// spans, mas o LangfuseClient não aceita `environment` no construtor —
+		// então score criado por ele cai em "default" mesmo com o trace em
+		// "production". Visto ao vivo no primeiro turno após o deploy: trace em
+		// production, scores do funil em default. Como o filtro de ambiente da UI
+		// é global, isso sumiria com o funil inteiro de quem filtrasse produção.
+		const environment = ambienteLangfuse();
 		for (const score of scoresDoTurno(record)) {
-			client.score.activeTrace(score);
+			client.score.activeTrace({ ...score, environment });
 		}
 	} catch (err) {
 		console.error("[langfuse] publicar scores do funil falhou (ignorado):", err);
