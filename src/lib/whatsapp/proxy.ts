@@ -807,6 +807,19 @@ export async function relayUserToAgent(userWaId: string, text: string): Promise<
 
 	await saveMessage(state.conversationId, "user", text);
 
+	// A TELA do atendente precisa saber que chegou.
+	//
+	// Sem este publish, a mensagem do cliente ia pro banco e pro WhatsApp do
+	// atendente, mas o painel só descobria se alguém recarregasse a página —
+	// quem atendia pelo modal ficava olhando uma conversa parada enquanto o
+	// cliente escrevia (relatado em 2026-08-10).
+	publishMessage(state.conversationId, {
+		id: crypto.randomUUID(),
+		role: "user",
+		content: text,
+		createdAt: simulatorNow().toISOString(),
+	});
+
 	if (state.handedOffUserId) {
 		const attendant = await getAttendantById(state.handedOffUserId);
 		if (attendant) {

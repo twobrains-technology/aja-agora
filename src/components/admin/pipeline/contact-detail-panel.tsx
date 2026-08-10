@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { rotuloDoEstagio } from "@/lib/admin/lead-stages";
+import { useConversaAoVivo } from "../conversa/use-conversa-ao-vivo";
 import type { LeadActiveHandoff } from "./lead-card";
 import { MesaResponsavel } from "./mesa-responsavel";
 import { MesaTransbordoDialog } from "./mesa-transbordo-dialog";
@@ -172,6 +173,29 @@ export function ContactDetailPanel({
 			.catch(() => setDetail(null))
 			.finally(() => setLoading(false));
 	}, [contactId]);
+
+	/**
+	 * Mesma busca, SEM `setLoading` — é o refresh de fundo.
+	 *
+	 * Acender o spinner a cada mensagem que chega (ou a cada 15s do polling)
+	 * piscaria a tela inteira no meio da leitura e mataria o scroll. Erro aqui é
+	 * silencioso de propósito: o próximo ciclo tenta de novo, e o dossiê velho na
+	 * tela é melhor do que uma tela vazia por um soluço de rede.
+	 */
+	const atualizarEmSilencio = useCallback(() => {
+		if (!contactId) return;
+		fetch(`/api/admin/contacts/${contactId}`)
+			.then((r) => (r.ok ? r.json() : null))
+			.then((d) => d && setDetail(d))
+			.catch(() => {});
+	}, [contactId]);
+
+	// A conversa ativa é a que recebe mensagem nova; é nela que o SSE escuta.
+	useConversaAoVivo({
+		conversationId: detail?.activeConversationId ?? null,
+		onAtualizar: atualizarEmSilencio,
+		ativo: open,
+	});
 
 	useEffect(() => {
 		if (!contactId || !open) return;
