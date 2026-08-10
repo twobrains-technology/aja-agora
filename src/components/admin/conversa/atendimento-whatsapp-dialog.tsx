@@ -41,8 +41,12 @@ export function AtendimentoWhatsAppDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
+			{/* `sm:max-w-*` e não `max-w-*`: o DialogContent base já traz
+			    `sm:max-w-sm`, e o tailwind-merge só resolve conflito entre classes da
+			    MESMA variante. Um `max-w-3xl` sem prefixo não sobrescrevia nada e o
+			    modal ficava com 384px — uma tira estreita numa tela larga. */}
 			<DialogContent
-				className="flex h-[88vh] max-w-3xl flex-col gap-0 overflow-hidden p-0"
+				className="flex h-[88vh] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl"
 				data-testid="atendimento-whatsapp"
 			>
 				{/* Cabeçalho no tom do WhatsApp: quem é o cliente, sempre à vista. */}

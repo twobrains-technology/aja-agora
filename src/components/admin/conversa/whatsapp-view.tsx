@@ -54,20 +54,25 @@ export function WhatsAppView({
 			data-testid="whatsapp-view"
 			// O bege é o fundo do WhatsApp. Não é enfeite: é o que faz o atendente
 			// reconhecer na hora que está vendo a conversa como o cliente a vê.
-			className="flex flex-col gap-1.5 overflow-y-auto rounded-lg bg-[#efeae2] p-3 dark:bg-[#0b141a]"
+			className="overflow-y-auto rounded-lg bg-[#efeae2] p-3 dark:bg-[#0b141a]"
 		>
-			{visiveis.map((m) => (
-				<WhatsAppBubble
-					key={m.id}
-					// O cliente é `user`; agente e atendente humano saem do mesmo lado,
-					// porque pro cliente os dois são "a empresa".
-					direction={m.role === "user" ? "received" : "sent"}
-					text={m.content}
-					createdAt={m.createdAt}
-					attachment={anexoDe(m)}
-					ehTemplate={Boolean(m.templateName)}
-				/>
-			))}
+			{/* O fundo ocupa a tela toda, a LEITURA não. A bolha é `max-w-[80%]` da
+			    coluna: sem teto aqui, num monitor largo ela viraria uma linha de
+			    800px, que ninguém lê com conforto. É o mesmo que o WhatsApp Web faz. */}
+			<div className="mx-auto flex w-full max-w-3xl flex-col gap-1.5">
+				{visiveis.map((m) => (
+					<WhatsAppBubble
+						key={m.id}
+						// O cliente é `user`; agente e atendente humano saem do mesmo lado,
+						// porque pro cliente os dois são "a empresa".
+						direction={m.role === "user" ? "received" : "sent"}
+						text={m.content}
+						createdAt={m.createdAt}
+						attachment={anexoDe(m)}
+						ehTemplate={Boolean(m.templateName)}
+					/>
+				))}
+			</div>
 		</div>
 	);
 }
