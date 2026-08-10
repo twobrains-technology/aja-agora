@@ -41,3 +41,15 @@ cedilha e til. Acento faltando é defeito de entrega.
 
 Documentação em `docs/` é **histórico, não lei**. ADR antigo que não faz sentido hoje: ignore ou
 apague. O código manda.
+
+## Figma → código
+
+O MCP do Figma (Dev Mode local, `figma-dev-mode`) traz o frame selecionado no app desktop. O que ele
+devolve é React+Tailwind genérico — **não** é o código do projeto. Traduza sempre:
+
+- Cor, espaçamento e tipografia → **token** de `src/app/globals.css` (`--aja-ink`, `--aja-sand`,
+  `--aja-paper`, escala `--blue-*`, semânticos do shadcn). Hex cru vindo do Figma é defeito.
+- Primitivo de UI → reutilize `src/components/ui/*` (shadcn, style `base-nova`). Componente novo só
+  quando não existe equivalente.
+- Ícone → `lucide`. SVG colado do Figma só para marca (`src/components/brand`, `src/components/icons`).
+- Texto visível → português com acento, como em todo o resto.
