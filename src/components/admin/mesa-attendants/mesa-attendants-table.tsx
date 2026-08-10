@@ -22,6 +22,9 @@ export interface MesaAttendant {
 	whatsapp: string;
 	isActive: boolean;
 	createdAt: string;
+	/** Conta de login vinculada (role `mesa_externa`). `null` = só WhatsApp, como
+	 *  sempre foi — ter acesso ao painel é opcional. */
+	userId?: string | null;
 }
 
 /** Formata E.164 sem '+' (5562999998888) pra exibição: +55 (62) 99999-8888. */

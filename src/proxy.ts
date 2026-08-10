@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
+import { podeAcessarRota, type Role, rotaInicialDe } from "@/lib/admin/role-scope";
 import { hasCampaignSignal, parseCampaignParams } from "@/lib/attribution/params";
 import {
 	decideVisit,
@@ -22,6 +23,20 @@ export async function proxy(request: NextRequest) {
 
 		if (!session) {
 			return NextResponse.redirect(new URL("/admin/login", request.url));
+		}
+
+		// Estar logado deixou de bastar (2026-08-10). Com a `mesa_externa` — gente
+		// de FORA da empresa entrando no painel — o menu inteiro da operação não
+		// pode mais ficar a um clique de qualquer sessão válida. Quem decide é
+		// `role-scope.ts`; aqui a decisão só é aplicada.
+		//
+		// Camada de navegação, não de dados: o `requireRole` de cada API continua
+		// sendo o que impede um `fetch` direto de ler o que não é dele.
+		const role = ((session.user as { role?: string }).role ?? "viewer") as Role;
+		if (!podeAcessarRota(role, pathname)) {
+			// Volta pra tela de casa dela em vez de um 403 seco — quem tropeça aqui
+			// clicou num link salvo, não tentou invadir nada.
+			return NextResponse.redirect(new URL(rotaInicialDe(role), request.url));
 		}
 	}
 

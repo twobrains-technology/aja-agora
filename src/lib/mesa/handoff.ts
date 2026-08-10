@@ -415,3 +415,74 @@ export async function getActiveHandoffsByLead(
 	}
 	return map;
 }
+
+/**
+ * O atendente de mesa por trás de uma conta de login (role `mesa_externa`).
+ *
+ * `null` significa conta sem atendente vinculado — e o chamador tem que tratar
+ * isso como "não vê nada", nunca como "vê tudo": é exatamente o caso em que um
+ * login mal provisionado abriria o funil inteiro.
+ */
+export async function getMesaAttendantByUserId(
+	userId: string,
+): Promise<{ id: string; nome: string; whatsapp: string; isActive: boolean } | null> {
+	const [row] = await db
+		.select({
+			id: mesaAttendants.id,
+			nome: mesaAttendants.nome,
+			whatsapp: mesaAttendants.whatsapp,
+			isActive: mesaAttendants.isActive,
+		})
+		.from(mesaAttendants)
+		.where(eq(mesaAttendants.userId, userId))
+		.limit(1);
+	return row ?? null;
+}
+
+/**
+ * Todos os leads que passaram pelas mãos de um atendente — QUALQUER status de
+ * handoff, não só os ativos.
+ *
+ * O status importa aqui por um motivo concreto: encerrar o atendimento marca o
+ * handoff como `concluido` e joga o lead em `fechado_ganho`. Filtrando só por
+ * handoff ativo, o card desapareceria no instante em que o atendente o arrasta
+ * pra Ganho — ele veria o próprio fechamento como um sumiço.
+ */
+export async function getLeadIdsDoAtendente(mesaAttendantId: string): Promise<string[]> {
+	const rows = await db
+		.selectDistinct({ leadId: mesaHandoffs.leadId })
+		.from(mesaHandoffs)
+		.where(eq(mesaHandoffs.mesaAttendantId, mesaAttendantId));
+	return rows.map((r) => r.leadId);
+}
+
+/**
+ * Esta conversa é de um caso deste atendente?
+ *
+ * Porteiro do chat com o cliente: sem ele, bastaria à mesa externa trocar o id
+ * na URL pra mandar WhatsApp em nome da empresa pro lead de qualquer colega.
+ *
+ * Olha os DOIS caminhos até a conversa — o `conversation_id` gravado no próprio
+ * handoff e o do lead — porque `mesa_handoffs.conversation_id` é nullable e nem
+ * todo transbordo o preenche.
+ */
+export async function conversaPertenceAoAtendente(
+	conversationId: string,
+	mesaAttendantId: string,
+): Promise<boolean> {
+	const [row] = await db
+		.select({ id: mesaHandoffs.id })
+		.from(mesaHandoffs)
+		.leftJoin(leads, eq(mesaHandoffs.leadId, leads.id))
+		.where(
+			and(
+				eq(mesaHandoffs.mesaAttendantId, mesaAttendantId),
+				or(
+					eq(mesaHandoffs.conversationId, conversationId),
+					eq(leads.conversationId, conversationId),
+				),
+			),
+		)
+		.limit(1);
+	return Boolean(row);
+}

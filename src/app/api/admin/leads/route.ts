@@ -2,12 +2,23 @@ import { desc } from "drizzle-orm";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
 import { dedupLeadsByContact } from "@/lib/admin/kanban-dedup";
-import { type LeadStage, STAGE_ORDER } from "@/lib/admin/lead-transitions";
+import type { LeadStage } from "@/lib/admin/lead-transitions";
+import { cardsDaMesaExterna } from "@/lib/admin/mesa-externa-cards";
 import { requireRole } from "@/lib/admin/require-role";
-import { getActiveHandoffsByLead } from "@/lib/mesa/handoff";
+import { isMesaExterna, raiasVisiveisPara } from "@/lib/admin/role-scope";
+import {
+	getActiveHandoffsByLead,
+	getLeadIdsDoAtendente,
+	getMesaAttendantByUserId,
+} from "@/lib/mesa/handoff";
 
 export async function GET() {
-	const { error } = await requireRole("admin", "viewer", "attendant");
+	const { error, session, role } = await requireRole(
+		"admin",
+		"viewer",
+		"attendant",
+		"mesa_externa",
+	);
 	if (error) return error;
 
 	// Pipeline mostra TODOS os leads (incl. simulados) — o simulador é
@@ -27,13 +38,33 @@ export async function GET() {
 		},
 	});
 
+	const comDataEmTexto = allLeads.map((l) => ({ ...l, updatedAt: l.updatedAt.toISOString() }));
+
+	// Recorte da MESA EXTERNA — feito aqui, no servidor, e não escondendo coluna
+	// no componente: o que a rota devolve é o que existe pra aquele login. Um
+	// `hidden` no front deixaria o funil inteiro a um `fetch` de distância.
+	const raiasVisiveis = raiasVisiveisPara(role);
+
 	// FIX-45: dedup por CONTATO — o mesmo cliente em web + WhatsApp vira UM card
 	// (não dois). Leads anônimos (sem contactId) ficam individuais. Cada card
 	// carrega `channels` (badge multi-canal) e `contactId` (abre a visão
 	// consolidada). Lógica pura em @/lib/admin/kanban-dedup.
-	const cards = dedupLeadsByContact(
-		allLeads.map((l) => ({ ...l, updatedAt: l.updatedAt.toISOString() })),
-	);
+	//
+	// Pra mesa externa o recorte vem ANTES do dedup (`mesa-externa-cards.ts`):
+	// deduplicar primeiro deixa um lead alheio ao atendimento eleger o card e o
+	// caso some do quadro de quem está atendendo.
+	let cards: Array<(typeof comDataEmTexto)[number] & { channels: string[] }>;
+
+	if (isMesaExterna(role)) {
+		const atendente = await getMesaAttendantByUserId(session.user.id);
+		// Conta sem atendente vinculado (ou desativado) não é "vê tudo": é vê nada.
+		if (!atendente || !atendente.isActive) {
+			return Response.json({ leads: vazio(raiasVisiveis), stages: raiasVisiveis });
+		}
+		cards = cardsDaMesaExterna(comDataEmTexto, await getLeadIdsDoAtendente(atendente.id));
+	} else {
+		cards = dedupLeadsByContact(comDataEmTexto);
+	}
 
 	// Visibilidade (spec 2026-07-03): anexa o responsável da mesa (handoff ativo) a cada card,
 	// pro selo do kanban e o bloco "Responsável". card.id = lead representativo do contato.
@@ -43,11 +74,8 @@ export async function GET() {
 		activeHandoff: handoffs.get(c.id) ?? null,
 	}));
 
-	// Agrupa os cards por raia.
-	const groupedLeads: Record<string, typeof cardsWithHandoff> = {};
-	for (const stage of STAGE_ORDER) {
-		groupedLeads[stage] = [];
-	}
+	// Agrupa os cards por raia — só nas raias que esta role enxerga.
+	const groupedLeads: Record<string, typeof cardsWithHandoff> = vazio(raiasVisiveis);
 	for (const card of cardsWithHandoff) {
 		const stage = card.stage as LeadStage;
 		if (groupedLeads[stage]) {
@@ -55,5 +83,12 @@ export async function GET() {
 		}
 	}
 
-	return Response.json({ leads: groupedLeads, stages: STAGE_ORDER });
+	return Response.json({ leads: groupedLeads, stages: raiasVisiveis });
+}
+
+/** Mapa raia → [] para exatamente as raias permitidas. */
+function vazio<T>(raias: readonly string[]): Record<string, T[]> {
+	const m: Record<string, T[]> = {};
+	for (const r of raias) m[r] = [];
+	return m;
 }
