@@ -96,6 +96,45 @@ o fechamento transborda; o resto depende do botão manual.
 
 ---
 
+## 4 · A esteira mente sobre qual commit está em produção
+
+Achado ao acompanhar quatro deploys em sequência na tarde de 2026-08-10.
+
+**Sintoma 1 — commit íntegro marcado como falha.** O run de `2bff5b41` aparece
+como **failure** no GitHub. O build passou, a imagem foi pro ECR, o código está
+em produção. O que estourou foi o gate de rollout:
+
+```
+[30/30] PRIMARY rolloutState=IN_PROGRESS deployments=2
+##[error]Rollout did not complete within ~10min
+```
+
+O gate espera `deployments == 1`. Dois pushes posteriores criaram deployments
+novos dentro da janela de 10 minutos, e ele nunca assentou. Falso negativo puro:
+não houve rollback nem crash. Quem olhar o histórico da `main` vai ver um X
+vermelho num commit que está rodando agora.
+
+**Sintoma 2 — quem escolhe o commit de produção é o relógio.** A task definition
+(`aja-agora-prod:13`, inalterada há vários deploys) fixa a imagem na tag **móvel**
+`:latest`. O deployment não carrega o commit: ele manda o ECS puxar `:latest`, e
+o que estiver lá naquele instante é o que sobe. Com pushes sobrepostos, o
+deployment disparado pelo commit A pode subir a imagem do commit B — quem decide
+é qual build terminou por último, não qual deploy foi acionado.
+
+Nesta tarde deu certo por sorte de ordenação. Não é uma propriedade do sistema.
+
+**Correção proposta:**
+1. Task definition nova por deploy, com a imagem fixada em `sha-<commit>`
+   (imutável) em vez de `:latest`. Aí o deployment carrega o commit, e digest
+   vira consequência, não coincidência.
+2. O gate de rollout precisa comparar o DIGEST em execução, não contar
+   deployments. Hoje não consegue: a role `gha-ecs-deploy` não tem
+   `ecs:DescribeTasks` — o próprio comentário do workflow admite isso.
+
+⚠️ **PENDENTE-KAIRO**: mexe na esteira de produção e numa role IAM.
+
+---
+
 ## Fora destes três
 
 - **Junya está com `SIM-supervisao-mesa`** (WhatsApp simulado). Ela loga e opera o
