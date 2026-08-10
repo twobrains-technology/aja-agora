@@ -334,6 +334,18 @@ export function ClientChatBox({
 						}
 						value={message}
 						onChange={(e) => setMessage(e.target.value)}
+						// Enter envia, Shift+Enter quebra linha — o teclado do WhatsApp.
+						// Quem atende digita o dia inteiro; obrigar a tirar a mão do
+						// teclado pra clicar em "Enviar" custa em cada mensagem.
+						onKeyDown={(e) => {
+							if (e.key !== "Enter" || e.shiftKey) return;
+							// IME (acento, emoji, teclado japonês) usa Enter pra CONFIRMAR a
+							// composição. Enviar aqui cortaria a palavra no meio.
+							if (e.nativeEvent.isComposing) return;
+							e.preventDefault();
+							if (sending || (!anexo && !message.trim())) return;
+							void (anexo ? enviarAnexo() : handleSendText());
+						}}
 						rows={3}
 						className={`resize-none ${FIELD_CLASS}`}
 						disabled={sending}
