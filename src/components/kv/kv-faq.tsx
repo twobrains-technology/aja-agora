@@ -3,56 +3,46 @@
 import { useId, useState } from "react";
 
 import { Em } from "@/components/kv/em";
+import { FAQ_GERAL, type KvFaqItem } from "@/components/kv/faq-catalogo";
 import { KvContainer } from "@/components/kv/ui/kv-container";
 import { KvEyebrow } from "@/components/kv/ui/kv-eyebrow";
 
-const FAQ_ITEMS = [
-	{
-		question: "Consórcio é seguro?",
-		summary: "Regulamentado e fiscalizado pelo Banco Central desde 2008.",
-		answer:
-			"Sim. O consórcio é regulamentado pela Lei 11.795/2008 e fiscalizado pelo Banco Central do Brasil, que autoriza e supervisiona as administradoras — uma fiscalização semelhante à de bancos.",
-	},
-	{
-		question: "Quanto tempo demora para ser contemplado?",
-		summary: "Sorteio mensal ou lance antecipam a contemplação.",
-		answer:
-			"Varia conforme o grupo, o valor do crédito e a estratégia usada. Todo mês há sorteio entre os participantes, e quem oferece lance aumenta as chances de ser contemplado antes do fim do prazo do plano.",
-	},
-	{
-		question: "Posso usar FGTS no consórcio?",
-		summary: "Sim, em consórcio de imóvel — para lance ou amortização.",
-		answer:
-			"Sim, para consórcio de imóvel residencial: o FGTS pode ser usado tanto para dar lance quanto para amortizar ou quitar o saldo devedor após a contemplação, seguindo as regras da Caixa Econômica Federal. Para consórcio de veículo, o FGTS não pode ser usado.",
-	},
-	{
-		question: "Atrasei uma parcela do consórcio. E agora?",
-		summary: "Gera multa e juros; dá pra negociar com a administradora.",
-		answer:
-			"O atraso gera multa e juros conforme o contrato, mas não cancela sua participação automaticamente — é possível negociar diretamente com a administradora. Atrasos recorrentes podem levar à exclusão do grupo, com devolução dos valores pagos conforme as regras contratuais e da assembleia.",
-	},
-	{
-		question: "Posso vender minha carta de crédito?",
-		summary: "A cota pode ser transferida, com aprovação da administradora.",
-		answer:
-			"A carta de crédito em si não é vendida — ela representa o direito de uso vinculado ao seu CPF. O que é possível é transferir a cota (sua posição no grupo) para outra pessoa, mediante aprovação da administradora e assinatura de um termo de transferência.",
-	},
-] as const;
+export type { KvFaqItem };
+
+/** Recorte da home: as perguntas gerais, antes de a pessoa escolher o bem. */
+export const FAQ_ITEMS = FAQ_GERAL;
 
 // Perguntas Frequentes (Figma frame 'Perguntas Frequentes' 1437x815): bloco
-// cream full-bleed com eyebrow + título à esquerda e accordion de 5 perguntas.
-export function KvFaq() {
+// cream full-bleed com eyebrow + título à esquerda e accordion de perguntas.
+//
+// As landings de vertical (`/consorcio/*`) reusam esta mesma seção passando um
+// recorte próprio de `itens` — no comp o eyebrow e o título são idênticos aos
+// da home, então só a lista muda.
+export function KvFaq({ itens = FAQ_ITEMS }: { itens?: readonly KvFaqItem[] } = {}) {
 	const [openIndex, setOpenIndex] = useState<number | null>(null);
 	const baseId = useId();
 
 	return (
-		<section className="relative overflow-hidden bg-[#F2F2DB] py-6 md:py-8">
-			{/* biome-ignore lint/performance/noImgElement: SVG decorativo estático, sem otimização do next/image necessária */}
-			<img
+		// py-24: no comp a faixa creme tem ~96px de respiro em cima e embaixo. Com
+		// py-8 a seção saía 141px mais curta que o frame, em todas as páginas.
+		<section className="relative overflow-hidden bg-[#F2F2DB] py-12 md:py-24">
+			{/* Padrão de chevron do comp. Veio exportado sobre BRANCO (JPG, sem alfa),
+			    então entra em `mix-blend-multiply`: o branco não altera o creme da
+			    seção e só os chevrons cinzas escurecem.
+			    UM ladrilho só, encostado à direita e com a altura da seção — sem
+			    repetir. O arquivo tem a proporção da faixa do comp, então nessa altura
+			    ele cobre ~830px e para sozinho por volta de x=610, que é onde o comp
+			    para. Com `repeat-x` sobrava uma tira estreita à esquerda e a repetição
+			    a preenchia com meio chevron, deixando uma emenda vertical dura. */}
+			<div
 				aria-hidden="true"
-				src="/kv/faq-chevron-pattern.svg"
-				alt=""
-				className="pointer-events-none absolute inset-y-0 right-0 hidden w-[40%] max-w-[566px] md:block"
+				className="pointer-events-none absolute inset-0 hidden mix-blend-multiply md:block"
+				style={{
+					backgroundImage: "url(/kv/fundo-faq-chevron.jpg)",
+					backgroundSize: "auto 100%",
+					backgroundRepeat: "no-repeat",
+					backgroundPosition: "right center",
+				}}
 			/>
 
 			<KvContainer className="max-w-[1437px] md:px-12 lg:px-[102px]">
@@ -66,7 +56,7 @@ export function KvFaq() {
 				</div>
 
 				<ul className="relative mt-6 flex flex-col gap-3 md:mt-8">
-					{FAQ_ITEMS.map((item, index) => {
+					{itens.map((item, index) => {
 						const isOpen = openIndex === index;
 						const panelId = `${baseId}-panel-${index}`;
 						const buttonId = `${baseId}-trigger-${index}`;
@@ -81,11 +71,14 @@ export function KvFaq() {
 									aria-controls={panelId}
 									className="flex min-h-[77px] w-full items-center justify-between gap-4 px-5 py-4 text-left md:px-[21px]"
 								>
-									<div className="flex flex-1 flex-col gap-1.5 lg:flex-row lg:items-center lg:gap-4">
+									<div className="flex min-w-0 flex-1 flex-col gap-1.5 lg:flex-row lg:items-center lg:gap-4">
 										<span className="text-[20px] font-normal leading-[1.2] text-[#052440] lg:shrink-0 lg:text-[32px] lg:leading-[38px]">
 											{item.question}
 										</span>
-										<span className="hidden shrink-0 whitespace-nowrap text-[14px] font-light leading-5 text-[#6B6B66] lg:block">
+										{/* Quem cede é o resumo, nunca a pergunta: numa linha estreita ele
+										    ganha reticências em vez de escorregar por baixo do chevron e
+										    ser decepado pelo `overflow-hidden` do item. */}
+										<span className="hidden min-w-0 truncate text-[14px] font-light leading-5 text-[#6B6B66] lg:block">
 											{item.summary}
 										</span>
 									</div>
@@ -107,10 +100,19 @@ export function KvFaq() {
 									</svg>
 								</button>
 								{isOpen && (
-									<section id={panelId} aria-labelledby={buttonId} className="px-5 pb-5 md:px-6">
-										<p className="max-w-[760px] text-[16px] font-normal leading-[1.5] text-[#2D2D2D]">
-											{item.summary}
-										</p>
+									<section
+										id={panelId}
+										aria-labelledby={buttonId}
+										className="max-w-[760px] space-y-3 px-5 pb-5 md:px-6"
+									>
+										{item.answer.map((paragrafo) => (
+											<p
+												key={paragrafo}
+												className="text-[16px] font-normal leading-[1.5] text-[#2D2D2D]"
+											>
+												{paragrafo}
+											</p>
+										))}
 									</section>
 								)}
 							</li>
