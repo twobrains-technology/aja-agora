@@ -9,7 +9,6 @@
 
 import { inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { PulsoAgora } from "./agora-types";
 
 const HAS_DB = Boolean(process.env.DATABASE_URL) && !process.env.DATABASE_URL?.includes("sentinel");
 const describeIfDb = HAS_DB ? describe : describe.skip;
@@ -91,10 +90,22 @@ describeIfDb("agora — sala de guerra (integration)", () => {
 	}
 
 	describe("computePulso", () => {
-		let antes: PulsoAgora;
+		// `computePulso` conta o banco INTEIRO — não há como escopá-la a uma
+		// conversa. Então a prova é por DELTA, e o delta só é confiável se nada
+		// mais escrever entre as duas medições.
+		//
+		// 2026-08-05 — este bloco era flaky: `antes` era medido num `beforeAll` e
+		// `depois` em três `it` separados. A janela entre as medições cobria a
+		// semeadura inteira MAIS a execução dos casos anteriores, e qualquer outro
+		// arquivo de integração criando conversa não-simulada nesse intervalo
+		// entrava no delta (o banco de teste é compartilhado — dívida conhecida,
+		// `docs/correcoes/inbox/2026-06-21-divida-infra-teste-qa-noturno.md` §2).
+		// Medir os dois lados adjacentes, num caso só, encolhe a janela pro tempo
+		// da semeadura. Não conserta o banco compartilhado; tira este arquivo da
+		// linha de tiro.
+		it("conta ao vivo, espera de resposta e ignora simulada — tudo no mesmo delta", async () => {
+			const antes = await queries.computePulso();
 
-		beforeAll(async () => {
-			antes = await queries.computePulso();
 			await semearConversa({ ultimaDe: "user", minutosAtras: 2 });
 			await semearConversa({ ultimaDe: "user", minutosAtras: 20 });
 			await semearConversa({ ultimaDe: "assistant", minutosAtras: 3 });
@@ -102,29 +113,14 @@ describeIfDb("agora — sala de guerra (integration)", () => {
 			await semearConversa({ ultimaDe: "user", minutosAtras: 180 });
 			// Simulada: não pode mandar ninguém correr atrás de conversa de teste.
 			await semearConversa({ ultimaDe: "user", minutosAtras: 1, simulada: true });
-		});
 
-		it("conta como ao vivo só quem teve movimento na última hora", async () => {
 			const depois = await queries.computePulso();
 
+			// 3 reais dentro da janela. A de 180 min ficou de fora; a simulada nunca
+			// entra (se entrasse, seria 4).
 			expect(depois.conversasAoVivo - antes.conversasAoVivo).toBe(3);
-		});
-
-		it("conta como esperando resposta quem falou por último", async () => {
-			const depois = await queries.computePulso();
-
-			// Duas com última fala do cliente e dentro da janela. A de 180 min ficou
-			// de fora, e a simulada nunca entra.
+			// Duas com a última fala do cliente e dentro da janela.
 			expect(depois.esperandoResposta - antes.esperandoResposta).toBe(2);
-		});
-
-		it("não deixa conversa simulada entrar em nenhum contador", async () => {
-			const depois = await queries.computePulso();
-			const naoSimuladasAoVivo = depois.conversasAoVivo - antes.conversasAoVivo;
-
-			// Semeamos 3 ao vivo reais + 1 simulada ao vivo. Se a simulada entrasse,
-			// o delta seria 4.
-			expect(naoSimuladasAoVivo).toBe(3);
 		});
 
 		it("devolve todos os contadores como número, nunca indefinido", async () => {
