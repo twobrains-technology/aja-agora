@@ -288,6 +288,13 @@
       "when": 1786333381061,
       "tag": "0040_closed_frank_castle",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1786365954091,
+      "tag": "0041_yielding_alex_wilder",
+      "breakpoints": true
     }
   ]
 }

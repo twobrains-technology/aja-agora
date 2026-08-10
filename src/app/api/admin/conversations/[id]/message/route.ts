@@ -153,6 +153,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 			content: text ?? conteudoRegistrado ?? `Template enviado: ${templateName}`,
 			channel: "whatsapp",
 			personaId: null, // mensagem do operador, não de persona
+			// Marca o disparo automático: no histórico, template e mensagem escrita
+			// à mão precisam ser distinguíveis meses depois.
+			templateName: sentType === "template" ? (templateName ?? null) : null,
 		});
 	}
 

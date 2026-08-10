@@ -1,0 +1,1 @@
+ALTER TABLE "messages" ADD COLUMN "template_name" varchar(128);

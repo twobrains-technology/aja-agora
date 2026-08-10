@@ -1,4 +1,4 @@
-import { CheckCheckIcon, FileTextIcon, MicIcon } from "lucide-react";
+import { CheckCheckIcon, FileTextIcon, MegaphoneIcon, MicIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /** Anexo exibido dentro da bolha. `url` é o endpoint que assina e redireciona
@@ -14,6 +14,8 @@ interface WhatsAppBubbleProps {
 	text: string;
 	createdAt: string;
 	attachment?: BubbleAttachment | null;
+	/** Saiu como template aprovado (HSM), não como texto escrito na hora. */
+	ehTemplate?: boolean;
 }
 
 /**
@@ -25,7 +27,13 @@ interface WhatsAppBubbleProps {
  * áudio não usa `<audio>` porque a URL é assinada e de vida curta, e um player
  * que quebra no meio é pior do que abrir numa aba.
  */
-export function WhatsAppBubble({ direction, text, createdAt, attachment }: WhatsAppBubbleProps) {
+export function WhatsAppBubble({
+	direction,
+	text,
+	createdAt,
+	attachment,
+	ehTemplate,
+}: WhatsAppBubbleProps) {
 	const time = new Date(createdAt).toLocaleTimeString("pt-BR", {
 		hour: "2-digit",
 		minute: "2-digit",
@@ -63,6 +71,15 @@ export function WhatsAppBubble({ direction, text, createdAt, attachment }: Whats
 							</span>
 						)}
 					</a>
+				)}
+				{/* Selo de template: ícone + palavra, nunca só cor. Meses depois, é o
+				    que diz se o cliente recebeu uma mensagem escrita à mão ou um
+				    disparo automático de retomada. */}
+				{ehTemplate && (
+					<div className="mb-1 flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide opacity-70">
+						<MegaphoneIcon className="size-3" aria-hidden />
+						Template
+					</div>
 				)}
 				<div className="whitespace-pre-wrap break-words pr-12">{text}</div>
 				<div

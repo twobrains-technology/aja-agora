@@ -16,6 +16,8 @@ export interface MensagemDaConversa {
 	createdAt: string;
 	mediaType?: string | null;
 	mediaFilename?: string | null;
+	/** Preenchido quando a mensagem saiu como template aprovado (HSM). */
+	templateName?: string | null;
 }
 
 /**
@@ -63,6 +65,7 @@ export function WhatsAppView({
 					text={m.content}
 					createdAt={m.createdAt}
 					attachment={anexoDe(m)}
+					ehTemplate={Boolean(m.templateName)}
 				/>
 			))}
 		</div>

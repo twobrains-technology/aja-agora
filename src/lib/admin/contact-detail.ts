@@ -87,6 +87,11 @@ export async function getContactDetail(id: string) {
 				content: msg.content,
 				createdAt: msg.createdAt,
 				artifacts: msg.artifacts,
+				// A tela de atendimento precisa distinguir o que foi template (HSM) e
+				// mostrar anexo — sem estes campos a conversa some com os dois.
+				templateName: msg.templateName,
+				mediaType: msg.mediaType,
+				mediaFilename: msg.mediaFilename,
 			})),
 		)
 		.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());

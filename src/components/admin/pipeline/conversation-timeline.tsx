@@ -26,6 +26,8 @@ interface Message {
 	/** Presente só quando a mensagem tem anexo (colunas nullable em `messages`). */
 	mediaType?: string | null;
 	mediaFilename?: string | null;
+	/** Preenchido quando saiu como template (HSM) — a bolha ganha o selo. */
+	templateName?: string | null;
 }
 
 /** Dados do cliente pro cabeçalho da tela cheia. Sem eles, o botão "Expandir"

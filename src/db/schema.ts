@@ -391,6 +391,12 @@ export const messages = pgTable(
 		mediaType: varchar("media_type", { length: 16 }),
 		mediaMimeType: varchar("media_mime_type", { length: 128 }),
 		mediaFilename: varchar("media_filename", { length: 255 }),
+		// Nome do template da Meta quando a mensagem saiu como HSM (janela de 24h
+		// fechada). Preenchido = foi template, e a conversa mostra o selo — sem
+		// isto, template e texto do atendente ficam idênticos no histórico, e
+		// ninguém sabe depois se o cliente recebeu uma mensagem escrita à mão ou
+		// um disparo automático de retomada.
+		templateName: varchar("template_name", { length: 128 }),
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	},
 	(table) => [index("messages_conversation_persona_idx").on(table.conversationId, table.personaId)],
