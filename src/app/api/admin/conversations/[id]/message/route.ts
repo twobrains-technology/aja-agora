@@ -5,6 +5,8 @@ import { requireRole } from "@/lib/admin/require-role";
 import { isMesaExterna } from "@/lib/admin/role-scope";
 import { conversaPertenceAoAtendente, getMesaAttendantByUserId } from "@/lib/mesa/handoff";
 import { sendTemplate, sendTextMessage } from "@/lib/whatsapp/api";
+import { resolverDestinoWhatsApp } from "@/lib/whatsapp/destino";
+import { montarComponents, primeiroNome } from "@/lib/whatsapp/template-params";
 import { isWindowOpen } from "@/lib/whatsapp/window";
 
 /**
@@ -22,6 +24,30 @@ import { isWindowOpen } from "@/lib/whatsapp/window";
  * @body { text: string } — texto livre (janela aberta)
  * @body { templateName: string, languageCode: string } — template HSM (janela fechada)
  */
+/**
+ * A Meta recusou → o atendente precisa SABER.
+ *
+ * `callApi` não lança: devolve `{ error }`. Como a rota só olhava `messageId`,
+ * uma recusa 400 virava `{ success: true }` com 200 — o atendente lia "contato
+ * de retomada enviado" e o cliente nunca recebia nada (prod, 2026-08-10).
+ */
+function falhaDaMeta(bruto: string) {
+	let motivo = bruto;
+	try {
+		motivo = (JSON.parse(bruto) as { error?: { message?: string } }).error?.message ?? bruto;
+	} catch {
+		// Não era JSON (timeout, rede) — o texto cru já é a explicação.
+	}
+	return Response.json(
+		{
+			error: "WhatsappSendFailed",
+			message: `O WhatsApp recusou o envio: ${motivo}`,
+			detail: bruto,
+		},
+		{ status: 502 },
+	);
+}
+
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
 	const { error, session, role } = await requireRole("admin", "attendant", "mesa_externa");
 	if (error) return error;
@@ -70,7 +96,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
 	// O destino do WhatsApp é o telefone do cliente, não o id da conversa.
 	const [conv] = await db
-		.select({ waId: conversations.waId })
+		.select({ waId: conversations.waId, contactName: conversations.contactName })
 		.from(conversations)
 		.where(eq(conversations.id, conversationId))
 		.limit(1);
@@ -91,6 +117,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 		);
 	}
 
+	// Gravado como "62992496793" (sem DDI), o "62" vira código de país da
+	// INDONÉSIA na Meta — o envio é aceito e não chega em ninguém. O resolvedor
+	// prefere o wa_id de uma conversa real desse mesmo número (prod, 2026-08-10).
+	const destino = await resolverDestinoWhatsApp(conv.waId);
+
 	const windowStatus = await isWindowOpen(conversationId);
 
 	let messageId: string | undefined;
@@ -105,7 +136,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 				{ status: 400 },
 			);
 		}
-		const result = await sendTextMessage(conv.waId, text);
+		const result = await sendTextMessage(destino, text);
+		if (result.error) return falhaDaMeta(result.error);
 		messageId = result.messageId;
 		sentType = "text";
 	} else {
@@ -130,20 +162,31 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 				{ status: 400 },
 			);
 		}
-		const result = await sendTemplate(conv.waId, templateName, languageCode);
+		// O corpo aprovado vem ANTES do envio: é ele que diz quantos `{{n}}` a Meta
+		// espera. Mandar de menos é 400 (#132000) — foi o que recusou todos os
+		// disparos de retomada em prod até aqui.
+		const [tpl] = await db
+			.select({ bodyPreview: whatsappTemplates.bodyPreview })
+			.from(whatsappTemplates)
+			.where(eq(whatsappTemplates.metaName, templateName))
+			.limit(1);
+
+		const nome = primeiroNome(conv.contactName) ?? "cliente";
+		const components = montarComponents(tpl?.bodyPreview, conv.contactName);
+
+		const result = await sendTemplate(destino, templateName, languageCode, components);
+		if (result.error) return falhaDaMeta(result.error);
 		messageId = result.messageId;
 		sentType = "template";
 
 		// O CLIENTE recebeu o corpo do template, não o nome dele. Gravar
 		// "Template enviado: aja_agora_atendente_retomada" deixava a timeline
 		// mentindo sobre o que foi dito — o atendente abria a conversa e via um
-		// identificador técnico no lugar da mensagem que o cliente leu.
-		const [tpl] = await db
-			.select({ bodyPreview: whatsappTemplates.bodyPreview })
-			.from(whatsappTemplates)
-			.where(eq(whatsappTemplates.metaName, templateName))
-			.limit(1);
-		conteudoRegistrado = tpl?.bodyPreview?.trim() || `Template enviado: ${templateName}`;
+		// identificador técnico no lugar da mensagem que o cliente leu. Os `{{n}}`
+		// saem resolvidos pelo mesmo motivo: o cliente leu "Oi, Kairo!".
+		conteudoRegistrado =
+			tpl?.bodyPreview?.trim().replace(/\{\{\s*\d+\s*\}\}/g, nome) ||
+			`Template enviado: ${templateName}`;
 	}
 
 	if (messageId) {

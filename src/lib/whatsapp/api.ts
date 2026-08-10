@@ -84,7 +84,10 @@ async function callApi(
 	}
 }
 
-function simulatedAck(): { messageId: string } {
+// `error?: undefined` no tipo é de propósito: o ack simulado NUNCA falha, e sem
+// essa chave a união com o retorno de `callApi` não deixava o caller checar
+// `result.error` — o jeito de descobrir uma recusa da Meta.
+function simulatedAck(): { messageId: string; error?: undefined } {
 	return { messageId: `sim-${crypto.randomUUID()}` };
 }
 
