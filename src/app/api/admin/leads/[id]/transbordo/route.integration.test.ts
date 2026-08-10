@@ -29,6 +29,7 @@ vi.mock("@/lib/admin/require-role", () => ({
 	requireRole: vi.fn(async () => ({
 		error: null,
 		session: { user: { id: "qa-transbordo-admin" } },
+		role: "admin",
 	})),
 }));
 // outbound.ts importa sendTextMessage + sendReplyButtons de @/lib/whatsapp/api — borda

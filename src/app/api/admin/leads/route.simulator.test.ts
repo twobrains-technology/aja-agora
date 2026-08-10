@@ -26,9 +26,15 @@ import { saveContactName, saveContactWhatsapp } from "@/lib/leads/contact-captur
 // requireRole consulta better-auth via headers() -- mockamos pra rodar a rota
 // como admin sem subir todo o ciclo de cookie/sessão.
 vi.mock("@/lib/admin/require-role", () => ({
-	requireRole: vi
-		.fn()
-		.mockResolvedValue({ error: null, session: { user: { id: "test-admin", role: "admin" } } }),
+	requireRole: vi.fn().mockResolvedValue({
+		error: null,
+		session: { user: { id: "test-admin", role: "admin" } },
+		// `role` no topo é o que a rota usa pra decidir QUE raias devolver
+		// (role-scope.ts). Sem ele a política trata como papel desconhecido e
+		// devolve zero leads — que é o comportamento certo, e por isso o mock
+		// precisa dizer quem está chamando.
+		role: "admin",
+	}),
 }));
 
 const { GET } = await import("./route");

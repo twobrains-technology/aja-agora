@@ -76,6 +76,7 @@ describe("POST /api/admin/personas/[id]/assist — guards", () => {
 		requireRoleMock.mockResolvedValue({
 			error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
 			session: null,
+			role: null,
 		});
 
 		const res = await POST(mkRequest({ messages: [] }), {
@@ -88,6 +89,7 @@ describe("POST /api/admin/personas/[id]/assist — guards", () => {
 		requireRoleMock.mockResolvedValue({
 			error: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
 			session: null,
+			role: null,
 		});
 
 		const res = await POST(mkRequest({ messages: [] }), {
@@ -100,6 +102,7 @@ describe("POST /api/admin/personas/[id]/assist — guards", () => {
 		requireRoleMock.mockResolvedValue({
 			error: null,
 			session: { user: { id: "admin-1", role: "admin" } } as never,
+			role: "admin",
 		});
 		getPersonaForAdminMock.mockRejectedValue(new Error("not found"));
 
@@ -121,6 +124,7 @@ describe("POST /api/admin/personas/[id]/assist — guards", () => {
 		requireRoleMock.mockResolvedValue({
 			error: null,
 			session: { user: { id: "admin-1", role: "admin" } } as never,
+			role: "admin",
 		});
 		getPersonaForAdminMock.mockResolvedValue(mkPersona());
 
@@ -137,6 +141,7 @@ describe("POST /api/admin/personas/[id]/assist — guards", () => {
 		requireRoleMock.mockResolvedValue({
 			error: null,
 			session: { user: { id: "admin-1", role: "admin" } } as never,
+			role: "admin",
 		});
 		getPersonaForAdminMock.mockResolvedValue(mkPersona());
 
@@ -175,6 +180,7 @@ describe("POST /api/admin/personas/[id]/assist — guards", () => {
 		requireRoleMock.mockResolvedValue({
 			error: null,
 			session: { user: { id: "admin-A", role: "admin" } } as never,
+			role: "admin",
 		});
 		for (let i = 0; i < 10; i++) {
 			await POST(
@@ -206,6 +212,7 @@ describe("POST /api/admin/personas/[id]/assist — guards", () => {
 		requireRoleMock.mockResolvedValue({
 			error: null,
 			session: { user: { id: "admin-B", role: "admin" } } as never,
+			role: "admin",
 		});
 		const free = await POST(
 			mkRequest({
@@ -225,6 +232,7 @@ describe("POST /api/admin/personas/[id]/assist — guards", () => {
 		requireRoleMock.mockResolvedValue({
 			error: null,
 			session: { user: { id: "admin-1", role: "admin" } } as never,
+			role: "admin",
 		});
 		getPersonaForAdminMock.mockRejectedValue(new Error("not found"));
 

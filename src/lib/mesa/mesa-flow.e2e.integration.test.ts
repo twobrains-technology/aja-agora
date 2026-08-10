@@ -136,7 +136,58 @@ describeIfDb(
 				email: `${adminUserId}@test.local`,
 				role: "admin",
 			});
+
+			// O broadcast só sai por TEMPLATE quando existe um `mesa_novo_caso`
+			// APROVADO no banco (notify.ts: aprovado → template; senão → interativo).
+			// Este teste assere o caminho do template, então precisa GARANTIR essa
+			// pré-condição — ela não pode depender de o banco de dev por acaso ter um
+			// template aprovado. Era exatamente esse o defeito: em dev o registro está
+			// `PENDING` (nunca foi aprovado pela Meta), o código caía no fallback
+			// interativo, `sendTemplate` nunca era chamado e a asserção via lista vazia.
+			statusOriginalDoTemplate = await garantirTemplateAprovado();
 		});
+
+		/** Status do `mesa_novo_caso` antes do teste mexer, pra devolver no fim. */
+		let statusOriginalDoTemplate: { id: string; status: string } | null = null;
+
+		/**
+		 * Deixa o template do broadcast APROVADO e devolve o estado anterior.
+		 *
+		 * O banco é compartilhado entre arquivos de teste, então mudar um registro
+		 * global exige devolvê-lo — senão este arquivo passa a decidir o
+		 * comportamento de quem rodar depois.
+		 */
+		async function garantirTemplateAprovado(): Promise<{ id: string; status: string } | null> {
+			const [existente] = await db
+				.select({ id: schema.whatsappTemplates.id, status: schema.whatsappTemplates.status })
+				.from(schema.whatsappTemplates)
+				.where(eq(schema.whatsappTemplates.usageKey, "mesa_novo_caso"))
+				.limit(1);
+
+			if (existente) {
+				await db
+					.update(schema.whatsappTemplates)
+					.set({ status: "APPROVED" })
+					.where(eq(schema.whatsappTemplates.id, existente.id));
+				return existente;
+			}
+
+			const [criado] = await db
+				.insert(schema.whatsappTemplates)
+				.values({
+					usageKey: "mesa_novo_caso",
+					metaName: `e2e_mesa_novo_caso_${randomUUID().slice(0, 8)}`,
+					language: "pt_BR",
+					status: "APPROVED",
+					bodyPreview: "Novo caso na mesa: {{1}}",
+				})
+				.returning({ id: schema.whatsappTemplates.id });
+			templateCriadoPeloTeste = criado.id;
+			return null;
+		}
+
+		/** Só é preenchido quando o teste teve de CRIAR o template (limpa no fim). */
+		let templateCriadoPeloTeste: string | null = null;
 
 		beforeEach(() => {
 			sendTextMessage.mockClear();
@@ -167,6 +218,23 @@ describeIfDb(
 			// user por último: created_by dos handoffs já caiu junto com as conversas acima.
 			if (adminUserId) {
 				await db.delete(schema.user).where(eq(schema.user.id, adminUserId));
+			}
+
+			// Devolve o template ao estado em que estava. O banco é compartilhado:
+			// deixar `mesa_novo_caso` aprovado por conta deste arquivo mudaria o
+			// comportamento do broadcast pra todo mundo que rodar depois.
+			if (templateCriadoPeloTeste) {
+				await db
+					.delete(schema.whatsappTemplates)
+					.where(eq(schema.whatsappTemplates.id, templateCriadoPeloTeste));
+			} else if (statusOriginalDoTemplate) {
+				await db
+					.update(schema.whatsappTemplates)
+					.set({
+						status:
+							statusOriginalDoTemplate.status as typeof schema.whatsappTemplates.$inferInsert.status,
+					})
+					.where(eq(schema.whatsappTemplates.id, statusOriginalDoTemplate.id));
 			}
 		});
 

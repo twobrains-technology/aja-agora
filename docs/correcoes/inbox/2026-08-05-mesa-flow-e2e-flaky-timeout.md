@@ -76,7 +76,30 @@ linhas, o `DELETE` foi **rejeitado** por FK (`mesa_handoffs_mesa_attendant_id_fk
 — ou seja, o banco não mudou — e o teste passou 7/7 na sequência. O volume não é a
 variável.
 
-## ⚠️ Root cause NÃO provado
+## ✅ RESOLVIDO (2026-08-10) — `mesa-flow.e2e` › "caminho do admin"
+
+**Causa raiz provada:** o teste dependia de uma pré-condição que ele não semeava.
+
+O broadcast só sai por **template** quando existe um `mesa_novo_caso` com status
+`APPROVED` no banco (`notify.ts`: aprovado → `sendTemplate`; senão → interativo). No
+banco de dev esse registro está `PENDING` — nunca foi aprovado pela Meta. Resultado:
+o código caía no fallback interativo, `sendTemplate` nunca era chamado, e a asserção
+via lista vazia (`expected [] to deeply equal [...]`).
+
+O modo de falha mudou desde o registro original: em 05/08 era timeout de 20s
+(intermitente); depois da migração do canal para template (02/08) virou falha de
+asserção **determinística** — 3 de 3, e igual com o meu trabalho fora do caminho
+(`git stash`), o que prova que era defeito da `main` e não regressão.
+
+**Conserto:** o `beforeAll` garante o template aprovado e o `afterAll` devolve o
+estado anterior (o banco é compartilhado — deixá-lo aprovado mudaria o
+comportamento do broadcast pra quem rodasse depois). Agora passa 3/3 isolado e a
+suíte de integração inteira fecha 61 arquivos / 304 testes verdes.
+
+Fica a lição de fundo: **teste de integração que depende de linha global do banco
+precisa semear essa linha**, ou ele reprova conforme o humor do ambiente.
+
+## ⚠️ Root cause NÃO provado (o segundo flaky, do simulador)
 
 Não consegui isolar. O que sei: é timing (sempre o teto exato de 20s, nunca
 asserção), reproduz isolado, e o caso que falha é justamente o que exercita

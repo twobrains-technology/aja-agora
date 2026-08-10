@@ -2,7 +2,9 @@
 
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale/pt-BR";
+import { List, MessageCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { WhatsAppView } from "@/components/admin/conversa/whatsapp-view";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -20,6 +22,9 @@ interface Message {
 	content: string;
 	createdAt: string;
 	artifacts: MessageArtifact[];
+	/** Presente só quando a mensagem tem anexo (colunas nullable em `messages`). */
+	mediaType?: string | null;
+	mediaFilename?: string | null;
 }
 
 type Props =
@@ -31,6 +36,11 @@ export function ConversationTimeline(props: Props) {
 	const [messages, setMessages] = useState<Message[]>(initialMessages ?? []);
 	const [loading, setLoading] = useState(endpoint !== undefined);
 	const [error, setError] = useState<string | null>(null);
+	// Duas leituras da MESMA conversa: a lista é registro (auditar, ver artifact),
+	// a de WhatsApp é atendimento (ver o que o cliente viu, do jeito que ele viu).
+	// Mora aqui, no componente que todas as telas de conversa usam, pra a visão
+	// existir em qualquer lugar que mostre histórico — sem cada tela reimplementar.
+	const [modo, setModo] = useState<"lista" | "whatsapp">("lista");
 	const bottomRef = useRef<HTMLDivElement>(null);
 
 	const fetchMessages = useCallback(async () => {
@@ -94,8 +104,50 @@ export function ConversationTimeline(props: Props) {
 		);
 	}
 
+	const alternador = (
+		<div className="flex items-center justify-end gap-1 px-4 pt-3">
+			<fieldset className="inline-flex rounded-md border p-0.5">
+				<legend className="sr-only">Modo de exibição da conversa</legend>
+				<button
+					type="button"
+					data-testid="modo-lista"
+					aria-pressed={modo === "lista"}
+					onClick={() => setModo("lista")}
+					className={`flex items-center gap-1.5 rounded px-2 py-1 text-xs transition-colors ${modo === "lista" ? "bg-accent font-medium" : "text-muted-foreground hover:bg-accent/50"}`}
+				>
+					<List className="size-3.5" aria-hidden />
+					Lista
+				</button>
+				<button
+					type="button"
+					data-testid="modo-whatsapp"
+					aria-pressed={modo === "whatsapp"}
+					onClick={() => setModo("whatsapp")}
+					className={`flex items-center gap-1.5 rounded px-2 py-1 text-xs transition-colors ${modo === "whatsapp" ? "bg-accent font-medium" : "text-muted-foreground hover:bg-accent/50"}`}
+				>
+					<MessageCircle className="size-3.5" aria-hidden />
+					WhatsApp
+				</button>
+			</fieldset>
+		</div>
+	);
+
+	if (modo === "whatsapp") {
+		return (
+			<div className="flex flex-1 flex-col">
+				{alternador}
+				<ScrollArea className="flex-1 h-[calc(100vh-260px)]">
+					<div className="p-4">
+						<WhatsAppView mensagens={messages} />
+					</div>
+				</ScrollArea>
+			</div>
+		);
+	}
+
 	return (
 		<ScrollArea className="flex-1 h-[calc(100vh-220px)]">
+			{alternador}
 			<div className="flex flex-col gap-3 p-4">
 				{messages
 					.filter((msg) => msg.role !== "system")

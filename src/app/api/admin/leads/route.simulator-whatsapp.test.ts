@@ -40,9 +40,12 @@ import { conversations, leadEvents, leads, messages } from "@/db/schema";
 // requireRole consulta better-auth via headers() — mockamos pra rodar as rotas
 // como admin sem subir todo o ciclo de cookie/sessão.
 vi.mock("@/lib/admin/require-role", () => ({
-	requireRole: vi
-		.fn()
-		.mockResolvedValue({ error: null, session: { user: { id: "test-admin", role: "admin" } } }),
+	requireRole: vi.fn().mockResolvedValue({
+		error: null,
+		session: { user: { id: "test-admin", role: "admin" } },
+		// Ver nota em route.simulator.test.ts: a rota decide as raias por este campo.
+		role: "admin",
+	}),
 }));
 
 // O processor real chama LLM via processWithOrchestrator. Não queremos
