@@ -9,6 +9,7 @@
 // ancorando a administradora + prazo pro fechamento fechar NO GRUPO CERTO — sem
 // re-busca, sem re-resolução, sem meta-narrativa (CONTRATO com bloco-b, adendo B8).
 
+import { extractMoneyMentions, parsePtBrNumber } from "./money";
 import { falaRecusa } from "./yes-no";
 
 // FIX-403/407 — `falaRecusa`, o predicado ÚNICO de recusa, nasceu aqui e MUDOU
@@ -216,31 +217,8 @@ export async function resolveOfferForAdministradora(
 /** Extrai valores monetários mencionados no texto livre — "92 mil", "R$
  * 92.902,00", "92.902" (formatação pt-BR). PURO, sem heurística de moeda
  * implícita em números soltos pequenos (evita falso-positivo em "12 meses"). */
-function extractMoneyMentions(text: string): number[] {
-	const out: number[] = [];
-	for (const m of text.matchAll(/(\d+(?:[.,]\d+)?)\s*mil\b/gi)) {
-		const n = Number(m[1].replace(",", "."));
-		if (!Number.isNaN(n)) out.push(n * 1000);
-	}
-	for (const m of text.matchAll(/R\$\s*([\d.,]+)/gi)) {
-		const n = parsePtBrNumber(m[1]);
-		if (n !== null) out.push(n);
-	}
-	for (const m of text.matchAll(/\b\d{1,3}(?:\.\d{3})+(?:,\d+)?\b/g)) {
-		const n = parsePtBrNumber(m[0]);
-		if (n !== null) out.push(n);
-	}
-	return out;
-}
-
-function parsePtBrNumber(raw: string): number | null {
-	const cleaned = raw.trim();
-	const normalized = cleaned.includes(",")
-		? cleaned.replace(/\./g, "").replace(",", ".")
-		: cleaned.replace(/\./g, "");
-	const n = Number(normalized);
-	return Number.isNaN(n) ? null : n;
-}
+// extractMoneyMentions/parsePtBrNumber saíram para `./money` — os asserts do
+// golden-set precisam da mesma leitura de dinheiro (ver money.ts).
 
 // FIX-265 (menor #2, veredito Fable r5, N6): o runner precisa distinguir
 // re-simulação PEDIDA (usuário citou um valor-alvo) de what-if EXPLORATÓRIO

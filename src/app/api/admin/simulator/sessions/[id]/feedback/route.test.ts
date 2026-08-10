@@ -7,8 +7,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-	// biome-ignore lint/suspicious/noExplicitAny: seams de teste com variantes (error/null, undefined)
 	requireRole: vi.fn(
+		// biome-ignore lint/suspicious/noExplicitAny: seams de teste com variantes (error/null, undefined)
 		async (): Promise<any> => ({ error: null, session: { user: { id: "admin-1" } } }),
 	),
 	isSimulatorEnabled: vi.fn(() => true),

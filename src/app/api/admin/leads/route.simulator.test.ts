@@ -20,7 +20,7 @@
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
-import { conversations, leadEvents, leads } from "@/db/schema";
+import { contacts, conversations, leadEvents, leads } from "@/db/schema";
 import { saveContactName, saveContactWhatsapp } from "@/lib/leads/contact-capture";
 
 // requireRole consulta better-auth via headers() -- mockamos pra rodar a rota
@@ -55,6 +55,15 @@ async function cleanupConversation(convId: string): Promise<void> {
 	}
 	await db.delete(leads).where(eq(leads.conversationId, convId));
 	await db.delete(conversations).where(eq(conversations.id, convId));
+	// O CONTATO também tem que sair. Sem isto o contact de telefone
+	// 11987654321 sobrevive entre execuções e vai acumulando os leads de
+	// QUALQUER jornada que compartilhe identidade com ele (o merge de contato
+	// une por CPF/telefone). Como o kanban deduplica por contato e elege um
+	// representativo por estágio/data, o lead recém-criado deixa de ser o
+	// escolhido e o teste falha por contaminação — não por regressão. Custou
+	// um diagnóstico inteiro em 09/08/2026: o resíduo tinha vindo de rodadas
+	// do golden-set, e o sintoma imitava bug de produto.
+	await db.delete(contacts).where(eq(contacts.phone, "11987654321"));
 }
 
 type LeadsResponse = {

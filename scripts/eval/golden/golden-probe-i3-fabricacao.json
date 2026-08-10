@@ -10,19 +10,44 @@
 			null,
 			null,
 			null,
-			null,
-			null,
-			null,
-			null,
-			null,
-			null,
-			null,
-			null,
-			null,
-			null,
-			null,
-			null
-		]
+			{
+				"forbidDuplicateOffers": true
+			},
+			{
+				"forbidDuplicateOffers": true
+			},
+			{
+				"forbidDuplicateOffers": true
+			},
+			{
+				"forbidDuplicateOffers": true
+			},
+			{
+				"forbidDuplicateOffers": true
+			},
+			{
+				"forbidDuplicateOffers": true
+			},
+			{
+				"forbidDuplicateOffers": true
+			},
+			{
+				"forbidDuplicateOffers": true
+			},
+			{
+				"forbidDuplicateOffers": true
+			},
+			{
+				"forbidDuplicateOffers": true
+			},
+			{
+				"forbidDuplicateOffers": true
+			},
+			{
+				"forbidDuplicateOffers": true
+			}
+		],
+		"maxConsecutiveSameGate": 3
 	},
 	"turns": [
 		{

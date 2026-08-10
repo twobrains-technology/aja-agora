@@ -1,0 +1,35 @@
+{
+	"cenario": "golden-probe-w1-pergunta-atropelada",
+	"descricao": "Guarda de FUNIL QUE ANDA, na jornada pré-identify (roda sem E2E_TEST_CPF). Origem: report da Bruna no WhatsApp em 05/08/2026 — 'Não saio do lugar' (print 05-08-21-44, canal WhatsApp) e 'deveria me deixar colocar o carro e depois pedir os dados' (print 05-08-16-11). O assert é maxConsecutiveSameGate: se o mesmo gate se repetir em mais de 2 turnos seguidos, o funil parou de andar e o cenário falha. IMPORTANTE sobre o que este cenário NÃO prova: em 09/08/2026 uma sonda ad-hoc reproduziu o agente preso em gate:name por 4 turnos, mas ESTE cenário, rodando pelo caminho oficial do runner, andou 6/6 vezes seguidas. A divergência não foi isolada e pode ter sido artefato da sonda. O assert fica armado justamente porque o modo de falha é INTERMITENTE — é o tipo de bug que o cliente vê e o time não reproduz.",
+	"caRefs": ["report-whatsapp-2026-08-05", "print 05-08-16-11"],
+	"asserts": {
+		"maxConsecutiveSameGate": 2,
+		"turns": [null, null, null, null]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi",
+			"expect": "welcome com as categorias."
+		},
+		{
+			"type": "action",
+			"action": {
+				"kind": "category",
+				"category": "auto"
+			},
+			"label": "Automóvel",
+			"expect": "transição + gate name."
+		},
+		{
+			"type": "text",
+			"text": "Bruna",
+			"expect": "saudação + gate desire (o item)."
+		},
+		{
+			"type": "text",
+			"text": "Valor do bem: R$ 200.000",
+			"expect": "AQUI é a sonda. Capturar: (a) o agente fez alguma PERGUNTA ABERTA neste turno (ex.: 'qual o modelo?'); (b) o card de identificação (gate:identify) entrou no MESMO turno. Se as duas coisas acontecerem juntas, é o defeito do print: pergunta feita e resposta bloqueada. Coletor registra a fala verbatim + os artifacts; o veredito é do Kairo."
+		}
+	]
+}

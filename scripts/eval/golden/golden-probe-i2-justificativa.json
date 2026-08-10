@@ -4,7 +4,26 @@
 	"caRefs": ["FIX-276 ancoragem de valor"],
 	"requiresEnv": ["E2E_TEST_CPF", "E2E_TEST_CELULAR"],
 	"asserts": {
-		"turns": [null, null, null, null, null, null, null, null, null]
+		"turns": [
+			null,
+			null,
+			null,
+			null,
+			null,
+			{
+				"forbidDuplicateOffers": true
+			},
+			{
+				"forbidDuplicateOffers": true
+			},
+			{
+				"forbidDuplicateOffers": true
+			},
+			{
+				"forbidDuplicateOffers": true
+			}
+		],
+		"maxConsecutiveSameGate": 3
 	},
 	"turns": [
 		{

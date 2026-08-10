@@ -174,6 +174,10 @@ async function main(): Promise<void> {
 						userMsg: r.userMsg,
 						agentText: r.agentText,
 						artifactTypes: r.artifacts.map((a: { type: string }) => a.type),
+						// O payload segue junto: os asserts de NÚMERO (duplicata de oferta,
+						// piso de carta — regressões do report de 05/08) leem daqui. Só o
+						// tipo do artifact não sustenta invariante sobre valor.
+						artifacts: r.artifacts as Array<{ type: string; data: unknown }>,
 						httpStatus: r.httpStatus,
 						error: r.error,
 						elapsedMs: r.elapsedMs,
@@ -251,6 +255,17 @@ async function main(): Promise<void> {
 			fail++;
 			console.log(`❌ ${cenario}  ${turns.length} turnos`);
 			for (const f of verdict.failures) console.log(`   └─ ${f}`);
+		}
+		// EVAL_VERBOSE=1 imprime a TRAJETÓRIA de cada turno mesmo quando passa.
+		// Sem isso o runner só diz sim/não, e um cenário que passa por variância
+		// do modelo (e não por estar correto) fica indistinguível de um que passa
+		// de verdade — foi exatamente o que travou o diagnóstico do funil preso
+		// em `gate:name` em 09/08/2026.
+		if (process.env.EVAL_VERBOSE === "1") {
+			for (const [i, t] of turns.entries()) {
+				console.log(`   ${i + 1}. "${t.userMsg.slice(0, 46)}" → [${t.artifactTypes.join(", ")}]`);
+				console.log(`      ${t.agentText.replace(/\s+/g, " ").slice(0, 110)}`);
+			}
 		}
 	}
 	for (const cenario of esperados) {

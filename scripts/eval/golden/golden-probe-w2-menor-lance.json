@@ -1,0 +1,78 @@
+{
+	"cenario": "golden-probe-w2-menor-lance",
+	"descricao": "Regressão do report da Bruna de 05/08/2026 (prints 05-08-16-19 e 05-08-16-21): com carta de R$ 200.000 na mesa, ela perguntou 'teria um grupo com menor lance?' e o agente (a) trouxe cartas MENORES — 150k/144k/144k/145k — em vez de outro grupo na mesma faixa ('não diminuir a minha carta'), e (b) recomendou ÂNCORA com lance médio 154.700 quando BANCO DO BRASIL, na MESMA tela, tinha 99.150 ('esse não seria o grupo com menor lance'). Também vigia a duplicata de oferta do print 05-08-21-47.\n\nPor que este cenário NÃO exige E2E_TEST_CPF: o gate `identify` valida apenas FORMATO (isValidCpf = dígito verificador, celular com DDD, aceite LGPD) — quem valida CPF×celular de verdade é a Bevi, e só no fechamento (contract-submit). Como esta jornada para na BUSCA/RECOMENDAÇÃO e nunca contrata, um CPF sintético com DV válido é suficiente e evita PII real no repo. Cenário que precise FECHAR contrato continua exigindo credencial real.\n\nACHADO 09/08/2026 (D2, pendente): o assert `recommendationMustMinimize` existe e está testado, mas NÃO pode ser armado aqui ainda — o card de recomendação chega ao artifact SEM `avgBidValue`, enquanto 17 ofertas na mesma tela têm o campo. Sem o lance no card não dá pra provar (nem mostrar ao cliente) que a recomendação é a melhor no eixo pedido, que é exatamente a dúvida da Bruna em 05/08 ('esse não seria o grupo com menor lance'). Próximo passo: garantir `avgBidValue` no payload da recomendação (recommendation-payload.ts:144 só o inclui quando a fonte traz) e então armar o assert neste turno.",
+	"caRefs": [
+		"report-whatsapp-2026-08-05",
+		"print 05-08-16-19",
+		"print 05-08-16-21",
+		"print 05-08-21-47"
+	],
+	"asserts": {
+		"maxConsecutiveSameGate": 3,
+		"turns": [
+			null,
+			null,
+			null,
+			null,
+			null,
+			{
+				"forbidDuplicateOffers": true,
+				"minCreditValue": 200000
+			},
+			{
+				"forbidDuplicateOffers": true,
+				"minCreditValue": 200000
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi",
+			"expect": "welcome com as categorias."
+		},
+		{
+			"type": "action",
+			"action": {
+				"kind": "category",
+				"category": "auto"
+			},
+			"label": "Automóvel",
+			"expect": "transição + gate name."
+		},
+		{
+			"type": "text",
+			"text": "Bruna",
+			"expect": "saudação + gate desire."
+		},
+		{
+			"type": "text",
+			"text": "Um carro de uns 200 mil, quero trocar o meu",
+			"expect": "eco do desejo + segue o funil até identify."
+		},
+		{
+			"type": "action",
+			"action": {
+				"kind": "gate",
+				"gate": "identify",
+				"value": {
+					"cpf": "12345678909",
+					"celular": "62999887766",
+					"lgpd": true
+				}
+			},
+			"label": "CPF e celular",
+			"expect": "identidade aceita (só formato) + segue pro valor."
+		},
+		{
+			"type": "text",
+			"text": "Valor do bem: R$ 200.000",
+			"expect": "reveal com as opções reais. ASSERT: nenhuma carta abaixo de 200k e nenhuma oferta duplicada na tela."
+		},
+		{
+			"type": "text",
+			"text": "a minha dúvida é: teria um grupo com menor lance?",
+			"expect": "ASSERT PRINCIPAL: responder com OUTRO GRUPO na mesma faixa de crédito. É PROIBIDO encolher a carta pra baixar o lance — foi o que a Bruna reportou. Nenhuma oferta abaixo de 200k, nenhuma duplicada."
+		}
+	]
+}
