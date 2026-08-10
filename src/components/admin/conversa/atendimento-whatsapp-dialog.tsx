@@ -1,6 +1,7 @@
 "use client";
 
 import { Phone, Video } from "lucide-react";
+import { useState } from "react";
 import { ClientChatBox } from "@/components/admin/pipeline/client-chat-box";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { type MensagemDaConversa, WhatsAppView } from "./whatsapp-view";
@@ -36,6 +37,7 @@ export function AtendimentoWhatsAppDialog({
 }) {
 	const nome = nomeDoContato?.trim() || "Cliente";
 	const iniciais = nome.slice(0, 2).toUpperCase();
+	const [aguardandoResposta, setAguardandoResposta] = useState(false);
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -63,11 +65,26 @@ export function AtendimentoWhatsAppDialog({
 				<div className="min-h-0 flex-1 overflow-y-auto bg-[#efeae2] dark:bg-[#0b141a]">
 					<div className="p-3">
 						<WhatsAppView mensagens={mensagens} />
+						{/* Depois de disparar a retomada, a conversa fica esperando o
+						    cliente. Dizer isso DENTRO da conversa — e não num canto — é
+						    o que evita o atendente ficar tentando mandar de novo. */}
+						{aguardandoResposta && (
+							<div className="mt-2 flex justify-center">
+								<span className="rounded-full bg-black/5 px-3 py-1 text-[11px] text-muted-foreground dark:bg-white/10">
+									Contato de retomada enviado — aguardando o cliente responder para liberar a
+									conversa
+								</span>
+							</div>
+						)}
 					</div>
 				</div>
 
 				<div className="border-t bg-background p-3">
-					<ClientChatBox conversationId={conversationId} onSent={onEnviado} />
+					<ClientChatBox
+						conversationId={conversationId}
+						onSent={onEnviado}
+						onRetomadaEnviada={() => setAguardandoResposta(true)}
+					/>
 				</div>
 			</DialogContent>
 		</Dialog>

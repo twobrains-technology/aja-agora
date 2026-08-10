@@ -6,8 +6,9 @@
 
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale/pt-BR";
-import { FileDown, Globe, Headset, Smartphone } from "lucide-react";
-import { useEffect, useState } from "react";
+import { FileDown, Globe, Headset, MessageCircle, Smartphone } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { AtendimentoWhatsAppDialog } from "@/components/admin/conversa/atendimento-whatsapp-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,7 +20,6 @@ import {
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { rotuloDoEstagio } from "@/lib/admin/lead-stages";
-import { ClientChatBox } from "./client-chat-box";
 import type { LeadActiveHandoff } from "./lead-card";
 import { MesaResponsavel } from "./mesa-responsavel";
 import { MesaTransbordoDialog } from "./mesa-transbordo-dialog";
@@ -131,6 +131,8 @@ export function ContactDetailPanel({
 	const [detail, setDetail] = useState<ContactDetail | null>(null);
 	const [loading, setLoading] = useState(false);
 	const [transbordoOpen, setTransbordoOpen] = useState(false);
+	/** Tela de atendimento (modal no layout do WhatsApp). */
+	const [atendimentoOpen, setAtendimentoOpen] = useState(false);
 	// Estado do download da proposta co-branded (PDF) por linha. A geração é
 	// best-effort no fechamento → "unavailable" quando ainda não existe no S3.
 	const [proposalPdf, setProposalPdf] = useState<Record<string, "loading" | "unavailable">>({});
@@ -155,16 +157,23 @@ export function ContactDetailPanel({
 		}
 	}
 
-	useEffect(() => {
-		if (!contactId || !open) return;
+	/** Recarrega o dossiê. Chamado ao abrir e depois de enviar mensagem — sem isto
+	 *  o template disparado não apareceria como bolha na tela de atendimento. */
+	const recarregarDetalhe = useCallback(() => {
+		if (!contactId) return;
 		setLoading(true);
-		setDetail(null);
 		fetch(`/api/admin/contacts/${contactId}`)
 			.then((r) => (r.ok ? r.json() : null))
 			.then((d) => setDetail(d))
 			.catch(() => setDetail(null))
 			.finally(() => setLoading(false));
-	}, [contactId, open]);
+	}, [contactId]);
+
+	useEffect(() => {
+		if (!contactId || !open) return;
+		setDetail(null);
+		recarregarDetalhe();
+	}, [contactId, open, recarregarDetalhe]);
 
 	// Reset da ação de transbordo ao trocar de contato (o ClientChatBox reseta sozinho).
 	// biome-ignore lint/correctness/useExhaustiveDependencies: contactId é o gatilho do reset
@@ -356,10 +365,25 @@ export function ContactDetailPanel({
 							</div>
 						)}
 
-						{/* FIX-87 + templates HSM: chat do operador → WhatsApp. Compartilhado com o
-						    LeadDetailPanel via ClientChatBox; janela fechada oferece envio de template. */}
+						{/* Atender é no MODAL, não numa caixinha no rodapé: a conversa
+						    inteira à vista, no layout que o cliente vê, com o campo de
+						    resposta embaixo. O chat inline continuava escondendo o
+						    histórico e obrigando a alternar de aba pra ler o que foi dito. */}
 						<div className="border-t pt-4">
-							<ClientChatBox conversationId={conversationId} onSent={onClose} />
+							<h4 className="mb-2 text-sm font-semibold">Conversa com o cliente</h4>
+							<Button
+								onClick={() => setAtendimentoOpen(true)}
+								disabled={!conversationId}
+								className="w-full"
+							>
+								<MessageCircle className="size-4" />
+								Abrir atendimento
+							</Button>
+							{!conversationId && (
+								<p className="mt-2 text-xs text-muted-foreground">
+									Sem conversa ativa para este contato.
+								</p>
+							)}
 						</div>
 					</TabsContent>
 				</Tabs>
@@ -372,6 +396,25 @@ export function ContactDetailPanel({
 						onOpenChange={setTransbordoOpen}
 					/>
 				)}
+
+				<AtendimentoWhatsAppDialog
+					open={atendimentoOpen}
+					onOpenChange={setAtendimentoOpen}
+					// Só a conversa ATIVA: misturar mensagens de conversas antigas do
+					// mesmo contato faria a tela de atendimento contar outra história.
+					mensagens={(detail?.timeline ?? [])
+						.filter((m) => !conversationId || m.conversationId === conversationId)
+						.map((m) => ({
+							id: m.id,
+							role: m.role as "user" | "assistant" | "system",
+							content: m.content,
+							createdAt: m.createdAt,
+						}))}
+					conversationId={conversationId}
+					nomeDoContato={leadName ?? detail?.contact?.name}
+					telefone={detail?.contact?.phone}
+					onEnviado={recarregarDetalhe}
+				/>
 			</SheetContent>
 		</Sheet>
 	);

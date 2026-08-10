@@ -10,7 +10,13 @@ import { buildTemplateComponents, createTemplateSchema } from "@/lib/validations
  * FIX-204. Protegida por role admin (mesmo guard das demais rotas admin).
  */
 export async function GET() {
-	const { error } = await requireRole("admin");
+	// LER a lista é de quem fala com o cliente, não só de quem gere templates.
+	// Era `admin` sozinho, e isso quebrava o atendimento: fora da janela de 24h o
+	// chat precisa achar o template de retomada, e pro atendente/mesa externa a
+	// chamada voltava 403 — o disparo automático nunca acontecia e o seletor
+	// aparecia vazio, como se não houvesse template nenhum cadastrado.
+	// Criar/submeter/editar continua admin-only (POST e as rotas de [id]).
+	const { error } = await requireRole("admin", "attendant", "mesa_externa");
 	if (error) return error;
 
 	const rows = await db.select().from(whatsappTemplates).orderBy(desc(whatsappTemplates.createdAt));

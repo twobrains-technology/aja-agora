@@ -30,9 +30,13 @@ const FIELD_CLASS =
 export function ClientChatBox({
 	conversationId,
 	onSent,
+	onRetomadaEnviada,
 }: {
 	conversationId?: string | null;
 	onSent?: () => void;
+	/** Avisa que o template de retomada foi disparado — quem mostra o estado de
+	 *  "aguardando o cliente" é a tela de atendimento, não esta caixa. */
+	onRetomadaEnviada?: () => void;
 }) {
 	const [message, setMessage] = useState("");
 	const [sending, setSending] = useState(false);
@@ -201,6 +205,10 @@ export function ClientChatBox({
 					setAvisoTemplate(
 						"A conversa estava fechada há mais de 24h, então enviei um contato de retomada. Assim que o cliente responder, sua mensagem pode ir.",
 					);
+					onRetomadaEnviada?.();
+					// Recarrega o histórico: o template virou mensagem e precisa aparecer
+					// como bolha na conversa, igual o cliente vai ver.
+					onSent?.();
 					return;
 				}
 				setWindowClosed(true);

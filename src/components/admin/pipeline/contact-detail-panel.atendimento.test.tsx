@@ -73,24 +73,38 @@ describe("ContactDetailPanel — aba Atendimento (transbordo + chat)", () => {
 		expect(screen.getByRole("button", { name: /transbordar para a mesa/i })).toBeTruthy();
 	});
 
-	it("na aba Atendimento mostra a caixa 'Chat com o cliente' com textarea e botão Enviar", async () => {
+	// 2026-08-10 — atender deixou de ser numa caixinha no rodapé da aba. Agora a
+	// aba oferece a PORTA ("Abrir atendimento") e a conversa acontece no modal em
+	// layout de WhatsApp, com o histórico inteiro à vista. O chat inline escondia
+	// as mensagens e obrigava a trocar de aba pra ler o que tinha sido dito.
+	it("na aba Atendimento oferece abrir a tela de atendimento", async () => {
 		renderPanel();
 		fireEvent.click(await screen.findByRole("tab", { name: "Atendimento" }));
-		expect(screen.getByText("Chat com o cliente")).toBeTruthy();
-		expect(screen.getByPlaceholderText(/digite sua mensagem para o cliente/i)).toBeTruthy();
-		expect(screen.getByRole("button", { name: /enviar/i })).toBeTruthy();
+		expect(screen.getByText("Conversa com o cliente")).toBeTruthy();
+		expect(screen.getByRole("button", { name: /abrir atendimento/i })).toBeTruthy();
 	});
 
-	it("enviar uma mensagem chama o endpoint da CONVERSA (não do lead)", async () => {
+	it("abrir o atendimento leva a conversa e o campo de envio pro modal", async () => {
+		renderPanel();
+		fireEvent.click(await screen.findByRole("tab", { name: "Atendimento" }));
+		fireEvent.click(screen.getByRole("button", { name: /abrir atendimento/i }));
+
+		// O modal traz o que o atendente precisa: o campo de resposta e o anexo.
+		expect(await screen.findByPlaceholderText(/digite sua mensagem para o cliente/i)).toBeTruthy();
+		expect(screen.getByRole("button", { name: /anexo/i })).toBeTruthy();
+	});
+
+	it("enviar do modal chama o endpoint da CONVERSA (não do lead)", async () => {
 		const fetchMock = global.fetch as unknown as ReturnType<typeof vi.fn>;
 		renderPanel();
 		fireEvent.click(await screen.findByRole("tab", { name: "Atendimento" }));
-		fireEvent.change(screen.getByPlaceholderText(/digite sua mensagem para o cliente/i), {
-			target: { value: "Olá, tudo certo com seus documentos?" },
-		});
-		// resposta do POST
+		fireEvent.click(screen.getByRole("button", { name: /abrir atendimento/i }));
+
+		const campo = await screen.findByPlaceholderText(/digite sua mensagem para o cliente/i);
+		fireEvent.change(campo, { target: { value: "Olá, tudo certo com seus documentos?" } });
 		fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ messageId: "m1" }) });
-		fireEvent.click(screen.getByRole("button", { name: /enviar/i }));
+		fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
+
 		const called = fetchMock.mock.calls.map((c) => String(c[0]));
 		expect(called.some((u) => u === "/api/admin/conversations/conv-1/message")).toBe(true);
 	});

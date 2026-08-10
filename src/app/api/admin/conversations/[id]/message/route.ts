@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { conversations, messages } from "@/db/schema";
+import { conversations, messages, whatsappTemplates } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
 import { isMesaExterna } from "@/lib/admin/role-scope";
 import { conversaPertenceAoAtendente, getMesaAttendantByUserId } from "@/lib/mesa/handoff";
@@ -94,6 +94,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 	const windowStatus = await isWindowOpen(conversationId);
 
 	let messageId: string | undefined;
+	/** Corpo REAL do template, pra timeline mostrar o que o cliente leu. */
+	let conteudoRegistrado: string | undefined;
 	let sentType: "text" | "template";
 
 	if (windowStatus.open) {
@@ -131,13 +133,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 		const result = await sendTemplate(conv.waId, templateName, languageCode);
 		messageId = result.messageId;
 		sentType = "template";
+
+		// O CLIENTE recebeu o corpo do template, não o nome dele. Gravar
+		// "Template enviado: aja_agora_atendente_retomada" deixava a timeline
+		// mentindo sobre o que foi dito — o atendente abria a conversa e via um
+		// identificador técnico no lugar da mensagem que o cliente leu.
+		const [tpl] = await db
+			.select({ bodyPreview: whatsappTemplates.bodyPreview })
+			.from(whatsappTemplates)
+			.where(eq(whatsappTemplates.metaName, templateName))
+			.limit(1);
+		conteudoRegistrado = tpl?.bodyPreview?.trim() || `Template enviado: ${templateName}`;
 	}
 
 	if (messageId) {
 		await db.insert(messages).values({
 			conversationId,
 			role: "assistant",
-			content: text ?? `Template enviado: ${templateName}`,
+			content: text ?? conteudoRegistrado ?? `Template enviado: ${templateName}`,
 			channel: "whatsapp",
 			personaId: null, // mensagem do operador, não de persona
 		});
