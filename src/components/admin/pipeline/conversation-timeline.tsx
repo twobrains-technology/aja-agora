@@ -136,7 +136,7 @@ export function ConversationTimeline(props: Props) {
 		return (
 			<div className="flex flex-1 flex-col">
 				{alternador}
-				<ScrollArea className="flex-1 h-[calc(100vh-260px)]">
+				<ScrollArea className="min-h-0 flex-1 max-h-[calc(100vh-260px)]">
 					<div className="p-4">
 						<WhatsAppView mensagens={messages} />
 					</div>
@@ -146,7 +146,7 @@ export function ConversationTimeline(props: Props) {
 	}
 
 	return (
-		<ScrollArea className="flex-1 h-[calc(100vh-220px)]">
+		<ScrollArea className="min-h-0 flex-1 max-h-[calc(100vh-220px)]">
 			{alternador}
 			<div className="flex flex-col gap-3 p-4">
 				{messages
