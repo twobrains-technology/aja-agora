@@ -150,7 +150,14 @@ async function main(): Promise<void> {
 	const runName = `gate-${gitShaCurto()}-${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "")}`;
 
 	const resultado = await dataset.runExperiment({
-		name: runName,
+		// `name` é o EXPERIMENTO (estável, agrupa os runs); `runName` é ESTA
+		// execução. Passar o nome da execução em `name` e omitir `runName` fazia o
+		// SDK anexar " - <ISO>" por conta própria — e como o nome já traz sha +
+		// timestamp, a prod ficou com runs tipo
+		// "gate-d0362a14-202608070333 - 2026-08-07T03:33:37.825Z": timestamp
+		// duplicado, nome estourando a coluna da UI.
+		name: "gate-promocao",
+		runName,
 		description: "Gate de promoção de prompt — golden-set contra o app real",
 		metadata: { baseUrl: BASE, aiModel: process.env.AI_MODEL ?? null },
 		maxConcurrency: 2,
@@ -198,6 +205,25 @@ async function main(): Promise<void> {
 					name: "trajectory_pass",
 					value: verdict.pass ? 1 : 0,
 					comment: verdict.failures.join(" | ").slice(0, 900) || "trajetória ok",
+				};
+			},
+		],
+		// Sem um evaluator de RUN, o número agregado só existia no stdout — a UI
+		// não tinha coluna comparável entre execuções, que é justamente o que se
+		// olha pra decidir se a versão nova do prompt regrediu. `pass_rate` é o
+		// veredito do run inteiro, ao lado do `trajectory_pass` de cada cenário.
+		runEvaluators: [
+			async ({ itemResults }) => {
+				const notas = itemResults
+					.flatMap((r) => r.evaluations)
+					.filter((e) => e.name === "trajectory_pass")
+					.map((e) => Number(e.value));
+				const total = notas.length;
+				const passou = notas.filter((n) => n === 1).length;
+				return {
+					name: "pass_rate",
+					value: total > 0 ? passou / total : 0,
+					comment: `${passou}/${total} cenários`,
 				};
 			},
 		],

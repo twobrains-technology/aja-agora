@@ -43,9 +43,22 @@ export function toLangChainTool(name: string, aiSdkTool: AiSdkTool): DynamicStru
 				name,
 				async (span) => {
 					span.update({ input });
-					const out = await execute(input as never, fakeToolExecutionOptions());
-					span.update({ output: out });
-					return out;
+					try {
+						const out = await execute(input as never, fakeToolExecutionOptions());
+						span.update({ output: out });
+						return out;
+					} catch (err) {
+						// Sem este catch a tool que estoura sai do trace como span mudo —
+						// sem output e sem marca de erro, idêntico a um span truncado. O
+						// nível ERROR é o que faz a observação aparecer vermelha na UI e
+						// entrar no filtro `level` da Metrics API, que é como "tool
+						// falhando em silêncio" vira número em vez de suspeita.
+						span.update({
+							level: "ERROR",
+							statusMessage: err instanceof Error ? err.message : String(err),
+						});
+						throw err;
+					}
 				},
 				{ asType: "tool" },
 			),

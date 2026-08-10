@@ -34,6 +34,7 @@ import {
 	prazoMesesForIntent,
 } from "@/lib/agent/qualify-config";
 import { nextGate } from "@/lib/agent/qualify-state";
+import { quemRespondePara } from "@/lib/agent/quem-responde";
 import { VISIT_COOKIE } from "@/lib/attribution/visit-cookie";
 import { resolveVisitIdFromCookie } from "@/lib/attribution/visit-store";
 import {
@@ -46,7 +47,6 @@ import {
 	ancorarOfertaReal,
 	buildStartContractInput,
 } from "@/lib/bevi/contract-input";
-import { quemRespondePara } from "@/lib/agent/quem-responde";
 import { sendContractSummary } from "@/lib/bevi/contract-summary";
 import { sendFechoPedirOi } from "@/lib/bevi/fecho-pedir-oi";
 import { confirmOffer, startContract, uploadContractDocument } from "@/lib/bevi/fulfillment";

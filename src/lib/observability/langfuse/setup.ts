@@ -5,7 +5,8 @@
 // nodejs, então os imports estáticos do SDK não vazam pro bundle do client.
 import { LangfuseSpanProcessor } from "@langfuse/otel";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
-import { isLangfuseConfigured } from "./env";
+import { getLangfuseClient } from "./client";
+import { ambienteLangfuse, isLangfuseConfigured, release } from "./env";
 import { maskSecrets } from "./mask";
 
 type LangfuseGlobal = typeof globalThis & {
@@ -21,6 +22,14 @@ export function initLangfuseTracing(): void {
 			publicKey: process.env.LANGFUSE_PUBLIC_KEY?.trim(),
 			secretKey: process.env.LANGFUSE_SECRET_KEY?.trim(),
 			baseUrl: process.env.LANGFUSE_BASE_URL?.trim(),
+			// Sem isto TUDO cai no ambiente "default" e produção fica misturada com
+			// dev/local no mesmo gráfico — qualquer média de qualidade sai
+			// contaminada por conversa de teste. O filtro de ambiente é global na
+			// UI, então separar aqui conserta todas as views de uma vez.
+			environment: ambienteLangfuse(),
+			// Carimba o commit em TODO span. É o que permite ler "esse defeito
+			// começou no deploy X" em vez de comparar timestamps na mão.
+			...(release() ? { release: release() } : {}),
 			mask: maskSecrets,
 			// Registrar um provider global ACORDA o OTel nativo do Next — sem este
 			// filtro, TODO request HTTP (inclusive os pollings de 3s do simulador)
@@ -45,12 +54,23 @@ export function initLangfuseTracing(): void {
 	}
 }
 
-/** Flush explícito (fim de script curto / after() de rota). Nunca lança. */
+/** Flush explícito (fim de script curto / after() de rota). Nunca lança.
+ *
+ *  São DOIS buffers independentes e esquecer o segundo é falha silenciosa: os
+ *  spans saem pelo `LangfuseSpanProcessor` (OTel), mas os scores saem pelo
+ *  `ScoreManager` do LangfuseClient, que tem fila própria. Só o `forceFlush`
+ *  do processor deixava score de fim de turno para trás num processo que
+ *  encerra logo depois (script de eval, lambda-like). */
 export async function flushLangfuse(): Promise<void> {
 	const g = globalThis as LangfuseGlobal;
 	try {
 		await g.__ajaLangfuseProcessor?.forceFlush();
 	} catch (err) {
-		console.error("[langfuse] flush falhou (ignorado):", err);
+		console.error("[langfuse] flush de spans falhou (ignorado):", err);
+	}
+	try {
+		await getLangfuseClient()?.score.flush();
+	} catch (err) {
+		console.error("[langfuse] flush de scores falhou (ignorado):", err);
 	}
 }

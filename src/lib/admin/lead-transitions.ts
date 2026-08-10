@@ -67,5 +67,23 @@ export async function transitionLeadStage(
 		console.error("[lead-transitions] falha ao registrar conversão de mídia:", err);
 	}
 
+	// Marco de observabilidade. Este é o ÚNICO funil por onde toda mudança de
+	// raia passa (mesa, worker da Bevi, admin arrastando o card), e até aqui o
+	// caminho de sucesso era mudo — nem log. Ancorar na sessão é o que deixa
+	// "fechou" ficar do lado da conversa que fechou. Nunca derruba a transição:
+	// o lead já mudou de raia no banco antes desta linha.
+	try {
+		const { registrarMarcoDeNegocio } = await import("@/lib/observability/langfuse/negocio");
+		registrarMarcoDeNegocio({
+			conversationId: lead.conversationId ?? null,
+			estagio: toStage,
+			estagioAnterior: lead.stage,
+			valor: lead.creditValue ? Number(lead.creditValue) : null,
+			isSimulated: lead.isSimulated === true,
+		});
+	} catch (err) {
+		console.error("[lead-transitions] falha ao publicar marco no Langfuse:", err);
+	}
+
 	return { ...lead, stage: toStage, updatedAt: now };
 }

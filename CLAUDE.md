@@ -14,11 +14,17 @@ explica lance/contemplação/taxa como quem sabe, e fecha. Não é um formulári
 **Invariante verificável vira código. Conversa é do modelo.**
 
 - Verificável (a Bevi exige CPF antes de simular; número vem de tool, nunca da cabeça do modelo;
-  nada de "cota reservada" antes da contratação; nada de prometer contemplação garantida ou prazo)
-  → **código determinístico**.
+  nada de "cota reservada" antes da contratação) → **código determinístico**.
 - Todo o resto — como perguntar, com que palavra, com que empatia, em que ordem quando o cliente
   puxa pro lado — → **é do modelo**. Não vira regra-no-prompt, não vira texto fixo no servidor,
   não vira teste de regex.
+
+**Falar de prazo de contemplação é do vendedor** (decisão do Kairo, 2026-08-10). Antes havia
+aqui "nada de prometer contemplação garantida ou prazo", e isso saiu: travar o assunto tira do
+agente um argumento que todo vendedor de consórcio usa — que lance antecipa, que grupo curto
+costuma girar mais rápido. Estimar, comparar e sugerir é o trabalho dele. O que continua valendo
+é **coerência**: o número que ele citar tem que sair de tool/dado real, não da cabeça do modelo
+(isso já é a primeira regra). Vender é o objetivo; a trava não pode ser o obstáculo.
 
 O agente já foi engessado uma vez e virou um robô que respondia sempre a mesma coisa. Se a conversa
 sair ruim, a primeira hipótese é **prompt/contexto ruim ou trava demais** — não "falta uma trava".

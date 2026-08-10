@@ -26,6 +26,7 @@
 
 import type { UIMessage, UIMessageStreamWriter } from "ai";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
+import { publicarFunilNoLangfuse } from "@/lib/observability/langfuse/funil-scores";
 
 export type TurnTraceChannel = "web" | "whatsapp";
 
@@ -84,9 +85,18 @@ export type TurnTraceDeps = {
 
 /** Sink padrão: log estruturado, 1 linha JSON por turno, prefixo estável pra
  *  grep/ingest. Trocar por uma tabela Drizzle `turn_traces` é substituir só
- *  isto — nenhum caller muda. */
+ *  isto — nenhum caller muda.
+ *
+ *  Desde 2026-08-10 o mesmo record também vira SCORE no Langfuse. Este é o
+ *  ponto de enganche certo porque é o único lugar por onde os DOIS canais
+ *  passam: web (via `instrumentWriter`) e WhatsApp (via `traceTurnEvents`)
+ *  fecham aqui, ambos dentro do callback de `withLangfuseTurn`. Instrumentar
+ *  no `route.ts` exigiria caçar o gate em dois pontos aninhados de 1600 linhas
+ *  e ainda deixaria o WhatsApp de fora. O log continua intacto: cassette e
+ *  grep de produção dependem dele — os scores são adição, não substituição. */
 export function emitTurnTrace(record: TurnTraceRecord): void {
 	console.log(`[turn-trace] ${JSON.stringify(record)}`);
+	publicarFunilNoLangfuse(record);
 }
 
 const defaultDeps: TurnTraceDeps = {

@@ -267,18 +267,45 @@ async function consumeEvents(
 	const conv = await db.query.conversations
 		.findFirst({
 			where: eq(conversations.id, conversationId),
-			columns: { isSimulated: true },
+			// `metadata` entra junto de propósito: a persona vinha sendo lida só
+			// mais adiante (no `TurnTrace`) e nunca chegava ao ctx do Langfuse, o
+			// que deixava o WhatsApp sem a tag `persona:` que a web tem. Buscar as
+			// duas na MESMA query evita pagar um SELECT a mais por turno.
+			columns: { isSimulated: true, metadata: true },
 		})
 		.catch(() => null);
+	const persona =
+		(conv?.metadata as { currentPersona?: string } | null | undefined)?.currentPersona ?? null;
+
+	// A fala do agente precisa ser acumulada AQUI, no tap, e não lá dentro: o
+	// trace do WhatsApp saía sem `output` nenhum, e trace sem output é trace que
+	// juiz nenhum consegue avaliar — era por isso que os evaluators gerenciados
+	// só rodavam sobre `channel:web`. O canal que mais dá problema era o único
+	// invisível para avaliação. Espelha o `collectAgentText` do canal web.
+	let falaFinal = "";
+	async function* comCapturaDaFala(): AsyncGenerator<TurnEvent> {
+		for await (const ev of events) {
+			if (ev.type === "text-delta") falaFinal += ev.text;
+			yield ev;
+		}
+	}
+
 	await withLangfuseTurn(
 		{
 			conversationId,
 			channel: "whatsapp",
 			isSimulated: conv?.isSimulated === true,
+			persona,
 			userId: `wa:${from}`,
 			userText: opts?.userText ?? null,
 		},
-		() => consumeEventsInner(from, conversationId, events, opts),
+		async (lfTurn) => {
+			try {
+				await consumeEventsInner(from, conversationId, comCapturaDaFala(), opts);
+			} finally {
+				if (falaFinal) lfTurn.setOutput(falaFinal);
+			}
+		},
 	);
 }
 
