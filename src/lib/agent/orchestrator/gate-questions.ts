@@ -79,6 +79,33 @@ const DESIRE_QUESTIONS: Record<Category, string> = {
 	moto: "Qual moto você tem em mente?",
 };
 
+/**
+ * A pergunta que ABRE o funil, quando a categoria ainda é desconhecida.
+ *
+ * PROD 3dbe48c5 (2026-08-04 15:23): cliente manda "Oi", o gate `desire` dispara
+ * e `[gate-undelivered]` loga "SEM entrega no WhatsApp (nem interactive nem
+ * texto)". O turno inteiro foi "Oi, Kairo! Tudo certo?" — e o cliente respondeu
+ * "Tudo e voce". Dois turnos e 28s antes da primeira pergunta útil, na abertura
+ * da venda, que é o único momento em que ele está disposto a falar.
+ *
+ * A causa era de MODELAGEM: `DESIRE_QUESTIONS` é `Record<Category, string>`, um
+ * tipo que não tem como representar "ainda não sei a categoria" — e é
+ * exatamente a categoria que este gate existe pra descobrir. O `null` da linha
+ * abaixo não era esquecimento, era o tipo dizendo a verdade sobre um gate que
+ * carregava dois trabalhos diferentes.
+ *
+ * ABERTA com âncoras, de propósito: resposta curta ("carro") classifica, e
+ * resposta longa ("quero trocar o meu, vive na oficina") entrega o MOTIVO — que
+ * é o que um vendedor usa no resto da conversa e que um botão nunca daria.
+ * Por isso não virou card: a primeira pergunta da venda não é um formulário.
+ *
+ * É REDE, não trilho — só sai quando o modelo NÃO perguntou (`modelAsked`
+ * false, `whatsapp/adapter.ts:535`). A reversão consciente do FIX-349
+ * (2026-07-21) segue valendo: pergunta do modelo nunca é duplicada pela
+ * canônica.
+ */
+const DESIRE_ABERTURA = "Me conta o que você quer conquistar: um carro, uma moto ou um imóvel?";
+
 export function gateQuestion(
 	gate: Gate,
 	category?: Category | null,
@@ -111,7 +138,7 @@ export function gateQuestion(
 			// input focado — null aqui evita a pergunta aparecer duas vezes.
 			return null;
 		case "desire":
-			return category ? DESIRE_QUESTIONS[category] : null;
+			return category ? DESIRE_QUESTIONS[category] : DESIRE_ABERTURA;
 		case "experience":
 			return "Você já fez consórcio antes?";
 		case "credit": {

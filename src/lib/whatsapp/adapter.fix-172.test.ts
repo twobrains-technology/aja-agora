@@ -20,6 +20,10 @@ const mocks = vi.hoisted(() => ({
 	reloadMeta: vi.fn().mockResolvedValue({}),
 	persistMeta: vi.fn().mockResolvedValue(undefined),
 	recordStageReached: vi.fn().mockResolvedValue(undefined),
+	reengageQuestionForGate: vi.fn(),
+	// Preenchido pelo factory do `vi.mock` abaixo (que roda hoisted, antes de
+	// qualquer `let` no corpo do módulo — daí morar aqui dentro).
+	reengageReal: null as unknown as (...a: unknown[]) => string | null,
 }));
 
 // Idempotência do canal (src/lib/whatsapp/once.ts) fala com o Postgres — nos
@@ -50,6 +54,13 @@ vi.mock("@/lib/agent/orchestrator", async (orig) => ({
 	...(await (orig() as Promise<Record<string, unknown>>)),
 	runTurn: mocks.runTurn,
 }));
+// Spy sobre o reengage REAL: por padrão delega ao original (o degrau preferido
+// é exercitado de verdade); só o caso da rede final o força a devolver null.
+vi.mock("@/lib/agent/gate-reengage", async (orig) => {
+	const real = (await orig()) as Record<string, unknown>;
+	mocks.reengageReal = real.reengageQuestionForGate as (...a: unknown[]) => string | null;
+	return { ...real, reengageQuestionForGate: mocks.reengageQuestionForGate };
+});
 
 import { processWithOrchestrator } from "./adapter";
 
@@ -69,14 +80,53 @@ beforeEach(() => {
 	vi.clearAllMocks();
 	mocks.getOrCreateConversation.mockResolvedValue({ id: "conv-fix172" });
 	mocks.reloadMeta.mockResolvedValue({});
+	// Re-arma o passthrough a CADA teste: sem isto o caso da rede final (que
+	// força `null`) vazaria a implementação pros seguintes e a suíte passaria a
+	// depender da ordem de execução.
+	mocks.reengageQuestionForGate.mockImplementation((...a: unknown[]) => mocks.reengageReal(...a));
 });
 afterEach(() => vi.clearAllMocks());
 
 describe("FIX-172 — guard de turno-mudo no WhatsApp (agente mudo ao receber o nome)", () => {
-	it("turno de usuário MUDO (loop de save_contact_name, 0 texto) => emite o fallback, não silêncio", async () => {
+	it("turno de usuário MUDO (loop de save_contact_name, 0 texto) => o usuário recebe algo, não silêncio", async () => {
 		mocks.runTurn.mockReturnValue(muteTurn());
 		await processWithOrchestrator(WA, "Kairo", undefined);
-		// o usuário recebe o fallback honesto em vez de 27s de silêncio
+
+		// O INVARIANTE do FIX-172: nunca 27s de silêncio. QUAL frase sai é o
+		// degrau do guard (asserido nos dois casos abaixo), não o invariante.
+		expect(mocks.sendText, "turno mudo tem que emitir ALGUMA coisa").toHaveBeenCalled();
+		const enviado = mocks.sendText.mock.calls.map((c) => c[1] as string).join(" | ");
+		expect(enviado.trim().length, "a mensagem não pode ser vazia").toBeGreaterThan(0);
+	});
+
+	// 2026-08-05 — o degrau PREFERIDO passou a valer também pro `desire`.
+	// `adapter.ts:574-591` sempre preferiu re-cobrar o gate pendente ao invés do
+	// "me perdi" ("Re-cobra o gate de coleta pendente em vez do 'me perdi';
+	// demais gates caem no fallback honesto"), e o FIX-351 generalizou pra
+	// "QUALQUER gate com pergunta própria é reengajável" — citando `desire`
+	// entre os que devolviam null. Mas `gateQuestion("desire", null)` continuava
+	// null sem categoria, então o `desire` seguia caindo no "me perdi". Com a
+	// pergunta de abertura (`DESIRE_ABERTURA`), o guard finalmente sobe de degrau
+	// no estado de PRIMEIRO CONTATO — que é o `reloadMeta` vazio deste teste.
+	it("turno mudo com gate reengajável => re-pergunta que CONDUZ, não 'me perdi'", async () => {
+		mocks.runTurn.mockReturnValue(muteTurn());
+		await processWithOrchestrator(WA, "Kairo", undefined);
+
+		const enviado = mocks.sendText.mock.calls.map((c) => c[1] as string).join(" | ");
+		expect(enviado).not.toBe(EMPTY_TURN_FALLBACK);
+		expect(enviado, "a re-cobrança tem que perguntar algo que move o funil").toMatch(
+			/carro|moto|im[óo]vel/i,
+		);
+	});
+
+	it("sem gate reengajável, a rede final ('me perdi') continua ligada", async () => {
+		// O último recurso não pode ter sido desligado pelo degrau novo: com o
+		// reengage devolvendo null (gate sem pergunta própria, ex.: `name`), o
+		// fallback honesto segue sendo o que sai.
+		mocks.reengageQuestionForGate.mockReturnValue(null);
+		mocks.runTurn.mockReturnValue(muteTurn());
+		await processWithOrchestrator(WA, "Kairo", undefined);
+
 		expect(mocks.sendText).toHaveBeenCalledWith(WA, EMPTY_TURN_FALLBACK);
 	});
 
