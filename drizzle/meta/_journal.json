@@ -295,6 +295,13 @@
       "when": 1786365954091,
       "tag": "0041_yielding_alex_wilder",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1786384520661,
+      "tag": "0042_freezing_machine_man",
+      "breakpoints": true
     }
   ]
 }

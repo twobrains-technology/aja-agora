@@ -1,0 +1,2 @@
+ALTER TABLE "mesa_attendants" ADD COLUMN "recebe_todos" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "mesa_attendants_recebe_todos_unico" ON "mesa_attendants" USING btree ("recebe_todos") WHERE "mesa_attendants"."recebe_todos" = true;

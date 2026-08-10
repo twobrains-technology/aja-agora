@@ -808,6 +808,17 @@ export const mesaAttendants = pgTable(
 			.unique()
 			.references(() => user.id, { onDelete: "set null" }),
 		isActive: boolean("is_active").default(true).notNull(),
+		// 2026-08-10 — MESA DEDICADA: este atendente recebe TODO caso que cair,
+		// atribuído na hora, sem passar pela fila de "quem pega primeiro".
+		//
+		// Existe porque durante a integração com a Bevi a operação é uma mesa só
+		// (decisão do Kairo: "tudo que cair tem que ir para a mesa dela"). Sem
+		// isto o handoff nasce sem dono e espera alguém clicar "Vou atender" no
+		// WhatsApp — e quem opera pelo painel não tinha como pegar caso nenhum.
+		//
+		// É FLAG NO BANCO, não nome no código: acabada a integração, desmarca e o
+		// modelo de broadcast volta sozinho, sem deploy.
+		recebeTodos: boolean("recebe_todos").default(false).notNull(),
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true })
 			.defaultNow()
@@ -817,6 +828,11 @@ export const mesaAttendants = pgTable(
 	(table) => [
 		index("mesa_attendants_whatsapp_idx").on(table.whatsapp),
 		index("mesa_attendants_user_id_idx").on(table.userId),
+		// No máximo UMA mesa dedicada ativa. Duas fariam a atribuição depender da
+		// ordem que o banco devolveu — o caso cairia num ou noutro sem regra.
+		uniqueIndex("mesa_attendants_recebe_todos_unico")
+			.on(table.recebeTodos)
+			.where(sql`${table.recebeTodos} = true`),
 	],
 );
 

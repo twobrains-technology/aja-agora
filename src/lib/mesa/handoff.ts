@@ -167,7 +167,51 @@ export async function createMesaHandoff(
 		})
 		.returning();
 
+	// MESA DEDICADA: havendo uma, o caso já nasce dela — sem fila, sem corrida.
+	//
+	// Passa pelo `claimMesaHandoff` de propósito, e não por um UPDATE aqui: é ele
+	// que cala o agente e move o lead pra `em_atendimento`. Um atalho novo
+	// esqueceria uma das duas coisas, que é como o agente acabou falando por cima
+	// do atendente antes (2026-08-10).
+	//
+	// Só quando ninguém foi indicado explicitamente: dono nomeado na chamada manda.
+	if (!attendant) {
+		const dedicada = await getMesaDedicada();
+		if (dedicada) {
+			const claim = await claimMesaHandoff(handoff.id, dedicada.id);
+			if (claim.ok) {
+				return { ok: true, handoff: claim.handoff, lead, attendant: dedicada, proposal };
+			}
+			console.error(
+				JSON.stringify({
+					level: "error",
+					source: "mesa-dedicada",
+					handoff_id: handoff.id,
+					attendant_id: dedicada.id,
+					reason: claim.reason,
+					note: "atribuição à mesa dedicada falhou; caso segue aberto pra claim normal",
+				}),
+			);
+		}
+	}
+
 	return { ok: true, handoff, lead, attendant, proposal };
+}
+
+/**
+ * A mesa que recebe tudo, se houver uma.
+ *
+ * Índice único parcial garante no máximo uma marcada; `isActive` filtra a que foi
+ * desativada sem desmarcar a flag. Nenhuma marcada → `null`, e o sistema volta ao
+ * broadcast com "Vou atender".
+ */
+export async function getMesaDedicada(): Promise<AttendantRow | null> {
+	const [dedicada] = await db
+		.select()
+		.from(mesaAttendants)
+		.where(and(eq(mesaAttendants.recebeTodos, true), eq(mesaAttendants.isActive, true)))
+		.limit(1);
+	return dedicada ?? null;
 }
 
 /**
