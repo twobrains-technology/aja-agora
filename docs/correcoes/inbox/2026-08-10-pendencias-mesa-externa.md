@@ -1,6 +1,6 @@
 # Pendências abertas do fluxo de mesa externa (2026-08-10)
 
-> Três buracos que sobraram depois da entrega da mesa externa (role `mesa_externa`,
+> Quatro buracos que sobraram depois da entrega da mesa externa (role `mesa_externa`,
 > modal de atendimento, anexos, trava do agente). Nenhum deles bloqueia o fluxo
 > hoje — todos foram **medidos**, não suspeitados. Palavras do Kairo ao pedir o
 > registro: *"anota isso ai"*.
@@ -114,7 +114,22 @@ novos dentro da janela de 10 minutos, e ele nunca assentou. Falso negativo puro:
 não houve rollback nem crash. Quem olhar o histórico da `main` vai ver um X
 vermelho num commit que está rodando agora.
 
-**Sintoma 2 — quem escolhe o commit de produção é o relógio.** A task definition
+**Sintoma 2 — verde também não prova nada.** O run de `9870bfa0` imprimiu
+`Rollout completed — esperado sha-9870bfa (sha256:b168a617…)` enquanto a task em
+execução naquele instante já era `bced0067…` (o commit seguinte).
+
+Lendo o passo (`.github/workflows/aws-ecr-deploy.yml:230-306`): ele calcula
+`EXPECTED` e apenas **imprime**. O critério de sucesso é
+`rolloutState=COMPLETED && deployments==1`, e a detecção de rollback é
+`grep "rolling back|deployment failed"` nos eventos do serviço — nunca há
+comparação com o digest em execução.
+
+E é assim por um motivo documentado ali mesmo: a role `gha-ecs-deploy` não tem
+`ecs:ListTasks`/`DescribeTasks`, e tentar usá-las quebrou o deploy `3abb5c3` com
+AccessDenied **depois** de a imagem já ter subido. A checagem por eventos foi o
+substituto possível na época — ela pega rollback, não pega deploy concorrente.
+
+**Sintoma 3 — quem escolhe o commit de produção é o relógio.** A task definition
 (`aja-agora-prod:13`, inalterada há vários deploys) fixa a imagem na tag **móvel**
 `:latest`. O deployment não carrega o commit: ele manda o ECS puxar `:latest`, e
 o que estiver lá naquele instante é o que sobe. Com pushes sobrepostos, o
@@ -124,18 +139,20 @@ deployment disparado pelo commit A pode subir a imagem do commit B — quem deci
 Nesta tarde deu certo por sorte de ordenação. Não é uma propriedade do sistema.
 
 **Correção proposta:**
-1. Task definition nova por deploy, com a imagem fixada em `sha-<commit>`
+1. Dar `ecs:ListTasks` + `ecs:DescribeTasks` à role `gha-ecs-deploy` e fazer o
+   passo comparar de fato o digest em execução com `$EXPECTED` — é a checagem
+   que o comentário do workflow diz querer e não pôde fazer.
+2. Task definition nova por deploy, com a imagem fixada em `sha-<commit>`
    (imutável) em vez de `:latest`. Aí o deployment carrega o commit, e digest
    vira consequência, não coincidência.
-2. O gate de rollout precisa comparar o DIGEST em execução, não contar
-   deployments. Hoje não consegue: a role `gha-ecs-deploy` não tem
-   `ecs:DescribeTasks` — o próprio comentário do workflow admite isso.
+3. O gate não pode reprovar por deploy concorrente: contar `deployments == 1`
+   transforma push em sequência em falso vermelho.
 
 ⚠️ **PENDENTE-KAIRO**: mexe na esteira de produção e numa role IAM.
 
 ---
 
-## Fora destes três
+## Fora destes quatro
 
 - **Junya está com `SIM-supervisao-mesa`** (WhatsApp simulado). Ela loga e opera o
   painel, mas não recebe mensagem real. Falta o número de verdade.
