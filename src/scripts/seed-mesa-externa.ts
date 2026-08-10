@@ -38,12 +38,22 @@ async function main() {
 		process.exit(1);
 	}
 
-	const validado = createMesaAttendantSchema.safeParse({ nome, whatsapp: whatsappBruto });
-	if (!validado.success) {
-		console.error(`Dados inválidos: ${JSON.stringify(validado.error.flatten().fieldErrors)}`);
-		process.exit(1);
+	// Número SIMULADO (`SIM-…`) pula a normalização E.164: ele não é telefone, é
+	// a chave que roteia pelo bus do simulador em vez da Meta. O schema de
+	// cadastro o rejeitaria — e é um caso legítimo (atendente sem número real
+	// ainda, ou conta de teste).
+	let whatsapp: string;
+	if (whatsappBruto.startsWith("SIM-")) {
+		whatsapp = whatsappBruto;
+		console.log(`[aviso] ${whatsapp} é simulado: NÃO recebe WhatsApp real nem copiloto.`);
+	} else {
+		const validado = createMesaAttendantSchema.safeParse({ nome, whatsapp: whatsappBruto });
+		if (!validado.success) {
+			console.error(`Dados inválidos: ${JSON.stringify(validado.error.flatten().fieldErrors)}`);
+			process.exit(1);
+		}
+		whatsapp = validado.data.whatsapp;
 	}
-	const { whatsapp } = validado.data;
 
 	// 1. A conta de login.
 	let userId: string;

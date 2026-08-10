@@ -56,6 +56,10 @@ interface TimelineMsg {
 	role: string;
 	content: string;
 	createdAt: string;
+	/** Preenchidos quando a mensagem saiu como template ou trouxe anexo. */
+	templateName?: string | null;
+	mediaType?: string | null;
+	mediaFilename?: string | null;
 }
 interface Proposal {
 	id: string;
@@ -400,16 +404,21 @@ export function ContactDetailPanel({
 				<AtendimentoWhatsAppDialog
 					open={atendimentoOpen}
 					onOpenChange={setAtendimentoOpen}
-					// Só a conversa ATIVA: misturar mensagens de conversas antigas do
-					// mesmo contato faria a tela de atendimento contar outra história.
-					mensagens={(detail?.timeline ?? [])
-						.filter((m) => !conversationId || m.conversationId === conversationId)
-						.map((m) => ({
-							id: m.id,
-							role: m.role as "user" | "assistant" | "system",
-							content: m.content,
-							createdAt: m.createdAt,
-						}))}
+					// Histórico INTEIRO do contato, não só a conversa atual. O cliente é
+					// um só: ele falou no site, voltou pelo WhatsApp, sumiu e voltou —
+					// e quem vai atender precisa de tudo isso à vista. Filtrar por
+					// `conversationId` escondia quase todo o histórico (e zerava a tela
+					// quando o id do card não era o da conversa das mensagens).
+					// O ENVIO continua indo pra conversa ativa (`conversationId` abaixo).
+					mensagens={(detail?.timeline ?? []).map((m) => ({
+						id: m.id,
+						role: m.role as "user" | "assistant" | "system",
+						content: m.content,
+						createdAt: m.createdAt,
+						templateName: m.templateName,
+						mediaType: m.mediaType,
+						mediaFilename: m.mediaFilename,
+					}))}
 					conversationId={conversationId}
 					nomeDoContato={leadName ?? detail?.contact?.name}
 					telefone={detail?.contact?.phone}

@@ -86,6 +86,15 @@ async function main() {
 	let [conv] = await db.select().from(conversations).where(eq(conversations.waId, WA_ID)).limit(1);
 
 	if (!conv) {
+		// O contato vem PRIMEIRO: a timeline do painel é montada a partir de
+		// `contacts.conversations`, ou seja, do `conversations.contact_id`. Criar a
+		// conversa sem esse vínculo (só amarrando pelo lead) faz a tela de
+		// atendimento abrir VAZIA, com as mensagens todas no banco.
+		const [contato] = await db
+			.insert(contacts)
+			.values({ name: NOME, phone: WA_ID })
+			.returning({ id: contacts.id });
+
 		const [criada] = await db
 			.insert(conversations)
 			.values({
@@ -93,15 +102,11 @@ async function main() {
 				status: "active",
 				waId: WA_ID,
 				contactName: NOME,
+				contactId: contato.id,
 				metadata: {},
 			})
 			.returning();
 		conv = criada;
-
-		const [contato] = await db
-			.insert(contacts)
-			.values({ name: NOME, phone: WA_ID })
-			.returning({ id: contacts.id });
 
 		await db.insert(leads).values({
 			conversationId: conv.id,
