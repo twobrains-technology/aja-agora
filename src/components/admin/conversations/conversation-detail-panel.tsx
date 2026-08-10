@@ -196,6 +196,8 @@ export function ConversationDetailPanel({
 										createdAt: m.createdAt,
 										artifacts: m.artifacts,
 									}))}
+									conversationId={conversationId}
+									nomeDoContato={data.conversation.contactName}
 								/>
 							</TabsContent>
 							<TabsContent value="insights" className="p-4 overflow-y-auto">

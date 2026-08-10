@@ -2,8 +2,9 @@
 
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale/pt-BR";
-import { List, MessageCircle } from "lucide-react";
+import { List, Maximize2, MessageCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AtendimentoWhatsAppDialog } from "@/components/admin/conversa/atendimento-whatsapp-dialog";
 import { WhatsAppView } from "@/components/admin/conversa/whatsapp-view";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -27,15 +28,27 @@ interface Message {
 	mediaFilename?: string | null;
 }
 
-type Props =
+/** Dados do cliente pro cabeçalho da tela cheia. Sem eles, o botão "Expandir"
+ *  não aparece — abrir um atendimento sem saber com quem se fala não ajuda. */
+interface DadosDoAtendimento {
+	conversationId?: string | null;
+	nomeDoContato?: string | null;
+	telefone?: string | null;
+}
+
+type Props = (
 	| { endpoint: string; initialMessages?: undefined }
-	| { initialMessages: Message[]; endpoint?: undefined };
+	| { initialMessages: Message[]; endpoint?: undefined }
+) &
+	DadosDoAtendimento;
 
 export function ConversationTimeline(props: Props) {
-	const { endpoint, initialMessages } = props;
+	const { endpoint, initialMessages, conversationId, nomeDoContato, telefone } = props;
 	const [messages, setMessages] = useState<Message[]>(initialMessages ?? []);
 	const [loading, setLoading] = useState(endpoint !== undefined);
 	const [error, setError] = useState<string | null>(null);
+	/** Tela cheia de atendimento (layout do simulador + caixa de envio). */
+	const [expandido, setExpandido] = useState(false);
 	// Duas leituras da MESMA conversa: a lista é registro (auditar, ver artifact),
 	// a de WhatsApp é atendimento (ver o que o cliente viu, do jeito que ele viu).
 	// Mora aqui, no componente que todas as telas de conversa usam, pra a visão
@@ -129,8 +142,34 @@ export function ConversationTimeline(props: Props) {
 					WhatsApp
 				</button>
 			</fieldset>
+
+			{/* Atender de verdade pede espaço: abre a conversa em tela cheia, com o
+			    campo de resposta embaixo. Só com conversa identificada. */}
+			{conversationId && (
+				<button
+					type="button"
+					data-testid="expandir-atendimento"
+					onClick={() => setExpandido(true)}
+					className="flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+				>
+					<Maximize2 className="size-3.5" aria-hidden />
+					Expandir
+				</button>
+			)}
 		</div>
 	);
+
+	const telaCheia = conversationId ? (
+		<AtendimentoWhatsAppDialog
+			open={expandido}
+			onOpenChange={setExpandido}
+			mensagens={messages}
+			conversationId={conversationId}
+			nomeDoContato={nomeDoContato}
+			telefone={telefone}
+			onEnviado={fetchMessages}
+		/>
+	) : null;
 
 	if (modo === "whatsapp") {
 		return (
@@ -141,6 +180,7 @@ export function ConversationTimeline(props: Props) {
 						<WhatsAppView mensagens={messages} />
 					</div>
 				</ScrollArea>
+				{telaCheia}
 			</div>
 		);
 	}
@@ -148,6 +188,7 @@ export function ConversationTimeline(props: Props) {
 	return (
 		<ScrollArea className="min-h-0 flex-1 max-h-[calc(100vh-220px)]">
 			{alternador}
+			{telaCheia}
 			<div className="flex flex-col gap-3 p-4">
 				{messages
 					.filter((msg) => msg.role !== "system")

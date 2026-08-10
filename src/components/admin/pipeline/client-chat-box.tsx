@@ -42,6 +42,8 @@ export function ClientChatBox({
 	const [loadingTemplates, setLoadingTemplates] = useState(false);
 	const [selectedTemplateId, setSelectedTemplateId] = useState("");
 	const [anexo, setAnexo] = useState<File | null>(null);
+	/** Aviso de que o template de retomada saiu sozinho (não é erro). */
+	const [avisoTemplate, setAvisoTemplate] = useState<string | null>(null);
 	const inputArquivo = useRef<HTMLInputElement>(null);
 
 	// Reset ao trocar de conversa (não vazar rascunho/estado entre cards).
@@ -52,6 +54,7 @@ export function ClientChatBox({
 		setWindowClosed(false);
 		setSelectedTemplateId("");
 		setAnexo(null);
+		setAvisoTemplate(null);
 	}, [conversationId]);
 
 	/** Valida com a MESMA regra do servidor (`media-kind.ts`): o atendente
@@ -153,6 +156,35 @@ export function ClientChatBox({
 		});
 	}
 
+	/**
+	 * Janela fechada → dispara o template de retomada SOZINHO.
+	 *
+	 * Escolher template não é decisão do atendente: existe um template pra isso
+	 * (`atendente_retomada`) e ele serve pra todo caso. Fazer o operador abrir um
+	 * seletor, entender o que é HSM e adivinhar qual item da lista usar é jogar
+	 * uma regra da Meta no colo de quem só quer falar com o cliente.
+	 *
+	 * Devolve `true` se conseguiu disparar. `false` cai no modo manual (é o que
+	 * acontece quando nenhum template está aprovado ainda).
+	 */
+	async function dispararTemplateAutomatico(): Promise<boolean> {
+		try {
+			const r = await fetch("/api/admin/whatsapp/templates");
+			if (!r.ok) return false;
+			const d = (await r.json()) as { templates?: TemplateRow[] };
+			const aprovados = (d.templates ?? []).filter((t) => t.status === "APPROVED");
+			const tpl =
+				aprovados.find((t) => t.metaName === TEMPLATE_PRINCIPAL) ??
+				(aprovados.length === 1 ? aprovados[0] : undefined);
+			if (!tpl) return false;
+
+			const res = await postMessage({ templateName: tpl.metaName, languageCode: tpl.language });
+			return res.ok;
+		} catch {
+			return false;
+		}
+	}
+
 	async function handleSendText() {
 		if (!conversationId || !message.trim()) return;
 		setSending(true);
@@ -160,8 +192,17 @@ export function ClientChatBox({
 		try {
 			const res = await postMessage({ text: message });
 			const data = await res.json().catch(() => ({}));
-			// Janela de 24h fechada → oferece template pra reabrir (não é dead-end).
+			// Janela de 24h fechada → tenta reabrir sozinho antes de incomodar.
 			if (res.status === 429 && data.error === "WindowClosed") {
+				if (await dispararTemplateAutomatico()) {
+					// A mensagem digitada FICA no campo de propósito: ela ainda não foi
+					// entregue, e a Meta só libera texto livre depois que o cliente
+					// responder. Limpar aqui faria o atendente achar que já enviou.
+					setAvisoTemplate(
+						"A conversa estava fechada há mais de 24h, então enviei um contato de retomada. Assim que o cliente responder, sua mensagem pode ir.",
+					);
+					return;
+				}
 				setWindowClosed(true);
 				setError(
 					data.message ??
@@ -215,6 +256,14 @@ export function ClientChatBox({
 			{error && (
 				<div className="p-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded">
 					{error}
+				</div>
+			)}
+
+			{/* Informativo, não erro: o sistema resolveu sozinho e o atendente só
+			    precisa saber o que aconteceu com a mensagem dele. */}
+			{avisoTemplate && (
+				<div className="rounded border border-amber-500/50 bg-amber-50 p-2 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
+					{avisoTemplate}
 				</div>
 			)}
 

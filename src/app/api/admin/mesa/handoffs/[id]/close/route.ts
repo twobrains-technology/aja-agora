@@ -1,18 +1,41 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { mesaAttendants } from "@/db/schema";
+import { mesaAttendants, mesaHandoffs } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
-import { closeMesaHandoff } from "@/lib/mesa/handoff";
+import { isMesaExterna } from "@/lib/admin/role-scope";
+import { closeMesaHandoff, getMesaAttendantByUserId } from "@/lib/mesa/handoff";
 import { notifyMesaAttendant } from "@/lib/whatsapp/mesa/notify";
 
 // Encerrar um atendimento de mesa: fecha o handoff (concluido) E move o lead pra `fechado_ganho`
 // (decisão Kairo 2026-07-03 — raia provisória). Fecha o gap do handoff que nunca terminava.
 // Ver docs/decisoes/2026-07-03-mesa-encerrar-atendimento-vai-pra-ganho.md.
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-	const { error, session } = await requireRole("admin");
+	// A mesa externa ENCERRA o próprio atendimento — é o trabalho dela, e sem
+	// isso o handoff ficava aberto pra sempre depois de ela marcar o caso como
+	// ganho pelo card. Reatribuir continua sendo só do admin (é gestão de mesa).
+	const { error, session, role } = await requireRole("admin", "mesa_externa");
 	if (error) return error;
 
 	const { id } = await params;
+
+	if (isMesaExterna(role)) {
+		const atendente = await getMesaAttendantByUserId(session.user.id);
+		if (!atendente || !atendente.isActive) {
+			return Response.json({ error: "Forbidden" }, { status: 403 });
+		}
+		// Só encerra o que é dela — trocar o id na URL não fecha o caso do colega.
+		const [meu] = await db
+			.select({ id: mesaHandoffs.id })
+			.from(mesaHandoffs)
+			.where(and(eq(mesaHandoffs.id, id), eq(mesaHandoffs.mesaAttendantId, atendente.id)))
+			.limit(1);
+		if (!meu) {
+			return Response.json(
+				{ error: "Forbidden", reason: "handoff_de_outro_atendente" },
+				{ status: 403 },
+			);
+		}
+	}
 
 	const result = await closeMesaHandoff(id, session?.user.id);
 	if (!result.ok) {

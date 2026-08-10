@@ -117,7 +117,12 @@ export function LeadDetailPanel({
 								<TabsTrigger value="documentos">Documentos</TabsTrigger>
 							</TabsList>
 							<TabsContent value="conversa" className="flex-1 min-h-0">
-								<ConversationTimeline endpoint={`/api/admin/leads/${lead.id}/conversation`} />
+								<ConversationTimeline
+									endpoint={`/api/admin/leads/${lead.id}/conversation`}
+									conversationId={lead.conversationId}
+									nomeDoContato={lead.name}
+									telefone={lead.phone}
+								/>
 							</TabsContent>
 							<TabsContent value="insights" className="p-4">
 								{insightsLoaded ? (

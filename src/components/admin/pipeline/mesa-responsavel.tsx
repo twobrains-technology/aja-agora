@@ -3,6 +3,7 @@
 import { Headset } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useSession } from "@/lib/auth-client";
 import type { LeadActiveHandoff } from "./lead-card";
 
 // Bloco "Responsável pela mesa" (spec 2026-07-03). Mostra quem assumiu o caso e deixa o admin
@@ -32,6 +33,13 @@ export function MesaResponsavel({
 	activeHandoff: LeadActiveHandoff | null;
 	onChanged?: () => void;
 }) {
+	// Reatribuir é GESTÃO de mesa (admin). A mesa externa vê de quem é o caso,
+	// mas não passa o caso adiante — nem enxerga a lista dos colegas, que a API
+	// de atendentes (admin-only) já nega. Sem isto o painel mostrava a ela um
+	// seletor sempre vazio e um botão que só devolvia 403.
+	const { data: sessao } = useSession();
+	const podeReatribuir =
+		((sessao?.user as { role?: string } | undefined)?.role ?? "viewer") !== "mesa_externa";
 	const [attendants, setAttendants] = useState<AttendantOption[]>([]);
 	const [selectedId, setSelectedId] = useState("");
 	const [busy, setBusy] = useState(false);
@@ -39,7 +47,7 @@ export function MesaResponsavel({
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: o id do handoff é o gatilho do fetch
 	useEffect(() => {
-		if (!activeHandoff) return;
+		if (!activeHandoff || !podeReatribuir) return;
 		let alive = true;
 		fetch("/api/admin/mesa-attendants")
 			.then((r) => (r.ok ? r.json() : { mesaAttendants: [] }))
@@ -126,29 +134,38 @@ export function MesaResponsavel({
 				</div>
 			)}
 
-			<label className="block text-xs font-medium text-muted-foreground" htmlFor="mesa-reassign">
-				Reatribuir para outro atendente
-			</label>
-			<select
-				id="mesa-reassign"
-				aria-label="Reatribuir para outro atendente"
-				value={selectedId}
-				onChange={(e) => setSelectedId(e.target.value)}
-				disabled={busy}
-				className={FIELD_CLASS}
-			>
-				<option value="">Selecione um atendente…</option>
-				{options.map((a) => (
-					<option key={a.id} value={a.id}>
-						{a.nome}
-					</option>
-				))}
-			</select>
+			{podeReatribuir && (
+				<>
+					<label
+						className="block text-xs font-medium text-muted-foreground"
+						htmlFor="mesa-reassign"
+					>
+						Reatribuir para outro atendente
+					</label>
+					<select
+						id="mesa-reassign"
+						aria-label="Reatribuir para outro atendente"
+						value={selectedId}
+						onChange={(e) => setSelectedId(e.target.value)}
+						disabled={busy}
+						className={FIELD_CLASS}
+					>
+						<option value="">Selecione um atendente…</option>
+						{options.map((a) => (
+							<option key={a.id} value={a.id}>
+								{a.nome}
+							</option>
+						))}
+					</select>
+				</>
+			)}
 
-			<div className="flex justify-between gap-2 pt-1">
-				<Button variant="outline" size="sm" onClick={reassign} disabled={!selectedId || busy}>
-					Reatribuir
-				</Button>
+			<div className={`flex gap-2 pt-1 ${podeReatribuir ? "justify-between" : "justify-end"}`}>
+				{podeReatribuir && (
+					<Button variant="outline" size="sm" onClick={reassign} disabled={!selectedId || busy}>
+						Reatribuir
+					</Button>
+				)}
 				<Button variant="outline" size="sm" onClick={encerrar} disabled={busy}>
 					Encerrar atendimento
 				</Button>
