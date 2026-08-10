@@ -48,7 +48,7 @@ describe("FIX-50 — deriveCurrentProposalId (proposta vigente)", () => {
 	});
 });
 
-describe("FIX-50 — deriveActiveConversationId (conversa ativa)", () => {
+describe("FIX-50 — deriveActiveConversationId (conversa em curso)", () => {
 	it("escolhe a conversa active mais recente", () => {
 		const convs = [
 			{ id: "c-encerrada", status: "closed", updatedAt: "2026-06-15T20:00:00Z" },
@@ -58,10 +58,33 @@ describe("FIX-50 — deriveActiveConversationId (conversa ativa)", () => {
 		expect(deriveActiveConversationId(convs)).toBe("c-ativa-nova");
 	});
 
-	it("nenhuma active (todas closed/handed_off) → null", () => {
+	// 2026-08-10 — INVERSÃO do que este teste cravava antes ("handed_off → null").
+	//
+	// `handed_off` é a conversa que um HUMANO está atendendo agora: a mais em
+	// curso que existe. Tratá-la como "nenhuma conversa ativa" fazia a tela do
+	// atendente não ter conversa nenhuma pra acompanhar — o SSE e o polling do
+	// refresh ao vivo recebiam `null` e simplesmente não ligavam. O atendente
+	// ficava olhando uma conversa parada enquanto o cliente escrevia.
+	it("conversa entregue a um humano CONTA como em curso — é a que está sendo atendida", () => {
+		const convs = [
+			{ id: "c-encerrada", status: "closed", updatedAt: "2026-06-15T20:00:00Z" },
+			{ id: "c-em-atendimento", status: "handed_off", updatedAt: "2026-06-15T11:00:00Z" },
+		];
+		expect(deriveActiveConversationId(convs)).toBe("c-em-atendimento");
+	});
+
+	it("entre uma active e uma handed_off, vale a mais recente", () => {
+		const convs = [
+			{ id: "c-active", status: "active", updatedAt: "2026-06-15T10:00:00Z" },
+			{ id: "c-handed-off", status: "handed_off", updatedAt: "2026-06-15T18:00:00Z" },
+		];
+		expect(deriveActiveConversationId(convs)).toBe("c-handed-off");
+	});
+
+	it("só conversa encerrada → null", () => {
 		const convs = [
 			{ id: "c1", status: "closed", updatedAt: "2026-06-15T10:00:00Z" },
-			{ id: "c2", status: "handed_off", updatedAt: "2026-06-15T11:00:00Z" },
+			{ id: "c2", status: "closed", updatedAt: "2026-06-15T11:00:00Z" },
 		];
 		expect(deriveActiveConversationId(convs)).toBeNull();
 	});

@@ -36,13 +36,28 @@ export function deriveCurrentProposalId(
 
 /** FIX-50 — conversa ATIVA do contato (a que ainda está rodando): status `active`
  * mais recente. Null quando nenhuma está ativa (todas closed/handed_off). Pura. */
+/**
+ * A conversa EM CURSO do contato — a que a tela deve acompanhar.
+ *
+ * `handed_off` entrou em 2026-08-10. Antes só `active` contava, e o efeito era
+ * perverso: no instante em que um atendente assumia o caso, a conversa saía de
+ * `active` e o contato passava a não ter conversa em curso nenhuma. A tela de
+ * quem estava atendendo recebia `null`, o SSE e o polling do refresh ao vivo nem
+ * chegavam a ligar, e o atendente ficava olhando uma conversa congelada enquanto
+ * o cliente escrevia.
+ *
+ * Uma conversa entregue a um humano é a mais em curso que existe. Só `closed`
+ * fica de fora.
+ */
+const STATUS_EM_CURSO = new Set(["active", "handed_off"]);
+
 export function deriveActiveConversationId(
 	conversations: { id: string; status: string; updatedAt: Date | string }[],
 ): string | null {
-	const active = conversations
-		.filter((c) => c.status === "active")
+	const emCurso = conversations
+		.filter((c) => STATUS_EM_CURSO.has(c.status))
 		.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-	return active[0]?.id ?? null;
+	return emCurso[0]?.id ?? null;
 }
 
 export async function getContactDetail(id: string) {
