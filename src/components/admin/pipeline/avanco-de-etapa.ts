@@ -12,8 +12,13 @@
 export function destinosDeAvanco(raiasVisiveis: readonly string[], atual: string): string[] {
 	const i = raiasVisiveis.indexOf(atual);
 	if (i === -1) return [];
-	// `perdido` fica de fora: é saída lateral, não a etapa seguinte. Como ele é o
-	// último da ordem do funil, entraria aqui como "próximo passo" de Ganho.
+	// O BOTÃO continua sugerindo só o passo seguinte — é o caminho previsível de
+	// quem está tocando o caso. Voltar etapa é possível (o funil deixou de ser
+	// forward-only), mas por arrasto: seria ruído oferecer "voltar" num botão que
+	// existe pra empurrar a venda adiante.
+	//
+	// `perdido` fica fora da fila: é saída lateral e, por ser o último da ordem
+	// do funil, entraria aqui como "próximo passo" de Ganho.
 	return raiasVisiveis.slice(i + 1).filter((r) => r !== PERDIDO);
 }
 

@@ -14,7 +14,6 @@ import {
 	SheetTitle,
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ClientChatBox } from "./client-chat-box";
 import { ClientDocumentsTab } from "./client-documents-tab";
 import { ConversationTimeline } from "./conversation-timeline";
 import { InsightCards } from "./insight-cards";
@@ -146,11 +145,11 @@ export function LeadDetailPanel({
 							</div>
 						)}
 
-						{/* FIX-87 + templates HSM: chat do operador → WhatsApp (janela fechada oferece
-						    template). Compartilhado com o ContactDetailPanel via ClientChatBox. */}
-						<div className="border-t p-4 bg-muted/30">
-							<ClientChatBox conversationId={lead.conversationId} onSent={onClose} />
-						</div>
+						{/* Atender é no MODAL — e a porta pra ele já está DENTRO da conversa
+						    ("Expandir", na aba Conversa). Um segundo botão aqui embaixo
+						    duplicaria o caminho e faria este painel buscar as mensagens de
+						    novo, só pra repassar ao mesmo modal. O chat inline que morava
+						    aqui era o que a timeline atropelava. */}
 
 						<MesaTransbordoDialog
 							leadId={lead.id}

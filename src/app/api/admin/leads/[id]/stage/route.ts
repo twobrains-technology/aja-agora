@@ -9,8 +9,11 @@ import { getLeadIdsDoAtendente, getMesaAttendantByUserId } from "@/lib/mesa/hand
 
 const stageSchema = z.object({
 	stage: z.enum(STAGE_ORDER),
-	// FIX-44: regressão (mover pra raia anterior) exige flag explícita. Default
-	// forward-only — o admin não regride em silêncio por arrasto acidental.
+	// 2026-08-10 — o forward-only do FIX-44 caiu (decisão do Kairo). A premissa
+	// era que arrasto pra trás é acidente; na operação real, corrigir uma
+	// classificação errada é rotina, e a trava virava um 409 que o operador não
+	// tinha como resolver pela tela. O campo continua aceito por compatibilidade
+	// com quem já mandava, mas o default agora é PERMITIR.
 	allowRegression: z.boolean().optional(),
 });
 
@@ -71,7 +74,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 		id,
 		parsed.data.stage,
 		{ type: "admin", id: session.user.id },
-		{ allowRegression: parsed.data.allowRegression ?? false },
+		{ allowRegression: parsed.data.allowRegression ?? true },
 	);
 
 	if (!result) {

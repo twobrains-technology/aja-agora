@@ -109,27 +109,28 @@ export function isMesaExterna(role: string | null | undefined): boolean {
  * Para admin/attendant esta política não restringe nada: o forward-only geral do
  * funil é do servidor (`transitionLeadStage`), e continua valendo lá.
  */
+/**
+ * A role pode mover um card de `origem` para `destino`?
+ *
+ * O que restringe é ESCOPO, não direção: cada papel mexe nas raias que enxerga,
+ * e em qualquer sentido.
+ *
+ * O forward-only caiu em 2026-08-10 (decisão do Kairo: "esse negócio de não
+ * poder voltar atrás não existe, ele deve poder movimentar sempre"). A regra
+ * partia da ideia de que arrasto pra trás é acidente; na operação real, corrigir
+ * uma classificação errada é rotina — e a trava transformava um clique numa
+ * mensagem de erro que o operador não tinha como resolver.
+ */
 export function podeMoverCard(role: Role, origem: LeadStage, destino: LeadStage): boolean {
 	if (!PODE_ARRASTAR[role]) return false;
 
 	const escopo = raiasVisiveisPara(role);
 	if (escopo.length === 0) return false;
 
-	// Quem enxerga o funil inteiro não é limitado por esta política.
+	// Quem enxerga o funil inteiro move o que quiser, pra onde quiser.
 	if (escopo === STAGE_ORDER) return true;
 
-	// A origem tem que estar no escopo, e `perdido` é TERMINAL: dali não se sai.
-	if (!escopo.includes(origem) || origem === PERDIDO) return false;
-
-	// Perder é uma saída lateral, não a etapa seguinte — vale de qualquer raia
-	// viva, ganho inclusive (venda que cai depois de fechada é real).
-	if (destino === PERDIDO) return true;
-
-	// Progresso: só pra frente, e só entre as etapas de caminhada. `indexOf` na
-	// lista de PROGRESSO (não na de raias visíveis) é o que impede `perdido` — o
-	// último da ordem do funil — de virar um "próximo passo" válido.
-	const progresso: readonly string[] = PROGRESSO_DA_MESA_EXTERNA;
-	const iOrigem = progresso.indexOf(origem);
-	const iDestino = progresso.indexOf(destino);
-	return iOrigem !== -1 && iDestino !== -1 && iDestino > iOrigem;
+	// Escopo restrito: as duas pontas têm que estar entre as raias que ela vê —
+	// mas a ordem entre elas não importa.
+	return escopo.includes(origem) && escopo.includes(destino);
 }

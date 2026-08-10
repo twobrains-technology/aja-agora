@@ -62,9 +62,15 @@ describe("movimento de card por role", () => {
 		expect(podeMoverCard("mesa_externa", "em_atendimento", "fechado_ganho")).toBe(true);
 	});
 
-	it("mesa_externa não puxa o card de volta", () => {
-		expect(podeMoverCard("mesa_externa", "fechado_ganho", "em_atendimento")).toBe(false);
-		expect(podeMoverCard("mesa_externa", "aguardando_pagamento", "em_atendimento")).toBe(false);
+	// 2026-08-10 — o forward-only caiu (decisão do Kairo: "esse negócio de não
+	// poder voltar atrás não existe, ele deve poder movimentar sempre"). A regra
+	// tratava arrasto pra trás como acidente; na operação, corrigir uma
+	// classificação errada é rotina, e a trava virava um erro sem saída na tela.
+	// O que restringe agora é ESCOPO, não direção.
+	it("mesa_externa move nos dois sentidos dentro do escopo dela", () => {
+		expect(podeMoverCard("mesa_externa", "fechado_ganho", "em_atendimento")).toBe(true);
+		expect(podeMoverCard("mesa_externa", "aguardando_pagamento", "em_atendimento")).toBe(true);
+		expect(podeMoverCard("mesa_externa", "perdido", "em_atendimento")).toBe(true);
 	});
 
 	// Decisão do Kairo (2026-08-10), revendo a escolha inicial: sem uma saída por
@@ -77,16 +83,9 @@ describe("movimento de card por role", () => {
 		expect(podeMoverCard("mesa_externa", "fechado_ganho", "perdido")).toBe(true);
 	});
 
-	it("perdido é terminal: dali ela não ressuscita o caso", () => {
-		expect(podeMoverCard("mesa_externa", "perdido", "em_atendimento")).toBe(false);
-		expect(podeMoverCard("mesa_externa", "perdido", "fechado_ganho")).toBe(false);
-	});
-
-	it("perdido não vira atalho para Ganho pela ordem do funil", () => {
-		// `perdido` é o último da STAGE_ORDER. Tratado como "próxima etapa", ele
-		// deixaria `fechado_ganho → perdido` passar por engano — mas o inverso
-		// (`perdido → fechado_ganho`) tem que continuar barrado.
-		expect(podeMoverCard("mesa_externa", "perdido", "aguardando_pagamento")).toBe(false);
+	it("caso dado como perdido pode ser retomado — engano acontece", () => {
+		expect(podeMoverCard("mesa_externa", "perdido", "fechado_ganho")).toBe(true);
+		expect(podeMoverCard("mesa_externa", "perdido", "aguardando_pagamento")).toBe(true);
 	});
 
 	it("mesa_externa não toca em raia que nem enxerga", () => {

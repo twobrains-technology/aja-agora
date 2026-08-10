@@ -546,6 +546,26 @@ export async function getLeadIdsDoAtendente(mesaAttendantId: string): Promise<st
 }
 
 /**
+ * Este CONTATO tem algum caso deste atendente?
+ *
+ * O painel de detalhe é por contato, não por lead — e a mesa externa precisa
+ * abrir o dossiê do cliente que ela atende (histórico, propostas, funil). Sem
+ * isto ela clicava no próprio card e recebia 403: painel vazio, sem conversa.
+ */
+export async function contatoPertenceAoAtendente(
+	contactId: string,
+	mesaAttendantId: string,
+): Promise<boolean> {
+	const [row] = await db
+		.select({ id: mesaHandoffs.id })
+		.from(mesaHandoffs)
+		.innerJoin(leads, eq(mesaHandoffs.leadId, leads.id))
+		.where(and(eq(mesaHandoffs.mesaAttendantId, mesaAttendantId), eq(leads.contactId, contactId)))
+		.limit(1);
+	return Boolean(row);
+}
+
+/**
  * Esta conversa é de um caso deste atendente?
  *
  * Porteiro do chat com o cliente: sem ele, bastaria à mesa externa trocar o id

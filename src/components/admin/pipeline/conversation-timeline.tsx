@@ -177,7 +177,7 @@ export function ConversationTimeline(props: Props) {
 		return (
 			<div className="flex flex-1 flex-col">
 				{alternador}
-				<ScrollArea className="min-h-0 flex-1 max-h-[calc(100vh-260px)]">
+				<ScrollArea className="h-full min-h-0 flex-1">
 					<div className="p-4">
 						<WhatsAppView mensagens={messages} />
 					</div>
@@ -188,7 +188,7 @@ export function ConversationTimeline(props: Props) {
 	}
 
 	return (
-		<ScrollArea className="min-h-0 flex-1 max-h-[calc(100vh-220px)]">
+		<ScrollArea className="h-full min-h-0 flex-1">
 			{alternador}
 			{telaCheia}
 			<div className="flex flex-col gap-3 p-4">
