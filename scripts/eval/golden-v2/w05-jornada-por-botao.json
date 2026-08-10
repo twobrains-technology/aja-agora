@@ -1,0 +1,36 @@
+{
+	"cenario": "w05-jornada-por-botao",
+	"canal": "whatsapp",
+	"descricao": "Boa parte dos clientes do WhatsApp nunca digita: só toca nos botões. Como o canal não tem card clicável rico, tudo vira texto mais botão interativo (limite de 3 por mensagem), e o funil precisa andar inteiro por esse caminho. Se algum gate só souber avançar por texto livre, o cliente que só clica fica preso sem entender por quê.",
+	"caRefs": ["paridade do funil por botão"],
+	"requiresEnv": ["E2E_TEST_CPF", "E2E_TEST_CELULAR"],
+	"asserts": {
+		"maxConsecutiveSameGate": 2,
+		"turns": [null, null, null, null, { "forbidDuplicateOffers": true }]
+	},
+	"turns": [
+		{ "type": "text", "text": "oi", "expect": "boas-vindas + pede o nome." },
+		{
+			"type": "text",
+			"text": "Aline",
+			"expect": "nome capturado; oferece caminho — idealmente com botões."
+		},
+		{
+			"type": "text",
+			"text": "carro de 70 mil",
+			"expect": "captura bem e valor; próximo passo com botão quando fizer sentido."
+		},
+		{
+			"type": "interactive",
+			"replyId": "experience_returning",
+			"replyTitle": "Já conheço",
+			"expect": "o clique avança o gate de experiência igual ao texto — nada de ignorar o botão e repetir a pergunta."
+		},
+		{
+			"type": "interactive",
+			"replyId": "interest",
+			"replyTitle": "Tenho interesse",
+			"expect": "avança pro fechamento pelo caminho de botão, sem exigir que ela digite."
+		}
+	]
+}

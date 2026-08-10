@@ -1,0 +1,35 @@
+{
+	"cenario": "w02-responde-pergunta-antiga",
+	"canal": "whatsapp",
+	"descricao": "Assíncrono de verdade: o cliente responde a pergunta de dois turnos atrás porque estava dirigindo. No chat web isso quase não acontece — a pessoa está na tela. No WhatsApp é rotina. O agente precisa entender que '90 mil' responde ao valor mesmo que a última coisa que ele tenha perguntado seja outra, em vez de descartar o dado ou tratá-lo como resposta errada.",
+	"caRefs": ["assincronia do canal"],
+	"asserts": {
+		"maxConsecutiveSameGate": 2,
+		"turns": [
+			null,
+			null,
+			null,
+			{ "forbidUngroundedMoney": true },
+			{ "forbidUngroundedMoney": true, "forbidRepeatedAgentText": true }
+		]
+	},
+	"turns": [
+		{ "type": "text", "text": "oi", "expect": "boas-vindas + pede o nome." },
+		{
+			"type": "text",
+			"text": "quero um apê",
+			"expect": "responde ao desejo E ainda precisa do nome — não pode ignorar nenhum dos dois."
+		},
+		{ "type": "text", "text": "Camila", "expect": "nome capturado; segue pro que falta." },
+		{
+			"type": "text",
+			"text": "300 mil",
+			"expect": "captura como valor do imóvel. Nada de tratar número solto como fora de contexto."
+		},
+		{
+			"type": "text",
+			"text": "desculpa a demora, tava dirigindo",
+			"expect": "acolhe em uma linha e RETOMA de onde parou, sem reiniciar a conversa e sem repetir bloco anterior."
+		}
+	]
+}

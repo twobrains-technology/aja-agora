@@ -1,0 +1,31 @@
+{
+	"cenario": "w01-mensagens-fragmentadas",
+	"canal": "whatsapp",
+	"descricao": "No WhatsApp ninguém escreve um parágrafo: escreve em rajada. 'oi' ENTER 'quero um carro' ENTER 'uns 80 mil' ENTER 'pode ser usado' são QUATRO webhooks em poucos segundos. Dois jeitos de perder a venda aqui: o agente responde as quatro e vira metralhadora atropelando o cliente, ou processa só a última e perde o valor que ele acabou de dar. Nenhum teste cobre isso hoje — e é o padrão de digitação mais comum do canal.",
+	"caRefs": ["fragmentação — sem cobertura até 2026-08-10"],
+	"asserts": {
+		"maxConsecutiveSameGate": 2,
+		"turns": [
+			null,
+			{ "forbidRepeatedAgentText": true },
+			{ "forbidRepeatedAgentText": true },
+			{ "forbidRepeatedAgentText": true },
+			{ "forbidRepeatedAgentText": true }
+		]
+	},
+	"turns": [
+		{ "type": "text", "text": "oi", "expect": "boas-vindas + pede o nome." },
+		{ "type": "text", "text": "Diego", "expect": "nome capturado." },
+		{ "type": "text", "text": "quero um carro", "expect": "reconhece o bem." },
+		{
+			"type": "text",
+			"text": "uns 80 mil",
+			"expect": "CAPTURA o valor mesmo tendo chegado em mensagem separada — não pode tratar como frase solta e voltar a perguntar."
+		},
+		{
+			"type": "text",
+			"text": "pode ser usado",
+			"expect": "absorve o detalhe e SEGUE. Não repete a pergunta de valor e não responde como se fosse a primeira mensagem."
+		}
+	]
+}

@@ -1,0 +1,28 @@
+{
+	"cenario": "w04-portugues-de-whatsapp",
+	"canal": "whatsapp",
+	"descricao": "Como as pessoas realmente escrevem no WhatsApp: abreviado, sem acento, sem pontuação, às vezes em caixa alta. 'qro um crro d uns 50 mil' é uma frase perfeitamente clara para um humano e um teste de fogo para a extração do analyzer. Se o valor não for capturado aqui, o funil trava no gate de crédito e o cliente é tratado como se não tivesse dito nada. Sem cobertura até hoje.",
+	"caRefs": ["extração sob ruído de digitação"],
+	"asserts": {
+		"maxConsecutiveSameGate": 2,
+		"turns": [null, null, { "forbidUngroundedMoney": true }, { "forbidRepeatedAgentText": true }]
+	},
+	"turns": [
+		{ "type": "text", "text": "oi bom dia", "expect": "boas-vindas + pede o nome." },
+		{
+			"type": "text",
+			"text": "eh o LUCAS",
+			"expect": "captura o nome como Lucas, sem devolver a caixa alta na fala."
+		},
+		{
+			"type": "text",
+			"text": "qro um crro d uns 50 mil pd ser usado",
+			"expect": "entende carro + R$ 50.000 + usado. O funil SAI do gate de crédito."
+		},
+		{
+			"type": "text",
+			"text": "vc consegue?",
+			"expect": "responde com o que já sabe e avança — não volta a pedir o valor."
+		}
+	]
+}

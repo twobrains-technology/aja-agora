@@ -1,0 +1,37 @@
+{
+	"cenario": "w06-cliente-impaciente",
+	"canal": "whatsapp",
+	"descricao": "A busca real na Bevi leva alguns segundos e o cliente do WhatsApp não vê 'digitando'. Ele cutuca: '?', 'alo', 'sumiu?'. Cada cutucada é um webhook novo. O risco é o agente responder cada uma e mandar a mesma coisa três vezes, ou pior, reiniciar o passo e disparar a busca de novo. Um vendedor humano diria 'já te respondo' uma vez, não três.",
+	"caRefs": ["turno mudo e resposta duplicada"],
+	"asserts": {
+		"maxConsecutiveSameGate": 3,
+		"turns": [
+			null,
+			null,
+			null,
+			{ "forbidRepeatedAgentText": true },
+			{ "forbidRepeatedAgentText": true },
+			{ "forbidRepeatedAgentText": true }
+		]
+	},
+	"turns": [
+		{ "type": "text", "text": "oi", "expect": "boas-vindas." },
+		{ "type": "text", "text": "Tiago", "expect": "nome capturado." },
+		{ "type": "text", "text": "quero um imóvel de 400 mil", "expect": "captura o valor e segue." },
+		{
+			"type": "text",
+			"text": "?",
+			"expect": "não trata como pergunta nova nem repete o bloco anterior."
+		},
+		{
+			"type": "text",
+			"text": "alo",
+			"expect": "no máximo um aceno curto; não reinicia o passo nem dispara busca de novo."
+		},
+		{
+			"type": "text",
+			"text": "sumiu?",
+			"expect": "retoma com leveza e continua de onde estava — três cutucadas não podem virar três respostas iguais."
+		}
+	]
+}

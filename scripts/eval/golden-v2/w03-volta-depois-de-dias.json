@@ -1,0 +1,37 @@
+{
+	"cenario": "w03-volta-depois-de-dias",
+	"canal": "whatsapp",
+	"descricao": "O cliente conversa, some, e volta três dias depois. A janela de 24h da Meta fechou no meio. O pecado capital aqui é REFAZER o funil: quem já disse nome e valor não pode ouvir 'como posso te chamar?' de novo — é o jeito mais rápido de perder alguém que voltou justamente porque estava interessado. Usa o relógio do simulador para atravessar a janela de verdade, em vez de fingir a passagem de tempo.",
+	"caRefs": ["janela de 24h", "retomada não refaz o funil"],
+	"asserts": {
+		"maxConsecutiveSameGate": 2,
+		"turns": [
+			null,
+			null,
+			null,
+			null,
+			{ "forbidRepeatedAgentText": true },
+			{ "forbidRepeatedAgentText": true }
+		]
+	},
+	"turns": [
+		{ "type": "text", "text": "oi", "expect": "boas-vindas + pede o nome." },
+		{ "type": "text", "text": "Renato", "expect": "nome capturado." },
+		{ "type": "text", "text": "quero uma moto de 30 mil", "expect": "captura bem e valor." },
+		{
+			"type": "clock",
+			"avancarHoras": 72,
+			"expect": "três dias se passam; a janela de 24h da Meta fecha."
+		},
+		{
+			"type": "text",
+			"text": "oi, voltei",
+			"expect": "RETOMA de onde parou — sabe que é o Renato e que ele quer moto de 30 mil. Não pergunta o nome, não pergunta o valor, não dá boas-vindas como se fosse a primeira mensagem."
+		},
+		{
+			"type": "text",
+			"text": "ainda tá de pé aquilo?",
+			"expect": "confirma e conduz pro próximo passo do funil, sem repetir o bloco anterior."
+		}
+	]
+}
