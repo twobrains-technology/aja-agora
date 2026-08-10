@@ -4,7 +4,25 @@
 	"caRefs": ["CA-35 1 balão = 1 ideia"],
 	"requiresEnv": ["E2E_TEST_CPF", "E2E_TEST_CELULAR"],
 	"asserts": {
-		"turns": [null, null, null, null, null, null, null, null, null, null]
+		"turns": [
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			{
+				"forbidDuplicateOffers": true
+			},
+			{
+				"forbidDuplicateOffers": true
+			},
+			{
+				"forbidDuplicateOffers": true
+			}
+		],
+		"maxConsecutiveSameGate": 3
 	},
 	"turns": [
 		{

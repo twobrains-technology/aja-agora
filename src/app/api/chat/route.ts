@@ -1357,7 +1357,29 @@ export async function POST(req: NextRequest) {
 										await pipeGatePrompt({ conversationId, gate: "identify", writer });
 										return;
 									}
-									await storeIdentity(conversationId, { cpf, celular: celularDigits });
+									// Falha ao PERSISTIR identidade não pode morrer calada. Sem o
+									// catch, um `IDENTITY_ENC_KEY` ausente/inválido derruba o turno no
+									// meio: o stream fecha vazio, o cliente não vê nada e no turno
+									// seguinte o gate `identify` re-dispara — do lado dele, é preencher
+									// o CPF e "não sair do lugar" pra sempre, que foi como o defeito
+									// chegou pelo WhatsApp. Reproduzido em 09/08/2026 com a chave vazia.
+									// O erro precisa aparecer no log (é config de infra, não do cliente)
+									// e o cliente precisa de uma saída — não de um turno mudo.
+									try {
+										await storeIdentity(conversationId, { cpf, celular: celularDigits });
+									} catch (err) {
+										console.error(
+											"[identify] storeIdentity FALHOU — identidade não persistida:",
+											err,
+										);
+										await writeAndSaveText(
+											writer,
+											conversationId,
+											meta.currentPersona ?? null,
+											"Tive um problema pra registrar seus dados agora. Já estou avisando o time — pode tentar de novo em instantes?",
+										);
+										return;
+									}
 									// Celular vira contato do lead (mesma régua do whatsapp_optin).
 									const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
 									await saveContactWhatsapp(conversationId, celularDigits).catch(() => {});

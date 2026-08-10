@@ -37,7 +37,14 @@ if (!existsSync("/.dockerenv")) {
 			const u = new URL(url);
 			if (u.hostname.includes(".") || u.hostname === "localhost") return url;
 			u.hostname = `${u.hostname}.orb.local`;
-			return u.toString();
+			// `toString()` NORMALIZA acrescentando a barra de path vazio. Quem
+			// concatena (`${base}/v1/messages`) acaba com `//v1/messages` — e o
+			// LiteLLM devolve 404 nisso. O sintoma engana: o eval aborta com
+			// "LLM INDISPONÍVEL", como se o gateway estivesse fora, quando o
+			// gateway responde 200 na mesma URL sem a barra. Só apareceu quando
+			// o host virou nome de container (`tb-litellm-shared`, sem ponto);
+			// com `host.docker.internal` a função retornava antes de traduzir.
+			return u.toString().replace(/\/$/, "");
 		} catch {
 			return url;
 		}
@@ -46,6 +53,15 @@ if (!existsSync("/.dockerenv")) {
 	if (db) process.env.DATABASE_URL = db;
 	const gw = paraHost(process.env.LITELLM_BASE_URL);
 	if (gw) process.env.LITELLM_BASE_URL = gw;
+	// Mesmo caso do DB e do gateway: com o Langfuse LOCAL compartilhado
+	// (tb-langfuse-shared), o `.env.local` guarda o nome de serviço da
+	// tb-local-net, que não resolve do Mac. Sem esta tradução o
+	// `sync-prompts`/`eval` do host falha em ENOTFOUND — e como o SDK do
+	// Langfuse é no-op por design, a falha vira SILÊNCIO: o script termina
+	// "ok" sem ter escrito nada. Contra a instância AWS o hostname tem ponto
+	// e a função devolve a URL intacta.
+	const lf = paraHost(process.env.LANGFUSE_BASE_URL);
+	if (lf) process.env.LANGFUSE_BASE_URL = lf;
 }
 
 // O SRV de Cloud Map só existe dentro da VPC; do host ele resolve pra nada e o
