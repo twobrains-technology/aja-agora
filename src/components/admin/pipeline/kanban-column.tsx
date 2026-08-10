@@ -2,21 +2,15 @@
 
 import { Draggable, Droppable } from "@hello-pangea/dnd";
 import { Badge } from "@/components/ui/badge";
+import { rotuloDoEstagio } from "@/lib/admin/lead-stages";
 import { cn } from "@/lib/utils";
 import { type Lead, LeadCard } from "./lead-card";
 
-const STAGE_LABELS: Record<string, string> = {
-	novo: "Novo",
-	engajado: "Engajado",
-	qualificado: "Qualificado",
-	em_negociacao: "Em Negociação",
-	proposta_enviada: "Proposta Enviada",
-	na_administradora: "Na Administradora",
-	em_atendimento: "Em Atendimento",
-	aguardando_pagamento: "Aguardando Pagamento",
-	fechado_ganho: "Fechado Ganho",
-	perdido: "Perdido",
-};
+// A tabela de rótulos vive em `lead-stages.ts` — e vive lá exatamente porque já
+// tinha sido copiada dentro de componente antes: o FIX-176 nasceu de uma cópia
+// que não conhecia a raia `em_atendimento` e mostrava o enum cru na tela. Esta
+// era a última cópia sobrevivente; raia nova agora aparece rotulada em todo
+// lugar de graça, sem ninguém precisar lembrar de sincronizar.
 
 const STAGE_DOT_COLORS: Record<string, string> = {
 	novo: "bg-blue-500",
@@ -35,12 +29,16 @@ export function KanbanColumn({
 	stage,
 	leads,
 	onLeadClick,
+	raiasVisiveis,
+	onAvancar,
 }: {
 	stage: string;
 	leads: Lead[];
 	onLeadClick?: (leadId: string) => void;
+	raiasVisiveis?: readonly string[];
+	onAvancar?: (leadId: string, destino: string) => void;
 }) {
-	const label = STAGE_LABELS[stage] ?? stage;
+	const label = rotuloDoEstagio(stage);
 	const isWon = stage === "fechado_ganho";
 	const isLost = stage === "perdido";
 
@@ -93,6 +91,8 @@ export function KanbanColumn({
 											lead={lead}
 											isDragging={dragSnapshot.isDragging}
 											onLeadClick={onLeadClick}
+											raiasVisiveis={raiasVisiveis}
+											onAvancar={onAvancar}
 										/>
 									</div>
 								)}
