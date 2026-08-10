@@ -28,15 +28,23 @@ interface Opts {
 	conversationId: string | null;
 	/** Chamado quando chega mensagem nova pelo SSE ou quando o poll deve recarregar. */
 	onAtualizar: () => void;
+	/**
+	 * Chamado SÓ pelo SSE, com a mensagem que chegou. É por aqui que sai o alerta
+	 * (som/notificação): o polling não serve pra isso, porque ele não sabe se
+	 * algo mudou — alertaria a cada 15 segundos, mensagem nova ou não.
+	 */
+	onMensagem?: (mensagem: { role?: string; content?: string }) => void;
 	/** `false` desliga tudo (modal fechado) — sem isso o SSE fica aberto à toa. */
 	ativo?: boolean;
 }
 
-export function useConversaAoVivo({ conversationId, onAtualizar, ativo = true }: Opts) {
-	// A callback muda a cada render do pai; guardá-la numa ref evita reconectar o
-	// SSE a cada digitação — reconexão em loop derrubaria o stream.
+export function useConversaAoVivo({ conversationId, onAtualizar, onMensagem, ativo = true }: Opts) {
+	// As callbacks mudam a cada render do pai; guardá-las numa ref evita
+	// reconectar o SSE a cada digitação — reconexão em loop derrubaria o stream.
 	const cb = useRef(onAtualizar);
 	cb.current = onAtualizar;
+	const cbMensagem = useRef(onMensagem);
+	cbMensagem.current = onMensagem;
 
 	useEffect(() => {
 		if (!conversationId || !ativo) return;
@@ -55,9 +63,14 @@ export function useConversaAoVivo({ conversationId, onAtualizar, ativo = true }:
 		if (source) {
 			source.onmessage = (ev) => {
 				try {
-					const payload = JSON.parse(ev.data) as { type?: string };
+					const payload = JSON.parse(ev.data) as {
+						type?: string;
+						message?: { role?: string; content?: string };
+					};
 					// `connected` e `ping` são só sinal de vida — não mexem na lista.
-					if (payload.type === "message") cb.current();
+					if (payload.type !== "message") return;
+					cb.current();
+					if (payload.message) cbMensagem.current?.(payload.message);
 				} catch {
 					// Frame malformado não pode derrubar o stream inteiro.
 				}

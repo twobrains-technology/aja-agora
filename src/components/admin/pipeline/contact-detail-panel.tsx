@@ -20,6 +20,8 @@ import {
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { rotuloDoEstagio } from "@/lib/admin/lead-stages";
+import { notificarMensagem, tocarAviso } from "../conversa/alerta-de-mensagem";
+import { BotaoNotificacoes } from "../conversa/botao-notificacoes";
 import { useConversaAoVivo } from "../conversa/use-conversa-ao-vivo";
 import type { LeadActiveHandoff } from "./lead-card";
 import { MesaResponsavel } from "./mesa-responsavel";
@@ -195,6 +197,14 @@ export function ContactDetailPanel({
 		conversationId: detail?.activeConversationId ?? null,
 		onAtualizar: atualizarEmSilencio,
 		ativo: open,
+		onMensagem: (m) => {
+			// Só mensagem do CLIENTE avisa. O eco do que o próprio atendente
+			// acabou de mandar tocaria um bipe a cada envio dele.
+			if (m.role !== "user") return;
+			tocarAviso();
+			const quem = detail?.contact;
+			notificarMensagem(quem?.name || quem?.phone || "Cliente", m.content ?? "");
+		},
 	});
 
 	useEffect(() => {
@@ -222,6 +232,11 @@ export function ContactDetailPanel({
 				<SheetHeader className="border-b px-4 py-3">
 					<SheetTitle>{title}</SheetTitle>
 					<SheetDescription>Tudo que o cliente fez — web e WhatsApp</SheetDescription>
+					{/* No cabeçalho porque precisa estar à mão ANTES de a mensagem
+					    chegar — quem só acha o botão depois já perdeu o aviso. */}
+					<div className="mt-1">
+						<BotaoNotificacoes />
+					</div>
 					{detail && (
 						<div className="flex flex-wrap items-center gap-2 mt-1">
 							{detail.currentStage && (
