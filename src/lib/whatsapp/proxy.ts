@@ -18,6 +18,7 @@ import { transitionLeadStage } from "@/lib/admin/lead-transitions";
 import { buildAdvanceToContractDirective } from "@/lib/agent/orchestrator/directives";
 import { recusaIsolada } from "@/lib/agent/orchestrator/yes-no";
 import type { ConversationMetadata } from "@/lib/agent/personas";
+import { quemRespondePara } from "@/lib/agent/quem-responde";
 import { publishMessage } from "@/lib/chat/message-bus";
 import { triggerEvalScoring } from "@/lib/eval/trigger";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
@@ -522,7 +523,18 @@ export async function handoffToAgents(
 	}
 }
 
-/** Check if a conversation is in handed_off state. */
+/**
+ * Este cliente está sendo atendido por gente?
+ *
+ * A pergunta é sobre a PESSOA, não sobre a linha da conversa. Quem assumiu o caso
+ * pelo painel silencia a conversa web; o mesmo cliente responde pelo WhatsApp, que
+ * é outra conversa, com o número em outro formato. Comparando `waId` por
+ * igualdade — como era até 2026-08-10 — o agente não via a trava e respondia por
+ * cima do atendente. Ver `quemRespondePara`.
+ *
+ * O `conversationId` devolvido é o do ATENDIMENTO (onde o humano está), não o do
+ * canal de entrada: é lá que a mensagem do cliente precisa aparecer.
+ */
 export async function getHandoffState(waId: string): Promise<{
 	isHandedOff: boolean;
 	conversationId?: string;
@@ -530,12 +542,29 @@ export async function getHandoffState(waId: string): Promise<{
 	contactName?: string;
 	isSimulated?: boolean;
 } | null> {
+	const decisao = await quemRespondePara(waId);
+
+	if (decisao.quem === "humano") {
+		// Metadados de exibição saem da conversa do atendimento, que é a que o
+		// atendente tem aberta na tela.
+		const conv = await db.query.conversations.findFirst({
+			where: eq(conversations.id, decisao.conversationId),
+		});
+		return {
+			isHandedOff: true,
+			conversationId: decisao.conversationId,
+			handedOffUserId: decisao.handedOffUserId,
+			contactName: conv?.contactName ?? undefined,
+			isSimulated: conv?.isSimulated,
+		};
+	}
+
 	const conv = await db.query.conversations.findFirst({
 		where: eq(conversations.waId, waId),
 	});
 	if (!conv) return null;
 	return {
-		isHandedOff: conv.status === "handed_off",
+		isHandedOff: false,
 		conversationId: conv.id,
 		handedOffUserId: conv.handedOffUserId ?? null,
 		contactName: conv.contactName ?? undefined,

@@ -350,8 +350,11 @@ describeIfDb(
 			);
 			expect(res.status).toBe(200);
 			expect((await res.json()).type).toBe("template");
-			// é o caminho que o ClientChatBox dispara quando a janela está fechada
-			expect(sendTemplate).toHaveBeenCalledWith(waId, "aja_reengajamento", "pt_BR");
+			// é o caminho que o ClientChatBox dispara quando a janela está fechada.
+			// O 4º argumento são os `components`: `undefined` aqui porque este
+			// template não tem `{{n}}` no corpo — mandar array vazio seria erro
+			// 132000 na Meta tanto quanto mandar de menos (ver template-params.ts).
+			expect(sendTemplate).toHaveBeenCalledWith(waId, "aja_reengajamento", "pt_BR", undefined);
 			const msgs = await db
 				.select()
 				.from(schema.messages)

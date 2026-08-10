@@ -45,7 +45,12 @@ vi.mock("./adapter", () => ({ runDirectiveWithOrchestrator: mocks.runDirective }
 vi.mock("@/db", () => ({
 	db: {
 		query: {
-			conversations: { findFirst: vi.fn(async () => mocks.conv) },
+			conversations: {
+				findFirst: vi.fn(async () => mocks.conv),
+				// `findMany` = "quem atende esta pessoa?" (quem-responde.ts). Vazio:
+				// ninguém em atendimento humano, que é a premissa destes casos.
+				findMany: vi.fn(async () => []),
+			},
 		},
 	},
 }));

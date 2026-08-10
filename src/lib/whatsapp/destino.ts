@@ -26,11 +26,11 @@ export async function resolverDestinoWhatsApp(waId: string): Promise<string> {
 	const chave = chaveTelefoneBR(waId);
 	if (!chave) return fallback;
 
-	// Conversa de WhatsApp com inbound = número confirmado pela própria Meta.
-	const candidatas = await db
-		.select({ waId: conversations.waId })
-		.from(conversations)
-		.where(eq(conversations.channel, "whatsapp"));
+	// Conversa de WhatsApp = número confirmado pela própria Meta.
+	const candidatas = await db.query.conversations.findMany({
+		where: eq(conversations.channel, "whatsapp"),
+		columns: { waId: true },
+	});
 
 	for (const c of candidatas) {
 		if (c.waId && chaveTelefoneBR(c.waId) === chave) return c.waId;

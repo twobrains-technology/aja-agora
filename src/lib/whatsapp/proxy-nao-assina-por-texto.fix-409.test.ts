@@ -59,7 +59,16 @@ vi.mock("./meta-helpers", () => ({
 }));
 vi.mock("./adapter", () => ({ runDirectiveWithOrchestrator: mocks.runDirective }));
 vi.mock("@/db", () => ({
-	db: { query: { conversations: { findFirst: vi.fn(async () => mocks.conv) } } },
+	// `findMany` responde a "quem atende esta pessoa?" (quem-responde.ts). Lista
+	// vazia = ninguém em atendimento humano, que é a premissa destes casos.
+	db: {
+		query: {
+			conversations: {
+				findFirst: vi.fn(async () => mocks.conv),
+				findMany: vi.fn(async () => []),
+			},
+		},
+	},
 }));
 vi.mock("@/lib/agent/orchestrator/choose-offer", () => ({
 	resolveAdministradoraMentionForConversation: mocks.resolveMention,

@@ -46,6 +46,7 @@ import {
 	ancorarOfertaReal,
 	buildStartContractInput,
 } from "@/lib/bevi/contract-input";
+import { quemRespondePara } from "@/lib/agent/quem-responde";
 import { sendContractSummary } from "@/lib/bevi/contract-summary";
 import { sendFechoPedirOi } from "@/lib/bevi/fecho-pedir-oi";
 import { confirmOffer, startContract, uploadContractDocument } from "@/lib/bevi/fulfillment";
@@ -322,7 +323,15 @@ export async function POST(req: NextRequest) {
 		conversationId = created.id;
 	}
 
-	if (conv?.status === "handed_off" && !body.action) {
+	// A trava é da PESSOA, não desta linha. O mesmo cliente pode ter sido assumido
+	// numa conversa de outro canal (o caso real foi o inverso: assumido na web,
+	// respondendo pelo WhatsApp). Perguntar só pelo `status` daqui deixava o
+	// agente falar por cima do atendente. Ver `quemRespondePara`.
+	const humanoNoCaso =
+		conv?.status === "handed_off" ||
+		(conv?.waId ? (await quemRespondePara(conv.waId)).quem === "humano" : false);
+
+	if (humanoNoCaso && conv && !body.action) {
 		const userText = lastUserText(body.messages);
 		if (!userText) {
 			return new Response("No user message in payload", { status: 400 });

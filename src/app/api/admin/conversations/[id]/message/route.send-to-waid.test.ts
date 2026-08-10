@@ -37,6 +37,10 @@ const limit = vi.fn();
 const fakeDb = {
 	select: vi.fn(() => ({ from: vi.fn(() => ({ where: vi.fn(() => ({ limit })) })) })),
 	insert: vi.fn(() => ({ values: vi.fn(async () => undefined) })),
+	// `findMany` responde ao resolvedor de destino (destino.ts), que procura uma
+	// conversa de WhatsApp do mesmo número pra usar o wa_id que a Meta reconhece.
+	// Vazio = não há; o destino cai no E.164 derivado do waId da conversa.
+	query: { conversations: { findMany: vi.fn(async () => []) } },
 };
 vi.mock("@/db", () => ({ globalDb: fakeDb, db: fakeDb }));
 
