@@ -40,11 +40,27 @@ export async function proxy(request: NextRequest) {
 		}
 	}
 
-	if (pathname === "/") {
+	if (ehLanding(pathname)) {
 		return registrarVisita(request);
 	}
 
 	return NextResponse.next();
+}
+
+/**
+ * As páginas que contam como chegada de gente ao site.
+ *
+ * A home não é mais a única: as landings de vertical
+ * (`/consorcio/auto`, `/consorcio/imovel`, `/consorcio/moto`) existem para ser
+ * destino de anúncio, então é justamente nelas que o UTM chega. Registrar só a
+ * home fazia toda campanha apontada para uma vertical nascer sem origem.
+ *
+ * Prefixo, e não lista: vertical nova entra sozinha. O `matcher` lá embaixo tem
+ * de acompanhar — fora dele o proxy nem roda, e `src/proxy.landing-atribuicao.test.ts`
+ * é quem prova que os dois continuam de acordo.
+ */
+export function ehLanding(pathname: string): boolean {
+	return pathname === "/" || pathname.startsWith("/consorcio/");
 }
 
 /**
@@ -126,5 +142,5 @@ async function registrarVisita(request: NextRequest): Promise<NextResponse> {
 }
 
 export const config = {
-	matcher: ["/", "/admin", "/admin/((?!login).*)"],
+	matcher: ["/", "/consorcio/:vertical", "/admin", "/admin/((?!login).*)"],
 };
