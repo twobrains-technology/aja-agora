@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { TurnTraceRecord } from "@/lib/telemetry/turn-trace";
-import { PROFUNDIDADE_MAXIMA, profundidadeDoGate, scoresDoTurno } from "./funil-scores";
+import {
+	PROFUNDIDADE_MAXIMA,
+	profundidadeDoGate,
+	scoreDeEntregaDoGate,
+	scoresDoTurno,
+} from "./funil-scores";
 
 function record(over: Partial<TurnTraceRecord> = {}): TurnTraceRecord {
 	return {
@@ -111,5 +116,35 @@ describe("scoresDoTurno — sinais de defeito do agente", () => {
 		for (const score of s.filter((x) => x.dataType === "BOOLEAN")) {
 			expect([0, 1]).toContain(score.value);
 		}
+	});
+});
+
+describe("scoreDeEntregaDoGate", () => {
+	it("gate sem entrega vale 0 — é ele que precisa virar alerta", () => {
+		const [taxa] = scoreDeEntregaDoGate("desire", "none");
+		expect(taxa).toMatchObject({ name: "gate_entregue", value: 0, dataType: "BOOLEAN" });
+	});
+
+	it.each(["interactive", "text"] as const)("gate entregue via %s vale 1", (via) => {
+		expect(scoreDeEntregaDoGate("credit", via)[0].value).toBe(1);
+	});
+
+	// O comment é o que diz QUAL gate afundou sem precisar abrir o trace.
+	it("o comentário identifica o gate e o caminho", () => {
+		expect(scoreDeEntregaDoGate("reco-consent", "none")[0].comment).toBe("reco-consent — none");
+	});
+
+	// Sem o categórico o painel teria a taxa mas não o culpado — e `comment`
+	// não é dimensão agregável no Langfuse.
+	it("só o afundamento emite o categórico que nomeia o gate", () => {
+		const afundou = scoreDeEntregaDoGate("desire", "none");
+		expect(afundou).toHaveLength(2);
+		expect(afundou[1]).toMatchObject({
+			name: "gate_afundado",
+			value: "desire",
+			dataType: "CATEGORICAL",
+		});
+
+		expect(scoreDeEntregaDoGate("desire", "text")).toHaveLength(1);
 	});
 });

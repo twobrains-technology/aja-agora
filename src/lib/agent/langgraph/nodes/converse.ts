@@ -20,7 +20,10 @@ import {
 	administradoraFoiRecusada,
 	listShownOffersForConversation,
 } from "@/lib/agent/orchestrator/choose-offer";
-import { EphemeralTextFilter } from "@/lib/agent/orchestrator/sanitizer";
+import {
+	contemPerguntaQueOcupaCota,
+	EphemeralTextFilter,
+} from "@/lib/agent/orchestrator/sanitizer";
 import { buildGateContextText } from "@/lib/agent/orchestrator/system-context";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { detectYesNoText } from "@/lib/agent/orchestrator/yes-no";
@@ -1232,9 +1235,15 @@ export function createConverseNode(model: BaseChatModel) {
 		// turno era classificado como "ninguém perguntou" — o card emitia a pergunta
 		// canônica embaixo dos cards, repetindo o que o agente já tinha acabado de
 		// dizer. Qualquer interrogação emitida NESTE turno conta.
+		// Cortesia ("Tudo certo?") não conta como pergunta em NENHUM dos dois
+		// caminhos: ela não pede dado nenhum, e tratá-la como pergunta apagava a
+		// canônica do gate no WhatsApp — cliente sem nada pra responder, funil
+		// parado no primeiro turno (trace be5cc1e6, produção 2026-08-10).
 		const modelAskedQuestion =
 			filter.hasHeldQuestion() ||
-			events.some((ev) => ev.type === "text-delta" && ev.text.includes("?"));
+			contemPerguntaQueOcupaCota(
+				events.map((ev) => (ev.type === "text-delta" ? ev.text : "")).join(""),
+			);
 		const tail = filter.flush();
 		if (tail) {
 			const ev: TurnEvent = { type: "text-delta", text: tail };

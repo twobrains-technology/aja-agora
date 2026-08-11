@@ -15,6 +15,7 @@ import type { Category, ConversationMetadata, Persona } from "@/lib/agent/person
 import { type Gate, nextGate } from "@/lib/agent/qualify-state";
 import { EMPTY_TURN_FALLBACK } from "@/lib/chat/empty-turn-guard";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
+import { registrarEntregaDoGate } from "@/lib/observability/langfuse/funil-scores";
 import { withLangfuseTurn } from "@/lib/observability/langfuse/turn";
 import { traceTurnEvents } from "@/lib/telemetry/turn-trace";
 import { sendInteractiveMessage, sendTextMessage } from "./api";
@@ -571,6 +572,7 @@ async function consumeEventsInner(
 					lastWasInteractive = true;
 					hasSent = hasSent || ok;
 					console.log(`[gate-delivery] conv=${conversationId} gate=${ev.gate} via=interactive`);
+					registrarEntregaDoGate(ev.gate, "interactive");
 				} else {
 					// FIX-120: gates conversacionais (credit/identify) saem como TEXTO — a
 					// pergunta viajava no body da lista; sem a lista, mandamos em texto.
@@ -599,6 +601,7 @@ async function consumeEventsInner(
 						lastWasInteractive = false;
 						hasSent = hasSent || ok;
 						console.log(`[gate-delivery] conv=${conversationId} gate=${ev.gate} via=text`);
+						registrarEntregaDoGate(ev.gate, "text");
 					} else {
 						// Nenhuma entrega pro gate no WhatsApp → o turno pode fechar MUDO.
 						// Alerta ALTO pra caçar buracos de entrega de gate (o do identify,
@@ -606,6 +609,10 @@ async function consumeEventsInner(
 						console.error(
 							`[gate-undelivered] conv=${conversationId} gate=${ev.gate} — SEM entrega no WhatsApp (nem interactive nem texto); turno pode fechar mudo`,
 						);
+						// O `console.error` acima é invisível fora do CloudWatch: foram 8
+						// afundamentos em 4 dias sem ninguém ver. Como score, isto vira
+						// taxa, gráfico e alerta — ver `scoreDeEntregaDoGate`.
+						registrarEntregaDoGate(ev.gate, "none");
 					}
 				}
 				gateFiredThisTurn = true; // FIX-211: o gate saiu — não é desvio.

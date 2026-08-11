@@ -213,6 +213,32 @@ const dashboards: { nome: string; descricao: string; widgets: Widget[] }[] = [
 				TAXA,
 				[score("turno_mudo")],
 			),
+			// O defeito que passou por todas as redes: gate dispara, o cliente não
+			// recebe pergunta nenhuma, e nada acusa — `turno_mudo` é 0 (o modelo
+			// escreveu uma cortesia) e os três juízes aprovam (a frase é educada).
+			// Determinístico, medido em código: não depende de LLM enxergar.
+			num(
+				"Taxa de gate ENTREGUE",
+				"Fração de gates que chegaram ao cliente (card ou texto). Abaixo de 1 = alguém ficou sem pergunta pra responder e a venda parou.",
+				"scores-boolean",
+				TAXA,
+				[score("gate_entregue")],
+			),
+			serie(
+				"Gate entregue por dia",
+				"Queda aqui é regressão de entrega — o cliente passou a receber conversa sem pergunta.",
+				"scores-boolean",
+				TAXA,
+				[score("gate_entregue")],
+			),
+			barra(
+				"Qual gate AFUNDA",
+				"Gates que dispararam sem nenhuma forma de chegar ao cliente. Nomeia o culpado — a taxa sozinha não diz onde consertar.",
+				"scores-categorical",
+				"stringValue",
+				CONTAGEM,
+				[score("gate_afundado")],
+			),
 			num(
 				"Taxa de artefato suprimido",
 				"Guard engoliu um card que o modelo tentou emitir. Recorrente = agente batendo em porta trancada.",

@@ -446,13 +446,71 @@ function isInterrogativeSentence(segment: string): boolean {
 	return /\?\s*$/.test(segment.trimEnd());
 }
 
+// Cortesia de abertura ("tudo bem?", "como vai?", "beleza?"). Termina em "?",
+// mas não é uma pergunta de VENDA: não pede dado nenhum e não move o funil.
+//
+// Ancorados no SEGMENTO INTEIRO, mesma guarda dos PROCESS_FILLER_PATTERNS —
+// "Tudo bem se eu te mandar as opções?" e "Você quer tudo bem organizado?" têm
+// conteúdo além da cortesia e por isso NÃO casam.
+const COURTESY_QUESTION_PATTERNS: RegExp[] = [
+	// "tudo bem?", "tudo certo?", "tudo joia?", "e você, tudo bem?"
+	/^[\s,!.]*(e\s+(a[íi]|voc[êe])\s*,?\s*)?(oi|ol[áa]|opa|bom\s+dia|boa\s+tarde|boa\s+noite)?[\s,!.]*tudo\s+(bem|certo|jo[íi]a|tranquilo|ok|bom)(\s+(com\s+)?(voc[êe]|contigo|a[íi]|por\s+a[íi]))?\s*\?+\s*$/i,
+	// "como vai?", "como você está?", "como estão as coisas?"
+	/^[\s,!.]*(e\s+)?(oi|ol[áa]|opa)?[\s,!.]*como\s+(vai|voc[êe]\s+(est[áa]|vai)|vc\s+(est[áa]|vai)|est[áa]|est[ãa]o\s+as\s+coisas)\s*\?+\s*$/i,
+	// "beleza?", "e aí, beleza?", "tranquilo?", "de boa?"
+	/^[\s,!.]*(e\s+a[íi]\s*,?\s*)?(oi|ol[áa]|opa)?[\s,!.]*(beleza|tranquilo|suave|de\s+boa)\s*\?+\s*$/i,
+];
+
+/**
+ * A cortesia é INOFENSIVA, não proibida — continua sendo entregue ao cliente.
+ * O que ela não pode é ocupar a cota de "uma pergunta por turno".
+ */
+export function ehPerguntaDeCortesia(segment: string): boolean {
+	return COURTESY_QUESTION_PATTERNS.some((re) => re.test(segment));
+}
+
+/**
+ * A pergunta que DISPUTA a cota do turno (FIX-298: só uma sobrevive).
+ *
+ * Achado em produção pelo Langfuse (trace `be5cc1e6dd32923553d18a61a0dc505c`,
+ * 2026-08-10): o cliente mandou "oi" e recebeu só "Oi, Kairo! Tudo certo?". A
+ * cortesia marcava `jaPerguntou`, o WhatsApp lia `modelAsked=true` e APAGAVA a
+ * pergunta canônica do gate (`adapter.ts:593`) — que, em gate sem card, é a
+ * única entrega possível. Resultado: `[gate-undelivered]`, cliente sem nada
+ * pra responder, venda parada no primeiro turno.
+ *
+ * Pior ainda no caso que o system-prompt PEDE ("cumprimente e emende a
+ * primeira pergunta útil na MESMA mensagem", system-prompt.ts:41): a cortesia
+ * chegava primeiro, tomava a cota, e a pergunta de venda logo atrás era dropada
+ * como "pergunta extra". O modelo fazia certo e o servidor desfazia.
+ */
+function ocupaCotaDePergunta(segment: string): boolean {
+	return isInterrogativeSentence(segment) && !ehPerguntaDeCortesia(segment);
+}
+
+/**
+ * O TEXTO do turno contém alguma pergunta que conta como "o modelo perguntou"?
+ *
+ * Existe porque `converse.ts` tinha um segundo caminho pro mesmo sinal, e ele
+ * era ainda mais cego que o do filtro: `events.some(ev => ev.text.includes("?"))`
+ * — QUALQUER "?" em QUALQUER posição, sem sequer olhar a sentença. Corrigir só
+ * o `hasHeldQuestion` deixaria o bug vivo por essa porta ("Oi, Kairo! Tudo
+ * certo?" tem "?" e marcava `modelAsked` do mesmo jeito).
+ *
+ * Uma regra, um lugar: os dois caminhos agora perguntam a MESMA coisa.
+ */
+export function contemPerguntaQueOcupaCota(texto: string): boolean {
+	if (!texto.includes("?")) return false;
+	return splitSegments(texto).some(ocupaCotaDePergunta);
+}
+
 /** Um segmento é a última sentença interrogativa dentre `segments` (índice
  * `index`) — usado pra decidir quais perguntas anteriores são dropadas.
  * FIX-298: nunca mais de 1 sentença interrogativa sobrevive por turno. */
 function lastInterrogativeIndex(segments: string[]): number {
 	let last = -1;
 	segments.forEach((seg, i) => {
-		if (isInterrogativeSentence(seg)) last = i;
+		if (ocupaCotaDePergunta(seg)) last = i;
 	});
 	return last;
 }
@@ -966,7 +1024,7 @@ export function stripProcessPreamble(text: string, ctx?: StateVerificationContex
 	// FIX-298: nunca mais de 1 sentença interrogativa por balão — só a ÚLTIMA
 	// pergunta sobrevive; perguntas anteriores no mesmo texto são dropadas.
 	const lastQuestion = lastInterrogativeIndex(survivors);
-	const kept = survivors.filter((seg, i) => !isInterrogativeSentence(seg) || i === lastQuestion);
+	const kept = survivors.filter((seg, i) => !ocupaCotaDePergunta(seg) || i === lastQuestion);
 	// FIX-299: strip de emoji determinístico, independe do modelo obedecer a
 	// regra de parcimônia do prompt. FIX-337: scrub de CPF, mesma garantia.
 	return semTravessaoDeIA(scrubCpf(stripEmoji(kept.join(""))));
@@ -1133,7 +1191,7 @@ export class EphemeralTextFilter {
 				this.gancho = seg;
 				continue;
 			}
-			if (isInterrogativeSentence(seg)) {
+			if (ocupaCotaDePergunta(seg)) {
 				// A pergunta sai NA ORDEM em que o modelo a escreveu. Antes ela era
 				// segurada e reanexada no fim do turno — e quando o modelo escrevia
 				// "me diz uma coisa: [pergunta]. Isso ajuda muito." o texto chegava

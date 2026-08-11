@@ -143,6 +143,68 @@ export function scoresDoTurno(record: TurnTraceRecord): Score[] {
 	return scores;
 }
 
+/** Como o gate chegou (ou não) ao cliente no WhatsApp. */
+export type EntregaDoGate = "interactive" | "text" | "none";
+
+/**
+ * O gate disparou — ele chegou ao cliente?
+ *
+ * Nasceu de um defeito que passou por TODAS as redes existentes (trace
+ * `be5cc1e6dd32923553d18a61a0dc505c`, produção, 2026-08-10): o cliente mandou
+ * "oi" e recebeu "Oi, Kairo! Tudo certo?" — cortesia pura, gate `desire` sem
+ * entrega nenhuma, venda parada no primeiro turno. Nada acusou:
+ *
+ *   • `turno_mudo` = 0 — o modelo ESCREVEU (só não perguntou nada);
+ *   • `artefato_suprimido` = 0 — nenhum guard rodou;
+ *   • `judge_resolved` = 1, `judge_tone` = 0.75 — os três juízes aprovaram,
+ *     e com razão: a frase é educada, verdadeira e bem escrita. Juiz de
+ *     qualidade de PROSA não enxerga funil que não andou.
+ *
+ * O único sinal existente era um `console.error("[gate-undelivered]")` — vivo
+ * só no CloudWatch, invisível no Langfuse, impossível de agregar ou alertar.
+ * Foram 8 ocorrências em 4 dias antes de alguém reparar, e o mesmo gate
+ * reincidiu na mesma conversa (`credit` às 10:20 e de novo às 14:29).
+ *
+ * Booleano de propósito: a média vira "taxa de entrega do gate" num widget só,
+ * e cruza de graça com o score categórico `gate` (qual gate afunda) e com
+ * `traceName` (`turn:web` × `turn:whatsapp`) — as duas dimensões que dizem
+ * ONDE consertar. É determinístico e custa zero: não depende de LLM julgar.
+ */
+export function scoreDeEntregaDoGate(gate: string, via: EntregaDoGate): Score[] {
+	const scores: Score[] = [
+		{
+			name: "gate_entregue",
+			value: via === "none" ? 0 : 1,
+			dataType: "BOOLEAN",
+			comment: `${gate} — ${via}`,
+		},
+	];
+	// A taxa diz QUANTO afunda; só o categórico diz QUAL gate — e é o "qual"
+	// que aponta o arquivo a consertar. `comment` não é dimensão no Langfuse
+	// (nem `metadata`), então sem este score o painel mostraria um número que
+	// ninguém consegue destrinchar. Emitido só no afundamento: gate entregue é
+	// o caso normal e não precisa de cardinalidade.
+	if (via === "none") {
+		scores.push({ name: "gate_afundado", value: gate, dataType: "CATEGORICAL" });
+	}
+	return scores;
+}
+
+/** Publica a entrega do gate no trace ATIVO (o adapter do WhatsApp roda dentro
+ * do callback de `withLangfuseTurn`, então há trace). No-op sem credencial. */
+export function registrarEntregaDoGate(gate: string, via: EntregaDoGate): void {
+	const client = getLangfuseClient();
+	if (!client) return;
+	try {
+		const environment = ambienteLangfuse();
+		for (const score of scoreDeEntregaDoGate(gate, via)) {
+			client.score.activeTrace({ ...score, environment });
+		}
+	} catch (err) {
+		console.error("[langfuse] registrar entrega do gate falhou (ignorado):", err);
+	}
+}
+
 /**
  * Publica os scores do turno no trace Langfuse ATIVO.
  *
