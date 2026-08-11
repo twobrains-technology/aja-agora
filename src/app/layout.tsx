@@ -3,6 +3,7 @@ import { DM_Mono, Poppins } from "next/font/google";
 import Script from "next/script";
 import { ThemeProvider } from "next-themes";
 import { merriweather } from "@/components/kv/fonts";
+import { SITE_URL } from "@/lib/seo/site";
 import "./globals.css";
 
 // Tags do time de anúncio (IDs públicos, não são segredo).
@@ -28,6 +29,7 @@ const dmMono = DM_Mono({
 });
 
 export const metadata: Metadata = {
+	metadataBase: SITE_URL,
 	title: "Aja Agora | Compare consórcios entre diversas administradoras",
 	description:
 		"Parceria independente de consórcio. Compare administradoras num único lugar e receba uma recomendação personalizada, sem juros, sem formulário e sem corretor.",
