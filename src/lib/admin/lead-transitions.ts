@@ -63,6 +63,22 @@ export async function transitionLeadStage(
 	try {
 		const { registrarConversaoDoEstagio } = await import("@/lib/conversions/registry");
 		await registrarConversaoDoEstagio(leadId, toStage, now);
+
+		// Escoa a fila DEPOIS de gravar, sem esperar: quem move o card não pode
+		// ficar preso numa chamada à Meta, e a transição já está no banco.
+		//
+		// É este ponto que faz a flag valer alguma coisa. Até aqui
+		// `despacharConversoesPendentes` só existia nos testes — a fila enchia e
+		// nunca saía, e ligar `CONVERSIONS_API_ENABLED` não teria efeito nenhum
+		// nem erro nenhum.
+		//
+		// Cada disparo leva junto o que ficou pendente de tentativas anteriores
+		// (o dispatch varre a fila, não só o evento recém-criado), então uma falha
+		// de rede se resolve sozinha na próxima transição de funil.
+		const { despacharConversoesPendentes } = await import("@/lib/conversions/dispatch");
+		void despacharConversoesPendentes().catch((err) => {
+			console.error("[lead-transitions] falha ao despachar conversões:", err);
+		});
 	} catch (err) {
 		console.error("[lead-transitions] falha ao registrar conversão de mídia:", err);
 	}
