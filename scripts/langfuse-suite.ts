@@ -303,6 +303,22 @@ const dashboards: { nome: string; descricao: string; widgets: Widget[] }[] = [
 				MEDIA,
 				[score("judge_resolved")],
 			),
+			// O turno pode passar nos outros três e mesmo assim não vender nada:
+			// "Oi, Kairo! Tudo certo?" tirou tom 0.75, resolveu 1 e alucinação 0.
+			num(
+				"Venda avançou — média",
+				"judge_avancou: o turno moveu a venda, ou foi gasto em cortesia? Cai quando o agente fica educado e parado.",
+				"scores-numeric",
+				MEDIA,
+				[score("judge_avancou")],
+			),
+			serie(
+				"Venda avançou por dia",
+				"Tendência do progresso por turno — queda aqui é o agente enrolando, mesmo com tom bom.",
+				"scores-numeric",
+				MEDIA,
+				[score("judge_avancou")],
+			),
 			num(
 				"Alucinação — média",
 				"judge_hallucination: número inventado. Quanto MENOR, melhor.",
@@ -415,11 +431,75 @@ const dashboards: { nome: string; descricao: string; widgets: Widget[] }[] = [
 //   "default eval model" do projeto e nasce `paused` com
 //   DEFAULT_EVAL_MODEL_MISSING se ele não estiver setado — falha que se parece
 //   com "o juiz não funciona".
-const JUIZES = [
+const JUIZES: {
+	nome: string;
+	descricao: string;
+	/** Só para juiz NOVO: cria o evaluator antes da rule. Os três originais já
+	 *  existem no projeto e não são tocados (mexer versionaria o prompt à toa). */
+	evaluator?: { prompt: string; score: string; reasoning: string };
+}[] = [
 	{ nome: "judge_tone", descricao: "soa como vendedor humano?" },
 	{ nome: "judge_resolved", descricao: "respondeu o que o cliente perguntou?" },
 	{ nome: "judge_hallucination", descricao: "inventou número?" },
+	{
+		// O buraco que o trace be5cc1e6 escancarou: o cliente mandou "oi", recebeu
+		// "Oi, Kairo! Tudo certo?" e os TRÊS juízes aprovaram — com razão, cada um
+		// dentro do seu critério. `judge_tone` mede tom, `judge_resolved` mede se
+		// respondeu, `judge_hallucination` mede se inventou número. Nenhum pergunta
+		// se a VENDA ANDOU. Uma frase educada, verdadeira e bem escrita passa em
+		// todos os três e mesmo assim deixa o cliente sem nada pra responder.
+		nome: "judge_avancou",
+		descricao: "a venda andou neste turno?",
+		evaluator: {
+			prompt:
+				"Você avalia UM turno de um vendedor de consórcio. " +
+				"Cliente: {{input}}. Agente: {{output}}. " +
+				"A VENDA ANDOU neste turno? ANDOU = o agente pediu um dado que ainda falta, " +
+				"mostrou opção/número real, reagiu ao que o cliente contou, tratou uma objeção " +
+				"com argumento, ou deu ao cliente algo concreto pra responder ou decidir. " +
+				"NÃO ANDOU = só cortesia ('tudo bem?', 'tudo certo?'), só eco do que o cliente " +
+				"disse, só promessa de fazer algo depois, ou fala sem nenhuma pergunta e sem " +
+				"informação nova. ATENÇÃO: resposta educada, correta e bem escrita que não pede " +
+				"nada nem oferece nada é 0 — o critério aqui é PROGRESSO, não simpatia nem " +
+				"veracidade (outros juízes cuidam disso).",
+			score:
+				"Retorne exatamente 1 se a venda avançou neste turno, ou exatamente 0 se o turno " +
+				"foi gasto sem mover a conversa adiante.",
+			reasoning:
+				"Explique em UMA frase, em português, o que o turno pediu/ofereceu ao cliente — " +
+				"ou, se foi 0, o que faltou pra ele ter algo a responder.",
+		},
+	},
 ];
+
+/** Cria o evaluator (o juiz em si) quando ele ainda não existe no projeto. A
+ *  rule é só o contrato de QUANDO ele roda; sem evaluator, a rule não tem o que
+ *  chamar. Idempotente por nome. */
+async function garantirEvaluator(juiz: (typeof JUIZES)[number]): Promise<void> {
+	if (!juiz.evaluator) return;
+	const existentes = await api<{ data: { name: string }[] }>(
+		"GET",
+		"/api/public/unstable/evaluators?limit=100",
+	);
+	if (existentes.data.some((e) => e.name === juiz.nome)) return;
+	if (DRY) {
+		console.log(`   + evaluator ${juiz.nome}`);
+		return;
+	}
+	await api("POST", "/api/public/unstable/evaluators", {
+		name: juiz.nome,
+		scope: "project",
+		type: "llm_as_judge",
+		variables: ["input", "output"],
+		prompt: juiz.evaluator.prompt,
+		outputDefinition: {
+			dataType: "NUMERIC",
+			score: { description: juiz.evaluator.score },
+			reasoning: { description: juiz.evaluator.reasoning },
+		},
+	});
+	console.log(`   + evaluator ${juiz.nome}`);
+}
 
 async function ligarJuizes() {
 	console.log("\n⚖️  Juízes (evaluation rules)");
@@ -433,6 +513,12 @@ async function ligarJuizes() {
 		if (jaTem.has(juiz.nome)) {
 			console.log(`   = ${juiz.nome} (já tem regra)`);
 			continue;
+		}
+		try {
+			await garantirEvaluator(juiz);
+		} catch (err) {
+			console.error(`   ✗ evaluator ${juiz.nome}: ${err instanceof Error ? err.message : err}`);
+			continue; // sem evaluator a rule nasceria órfã
 		}
 		if (DRY) {
 			console.log(`   + ${juiz.nome} — ${juiz.descricao}`);
