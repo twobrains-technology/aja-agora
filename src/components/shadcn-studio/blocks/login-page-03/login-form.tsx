@@ -51,7 +51,7 @@ const LoginForm = () => {
 				<Input
 					type="email"
 					id="userEmail"
-					placeholder="admin@ajaagora.com.br"
+					placeholder="nome.sobrenome@ajaagora.com.br"
 					value={email}
 					onChange={(e) => setEmail(e.target.value)}
 					required
