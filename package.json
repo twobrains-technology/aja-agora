@@ -30,7 +30,7 @@
 		"test:coverage": "vitest run --coverage",
 		"test:unit": "vitest run --reporter=dot --silent=true --bail=10 src/ --exclude='src/**/route*.test.ts' --exclude='src/**/*.integration.test.ts' --exclude='src/**/builder*.test.ts'",
 		"sync-prompts": "tsx scripts/sync-prompts.ts",
-		"langfuse:suite": "tsx scripts/langfuse-suite.ts",
+		"langfuse:suite": "tsx --env-file-if-exists=.env.local scripts/langfuse-suite.ts",
 		"eval": "tsx scripts/eval-run.ts",
 		"eval:seed": "tsx scripts/eval-seed-dataset.ts",
 		"sonda:variancia": "tsx scripts/sonda-variancia.ts",
