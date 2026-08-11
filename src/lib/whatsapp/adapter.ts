@@ -612,7 +612,18 @@ async function consumeEventsInner(
 						// O `console.error` acima é invisível fora do CloudWatch: foram 8
 						// afundamentos em 4 dias sem ninguém ver. Como score, isto vira
 						// taxa, gráfico e alerta — ver `scoreDeEntregaDoGate`.
-						registrarEntregaDoGate(ev.gate, "none");
+						//
+						// Só pontua o gate cuja entrega é RESPONSABILIDADE DESTE CANAL.
+						// `decision` e `contract` caem aqui por DESIGN — a pergunta deles é
+						// um card do orquestrador (`present_decision_prompt`,
+						// `contract_form`) e `gateQuestion` devolve null de propósito
+						// (gate-questions.ts:239). Eles respondem por 2 dos 8
+						// `[gate-undelivered]` dos últimos 4 dias; pontuá-los encheria a
+						// métrica de falso positivo, e alerta que grita à toa é alerta que
+						// ninguém olha.
+						if (WHATSAPP_TEXT_GATES.has(ev.gate) || WHATSAPP_INTERACTIVE_GATES.has(ev.gate)) {
+							registrarEntregaDoGate(ev.gate, "none");
+						}
 					}
 				}
 				gateFiredThisTurn = true; // FIX-211: o gate saiu — não é desvio.
