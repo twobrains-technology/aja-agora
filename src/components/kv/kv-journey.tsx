@@ -204,7 +204,7 @@ const WAVE_BOX = { left: 170, top: 169, width: 893, height: 297 };
 // e abaixo (vales).
 export function KvJourney() {
 	return (
-		<section className="relative overflow-hidden bg-gradient-to-b from-[#F4F4E2] to-[#FAFAF3] py-6 lg:py-8">
+		<section className="relative overflow-hidden bg-gradient-to-b from-[#F4F4E2] to-[#FAFAF3] pb-6 pt-16 lg:pb-8 lg:pt-24">
 			{/* Blobs rosa de fundo (mobile) */}
 			<div
 				aria-hidden="true"

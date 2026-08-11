@@ -20,23 +20,23 @@ const testimonials: Testimonial[] = [
 	{
 		quote:
 			"Sempre tive receio de contratar um consórcio sem saber se estava fazendo a melhor escolha, ainda mais se tratando de um imóvel.\nNa AJA foi diferente: eles compararam várias administradoras, explicaram tudo com clareza\ne encontraram um grupo ideal para o meu perfil. Hoje estou realizando o sonho do meu primeiro imóvel com tranquilidade e confiança.”",
-		name: "Bruna Perrotta",
+		name: "Paulo Perrotti",
 		meta: "Imóvel em São Paulo - SP",
-		avatar: "avatar-image-2.png",
+		avatar: "depoimento-paulo.png",
 	},
 	{
 		quote:
 			"Ter um carro novo era um objetivo importante para minha família. Na AJA encontrei muito mais do que um consórcio: encontrei orientação, transparência e a segurança de saber que escolheram a melhor opção\npara mim entre várias administradoras.\nRecomendo de olhos fechados.",
-		name: "Bernardo Canedo",
+		name: "Mariana Costa",
 		meta: "Automóvel em Curitiba - PR",
-		avatar: "avatar-image.png",
+		avatar: "depoimento-mariana.png",
 	},
 	{
 		quote:
 			"Eu queria comprar uma moto e a Aja entendeu o que eu precisava!! Deu para perceber que eles respeitam o meu dinheiro, são imparciais, tanto faz o consórcio que eu fechei! Mas, o escolhido foi analisado e recomendado exclusivamente para mim! E não paguei nada a mais por isso!!!",
-		name: "Eduardo Leite",
+		name: "Adir Neto",
 		meta: "Moto em Belo Horizonte - MG",
-		avatar: "avatar-image-3.png",
+		avatar: "depoimento-adir.png",
 	},
 ];
 

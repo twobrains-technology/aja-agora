@@ -169,6 +169,34 @@ function PathCard({ path, className }: { path: Path; className?: string }) {
 export function KvContemplacao() {
 	return (
 		<section className="relative overflow-hidden bg-[#FAFAF3]">
+			{/*
+			 * Seta coral de fundo — o glifo ">" da marca, 507x703 (Figma 'Vector').
+			 *
+			 * Mora aqui fora do `KvContainer` de propósito: no comp ela nasce na
+			 * borda ESQUERDA DA PÁGINA (x=-1), não na faixa de 1240, e sangra pra
+			 * fora da tela. Pendurada no container ela teria de levar um `left`
+			 * negativo calculado em cima da largura da viewport, que erra em toda
+			 * tela que não fosse 1440.
+			 *
+			 * O path é o do arquivo que o design exportou, verbatim — inclusive a
+			 * ponta CHANFRADA à direita (aresta reta de 129px em x=506), que não é
+			 * defeito de exportação: a caixa do nó tem exatamente esses 507px. O que
+			 * havia antes eram duas formas desenhadas a mão ("banda diagonal" mais
+			 * um triângulo solto) que não são o glifo da marca — era esse o bug.
+			 */}
+			<svg
+				className="pointer-events-none absolute left-0 top-1/2 z-0 hidden h-[703px] w-[507px] -translate-y-1/2 xl:block"
+				viewBox="-1 0 507 703"
+				fill="none"
+				role="presentation"
+				aria-hidden="true"
+			>
+				<path
+					fill="var(--aja-coral)"
+					d="M-1 152.913L350.279 351.517L-1 548.76L-1 703L506 414.674L506 285.802L-1 0L-1 152.913Z"
+				/>
+			</svg>
+
 			{/* Blob coral desfocado atrás do header/1º card (mobile + tablet, até o breakpoint em que a colagem desktop assume) */}
 			<div className="pointer-events-none absolute left-[43%] top-[357px] size-[300px] -translate-x-1/2 rounded-full bg-[#FFE0E3] opacity-70 blur-[100px] xl:hidden" />
 
@@ -178,21 +206,6 @@ export function KvContemplacao() {
 				    passava da borda, foto sobrepunha o texto). Abaixo de xl mantém o
 				    empilhamento vertical, que já é responsivo. */}
 				<div className="relative xl:min-h-[880px]">
-					{/* Grafismos corais diagonais de fundo (só desktop) */}
-					<svg
-						className="pointer-events-none absolute left-[-150px] top-0 z-0 hidden h-full w-[560px] xl:block"
-						viewBox="0 0 560 880"
-						preserveAspectRatio="xMinYMin slice"
-						role="presentation"
-						aria-hidden="true"
-					>
-						{/* Banda diagonal principal — desce da direita-alto pra esquerda-baixo,
-							    poka à esquerda do card e some no canto inferior-esquerdo. */}
-						<path fill="#F2404F" d="M200,270 L370,350 L170,880 L0,880 L0,760 Z" />
-						{/* Triângulo superior-esquerdo, alinhado ao topo do card sorteio. */}
-						<path fill="#F2404F" d="M70,210 L130,210 L70,340 Z" />
-					</svg>
-
 					<div className="relative z-10 text-center lg:max-w-[633px] lg:text-left">
 						{/* Foto — topo no mobile; no desktop vive na direita (abaixo).
 						    Cutout transparente (585x715, retrato) — object-cover simples numa

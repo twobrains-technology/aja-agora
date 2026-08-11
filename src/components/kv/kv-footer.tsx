@@ -49,15 +49,27 @@ function YouTubeIcon(props: SVGProps<SVGSVGElement>) {
 }
 
 const NAV_LINKS = [
-	{ label: "Consórcio vs financiamento", href: "#" },
+	{ label: "Encontre o consórcio certo", href: "#" },
 	{ label: "Como funcionamos", href: "#" },
 	{ label: "Tipo de Consórcio", href: "#" },
 ];
 
+// Sem "Blog": o comp atualizado deixou Recursos com dois itens, e não há blog
+// publicado para onde apontar.
 const RESOURCE_LINKS = [
 	{ label: "Dúvidas", href: "#" },
 	{ label: "Jornada", href: "#" },
-	{ label: "Blog", href: "#" },
+];
+
+/**
+ * Letras miúdas do rodapé. Razão social, CNPJ e endereço são exigência de
+ * identificação de quem opera o site — texto do comp, palavra por palavra, com
+ * "consorcio" acentuado.
+ */
+const LETRAS_MIUDAS = [
+	"© 2026 AJA. Todos os direitos reservados.",
+	"A AJA é o nome comercial de Labre Assessoria e Consultoria Empresarial Ltda, inscrita no CNPJ 64.975.074/0001-26, com sede em São Paulo - SP, na Avenida Paulista, 1471, conj. 511 - Bela Vista, CEP 01311-927. Consulte nossos canais de atendimento acima para falar por WhatsApp ou telefone.",
+	"Ao utilizar este site, você concorda com nossos termos de uso e política de privacidade.",
 ];
 
 type FooterLink = { label: string; href: string };
@@ -97,45 +109,59 @@ const SOCIALS = [
 
 interface KvFooterProps {
 	onOpenChat: TheaterOpener;
+	/** Sem o bloco "Busque a melhor alternativa" — só a faixa navy. */
+	comCtaFinal?: boolean;
 }
 
 // Frame 'CTA Final + Footer' (1440x615): CTA sobre fundo claro (headline +
 // 2 botões) seguido do rodapé navy (marca, navegação, contato, redes sociais
 // e linha legal). Todo o bloco é o landmark <footer> da página.
-export function KvFooter({ onOpenChat }: KvFooterProps) {
+//
+// `comCtaFinal` existe porque as páginas de conformidade (política de
+// privacidade e 404) trazem só a parte navy: nos frames 625:4545 e 625:4639 o
+// filho é o `Footer - AJA` puro, sem o "Busque a melhor alternativa". Faz
+// sentido — quem caiu num 404 ou foi ler a política não está no fim de um funil
+// de venda para levar uma chamada de conversão na cara.
+export function KvFooter({ onOpenChat, comCtaFinal = true }: KvFooterProps) {
 	return (
 		<footer className="bg-[#FAFAF3]">
-			{/* CTA Final */}
-			<KvContainer className="flex max-w-[1240px] flex-col gap-8 pb-12 pt-8 md:pb-16 md:pt-4 lg:flex-row lg:items-center lg:justify-between lg:px-0">
-				<h2 className="max-w-[815px] font-[family-name:var(--font-merriweather)] text-[32px] font-normal leading-[1.2] text-[#021628] md:text-[44px] md:leading-[62px]">
-					Busque a melhor <Em>alternativa</Em>
-				</h2>
-				<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-5">
-					<KvCtaButton
-						onClick={(e) => onOpenChat("", e.currentTarget)}
-						className="focus-visible:ring-2 focus-visible:ring-[#F2404F] focus-visible:ring-offset-2 focus-visible:ring-offset-[#FAFAF3] focus-visible:outline-none"
-					>
-						Fale com a AJA
-					</KvCtaButton>
-					<KvCtaButton
-						variant="outline"
-						onClick={(e) => onOpenChat("", e.currentTarget)}
-						className="border-2 hover:bg-transparent hover:text-[#F2404F] focus-visible:ring-2 focus-visible:ring-[#021628] focus-visible:ring-offset-2 focus-visible:ring-offset-[#FAFAF3] focus-visible:outline-none"
-					>
-						Escolha o seu consórcio
-					</KvCtaButton>
-				</div>
-			</KvContainer>
+			{comCtaFinal ? (
+				<KvContainer className="flex max-w-[1240px] flex-col gap-8 pb-12 pt-8 md:pb-16 md:pt-4 lg:flex-row lg:items-center lg:justify-between lg:px-0">
+					<h2 className="max-w-[815px] font-[family-name:var(--font-merriweather)] text-[32px] font-normal leading-[1.2] text-[#021628] md:text-[44px] md:leading-[62px]">
+						Busque a melhor <Em>alternativa</Em>
+					</h2>
+					<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-5">
+						<KvCtaButton
+							onClick={(e) => onOpenChat("", e.currentTarget)}
+							className="focus-visible:ring-2 focus-visible:ring-[#F2404F] focus-visible:ring-offset-2 focus-visible:ring-offset-[#FAFAF3] focus-visible:outline-none"
+						>
+							Fale com a AJA
+						</KvCtaButton>
+						<KvCtaButton
+							variant="outline"
+							onClick={(e) => onOpenChat("", e.currentTarget)}
+							className="border-2 hover:bg-transparent hover:text-[#F2404F] focus-visible:ring-2 focus-visible:ring-[#021628] focus-visible:ring-offset-2 focus-visible:ring-offset-[#FAFAF3] focus-visible:outline-none"
+						>
+							Encontre o consórcio certo
+						</KvCtaButton>
+					</div>
+				</KvContainer>
+			) : null}
 
 			{/* Footer */}
-			<div className="bg-[#021628] px-6 pb-8 pt-12 text-[#F2F2F2] md:px-16 lg:pb-[191px]">
+			{/* Respiros do comp: 64px em cima, 64px nas laterais e 36px abaixo dos
+			    links. Os 191px que havia embaixo vinham de medir o rodapé no frame
+			    da home, onde ele transborda a moldura e não dá para ler a base —
+			    'politica-de-privacidade' e 'pagina-404' contêm o rodapé inteiro
+			    (495px) e concordam entre si. */}
+			<div className="bg-[#021628] px-6 pb-9 pt-16 text-[#F2F2F2] md:px-16">
 				<div className="mx-auto flex max-w-[1316px] flex-col gap-6">
 					<div className="flex flex-col gap-10 lg:flex-row lg:gap-12">
 						{/* Marca */}
 						<div className="flex flex-col items-start gap-3 lg:w-[360px]">
 							<Wordmark className="h-[58px] w-auto text-[#F2F2F2]" />
 							<p className="text-[14px] leading-[2] text-[#F2F2F2]">
-								Consultoria de consórcio independente
+								O jeito independente de escolher consórcio
 							</p>
 						</div>
 
@@ -152,16 +178,16 @@ export function KvFooter({ onOpenChat }: KvFooterProps) {
 							</h3>
 							<div className="mt-[10px] flex flex-col gap-[10px]">
 								<a
-									href="mailto:contato@aja.com.br"
+									href="mailto:contato@ajaagora.com.br"
 									className="text-[14px] leading-none text-[#F2F2F2] transition-colors hover:text-white"
 								>
-									contato@aja.com.br
+									contato@ajaagora.com.br
 								</a>
 								<a
-									href="tel:+551100000000"
+									href="tel:+5511955020229"
 									className="text-[14px] leading-none text-[#F2F2F2] transition-colors hover:text-white"
 								>
-									+55 (11) 0000-0000
+									+55 (11) 95502-0229
 								</a>
 							</div>
 						</div>
@@ -181,27 +207,32 @@ export function KvFooter({ onOpenChat }: KvFooterProps) {
 						))}
 					</div>
 
-					{/* Linha legal */}
+					{/* Linha legal + letras miúdas. No comp o bloco jurídico ocupa a
+					    largura toda e os dois links vêm ABAIXO dele, não ao lado: com o
+					    texto de razão social e endereço, a linha única de antes não
+					    cabia mais. */}
 					<div className="flex flex-col gap-4">
 						<div className="h-px w-full bg-[#F2F2F2]" />
-						<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-							<p className="text-[12px] leading-none text-[#F2F2F2]">
-								© 2026 AJA AGORA. Todos os direitos reservados.
-							</p>
-							<div className="flex items-center gap-4">
-								<a
-									href="/politica-de-privacidade"
-									className="text-[12px] leading-none text-[#F2F2F2] transition-colors hover:text-white"
-								>
-									Política de Privacidade
-								</a>
-								<a
-									href="/termos-de-uso"
-									className="text-[12px] leading-none text-[#F2F2F2] transition-colors hover:text-white"
-								>
-									Termos de Uso
-								</a>
-							</div>
+						<div className="flex flex-col gap-1">
+							{LETRAS_MIUDAS.map((paragrafo) => (
+								<p key={paragrafo} className="text-[14px] leading-[21px] text-[#F2F2F2]">
+									{paragrafo}
+								</p>
+							))}
+						</div>
+						<div className="flex items-center gap-4">
+							<a
+								href="/politica-de-privacidade"
+								className="text-[14px] leading-[21px] text-[#F2F2F2] transition-colors hover:text-white"
+							>
+								Política de Privacidade
+							</a>
+							<a
+								href="/termos-de-uso"
+								className="text-[14px] leading-[21px] text-[#F2F2F2] transition-colors hover:text-white"
+							>
+								Termos de Uso
+							</a>
 						</div>
 					</div>
 				</div>

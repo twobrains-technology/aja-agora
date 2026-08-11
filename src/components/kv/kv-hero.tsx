@@ -4,6 +4,7 @@ import { Bike, Car, Home as HomeIcon, Send } from "lucide-react";
 import Image from "next/image";
 import { type FormEvent, useRef, useState } from "react";
 
+import { AjaMark } from "@/components/brand/aja-mark";
 import type { TheaterOpener } from "@/components/chat/theater/theater-context";
 import { Em } from "@/components/kv/em";
 import { CARD_SHADOW, KvContainer } from "@/components/kv/ui/kv-container";
@@ -16,26 +17,6 @@ const SEARCH_CHIPS = [
 	{ icon: Car, label: "Carro", fill: "Quero comprar um carro." },
 	{ icon: Bike, label: "Moto", fill: "Quero comprar uma moto." },
 ];
-
-// Lettermark curto "AJA" (variante 'Curto — fundo escuro' do design system). Reaproveita
-// os glifos A-J-A da parte superior do lockup oficial (src/components/brand/wordmark.tsx),
-// recortados via viewBox. Segue currentColor (claro sobre o navy do badge/avatar).
-function AjaMark({ className }: { className?: string }) {
-	return (
-		<svg
-			viewBox="165 158 540 172"
-			fill="currentColor"
-			xmlns="http://www.w3.org/2000/svg"
-			role="img"
-			aria-label="AJA"
-			className={className}
-		>
-			<polygon points="215.29 323.78 275.58 214.54 335.47 323.78 382.3 323.78 294.76 166.11 255.64 166.11 168.87 323.78" />
-			<path d="M456.44,163.77v60.32c0,33.62-27.35,60.97-60.97,60.97-7.1,0-13.89-1.28-20.21-3.55l-.35.35,23.13,41.67c53.7-1.38,96.99-45.4,96.99-99.44v-60.32h-38.6Z" />
-			<polygon points="533.64 323.22 593.94 213.98 653.82 323.22 700.65 323.22 613.12 165.55 573.99 165.55 487.22 323.22" />
-		</svg>
-	);
-}
 
 interface KvHeroProps {
 	onOpenChat: TheaterOpener;
@@ -62,7 +43,7 @@ export function KvHero({ onOpenChat }: KvHeroProps) {
 			    @(1021,-225), opacity .95, blur 334.8). */}
 			<div className="pointer-events-none absolute -top-[225px] -right-[301px] h-[757px] w-[720px] rounded-full bg-[#FFE0E3] opacity-95 blur-[335px]" />
 
-			<KvContainer className="grid max-w-[1240px] items-center gap-12 py-6 lg:grid-cols-[560px_1fr] lg:gap-[80px] lg:py-8">
+			<KvContainer className="grid max-w-[1240px] items-center gap-12 pb-16 pt-6 lg:grid-cols-[560px_1fr] lg:gap-[80px] lg:pb-24 lg:pt-8">
 				{/* Coluna de texto */}
 				<div className="max-w-[560px]">
 					<span className="inline-flex items-center gap-2 rounded-full bg-[#021628] py-1.5 pl-3.5 pr-4 text-[16px] font-semibold text-[#FAFAF3]">

@@ -16,11 +16,31 @@ const NAV = [
 	{ label: "Dúvidas", href: "#faq" },
 ];
 
+/** Seções que existem só na home — nas verticais viram link para lá. */
+const SO_NA_HOME = new Set(["#como-funciona", "#confianca"]);
+
+/**
+ * O menu das landings de vertical: os MESMOS itens da home.
+ *
+ * Sai de `NAV` por construção, e não copiado, para que renomear um item na home
+ * não deixe as três verticais para trás — foi assim que elas acabaram com
+ * "Quais motos" e "Moto como renda", um menu diferente por página.
+ *
+ * `#hero` e `#faq` continuam âncoras locais porque as duas seções existem em
+ * toda vertical. "Como funcionamos" e "Quem somos" não existem fora da home,
+ * então apontam para lá: mesmo rótulo, clique vivo.
+ */
+export const NAV_VERTICAL = NAV.map((item) =>
+	SO_NA_HOME.has(item.href) ? { ...item, href: `/${item.href}` } : item,
+);
+
 interface KvMenuProps {
 	onOpenChat: TheaterOpener;
+	/** Itens do menu. Sem isto, o da home; as verticais passam `NAV_VERTICAL`. */
+	nav?: { label: string; href: string }[];
 }
 
-export function KvMenu({ onOpenChat }: KvMenuProps) {
+export function KvMenu({ onOpenChat, nav = NAV }: KvMenuProps) {
 	const [mobileOpen, setMobileOpen] = useState(false);
 
 	return (
@@ -29,7 +49,7 @@ export function KvMenu({ onOpenChat }: KvMenuProps) {
 				<Wordmark className="h-[56px] w-auto text-white" />
 
 				<nav className="hidden items-center gap-[48px] lg:flex xl:gap-[61px]">
-					{NAV.map((item) => (
+					{nav.map((item) => (
 						<a
 							key={item.label}
 							href={item.href}
@@ -70,7 +90,7 @@ export function KvMenu({ onOpenChat }: KvMenuProps) {
 
 			{mobileOpen ? (
 				<nav id="kv-menu-mobile-nav" className="border-t border-white/10 bg-[#052440] lg:hidden">
-					{NAV.map((item) => (
+					{nav.map((item) => (
 						<a
 							key={item.label}
 							href={item.href}

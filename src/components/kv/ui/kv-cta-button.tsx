@@ -18,6 +18,25 @@ const SIZE_CLASS: Record<NonNullable<KvCtaButtonProps["size"]>, string> = {
 	sm: "rounded-full px-4 py-2 text-[12px] font-semibold leading-4",
 };
 
+const BASE_CLASS =
+	"inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-full transition-[filter,color,background-color] disabled:pointer-events-none disabled:opacity-50";
+
+/**
+ * As classes da pill, sem o `<button>`.
+ *
+ * Existe para o CTA que NAVEGA (o "Voltar para o Início" do 404, que precisa ser
+ * uma âncora e não um botão) poder ter a mesma pill sem copiar a lista de
+ * classes — cópia que sairia do lugar na primeira vez que a marca mexesse no
+ * raio ou na altura do botão.
+ */
+export function kvCtaClass({
+	variant = "primary",
+	size = "md",
+	className,
+}: Pick<KvCtaButtonProps, "variant" | "size" | "className"> = {}) {
+	return cn(BASE_CLASS, VARIANT_CLASS[variant], SIZE_CLASS[size], className);
+}
+
 // Botão CTA compartilhado das seções do Key Visual — pill vermelha (primary),
 // contorno navy (outline) ou contorno branco pra fundo escuro (outline-light).
 // Todo CTA de conversão ("Fale com a AJA", "Comparar agora") usa este átomo em
@@ -29,16 +48,5 @@ export function KvCtaButton({
 	type = "button",
 	...props
 }: KvCtaButtonProps) {
-	return (
-		<button
-			type={type}
-			className={cn(
-				"inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-full transition-[filter,color,background-color] disabled:pointer-events-none disabled:opacity-50",
-				VARIANT_CLASS[variant],
-				SIZE_CLASS[size],
-				className,
-			)}
-			{...props}
-		/>
-	);
+	return <button type={type} className={kvCtaClass({ variant, size, className })} {...props} />;
 }
