@@ -1,6 +1,6 @@
 /**
  * Catálogo de perguntas frequentes, compartilhado entre a home e as landings de
- * vertical (`/consorcio/*`).
+ * vertical (`/autos`, `/imoveis` e `/motos`).
  *
  * Cada página tem o seu conjunto: a home responde no geral, e cada vertical
  * responde o que se pergunta sobre aquele bem — o que a carta compra, quando o

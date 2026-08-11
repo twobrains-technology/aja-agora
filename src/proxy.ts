@@ -50,17 +50,20 @@ export async function proxy(request: NextRequest) {
 /**
  * As páginas que contam como chegada de gente ao site.
  *
- * A home não é mais a única: as landings de vertical
- * (`/consorcio/auto`, `/consorcio/imovel`, `/consorcio/moto`) existem para ser
- * destino de anúncio, então é justamente nelas que o UTM chega. Registrar só a
- * home fazia toda campanha apontada para uma vertical nascer sem origem.
+ * A home não é mais a única: as landings de vertical (`/autos`, `/imoveis`,
+ * `/motos`) existem para ser destino de anúncio, então é justamente nelas que o
+ * UTM chega. Registrar só a home fazia toda campanha apontada para uma vertical
+ * nascer sem origem.
  *
- * Prefixo, e não lista: vertical nova entra sozinha. O `matcher` lá embaixo tem
- * de acompanhar — fora dele o proxy nem roda, e `src/proxy.landing-atribuicao.test.ts`
- * é quem prova que os dois continuam de acordo.
+ * Lista, e não prefixo: as verticais moram na raiz do site, ao lado de qualquer
+ * outra página. Vertical nova entra aqui E no `matcher` lá embaixo — fora dele o
+ * proxy nem roda, e é `src/proxy.landing-atribuicao.test.ts` que prova que os
+ * dois continuam de acordo, porque esquecer um deles não quebra nada na tela.
  */
+export const LANDINGS = ["/", "/autos", "/imoveis", "/motos"] as const;
+
 export function ehLanding(pathname: string): boolean {
-	return pathname === "/" || pathname.startsWith("/consorcio/");
+	return (LANDINGS as readonly string[]).includes(pathname);
 }
 
 /**
@@ -142,5 +145,7 @@ async function registrarVisita(request: NextRequest): Promise<NextResponse> {
 }
 
 export const config = {
-	matcher: ["/", "/consorcio/:vertical", "/admin", "/admin/((?!login).*)"],
+	// Precisa ser literal: o Next lê este array em build time, então ele não pode
+	// sair de `LANDINGS`. O teste é quem mantém os dois em dia.
+	matcher: ["/", "/autos", "/imoveis", "/motos", "/admin", "/admin/((?!login).*)"],
 };

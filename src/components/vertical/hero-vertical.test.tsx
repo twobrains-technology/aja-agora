@@ -25,9 +25,9 @@ vi.mock("next/image", () => ({
 	default: ({ fill, priority, ...rest }: any) => createElement("img", rest),
 }));
 
-import { HERO_AUTO } from "@/app/consorcio/auto/conteudo";
-import { HERO_IMOVEL } from "@/app/consorcio/imovel/conteudo";
-import { HERO_MOTO } from "@/app/consorcio/moto/conteudo";
+import { HERO_AUTO } from "@/app/(verticais)/autos/conteudo";
+import { HERO_IMOVEL } from "@/app/(verticais)/imoveis/conteudo";
+import { HERO_MOTO } from "@/app/(verticais)/motos/conteudo";
 import { HeroVertical } from "./hero-vertical";
 
 afterEach(() => {

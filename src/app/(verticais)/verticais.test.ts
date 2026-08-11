@@ -13,15 +13,15 @@ import { describe, expect, it } from "vitest";
 
 import { NAV_VERTICAL } from "@/components/kv/kv-menu";
 
-import { FAQ_AUTO, GUIA_AUTO, HERO_AUTO, NUMEROS_AUTO, UPGRADE_AUTO } from "./auto/conteudo";
+import { FAQ_AUTO, GUIA_AUTO, HERO_AUTO, NUMEROS_AUTO, UPGRADE_AUTO } from "./autos/conteudo";
 import {
 	FAQ_IMOVEL,
 	FGTS_IMOVEL,
 	GUIA_IMOVEL,
 	HERO_IMOVEL,
 	NUMEROS_IMOVEL,
-} from "./imovel/conteudo";
-import { FAQ_MOTO, GUIA_MOTO, HERO_MOTO, NUMEROS_MOTO, PASSOS_MOTO } from "./moto/conteudo";
+} from "./imoveis/conteudo";
+import { FAQ_MOTO, GUIA_MOTO, HERO_MOTO, NUMEROS_MOTO, PASSOS_MOTO } from "./motos/conteudo";
 
 /** Todo texto da página, achatado — funções e componentes ficam de fora. */
 function todoOTexto(valor: unknown): string[] {

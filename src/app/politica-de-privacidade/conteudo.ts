@@ -1,3 +1,5 @@
+import type { DestaqueLegal, HeroLegal, SecaoLegal } from "@/components/legal/documento-legal";
+
 // Texto da Política de Privacidade (Figma 'politica-de-privacidade' 625:4545).
 //
 // Documento jurídico: o texto sai do comp palavra por palavra, e é de propósito
@@ -5,35 +7,31 @@
 // é o jurídico, não quem mexe em layout — e nenhuma das duas partes precisa
 // abrir a outra para trabalhar.
 //
-// Divergência anotada, NÃO corrigida por conta própria: o e-mail do DPO no comp
-// é `dpo@aja.com.br`, enquanto o rodapé do site usa o domínio `ajaagora.com.br`.
-// Endereço de contato de encarregado de dados é informação legal — corrigir
-// domínio por dedução seria pior que manter o que o documento aprovado diz.
+// A divergência do e-mail do DPO foi levada ao operador e resolvida por decisão
+// dele (2026-08-11): o comp dizia `dpo@ajaagora.com.br`, e o canal correto é no
+// domínio do site, `dpo@ajaagora.com.br`. Canal de encarregado que não recebe
+// mensagem é descumprimento do art. 41 da LGPD, então a caixa precisa existir.
 
-export type SecaoPolitica = {
-	titulo: string;
-	/** Parágrafos corridos, na ordem. */
-	paragrafos: string[];
-	/** Itens de lista, quando a seção enumera. Vêm depois dos parágrafos. */
-	itens?: string[];
-};
+export type SecaoPolitica = SecaoLegal;
 
-export const HERO_POLITICA = {
+export const HERO_POLITICA: HeroLegal = {
 	eyebrow: "TRANSPARÊNCIA E SEGURANÇA",
 	titulo: "Política de Privacidade",
 	texto:
 		"A AJA se compromete com a segurança e o respeito total à privacidade dos seus dados pessoais. Saiba exatamente como tratamos suas informações.",
 };
 
+export const ATUALIZADO_EM = "11 de agosto de 2026";
+
 /** Card de destaque logo abaixo do hero — o resumo em uma frase. */
-export const DESTAQUE_LGPD = {
+export const DESTAQUE_LGPD: DestaqueLegal = {
 	icone: "🛡️",
 	titulo: "Em total conformidade com a LGPD",
 	texto:
 		"Não vendemos seus dados cadastrais. Suas simulações e dados de contato são utilizados de forma exclusivamente imparcial para que você encontre o consórcio mais inteligente e planejado.",
 };
 
-export const SECOES_POLITICA: SecaoPolitica[] = [
+export const SECOES_POLITICA: SecaoLegal[] = [
 	{
 		titulo: "1. Introdução e Compromisso",
 		paragrafos: [
@@ -90,7 +88,7 @@ export const SECOES_POLITICA: SecaoPolitica[] = [
 	{
 		titulo: "7. Contato do Encarregado de Proteção de Dados (DPO)",
 		paragrafos: [
-			'Para esclarecer qualquer dúvida sobre nossa política, exercer seus direitos assegurados pela LGPD ou contatar nosso Encarregado pelo Tratamento de Dados Pessoais (DPO), envie um e-mail formal para dpo@aja.com.br com o assunto "LGPD - Solicitação". Estamos à disposição para garantir que sua jornada de consórcios ocorra com máxima segurança, transparência e respeito à sua privacidade.',
+			'Para esclarecer qualquer dúvida sobre nossa política, exercer seus direitos assegurados pela LGPD ou contatar nosso Encarregado pelo Tratamento de Dados Pessoais (DPO), envie um e-mail formal para dpo@ajaagora.com.br com o assunto "LGPD - Solicitação". Estamos à disposição para garantir que sua jornada de consórcios ocorra com máxima segurança, transparência e respeito à sua privacidade.',
 		],
 	},
 ];

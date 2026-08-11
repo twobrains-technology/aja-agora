@@ -15,7 +15,7 @@ export const FAQ_ITEMS = FAQ_GERAL;
 // Perguntas Frequentes (Figma frame 'Perguntas Frequentes' 1437x815): bloco
 // cream full-bleed com eyebrow + título à esquerda e accordion de perguntas.
 //
-// As landings de vertical (`/consorcio/*`) reusam esta mesma seção passando um
+// As landings de vertical (`/autos`, `/imoveis` e `/motos`) reusam esta mesma seção passando um
 // recorte próprio de `itens` — no comp o eyebrow e o título são idênticos aos
 // da home, então só a lista muda.
 export function KvFaq({ itens = FAQ_ITEMS }: { itens?: readonly KvFaqItem[] } = {}) {
