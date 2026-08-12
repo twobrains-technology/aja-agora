@@ -35,18 +35,26 @@ interface BlocoUpgradeProps {
 }
 
 /**
- * Geometria do diagrama a partir de `lg`, medida no comp (frame de 1440).
+ * Geometria do diagrama a partir de `lg`, em px dentro do palco de 878x615 —
+ * as medidas são as do comp, lidas direto do grupo do diagrama.
  *
- * O x vai em %, para acompanhar a largura; o y em px, porque a altura do
- * diagrama é fixa em 620px — é uma composição, não um fluxo. Abaixo de `lg`
- * nada disso vale: os três viram uma lista e o carro sobe para o topo.
+ * Era tudo em % antes, o que parecia mais flexível e na prática desalinhava:
+ * as porcentagens tinham sido tiradas do frame de 1440 do Figma, mas resolvem
+ * contra o contêiner, que mede 1376. Cada peça escorregava um tanto diferente
+ * — o selo de HOJE ia 21px pra direita, o texto de A TROCA 25px pra esquerda —
+ * e o diagrama saía torto. Com o palco em largura fixa, x e y são os do comp e
+ * não dependem mais da janela. Abaixo de `lg` nada disso vale: os três viram
+ * uma lista e o carro sobe para o topo.
  */
 const POSICAO = [
-	{ texto: "lg:left-[31.6%] lg:top-[35px]", selo: "lg:left-[24.5%] lg:top-[58px]" },
-	{ texto: "lg:left-[60.8%] lg:top-[145px]", selo: "lg:left-[54.4%] lg:top-[168px]" },
+	{ selo: "lg:left-[66px] lg:top-[34px]", texto: "lg:left-[180px] lg:top-[22px] lg:w-[246px]" },
+	// A TROCA sobe 24px em relação ao comp (selo 148→124, texto 134→110). No comp
+	// o capô do carro passa por cima de "O carro sai no seu nome" — invade 17px na
+	// última linha —, e o selo acompanha o texto pra não descolar do bloco.
+	{ selo: "lg:left-[496px] lg:top-[124px]", texto: "lg:left-[612px] lg:top-[110px] lg:w-[266px]" },
 	{
-		texto: "lg:left-[38%] lg:top-[500px] lg:w-[28%] lg:text-center",
-		selo: "lg:left-[44.3%] lg:top-[388px]",
+		selo: "lg:left-[353px] lg:top-[368px]",
+		texto: "lg:left-[221px] lg:top-[496px] lg:w-[364px] lg:text-center",
 	},
 ];
 
@@ -64,7 +72,7 @@ export function BlocoUpgrade({ conteudo, onOpenChat }: BlocoUpgradeProps) {
 			/>
 
 			<KvContainer className="max-w-[1440px] px-0">
-				<div className="mx-auto flex max-w-[1091px] flex-col items-center gap-4 px-6 text-center md:px-8">
+				<div className="mx-auto flex max-w-[1091px] flex-col items-center gap-2 px-6 text-center md:px-8">
 					<KvEyebrow className="tracking-[0.18em]">{conteudo.eyebrow}</KvEyebrow>
 					<h2 className="text-[32px] font-normal leading-[1.2] text-[color:var(--aja-ink)] md:text-[44px] md:leading-[62px]">
 						{conteudo.titulo.inicio} <Em w="black">{conteudo.titulo.enfase}</Em>
@@ -80,7 +88,7 @@ export function BlocoUpgrade({ conteudo, onOpenChat }: BlocoUpgradeProps) {
 
 				{/* O diagrama. Altura fixa a partir de `lg` porque as peças são
 				    posicionadas umas em relação às outras, não empilhadas. */}
-				<div className="relative mt-10 px-6 md:px-8 lg:mt-8 lg:h-[620px] lg:px-0">
+				<div className="relative mt-10 px-6 md:px-8 lg:mx-auto lg:mt-10 lg:h-[615px] lg:w-[878px] lg:px-0">
 					{/* A fita é UMA peça usada DUAS vezes: girada 180° ela vira o arco de
 					    cima (ponta apontando pra cima e à esquerda), e no natural o de
 					    baixo. O carro e os selos entram depois no DOM, então ficam por
@@ -92,14 +100,14 @@ export function BlocoUpgrade({ conteudo, onOpenChat }: BlocoUpgradeProps) {
 								src={conteudo.fita.src}
 								alt=""
 								aria-hidden="true"
-								className="pointer-events-none absolute left-[19.6%] top-[17px] hidden w-[28.5%] rotate-180 lg:block"
+								className="pointer-events-none absolute left-0 top-0 hidden w-[411px] rotate-180 lg:block"
 							/>
 							{/* biome-ignore lint/performance/noImgElement: decoração estática, sem redimensionamento */}
 							<img
 								src={conteudo.fita.src}
 								alt=""
 								aria-hidden="true"
-								className="pointer-events-none absolute left-[48%] top-[277px] hidden w-[28.5%] lg:block"
+								className="pointer-events-none absolute left-[411px] top-[249px] hidden w-[411px] lg:block"
 							/>
 						</>
 					)}
@@ -109,10 +117,10 @@ export function BlocoUpgrade({ conteudo, onOpenChat }: BlocoUpgradeProps) {
 						<img
 							src={conteudo.veiculo.src}
 							alt={conteudo.veiculo.alt}
-							// 36% = 518px e o arquivo é 2:1, logo 259px de altura. O topo vem do
-							// comp: teto do carro em y=418 da seção, ou seja 168 deste contêiner
-							// — é isso que faz o selo do contrato encostar no teto, como lá.
-							className="mx-auto w-full max-w-[420px] lg:pointer-events-none lg:absolute lg:left-[29.5%] lg:top-[168px] lg:mx-0 lg:w-[36%] lg:max-w-none"
+							// No comp a moldura do carro é 526x294 em 148,135. O arquivo é 2:1,
+							// então a 526px de largura ele dá 263 de altura e assenta no meio
+							// dessa moldura — daí o topo em 150, e não em 135.
+							className="mx-auto w-full max-w-[420px] lg:pointer-events-none lg:absolute lg:left-[148px] lg:top-[150px] lg:mx-0 lg:w-[526px] lg:max-w-none"
 						/>
 					)}
 
@@ -127,7 +135,7 @@ export function BlocoUpgrade({ conteudo, onOpenChat }: BlocoUpgradeProps) {
 										aria-hidden="true"
 										// O recorte já traz o disco branco; o `rounded-full` apara os
 										// cantos, onde sobra fundo da seção.
-										className={`size-[94px] shrink-0 rounded-full shadow-[0_4px_16px_0_#00000014] lg:absolute ${POSICAO[i]?.selo ?? ""}`}
+										className={`size-[94px] shrink-0 rounded-full shadow-[0_4px_16px_0_#00000014] lg:absolute lg:size-[100px] ${POSICAO[i]?.selo ?? ""}`}
 									/>
 								)}
 
@@ -135,11 +143,14 @@ export function BlocoUpgrade({ conteudo, onOpenChat }: BlocoUpgradeProps) {
 									<p className="text-[12px] font-semibold uppercase leading-4 tracking-[0.18em] text-[color:var(--aja-coral)]">
 										{grupo.rotulo}
 									</p>
-									<ul className="mt-2 flex flex-col gap-1">
+									{/* Sem `gap`: no comp os quatro itens são um bloco de texto só, quatro
+									    linhas seguidas de 22px. Os 4px que havia entre eles engordavam o
+									    bloco em 20px e desencontravam o texto do selo ao lado. */}
+									<ul className="mt-1 flex flex-col">
 										{grupo.itens.map((item) => (
 											<li
 												key={item}
-												className="text-[15px] leading-[24px] text-[color:var(--aja-ink)]/85"
+												className="text-[14px] leading-[22px] text-[color:var(--aja-ink)]/85"
 											>
 												• {item}
 											</li>

@@ -5,6 +5,7 @@ import type { TheaterOpener } from "@/components/chat/theater/theater-context";
 import { Em } from "@/components/kv/em";
 import { KvContainer } from "@/components/kv/ui/kv-container";
 import { KvCtaButton } from "@/components/kv/ui/kv-cta-button";
+import { KV_RITMO } from "@/components/kv/ui/kv-section";
 
 // Ícones de marca (o lucide-react do projeto não exporta social icons por
 // questão de trademark). SVGs inline, currentColor.
@@ -30,20 +31,6 @@ function FacebookIcon(props: SVGProps<SVGSVGElement>) {
 	return (
 		<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
 			<path d="M14 9h3V5h-3c-2.2 0-4 1.8-4 4v2H7v4h3v6h4v-6h3l1-4h-4V9c0-.6.4-1 1-1z" />
-		</svg>
-	);
-}
-function LinkedInIcon(props: SVGProps<SVGSVGElement>) {
-	return (
-		<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
-			<path d="M6.94 5A1.94 1.94 0 1 1 3 5a1.94 1.94 0 0 1 3.94 0zM3.5 8.5h3v12h-3v-12zm5 0h2.87v1.64h.04c.4-.76 1.38-1.56 2.84-1.56 3.04 0 3.6 2 3.6 4.6v7.32h-3v-6.49c0-1.55-.03-3.54-2.16-3.54-2.16 0-2.49 1.69-2.49 3.43v6.6h-3v-12z" />
-		</svg>
-	);
-}
-function YouTubeIcon(props: SVGProps<SVGSVGElement>) {
-	return (
-		<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
-			<path d="M22.5 7.2a2.7 2.7 0 0 0-1.9-1.9C18.9 4.8 12 4.8 12 4.8s-6.9 0-8.6.5A2.7 2.7 0 0 0 1.5 7.2C1 8.9 1 12 1 12s0 3.1.5 4.8a2.7 2.7 0 0 0 1.9 1.9c1.7.5 8.6.5 8.6.5s6.9 0 8.6-.5a2.7 2.7 0 0 0 1.9-1.9c.5-1.7.5-4.8.5-4.8s0-3.1-.5-4.8zM9.8 15.3V8.7l5.7 3.3-5.7 3.3z" />
 		</svg>
 	);
 }
@@ -103,8 +90,6 @@ function FooterLinkColumn({ title, links }: { title: string; links: FooterLink[]
 const SOCIALS = [
 	{ icon: InstagramIcon, label: "Instagram", href: "#" },
 	{ icon: FacebookIcon, label: "Facebook", href: "#" },
-	{ icon: LinkedInIcon, label: "LinkedIn", href: "#" },
-	{ icon: YouTubeIcon, label: "YouTube", href: "#" },
 ];
 
 interface KvFooterProps {
@@ -126,7 +111,9 @@ export function KvFooter({ onOpenChat, comCtaFinal = true }: KvFooterProps) {
 	return (
 		<footer className="bg-[#FAFAF3]">
 			{comCtaFinal ? (
-				<KvContainer className="flex max-w-[1240px] flex-col gap-8 pb-12 pt-8 md:pb-16 md:pt-4 lg:flex-row lg:items-center lg:justify-between lg:px-0">
+				<KvContainer
+					className={`flex flex-col gap-8 ${KV_RITMO.rodape} lg:flex-row lg:items-center lg:justify-between`}
+				>
 					<h2 className="max-w-[815px] font-[family-name:var(--font-merriweather)] text-[32px] font-normal leading-[1.2] text-[#021628] md:text-[44px] md:leading-[62px]">
 						Busque a melhor <Em>alternativa</Em>
 					</h2>

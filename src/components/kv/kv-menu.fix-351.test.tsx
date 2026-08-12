@@ -29,15 +29,10 @@ describe("FIX-351 — KvMenu chama onOpenChat", () => {
 		expect(onOpenChat.mock.calls[0][0]).toBe("");
 	});
 
-	it("'Entrar' fica inerte (desabilitado) — não existe login de cliente ainda", () => {
-		const onOpenChat = vi.fn();
-		render(<KvMenu onOpenChat={onOpenChat} />);
+	it("não há botão 'Entrar' — não existe jornada de login de cliente", () => {
+		render(<KvMenu onOpenChat={vi.fn()} />);
 
-		const entrar = screen.getByRole("button", { name: "Entrar" });
-		fireEvent.click(entrar);
-
-		expect(entrar).toBeDisabled();
-		expect(onOpenChat).not.toHaveBeenCalled();
+		expect(screen.queryByRole("button", { name: "Entrar" })).toBeNull();
 	});
 
 	it("menu mobile: toggle abre e fecha o painel com os anchors da nav", () => {

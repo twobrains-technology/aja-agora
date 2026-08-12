@@ -6,6 +6,7 @@ import { Em } from "@/components/kv/em";
 import { FAQ_GERAL, type KvFaqItem } from "@/components/kv/faq-catalogo";
 import { KvContainer } from "@/components/kv/ui/kv-container";
 import { KvEyebrow } from "@/components/kv/ui/kv-eyebrow";
+import { KV_RITMO, KvSection } from "@/components/kv/ui/kv-section";
 
 export type { KvFaqItem };
 
@@ -23,9 +24,7 @@ export function KvFaq({ itens = FAQ_ITEMS }: { itens?: readonly KvFaqItem[] } = 
 	const baseId = useId();
 
 	return (
-		// py-24: no comp a faixa creme tem ~96px de respiro em cima e embaixo. Com
-		// py-8 a seção saía 141px mais curta que o frame, em todas as páginas.
-		<section className="relative overflow-hidden bg-[#F2F2DB] py-12 md:py-24">
+		<KvSection rhythm={KV_RITMO.faq} className="overflow-hidden bg-[#F2F2DB]">
 			{/* Padrão de chevron do comp. Veio exportado sobre BRANCO (JPG, sem alfa),
 			    então entra em `mix-blend-multiply`: o branco não altera o creme da
 			    seção e só os chevrons cinzas escurecem.
@@ -45,12 +44,12 @@ export function KvFaq({ itens = FAQ_ITEMS }: { itens?: readonly KvFaqItem[] } = 
 				}}
 			/>
 
-			<KvContainer className="max-w-[1437px] md:px-12 lg:px-[102px]">
+			<KvContainer>
 				<div className="relative max-w-[500px]">
 					<KvEyebrow className="tracking-[0.2em]">
 						dúvidas para quem tá começando a jornada
 					</KvEyebrow>
-					<h2 className="mt-3 text-[32px] font-normal leading-[1.15] text-[#021628] md:text-[44px] md:leading-[62px]">
+					<h2 className="mt-3 text-[32px] font-normal leading-[1.15] text-[#021628] md:mt-0.5 md:text-[44px] md:leading-[62px]">
 						<Em>Perguntas</Em> Frequentes
 					</h2>
 				</div>
@@ -120,6 +119,6 @@ export function KvFaq({ itens = FAQ_ITEMS }: { itens?: readonly KvFaqItem[] } = 
 					})}
 				</ul>
 			</KvContainer>
-		</section>
+		</KvSection>
 	);
 }

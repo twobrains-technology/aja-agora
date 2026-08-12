@@ -3,14 +3,13 @@ import type { ButtonHTMLAttributes } from "react";
 import { cn } from "@/lib/utils";
 
 type KvCtaButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
-	variant?: "primary" | "outline" | "outline-light";
+	variant?: "primary" | "outline";
 	size?: "md" | "sm";
 };
 
 const VARIANT_CLASS: Record<NonNullable<KvCtaButtonProps["variant"]>, string> = {
 	primary: "bg-[#F2404F] text-white hover:brightness-105",
 	outline: "border border-[#021628] text-[#021628] hover:bg-[#021628] hover:text-white",
-	"outline-light": "border border-white text-white hover:text-white/75",
 };
 
 const SIZE_CLASS: Record<NonNullable<KvCtaButtonProps["size"]>, string> = {
@@ -38,9 +37,8 @@ export function kvCtaClass({
 }
 
 // Botão CTA compartilhado das seções do Key Visual — pill vermelha (primary),
-// contorno navy (outline) ou contorno branco pra fundo escuro (outline-light).
-// Todo CTA de conversão ("Fale com a AJA", "Comparar agora") usa este átomo em
-// vez de reescrever a pill em cada seção.
+// contorno navy (outline). Todo CTA de conversão ("Fale com a AJA", "Comparar
+// agora") usa este átomo em vez de reescrever a pill em cada seção.
 export function KvCtaButton({
 	variant = "primary",
 	size = "md",

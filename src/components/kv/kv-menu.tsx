@@ -8,7 +8,7 @@ import type { TheaterOpener } from "@/components/chat/theater/theater-context";
 import { KvContainer } from "@/components/kv/ui/kv-container";
 import { KvCtaButton } from "@/components/kv/ui/kv-cta-button";
 
-// Menu (Figma: frame 'Menu' navy #052440, altura 120, conteúdo 1256 centrado).
+// Menu (Figma: frame 'Header / Desktop' navy #052440, altura 96, logo em x=64).
 const NAV = [
 	{ label: "Seu Objetivo", href: "#hero" },
 	{ label: "Como funcionamos", href: "#como-funciona" },
@@ -45,7 +45,9 @@ export function KvMenu({ onOpenChat, nav = NAV }: KvMenuProps) {
 
 	return (
 		<header className="relative w-full bg-[#052440]">
-			<KvContainer className="flex h-[120px] max-w-[1440px] items-center justify-between px-4 md:px-4 lg:pl-[109px] lg:pr-[75px]">
+			{/* 96px de altura e conteúdo começando em 64px — o comp põe o logo em x=64,
+			    a mesma coluna da faixa navy do rodapé (`px-6 md:px-16` lá também). */}
+			<KvContainer className="flex h-[96px] max-w-[1440px] items-center justify-between md:px-16">
 				<Wordmark className="h-[56px] w-auto text-white" />
 
 				<nav className="hidden items-center gap-[48px] lg:flex xl:gap-[61px]">
@@ -64,17 +66,10 @@ export function KvMenu({ onOpenChat, nav = NAV }: KvMenuProps) {
 					<KvCtaButton size="sm" onClick={(e) => onOpenChat("", e.currentTarget)}>
 						Comparar agora
 					</KvCtaButton>
-					{/* FIX-351: não existe fluxo de login de cliente hoje (só admin em
-					    /admin/login) — inerte/desabilitado até a jornada de login existir. */}
-					<KvCtaButton
-						variant="outline-light"
-						size="sm"
-						disabled
-						title="Login do cliente ainda não disponível"
-						className="hidden sm:inline-flex"
-					>
-						Entrar
-					</KvCtaButton>
+					{/* Sem "Entrar": o comp tem o botão, mas não existe jornada de login de
+					    cliente (só admin, em /admin/login), e ele vivia inerte/desabilitado
+					    desde o FIX-351. Decisão do time — não repor por fidelidade ao Figma
+					    enquanto o login não existir. */}
 					<button
 						type="button"
 						aria-label={mobileOpen ? "Fechar menu" : "Abrir menu"}
