@@ -10,7 +10,6 @@ import {
 	KanbanIcon,
 	MessageSquareTextIcon,
 	MessagesSquareIcon,
-	SettingsIcon,
 	UserIcon,
 	UsersIcon,
 } from "lucide-react";
@@ -31,10 +30,7 @@ import {
 } from "@/components/ui/sidebar";
 import { podeAcessarRota, type Role } from "@/lib/admin/role-scope";
 
-const settingsItems = [
-	{ title: "Perfil", href: "/admin/profile", icon: UserIcon },
-	{ title: "Configurações", href: "/admin/settings", icon: SettingsIcon },
-];
+const settingsItems = [{ title: "Perfil", href: "/admin/profile", icon: UserIcon }];
 
 export function AppSidebar({ role = "viewer" }: { role?: Role }) {
 	const pathname = usePathname();

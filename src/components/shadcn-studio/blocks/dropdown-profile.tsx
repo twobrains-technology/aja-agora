@@ -65,7 +65,7 @@ export default function ProfileDropdown({
 				    Júnia, 2026-08-12). Dois destinos mortos não valem mais que um
 				    vivo. O "Configuracoes" ainda ia sem cedilha. */}
 				<DropdownMenuGroup>
-					<DropdownMenuItem onClick={() => router.push("/admin/perfil")}>
+					<DropdownMenuItem onClick={() => router.push("/admin/profile")}>
 						<UserIcon className="text-muted-foreground" />
 						<span>Meu perfil</span>
 					</DropdownMenuItem>
