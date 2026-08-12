@@ -51,9 +51,21 @@ export async function advanceFunnelNode(
 	// assunto do turno; o prazo vem depois. Não passa por `artifactAllowed` de
 	// novo: o guard já autorizou este payload especificamente A ESPERAR — o
 	// release é a resolução daquele hold, não um card novo.
+	// A condição de LIBERAÇÃO espelha a do guard que segurou (`artifact-guard.ts`,
+	// regra `hero-awaits-reco-consent`) — as duas precisam concordar, senão o
+	// payload fica guardado e nunca sai. Foi exatamente o que aconteceu em
+	// produção (2026-08-12): o hero era suprimido, virava
+	// `pendingRecommendationCard`, e a liberação esperava `experiencePrev` ou
+	// `recoConsentAnswered` — dois sinais que podem não chegar nunca, porque o
+	// convite saiu da cascata em 2026-07-21 e a experiência virou pergunta de uma
+	// vez só. O cliente via só a `comparison_table`, e o agente, sem a
+	// recomendação ancorada, dizia "a gente ainda não tem um grupo selecionado".
 	const liberaHero =
 		Boolean(funnel.pendingRecommendationCard) &&
-		(funnel.experiencePrev !== undefined || funnel.recoConsentAnswered === true);
+		(funnel.experiencePrev !== undefined ||
+			funnel.recoConsentAnswered === true ||
+			funnel.experienceDispatched === true ||
+			Boolean(funnel.escolha));
 	if (liberaHero && funnel.pendingRecommendationCard) {
 		// Anuncia AO VIVO que a recomendação está sendo montada. Este turno faz
 		// DOIS beats de modelo e chega a durar quase um minuto sem chamar tool
