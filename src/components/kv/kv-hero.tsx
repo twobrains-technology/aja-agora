@@ -47,8 +47,8 @@ export function KvHero({ onOpenChat }: KvHeroProps) {
 				{/* Coluna de texto */}
 				<div className="max-w-[560px]">
 					<span className="inline-flex items-center gap-2 rounded-full bg-[#021628] py-1.5 pl-3.5 pr-4 text-[16px] font-semibold text-[#FAFAF3]">
-						<AjaMark className="h-3 w-auto text-[#FAFAF3]" />
-						o jeito independente de escolher consórcio
+						<AjaMark className="h-3 w-auto text-[#FAFAF3]" />o jeito independente de escolher
+						consórcio
 					</span>
 
 					<h1 className="mt-6 text-[40px] font-normal leading-[1.08] tracking-[-0.01em] text-[#021628] md:text-[56px] md:leading-[62px]">

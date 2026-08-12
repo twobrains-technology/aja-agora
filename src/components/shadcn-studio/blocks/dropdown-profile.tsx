@@ -1,6 +1,7 @@
 "use client";
 
-import { LogOutIcon, SettingsIcon, UserIcon } from "lucide-react";
+import { LogOutIcon, UserIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,7 @@ export default function ProfileDropdown({
 	userInitials = "AD",
 	onLogout,
 }: Props) {
+	const router = useRouter();
 	return (
 		<DropdownMenu>
 			<DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="size-9" />}>
@@ -57,14 +59,15 @@ export default function ProfileDropdown({
 
 				<DropdownMenuSeparator />
 
+				{/* Um item só, e que LEVA a algum lugar. Antes eram dois — "Minha
+				    conta" e "Configuracoes" — sem `onClick` e sem `href`: clicavam e
+				    não faziam nada, o que a equipe leu como "desabilitado" (relato da
+				    Júnia, 2026-08-12). Dois destinos mortos não valem mais que um
+				    vivo. O "Configuracoes" ainda ia sem cedilha. */}
 				<DropdownMenuGroup>
-					<DropdownMenuItem>
+					<DropdownMenuItem onClick={() => router.push("/admin/perfil")}>
 						<UserIcon className="text-muted-foreground" />
-						<span>Minha conta</span>
-					</DropdownMenuItem>
-					<DropdownMenuItem>
-						<SettingsIcon className="text-muted-foreground" />
-						<span>Configuracoes</span>
+						<span>Meu perfil</span>
 					</DropdownMenuItem>
 				</DropdownMenuGroup>
 
