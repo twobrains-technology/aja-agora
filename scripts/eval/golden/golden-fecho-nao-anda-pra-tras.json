@@ -1,0 +1,83 @@
+{
+	"cenario": "golden-fecho-nao-anda-pra-tras",
+	"descricao": "Cliente que já escolheu e pede pra contratar não pode receber pergunta de qualificação de volta. Produção 2026-08 (Caua, Erik, Monique): depois do clique na oferta, o funil voltava pra 'você já fez consórcio antes?' e depois pra pergunta de lance — o contract_form nunca chegava à tela e a venda morria. Três portas causavam isso: `experience` sem guarda de idempotência (reaparecia turno após turno), a cascata de lance barrando quem já escolheu, e o hero preso esperando um gate que saiu da cascata em 2026-07-21.",
+	"caRefs": ["CA-20 fechamento", "CA-21 contract_form"],
+	"asserts": {
+		"turns": [
+			null,
+			null,
+			null,
+			null,
+			null,
+			{
+				"expectArtifacts": ["comparison_table"]
+			},
+			null,
+			null,
+			{
+				"expectArtifacts": ["contract_form"],
+				"forbidUngroundedMoney": true
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi",
+			"expect": "welcome."
+		},
+		{
+			"type": "action",
+			"action": {
+				"kind": "category",
+				"category": "auto"
+			},
+			"label": "Automóvel",
+			"expect": "divider de especialista e depois o gate de nome."
+		},
+		{
+			"type": "text",
+			"text": "Rafael",
+			"expect": "cumprimenta e abre o gate desire."
+		},
+		{
+			"type": "text",
+			"text": "uns 90 mil",
+			"expect": "reconhece a faixa; nenhum número inventado."
+		},
+		{
+			"type": "text",
+			"text": "é pra trabalhar",
+			"expect": "espelha o motivo UMA vez e conduz pro CPF/celular (identify). Nunca pede CPF por texto livre."
+		},
+		{
+			"type": "action",
+			"action": {
+				"kind": "gate",
+				"gate": "identify",
+				"value": {
+					"cpf": "${E2E_TEST_CPF}",
+					"celular": "11995432576",
+					"lgpd": true
+				},
+				"label": "Enviei meus dados pra buscar as ofertas"
+			},
+			"expect": "busca real e reveal das ofertas."
+		},
+		{
+			"type": "text",
+			"text": "e agora?",
+			"expect": "apresenta as ofertas encontradas com números REAIS da busca. Não narra falha nem retentativa do sistema."
+		},
+		{
+			"type": "text",
+			"text": "Quero essa mesma, bora fechar",
+			"expect": "confirma a cota e CONDUZ AO FECHAMENTO. É PROIBIDO voltar a perguntar se ele já fez consórcio antes, pedir o prazo desejado ou abrir a conversa de lance — ele acabou de pedir pra fechar."
+		},
+		{
+			"type": "text",
+			"text": "isso, quero contratar",
+			"expect": "entrega o formulário de contratação (contract_form) com a fala curta de pré-cadastro: não paga nada agora, o pagamento começa quando o boleto chegar. Nada de 'cota reservada' antes da contratação."
+		}
+	]
+}

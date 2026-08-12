@@ -12,6 +12,7 @@ import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors
 import { getLeadIdForConversation } from "@/lib/admin/lead-stage-tracker";
 import { reengageQuestionForGate } from "@/lib/agent/gate-reengage";
 import {
+	listShownOffersForConversation,
 	resolveChosenOffer,
 	resolveOfferForAdministradora,
 	resolveOfferMentionForConversation,
@@ -464,6 +465,45 @@ export async function POST(req: NextRequest) {
 
 								if (body.action?.kind === "select-group") {
 									const { groupId, administradora, creditValue, termMonths } = body.action;
+									// ANCORAR A ESCOLHA AQUI É O QUE FAZIA FALTA.
+									//
+									// O FIX-406 tirou do TEXTO o poder de gravar `escolha` e deixou
+									// dois caminhos vivos: a tool `escolher_cota` e o CLIQUE de card,
+									// "cujo payload é dado do servidor". O clique nunca foi ligado —
+									// este handler só montava um directive de texto, e `escolha`
+									// dependia inteiramente de o modelo lembrar de chamar a tool.
+									//
+									// Medido em produção (2026-08-12): mandei esta mesma action numa
+									// conversa com duas ofertas na tela e `metadata->'escolha'`
+									// continuou null. Sem ela, `fechamentoSinalizado` é false, o funil
+									// nunca alcança `contract`, o `contract_form` não aparece e o
+									// agente — sem cota ancorada — responde "a gente ainda não tem um
+									// grupo selecionado" a quem acabou de pedir pra contratar.
+									//
+									// Isto NÃO reabre o texto livre: o payload vem do card que o
+									// servidor emitiu, e ainda assim é conferido contra as ofertas
+									// REALMENTE exibidas nesta conversa antes de amarrar dinheiro —
+									// mesma precondição que a tool cumpre (FIX-180/413).
+									const exibidas = await listShownOffersForConversation(conversationId);
+									const oferta = exibidas.find((o) => o.groupId === groupId);
+									if (oferta) {
+										const metaAtual = await reloadMeta(conversationId);
+										await persistMeta(conversationId, {
+											...metaAtual,
+											escolha: {
+												groupId,
+												administradora: oferta.administradora ?? administradora,
+												creditValue: oferta.creditValue ?? creditValue,
+												termMonths: oferta.termMonths ?? termMonths,
+												monthlyPayment: oferta.monthlyPayment,
+												origem: "afirmacao",
+											},
+										});
+									} else {
+										console.warn(
+											`[chat] select-group com groupId fora das ofertas exibidas — escolha NÃO ancorada (conv ${conversationId}, group ${groupId})`,
+										);
+									}
 									await pipeDirectiveTurn({
 										conversationId,
 										directive: buildGroupSelectedDirective(

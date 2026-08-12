@@ -1,0 +1,41 @@
+{
+	"cenario": "golden-nome-nao-e-frase",
+	"descricao": "Frase e rótulo de botão não podem virar o nome do lead. Produção 2026-08: 5 conversas com contact_name='Voltei', uma com 'Quitar' (o cliente clicou no botão 'Quitar o financiamento atual') e o caso 'Ainda' (de 'Ainda não sei bem qual modelo'). O nome vai pro dossiê da mesa e o agente ecoa em toda saudação — 'Oi, Quitar!'.",
+	"caRefs": ["CA-01 captura de nome"],
+	"asserts": {
+		"turns": [
+			null,
+			null,
+			{ "forbidRepeatedAgentText": true },
+			{ "forbidRepeatedAgentText": true },
+			null
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi",
+			"expect": "welcome; pergunta como pode chamar a pessoa."
+		},
+		{
+			"type": "text",
+			"text": "quero comprar um carro",
+			"expect": "reage ao carro e segue pedindo o nome — ainda não sabe quem é."
+		},
+		{
+			"type": "text",
+			"text": "Ainda não sei bem qual modelo",
+			"expect": "NÃO pode adotar 'Ainda' como nome. Trata como resposta sobre o modelo (tranquiliza, diz que dá pra decidir depois) e volta a pedir o nome. Em nenhum momento chama a pessoa de 'Ainda'."
+		},
+		{
+			"type": "text",
+			"text": "Quitar o financiamento atual",
+			"expect": "NÃO pode adotar 'Quitar' como nome — é rótulo de botão. Reage ao CONTEÚDO (trocar financiamento por consórcio) e pede o nome de novo. Em nenhum momento chama a pessoa de 'Quitar'."
+		},
+		{
+			"type": "text",
+			"text": "Pode me chamar de Rafael",
+			"expect": "agora sim adota o nome: cumprimenta como Rafael e segue o funil. Daqui pra frente é 'Rafael', nunca 'Ainda' nem 'Quitar'."
+		}
+	]
+}

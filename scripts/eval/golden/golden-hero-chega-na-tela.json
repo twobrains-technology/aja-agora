@@ -1,0 +1,64 @@
+{
+	"cenario": "golden-hero-chega-na-tela",
+	"descricao": "A recomendação (recommendation_card) precisa chegar ao cliente. Produção 2026-08-12: o log repetia '[hero-awaits-reco-consent] guard: suprimindo recommendation_card' em toda conversa — o portão do hero virou a EXPERIÊNCIA em 2026-07-21 (quando o convite saiu da cascata) e, com o gate `experience` passando a perguntar UMA vez só, `experiencePrev` ficava undefined pra sempre. O card era guardado como pendente e nunca liberado. Na tela: só a comparison_table, o agente sem cota ancorada, e a resposta 'não consigo ver qual cota você está vendo na tela' pra quem pedia pra fechar.",
+	"caRefs": ["CA-15 reveal em dois tempos", "CA-16 recomendação"],
+	"asserts": {
+		"turns": [
+			null,
+			null,
+			null,
+			null,
+			null,
+			{ "expectArtifacts": ["comparison_table"], "forbidDuplicateOffers": true },
+			null,
+			{ "expectArtifacts": ["recommendation_card"] },
+			{ "forbidUngroundedMoney": true }
+		]
+	},
+	"turns": [
+		{ "type": "text", "text": "oi", "expect": "welcome." },
+		{
+			"type": "action",
+			"action": { "kind": "category", "category": "auto" },
+			"label": "Automóvel",
+			"expect": "especialista e gate de nome."
+		},
+		{ "type": "text", "text": "Marina", "expect": "cumprimenta e abre o desire." },
+		{ "type": "text", "text": "um carro de uns 90 mil", "expect": "reconhece a faixa." },
+		{
+			"type": "text",
+			"text": "o meu vive quebrando",
+			"expect": "espelha o motivo uma vez e conduz ao identify."
+		},
+		{
+			"type": "action",
+			"action": {
+				"kind": "gate",
+				"gate": "identify",
+				"value": { "cpf": "${E2E_TEST_CPF}", "celular": "11995432576", "lgpd": true },
+				"label": "Enviei meus dados pra buscar as ofertas"
+			},
+			"expect": "busca real; a lista aparece."
+		},
+		{
+			"type": "text",
+			"text": "e aí, o que você acha?",
+			"expect": "apresenta as opções com números reais e pergunta a familiaridade com consórcio."
+		},
+		{
+			"type": "action",
+			"action": {
+				"kind": "gate",
+				"gate": "experience",
+				"value": "returning",
+				"label": "Já conheço"
+			},
+			"expect": "com a experiência respondida, a RECOMENDAÇÃO é entregue — o hero sai, com a explicação de por que essa é a indicada."
+		},
+		{
+			"type": "text",
+			"text": "por que essa e não outra?",
+			"expect": "justifica a recomendação usando os números REAIS da oferta (parcela, carta, prazo). Nenhum valor fora do que a busca devolveu; nenhuma administradora que não esteja nas ofertas desta conversa."
+		}
+	]
+}
