@@ -59,8 +59,11 @@ const PRODUCT_STEP_ANNOUNCEMENT_PATTERNS: RegExp[] = [
 
 // Fillers de processo puros ("um segundo", "só um instante"). Ancorados no
 // segmento inteiro pra NÃO pegar "tem um segundo grupo" (falso-positivo).
+// 2026-08 (conv 31dc7e52): "Um segundo aí." escapava — a âncora não previa o
+// advérbio de lugar no fim. O sufixo é opcional e fechado ("aí"/"aqui"/"só"),
+// mantendo a proteção contra o falso-positivo.
 const PROCESS_FILLER_PATTERNS: RegExp[] = [
-	/^\s*(um\s+segundo|s[óo]\s+um\s+(instante|segundo|minuto))\s*[:.!…]*\s*$/i,
+	/^\s*(um\s+segundo|s[óo]\s+um\s+(instante|segundo|minuto))(\s+(a[íi]|aqui|s[óo]))?\s*[:.!…]*\s*$/i,
 ];
 
 export const PROCESS_PREAMBLE_PATTERNS: RegExp[] = [
@@ -122,6 +125,48 @@ export function isTechnicalFallback(segment: string): boolean {
 	return TECHNICAL_FALLBACK_PATTERNS.some((rx) => rx.test(s));
 }
 
+// O agente contando pro cliente que a MÁQUINA falhou ou que vai tentar de novo.
+//
+// Produção, 2026-08 (conv 31dc7e52, literal do banco): "Agora vou trazer as
+// melhores opções pra você com R$ 300 mil. Um segundo aí. Deixa eu tentar de
+// outro jeito aqui. Infelizmente a busca travou por um segundo." — e o
+// `comparison_table` saiu no MESMO turno, logo em seguida. A busca não travou:
+// o modelo narrou um retry interno e o cliente leu "travou" antes de ver as
+// ofertas aparecerem normais. 6 ocorrências de "de outro jeito" na base.
+//
+// Irmão do FIX-190 (fallback técnico) e do FIX-283 (narração do mecanismo): o
+// que acontece dentro da máquina não é assunto do cliente — vendedor não conta
+// que o sistema dele engasgou, ele só entrega. Vive em `factualDropReason`, não
+// em estilo, porque a frase afirma um FATO, e no caso da Bruna um fato falso.
+//
+// A fronteira: honestidade sobre o NEGÓCIO passa inteira. "As opções na sua
+// faixa estão limitadas hoje" e "não achei nada nessa faixa" são verdade sobre a
+// OFERTA — o directive de escassez inclusive manda dizer. Por isso os padrões
+// exigem um sujeito de MÁQUINA (busca/sistema/conexão) junto do verbo de falha:
+// "não encontrei grupos" nunca cai aqui, "a busca falhou" sempre cai.
+const INTERNAL_FAILURE_PATTERNS: RegExp[] = [
+	// Retentativa anunciada: "deixa eu tentar de outro jeito", "vou tentar de novo".
+	/\b(deixa\s+eu|vou)\s+tentar\s+(de\s+(outro|outra)\s+\w+|de\s+novo|novamente|outra\s+vez)\b/i,
+	// Sujeito de máquina + verbo de falha. O sujeito é obrigatório: sem ele,
+	// "não encontrei nada nessa faixa" (verdade de negócio) seria dropado junto.
+	/\b(a\s+)?(busca|consulta|pesquisa|simula[çc][ãa]o)\s+(travou|falhou|caiu|n[ãa]o\s+(funcionou|respondeu|retornou|carregou)|deu\s+(erro|problema|pau))\b/i,
+	/\b(o\s+)?sistema\s+(travou|falhou|caiu|engasgou|est[áa]\s+(fora|inst[áa]vel|lento|com\s+problema))\b/i,
+	/\bdeu\s+(um\s+)?(erro|problema|pau)\s+(na|no|aqui|com)\b/i,
+	/\btive\s+(um\s+)?(problema|erro)\s+(t[ée]cnico|aqui|na\s+busca)\b/i,
+	/\binstabilidade\s+(no|na|do|da)\s+(sistema|busca|conex[ãa]o|plataforma)\b/i,
+];
+
+/**
+ * O segmento conta ao cliente uma falha ou retentativa do MECANISMO — não pode
+ * virar bolha. Ver `INTERNAL_FAILURE_PATTERNS` para o caso real e para a
+ * fronteira com honestidade de negócio (que passa).
+ */
+export function isInternalFailureNarration(segment: string): boolean {
+	const s = segment.trim();
+	if (!s) return false;
+	return INTERNAL_FAILURE_PATTERNS.some((rx) => rx.test(s));
+}
+
 // FIX-234 (handoff agente-vendas-consorcio, 2026-07-09 — D7/05-compliance) —
 // "reduzir o prazo"/"terminar antes"/"quitar antes": o abatimento do lance
 // (dinheiro OU embutido) vira PARCELA MENOR, nunca prazo menor. Prometer prazo
@@ -151,6 +196,13 @@ const PREMATURE_RESERVATION_PATTERNS: RegExp[] = [
 	/\bcota\b[\s\S]{0,25}\bgarantida\b/i,
 	/\breservad[ao]\b/i,
 	/\bvoc[êe]\s+j[áa]\s+est[áa]\s+no\s+grupo\b/i,
+	// Produção 2026-08: "A moto é sua!" numa conversa com ZERO propostas na
+	// Bevi. É a mesma promessa do invariante #9, dita pelo lado do BEM em vez do
+	// lado da cota — e por isso passava por todos os padrões acima. O artigo
+	// definido é obrigatório na regra pra não pegar "a escolha é sua" nem "a
+	// decisão é sua", que são falas legítimas (e o `two-paths-payload` depende
+	// da segunda).
+	/\b(a|o)\s+(moto|carro|im[óo]vel|casa|apartamento|caminh[ãa]o|ve[íi]culo)\s+(j[áa]\s+)?[ée]\s+(sua|seu)\b/i,
 ];
 
 /** Afirma que a RESERVA/GARANTIA da cota dele já aconteceu — o objeto é a
@@ -862,6 +914,9 @@ export function isPrematureTopOfferClaim(segment: string, ctx?: StateVerificatio
 export type EphemeralDropReason =
 	| "process-preamble"
 	| "technical-fallback"
+	/** O agente contou pro cliente que a máquina falhou ou que vai tentar de
+	 * novo ("a busca travou", "deixa eu tentar de outro jeito"). */
+	| "internal-failure-narration"
 	| "prazo-reduction"
 	| "premature-reservation"
 	| "banned-lexicon"
@@ -874,6 +929,9 @@ export type EphemeralDropReason =
 	| "hallucinated-administradora"
 	| "internal-tool-leak"
 	| "premature-reveal-scenario"
+	/** Resíduo de split: caractere visível sem nenhuma letra ou dígito (")" que
+	 * sobrou de uma reticência). Nunca é fala. */
+	| "sem-conteudo"
 	/** Segunda pergunta do mesmo turno (ou pergunta no 1º beat do reveal, onde o
 	 * agente só apresenta). Uma pergunta por vez — as demais são dropadas. */
 	| "pergunta-extra";
@@ -892,6 +950,7 @@ function factualDropReason(
 	ctx?: StateVerificationContext,
 ): EphemeralDropReason | null {
 	if (isTechnicalFallback(segment)) return "technical-fallback";
+	if (isInternalFailureNarration(segment)) return "internal-failure-narration";
 	if (isPrazoReductionClaim(segment)) return "prazo-reduction";
 	if (isPrematureReservationClaim(segment, ctx)) return "premature-reservation";
 	if (isTaxaContemplacaoClaim(segment)) return "taxa-contemplacao";
@@ -928,6 +987,12 @@ function ephemeralSegmentReason(
 	segment: string,
 	ctx?: StateVerificationContext,
 ): EphemeralDropReason | null {
+	// Rede de segurança estrutural, antes de qualquer guard de conteúdo: um
+	// segmento que tem caractere visível mas nenhuma letra ou dígito é resíduo de
+	// split (o ")" órfão que o cliente recebeu como bolha em produção), nunca
+	// fala. Segmento só de espaço NÃO cai aqui de propósito — ele é o separador
+	// entre frases, e dropá-lo colaria as palavras vizinhas.
+	if (/\S/.test(segment) && !/[\p{L}\p{N}]/u.test(segment)) return "sem-conteudo";
 	const factual = factualDropReason(segment, ctx);
 	if (factual) return factual;
 	if (isInterrogativeSentence(segment)) return null;
@@ -956,10 +1021,22 @@ function isThousandsSeparatorDot(text: string, dotIndex: number): boolean {
 	return /\d/.test(text[dotIndex - 1] ?? "");
 }
 
+/** Fecham o que a frase abriu — o delimitador que vem ANTES deles ainda não é o
+ * fim da frase, porque o fechamento pertence a ela. Sem isto, "(Corolla, Onix,
+ * Gol...)" perdia o ")" pra uma bolha própria. */
+const CLOSING_CHARS = new Set([")", "]", "}", '"', "'", "»", "”", "’"]);
+
 function isSegmentBoundary(text: string, index: number): boolean {
 	const ch = text[index];
 	if (!SEGMENT_BOUNDARY_CHARS.has(ch)) return false;
 	if (ch === "." && isThousandsSeparatorDot(text, index)) return false;
+	// Reticência é UM delimitador, não três. Produção 2026-08 (conv do Romulo):
+	// "…que você tem em mente? (Corolla, Onix, HB20, Gol...)" quebrava em
+	// "Gol." + "." + "." + ")" e o cliente recebia uma bolha com um caractere.
+	// Só o ÚLTIMO ponto da sequência fecha a frase.
+	if (ch === "." && text[index + 1] === ".") return false;
+	// O fechamento ainda pertence à frase — ver `CLOSING_CHARS`.
+	if (CLOSING_CHARS.has(text[index + 1] ?? "")) return false;
 	return true;
 }
 

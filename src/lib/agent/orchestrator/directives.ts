@@ -487,6 +487,9 @@ const EMPTY_TURN_RETRY_REASON_LABELS: Record<EphemeralDropReason, string> = {
 		"escreveu o nome de uma ferramenta interna (ex.: recommend_groups) em vez de falar com o usuário",
 	"premature-reveal-scenario":
 		"narrou o cenário de lance/contemplação/sorteio no reveal, antes de perguntar se o usuário já conhece consórcio",
+	"internal-failure-narration":
+		'contou pro cliente que a máquina falhou ou que ia tentar de novo ("a busca travou", "deixa eu tentar de outro jeito") — o que acontece por dentro não é assunto dele',
+	"sem-conteudo": "a frase não tinha nenhuma letra ou número (só pontuação solta)",
 };
 
 /**

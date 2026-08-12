@@ -114,6 +114,7 @@ export function createRunTurnLangGraph(deps?: {
 				gate: undefined,
 				answeredGate: undefined,
 				modelAskedQuestion: false,
+				modelAskedForName: false,
 				apresentaOfertaNesteTurno: false,
 				streamedArtifactIds: [],
 				funnel: funnelFromMeta(baseMeta),

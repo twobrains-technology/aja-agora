@@ -26,6 +26,32 @@
  * Implementação isolada pra ter unit test puro (sem mock de orchestrator
  * inteiro).
  */
+/**
+ * O texto PERGUNTA o nome da pessoa?
+ *
+ * Patterns observados em prod (comparados já sem acento):
+ *   "como posso te chamar?" · "como te chamar?" · "como prefere ser chamado?"
+ *   "qual seu nome?" · "me diz seu nome?" · "como voce se chama?"
+ *
+ * Extraída de `isLikelyNameResponse` porque tem um segundo uso, do outro lado
+ * do turno: decidir se o CARD do gate `name` deve aparecer. Ver
+ * `deveEmitirCardDeNome` (emit-card.ts) — o agente que pergunta o imóvel não
+ * pode receber embaixo um campo pedindo o nome.
+ */
+export function perguntouONome(texto: string | undefined | null): boolean {
+	const prev = stripAccents((texto ?? "").toLowerCase());
+	return (
+		// "chamado/chamada" além de "chamar": "como prefere ser chamado?" é uma das
+		// formas que o agente mais usa e escapava da âncora original.
+		/como\s+(te\s+|posso\s+(te\s+)?|prefere\s+ser\s+|gosta\s+de\s+ser\s+)?(chamar|chamad[oa]|chama)\b/.test(
+			prev,
+		) ||
+		/qual.{0,20}seu\s+nome/.test(prev) ||
+		/(seu|teu)\s+nome\??/.test(prev) ||
+		/como\s+(voce\s+)?se\s+chama/.test(prev)
+	);
+}
+
 export function isLikelyNameResponse(args: {
 	previousAssistantText: string | undefined;
 	currentUserText: string;
@@ -33,22 +59,8 @@ export function isLikelyNameResponse(args: {
 }): boolean {
 	if (args.conversationContactName) return false;
 
-	// Normaliza acentos pra comparar regex sem ç/ã/é (mais robusto).
-	const prev = stripAccents((args.previousAssistantText ?? "").toLowerCase());
 	// Sem âncora de pergunta de nome no turno anterior → não força.
-	// Patterns observados em prod (já com acentos removidos):
-	//   - "como posso te chamar?"
-	//   - "como te chamar?"
-	//   - "como prefere ser chamado?"
-	//   - "qual seu nome?"
-	//   - "me diz seu nome?"
-	//   - "como voce se chama?"
-	const askedForName =
-		/como\s+(te\s+|posso\s+(te\s+)?|prefere\s+ser\s+)?chamar/.test(prev) ||
-		/qual.{0,20}seu\s+nome/.test(prev) ||
-		/(seu|teu)\s+nome\??/.test(prev) ||
-		/como\s+(voce\s+)?se\s+chama/.test(prev);
-	if (!askedForName) return false;
+	if (!perguntouONome(args.previousAssistantText)) return false;
 
 	const txt = args.currentUserText.trim();
 	if (txt.length === 0 || txt.length > 50) return false;

@@ -20,6 +20,7 @@ import {
 	administradoraFoiRecusada,
 	listShownOffersForConversation,
 } from "@/lib/agent/orchestrator/choose-offer";
+import { perguntouONome } from "@/lib/agent/orchestrator/detect-name-turn";
 import {
 	contemPerguntaQueOcupaCota,
 	EphemeralTextFilter,
@@ -1239,22 +1240,27 @@ export function createConverseNode(model: BaseChatModel) {
 		// caminhos: ela não pede dado nenhum, e tratá-la como pergunta apagava a
 		// canônica do gate no WhatsApp — cliente sem nada pra responder, funil
 		// parado no primeiro turno (trace be5cc1e6, produção 2026-08-10).
-		const modelAskedQuestion =
-			filter.hasHeldQuestion() ||
-			contemPerguntaQueOcupaCota(
-				events.map((ev) => (ev.type === "text-delta" ? ev.text : "")).join(""),
-			);
+		const textoDoTurno = events.map((ev) => (ev.type === "text-delta" ? ev.text : "")).join("");
+		const modelAskedQuestion = filter.hasHeldQuestion() || contemPerguntaQueOcupaCota(textoDoTurno);
 		const tail = filter.flush();
 		if (tail) {
 			const ev: TurnEvent = { type: "text-delta", text: tail };
 			config.writer?.(ev);
 			events.push(ev);
 		}
+		// A pergunta foi a DO NOME? Só depois do `flush()`, porque a pergunta fica
+		// SEGURADA no filtro até aqui (é assim que a última pergunta vence a
+		// anterior) — computar antes leria o turno sem justamente a frase que
+		// interessa. Sem essa distinção o card do gate `name` saía embaixo de uma
+		// pergunta sobre o imóvel e roubava a resposta dela (ver
+		// `deveEmitirCardDeNome`).
+		const modelAskedForName = perguntouONome(textoDoTurno + tail);
 
 		return {
 			messages: newMessages,
 			events,
 			modelAskedQuestion,
+			modelAskedForName,
 			streamedArtifactIds,
 			...(deveExplicarComoFunciona ||
 			handoffRef.pedido ||

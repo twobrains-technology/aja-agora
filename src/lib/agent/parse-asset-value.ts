@@ -54,10 +54,91 @@ function magnitudeCount(raw: string): number | null {
 	return brNumber(cleaned);
 }
 
+/**
+ * Muletas de quem está DIZENDO UM PREÇO. Allowlist, não blocklist: o número nu
+ * só vira valor quando toda palavra ao lado dele é uma destas.
+ *
+ * Produção, 2026-08: "CG 160" (o modelo da moto, respondido no turno do valor)
+ * virou uma carta de R$ 160.000 — a busca inteira rodou na faixa errada pra
+ * quem queria uma moto de ~R$ 18 mil. A proteção anterior cobria só o número
+ * COLADO à letra ("rav4"); com espaço no meio ela não pegava, e "até 4
+ * palavras" deixava passar "quero uma cg 160" inteiro.
+ *
+ * A alternativa seria enumerar modelos de veículo — lista infinita que envelhece
+ * a cada lançamento. Aqui o conjunto fechado é o do OUTRO lado: as poucas
+ * palavras que acompanham um preço falado. Palavra desconhecida ao lado do
+ * número = ambíguo = null, e ambíguo é seguro: o gate `credit` continua
+ * pendente e o agente pergunta de novo.
+ */
+const MULETAS_DE_PRECO = new Set([
+	"um",
+	"uma",
+	"uns",
+	"umas",
+	"cerca",
+	"perto",
+	"torno",
+	"volta",
+	"faixa",
+	"entre",
+	"de",
+	"do",
+	"da",
+	"em",
+	"no",
+	"na",
+	"por",
+	"pra",
+	"para",
+	"com",
+	"ate",
+	"so",
+	"o",
+	"a",
+	"e",
+	"eh",
+	"ou",
+	"mais",
+	"menos",
+	"acho",
+	"que",
+	"talvez",
+	"aproximadamente",
+	"tipo",
+	"assim",
+	"algo",
+	"la",
+	"ai",
+	"maximo",
+	"minimo",
+	"quero",
+	"queria",
+	"seria",
+	"ser",
+	"pode",
+	"tem",
+	"vai",
+	"dar",
+	"fica",
+	"custa",
+	"valor",
+	"reais",
+	"real",
+	"pensando",
+	"estou",
+	"tou",
+	"to",
+]);
+
+function semAcento(s: string): string {
+	return s.normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
 /** FIX-208: a mensagem é ESSENCIALMENTE um número (1 grupo de dígitos, ≤ 4
- * palavras)? Só então um número nu no gate `credit` é lido como valor — evita
- * cravar valor de uma pergunta solta com número ("e a taxa de 2%?"). Lei 4:
- * não age sobre número não-ancorado no valor do bem. Retorna o número ou null. */
+ * palavras, e só muletas de preço em volta)? Só então um número nu no gate
+ * `credit` é lido como valor — evita cravar valor de uma pergunta solta com
+ * número ("e a taxa de 2%?") ou de um nome de modelo ("CG 160"). Lei 4: não age
+ * sobre número não-ancorado no valor do bem. Retorna o número ou null. */
 function bareNumberAsValue(t: string): number | null {
 	// O dígito precisa ser um TOKEN, não um pedaço de palavra. Sem esta âncora,
 	// "rav4" virava o número 4 → carta de R$ 4.000: o `creditMax` era gravado
@@ -68,6 +149,14 @@ function bareNumberAsValue(t: string): number | null {
 	const digitGroups = t.match(NUMERO_SOLTO) ?? [];
 	const words = t.trim().split(/\s+/).filter(Boolean);
 	if (digitGroups.length !== 1 || words.length > 4) return null;
+	// Toda palavra que não carrega o número precisa ser muleta de preço. É o que
+	// separa "uns 200" (valor) de "quero uma cg 160" (modelo) — ver
+	// `MULETAS_DE_PRECO`.
+	const acompanhantes = words.filter((w) => !/\d/.test(w));
+	const todasSaoMuletas = acompanhantes.every((w) =>
+		MULETAS_DE_PRECO.has(semAcento(w).replace(/[^\p{L}]/gu, "")),
+	);
+	if (!todasSaoMuletas) return null;
 	const m = digitGroups[0].match(/(\d+)(?:[.,](\d{1,2}))?/);
 	if (!m) return null;
 	const n = Number.parseFloat(m[2] ? `${m[1]}.${m[2]}` : m[1]);

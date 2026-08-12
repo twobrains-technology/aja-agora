@@ -338,32 +338,43 @@ export async function POST(req: NextRequest) {
 		}
 		await saveMessage(conversationId, "user", userText, "web");
 		const userName = conv.contactName ?? "Cliente";
-		await relayWebUserToAgent(conversationId, userText, userName);
+		const entregue = await relayWebUserToAgent(conversationId, userText, userName);
 		publishMessage(conversationId, {
 			id: lastUserMessageId(body.messages) ?? crypto.randomUUID(),
 			role: "user",
 			content: userText,
 			createdAt: simulatorNow().toISOString(),
 		});
-		const agentName = conv.handedOffUser?.name ?? "Consultor";
-		const stream = createUIMessageStream<AjaUIMessage>({
-			execute: ({ writer }) => {
-				const id = crypto.randomUUID();
-				writer.write({ type: "text-start", id });
-				writer.write({
-					type: "text-delta",
-					id,
-					delta: `_Mensagem enviada para ${agentName}. Aguarde a resposta aqui._`,
-				});
-				writer.write({ type: "text-end", id });
-			},
-			// FIX-110: onError uniforme em TODO stream do route (helper único).
-			onError: streamErrorMessage,
-		});
-		return createUIMessageStreamResponse({
-			stream,
-			headers: { "X-Conversation-Id": conversationId, "X-Handed-Off": "true" },
-		});
+		// OC-31: a promessa só é escrita quando a mensagem SAIU. Antes o relay
+		// abortava em silêncio sempre que o atendimento vivia em outra conversa da
+		// mesma pessoa (ele começa no WhatsApp, volta pela web) — o cliente lia
+		// "aguarde a resposta aqui", ninguém recebia nada, e a conversa morria ali.
+		// Sem entrega, o agente segue o fluxo normal em vez de mandar esperar por
+		// alguém que não foi avisado.
+		if (entregue) {
+			const agentName = conv.handedOffUser?.name ?? "Consultor";
+			const stream = createUIMessageStream<AjaUIMessage>({
+				execute: ({ writer }) => {
+					const id = crypto.randomUUID();
+					writer.write({ type: "text-start", id });
+					writer.write({
+						type: "text-delta",
+						id,
+						delta: `_Mensagem enviada para ${agentName}. Aguarde a resposta aqui._`,
+					});
+					writer.write({ type: "text-end", id });
+				},
+				// FIX-110: onError uniforme em TODO stream do route (helper único).
+				onError: streamErrorMessage,
+			});
+			return createUIMessageStreamResponse({
+				stream,
+				headers: { "X-Conversation-Id": conversationId, "X-Handed-Off": "true" },
+			});
+		}
+		console.warn(
+			`[chat] handoff sem destinatário — nenhum atendente recebeu; o agente assume o turno (conv ${conversationId})`,
+		);
 	}
 
 	const meta = conv ? metaOf(conv) : ({} as ConversationMetadata);

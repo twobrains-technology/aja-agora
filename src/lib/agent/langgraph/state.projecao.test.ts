@@ -75,6 +75,7 @@ const FUNIL_COMPLETO: FunnelState = {
 	experiencePrev: "doubts",
 	doubtsAddressed: true,
 	explicouComoFunciona: true,
+	nameCardAdiado: true,
 	topicPickerDispatched: true,
 	recoConsentDispatched: true,
 	recoConsentAnswered: true,

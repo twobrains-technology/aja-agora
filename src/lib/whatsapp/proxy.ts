@@ -758,31 +758,68 @@ export async function handleAgentMessage(agentWaId: string, text: string): Promi
 }
 
 /**
- * Relay a message from a web user to the claimed attendant (or all, if unclaimed).
- * Web users don't have a `waId`, so the conversation is identified directly.
+ * Entrega ao atendente uma mensagem que o cliente escreveu na web.
+ *
+ * Devolve `true` quando a mensagem SAIU pra alguém. Isso não é detalhe de API:
+ * quem chama (`/api/chat`) escreve "Mensagem enviada para Fulano. Aguarde a
+ * resposta aqui." na tela do cliente, e essa frase não pode ser dita sem
+ * entrega.
+ *
+ * OC-31 (produção, 2026-08) — o cliente ficou falando sozinho. A armadilha
+ * precisa de duas conversas da MESMA pessoa, o que é o caso comum: ele começa no
+ * WhatsApp, um atendente assume ali, e depois volta pela web. As duas pontas
+ * então discordavam sobre o que é "o caso":
+ *
+ *   • `route.ts` perguntava pela PESSOA (`quemRespondePara`, que casa por
+ *     telefone normalizado em qualquer conversa `handed_off`) — achava o humano
+ *     e calava o agente;
+ *   • esta função perguntava pela LINHA (`conv.status !== "handed_off"`) e caía
+ *     num `return` seco, sem log e sem erro.
+ *
+ * O agente não respondia, o atendente não recebia nada, e o cliente lia uma
+ * promessa de entrega que nunca aconteceu. Agora as duas pontas fazem a MESMA
+ * pergunta — a da pessoa — e o atendimento é procurado na conversa onde ele
+ * realmente vive, que nem sempre é a do canal de entrada.
  */
 export async function relayWebUserToAgent(
 	conversationId: string,
 	text: string,
 	userName: string,
-): Promise<void> {
+): Promise<boolean> {
 	const conv = await db.query.conversations.findFirst({
 		where: eq(conversations.id, conversationId),
 	});
-	if (!conv || conv.status !== "handed_off") return;
-	const isSimulated = conv.isSimulated;
+	if (!conv) return false;
 
-	if (conv.handedOffUserId) {
-		const attendant = await getAttendantById(conv.handedOffUserId);
+	// A conversa de entrada pode não ser a do atendimento. Resolve pela pessoa —
+	// mesma pergunta que o `route.ts` faz pra decidir calar o agente.
+	let atendimento = conv;
+	if (conv.status !== "handed_off") {
+		const quem = await quemRespondePara(conv.waId);
+		if (quem.quem !== "humano") return false;
+		const outra = await db.query.conversations.findFirst({
+			where: eq(conversations.id, quem.conversationId),
+		});
+		if (!outra) return false;
+		atendimento = outra;
+		console.log(
+			`[whatsapp-proxy] WebUser→Attendant: atendimento vive em outra conversa da pessoa (${conversationId} → ${outra.id})`,
+		);
+	}
+
+	const isSimulated = atendimento.isSimulated;
+
+	if (atendimento.handedOffUserId) {
+		const attendant = await getAttendantById(atendimento.handedOffUserId);
 		if (attendant) {
 			await sendToAttendant(attendant.phone, `*${userName}:*\n${text}`, { simulated: isSimulated });
 			console.log(
 				`[whatsapp-proxy] WebUser→Attendant: ${conversationId} → ${attendant.phone} | "${text.slice(0, 50)}" simulated=${isSimulated}`,
 			);
-			return;
+			return true;
 		}
 		console.warn(
-			`[whatsapp-proxy] Claimed attendant ${conv.handedOffUserId} not found in active list`,
+			`[whatsapp-proxy] Claimed attendant ${atendimento.handedOffUserId} not found in active list`,
 		);
 	}
 
@@ -791,8 +828,10 @@ export async function relayWebUserToAgent(
 		await sendToAttendant(a.phone, `*${userName}:*\n${text}`, { simulated: isSimulated });
 	}
 	console.log(
-		`[whatsapp-proxy] WebUser→AllAttendants: ${conversationId} | "${text.slice(0, 50)}" simulated=${isSimulated}`,
+		`[whatsapp-proxy] WebUser→AllAttendants: ${conversationId} | "${text.slice(0, 50)}" simulated=${isSimulated} entregues=${attendants.length}`,
 	);
+	// Lista vazia é entrega que não aconteceu — não pode virar "mensagem enviada".
+	return attendants.length > 0;
 }
 
 /** Relay a message from user to the claimed attendant (or all, if unclaimed). */

@@ -103,24 +103,43 @@ describeIfDb("agora — sala de guerra (integration)", () => {
 		// Medir os dois lados adjacentes, num caso só, encolhe a janela pro tempo
 		// da semeadura. Não conserta o banco compartilhado; tira este arquivo da
 		// linha de tiro.
-		it("conta ao vivo, espera de resposta e ignora simulada — tudo no mesmo delta", async () => {
-			const antes = await queries.computePulso();
-
-			await semearConversa({ ultimaDe: "user", minutosAtras: 2 });
-			await semearConversa({ ultimaDe: "user", minutosAtras: 20 });
-			await semearConversa({ ultimaDe: "assistant", minutosAtras: 3 });
+		// 2026-08-12: o delta continuava FLAKY. Encolher a janela (nota acima)
+		// reduziu a chance, não a eliminou — qualquer arquivo de integração rodando
+		// em paralelo que crie ou apague conversa não-simulada ainda desloca os dois
+		// lados da subtração, e a suíte completa falhava aqui de forma intermitente.
+		//
+		// A saída é parar de medir por DIFERENÇA GLOBAL e passar a verificar as
+		// conversas SEMEADAS por id. `computeConversasAoVivo` aplica exatamente as
+		// mesmas duas regras que o pulso (`is_simulated = false` + janela de
+		// `JANELA_AO_VIVO_MIN`), então as propriedades sob teste continuam as
+		// mesmas — só que agora ruído concorrente não tem como interferir.
+		it("conta ao vivo, espera de resposta e ignora simulada", async () => {
+			const recenteDoCliente = await semearConversa({ ultimaDe: "user", minutosAtras: 2 });
+			const antigaDoCliente = await semearConversa({ ultimaDe: "user", minutosAtras: 20 });
+			const respondidaPeloAgente = await semearConversa({ ultimaDe: "assistant", minutosAtras: 3 });
 			// Fora da janela de uma hora: não é "ao vivo".
-			await semearConversa({ ultimaDe: "user", minutosAtras: 180 });
+			const foraDaJanela = await semearConversa({ ultimaDe: "user", minutosAtras: 180 });
 			// Simulada: não pode mandar ninguém correr atrás de conversa de teste.
-			await semearConversa({ ultimaDe: "user", minutosAtras: 1, simulada: true });
+			const simulada = await semearConversa({ ultimaDe: "user", minutosAtras: 1, simulada: true });
 
-			const depois = await queries.computePulso();
+			// Limite alto de propósito: com o padrão (40), uma base movimentada
+			// empurraria as semeadas pra fora da página e o teste mediria paginação.
+			const aoVivo = await queries.computeConversasAoVivo(500);
+			const porId = new Map(aoVivo.map((c) => [c.conversationId, c]));
 
-			// 3 reais dentro da janela. A de 180 min ficou de fora; a simulada nunca
-			// entra (se entrasse, seria 4).
-			expect(depois.conversasAoVivo - antes.conversasAoVivo).toBe(3);
-			// Duas com a última fala do cliente e dentro da janela.
-			expect(depois.esperandoResposta - antes.esperandoResposta).toBe(2);
+			// As três reais dentro da janela entraram.
+			expect(porId.has(recenteDoCliente)).toBe(true);
+			expect(porId.has(antigaDoCliente)).toBe(true);
+			expect(porId.has(respondidaPeloAgente)).toBe(true);
+
+			// A de 180 min ficou de fora; a simulada nunca entra.
+			expect(porId.has(foraDaJanela)).toBe(false);
+			expect(porId.has(simulada)).toBe(false);
+
+			// Espera resposta = a última palavra foi do cliente.
+			expect(porId.get(recenteDoCliente)?.esperandoResposta).toBe(true);
+			expect(porId.get(antigaDoCliente)?.esperandoResposta).toBe(true);
+			expect(porId.get(respondidaPeloAgente)?.esperandoResposta).toBe(false);
 		});
 
 		it("devolve todos os contadores como número, nunca indefinido", async () => {

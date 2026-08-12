@@ -26,7 +26,17 @@ describeIfDb("FIX-379 — primeiro turno sem nome: o funil tem que pedir o nome"
 		for (const id of criadas) await limparCenario(id);
 	});
 
-	it("emite o gate `name` mesmo quando o modelo pergunta outra coisa", async () => {
+	// REVISADO em 2026-08-12 com evidência nova de produção. O contrato original
+	// era "o gate `name` sai NO MESMO turno em que o modelo pergunta outra
+	// coisa". Onze conversas reais mostraram o custo desse contrato (conv do
+	// Erik): o texto perguntava o imóvel, o card pedia o nome, o cliente
+	// respondia ao card — que é o que tem campo pra digitar — e a pergunta do
+	// agente morria sem resposta, fazendo ele repeti-la no turno seguinte.
+	//
+	// O contrato agora é "o card cede a vez UMA vez". A preocupação que gerou o
+	// FIX-379 continua coberta e é o que o segundo caso abaixo prova: o funil
+	// não fica refém do modelo — no máximo perde um turno.
+	it("cede a vez no turno em que o modelo pergunta outra coisa", async () => {
 		const r = await runScenario({
 			// Ninguém se apresentou ainda — é o estado real do primeiro turno.
 			contactName: null,
@@ -45,11 +55,32 @@ describeIfDb("FIX-379 — primeiro turno sem nome: o funil tem que pedir o nome"
 		});
 		criadas.push(r.conversationId);
 
-		// O funil não pode concordar com o desvio: o gate do nome é o único
-		// legítimo aqui, e é ele que dá ao cliente o input certo pra responder.
-		expect(r.turns[0].trilha).toContain("gate:name");
+		// A pergunta do agente fica de pé sozinha — sem um campo de nome embaixo
+		// competindo por resposta.
+		expect(r.turns[0].trilha).not.toContain("gate:name");
 
 		// E nada de valor pode ter sido gravado: o cliente não disse valor nenhum.
 		expect(r.meta.qualifyAnswers?.creditMax).toBeUndefined();
+	});
+
+	it("na segunda insistência o card entra e o funil retoma a ordem", async () => {
+		const r = await runScenario({
+			contactName: null,
+			metaInicial: {},
+			turns: [
+				{
+					user: "Quero comprar um carro.",
+					beats: [{ text: "Que ótimo! Qual é o valor aproximado do carro?" }],
+				},
+				{
+					user: "Ainda não sei bem.",
+					// O modelo insiste em não perguntar o nome.
+					beats: [{ text: "Sem problema! Você prefere um carro novo ou usado?" }],
+				},
+			],
+		});
+		criadas.push(r.conversationId);
+
+		expect(r.turns[1].trilha).toContain("gate:name");
 	});
 });

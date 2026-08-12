@@ -55,6 +55,7 @@ export function projectToMeta(state: AgentGraphStateType): ConversationMetadata 
 		experiencePrev: funnel.experiencePrev,
 		doubtsAddressed: funnel.doubtsAddressed,
 		explicouComoFunciona: funnel.explicouComoFunciona,
+		nameCardAdiado: funnel.nameCardAdiado,
 		topicPickerDispatched: funnel.topicPickerDispatched,
 		recoConsentDispatched: funnel.recoConsentDispatched,
 		recoConsentAnswered: funnel.recoConsentAnswered,

@@ -51,6 +51,48 @@ export function shouldEmitLateScarcity(
 	);
 }
 
+/**
+ * O card do gate `name` deve sair NESTE turno?
+ *
+ * Produção, 2026-08 (conv do Erik): o texto perguntou o imóvel, o card pediu o
+ * nome, o cliente respondeu ao card — que é o que tem campo pra digitar — e a
+ * pergunta do texto morreu sem resposta. O agente a repetiu no turno seguinte,
+ * parecendo um robô. Foi o padrão mais frequente da base.
+ *
+ * `modelAsked` sozinho não resolve: ele diz que o modelo perguntou ALGUMA
+ * coisa, e serve pro card não repetir a pergunta canônica em dobro. Mas quando a
+ * pergunta do modelo é sobre outro assunto, calar o card não basta — um campo
+ * mudo pedindo nome embaixo de uma pergunta sobre imóvel compete igual.
+ *
+ * Quem manda é a fala (decisão do Kairo, "card só quando a fala pedir"):
+ *   • modelo não perguntou nada → card aparece e faz a pergunta (a rede nunca
+ *     cai: sem isto, um turno social deixaria ninguém perguntando);
+ *   • modelo perguntou o nome    → card complementa, com o input focado;
+ *   • modelo perguntou outra coisa → card cede a vez, UMA vez.
+ *
+ * O "uma vez" é o que reconcilia isto com o FIX-379 (2026-07-26), que decidiu o
+ * OPOSTO a partir de um caso igualmente real: o agente perguntou o valor antes
+ * do nome, o cliente ironizou ("Pode me chamar de 100 reais") e a conclusão foi
+ * que o card precisa sair pra corrigir o desvio do modelo. Os dois casos são o
+ * mesmo fenômeno — o modelo perguntando fora de ordem — julgados de lados
+ * opostos, e os dois julgamentos estão certos sobre o próprio risco: atropelar a
+ * pergunta do agente (Erik) e ficar refém do modelo (FIX-379).
+ *
+ * Ceder por um turno paga os dois: a pergunta do agente é respondida, e se o
+ * nome ainda não veio no turno seguinte o card entra e o funil retoma a ordem.
+ * O pior caso deixa de ser "a venda anda em círculo" e passa a ser "um turno a
+ * mais".
+ */
+export function deveEmitirCardDeNome(args: {
+	modelAsked: boolean;
+	modelAskedForName: boolean;
+	jaAdiouUmaVez?: boolean;
+}): boolean {
+	if (!args.modelAsked) return true;
+	if (args.modelAskedForName) return true;
+	return args.jaAdiouUmaVez === true;
+}
+
 import { artifactAllowed, type GuardContext } from "./guarded-artifact";
 
 export async function emitCardNode(
@@ -149,10 +191,22 @@ export async function emitCardNode(
 		!funnel.qualifyAnswers.embeddedBidDispatched &&
 		!educacaoDoEmbutidoSaiNesteTurno;
 
+	// O card do nome espera quando a fala do turno perguntou OUTRA coisa — sem
+	// isto ele aparecia mudo embaixo de "já tem uma ideia do que procura?" e
+	// roubava a resposta da pergunta do agente. Ver `deveEmitirCardDeNome`.
+	const cardDeNomeAtropelaAFala =
+		state.gate === "name" &&
+		!deveEmitirCardDeNome({
+			modelAsked: state.modelAskedQuestion,
+			modelAskedForName: state.modelAskedForName,
+			jaAdiouUmaVez: funnel.nameCardAdiado,
+		});
+
 	const gateDoTurno =
 		((state.apresentaOfertaNesteTurno || turnoJaPedeAcao) &&
 			!GATES_DE_ACAO.has(String(state.gate ?? ""))) ||
-		perguntaEmbutidoNoEscuro
+		perguntaEmbutidoNoEscuro ||
+		cardDeNomeAtropelaAFala
 			? undefined
 			: state.gate;
 	if (gateDoTurno) {
@@ -354,5 +408,11 @@ export async function emitCardNode(
 	// fazia `gatePartData("credit", metaVelha)` cair no `if (!category) return
 	// null` e NENHUM card aparecia na tela. Ordem é contrato, não detalhe.
 	void config;
+	// Marca que o card do nome já cedeu a vez — no próximo turno ele sai de
+	// qualquer jeito, mesmo que o modelo pergunte outra coisa de novo. É o
+	// limite que impede o adiamento de virar funil refém do modelo (FIX-379).
+	if (cardDeNomeAtropelaAFala && !funnel.nameCardAdiado) {
+		funnel = { ...funnel, nameCardAdiado: true };
+	}
 	return { funnel, events };
 }

@@ -272,6 +272,33 @@ export function querAntecipar(q: NonNullable<ConversationMetadata["qualifyAnswer
 	return q.hasLance === "yes" || q.hasLance === "maybe" || q.lanceEmbutido === true;
 }
 
+/**
+ * O cliente já sinalizou que quer FECHAR? É o que tira do caminho os gates de
+ * qualificação OPCIONAL (`experience`, `timeframe`) — contexto que ajuda a
+ * vender, mas que nunca foi pré-requisito de contratação.
+ *
+ * Nasceu de três clientes reais (Caua, Erik, Monique — produção, 2026-08-10/11)
+ * que receberam "você já fez consórcio antes?" DEPOIS de terem escolhido a cota.
+ * No Caua custou a venda: `experience` disparou por cima do fechamento e o
+ * `contract_form` nunca chegou à tela. O `timeframe` já se protegia com
+ * `!meta.escolha`; o `experience` não tinha guard nenhum, e `experiencePrev` só
+ * é preenchido quando o cliente RESPONDE o gate — então toda conversa que chega
+ * ao reveal sem essa resposta (retomada, WhatsApp, meta reidratado) voltava pro
+ * começo do funil justamente no turno em que a venda estava madura.
+ *
+ * Os três sinais são o mesmo fato em momentos diferentes da mesma reta final:
+ * a cota ancorada (o cliente NOMEOU o que quer), a decisão aceita (ele disse
+ * sim ao card) e o formulário já na tela (o fecho começou). Qualquer um deles
+ * basta. Os gates de COLETA (credit, identify, lance) continuam bloqueando —
+ * sem aqueles dados a Bevi não simula nem contrata, e isso é invariante, não
+ * conversa. Pura.
+ */
+export function fechamentoSinalizado(meta: ConversationMetadata): boolean {
+	return (
+		Boolean(meta.escolha) || meta.decisionAccepted === true || meta.contractFormDispatched === true
+	);
+}
+
 export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: boolean }): Gate {
 	// FIX-364 (bloco-h-resume-mesa): contrato fechado é estado TERMINAL —
 	// checa ANTES de qualquer outro gate, independente de qual flag
@@ -382,7 +409,10 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	// 1º gate do funil (linha logo após o nome); ver ADR
 	// docs/decisoes/blocos/2026-07-09-agente-vendas-consorcio.md (D2).
 	if (meta.revealCompleted) {
-		if (!meta.experiencePrev) return "experience";
+		// O guard de fechamento (ver `fechamentoSinalizado`) é o que impede este
+		// gate de atropelar a venda madura: quem já escolheu a cota não volta pra
+		// "você já fez consórcio antes?".
+		if (!meta.experiencePrev && !fechamentoSinalizado(meta)) return "experience";
 		if (meta.experiencePrev === "doubts" && !meta.doubtsAddressed) return "doubts-wait";
 
 		// FIX-297 (rodada 10, 2026-07-12) — reveal em DOIS TEMPOS com
@@ -431,7 +461,9 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 		// prazo que vale é o da cota, `recommendedOffer.termMonths`). Segurar o
 		// fecho aqui foi o que fez o cliente pedir "bora contratar" três turnos
 		// seguidos enquanto o agente respondia que ainda não havia proposta.
-		if (!meta.escolha && q.prazoMeses === undefined) return "timeframe";
+		// `escolha` era o único sinal de fechamento aqui; `decisionAccepted` e o
+		// formulário já na tela valem o mesmo (ver `fechamentoSinalizado`).
+		if (!fechamentoSinalizado(meta) && q.prazoMeses === undefined) return "timeframe";
 	}
 
 	// FIX-215 (Refino Ata 2026-07-04): a conversa de lance (recurso próprio +

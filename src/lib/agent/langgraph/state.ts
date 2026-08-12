@@ -99,6 +99,11 @@ export type FunnelState = {
 	 * comportamento de formulário que este produto combate — e porque a
 	 * explicação precisa acontecer UMA vez, não a cada turno. */
 	explicouComoFunciona?: boolean;
+	/** O card do gate `name` já cedeu a vez UMA vez pra uma pergunta que o
+	 * modelo fez sobre outro assunto. É o que impede o adiamento de virar
+	 * refém: no turno seguinte o card sai de qualquer jeito. Ver
+	 * `deveEmitirCardDeNome` (emit-card.ts) e o FIX-379. */
+	nameCardAdiado?: boolean;
 	// FIX-360 — card único (`topic_picker`) pro usuário novato logo após
 	// `experience` resolver, antes do convite de recomendação.
 	topicPickerDispatched?: boolean;
@@ -188,6 +193,7 @@ export const FUNNEL_KEYS = {
 	experiencePrev: true,
 	doubtsAddressed: true,
 	explicouComoFunciona: true,
+	nameCardAdiado: true,
 	topicPickerDispatched: true,
 	recoConsentDispatched: true,
 	recoConsentAnswered: true,
@@ -244,6 +250,7 @@ export function funnelFromMeta(meta: ConversationMetadata): FunnelState {
 		experiencePrev: meta.experiencePrev,
 		doubtsAddressed: meta.doubtsAddressed,
 		explicouComoFunciona: meta.explicouComoFunciona,
+		nameCardAdiado: meta.nameCardAdiado,
 		topicPickerDispatched: meta.topicPickerDispatched,
 		recoConsentDispatched: meta.recoConsentDispatched,
 		recoConsentAnswered: meta.recoConsentAnswered,
@@ -308,6 +315,16 @@ export const AgentGraphState = Annotation.Root({
 	 * social sem pergunta desligava a rede de segurança e o turno acabava sem
 	 * ninguém perguntando nada. */
 	modelAskedQuestion: Annotation<boolean>({
+		reducer: (a, b) => b ?? a,
+		default: () => false,
+	}),
+
+	/** A pergunta que o modelo fez neste turno é a DO NOME. Distinto de
+	 * `modelAskedQuestion`, que só diz que ele perguntou alguma coisa: em
+	 * produção o agente perguntava o imóvel e o card de nome aparecia mudo
+	 * embaixo, o cliente respondia ao campo e a pergunta do texto morria sem
+	 * resposta. Ver `deveEmitirCardDeNome` (emit-card.ts). */
+	modelAskedForName: Annotation<boolean>({
 		reducer: (a, b) => b ?? a,
 		default: () => false,
 	}),

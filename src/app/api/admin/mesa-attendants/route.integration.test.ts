@@ -103,13 +103,20 @@ describeIfDb("FIX-63 — mesa-attendants CRUD (integration)", () => {
 		const { getMesaAttendantList, invalidateMesaAttendantCache } = await import(
 			"@/lib/whatsapp/mesa/routing"
 		);
-		invalidateMesaAttendantCache();
-
 		const [created] = await db
 			.insert(schema.mesaAttendants)
 			.values({ nome: "Cache Fix-175", whatsapp: "5562977776666", isActive: true })
 			.returning();
 		createdIds.push(created.id);
+
+		// A invalidação vem DEPOIS do insert, não antes (2026-08-12: era antes, e a
+		// suíte completa falhava aqui de forma intermitente). O cache é global e
+		// dura 60s; com o invalidate na frente, qualquer arquivo rodando em
+		// paralelo que lesse a lista na janela entre ele e o insert reaquecia o
+		// cache SEM o atendente recém-criado, e a leitura abaixo pegava esse cache
+		// velho. Invalidando depois, qualquer reaquecimento concorrente já enxerga
+		// a linha nova.
+		invalidateMesaAttendantCache();
 
 		// Aquece o cache com o atendente ATIVO (mesma leitura que o broadcast faz).
 		const before = await getMesaAttendantList();
