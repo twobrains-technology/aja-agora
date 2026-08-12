@@ -287,6 +287,27 @@ export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
 			// experiência, o hero sai direto, sem pedir licença. Ver `nextGate`.
 			if (meta.experiencePrev !== undefined) return false;
 			if (meta.recoConsentAnswered === true) return false;
+			// 2026-08-12 — O PORTÃO É A CHANCE, NÃO A RESPOSTA.
+			//
+			// Medido em produção: o `recommendation_card` NUNCA saía. O cliente via
+			// só a `comparison_table`, o agente ficava sem a recomendação ancorada e,
+			// ao ouvir "quero essa mesma", respondia "não consigo ver qual cota você
+			// está vendo na tela".
+			//
+			// A causa é a soma de duas mudanças certas: o portão do hero virou a
+			// EXPERIÊNCIA (2026-07-21, quando o convite saiu da cascata) e, no mesmo
+			// dia de hoje, o gate `experience` ganhou idempotência — pergunta uma vez
+			// e, sem resposta, o funil SEGUE, porque é qualificação opcional e estava
+			// travando a venda. Juntas, prendem o hero para sempre: antes o gate
+			// insistia turno após turno e `experiencePrev` acabava preenchido; agora
+			// ele fica `undefined` e o guard espera por uma resposta que ninguém mais
+			// vai pedir.
+			//
+			// Mesma regra dos dois lados: o que não bloqueia o funil não bloqueia o
+			// card. Perguntada a experiência (`experienceDispatched`), o hero sai —
+			// e quem já escolheu a cota vê a recomendação de qualquer jeito.
+			if (meta.experienceDispatched === true) return false;
+			if (meta.escolha) return false;
 			if (artifactType === "recommendation_card") return true;
 			// FIX-376 (Kairo, web ao vivo 2026-07-25): `group_card` recebe o MESMO
 			// hold. O system-prompt oferece `present_group_card` como caminho
