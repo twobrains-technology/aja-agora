@@ -55,7 +55,11 @@ describe("FIX-364 — nextGate nunca re-emite gate de qualificação com contrat
 			searchDispatched: true,
 			revealCompleted: true,
 			experiencePrev: "returning",
-			escolha: { origem: "mencao" },
+			// SEM `escolha`: o ponto deste caso é provar que a cascata roda quando o
+			// contrato não fechou. Com a cota ancorada ele deixou de medir isso — a
+			// cascata passou a (corretamente) levar direto ao contrato, porque lance
+			// não barra mais quem já escolheu (2026-08-12, o defeito do Caua). O
+			// caso de cima, esse sim, mantém `escolha` e prova o short-circuit.
 			qualifyAnswers: { creditMax: 80_000, creditMin: 60_000, prazoMeses: 24 },
 		};
 		expect(nextGate(meta, { hasContactName: true })).toBe("lance");

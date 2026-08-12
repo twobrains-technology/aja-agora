@@ -99,6 +99,8 @@ export type FunnelState = {
 	 * comportamento de formulário que este produto combate — e porque a
 	 * explicação precisa acontecer UMA vez, não a cada turno. */
 	explicouComoFunciona?: boolean;
+	/** O gate `experience` já foi PERGUNTADO — ver `ConversationMetadata`. */
+	experienceDispatched?: boolean;
 	/** O card do gate `name` já cedeu a vez UMA vez pra uma pergunta que o
 	 * modelo fez sobre outro assunto. É o que impede o adiamento de virar
 	 * refém: no turno seguinte o card sai de qualquer jeito. Ver
@@ -193,6 +195,7 @@ export const FUNNEL_KEYS = {
 	experiencePrev: true,
 	doubtsAddressed: true,
 	explicouComoFunciona: true,
+	experienceDispatched: true,
 	nameCardAdiado: true,
 	topicPickerDispatched: true,
 	recoConsentDispatched: true,
@@ -250,6 +253,7 @@ export function funnelFromMeta(meta: ConversationMetadata): FunnelState {
 		experiencePrev: meta.experiencePrev,
 		doubtsAddressed: meta.doubtsAddressed,
 		explicouComoFunciona: meta.explicouComoFunciona,
+		experienceDispatched: meta.experienceDispatched,
 		nameCardAdiado: meta.nameCardAdiado,
 		topicPickerDispatched: meta.topicPickerDispatched,
 		recoConsentDispatched: meta.recoConsentDispatched,

@@ -408,6 +408,12 @@ export async function emitCardNode(
 	// fazia `gatePartData("credit", metaVelha)` cair no `if (!category) return
 	// null` e NENHUM card aparecia na tela. Ordem é contrato, não detalhe.
 	void config;
+	// O gate `experience` foi perguntado NESTE turno — não pergunta de novo. Ver
+	// a nota em `nextGate`: era o único gate opcional sem guarda de idempotência,
+	// e reaparecia turno após turno enquanto a resposta não viesse.
+	if (gateDoTurno === "experience" && !funnel.experienceDispatched) {
+		funnel = { ...funnel, experienceDispatched: true };
+	}
 	// Marca que o card do nome já cedeu a vez — no próximo turno ele sai de
 	// qualquer jeito, mesmo que o modelo pergunte outra coisa de novo. É o
 	// limite que impede o adiamento de virar funil refém do modelo (FIX-379).

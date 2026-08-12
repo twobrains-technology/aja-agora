@@ -412,7 +412,20 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 		// O guard de fechamento (ver `fechamentoSinalizado`) é o que impede este
 		// gate de atropelar a venda madura: quem já escolheu a cota não volta pra
 		// "você já fez consórcio antes?".
-		if (!meta.experiencePrev && !fechamentoSinalizado(meta)) return "experience";
+		// `experienceDispatched` é a guarda de idempotência que faltava — e a
+		// ausência dela era o defeito mais caro daqui. `experience` era o ÚNICO
+		// gate opcional sem uma (`recoConsentDispatched`,
+		// `simulatorOfferDispatched`, `decisionDispatched`, `scarcityDispatched`,
+		// `contractFormDispatched` todos têm), então `nextGate` o devolvia
+		// enquanto `experiencePrev` estivesse vazio — e ele fica vazio PARA SEMPRE
+		// quando o cliente não responde e segue falando de outra coisa. Sonda de
+		// conversa real (2026-08-12): três turnos seguidos com `gate=experience`,
+		// o cliente dizendo "bora fechar" e ouvindo "já fez consórcio antes?".
+		// Pergunta uma vez; sem resposta, o funil segue — o dado ajuda a vender,
+		// não é pré-requisito de nada.
+		if (!meta.experiencePrev && !meta.experienceDispatched && !fechamentoSinalizado(meta)) {
+			return "experience";
+		}
 		if (meta.experiencePrev === "doubts" && !meta.doubtsAddressed) return "doubts-wait";
 
 		// FIX-297 (rodada 10, 2026-07-12) — reveal em DOIS TEMPOS com
@@ -481,15 +494,34 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	// assunto (analyzer captura `hasLance`), a jornada de lance segue normal.
 	const semPressa = q.objetivo === "investimento" || (q.prazoMeses ?? 0) >= 120;
 
+	// A ÚLTIMA PORTA DO DEFEITO DO CAUA (sonda de conversa real, 2026-08-12).
+	//
+	//   👤 Quero essa mesma, bora fechar
+	//   🤖 ...Antes de seguir pro contrato, você já teve consórcio antes?
+	//   👤 isso, quero contratar
+	//   🤖 Bora! Só falta um detalhe: você teria como dar algum lance próprio?
+	//
+	// O cliente pediu o contrato duas vezes e recebeu duas perguntas. Com a cota
+	// já ancorada, a cascata de lance seguia barrando o caminho até o formulário.
+	//
+	// Lance não é pré-requisito de contratação — o comentário logo abaixo já diz
+	// o porquê: ele existe pra ANTECIPAR a contemplação. É bom argumento de
+	// venda, e continua inteiro pra quem ainda está decidindo; mas quem escolheu
+	// a cota e pede o contrato não pode ser barrado por ele. Vendedor humano
+	// fecha e oferece o lance junto, não segura o contrato como refém da
+	// resposta. Os gates de COLETA de verdade (identify, credit) continuam
+	// bloqueando acima — sem CPF e sem faixa a Bevi não contrata.
+	const fechando = fechamentoSinalizado(meta);
+
 	if (meta.revealCompleted) {
-		if (!q.hasLance && !semPressa) return "lance";
+		if (!fechando && !q.hasLance && !semPressa) return "lance";
 		// Lance embutido e simulador de contemplação existem por UM motivo:
 		// ANTECIPAR a contemplação. Quem acabou de dizer "por enquanto não" ou "só
 		// a parcela" não quer isso — insistir depois da recusa é o agente
 		// perguntando o que o cliente já respondeu, e foi exatamente o que
 		// atravancou a venda de quem só queria a menor parcela (visto ao vivo,
 		// 2026-07-21). Quem topa (yes/maybe) segue a jornada inteira.
-		if (querAntecipar(q)) {
+		if (!fechando && querAntecipar(q)) {
 			// Jornada do doc (passo 2, linha 21-22): quem TEM reserva responde "Qual
 			// valor aproximado?" — o valor do lance vem do USUÁRIO, nunca derivado
 			// silenciosamente (auditoria 2026-06-04: derivação de 30% era MISSING do docx).
@@ -713,6 +745,21 @@ export function decideShowGate(args: {
 	// pergunta de qualificação pendente. Todos os outros gates (incluindo
 	// `COLLECTION_GATES` — credit/lance/etc., já cobertos por teste explícito
 	// de regressão) continuam sob a trava original abaixo.
+	//
+	// 2026-08-12 — `ready_to_proceed` sai do bypass, e SÓ para `experience`.
+	// Sonda de conversa real: o cliente disse "Quero essa mesma, bora fechar" e
+	// ouviu "Antes de seguirmos pra contratação, me conta: você já fez consórcio
+	// antes?". É o defeito do Caua por outra porta — o guard de `nextGate`
+	// (`fechamentoSinalizado`) depende de `meta.escolha`, e escolha por TEXTO foi
+	// removida de propósito no FIX-406 ("só via clique no card"), então naquele
+	// turno não há `escolha` pra ele enxergar. O sinal que existe é o intent.
+	//
+	// O FIX-317 continua valendo no que ele protegia: foi desenhado contra
+	// intents de DESVIO (pergunta, dúvida, confusão, off-topic) e contra o
+	// blanket de `wants_more_options`. `ready_to_proceed` não é desvio — é o
+	// oposto. `identify` NÃO entra na exceção: é gate de COLETA, e sem CPF a Bevi
+	// não simula nem contrata, então ele não cede nem pra quem quer fechar.
+	if (gate === "experience" && intent === "ready_to_proceed") return false;
 	if (
 		(gate === "experience" || gate === "identify") &&
 		!(

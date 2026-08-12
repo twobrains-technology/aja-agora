@@ -173,6 +173,78 @@ const ROTEIROS: Roteiro[] = [
 			{ user: "não, prefiro usar só o meu dinheiro", nota: "🔴 O TURNO DO BUG — recusa" },
 		],
 	},
+	// ── Rodada 2026-08-12: os defeitos levantados na varredura de produção ──
+	{
+		id: "nome-de-frase",
+		titulo: "Nome — frase e rótulo de botão não podem virar nome do lead",
+		olharPara:
+			'o agente passa a chamar o cliente de "Ainda" ou "Quitar"? o nome só é adotado quando ele de fato se apresenta?',
+		turnos: [
+			{ user: "oi", nota: "" },
+			{ user: "quero comprar um carro", nota: "" },
+			{
+				user: "Ainda não sei bem qual modelo",
+				nota: "🔴 produção: virava contact_name = 'Ainda'",
+			},
+			{
+				user: "Quitar o financiamento atual",
+				nota: "🔴 produção: rótulo de botão virava contact_name = 'Quitar' (5 leads assim)",
+			},
+			{ user: "Pode me chamar de Rafael", nota: "agora sim — daqui pra frente é Rafael" },
+		],
+	},
+	{
+		id: "reveal-sem-narracao",
+		titulo: "Reveal — sem narrar falha da máquina e sem bolha de pontuação",
+		olharPara:
+			'aparece "travou", "de outro jeito", "tentar de novo", "um segundo"? algum balão só com ")" ou "..."? o agente repete a mesma frase em turnos seguidos?',
+		turnos: [
+			{ user: "oi", nota: "" },
+			{ user: "quero comprar um carro", nota: "" },
+			{ user: "Rafael", nota: "nome" },
+			{ user: "uns 90 mil", nota: "valor do bem" },
+			{ user: "é pra trabalhar", nota: "motivo" },
+			{
+				user: "Enviei meus dados pra buscar as ofertas",
+				nota: "form de CPF (clique de card)",
+				action: {
+					kind: "gate",
+					gate: "identify",
+					value: { cpf: "33880599858", celular: "11995432576", lgpd: true },
+					label: "Enviei meus dados pra buscar as ofertas",
+				},
+			},
+			{ user: "e agora?", nota: "🔴 o turno do reveal — onde a Bruna leu 'a busca travou'" },
+		],
+	},
+	{
+		id: "fecho-sem-voltar",
+		titulo: "Fechamento — o funil não volta a perguntar a experiência",
+		olharPara:
+			'depois de escolher a cota, o agente pergunta "já fez consórcio antes?" ou segue pro contrato? o contract_form aparece?',
+		turnos: [
+			{ user: "oi", nota: "" },
+			{ user: "quero comprar um carro", nota: "" },
+			{ user: "Rafael", nota: "nome" },
+			{ user: "uns 90 mil", nota: "valor do bem" },
+			{ user: "é pra trabalhar", nota: "motivo" },
+			{
+				user: "Enviei meus dados pra buscar as ofertas",
+				nota: "form de CPF",
+				action: {
+					kind: "gate",
+					gate: "identify",
+					value: { cpf: "33880599858", celular: "11995432576", lgpd: true },
+					label: "Enviei meus dados pra buscar as ofertas",
+				},
+			},
+			{
+				user: "Quero essa mesma, bora fechar",
+				nota: "🔴 o turno do Caua — aqui o `experience` atropelava e matava o contract_form",
+			},
+			{ user: "isso, quero contratar", nota: "reforça o fecho" },
+		],
+	},
 ];
 
 /** Lê o stream do /api/chat e separa o que o cliente VÊ: texto e artifacts. */

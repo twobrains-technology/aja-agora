@@ -142,6 +142,10 @@ export type ConversationMetadata = {
 	 * `experiencePrev === "doubts"` — nunca mais dependente do LLM chamar
 	 * `present_topic_picker` (0 emissões medidas em 2 dossiês limpos, r10). */
 	topicPickerDispatched?: boolean;
+	/** O gate `experience` já foi PERGUNTADO. Qualificação opcional pergunta uma
+	 * vez; sem resposta, o funil segue (o dado ajuda a vender, não é
+	 * pré-requisito). Sem esta flag ele reaparecia turno após turno. */
+	experienceDispatched?: boolean;
 	/** O card do gate `name` já cedeu a vez UMA vez pra uma pergunta que o modelo
 	 * fez sobre outro assunto — no próximo turno ele sai de qualquer jeito. Ver
 	 * `deveEmitirCardDeNome` (emit-card.ts). */
