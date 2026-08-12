@@ -125,94 +125,6 @@ export function isTechnicalFallback(segment: string): boolean {
 	return TECHNICAL_FALLBACK_PATTERNS.some((rx) => rx.test(s));
 }
 
-// O agente contando pro cliente que a MÁQUINA falhou ou que vai tentar de novo.
-//
-// Produção, 2026-08 (conv 31dc7e52, literal do banco): "Agora vou trazer as
-// melhores opções pra você com R$ 300 mil. Um segundo aí. Deixa eu tentar de
-// outro jeito aqui. Infelizmente a busca travou por um segundo." — e o
-// `comparison_table` saiu no MESMO turno, logo em seguida. A busca não travou:
-// o modelo narrou um retry interno e o cliente leu "travou" antes de ver as
-// ofertas aparecerem normais. 6 ocorrências de "de outro jeito" na base.
-//
-// Irmão do FIX-190 (fallback técnico) e do FIX-283 (narração do mecanismo): o
-// que acontece dentro da máquina não é assunto do cliente — vendedor não conta
-// que o sistema dele engasgou, ele só entrega. Vive em `factualDropReason`, não
-// em estilo, porque a frase afirma um FATO, e no caso da Bruna um fato falso.
-//
-// A fronteira: honestidade sobre o NEGÓCIO passa inteira. "As opções na sua
-// faixa estão limitadas hoje" e "não achei nada nessa faixa" são verdade sobre a
-// OFERTA — o directive de escassez inclusive manda dizer. Por isso os padrões
-// exigem um sujeito de MÁQUINA (busca/sistema/conexão) junto do verbo de falha:
-// "não encontrei grupos" nunca cai aqui, "a busca falhou" sempre cai.
-const INTERNAL_FAILURE_PATTERNS: RegExp[] = [
-	// Retentativa anunciada: "deixa eu tentar de outro jeito", "vou tentar de novo".
-	/\b(deixa\s+eu|vou)\s+tentar\s+(de\s+(outro|outra)\s+\w+|de\s+novo|novamente|outra\s+vez)\b/i,
-	// Sujeito de máquina + verbo de falha. O sujeito é obrigatório: sem ele,
-	// "não encontrei nada nessa faixa" (verdade de negócio) seria dropado junto.
-	/\b(a\s+)?(busca|consulta|pesquisa|simula[çc][ãa]o)\s+(travou|falhou|caiu|n[ãa]o\s+(funcionou|respondeu|retornou|carregou)|deu\s+(erro|problema|pau))\b/i,
-	/\b(o\s+)?sistema\s+(travou|falhou|caiu|engasgou|est[áa]\s+(fora|inst[áa]vel|lento|com\s+problema))\b/i,
-	/\bdeu\s+(um\s+)?(erro|problema|pau)\s+(na|no|aqui|com)\b/i,
-	/\btive\s+(um\s+)?(problema|erro)\s+(t[ée]cnico|aqui|na\s+busca)\b/i,
-	/\binstabilidade\s+(no|na|do|da)\s+(sistema|busca|conex[ãa]o|plataforma)\b/i,
-	// O agente confessando a própria arquitetura. Produção 2026-08-12 (conv
-	// 5f02e068): "parece que não consigo ver qual cota você está vendo na tela".
-	// Não há verbo de falha nem nome de ferramenta aqui — é uma explicação de
-	// COMO O AGENTE É FEITO —, por isso escapava dos padrões acima e também do
-	// `mechanism-narration`. O cliente não precisa saber o que o agente enxerga;
-	// precisa saber o que fazer. A âncora exige o par "não + verbo de percepção"
-	// junto de tela/cards/o que você vê, pra não pegar "não encontrei grupos"
-	// (verdade de negócio, que passa).
-	/\bn[ãa]o\s+(consigo|estou\s+conseguindo|posso|tenho\s+como|estou)\s+(ver|enxergar|visualizar|acessar|enxergando|vendo)\b[\s\S]{0,40}\b(tela|cards?|o\s+que\s+(voc[êe]|vc)\s+(est[áa]\s+)?(vendo|v[êe])|do\s+seu\s+lado|a[íi]\s+pra\s+voc[êe])/i,
-	/\bn[ãa]o\s+tenho\s+acesso\s+(a|ao|à)\s+[\s\S]{0,30}\b(tela|cards?|o\s+que\s+(aparece|voc[êe])|a[íi]\s+pra\s+voc[êe])/i,
-];
-
-/**
- * O segmento conta ao cliente uma falha ou retentativa do MECANISMO — não pode
- * virar bolha. Ver `INTERNAL_FAILURE_PATTERNS` para o caso real e para a
- * fronteira com honestidade de negócio (que passa).
- */
-export function isInternalFailureNarration(segment: string): boolean {
-	const s = segment.trim();
-	if (!s) return false;
-	return INTERNAL_FAILURE_PATTERNS.some((rx) => rx.test(s));
-}
-
-/**
- * Tira a SEGUNDA (e seguintes) chamada pelo nome no mesmo turno.
- *
- * Produção 2026-08-12: "Ótimo, Rafael! Rafael, desculpa, parece que…" — o nome
- * duas vezes em frases coladas, que é como ninguém fala. Estava no inventário
- * desde a varredura das conversas ("Beleza, Erik. Opa, Erik!") e só reproduziu
- * agora.
- *
- * Opera só no VOCATIVO — o nome isolado por pontuação, que é o uso "chamar a
- * pessoa". O nome no meio de uma frase ("o consórcio do Rafael Silva") não é
- * vocativo e fica intacto: cortar ali mudaria o sentido, não o tom.
- *
- * É guard de ESTILO e nada mais: nunca remove informação, só a repetição. Pura.
- */
-export function semVocativoRepetido(texto: string, contactName: string | null): string {
-	if (!contactName || !texto) return texto;
-	const nome = contactName.trim().split(/\s+/)[0];
-	if (nome.length < 2) return texto;
-	const escapado = nome.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-	// Vocativo = nome precedido por começo/pontuação e seguido de pontuação. O
-	// lookbehind é o que permite duas ocorrências ADJACENTES ("…, Rafael! Rafael,
-	// …") serem vistas como duas: consumindo a pontuação da frente, a primeira
-	// match comia a fronteira de que a segunda precisava.
-	const vocativo = new RegExp(`(?<=^|[,;!?.]\\s*)${escapado}([,!?.]\\s*)`, "giu");
-
-	let vistos = 0;
-	return texto
-		.replace(vocativo, (match) => {
-			vistos += 1;
-			return vistos === 1 ? match : "";
-		})
-		.replace(/([.!?]\s+)(\p{Ll})/gu, (_m, p: string, letra: string) => p + letra.toUpperCase())
-		.replace(/\s{2,}/g, " ")
-		.trim();
-}
-
 // FIX-234 (handoff agente-vendas-consorcio, 2026-07-09 — D7/05-compliance) —
 // "reduzir o prazo"/"terminar antes"/"quitar antes": o abatimento do lance
 // (dinheiro OU embutido) vira PARCELA MENOR, nunca prazo menor. Prometer prazo
@@ -746,9 +658,6 @@ export function scrubCpf(text: string): string {
 /** Fatos reais do turno/conversa contra os quais uma afirmação de estado é
  * verificada — NUNCA a narrativa do LLM (Lei 1/5). FIX-270. */
 export type StateVerificationContext = {
-	/** Primeiro nome do cliente, quando já capturado. Serve ao guard de vocativo
-	 * repetido — sem ele, não há como saber qual palavra é "o nome dele". */
-	contactName?: string | null;
 	/** true só quando `meta.documentSlotsSent` tem upload confirmado de fato. */
 	hasReceivedDocuments: boolean;
 	/** true só quando uma tool de busca (search_groups/recommend_groups) já
@@ -963,9 +872,6 @@ export function isPrematureTopOfferClaim(segment: string, ctx?: StateVerificatio
 export type EphemeralDropReason =
 	| "process-preamble"
 	| "technical-fallback"
-	/** O agente contou pro cliente que a máquina falhou ou que vai tentar de
-	 * novo ("a busca travou", "deixa eu tentar de outro jeito"). */
-	| "internal-failure-narration"
 	| "prazo-reduction"
 	| "premature-reservation"
 	| "banned-lexicon"
@@ -999,7 +905,6 @@ function factualDropReason(
 	ctx?: StateVerificationContext,
 ): EphemeralDropReason | null {
 	if (isTechnicalFallback(segment)) return "technical-fallback";
-	if (isInternalFailureNarration(segment)) return "internal-failure-narration";
 	if (isPrazoReductionClaim(segment)) return "prazo-reduction";
 	if (isPrematureReservationClaim(segment, ctx)) return "premature-reservation";
 	if (isTaxaContemplacaoClaim(segment)) return "taxa-contemplacao";
@@ -1198,8 +1103,6 @@ export class EphemeralTextFilter {
 	private ultimoEmitido = "";
 	/** Nenhuma pergunta pode sair (1º beat do reveal: só apresentação). */
 	private perguntasProibidas = false;
-	/** O cliente já foi chamado pelo nome NESTE turno — a segunda chamada cai. */
-	private vocativoJaSaiu = false;
 	// FIX-347: motivos (guards) que já dropParam pelo menos 1 segmento neste
 	// turno — permite ao runner distinguir "o modelo não disse nada" de "o
 	// modelo disse algo e o sanitizer comeu tudo", pra dar uma segunda chance
@@ -1285,7 +1188,7 @@ export class EphemeralTextFilter {
 		const ctx = this.getContext?.();
 		const segments = splitSegments(complete);
 		let out = "";
-		for (let seg of segments) {
+		for (const seg of segments) {
 			// GANCHO PENDURADO: um trecho que termina em ":" ou "," não é uma frase,
 			// é a abertura da próxima ("Rodrigo, me confirma:"). Se o que vinha
 			// depois for dropado (pergunta extra, preâmbulo), o gancho fica sozinho
@@ -1309,26 +1212,6 @@ export class EphemeralTextFilter {
 				// O gancho vai junto (mesma razão de descarte já registrada acima).
 				this.gancho = "";
 				continue;
-			}
-			// O nome do cliente é chamado UMA vez por turno. Produção 2026-08-12:
-			// "Ótimo, Rafael! Rafael, desculpa, parece que…" — duas chamadas em
-			// frases coladas, que é como ninguém fala. Só o VOCATIVO cai; o nome
-			// dentro da frase fica (cortar ali mudaria o sentido, não o tom).
-			const nome = ctx?.contactName?.trim().split(/\s+/)[0];
-			if (nome && nome.length >= 2) {
-				const escapado = nome.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-				// `\s*` no início porque o split mantém o espaço que separa as frases —
-				// sem ele, " Rafael, desculpa" não casava e a segunda chamada passava.
-				const abreComVocativo = new RegExp(`^(\\s*)${escapado}\\s*[,!.?]\\s*`, "iu");
-				const temVocativo = new RegExp(`(^|[,;!?.]\\s*)${escapado}\\s*[,!.?]`, "iu");
-				if (this.vocativoJaSaiu && abreComVocativo.test(seg)) {
-					// Preserva o espaço separador que o split deixou — ele é o que
-					// impede a frase de colar na anterior.
-					seg = seg.replace(abreComVocativo, "$1");
-					seg = seg.replace(/^(\s*)(\p{Ll})/u, (_m, sp: string, l: string) => sp + l.toUpperCase());
-				} else if (temVocativo.test(seg)) {
-					this.vocativoJaSaiu = true;
-				}
 			}
 			if (this.gancho) {
 				const gancho = this.gancho;

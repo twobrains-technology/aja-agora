@@ -154,7 +154,7 @@ describeIfDb("agora — sala de guerra (integration)", () => {
 	describe("computeConversasAoVivo", () => {
 		it("traz a última mensagem de cada conversa, não a primeira", async () => {
 			const id = await semearConversa({ ultimaDe: "user", minutosAtras: 1, nome: "Joana Teste" });
-			const lista = await queries.computeConversasAoVivo();
+			const lista = await queries.computeConversasAoVivo(500);
 			const minha = lista.find((c) => c.conversationId === id);
 
 			expect(minha).toMatchObject({
@@ -167,7 +167,7 @@ describeIfDb("agora — sala de guerra (integration)", () => {
 
 		it("marca como não-esperando quando quem falou por último foi o agente", async () => {
 			const id = await semearConversa({ ultimaDe: "assistant", minutosAtras: 1 });
-			const lista = await queries.computeConversasAoVivo();
+			const lista = await queries.computeConversasAoVivo(500);
 
 			expect(lista.find((c) => c.conversationId === id)?.esperandoResposta).toBe(false);
 		});
@@ -215,9 +215,13 @@ describeIfDb("agora — sala de guerra (integration)", () => {
 	});
 
 	describe("esperaCritica", () => {
+		// Limite alto pelo mesmo motivo do caso do pulso: com o default (40), uma
+		// base movimentada — outros arquivos de integração rodando em paralelo
+		// contra o MESMO banco — empurra a conversa semeada pra fora da página e o
+		// teste falha medindo paginação em vez da regra.
 		it("só alerta quando o cliente está esperando E o tempo passou do limite", async () => {
 			const id = await semearConversa({ ultimaDe: "user", minutosAtras: 12 });
-			const lista = await queries.computeConversasAoVivo();
+			const lista = await queries.computeConversasAoVivo(500);
 			const critica = lista.find((c) => c.conversationId === id);
 
 			expect(critica && queries.esperaCritica(critica)).toBe(true);
@@ -225,7 +229,7 @@ describeIfDb("agora — sala de guerra (integration)", () => {
 
 		it("não alerta por conversa parada em que o agente já respondeu", async () => {
 			const id = await semearConversa({ ultimaDe: "assistant", minutosAtras: 40 });
-			const lista = await queries.computeConversasAoVivo();
+			const lista = await queries.computeConversasAoVivo(500);
 			const calma = lista.find((c) => c.conversationId === id);
 
 			expect(calma && queries.esperaCritica(calma)).toBe(false);
