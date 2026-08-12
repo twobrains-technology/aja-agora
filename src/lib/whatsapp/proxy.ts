@@ -21,6 +21,7 @@ import type { ConversationMetadata } from "@/lib/agent/personas";
 import { quemRespondePara } from "@/lib/agent/quem-responde";
 import { publishMessage } from "@/lib/chat/message-bus";
 import { triggerEvalScoring } from "@/lib/eval/trigger";
+import { ehNomeProprioPlausivel } from "@/lib/leads/contact-capture";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { runDirectiveWithOrchestrator } from "./adapter";
 import { sendTextMessage } from "./api";
@@ -185,6 +186,32 @@ export async function startInterestHandoff(
  *   2. If qualification finished and the user expresses interest, start handoff.
  * Returns true if handled (caller should stop); false to continue with AI flow.
  */
+/**
+ * O texto que o cliente mandou depois de "qual seu nome completo?" serve como
+ * nome? Devolve o nome limpo, ou `null` quando não é nome.
+ *
+ * Este é o TERCEIRO caminho de escrita de `contactName` (os outros dois são
+ * `saveContactName` e `captureAnswerNode`) e o mais exposto: o nome daqui vai
+ * direto pro dossiê que o atendente humano recebe. Ele gravava o texto
+ * VERBATIM, sem validação nenhuma — uma resposta confusa ("não sei", "isso
+ * mesmo") virava o nome do lead na mesa. Achado em revisão adversarial,
+ * 2026-08-12, depois de os outros dois caminhos já terem sido fechados.
+ *
+ * Usa a mesma fonte de verdade dos outros (`ehNomeProprioPlausivel`) — duas
+ * listas divergentes foi exatamente como o defeito do "Voltei" sobreviveu ao
+ * primeiro conserto. E aplica o mesmo limite de tamanho: nome é resposta curta,
+ * frase não é apresentação.
+ */
+export function nomeParaHandoff(texto: string): string | null {
+	const limpo = texto.trim().replace(/\s+/g, " ");
+	if (!limpo) return null;
+	const palavras = limpo.split(" ");
+	if (palavras.length > 3) return null;
+	if (!/^[\p{L}\s'-]+$/u.test(limpo)) return null;
+	if (!ehNomeProprioPlausivel(palavras[0])) return null;
+	return limpo;
+}
+
 export async function handlePendingHandoffText(from: string, text: string): Promise<boolean> {
 	const handoff = await getHandoffState(from);
 	if (!handoff?.conversationId) return false;
@@ -197,18 +224,23 @@ export async function handlePendingHandoffText(from: string, text: string): Prom
 	if (meta?.awaitingName) {
 		const agents = await getAttendantList();
 		if (agents.length > 0) {
+			// Só grava se for nome (ver `nomeParaHandoff`). O encaminhamento NÃO
+			// depende disso: quem pediu atendimento humano recebe atendimento
+			// humano, com nome ou sem. O que não pode é a mesa receber "não sei"
+			// como nome do cliente.
+			const nome = nomeParaHandoff(text);
 			await db
 				.update(conversations)
 				.set({
 					metadata: { ...meta, awaitingName: false },
-					contactName: text,
+					...(nome ? { contactName: nome } : {}),
 					updatedAt: simulatorNow(),
 				})
 				.where(eq(conversations.id, handoff.conversationId));
 
 			const history = await loadConversationHistory(handoff.conversationId);
 			const summary = buildConversationSummary(history, []);
-			await handoffToAgents(handoff.conversationId, from, text, summary);
+			await handoffToAgents(handoff.conversationId, from, nome ?? text, summary);
 			return true;
 		}
 	}

@@ -34,6 +34,19 @@ describe("nome de modelo não vira valor do bem", () => {
 		}
 	});
 
+	// Revisão adversarial, 2026-08-12 — o primeiro corte da allowlist tinha um
+	// buraco: ele descartava da checagem TODA palavra que contivesse dígito, e
+	// não apenas o número que estava sendo lido. Num modelo com letra e dígito
+	// grudados ("HB20"), a lista de acompanhantes ficava VAZIA e o `every`
+	// passava por vacuidade — "HB20 1.6", resposta banal pra "qual carro você
+	// tem em mente", virava uma carta de R$ 1.600. E o clamp por categoria não
+	// salva mais (FIX-218 o revogou), então o número ia cru pro `creditMax`.
+	it("modelo com letra e dígito GRUDADOS não abre exceção pro número ao lado", () => {
+		for (const t of ["HB20 1.6", "quero um hb20 1.6", "T-Cross 1.4", "i30 2.0", "S10 2.8"]) {
+			expect(parseAssetValue(t, noGateDeValor), t).toBeNull();
+		}
+	});
+
 	it("número nu continua virando valor quando a mensagem é só o número", () => {
 		expect(parseAssetValue("200", noGateDeValor)).toBe(200_000);
 		expect(parseAssetValue("80", noGateDeValor)).toBe(80_000);

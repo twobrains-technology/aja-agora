@@ -149,10 +149,17 @@ function bareNumberAsValue(t: string): number | null {
 	const digitGroups = t.match(NUMERO_SOLTO) ?? [];
 	const words = t.trim().split(/\s+/).filter(Boolean);
 	if (digitGroups.length !== 1 || words.length > 4) return null;
-	// Toda palavra que não carrega o número precisa ser muleta de preço. É o que
-	// separa "uns 200" (valor) de "quero uma cg 160" (modelo) — ver
-	// `MULETAS_DE_PRECO`.
-	const acompanhantes = words.filter((w) => !/\d/.test(w));
+	// Toda palavra que não É o número precisa ser muleta de preço. É o que separa
+	// "uns 200" (valor) de "quero uma cg 160" (modelo) — ver `MULETAS_DE_PRECO`.
+	//
+	// A comparação é contra o TOKEN casado, não contra "tem dígito". Descartar
+	// toda palavra com dígito deixava a lista vazia quando o modelo tinha letra e
+	// número grudados, e `every` sobre lista vazia é `true`: "HB20 1.6" — resposta
+	// banal pra "qual carro você tem em mente" — passava batido e virava uma
+	// carta de R$ 1.600. Achado em revisão adversarial, 2026-08-12.
+	const bordas = /^[^\p{L}\d]+|[^\p{L}\d]+$/gu;
+	const numeroLido = digitGroups[0];
+	const acompanhantes = words.filter((w) => w.replace(bordas, "") !== numeroLido);
 	const todasSaoMuletas = acompanhantes.every((w) =>
 		MULETAS_DE_PRECO.has(semAcento(w).replace(/[^\p{L}]/gu, "")),
 	);
