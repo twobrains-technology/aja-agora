@@ -239,10 +239,31 @@ const ROTEIROS: Roteiro[] = [
 				},
 			},
 			{
+				// O gate `credit` pode pedir confirmação do valor no card (slider). Em
+				// produção foi o que aconteceu, e sem este turno a jornada parava
+				// antes do reveal — a sonda não clica em card. O clique explícito
+				// deixa o roteiro determinístico nos dois ambientes.
+				user: "Valor do bem: R$ 90.000",
+				nota: "confirma o valor no card",
+				action: {
+					kind: "gate",
+					gate: "credit",
+					value: { creditMax: 90000 },
+					label: "Valor do bem: R$ 90.000",
+				},
+			},
+			{
 				user: "Quero essa mesma, bora fechar",
 				nota: "🔴 o turno do Caua — aqui o `experience` atropelava e matava o contract_form",
 			},
 			{ user: "isso, quero contratar", nota: "reforça o fecho" },
+			{
+				// FIX-386 — contratar exige um SIM explícito ao card de decisão. Sem
+				// este turno o roteiro parava um passo antes do formulário e dava a
+				// impressão errada de que o funil tinha travado.
+				user: "sim, quero essa",
+				nota: "o sim que o FIX-386 exige — aqui o contract_form tem que aparecer",
+			},
 		],
 	},
 ];

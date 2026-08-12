@@ -779,6 +779,9 @@ export function createConverseNode(model: BaseChatModel) {
 				state.funnel.pendingRecommendationCard?.administradora,
 			].filter((a): a is string => typeof a === "string" && a.length > 0);
 			return {
+				// Alimenta o guard de vocativo repetido: sem o nome, o sanitizer não
+				// tem como saber qual palavra é "o nome dele".
+				contactName: state.contactName,
 				hasReceivedDocuments: (state.baseMeta.documentSlotsSent?.length ?? 0) > 0,
 				// O `converse` NÃO chama busca (a descoberta é nó determinístico, fora
 				// do toolset dele) — então nenhum turno deste nó é "o turno do reveal".

@@ -154,6 +154,16 @@ const INTERNAL_FAILURE_PATTERNS: RegExp[] = [
 	/\bdeu\s+(um\s+)?(erro|problema|pau)\s+(na|no|aqui|com)\b/i,
 	/\btive\s+(um\s+)?(problema|erro)\s+(t[ée]cnico|aqui|na\s+busca)\b/i,
 	/\binstabilidade\s+(no|na|do|da)\s+(sistema|busca|conex[ãa]o|plataforma)\b/i,
+	// O agente confessando a própria arquitetura. Produção 2026-08-12 (conv
+	// 5f02e068): "parece que não consigo ver qual cota você está vendo na tela".
+	// Não há verbo de falha nem nome de ferramenta aqui — é uma explicação de
+	// COMO O AGENTE É FEITO —, por isso escapava dos padrões acima e também do
+	// `mechanism-narration`. O cliente não precisa saber o que o agente enxerga;
+	// precisa saber o que fazer. A âncora exige o par "não + verbo de percepção"
+	// junto de tela/cards/o que você vê, pra não pegar "não encontrei grupos"
+	// (verdade de negócio, que passa).
+	/\bn[ãa]o\s+(consigo|estou\s+conseguindo|posso|tenho\s+como|estou)\s+(ver|enxergar|visualizar|acessar|enxergando|vendo)\b[\s\S]{0,40}\b(tela|cards?|o\s+que\s+(voc[êe]|vc)\s+(est[áa]\s+)?(vendo|v[êe])|do\s+seu\s+lado|a[íi]\s+pra\s+voc[êe])/i,
+	/\bn[ãa]o\s+tenho\s+acesso\s+(a|ao|à)\s+[\s\S]{0,30}\b(tela|cards?|o\s+que\s+(aparece|voc[êe])|a[íi]\s+pra\s+voc[êe])/i,
 ];
 
 /**
@@ -165,6 +175,42 @@ export function isInternalFailureNarration(segment: string): boolean {
 	const s = segment.trim();
 	if (!s) return false;
 	return INTERNAL_FAILURE_PATTERNS.some((rx) => rx.test(s));
+}
+
+/**
+ * Tira a SEGUNDA (e seguintes) chamada pelo nome no mesmo turno.
+ *
+ * Produção 2026-08-12: "Ótimo, Rafael! Rafael, desculpa, parece que…" — o nome
+ * duas vezes em frases coladas, que é como ninguém fala. Estava no inventário
+ * desde a varredura das conversas ("Beleza, Erik. Opa, Erik!") e só reproduziu
+ * agora.
+ *
+ * Opera só no VOCATIVO — o nome isolado por pontuação, que é o uso "chamar a
+ * pessoa". O nome no meio de uma frase ("o consórcio do Rafael Silva") não é
+ * vocativo e fica intacto: cortar ali mudaria o sentido, não o tom.
+ *
+ * É guard de ESTILO e nada mais: nunca remove informação, só a repetição. Pura.
+ */
+export function semVocativoRepetido(texto: string, contactName: string | null): string {
+	if (!contactName || !texto) return texto;
+	const nome = contactName.trim().split(/\s+/)[0];
+	if (nome.length < 2) return texto;
+	const escapado = nome.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	// Vocativo = nome precedido por começo/pontuação e seguido de pontuação. O
+	// lookbehind é o que permite duas ocorrências ADJACENTES ("…, Rafael! Rafael,
+	// …") serem vistas como duas: consumindo a pontuação da frente, a primeira
+	// match comia a fronteira de que a segunda precisava.
+	const vocativo = new RegExp(`(?<=^|[,;!?.]\\s*)${escapado}([,!?.]\\s*)`, "giu");
+
+	let vistos = 0;
+	return texto
+		.replace(vocativo, (match) => {
+			vistos += 1;
+			return vistos === 1 ? match : "";
+		})
+		.replace(/([.!?]\s+)(\p{Ll})/gu, (_m, p: string, letra: string) => p + letra.toUpperCase())
+		.replace(/\s{2,}/g, " ")
+		.trim();
 }
 
 // FIX-234 (handoff agente-vendas-consorcio, 2026-07-09 — D7/05-compliance) —
@@ -700,6 +746,9 @@ export function scrubCpf(text: string): string {
 /** Fatos reais do turno/conversa contra os quais uma afirmação de estado é
  * verificada — NUNCA a narrativa do LLM (Lei 1/5). FIX-270. */
 export type StateVerificationContext = {
+	/** Primeiro nome do cliente, quando já capturado. Serve ao guard de vocativo
+	 * repetido — sem ele, não há como saber qual palavra é "o nome dele". */
+	contactName?: string | null;
 	/** true só quando `meta.documentSlotsSent` tem upload confirmado de fato. */
 	hasReceivedDocuments: boolean;
 	/** true só quando uma tool de busca (search_groups/recommend_groups) já
@@ -1149,6 +1198,8 @@ export class EphemeralTextFilter {
 	private ultimoEmitido = "";
 	/** Nenhuma pergunta pode sair (1º beat do reveal: só apresentação). */
 	private perguntasProibidas = false;
+	/** O cliente já foi chamado pelo nome NESTE turno — a segunda chamada cai. */
+	private vocativoJaSaiu = false;
 	// FIX-347: motivos (guards) que já dropParam pelo menos 1 segmento neste
 	// turno — permite ao runner distinguir "o modelo não disse nada" de "o
 	// modelo disse algo e o sanitizer comeu tudo", pra dar uma segunda chance
@@ -1234,7 +1285,7 @@ export class EphemeralTextFilter {
 		const ctx = this.getContext?.();
 		const segments = splitSegments(complete);
 		let out = "";
-		for (const seg of segments) {
+		for (let seg of segments) {
 			// GANCHO PENDURADO: um trecho que termina em ":" ou "," não é uma frase,
 			// é a abertura da próxima ("Rodrigo, me confirma:"). Se o que vinha
 			// depois for dropado (pergunta extra, preâmbulo), o gancho fica sozinho
@@ -1258,6 +1309,26 @@ export class EphemeralTextFilter {
 				// O gancho vai junto (mesma razão de descarte já registrada acima).
 				this.gancho = "";
 				continue;
+			}
+			// O nome do cliente é chamado UMA vez por turno. Produção 2026-08-12:
+			// "Ótimo, Rafael! Rafael, desculpa, parece que…" — duas chamadas em
+			// frases coladas, que é como ninguém fala. Só o VOCATIVO cai; o nome
+			// dentro da frase fica (cortar ali mudaria o sentido, não o tom).
+			const nome = ctx?.contactName?.trim().split(/\s+/)[0];
+			if (nome && nome.length >= 2) {
+				const escapado = nome.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+				// `\s*` no início porque o split mantém o espaço que separa as frases —
+				// sem ele, " Rafael, desculpa" não casava e a segunda chamada passava.
+				const abreComVocativo = new RegExp(`^(\\s*)${escapado}\\s*[,!.?]\\s*`, "iu");
+				const temVocativo = new RegExp(`(^|[,;!?.]\\s*)${escapado}\\s*[,!.?]`, "iu");
+				if (this.vocativoJaSaiu && abreComVocativo.test(seg)) {
+					// Preserva o espaço separador que o split deixou — ele é o que
+					// impede a frase de colar na anterior.
+					seg = seg.replace(abreComVocativo, "$1");
+					seg = seg.replace(/^(\s*)(\p{Ll})/u, (_m, sp: string, l: string) => sp + l.toUpperCase());
+				} else if (temVocativo.test(seg)) {
+					this.vocativoJaSaiu = true;
+				}
 			}
 			if (this.gancho) {
 				const gancho = this.gancho;
