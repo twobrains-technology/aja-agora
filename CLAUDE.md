@@ -19,6 +19,39 @@ explica lance/contemplação/taxa como quem sabe, e fecha. Não é um formulári
   puxa pro lado — → **é do modelo**. Não vira regra-no-prompt, não vira texto fixo no servidor,
   não vira teste de regex.
 
+### Achou uma fala ruim em produção. Agora o quê?
+
+Este é o ponto onde a regra acima era mais desobedecida, justamente por quem estava tentando
+obedecê-la: vê-se uma frase feia no banco, ela É verificável (está lá, dá pra dar `grep`), e o
+reflexo é escrever um guard. **Poder dar grep numa frase não a torna um invariante.**
+
+O teste de decisão, nesta ordem:
+
+1. **Existe um FATO no servidor que a fala contradiz?** ("a busca travou" com a busca tendo
+   rodado; "sua cota está reservada" com `bevi_proposals = 0`.) → guard determinístico **ancorado
+   nesse estado**, como `isPrematureReservationClaim(seg, ctx)`, que consulta `ctx.hasProposal` e
+   deixa a MESMA frase passar quando a proposta existe. Guard sem âncora de estado é lista de
+   frase disfarçada.
+2. **O dado vai para o banco, para a Bevi ou para a mesa?** (nome do lead, valor do bem, ordem do
+   funil, entrega ao atendente.) → código, e teste de integração de verdade.
+3. **É tom, repetição, fluidez, "soou robótico"?** → **Langfuse**. Juiz LLM + score sobre volume
+   real, olhando a distribuição. Não é código, não é regex, não é teste unitário.
+
+**O anti-padrão, para reconhecer quando estiver fazendo:** você colhe uma frase da produção,
+escreve um regex que casa com ela, escreve um teste com a sua própria lista de strings e ele fica
+verde. O teste mede o seu regex contra a sua lista — não contra o que o modelo dirá amanhã. Na
+paráfrase seguinte ("tive um problema" → "estou com dificuldade técnica" → "deu uma travadinha")
+você escreve a segunda rodada, e a terceira. Isso não converge: o espaço de frases é infinito, e
+`advance.ts` já registra a mesma conclusão pelo lado da ancoragem de escolha ("não se fecha porta
+a porta — fecha-se a parede").
+
+E o pior efeito: **amordaçar a frase costuma esconder um sintoma verdadeiro**. Quando o agente diz
+"não consigo acessar as ofertas", em geral ele está mesmo sem as ofertas no contexto — dropar a
+frase não devolve o dado a ele, só deixa o cliente sem explicação. Conserte a causa (o contexto, o
+estado, a tool), não a frase.
+
+Aconteceu em 2026-08-12, três rodadas seguidas, e foi revertido em `649320dc`.
+
 **Falar de prazo de contemplação é do vendedor** (decisão do Kairo, 2026-08-10). Antes havia
 aqui "nada de prometer contemplação garantida ou prazo", e isso saiu: travar o assunto tira do
 agente um argumento que todo vendedor de consórcio usa — que lance antecipa, que grupo curto
