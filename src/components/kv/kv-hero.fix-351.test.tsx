@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 /**
  * FIX-351 (topo de funil /kv) — os CTAs do Hero ("Fale com a AJA",
- * "Financiamento vs Consórcio") e o composer do search-card (chips +
+ * "Encontre o consórcio certo") e o composer do search-card (chips +
  * "Enviar") eram inertes: réplica visual do Figma que nunca recebeu a
  * integração com o Modo Teatro (onOpenChat/TheaterOpener), no mesmo padrão
  * de src/components/landing/hero.tsx (FIX-75: texto digitado vence o chip).
@@ -33,11 +33,11 @@ describe("FIX-351 — KvHero chama onOpenChat", () => {
 		expect(onOpenChat.mock.calls[0][0]).toBe("");
 	});
 
-	it("clicar em 'Financiamento vs Consórcio' chama onOpenChat com seed vazio", () => {
+	it("clicar em 'Encontre o consórcio certo' chama onOpenChat com seed vazio", () => {
 		const onOpenChat = vi.fn();
 		render(<KvHero onOpenChat={onOpenChat} />);
 
-		fireEvent.click(screen.getByRole("button", { name: /Financiamento.*Consórcio/ }));
+		fireEvent.click(screen.getByRole("button", { name: "Encontre o consórcio certo" }));
 
 		expect(onOpenChat).toHaveBeenCalledTimes(1);
 		expect(onOpenChat.mock.calls[0][0]).toBe("");

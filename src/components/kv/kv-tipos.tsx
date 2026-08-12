@@ -56,7 +56,7 @@ const CARDS: TipoCard[] = [
 		title: "Carro",
 		descriptionLead: "Para gerar renda",
 		descriptionRestLines: [", ganhar mobilidade ou conquistar o carro que faz sentido para você."],
-		button: "Compara opções",
+		button: "Comparar opções",
 		seed: "Quero comprar um carro.",
 		tags: ["Viagens", "Primeiro carro", "Autonomia"],
 		image: {
@@ -107,7 +107,7 @@ const CARDS: TipoCard[] = [
 		descriptionLead: "Saia da moto alugada,",
 		descriptionBreakAfterLead: true,
 		descriptionRestLines: ["escape do trânsito ou realize", "o sonho da moto própria."],
-		button: "Simular ofertas",
+		button: "Achar parcela perfeita",
 		seed: "Quero comprar uma moto.",
 		tags: ["Trânsito", "Economia", "Mobilidade"],
 		image: {

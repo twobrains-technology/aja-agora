@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 /**
- * FIX-351 (topo de funil /kv) — os botões de cada card ("Compara opções",
- * "Buscar alternativas", "Simular ofertas") eram <button> sem onClick.
+ * FIX-351 (topo de funil /kv) — os botões de cada card ("Comparar opções",
+ * "Buscar alternativas", "Achar parcela perfeita") eram <button> sem onClick.
  * Cada card chama onOpenChat com o seed do tipo correspondente.
  */
 
@@ -25,7 +25,7 @@ describe("FIX-351 — KvTipos chama onOpenChat com o seed do tipo", () => {
 		const onOpenChat = vi.fn();
 		render(<KvTipos onOpenChat={onOpenChat} />);
 
-		fireEvent.click(screen.getByRole("button", { name: "Compara opções" }));
+		fireEvent.click(screen.getByRole("button", { name: "Comparar opções" }));
 
 		expect(onOpenChat).toHaveBeenCalledTimes(1);
 		expect(onOpenChat.mock.calls[0][0]).toBe("Quero comprar um carro.");
@@ -44,7 +44,7 @@ describe("FIX-351 — KvTipos chama onOpenChat com o seed do tipo", () => {
 		const onOpenChat = vi.fn();
 		render(<KvTipos onOpenChat={onOpenChat} />);
 
-		fireEvent.click(screen.getByRole("button", { name: "Simular ofertas" }));
+		fireEvent.click(screen.getByRole("button", { name: "Achar parcela perfeita" }));
 
 		expect(onOpenChat.mock.calls[0][0]).toBe("Quero comprar uma moto.");
 	});

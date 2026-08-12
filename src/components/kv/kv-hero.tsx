@@ -48,7 +48,7 @@ export function KvHero({ onOpenChat }: KvHeroProps) {
 				<div className="max-w-[560px]">
 					<span className="inline-flex items-center gap-2 rounded-full bg-[#021628] py-1.5 pl-3.5 pr-4 text-[16px] font-semibold text-[#FAFAF3]">
 						<AjaMark className="h-3 w-auto text-[#FAFAF3]" />
-						Parceria independente para consórcio
+						o jeito independente de escolher consórcio
 					</span>
 
 					<h1 className="mt-6 text-[40px] font-normal leading-[1.08] tracking-[-0.01em] text-[#021628] md:text-[56px] md:leading-[62px]">
@@ -117,7 +117,7 @@ export function KvHero({ onOpenChat }: KvHeroProps) {
 							Fale com a AJA
 						</KvCtaButton>
 						<KvCtaButton variant="outline" onClick={(e) => onOpenChat("", e.currentTarget)}>
-							Financiamento <Em className="mx-1">vs</Em> Consórcio
+							Encontre o consórcio certo
 						</KvCtaButton>
 					</div>
 				</div>
