@@ -346,7 +346,46 @@ export function buildComparisonTableFromRevealGroups(
 			category: g.category,
 		})),
 	};
-	return coerceComparisonPayload(input, index, logosByAdministradora, knownCreditValueByGroupId);
+	const payload = coerceComparisonPayload(
+		input,
+		index,
+		logosByAdministradora,
+		knownCreditValueByGroupId,
+	);
+	return semOfertasVisualmenteIguais(payload);
+}
+
+/**
+ * Tira da tabela as cotas que o cliente veria como a MESMA linha.
+ *
+ * A Bevi devolve grupos distintos (ids diferentes) que às vezes têm exatamente
+ * a mesma condição comercial — mesma administradora, mesma carta, mesma parcela,
+ * mesmo prazo. No índice são dois grupos legítimos; na tela são duas linhas
+ * idênticas, e o cliente lê como bug. É o report do Kairo de 2026-08-05 ("está
+ * repetindo grupos iguais"), que ganhou assert no golden-set
+ * (`forbidDuplicateOffers`) e seguiu acontecendo — o eval flagrou
+ * `CANOPUS::90000::1176.39::96` duas vezes na mesma tabela em 2026-08-12.
+ *
+ * Deduplica pela assinatura VISÍVEL, não pelo id: é o que o cliente compara.
+ * Administradora repetida com números diferentes continua sendo opção distinta
+ * e permanece. Mantém a primeira ocorrência, preservando a ordem do ranking.
+ */
+function semOfertasVisualmenteIguais(payload: Record<string, unknown>): Record<string, unknown> {
+	const grupos = payload.groups;
+	if (!Array.isArray(grupos)) return payload;
+
+	const vistas = new Set<string>();
+	const unicos = grupos.filter((g) => {
+		if (!g || typeof g !== "object") return true;
+		const o = g as Record<string, unknown>;
+		const chave = [o.administradora, o.creditValue, o.monthlyPayment, o.termMonths].join("::");
+		if (vistas.has(chave)) return false;
+		vistas.add(chave);
+		return true;
+	});
+
+	if (unicos.length === grupos.length) return payload;
+	return { ...payload, groups: unicos };
 }
 
 /** Seletor (`comparison_table`): coage CADA cota por `id` — é a lista de cotas do
