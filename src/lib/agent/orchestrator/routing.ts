@@ -9,11 +9,38 @@ const CATEGORY_KEYWORDS: Record<Category, RegExp> = {
 	moto: /\b(moto|motocicleta|motoca|motoneta)\b/i,
 };
 
+/** Trecho negado: a palavra de negação e o que vem logo depois dela, até a
+ * próxima vírgula ou fim de frase. "não imóvel", "nem carro", "moto não". */
+const TRECHO_NEGADO = /\b(n[ãa]o|nem)\b[^,.;!?]*/gi;
+const NEGACAO_POSPOSTA = /\b([\p{L}]+)\s+n[ãa]o\b/giu;
+
+/**
+ * Qual bem o cliente citou? `null` quando nenhum.
+ *
+ * Golden `golden-troca-de-categoria`, vermelho em 2026-08-12: "Pensando melhor,
+ * na verdade eu quero uma moto, não imóvel" resolvia como IMÓVEL e a transição
+ * pra moto nunca acontecia. A versão anterior varria as categorias na ordem em
+ * que estão escritas no objeto (imovel → auto → moto) e devolvia a primeira que
+ * casasse em qualquer lugar do texto: "imóvel" aparecia dentro da NEGAÇÃO e
+ * ganhava do "moto", que era o pedido. A ordem do objeto decidindo a categoria
+ * da venda era acidente, não critério.
+ *
+ * Agora: o que vem negado não conta, e entre o que sobra vence o bem mencionado
+ * PRIMEIRO na frase — que é como a pessoa fala ("quero uma moto, não imóvel").
+ */
 export function fallbackDetectCategory(text: string): Category | null {
+	const semNegado = text.replace(NEGACAO_POSPOSTA, " ").replace(TRECHO_NEGADO, " ");
+
+	let escolhida: Category | null = null;
+	let posicao = Number.POSITIVE_INFINITY;
 	for (const [cat, re] of Object.entries(CATEGORY_KEYWORDS) as Array<[Category, RegExp]>) {
-		if (re.test(text)) return cat;
+		const m = semNegado.match(re);
+		if (m?.index !== undefined && m.index < posicao) {
+			posicao = m.index;
+			escolhida = cat;
+		}
 	}
-	return null;
+	return escolhida;
 }
 
 export type RoutingDecision =
@@ -44,7 +71,24 @@ export function decideRouting(
 	meta: ConversationMetadata,
 	analysis: TurnAnalysis,
 ): RoutingDecision {
-	const detectedCategory = analysis.detectedCategory ?? fallbackDetectCategory(text);
+	// O DETERMINÍSTICO MANDA QUANDO DISCORDA (Lei 1).
+	//
+	// Era `analysis.detectedCategory ?? fallback` — o analyzer sempre vencia, e o
+	// fallback só entrava quando ele devolvia nada. Em "quero uma moto, não
+	// imóvel" o analyzer devolve IMÓVEL (lê a palavra dentro da negação), a
+	// comparação com `currentCategory` dá igual, e o routing responde `stay`: o
+	// cliente pede moto a conversa inteira e o funil segue em imóvel.
+	//
+	// O fallback agora limpa negação e escolhe pela posição na frase (ver
+	// `fallbackDetectCategory`), então quando ele aponta um bem DIFERENTE do atual
+	// isso é evidência de texto, não palpite — e vence o classificador. Se ele não
+	// acha nada, o analyzer segue valendo: ele entende formas que a keyword não
+	// pega ("um apê", "minha casa própria").
+	const porKeyword = fallbackDetectCategory(text);
+	const detectedCategory =
+		porKeyword && porKeyword !== meta.currentCategory
+			? porKeyword
+			: (analysis.detectedCategory ?? porKeyword);
 	if (!detectedCategory) return { kind: "stay" };
 	if (detectedCategory === meta.currentCategory) return { kind: "stay" };
 	if (!meta.currentCategory || analysis.isExplicitSwitch || funilAindaNaoInvestiu(meta)) {
