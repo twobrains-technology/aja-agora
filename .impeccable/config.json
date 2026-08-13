@@ -1,0 +1,15 @@
+{
+	"detector": {
+		"ignoreRules": [],
+		"ignoreFiles": [],
+		"ignoreValues": [
+			{
+				"rule": "broken-image",
+				"value": "*",
+				"files": ["src/components/admin/whatsapp-perfil/configuracao-whatsapp.tsx"],
+				"createdAt": "2026-08-13T06:50:41.570Z",
+				"reason": "falso positivo: o src e dinamico (perfil.profile_picture_url, URL assinada da Meta) e o <img> so renderiza dentro do ternario quando a URL existe; o ramo vazio mostra um placeholder proprio com icone"
+			}
+		]
+	}
+}
