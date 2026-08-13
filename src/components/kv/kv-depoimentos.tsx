@@ -6,6 +6,7 @@ import { Em } from "@/components/kv/em";
 import { CARD_SHADOW, KvContainer } from "@/components/kv/ui/kv-container";
 import { KvCtaButton } from "@/components/kv/ui/kv-cta-button";
 import { KvEyebrow } from "@/components/kv/ui/kv-eyebrow";
+import { KV_RITMO, KvSection } from "@/components/kv/ui/kv-section";
 
 const KV = "/kv";
 
@@ -48,11 +49,11 @@ interface KvDepoimentosProps {
 // grid de 3 cards de depoimento + bloco de CTA final.
 export function KvDepoimentos({ onOpenChat }: KvDepoimentosProps) {
 	return (
-		<section className="relative overflow-hidden bg-[#FAFAF3]">
+		<KvSection rhythm={KV_RITMO.depoimentos} className="overflow-hidden bg-[#FAFAF3]">
 			{/* Blob decorativo desfocado (Figma: 450x450 @(-200,150), opacity .6, blur 150) */}
 			<div className="pointer-events-none absolute -left-[200px] top-[150px] size-[450px] rounded-full bg-[#FFE0E3] opacity-60 blur-[150px]" />
 
-			<KvContainer className="max-w-[1440px] py-6 md:px-20 md:py-8">
+			<KvContainer>
 				{/* Header */}
 				<div className="text-center">
 					<KvEyebrow>CONFIANÇA E RESULTADO</KvEyebrow>
@@ -120,6 +121,6 @@ export function KvDepoimentos({ onOpenChat }: KvDepoimentosProps) {
 					<KvCtaButton onClick={(e) => onOpenChat("", e.currentTarget)}>Fale com a AJA</KvCtaButton>
 				</div>
 			</KvContainer>
-		</section>
+		</KvSection>
 	);
 }

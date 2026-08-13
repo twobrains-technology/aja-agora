@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Wordmark } from "@/components/brand/wordmark";
 import { Em } from "@/components/kv/em";
 import { CARD_SHADOW, KvContainer } from "@/components/kv/ui/kv-container";
+import { KV_RITMO, KvSection } from "@/components/kv/ui/kv-section";
 
 const KV = "/kv";
 
@@ -18,17 +19,11 @@ type CriterioCard = {
 };
 
 // Frame 'Confiança e Segurança': painel coral (headline) → faixa cream com
-// carrossel horizontal de 6 cards de critério → faixa navy full-width
+// carrossel horizontal de 5 cards de critério → faixa navy full-width
 // (logo à esquerda + "Saúde financeira" à direita) com a imagem sobrepondo
 // entre as duas. Ordem replica o blueprint (coral → cream → navy), não a
 // composição anterior (coral+navy+imagem → cards) que tinha desviado do design.
 const CRITERIOS: CriterioCard[] = [
-	{
-		id: "taxa-administracao",
-		emoji: "📊",
-		title: "Taxa de administração",
-		description: "Encontramos grupos com melhor custo-benefício para que você pague menos taxas.",
-	},
 	{
 		id: "lance-medio",
 		emoji: "🚀",
@@ -65,7 +60,7 @@ const CRITERIOS: CriterioCard[] = [
 	},
 ];
 
-// Frame 'aja-mobile' (Figma, 402px): mobile usa 3 dos critérios (não os 6 do
+// Frame 'aja-mobile' (Figma, 402px): mobile usa 3 dos critérios (não os 5 do
 // desktop), empilhados full-width, com título/copy próprios do blueprint —
 // lista separada, não um subconjunto renderizado do array acima.
 const CRITERIOS_MOBILE: CriterioCard[] = [
@@ -93,7 +88,7 @@ const CRITERIOS_MOBILE: CriterioCard[] = [
 ];
 
 // Card de critério (ícone circular + emoji + título Merriweather + descrição).
-// Mesma estrutura no mobile (3 itens, ícone sólido) e no desktop (6 itens no
+// Mesma estrutura no mobile (3 itens, ícone sólido) e no desktop (5 itens no
 // carrossel, ícone tintado) — só tamanho/padding mudam entre os 2 frames do
 // Figma (breakpoint `size`).
 function CriterioCardItem({
@@ -398,7 +393,11 @@ function CriteriosCarousel() {
 
 export function KvConfianca() {
 	return (
-		<section aria-labelledby="confianca-heading" className="bg-[#FAFAF3]">
+		<KvSection
+			rhythm={KV_RITMO.confianca}
+			aria-labelledby="confianca-heading"
+			className="bg-[#FAFAF3]"
+		>
 			{/* MOBILE (<lg): frame 'aja-mobile' — header e faixa navy full-bleed, 3 cards empilhados */}
 			<div className="lg:hidden">
 				<div className="bg-[#F2404F] px-6 pt-10 pb-5">
@@ -432,7 +431,7 @@ export function KvConfianca() {
 						<p className="mt-3 text-[15px] leading-[24px] text-[#FAFAF3]">
 							Nosso objetivo não é vender qualquer consórcio.{" "}
 							<strong className="font-bold">É ajudar você a fazer uma escolha sustentável</strong>{" "}
-							para conquistar seu objetivo sem comprometer seu orçamento mensal.
+							para conquistar seu objetivo sem comprometer seu orçamento.
 						</p>
 					</div>
 					{/* Muda transparente sobre os raios navy (Figma 'Group 43'): sunburst radial branco,
@@ -458,10 +457,10 @@ export function KvConfianca() {
 
 			{/* DESKTOP (≥lg) */}
 			<div className="hidden lg:block">
-				<KvContainer className="max-w-[1280px] py-6 md:py-8">
+				<KvContainer>
 					{/* Painel coral: headline + subtítulo. Figma: banner 1234x242 (r:12), título
 					    844px de largura quebrando em 2 linhas ("Como a AJA compara as melhores /
-					    alternativas para você...."), padding topo ~37 / base ~11. */}
+					    alternativas para você..."), padding topo ~37 / base ~11. */}
 					<div className="rounded-[12px] bg-[#F2404F] px-8 py-10 md:px-14 md:pt-10 md:pb-6">
 						<h2
 							id="confianca-heading"
@@ -472,7 +471,7 @@ export function KvConfianca() {
 								compara
 							</Em>{" "}
 							as melhores
-							<br className="hidden md:block" /> alternativas para você....
+							<br className="hidden md:block" /> alternativas para você...
 						</h2>
 						<p className="mt-3 max-w-[705px] text-[14px] leading-[22px] text-[#FFFFFF] md:text-[16px] md:leading-[26px]">
 							Não basta comparar parcelas. Também avaliamos: prazo, histórico de contemplação, lance
@@ -561,6 +560,6 @@ export function KvConfianca() {
 					/>
 				</KvContainer>
 			</div>
-		</section>
+		</KvSection>
 	);
 }

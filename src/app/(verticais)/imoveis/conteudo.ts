@@ -1,4 +1,5 @@
 import { Casinha } from "@/components/icons/casinha";
+import { FONTE_ABAC } from "@/components/kv/fonte-abac";
 import type { BlocoFormasConteudo } from "@/components/vertical/bloco-formas";
 import type { FaixaNumerosConteudo } from "@/components/vertical/faixa-numeros";
 import type { GuiaArtigosConteudo } from "@/components/vertical/guia-artigos";
@@ -98,7 +99,7 @@ export const NUMEROS_IMOVEL: FaixaNumerosConteudo = {
 			alt: "Casal abrindo caixas de mudança no imóvel recém-conquistado",
 		},
 	},
-	fonte: "Fonte: ABAC – Associação Brasileira de Administradoras de Consórcios. Dados de 2025.",
+	fonte: FONTE_ABAC,
 };
 
 export const FGTS_IMOVEL: BlocoFormasConteudo = {

@@ -4,12 +4,12 @@ import Image from "next/image";
 import { Em } from "@/components/kv/em";
 import { KvContainer } from "@/components/kv/ui/kv-container";
 import { KvEyebrow } from "@/components/kv/ui/kv-eyebrow";
+import { KV_RITMO, KvSection } from "@/components/kv/ui/kv-section";
 
 const KV = "/kv";
 
 const CONSORCIO_ITEMS = [
 	"Maior poder de compra no longo prazo.",
-	"Taxa de administração fixa e diluída no plano.",
 	"Carta de crédito atualizada conforme o contrato.",
 	"Sem cobrança de juros.",
 ];
@@ -92,7 +92,11 @@ function Medalhao({
 // runtime) com o leque de raios (SVG dedicado) atrás.
 export function KvComparacao() {
 	return (
-		<section aria-labelledby="comparacao-heading" className="relative bg-[#FAFAF3]">
+		<KvSection
+			rhythm={KV_RITMO.comparacao}
+			aria-labelledby="comparacao-heading"
+			className="bg-[#FAFAF3]"
+		>
 			{/* Blob coral desfocado, canto superior direito — mesma peça do Hero,
 			    marcando a transição vindo da seção "Saúde financeira" (Figma: 720x757).
 			    SEM nenhum overflow na seção (de propósito, e importante: `overflow-x-
@@ -109,16 +113,23 @@ export function KvComparacao() {
 			    ficava quase imperceptível. */}
 			<div className="pointer-events-none absolute -top-[230px] right-0 h-[870px] w-[830px] rounded-full bg-[#FFE0E3] opacity-85 blur-[260px]" />
 
-			<KvContainer className="relative z-20 max-w-[1120px] py-6 md:py-8">
+			<KvContainer className="relative z-20">
 				<div className="mx-auto max-w-[700px] text-center">
 					<KvEyebrow className="tracking-[0.16em]">COMO FUNCIONA</KvEyebrow>
+					{/* No comp o título sobe até encostar no eyebrow: a caixa dele começa
+					    12px abaixo do TOPO do eyebrow, e não 12px abaixo da base. Cabe
+					    porque o line-height de 62px num tipo de 44 deixa 9px de folga
+					    interna. Só a partir de md — no mobile a folga é de 2px e o mt-3
+					    normal é o certo. */}
 					<h2
 						id="comparacao-heading"
-						className="mt-3 text-[32px] font-normal leading-[1.15] text-[#021628] md:text-[44px] md:leading-[62px]"
+						className="mt-3 text-[32px] font-normal leading-[1.15] text-[#021628] md:-mt-1 md:text-[44px] md:leading-[62px]"
 					>
 						Consórcio <Em>vs</Em> financiamento
 					</h2>
-					<p className="mx-auto mt-4 max-w-[560px] text-[16px] leading-[26px] text-[#6B6B66]">
+					{/* No comp a caixa do subtítulo encosta na do título (7636 = base do h2).
+					    O respiro que se enxerga vem da folga do line-height, não de margem. */}
+					<p className="mx-auto mt-4 max-w-[617px] text-[16px] leading-[26px] text-[#6B6B66] md:mt-0">
 						Compare custos, prazos e vantagens de cada modalidade para escolher a alternativa mais
 						inteligente para o seu momento.
 					</p>
@@ -189,6 +200,6 @@ export function KvComparacao() {
 					</div>
 				</div>
 			</KvContainer>
-		</section>
+		</KvSection>
 	);
 }

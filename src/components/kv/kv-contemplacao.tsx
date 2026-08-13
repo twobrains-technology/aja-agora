@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { Em } from "@/components/kv/em";
 import { CARD_SHADOW, KvContainer } from "@/components/kv/ui/kv-container";
 import { KvEyebrow } from "@/components/kv/ui/kv-eyebrow";
+import { KV_RITMO, KvSection } from "@/components/kv/ui/kv-section";
 import { cn } from "@/lib/utils";
 
 const KV = "/kv";
@@ -168,7 +169,7 @@ function PathCard({ path, className }: { path: Path; className?: string }) {
 // texto) fica ancorado na base da seção, abaixo da linha do card lance.
 export function KvContemplacao() {
 	return (
-		<section className="relative overflow-hidden bg-[#FAFAF3]">
+		<KvSection rhythm={KV_RITMO.contemplacao} className="overflow-hidden bg-[#FAFAF3]">
 			{/*
 			 * Seta coral de fundo — o glifo ">" da marca, 507x703 (Figma 'Vector').
 			 *
@@ -200,7 +201,7 @@ export function KvContemplacao() {
 			{/* Blob coral desfocado atrás do header/1º card (mobile + tablet, até o breakpoint em que a colagem desktop assume) */}
 			<div className="pointer-events-none absolute left-[43%] top-[357px] size-[300px] -translate-x-1/2 rounded-full bg-[#FFE0E3] opacity-70 blur-[100px] xl:hidden" />
 
-			<KvContainer className="max-w-[1240px] px-5 py-6 md:px-8 lg:py-8">
+			<KvContainer>
 				{/* Colagem absoluta (foto + card "Por Lance" flutuando) só cabe fiel ao
 				    Figma a partir de xl (1280px) — entre 1024-1279px ela vazava (card
 				    passava da borda, foto sobrepunha o texto). Abaixo de xl mantém o
@@ -277,16 +278,16 @@ export function KvContemplacao() {
 					<div className="mt-8 rounded-[14px] bg-[#021628] p-5 xl:hidden">
 						<div className="flex items-center gap-2">
 							<ChevronRight className="size-3 shrink-0 text-[#F2404F]" strokeWidth={2.5} />
-							<KvEyebrow className="text-[11px]">DIFERENCIAL DA PLATAFORMA</KvEyebrow>
+							<KvEyebrow className="text-[11px]">DIFERENCIAL DA NOSSA PLATAFORMA</KvEyebrow>
 						</div>
 						<p className="mt-3 max-w-[340px] text-[14px] font-medium leading-[20px] text-[#FAFAF3]">
 							Aja Agora te mostra o lance médio
 							<br />
-							dos consorciados para contemplação acelerada.
+							dos clientes para contemplação rápida.
 						</p>
 					</div>
 				</div>
 			</KvContainer>
-		</section>
+		</KvSection>
 	);
 }

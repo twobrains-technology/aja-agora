@@ -3,9 +3,11 @@
 import Image from "next/image";
 import type { TheaterOpener } from "@/components/chat/theater/theater-context";
 import { Em } from "@/components/kv/em";
+import { FONTE_ABAC, FONTE_ABAC_CLASS } from "@/components/kv/fonte-abac";
 import { CARD_SHADOW, KvContainer } from "@/components/kv/ui/kv-container";
 import { KvCtaButton } from "@/components/kv/ui/kv-cta-button";
 import { KvEyebrow } from "@/components/kv/ui/kv-eyebrow";
+import { KV_RITMO, KvSection } from "@/components/kv/ui/kv-section";
 
 const KV = "/kv";
 
@@ -56,6 +58,8 @@ const CARDS: TipoCard[] = [
 		title: "Carro",
 		descriptionLead: "Para gerar renda",
 		descriptionRestLines: [", ganhar mobilidade ou conquistar o carro que faz sentido para você."],
+		// O comp escreve "Compara opções"; entra no infinitivo, como os outros dois
+		// CTAs ("Buscar alternativas", "Achar parcela perfeita").
 		button: "Comparar opções",
 		seed: "Quero comprar um carro.",
 		tags: ["Viagens", "Primeiro carro", "Autonomia"],
@@ -132,9 +136,10 @@ export function KvTipos({ onOpenChat }: KvTiposProps) {
 		// Painel navy FULL-BLEED: largura total da tela, cantos retos, sem margem cream
 		// em volta (Figma: Rectangle 85 1442x963, x≈0). Só o CONTEÚDO fica no container
 		// max-w centralizado. overflow-hidden clipa os ornamentos navy-claro do fundo.
-		<section
+		<KvSection
+			rhythm={KV_RITMO.tipos}
 			aria-labelledby="tipos-consorcio-heading"
-			className="relative w-full overflow-hidden bg-[#021628]"
+			className="w-full overflow-hidden bg-[#021628]"
 		>
 			{/* Ornamento navy tone-on-tone do painel — sutil, atrás de todo o conteúdo.
 			    Mesmo vetor nos dois cantos: canto superior esquerdo normal, canto
@@ -154,12 +159,13 @@ export function KvTipos({ onOpenChat }: KvTiposProps) {
 				className="pointer-events-none absolute -bottom-10 -right-10 z-0 h-auto w-[380px] rotate-180 md:w-[560px]"
 			/>
 
-			<KvContainer className="z-10 max-w-[1320px] py-6 md:py-8">
+			<KvContainer className="z-10">
 				<div className="mx-auto max-w-[820px] text-center">
-					<KvEyebrow>QUAL É O SEU OBJETIVO</KvEyebrow>
+					{/* O comp traz "QUAL A SUA PROPÓSITO"; entra com a concordância corrigida. */}
+					<KvEyebrow>QUAL O SEU PROPÓSITO</KvEyebrow>
 					<h2
 						id="tipos-consorcio-heading"
-						className="mt-3 text-[32px] font-normal leading-[1.15] text-white md:text-[44px] md:leading-[62px]"
+						className="mt-3 text-[32px] font-normal leading-[1.15] text-white md:-mt-1.5 md:text-[44px] md:leading-[62px]"
 					>
 						Escolha o seu <Em w="black">tipo</Em> de consórcio
 					</h2>
@@ -245,7 +251,9 @@ export function KvTipos({ onOpenChat }: KvTiposProps) {
 						</article>
 					))}
 				</div>
+
+				<p className={`mt-10 ${FONTE_ABAC_CLASS}`}>{FONTE_ABAC}</p>
 			</KvContainer>
-		</section>
+		</KvSection>
 	);
 }

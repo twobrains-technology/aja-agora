@@ -1,6 +1,7 @@
 import { ArrowDown, Percent } from "lucide-react";
 
 import { Carrinho } from "@/components/icons/carrinho";
+import { FONTE_ABAC } from "@/components/kv/fonte-abac";
 import type { BlocoUpgradeConteudo } from "@/components/vertical/bloco-upgrade";
 import type { FaixaNumerosConteudo } from "@/components/vertical/faixa-numeros";
 import type { GuiaArtigosConteudo } from "@/components/vertical/guia-artigos";
@@ -110,7 +111,7 @@ export const NUMEROS_AUTO: FaixaNumerosConteudo = {
 			alt: "Mulher ao volante do carro recém-conquistado",
 		},
 	},
-	fonte: "Fonte: ABAC – Associação Brasileira de Administradoras de Consórcios. Dados de 2025.",
+	fonte: FONTE_ABAC,
 };
 
 export const UPGRADE_AUTO: BlocoUpgradeConteudo = {

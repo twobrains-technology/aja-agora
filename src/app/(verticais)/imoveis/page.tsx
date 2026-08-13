@@ -8,10 +8,10 @@ import { KvFooter } from "@/components/kv/kv-footer";
 import { KvMenu, NAV_VERTICAL } from "@/components/kv/kv-menu";
 import { BlocoFormas } from "@/components/vertical/bloco-formas";
 import { FaixaNumeros } from "@/components/vertical/faixa-numeros";
-import { GuiaArtigos } from "@/components/vertical/guia-artigos";
+// import { GuiaArtigos } from "@/components/vertical/guia-artigos";
 import { HeroVertical } from "@/components/vertical/hero-vertical";
 
-import { FAQ_IMOVEL, FGTS_IMOVEL, GUIA_IMOVEL, HERO_IMOVEL, NUMEROS_IMOVEL } from "./conteudo";
+import { FAQ_IMOVEL, FGTS_IMOVEL, HERO_IMOVEL, NUMEROS_IMOVEL } from "./conteudo";
 
 // Landing da vertical de imóvel (Figma 'Consórcios - imóvel' 625:4133). Primeira
 // de uma família — auto, moto e serviços reaproveitam estas seções trocando só o
@@ -46,7 +46,11 @@ function PaginaImovel() {
 			<div id="faq" className="scroll-mt-24">
 				<KvFaq itens={FAQ_IMOVEL} />
 			</div>
-			<GuiaArtigos conteudo={GUIA_IMOVEL} />
+			{/* Guia de artigos fora do ar por ora — o blog ainda não existe e todos os
+			    `href` do bloco apontam para "#". `GUIA_IMOVEL` segue exportado em
+			    ./conteudo e coberto por verticais.test.ts; para repor, descomente aqui
+			    e o import lá em cima. */}
+			{/* <GuiaArtigos conteudo={GUIA_IMOVEL} /> */}
 			<KvFooter onOpenChat={openTheater} />
 		</main>
 	);

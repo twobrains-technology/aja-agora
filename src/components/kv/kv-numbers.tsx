@@ -1,8 +1,10 @@
 import { Building2, DollarSign, TrendingUp, Users } from "lucide-react";
 
 import { Em } from "@/components/kv/em";
+import { FONTE_ABAC, FONTE_ABAC_CLASS } from "@/components/kv/fonte-abac";
 import { KvContainer } from "@/components/kv/ui/kv-container";
 import { KvEyebrow } from "@/components/kv/ui/kv-eyebrow";
+import { KV_RITMO, KvSection } from "@/components/kv/ui/kv-section";
 
 type Metric = {
 	icon: typeof DollarSign;
@@ -14,9 +16,9 @@ type Metric = {
 const metrics: Metric[] = [
 	{
 		icon: DollarSign,
-		value: "R$ 351 bi",
+		value: "R$ 500 bi",
 		highlight: "bilhões",
-		label: "Créditos comercializados em todo o Brasil em 2024",
+		label: "Créditos comercializados em todo o Brasil em 2025",
 	},
 	{
 		icon: Users,
@@ -69,7 +71,7 @@ const MARQUEE_TEXT = MARQUEE_SEGMENTS.map((segment) => segment.text).join("");
 export function KvNumbers() {
 	return (
 		<>
-			<section className="relative overflow-hidden bg-[#021628]">
+			<KvSection rhythm={KV_RITMO.numeros} className="overflow-hidden bg-[#021628]">
 				{/* Blobs decorativos desfocados */}
 				<div
 					aria-hidden="true"
@@ -80,11 +82,13 @@ export function KvNumbers() {
 					className="pointer-events-none absolute -right-[160px] -top-[100px] size-[450px] rounded-full bg-[#0C3357] opacity-30 blur-[100px]"
 				/>
 
-				<KvContainer className="max-w-[1240px] py-6 md:px-6 md:py-8 lg:px-0">
+				<KvContainer>
 					{/* Header */}
 					<div className="mx-auto flex flex-col items-center gap-4 text-center">
+						{/* O comp traz "QUAL A SUA PROPÓSITO" aqui e no Tipos; entra nas duas
+						    com a concordância corrigida. */}
 						<KvEyebrow className="mx-auto max-w-[762px] tracking-[0.15em]">
-							O SETOR EM NÚMEROS
+							QUAL O SEU PROPÓSITO
 						</KvEyebrow>
 						<h2 className="text-[32px] font-normal leading-[1.2] text-[#FAFAF3] md:text-[40px] md:leading-[48px]">
 							O setor de <Em>consórcio não para</Em> de crescer
@@ -124,10 +128,14 @@ export function KvNumbers() {
 							</div>
 						))}
 					</div>
-				</KvContainer>
-			</section>
 
-			{/* Marquee Ticker */}
+					<p className={`mt-10 ${FONTE_ABAC_CLASS}`}>{FONTE_ABAC}</p>
+				</KvContainer>
+			</KvSection>
+
+			{/* Marquee Ticker — irmão da seção, e não filho: no comp a faixa coral
+			    cola no painel navy. É por isso que `KV_RITMO.numeros` tem base curta
+			    (20px) enquanto o topo tem 101px. */}
 			<div className="overflow-hidden bg-[#F2404F] py-5" role="marquee" aria-label={MARQUEE_TEXT}>
 				<style>{`
 					@keyframes kv-numbers-marquee {

@@ -70,3 +70,7 @@ test-results/
 
 # Harness de QA local (scripts one-shot copiados pro container em runtime).
 .qa/
+
+# Dump bruto do frame do Figma (cache local; a referência versionada é
+# docs/design/2026-08-12-home-medidas-figma.md).
+.figma-cache/
