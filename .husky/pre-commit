@@ -17,7 +17,17 @@
 # rodar os cenários de jornada; sem ela, esses cenários pulam via
 # `describeIfDb` e o resto da suíte roda igual. Se até o biome/tsc travarem por
 # ambiente quebrado, é sinal de configuração — não de motivo pra pular o gate.
-npx biome check --write --no-errors-on-unmatched --files-ignore-unknown=true $(git diff --cached --name-only --diff-filter=ACM) 2>/dev/null || true
-git add -u 2>/dev/null || true
+#
+# 2026-08-13 — o `git add -u` daqui não tinha pathspec, e `git add -u` sem
+# pathspec varre a ÁRVORE INTEIRA: qualquer commit sugava junto todo trabalho
+# em andamento não commitado, mesmo em arquivo que nada tinha a ver com ele.
+# Na prática não existia commit seletivo neste repo. Agora o auto-fix e o
+# re-stage operam SÓ sobre o que já estava no commit.
+STAGED=$(git diff --cached --name-only --diff-filter=ACM)
+if [ -n "$STAGED" ]; then
+	printf '%s\n' "$STAGED" | tr '\n' '\0' \
+		| xargs -0 npx biome check --write --no-errors-on-unmatched --files-ignore-unknown=true 2>/dev/null || true
+	printf '%s\n' "$STAGED" | tr '\n' '\0' | xargs -0 git add -- 2>/dev/null || true
+fi
 
 pnpm test:pre-commit
