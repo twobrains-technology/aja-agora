@@ -42,7 +42,7 @@ conv): o erro estourava no `simulate`, antes do snapshot.
 Opção escolhida: **ambos, em camadas** — thread `productId` no `simulate` (consistência,
 o código) + `BEVI_PRODUCT_ID` permanece env-parametrizado (já era) + erro tipado pra
 diagnóstico. ADR completo em
-`docs/correcoes/decisions/2026-06-25-bloco-b-bevi-fechamento.md`.
+`docs/decisoes/blocos/2026-06-25-bloco-b-bevi-fechamento.md`.
 
 ## ⚠️ PENDENTE-KAIRO (dependência externa — Bevi/AGX)
 

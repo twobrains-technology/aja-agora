@@ -99,7 +99,7 @@ de teste, 1925 testes, 100% verde.**
 
 Nenhum trade-off novo apareceu durante a implementação além do que já estava
 decidido nos cards de correção — não foi necessário nenhum registro de
-decisão adicional (`docs/correcoes/decisions/`). O ponto que exigiria uma
+decisão adicional (`docs/decisoes/blocos/`). O ponto que exigiria uma
 decisão de produto (recomendar a cota real vs. re-simular no fechamento) já
 tinha sido resolvido pelo Kairo antes de eu começar a implementar.
 

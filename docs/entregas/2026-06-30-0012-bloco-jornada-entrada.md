@@ -5,7 +5,7 @@ branch: feat/jornada-entrada-conversacional
 onda: jornada-entrada (revisão da entrada conversacional)
 itens: [FIX-103, FIX-104, FIX-105, FIX-106]
 spec: docs/specs/2026-06-28-jornada-entrada-simulador-conversacional-design.md
-decisoes: docs/correcoes/decisions/2026-06-28-bloco-jornada-entrada.md
+decisoes: docs/decisoes/blocos/2026-06-28-bloco-jornada-entrada.md
 ---
 
 # Entrega — bloco-jornada-entrada (comportamento do agente na entrada + simulador)
@@ -51,7 +51,7 @@ Contratos exportados pra consumo nível-3 dos irmãos:
 3. **Condução do loop (FIX-106):** oferta do docx + reconvite leve (1×) e depois
    recalcula sob demanda; itera quantas vezes o usuário quiser, sem empurrar.
 
-Racional completo: `docs/correcoes/decisions/2026-06-28-bloco-jornada-entrada.md`.
+Racional completo: `docs/decisoes/blocos/2026-06-28-bloco-jornada-entrada.md`.
 
 ## Testes (3 camadas, regra do projeto)
 

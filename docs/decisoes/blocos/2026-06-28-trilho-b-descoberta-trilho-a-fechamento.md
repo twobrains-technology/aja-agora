@@ -62,7 +62,7 @@ fora do escopo desta decisão.
 ## Evolução (2026-06-28/07-01) — fechamento-via-B deixa de ser descartado
 
 > `bloco-c-fechamento-trilho-b` (FIX-88/FIX-89). Design completo:
-> `docs/correcoes/decisions/2026-06-28-bloco-c-fechamento-trilho-b.md`.
+> `docs/decisoes/blocos/2026-06-28-bloco-c-fechamento-trilho-b.md`.
 
 **A premissa que sustentava a Decisão 1 (item 1 acima) mudou:**
 

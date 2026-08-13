@@ -89,7 +89,7 @@ ainda em produção:
 
 ## 7. Decisões registradas
 
-Ver `docs/correcoes/decisions/2026-06-28-bloco-a-documentos.md` — cobre:
+Ver `docs/decisoes/blocos/2026-06-28-bloco-a-documentos.md` — cobre:
 nome dos envs, generalização do módulo de storage, dependência nova
 (`@aws-sdk/s3-request-presigner` + fix de diamante de versão via
 `pnpm-workspace.yaml` overrides), enums no schema, shape do audit de

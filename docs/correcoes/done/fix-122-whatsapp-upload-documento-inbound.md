@@ -4,7 +4,7 @@ titulo: "WhatsApp: handler de upload de documento inbound (webhook ignora mídia
 status: done
 commit: a3df11c
 executado_em: 2026-07-01
-decisao: docs/correcoes/decisions/2026-07-01-bloco-entrada-welcome-upload.md (Opção A — paridade com o web)
+decisao: docs/decisoes/blocos/2026-07-01-bloco-entrada-welcome-upload.md (Opção A — paridade com o web)
 severidade: alta
 bloco: bloco-entrada-welcome-upload
 arquivos: [src/app/api/webhook/whatsapp/route.ts, src/lib/whatsapp/api.ts, src/lib/whatsapp/document-inbound.ts, src/lib/whatsapp/formatter.ts, src/lib/agent/personas.ts, tests/regression/agent-trajectory.test.ts]
@@ -15,7 +15,7 @@ rodada: 2026-07-01 — auditoria código×jornada (Mapa em docs/jornada/jornada-
 > **Opção A — paridade com o web** (`uploadContractDocument` direto, sem staging
 > S3 nosso), confirmada pelo Kairo via `AskUserQuestion`. `src/lib/storage/index.ts`
 > ficou FORA do escopo efetivo (era o caso B). Detalhe em
-> `docs/correcoes/decisions/2026-07-01-bloco-entrada-welcome-upload.md`. Regressão
+> `docs/decisoes/blocos/2026-07-01-bloco-entrada-welcome-upload.md`. Regressão
 > nas 3 camadas verde; gate `pnpm test:unit` (206 files, 2134 tests) verde.
 ## Origem — auditoria código×jornada (D13)
 

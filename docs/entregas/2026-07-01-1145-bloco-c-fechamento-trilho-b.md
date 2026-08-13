@@ -86,11 +86,11 @@ apenas adicionamos uma alternativa ao lado.
 
 ## 7. Decisões de arquitetura registradas
 
-- `docs/correcoes/decisions/2026-06-28-bloco-c-fechamento-trilho-b.md` —
+- `docs/decisoes/blocos/2026-06-28-bloco-c-fechamento-trilho-b.md` —
   as 5 decisões de design deste bloco (como resolver o identificador da
   proposta, como representar a ausência do link de assinatura, o passo extra
   de finalização, o que fica de fora por enquanto, e o mapeamento de ofertas).
-- `docs/correcoes/decisions/2026-06-28-trilho-b-descoberta-trilho-a-fechamento.md`
+- `docs/decisoes/blocos/2026-06-28-trilho-b-descoberta-trilho-a-fechamento.md`
   (seção "Evolução") — registra por que a decisão original ("só o Trilho A
   fecha") mudou: o Trilho A travou sem prazo e o piloto atual é de baixa
   concorrência (não multiusuário em escala).

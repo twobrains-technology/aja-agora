@@ -1,7 +1,7 @@
 # Bloco A — Governança determinística do agente (a cura da doença da Mirella)
 
 > 2026-07-01 · branch `feat/governanca-agente` · FIX-181 + FIX-180 + FIX-182
-> ADR: `docs/correcoes/decisions/2026-07-01-bloco-a-governanca-agente.md`
+> ADR: `docs/decisoes/blocos/2026-07-01-bloco-a-governanca-agente.md`
 
 ## O que estava quebrado (por que isso importa)
 

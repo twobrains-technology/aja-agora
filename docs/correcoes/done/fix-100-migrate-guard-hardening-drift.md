@@ -86,5 +86,5 @@ NÃO é bug de agente → **sem cassette Camada 2**. É infra de migration: docu
 
 ## Cross-ref
 - **FIX-81** (remoção do Letta / re-home pro Postgres — `done`) — esta migration 0027 (`memory_identities`) é o artefato de schema do FIX-81.
-- **ADR de remoção do Letta** (`docs/correcoes/decisions/`) — registrar este risco de deploy como nota de release no ADR.
+- **ADR de remoção do Letta** (`docs/decisoes/blocos/`) — registrar este risco de deploy como nota de release no ADR.
 - `2026-06-25-remover-letta-rehome-memoria-postgres.md` (card original do refactor).

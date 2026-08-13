@@ -61,7 +61,7 @@ exatamente o que a jornada canônica define como a experiência da mesa.
 - Migrations 0029/0030 geradas por `drizzle-kit` e aplicadas **no container** (nunca na mão).
 
 ## 7. Decisões registradas
-`docs/correcoes/decisions/2026-07-01-bloco-mesa-transbordo-auto.md` — as 2 decisões de
+`docs/decisoes/blocos/2026-07-01-bloco-mesa-transbordo-auto.md` — as 2 decisões de
 produto (gatilho = só `na_administradora`; raia nova `em_atendimento` **após**
 `na_administradora`) confirmadas pelo Kairo via seleção; inclui a reconciliação da tensão
 forward-only que o card original teria quebrado.

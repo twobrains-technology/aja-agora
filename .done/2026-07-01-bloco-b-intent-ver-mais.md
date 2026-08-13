@@ -81,7 +81,7 @@ pós-comparativo, significa **decidir**.
 - **Limite consciente do default**: enquanto o FIX-96 (tela "ver todos", hero+5+expansível)
   não sai, "ver mais" só **re-mostra o que já foi descoberto** — não traz opções adicionais
   além das apresentadas. É limite honesto, não bug. Decisão registrada em
-  `docs/correcoes/decisions/2026-07-01-bloco-b-intent-ver-mais.md`.
+  `docs/decisoes/blocos/2026-07-01-bloco-b-intent-ver-mais.md`.
 - **PENDENTE-KAIRO / Bernardo**: a UX final de "ver todos" (FIX-96) segue **segurada**
   aguardando aval do Bernardo — **não** implementada aqui, por decisão explícita de escopo.
 - **Dívida pré-existente sinalizada**: 3 testes de `test:integration` (persistência de

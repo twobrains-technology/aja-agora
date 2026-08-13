@@ -32,7 +32,7 @@ executado_em: 2026-06-28
   `name → experience → consent → identify → credit → lance → lance-value →
   lance-embutido → simulator-offer` — ordem correta confirmada.
 - **Decisão de design registrada** em
-  `docs/correcoes/decisions/2026-06-28-bloco-g.md` (sem trade-off real —
+  `docs/decisoes/blocos/2026-06-28-bloco-g.md` (sem trade-off real —
   ordem 100% determinada pelo código de produção já existente).
 
 # Bug (Camada 3) — Eval da jornada percorre gates na ordem PRÉ-FIX-53 (identify no fim)

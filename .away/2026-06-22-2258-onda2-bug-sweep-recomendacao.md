@@ -72,7 +72,7 @@ Os 2 são independentes (D=tool-policy, E=adapter/discovery) → paralelos.
 ## Relatório final
 - **Resultado vs critério de pronto:** ✅ ATINGIDO. Os 2 blocos mergeados na `develop` (HEAD `5662e14b`), gate `test:unit` VERDE pós-merge (175 arquivos, **1891 testes**, +22 vs baseline, 0 falhas), pushados. `landed: 2, quarantine: []`.
   - `bloco-d` (bug): `test+fix:` re-descoberta por troca de faixa pós-reveal sem reabrir o BUG-REVEAL-LOOP. 3 camadas de regressão (structural `tool-policy.test.ts` + cassette `agent-trajectory.test.ts` do `auto-130k-60m`).
-  - `bloco-e` (feature): sweep sequencial multi-faixa no adapter, **opt-in (flag `sweep`, default OFF)**, 3 faixas default (spread multiplicativo), circuit breaker c/ detecção de throttle, sem mexer no fechamento. ADR: `docs/correcoes/decisions/2026-06-22-bloco-e-sweep-multifaixa.md`.
+  - `bloco-e` (feature): sweep sequencial multi-faixa no adapter, **opt-in (flag `sweep`, default OFF)**, 3 faixas default (spread multiplicativo), circuit breaker c/ detecção de throttle, sem mexer no fechamento. ADR: `docs/decisoes/blocos/2026-06-22-bloco-e-sweep-multifaixa.md`.
 - **O que NÃO fiz e por quê:** (1) NÃO liguei o sweep — é opt-in até o spike validar latência/rate-limit ao vivo (decisão conservadora correta do agente). (2) NÃO consertei os 25 erros de `tsc` da develop (dívida pré-existente, fora do escopo). (3) NÃO toquei os blocos a/b/c parados.
 - **Revisar primeiro:**
   - **D4** — gate de merge-back trocado pra `test:unit` (o `tsc` global está vermelho na base há tempo; ver PENDENTE abaixo).

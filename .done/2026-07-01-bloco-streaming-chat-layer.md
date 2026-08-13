@@ -34,7 +34,7 @@ com defeito, sem tocar na inteligência da conversa.
 | **FIX-189** | Segmentação (anti-colagem `normalizeGluedSentences`) + a descoberta responde sem cutucar (correção do falso-negativo do `isTurnEmpty` + guard de turno-mudo nos dispatches de busca web/WhatsApp) | `8a0db893` |
 | **FIX-190** | Barreira em código contra fallback de refresh (`isTechnicalFallback`) — as camadas de prompt/HARD_RULES/cassette já vinham do FIX-52 | `b8a23a28` |
 
-## Decisões de implementação (detalhe em `docs/correcoes/decisions/2026-07-01-bloco-streaming-chat-layer.md`)
+## Decisões de implementação (detalhe em `docs/decisoes/blocos/2026-07-01-bloco-streaming-chat-layer.md`)
 
 - **Streaming por FRASE** (não por bloco nem só-persistência): o sanitizer checa cada frase completa
   antes de emitir, garantindo o invariante "preâmbulo nem enviado" sem matar o streaming.

@@ -21,7 +21,7 @@ alteração). `mesa` é no-op manual. `bevi_b` fica STUB (`TODO(bevi_b)`,
 PENDENTE-KAIRO). Documento inexistente propaga erro (fail-fast, não é o
 caminho best-effort). **Gap aberto:** nenhum chamador automático foi
 wireado ainda (decisão registrada em
-`docs/correcoes/decisions/2026-06-28-bloco-a-documentos.md` §8) — o contrato
+`docs/decisoes/blocos/2026-06-28-bloco-a-documentos.md` §8) — o contrato
 está pronto pro bloco-c consumir com `target="bevi_b"`. Testes:
 `dispatch.integration.test.ts` (6 cenários: mesa/bevi_b-stub/bevi_a
 sucesso+falha+exceção/documento inexistente).

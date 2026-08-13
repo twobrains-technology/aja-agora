@@ -74,7 +74,7 @@ uma `comparison_table` de verdade.
 Feature nova com decisões reais de design (mecânica do híbrido, política de faixas,
 circuit breaker). Use o raciocínio da skill `superpowers:brainstorming` mas DECIDA
 sozinho (você é o decisor; não trave esperando aprovação). Registre cada decisão em
-`docs/correcoes/decisions/<data>-bloco-e-sweep-multifaixa.md` (o quê · opções · escolhida + porquê).
+`docs/decisoes/blocos/<data>-bloco-e-sweep-multifaixa.md` (o quê · opções · escolhida + porquê).
 
 ## 6. Regressão exigida
 

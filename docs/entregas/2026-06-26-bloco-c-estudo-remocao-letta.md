@@ -8,7 +8,7 @@
 
 ## O que entregou
 
-1. **ADR completo** — `docs/correcoes/decisions/2026-06-25-remocao-letta-postgres.md`:
+1. **ADR completo** — `docs/decisoes/blocos/2026-06-25-remocao-letta-postgres.md`:
    contexto, mapa de uso real, veredito, 4 opções consideradas, decisão proposta,
    plano de migração faseado, riscos, rollback, e os pré-requisitos de medição.
 2. **Plano de migração faseado** (dentro do ADR, §5) — fase 0 (medição bloqueante)

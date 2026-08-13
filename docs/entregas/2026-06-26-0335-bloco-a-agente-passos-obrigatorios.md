@@ -50,7 +50,7 @@ determinístico com `MockLanguageModelV3`), conforme a regra inviolável do proj
 container transitório com store pnpm compartilhado + pg develop + bind-mount deste worktree
 (host é pnpm-only, sem `node_modules`). Builder tests (prompt-cache) também verdes.
 
-## Decisões de design (ADR `docs/correcoes/decisions/2026-06-25-bloco-a-agente-passos-obrigatorios.md`)
+## Decisões de design (ADR `docs/decisoes/blocos/2026-06-25-bloco-a-agente-passos-obrigatorios.md`)
 
 - **FIX-76:** prompt anti-alucinação **+** reabertura do gate via `revealValueTargetChanged`,
   em vez de só-prompt — o card pede a reabertura e o prompt sozinho deixa o agente livre pra

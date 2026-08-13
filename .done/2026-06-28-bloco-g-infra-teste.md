@@ -67,7 +67,7 @@ identify-cedo`
 - **Validado rodando o eval LLM real** (não só a Camada 1): 31/31 passed,
   `fluxoScore=0.89` (piso 0.85).
 - Decisão de design (mecânica, sem trade-off de produto) registrada em
-  `docs/correcoes/decisions/2026-06-28-bloco-g.md`.
+  `docs/decisoes/blocos/2026-06-28-bloco-g.md`.
 
 ## FIX-100 — `migrate-guard.mjs` detecta drift
 
@@ -120,7 +120,7 @@ pnpm test:integration → 42/44 arquivos, 175/178 testes — verde (2 rodadas se
 
 1. **FIX-99**: ordem de gates do eval determinada 100% pelo código de
    produção já existente (sem trade-off real) — registrado em
-   `docs/correcoes/decisions/2026-06-28-bloco-g.md`.
+   `docs/decisoes/blocos/2026-06-28-bloco-g.md`.
 2. **FIX-97**: isolamento de DB via serialização de arquivos
    (`--no-file-parallelism`), não via schema/org efêmero — decisão de
    escopo (proporcional ao saneamento vs. feature de infra de teste maior),

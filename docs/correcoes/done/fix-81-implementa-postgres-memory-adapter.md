@@ -31,7 +31,7 @@ rodada: "2026-06-26 — Kairo autorizou a EXECUÇÃO da remoção do Letta (apó
 > Opção B do ADR — não mais estudo.
 
 ## Root cause (já investigado — ADR FIX-80)
-Ver `docs/correcoes/decisions/2026-06-25-remocao-letta-postgres.md` (PLANO COMPLETO).
+Ver `docs/decisoes/blocos/2026-06-25-remocao-letta-postgres.md` (PLANO COMPLETO).
 Veredito: **OVERKILL do Letta, não da memória**. O Letta é usado como KV-store REST
 caro (~2.131 LOC + container ECS + Cloud Map SRV + dependência OpenAI já quebrada),
 guardando um blob `jsonb` keyed por identidade que o app já produz localmente

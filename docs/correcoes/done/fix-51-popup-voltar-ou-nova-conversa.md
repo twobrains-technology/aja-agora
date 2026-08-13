@@ -55,7 +55,7 @@ existe ponto de decisão do usuário** entre "achei uma conversa retomável" e
 
 ### Decisões de DESIGN (resolver no passo 2 / brainstorming autônomo do bloco)
 
-São escolhas reais — registrar em `docs/correcoes/decisions/`:
+São escolhas reais — registrar em `docs/decisoes/blocos/`:
 
 1. **Quando mostrar o popup:** sempre que houver conversa retomável, ou só com
    progresso significativo (ex.: ≥ N mensagens / passou da qualificação)? Mostrar

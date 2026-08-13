@@ -105,7 +105,7 @@
   - Código hoje: honra — `shouldAskMotive` (`src/lib/agent/qualify-state.ts:191-194`) +
     supressão de gate no turno (`decideShowGate`, `qualify-state.ts:244-247`) +
     `desireFollowUpSection` instruindo a pergunta (`src/lib/agent/system-prompt.ts:1019-1027`).
-    `motivationAsked` marcado no runner (`src/lib/agent/orchestrator/runner.ts:1113-1118`)
+    `motivationAsked` marcado no nó `advance` (`src/lib/agent/langgraph/nodes/advance.ts:94-95`)
     garante não-bloqueio.
   - Como o Haiku verifica: responder "Um Corolla, sempre quis"; capturar o turno seguinte —
     deve conter UMA pergunta de motivo e ZERO cards (nenhum form de CPF, nenhum slider);
@@ -132,8 +132,8 @@
   - Esperado: se o usuário ignora a pergunta do motivo (responde outra coisa/valor), o funil
     segue normal pro identify — sem re-perguntar o motivo em loop.
   - Código hoje: honra — `motivationAsked` libera o funil no turno seguinte
-    (`qualify-state.ts:191-194` + `runner.ts:1113-1118`); `desireAsked` marcado na emissão
-    (`src/lib/agent/orchestrator/index.ts:657-662`) impede re-emissão.
+    (`qualify-state.ts:191-194` + `langgraph/nodes/advance.ts:94-95`); `desireAsked` marcado
+    na emissão (`src/lib/agent/langgraph/nodes/persist.ts:61-62`) impede re-emissão.
   - Como o Haiku verifica (cenário alternativo): em vez de dar o motivo, responder "quero
     ver as opções logo" — o próximo turno deve avançar (pedido de CPF), sem repetir "o que
     fez você decidir agora?".
@@ -663,12 +663,15 @@
   Quatro convenções convivendo — decidir a palavra oficial e alinhar as copies
   determinísticas.
 
-- **DV-9 — Docs de QA/jornada com resíduos.** `docs/qa/roteiro-qa.md` (Passo 2) ainda lista
-  o seletor do consent ("consent `Bora!`") e a ordem antiga (experience → valor na entrada);
-  `docs/jornada/jornada-canonica.md:113-114` diz que a 3ª saída do lance é "só via texto
-  livre — sem botão próprio", mas o FIX-236 criou o botão "Só a parcela, sem lance"
-  (`web/adapter.ts:109-113`). Só documentação — mas o coletor pode se confundir se usar o
-  roteiro cru.
+- **DV-9 — Docs de QA com resíduos.** `docs/qa/roteiro-qa.md` (Passo 2) ainda lista o seletor
+  do consent ("consent `Bora!`") e a ordem antiga (experience → valor na entrada). Só
+  documentação — mas o coletor pode se confundir se usar o roteiro cru.
+
+  A segunda metade deste item **caducou** e foi removida: apontava divergência contra
+  `docs/jornada/jornada-canonica.md`, **revogada em 13/07/2026** (`99394062`) exatamente por
+  ter virado lei — "cada ciclo de melhoria apertou o parafuso até o agente ficar bitolado".
+  Hoje quem registra a decisão do cliente é `docs/jornada/decisoes-do-cliente.md`, e
+  divergência entre código e jornada **não é mais defeito automático do código**.
 
 ## DÚVIDAS ABERTAS (não confirmei barato — verificar ao vivo / com o dono)
 

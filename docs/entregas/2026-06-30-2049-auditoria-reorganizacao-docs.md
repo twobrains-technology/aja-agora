@@ -66,7 +66,7 @@ para também olhar `docs/entregas/`. Detalhe completo (antes/depois, não-confor
   pelo Superset), então o pre-commit hook (que roda `pnpm` no host) não executa aqui. O gate foi
   verificado à parte num container transitório (§6, 1903 testes verdes) — padrão documentado para este
   ambiente.
-- **Skill `todo-blocks`** ainda grava ADR de bloco no path legado `docs/correcoes/decisions/`
+- **Skill `todo-blocks`** ainda grava ADR de bloco no path legado `docs/decisoes/blocos/`
   (este repo já usa `docs/decisoes/blocos/`); alinhar a skill numa próxima passada — relatório §7.
 - **Passo 2 opcional** (purismo total: renomear `jornada→jornadas`, mover `integracoes`/`visao`)
   fica aberto, com o caminho fechado, aguardando aval — relatório §6.

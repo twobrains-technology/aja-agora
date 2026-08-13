@@ -30,7 +30,7 @@
 | 5 | `docs/superpowers/plans/` | Plano fora de `design/` | `docs/design/planos/` |
 | 6 | `docs/specs/` | Specs soltas sem o `design/` | `docs/design/specs/` |
 | 7 | `docs/decisions/` | Decisão/ADR em inglês fora de `decisoes/` | `docs/decisoes/` |
-| 8 | `docs/correcoes/decisions/` | ADRs de bloco fora da taxonomia de decisões | `docs/decisoes/blocos/` |
+| 8 | `docs/decisoes/blocos/` | ADRs de bloco fora da taxonomia de decisões | `docs/decisoes/blocos/` |
 | 9 | `CONTEXT.md` (raiz) | Glossário de domínio na raiz do repo | `docs/referencia/CONTEXT.md` |
 | 10 | `docs/agent-eval-*.md` (3) | Guias temáticos soltos no topo de `docs/` | `docs/referencia/` |
 | 11 | `docs/qa-suggestions.md` | Observações de QA soltas no topo de `docs/` | `docs/referencia/` |
@@ -84,7 +84,7 @@ docs/                              🟦 PRODUTO (durável)
 
 Refs em **código ativo** e **processo ativo** foram corrigidas (ponteiro quebrado = defeito):
 
-- `docs/correcoes/decisions/` → `docs/decisoes/blocos/`: 9 comentários em `src/`+`tests/`
+- `docs/decisoes/blocos/` → `docs/decisoes/blocos/`: 9 comentários em `src/`+`tests/`
   (`mesa/handoff.ts`, `validations/mesa.ts`, `whatsapp/mesa/{routing,outbound}.ts`,
   `agent/mesa-copilot/system-prompt.ts`, `agent/qualify-config.test.ts`, `chat/resume.meaningful.test.ts`,
   `regression/agent-trajectory.test.ts`) + 6 ocorrências em prompts/cards de **blocos TODO abertos**.
@@ -130,7 +130,7 @@ Nenhum desses foi feito por padrão por ter **blast radius alto** (regra: deixa 
 
 ## 7. Observação para as skills geradoras
 
-A skill **`todo-blocks`** ainda grava ADRs de bloco em `docs/correcoes/decisions/`, enquanto o
+A skill **`todo-blocks`** ainda grava ADRs de bloco em `docs/decisoes/blocos/`, enquanto o
 padrão canônico (e agora este repo) usa `docs/decisoes/blocos/`. Os prompts dos blocos TODO
 abertos já foram atualizados para o path novo; convém alinhar a skill na fonte numa próxima passada
 para não recriar o path legado.

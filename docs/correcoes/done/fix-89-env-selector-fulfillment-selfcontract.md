@@ -6,7 +6,7 @@ bloco: bloco-c-fechamento-trilho-b
 arquivos:
   - src/lib/adapters/index.ts
   - src/lib/bevi/fulfillment.ts
-  - docs/correcoes/decisions/2026-06-28-trilho-b-descoberta-trilho-a-fechamento.md
+  - docs/decisoes/blocos/2026-06-28-trilho-b-descoberta-trilho-a-fechamento.md
 rodada: 2026-06-28 — fazer a jornada fechar de ponta a ponta (Trilho A travado)
 commit: 1ad9496b
 executado_em: 2026-07-01
@@ -30,7 +30,7 @@ do Trilho B (no B, descoberta e fechamento são a MESMA proposta — não cria n
 | Adicionar `"selfcontract"` ao switch de `PROPOSAL_GATEWAY` → instancia `BeviSelfContractProposalGateway` (FIX-88) | `src/lib/adapters/index.ts` |
 | Quando o gateway é self-contract, `startContract` REUSA a proposta de descoberta da conversa (discovery-session) em vez de criar nova/re-simular; `confirmOffer` → `chooseOffer` (finished:true) + `finalize` → `proposalNumber`; sem `consortiumProposalLink` (UX "proposta enviada à administradora, nº X") | `src/lib/bevi/fulfillment.ts` |
 | Disparar o despacho do documento pro destino do trilho: `dispatchClientDocument(documentId, "bevi_b")` — **STUB nível 3** (contrato do bloco-a) com `TODO(bloco-a): dispatch real` até o merge de A | `src/lib/bevi/fulfillment.ts` |
-| Atualizar o ADR: o fechamento-via-B deixa de ser "descartado" — premissa mudou (A travado sem prazo + piloto). Registrar a evolução da decisão (não apagar a anterior; anexar) | `docs/correcoes/decisions/2026-06-28-trilho-b-descoberta-trilho-a-fechamento.md` |
+| Atualizar o ADR: o fechamento-via-B deixa de ser "descartado" — premissa mudou (A travado sem prazo + piloto). Registrar a evolução da decisão (não apagar a anterior; anexar) | `docs/decisoes/blocos/2026-06-28-trilho-b-descoberta-trilho-a-fechamento.md` |
 
 ## Regressão exigida
 - **Camada 1 (structural):** `PROPOSAL_GATEWAY=selfcontract` resolve o gateway self-contract;

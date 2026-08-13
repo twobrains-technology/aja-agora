@@ -55,7 +55,7 @@ evidencia:
   (`throw err`).
 - Um `throw` numa tool do Vercel AI SDK vira **tool-error** que retorna ao modelo, e o
   modelo o **narra**. Não há `experimental_repairToolCall`/`onError` no agent — o ADR
-  `docs/correcoes/decisions/2026-07-01-bloco-a-governanca-agente.md:86-103` decidiu
+  `docs/decisoes/blocos/2026-07-01-bloco-a-governanca-agente.md:86-103` decidiu
   **não** adotar `repairToolCall`. Logo o único caminho hoje é o modelo narrar.
 - Existe precedente do padrão certo: o **FIX-72** já converte um erro de tool em
   **diretiva** (re-busca) em vez de deixar narrar — `src/lib/agent/tools/ai-sdk.fix-72.test.ts`.

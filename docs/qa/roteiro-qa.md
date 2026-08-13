@@ -2,7 +2,7 @@
 projeto: aja-agora
 dominio: TwoBrains
 atualizado: 2026-07-01
-oraculo: docs/jornada/jornada-canonica.md
+oraculo: "o código — nextGate em src/lib/agent/qualify-state.ts; decisão do cliente em docs/jornada/decisoes-do-cliente.md"
 escopo_padrao: "carro (auto) no web, do sonho à proposta, ponta-a-ponta"
 ---
 
@@ -202,7 +202,8 @@ Mesma jornada, mesma ordem, mesmas regras. Web tem componentes interativos (agul
 botões); WhatsApp usa botões nativos + conversa + marcos textuais. **Testar WhatsApp sem
 WhatsApp real:** simuladores no admin — `/admin/simulator` (hub), `/admin/simulator/whatsapp`
 ("Cliente no WhatsApp", mesmo código do canal real), `/admin/simulator/web`,
-`/admin/simulator/attendant`. Divergências a caçar (mapa em `jornada-canonica.md:258-285`):
+`/admin/simulator/attendant`. Divergências a caçar (o mapa vivia em `jornada-canonica.md`,
+revogada em 13/07/2026 — sobrou a lista abaixo):
 D5 (WhatsApp manda faixas em vez de conversa no valor), D11 (WhatsApp promete "assinatura"),
 D13 (WhatsApp ignora upload inbound), D18 (card de decisão intercalado no 1º "Tenho interesse"),
 D19 (pula educação de lance embutido pra no/maybe), D22 ("Ver outras opções" sem handler). Vários
@@ -316,9 +317,13 @@ com fix aplicado (FIX-116/117/119/120/122) mas **validação de tela WhatsApp pe
     acessar os grupos", "preciso trazer os IDs reais") e entrou em **loop**; só saiu com
     confirmação manual. Casa com o padrão proibido §8. Raiz: não re-resolveu o grupo/ID da
     recomendação (ligado ao defeito do card).
-  - **Defeito** — `recommendation_card` é o único artefato do reveal **sem coação server-side**
-    (números model-typed; `runner.ts` empurra `payload=input`, sem `coerceRecommendation*`).
-    Confirma [[project_aja_tela_recomendacao_dados_reais]].
+  - **Defeito (REVALIDAR)** — `recommendation_card` era o único artefato do reveal **sem coação
+    server-side** (números model-typed; o `runner.ts` de então empurrava `payload=input`, sem
+    `coerceRecommendation*`). ⚠️ Relato da época do runtime Vercel: `runner.ts` foi removido em
+    `90270707` e hoje `coerceRecommendationPayload` existe
+    (`src/lib/agent/orchestrator/recommendation-payload.ts:168`) e recalcula o payload. Não
+    confirmei ponta-a-ponta que o caminho do card passa por ela — **revalidar antes de tratar
+    como aberto**. Confirma [[project_aja_tela_recomendacao_dados_reais]].
   - **Defeito** — selo **"Orçamento 100%"** calculado contra um orçamento que o cliente **nunca
     informou** (schema `recommend_groups` exige `budget` → modelo inventa ≈ parcela). Risco CDC.
   - Menores: IPCA 4,5% hardcoded (`offer-mapper.ts:188`); dial "Após receber" estático/mislabel

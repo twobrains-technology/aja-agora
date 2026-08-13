@@ -38,7 +38,7 @@ aprovado pode iniciar a mensagem. Este bloco é a porta de entrada desses templa
 - **D5 — UI** com componentes shadcn já instalados, espelhando o padrão de
   `administradoras/`; página sob `(dashboard)` pra herdar o shell/sidebar.
 
-(Detalhe em `docs/correcoes/decisions/2026-07-02-bloco-whatsapp-templates-admin.md`.)
+(Detalhe em `docs/decisoes/blocos/2026-07-02-bloco-whatsapp-templates-admin.md`.)
 
 ## Qualidade
 

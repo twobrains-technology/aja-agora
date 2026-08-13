@@ -102,4 +102,4 @@ test+feat: adiciona sendTemplate HSM na API WhatsApp oficial (FIX-85)
 
 **Conclusão:** Bloco executado na ordem FIX-85 → FIX-86 → FIX-87. Arquitetura segue padrões do projeto (adapter pattern, simulation bus, Drizzle ORM, shadcn/ui). Pendente apenas o template HSM na Meta Business (externo).
 
-🔖 **Referência:** `docs/correcoes/decisions/2026-06-28-bloco-b-chat-mesa.md`
+🔖 **Referência:** `docs/decisoes/blocos/2026-06-28-bloco-b-chat-mesa.md`

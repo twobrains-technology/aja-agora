@@ -63,7 +63,7 @@ quanto quer gastar.
   LLM formular a pergunta no directive. Motivo: determinismo e paridade — a pergunta nunca some
   e não depende do LLM não narrar mecanismo. Alternativa (directive do agente) descartada por
   ser não-determinística. Registrada em
-  `docs/correcoes/decisions/2026-07-01-bloco-whatsapp-funil-paridade.md`.
+  `docs/decisoes/blocos/2026-07-01-bloco-whatsapp-funil-paridade.md`.
 - **FIX-120 — remoção do código morto** (decisão técnica, sem perguntar): removidos
   `creditRangeQuestionToWhatsApp`/`resolveCreditReply`/`handleCredit`/roteamento `credit_`
   (regra global: sem import órfão). `CREDIT_BUCKETS` fica (serve `lanceValueOptions`).

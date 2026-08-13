@@ -34,7 +34,7 @@ Path de SUCESSO, não de falha Bevi — documentado, não corrigido (candidato a
 ## Decisão de design
 
 Ver ADR completa:
-[`docs/correcoes/decisions/2026-07-12-bloco-r9-4-bevi-degradacao.md`](../docs/correcoes/decisions/2026-07-12-bloco-r9-4-bevi-degradacao.md).
+[`docs/decisoes/blocos/2026-07-12-bloco-r9-4-bevi-degradacao.md`](../docs/decisoes/blocos/2026-07-12-bloco-r9-4-bevi-degradacao.md).
 
 - **Decidi** medir o teto agregado (a) na camada de TOOL (`runDiscovery`, `ai-sdk.ts`) via
   `Promise.race` contra um deadline único (1ª tentativa + retry), **em vez de** threading um

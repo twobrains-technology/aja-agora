@@ -4,7 +4,7 @@ titulo: "ESTUDO/PLANO de remoção do Letta — re-home da memória pro Postgres
 status: done
 bloco: bloco-c-estudo-remocao-letta
 arquivos:
-  - docs/correcoes/decisions/2026-06-25-remocao-letta-postgres.md
+  - docs/decisoes/blocos/2026-06-25-remocao-letta-postgres.md
   - docs/
   - src/lib/memory/postgres-adapter.ts
 rodada: "2026-06-25 sessão de QA manual Kairo — jornada chat/fechamento"

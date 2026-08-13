@@ -16,7 +16,7 @@ rodada: 2026-07-01 — investigação profunda da jornada da Mirella (conv 69a38
 ---
 
 ## Resolução (2026-07-01)
-ADR: docs/correcoes/decisions/2026-07-01-bloco-a-governanca-agente.md (Q1/Q2/Q3 recomendadas).
+ADR: docs/decisoes/blocos/2026-07-01-bloco-a-governanca-agente.md (Q1/Q2/Q3 recomendadas).
 - **Tabela declarativa `action-policy.ts`** (`evaluateActionPrecondition`) generaliza a precondição de
   DADO do FIX-179 (antes `if` inline no execute) para as 3 tools de risco (simulate_quota/
   get_group_details/present_decision_prompt) — a dimensão AÇÃO→PRECONDIÇÃO da allowlist. As diretivas

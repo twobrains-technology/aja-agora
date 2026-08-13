@@ -78,7 +78,7 @@ faltavam pra calibrar a varredura com segurança.
 
 ## 7. Decisões de arquitetura registradas
 
-- `docs/correcoes/decisions/2026-06-22-bloco-e-sweep-multifaixa.md` — onde vive a
+- `docs/decisoes/blocos/2026-06-22-bloco-e-sweep-multifaixa.md` — onde vive a
   varredura, gatilho opt-in, política de faixas, circuit breaker/throttle, e por
   que o fechamento não precisou mudar.
 

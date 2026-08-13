@@ -12,7 +12,7 @@ arquivos:
 rodada: "2026-07-12 loop r9 ONDA 4 (pós-onda-3 4/10, P0 Negócio/E2E, veredito-r9pos3-sonnet.md §3+§6)"
 executado_em: 2026-07-12
 commit: 604cbde (a: teto agregado), 25a8f50 (b: recovery searchDispatched)
-decisao: docs/correcoes/decisions/2026-07-12-bloco-r9-4-bevi-degradacao.md
+decisao: docs/decisoes/blocos/2026-07-12-bloco-r9-4-bevi-degradacao.md
 ---
 ## Palavras do juiz (veredito r9pos3, Sonnet 5 — P0 Negócio+E2E, "erro do mario")
 > "search_groups estoura o timeout de 90s do coletor [...] o funil segue roteirizado
@@ -100,7 +100,7 @@ decisao: docs/correcoes/decisions/2026-07-12-bloco-r9-4-bevi-degradacao.md
 
 ## Resolução (2026-07-12)
 
-Ver decisão completa em `docs/correcoes/decisions/2026-07-12-bloco-r9-4-bevi-degradacao.md`
+Ver decisão completa em `docs/decisoes/blocos/2026-07-12-bloco-r9-4-bevi-degradacao.md`
 (investigação do passo 3 + trade-offs de design). Resumo:
 
 - **(a) cap agregado**: `runDiscovery` (`ai-sdk.ts`) mede um deadline ÚNICO de 45s por invocação

@@ -45,7 +45,7 @@ já entregava; o WhatsApp finalmente alcançou.
   o mesmo tratamento. Não inventamos um fluxo paralelo só pro WhatsApp, que
   viraria dívida amanhã. A decisão de arquitetura (onde guardar o arquivo) foi
   levada ao Kairo e confirmada antes de uma linha ser escrita
-  (`docs/correcoes/decisions/2026-07-01-bloco-entrada-welcome-upload.md`).
+  (`docs/decisoes/blocos/2026-07-01-bloco-entrada-welcome-upload.md`).
 - **Anti-regressão de verdade.** Cada correção nasceu de um teste que falhava
   antes do conserto e passou depois. O envio de documento tem cobertura nas três
   camadas exigidas (estrutural, cassette de trajetória e comportamento do

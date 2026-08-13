@@ -88,4 +88,4 @@ erros restantes são dívida pré-existente em test files de `mesa`, na develop)
 
 Produção: `bevi-errors.ts`, `tools/ai-sdk.ts`, `orchestrator/{action-policy,artifact-guard,directives,runner,index}.ts`.
 Testes: os `.test.ts` ao lado + `runner.discovery-failed.integration.test.ts` + `tools/ai-sdk.fix-186.test.ts` + `tests/regression/agent-trajectory.test.ts` (cassettes) + `tests/eval/agent-flow.eval.test.ts` (nightly).
-Docs: ADR em `docs/correcoes/decisions/2026-07-01-bloco-funil-turno-orquestracao.md`; cards em `docs/correcoes/done/fix-186-*.md` e `fix-187-*.md`.
+Docs: ADR em `docs/decisoes/blocos/2026-07-01-bloco-funil-turno-orquestracao.md`; cards em `docs/correcoes/done/fix-186-*.md` e `fix-187-*.md`.

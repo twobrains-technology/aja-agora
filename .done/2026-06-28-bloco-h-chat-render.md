@@ -52,7 +52,7 @@ downstream (persistência do `content`, prefixo do próximo gate, `RunAgentResul
 orchestrator).
 
 **Trade-off decidido sem novo ADR** (já explícito no card, então não gerou
-`docs/correcoes/decisions/2026-06-28-bloco-h.md`): a guarda vive em `runner.ts` (antes de
+`docs/decisoes/blocos/2026-06-28-bloco-h.md`): a guarda vive em `runner.ts` (antes de
 persistir), não em `groupAdjacentText` (render). Motivo: `runAgentTurn` é o ponto único
 consumido tanto pelo canal web quanto pelo WhatsApp (`src/lib/whatsapp/adapter.ts` também
 acumula os mesmos `text-delta` events); colapsar no `chat-message.tsx` corrigiria só o render web,

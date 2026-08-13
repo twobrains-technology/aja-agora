@@ -20,7 +20,7 @@ opcional via `S3_CLIENT_DOCS_KMS_KEY_ID`), tabela `client_documents` (migration
 0029 à mão + snapshot do meta reconstruído), módulo `client-documents.ts`
 (`storeClientDocument`/`listClientDocuments`/etc) e `/api/chat/document`
 refatorado pra gravar primeiro e responder `{ok, documentId}`. Detalhes e
-decisões finas em `docs/correcoes/decisions/2026-06-28-bloco-a-documentos.md`.
+decisões finas em `docs/decisoes/blocos/2026-06-28-bloco-a-documentos.md`.
 Testes: `route.integration.test.ts` + `storage/index.test.ts`.
 
 ## Palavras do operador
