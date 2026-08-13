@@ -1,0 +1,44 @@
+{
+	"cenario": "golden-objecao-fgts-e-atraso",
+	"descricao": "Duas perguntas do FAQ do site que o golden set nunca cobriu: FGTS (imóvel) e atraso de parcela. Nenhuma pode virar número inventado nem travar o funil.",
+	"caRefs": ["site/FAQ — FGTS e atraso"],
+	"asserts": {
+		"turns": [
+			null,
+			null,
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true,
+				"forbidRepeatedAgentText": true
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi",
+			"expect": "welcome."
+		},
+		{
+			"type": "action",
+			"action": {
+				"kind": "category",
+				"category": "imovel"
+			},
+			"label": "Imóvel",
+			"expect": "divider do especialista de imóvel e o gate de nome."
+		},
+		{
+			"type": "text",
+			"text": "posso usar meu FGTS no lance?",
+			"expect": "responde o que vale para imóvel residencial, sem inventar percentual ou valor."
+		},
+		{
+			"type": "text",
+			"text": "e se eu atrasar uma parcela, o que acontece?",
+			"expect": "responde com honestidade, sem multa inventada e sem repetir a fala anterior."
+		}
+	]
+}

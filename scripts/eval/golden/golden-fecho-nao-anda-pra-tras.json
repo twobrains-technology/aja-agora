@@ -57,7 +57,7 @@
 				"gate": "identify",
 				"value": {
 					"cpf": "${E2E_TEST_CPF}",
-					"celular": "11995432576",
+					"celular": "${E2E_TEST_CELULAR}",
 					"lgpd": true
 				},
 				"label": "Enviei meus dados pra buscar as ofertas"

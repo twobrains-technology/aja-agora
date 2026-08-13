@@ -384,3 +384,60 @@ describe("checkScenario — regressões do report de 05/08", () => {
 		expect(out.pass).toBe(true);
 	});
 });
+
+// FIX-431 — o escopo de `forbidDuplicateOffers`.
+//
+// O assert nasceu do report de 05/08 ("Está repetindo grupos iguais"): a mesma
+// oferta aparecendo duas vezes na MESMA lista. Ele estava somando as ofertas de
+// TODOS os artifacts do turno, o que reprovava o desenho correto do produto — o
+// `recommendation_card` destaca uma opção e o `comparison_table` lista todas,
+// incluindo a destacada (FIX-78/FIX-224, os dois são inseparáveis).
+//
+// Só apareceu agora porque os cenários que exercitam esse ramo viviam SKIPPED
+// por falta de `E2E_TEST_CPF`. Destravar o gate revelou o assert mal escopado.
+describe("forbidDuplicateOffers — escopo", () => {
+	const oferta = {
+		administradora: "Âncora",
+		creditValue: 80_000,
+		monthlyPayment: 970,
+		termMonths: 115,
+	};
+
+	function turnoCom(artifacts: Array<{ type: string; data: unknown }>) {
+		return {
+			userMsg: "quero ver mais opções",
+			agentText: "",
+			artifactTypes: artifacts.map((a) => a.type),
+			artifacts,
+			httpStatus: 200,
+			elapsedMs: 1,
+			error: null,
+		};
+	}
+
+	it("a MESMA oferta no card e na tabela NÃO é duplicata (é o desenho)", () => {
+		const r = checkScenario(
+			[
+				turnoCom([
+					{ type: "recommendation_card", data: oferta },
+					{
+						type: "comparison_table",
+						data: { groups: [oferta, { ...oferta, creditValue: 90_000 }] },
+					},
+				]),
+			],
+			{ turns: [{ forbidDuplicateOffers: true }] },
+		);
+		expect(r.failures).toEqual([]);
+		expect(r.pass).toBe(true);
+	});
+
+	it("a mesma oferta DUAS VEZES na mesma lista continua sendo defeito", () => {
+		const r = checkScenario(
+			[turnoCom([{ type: "comparison_table", data: { groups: [oferta, oferta] } }])],
+			{ turns: [{ forbidDuplicateOffers: true }] },
+		);
+		expect(r.failures).toHaveLength(1);
+		expect(r.failures[0]).toContain("comparison_table");
+	});
+});

@@ -1,0 +1,36 @@
+{
+	"cenario": "golden-objecao-vender-a-carta",
+	"descricao": "FAQ do site: 'posso vender a carta / transferir a cota?'. Pergunta de saída — o agente não pode nem prometer liquidez nem empurrar handoff só porque a pergunta é chata.",
+	"caRefs": ["site/FAQ — transferência de cota", "CA-36 tom consultivo"],
+	"asserts": {
+		"turns": [
+			null,
+			{
+				"forbidUngroundedMoney": true,
+				"forbidArtifacts": ["atendimento_handoff"]
+			},
+			{
+				"forbidUngroundedMoney": true,
+				"forbidRepeatedAgentText": true,
+				"forbidArtifacts": ["atendimento_handoff"]
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi",
+			"expect": "welcome."
+		},
+		{
+			"type": "text",
+			"text": "se eu me arrepender, dá pra vender a carta pra outra pessoa?",
+			"expect": "explica transferência de cota sem prometer comprador nem valor, e sem despachar para atendente humano."
+		},
+		{
+			"type": "text",
+			"text": "e se eu quiser desistir no meio?",
+			"expect": "responde com honestidade sobre o que acontece, sem repetir a fala anterior e sem handoff."
+		}
+	]
+}

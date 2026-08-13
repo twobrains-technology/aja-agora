@@ -234,15 +234,30 @@ export function checkScenario(
 		const ofertas = (t.artifacts ?? []).flatMap((a) => coletarOfertas(a.data));
 
 		if (asserts.forbidDuplicateOffers) {
-			const vistas = new Set<string>();
-			const repetidas = new Set<string>();
-			for (const o of ofertas) {
-				const chave = rotuloOferta(o);
-				if (vistas.has(chave)) repetidas.add(chave);
-				vistas.add(chave);
-			}
-			for (const chave of repetidas) {
-				failures.push(`${rotulo}: oferta DUPLICADA na mesma tela — ${chave}`);
+			// A repetição é medida DENTRO de cada artifact.
+			//
+			// Entre artifacts DIFERENTES ela é o desenho do produto: o
+			// `recommendation_card` destaca UMA opção e o `comparison_table` lista
+			// TODAS — a destacada aparece nos dois de propósito (FIX-78/FIX-224:
+			// os dois cards são inseparáveis no ramo de 2+ grupos). Contar isso
+			// como defeito reprovava o comportamento correto, e só não aparecia
+			// porque os cenários que exercitam esse ramo viviam SKIPPED por falta
+			// de `E2E_TEST_CPF` (destravados em 2026-08-13).
+			//
+			// O report que criou este assert ("Está repetindo grupos iguais",
+			// 05/08) é sobre a MESMA tela mostrar a mesma oferta duas vezes — isto
+			// é, dentro da mesma lista. É isso que continua proibido.
+			for (const artifact of t.artifacts ?? []) {
+				const vistas = new Set<string>();
+				const repetidas = new Set<string>();
+				for (const o of coletarOfertas(artifact.data)) {
+					const chave = rotuloOferta(o);
+					if (vistas.has(chave)) repetidas.add(chave);
+					vistas.add(chave);
+				}
+				for (const chave of repetidas) {
+					failures.push(`${rotulo}: oferta DUPLICADA dentro de "${artifact.type}" — ${chave}`);
+				}
 			}
 		}
 

@@ -1,0 +1,35 @@
+{
+	"cenario": "golden-objecao-financiamento",
+	"descricao": "FAQ do site: 'por que consórcio e não financiamento?'. O argumento é o coração da venda — e a tool compare_with_financing nunca era exercitada em eval. Números citados têm que vir de tool, nunca da cabeça do modelo.",
+	"caRefs": ["site/FAQ — sem juros", "D11 nenhum número sem fonte"],
+	"asserts": {
+		"turns": [
+			null,
+			{
+				"forbidUngroundedMoney": true,
+				"forbidArtifacts": ["comparison_table", "recommendation_card"]
+			},
+			{
+				"forbidUngroundedMoney": true,
+				"forbidRepeatedAgentText": true
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi",
+			"expect": "welcome."
+		},
+		{
+			"type": "text",
+			"text": "por que eu faria consórcio em vez de financiamento?",
+			"expect": "responde a objeção com o argumento real (sem juros, taxa de administração) sem inventar percentual nem parcela, e conduz de volta ao funil."
+		},
+		{
+			"type": "text",
+			"text": "mas no financiamento eu saio com o carro na hora, né?",
+			"expect": "reconhece a desvantagem com honestidade — o site não promete contemplação rápida — e não repete o bloco anterior."
+		}
+	]
+}

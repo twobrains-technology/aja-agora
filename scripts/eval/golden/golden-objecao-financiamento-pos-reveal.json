@@ -1,0 +1,87 @@
+{
+	"cenario": "golden-objecao-financiamento-pos-reveal",
+	"descricao": "O argumento central da marca — consórcio × financiamento — COM números reais na mesa. O cenário de objeção anterior pergunta na entrada, antes de existir oferta; aqui a pergunta chega depois do reveal, que é o único ponto em que compare_with_financing tem dado para comparar. Era a lacuna que o §1.4 do dossiê apontou. O assert do turno 8 exige o artifact da comparação (fato verificável: a tool rodou), em vez de proibir número derivado — a diferença entre duas parcelas reais é aritmética legítima, e é o argumento central da marca.",
+	"caRefs": ["site/FAQ — sem juros", "D11 nenhum número sem fonte"],
+	"requiresEnv": ["E2E_TEST_CPF", "E2E_TEST_CELULAR"],
+	"asserts": {
+		"turns": [
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"expectArtifacts": ["financing_comparison"],
+				"forbidDuplicateOffers": true
+			},
+			{
+				"forbidRepeatedAgentText": true,
+				"forbidDuplicateOffers": true
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi",
+			"expect": "welcome."
+		},
+		{
+			"type": "action",
+			"action": {
+				"kind": "category",
+				"category": "auto"
+			},
+			"label": "Automóvel",
+			"expect": "especialista e gate de nome."
+		},
+		{
+			"type": "text",
+			"text": "Marina",
+			"expect": "cumprimenta e abre o desire."
+		},
+		{
+			"type": "text",
+			"text": "um carro de uns 90 mil",
+			"expect": "reconhece a faixa."
+		},
+		{
+			"type": "text",
+			"text": "o meu vive quebrando",
+			"expect": "espelha o motivo uma vez e conduz ao identify."
+		},
+		{
+			"type": "action",
+			"action": {
+				"kind": "gate",
+				"gate": "identify",
+				"value": {
+					"cpf": "${E2E_TEST_CPF}",
+					"celular": "${E2E_TEST_CELULAR}",
+					"lgpd": true
+				},
+				"label": "Enviei meus dados"
+			},
+			"expect": "busca real e reveal com as opções."
+		},
+		{
+			"type": "text",
+			"text": "e aí, o que você acha?",
+			"expect": "apresenta as opções com números reais."
+		},
+		{
+			"type": "text",
+			"text": "meu gerente ofereceu financiamento em 60x, por que eu faria consórcio?",
+			"expect": "AQUI o argumento tem lastro: compara com o que está na tela usando os números REAIS da oferta. Nenhum juro, parcela ou total inventado — se citar número do financiamento, ele veio da ferramenta de comparação."
+		},
+		{
+			"type": "text",
+			"text": "mas no financiamento eu levo o carro hoje",
+			"expect": "reconhece a diferença com honestidade (o site não promete contemplação rápida), sem repetir o bloco anterior e sem número sem fonte."
+		}
+	]
+}

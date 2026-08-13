@@ -24,6 +24,7 @@ import "./_env-host";
 import { execSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { envsFaltando } from "@/lib/eval/env-do-cenario";
 import {
 	checkScenario,
 	type GoldenExpectations,
@@ -48,10 +49,6 @@ function expandEnv(value: string): { text: string; missing: string[] } {
 		return v ?? "";
 	});
 	return { text, missing };
-}
-
-function unmetEnv(requires: string[]): string[] {
-	return requires.filter((name) => !process.env[name]?.trim());
 }
 
 async function probeLlm(): Promise<{ ok: boolean; reason?: string }> {
@@ -165,7 +162,20 @@ async function main(): Promise<void> {
 			const input = item.input as { cenario: string; turns: Turn[] };
 			const meta = (item.metadata ?? {}) as { requiresEnv?: string[] };
 			if (only && input.cenario !== only) return { skipped: "fora do filtro --only" };
-			const faltando = unmetEnv(meta.requiresEnv ?? []);
+			// A exigência de env vem de DUAS fontes: o que o JSON declarou e o que o
+			// próprio texto do cenário cita como `${VAR}`. A segunda existe porque a
+			// primeira depende de alguém lembrar — e em 2026-08-13 ninguém lembrou:
+			// `golden-fecho-nao-anda-pra-tras` manda `"cpf": "${E2E_TEST_CPF}"` sem
+			// declarar nada, a env não existia, a expansão virou string VAZIA e o
+			// cenário foi reprovado como se o produto estivesse quebrado ("esperava
+			// comparison_table, veio gate:identify" — o funil pedindo identidade de
+			// novo, corretamente, porque recebeu um CPF vazio). FAIL falso custa mais
+			// caro que teste ausente: manda consertar o que não está quebrado.
+			const faltando = envsFaltando({
+				cenarioSerializado: JSON.stringify(input),
+				declaradas: meta.requiresEnv ?? [],
+				ambiente: process.env,
+			});
 			if (faltando.length > 0) return { skipped: `sem env ${faltando.join(", ")}` };
 
 			const conversationId = await createSimulatedConversation();
@@ -232,22 +242,33 @@ async function main(): Promise<void> {
 	// Sumário no terminal — o veredito local usa os MESMOS asserts versionados
 	// em scripts/eval/golden/ (o run no Langfuse guarda o mesmo resultado via
 	// evaluator; aqui é a fonte do exit code do gate).
-	const goldenLocal = new Map<string, { asserts: GoldenExpectations; requiresEnv: string[] }>();
+	const goldenLocal = new Map<string, { asserts: GoldenExpectations; envFaltando: string[] }>();
 	const goldenDir = join(import.meta.dirname, "eval", "golden");
 	for (const f of readdirSync(goldenDir).filter((f) => f.endsWith(".json"))) {
-		const d = JSON.parse(readFileSync(join(goldenDir, f), "utf8")) as {
+		const cru = readFileSync(join(goldenDir, f), "utf8");
+		const d = JSON.parse(cru) as {
 			cenario: string;
 			asserts?: GoldenExpectations;
 			requiresEnv?: string[];
 		};
-		goldenLocal.set(d.cenario, { asserts: d.asserts ?? {}, requiresEnv: d.requiresEnv ?? [] });
+		// Mesma regra da task (env citada no texto conta tanto quanto env
+		// declarada) — se as duas listas divergirem, o sumário chama de FALHA DE
+		// INFRA um cenário que a task pulou de propósito.
+		goldenLocal.set(d.cenario, {
+			asserts: d.asserts ?? {},
+			envFaltando: envsFaltando({
+				cenarioSerializado: cru,
+				declaradas: d.requiresEnv ?? [],
+				ambiente: process.env,
+			}),
+		});
 	}
 	// O que DEVERIA ter rodado: passa no filtro --only e tem env satisfeita.
 	// Cenário esperado que não aparece no resultado = task lançou (o SDK pula
 	// itens com erro) — conta como FALHA DE INFRA, nunca como verde.
 	const esperados = new Set(
 		[...goldenLocal.entries()]
-			.filter(([nome, g]) => (!only || nome === only) && unmetEnv(g.requiresEnv).length === 0)
+			.filter(([nome, g]) => (!only || nome === only) && g.envFaltando.length === 0)
 			.map(([nome]) => nome),
 	);
 

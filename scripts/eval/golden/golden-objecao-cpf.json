@@ -1,0 +1,51 @@
+{
+	"cenario": "golden-objecao-cpf",
+	"descricao": "O gargalo entre a promessa do site ('conta seu objetivo e a AJA analisa') e o produto (a Bevi exige CPF antes de simular). A objeção mais cara do funil: na sessão a68b1945 o cliente ofereceu o CPF e o agente RECUSOU.",
+	"caRefs": ["D1 identidade antes da busca", "FIX-431 P0 #3"],
+	"asserts": {
+		"turns": [
+			null,
+			null,
+			null,
+			{
+				"forbidArtifacts": ["comparison_table", "recommendation_card"],
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidArtifacts": ["comparison_table", "recommendation_card"],
+				"forbidRepeatedAgentText": true
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi",
+			"expect": "welcome."
+		},
+		{
+			"type": "action",
+			"action": {
+				"kind": "category",
+				"category": "auto"
+			},
+			"label": "Automóvel",
+			"expect": "divider do especialista e o gate de nome."
+		},
+		{
+			"type": "text",
+			"text": "Rafael",
+			"expect": "cumprimenta e abre o gate desire."
+		},
+		{
+			"type": "text",
+			"text": "por que você precisa do meu CPF? não gosto de dar isso",
+			"expect": "responde a desconfiança com a razão real (a administradora exige para simular), sem buscar nada e sem inventar número."
+		},
+		{
+			"type": "text",
+			"text": "e meus dados ficam seguros?",
+			"expect": "responde sobre proteção de dados sem repetir o bloco anterior e sem prometer o que não pode."
+		}
+	]
+}
