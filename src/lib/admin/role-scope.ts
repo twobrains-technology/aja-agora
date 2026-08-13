@@ -72,6 +72,28 @@ const ROTAS_POR_ROLE: Record<Role, readonly string[] | typeof TODAS_AS_ROTAS> = 
 	mesa_externa: ["/admin/pipeline", "/admin/profile"],
 };
 
+/**
+ * Telas que NENHUMA outra role abre, nem as que têm `TODAS_AS_ROTAS`.
+ *
+ * `admin`, `viewer` e `attendant` recebem `*` acima — o painel de operação é
+ * deles por inteiro. Isso funciona enquanto toda tela for sobre o funil; deixa
+ * de funcionar quando uma tela sai do funil e vai mexer em algo de FORA: a
+ * configuração do WhatsApp escreve no perfil que o cliente vê no app (nome,
+ * foto, descrição do negócio) usando o token da Meta. Ler o funil não é mandato
+ * pra trocar a cara da empresa.
+ *
+ * Lista curta e explícita, e não uma role `owner` nova: papel novo é migração de
+ * banco e revisão de tudo que já existe; a exclusividade aqui é de TELA.
+ */
+const ROTAS_SO_DE_ADMIN = ["/admin/whatsapp/configuracao"] as const;
+
+/** A rota é exata ou filha de alguma das exclusivas? */
+function ehRotaSoDeAdmin(pathname: string): boolean {
+	// Mesmo casamento das raias: o `/` impede que `/admin/whatsapp/configuracao-x`
+	// caia na trava por semelhança de prefixo.
+	return ROTAS_SO_DE_ADMIN.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
 /** Tela pra onde cada role é levada ao entrar (ou ao bater numa porta fechada). */
 const ROTA_INICIAL: Record<Role, string> = {
 	admin: "/admin",
@@ -87,6 +109,10 @@ export function rotaInicialDe(role: Role): string {
 export function podeAcessarRota(role: Role, pathname: string): boolean {
 	const permitidas = ROTAS_POR_ROLE[role];
 	if (!permitidas) return false;
+
+	// Antes do `*`: a exclusividade tem que valer justamente pra quem tem tudo.
+	if (ehRotaSoDeAdmin(pathname)) return role === "admin";
+
 	if (permitidas === TODAS_AS_ROTAS) return true;
 
 	// Casa a rota exata ou um filho dela. O `/` é obrigatório pra que
