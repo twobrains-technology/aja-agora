@@ -8,6 +8,7 @@ import { decideRouting } from "@/lib/agent/orchestrator/routing";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { pickPersonaForCategory } from "@/lib/agent/personas-repo";
 import { valorAncoradoNoTexto } from "@/lib/agent/valor-declarado";
+import { registrarValorRevertido } from "@/lib/observability/langfuse/funil-scores";
 import { projectToMeta } from "../emit";
 import type { AgentGraphStateType } from "../state";
 import { funnelFromMeta } from "../state";
@@ -84,14 +85,82 @@ export function createAnalyzeNode(analyze: AnalyzeFn = analyzeAndMerge) {
 		// dizer em português que R$ 100 é pouco pra um carro — o que ele não pode
 		// é registrar outro número no lugar. Sem menção numérica na fala (slider,
 		// card, turno anterior), nada é bloqueado.
+		// FIX-431 — o gate corrente diz se a resposta numérica NUA vale como
+		// milhar. Quando o servidor acabou de perguntar o valor do bem (gate
+		// `credit`), "238" é R$ 238 mil: foi a resposta que matou a venda da
+		// sessão `a68b1945`, vetada por não bater com 238000 ao pé da letra.
+		// Fora desse gate o comportamento do FIX-378 fica idêntico.
+		const perguntouValorDoBem = state.gate === "credit";
+		// FIX-431 — a fala do cliente não cabe só no turno atual.
+		//
+		// `creditMentionedAtDesire` guarda o valor que ELE disse (só não estava
+		// promovido ainda); é o que o escape do gate preso (FIX-307,
+		// `qualify-state.ts`) promove depois de 3 turnos travados. Sem esta
+		// exceção os dois guards se anulavam em ciclo: o escape promovia, e aqui
+		// o valor era revertido porque a frase daquele turno ("Ok 3 anos") não
+		// continha 238000 — só o número 3. O funil ficava preso em `credit` para
+		// sempre, `identify` nunca chegava, a busca nunca era autorizada. Foi
+		// assim que a venda de R$ 238 mil morreu (produção, sessão `a68b1945`).
+		//
+		// Não é afrouxamento: promover o que o cliente DISSE é o oposto de
+		// fabricar valor, que é o único caso que o FIX-378 existe para impedir.
+		const valorQueOClienteJaDisse = depois?.creditMentionedAtDesire;
+		const ancoradoNoQueEleJaDisse =
+			valorQueOClienteJaDisse !== undefined && depois?.creditMax === valorQueOClienteJaDisse;
+
+		// FIX-431 — DEPOIS DO REVEAL, VALOR NÃO MUDA SOZINHO.
+		//
+		// O guard abaixo é permissivo quando a fala não traz número — o valor pode
+		// ter vindo do slider, de um card ou de um turno anterior, e bloquear aí
+		// quebraria fluxo legítimo. Isso vale ANTES do reveal.
+		//
+		// Depois dele, custa a venda. Cenário `golden-fecho-nao-anda-pra-tras`,
+		// turno 9: o cliente escreveu "isso, quero contratar" (zero números) e o
+		// analyzer devolveu `creditMax = 92902`. Faixa nova →
+		// `revealValueTargetChanged` → descoberta reaberta → os cards do reveal
+		// saíram de novo → o turno passou a ter card que pede ação → e o
+		// `contract_form`, que o `route` JÁ havia liberado (`gate=contract
+		// show=true`), não foi emitido. O cliente pediu para contratar e recebeu a
+		// lista de opções de volta.
+		//
+		// A regra é estreita de propósito: só depois do reveal, só em turno de
+		// texto sem número nenhum. Quem realmente pede outra faixa ("e se fosse
+		// 130 mil?") escreve o número, e continua trocando.
+		const faixaJaDescoberta = state.funnel.revealCompleted === true;
+		const falaSemNumero = !/\d/.test(state.userText ?? "");
+		if (
+			faixaJaDescoberta &&
+			falaSemNumero &&
+			depois?.creditMax !== undefined &&
+			depois.creditMax !== antes.creditMax
+		) {
+			console.log(
+				`[analyze] creditMax R$ ${depois.creditMax} apareceu pós-reveal numa fala sem número; mantido R$ ${antes.creditMax ?? "vazio"}`,
+			);
+			meta.qualifyAnswers = { ...meta.qualifyAnswers };
+			if (antes.creditMax === undefined) delete meta.qualifyAnswers.creditMax;
+			else meta.qualifyAnswers.creditMax = antes.creditMax;
+			registrarValorRevertido({ valorRecusado: depois.creditMax, veioDoEscape: false });
+		}
 		if (
 			depois?.creditMax !== undefined &&
 			depois.creditMax !== antes.creditMax &&
-			!valorAncoradoNoTexto(state.userText, depois.creditMax)
+			!ancoradoNoQueEleJaDisse &&
+			!valorAncoradoNoTexto(state.userText, depois.creditMax, {
+				escalaImplicita: perguntouValorDoBem,
+			})
 		) {
 			console.log(
 				`[analyze] creditMax R$ ${depois.creditMax} nao ancorado na fala do cliente; devolvido a ${antes.creditMax ?? "vazio"}`,
 			);
+			// FIX-431 (P2 #14) — o flagrante fica no trace, não só no CloudWatch.
+			// Reversão recorrente na MESMA conversa é o livelock voltando por
+			// outra porta; sem este score, descobrir isso exigia ler log de
+			// container linha a linha (foi o que custou a sessão `a68b1945`).
+			registrarValorRevertido({
+				valorRecusado: depois.creditMax,
+				veioDoEscape: valorQueOClienteJaDisse !== undefined,
+			});
 			meta.qualifyAnswers = { ...meta.qualifyAnswers };
 			if (antes.creditMax === undefined) delete meta.qualifyAnswers.creditMax;
 			else meta.qualifyAnswers.creditMax = antes.creditMax;

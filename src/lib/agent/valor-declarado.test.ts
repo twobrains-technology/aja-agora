@@ -50,3 +50,72 @@ describe("FIX-378 — valor extraído tem que estar ancorado na fala do cliente"
 		expect(valorAncoradoNoTexto("90mil", 90_000)).toBe(true);
 	});
 });
+
+// FIX-431 (P0 #2) — a resposta numérica NUA à pergunta de valor.
+//
+// Produção, WhatsApp, 2026-08-13, sessão `a68b1945`. O agente perguntou o valor
+// do BYD Song; o cliente respondeu **"238"**. O analyzer entendeu certo
+// (R$ 238.000 — é o preço do carro e o único sentido possível na frase), mas
+// este guard vetou: `valoresPlausiveis("238")` devolve `[238]`, e 238 ≠ 238000.
+//
+// O veto apagou o `creditMax`, deixou `creditMin` órfão, e o funil ficou preso
+// no gate `credit` para sempre — o escape do FIX-307 repromovia o valor a cada
+// 3 turnos e este guard revertia. Foi assim que a venda de R$ 238 mil morreu.
+//
+// A correção NÃO abre a porta: a escala implícita de milhar só vale no turno em
+// que o servidor PERGUNTOU o valor do bem. Fora dele, "238" solto continua sem
+// ancorar — que é o caso que o FIX-378 nasceu para pegar.
+describe("FIX-431 — resposta numérica nua no gate de valor", () => {
+	it("no gate de valor, '238' ancora R$ 238.000 (o caso da venda perdida)", () => {
+		expect(valorAncoradoNoTexto("238", 238_000, { escalaImplicita: true })).toBe(true);
+	});
+
+	it("fora do gate de valor, '238' continua NÃO ancorando 238.000", () => {
+		expect(valorAncoradoNoTexto("238", 238_000)).toBe(false);
+	});
+
+	it("a escala implícita não legitima qualquer número: '238' não vira 500.000", () => {
+		expect(valorAncoradoNoTexto("238", 500_000, { escalaImplicita: true })).toBe(false);
+	});
+
+	it("o valor literal continua valendo com a escala ligada ('1200' = R$ 1.200)", () => {
+		expect(valorAncoradoNoTexto("1200", 1_200, { escalaImplicita: true })).toBe(true);
+	});
+
+	it("quem já escreveu a escala não muda de comportamento", () => {
+		expect(valorAncoradoNoTexto("238 mil", 238_000, { escalaImplicita: true })).toBe(true);
+		expect(valorAncoradoNoTexto("22k", 22_000, { escalaImplicita: true })).toBe(true);
+	});
+
+	// O guard nasceu deste caso: "100 reais" virando R$ 1.000. Com a escala
+	// implícita ligada, "100 reais" ainda não pode virar 100.000 — a unidade
+	// está escrita na frase.
+	it("unidade escrita na frase vence a escala implícita", () => {
+		expect(valorAncoradoNoTexto("100 reais", 100_000, { escalaImplicita: true })).toBe(false);
+	});
+});
+
+// Risco levantado na auditoria de 2026-08-13: com a escala implícita ligada,
+// QUALQUER número nu passaria a legitimar o seu ×1000 — "3" (de "Ok 3 anos")
+// autorizaria `creditMax = 3.000` se o analyzer errasse. A escala existe para
+// resolver "238" → R$ 238 mil, que é resposta de PREÇO DE BEM; um bem de
+// R$ 3.000 não existe em nenhuma categoria que a Bevi opera.
+describe("FIX-431 — a escala implícita não vale para número que não é preço de bem", () => {
+	it("'3' não legitima R$ 3.000 nem no gate de valor", () => {
+		expect(valorAncoradoNoTexto("Ok 3 anos", 3_000, { escalaImplicita: true })).toBe(false);
+	});
+
+	it("'12' (meses) não legitima R$ 12.000", () => {
+		expect(valorAncoradoNoTexto("12", 12_000, { escalaImplicita: true })).toBe(false);
+	});
+
+	// O piso é o do bem mais barato que a jornada vende (moto). Abaixo disso, a
+	// escala não se aplica — acima, resolve o caso real.
+	it("'22' ancora R$ 22 mil (a moto da sessão 04fda013)", () => {
+		expect(valorAncoradoNoTexto("22", 22_000, { escalaImplicita: true })).toBe(true);
+	});
+
+	it("'238' ancora R$ 238 mil (a venda perdida)", () => {
+		expect(valorAncoradoNoTexto("238", 238_000, { escalaImplicita: true })).toBe(true);
+	});
+});
