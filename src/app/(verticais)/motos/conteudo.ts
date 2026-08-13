@@ -1,6 +1,6 @@
 import { ArrowDown, Percent } from "lucide-react";
-
 import { Motinha } from "@/components/icons/motinha";
+import { FONTE_ABAC } from "@/components/kv/fonte-abac";
 import type { BlocoPassosConteudo } from "@/components/vertical/bloco-passos";
 import type { FaixaNumerosConteudo } from "@/components/vertical/faixa-numeros";
 import type { GuiaArtigosConteudo } from "@/components/vertical/guia-artigos";
@@ -119,7 +119,7 @@ export const NUMEROS_MOTO: FaixaNumerosConteudo = {
 			alt: "Motociclista conferindo o celular ao lado da moto",
 		},
 	},
-	fonte: "Fonte: ABAC – Associação Brasileira de Administradoras de Consórcios. Dados de 2025.",
+	fonte: FONTE_ABAC,
 };
 
 export const PASSOS_MOTO: BlocoPassosConteudo = {

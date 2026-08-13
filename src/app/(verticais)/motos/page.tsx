@@ -8,10 +8,10 @@ import { KvFooter } from "@/components/kv/kv-footer";
 import { KvMenu, NAV_VERTICAL } from "@/components/kv/kv-menu";
 import { BlocoPassos } from "@/components/vertical/bloco-passos";
 import { FaixaNumeros } from "@/components/vertical/faixa-numeros";
-import { GuiaArtigos } from "@/components/vertical/guia-artigos";
+// import { GuiaArtigos } from "@/components/vertical/guia-artigos";
 import { HeroVertical } from "@/components/vertical/hero-vertical";
 
-import { FAQ_MOTO, GUIA_MOTO, HERO_MOTO, NUMEROS_MOTO, PASSOS_MOTO } from "./conteudo";
+import { FAQ_MOTO, HERO_MOTO, NUMEROS_MOTO, PASSOS_MOTO } from "./conteudo";
 
 // Landing da vertical de moto (Figma 'Consórcios - moto' 625:3679). Terceira da
 // família: reaproveita hero, faixa de números, FAQ e guia das outras duas,
@@ -48,7 +48,11 @@ function PaginaMoto() {
 			<div id="faq" className="scroll-mt-24">
 				<KvFaq itens={FAQ_MOTO} />
 			</div>
-			<GuiaArtigos conteudo={GUIA_MOTO} />
+			{/* Guia de artigos fora do ar por ora — o blog ainda não existe e todos os
+			    `href` do bloco apontam para "#". `GUIA_MOTO` segue exportado em
+			    ./conteudo e coberto por verticais.test.ts; para repor, descomente aqui
+			    e o import lá em cima. */}
+			{/* <GuiaArtigos conteudo={GUIA_MOTO} /> */}
 			<KvFooter onOpenChat={openTheater} />
 		</main>
 	);

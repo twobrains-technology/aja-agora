@@ -8,10 +8,10 @@ import { KvFooter } from "@/components/kv/kv-footer";
 import { KvMenu, NAV_VERTICAL } from "@/components/kv/kv-menu";
 import { BlocoUpgrade } from "@/components/vertical/bloco-upgrade";
 import { FaixaNumeros } from "@/components/vertical/faixa-numeros";
-import { GuiaArtigos } from "@/components/vertical/guia-artigos";
+// import { GuiaArtigos } from "@/components/vertical/guia-artigos";
 import { HeroVertical } from "@/components/vertical/hero-vertical";
 
-import { FAQ_AUTO, GUIA_AUTO, HERO_AUTO, NUMEROS_AUTO, UPGRADE_AUTO } from "./conteudo";
+import { FAQ_AUTO, HERO_AUTO, NUMEROS_AUTO, UPGRADE_AUTO } from "./conteudo";
 
 // Landing da vertical de carro (Figma 'Consórcios - auto' 625:3331). Segunda da
 // família: reaproveita hero, faixa de números, FAQ e guia da vertical de imóvel,
@@ -47,7 +47,11 @@ function PaginaAuto() {
 			<div id="faq" className="scroll-mt-24">
 				<KvFaq itens={FAQ_AUTO} />
 			</div>
-			<GuiaArtigos conteudo={GUIA_AUTO} />
+			{/* Guia de artigos fora do ar por ora — o blog ainda não existe e todos os
+			    `href` do bloco apontam para "#". `GUIA_AUTO` segue exportado em
+			    ./conteudo e coberto por verticais.test.ts; para repor, descomente aqui
+			    e o import lá em cima. */}
+			{/* <GuiaArtigos conteudo={GUIA_AUTO} /> */}
 			<KvFooter onOpenChat={openTheater} />
 		</main>
 	);

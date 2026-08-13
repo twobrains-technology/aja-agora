@@ -1,5 +1,5 @@
 import Image from "next/image";
-import type { ComponentType, SVGProps } from "react";
+import type { ComponentType, CSSProperties, SVGProps } from "react";
 
 import { Em } from "@/components/kv/em";
 import { KvContainer } from "@/components/kv/ui/kv-container";
@@ -27,7 +27,10 @@ export type FaixaNumerosConteudo = {
 	};
 	/** Número-síntese do setor (ex.: "2,83 milhões de brasileiros…"). */
 	destaque: {
-		/** Parte inteira e decimal separadas — no comp a vírgula e os decimais vêm em peso leve. */
+		/**
+		 * Parte inteira e decimal separadas. No comp só a VÍRGULA vem em peso leve —
+		 * inteiro e decimais são ambos Poppins 900.
+		 */
 		numero: { inteiro: string; decimal: string };
 		unidade: string;
 		descricao: string;
@@ -100,29 +103,46 @@ export function FaixaNumeros({ conteudo }: { conteudo: FaixaNumerosConteudo }) {
 
 			{/* 1320 = 1256px de conteúdo, a largura da faixa no comp. Com 1280 a linha
 			    de cards saía 3% mais estreita e a lista do primeiro card quebrava. */}
-			<KvContainer className="max-w-[1320px] py-14 md:py-20">
-				<div className="mx-auto flex max-w-[1023px] flex-col items-center gap-4 text-center">
+			{/* Respiro assimétrico, como no comp: 72px acima do eyebrow e 33px abaixo da
+			    linha da fonte. Com `py-20` nos dois lados sobravam 47px no pé. */}
+			<KvContainer className="max-w-[1320px] py-14 md:pb-[33px] md:pt-[72px]">
+				<div className="mx-auto flex max-w-[1023px] flex-col items-center gap-4 text-center md:gap-[11px]">
 					<KvEyebrow className="tracking-[0.18em]">{conteudo.eyebrow}</KvEyebrow>
 					<h2 className="text-[32px] font-normal leading-[1.2] text-white md:text-[44px] md:leading-[62px]">
 						{conteudo.titulo.inicio} <Em w="black">{conteudo.titulo.enfase}</Em>
 					</h2>
 				</div>
 
-				{/* Proporção dos três cards vem do comp: 493 / 422 / 275 px em 1440. */}
-				<div className="mt-12 grid gap-6 lg:grid-cols-[1.79fr_1.53fr_1fr]">
+				{/* Proporção dos três cards vem do comp: 497 / 419 / 272 px em 1440 — e os
+				    três com 265px de altura. */}
+				<div className="mt-12 grid gap-6 md:mt-[67px] lg:grid-cols-[1.79fr_1.53fr_1fr]">
 					{/* Card "Quais imóveis?" */}
-					<div className="rounded-[12px] border-2 border-white p-8">
+					<div
+						className="relative rounded-[12px] border-2 border-white p-8 lg:min-h-[265px] lg:py-[22px]"
+						style={
+							conteudo.cobertura.arte
+								? ({
+										// Quanto a arte ocupa DENTRO do card (largura menos a sangria), mais
+										// a calha de 16px. Fora do fluxo ela não afasta mais a lista sozinha,
+										// então esse recuo devolve à lista o lugar que ela tinha antes.
+										"--calha-arte": `${conteudo.cobertura.arte.largura - conteudo.cobertura.arte.sangria + 16}px`,
+									} as CSSProperties)
+								: undefined
+						}
+					>
 						<div className="flex items-center gap-4">
-							{/* A `sangria` puxa a arte pra fora da borda esquerda do card, como
-							    no comp, e é ela que devolve à lista o espaço de que precisa
-							    pra não quebrar linha. */}
+							{/* A arte fica FORA do fluxo: no comp ela transborda a borda esquerda
+							    do card e também as de cima e de baixo, sem entrar na altura.
+							    Enquanto era flex item, a chave do auto (354px de alto) esticava o
+								    card pra 422px e, por ser tudo uma linha só de grid, levava os outros
+								    dois junto — a seção vinha 235px mais alta que o comp. */}
 							{conteudo.cobertura.arte && (
 								<div
-									className="relative hidden shrink-0 lg:block"
+									className="pointer-events-none absolute top-1/2 hidden -translate-y-1/2 lg:block"
 									style={{
 										aspectRatio: conteudo.cobertura.arte.proporcao,
 										width: `${conteudo.cobertura.arte.largura}px`,
-										marginLeft: `-${conteudo.cobertura.arte.sangria}px`,
+										left: `-${conteudo.cobertura.arte.sangria}px`,
 									}}
 								>
 									<Image
@@ -135,11 +155,11 @@ export function FaixaNumeros({ conteudo }: { conteudo: FaixaNumerosConteudo }) {
 								</div>
 							)}
 
-							<div className="min-w-0">
+							<div className="min-w-0 lg:pl-[var(--calha-arte)]">
 								<h3 className="text-[26px] font-normal leading-[1.2] text-[color:var(--aja-paper)] md:text-[32px] md:leading-[38px]">
 									{conteudo.cobertura.titulo}
 								</h3>
-								<ul className="mt-6 flex flex-col gap-[15px]">
+								<ul className="mt-6 flex flex-col gap-[15px] lg:mt-[18px]">
 									{conteudo.cobertura.itens.map((item, i) => (
 										<li
 											key={item}
@@ -163,7 +183,7 @@ export function FaixaNumeros({ conteudo }: { conteudo: FaixaNumerosConteudo }) {
 					</div>
 
 					{/* Card do número */}
-					<div className="relative flex flex-col justify-center rounded-[12px] border-2 border-white bg-[var(--aja-paper)] px-6 pb-8 pt-10 text-center">
+					<div className="relative flex flex-col justify-center rounded-[12px] border-2 border-white bg-[var(--aja-paper)] px-6 pb-[21px] pt-[23px] text-center">
 						<Image
 							src={conteudo.destaque.selo.src}
 							alt={conteudo.destaque.selo.alt}
@@ -175,28 +195,34 @@ export function FaixaNumeros({ conteudo }: { conteudo: FaixaNumerosConteudo }) {
 						<p className="text-[color:var(--aja-coral)]">
 							<span className="text-[88px] font-black leading-[1] tracking-[-0.02em] md:text-[128px]">
 								{conteudo.destaque.numero.inteiro}
-								<span className="font-light">,{conteudo.destaque.numero.decimal}</span>
+								{/* Só a VÍRGULA vem em peso leve: no comp o nó "5,38" é Poppins 900 e
+								    o override de peso 300 pega o caractere 1, apenas. Os decimais
+								    seguem 900 — deixá-los leves apagava o bold do número. */}
+								<span className="font-light">,</span>
+								{conteudo.destaque.numero.decimal}
 							</span>
 							<span className="-mt-2 block font-[family-name:var(--font-merriweather)] text-[28px] font-light leading-[1.2] tracking-[-0.02em] md:text-[36px]">
 								{conteudo.destaque.unidade}
 							</span>
 						</p>
-						<p className="mt-5 text-[16px] leading-[26px] text-[color:var(--aja-ink)]/85">
+						<p className="mt-[7px] text-[16px] leading-[26px] text-[color:var(--aja-ink)]/85">
 							{conteudo.destaque.descricao}
 						</p>
 					</div>
 
 					{/* Card das contemplações */}
-					<div className="flex flex-col items-center rounded-[12px] border-2 border-white px-6 py-8 text-center">
+					<div className="flex flex-col items-center rounded-[12px] border-2 border-white px-6 py-[21px] text-center">
 						<p className="text-[color:var(--aja-coral)]">
-							<span className="text-[56px] font-black leading-[1] tracking-[-0.02em] md:text-[64px]">
+							<span className="text-[56px] font-black leading-[1] tracking-[-0.02em] md:text-[66px]">
 								{conteudo.contemplacoes.numero}
 							</span>{" "}
-							<span className="text-[26px] font-light leading-[1]">
+							{/* A unidade é serifada no comp (Merriweather 400 36px), não a sans em
+							    peso leve — mesmo tratamento que "milhões" recebe no card ao lado. */}
+							<span className="font-[family-name:var(--font-merriweather)] text-[26px] font-normal leading-[1] md:text-[36px]">
 								{conteudo.contemplacoes.unidade}
 							</span>
 						</p>
-						<p className="mt-2 text-[16px] leading-[22px] text-white">
+						<p className="text-[16px] leading-[22px] text-white">
 							{conteudo.contemplacoes.descricao.map((parte) => (
 								<span
 									key={parte.texto}
@@ -209,7 +235,7 @@ export function FaixaNumeros({ conteudo }: { conteudo: FaixaNumerosConteudo }) {
 						</p>
 
 						{/* Grade de pictogramas: parte em coral, como no comp. */}
-						<div aria-hidden="true" className="mt-6 grid grid-cols-5 gap-2">
+						<div aria-hidden="true" className="mt-[17px] grid grid-cols-5 gap-2">
 							{Array.from({ length: conteudo.contemplacoes.total }, (_, i) => (
 								<conteudo.contemplacoes.pictograma
 									// biome-ignore lint/suspicious/noArrayIndexKey: grade decorativa de tamanho fixo, sem identidade própria
@@ -226,8 +252,8 @@ export function FaixaNumeros({ conteudo }: { conteudo: FaixaNumerosConteudo }) {
 				</div>
 
 				{/* Bloco "Como funciona a carta de crédito" */}
-				<div className="mt-6 grid overflow-hidden rounded-[12px] border-2 border-white lg:grid-cols-[1fr_460px]">
-					<div className="p-8 md:p-10">
+				<div className="mt-6 grid overflow-hidden rounded-[12px] border-2 border-white md:mt-[28px] lg:grid-cols-[1fr_460px]">
+					<div className="p-8 md:px-10 md:py-[33px]">
 						<div className="flex items-start gap-5">
 							{/* biome-ignore lint/performance/noImgElement: SVG decorativo estático; o next/image recusa SVG sem `dangerouslyAllowSVG`, e não há o que otimizar aqui */}
 							<img
@@ -238,12 +264,13 @@ export function FaixaNumeros({ conteudo }: { conteudo: FaixaNumerosConteudo }) {
 								aria-hidden="true"
 								className="hidden h-[70px] w-auto shrink-0 md:block"
 							/>
-							<h3 className="text-[26px] font-normal leading-[1.2] text-white md:text-[32px] md:leading-[40px]">
+							<h3 className="text-[26px] font-normal leading-[1.2] text-white md:text-[32px] md:leading-[38px]">
 								{conteudo.carta.titulo.inicio} <Em w="black">{conteudo.carta.titulo.enfase}</Em>{" "}
 								{conteudo.carta.titulo.fim}
 							</h3>
 						</div>
-						<p className="mt-6 max-w-[620px] text-[16px] font-light leading-[28px] text-white">
+						{/* 16px/26 em peso 400, como o nó do comp — não o 300 que estava aqui. */}
+						<p className="mt-[17px] max-w-[684px] text-[16px] font-normal leading-[26px] text-white">
 							{conteudo.carta.texto.inicio}{" "}
 							<strong className="font-bold">{conteudo.carta.texto.forte}</strong>{" "}
 							{conteudo.carta.texto.fim}
@@ -261,7 +288,9 @@ export function FaixaNumeros({ conteudo }: { conteudo: FaixaNumerosConteudo }) {
 					</div>
 				</div>
 
-				<p className="mt-10 text-center text-[12px] font-light text-white/70">{conteudo.fonte}</p>
+				<p className="mt-10 text-center text-[12px] font-light text-white/70 md:mt-[33px]">
+					{conteudo.fonte}
+				</p>
 			</KvContainer>
 		</section>
 	);

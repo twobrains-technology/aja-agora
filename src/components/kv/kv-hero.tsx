@@ -9,6 +9,7 @@ import type { TheaterOpener } from "@/components/chat/theater/theater-context";
 import { Em } from "@/components/kv/em";
 import { CARD_SHADOW, KvContainer } from "@/components/kv/ui/kv-container";
 import { KvCtaButton } from "@/components/kv/ui/kv-cta-button";
+import { KV_RITMO, KvSection } from "@/components/kv/ui/kv-section";
 
 const KV = "/kv";
 
@@ -36,14 +37,14 @@ export function KvHero({ onOpenChat }: KvHeroProps) {
 	};
 
 	return (
-		<section className="relative overflow-hidden bg-[#FAFAF3]">
+		<KvSection rhythm={KV_RITMO.hero} className="overflow-hidden bg-[#FAFAF3]">
 			{/* Blob navy desfocado (Figma 'Blob' 720x757 @(-236,635)) */}
 			<div className="pointer-events-none absolute -bottom-40 -left-40 size-[560px] rounded-full bg-[#021628] opacity-10 blur-[120px]" />
 			{/* Blob coral desfocado, canto superior direito (Figma: 720x756.67
 			    @(1021,-225), opacity .95, blur 334.8). */}
 			<div className="pointer-events-none absolute -top-[225px] -right-[301px] h-[757px] w-[720px] rounded-full bg-[#FFE0E3] opacity-95 blur-[335px]" />
 
-			<KvContainer className="grid max-w-[1240px] items-center gap-12 pb-16 pt-6 lg:grid-cols-[560px_1fr] lg:gap-[80px] lg:pb-24 lg:pt-8">
+			<KvContainer className="grid items-center gap-12 lg:grid-cols-[560px_1fr] lg:gap-[80px]">
 				{/* Coluna de texto */}
 				<div className="max-w-[560px]">
 					<span className="inline-flex items-center gap-2 rounded-full bg-[#021628] py-1.5 pl-3.5 pr-4 text-[16px] font-semibold text-[#FAFAF3]">
@@ -95,9 +96,11 @@ export function KvHero({ onOpenChat }: KvHeroProps) {
 											? onOpenChat(value.trim(), e.currentTarget, "digitada")
 											: onOpenChat(chip.fill, e.currentTarget, "chip")
 									}
-									className="inline-flex items-center gap-1.5 rounded-[6px] bg-[#FBFBF9] px-3.5 py-1.5 text-[10px] font-semibold text-[#021628] transition-colors hover:bg-[#F2404F]/10"
+									// Pílula com contorno navy, e não retângulo chapado: no comp os três
+									// chips são `Button` 96x27 com stroke #052440 e raio total.
+									className="inline-flex w-[96px] items-center justify-center gap-1.5 rounded-full border border-[#052440] bg-[#FBFBF9] px-3.5 py-1.5 text-[10px] font-semibold text-[#021628] transition-colors hover:bg-[#F2404F]/10"
 								>
-									<chip.icon className="size-3.5" strokeWidth={2} />
+									<chip.icon className="size-3.5" strokeWidth={1.5} />
 									{chip.label}
 								</button>
 							))}
@@ -124,7 +127,7 @@ export function KvHero({ onOpenChat }: KvHeroProps) {
 
 				{/* Colagem de fotos — PNG único (tríptico + consultora + sunburst + balões
 				    já compostos na arte), substitui os componentes separados anteriores. */}
-				<div className="relative mx-auto aspect-[617/615] w-full max-w-[560px]">
+				<div className="relative mx-auto aspect-[1999/1909] w-full max-w-[560px]">
 					<Image
 						src={`${KV}/hero-collage.png`}
 						alt="Consultora da Aja Agora cercada por opções de carro, moto e imóvel, com balões de chat mostrando a conversa com o consórcio"
@@ -136,6 +139,6 @@ export function KvHero({ onOpenChat }: KvHeroProps) {
 					/>
 				</div>
 			</KvContainer>
-		</section>
+		</KvSection>
 	);
 }

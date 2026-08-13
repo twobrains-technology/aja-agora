@@ -3,12 +3,28 @@ import type { HTMLAttributes } from "react";
 import { cn } from "@/lib/utils";
 
 // Wrapper de centralização + gutter responsivo compartilhado pelas seções do
-// Key Visual. Cada seção mantém sua própria largura máxima (fiel ao frame do
-// Figma — 1120/1240/1280/1440px variam por seção, não normalizar) via
-// `className` (ex. `max-w-[1240px]`); este átomo só resolve o `mx-auto` +
-// padding lateral repetido em toda seção.
+// Key Visual.
+//
+// Toda seção de conteúdo usa `max-w-[1240px]` e o gutter padrão — é a coluna
+// dominante do comp (frame 1440: conteúdo de 1240px começando em x=100, medido
+// em Hero, Jornada, Números e no CTA do rodapé). Antes cada seção trazia a sua
+// (1120/1240/1280/1320/1437/1440) com recuos próprios por cima, e a borda
+// esquerda do conteúdo pulava de 60 a 160px descendo a página.
+//
+// As duas exceções são cromo, não conteúdo, e compartilham a coluna de ~1316px
+// do comp (recuo 64px): o menu e a faixa navy do rodapé, ambos `md:px-16`.
+// 1304 = os 1240px de conteúdo do comp + os 2x32 do gutter `md:px-8`. Somar o
+// gutter à largura máxima é o que faz o conteúdo começar exatamente em x=100 num
+// viewport de 1440 (como no comp) sem abrir mão do respiro lateral nas telas
+// estreitas — com `max-w-[1240px]` cru o padding comeria a coluna por dentro e o
+// conteúdo cairia em 132px.
 export function KvContainer({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-	return <div className={cn("relative mx-auto w-full px-6 md:px-8", className)} {...props} />;
+	return (
+		<div
+			className={cn("relative mx-auto w-full max-w-[1304px] px-6 md:px-8", className)}
+			{...props}
+		/>
+	);
 }
 
 // Sombra de card "oficial" do design system AJA (Figma) — mesmo par

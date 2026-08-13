@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Em } from "@/components/kv/em";
 import { CARD_SHADOW, KvContainer } from "@/components/kv/ui/kv-container";
 import { KvEyebrow } from "@/components/kv/ui/kv-eyebrow";
+import { KV_RITMO, KvSection } from "@/components/kv/ui/kv-section";
 
 type JourneyStep = {
 	eyebrow: string;
@@ -83,7 +84,7 @@ const STEPS: JourneyStep[] = [
 		eyebrow: "analisamos alternativas",
 		title: "Desenrolamos",
 		description:
-			"Analisamos taxas, prazos, regras e condições para encontrar o que é mais adequado para você! Depois, é só você escolher!",
+			"Analisamos prazos, regras e condições para encontrar o que é mais adequado para você! Depois, é só você escolher!",
 		emphasis: "adequado",
 		brand: true,
 		iconX: 310,
@@ -204,7 +205,10 @@ const WAVE_BOX = { left: 170, top: 169, width: 893, height: 297 };
 // e abaixo (vales).
 export function KvJourney() {
 	return (
-		<section className="relative overflow-hidden bg-gradient-to-b from-[#F4F4E2] to-[#FAFAF3] pb-6 pt-16 lg:pb-8 lg:pt-24">
+		<KvSection
+			rhythm={KV_RITMO.jornada}
+			className="overflow-hidden bg-gradient-to-b from-[#F4F4E2] to-[#FAFAF3]"
+		>
 			{/* Blobs rosa de fundo (mobile) */}
 			<div
 				aria-hidden="true"
@@ -215,11 +219,13 @@ export function KvJourney() {
 				className="pointer-events-none absolute -left-28 top-[60%] size-[300px] rounded-full bg-[#FFE0E3] opacity-60 blur-[80px] lg:hidden"
 			/>
 
-			<KvContainer className="max-w-[1240px]">
+			<KvContainer>
 				{/* Cabeçalho centralizado (eyebrow + título) */}
 				<div className="mx-auto max-w-[815px] text-center">
 					<KvEyebrow>Como funciona</KvEyebrow>
-					<h2 className="mt-3 text-[32px] font-normal leading-[44px] text-[#021628] lg:text-[44px] lg:leading-[62px]">
+					{/* `-mt-1` a partir de lg: no comp o título encosta no eyebrow, cabendo
+					    na folga interna do line-height de 62px. Ver kv-comparacao.tsx. */}
+					<h2 className="mt-3 text-[32px] font-normal leading-[44px] text-[#021628] lg:-mt-1 lg:text-[44px] lg:leading-[62px]">
 						Uma jornada em poucos <Em>Movimentos</Em>
 					</h2>
 				</div>
@@ -334,6 +340,6 @@ export function KvJourney() {
 					})}
 				</div>
 			</KvContainer>
-		</section>
+		</KvSection>
 	);
 }
