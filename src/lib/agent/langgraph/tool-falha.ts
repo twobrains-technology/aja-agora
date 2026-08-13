@@ -73,8 +73,21 @@ export function lerFalhaDeTool(msg: BaseMessage): FalhaDeTool | null {
  * informação que faltava — do ponto de vista do cliente NÃO houve problema
  * nenhum, a ferramenta apenas não é usável neste ponto do funil.
  */
-export function orientarSobreToolAusente(tool: string): string {
-	return `${TOOL_AUSENTE_MARCADOR} A ferramenta "${tool}" não está disponível NESTE ponto da conversa — é uma regra do funil, não um defeito. Do lado do cliente nada falhou. NÃO diga que houve problema técnico, instabilidade, erro ou dificuldade; NÃO prometa "já resolvi"; NÃO ofereça passar para um atendente por causa disto. Siga a conversa normalmente com o que você já sabe, conduzindo para a próxima informação que você ainda precisa do cliente.`;
+export function orientarSobreToolAusente(
+	tool: string,
+	ctx: {
+		/** A busca já rodou e os cards já estão na tela? Muda a conduta certa. */
+		buscaJaFeita?: boolean;
+	} = {},
+): string {
+	const base = `${TOOL_AUSENTE_MARCADOR} A ferramenta "${tool}" não está disponível NESTE ponto da conversa — é uma regra do funil, não um defeito. Do lado do cliente nada falhou. NÃO diga que houve problema técnico, instabilidade, erro ou dificuldade; NÃO prometa "já resolvi"; NÃO ofereça passar para um atendente por causa disto.`;
+	// Com a busca feita, mandar "conduzir a coleta" faz o agente repetir pergunta
+	// que o cliente já respondeu — foi o funil andando para trás da sessão
+	// `04fda013`, onde o pré-cadastro fechou e o servidor voltou a perguntar
+	// experiência e prazo. A conduta certa depende do estado, não da tool.
+	return ctx.buscaJaFeita === true
+		? `${base} As opções JÁ ESTÃO NA TELA do cliente — o sistema as buscou. Apresente e comente o que já apareceu, e siga a conversa a partir do que ele responder.`
+		: `${base} Siga a conversa normalmente com o que você já sabe, conduzindo para a próxima informação que você ainda precisa do cliente.`;
 }
 
 /** Mesma orientação para tool que EXISTE e estourou: aqui houve falha real, mas
@@ -90,7 +103,10 @@ export function orientarSobreToolComErro(tool: string): string {
  * contrato da API do modelo — perder o id derruba o turno inteiro, que é
  * exatamente o estrago que esta função existe para evitar.
  */
-export function reescreverToolMessagesComFalha(mensagens: BaseMessage[]): {
+export function reescreverToolMessagesComFalha(
+	mensagens: BaseMessage[],
+	ctx: { buscaJaFeita?: boolean } = {},
+): {
 	mensagens: BaseMessage[];
 	falhas: FalhaDeTool[];
 } {
@@ -101,7 +117,7 @@ export function reescreverToolMessagesComFalha(mensagens: BaseMessage[]): {
 		falhas.push(falha);
 		const orientacao =
 			falha.tipo === "ausente"
-				? orientarSobreToolAusente(falha.tool)
+				? orientarSobreToolAusente(falha.tool, ctx)
 				: orientarSobreToolComErro(falha.tool);
 		const original = msg as ToolMessage;
 		return new ToolMessage({

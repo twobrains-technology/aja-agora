@@ -32,6 +32,7 @@ import { ToolMessage } from "@langchain/core/messages";
 import { describe, expect, it } from "vitest";
 import {
 	lerFalhaDeTool,
+	orientarSobreToolAusente,
 	reescreverToolMessagesComFalha,
 	TOOL_AUSENTE_MARCADOR,
 } from "./tool-falha";
@@ -113,5 +114,38 @@ describe("falha de tool — o que o modelo recebe de volta", () => {
 		const { mensagens, falhas } = reescreverToolMessagesComFalha([ok]);
 		expect(falhas).toEqual([]);
 		expect(mensagens[0]).toBe(ok);
+	});
+});
+
+// FIX-431 (P1 #12) — a orientação tem que saber ONDE a conversa está.
+//
+// O texto único ("conduza para a próxima informação que você ainda precisa do
+// cliente") é certo antes da busca e ERRADO depois dela: com a oferta já
+// ancorada e os cards na tela, mandar o agente coletar dado é fazê-lo repetir
+// pergunta que o cliente já respondeu — que é o segundo defeito mais caro desta
+// investigação (funil andando pra trás, sessão `04fda013`).
+describe("orientação sensível ao estado", () => {
+	it("antes da busca: manda conduzir a coleta", () => {
+		const t = orientarSobreToolAusente("search_groups", { buscaJaFeita: false });
+		expect(t.toLowerCase()).toMatch(/precisa|coleta|conduz/);
+		expect(t.toLowerCase()).not.toMatch(/já est(ão|a) na tela/);
+	});
+
+	it("depois da busca: manda apresentar o que já está na tela", () => {
+		const t = orientarSobreToolAusente("search_groups", { buscaJaFeita: true });
+		expect(t.toLowerCase()).toMatch(/já est(ão|á) na tela|já apareceram/);
+		expect(t.toLowerCase()).not.toMatch(/pe(ç|c)a os dados|coletar/);
+	});
+
+	// O que não muda com o estado: nunca vender defeito técnico ao cliente.
+	it("nos dois casos, proíbe anunciar problema técnico", () => {
+		for (const buscaJaFeita of [true, false]) {
+			const t = orientarSobreToolAusente("search_groups", { buscaJaFeita }).toLowerCase();
+			expect(t).toMatch(/n[ãa]o diga que houve problema/);
+		}
+	});
+
+	it("sem contexto, mantém o comportamento anterior (compatível)", () => {
+		expect(orientarSobreToolAusente("search_groups")).toContain(TOOL_AUSENTE_MARCADOR);
 	});
 });

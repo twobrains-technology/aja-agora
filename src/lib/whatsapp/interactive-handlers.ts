@@ -566,7 +566,7 @@ async function handleRange(ctx: Ctx): Promise<boolean> {
 	await runAgentDirective(
 		from,
 		conversationId,
-		buildRangePickerDirective(label, range.category, filtros, budgetFmt),
+		buildRangePickerDirective(label, filtros, budgetFmt),
 	);
 	return true;
 }

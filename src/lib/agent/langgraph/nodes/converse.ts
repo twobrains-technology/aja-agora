@@ -21,6 +21,7 @@ import {
 	administradoraFoiRecusada,
 	listShownOffersForConversation,
 } from "@/lib/agent/orchestrator/choose-offer";
+import { payloadSemOfertasRepetidas } from "@/lib/agent/orchestrator/dedup-ofertas";
 import { perguntouONome } from "@/lib/agent/orchestrator/detect-name-turn";
 import {
 	contemPerguntaQueOcupaCota,
@@ -34,7 +35,11 @@ import { querAntecipar, shouldAskMotive } from "@/lib/agent/qualify-state";
 import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import type { ArtifactType } from "@/lib/chat/types";
-import { registrarFalhasDeTool } from "@/lib/observability/langfuse/funil-scores";
+import {
+	registrarEscolhaNaoAncorada,
+	registrarFalaPodada,
+	registrarFalhasDeTool,
+} from "@/lib/observability/langfuse/funil-scores";
 import { fetchManagedPrompt, PROMPT_NAMES } from "@/lib/observability/langfuse/prompts";
 import { projectToMeta } from "../emit";
 import { cacheableSystemBlock } from "../provider";
@@ -504,13 +509,26 @@ export function createConverseNode(model: BaseChatModel) {
 		// No WhatsApp não existe card, botão nem "aqui em cima": tudo é mensagem.
 		// O agente dizia "das opções que você viu na tela" e "aqui na minha tela
 		// preciso que você confirme", e o cliente não tinha tela nenhuma.
+		// FIX-431: a regra de CPF mora AQUI, não no prompt global. "Nunca peça
+		// dados pessoais por texto" é verdade na web (o formulário é a tela) e
+		// MENTIRA no WhatsApp, onde a identidade sempre chegou por mensagem
+		// (`whatsapp/adapter.ts` pede o CPF por texto; `identify-capture.ts` o lê
+		// do texto). Produção 2026-08-13: o cliente ofereceu o CPF e o agente
+		// recusou — obedecendo, corretamente, à regra do canal errado.
 		const blocoCanal =
 			state.channel === "whatsapp"
 				? `Vocês estão conversando pelo WHATSAPP: não existe tela, card, botão nem "aqui em cima". ` +
 					`É PROIBIDO dizer "na tela", "no card", "clica em", "aqui na minha tela" ou pedir que ele ` +
 					`role/toque em algo — fale como quem fala ao telefone. Isso é só sobre COMO você escreve; ` +
-					`não muda o assunto do turno nem te autoriza a reconfirmar coisas já decididas.`
-				: null;
+					`não muda o assunto do turno nem te autoriza a reconfirmar coisas já decididas. ` +
+					`AQUI A IDENTIFICAÇÃO É POR MENSAGEM: o CPF chega escrito na conversa, e o sistema o ` +
+					`recebe e protege sozinho. NUNCA recuse o CPF que o cliente mandar, nunca diga que ele ` +
+					`"não precisa mandar" nem que "isso fica pra depois, na plataforma" — não existe outra ` +
+					`plataforma neste canal. Se ele já mandou, apenas siga com a conversa.`
+				: `Vocês estão na WEB, onde existe tela: os dados de identificação (CPF, celular, aceite) ` +
+					`são digitados no formulário que o sistema abre, não por mensagem. Não peça CPF por ` +
+					`texto — mas se o cliente escrever o dele mesmo assim, NUNCA o repreenda nem diga que ` +
+					`ele não devia: agradeça e siga, que o sistema cuida do resto.`;
 
 		// ── O FORMULÁRIO ESTÁ ABERTO E ESPERANDO ELE ──
 		// No web a contratação se conclui com o cliente confirmando os dados no
@@ -930,6 +948,20 @@ export function createConverseNode(model: BaseChatModel) {
 								() => [],
 							);
 							const cota = exibidas.find((o) => o.groupId === gid);
+							// FIX-431 — O SILÊNCIO MAIS CARO DO SISTEMA.
+							//
+							// Quando o cliente diz "quero contratar" e a âncora NÃO acontece,
+							// `escolha` não entra no estado, `fechamentoSinalizado` fica falso e
+							// o funil continua no reveal: o cliente pede o contrato e recebe o
+							// card de recomendação de novo. Até aqui isso não deixava rastro
+							// nenhum — nem log, nem score —, então o defeito só aparecia como
+							// "o agente não fecha", sem causa legível.
+							if (!cota) {
+								console.error(
+									`[escolha-nao-ancorou] groupId=${gid} nao esta entre as ${exibidas.length} ofertas exibidas (conv=${state.conversationId})`,
+								);
+								registrarEscolhaNaoAncorada({ groupId: gid, exibidas: exibidas.length });
+							}
 							// FIX-414 — o veto também cobre EXCLUSÃO da marca, não só recusa
 							// genérica. A 11ª revisão mediu a tool ancorando RODOBENS em
 							// "qualquer uma menos a Rodobens, quero fechar" — ou seja, o
@@ -982,10 +1014,13 @@ export function createConverseNode(model: BaseChatModel) {
 							),
 						};
 						if (artifactAllowed(guardCtx, artifactType)) {
-							const payloadFinal = coagirContraEscolha(
-								artifactType,
-								call.args,
-								state.funnel.escolha,
+							// A mesma oferta não sai duas vezes na mesma tela: o payload é
+							// escrito pelo MODELO e ele repetia o grupo já destacado ao
+							// remontar a lista ("quero ver mais opções"). Report de 05/08,
+							// reproduzido pelo gate em 13/08 assim que os cenários pararam
+							// de ficar SKIPPED. Invariante — vive aqui, não no prompt.
+							const payloadFinal = payloadSemOfertasRepetidas(
+								coagirContraEscolha(artifactType, call.args, state.funnel.escolha),
 							);
 							// O CARD SAI AGORA, COLADO NA FALA QUE O ANUNCIOU.
 							//
@@ -1009,6 +1044,10 @@ export function createConverseNode(model: BaseChatModel) {
 								payload: payloadFinal,
 								toolCallId: artifactId,
 							};
+							// FIX-431 (P1 #9): o gancho que ANUNCIOU este card passa a ter o
+							// que anunciar — sem isto ele é descartado no flush e o turno
+							// entrega card sem uma palavra (turno mudo da sessão `04fda013`).
+							filter.marcarArtifactEmitido();
 							events.push(fechaBalao);
 							events.push(cardDaTool);
 							config.writer?.(fechaBalao);
@@ -1074,8 +1113,13 @@ export function createConverseNode(model: BaseChatModel) {
 				// perdida. Aqui o erro vira instrução de conduta e, no mesmo passo,
 				// vira SCORE — é o fato do servidor, não a fala do modelo, que alimenta
 				// o alerta.
-				const { mensagens: toolMessages, falhas } =
-					reescreverToolMessagesComFalha(toolMessagesCruas);
+				const { mensagens: toolMessages, falhas } = reescreverToolMessagesComFalha(
+					toolMessagesCruas,
+					// A conduta certa depois de uma tool ausente depende de a busca já
+					// ter acontecido: com os cards na tela, "colete o próximo dado" faz
+					// o agente repetir pergunta respondida (FIX-431 P1 #12).
+					{ buscaJaFeita: state.funnel.revealCompleted === true },
+				);
 				if (falhas.length > 0) registrarFalhasDeTool(falhas);
 				loopMessages = [...loopMessages, ...toolMessages];
 				newMessages.push(...toolMessages);
@@ -1208,6 +1252,10 @@ export function createConverseNode(model: BaseChatModel) {
 		const textoDoTurno = events.map((ev) => (ev.type === "text-delta" ? ev.text : "")).join("");
 		const modelAskedQuestion = filter.hasHeldQuestion() || contemPerguntaQueOcupaCota(textoDoTurno);
 		const tail = filter.flush();
+		// FIX-431 (P2 #14): por que a fala do turno encolheu. O sanitizer sempre
+		// soube (`droppedSegmentReasons`), e a informação morria nele — o turno
+		// mudo da sessão `04fda013` apareceu no painel como silêncio sem causa.
+		registrarFalaPodada(filter.droppedSegmentReasons());
 		if (tail) {
 			const ev: TurnEvent = { type: "text-delta", text: tail };
 			config.writer?.(ev);
@@ -1220,6 +1268,27 @@ export function createConverseNode(model: BaseChatModel) {
 		// pergunta sobre o imóvel e roubava a resposta dela (ver
 		// `deveEmitirCardDeNome`).
 		const modelAskedForName = perguntouONome(textoDoTurno + tail);
+
+		// FIX-431 (P1 #11) — O MODELO PRECISA SABER O QUE NÃO FOI ENTREGUE.
+		//
+		// O checkpointer guarda a fala CRUA do modelo, e o cliente recebe a fala
+		// PODADA. A partir do turno seguinte o modelo relê como dita uma frase que
+		// ninguém ouviu — na sessão `a68b1945` ele "lembrava" de ter prometido
+		// "deixa eu buscar os melhores grupos… 🔍", promessa que o sanitizer havia
+		// cortado, e o prompt manda cumprir o que foi prometido.
+		//
+		// Reescrever a mensagem persistida quebraria o par `tool_call`/
+		// `tool_result` (contrato da API). A anotação resolve o mesmo problema
+		// sem tocar no que já está lá: é FATO do servidor, no formato de
+		// instrução de sistema que a casa já usa nos directives.
+		const podados = filter.droppedSegmentReasons();
+		if (podados.length > 0) {
+			newMessages.push(
+				new HumanMessage(
+					`[instrução do sistema — o cliente NÃO vê este texto] Parte da sua última fala NÃO chegou ao cliente (filtro do servidor: ${podados.join(", ")}). Não conte com nada que você disse ali: se era uma promessa ou um anúncio, ele não ouviu.`,
+				),
+			);
+		}
 
 		return {
 			messages: newMessages,
