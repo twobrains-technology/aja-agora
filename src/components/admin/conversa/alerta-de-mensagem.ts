@@ -15,7 +15,17 @@
  * Navegador não deixa tocar áudio antes de o usuário interagir com a página. O
  * `AudioContext` nasce suspenso e só é retomado depois de um clique — por isso
  * `prepararAudio()` é chamado no primeiro gesto, e não no load.
+ *
+ * ## Diagnóstico
+ *
+ * Cada caminho que termina em SILÊNCIO deixa um registro (`registrarDiagnostico`).
+ * Antes disso, "não consigo ativar a notificação" chegava sem nenhuma evidência
+ * do lado de cá: o `catch` era vazio, a supressão por aba visível não aparecia em
+ * lugar nenhum, e navegador sem a API sumia com o botão sem dizer por quê. O
+ * registro é best-effort e não muda nenhuma decisão daqui.
  */
+
+import { registrarDiagnostico } from "@/lib/telemetry/diagnostico-notificacoes";
 
 let ctx: AudioContext | null = null;
 
@@ -25,9 +35,18 @@ export function prepararAudio(): void {
 	const AudioCtor =
 		window.AudioContext ??
 		(window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-	if (!AudioCtor) return;
-	if (!ctx) ctx = new AudioCtor();
-	if (ctx.state === "suspended") void ctx.resume();
+	if (!AudioCtor) {
+		registrarDiagnostico("audio", { motivo: "sem-api-de-audio" });
+		return;
+	}
+	try {
+		if (!ctx) ctx = new AudioCtor();
+		if (ctx.state === "suspended") void ctx.resume();
+	} catch (err) {
+		// Contexto de áudio pode falhar por política do navegador ou por limite de
+		// contextos abertos. Som é conforto; a notificação não depende dele.
+		registrarDiagnostico("falha", { onde: "prepararAudio", erro: String(err) });
+	}
 }
 
 /**
@@ -38,7 +57,15 @@ export function prepararAudio(): void {
  */
 export function tocarAviso(): void {
 	prepararAudio();
-	if (!ctx || ctx.state !== "running") return;
+	if (!ctx || ctx.state !== "running") {
+		// Sintoma clássico de "liguei e não ouvi nada": o contexto continua suspenso
+		// porque o clique que o destravaria aconteceu em outra aba/janela.
+		registrarDiagnostico("audio", {
+			motivo: "contexto-nao-destravou",
+			estado: ctx?.state ?? "sem-contexto",
+		});
+		return;
+	}
 
 	const agora = ctx.currentTime;
 	// Duas senoides curtas (880Hz → 1175Hz): sobe, o que o ouvido lê como
@@ -77,13 +104,57 @@ export function estadoDaNotificacao(): PermissaoNotificacao {
  * cadeado da barra de endereço.
  */
 export async function pedirPermissao(): Promise<PermissaoNotificacao> {
-	if (typeof window === "undefined" || !window.Notification) return "indisponivel";
-	if (Notification.permission !== "default") return Notification.permission as PermissaoNotificacao;
+	if (typeof window === "undefined" || !window.Notification) {
+		registrarDiagnostico("permissao", { resultado: "indisponivel", motivo: "sem-api" });
+		return "indisponivel";
+	}
+	if (Notification.permission !== "default") {
+		// Já respondida antes. Vale registrar: "cliquei e não aconteceu nada" quase
+		// sempre é isto — negada uma vez, o navegador nem mostra o pedido de novo.
+		registrarDiagnostico("permissao", {
+			resultado: Notification.permission,
+			motivo: "ja-respondida",
+		});
+		return Notification.permission as PermissaoNotificacao;
+	}
+
 	try {
-		return (await Notification.requestPermission()) as PermissaoNotificacao;
-	} catch {
+		const resultado = await pedirAoNavegador();
+		registrarDiagnostico("permissao", { resultado });
+		return resultado;
+	} catch (err) {
+		registrarDiagnostico("falha", { onde: "pedirPermissao", erro: String(err) });
 		return "denied";
 	}
+}
+
+/**
+ * Chama `requestPermission` cobrindo as DUAS assinaturas.
+ *
+ * O Safari só passou a devolver promise na 16; antes disso a resposta vinha por
+ * callback e a chamada retornava `undefined`. Com `await` direto, o resultado
+ * virava `undefined` — nem "granted", nem "denied" — e o botão ficava num limbo
+ * em que nada mais acontecia por mais que a pessoa clicasse.
+ */
+function pedirAoNavegador(): Promise<PermissaoNotificacao> {
+	return new Promise((resolve, reject) => {
+		try {
+			let respondido = false;
+			const responder = (p: NotificationPermission) => {
+				if (respondido) return;
+				respondido = true;
+				resolve(p as PermissaoNotificacao);
+			};
+
+			const retorno = Notification.requestPermission(responder);
+			// Navegador moderno: a promise resolve e o callback nem é usado.
+			if (retorno && typeof retorno.then === "function") {
+				retorno.then(responder, reject);
+			}
+		} catch (err) {
+			reject(err);
+		}
+	});
 }
 
 /**
@@ -93,9 +164,18 @@ export async function pedirPermissao(): Promise<PermissaoNotificacao> {
  * — ele já está vendo a mensagem chegar. É o mesmo critério do WhatsApp Web.
  */
 export function notificarMensagem(de: string, texto: string): void {
-	if (typeof window === "undefined" || !window.Notification) return;
-	if (Notification.permission !== "granted") return;
-	if (typeof document !== "undefined" && document.visibilityState === "visible") return;
+	if (typeof window === "undefined" || !window.Notification) {
+		registrarDiagnostico("aviso", { motivo: "sem-api" });
+		return;
+	}
+	if (Notification.permission !== "granted") {
+		registrarDiagnostico("aviso", { motivo: "sem-permissao", permissao: Notification.permission });
+		return;
+	}
+	if (typeof document !== "undefined" && document.visibilityState === "visible") {
+		registrarDiagnostico("aviso", { motivo: "aba-visivel" });
+		return;
+	}
 
 	try {
 		const n = new Notification(`Mensagem de ${de}`, {
@@ -110,7 +190,13 @@ export function notificarMensagem(de: string, texto: string): void {
 			window.focus();
 			n.close();
 		};
-	} catch {
-		// Notificação é conforto, nunca caminho crítico — falhar aqui é silencioso.
+		registrarDiagnostico("aviso", { motivo: "disparado" });
+	} catch (err) {
+		// Falhar aqui continua sendo silencioso PRA TELA — notificação é conforto,
+		// nunca caminho crítico. Mas deixou de ser silencioso pra nós: é neste
+		// ponto que o Chrome no Android joga `Illegal constructor` (lá só existe
+		// `ServiceWorkerRegistration.showNotification`), e engolir isso era o
+		// motivo de o defeito não ter explicação nenhuma do nosso lado.
+		registrarDiagnostico("falha", { onde: "notificarMensagem", erro: String(err) });
 	}
 }

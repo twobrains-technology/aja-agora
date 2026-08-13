@@ -19,6 +19,7 @@
  */
 
 import { useEffect, useRef } from "react";
+import { registrarDiagnostico } from "@/lib/telemetry/diagnostico-notificacoes";
 
 /** Intervalo da rede de segurança. Baixo o bastante pra não pesar, alto o bastante pra não substituir o SSE. */
 const POLL_MS = 15_000;
@@ -60,7 +61,14 @@ export function useConversaAoVivo({ conversationId, onAtualizar, onMensagem, ati
 				? new EventSource(`/api/admin/conversations/${conversationId}/stream`)
 				: null;
 
+		// Sem este par de registros, "não recebo aviso de mensagem nova" e "o
+		// stream nunca conectou" produzem o MESMO log: nenhum. Saber que a mensagem
+		// chegou muda completamente onde procurar o defeito.
+		if (!source) registrarDiagnostico("stream", { motivo: "sem-eventsource" });
+
 		if (source) {
+			source.onopen = () => registrarDiagnostico("stream", { motivo: "conectado" });
+
 			source.onmessage = (ev) => {
 				try {
 					const payload = JSON.parse(ev.data) as {
@@ -69,6 +77,7 @@ export function useConversaAoVivo({ conversationId, onAtualizar, onMensagem, ati
 					};
 					// `connected` e `ping` são só sinal de vida — não mexem na lista.
 					if (payload.type !== "message") return;
+					registrarDiagnostico("stream", { motivo: "mensagem", papel: payload.message?.role });
 					cb.current();
 					if (payload.message) cbMensagem.current?.(payload.message);
 				} catch {
@@ -80,6 +89,9 @@ export function useConversaAoVivo({ conversationId, onAtualizar, onMensagem, ati
 				// O EventSource já reconecta sozinho. Nada de fechar aqui: fechar na
 				// primeira falha de rede transformaria um soluço em tela morta até o
 				// próximo mount — e é justamente o polling que segura a queda.
+				// O registro é throttled na camada de diagnóstico: reconexão em loop
+				// não vira enxurrada de POST.
+				registrarDiagnostico("stream", { motivo: "erro", estado: source.readyState });
 			};
 		}
 
