@@ -10,7 +10,6 @@
 // REGRA de paridade: o MESMO regex que protege o web passa a valer no WhatsApp.
 
 import { describe, expect, it } from "vitest";
-import { buildContractSummaryText } from "@/lib/bevi/contract-summary";
 import { signatureHandoffToWhatsApp } from "./formatter";
 
 const LINK = "https://docs.aja.test/proposta.pdf";
@@ -45,17 +44,8 @@ describe("FIX-116 — WhatsApp apresenta PROPOSTA pronta, NÃO 'assinatura' (par
 		expect(wa.text ?? "").toContain("ÂNCORA");
 	});
 
-	it("buildContractSummaryText: rótulo do link NÃO é 'Assinatura digital' e menciona proposta", () => {
-		const text = buildContractSummaryText({
-			administradora: "ÂNCORA",
-			grupo: "1234",
-			creditValue: 80_000,
-			monthlyPayment: 900,
-			termMonths: 80,
-			signatureLink: LINK,
-		});
-		expect(text).not.toMatch(/assinatura|assinar/i);
-		expect(text).toContain(LINK);
-		expect(text).toMatch(/proposta/i);
-	});
+	// O "Resumo da sua contratação" SAIU do produto (Kairo, 2026-08-13) — ele
+	// levava o link `uselink.me` da administradora. O teste que cobria o rótulo
+	// daquele link saiu junto; a paridade DES-1 continua protegida acima, no
+	// signatureHandoffToWhatsApp, que é o que hoje entrega o link da proposta.
 });

@@ -236,10 +236,11 @@ export async function finalizarOfertaReal(from: string, conversationId: string):
 			await saveMessage(conversationId, "assistant", sentTexts.join("\n\n"), "whatsapp");
 		}
 
-		// docx passo 5 (linha 52): resumo da contratação por WhatsApp. Nunca quebra
-		// o fechamento — falha vira contractSummaryPending.
-		const { sendContractSummary } = await import("@/lib/bevi/contract-summary");
-		await sendContractSummary(conversationId).catch(() => {});
+		// AQUI SAÍA o "Resumo da sua contratação · Aja Agora ✅" (docx passo 5,
+		// linha 52). REMOVIDO a pedido do Kairo (2026-08-13), olhando a sequência
+		// real no WhatsApp: era mais um balão repetindo números que o cliente
+		// acabara de ver, e levava o link `uselink.me` da administradora — domínio
+		// de terceiro que ele já tinha pedido para tirar da jornada.
 
 		// A PROPOSTA em PDF — a peça do fechamento — vai pro cliente aqui. Antes o
 		// PDF era gerado e ficava só no S3 do back office, enquanto o agente dizia

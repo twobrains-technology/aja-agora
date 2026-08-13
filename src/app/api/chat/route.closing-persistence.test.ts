@@ -54,10 +54,6 @@ vi.mock("@/lib/bevi/fulfillment", () => ({
 	uploadContractDocument: fulfillmentRef.uploadContractDocument,
 }));
 
-vi.mock("@/lib/bevi/contract-summary", () => ({
-	sendContractSummary: vi.fn().mockResolvedValue(undefined),
-}));
-
 // Memory adapter desligado pra evitar Letta no teste.
 vi.mock("@/lib/memory/orchestrator-bridge", () => ({
 	resolveIdentityForTurn: () => null,

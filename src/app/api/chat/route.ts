@@ -48,7 +48,6 @@ import {
 	ancorarOfertaReal,
 	buildStartContractInput,
 } from "@/lib/bevi/contract-input";
-import { sendContractSummary } from "@/lib/bevi/contract-summary";
 import { sendFechoPedirOi } from "@/lib/bevi/fecho-pedir-oi";
 import { confirmOffer, startContract, uploadContractDocument } from "@/lib/bevi/fulfillment";
 import { getLatestBeviProposal } from "@/lib/bevi/proposal-repo";
@@ -1126,9 +1125,13 @@ export async function POST(req: NextRequest) {
 										// A proposta em PDF entra como CARD (signature_handoff, acima) —
 										// não mais como uma URL assinada crua no meio do texto, com 400
 										// caracteres de assinatura AWS aparecendo pro cliente.
-										// docx passo 5 (linha 52): resumo da contratação por WhatsApp.
-										// Nunca quebra o fechamento — falha vira contractSummaryPending.
-										await sendContractSummary(conversationId);
+										// AQUI SAÍA o "Resumo da sua contratação" por WhatsApp (docx passo 5,
+										// linha 52). REMOVIDO a pedido do Kairo (2026-08-13): o balão repetia
+										// administradora/prazo/carta/parcela que o cliente acabou de ver no
+										// card da proposta, e levava o link `uselink.me` da administradora —
+										// domínio de terceiro que ele já tinha mandado tirar da jornada. O
+										// fecho segue entregando a NOSSA proposta (signature_handoff) e o
+										// aviso de que o atendente chama.
 									} catch (err) {
 										// Achado no QA autônomo (E2E de tela ao vivo, 2026-07-01): este catch
 										// engolia o erro sem logar — mesma lição de empty-env-compose (tool

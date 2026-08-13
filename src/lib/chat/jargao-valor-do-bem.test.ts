@@ -96,12 +96,11 @@ describe("FIX-2 — WhatsApp formatter sem jargão seco", () => {
 	});
 });
 
-describe("FIX-2 — resumo oficial mantém o termo técnico COM aposto explicativo", () => {
-	it("contract-summary: 'Carta de crédito (valor do bem)'", () => {
-		const src = readSource("src/lib/bevi/contract-summary.ts");
-		expect(src).toMatch(/Carta de crédito \(valor do bem\)/);
-	});
-});
+// O "Resumo da sua contratação" foi REMOVIDO do produto (Kairo, 2026-08-13):
+// repetia números que o cliente acabara de ver e levava o link `uselink.me` da
+// administradora. O assert que vivia aqui olhava o aposto "(valor do bem)"
+// naquele texto — sem o texto, o invariante do FIX-2 segue protegido nos
+// blocos acima e no system prompt, abaixo.
 
 describe("FIX-2 — system prompt orienta vocabulário amigável", () => {
 	it("usa 'valor do bem' (nunca 'carta de crédito') no vocabulário com o usuário", () => {

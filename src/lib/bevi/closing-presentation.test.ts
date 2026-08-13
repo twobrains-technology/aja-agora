@@ -337,10 +337,11 @@ describe("closingPresentation — o fecho (passo 5.2)", () => {
 		expect(idxParabens).toBeGreaterThan(idxSig);
 	});
 
-	it("NUNCA promete contemplação — e diz explicitamente que não há data garantida", () => {
-		// "garantida" aparece SÓ na ressalva ("não tem data garantida"), nunca como
-		// promessa. O que continua proibido é afirmar contemplação/vaga como fato.
-		expect(allText.toLowerCase()).toMatch(/n[ãa]o tem data garantida/);
+	it("NUNCA promete contemplação", () => {
+		// A ressalva fixa ("não tem data garantida") SAIU do fecho a pedido do
+		// Kairo (2026-08-13) — ver closing-presentation.ts. O que este teste
+		// protege continua sendo o que importa: o fecho não pode AFIRMAR
+		// contemplação nem vaga como fato consumado.
 		expect(allText.toLowerCase()).not.toMatch(/contempla[çc][ãa]o garantida/);
 		expect(allText.toLowerCase()).not.toMatch(/voc[êe] j[áa] est[áa] no grupo/);
 		expect(allText.toLowerCase()).not.toMatch(/ser[áa] contemplad[ao]/);

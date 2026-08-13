@@ -15,7 +15,6 @@ const mocks = vi.hoisted(() => ({
 	persistMeta: vi.fn().mockResolvedValue(undefined),
 	meta: {} as ConversationMetadata,
 	confirmOffer: vi.fn(),
-	sendContractSummary: vi.fn().mockResolvedValue({ sent: true }),
 	fireContract: vi.fn().mockResolvedValue(undefined),
 	processText: vi.fn().mockResolvedValue(undefined),
 }));
@@ -41,7 +40,6 @@ vi.mock("@/lib/bevi/fulfillment", () => ({
 	confirmOffer: mocks.confirmOffer,
 	startContract: vi.fn(),
 }));
-vi.mock("@/lib/bevi/contract-summary", () => ({ sendContractSummary: mocks.sendContractSummary }));
 // A proposta que o cliente recebe é a NOSSA (PDF co-branded). Sem ela o fecho
 // NÃO emite o beat "Sua proposta está pronta" — nunca cai no link da
 // administradora em domínio de terceiro (abolido em 2026-07-21).
@@ -85,7 +83,6 @@ beforeEach(() => {
 		mocks.saveMessage,
 		mocks.persistMeta,
 		mocks.confirmOffer,
-		mocks.sendContractSummary,
 		mocks.fireContract,
 		mocks.processText,
 	])
@@ -129,7 +126,7 @@ describe("offer_confirm — terminal paridade web (CA-9)", () => {
 		documentsLinkAddress: "https://bevi/end/p-1",
 	};
 
-	it("confirmOffer → contractClosed=true + reforço + Parabéns + resumo", async () => {
+	it("confirmOffer → contractClosed=true + reforço + Parabéns (sem resumo)", async () => {
 		mocks.confirmOffer.mockResolvedValue(CONFIRM_RESULT);
 		mocks.meta = { currentPersona: "specialist" } as ConversationMetadata;
 
@@ -153,7 +150,9 @@ describe("offer_confirm — terminal paridade web (CA-9)", () => {
 		// Documento é assunto do atendente que faz a adesão — não do fecho.
 		expect(allSent.toLowerCase()).not.toMatch(/rg ou cnh/);
 		expect(allSent.toLowerCase()).toMatch(/atendente/);
-		expect(mocks.sendContractSummary).toHaveBeenCalledWith(CONV_ID);
+		// O resumo da contratação SAIU do fecho (Kairo, 2026-08-13) — o link
+		// `uselink.me` da administradora ia nele. O que o cliente recebe agora é a
+		// NOSSA proposta (asserts acima) e o aviso do atendente.
 	});
 
 	it("erro do confirmOffer → mensagem de retry, sem contractClosed", async () => {

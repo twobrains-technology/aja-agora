@@ -234,14 +234,17 @@ export function closingPresentation(
 			kind: "text",
 			text: "Parabéns! Agora você está oficialmente mais perto da sua conquista!",
 		},
-		// A ressalva que o mockup traz e que faltava para quem nunca falou de
-		// lance: quem passou pela conversa de lance ouve isso do agente, quem não
-		// passou terminava a jornada sem nunca saber que não existe data. É fato
-		// regulatório do produto, não conversa — por isso é copy determinística.
-		{
-			kind: "text",
-			text: "Só pra deixar claro desde já: a contemplação acontece por sorteio ou lance, e não tem data garantida: ninguém pode prometer isso. O que a gente garante é te acompanhar até lá.",
-		},
+		// AQUI MORAVA A RESSALVA "a contemplação acontece por sorteio ou lance, e
+		// não tem data garantida". REMOVIDA a pedido do Kairo (2026-08-13), depois
+		// de ver a sequência inteira chegar no WhatsApp: no meio de um fecho que já
+		// tem "Parabéns" e o aviso do atendente, ela lia como letra miúda jogada no
+		// cliente logo depois da comemoração — desnecessária, palavra dele.
+		//
+		// O conteúdo NÃO se perdeu: falar de contemplação (que é sorteio ou lance,
+		// que lance antecipa, que não há data cravada) é trabalho do vendedor, na
+		// conversa, no momento em que o assunto aparece — é o que o CLAUDE.md
+		// define desde 2026-08-10. O que saiu foi o balão fixo, não o assunto.
+		//
 		// O "oi" no WhatsApp tem função TÉCNICA (abre a janela de 24h,
 		// whatsapp/window.ts) — sem ele, o envio do atendente cai na fila de
 		// template. Por isso o handoff é um card com botão, não um número solto

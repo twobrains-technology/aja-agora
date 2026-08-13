@@ -52,9 +52,6 @@ vi.mock("@/lib/bevi/fulfillment", () => ({
 	confirmOffer: fulfillmentRef.confirmOffer,
 	uploadContractDocument: fulfillmentRef.uploadContractDocument,
 }));
-vi.mock("@/lib/bevi/contract-summary", () => ({
-	sendContractSummary: vi.fn().mockResolvedValue(undefined),
-}));
 vi.mock("@/lib/memory/orchestrator-bridge", () => ({
 	resolveIdentityForTurn: () => null,
 	loadMemoryContextForTurn: vi.fn().mockResolvedValue(null),
