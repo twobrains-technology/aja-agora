@@ -90,6 +90,24 @@ export function waIdToCelular(waId: string): string {
 	return normalizeCelularBR(waId);
 }
 
+/** DDDs realmente atribuídos no Brasil (Anatel). Fora desta lista, 11 dígitos
+ *  não são telefone — e é o que separa o CPF `028…` da sessão `a68b1945` de um
+ *  celular ditado. */
+const DDD_VALIDOS = new Set([
+	11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 24, 27, 28, 31, 32, 33, 34, 35, 37, 38, 41, 42, 43,
+	44, 45, 46, 47, 48, 49, 51, 53, 54, 55, 61, 62, 63, 64, 65, 66, 67, 68, 69, 71, 73, 74, 75, 77,
+	79, 81, 82, 83, 84, 85, 86, 87, 88, 89, 91, 92, 93, 94, 95, 96, 97, 98, 99,
+]);
+
+/** O texto traz um número que tem cara de CELULAR (DDD válido + 9 + 8 dígitos)? */
+function pareceCelularBR(text: string): boolean {
+	for (const m of (text ?? "").matchAll(/\d{11}/g)) {
+		const d = m[0];
+		if (DDD_VALIDOS.has(Number(d.slice(0, 2))) && d[2] === "9") return true;
+	}
+	return false;
+}
+
 /** Parece uma tentativa de CPF (número longo) mesmo sem validar? Usado pra
  * responder "CPF inválido" em vez de mandar o número pro agente conversar. */
 function looksLikeCpfAttempt(text: string): boolean {
@@ -127,7 +145,38 @@ export async function captureIdentifyText(
 	if (!conv) return { handled: false };
 	const meta = metaOf(conv);
 	if (meta.identityCollected) return { handled: false };
-	if (nextGate(meta) !== "identify") return { handled: false };
+
+	// FIX-431 — CPF OFERECIDO tem fechadura em qualquer gate.
+	//
+	// Produção, 2026-08-13, sessão `a68b1945`: o funil estava travado no gate
+	// `credit`, o cliente perguntou "Precisou do cpf?" e digitou o CPF. Como o
+	// gate corrente não era `identify`, isto aqui devolvia `handled:false`, o
+	// texto caía no modelo e ele RECUSAVA o dado ("não precisa compartilhar CPF
+	// comigo não"). O que destravava a venda voltou para o cliente; dois turnos
+	// depois, handoff.
+	//
+	// Enquanto `identityCollected` for falso, CPF com DV válido é o dado que a
+	// administradora exige para simular: aceitá-lo nunca atrapalha o funil, e o
+	// gate se recomputa sozinho no turno seguinte. A porta continua estreita —
+	// só CPF válido entra; qualquer outra coisa segue para o modelo (abaixo).
+	const noGateDeIdentidade = nextGate(meta) === "identify";
+
+	// FORA do gate, um número de 11 dígitos que PARECE CELULAR não é capturado.
+	//
+	// ~1% dos números de 11 dígitos passam no dígito verificador por acaso, e o
+	// mais provável deles na conversa é um telefone ditado — viraria identidade
+	// persistida em silêncio, com a administradora reprovando só no fechamento.
+	//
+	// Exigir a palavra "CPF" seria fácil e ERRADO: na sessão `a68b1945` o cliente
+	// digitou o CPF sozinho, sem escrever nada em volta ("02134567880"), depois
+	// de perguntar se era isso que faltava. É exatamente esse caso que a
+	// fechadura existe para pegar.
+	//
+	// A distinção é estrutural: celular brasileiro é DDD válido + 9 + 8 dígitos.
+	// O CPF daquela sessão começa em "02", que não é DDD de lugar nenhum.
+	if (!noGateDeIdentidade && pareceCelularBR(text) && !/\bcpf\b/i.test(text)) {
+		return { handled: false };
+	}
 
 	const cpf = extractCpf(text);
 	if (cpf) {
@@ -141,9 +190,14 @@ export async function captureIdentifyText(
 		}
 		return { handled: true, outcome: "captured" };
 	}
-	if (looksLikeCpfAttempt(text)) {
+	// Tentativa MALFORMADA de CPF só é interceptada quando o gate é o de
+	// identidade — fora dele, um número comprido pode ser qualquer coisa (valor,
+	// telefone, ano) e sequestrar o turno seria pior que deixar o modelo
+	// responder.
+	if (noGateDeIdentidade && looksLikeCpfAttempt(text)) {
 		return { handled: true, outcome: "invalid" };
 	}
+	if (!noGateDeIdentidade) return { handled: false };
 	// Não é CPF nem tentativa de CPF → não é uma resposta a este gate. É OUTRA COISA,
 	// e quem responde outra coisa é o modelo.
 	return { handled: false };

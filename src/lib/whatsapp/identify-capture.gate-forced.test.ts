@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 
 const CONV_ID = "conv-identify-fix217";
-const WA = "5562992496793";
+const WA = "5561988887777";
 const CPF_VALIDO = "52998224725";
 
 const mocks = vi.hoisted(() => ({
