@@ -44,7 +44,7 @@ pode calar o alerta.
 | Var | Para quê |
 |---|---|
 | `LANGFUSE_WEBHOOK_SECRET` | Segredo `lf-whsec_…` gerado pelo Langfuse ao criar a Automation. Sem ele → 503 |
-| `ALERTA_OBSERVABILIDADE_TO` | Destinatários, separados por vírgula. Default `contato@twobrainstechnology.com` |
+| `ALERTA_OBSERVABILIDADE_TO` | Destinatários, separados por vírgula. **Sem default no código** (regra de isolamento da casa): vazio = a rota loga erro de configuração e NÃO envia |
 | `CORTEX_MCP_URL` | `https://tb-cortex.twobrainstechnology.com/api/mcp` |
 | `CORTEX_MCP_TOKEN` | Bearer do Cortex. Vazio = no-op (o e-mail sai do mesmo jeito) |
 | `CORTEX_PROJETO` | Nome do projeto no Cortex. Default `Ajaagora` |
@@ -68,16 +68,22 @@ Em `https://langfuse.twobrainstechnology.com` → projeto **aja-agora**.
 > ⚠️ Crie a Automation **depois** de a rota estar no ar. Enquanto ela responder 404, cada
 > alerta conta como falha de entrega — e cinco falhas seguidas desabilitam a automação.
 
-### 2. Monitors (os quatro gatilhos aprovados pelo Kairo)
+### 2. Monitors (os gatilhos aprovados pelo Kairo)
 
 Métrica de score **booleano**: a **média é a taxa**. É por isso que os sinais nascem booleanos.
 
 | # | Monitor | Métrica | Alerta quando | Janela | O que pega |
 |---|---|---|---|---|---|
 | 1 | **Tool falhou** | score `tool_falhou` (média) | `> 0` | 1h | Tool fora do toolset da fase ou tool que estourou. Foi o que matou a sessão `a68b1945` |
-| 2 | **Turno mudo** | score `turno_mudo` (média) | `> 0` | 1h | O agente processou e não escreveu uma letra. No WhatsApp é silêncio absoluto |
-| 3 | **Gate afundado** | score `gate_entregue` (média) | `< 1` | 1d | O funil parou: o gate disparou e não chegou ao cliente |
-| 4 | **Sem tráfego** | observations (contagem) | estado **`NO_DATA`** notificando | 1h | Cliente escrevendo e **nenhum turno rodando** — a falha mais silenciosa de todas |
+| 2 | **Turno mudo** | score `turno_mudo` (média) | `> 0` | 1h | O agente processou e não entregou NADA — nem texto, nem card |
+| 3 | **Card sem fala** | score `card_sem_fala` (média) | `> 0,1` | 1d | Card na tela e nenhuma palavra. Na web o cliente vê algo; no WhatsApp é silêncio (sessão `04fda013`). Separado do #2 de propósito: alertar junto daria falso positivo |
+| 4 | **Gate afundado** | score `gate_entregue` (média) | `< 1` | 1d | O funil parou: o gate disparou e não chegou ao cliente |
+| 5 | **Valor revertido** | score `valor_revertido` (média) | `> 0` | 1d | O guard de ancoragem recusou um valor. Recorrência na mesma conversa é o livelock voltando por outra porta (P0 #1) |
+| 6 | **Sem tráfego** | observations (contagem) | estado **`NO_DATA`** notificando | 1h | Cliente escrevendo e **nenhum turno rodando** — a falha mais silenciosa de todas |
+
+Não vira monitor, mas é a coluna que explica os de cima no e-mail e no painel:
+`tool_falha_nome` (qual tool), `gate_afundado` (qual gate), `fala_podada` (qual guard comeu
+a fala — o motivo vem no `comment`).
 
 Em todos: ligar a Automation do passo 1 e **marcar `NO_DATA` para notificar**, não para tratar
 como zero.
@@ -95,7 +101,9 @@ como zero.
 |---|---|---|
 | `tool_falhou`, `tool_falha_nome`, `tool_falha_tipo` | `src/lib/agent/langgraph/tool-falha.ts` + `funil-scores.ts` | booleano + categóricos |
 | `gate_entregue`, `gate_afundado` | `funil-scores.ts` (`scoreDeEntregaDoGate`) | booleano + categórico |
-| `turno_mudo`, `artefato_suprimido`, `handoff`, `tools_chamadas`, `gate`, `funil_passo` | `funil-scores.ts` (`scoresDoTurno`) | vários |
+| `turno_mudo`, `card_sem_fala`, `artefato_suprimido`, `handoff`, `tools_chamadas`, `gate`, `funil_passo` | `funil-scores.ts` (`scoresDoTurno`) | vários |
+| `fala_podada` | `funil-scores.ts` + `converse.ts` (motivos do sanitizer) | booleano + comment |
+| `valor_revertido` | `funil-scores.ts` + `analyze.ts` (guard de ancoragem) | booleano + comment |
 
 Todos determinísticos, emitidos pelo servidor. Juiz de LLM avalia **qualidade da fala** e
 nunca enxerga funil parado — no turno que matou a venda em `a68b1945`, os quatro juízes

@@ -4,6 +4,9 @@ import {
 	PROFUNDIDADE_MAXIMA,
 	profundidadeDoGate,
 	scoreDeEntregaDoGate,
+	scoresDeFalaPodada,
+	scoresDeFalhaDeTool,
+	scoresDeValorRevertido,
 	scoresDoTurno,
 } from "./funil-scores";
 
@@ -146,5 +149,148 @@ describe("scoreDeEntregaDoGate", () => {
 		});
 
 		expect(scoreDeEntregaDoGate("desire", "text")).toHaveLength(1);
+	});
+});
+
+// FIX-431 — a tool que o modelo chamou e não rodou.
+//
+// Produção 2026-08-13, WhatsApp: `search_groups` fora do toolset da fase, o
+// modelo recebeu `Tool not found` e vendeu isso ao cliente como problema
+// técnico. `tools_chamadas` marcou 1 (contou a chamada!), `finish_reason` = ok,
+// os quatro juízes aprovaram. Nenhum sinal existente distinguia tool que rodou
+// de tool que nem existe — este é o score que faltava.
+describe("scoresDeFalhaDeTool", () => {
+	it("turno sem falha não emite score nenhum (não inventa zero)", () => {
+		expect(scoresDeFalhaDeTool([])).toEqual([]);
+	});
+
+	it("tool ausente do toolset vira booleano + nome + tipo", () => {
+		const scores = scoresDeFalhaDeTool([
+			{ tool: "search_groups", tipo: "ausente", mensagem: 'Tool "search_groups" not found' },
+		]);
+		expect(scores[0]).toMatchObject({ name: "tool_falhou", value: 1, dataType: "BOOLEAN" });
+		expect(scores[0].comment).toBe("search_groups (ausente)");
+		expect(scores).toContainEqual({
+			name: "tool_falha_nome",
+			value: "search_groups",
+			dataType: "CATEGORICAL",
+		});
+		expect(scores).toContainEqual({
+			name: "tool_falha_tipo",
+			value: "ausente",
+			dataType: "CATEGORICAL",
+		});
+	});
+
+	// Duas falhas da MESMA tool no turno são um defeito só — repetir o
+	// categórico inflaria a contagem do painel e do alerta.
+	it("não duplica o categórico quando a mesma tool falha duas vezes", () => {
+		const scores = scoresDeFalhaDeTool([
+			{ tool: "search_groups", tipo: "ausente", mensagem: "x" },
+			{ tool: "search_groups", tipo: "ausente", mensagem: "x" },
+		]);
+		expect(scores.filter((s) => s.name === "tool_falha_nome")).toHaveLength(1);
+		expect(scores.filter((s) => s.name === "tool_falha_tipo")).toHaveLength(1);
+	});
+
+	// `ausente` manda consertar tool-policy/directive; `erro` manda olhar a
+	// Bevi. Alerta que não separa os dois não diz para onde ir.
+	it("separa tool ausente de tool que estourou", () => {
+		const scores = scoresDeFalhaDeTool([
+			{ tool: "search_groups", tipo: "ausente", mensagem: "x" },
+			{ tool: "simulate_quota", tipo: "erro", mensagem: "Bevi 500" },
+		]);
+		const tipos = scores.filter((s) => s.name === "tool_falha_tipo").map((s) => s.value);
+		expect(tipos).toEqual(expect.arrayContaining(["ausente", "erro"]));
+	});
+});
+
+// FIX-431 (P1 #13) — silêncio de verdade × card sem fala.
+//
+// Produção, WhatsApp, 2026-08-13, sessão `04fda013`, trace `71191c00`: o modelo
+// chamou `simulate_quota` e `present_simulation_result`, o card foi emitido — e
+// nenhuma letra saiu. `turno_mudo` marcou 1, o que está certo do ponto de vista
+// do cliente (ele não recebeu texto), mas mistura dois defeitos diferentes:
+//
+//   • sem fala E sem artifact = o agente processou e não entregou NADA;
+//   • sem fala COM artifact = o servidor podou a fala e entregou só o card
+//     (na web o cliente ao menos vê o card; no WhatsApp é silêncio total).
+//
+// Os dois pedem conserto em lugares distintos, e um Monitor sobre a média de
+// `turno_mudo` alertaria em falso no segundo caso. Separar é pré-requisito do
+// alerta — é o ponto 13 do dossiê.
+describe("turno mudo × card sem fala", () => {
+	const base = {
+		traceId: "t",
+		conversationId: "c",
+		channel: "whatsapp" as const,
+		persona: null,
+		gate: null,
+		toolsCalled: [],
+		toolCount: 0,
+		artifactsEmitted: [],
+		artifactCount: 0,
+		suppressed: [],
+		cacheRead: null,
+		cacheWrite: null,
+		textChars: 0,
+		handoff: false,
+		transitionedTo: null,
+		leadStage: null,
+		durationMs: 10,
+		finishReason: null,
+		startedAt: 0,
+	};
+
+	function valor(scores: ReturnType<typeof scoresDoTurno>, nome: string) {
+		return scores.find((s) => s.name === nome)?.value;
+	}
+
+	it("sem fala e sem card: turno mudo de verdade", () => {
+		const s = scoresDoTurno(base);
+		expect(valor(s, "turno_mudo")).toBe(1);
+		expect(valor(s, "card_sem_fala")).toBe(0);
+	});
+
+	// O caso real do trace `71191c00`.
+	it("sem fala mas COM card: é card_sem_fala, não turno mudo", () => {
+		const s = scoresDoTurno({
+			...base,
+			artifactsEmitted: ["simulation_result"],
+			artifactCount: 1,
+		});
+		expect(valor(s, "card_sem_fala")).toBe(1);
+		expect(valor(s, "turno_mudo")).toBe(0);
+	});
+
+	it("com fala: nenhum dos dois acende", () => {
+		const s = scoresDoTurno({ ...base, textChars: 42 });
+		expect(valor(s, "turno_mudo")).toBe(0);
+		expect(valor(s, "card_sem_fala")).toBe(0);
+	});
+});
+
+// FIX-431 (P2 #14) — os dois instantes que o sistema sabia e não contava.
+describe("fala podada e valor revertido", () => {
+	it("sem poda, nenhum score (não inventa zero)", () => {
+		expect(scoresDeFalaPodada([])).toEqual([]);
+	});
+
+	it("com poda, booleano com os motivos no comment", () => {
+		const s = scoresDeFalaPodada(["gancho", "process-preamble", "gancho"]);
+		expect(s[0]).toMatchObject({ name: "fala_podada", value: 1, dataType: "BOOLEAN" });
+		// Motivo repetido é o mesmo guard atuando duas vezes — não polui o comment.
+		expect(s[0].comment).toBe("gancho, process-preamble");
+	});
+
+	// Reincidência na MESMA conversa é o livelock por outra porta — o comment
+	// diz o valor recusado e se ele tinha vindo do escape de gate preso.
+	it("valor revertido registra o número e a origem", () => {
+		expect(scoresDeValorRevertido({ valorRecusado: 238_000, veioDoEscape: true })[0]).toMatchObject(
+			{ name: "valor_revertido", value: 1, comment: "238000 (escape)" },
+		);
+		expect(
+			scoresDeValorRevertido({ valorRecusado: 1_000_000, veioDoEscape: false })[0].comment,
+		).toBe("1000000");
 	});
 });
