@@ -15,7 +15,11 @@ import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages
 import { RunnablePassthrough, RunnableSequence } from "@langchain/core/runnables";
 import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
-import { reescreverToolMessagesComFalha } from "@/lib/agent/langgraph/tool-falha";
+import {
+	reescreverToolMessagesComFalha,
+	toolAceitouPedido,
+	toolsQueRecusaram,
+} from "@/lib/agent/langgraph/tool-falha";
 import type { ChosenOffer } from "@/lib/agent/orchestrator/choose-offer";
 import {
 	administradoraFoiRecusada,
@@ -35,6 +39,7 @@ import { querAntecipar, shouldAskMotive } from "@/lib/agent/qualify-state";
 import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import type { ArtifactType } from "@/lib/chat/types";
+import { registrarToolsRecusadas } from "@/lib/observability/langfuse/conducao-scores";
 import {
 	registrarEscolhaNaoAncorada,
 	registrarFalaPodada,
@@ -230,6 +235,28 @@ export function createConverseNode(model: BaseChatModel) {
 			conversationId: state.conversationId,
 			channel: state.channel,
 			hasLance: state.funnel.qualifyAnswers?.hasLance === "yes",
+			// A MESMA fonte que este nó usa. O `persist` é o último nó do turno, então
+			// no turno da descoberta o banco ainda não tem a oferta que o `discovery`
+			// acabou de apurar — e as tools recusavam pedidos legítimos por causa
+			// disso (sessão `ff8f2080`).
+			metaDoTurno: projectToMeta(state),
+			// O que este turno já pôs (ou vai pôr) na tela. Inclui o card de
+			// recomendação PENDENTE: ele é emitido pelo `emitCard` no fim deste mesmo
+			// turno, e o contexto do modelo já manda simular com esse grupo — o guard
+			// não pode recusar aquilo que o próprio sistema mandou fazer.
+			artifactsDoTurno: [
+				...state.events
+					.filter((ev): ev is Extract<TurnEvent, { type: "artifact" }> => ev.type === "artifact")
+					.map((ev) => ({ type: ev.artifactType, payload: ev.payload })),
+				...(state.funnel.pendingRecommendationCard
+					? [
+							{
+								type: "recommendation_card",
+								payload: state.funnel.pendingRecommendationCard,
+							},
+						]
+					: []),
+			],
 			// Paridade com o runtime Vercel: as diretivas de recuperação (grupo não
 			// exibido / id fabricado) só podem citar tool que existe nesta fase —
 			// citar uma escondida faz o modelo tomar NoSuchToolError e o turno cair
@@ -251,6 +278,19 @@ export function createConverseNode(model: BaseChatModel) {
 		const novaFaixaRef: {
 			faixa: { creditMax: number; creditMin: number; parcelaAlvo: number } | null;
 		} = { faixa: null };
+		/** Tools que responderam RECUSANDO o pedido neste turno — vira o score
+		 * `tool_recusou`. */
+		const toolsRecusadas: string[] = [];
+		/** Quanto texto já tinha sido entregue quando o beat da âncora começou.
+		 * `null` = a âncora não foi tentada neste turno (não é reveal, ou o gate
+		 * ativo é de coleta e quem conduz é o funil). */
+		const ancoraCharsRef: { antes: number | null } = { antes: null };
+		/** Reposicionamentos que o modelo PEDIU e que ainda esperam a resposta da
+		 * tool — só viram `novaFaixaRef` se ela tiver mesmo ajustado. */
+		const ajustesPendentes: Array<{
+			toolCallId: string | undefined;
+			faixa: { creditMax: number; creditMin: number; parcelaAlvo: number };
+		}> = [];
 		/** A cota que o cliente escolheu, dita pelo modelo e conferida contra as
 		 * que de fato apareceram em card nesta conversa. */
 		const escolhaRef: { cota: ChosenOffer | null } = { cota: null };
@@ -839,6 +879,28 @@ export function createConverseNode(model: BaseChatModel) {
 
 				if (!aiMessage.tool_calls || aiMessage.tool_calls.length === 0) break;
 
+				// FRONTEIRA DE GERAÇÃO — o que uma não fechou não vaza para a próxima.
+				//
+				// O filtro retém no `pending` o trecho final sem delimitador, esperando
+				// o resto da frase. Só que "R$ 1.800." NÃO fecha frase (o "." colado a
+				// dígito é separador de milhar — `sanitizer.ts:985-991`, FIX-248), e a
+				// geração seguinte chegava colada nesse resto: as duas viravam UM
+				// segmento, que começava pelo preâmbulo da anterior e caía inteiro,
+				// levando junto a fala boa da nova. Foi assim que o cliente da sessão
+				// `ff8f2080` (produção 2026-08-13) recebeu "Excelente, Kairo! Um
+				// instante." e cinco cards, sem uma palavra sobre as ofertas.
+				//
+				// `flushPending` (e não `flush`) é o método feito para isto: libera a
+				// cauda e NUNCA a pergunta segurada, porque uma fronteira intermediária
+				// não é o fim do turno (FIX-330, `sanitizer.ts:1207-1219` — que já
+				// descrevia este uso, "troca de bloco multi-tool-call, pré-tool-call").
+				const cauda = filter.flushPending();
+				if (cauda) {
+					const ev: TurnEvent = { type: "text-delta", text: cauda };
+					config.writer?.(ev);
+					events.push(ev);
+				}
+
 				for (const call of aiMessage.tool_calls) {
 					const ev: TurnEvent = {
 						type: "tool-call",
@@ -860,6 +922,19 @@ export function createConverseNode(model: BaseChatModel) {
 					// "Essa parcela não cabe" → reposiciona a FAIXA DE BUSCA pelo estado
 					// do grafo. A tool só calcula e narra; quem escreve é aqui, senão o
 					// nó de persistência apaga logo em seguida e a busca nunca roda.
+					//
+					// O efeito fica PENDENTE até a tool responder. Enquanto ele era
+					// aplicado aqui, o servidor escrevia um ajuste que a tool tinha
+					// acabado de RECUSAR — as duas leem a mesma oferta de lugares
+					// diferentes (a tool do banco, via `reloadMeta`; este nó do estado
+					// do grafo), e no turno da DESCOBERTA elas divergem: o `discovery`
+					// já escreveu a oferta no estado e o `persist` ainda não a gravou
+					// no banco. Produção 2026-08-13, sessão `ff8f2080`: o cliente pediu
+					// um carro de R$ 238 mil, a tool devolveu "[Sem oferta ancorada
+					// nesta conversa]" ao modelo, e o funil terminou o turno buscando
+					// cartas de R$ 63–70 mil assim mesmo. O modelo, que ouviu "não
+					// deu", nem sabia. O servidor só aplica o que ele disse ao modelo
+					// que aplicaria.
 					if (call.name === "ajustar_por_parcela") {
 						const desejada = Number((call.args as { parcelaDesejada?: unknown })?.parcelaDesejada);
 						const atual = state.funnel.recommendedOffer;
@@ -871,11 +946,14 @@ export function createConverseNode(model: BaseChatModel) {
 							desejada < atual.monthlyPayment
 						) {
 							const alvo = Math.round(atual.creditValue * (desejada / atual.monthlyPayment));
-							novaFaixaRef.faixa = {
-								creditMax: alvo,
-								creditMin: Math.round(alvo * 0.9),
-								parcelaAlvo: desejada,
-							};
+							ajustesPendentes.push({
+								toolCallId: call.id,
+								faixa: {
+									creditMax: alvo,
+									creditMin: Math.round(alvo * 0.9),
+									parcelaAlvo: desejada,
+								},
+							});
 						}
 					}
 
@@ -1121,6 +1199,27 @@ export function createConverseNode(model: BaseChatModel) {
 					{ buscaJaFeita: state.funnel.revealCompleted === true },
 				);
 				if (falhas.length > 0) registrarFalhasDeTool(falhas);
+				toolsRecusadas.push(...toolsQueRecusaram(toolMessagesCruas));
+				// O reposicionamento de faixa só vale se a tool tiver mesmo ajustado.
+				// `ajustar_por_parcela` recusa quando não há oferta ancorada — e nesse
+				// caso o servidor NÃO pode escrever o ajuste pelas costas do modelo
+				// (ver o pedido pendente, mais acima).
+				for (const pendente of ajustesPendentes) {
+					if (!toolAceitouPedido(toolMessagesCruas, pendente.toolCallId)) continue;
+					// A tool CALCULAR e o servidor APLICAR são coisas diferentes.
+					//
+					// Desde que as tools passaram a ler o estado do turno, o cálculo
+					// funciona já no turno da descoberta — e é bom que funcione: o modelo
+					// consegue dizer "com R$ 1.800 a carta fica em torno de R$ 70 mil".
+					// Mas TROCAR a faixa de busca ali seria decidir pelo cliente antes de
+					// mostrar a ele a primeira opção: ele pediu um carro de R$ 238 mil e
+					// não reclamou de parcela nenhuma — a objeção "essa parcela não cabe"
+					// só existe depois que ele VÊ a parcela. Um vendedor apresenta o que
+					// achou, explica o que R$ 1.800 compra, e deixa a pessoa escolher.
+					if (state.apresentaOfertaNesteTurno) continue;
+					novaFaixaRef.faixa = pendente.faixa;
+				}
+				ajustesPendentes.length = 0;
 				loopMessages = [...loopMessages, ...toolMessages];
 				newMessages.push(...toolMessages);
 				// Só volta pro modelo se alguma das tools trouxe informação nova. Ver
@@ -1235,6 +1334,11 @@ export function createConverseNode(model: BaseChatModel) {
 					...loopMessages.slice(1),
 					deixaDaAncora,
 				];
+				// Marco: o que a âncora entregar vem DEPOIS daqui. Se nada vier, o
+				// `emit-card` devolve a pergunta do funil em vez de suprimi-la.
+				ancoraCharsRef.antes = events
+					.map((ev) => (ev.type === "text-delta" ? ev.text : ""))
+					.join("").length;
 				await executarBeat(false);
 			}
 		}
@@ -1256,6 +1360,7 @@ export function createConverseNode(model: BaseChatModel) {
 		// soube (`droppedSegmentReasons`), e a informação morria nele — o turno
 		// mudo da sessão `04fda013` apareceu no painel como silêncio sem causa.
 		registrarFalaPodada(filter.droppedSegmentReasons());
+		registrarToolsRecusadas(toolsRecusadas);
 		if (tail) {
 			const ev: TurnEvent = { type: "text-delta", text: tail };
 			config.writer?.(ev);
@@ -1290,11 +1395,18 @@ export function createConverseNode(model: BaseChatModel) {
 			);
 		}
 
+		// A âncora foi tentada e não entregou nada? Medido depois do `flush()`, de
+		// propósito: o que ela escreveu pode ter ficado retido no filtro até aqui,
+		// e olhar antes contaria como silêncio uma fala que o cliente recebeu.
+		const ancoraFalhou =
+			ancoraCharsRef.antes !== null && (textoDoTurno + tail).length <= ancoraCharsRef.antes;
+
 		return {
 			messages: newMessages,
 			events,
 			modelAskedQuestion,
 			modelAskedForName,
+			ancoraFalhou,
 			streamedArtifactIds,
 			...(deveExplicarComoFunciona ||
 			handoffRef.pedido ||

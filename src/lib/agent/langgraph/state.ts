@@ -323,6 +323,19 @@ export const AgentGraphState = Annotation.Root({
 		default: () => false,
 	}),
 
+	/** O turno de reveal terminou SEM a âncora — o beat que deveria convidar o
+	 * cliente a reagir aos cards não entregou uma palavra (morreu em
+	 * `<thinking>`, foi podado inteiro pelo filtro, ou o modelo perseguiu uma
+	 * tool inexistente). Existe porque o reveal SUPRIME o gate de propósito,
+	 * contando com a âncora para conduzir: quando ela falha, as duas redes caem
+	 * juntas e o cliente fica diante dos cards sem nada a responder (sessão
+	 * `ff8f2080`, produção 2026-08-13). Com isto ligado, o `emit-card` devolve a
+	 * pergunta canônica do funil no MESMO turno. */
+	ancoraFalhou: Annotation<boolean>({
+		reducer: (a, b) => b ?? a,
+		default: () => false,
+	}),
+
 	/** A pergunta que o modelo fez neste turno é a DO NOME. Distinto de
 	 * `modelAskedQuestion`, que só diz que ele perguntou alguma coisa: em
 	 * produção o agente perguntava o imóvel e o card de nome aparecia mudo

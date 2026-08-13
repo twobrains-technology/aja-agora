@@ -51,6 +51,50 @@ function ehToolMessage(msg: BaseMessage): msg is ToolMessage {
 	return msg.getType() === "tool";
 }
 
+/**
+ * A tool ACEITOU o pedido, ou o recusou?
+ *
+ * Recusa não é falha: a tool rodou, respondeu, e disse "não dá" — é o
+ * `{ error: "[Sem oferta ancorada nesta conversa...]" }` de `ai-sdk.ts:411`,
+ * que volta com `status: "success"` e por isso não aparece em `lerFalhaDeTool`.
+ *
+ * Existe porque alguns efeitos da tool são aplicados pelo SERVIDOR (o nó de
+ * conversa), e não pela tool — que só calcula e narra, senão o `persist`
+ * apagaria a escrita logo em seguida. Nesse arranjo, quem aplica precisa saber
+ * o que a tool respondeu ao modelo; sem isso o servidor grava um efeito que o
+ * modelo foi informado de que NÃO aconteceu, e as duas fontes de verdade
+ * passam a contar histórias diferentes sobre o mesmo turno.
+ */
+export function toolAceitouPedido(mensagens: BaseMessage[], toolCallId?: string): boolean {
+	if (!toolCallId) return false;
+	const msg = mensagens.find((m) => ehToolMessage(m) && m.tool_call_id === toolCallId);
+	if (!msg) return false;
+	const tm = msg as ToolMessage;
+	if (tm.status === "error") return false;
+	const bruto = typeof tm.content === "string" ? tm.content : JSON.stringify(tm.content);
+	try {
+		const corpo: unknown = JSON.parse(bruto);
+		// Só o campo `error` reprova. Um corpo que não é objeto (número, string
+		// solta) é resposta legítima de tool que devolve escalar.
+		return !(typeof corpo === "object" && corpo !== null && "error" in corpo);
+	} catch {
+		// Resposta em texto puro: não há como provar recusa, e a tool respondeu
+		// com status de sucesso — vale como aceite.
+		return true;
+	}
+}
+
+/** Quais tools RECUSARAM o pedido neste beat (respondeu, com `{error}`). É o
+ * mesmo predicado de `toolAceitouPedido`, do lado do observador: vira o score
+ * `tool_recusou`, que não existia e por isso duas recusas seguidas passaram em
+ * branco pelo painel (sessão `ff8f2080`). */
+export function toolsQueRecusaram(mensagens: BaseMessage[]): string[] {
+	return mensagens
+		.filter(ehToolMessage)
+		.filter((m) => m.status !== "error" && !toolAceitouPedido(mensagens, m.tool_call_id))
+		.map((m) => m.name ?? "desconhecida");
+}
+
 /** Lê uma ToolMessage e diz se ela representa falha — e de que tipo. */
 export function lerFalhaDeTool(msg: BaseMessage): FalhaDeTool | null {
 	if (!ehToolMessage(msg)) return null;

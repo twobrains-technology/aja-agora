@@ -202,8 +202,15 @@ export async function emitCardNode(
 			jaAdiouUmaVez: funnel.nameCardAdiado,
 		});
 
+	// O reveal suprime o gate porque a ÂNCORA fecha o turno — mas só se ela tiver
+	// mesmo fechado. Sem `!state.ancoraFalhou`, as duas redes caíam juntas: o gate
+	// já tinha sido gasto e a âncora não saiu, então o cliente ficava diante dos
+	// cards sem nada a responder (sessão `ff8f2080`, produção 2026-08-13). Quando
+	// a âncora conduz, nada muda — o gate continua suprimido e não há pergunta
+	// dupla.
+	const revelouSemConduzir = state.apresentaOfertaNesteTurno && state.ancoraFalhou;
 	const gateDoTurno =
-		((state.apresentaOfertaNesteTurno || turnoJaPedeAcao) &&
+		(((state.apresentaOfertaNesteTurno && !revelouSemConduzir) || turnoJaPedeAcao) &&
 			!GATES_DE_ACAO.has(String(state.gate ?? ""))) ||
 		perguntaEmbutidoNoEscuro ||
 		cardDeNomeAtropelaAFala

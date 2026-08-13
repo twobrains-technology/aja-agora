@@ -21,6 +21,7 @@ import { evaluateActionPrecondition } from "@/lib/agent/orchestrator/action-poli
 import type { ChosenOffer } from "@/lib/agent/orchestrator/choose-offer";
 import { listShownOffersForConversation } from "@/lib/agent/orchestrator/choose-offer";
 import { CANONICAL_TOPIC_IDS } from "@/lib/agent/orchestrator/topic-catalog";
+import type { ConversationMetadata } from "@/lib/agent/personas";
 import { dinheiroDeclaradoPeloCliente } from "@/lib/agent/qualify-state";
 import { rankGroups, recommendWithFallback } from "@/lib/agent/recommendation";
 import { computeScenarios } from "@/lib/agent/scenarios";
@@ -1243,6 +1244,19 @@ export type ConsorcioToolsContext = {
 	 * pelo chamador (builder.ts) a partir do meta; false/undefined preserva o
 	 * comportamento de busca real (pré-reveal ou troca legítima de faixa). */
 	reuseShownGroupsOnly?: boolean;
+	/** Meta projetada do ESTADO DO GRAFO neste turno (`projectToMeta`). Fonte
+	 * PREFERENCIAL sobre o `reloadMeta`: o `persist` é o último nó, então no
+	 * turno da descoberta o banco está um nó atrás do grafo e as tools recusavam
+	 * pedidos legítimos ("[Sem oferta ancorada nesta conversa]" com a oferta já
+	 * apurada — sessão `ff8f2080`, produção 2026-08-13). **Só o grafo passa este
+	 * campo**; sem ele o comportamento é idêntico ao de antes. */
+	metaDoTurno?: ConversationMetadata;
+	/** Artifacts que ESTE turno apurou e cuja exibição é determinística (saíram
+	 * do `discovery`, ou estão pendentes de emissão no `emitCard`). Semeia o
+	 * `getShownGroups` para que ler/simular sobre eles seja permitido no mesmo
+	 * turno. Fonte SERVIDOR, nunca a narrativa do modelo — é o que mantém o
+	 * FIX-180 de pé: id fabricado pelo modelo continua barrado. */
+	artifactsDoTurno?: Array<{ type: string; payload: unknown }>;
 	/** Tools que a policy REALMENTE expôs nesta fase. As diretivas de recuperação
 	 * (naoExibidoDirective) só podem nomear tool desta lista — nomear uma que a
 	 * policy escondeu faz o modelo tomar NoSuchToolError e o turno inteiro cair no
@@ -1281,10 +1295,32 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 	const sameSearchParams = (a: SearchGroupsParams, b: SearchGroupsParams): boolean =>
 		a.category === b.category && a.creditMin === b.creditMin && a.creditMax === b.creditMax;
 
+	/** A meta que vale AGORA. Prefere o estado do turno (grafo) e só cai no banco
+	 * quando ele não foi passado — ver `metaDoTurno`. Sem isto, tudo que o
+	 * `discovery` apurou neste turno ficava invisível às tools até o `persist`. */
+	const metaAtual = async (): Promise<ConversationMetadata | null> => {
+		if (ctx.metaDoTurno) return ctx.metaDoTurno;
+		if (!conversationId) return null;
+		const { reloadMeta } = await import("@/lib/conversation/meta");
+		return reloadMeta(conversationId).catch(() => null);
+	};
+
 	let shownGroupsPromise: ReturnType<typeof loadShownGroups> | null = null;
 	const getShownGroups = () => {
 		if (!conversationId) return Promise.resolve(emptyShownGroups());
-		if (!shownGroupsPromise) shownGroupsPromise = loadShownGroups(conversationId);
+		if (!shownGroupsPromise) {
+			// Ao seed do banco (turnos anteriores) somam-se os artifacts DESTE turno.
+			// Reusa `extractShownFromPayload` — a mesma peça do `markShown`, nenhuma
+			// lista nova de tipos para manter em dia.
+			shownGroupsPromise = loadShownGroups(conversationId).then((shown) => {
+				for (const a of ctx.artifactsDoTurno ?? []) {
+					const extraido = extractShownFromPayload(a.type, a.payload);
+					for (const id of extraido.ids) shown.ids.add(id);
+					for (const admin of extraido.administradoras) shown.administradoras.add(admin);
+				}
+				return shown;
+			});
+		}
 		return shownGroupsPromise;
 	};
 	const markShown = async (type: string, payload: unknown) => {
@@ -1645,8 +1681,7 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		}),
 		execute: async (args: { targetMonth: number; usarLanceEmbutido?: boolean }) => {
 			if (!conversationId) return SIMULACAO_SEM_OFERTA;
-			const { reloadMeta } = await import("@/lib/conversation/meta");
-			const meta = await reloadMeta(conversationId).catch(() => null);
+			const meta = await metaAtual();
 			const offer = meta?.recommendedOffer;
 			if (!offer?.creditValue || !offer.termMonths || !offer.monthlyPayment) {
 				return SIMULACAO_SEM_OFERTA;
@@ -1693,8 +1728,7 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		}),
 		execute: async (args: { parcelaDesejada: number }) => {
 			if (!conversationId) return SIMULACAO_SEM_OFERTA;
-			const { reloadMeta } = await import("@/lib/conversation/meta");
-			const meta = await reloadMeta(conversationId).catch(() => null);
+			const meta = await metaAtual();
 			const offer = meta?.recommendedOffer;
 			if (!meta || !offer?.creditValue || !offer.monthlyPayment) return SIMULACAO_SEM_OFERTA;
 			if (args.parcelaDesejada >= offer.monthlyPayment) {
@@ -1788,8 +1822,7 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		}),
 		execute: async (args: { usarLanceEmbutido?: boolean }) => {
 			if (!conversationId) return SIMULACAO_SEM_OFERTA;
-			const { reloadMeta } = await import("@/lib/conversation/meta");
-			const meta = await reloadMeta(conversationId).catch(() => null);
+			const meta = await metaAtual();
 			const offer = meta?.recommendedOffer;
 			if (!offer?.creditValue || !offer.termMonths) return SIMULACAO_SEM_OFERTA;
 			return computeScenarios({

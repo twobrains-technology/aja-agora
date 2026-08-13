@@ -65,7 +65,7 @@ export function profundidadeDoGate(gate: string | null): number | null {
 	return PROFUNDIDADE_DO_GATE[gate] ?? null;
 }
 
-type Score = {
+export type Score = {
 	name: string;
 	value: string | number;
 	dataType: "CATEGORICAL" | "NUMERIC" | "BOOLEAN";
