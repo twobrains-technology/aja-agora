@@ -310,23 +310,16 @@ export function buildSearchSummaryDirective(args: {
 	const { category, meta } = args;
 	const q = meta.qualifyAnswers ?? {};
 
-	const filterParts: string[] = [];
-	if (q.creditMin !== undefined && q.creditMin > 0) {
-		filterParts.push(`creditMin=${q.creditMin}`);
-	}
-	if (q.creditMax !== undefined) {
-		filterParts.push(`creditMax=${q.creditMax}`);
-	}
-	const filters = filterParts.length > 0 ? `, ${filterParts.join(", ")}` : "";
-
 	// FIX-INTEGRIDADE (2026-07-02): frase "% do seu teto" NÃO pode aparecer quando:
 	// 1. Cliente NÃO declarou orçamento mensal (monthlyBudget undefined)
 	// 2. Categoria é MOTO (não coleta orçamento mensal — system-prompt FIX-104 passo 15-17)
 	const hasBudget =
 		category !== "moto" && typeof q.monthlyBudget === "number" && q.monthlyBudget > 0;
-	const budgetArgs = hasBudget
-		? `, budget=${q.monthlyBudget}, desiredTermMonths=${q.prazoMeses ?? 0}`
-		: `, desiredTermMonths=${q.prazoMeses ?? 0}`;
+
+	// `filterParts`/`filters`/`budgetArgs` viviam aqui montando os argumentos de
+	// `search_groups` e `recommend_groups` para o texto abaixo. O FIX-431 tirou
+	// essas ordens do directive (as tools não são do modelo), e as variáveis
+	// ficaram órfãs — nada mais as lê.
 
 	// FIX-18 (jornada BB real do Kairo, 2026-06-11): a busca filtra pela FAIXA DE
 	// CRÉDITO; o orçamento declarado não participa do filtro (limitação da Bevi
@@ -351,40 +344,47 @@ CONFRONTO DE VIABILIDADE (orçamento declarado R$ ${q.monthlyBudget}/mês): a bu
 CONFRONTO DE FAIXA (FIX-33): o usuário pediu um bem de R$ ${q.creditClampedFrom} por texto, ACIMA do teto da categoria. A busca foi ajustada pro teto real da categoria (R$ ${q.creditMax}). ANTES de apresentar, confronte com honestidade em UMA frase: diga que pra essa categoria a faixa vai até R$ ${q.creditMax} e pergunte se ele quer ver as opções nesse teto OU se o bem seria de outra categoria. NUNCA celebre nem prometa o valor original (R$ ${q.creditClampedFrom}) — a administradora não entrega esse valor nessa categoria.`
 			: "";
 
-	// docx passos 3-4: mostrar PRIMEIRO o "Plano recomendado pela Aja Agora" em
-	// DESTAQUE + o detalhamento E o carrossel das opções lado a lado.
-	// Teste manual Kairo (2026-06-11): "disse que tinha 3 opções mas mostrou só
-	// uma" — o reveal anunciava 3 mas escondia as outras 2 atrás de um botão. Agora
-	// o carrossel (present_comparison_table, a recomendada destacada) aparece NO
-	// reveal. Mais fiel ao docx (linha 32 "Encontramos 3 boas opções" + linha 37
-	// "ver outras opções pra comparação"). Ver CONTEXT.md (D15).
+	// FIX-431 — este texto parou de ORDENAR TOOL QUE NÃO EXISTE.
+	//
+	// Produção, WhatsApp, 2026-08-13. O directive dizia "FLUXO OBRIGATÓRIO ... 1.
+	// Chame search_groups", "3. chame recommend_groups ... present_recommendation_
+	// card", "5. chame present_comparison_table". Nenhuma das três está em
+	// `WHAT_IF_TOOL_NAMES` (langgraph/toolset.ts) — a descoberta é do nó
+	// `discovery`, determinística, e é ele quem emite `comparison_table` e
+	// `recommendation_card` server-side. O modelo obedecia, tomava
+	// `Error: Tool "search_groups" not found` e traduzia isso ao cliente:
+	// "Infelizmente tive um problema na busca" → handoff, venda perdida (sessão
+	// `a68b1945`). Na sessão seguinte a mesma ordem queimou três rodadas de LLM
+	// 13s DEPOIS de a busca já ter rodado no mesmo turno.
+	//
+	// Era duplicidade de comando: código e prompt mandando no mesmo passo, o
+	// prompt sem saber que o código já tinha feito. O texto é herança do runtime
+	// Vercel anterior, onde `tool-policy.ts` governava o toolset.
+	//
+	// Sobrou para o modelo o que é dele: a FALA, e a simulação
+	// (`simulate_quota`/`present_simulation_result` existem no toolset, e o
+	// `discovery` não as executa). Os cards já estão na tela quando este turno
+	// começa — por isso "olhe o que JÁ apareceu", nunca "vou buscar".
 	return `O usuário completou as 4 perguntas de qualificação:
 - experiência=${meta.experiencePrev}
 - faixa de crédito=R$ ${q.creditMin ?? 0} a R$ ${q.creditMax ?? "?"}${hasBudget ? `\n- parcela mensal=R$ ${q.monthlyBudget}` : ""}
 - prazo=${q.prazoMeses ?? "?"} meses
 - lance=${q.hasLance}
 
-FLUXO OBRIGATÓRIO neste turno (ordem do docx — recomendado PRIMEIRO, em destaque):
-1. Chame search_groups com category="${category}"${filters} ANTES de anunciar qualquer coisa.
-2. Anuncie conforme o RESULTADO REAL da busca (honestidade > template — FIX-7):
-   - 3 ou mais grupos: algo como "Encontramos 3 boas opções pra você!" (número real).
-   - 2 grupos: anuncie "2 boas opções" (número real).
-   - apenas 1 grupo: anuncie que encontrou UMA opção forte pra ele — NÃO anuncie "3 boas opções", NÃO use plural ("boas opções") nem prometa comparação/curadoria que não existe.
-   Em 1-2 frases curtas NO SEU TOM. NÃO use bullets/checkboxes (✅), NÃO use template, NÃO descreva números específicos dos grupos. NÃO anuncie o PRÓXIMO passo — nem "agora vou recomendar/detalhar/destacar a mais adequada", nem variações como "vou/deixa eu te apresentar as opções", "vou te mostrar o cenário completo/os números exatos", "separei as melhores pra você conferir" — isso soa como log de execução empilhado, não como gente vendendo (FIX-335/FIX-348). Escreva UMA transição, nunca 2-3 frases dizendo a MESMA coisa de jeitos diferentes. Só anuncie o que JÁ encontrou; o que vem depois, você FAZ, não anuncia.
-3. SE retornou 2 OU MAIS grupos: chame recommend_groups com category="${category}"${filters}${budgetArgs} e em seguida present_recommendation_card com o id da PRIMEIRA opção retornada (já vem ordenada, é a de maior score) — administradora, category, creditValue, monthlyPayment, termMonths. NÃO digite número de contemplação nem score/scoreBreakdown (FIX-334: recommend_groups não devolve mais esses números crus, só um scoreLabel qualitativo): o sistema coage os números do card (parcela, valor, prazo, contemplados/mês, score) a partir do grupo REAL da busca — você só ancora pelo id (FIX-191). SE retornou apenas 1 grupo: NÃO chame present_recommendation_card nem present_group_card (duplicaria o detalhamento — o card único do reveal e a simulação abaixo); seu texto faz o papel da recomendação.
-4. Chame simulate_quota com o groupId e o creditValue NOMINAL do grupo recomendado e em seguida present_simulation_result. OBRIGATÓRIO copiar do retorno do simulate_quota os campos lanceScenario e embeddedBid (variação com/sem lance e com lance embutido). ISSO É PREPARAÇÃO server-side do cenário que aparece DEPOIS — NÃO descreva esse cenário (lance, contemplação, sorteio, quantos meses pra contemplar, correção) em texto agora.
-5. SE retornou 2 OU MAIS grupos: chame present_comparison_table com TODOS os grupos retornados por recommend_groups — por ÚLTIMO, como convite pra comparar depois de já ter visto a opção completa (FIX-224, Ata 2026-07-04) — SEM destacar nenhuma opção como preferencial (FIX-220: a 1ª lista é NEUTRA, mesmo peso pra todas — ainda não há dado de lance pra recomendar nada). SE retornou apenas 1 grupo: NÃO chame present_comparison_table (só ha uma opção).
-6. SE recommend_groups retornar insufficientOptions=true: diga com transparência, em UMA frase, que as opções na faixa dele estao limitadas hoje e que você expandiu a busca pra trazer o que ha de melhor — NUNCA esconda a escassez nem invente abundância.
+A BUSCA JÁ FOI FEITA e os cards das opções JÁ ESTÃO NA TELA do cliente — o sistema fez isso antes de te chamar. Você NÃO tem ferramenta de busca: search_groups e recommend_groups não são suas, não tente chamá-las. NÃO diga que "vai buscar", que "está buscando", nem que houve qualquer problema técnico — não houve.
 
-SEU TEXTO NESTE TURNO: as tools acima rodam em silêncio (o cliente vê os cards). Todo o seu texto do turno são só 2-3 frases curtas, no seu tom, nesta forma: [convite pra olhar carta e parcela] + [a pergunta de familiaridade que fecha]. Ex.: "Encontrei ótimas opções na sua faixa! Repara na carta e na parcela de cada uma. E me conta: você já fez consórcio antes?". NÃO narre o que você "vai/precisa" fazer (apresentar, montar, mostrar, simular, detalhar, buscar) nem escreva "agora você vê/veja a recomendação e a tabela"; NÃO cite lance, meses pra contemplar, sorteio, nem qual é a melhor opção — isso vem só depois que ele responder a familiaridade.${confrontoBudget}${confrontoFaixa}
+O QUE VOCÊ FAZ NESTE TURNO:
+1. Anuncie conforme o RESULTADO REAL que está na tela (honestidade > template — FIX-7): 3 ou mais opções, algo como "Encontrei ótimas opções na sua faixa!" (número real); 2 opções, anuncie 2; apenas 1, diga que encontrou UMA opção forte — NÃO use plural nem prometa comparação que não existe. Em 1-2 frases curtas NO SEU TOM. NÃO use bullets nem checkbox, NÃO descreva em texto os números que o card já mostra (parcela, taxa, carta), e NÃO anuncie o próximo passo ("vou te apresentar", "vou detalhar", "separei as melhores") — isso soa como log de execução, não como gente vendendo (FIX-335/FIX-348).
+2. Chame simulate_quota com o groupId e o creditValue NOMINAL da opção recomendada e, em seguida, present_simulation_result. OBRIGATÓRIO copiar do retorno do simulate_quota os campos lanceScenario e embeddedBid. Isso é PREPARAÇÃO do cenário que aparece DEPOIS — NÃO descreva esse cenário (lance, contemplação, sorteio, quantos meses pra contemplar, correção) em texto agora.
+3. SE as opções na faixa dele estiverem limitadas, diga isso com transparência em UMA frase — NUNCA esconda a escassez nem invente abundância.
 
-A ORDEM dos cards no reveal (FIX-224, Ata 2026-07-04 — resolve a confusão dos 3 blocos soltos): recommendation_card (a opção completa: parcela, logo, lance médio, antes/depois da contemplação) → simulation_result (aprofunda: cenário com lance, correção prevista) → comparison_table (convite pra comparar com as outras opções, por último, mesmo peso pra todas). As "outras opções" também seguem acessíveis depois pelo botão do card de decisão.
+SEU TEXTO NESTE TURNO: as tools acima rodam em silêncio (o cliente vê os cards). Todo o seu texto são 2-3 frases curtas, no seu tom, nesta forma: [convite pra olhar carta e parcela] + [a pergunta de familiaridade que fecha]. Ex.: "Encontrei ótimas opções na sua faixa! Repara na carta e na parcela de cada uma. E me conta: você já fez consórcio antes?". NÃO narre o que você "vai/precisa" fazer (apresentar, montar, mostrar, simular, detalhar, buscar) nem escreva "agora você vê/veja a recomendação e a tabela"; NÃO cite lance, meses pra contemplar, sorteio, nem qual é a melhor opção — isso vem só depois que ele responder a familiaridade.
 
-REGRA DURA — present_recommendation_card e present_comparison_table são INSEPARÁVEIS no ramo 2+ grupos (FIX-78, bug real conv a9c5effa 2026-06-25): se você chamou present_recommendation_card, é porque a busca devolveu 2+ grupos — então present_comparison_table com TODOS os grupos É OBRIGATÓRIO no MESMO turno (mesmo saindo por ÚLTIMO na ordem — ver acima). Emitir um sem o outro é DEFEITO: o usuário fica só com a proposta recomendada e PERDE o carrossel comparativo das demais (foi o que aconteceu — recommendation_card saiu, comparison_table sumiu). NUNCA emita um sem o outro no ramo 2+ grupos. (Só pulam os DOIS juntos quando a busca devolveu 1 grupo único — aí nenhum dos dois é chamado.)
+A ORDEM em que os cards aparecem é decidida pelo SISTEMA, não por você: o nó de descoberta emite a recomendação e a tabela comparativa juntas, na ordem certa. Não há nada a fazer da sua parte quanto a isso.
 
 O sistema entrega seu texto ANTES dos cards. Por isso seu texto deve introduzir o que vai aparecer, não comentar atributos específicos de cada grupo.
 
-FIX-333: o hero (recommendation_card) só é REVELADO depois que o usuário consentir no próximo gate ("Posso te mostrar a opção que eu recomendo?") — até lá, seu texto CONVIDA a ver a recomendação, nunca a entrega. NUNCA cite neste turno a administradora, a parcela ou o score da opção recomendada em texto corrido (nem "em destaque", nem "essa é a que eu indicaria") — isso é teatro de consentimento. O sistema também dropa automaticamente qualquer menção assim, mas a ideia é você nem tentar.`;
+FIX-333: o hero (recommendation_card) só é REVELADO depois que o usuário consentir no próximo gate ("Posso te mostrar a opção que eu recomendo?") — até lá, seu texto CONVIDA a ver a recomendação, nunca a entrega. NUNCA cite neste turno a administradora, a parcela ou o score da opção recomendada em texto corrido (nem "em destaque", nem "essa é a que eu indicaria") — isso é teatro de consentimento. O sistema também dropa automaticamente qualquer menção assim, mas a ideia é você nem tentar.${confrontoBudget}${confrontoFaixa}`;
 }
 
 // ---- Reco-consent (FIX-297, rodada 10) — hero liberado após consentimento ----
@@ -423,7 +423,7 @@ export function buildSimulatorDialDirective(args: {
 	// dial UMA vez — determinístico, não a critério do modelo.
 	return `O usuário ACEITOU ver o simulador de contemplação. FLUXO OBRIGATÓRIO neste turno:
 1. Escreva UMA frase curta NO SEU TOM introduzindo o simulador (ex: "Olha só: dá pra ver bem aqui quando você consegue ser contemplado:"). NÃO descreva o gesto físico do controle da UI; fale do que a pessoa vai DESCOBRIR (quando contempla), não de como manuseia a tela.${anchorInstruction}
-2. Chame present_contemplation_dial UMA vez.${adminCtx} Nos marcos, destaque os cenários de 3, 6 e 12 meses (a pergunta do docx).
+2. A agulha de contemplação é colocada na tela pelo SISTEMA neste turno — você não a chama.${adminCtx} Nos marcos, destaque os cenários de 3, 6 e 12 meses (a pergunta do docx).
 
 PROIBIDO neste turno: chamar search_groups, recommend_groups, simulate_quota, present_comparison_table, present_recommendation_card ou present_simulation_result de novo — o usuário JÁ VIU tudo isso (re-apresentar = loop). Depois que o usuário explorar o simulador e sinalizar que está satisfeito, o sistema dirige o card de decisão ("Esse plano faz sentido?").`;
 }
