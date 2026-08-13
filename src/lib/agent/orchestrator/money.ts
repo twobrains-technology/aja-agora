@@ -16,14 +16,43 @@ export function parsePtBrNumber(raw: string): number | null {
 	return Number.isNaN(n) ? null : n;
 }
 
-/** Todos os valores monetários citados no texto: "19 mil", "R$ 6.252", "1.000.000". */
+/** Fator da escala escrita por extenso ("mil", "milhão", "mi"). 1 = sem escala. */
+function fatorDaEscala(palavra: string | undefined): number {
+	if (!palavra) return 1;
+	// Sem acento e minúsculo: "milhão", "milhao", "MILHÕES" viram a mesma coisa.
+	const seca = palavra
+		.normalize("NFD")
+		.replace(/[\u0300-\u036f]/g, "")
+		.toLowerCase();
+	if (seca === "mil") return 1_000;
+	// "milhao"/"milhoes" (já sem acento) e o coloquial "mi".
+	if (seca === "mi" || seca.startsWith("milh")) return 1_000_000;
+	return 1;
+}
+
+const ESCALA_ESCRITA = "mil|milh[õo]es|milh[ãa]o|mi";
+
+/** Todos os valores monetários citados no texto: "19 mil", "R$ 6.252", "1.000.000".
+ *
+ * A escala escrita GANHA do número cru: "R$ 93 mil" são noventa e três mil, e
+ * não noventa e três. A regra do `R$` capturava o número ignorando o "mil" que
+ * vinha depois, e o valor espúrio virava acusação falsa de número inventado
+ * contra o agente (gate de 2026-08-13: ele disse "quase R$ 93 mil" sobre uma
+ * carta de R$ 92.902 — arredondamento honesto, reprovado como invenção). */
 export function extractMoneyMentions(text: string): number[] {
 	const out: number[] = [];
-	for (const m of text.matchAll(/(\d+(?:[.,]\d+)?)\s*mil\b/gi)) {
-		const n = Number(m[1].replace(",", "."));
-		if (!Number.isNaN(n)) out.push(n * 1000);
+	const comEscala = new RegExp(`(\\d+(?:[.,]\\d+)?)\\s*(${ESCALA_ESCRITA})\\b`, "gi");
+	for (const m of text.matchAll(comEscala)) {
+		const base = Number(m[1].replace(",", "."));
+		if (!Number.isNaN(base)) out.push(base * fatorDaEscala(m[2]));
 	}
-	for (const m of text.matchAll(/R\$\s*([\d.,]+)/gi)) {
+	// O `R$` só conta quando o número NÃO é seguido de escala — senão o mesmo
+	// valor entraria duas vezes, uma delas mil vezes menor.
+	const soCifrao = new RegExp(
+		`R\\$\\s*([\\d.,]+)(?!\\s*(?:${ESCALA_ESCRITA})\\b)(?![\\d.,])`,
+		"gi",
+	);
+	for (const m of text.matchAll(soCifrao)) {
 		const n = parsePtBrNumber(m[1]);
 		if (n !== null) out.push(n);
 	}

@@ -265,7 +265,20 @@ export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
 		// o que decidir. O reveal legítimo usa dois (lista + hero); do terceiro em
 		// diante é avalanche — o card espera o próximo turno.
 		name: "teto-de-cards-por-turno",
-		applies: ({ turnArtifactTypes }) => (turnArtifactTypes?.length ?? 0) >= 2,
+		// FIX-431 — o CONTRATO não espera o próximo turno.
+		//
+		// `golden-fecho-nao-anda-pra-tras`, turno 9: o cliente diz "quero
+		// contratar", o roteador decide `gate=contract show=true`, e o formulário
+		// é cortado aqui porque o hero (pendente do consentimento) e o card de
+		// escassez chegaram primeiro. O cliente pediu para fechar e recebeu a
+		// recomendação de novo.
+		//
+		// O teto continua valendo para o que ele foi criado: avalanche de card de
+		// APRESENTAÇÃO (saíram quatro de uma vez e ninguém sabia o que decidir).
+		// O que muda é a precedência — quando a venda chega ao fechamento, o
+		// formulário É o card do turno; quem espera é a apresentação.
+		applies: ({ turnArtifactTypes, artifactType }) =>
+			artifactType !== "contract_form" && (turnArtifactTypes?.length ?? 0) >= 2,
 		logLine: ({ artifactType, conversationId }) =>
 			`[teto-de-cards-por-turno] guard: suprimindo ${artifactType} — já saíram 2 cards neste turno (conv=${conversationId})`,
 	},

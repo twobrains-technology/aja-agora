@@ -153,6 +153,15 @@ export function isPrazoReductionClaim(segment: string): boolean {
 const PREMATURE_RESERVATION_PATTERNS: RegExp[] = [
 	/\bcota\b[\s\S]{0,25}\bgarantida\b/i,
 	/\breservad[ao]\b/i,
+	// Produção 2026-08-13, sessão `8e28d6f0` (web): "Pronto, Paulo! Sua cota
+	// está CONFIRMADA." — dito antes de o formulário sequer aparecer, com zero
+	// propostas na administradora. Mesma promessa, outra palavra.
+	//
+	// O objeto precisa ser a NOSSA entrega (cota/vaga/plano/grupo): "seu
+	// telefone está confirmado" e "confirmado, é esse valor" são fala legítima
+	// e ficam de fora. E, como todo padrão desta lista, ele só vale enquanto
+	// `hasProposal` for falso — com a proposta criada, a frase é verdade.
+	/\b(sua|seu|a sua|o seu)\s+(cota|vaga|plano|grupo)\b[\s\S]{0,25}\bconfirmad[ao]\b/i,
 	/\bvoc[êe]\s+j[áa]\s+est[áa]\s+no\s+grupo\b/i,
 	// Produção 2026-08: "A moto é sua!" numa conversa com ZERO propostas na
 	// Bevi. É a mesma promessa do invariante #9, dita pelo lado do BEM em vez do
@@ -889,7 +898,13 @@ export type EphemeralDropReason =
 	| "sem-conteudo"
 	/** Segunda pergunta do mesmo turno (ou pergunta no 1º beat do reveal, onde o
 	 * agente só apresenta). Uma pergunta por vez — as demais são dropadas. */
-	| "pergunta-extra";
+	| "pergunta-extra"
+	/** Gancho que anunciava algo e terminou o turno sem esse algo ("dá uma
+	 * olhada:" sem nada depois, e sem card). Foi o motivo do turno mudo da
+	 * sessão `04fda013`, e por muito tempo era o único descarte SEM rastro — o
+	 * `flush` zerava o gancho em silêncio, de modo que nem a anotação para o
+	 * modelo nem o score `fala_podada` disparavam. */
+	| "gancho";
 
 /** Motivo (guard) que classifica este segmento como EFÊMERO, ou `null` se o
  * segmento pode virar bolha. Fonte única pra `isEphemeralSegment` (abaixo) e
@@ -1098,6 +1113,9 @@ export class EphemeralTextFilter {
 	/** Trecho que ANUNCIA a próxima frase ("me confirma:") e ainda não pôde
 	 * sair — só é emitido junto com o que ele anuncia. */
 	private gancho = "";
+	/** Algum card foi entregue neste turno? Um gancho que anuncia card tem o que
+	 * anunciar mesmo sem texto depois (FIX-431). */
+	private artifactNoTurno = false;
 	/** Último caractere já entregue ao cliente — o `emendar` precisa dele pra
 	 * não colar duas chamadas ("Show, Rodrigo!" + "Fechado nos números"). */
 	private ultimoEmitido = "";
@@ -1159,10 +1177,31 @@ export class EphemeralTextFilter {
 	flush(): string {
 		const rest = this.pending;
 		this.pending = "";
-		const out = rest ? this.filterComplete(rest) : "";
-		// Gancho que sobrou no fim do turno não anuncia nada — descarta.
+		let out = rest ? this.filterComplete(rest) : "";
+		// FIX-431 (P1 #9) — o gancho que anuncia um CARD tem o que anunciar.
+		//
+		// A regra "gancho sozinho no fim do turno não anuncia nada" nasceu do
+		// gancho órfão de TEXTO. Mas quando o turno entrega um artifact, o que ele
+		// anunciava apareceu de verdade: "Beleza, essa é a simulação da BB." com o
+		// card da simulação logo abaixo é uma fala completa. Descartá-lo produziu
+		// o turno mudo da sessão `04fda013` (produção, 2026-08-13) — cards na tela
+		// e nenhuma palavra, 15 segundos de silêncio no WhatsApp, onde card nem
+		// existe. Sem artifact no turno, o comportamento antigo continua.
+		if (this.gancho && this.artifactNoTurno) {
+			out = emendar(out, this.gancho);
+		} else if (this.gancho) {
+			// Descarte com rastro: sem isto, o único corte silencioso do sanitizer
+			// era justamente o que produziu o turno mudo em produção.
+			this.droppedReasons.add("gancho");
+		}
 		this.gancho = "";
 		return out;
+	}
+
+	/** O turno entregou algum card? Informado pelo runner no momento da emissão —
+	 *  é o que dá ao gancho o direito de sair (ver `flush`). */
+	marcarArtifactEmitido(): void {
+		this.artifactNoTurno = true;
 	}
 
 	/** FIX-330 — mesma coisa que `flush()`, mas NUNCA libera a pergunta
