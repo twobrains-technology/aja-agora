@@ -74,3 +74,7 @@ test-results/
 # Dump bruto do frame do Figma (cache local; a referência versionada é
 # docs/design/2026-08-12-home-medidas-figma.md).
 .figma-cache/
+
+# Estado do hook de design (impeccable). O cache é por sessão e guarda caminho
+# absoluto da máquina — não serve pra ninguém além de quem o gerou.
+.impeccable/hook.cache.json

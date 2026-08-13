@@ -9,11 +9,14 @@
  */
 import { isSimulatedWaId, publishToClient } from "./simulator-bus";
 
-const GRAPH_API = "https://graph.facebook.com/v21.0";
+// Exportado pra que `business-profile.ts` fale com a MESMA versão da Graph. Duas
+// constantes em dois arquivos é como um lado sobe pra v23 e o outro fica pra trás
+// sem ninguém notar até um campo novo não existir de um dos lados.
+export const GRAPH_API = "https://graph.facebook.com/v21.0";
 
 // Timeout dos fetches à Graph API (ms). Egress lento pendura a request ~30s e
 // vira 502 do gateway — cortamos em 15s e traduzimos o abort num erro claro.
-const GRAPH_TIMEOUT_MS = 15_000;
+export const GRAPH_TIMEOUT_MS = 15_000;
 
 /**
  * `true` quando o erro veio do AbortSignal.timeout estourar (o navegador/Node

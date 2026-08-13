@@ -155,6 +155,39 @@ describe("acesso às telas do painel", () => {
 		expect(podeAcessarRota("papel_que_nao_existe" as never, "/admin/pipeline")).toBe(false);
 	});
 
+	// A configuração do WhatsApp corporativo escreve no perfil que o CLIENTE vê no
+	// app (nome, foto, descrição) usando o token da Meta. `viewer` e `attendant`
+	// tinham `*` — ou seja, entrariam nela pelo simples fato de a tela existir.
+	// Ter acesso de leitura ao funil não é mandato pra trocar a cara da empresa.
+	describe("telas exclusivas de admin", () => {
+		it("só admin abre a configuração do WhatsApp", () => {
+			expect(podeAcessarRota("admin", "/admin/whatsapp/configuracao")).toBe(true);
+			for (const role of ["viewer", "attendant", "mesa_externa"] as const) {
+				expect(
+					podeAcessarRota(role, "/admin/whatsapp/configuracao"),
+					`${role} não deveria configurar o WhatsApp`,
+				).toBe(false);
+			}
+		});
+
+		it("a exclusividade vale para as sub-rotas", () => {
+			expect(podeAcessarRota("admin", "/admin/whatsapp/configuracao/foto")).toBe(true);
+			expect(podeAcessarRota("attendant", "/admin/whatsapp/configuracao/foto")).toBe(false);
+		});
+
+		// A trava é na tela de configuração, não no `/admin/whatsapp` inteiro: o
+		// atendente PRECISA da lista de templates pra retomar conversa fora da
+		// janela de 24h (é o motivo do GET de templates aceitar três roles).
+		it("os templates continuam abertos a quem fala com o cliente", () => {
+			expect(podeAcessarRota("attendant", "/admin/whatsapp/templates")).toBe(true);
+			expect(podeAcessarRota("viewer", "/admin/whatsapp/templates")).toBe(true);
+		});
+
+		it("prefixo não vaza por semelhança de nome", () => {
+			expect(podeAcessarRota("attendant", "/admin/whatsapp/configuracao-de-mentira")).toBe(true);
+		});
+	});
+
 	it("cada role tem uma tela de chegada — a da mesa externa é o pipeline", () => {
 		expect(rotaInicialDe("mesa_externa")).toBe("/admin/pipeline");
 		expect(rotaInicialDe("admin")).toBe("/admin");

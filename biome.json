@@ -16,6 +16,7 @@
 			"!drizzle/meta",
 			"!.processo",
 			"!.claude",
+			"!.impeccable",
 			"!docs/**/*.json",
 			"!docs/**/*-referencia.ts"
 		]

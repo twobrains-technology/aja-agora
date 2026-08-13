@@ -2,6 +2,7 @@
 
 import {
 	ActivityIcon,
+	BadgeCheckIcon,
 	BotIcon,
 	BuildingIcon,
 	ChartPieIcon,
@@ -30,7 +31,13 @@ import {
 } from "@/components/ui/sidebar";
 import { podeAcessarRota, type Role } from "@/lib/admin/role-scope";
 
-const settingsItems = [{ title: "Perfil", href: "/admin/profile", icon: UserIcon }];
+const settingsItems = [
+	{ title: "Perfil", href: "/admin/profile", icon: UserIcon },
+	// Só o admin enxerga — `podeAcessarRota` filtra este item pelas outras roles
+	// (`ROTAS_SO_DE_ADMIN` em `role-scope.ts`), a mesma política que o `proxy.ts`
+	// aplica na navegação.
+	{ title: "WhatsApp", href: "/admin/whatsapp/configuracao", icon: BadgeCheckIcon },
+];
 
 export function AppSidebar({ role = "viewer" }: { role?: Role }) {
 	const pathname = usePathname();
