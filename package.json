@@ -36,7 +36,6 @@
 		"sonda:variancia": "tsx scripts/sonda-variancia.ts",
 		"test:funil": "vitest run --reporter=verbose --no-file-parallelism 'src/lib/agent/orchestrator/**/*.integration.test.ts' 'src/lib/agent/langgraph/**/*.integration.test.ts'",
 		"test:integration": "vitest run --reporter=verbose --no-file-parallelism route. integration.test builder.",
-		"test:e2e": "playwright test",
 		"test:caminho-do-dinheiro": "RUN_DB_TESTS=1 vitest run --reporter=dot --silent=true --no-file-parallelism --testTimeout=240000 route. integration.test",
 		"test:pre-commit": "pnpm lint && pnpm test:unit && pnpm test:caminho-do-dinheiro",
 		"prepare": "husky",
@@ -98,7 +97,6 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.2.0",
-		"@playwright/test": "^1.60.0",
 		"@tailwindcss/postcss": "^4",
 		"@testing-library/dom": "^10.4.1",
 		"@testing-library/jest-dom": "^6.9.1",
