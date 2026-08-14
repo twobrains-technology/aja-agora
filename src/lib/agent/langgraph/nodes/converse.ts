@@ -41,6 +41,7 @@ import { querAntecipar, shouldAskMotive } from "@/lib/agent/qualify-state";
 import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import type { ArtifactType } from "@/lib/chat/types";
+import { registrarFalaContraCatalogo } from "@/lib/observability/langfuse/busca-scores";
 import { registrarToolsRecusadas } from "@/lib/observability/langfuse/conducao-scores";
 import {
 	registrarEscolhaNaoAncorada,
@@ -1418,6 +1419,21 @@ export function createConverseNode(model: BaseChatModel) {
 		// canônica do gate no WhatsApp — cliente sem nada pra responder, funil
 		// parado no primeiro turno (trace be5cc1e6, produção 2026-08-10).
 		const textoDoTurno = events.map((ev) => (ev.type === "text-delta" ? ev.text : "")).join("");
+		// RECONCILIAÇÃO FALA × CATÁLOGO — o sinal que mede a ADESÃO ao dado.
+		//
+		// O contexto passou a carregar os números reais da tela, e mesmo assim o
+		// agente convidou o cliente a "esticar pra algo entre R$ 300 e R$ 400" em
+		// 4 de 10 rodadas medidas — com o R$ 484,16 correto disponível no mesmo
+		// turno. Injetar não é aderir, e sem medida isso é anedota.
+		//
+		// Não é lista de frases: a âncora é o intervalo real do catálogo NAQUELE
+		// turno. A mesma fala é violação com um catálogo e correta com outro.
+		registrarFalaContraCatalogo({
+			falaDoAgente: textoDoTurno,
+			parcelasDoCatalogo: ofertasExibidas
+				.map((o) => o.monthlyPayment)
+				.filter((p): p is number => typeof p === "number" && p > 0),
+		});
 		const modelAskedQuestion = filter.hasHeldQuestion() || contemPerguntaQueOcupaCota(textoDoTurno);
 		const tail = filter.flush();
 		// FIX-431 (P2 #14): por que a fala do turno encolheu. O sanitizer sempre

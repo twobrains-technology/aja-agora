@@ -195,3 +195,74 @@ export function registrarEstadoDoFunil(e: EstadoDoFunil): void {
 export function registrarOfertaExibida(o: { parcelaAlvo?: number; monthlyPayment?: number }): void {
 	publicar(scoresDeOfertaContradizParcela(o), "registrar oferta exibida");
 }
+
+/**
+ * O agente citou um número de parcela que NÃO existe no catálogo daquele turno?
+ *
+ * O sinal que faltava para responder à pergunta que ficou aberta a sessão
+ * inteira: **injetar o dado no contexto não garante adesão ao dado**. Medido em
+ * 10 rodadas da mesma conversa: o agente cita a menor parcela correta
+ * (R$ 484,16, do payload) e, dois turnos depois, convida o cliente a "esticar
+ * pra algo entre R$ 300 e R$ 400" — faixa onde não existe grupo nenhum. Isso
+ * aconteceu em 4 de 10 rodadas, sempre com o número certo disponível no
+ * contexto do mesmo turno.
+ *
+ * Por que isto NÃO é a lista de frases proibidas que o CLAUDE.md veta: não há
+ * frase alguma aqui. A âncora é o **intervalo real do catálogo naquele turno** —
+ * um fato do servidor. A mesma fala é violação com um catálogo e correta com
+ * outro; nenhuma paráfrase escapa, porque o que se mede é o NÚMERO, não a
+ * palavra. E o veredito não vira guard: é score, para o juiz e o Monitor
+ * olharem a distribuição.
+ *
+ * Fora de escopo de propósito: valores que o cliente disse (é ele quem fala),
+ * valores de crédito (outra ordem de grandeza, outro predicado) e qualquer
+ * número fora de contexto monetário.
+ */
+export function scoresDeParcelaForaDoCatalogo(args: {
+	falaDoAgente: string;
+	parcelasDoCatalogo: number[];
+}): Score[] {
+	const catalogo = args.parcelasDoCatalogo.filter((p) => p > 0);
+	if (catalogo.length === 0) return [];
+
+	const min = Math.min(...catalogo);
+	const max = Math.max(...catalogo);
+	const citados = valoresEmReaisCitados(args.falaDoAgente);
+	// Só parcelas: valores na ordem de grandeza de carta (acima de 10× o teto de
+	// parcela) são outro assunto e teriam outro predicado.
+	const candidatos = citados.filter((v) => v > 0 && v <= max * 10);
+	const foraDoCatalogo = candidatos.filter((v) => v < min);
+	if (foraDoCatalogo.length === 0) {
+		return [{ name: "parcela_fora_do_catalogo", value: 0, dataType: "BOOLEAN" }];
+	}
+	return [
+		{
+			name: "parcela_fora_do_catalogo",
+			value: 1,
+			dataType: "BOOLEAN",
+			comment:
+				`citou ${foraDoCatalogo.map((v) => `R$ ${v}`).join(", ")} ` +
+				`com o catálogo do turno em R$ ${min}–${max}`,
+		},
+	];
+}
+
+/** Valores em reais explicitamente citados na fala ("R$ 300", "R$ 1.323,00"). */
+export function valoresEmReaisCitados(texto: string): number[] {
+	const out: number[] = [];
+	// Só o que vem marcado como dinheiro — número solto ("61 meses", "6 opções")
+	// não é valor, e contá-lo produziria alarme falso em toda conversa.
+	for (const m of texto.matchAll(/R\$\s?([\d.]+(?:,\d{1,2})?)/g)) {
+		const bruto = m[1].replace(/\./g, "").replace(",", ".");
+		const v = Number(bruto);
+		if (Number.isFinite(v) && v > 0) out.push(v);
+	}
+	return out;
+}
+
+export function registrarFalaContraCatalogo(args: {
+	falaDoAgente: string;
+	parcelasDoCatalogo: number[];
+}): void {
+	publicar(scoresDeParcelaForaDoCatalogo(args), "registrar fala contra catalogo");
+}

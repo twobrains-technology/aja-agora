@@ -19,6 +19,8 @@ import {
 	scoresDeBuscaDespachada,
 	scoresDeEstadoIncoerente,
 	scoresDeOfertaContradizParcela,
+	scoresDeParcelaForaDoCatalogo,
+	valoresEmReaisCitados,
 } from "./busca-scores";
 
 describe("busca_abaixo_do_piso — a pergunta impossível nem devia sair", () => {
@@ -139,5 +141,55 @@ describe("oferta_contradiz_parcela — a aritmética que o juiz não viu", () =>
 		expect(scores.find((sc) => sc.name === "oferta_contradiz_parcela_gravidade")?.value).toBe(
 			"acima_de_3x",
 		);
+	});
+});
+
+describe("parcela_fora_do_catalogo — mede a ADESÃO ao dado injetado", () => {
+	// O catálogo real de moto naquele turno: R$ 484,16 a R$ 1.323.
+	const CATALOGO = [484.16, 696.72, 1_323];
+
+	it("acusa o convite para a faixa que não existe (medido em 4 de 10 rodadas)", () => {
+		const s = scoresDeParcelaForaDoCatalogo({
+			falaDoAgente: "Você consegue flexibilizar um pouco, tipo R$ 300, R$ 350 por mês?",
+			parcelasDoCatalogo: CATALOGO,
+		});
+		expect(s[0].value).toBe(1);
+		expect(s[0].comment).toContain("300");
+	});
+
+	it("não acusa quando o agente cita a parcela REAL", () => {
+		const s = scoresDeParcelaForaDoCatalogo({
+			falaDoAgente: "A menor parcela que existe hoje é R$ 484,16 na TRADIÇÃO, em 61 meses.",
+			parcelasDoCatalogo: CATALOGO,
+		});
+		expect(s[0].value).toBe(0);
+	});
+
+	it("número solto não é valor — 61 meses e 6 opções não acusam nada", () => {
+		const s = scoresDeParcelaForaDoCatalogo({
+			falaDoAgente: "Achei 6 opções, com prazos de 23 a 86 meses.",
+			parcelasDoCatalogo: CATALOGO,
+		});
+		expect(s[0].value).toBe(0);
+	});
+
+	it("sem catálogo no turno, não há contra o que reconciliar", () => {
+		expect(
+			scoresDeParcelaForaDoCatalogo({ falaDoAgente: "R$ 300", parcelasDoCatalogo: [] }),
+		).toEqual([]);
+	});
+
+	it("valor de CARTA não é medido contra a faixa de parcela", () => {
+		const s = scoresDeParcelaForaDoCatalogo({
+			falaDoAgente: "A carta é de R$ 22.077 em 61 meses.",
+			parcelasDoCatalogo: CATALOGO,
+		});
+		expect(s[0].value).toBe(0);
+	});
+});
+
+describe("valoresEmReaisCitados", () => {
+	it("lê os formatos que o agente usa de verdade", () => {
+		expect(valoresEmReaisCitados("R$ 484,16 e R$ 1.323 e R$200")).toEqual([484.16, 1323, 200]);
 	});
 });
