@@ -172,3 +172,33 @@ describeIfDb("parcela declarada manda na busca", () => {
 		).toBeGreaterThan(0);
 	});
 });
+
+describeIfDb("quem pede parcela é rankeado por prazo longo", () => {
+	const criadas: string[] = [];
+	afterAll(async () => {
+		for (const id of criadas) await limparCenario(id);
+	});
+
+	it("alvo por parcela pede prazo longo ao ranking", async () => {
+		// Sem isto o ranking fica neutro e o agente chega a oferecer a opção de
+		// parcela MAIOR a quem acabou de pedir parcela menor (visto em 14/08:
+		// R$ 1.101 em 24 meses para quem pediu "parcela reduzida").
+		const { busca, chamadas } = buscaEspia();
+		const r = await runScenario({
+			busca: busca as never,
+			metaInicial: {
+				desireAsked: true,
+				desireAnswered: true,
+				identityCollected: true,
+				currentCategory: "moto" as const,
+				qualifyAnswers: { parcelaAlvo: 200, alvoDeBusca: "parcela" as const },
+			},
+			turns: [
+				{ user: "quero ver o que cabe", intent: "ready_to_proceed", beats: [{ text: "Vou ver." }] },
+			],
+		});
+		criadas.push(r.conversationId);
+
+		expect(chamadas[0]?.desiredTermMonths).toBeGreaterThan(0);
+	});
+});

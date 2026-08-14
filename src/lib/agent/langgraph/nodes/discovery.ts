@@ -138,7 +138,14 @@ export async function discoveryNode(
 	// fechava no prazo mais curto disponível, prometendo um ajuste que nunca fazia
 	// (visto ao vivo, 2026-07-21). Quem tem pressa continua neutro: aí o que pesa
 	// é a contemplação, não o prazo.
+	// Quem declarou uma PARCELA quer, por definição, a menor parcela — e o
+	// ranking não sabia disso: `querMenorParcela` só olhava objetivo e prazo, que
+	// num cliente sem prazo declarado caem no default assumido. Resultado visto
+	// em 14/08: o agente ofereceu espontaneamente a opção de R$ 1.101 em 24 meses
+	// a quem tinha acabado de pedir parcela reduzida. O alvo por parcela é o
+	// sinal mais direto que existe dessa preferência.
 	const querMenorParcela =
+		alvoDeBusca(funnel.qualifyAnswers) === "parcela" ||
 		funnel.qualifyAnswers.objetivo === "investimento" ||
 		(funnel.qualifyAnswers.prazoMeses ?? 0) >= 120;
 	// O alvo é UM só, e quem o discrimina é o estado (`alvoDeBusca`). Antes daqui
