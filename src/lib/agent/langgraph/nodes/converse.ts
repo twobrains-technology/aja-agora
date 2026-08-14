@@ -525,7 +525,13 @@ export function createConverseNode(model: BaseChatModel) {
 		// já estavam apurados e improvisava "só um instante que vou confirmar com a
 		// administradora e já te trago" — duas, três vezes seguidas, sem nunca trazer
 		// nada, porque não havia nada a buscar. O card já estava pronto no estado.
-		const temCardsDeOferta = Boolean(oferta);
+		// Oferta MARCADA como stale (a última busca voltou vazia) não autoriza o
+		// agente a dizer "as ofertas já foram buscadas e estão na tela" — foi essa
+		// afirmação, sobre uma oferta de três faixas atrás, que o cliente recebeu
+		// depois de quatro buscas em branco. Ela continua valendo para escolha e
+		// contratação (o card segue visível); o que ela perde é o direito de virar
+		// anúncio de descoberta nova.
+		const temCardsDeOferta = Boolean(oferta) && state.funnel.recommendedOfferStale !== true;
 		// Critério VERIFICÁVEL da recomendação — o cliente consegue conferir na
 		// lista que acabou de ver. O card hero vinha MUDO: aparecia sem nenhuma
 		// frase dizendo em QUÊ aquela opção é a melhor, e o cliente tinha que abrir

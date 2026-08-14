@@ -51,6 +51,7 @@ const FUNIL_COMPLETO: FunnelState = {
 	discoveryEmptyStreak: 0,
 	discoveredCreditTarget: 555_000,
 	discoveredParcelaTarget: 1_777,
+	recommendedOfferStale: false,
 	revealCompleted: true,
 	recommendedAdministradora: "Canopus",
 	recommendedOffer: {

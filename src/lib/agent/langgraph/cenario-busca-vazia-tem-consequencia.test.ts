@@ -82,7 +82,7 @@ describeIfDb("busca vazia tem consequência", () => {
 		).toBeLessThanOrEqual(2);
 	});
 
-	it("busca vazia invalida a oferta ancorada — o contexto não pode afirmar o que não existe", async () => {
+	it("busca vazia MARCA a oferta ancorada — o contexto não pode afirmar o que não existe", async () => {
 		const { busca } = buscaVazia();
 		const r = await runScenario({
 			busca: busca as never,
@@ -107,7 +107,11 @@ describeIfDb("busca vazia tem consequência", () => {
 		});
 		criadas.push(r.conversationId);
 
-		expect(r.meta.recommendedOffer).toBeUndefined();
-		expect(r.meta.recommendedAdministradora).toBeUndefined();
+		// Marcada, não apagada: o card de uma busca anterior CONTINUA na tela do
+		// cliente, e apagar a âncora o convidaria a escolher uma oferta que o
+		// estado não conhece mais. O que ela perde é o direito de virar anúncio de
+		// descoberta nova — quem lê a marca é o contexto do modelo.
+		expect(r.meta.recommendedOfferStale).toBe(true);
+		expect(r.meta.recommendedOffer).toBeDefined();
 	});
 });

@@ -305,6 +305,8 @@ export type ConversationMetadata = {
 	/** Espelho de `FunnelState.discoveredParcelaTarget` — a parcela levada à
 	 *  última busca. */
 	discoveredParcelaTarget?: number;
+	/** Espelho de `FunnelState.recommendedOfferStale`. */
+	recommendedOfferStale?: boolean;
 	/** FIX-6: snapshot dos NÚMEROS da oferta ativa (capturado no reveal e
 	 * atualizado em what-if). O payload do contemplation_dial é coagido
 	 * server-side a partir daqui (coerceDialPayload) — o modelo passava o

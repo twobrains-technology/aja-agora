@@ -86,6 +86,15 @@ export type FunnelState = {
 	 * valor para parcela nunca re-disparava a descoberta — a busca ficava presa
 	 * na faixa antiga e o cliente ouvia promessa sem card. */
 	discoveredParcelaTarget?: number;
+	/** A oferta ancorada é de uma busca ANTERIOR e a última busca voltou vazia.
+	 *
+	 * Apagar `recommendedOffer` na busca vazia parecia certo, mas some com a
+	 * âncora de um card que CONTINUA na tela — o cliente é convidado a escolher
+	 * uma oferta que o estado não conhece mais, e o contrato perde a referência.
+	 * Marcar é o que separa as duas coisas: o agente não pode AFIRMAR que
+	 * encontrou (a busca nova voltou vazia), mas a cota visível continua
+	 * escolhível e contratável. */
+	recommendedOfferStale?: boolean;
 	revealCompleted: boolean;
 	recommendedAdministradora?: string;
 	recommendedOffer?: ConversationMetadata["recommendedOffer"];
@@ -195,6 +204,7 @@ export const FUNNEL_KEYS = {
 	discoveryEmptyStreak: true,
 	discoveredCreditTarget: true,
 	discoveredParcelaTarget: true,
+	recommendedOfferStale: true,
 	revealCompleted: true,
 	recommendedAdministradora: true,
 	recommendedOffer: true,
@@ -256,6 +266,7 @@ export function funnelFromMeta(meta: ConversationMetadata): FunnelState {
 		discoveryEmptyStreak: meta.discoveryEmptyStreak,
 		discoveredCreditTarget: meta.discoveredCreditTarget,
 		discoveredParcelaTarget: meta.discoveredParcelaTarget,
+		recommendedOfferStale: meta.recommendedOfferStale,
 		revealCompleted: meta.revealCompleted ?? false,
 		recommendedAdministradora: meta.recommendedAdministradora,
 		recommendedOffer: meta.recommendedOffer,

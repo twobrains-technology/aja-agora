@@ -231,14 +231,14 @@ export async function discoveryNode(
 				discoveredParcelaTarget: buscaPorParcela
 					? funnel.qualifyAnswers.parcelaAlvo
 					: funnel.discoveredParcelaTarget,
-				// A ÂNCORA PODRE. A oferta de uma faixa anterior sobrevivia à busca
-				// vazia, e era ela que fazia o contexto do modelo afirmar "as ofertas
-				// já foram buscadas e os cards estão na tela: BANCO DO BRASIL,
-				// R$ 201.393" depois de a busca ter voltado em branco. A rede que
-				// existe para isso (`blocoBuscaVazia`) só arma quando NÃO há oferta —
-				// então a âncora velha era exatamente o que a desligava.
-				recommendedOffer: undefined,
-				recommendedAdministradora: undefined,
+				// A ÂNCORA PODRE — marcada, não apagada. Era ela que fazia o contexto
+				// afirmar "as ofertas já foram buscadas e os cards estão na tela:
+				// BANCO DO BRASIL, R$ 201.393" depois de a busca voltar em branco.
+				// Apagar resolvia isso e criava outro buraco: some com a âncora de um
+				// card que CONTINUA visível, e o cliente é convidado a escolher uma
+				// oferta que o estado não conhece mais. Marcada, o agente não pode
+				// AFIRMAR que encontrou, e a cota na tela segue escolhível.
+				recommendedOfferStale: true,
 			},
 		};
 	}
@@ -324,6 +324,8 @@ export async function discoveryNode(
 			// FIX-380 — achou: zera a contagem de vazio, senão uma falha antiga
 			// ficaria pesando sobre uma busca que deu certo.
 			discoveryEmptyStreak: 0,
+			// Busca que ACHOU limpa a marca: a âncora volta a ser fresca.
+			recommendedOfferStale: false,
 			// FIX-360 — snapshot do valor-alvo REALMENTE buscado (equivalente a
 			// `discoveredCreditTarget`, tool-policy.ts) — permite ao `route`
 			// distinguir troca de faixa (re-descoberta legítima) de afirmativo
