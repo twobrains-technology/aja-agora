@@ -124,6 +124,15 @@ services:
       LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      # A ponte do alerta (Monitor do Langfuse → e-mail + ocorrência no Cortex).
+      # Estavam fora do compose, então em dev a rota respondia 503 e ninguém
+      # conseguia exercitá-la localmente — a mesma classe do que a manteve muda
+      # em produção, onde as chaves faltavam no secret e na taskdef.
+      LANGFUSE_WEBHOOK_SECRET: ${LANGFUSE_WEBHOOK_SECRET:-}
+      ALERTA_OBSERVABILIDADE_TO: ${ALERTA_OBSERVABILIDADE_TO:-}
+      CORTEX_MCP_URL: ${CORTEX_MCP_URL:-}
+      CORTEX_MCP_TOKEN: ${CORTEX_MCP_TOKEN:-}
+      CORTEX_PROJETO: ${CORTEX_PROJETO:-}
     networks:
       - tb-local-net
     labels:
