@@ -11,7 +11,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { NAV_VERTICAL } from "@/components/kv/kv-menu";
+import { linksDoMenu, NAV_VERTICAL } from "@/components/kv/navegacao";
 
 import { FAQ_AUTO, GUIA_AUTO, HERO_AUTO, NUMEROS_AUTO, UPGRADE_AUTO } from "./autos/conteudo";
 import {
@@ -86,13 +86,19 @@ describe.each(VERTICAIS)("conteúdo da vertical de $nome", (vertical) => {
 		// itens — "Como funcionamos" e "Quem somos" — falam de seções que só
 		// existem lá e viram link para a home. O resto tem de ser âncora que esta
 		// página realmente monta, senão é clique que não faz nada.
-		const hrefs = NAV_VERTICAL.map((item) => item.href);
+		//
+		// `linksDoMenu` achata o submenu "Tipo de Consórcio": o que interessa é
+		// todo destino clicável, esteja ele na barra ou uma camada abaixo.
+		const hrefs = linksDoMenu(NAV_VERTICAL).map((link) => link.href);
 
 		expect(hrefs.length).toBeGreaterThan(0);
-		expect(new Set(hrefs).size, "âncora repetida no menu").toBe(hrefs.length);
+		expect(new Set(hrefs).size, "destino repetido no menu").toBe(hrefs.length);
 
 		for (const href of hrefs) {
-			if (href.startsWith("/#")) continue;
+			// Caminho absoluto (`/#como-funciona`, `/autos`) sai daqui: quem cobra
+			// que a rota de destino existe é `navegacao.rotas-existem.test.ts`.
+			// Aqui a pergunta é outra — a âncora que resolve NESTA página existe?
+			if (href.startsWith("/")) continue;
 			expect(href, "âncora do menu tem que ser interna ou apontar para a home").toMatch(/^#/);
 			expect(vertical.ancoras, `${href} não é uma seção desta página`).toContain(href);
 		}

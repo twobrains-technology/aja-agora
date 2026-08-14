@@ -8,7 +8,9 @@ type KvCtaButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 const VARIANT_CLASS: Record<NonNullable<KvCtaButtonProps["variant"]>, string> = {
-	primary: "bg-[#F2404F] text-white hover:brightness-105",
+	// 105% de brilho sobre um vermelho já saturado é mudança que não se enxerga —
+	// o CTA principal do site parecia não ter hover nenhum. 110% se percebe.
+	primary: "bg-[#F2404F] text-white hover:brightness-110",
 	outline: "border border-[#021628] text-[#021628] hover:bg-[#021628] hover:text-white",
 };
 

@@ -359,6 +359,20 @@
 	p {
 		text-wrap: pretty;
 	}
+
+	/* Botão volta a ter cursor de mão.
+	   O Preflight do Tailwind v4 parou de forçar `cursor: pointer` em `button` e
+	   passou a deixar o padrão do navegador, que é a seta. O efeito é o site
+	   inteiro deixar de PARECER clicável — e a resposta que apareceu no código foi
+	   salpicar `cursor-pointer` à mão, um componente por vez (`quick-reply`,
+	   `group-card`, `date-range-filter`, `lead-card`...), o que só cobre quem
+	   lembrou de escrever. A regra aqui vale para todos de uma vez; os
+	   `cursor-pointer` avulsos continuam válidos, só ficam redundantes.
+	   `:not(:disabled)` porque botão desativado não deve convidar o clique. */
+	button:not(:disabled),
+	[role="button"]:not(:disabled) {
+		cursor: pointer;
+	}
 }
 
 /* Eyebrow / overline — labels caixa-alta. Medido no site (COMO FUNCIONA):

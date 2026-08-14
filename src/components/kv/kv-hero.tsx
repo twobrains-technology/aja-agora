@@ -107,7 +107,10 @@ export function KvHero({ onOpenChat }: KvHeroProps) {
 							<button
 								type="submit"
 								aria-label="Enviar"
-								className="flex size-[37px] shrink-0 items-center justify-center rounded-[6px] bg-[#FFE0E3] text-[#F2404F] sm:ml-auto"
+								// O rosa claro do comp é discreto demais para sinalizar sozinho que
+								// isto envia a busca: no hover ele vira o vermelho da marca, com o
+								// ícone em branco.
+								className="flex size-[37px] shrink-0 items-center justify-center rounded-[6px] bg-[#FFE0E3] text-[#F2404F] transition-colors hover:bg-[#F2404F] hover:text-white sm:ml-auto"
 							>
 								<Send className="size-4" strokeWidth={2} />
 							</button>
