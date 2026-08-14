@@ -272,9 +272,18 @@ export async function analyzeAndMerge(
 		meta.qualifyAnswers = q;
 		metaChanged = true;
 	}
+	// O MESMO número não pode preencher dois campos diferentes. "200", dito como
+	// parcela, foi extraído ao mesmo tempo como `parcelaMensal: 200` e
+	// `prazoMeses: 200` — e um consórcio de 200 meses distorce toda a simulação
+	// que o cliente vê. Quando o classificador devolve o mesmo valor nos dois
+	// campos, o que o cliente respondeu foi um só, e é o de parcela (o outro é
+	// eco). Verificável no próprio turno, sem adivinhar intenção.
+	const prazoEhEcoDaParcela =
+		analysis.parcelaMensal !== null && analysis.prazoMeses === analysis.parcelaMensal;
 	if (
 		analysis.prazoMeses !== null &&
 		q.prazoMeses === undefined &&
+		!prazoEhEcoDaParcela &&
 		!isMonthlyBudgetOnlyMention(text)
 	) {
 		q.prazoMeses = analysis.prazoMeses;

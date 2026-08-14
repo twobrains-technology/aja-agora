@@ -130,10 +130,20 @@ export const ARTIFACT_GUARD_RULES: ArtifactGuardRule[] = [
 	// reconduz ao identify naturalmente.
 	{
 		name: "premature-contract",
-		applies: ({ artifactType, meta }) =>
-			artifactType === "contract_form" && meta.revealCompleted !== true,
+		applies: ({ artifactType, meta }) => {
+			if (artifactType !== "contract_form") return false;
+			if (meta.revealCompleted !== true) return true;
+			// `revealCompleted`, uma vez verdadeiro, nunca volta atrás — e a tela
+			// pode ter esvaziado depois dele. Sonda de 14/08: a busca por parcela
+			// voltou em branco, a âncora foi (corretamente) invalidada, e o
+			// formulário saiu assim mesmo, com o agente afirmando que as opções
+			// estavam na tela. Submeter cria proposta REAL na Bevi, com CPF e
+			// bureau: sem cota na mesa, é contrato sobre nada.
+			const temCota = Boolean(meta.recommendedOffer ?? meta.contractOffer ?? meta.escolha);
+			return !temCota;
+		},
 		logLine: ({ conversationId, userIntent }) =>
-			`[contract-gate] guard: suprimindo contract_form PRÉ-reveal — identidade é assunto do gate identify (conv=${conversationId}, intent=${userIntent})`,
+			`[contract-gate] guard: suprimindo contract_form sem reveal ou sem cota ancorada (conv=${conversationId}, intent=${userIntent})`,
 	},
 	// FIX-239 (Fable r1, D3.4, gap P1 #6a): "Gostei, faz bastante sentido"
 	// (elogio pós-reveal, NÃO decisão) disparava decision_prompt ANTES de
