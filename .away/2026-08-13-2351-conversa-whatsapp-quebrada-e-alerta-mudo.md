@@ -65,6 +65,66 @@ implementação segue o que ele apontar.
 - **Evidência:** `pnpm vitest run …route.ponte-cortex.integration.test.ts` → **8 passed**.
   Conclusão: o código da ponte está certo; o que faltava era configuração e sinal.
 
+### D4 · 00:10 — o dev local estava apontando para o Langfuse e o gateway de PRODUÇÃO
+- **Contexto:** antes de validar qualquer correção com conversa real eu conferi o ambiente. O
+  container subia com `LANGFUSE_BASE_URL=https://langfuse.twobrainstechnology.com` (log:
+  `[langfuse] tracing ativo → …twobrainstechnology.com`) e `LITELLM_BASE_URL=http://host.docker.
+  internal:4100`, um túnel SSM que não estava de pé — por isso a sonda voltava `[sem texto]`,
+  com `textChars: 0` e `durationMs: 22`.
+- **Decidi:** apontar o dev local para os shared locais — `LANGFUSE_BASE_URL=http://tb-langfuse-web:3000`
+  com as chaves do projeto `aja-agora-local`, `LITELLM_BASE_URL=http://tb-litellm-shared:4000`,
+  `AI_MODEL=claude-haiku-4-5` (o mesmo modelo de produção).
+- **Pegadinha que custou tempo e vale registrar:** editar só o `.env.local` **não adianta** — o
+  `docker-compose.yml` interpola `${VAR}` e o docker compose lê o **`.env`** para isso. Quem
+  manda no container é o `.env`. E `docker restart` não basta: mudança de `environment` exige
+  `up -d --force-recreate`.
+- **Alternativas:** subir o túnel SSM da porta 4100 — descartado, a skill `local-dev` §5.5 diz
+  que dev fala com o gateway shared, e o túnel cai a cada 1-2 min de inatividade.
+- **Reversibilidade:** fácil — backups em `.env.bak-antes-do-fix-observabilidade` e
+  `.env.local.bak-antes-do-fix-observabilidade` (ambos fora do git).
+- **Evidência:** `pnpm sonda:conversa fix-389` agora devolve fala real do agente; log do
+  container mostra `[langfuse] tracing ativo → http://tb-langfuse-web:3000` e `[analyzer]`
+  classificando os turnos.
+- **⚠️ Para o Kairo:** enquanto estava assim, **toda conversa de dev nesta máquina ia para o
+  Langfuse de produção** — misturada com o tráfego real que os alertas leem.
+
+### D5 · 00:05 — o workspace apontava para o database de OUTRO worktree
+- **Contexto:** `pnpm test:jornada` falhou em 109 de 116 com `column "media_key" does not exist`.
+  O `.env` trazia `WORKSPACE_DB_NAME=aja_agora_ws_langgraph_runtime` (worktree antigo) enquanto
+  o workspace `develop` tem `aja_agora_ws_develop` — o app rodava contra um banco e os cenários
+  contra outro, e o do workspace estava sem as migrations de agosto.
+- **Decidi:** alinhar o `.env` em `aja_agora_ws_develop` e rodar `pnpm db:migrate` **dentro do
+  container** (regra da casa: migration nunca na mão contra o banco).
+- **Reversibilidade:** fácil.
+- **Evidência:** `pnpm test:jornada` → **116 passed (30 arquivos)**. Baseline verde antes de
+  qualquer correção, que é o que dá sentido a "ficou verde depois".
+
+### D6 · 00:20 — o defeito foi REPRODUZIDO na stack local, e o culpado é o analyzer
+- **Contexto:** para corrigir com prova (e não por leitura de código), adicionei o roteiro
+  `moto-parcela-200` à `scripts/sonda-conversa-real.ts` — a fala literal do Kairo nos 11 turnos
+  de `fa0533a0-…`. Rodei contra o app local com o mesmo modelo de produção (`claude-haiku-4-5`).
+- **Reproduziu, e o log determinístico mostra onde:**
+  ```
+  [analyzer] cat=moto … credit=null-20000  | "valor isolado (20k) … crédito desejado para moto"
+  [analyzer] cat=moto … credit=null-null   | "pergunta sobre parcela reduzida…"
+  [analyzer] cat=moto … credit=null-200000 | "número isolado em contexto de identificação…"
+  ```
+  O turno do "200" (parcela) virou `creditMax = 200.000`. **Quem erra é o analyzer**, não o
+  `discovery` — este só copia (`discovery.ts:252`). `turn-analyzer.ts:188-201` ensina o modelo,
+  por exemplo, que `"no mínimo 100" → creditMin: 100000`: número solto vira milhares. Faltou a
+  âncora de que havia um gate de PARCELA aberto (o turno anterior emitiu `quick_reply` com
+  R$ 300/350/400). O parâmetro para isso existe — `analyzeAndMerge(…, lastAssistantText)` — e é
+  aí que o diagnóstico do especialista precisa fechar.
+- **Estado gravado na conversa local `2b594c6d-…` (a prova do dano):**
+  `creditMax: 20000` · `creditMin: 180000` · `desiredItem: "uma casa"` · `currentCategory: "moto"`
+  — a **mesma faixa invertida** de produção (lá: 18000 > 6424) e o mesmo bem obsoleto.
+- **Elo com a OC-35 (Bruna, "cotas indisponíveis"):** a análise daquela ocorrência diz que
+  `searchGroups` exige `creditMax`/`creditMin` > 0 e que o `bevi-offer-guard` descartou 91
+  ofertas em 3 dias. Faixa invertida chegando na busca é candidata forte a ser a origem do
+  sintoma que ela reportou. **Ainda não provado** — não confirmei que aquelas 91 vieram daqui.
+- **Reversibilidade:** fácil (o roteiro é aditivo).
+- **Evidência:** `pnpm sonda:conversa moto-parcela-200` + `metadata` da conversa no DB local.
+
 ### ⚠️ PENDENTE-KAIRO · 23:50 — configurar a ponte de alerta em produção
 - **O que é:** (a) gravar `LANGFUSE_WEBHOOK_SECRET`, `ALERTA_OBSERVABILIDADE_TO`,
   `CORTEX_MCP_URL`, `CORTEX_MCP_TOKEN`, `CORTEX_PROJETO` no secret `tb/prod/aja-agora/env`

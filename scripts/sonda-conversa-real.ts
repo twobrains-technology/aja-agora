@@ -175,6 +175,33 @@ const ROTEIROS: Roteiro[] = [
 	},
 	// ── Rodada 2026-08-12: os defeitos levantados na varredura de produção ──
 	{
+		id: "moto-parcela-200",
+		titulo: "Moto de R$ 20 mil com parcela de R$ 200 — a conversa que morreu em produção",
+		olharPara:
+			"o valor do bem ANTERIOR (casa de 1,5M) sobrevive à troca pra moto? a parcela de R$ 200 vira crédito de R$ 200 mil? quando ele diz que achou opções, o card vem junto? ele volta a perguntar o que já foi respondido?",
+		turnos: [
+			// Reprodução literal de `fa0533a0-…` (produção, WhatsApp, 13/08 23:28→23:35).
+			// O cliente é o próprio Kairo; a conversa terminou com "pqp" e sem proposta.
+			{ user: "oi", nota: "" },
+			{ user: "uma casa", nota: "primeiro bem" },
+			{ user: "1.5m", nota: "🔴 este valor precisa MORRER na troca de bem" },
+			{ user: "na verdade quero ver uma moto", nota: "troca de categoria" },
+			{ user: "20k", nota: "novo valor do bem — R$ 20 mil" },
+			{ user: "tem opcao de parcela reduzida?", nota: "abre o caminho por parcela" },
+			{
+				user: "200",
+				nota: "🔴 produção: virou crédito de R$ 200 mil (grupos de R$ 201.393, parcela R$ 6.270)",
+			},
+			{ user: "sim quero ver", nota: "" },
+			{ user: "mas eu falei 200", nota: "🔴 o agente pediu desculpa e repetiu o erro" },
+			{
+				user: "200 reais a parcela nao 200 mill",
+				nota: "🔴 produção: prometeu 'achei grupos com parcela de R$ 200' e não emitiu card nenhum",
+			},
+			{ user: "ta maluco 1.5m numa moto?", nota: "o valor da casa ainda estava no estado" },
+		],
+	},
+	{
 		id: "nome-de-frase",
 		titulo: "Nome — frase e rótulo de botão não podem virar nome do lead",
 		olharPara:

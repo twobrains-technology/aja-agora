@@ -1,6 +1,7 @@
 import { creditoBuscavel } from "@/lib/consorcio/credito-minimo";
 import { revealValueTargetChanged } from "./orchestrator/tool-policy";
 import type { ConversationMetadata, QualifyAnswers } from "./personas";
+import { aplicarFaixaDeCredito } from "./qualify-answers";
 import { objetivoForPrazo } from "./qualify-config";
 
 export type Gate =
@@ -115,7 +116,8 @@ function stuckGateDefaultPatch(gate: Gate, meta: ConversationMetadata): Partial<
 			// promove o valor que o usuário JÁ disse, nunca fabrica um novo.
 			const mentioned = meta.qualifyAnswers?.creditMentionedAtDesire;
 			if (mentioned === undefined) return {};
-			return { creditMax: mentioned, creditMin: Math.round(mentioned * 0.9) };
+			// Piso e teto saem juntos do reducer — o par nunca se separa.
+			return aplicarFaixaDeCredito({}, { creditMax: mentioned }, meta.currentCategory);
 		}
 		case "timeframe":
 			return {

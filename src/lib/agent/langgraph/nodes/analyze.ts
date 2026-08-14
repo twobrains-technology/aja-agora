@@ -7,6 +7,7 @@ import { analyzeAndMerge } from "@/lib/agent/orchestrator/analyze";
 import { decideRouting } from "@/lib/agent/orchestrator/routing";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { pickPersonaForCategory } from "@/lib/agent/personas-repo";
+import { aplicarTrocaDeCategoria, reverterFaixaDeCredito } from "@/lib/agent/qualify-answers";
 import { valorAncoradoNoTexto } from "@/lib/agent/valor-declarado";
 import { registrarValorRevertido } from "@/lib/observability/langfuse/funil-scores";
 import { projectToMeta } from "../emit";
@@ -137,9 +138,10 @@ export function createAnalyzeNode(analyze: AnalyzeFn = analyzeAndMerge) {
 			console.log(
 				`[analyze] creditMax R$ ${depois.creditMax} apareceu pós-reveal numa fala sem número; mantido R$ ${antes.creditMax ?? "vazio"}`,
 			);
-			meta.qualifyAnswers = { ...meta.qualifyAnswers };
-			if (antes.creditMax === undefined) delete meta.qualifyAnswers.creditMax;
-			else meta.qualifyAnswers.creditMax = antes.creditMax;
+			// Revert é do PAR (`qualify-answers.ts`): devolver só o teto deixava o
+			// piso da faixa desfeita órfão no estado — foi assim que produção
+			// terminou com `creditMin: 18000` e `creditMax: 6424`.
+			meta.qualifyAnswers = reverterFaixaDeCredito(meta.qualifyAnswers ?? {}, antes);
 			registrarValorRevertido({ valorRecusado: depois.creditMax, veioDoEscape: false });
 		}
 		if (
@@ -161,9 +163,7 @@ export function createAnalyzeNode(analyze: AnalyzeFn = analyzeAndMerge) {
 				valorRecusado: depois.creditMax,
 				veioDoEscape: valorQueOClienteJaDisse !== undefined,
 			});
-			meta.qualifyAnswers = { ...meta.qualifyAnswers };
-			if (antes.creditMax === undefined) delete meta.qualifyAnswers.creditMax;
-			else meta.qualifyAnswers.creditMax = antes.creditMax;
+			meta.qualifyAnswers = reverterFaixaDeCredito(meta.qualifyAnswers ?? {}, antes);
 		}
 
 		if (
@@ -202,6 +202,28 @@ export function createAnalyzeNode(analyze: AnalyzeFn = analyzeAndMerge) {
 		const rota = decideRouting(state.userText, meta, analysis);
 		if (rota.kind === "transition") {
 			const personaAnterior = state.funnel.currentPersona;
+			const categoriaAnterior = meta.currentCategory;
+			// Trocar de bem invalida o que era DO BEM (faixa, item desejado, valor
+			// mencionado no desire) e preserva o que é DA PESSOA (prazo, lance,
+			// poupança). Sem isto, o R$ 1,5 milhão da casa sobreviveu à troca para
+			// moto e voltou como pergunta — "Uns R$ 1.500.000 então, é isso?" — numa
+			// conversa sobre uma moto de R$ 20 mil. O que o cliente disse NESTE
+			// turno é reaplicado: "na verdade quero uma moto de 20 mil" troca e
+			// informa o valor de uma vez só.
+			if (categoriaAnterior && categoriaAnterior !== rota.toCategory) {
+				meta.qualifyAnswers = aplicarTrocaDeCategoria(
+					meta.qualifyAnswers ?? {},
+					{
+						creditMax: analysis.creditMax,
+						creditMin: analysis.creditMin,
+						desiredItem: analysis.desiredItem,
+					},
+					rota.toCategory,
+				);
+				console.log(
+					`[analyze] troca ${categoriaAnterior}→${rota.toCategory}: faixa e item do bem anterior invalidados`,
+				);
+			}
 			meta.currentCategory = rota.toCategory;
 			const persona = await pickPersonaForCategory(rota.toCategory).catch(() => null);
 			// `currentPersona` guarda o ID da persona (linha do banco), não a categoria.

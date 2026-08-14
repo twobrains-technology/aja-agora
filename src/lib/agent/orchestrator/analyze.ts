@@ -1,5 +1,6 @@
 import { parseAssetValue } from "@/lib/agent/parse-asset-value";
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
+import { aplicarFaixaDeCredito } from "@/lib/agent/qualify-answers";
 import { clampCreditToCategory, objetivoForPrazo } from "@/lib/agent/qualify-config";
 import { type Gate, nextGate, registerGateStuckTurn } from "@/lib/agent/qualify-state";
 import { analyzeTurn, type TurnAnalysis } from "@/lib/agent/turn-analyzer";
@@ -237,12 +238,18 @@ export async function analyzeAndMerge(
 		const clamp = meta.currentCategory
 			? clampCreditToCategory(sourceCreditMax, meta.currentCategory)
 			: null;
-		const creditMax = clamp ? clamp.value : sourceCreditMax;
-		const rawMin = analysis.creditMin ?? Math.round(creditMax * 0.9);
-		// creditMin derivado nunca fica abaixo do piso da faixa nem acima do
-		// creditMax real (que já não é mais capado ao teto da categoria).
-		q.creditMin = clamp ? Math.min(Math.max(rawMin, clamp.min), creditMax) : rawMin;
-		q.creditMax = creditMax;
+		// O par piso/teto sai do reducer (`qualify-answers.ts`) — é ele que
+		// garante `creditMin ≤ creditMax`. Escrever os dois campos aqui à mão foi
+		// o que permitiu, somado aos reverts parciais, o estado `creditMin: 18000`
+		// com `creditMax: 6424` chegar à busca da Bevi.
+		Object.assign(
+			q,
+			aplicarFaixaDeCredito(
+				q,
+				{ creditMax: sourceCreditMax, creditMin: analysis.creditMin },
+				meta.currentCategory,
+			),
+		);
 		if (clamp?.clamped) {
 			// Preserva o valor original pedido pro agente confrontar a faixa.
 			q.creditClampedFrom = sourceCreditMax;
