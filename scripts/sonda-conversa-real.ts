@@ -183,10 +183,28 @@ const ROTEIROS: Roteiro[] = [
 			// Reprodução literal de `fa0533a0-…` (produção, WhatsApp, 13/08 23:28→23:35).
 			// O cliente é o próprio Kairo; a conversa terminou com "pqp" e sem proposta.
 			{ user: "oi", nota: "" },
+			// No WhatsApp o nome já vem do contato (lá era "Kairo"); na web o gate
+			// `name` precisa ser respondido, senão o funil trava antes do que este
+			// roteiro existe para exercitar.
+			{ user: "Kairo", nota: "nome — no WhatsApp já vinha do contato" },
 			{ user: "uma casa", nota: "primeiro bem" },
 			{ user: "1.5m", nota: "🔴 este valor precisa MORRER na troca de bem" },
 			{ user: "na verdade quero ver uma moto", nota: "troca de categoria" },
 			{ user: "20k", nota: "novo valor do bem — R$ 20 mil" },
+			{
+				// Em produção o CPF FOI enviado (a captura do WhatsApp não persiste a
+				// mensagem, por isso ele não aparece no transcript). Sem este passo a
+				// sonda trava no `identify` e nunca chega à busca — que é justamente
+				// o trecho onde o defeito morava.
+				user: "Enviei meus dados pra buscar as ofertas",
+				nota: "form de CPF — na web o CPF não entra por conversa (LGPD)",
+				action: {
+					kind: "gate",
+					gate: "identify",
+					value: { cpf: "33880599858", celular: "11995432576", lgpd: true },
+					label: "Enviei meus dados pra buscar as ofertas",
+				},
+			},
 			{ user: "tem opcao de parcela reduzida?", nota: "abre o caminho por parcela" },
 			{
 				user: "200",

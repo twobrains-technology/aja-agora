@@ -66,6 +66,20 @@ function stripAccents(s: string): string {
 // que lembram palavra comum (Vera, Rosa, Vitória) ficam FORA da lista de
 // propósito — são nomes de gente.
 const NAO_SAO_NOMES = new Set([
+	// Artigos. Classe gramatical FECHADA — estas oito palavras são todas as que
+	// existem, e nenhuma delas abre uma apresentação em português. Entraram
+	// depois de a sonda de 14/08 flagrar `contact_name = "Uma"`: o funil estava
+	// no gate `name`, o MODELO perguntou qual bem o cliente queria, ele
+	// respondeu "uma casa" — ao modelo — e o servidor leu como resposta ao
+	// funil. Diferente das listas abaixo, esta não cresce: não há artigo novo.
+	"o",
+	"a",
+	"os",
+	"as",
+	"um",
+	"uma",
+	"uns",
+	"umas",
 	// retomada e presença — a família que causou o defeito
 	"voltei",
 	"voltou",

@@ -125,6 +125,36 @@ implementação segue o que ele apontar.
 - **Reversibilidade:** fácil (o roteiro é aditivo).
 - **Evidência:** `pnpm sonda:conversa moto-parcela-200` + `metadata` da conversa no DB local.
 
+### D7 · 00:35 — implementados os quatro P0 do dossiê do especialista
+- **Contexto:** o `super-especialista-de-ia` fechou o diagnóstico em
+  `docs/design/specs/2026-08-14-dossie-conversa-parcela-200.md` (516 linhas) e corrigiu **duas
+  hipóteses minhas**: (a) o CPF **foi** enviado — a captura não persiste a mensagem, então o
+  transcript mente por omissão e a invariante não foi furada; (b) o "turno morto" das 23:33:40
+  entregou uma pergunta enlatada que **nunca entrou no histórico do modelo** ("Uns R$ 1.500.000
+  então, é isso?"), e o "ta maluco 1.5m numa moto?" responde a ela.
+- **Implementei, cada um com regressão primeiro (TDD):**
+  1. **Reducer de `qualifyAnswers`** (D6 acima) — faixa nunca invertida, troca de bem invalida
+     o que é do bem. `10ec8289`.
+  2. **Alvo de busca discriminado** (`alvoDeBusca: "valor" | "parcela"`) — quem fala em parcela
+     é buscado por `INSTALLMENT_VALUE`; a derivação proporcional virou narração, não estado. E o
+     analyzer ganhou o campo `parcelaMensal`, que **não existia**: o Haiku entendia certo e era
+     obrigado pelo schema a gravar R$ 200/mês como bem de R$ 200 mil.
+  3. **Busca vazia com consequências** — registra o alvo tentado (freio: 4 chamadas idênticas
+     viraram no máximo 2), invalida `recommendedOffer` (a âncora podre que fazia o contexto
+     afirmar "os cards estão na tela") e arma o bloco anti-promessa por fato do turno.
+  4. **Cinco sinais determinísticos novos** — `busca_abaixo_do_piso`, `busca_vazia`,
+     `busca_esgotada`, `estado_incoerente`, `oferta_contradiz_parcela`; mais o erro da Bevi no
+     nó `discovery` passando a pontuar como `tool_falhou` (antes morria em log).
+- **Decisão de conciliação que vale revisão:** o dossiê pedia "nunca 2+ buscas no mesmo alvo",
+  mas o FIX-380 usa a **segunda** vazia como gatilho para o funil trocar de estratégia. Adotei
+  **duas tentativas por alvo** — mata o loop de quatro e preserva o FIX-380 (que ficaria
+  vermelho com uma só).
+- **Um teste antigo mudou de contrato:** `cenario-faixa-so-reposiciona-com-oferta-vista`
+  esperava o `creditMax` derivado (69.990). Atualizei para o novo contrato e deixei no arquivo
+  o porquê — é a única asserção que inverti, e é intencional.
+- **Evidência:** `pnpm test:jornada` **120/120**, `pnpm vitest run src/lib/agent/` **585**,
+  `pnpm tsc --noEmit` limpo.
+
 ### ⚠️ PENDENTE-KAIRO · 23:50 — configurar a ponte de alerta em produção
 - **O que é:** (a) gravar `LANGFUSE_WEBHOOK_SECRET`, `ALERTA_OBSERVABILIDADE_TO`,
   `CORTEX_MCP_URL`, `CORTEX_MCP_TOKEN`, `CORTEX_PROJETO` no secret `tb/prod/aja-agora/env`

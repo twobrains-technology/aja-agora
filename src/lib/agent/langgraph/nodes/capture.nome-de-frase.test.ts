@@ -34,6 +34,25 @@ function noGateDoNome(userText: string): AgentGraphStateType {
 }
 
 describe("captureAnswerNode — o que NÃO é nome", () => {
+	// 2026-08-14, sonda local: o funil estava no gate `name` e o MODELO perguntou
+	// qual bem o cliente queria. Ele respondeu "uma casa" — ao modelo — e o
+	// servidor batizou o lead de "Uma". Daí em diante o agente cumprimentava
+	// "Perfeito, Uma!" e a mesa receberia o lead assim.
+	//
+	// Artigo é classe gramatical FECHADA (o, a, os, as, um, uma, uns, umas) —
+	// oito palavras que nunca abrem uma apresentação em português. Isso não é
+	// caçar frase por frase: é gramática, e o conjunto não cresce amanhã.
+	it("artigo indefinido não vira nome (o caso 'Uma', da sonda de 14/08)", () => {
+		expect(captureAnswerNode(noGateDoNome("uma casa"))).toEqual({});
+		expect(captureAnswerNode(noGateDoNome("um carro"))).toEqual({});
+		expect(captureAnswerNode(noGateDoNome("uma moto"))).toEqual({});
+	});
+
+	it("artigo definido também não (o apartamento, a casa)", () => {
+		expect(captureAnswerNode(noGateDoNome("o apartamento"))).toEqual({});
+		expect(captureAnswerNode(noGateDoNome("a casa"))).toEqual({});
+	});
+
 	it("rótulo de botão não vira nome (o caso 'Quitar', literal de produção)", () => {
 		expect(captureAnswerNode(noGateDoNome("Quitar o financiamento atual"))).toEqual({});
 	});
