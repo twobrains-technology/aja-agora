@@ -164,6 +164,12 @@ export type ConversationMetadata = {
 	 * marcado. O worker RE-CALCULA nextGate no disparo (frescor); este é só o
 	 * indicador do que estava aberto. */
 	pendingGate?: Gate;
+	/** Retomadas já disparadas neste período de silêncio (ver
+	 * `workers/retomada.ts`). Gravado ANTES do disparo: turno de retomada que
+	 * morra no meio continua contando, senão o watchdog vira loop justamente na
+	 * conversa que está quebrando. Zerado a cada turno REAL do cliente — ele
+	 * respondeu, o relógio recomeça. */
+	retomada?: { attempts: number; lastAt: number };
 	/** FIX-211 — contador de cobranças por gate de COLETA obrigatória (identify/
 	 * credit/lance/...). Incrementado a cada RE-cobrança (turno mudo ou desvio do
 	 * usuário), NÃO na emissão original do gate. Governa a ESCADA de cobrança

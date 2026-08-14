@@ -29,6 +29,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
 import {
+	isConversationPausedOrTerminal,
 	isMandatoryCollectionGate,
 	NON_REENGAGE_GATES,
 	reengageQuestionForGate,
@@ -39,6 +40,7 @@ import { nextGate } from "@/lib/agent/qualify-state";
 import { saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta } from "@/lib/conversation/meta";
 import type { fireGate as FireGate } from "@/lib/whatsapp/adapter";
+import { buildRetomadaDirective, podeRetomar } from "./retomada";
 
 export interface ReengageDeps {
 	now?: Date;
@@ -76,6 +78,65 @@ export async function findPendingGateConversations(): Promise<PendingConversatio
 				sql`${conversations.metadata} ->> 'pendingGateSince' IS NOT NULL`,
 			),
 		);
+}
+
+/** Quanto tempo de silêncio, por canal, antes de a conversa virar candidata a
+ * retomada. Web é mais curto porque o cliente está com a tela aberta e a
+ * atenção dura pouco; WhatsApp tem outro ritmo e 90s ali soaria afobado. */
+const IDLE_RETOMADA_MS = {
+	web: Number(process.env.RETOMADA_IDLE_WEB_MS ?? 2 * 60_000),
+	whatsapp: Number(process.env.RETOMADA_IDLE_WHATSAPP_MS ?? 5 * 60_000),
+};
+
+/** Teto de conversas por ciclo — as MAIS RECENTES primeiro.
+ *
+ * Sem isto, o primeiro ciclo depois do deploy varreria 24 h inteiras de
+ * conversas paradas e dispararia retomada em todas de uma vez: dezenas de
+ * clientes recebendo mensagem no mesmo minuto, por causa de um watchdog que
+ * acabou de nascer. Com o cron de 30s a fila drena rápido, e quem parou há mais
+ * tempo é justamente quem menos tem chance de voltar. */
+const RETOMADAS_POR_CICLO = Number(process.env.RETOMADAS_POR_CICLO ?? 5);
+
+/**
+ * A SEGUNDA fonte do watchdog: o cliente falou e ninguém respondeu.
+ *
+ * Não é redundante com a primeira, e a diferença importa. O marcador de
+ * pendência é escrito PELO TURNO — se o turno morre no meio, ou nunca roda, o
+ * marcador não existe e a conversa fica invisível (foi o caso do cliente que
+ * escreveu três vezes sem receber trace nenhum). Esta fonte não depende de
+ * escrita nenhuma: ela olha o estado observável — a última mensagem é do
+ * cliente, e faz tempo.
+ *
+ * A janela de 24 h é regra de negócio, não estética: fora dela o WhatsApp não
+ * entrega texto livre (só template aprovado), então retomada tardia é outra
+ * feature — com template e mesa —, não este worker. De quebra, limita o scan.
+ */
+export async function findConversasSemResposta(now: Date): Promise<PendingConversationRow[]> {
+	const rows = await db.execute(sql`
+		WITH ultimas AS (
+			SELECT DISTINCT ON (m.conversation_id)
+			       m.conversation_id, m.role, m.created_at
+			FROM messages m
+			WHERE m.created_at > ${now.toISOString()}::timestamptz - interval '24 hours'
+			ORDER BY m.conversation_id, m.created_at DESC
+		)
+		SELECT c.id, c.channel, c.wa_id AS "waId", c.contact_name AS "contactName", c.metadata
+		FROM conversations c
+		JOIN ultimas u ON u.conversation_id = c.id
+		WHERE c.status = 'active'
+		  AND c.is_simulated = false
+		  AND u.role = 'user'
+		  AND u.created_at < ${now.toISOString()}::timestamptz - (
+		        CASE c.channel
+		          WHEN 'web' THEN ${`${IDLE_RETOMADA_MS.web} milliseconds`}::interval
+		          ELSE ${`${IDLE_RETOMADA_MS.whatsapp} milliseconds`}::interval
+		        END)
+		ORDER BY u.created_at DESC
+		LIMIT ${RETOMADAS_POR_CICLO}
+	`);
+	return (
+		Array.isArray(rows) ? rows : ((rows as { rows?: unknown[] }).rows ?? [])
+	) as PendingConversationRow[];
 }
 
 /**
@@ -199,6 +260,102 @@ export async function runReengageCycle(deps: ReengageDeps = {}): Promise<{ reeng
 	return { reengaged };
 }
 
+/** Dispara um turno de SERVIDOR na conversa. Injetável para o ciclo ser testável
+ * sem tocar a Meta API nem subir o grafo. */
+export type DisparaRetomada = (args: {
+	conversationId: string;
+	channel: "web" | "whatsapp";
+	waId: string | null;
+	directive: string;
+}) => Promise<void>;
+
+/**
+ * Ciclo da RETOMADA: conversas em que o cliente falou e ninguém respondeu.
+ *
+ * Roda depois do `runReengageCycle` e ignora o que ele já tratou no mesmo ciclo
+ * (`jaTratadas`) — as duas fontes se sobrepõem de propósito, mas cobrar duas
+ * vezes seria pior que não cobrar.
+ */
+export async function runRetomadaCycle(
+	deps: { now?: Date; dispara?: DisparaRetomada; jaTratadas?: ReadonlySet<string> } = {},
+): Promise<{ retomadas: number }> {
+	const now = deps.now ?? new Date();
+	const jaTratadas = deps.jaTratadas ?? new Set<string>();
+	const dispara = deps.dispara ?? disparaRetomadaReal;
+	const rows = await findConversasSemResposta(now);
+	let retomadas = 0;
+
+	for (const row of rows) {
+		try {
+			if (jaTratadas.has(row.id)) continue;
+			const meta = metaOf(row);
+			// Handoff pendente, contrato fechado, coleta de lead: quem conduz não é
+			// mais o agente.
+			if (isConversationPausedOrTerminal(meta)) continue;
+			if (!podeRetomar(meta, now.getTime())) continue;
+
+			const minutosParado = Math.max(
+				1,
+				Math.round((IDLE_RETOMADA_MS[row.channel] ?? IDLE_RETOMADA_MS.web) / 60_000),
+			);
+			const directive = buildRetomadaDirective(meta, { minutosParado, channel: row.channel });
+
+			// GRAVA ANTES DE DISPARAR. Se o turno morrer no meio, a tentativa continua
+			// contada — um watchdog que só conta sucesso vira loop exatamente na
+			// conversa que está quebrando, e aí o defeito persegue o cliente.
+			await persistMeta(row.id, {
+				...meta,
+				retomada: { attempts: (meta.retomada?.attempts ?? 0) + 1, lastAt: now.getTime() },
+			});
+
+			await dispara({
+				conversationId: row.id,
+				channel: row.channel,
+				waId: row.waId,
+				directive,
+			});
+			retomadas += 1;
+		} catch (err) {
+			console.error(
+				JSON.stringify({
+					level: "error",
+					source: "retomada",
+					conversation_id: row.id,
+					error: err instanceof Error ? err.message : String(err),
+				}),
+			);
+		}
+	}
+
+	return { retomadas };
+}
+
+/** A retomada real: turno de servidor no runtime de verdade. No WhatsApp o
+ * adapter entrega pela Meta API; no web o `persist` grava a mensagem e o cliente
+ * a recebe no próximo poll/resume. */
+const disparaRetomadaReal: DisparaRetomada = async ({
+	conversationId,
+	channel,
+	waId,
+	directive,
+}) => {
+	if (channel === "whatsapp") {
+		if (!waId) return;
+		const { runDirectiveWithOrchestrator } = await import("@/lib/whatsapp/adapter");
+		await runDirectiveWithOrchestrator({ from: waId, conversationId, directive });
+		return;
+	}
+	const { runTurn } = await import("@/lib/agent/orchestrator");
+	for await (const _ of runTurn({
+		channel: "web",
+		conversationId,
+		userText: directive,
+		isUserTurn: false,
+	})) {
+		// Drenar é o que faz o turno acontecer; o `persist` grava a fala.
+	}
+};
+
 // ─── Wiring BullMQ (só no entrypoint do worker; nunca em testes) ──────────────
 
 const QUEUE_NAME = "gate-reengage-poll";
@@ -238,8 +395,12 @@ export async function startGateReengageWorker() {
 		QUEUE_NAME,
 		async () => {
 			const result = await runReengageCycle();
-			if (result.reengaged > 0) {
-				console.log(`[gate-reengage-poll] ciclo: ${JSON.stringify(result)}`);
+			// A retomada roda no MESMO ciclo e sabe o que a primeira fonte tratou —
+			// as duas se sobrepõem de propósito, mas cobrar duas vezes seria pior
+			// que não cobrar.
+			const retomada = await runRetomadaCycle();
+			if (result.reengaged > 0 || retomada.retomadas > 0) {
+				console.log(`[gate-reengage-poll] ciclo: ${JSON.stringify({ ...result, ...retomada })}`);
 			}
 		},
 		{ connection },

@@ -17,11 +17,13 @@ import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { artifacts as artifactsTable, conversations as conversationsTable } from "@/db/schema";
+import { turnoEntregouConducao } from "@/lib/agent/conducao";
 import { pendingGateAfterTurn } from "@/lib/agent/gate-reengage";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { shouldMarkDoubtsAddressed } from "@/lib/agent/qualify-state";
 import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta } from "@/lib/conversation/meta";
+import { registrarConducao } from "@/lib/observability/langfuse/conducao-scores";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { projectToMeta } from "../emit";
 import { pausaDeConversa, RITMO } from "../ritmo";
@@ -159,9 +161,33 @@ export async function persistNode(
 	// `tool-policy` lê esses campos, só o worker; entrar no slice seria dar-lhes
 	// uma autoridade sobre o fluxo que eles não têm.
 	const meta = { ...projetado };
+
+	// O TURNO CONDUZIU, OU SÓ FALOU?
+	//
+	// Uma pergunta, dois consumidores: o marcador de pendência (logo abaixo) e o
+	// score `conducao_entregue`. A definição é compartilhada (`@/lib/agent/
+	// conducao`) e o INSUMO também — esta mesma const alimenta os dois. Se cada
+	// um lesse os eventos por conta própria, o painel poderia dizer "conduziu"
+	// enquanto o watchdog achasse o contrário, e ninguém notaria.
+	const flagsDeConducao = {
+		isUserTurn,
+		perguntaEntregue: state.modelAskedQuestion === true,
+		handoff: state.events.some((ev) => ev.type === "handoff") || funnel.handoffSuggested === true,
+		// `contractClosed`, NÃO `contractFormDispatched`: com o formulário na tela e
+		// o cliente ainda sem preencher, conduzir importa mais que nunca.
+		contractClosed: projetado.contractClosed === true,
+	};
+	const conduziu = turnoEntregouConducao(state.events, flagsDeConducao);
+
+	// `gateFired` deixa de perguntar pela ROTA (`Boolean(state.gate)` — "o funil
+	// CALCULOU um gate") e passa a perguntar pela ENTREGA. Calcular não é
+	// entregar: no turno do reveal o gate é suprimido de propósito, e quando a
+	// âncora também não sai o cliente fica sem nada a responder — sem que
+	// pendência nenhuma fosse gravada (sessão `ff8f2080`). `null` (turno de
+	// servidor, contrato fechado) conta como entregue: ali não se cobra ninguém.
 	const pendingGate = pendingGateAfterTurn({
 		meta: projetado,
-		gateFired: Boolean(state.gate),
+		gateFired: conduziu !== false,
 		isUserTurn,
 		hasContactName: Boolean(state.contactName),
 	});
@@ -173,6 +199,13 @@ export async function persistNode(
 		delete meta.pendingGateSince;
 		delete meta.pendingGate;
 	}
+	// O CLIENTE VOLTOU A FALAR → o contador de retomadas zera.
+	//
+	// Sem isto, o teto de 2 seria por CONVERSA e não por período de silêncio: uma
+	// pessoa que sumiu duas vezes lá no começo e voltou nunca mais seria puxada de
+	// volta, mesmo travando na véspera de assinar. Só turno REAL do cliente conta
+	// (`userText`) — a própria retomada é `isUserTurn: false` e não se auto-perdoa.
+	if (isUserTurn && userText) delete meta.retomada;
 	await persistMeta(conversationId, meta);
 
 	// O NOME CAPTURADO PRECISA SOBREVIVER AO TURNO.
@@ -218,6 +251,10 @@ export async function persistNode(
 	}
 	events.push({ type: "meta-update", meta });
 	events.push({ type: "finish", reason: "ok" });
+
+	// Mesmo veredito que decidiu a pendência lá em cima, agora virando score —
+	// mesma função, mesmo insumo, nenhuma chance de divergirem.
+	registrarConducao({ ...flagsDeConducao, eventos: state.events, gateAtivo: state.gate ?? null });
 
 	// AO VIVO, e SÓ AQUI. O grafo pausa no `human` logo depois deste nó, então o
 	// `values` final nunca chega ao `run-turn.ts` — tudo que não sair pelo writer
