@@ -14,6 +14,7 @@ import { planTransition } from "@/lib/agent/orchestrator/transition";
 import type { Category, ConversationMetadata, Persona } from "@/lib/agent/personas";
 import { type Gate, nextGate } from "@/lib/agent/qualify-state";
 import { EMPTY_TURN_FALLBACK } from "@/lib/chat/empty-turn-guard";
+import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { registrarEntregaDoGate } from "@/lib/observability/langfuse/funil-scores";
 import { withLangfuseTurn } from "@/lib/observability/langfuse/turn";
@@ -600,6 +601,21 @@ async function consumeEventsInner(
 						const ok = await sendText(from, textPrompt);
 						lastWasInteractive = false;
 						hasSent = hasSent || ok;
+						// O que o canal manda ao cliente É fala da conversa, e precisa
+						// existir para o modelo. Em 13/08 esta linha entregou "Uns
+						// R$ 1.500.000 então, é isso?" numa conversa sobre uma moto de
+						// R$ 20 mil, sem persistir: o cliente respondeu "ta maluco 1.5m numa
+						// moto?" no turno seguinte e o modelo, cego à pergunta que o sistema
+						// fez em seu nome, assumiu a culpa por um valor que ele nunca disse.
+						if (ok) {
+							await saveMessage(conversationId, "assistant", textPrompt, "whatsapp").catch(
+								(err) => {
+									// Persistir é para o histórico; falhar aqui não pode derrubar
+									// a entrega, que já aconteceu.
+									console.error(`[gate-delivery] persistência falhou (ignorado):`, err);
+								},
+							);
+						}
 						console.log(`[gate-delivery] conv=${conversationId} gate=${ev.gate} via=text`);
 						registrarEntregaDoGate(ev.gate, "text");
 					} else {
