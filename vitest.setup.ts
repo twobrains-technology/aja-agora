@@ -45,9 +45,29 @@ if (!existsSync("/.dockerenv")) {
 		if (!url) return url;
 		try {
 			const u = new URL(url);
+			// `toString()` NORMALIZA acrescentando a barra do path vazio, e quem
+			// concatena (`${base}/v1/messages`) acaba com `//v1/messages` — o LiteLLM
+			// responde 404 nisso. O `scripts/_env-host.ts` já apanhou do mesmo
+			// footgun e o corrige; aqui faltava.
+			const semBarra = (u2: URL) => u2.toString().replace(/\/$/, "");
+			// `host.docker.internal` é como o CONTAINER chama o Mac — do lado de cá
+			// ele não resolve ("Unknown host"), e a regra do ponto abaixo o deixava
+			// passar intacto: o teste que toca o LLM ficava pendurado até estourar o
+			// timeout, com cara de bug do produto. Do host, o mesmo endereço é o
+			// loopback, onde o túnel SSM do LiteLLM publica.
+			//
+			// ⚠️ Isto exige o túnel VIVO, não só a porta aberta. Sessão SSM expirada
+			// deixa um listener órfão que aceita a conexão e nunca responde — pior
+			// que não ter túnel, porque falha lenta em vez de falha rápida. Sintoma:
+			// vários testes de integração estourando timeout ao mesmo tempo.
+			// Confira com `curl -m 5 http://127.0.0.1:4100/health` (401 = vivo).
+			if (u.hostname === "host.docker.internal") {
+				u.hostname = "127.0.0.1";
+				return semBarra(u);
+			}
 			if (u.hostname.includes(".") || u.hostname === "localhost") return url;
 			u.hostname = `${u.hostname}.orb.local`;
-			return u.toString();
+			return semBarra(u);
 		} catch {
 			return url;
 		}
