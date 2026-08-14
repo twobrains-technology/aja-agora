@@ -248,6 +248,22 @@ implementação segue o que ele apontar.
   número que o servidor calculou — e *"R$ 200 por mês não existe em nenhuma administradora, nem
   esticando o prazo no máximo"*. Nenhuma faixa fantasma na conversa inteira.
 
+### D14 · 05:00 — parei de iterar no contexto e entreguei o INSTRUMENTO
+- **O que a última medição mostrou:** fechei os dois becos que o juiz isolou (o veredito passou a
+  declarar a menor carta real e que abaixo dela não há nada; o bem abandonado virou fato no
+  contexto) e, na rodada seguinte, o fecho catastrófico **não** apareceu — mas a faixa fantasma
+  **voltou** ("tipo R$ 300, R$ 350 por mês") com o R$ 484 correto no mesmo contexto.
+- **A conclusão, que é do juiz e eu assino:** **injeção não é adesão**. Em 4 de 10 rodadas
+  medidas o agente citou o número certo e contradisse esse mesmo número turnos depois. Mais
+  contexto não resolve isso — e guard sobre a frase é o anti-padrão que o CLAUDE.md proíbe.
+- **Decidi parar de iterar no prompt e entregar o instrumento:** o score
+  `parcela_fora_do_catalogo` reconcilia os valores em reais que o agente citou com o intervalo
+  real do catálogo **daquele turno**. Não é lista de frases — a âncora é o catálogo, então a
+  mesma fala é violação com um catálogo e correta com outro, e paráfrase nenhuma escapa porque o
+  que se mede é o número.
+- **Por que isso encerra minha parte:** a pergunta "a injeção pegou?" deixa de depender de mim
+  ler transcript à mão. Vira taxa, com Monitor. É o que permite o N≥20 fazer sentido.
+
 ### ⚠️ PENDENTE-KAIRO · 23:50 — configurar a ponte de alerta em produção
 - **O que é:** (a) gravar `LANGFUSE_WEBHOOK_SECRET`, `ALERTA_OBSERVABILIDADE_TO`,
   `CORTEX_MCP_URL`, `CORTEX_MCP_TOKEN`, `CORTEX_PROJETO` no secret `tb/prod/aja-agora/env`
@@ -289,7 +305,7 @@ não foi atingida (o produto saiu de 4/10 para uma amostra que ainda varia).
 | `pnpm typecheck` + suíte unitária | ✅ limpo · **2.955 testes** |
 | Sinal determinístico novo, provado por teste | ✅ 5 sinais (`busca_abaixo_do_piso`, `busca_vazia`, `busca_esgotada`, `estado_incoerente`, `oferta_contradiz_parcela`) + erro da Bevi passando a pontuar |
 | Ponte alerta → Cortex provada na stack local | ✅ ponta a ponta, webhook assinado → `ocorrencia_aberta: true` |
-| Conversa refeita com 10/10 de um agente juiz | ❌ **não atingido** — ver abaixo |
+| Conversa refeita com 10/10 de um agente juiz | ❌ **não atingido** — melhor rodada 8/10, produto 4/10 |
 
 Suítes na verificação final: unitária **2.955**, jornada **120**, caminho do dinheiro
 **327** (integração com DB real). Typecheck limpo.
@@ -300,10 +316,16 @@ O juiz (independente, com o dossiê factual e sem acesso à minha narrativa) deu
 
 - **4/10** na primeira validação — o estado estava curado e o agente **continuava anunciando
   oferta inexistente**;
-- depois das correções de contexto: **7,5/10** numa rodada e **2/10** em outra, com nota de
-  produto **3/10** — "o cliente recebe um sorteio";
-- o defeito de maior alcance que ele isolou (pedido de CPF em dobro, 4 de 4 ocorrências) está
-  **corrigido e medido: 0 em 2 rodadas**.
+- depois das correções de contexto: **7,5** e **2**, produto **3/10** — "o cliente recebe um sorteio";
+- depois do fix do CPF: **5** e **6,5**, produto **5/10**;
+- depois da conta com veredito: **8/10** (a melhor conversa das dez que ele julgou) e **3,5**,
+  produto **4/10** — e ele foi explícito: a nota caiu porque **ele finalmente amostrou a cauda
+  ruim**, não porque o produto piorou.
+
+O que ele assina com confiança alta: **a camada determinística está limpa em 4 rodadas seguidas**
+— CPF pedido uma vez, nenhum 200000, `creditMentionedAtDesire` correto, âncora preservada,
+nenhuma afirmação sobre a tela contradizendo os artifacts. O que ele não sabe (e eu também não):
+a taxa real da cauda ruim, porque n=2 por versão não é distribuição.
 
 O que ele diz e eu assino: **injeção de contexto não é adesão**. Na mesma conversa em que o
 agente citou "R$ 484 da Tradição em 61 meses" (exato, do payload), quatro turnos depois ele
