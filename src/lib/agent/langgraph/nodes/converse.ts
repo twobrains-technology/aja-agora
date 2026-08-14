@@ -945,6 +945,12 @@ export function createConverseNode(model: BaseChatModel) {
 							atual.monthlyPayment &&
 							desejada < atual.monthlyPayment
 						) {
+							// A proporção continua sendo calculada — mas para NARRAR ("com
+							// R$ 200 por mês a carta fica em torno de R$ X"), nunca para
+							// virar o alvo da busca. Como `creditMax`, ela produziu R$ 9.120
+							// e depois R$ 6.424 numa moto de R$ 20 mil: abaixo do piso que a
+							// Bevi aceita, quatro buscas vazias seguidas, venda morta. Quem
+							// falou em parcela é buscado por parcela (`INSTALLMENT_VALUE`).
 							const alvo = Math.round(atual.creditValue * (desejada / atual.monthlyPayment));
 							ajustesPendentes.push({
 								toolCallId: call.id,
@@ -1432,11 +1438,15 @@ export function createConverseNode(model: BaseChatModel) {
 										// dizendo "o que cabe no meu bolso vocês não têm de verdade".
 										// Deixando o valor antigo, `creditMax !== discoveredCreditTarget`
 										// vira true e a descoberta roda na faixa nova.
+										// O que vai ao ESTADO é a parcela e o discriminante do alvo.
+										// O crédito derivado da parcela fica de fora: ele existe
+										// para o modelo narrar a ordem de grandeza, e como alvo de
+										// busca é justamente o número abaixo do piso que esvaziou
+										// quatro buscas seguidas.
 										qualifyAnswers: {
 											...state.funnel.qualifyAnswers,
-											creditMax: novaFaixaRef.faixa.creditMax,
-											creditMin: novaFaixaRef.faixa.creditMin,
 											parcelaAlvo: novaFaixaRef.faixa.parcelaAlvo,
+											alvoDeBusca: "parcela" as const,
 										},
 									}
 								: {}),

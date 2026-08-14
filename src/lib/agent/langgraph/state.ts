@@ -53,6 +53,8 @@ export type FunnelQualifyAnswers = {
 	valorDoBemAlvo?: number;
 	/** Parcela que o cliente disse que cabe no bolso — reposiciona a faixa de busca. */
 	parcelaAlvo?: number;
+	/** Discriminante do alvo da busca: valor do bem ou parcela (`qualify-answers.ts`). */
+	alvoDeBusca?: "valor" | "parcela";
 	embeddedBidDispatched?: boolean;
 };
 
@@ -79,6 +81,11 @@ export type FunnelState = {
 	// re-disparar a descoberta quando o usuário pede uma faixa de valor NOVA
 	// pós-reveal, sem re-buscar em afirmativos curtos na MESMA faixa.
 	discoveredCreditTarget?: number;
+	/** O par do `discoveredCreditTarget` para o alvo por PARCELA: a parcela que
+	 * a última busca de fato levou à Bevi. Sem ele, quem trocasse o alvo de
+	 * valor para parcela nunca re-disparava a descoberta — a busca ficava presa
+	 * na faixa antiga e o cliente ouvia promessa sem card. */
+	discoveredParcelaTarget?: number;
 	revealCompleted: boolean;
 	recommendedAdministradora?: string;
 	recommendedOffer?: ConversationMetadata["recommendedOffer"];
@@ -173,6 +180,7 @@ export const FUNNEL_QUALIFY_KEYS = {
 	lanceEmbutidoPercent: true,
 	valorDoBemAlvo: true,
 	parcelaAlvo: true,
+	alvoDeBusca: true,
 	embeddedBidDispatched: true,
 } satisfies Record<keyof FunnelQualifyAnswers, true>;
 
@@ -186,6 +194,7 @@ export const FUNNEL_KEYS = {
 	searchDispatched: true,
 	discoveryEmptyStreak: true,
 	discoveredCreditTarget: true,
+	discoveredParcelaTarget: true,
 	revealCompleted: true,
 	recommendedAdministradora: true,
 	recommendedOffer: true,
@@ -239,12 +248,14 @@ export function funnelFromMeta(meta: ConversationMetadata): FunnelState {
 			lanceEmbutidoPercent: meta.qualifyAnswers?.lanceEmbutidoPercent,
 			valorDoBemAlvo: meta.qualifyAnswers?.valorDoBemAlvo,
 			parcelaAlvo: meta.qualifyAnswers?.parcelaAlvo,
+			alvoDeBusca: meta.qualifyAnswers?.alvoDeBusca,
 			embeddedBidDispatched: meta.qualifyAnswers?.embeddedBidDispatched,
 		},
 		identityCollected: meta.identityCollected ?? false,
 		searchDispatched: meta.searchDispatched ?? false,
 		discoveryEmptyStreak: meta.discoveryEmptyStreak,
 		discoveredCreditTarget: meta.discoveredCreditTarget,
+		discoveredParcelaTarget: meta.discoveredParcelaTarget,
 		revealCompleted: meta.revealCompleted ?? false,
 		recommendedAdministradora: meta.recommendedAdministradora,
 		recommendedOffer: meta.recommendedOffer,

@@ -26,6 +26,23 @@ export function pisoPadraoPara(creditMax: number): number {
 }
 
 /**
+ * Qual pergunta vai à administradora: pelo valor do bem ou pela parcela?
+ *
+ * A Bevi aceita as duas (`TOTAL_VALUE` e `INSTALLMENT_VALUE`). O que não pode é
+ * o servidor decidir isso implicitamente — era o que fazia: "tem `creditMax`?
+ * então busca por valor". Como a derivação parcela→crédito DEFINIA um
+ * `creditMax`, a busca por parcela virava inalcançável no exato momento em que
+ * era pedida, e a Bevi recebia um crédito abaixo do piso que ela mesma aceita.
+ *
+ * O default preserva o comportamento anterior: sem discriminante, só há alvo por
+ * parcela quando não existe valor do bem nenhum (o caso do FIX-382).
+ */
+export function alvoDeBusca(q: QualifyAnswers): "valor" | "parcela" {
+	if (q.alvoDeBusca) return q.alvoDeBusca;
+	return q.creditMax === undefined && (q.parcelaAlvo ?? 0) > 0 ? "parcela" : "valor";
+}
+
+/**
  * O estado tem piso acima do teto?
  *
  * É o predicado que o sinal determinístico `estado_incoerente` usa — e a razão
@@ -63,7 +80,14 @@ export function aplicarFaixaDeCredito(
 	// teto. O corte no teto é o último a falar — é ele que impede a inversão.
 	const pisoNaFaixa = clamp ? Math.max(pisoPedido, clamp.min) : pisoPedido;
 
-	return { ...q, creditMax: teto, creditMin: Math.min(pisoNaFaixa, teto) };
+	// Dizer o valor do bem é escolher o alvo: quem pediu parcela e depois diz
+	// "na verdade quero uma de 30 mil" volta a ser buscado por valor.
+	return {
+		...q,
+		creditMax: teto,
+		creditMin: Math.min(pisoNaFaixa, teto),
+		alvoDeBusca: "valor",
+	};
 }
 
 /**

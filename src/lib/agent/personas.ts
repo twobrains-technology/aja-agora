@@ -53,6 +53,15 @@ export type QualifyAnswers = {
 	 * embutido sai da própria carta, então a carta tem que comportar o bem + o
 	 * lance). Sem este campo o valor original se perdia na primeira re-busca. */
 	valorDoBemAlvo?: number;
+	/** Qual é o ALVO da busca: o valor do bem ou a parcela que cabe no bolso.
+	 *
+	 * A Bevi aceita os dois (`TOTAL_VALUE` e `INSTALLMENT_VALUE`), e antes disto
+	 * o servidor escolhia um implicitamente — "tem `creditMax`? então é por
+	 * valor" — o que tornava a busca por parcela inalcançável logo depois de
+	 * alguém derivar um crédito a partir da parcela. Discriminar o alvo é o que
+	 * impede a pergunta errada de chegar à administradora. Ausente = "valor",
+	 * salvo quando só há parcela (compatibilidade com o FIX-382). */
+	alvoDeBusca?: "valor" | "parcela";
 	/** Quanto o cliente disse que consegue pagar POR MÊS, quando reagiu à parcela
 	 * como alta. É o que reposiciona a faixa de busca pra uma carta que caiba no
 	 * bolso dele — antes disso, "essa parcela é pesada pra mim" não tinha
@@ -293,6 +302,9 @@ export type ConversationMetadata = {
 	 * (revealValueTargetChanged). undefined = descoberta anterior ao fix → fail-safe
 	 * (não reabre a busca, mantém o anti-loop). */
 	discoveredCreditTarget?: number;
+	/** Espelho de `FunnelState.discoveredParcelaTarget` — a parcela levada à
+	 *  última busca. */
+	discoveredParcelaTarget?: number;
 	/** FIX-6: snapshot dos NÚMEROS da oferta ativa (capturado no reveal e
 	 * atualizado em what-if). O payload do contemplation_dial é coagido
 	 * server-side a partir daqui (coerceDialPayload) — o modelo passava o

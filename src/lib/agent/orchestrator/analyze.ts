@@ -343,6 +343,18 @@ export async function analyzeAndMerge(
 		meta.qualifyAnswers = q;
 		metaChanged = true;
 	}
+	// A parcela que cabe no bolso é um alvo de busca legítimo (a Bevi busca por
+	// `INSTALLMENT_VALUE`) e, até 14/08/2026, o analyzer não tinha onde pô-la: o
+	// schema só oferecia `creditMin/creditMax`, então "só consigo 200 por mês"
+	// era forçado a virar crédito de R$ 200 mil. O Haiku entendia certo — escreveu
+	// no próprio reasoning que era parcela — e gravava no campo errado porque era
+	// o único que existia. Quem declara parcela passa a ser buscado por parcela.
+	if (analysis.parcelaMensal !== null && analysis.parcelaMensal > 0) {
+		q.parcelaAlvo = analysis.parcelaMensal;
+		q.alvoDeBusca = "parcela";
+		meta.qualifyAnswers = q;
+		metaChanged = true;
+	}
 	// FIX-241 (rodada 2, Fable r1, D1 — âncora de dinheiro): captura oportunista
 	// de monthlySavings/fgtsValue por texto livre, mesmo padrão do FIX-233
 	// acima — primeira ocorrência só, nunca sobrescrita por turno posterior.

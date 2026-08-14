@@ -17,6 +17,7 @@ describe("turnAnalysisSchema — categoria servicos extinta (FIX-363)", () => {
 		experiencePrev: null,
 		creditMin: null,
 		creditMax: null,
+		parcelaMensal: null,
 		prazoMeses: null,
 		hasLance: null,
 		desiredItem: null,

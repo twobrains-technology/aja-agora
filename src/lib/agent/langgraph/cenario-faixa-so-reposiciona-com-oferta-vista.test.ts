@@ -115,6 +115,19 @@ describeIfDb("faixa de busca só se reposiciona com oferta na tela", () => {
 		criadas.push(r.conversationId);
 
 		expect(r.meta.qualifyAnswers?.parcelaAlvo).toBe(1_800);
-		expect(r.meta.qualifyAnswers?.creditMax).toBe(69_990);
+		// 2026-08-14 — o que o reposicionamento grava MUDOU, e de propósito.
+		//
+		// Antes, o ajuste virava um `creditMax` derivado da proporção
+		// (241.258 × 1800/6204,66 = 69.990) e a busca saía por VALOR. Numa moto de
+		// R$ 20 mil com parcela de R$ 200 essa mesma conta deu R$ 9.120 — abaixo do
+		// piso que a Bevi aceita — e foram quatro buscas vazias seguidas até a
+		// venda morrer (conversa `fa0533a0-…`, dossiê de 14/08).
+		//
+		// Agora o que reposiciona é o ALVO: quem falou em parcela é buscado por
+		// parcela (`INSTALLMENT_VALUE`, que a Bevi suporta). A proporção continua
+		// existindo para o modelo NARRAR a ordem de grandeza — não para virar
+		// estado. O `creditMax` do cliente fica como estava.
+		expect(r.meta.qualifyAnswers?.alvoDeBusca).toBe("parcela");
+		expect(r.meta.qualifyAnswers?.creditMax).toBe(238_000);
 	});
 });

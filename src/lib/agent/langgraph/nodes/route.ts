@@ -6,6 +6,8 @@
 // `readyForDiscovery` é o invariante I1 desta fundação — "descoberta nunca
 // dispara sem identidade + valor" — vira PREDICADO PURO exportado pra teste
 // direto (TDD strict), não side-effect escondido dentro do nó.
+
+import { alvoDeBusca } from "@/lib/agent/qualify-answers";
 import { decideShowGate, nextGate, shouldAskMotive } from "@/lib/agent/qualify-state";
 import { creditoBuscavel } from "@/lib/consorcio/credito-minimo";
 import { projectToMeta } from "../emit";
@@ -29,6 +31,13 @@ export function readyForDiscovery(funnel: FunnelState): boolean {
 		Boolean(funnel.currentCategory);
 	if (!base) return false;
 	if (!funnel.searchDispatched) return true;
+	// Alvo por PARCELA tem o snapshot dele. Sem isto, quem trocava de alvo
+	// (valor → parcela) nunca re-disparava a busca: o `creditMax` continuava
+	// igual ao já buscado, a condição abaixo dava false, e o cliente ouvia
+	// "deixa eu buscar o que cabe em R$ 200" sem que busca nenhuma acontecesse.
+	if (alvoDeBusca(funnel.qualifyAnswers) === "parcela") {
+		return funnel.qualifyAnswers.parcelaAlvo !== funnel.discoveredParcelaTarget;
+	}
 	// FIX-360 — troca de faixa de valor PÓS-reveal re-dispara a descoberta
 	// (equivalente a `revealValueTargetChanged`, tool-policy.ts): só quando o
 	// valor-alvo ATUAL diverge do que foi de fato buscado da última vez —

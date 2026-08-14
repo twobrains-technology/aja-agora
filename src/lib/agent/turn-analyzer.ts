@@ -72,6 +72,12 @@ export const turnAnalysisSchema = z.object({
 		.describe(
 			"Limite superior do crédito em BRL. Ex: '200 mil' -> 200000. '100 a 200k' -> 200000. null se não mencionado.",
 		),
+	parcelaMensal: z
+		.number()
+		.nullable()
+		.describe(
+			"A PARCELA MENSAL que cabe no bolso do usuário, em BRL — o quanto ele pode pagar POR MÊS pelo consórcio ('só consigo 200 por mês', 'até 1500 mensais', 'essa parcela é alta, no máximo 800'). NÃO é o valor do bem: quem diz '200' respondendo a uma pergunta sobre parcela quer pagar R$ 200 por mês, não comprar um bem de R$ 200 mil. Quando a mensagem é sobre parcela, preencha ESTE campo e deixe creditMin/creditMax em null. Diferente de monthlySavings (o que ele junta À PARTE pro lance). null se não mencionado.",
+		),
 	prazoMeses: z
 		.number()
 		.nullable()
@@ -138,6 +144,7 @@ const NEUTRAL_FALLBACK: TurnAnalysis = {
 	experiencePrev: null,
 	creditMin: null,
 	creditMax: null,
+	parcelaMensal: null,
 	prazoMeses: null,
 	hasLance: null,
 	desiredItem: null,
@@ -193,6 +200,10 @@ Exemplos:
 - "no máximo 700" -> { creditMin: null, creditMax: 700000 }
 - "menos de 80k" -> { creditMin: null, creditMax: 80000 }
 - "uns 80k" -> { creditMin: null, creditMax: 80000 }
+- "só consigo 200 por mês" -> { parcelaMensal: 200, creditMin: null, creditMax: null }  // PARCELA, não bem de 200 mil
+- "essa parcela ta alta, no maximo 800 mensais" -> { parcelaMensal: 800, creditMax: null }
+- "200" (respondendo a "qual parcela cabe no seu bolso?") -> { parcelaMensal: 200, creditMax: null }
+- "200" (respondendo a "quanto custa o bem que você quer?") -> { creditMax: 200000 }  // a MESMA fala, o alvo muda com a pergunta
 - "bora ver as opções" -> { userIntent: "ready_to_proceed" }  // avanço no funil (ainda não viu opções)
 - "quero ver todos" -> { userIntent: "wants_more_options" }  // JÁ viu um conjunto, quer ver MAIS/TODAS
 - "tem mais opções?" -> { userIntent: "wants_more_options" }

@@ -45,6 +45,7 @@ function analise(campos: Partial<TurnAnalysis>): TurnAnalysis {
 		experiencePrev: null,
 		creditMin: null,
 		creditMax: null,
+		parcelaMensal: null,
 		prazoMeses: null,
 		hasLance: null,
 		desiredItem: null,

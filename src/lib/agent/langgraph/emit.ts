@@ -47,6 +47,7 @@ export function projectToMeta(state: AgentGraphStateType): ConversationMetadata 
 		searchDispatched: funnel.searchDispatched,
 		discoveryEmptyStreak: funnel.discoveryEmptyStreak,
 		discoveredCreditTarget: funnel.discoveredCreditTarget,
+		discoveredParcelaTarget: funnel.discoveredParcelaTarget,
 		revealCompleted: funnel.revealCompleted,
 		recommendedAdministradora: funnel.recommendedAdministradora,
 		recommendedOffer: funnel.recommendedOffer,
@@ -99,6 +100,10 @@ export function projectToMeta(state: AgentGraphStateType): ConversationMetadata 
 			// cliente. `embeddedBidDispatched` guarda a idempotência do card.
 			valorDoBemAlvo: funnel.qualifyAnswers.valorDoBemAlvo,
 			parcelaAlvo: funnel.qualifyAnswers.parcelaAlvo,
+			// Sem o discriminante na projeção, o turno seguinte reconstrói o funil
+			// sem ele e a busca volta a ser por valor — que é exatamente a busca
+			// errada para quem acabou de dizer quanto cabe no bolso.
+			alvoDeBusca: funnel.qualifyAnswers.alvoDeBusca,
 			embeddedBidDispatched: funnel.qualifyAnswers.embeddedBidDispatched,
 		},
 	};

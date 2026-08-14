@@ -37,6 +37,7 @@ import {
 } from "@/lib/agent/orchestrator/recommendation-payload";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import type { Category } from "@/lib/agent/personas";
+import { alvoDeBusca } from "@/lib/agent/qualify-answers";
 import { scoringInputFromMeta } from "@/lib/agent/scoring-input";
 import { loadAdministradoraLogoMap } from "@/lib/consorcio/administradora-logo-repo";
 import { projectToMeta } from "../emit";
@@ -135,14 +136,22 @@ export async function discoveryNode(
 	const querMenorParcela =
 		funnel.qualifyAnswers.objetivo === "investimento" ||
 		(funnel.qualifyAnswers.prazoMeses ?? 0) >= 120;
+	// O alvo é UM só, e quem o discrimina é o estado (`alvoDeBusca`). Antes daqui
+	// a escolha era implícita — "tem creditMax? então é por valor" — e a busca
+	// por parcela ficava inalcançável no momento em que era pedida, porque a
+	// derivação parcela→crédito acabava de definir um `creditMax` (abaixo do
+	// piso da Bevi, garantidamente vazio).
+	const buscaPorParcela =
+		alvoDeBusca(funnel.qualifyAnswers) === "parcela" &&
+		(funnel.qualifyAnswers.parcelaAlvo ?? 0) > 0;
 	const result = await buscar({
 		category,
-		creditMin: funnel.qualifyAnswers.creditMin,
-		creditMax: funnel.qualifyAnswers.creditMax,
-		// FIX-382 — sem valor do bem, o alvo e a parcela.
-		...(funnel.qualifyAnswers.creditMax === undefined && funnel.qualifyAnswers.parcelaAlvo
+		...(buscaPorParcela
 			? { parcelaAlvo: funnel.qualifyAnswers.parcelaAlvo }
-			: {}),
+			: {
+					creditMin: funnel.qualifyAnswers.creditMin,
+					creditMax: funnel.qualifyAnswers.creditMax,
+				}),
 		budget: 0,
 		desiredTermMonths: querMenorParcela ? PRAZO_ALVO_MENOR_PARCELA : 0,
 	});
@@ -250,6 +259,12 @@ export async function discoveryNode(
 			// distinguir troca de faixa (re-descoberta legítima) de afirmativo
 			// curto na mesma faixa (idempotência original, I1).
 			discoveredCreditTarget: funnel.qualifyAnswers.creditMax,
+			// O mesmo snapshot para o alvo por parcela — é ele que impede a
+			// re-busca infinita na MESMA parcela e permite a re-busca quando ela
+			// muda.
+			discoveredParcelaTarget: buscaPorParcela
+				? funnel.qualifyAnswers.parcelaAlvo
+				: funnel.discoveredParcelaTarget,
 			recommendedAdministradora,
 			recommendedOffer,
 			// FIX-415 — busca NOVA invalida a cota do contrato.
