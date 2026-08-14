@@ -230,6 +230,24 @@ implementação segue o que ele apontar.
 - **Decisão:** não mexer no código sem reprodução. Fica como pendência com a evidência do juiz
   (conversa `dd7d420a`), não como conserto declarado.
 
+### D13 · 03:45 — a conta com veredito, o item nº 1 do juiz
+- **O que ele mediu na série inteira:** a "faixa fantasma" (convidar o cliente a esticar para
+  R$ 300–400, faixa onde nada existe) apareceu em **3 de 5 rodadas**, e o "R$ 9 mil" (a regra de
+  três apresentada como produto disponível) em outras 3. Na rodada 7 as duas coisas aconteceram
+  **na mesma mensagem em que o agente citou o piso correto de R$ 484** — prova de que injetar o
+  número no contexto não garante adesão a ele.
+- **Decidi** entregar o VEREDITO, não mais contexto: o servidor calcula e declara (a) o crédito
+  implícito da parcela pedida, rotulado como **inexistente**; (b) a menor parcela real; (c) a
+  menor parcela alcançável **esticando o prazo até o teto** da administradora; e (d) se o alvo é
+  alcançável por qualquer alavanca. Quando não é, proíbe explicitamente convidar para faixa
+  abaixo do piso.
+- **Por que isso não é mordaça:** não olha a fala do agente em momento nenhum — é aritmética
+  sobre o catálogo que está na tela. A regra de três o modelo fazia sozinho; melhor entregá-la
+  pronta e já rotulada do que deixá-lo apresentá-la como oferta.
+- **Evidência na rodada seguinte:** *"esticar o prazo ao máximo pra baixar pra uns R$ 343"* — o
+  número que o servidor calculou — e *"R$ 200 por mês não existe em nenhuma administradora, nem
+  esticando o prazo no máximo"*. Nenhuma faixa fantasma na conversa inteira.
+
 ### ⚠️ PENDENTE-KAIRO · 23:50 — configurar a ponte de alerta em produção
 - **O que é:** (a) gravar `LANGFUSE_WEBHOOK_SECRET`, `ALERTA_OBSERVABILIDADE_TO`,
   `CORTEX_MCP_URL`, `CORTEX_MCP_TOKEN`, `CORTEX_PROJETO` no secret `tb/prod/aja-agora/env`
