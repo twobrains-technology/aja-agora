@@ -6,7 +6,7 @@
   (3) sinal determinístico novo emitido e provado por teste, cobrindo a classe de defeito
   desta conversa; (4) caminho alerta → Cortex provado ponta a ponta **na stack local**;
   (5) a conversa refeita na stack local recebe **10/10 de um agente juiz**.
-- **Status:** EM ANDAMENTO
+- **Status:** PARCIAL (defeitos de estado curados e provados; nota 10/10 do juiz não atingida)
 
 ## Contexto
 
@@ -155,6 +155,81 @@ implementação segue o que ele apontar.
 - **Evidência:** `pnpm test:jornada` **120/120**, `pnpm vitest run src/lib/agent/` **585**,
   `pnpm tsc --noEmit` limpo.
 
+### D8 · 00:50 — a ponte alerta → Cortex provada AO VIVO na stack local
+- **Contexto:** o teste de integração já provava a rota; faltava provar o wiring real (env
+  chegando ao container, rota rodando no Next, HMAC de verdade).
+- **Fiz:** subi um stub HTTP fazendo de Cortex MCP, configurei as 5 envs e disparei um webhook
+  **assinado** contra `http://aja-develop.orb.local/api/observability/alerta-langfuse`.
+- **Resultado:** `{"ok":true,"email":false,"cortex":true}` e o stub recebeu `abrir_ocorrencia`
+  com `projeto: Ajaagora`, `tipo: incident`, `prioridade: urgent`, título
+  `[Aja Agora · ALERT] busca_abaixo_do_piso disparou`. Log do app:
+  `"ocorrencia_aberta":true`. (`email:false` é esperado localmente — sem `SENDGRID_API_KEY`.)
+- **Achado no caminho:** o `docker-compose.yml` **não mapeava** nenhuma das 5 envs, então em
+  dev a rota respondia 503 e ninguém conseguia exercitá-la — a mesma classe do que a manteve
+  muda em produção (secret sem entrada na taskdef). Corrigido em `281105cd`.
+- **Não usei o Cortex real:** `cortex.ts` registra que lá não existe editar/excluir ocorrência
+  — card de teste em projeto real fica para sempre.
+
+### D9 · 01:05 — dois defeitos NOVOS que a validação ao vivo revelou
+- **`contact_name = "Uma"`:** o funil estava no gate `name`, o modelo perguntou qual bem o
+  cliente queria, ele respondeu "uma casa" — **ao modelo** — e o servidor leu como resposta ao
+  **funil**. É a mesma classe do "200": o cliente responde a uma pergunta e o servidor valida
+  contra outra. Corrigi por classe gramatical fechada (artigos), não por lista de frases.
+- **`contract_form` sem cota na mesa:** com a âncora podre invalidada (D7.3), apareceu o buraco
+  que ela escondia — `revealCompleted` nunca volta atrás, então o formulário saía depois de uma
+  busca em branco, com o agente afirmando que as opções estavam na tela. Submeter cria proposta
+  REAL na Bevi (CPF + bureau). Guard estendido para exigir oferta, escolha ou cota de contrato.
+- **Bônus:** o mesmo "200" também virava `prazoMeses: 200`. Quando o classificador devolve o
+  número idêntico em parcela e prazo, o cliente falou uma coisa só.
+- **Evidência da jornada ao vivo:** `[discovery-empty] busca sem resultado (streak=1,
+  **alvo=parcela 200**)` — a busca saiu **por parcela**, como devia, e a Bevi respondeu que não
+  há oferta de R$ 200/mês para moto. O agente explicou em vez de mostrar grupos de R$ 201 mil.
+
+### D10 · 01:25 — o juiz deu 4/10 e acertou: o estado curou, a conduta não
+- **Veredito dele (com evidência cruzada entre fala e turn-trace):** o R$ 1,5 milhão morreu, o
+  "200" virou parcela, a faixa ficou coerente e o cliente nunca mais viu grupo de R$ 201 mil —
+  mas o agente **continuou anunciando oferta que não existe**: "Pronto! Agora apareceram as
+  opções com parcelas em torno de R$ 200" num turno cujo trace é `cards: []`, e "as parcelas
+  variam entre R$ 250 e R$ 400" com o card na tela dizendo R$ 484,16.
+- **A causa que ele apontou, e que eu tinha deixado passar:** o modelo **não sabia o que estava
+  na tela**. A lista de ofertas exibidas vinha só do banco, e no turno em que os cards nascem
+  eles ainda não foram gravados (`persist` roda depois do `converse`) — exatamente no turno da
+  apresentação, o contexto ia vazio. E a busca vazia chegava ao modelo só como proibição
+  ("é PROIBIDO dizer que encontrou opções"), nunca como fato.
+- **Decidi:** dar o DADO em vez de reforçar a proibição — bloco com os números reais da tela
+  (menor/maior parcela, quantas opções) e bloco de busca vazia declarando o que foi buscado,
+  que não voltou nada, e qual a alternativa real mais próxima do catálogo.
+- **Alternativas descartadas:** endurecer a proibição no prompt (é a mordaça que o CLAUDE.md
+  proíbe, e ela já estava lá e não segurou); guard que dropa a frase (esconderia o sintoma e
+  deixaria o cliente sem explicação).
+- **Evidência do efeito, na rodada seguinte:** *"você pediu R$ 200 e não tem oferta nessa faixa.
+  A mais baixa que existe é R$ 484"* e *"a busca que fiz não trouxe nenhum grupo com parcela tão
+  baixa"* — exatamente a honestidade que faltava, com número de catálogo.
+
+### D11 · 02:30 — o juiz achou um defeito que EU tinha classificado errado
+- **Contexto:** na primeira validação ao vivo eu vi o pedido de CPF aparecendo duas vezes,
+  colado sem espaço, e classifiquei como **artefato da sonda** (que concatena os balões). Estava
+  errado. O juiz mostrou que a frase é **literalmente idêntica em 4 de 4 ocorrências, em duas
+  conversas diferentes** — isso é template, não modelo.
+- **Causa real:** o canal só suprime a pergunta canônica quando `modelAsked` é verdadeiro, e
+  esse sinal responde "o modelo fez ALGUMA pergunta". "Preciso do seu CPF" é **afirmação**,
+  então nunca contava — e o cliente lia o pedido duas vezes no turno de maior atrito da jornada.
+- **Corrigido** pelo mesmo padrão que a casa já usa para o nome (`perguntouONome` → agora também
+  `pediuIdentidade`). **Medição: 0 ocorrências em 2 rodadas novas**, contra 4 de 4 antes.
+- **Lição para mim:** "parece artefato da ferramenta" foi um palpite meu que passou por
+  verificação nenhuma. O juiz cruzou 4 ocorrências e cravou. Regra da casa: não classificar sem
+  contar.
+
+### D12 · 02:50 — um conserto que eu NÃO fiz, e por quê
+- **O juiz apontou** `decisionAccepted: true` sem aceite: o cliente disse "sim quero ver" (pedido
+  de VER) e o estado gravou decisão aceita e despachada — no WhatsApp isso manda à mesa um lead
+  marcado como decidido.
+- **Escrevi o cenário para reproduzir e ele NÃO reproduziu:** no estado que montei, o "sim" não
+  marcou aceite nenhum, ou seja, não achei o caminho real. Apaguei o teste em vez de deixá-lo
+  passando vacuamente (teste verde que não exercita nada é pior que teste nenhum).
+- **Decisão:** não mexer no código sem reprodução. Fica como pendência com a evidência do juiz
+  (conversa `dd7d420a`), não como conserto declarado.
+
 ### ⚠️ PENDENTE-KAIRO · 23:50 — configurar a ponte de alerta em produção
 - **O que é:** (a) gravar `LANGFUSE_WEBHOOK_SECRET`, `ALERTA_OBSERVABILIDADE_TO`,
   `CORTEX_MCP_URL`, `CORTEX_MCP_TOKEN`, `CORTEX_PROJETO` no secret `tb/prod/aja-agora/env`
@@ -175,10 +250,77 @@ implementação segue o que ele apontar.
 - 23:48 — provado: rota de alerta responde 503, 5 envs ausentes, 4 Monitors não cobririam o caso
 - 23:51 — Kairo saiu; modo autônomo ativado, diário aberto
 - 23:51 — complemento de escopo enviado ao especialista (ponto 9: sinal que teria pego)
+- 00:15 — dossiê do especialista (516 linhas); duas hipóteses minhas corrigidas por ele
+- 00:35 — P0 completo: reducer, alvo discriminado, busca vazia com freio, 5 sinais novos
+- 00:50 — ponte alerta → Cortex provada ao vivo (`ocorrencia_aberta: true`)
+- 01:25 — juiz: **4/10** (estado curado, conduta não)
+- 01:45 — contexto da tela + busca vazia como fato; juiz: 7,5 e 2 (produto 3/10)
+- 02:30 — defeito [A] do juiz (CPF em dobro) corrigido na causa: **0 em 2 rodadas**
+- 03:10 — suítes finais verdes (2.955 unit · 120 jornada · 327 caminho do dinheiro)
 
-## Relatório final (preencher ao encerrar)
+## Relatório final
 
-- **Resultado vs critério de pronto:** _(pendente)_
-- **O que NÃO fiz e por quê:** _(pendente)_
-- **Revisar primeiro:** _(pendente)_
-- **Próximos passos sugeridos:** _(pendente)_
+**Status: PARCIAL** — os defeitos de estado morreram e estão provados; a nota 10/10 do juiz
+não foi atingida (o produto saiu de 4/10 para uma amostra que ainda varia).
+
+### Resultado vs critério de pronto
+
+| Critério | Resultado |
+|---|---|
+| Regressão falhando antes / verde depois por defeito | ✅ 11 commits, cada um com teste que reproduziu o defeito primeiro |
+| `pnpm typecheck` + suíte unitária | ✅ limpo · **2.955 testes** |
+| Sinal determinístico novo, provado por teste | ✅ 5 sinais (`busca_abaixo_do_piso`, `busca_vazia`, `busca_esgotada`, `estado_incoerente`, `oferta_contradiz_parcela`) + erro da Bevi passando a pontuar |
+| Ponte alerta → Cortex provada na stack local | ✅ ponta a ponta, webhook assinado → `ocorrencia_aberta: true` |
+| Conversa refeita com 10/10 de um agente juiz | ❌ **não atingido** — ver abaixo |
+
+Suítes na verificação final: unitária **2.955**, jornada **120**, caminho do dinheiro
+**327** (integração com DB real). Typecheck limpo.
+
+### A nota, com honestidade
+
+O juiz (independente, com o dossiê factual e sem acesso à minha narrativa) deu:
+
+- **4/10** na primeira validação — o estado estava curado e o agente **continuava anunciando
+  oferta inexistente**;
+- depois das correções de contexto: **7,5/10** numa rodada e **2/10** em outra, com nota de
+  produto **3/10** — "o cliente recebe um sorteio";
+- o defeito de maior alcance que ele isolou (pedido de CPF em dobro, 4 de 4 ocorrências) está
+  **corrigido e medido: 0 em 2 rodadas**.
+
+O que ele diz e eu assino: **injeção de contexto não é adesão**. Na mesma conversa em que o
+agente citou "R$ 484 da Tradição em 61 meses" (exato, do payload), quatro turnos depois ele
+ofereceu "algo entre R$ 300 e R$ 400" — faixa que não existe. O dado chegou e o modelo o
+contradisse. Isso não se conserta com mais contexto nem com regex: mede-se com juiz sobre volume.
+
+### O que NÃO fiz, e por quê
+
+- **Configurar a ponte em produção** (5 envs no secret + taskdef, Automation e Monitors na UI do
+  Langfuse) — blast radius alto, fora da autonomia do modo autônomo. Está em PENDENTE-KAIRO com
+  o passo a passo.
+- **`decisionAccepted` sem aceite** — escrevi o cenário, não reproduziu, apaguei o teste em vez
+  de deixá-lo verde à toa. Pendência com evidência, não conserto declarado (D12).
+- **P1.6 (telefone canônico / contato duplicado)** e **P2 do dossiê** — não cheguei.
+- **Medir a variância com N≥20** — é o próximo passo mais importante e não cabia nesta sessão.
+
+### Revisar primeiro (as decisões mais discutíveis)
+
+1. **D7, o retry de busca vazia:** o dossiê pedia "nunca 2+ buscas no mesmo alvo"; adotei **duas**
+   para não quebrar o FIX-380, que usa a segunda vazia como gatilho. É um julgamento meu entre
+   duas fontes que discordam.
+2. **D10/`recommendedOfferStale`:** inverti minha própria decisão anterior (apagar a âncora) para
+   marcá-la. Apagar consertava a frase e criava um buraco no fecho.
+3. **`cenario-faixa-so-reposiciona-com-oferta-vista`** — única asserção de teste antigo que
+   inverti, de propósito: ela travava o crédito derivado da parcela, que é a causa do incidente.
+
+### Próximos passos sugeridos (na ordem do juiz)
+
+1. Medir a variância: rodar a mesma sequência N≥20 com juiz no Langfuse. Com n=2 não se sabe se a
+   rodada ruim é exceção ou norma.
+2. **Reconciliação fala × catálogo como sinal**: extrair os valores em R$ que o agente citou no
+   turno e comparar com o intervalo real das ofertas que estavam no contexto. Pega "R$ 300 a
+   R$ 400" (fora de [484, 1323]) sozinho — e é o instrumento que responde "a injeção pegou?".
+3. Invariante estrutural de turno: card com 0 caractere de fala é defeito.
+4. Procedência por campo em `qualifyAnswers` (dito × assumido × derivado) — `objetivo` e
+   `hasLance` entram sem ninguém ter dito, e alimentam o ranking.
+5. Quando o alvo é impossível, entregar a **impossibilidade calculada** (a parcela mínima real
+   esticando o prazo até o teto do catálogo), não só a busca vazia.
