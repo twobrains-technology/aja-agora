@@ -122,3 +122,24 @@ function stripAccents(s: string): string {
 	// NFD decompõe acentos, daí filtramos os combining marks (U+0300–U+036F).
 	return s.normalize("NFD").replace(/[̀-ͯ]/g, "");
 }
+
+/**
+ * O modelo JÁ pediu a identidade (CPF) na fala deste turno?
+ *
+ * Julgamento de 14/08: em 4 de 4 turnos de identidade, o cliente recebeu o
+ * pedido DUAS vezes — a fala do modelo ("preciso do seu CPF e do seu celular,
+ * a administradora exige…") e, colada, a pergunta canônica do canal
+ * ("Pra eu trazer as ofertas reais das administradoras, preciso do seu CPF e
+ * celular."). Idêntica nas quatro, em conversas diferentes: template, não
+ * modelo. É o turno de maior atrito da jornada — pedir CPF em dobro é o pior
+ * lugar possível para soar automático.
+ *
+ * `modelAsked` não pega este caso: ele responde "o modelo fez ALGUMA pergunta",
+ * e o pedido de CPF quase nunca sai como pergunta ("preciso do seu CPF" é
+ * afirmação). Aqui a checagem é do FATO específico — a palavra CPF está na fala
+ * ou não está —, exatamente como `perguntouONome` faz para o nome.
+ */
+export function pediuIdentidade(texto: string | undefined | null): boolean {
+	const t = stripAccents((texto ?? "").toLowerCase());
+	return /\bcpf\b/.test(t);
+}

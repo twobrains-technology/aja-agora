@@ -109,3 +109,21 @@ describe("faixa de crédito no merge do analyzer", () => {
 		}
 	});
 });
+
+describe("prazo extraído do número errado", () => {
+	it("não grava prazo fora do catálogo (o '200' da parcela virando 200 meses)", async () => {
+		const meta = metaDepoisDoValorDaMoto();
+		// Turno real de 14/08: o classificador devolveu prazoMeses=200 sem parcela
+		// nenhuma. 200 meses não existe no produto — o maior horizonte é 120.
+		analyzeTurnMock.mockResolvedValueOnce(analise({ prazoMeses: 200 }));
+		await analyzeAndMerge("200", "moto", meta, "Qual parcela cabe no seu bolso?");
+		expect(meta.qualifyAnswers?.prazoMeses).toBeUndefined();
+	});
+
+	it("prazo dentro do catálogo continua entrando", async () => {
+		const meta = metaDepoisDoValorDaMoto();
+		analyzeTurnMock.mockResolvedValueOnce(analise({ prazoMeses: 60 }));
+		await analyzeAndMerge("uns 5 anos", "moto", meta, "Em quanto tempo você quer?");
+		expect(meta.qualifyAnswers?.prazoMeses).toBe(60);
+	});
+});

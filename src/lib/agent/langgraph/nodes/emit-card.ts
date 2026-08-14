@@ -93,6 +93,7 @@ export function deveEmitirCardDeNome(args: {
 	return args.jaAdiouUmaVez === true;
 }
 
+import { pediuIdentidade } from "@/lib/agent/orchestrator/detect-name-turn";
 import { artifactAllowed, type GuardContext } from "./guarded-artifact";
 
 export async function emitCardNode(
@@ -191,13 +192,24 @@ export async function emitCardNode(
 		!funnel.qualifyAnswers.embeddedBidDispatched &&
 		!educacaoDoEmbutidoSaiNesteTurno;
 
+	// O PEDIDO DE CPF NÃO SAI EM DOBRO.
+	//
+	// `modelAskedQuestion` responde "o modelo fez ALGUMA pergunta" — e pedir CPF
+	// quase nunca sai como pergunta ("preciso do seu CPF" é afirmação). Resultado
+	// medido em 14/08: 4 de 4 turnos de identidade entregaram o pedido duas vezes,
+	// a fala do modelo e, colada, a canônica do canal. É o turno de maior atrito
+	// da jornada — pedir o CPF em dobro ali é o pior lugar para soar automático.
+	const modeloJaPediuIdentidade =
+		state.gate === "identify" &&
+		pediuIdentidade(state.events.map((ev) => (ev.type === "text-delta" ? ev.text : "")).join(""));
+
 	// O card do nome espera quando a fala do turno perguntou OUTRA coisa — sem
 	// isto ele aparecia mudo embaixo de "já tem uma ideia do que procura?" e
 	// roubava a resposta da pergunta do agente. Ver `deveEmitirCardDeNome`.
 	const cardDeNomeAtropelaAFala =
 		state.gate === "name" &&
 		!deveEmitirCardDeNome({
-			modelAsked: state.modelAskedQuestion,
+			modelAsked: state.modelAskedQuestion || modeloJaPediuIdentidade,
 			modelAskedForName: state.modelAskedForName,
 			jaAdiouUmaVez: funnel.nameCardAdiado,
 		});
@@ -228,7 +240,11 @@ export async function emitCardNode(
 		// fala social sem pergunta ("Prazer em te ajudar!") calava a pergunta
 		// canônica do card — as duas redes caíam juntas e o turno terminava sem
 		// ninguém perguntando nada.
-		events.push({ type: "gate", gate: gateDoTurno, modelAsked: state.modelAskedQuestion });
+		events.push({
+			type: "gate",
+			gate: gateDoTurno,
+			modelAsked: state.modelAskedQuestion || modeloJaPediuIdentidade,
+		});
 	}
 
 	// A liberação do hero pendente MUDOU DE LUGAR: vive no `advance`, que roda

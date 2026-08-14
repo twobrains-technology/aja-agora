@@ -15,6 +15,9 @@ import { analyzeTurn, type TurnAnalysis } from "@/lib/agent/turn-analyzer";
 // "/mês", "mensal") e NENHUMA menção explícita de duração (dígito + "anos"/
 // "meses", ex.: "24 meses", "2 anos"), o prazoMeses extraído é descartado —
 // não confia só no prompt do analyzer.
+/** O maior prazo que a jornada oferece (`TIMEFRAME_OPTIONS`, "sem pressa"). */
+const PRAZO_MAXIMO_DO_PRODUTO = 120;
+
 const MONTHLY_CADENCE_MARKER = /(por|ao|a\s+cada)\s*m[êe]s|\/\s*m[êe]s|\bmensal(mente)?\b/i;
 const EXPLICIT_DURATION_MENTION = /\b\d+\s*(anos?|meses?)\b/i;
 
@@ -280,10 +283,18 @@ export async function analyzeAndMerge(
 	// eco). Verificável no próprio turno, sem adivinhar intenção.
 	const prazoEhEcoDaParcela =
 		analysis.parcelaMensal !== null && analysis.prazoMeses === analysis.parcelaMensal;
+	// Prazo fora do que o produto oferece não é prazo — é outro número que caiu
+	// no campo errado. O maior horizonte da jornada é 120 meses
+	// (`TIMEFRAME_OPTIONS`, "sem pressa"); em 14/08 o "200" da PARCELA virou
+	// `prazoMeses: 200` num turno em que o classificador não devolveu parcela
+	// nenhuma, e um consórcio de 200 meses distorce toda simulação que o cliente
+	// vê. O teto é do catálogo, não uma opinião sobre o que é razoável.
+	const prazoForaDoCatalogo = (analysis.prazoMeses ?? 0) > PRAZO_MAXIMO_DO_PRODUTO;
 	if (
 		analysis.prazoMeses !== null &&
 		q.prazoMeses === undefined &&
 		!prazoEhEcoDaParcela &&
+		!prazoForaDoCatalogo &&
 		!isMonthlyBudgetOnlyMention(text)
 	) {
 		q.prazoMeses = analysis.prazoMeses;
