@@ -13,6 +13,32 @@ import { creditoBuscavel } from "@/lib/consorcio/credito-minimo";
 import { projectToMeta } from "../emit";
 import type { AgentGraphStateType, FunnelState } from "../state";
 
+/**
+ * Quantas tentativas VAZIAS o mesmo alvo pode gastar antes de o funil parar de
+ * insistir.
+ *
+ * Duas, e não uma, porque a Bevi cai de verdade: um retry cobre a falha
+ * transitória, e é também o que o FIX-380 usa como gatilho para trocar de
+ * estratégia (na segunda vazia o funil volta a pedir o valor em vez de prometer
+ * de novo). O que não pode é o que aconteceu em `fa0533a0-…`: quatro chamadas
+ * idênticas, uma por turno, à mesma faixa impossível.
+ */
+const TENTATIVAS_VAZIAS_POR_ALVO = 2;
+
+/** O alvo corrente é exatamente o que a última busca já levou à Bevi? */
+function mesmoAlvoJaTentado(funnel: FunnelState): boolean {
+	if (alvoDeBusca(funnel.qualifyAnswers) === "parcela") {
+		return (
+			funnel.discoveredParcelaTarget !== undefined &&
+			funnel.qualifyAnswers.parcelaAlvo === funnel.discoveredParcelaTarget
+		);
+	}
+	return (
+		funnel.discoveredCreditTarget !== undefined &&
+		funnel.qualifyAnswers.creditMax === funnel.discoveredCreditTarget
+	);
+}
+
 export function readyForDiscovery(funnel: FunnelState): boolean {
 	const base =
 		funnel.identityCollected &&
@@ -30,7 +56,17 @@ export function readyForDiscovery(funnel: FunnelState): boolean {
 			(funnel.qualifyAnswers.parcelaAlvo ?? 0) > 0) &&
 		Boolean(funnel.currentCategory);
 	if (!base) return false;
-	if (!funnel.searchDispatched) return true;
+	// Busca que voltou VAZIA não marca `searchDispatched` (o retry precisa ficar
+	// liberado quando a Bevi cai). Mas ela registra o alvo tentado — e repetir a
+	// pergunta idêntica não muda a resposta: a mesma faixa impossível foi à Bevi
+	// quatro turnos seguidos em `fa0533a0-…`. Enquanto o alvo não mudar, não há
+	// o que buscar de novo.
+	if (!funnel.searchDispatched) {
+		const esgotou =
+			mesmoAlvoJaTentado(funnel) &&
+			(funnel.discoveryEmptyStreak ?? 0) >= TENTATIVAS_VAZIAS_POR_ALVO;
+		return !esgotou;
+	}
 	// Alvo por PARCELA tem o snapshot dele. Sem isto, quem trocava de alvo
 	// (valor → parcela) nunca re-disparava a busca: o `creditMax` continuava
 	// igual ao já buscado, a condição abaixo dava false, e o cliente ouvia

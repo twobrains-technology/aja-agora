@@ -23,6 +23,7 @@ import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { shouldMarkDoubtsAddressed } from "@/lib/agent/qualify-state";
 import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta } from "@/lib/conversation/meta";
+import { registrarEstadoDoFunil } from "@/lib/observability/langfuse/busca-scores";
 import { registrarConducao } from "@/lib/observability/langfuse/conducao-scores";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { projectToMeta } from "../emit";
@@ -206,6 +207,15 @@ export async function persistNode(
 	// volta, mesmo travando na véspera de assinar. Só turno REAL do cliente conta
 	// (`userText`) — a própria retomada é `isUserTurn: false` e não se auto-perdoa.
 	if (isUserTurn && userText) delete meta.retomada;
+	// O último ponto antes de o estado virar verdade no banco — é aqui que se
+	// pergunta se ele é aritmeticamente possível. Em 13/08 um par `creditMin:
+	// 18000` com `creditMax: 6424` foi gravado e usado numa busca sem que nada
+	// acusasse; agora todo turno responde a essa pergunta no trace.
+	registrarEstadoDoFunil({
+		creditMin: meta.qualifyAnswers?.creditMin,
+		creditMax: meta.qualifyAnswers?.creditMax,
+		alvo: meta.qualifyAnswers?.alvoDeBusca,
+	});
 	await persistMeta(conversationId, meta);
 
 	// O NOME CAPTURADO PRECISA SOBREVIVER AO TURNO.

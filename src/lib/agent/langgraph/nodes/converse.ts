@@ -598,7 +598,14 @@ export function createConverseNode(model: BaseChatModel) {
 		// ótimas opções aí na sua faixa de R$ 190 mil!" sem ter encontrado nada, e
 		// dois turnos depois teve que se desculpar ("ainda não te mostrei nada").
 		// Afirmar achado que não existe é a pior mentira possível numa venda.
-		const buscaJaTentada = state.funnel.searchDispatched === true;
+		// A condição arma por FATO do turno, não só por ausência de âncora. Busca
+		// que volta vazia não marca `searchDispatched` (o retry fica liberado), e
+		// enquanto uma oferta velha continuasse ancorada este bloco ficava
+		// desarmado exatamente na hora em que era necessário — foi assim que o
+		// contexto afirmou "as ofertas já foram buscadas e os cards estão na tela"
+		// com a última busca em branco (`fa0533a0-…`, 13/08).
+		const buscaJaTentada =
+			state.funnel.searchDispatched === true || (state.funnel.discoveryEmptyStreak ?? 0) > 0;
 		const blocoBuscaVazia =
 			buscaJaTentada && !oferta
 				? `A busca de ofertas JÁ foi tentada nesta conversa e NÃO há nenhuma oferta ancorada agora ` +

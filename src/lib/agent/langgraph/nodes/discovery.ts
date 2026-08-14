@@ -40,6 +40,11 @@ import type { Category } from "@/lib/agent/personas";
 import { alvoDeBusca } from "@/lib/agent/qualify-answers";
 import { scoringInputFromMeta } from "@/lib/agent/scoring-input";
 import { loadAdministradoraLogoMap } from "@/lib/consorcio/administradora-logo-repo";
+import {
+	registrarBuscaDespachada,
+	registrarOfertaExibida,
+} from "@/lib/observability/langfuse/busca-scores";
+import { registrarFalhasDeTool } from "@/lib/observability/langfuse/funil-scores";
 import { projectToMeta } from "../emit";
 
 /** FIX-374 — snapshot do grupo REAL ranqueado (`best`) que sobrevive no meta
@@ -144,17 +149,48 @@ export async function discoveryNode(
 	const buscaPorParcela =
 		alvoDeBusca(funnel.qualifyAnswers) === "parcela" &&
 		(funnel.qualifyAnswers.parcelaAlvo ?? 0) > 0;
-	const result = await buscar({
-		category,
-		...(buscaPorParcela
-			? { parcelaAlvo: funnel.qualifyAnswers.parcelaAlvo }
-			: {
-					creditMin: funnel.qualifyAnswers.creditMin,
-					creditMax: funnel.qualifyAnswers.creditMax,
-				}),
-		budget: 0,
-		desiredTermMonths: querMenorParcela ? PRAZO_ALVO_MENOR_PARCELA : 0,
-	});
+	const alvoDoSinal = {
+		alvo: buscaPorParcela ? ("parcela" as const) : ("valor" as const),
+		categoria: category,
+		creditMax: funnel.qualifyAnswers.creditMax,
+		creditMin: funnel.qualifyAnswers.creditMin,
+		parcelaAlvo: funnel.qualifyAnswers.parcelaAlvo,
+		creditoMinimoInformado: funnel.qualifyAnswers.creditoMinimoInformado,
+	};
+
+	let result: unknown;
+	try {
+		result = await buscar({
+			category,
+			...(buscaPorParcela
+				? { parcelaAlvo: funnel.qualifyAnswers.parcelaAlvo }
+				: {
+						creditMin: funnel.qualifyAnswers.creditMin,
+						creditMax: funnel.qualifyAnswers.creditMax,
+					}),
+			budget: 0,
+			desiredTermMonths: querMenorParcela ? PRAZO_ALVO_MENOR_PARCELA : 0,
+		});
+	} catch (err) {
+		// Erro da Bevi AQUI não pontuava em lugar nenhum: `tool_falhou` só cobre
+		// tool chamada pelo MODELO no `converse`, e a falha do nó morria num JSON
+		// de log. Foram quatro `BeviApiError` na conversa de 13/08 com o painel
+		// inteiro verde. É a mesma família de falha — entra na mesma família de
+		// score, senão o Monitor de tool continua cego para metade do sistema.
+		registrarFalhasDeTool([
+			{
+				tool: "recommend_groups",
+				tipo: "erro",
+				mensagem: err instanceof Error ? err.message : String(err),
+			},
+		]);
+		registrarBuscaDespachada({
+			...alvoDoSinal,
+			vazia: true,
+			streak: (funnel.discoveryEmptyStreak ?? 0) + 1,
+		});
+		throw err;
+	}
 
 	const index: RevealGroupIndex = new Map();
 	indexRevealGroups(index, "recommend_groups", result);
@@ -175,14 +211,39 @@ export async function discoveryNode(
 		// que permite ao funil parar de prometer e pedir outro valor. O código
 		// não fabrica número nenhum — só deixa de esconder a falha.
 		const streak = (funnel.discoveryEmptyStreak ?? 0) + 1;
+		registrarBuscaDespachada({ ...alvoDoSinal, vazia: true, streak });
 		console.log(
-			`[discovery-empty] busca sem resultado (streak=${streak}, creditMax=${funnel.qualifyAnswers.creditMax}, conv=${conversationId})`,
+			`[discovery-empty] busca sem resultado (streak=${streak}, alvo=${buscaPorParcela ? `parcela ${funnel.qualifyAnswers.parcelaAlvo}` : `creditMax ${funnel.qualifyAnswers.creditMax}`}, conv=${conversationId})`,
 		);
 		return {
 			events: [],
-			funnel: { ...funnel, discoveryEmptyStreak: streak },
+			funnel: {
+				...funnel,
+				discoveryEmptyStreak: streak,
+				// O FREIO. Sem registrar o alvo TENTADO, a condição que re-dispara a
+				// descoberta ("o alvo atual diverge do último buscado") nunca
+				// cicatrizava, e o funil refazia a MESMA pergunta impossível à Bevi a
+				// cada turno — quatro vezes seguidas em `fa0533a0-…`. Repetir uma
+				// busca idêntica não muda a resposta; o que destrava é o alvo mudar.
+				discoveredCreditTarget: buscaPorParcela
+					? funnel.discoveredCreditTarget
+					: funnel.qualifyAnswers.creditMax,
+				discoveredParcelaTarget: buscaPorParcela
+					? funnel.qualifyAnswers.parcelaAlvo
+					: funnel.discoveredParcelaTarget,
+				// A ÂNCORA PODRE. A oferta de uma faixa anterior sobrevivia à busca
+				// vazia, e era ela que fazia o contexto do modelo afirmar "as ofertas
+				// já foram buscadas e os cards estão na tela: BANCO DO BRASIL,
+				// R$ 201.393" depois de a busca ter voltado em branco. A rede que
+				// existe para isso (`blocoBuscaVazia`) só arma quando NÃO há oferta —
+				// então a âncora velha era exatamente o que a desligava.
+				recommendedOffer: undefined,
+				recommendedAdministradora: undefined,
+			},
 		};
 	}
+
+	registrarBuscaDespachada(alvoDoSinal);
 
 	const logos = await loadAdministradoraLogoMap();
 	const events: TurnEvent[] = [];
@@ -239,6 +300,15 @@ export async function discoveryNode(
 		}
 		recommendedAdministradora = best.administradora;
 		recommendedOffer = buildRecommendedOfferSnapshot(best, category as Category);
+		// A oferta que vai à tela cabe no que ele disse que pode pagar? Aritmética
+		// pura, e o único sinal que teria pego o turno das 23:32:35 de 13/08: o
+		// cliente pediu R$ 200 por mês e o card mostrou R$ 6.270,48. A busca tinha
+		// rodado, o card tinha saído, o agente tinha falado — e os três juízes
+		// aprovaram o turno.
+		registrarOfertaExibida({
+			parcelaAlvo: funnel.qualifyAnswers.parcelaAlvo,
+			monthlyPayment: recommendedOffer.monthlyPayment,
+		});
 	}
 
 	// Os ARTIFACTS não saem aqui — quem entrega é o `converse` (entre os dois
