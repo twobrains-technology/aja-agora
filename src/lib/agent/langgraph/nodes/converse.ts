@@ -23,6 +23,7 @@ import {
 import type { ChosenOffer } from "@/lib/agent/orchestrator/choose-offer";
 import {
 	administradoraFoiRecusada,
+	listShownOffers,
 	listShownOffersForConversation,
 } from "@/lib/agent/orchestrator/choose-offer";
 import { payloadSemOfertasRepetidas } from "@/lib/agent/orchestrator/dedup-ofertas";
@@ -34,6 +35,7 @@ import {
 import { buildGateContextText } from "@/lib/agent/orchestrator/system-context";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { detectYesNoText } from "@/lib/agent/orchestrator/yes-no";
+import { alvoDeBusca } from "@/lib/agent/qualify-answers";
 import { LANCE_EMBUTIDO_DEFAULT_PERCENT } from "@/lib/agent/qualify-config";
 import { querAntecipar, shouldAskMotive } from "@/lib/agent/qualify-state";
 import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
@@ -52,6 +54,7 @@ import { pausaDeConversa, RITMO } from "../ritmo";
 import type { AgentGraphStateType, FunnelState } from "../state";
 import { buildLangGraphTools } from "../tool-adapter";
 import { WHAT_IF_TOOL_NAMES } from "../toolset";
+import { blocoDeBuscaVazia, blocoDoQueEstaNaTela } from "./contexto-da-tela";
 import { artifactAllowed, type GuardContext } from "./guarded-artifact";
 
 const MAX_TOOL_LOOP_ITERATIONS = 4;
@@ -380,9 +383,36 @@ export function createConverseNode(model: BaseChatModel) {
 		// valores"), e numa das conversas isso travou a venda inteira: três
 		// pedidos seguidos pra ela repetir o que estava no card acima.
 		// Quem tem a proposta na mão é o vendedor.
-		const ofertasExibidas = state.funnel.revealCompleted
+		// A lista vinha SÓ do banco — e no turno em que os cards nascem eles ainda
+		// não foram gravados (`persist` roda depois deste nó). Ou seja: exatamente
+		// no turno em que o modelo apresenta as ofertas, ele não tinha nenhuma
+		// delas no contexto. Foi assim que saiu "as parcelas variam entre R$ 250 e
+		// R$ 400" no mesmo turno em que o card na tela dizia R$ 484,16.
+		const doBanco = state.funnel.revealCompleted
 			? await listShownOffersForConversation(state.conversationId).catch(() => [])
 			: [];
+		const doTurno = listShownOffers(
+			state.events
+				.filter((ev): ev is Extract<TurnEvent, { type: "artifact" }> => ev.type === "artifact")
+				.map((ev) => ({ type: ev.artifactType, payload: ev.payload })),
+		);
+		const vistos = new Set(doBanco.map((o) => o.groupId).filter(Boolean));
+		const ofertasExibidas = [...doBanco, ...doTurno.filter((o) => !vistos.has(o.groupId))];
+		// Os NÚMEROS que o cliente está vendo, e o que a última busca respondeu.
+		// Sem estes dois o modelo preenchia o vácuo com otimismo: anunciou faixa de
+		// parcela que não existia no card, e afirmou que "as opções apareceram" no
+		// mesmo turno em que a busca voltou vazia. Proibir a frase não devolvia o
+		// dado a ele — estes blocos devolvem.
+		const blocoTela = blocoDoQueEstaNaTela(ofertasExibidas);
+		const blocoVazia =
+			(state.funnel.discoveryEmptyStreak ?? 0) > 0
+				? blocoDeBuscaVazia({
+						alvo: alvoDeBusca(state.funnel.qualifyAnswers),
+						parcelaAlvo: state.funnel.qualifyAnswers.parcelaAlvo,
+						creditMax: state.funnel.qualifyAnswers.creditMax,
+						ofertasNaTela: ofertasExibidas,
+					})
+				: null;
 		const blocoOpcoesNaTela =
 			ofertasExibidas.length > 1
 				? `OPÇÕES QUE ELE JÁ VIU nesta conversa (você TEM esta lista — nunca peça pra ele repetir ` +
@@ -679,6 +709,8 @@ export function createConverseNode(model: BaseChatModel) {
 						: []),
 					...(blocoCanal ? [{ type: "text" as const, text: blocoCanal }] : []),
 					...(blocoOfertas ? [{ type: "text" as const, text: blocoOfertas }] : []),
+					...(blocoTela ? [{ type: "text" as const, text: blocoTela }] : []),
+					...(blocoVazia ? [{ type: "text" as const, text: blocoVazia }] : []),
 					...(blocoOpcoesNaTela ? [{ type: "text" as const, text: blocoOpcoesNaTela }] : []),
 					...(blocoFechamento ? [{ type: "text" as const, text: blocoFechamento }] : []),
 					...(blocoRetomadaPosFechamento
