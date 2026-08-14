@@ -68,6 +68,63 @@ export function blocoDoQueEstaNaTela(ofertas: OfertaNaTela[]): string | null {
 }
 
 /**
+ * A parcela que ele pediu é alcançável por ALGUMA alavanca — ou não é?
+ *
+ * O agente errou três vezes seguidas a mesma coisa, com duas máscaras: fez a
+ * regra de três ("com R$ 200 a carta cai para ~R$ 9 mil") e apresentou o
+ * resultado como produto disponível; e convidou o cliente a "esticar para algo
+ * entre R$ 300 e R$ 400" — faixa onde nada existe — na mesma mensagem em que
+ * declarava que o piso é R$ 484. Pôr o número certo no contexto não impediu:
+ * faltava o VEREDITO, isto é, a conta que fecha a porta.
+ *
+ * Os três fatos, todos derivados do catálogo que está na tela:
+ *   • o crédito implícito da parcela pedida (a regra de três que o modelo faz
+ *     sozinho de qualquer jeito — melhor entregá-la já rotulada);
+ *   • a menor parcela que existe hoje;
+ *   • a menor parcela alcançável esticando o prazo até o maior que a
+ *     administradora oferece — o limite da única alavanca que sobra.
+ *
+ * Se nem esticando chega, a resposta honesta é "não dá por aqui", e o vendedor
+ * passa a negociar o que é possível em vez de prometer o que não é.
+ */
+export function vereditoDeParcelaAlvo(args: { parcelaAlvo: number; ofertas: OfertaNaTela[] }): {
+	alcancavel: boolean;
+	menorParcelaReal: number;
+	menorParcelaEsticandoPrazo: number;
+	creditoImplicito: number | null;
+	prazoMaximo: number | null;
+} | null {
+	const faixa = faixaDeParcelas(args.ofertas);
+	if (!faixa || args.parcelaAlvo <= 0) return null;
+
+	const prazos = args.ofertas
+		.map((o) => o.termMonths)
+		.filter((t): t is number => typeof t === "number" && t > 0);
+	const prazoMaximo = prazos.length > 0 ? Math.max(...prazos) : null;
+
+	// Esticar o prazo dilui a mesma carta em mais meses. A proporção usa a
+	// própria oferta de menor parcela como base — nada é inventado, é o número
+	// dela reescalado para o maior prazo que a administradora tem.
+	const menorParcelaEsticandoPrazo =
+		prazoMaximo && faixa.menor.termMonths
+			? Math.round(faixa.min * (faixa.menor.termMonths / prazoMaximo))
+			: faixa.min;
+
+	const creditoImplicito =
+		faixa.menor.creditValue && faixa.min > 0
+			? Math.round(faixa.menor.creditValue * (args.parcelaAlvo / faixa.min))
+			: null;
+
+	return {
+		alcancavel: args.parcelaAlvo >= menorParcelaEsticandoPrazo,
+		menorParcelaReal: faixa.min,
+		menorParcelaEsticandoPrazo,
+		creditoImplicito,
+		prazoMaximo,
+	};
+}
+
+/**
  * A busca voltou vazia — e o cliente merece ouvir isso com a alternativa real.
  *
  * O servidor SABE que voltou vazia (`discoveryEmptyStreak`) e essa informação
@@ -99,6 +156,38 @@ export function blocoDeBuscaVazia(args: {
 			`. Ofereça ESSA, explicando a diferença.`
 		: "";
 
+	// O VEREDITO — a conta que fecha a porta. Sem ele o modelo faz a regra de
+	// três sozinho e apresenta o resultado como produto ("com R$ 200 a carta cai
+	// para uns R$ 9 mil"), ou convida a esticar para uma faixa onde nada existe.
+	const v =
+		args.alvo === "parcela" && args.parcelaAlvo
+			? vereditoDeParcelaAlvo({ parcelaAlvo: args.parcelaAlvo, ofertas: args.ofertasNaTela })
+			: null;
+	const veredito = v
+		? `
+A CONTA, já feita — use estes números e NÃO invente outros:
+` +
+			(v.creditoImplicito
+				? `- ${brl(args.parcelaAlvo ?? 0)} por mês corresponderia a uma carta de cerca de ` +
+					`${brl(v.creditoImplicito)}, e **não existe grupo nessa faixa** — essa carta não está à venda.
+`
+				: "") +
+			`- A menor parcela que existe hoje nesta categoria é ${brl(v.menorParcelaReal)}.
+` +
+			(v.prazoMaximo
+				? `- Esticando o prazo até o máximo da administradora (${v.prazoMaximo} meses), a menor ` +
+					`parcela possível fica em torno de ${brl(v.menorParcelaEsticandoPrazo)}.
+`
+				: "") +
+			(v.alcancavel
+				? `- Ou seja: ${brl(args.parcelaAlvo ?? 0)} É alcançável esticando o prazo. Ofereça esse caminho.`
+				: `- Ou seja: ${brl(args.parcelaAlvo ?? 0)} **não é alcançável por nenhuma alavanca** nesta ` +
+					`categoria — nem com o prazo no máximo. É PROIBIDO sugerir que ele "estique um pouco" ` +
+					`para uma faixa abaixo de ${brl(v.menorParcelaReal)}: ali não há nada. Diga o que é ` +
+					`possível de verdade (a de ${brl(v.menorParcelaReal)}, um bem mais barato, ou outra ` +
+					`categoria) e deixe a decisão com ele.`)
+		: "";
+
 	return (
 		`FATO DESTE TURNO: a busca com ${pedido} foi feita agora e a administradora NÃO devolveu ` +
 		`nenhum grupo. Não existe oferta nessa faixa — nada apareceu na tela.\n` +
@@ -106,6 +195,7 @@ export function blocoDeBuscaVazia(args: {
 		`que encontrou opções, que elas "estão na tela" ou pedir que ele escolha entre opções que ` +
 		`não existem.${alternativa}\n` +
 		`Não peça desculpa repetida nem prometa buscar de novo com o mesmo valor: já foi buscado. ` +
-		`O caminho é propor um ajuste concreto — outra faixa, outro prazo, outra categoria.`
+		`O caminho é propor um ajuste concreto — outra faixa, outro prazo, outra categoria.` +
+		veredito
 	);
 }

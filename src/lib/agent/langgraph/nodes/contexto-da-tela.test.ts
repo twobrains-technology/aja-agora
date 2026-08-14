@@ -11,7 +11,12 @@
 // A proibição já existia no contexto e não segurou nada. O que faltava era o
 // DADO — e é ele que estes blocos entregam.
 import { describe, expect, it } from "vitest";
-import { blocoDeBuscaVazia, blocoDoQueEstaNaTela, faixaDeParcelas } from "./contexto-da-tela";
+import {
+	blocoDeBuscaVazia,
+	blocoDoQueEstaNaTela,
+	faixaDeParcelas,
+	vereditoDeParcelaAlvo,
+} from "./contexto-da-tela";
 
 /** Os grupos reais que a Bevi devolveu para moto de R$ 20 mil. */
 const NA_TELA = [
@@ -93,5 +98,53 @@ describe("blocoDeBuscaVazia", () => {
 
 	it("sem alvo nenhum, não há fato a declarar", () => {
 		expect(blocoDeBuscaVazia({ alvo: "valor", ofertasNaTela: [] })).toBeNull();
+	});
+});
+
+describe("vereditoDeParcelaAlvo — a conta que fecha a porta", () => {
+	it("R$ 200 não é alcançável nem esticando o prazo até o teto", () => {
+		// Catálogo real de moto: menor parcela R$ 484,16 em 61 meses; maior prazo
+		// visto, 86 meses. Esticar até lá dá ~R$ 343 — ainda longe de R$ 200.
+		const v = vereditoDeParcelaAlvo({
+			parcelaAlvo: 200,
+			ofertas: [...NA_TELA, { groupId: "g3", monthlyPayment: 1_323, termMonths: 86 }],
+		});
+		expect(v?.alcancavel).toBe(false);
+		expect(v?.menorParcelaReal).toBe(484.16);
+		expect(v?.prazoMaximo).toBe(86);
+		expect(v?.menorParcelaEsticandoPrazo).toBe(343);
+	});
+
+	it("uma parcela dentro do alcance é reconhecida como alcançável", () => {
+		const v = vereditoDeParcelaAlvo({
+			parcelaAlvo: 400,
+			ofertas: [...NA_TELA, { groupId: "g3", monthlyPayment: 1_323, termMonths: 86 }],
+		});
+		expect(v?.alcancavel).toBe(true);
+	});
+
+	it("dá o crédito implícito da parcela pedida, rotulado", () => {
+		const v = vereditoDeParcelaAlvo({ parcelaAlvo: 200, ofertas: NA_TELA });
+		// 22.077,30 × (200 / 484,16) ≈ 9.121
+		expect(v?.creditoImplicito).toBeGreaterThan(8_900);
+		expect(v?.creditoImplicito).toBeLessThan(9_300);
+	});
+
+	it("sem oferta na tela não há conta a fazer", () => {
+		expect(vereditoDeParcelaAlvo({ parcelaAlvo: 200, ofertas: [] })).toBeNull();
+	});
+});
+
+describe("blocoDeBuscaVazia com o veredito", () => {
+	it("declara que R$ 200 é inalcançável e proíbe convidar para faixa vazia", () => {
+		const bloco =
+			blocoDeBuscaVazia({
+				alvo: "parcela",
+				parcelaAlvo: 200,
+				ofertasNaTela: [...NA_TELA, { groupId: "g3", monthlyPayment: 1_323, termMonths: 86 }],
+			}) ?? "";
+		expect(bloco).toContain("não é alcançável");
+		expect(bloco).toContain("86 meses");
+		expect(bloco).toMatch(/9\.1\d\d/); // o crédito implícito, rotulado como inexistente
 	});
 });
