@@ -95,6 +95,8 @@ export type FunnelState = {
 	 * encontrou (a busca nova voltou vazia), mas a cota visível continua
 	 * escolhível e contratável. */
 	recommendedOfferStale?: boolean;
+	/** Ver `ConversationMetadata.bemAbandonado`. */
+	bemAbandonado?: { categoria: Category; valor?: number };
 	revealCompleted: boolean;
 	recommendedAdministradora?: string;
 	recommendedOffer?: ConversationMetadata["recommendedOffer"];
@@ -205,6 +207,7 @@ export const FUNNEL_KEYS = {
 	discoveredCreditTarget: true,
 	discoveredParcelaTarget: true,
 	recommendedOfferStale: true,
+	bemAbandonado: true,
 	revealCompleted: true,
 	recommendedAdministradora: true,
 	recommendedOffer: true,
@@ -267,6 +270,7 @@ export function funnelFromMeta(meta: ConversationMetadata): FunnelState {
 		discoveredCreditTarget: meta.discoveredCreditTarget,
 		discoveredParcelaTarget: meta.discoveredParcelaTarget,
 		recommendedOfferStale: meta.recommendedOfferStale,
+		bemAbandonado: meta.bemAbandonado,
 		revealCompleted: meta.revealCompleted ?? false,
 		recommendedAdministradora: meta.recommendedAdministradora,
 		recommendedOffer: meta.recommendedOffer,

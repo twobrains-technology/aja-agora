@@ -211,6 +211,17 @@ export function createAnalyzeNode(analyze: AnalyzeFn = analyzeAndMerge) {
 			// turno é reaplicado: "na verdade quero uma moto de 20 mil" troca e
 			// informa o valor de uma vez só.
 			if (categoriaAnterior && categoriaAnterior !== rota.toCategory) {
+				// O bem antigo vira FATO no contexto: menção posterior ao valor dele é
+				// ironia ou comparação, não pedido de voltar atrás. Sem isto, "ta
+				// maluco 1.5m numa moto?" foi lido como intenção de compra em 2 de 7
+				// conversas — uma delas propondo "voltar ao plano original, a casa de
+				// R$ 1,5 milhão" no último turno, com o funil vivo na mesa.
+				meta.bemAbandonado = {
+					categoria: categoriaAnterior,
+					...(meta.qualifyAnswers?.creditMax !== undefined
+						? { valor: meta.qualifyAnswers.creditMax }
+						: {}),
+				};
 				meta.qualifyAnswers = aplicarTrocaDeCategoria(
 					meta.qualifyAnswers ?? {},
 					{

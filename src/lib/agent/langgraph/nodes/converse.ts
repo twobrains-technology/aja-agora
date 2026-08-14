@@ -54,7 +54,7 @@ import { pausaDeConversa, RITMO } from "../ritmo";
 import type { AgentGraphStateType, FunnelState } from "../state";
 import { buildLangGraphTools } from "../tool-adapter";
 import { WHAT_IF_TOOL_NAMES } from "../toolset";
-import { blocoDeBuscaVazia, blocoDoQueEstaNaTela } from "./contexto-da-tela";
+import { blocoDeBemAbandonado, blocoDeBuscaVazia, blocoDoQueEstaNaTela } from "./contexto-da-tela";
 import { artifactAllowed, type GuardContext } from "./guarded-artifact";
 
 const MAX_TOOL_LOOP_ITERATIONS = 4;
@@ -404,6 +404,18 @@ export function createConverseNode(model: BaseChatModel) {
 		// mesmo turno em que a busca voltou vazia. Proibir a frase não devolvia o
 		// dado a ele — estes blocos devolvem.
 		const blocoTela = blocoDoQueEstaNaTela(ofertasExibidas);
+		// O bem que ele largou no meio do caminho. Sem este fato, a ironia sobre o
+		// valor antigo ("ta maluco 1,5 milhão numa moto?") foi lida como intenção
+		// de compra em 2 de 7 conversas — uma delas propondo, no último turno,
+		// "voltar ao plano original, a casa de R$ 1,5 milhão", com o funil vivo.
+		const blocoAbandono = state.funnel.currentCategory
+			? blocoDeBemAbandonado({
+					categoriaAtual: state.funnel.currentCategory,
+					valorAtual: state.funnel.qualifyAnswers.creditMax,
+					categoriaAnterior: state.funnel.bemAbandonado?.categoria,
+					valorAnterior: state.funnel.bemAbandonado?.valor,
+				})
+			: null;
 		const blocoVazia =
 			(state.funnel.discoveryEmptyStreak ?? 0) > 0
 				? blocoDeBuscaVazia({
@@ -716,6 +728,7 @@ export function createConverseNode(model: BaseChatModel) {
 					...(blocoCanal ? [{ type: "text" as const, text: blocoCanal }] : []),
 					...(blocoOfertas ? [{ type: "text" as const, text: blocoOfertas }] : []),
 					...(blocoTela ? [{ type: "text" as const, text: blocoTela }] : []),
+					...(blocoAbandono ? [{ type: "text" as const, text: blocoAbandono }] : []),
 					...(blocoVazia ? [{ type: "text" as const, text: blocoVazia }] : []),
 					...(blocoOpcoesNaTela ? [{ type: "text" as const, text: blocoOpcoesNaTela }] : []),
 					...(blocoFechamento ? [{ type: "text" as const, text: blocoFechamento }] : []),

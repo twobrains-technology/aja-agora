@@ -305,6 +305,10 @@ export type ConversationMetadata = {
 	/** Espelho de `FunnelState.discoveredParcelaTarget` — a parcela levada à
 	 *  última busca. */
 	discoveredParcelaTarget?: number;
+	/** O bem que o cliente ABANDONOU ao trocar de categoria no meio da conversa.
+	 *  Vira contexto: menção ao valor antigo é ironia/comparação, não pedido de
+	 *  voltar atrás (2 de 7 conversas fecharam mal exatamente por essa leitura). */
+	bemAbandonado?: { categoria: Category; valor?: number };
 	/** Espelho de `FunnelState.recommendedOfferStale`. */
 	recommendedOfferStale?: boolean;
 	/** FIX-6: snapshot dos NÚMEROS da oferta ativa (capturado no reveal e

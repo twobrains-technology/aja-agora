@@ -92,6 +92,8 @@ export function vereditoDeParcelaAlvo(args: { parcelaAlvo: number; ofertas: Ofer
 	menorParcelaReal: number;
 	menorParcelaEsticandoPrazo: number;
 	creditoImplicito: number | null;
+	/** A menor carta que existe hoje na categoria — o fundo do catálogo. */
+	menorCartaReal: number | null;
 	prazoMaximo: number | null;
 } | null {
 	const faixa = faixaDeParcelas(args.ofertas);
@@ -115,13 +117,55 @@ export function vereditoDeParcelaAlvo(args: { parcelaAlvo: number; ofertas: Ofer
 			? Math.round(faixa.menor.creditValue * (args.parcelaAlvo / faixa.min))
 			: null;
 
+	// A menor CARTA do catálogo fecha o último beco. Sem ela, o modelo lê "essa
+	// carta não está à venda" e responde "então vamos procurar uma moto de R$ 8 a
+	// 10 mil" — conduzindo o cliente a caçar um produto que não existe em
+	// nenhuma faixa. Negar o produto sem fechar o caminho é meio conserto.
+	const creditos = args.ofertas
+		.map((o) => o.creditValue)
+		.filter((c): c is number => typeof c === "number" && c > 0);
+	const menorCartaReal = creditos.length > 0 ? Math.min(...creditos) : null;
+
 	return {
 		alcancavel: args.parcelaAlvo >= menorParcelaEsticandoPrazo,
 		menorParcelaReal: faixa.min,
 		menorParcelaEsticandoPrazo,
 		creditoImplicito,
+		menorCartaReal,
 		prazoMaximo,
 	};
+}
+
+/**
+ * O cliente TROCOU de bem — e o bem antigo não volta sozinho.
+ *
+ * Em 2 de 7 conversas o fecho foi catastrófico pelo mesmo motivo: o cliente
+ * ironizou o valor antigo ("ta maluco 1,5 milhão numa moto?") e o agente leu a
+ * ironia como intenção de compra — uma vez concordando que ele queria uma moto
+ * de R$ 1,5 milhão, outra propondo "voltar ao plano original, a casa de R$ 1,5
+ * milhão", jogando fora um funil vivo no último turno.
+ *
+ * O estado sabe o que aconteceu: a categoria mudou e o valor foi reescrito. É
+ * fato de servidor, e é isso que vai ao contexto — não uma proibição de falar
+ * da casa (se ele PEDIR para voltar, voltar é o certo).
+ */
+export function blocoDeBemAbandonado(args: {
+	categoriaAtual: string;
+	valorAtual?: number;
+	categoriaAnterior?: string | null;
+	valorAnterior?: number | null;
+}): string | null {
+	if (!args.categoriaAnterior || args.categoriaAnterior === args.categoriaAtual) return null;
+	const antigo = args.valorAnterior ? ` de ${brl(args.valorAnterior)}` : "";
+	const atual = args.valorAtual ? ` de ${brl(args.valorAtual)}` : "";
+	return (
+		`FATO: este cliente TROCOU de bem no meio da conversa — saiu de ${args.categoriaAnterior}` +
+		`${antigo} e está em ${args.categoriaAtual}${atual}. O bem e o valor antigos foram ` +
+		`ABANDONADOS por ele.\n` +
+		`Se ele mencionar o valor antigo, é quase sempre ironia ou comparação — NUNCA trate como ` +
+		`pedido de voltar atrás, e nunca proponha retomar o bem antigo por conta própria. Só volte ` +
+		`se ele pedir com todas as letras.`
+	);
 }
 
 /**
@@ -170,6 +214,12 @@ A CONTA, já feita — use estes números e NÃO invente outros:
 			(v.creditoImplicito
 				? `- ${brl(args.parcelaAlvo ?? 0)} por mês corresponderia a uma carta de cerca de ` +
 					`${brl(v.creditoImplicito)}, e **não existe grupo nessa faixa** — essa carta não está à venda.
+`
+				: "") +
+			(v.menorCartaReal
+				? `- A MENOR carta que existe hoje nesta categoria é ${brl(v.menorCartaReal)}. Abaixo dela não ` +
+					`há grupo nenhum: procurar um bem mais barato **não resolve** e é beco sem saída — não ` +
+					`conduza o cliente por aí.
 `
 				: "") +
 			`- A menor parcela que existe hoje nesta categoria é ${brl(v.menorParcelaReal)}.

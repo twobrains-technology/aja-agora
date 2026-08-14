@@ -12,6 +12,7 @@
 // DADO — e é ele que estes blocos entregam.
 import { describe, expect, it } from "vitest";
 import {
+	blocoDeBemAbandonado,
 	blocoDeBuscaVazia,
 	blocoDoQueEstaNaTela,
 	faixaDeParcelas,
@@ -146,5 +147,35 @@ describe("blocoDeBuscaVazia com o veredito", () => {
 		expect(bloco).toContain("não é alcançável");
 		expect(bloco).toContain("86 meses");
 		expect(bloco).toMatch(/9\.1\d\d/); // o crédito implícito, rotulado como inexistente
+	});
+});
+
+describe("blocoDeBemAbandonado — o bem antigo não volta sozinho", () => {
+	it("declara a troca e proíbe retomar por conta própria", () => {
+		const bloco =
+			blocoDeBemAbandonado({
+				categoriaAtual: "moto",
+				valorAtual: 20_000,
+				categoriaAnterior: "imovel",
+				valorAnterior: 1_500_000,
+			}) ?? "";
+		expect(bloco).toContain("TROCOU");
+		expect(bloco).toContain("1.500.000");
+		expect(bloco).toContain("ironia");
+	});
+
+	it("sem troca, não há bloco", () => {
+		expect(blocoDeBemAbandonado({ categoriaAtual: "moto", categoriaAnterior: "moto" })).toBeNull();
+		expect(blocoDeBemAbandonado({ categoriaAtual: "moto" })).toBeNull();
+	});
+});
+
+describe("veredito fecha o beco do bem mais barato", () => {
+	it("declara a menor carta real e que abaixo dela não há nada", () => {
+		const bloco =
+			blocoDeBuscaVazia({ alvo: "parcela", parcelaAlvo: 200, ofertasNaTela: NA_TELA }) ?? "";
+		expect(bloco).toContain("MENOR carta");
+		expect(bloco).toContain("22.077");
+		expect(bloco).toMatch(/não resolve|beco sem saída/);
 	});
 });

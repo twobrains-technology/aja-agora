@@ -49,6 +49,7 @@ export function projectToMeta(state: AgentGraphStateType): ConversationMetadata 
 		discoveredCreditTarget: funnel.discoveredCreditTarget,
 		discoveredParcelaTarget: funnel.discoveredParcelaTarget,
 		recommendedOfferStale: funnel.recommendedOfferStale,
+		bemAbandonado: funnel.bemAbandonado,
 		revealCompleted: funnel.revealCompleted,
 		recommendedAdministradora: funnel.recommendedAdministradora,
 		recommendedOffer: funnel.recommendedOffer,

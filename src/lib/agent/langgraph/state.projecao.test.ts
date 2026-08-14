@@ -52,6 +52,7 @@ const FUNIL_COMPLETO: FunnelState = {
 	discoveredCreditTarget: 555_000,
 	discoveredParcelaTarget: 1_777,
 	recommendedOfferStale: false,
+	bemAbandonado: { categoria: "imovel" as const, valor: 1_500_000 },
 	revealCompleted: true,
 	recommendedAdministradora: "Canopus",
 	recommendedOffer: {
