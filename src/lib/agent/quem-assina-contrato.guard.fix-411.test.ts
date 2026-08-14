@@ -138,7 +138,10 @@ describe("FIX-411 — allowlist de quem assina contrato", () => {
 	it("só os arquivos declarados criam `escolha`", () => {
 		const infratores = arquivosTs(RAIZ)
 			.filter((caminho) => CRIA_ESCOLHA.test(semComentarios(readFileSync(caminho, "utf8"))))
-			.map((caminho) => relative(join(process.cwd(), "src"), caminho))
+			// Barra normal, sempre: no Windows o `relative` devolve contrabarra e
+			// nenhuma chave do `AUTORIZADOS` casava — o guard acusava como escritores
+			// NOVOS exatamente os três arquivos que ele declara e justifica.
+			.map((caminho) => relative(join(process.cwd(), "src"), caminho).replaceAll("\\", "/"))
 			.filter((rel) => !AUTORIZADOS.has(rel));
 
 		expect(
