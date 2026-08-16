@@ -13,7 +13,7 @@
 // Função pura de propósito: a agregação é regra de negócio (qual canal engloba o
 // quê) e merece teste sem banco.
 
-import type { TipoOrigem } from "./origem-label";
+import type { Origem, TipoOrigem } from "./origem-label";
 import type { LinhaOrigem } from "./performance-types";
 
 /** Como cada fonte de tráfego se chama para quem lê o painel.
@@ -79,6 +79,37 @@ export function abreviarId(valor: string, digitos = 6): string {
 	if (!/^\d+$/.test(t)) return t;
 	if (t.length <= digitos + 2) return t;
 	return `…${t.slice(-digitos)}`;
+}
+
+/**
+ * A origem de UM cliente, em uma linha de português.
+ *
+ * O `label` que o servidor monta é `ig · 120250956902860104 · 12025098957333`:
+ * ótimo para colar no gerenciador de anúncios, ilegível no painel. Ele continua
+ * disponível no `title` de quem renderiza; o que fica na tela é o nome do canal,
+ * que é o que responde "de onde veio esse cliente?".
+ *
+ * Vive aqui, e não no componente, porque a pipeline mostra isso em dois painéis
+ * (lead e contato) — e duas cópias divergiriam na primeira mudança de copy.
+ */
+export function descreverOrigem(origem: Origem): string {
+	switch (origem.tipo) {
+		case "campanha":
+			return origem.campanha
+				? `${nomeDaFonte(origem.fonte)} · campanha ${abreviarId(origem.campanha)}`
+				: nomeDaFonte(origem.fonte);
+		case "click-to-whatsapp":
+			return origem.criativo
+				? `Click-to-WhatsApp · ${origem.criativo}`
+				: "Anúncio Click-to-WhatsApp";
+		case "referencia":
+			return `Veio de ${origem.fonte ?? "outro site"}`;
+		case "direto":
+			// Houve visita, sem campanha: a pessoa chegou pela landing por conta
+			// própria. Não é "não sei" — é uma chegada medida, sem anúncio. Quem
+			// não tem visita nenhuma recebe `null` na origem e não cai aqui.
+			return "Chegou direto, sem campanha";
+	}
 }
 
 /** O nome curto de uma campanha dentro do canal dela: sem repetir a fonte. */

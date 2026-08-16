@@ -6,7 +6,7 @@
 
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale/pt-BR";
-import { FileDown, Globe, Headset, MessageCircle, Smartphone } from "lucide-react";
+import { FileDown, Globe, Headset, MegaphoneIcon, MessageCircle, Smartphone } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { AtendimentoWhatsAppDialog } from "@/components/admin/conversa/atendimento-whatsapp-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +19,7 @@ import {
 	SheetTitle,
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { descreverOrigem } from "@/lib/admin/agrupar-origens";
 import { rotuloDoEstagio } from "@/lib/admin/lead-stages";
 import { notificarMensagem, tocarAviso } from "../conversa/alerta-de-mensagem";
 import { BotaoNotificacoes } from "../conversa/botao-notificacoes";
@@ -92,6 +93,14 @@ interface ContactDetail {
 	currentStage: string | null;
 	conversationCount: number;
 	currentProposalId: string | null;
+	/** De qual campanha o cliente veio. `null` = nenhuma conversa nasceu de visita medida. */
+	origem: {
+		tipo: "campanha" | "click-to-whatsapp" | "referencia" | "direto";
+		fonte: string | null;
+		campanha: string | null;
+		criativo: string | null;
+		label: string;
+	} | null;
 	activeConversationId: string | null;
 	timeline: TimelineMsg[];
 	proposals: Proposal[];
@@ -254,6 +263,18 @@ export function ContactDetailPanel({
 							)}
 							{c?.email && <span className="text-xs text-muted-foreground">{c.email}</span>}
 						</div>
+					)}
+
+					{/* De onde este cliente chegou — o anúncio, não o canal. Só aparece
+					    quando alguma conversa dele nasceu de uma visita medida; sem isso
+					    seria afirmar uma chegada que ninguém viu. */}
+					{detail?.origem && (
+						<p className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
+							<MegaphoneIcon className="size-3.5 shrink-0" aria-hidden="true" />
+							<span className="truncate" title={detail.origem.label}>
+								{descreverOrigem(detail.origem)}
+							</span>
+						</p>
 					)}
 				</SheetHeader>
 

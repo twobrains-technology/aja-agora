@@ -2,7 +2,7 @@
 
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale/pt-BR";
-import { Globe, Headset, Smartphone } from "lucide-react";
+import { Globe, Headset, MegaphoneIcon, Smartphone } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import {
 	SheetTitle,
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { descreverOrigem } from "@/lib/admin/agrupar-origens";
 import { ClientDocumentsTab } from "./client-documents-tab";
 import { ConversationTimeline } from "./conversation-timeline";
 import { InsightCards } from "./insight-cards";
@@ -92,6 +93,18 @@ export function LeadDetailPanel({
 									})}
 								</span>
 							</div>
+
+							{/* De onde este lead veio. Só aparece quando há visita medida:
+							    sem ela, a conversa nasceu fora da landing e afirmar
+							    qualquer origem seria inventar uma chegada que ninguém viu. */}
+							{lead.origem && (
+								<p className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
+									<MegaphoneIcon className="size-3.5 shrink-0" aria-hidden="true" />
+									<span className="truncate" title={lead.origem.label}>
+										{descreverOrigem(lead.origem)}
+									</span>
+								</p>
+							)}
 							{!activeHandoff && (
 								<Button
 									variant="outline"

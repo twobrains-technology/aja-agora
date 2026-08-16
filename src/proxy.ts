@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { podeAcessarRota, type Role, rotaInicialDe } from "@/lib/admin/role-scope";
 import { hasCampaignSignal, parseCampaignParams } from "@/lib/attribution/params";
+import { ehRoboDeclarado } from "@/lib/attribution/user-agent-robo";
 import {
 	decideVisit,
 	newVisitorId,
@@ -84,10 +85,21 @@ async function registrarVisita(request: NextRequest): Promise<NextResponse> {
 
 	// Prefetch e navegação RSC não são chegada de gente: contá-las inflaria o
 	// denominador de toda taxa de conversão da dashboard.
+	//
+	// Robô declarado entra no mesmo `if` pelo mesmo motivo, e a conta é maior do
+	// que a do prefetch: medido em produção em 15/08/2026, 38.792 das 40.796
+	// visitas de 30 dias eram máquina — 33.382 delas o health check do NOSSO ALB,
+	// que bate em `/` a cada 30 segundos e cai neste matcher. O painel mostrava
+	// 0,056% de visita → conversa; sobre gente a taxa é 1,15%.
+	//
+	// Aqui a sujeira para de NASCER. O histórico já gravado continua precisando
+	// da mesma classificação na leitura (`performance-queries.ts`) — é a mesma
+	// lista, exportada uma vez só.
 	if (
 		request.headers.get("next-router-prefetch") !== null ||
 		request.headers.get("purpose") === "prefetch" ||
-		request.headers.get("rsc") !== null
+		request.headers.get("rsc") !== null ||
+		ehRoboDeclarado(request.headers.get("user-agent"))
 	) {
 		return response;
 	}

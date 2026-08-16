@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronRightIcon } from "lucide-react";
+import Link from "next/link";
 import { Fragment, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,9 +38,27 @@ const nf = new Intl.NumberFormat("pt-BR");
  * O detalhe não foi jogado fora porque quem compra mídia precisa dele para
  * decidir qual criativo pausar; ele só deixou de ser a leitura padrão.
  */
-export function TabelaOrigens({ origens }: { origens: LinhaOrigem[] }) {
+export function TabelaOrigens({
+	origens,
+	de,
+	ate,
+}: {
+	origens: LinhaOrigem[];
+	/** O período da tela viaja no link — sem ele o número clicado não bate com a lista que abre. */
+	de?: Date | null;
+	ate?: Date | null;
+}) {
 	const canais = agruparPorCanal(origens);
 	const [abertos, setAbertos] = useState<Set<string>>(new Set());
+
+	/** O link que abre exatamente as conversas contadas nesta célula. */
+	const linkDasConversas = (chave: string, campanha?: string | null) => {
+		const p = new URLSearchParams({ origem: chave });
+		if (campanha) p.set("campanha", campanha);
+		if (de) p.set("from", de.toISOString());
+		if (ate) p.set("to", ate.toISOString());
+		return `/admin/conversations?${p.toString()}`;
+	};
 
 	const alternar = (chave: string) =>
 		setAbertos((atual) => {
@@ -134,7 +153,21 @@ export function TabelaOrigens({ origens }: { origens: LinhaOrigem[] }) {
 													{nf.format(canal.visitas)}
 												</TableCell>
 												<TableCell className="text-right tabular-nums">
-													{nf.format(canal.conversas)}
+													{canal.conversas > 0 ? (
+														<Link
+															href={linkDasConversas(canal.chave)}
+															// `stopPropagation` porque a linha inteira alterna a
+															// expansão: sem isso, clicar no número abriria a lista E
+															// sanfonaria a linha embaixo do dedo.
+															onClick={(e) => e.stopPropagation()}
+															className="underline underline-offset-2 decoration-dotted hover:decoration-solid"
+															title={`Ver as ${nf.format(canal.conversas)} conversas de ${canal.nome}`}
+														>
+															{nf.format(canal.conversas)}
+														</Link>
+													) : (
+														nf.format(canal.conversas)
+													)}
 												</TableCell>
 												<TableCell className="text-right tabular-nums">
 													{nf.format(canal.identificados)}
@@ -170,7 +203,17 @@ export function TabelaOrigens({ origens }: { origens: LinhaOrigem[] }) {
 															{nf.format(linha.visitas)}
 														</TableCell>
 														<TableCell className="text-right tabular-nums py-2 text-sm">
-															{nf.format(linha.conversas)}
+															{linha.conversas > 0 ? (
+																<Link
+																	href={linkDasConversas(canal.chave, linha.origem.campanha)}
+																	className="underline underline-offset-2 decoration-dotted hover:decoration-solid"
+																	title={`Ver as ${nf.format(linha.conversas)} conversas desta campanha`}
+																>
+																	{nf.format(linha.conversas)}
+																</Link>
+															) : (
+																nf.format(linha.conversas)
+															)}
 														</TableCell>
 														<TableCell className="text-right tabular-nums py-2 text-sm">
 															{nf.format(linha.identificados)}
