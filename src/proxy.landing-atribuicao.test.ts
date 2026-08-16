@@ -31,8 +31,14 @@ import { config, ehLanding, LANDINGS, proxy } from "./proxy";
 // entra no teste sozinha e, se o `matcher` ficar para trás, cai aqui.
 const ROTAS = [...LANDINGS];
 
-function chegada(pathname: string, busca = "") {
-	return new NextRequest(new URL(`https://ajaagora.com.br${pathname}${busca}`));
+/** Um navegador de verdade — sem isso a chegada é máquina, e máquina não é visita. */
+const UA_GENTE =
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36";
+
+function chegada(pathname: string, busca = "", userAgent: string | null = UA_GENTE) {
+	return new NextRequest(new URL(`https://ajaagora.com.br${pathname}${busca}`), {
+		headers: userAgent ? { "user-agent": userAgent } : {},
+	});
 }
 
 beforeEach(() => {
@@ -52,6 +58,28 @@ describe("o proxy grava a chegada em toda landing", () => {
 
 	it("não conta como chegada uma rota que não é landing", async () => {
 		await proxy(chegada("/politica-de-privacidade"));
+
+		expect(recordWebVisit).not.toHaveBeenCalled();
+	});
+
+	// A outra metade do mesmo invariante: a landing certa, com a chegada errada.
+	//
+	// Medido em produção em 15/08/2026: 38.792 das 40.796 visitas de 30 dias
+	// eram máquina, e 33.382 delas o health check do NOSSO ALB — que bate em `/`
+	// a cada 30 segundos, exatamente a rota que o matcher acima cobre. A taxa de
+	// visita → conversa aparecia como 0,056% quando sobre gente é 1,15%.
+	it.each([
+		["ELB-HealthChecker/2.0", "o health check do nosso ALB"],
+		["facebookexternalhit/1.1", "o crawler da Meta"],
+		["curl/8.7.1", "cliente de linha de comando"],
+	])("não grava visita de %s (%s)", async (userAgent) => {
+		await proxy(chegada("/", "?utm_source=meta", userAgent));
+
+		expect(recordWebVisit).not.toHaveBeenCalled();
+	});
+
+	it("não grava chegada sem user-agent — navegador real sempre manda", async () => {
+		await proxy(chegada("/", "", null));
 
 		expect(recordWebVisit).not.toHaveBeenCalled();
 	});

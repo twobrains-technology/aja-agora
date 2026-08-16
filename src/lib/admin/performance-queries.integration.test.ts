@@ -40,6 +40,10 @@ describeIfDb("performance — funil de mídia (integration)", () => {
 		}
 	});
 
+	/** Um navegador de verdade — é o que a semeadura representa por padrão. */
+	const UA_GENTE =
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36";
+
 	interface Semente {
 		utmSource?: string;
 		utmCampaign?: string;
@@ -47,18 +51,21 @@ describeIfDb("performance — funil de mídia (integration)", () => {
 		ctwaSourceId?: string;
 		ctwaHeadline?: string;
 		referrer?: string;
+		/** Sobrescreve o user-agent — é assim que se semeia um robô. */
+		userAgent?: string | null;
 		/** Até onde esta jornada chegou. */
 		ate: "visita" | "conversa" | "engajou" | "oferta" | "identificou" | "proposta" | "fechou";
 		simulada?: boolean;
 	}
 
-	async function semear(semente: Semente): Promise<void> {
+	async function semear(semente: Semente): Promise<string> {
 		const [visita] = await db
 			.insert(schema.visits)
 			.values({
 				visitorId: `v-${crypto.randomUUID()}`,
 				channel: "web",
 				createdAt: DENTRO,
+				userAgent: semente.userAgent === undefined ? UA_GENTE : semente.userAgent,
 				utmSource: semente.utmSource ?? null,
 				utmCampaign: semente.utmCampaign ?? null,
 				utmContent: semente.utmContent ?? null,
@@ -68,7 +75,7 @@ describeIfDb("performance — funil de mídia (integration)", () => {
 			})
 			.returning({ id: schema.visits.id });
 		visitIds.push(visita.id);
-		if (semente.ate === "visita") return;
+		if (semente.ate === "visita") return visita.id;
 
 		const simulada = semente.simulada ?? false;
 		const [conversa] = await db
@@ -82,7 +89,7 @@ describeIfDb("performance — funil de mídia (integration)", () => {
 			})
 			.returning({ id: schema.conversations.id });
 		convIds.push(conversa.id);
-		if (semente.ate === "conversa") return;
+		if (semente.ate === "conversa") return visita.id;
 
 		const [mensagem] = await db
 			.insert(schema.messages)
@@ -93,7 +100,7 @@ describeIfDb("performance — funil de mídia (integration)", () => {
 				createdAt: DENTRO,
 			})
 			.returning({ id: schema.messages.id });
-		if (semente.ate === "engajou") return;
+		if (semente.ate === "engajou") return visita.id;
 
 		// Identificação vem ANTES da oferta: a Bevi exige CPF pra simular, então
 		// quem vê número já deixou contato. O seed segue a jornada real do produto
@@ -112,12 +119,12 @@ describeIfDb("performance — funil de mídia (integration)", () => {
 				updatedAt: DENTRO,
 			})
 			.returning({ id: schema.leads.id });
-		if (semente.ate === "identificou") return;
+		if (semente.ate === "identificou") return visita.id;
 
 		await db
 			.insert(schema.artifacts)
 			.values({ messageId: mensagem.id, type: "real_offer", payload: {}, createdAt: DENTRO });
-		if (semente.ate === "oferta") return;
+		if (semente.ate === "oferta") return visita.id;
 
 		await db.insert(schema.beviProposals).values({
 			conversationId: conversa.id,
@@ -126,6 +133,7 @@ describeIfDb("performance — funil de mídia (integration)", () => {
 			createdAt: DENTRO,
 			updatedAt: DENTRO,
 		});
+		return visita.id;
 	}
 
 	describe("computeFunilMidia", () => {
@@ -278,6 +286,74 @@ describeIfDb("performance — funil de mídia (integration)", () => {
 			);
 
 			expect(vazio.every((e) => e.count === 0 && e.percentDoTopo === 0)).toBe(true);
+		});
+	});
+
+	describe("robô declarado não entra no denominador", () => {
+		// O caso real: em 15/08/2026, 38.792 das 40.796 visitas de 30 dias em
+		// produção eram máquina — 33.382 só do health check do nosso ALB, que bate
+		// em `/` a cada 30 s. A tela mostrava 0,056% de visita → conversa; a taxa
+		// sobre gente era 1,15%. O proxy já não grava mais, mas o histórico
+		// gravado só fica legível se a LEITURA também classificar.
+		const idsRobo: string[] = [];
+
+		beforeAll(async () => {
+			idsRobo.push(await semear({ userAgent: "ELB-HealthChecker/2.0", ate: "visita" }));
+			idsRobo.push(await semear({ userAgent: "facebookexternalhit/1.1", ate: "visita" }));
+			idsRobo.push(await semear({ userAgent: null, ate: "visita" }));
+		});
+
+		afterAll(async () => {
+			await db.delete(schema.visits).where(inArray(schema.visits.id, idsRobo));
+		});
+
+		it("não conta health check nem crawler como chegada", async () => {
+			// As 8 visitas de gente da semeadura continuam; as 3 de máquina não
+			// entram, mesmo estando na tabela.
+			const porta = await queries.computePorta(JANELA_DE, JANELA_ATE);
+			expect(porta.visitas).toBe(8);
+		});
+
+		it("mantém o topo do funil e a série livres de robô", async () => {
+			const funil = await queries.computeFunilMidia(JANELA_DE, JANELA_ATE);
+			expect(funil.find((e) => e.chave === "visitas")?.count).toBe(8);
+
+			const serie = await queries.computeSerie(JANELA_DE, JANELA_ATE);
+			const totalVisitas = serie.reduce((acc, p) => acc + p.visitas, 0);
+			expect(totalVisitas).toBe(8);
+		});
+
+		it("não deixa robô inflar a tabela por origem", async () => {
+			const origens = await queries.computeOrigens(JANELA_DE, JANELA_ATE);
+			const total = origens.reduce((acc, o) => acc + o.visitas, 0);
+			expect(total).toBe(8);
+		});
+
+		it("visita que PRODUZIU conversa conta, qualquer que seja o user-agent", async () => {
+			// A âncora que impede o erro caro: fato do servidor vence heurística.
+			// Um cliente atrás de proxy corporativo pode chegar com user-agent
+			// esquisito — se ele conversou, ele é gente, e descartá-lo apagaria a
+			// venda do relatório.
+			const convAntes = convIds.length;
+			const idAncorado = await semear({
+				userAgent: "python-requests/2.31.0",
+				utmSource: "facebook",
+				utmCampaign: "camp-a",
+				ate: "engajou",
+			});
+			try {
+				const porta = await queries.computePorta(JANELA_DE, JANELA_ATE);
+				expect(porta.visitas).toBe(9);
+				expect(porta.conversas).toBe(7);
+			} finally {
+				// A conversa sai JUNTO com a visita: deixá-la viva mudaria a cobertura
+				// de atribuição dos outros testes desta mesma janela.
+				const criadas = convIds.splice(convAntes);
+				if (criadas.length > 0) {
+					await db.delete(schema.conversations).where(inArray(schema.conversations.id, criadas));
+				}
+				await db.delete(schema.visits).where(inArray(schema.visits.id, [idAncorado]));
+			}
 		});
 	});
 

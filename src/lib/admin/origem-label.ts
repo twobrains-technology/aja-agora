@@ -34,6 +34,39 @@ function limpo(valor: string | null | undefined): string | null {
 	return t ? t : null;
 }
 
+/** As colunas da tabela `visits` que decidem a origem. */
+export interface ColunasDaVisita {
+	utmSource: string | null;
+	utmMedium: string | null;
+	utmCampaign: string | null;
+	utmContent: string | null;
+	ctwaSourceId: string | null;
+	ctwaHeadline: string | null;
+	referrer: string | null;
+}
+
+/**
+ * A origem de uma LINHA de `visits`, direto do banco.
+ *
+ * Existe para que lead, contato e a tabela por origem cheguem ao mesmo nome
+ * partindo da mesma linha. O ponto delicado é o `referrer`: a coluna guarda a
+ * URL inteira e o rótulo quer só o host — `computeOrigens` já fazia esse corte
+ * em SQL, e repetir a conta errada em outro lugar faria a mesma chegada
+ * aparecer com dois nomes em duas telas do painel.
+ */
+export function origemDaVisita(visita: ColunasDaVisita): Origem {
+	const semEsquema = visita.referrer?.replace(/^https?:\/\//, "") ?? null;
+	return rotularOrigem({
+		utmSource: visita.utmSource,
+		utmMedium: visita.utmMedium,
+		utmCampaign: visita.utmCampaign,
+		utmContent: visita.utmContent,
+		ctwaSourceId: visita.ctwaSourceId,
+		ctwaHeadline: visita.ctwaHeadline,
+		referrerHost: semEsquema ? (semEsquema.split("/")[0] ?? null) : null,
+	});
+}
+
 export function rotularOrigem(bruta: OrigemBruta | null): Origem {
 	const utmSource = limpo(bruta?.utmSource);
 	const utmCampaign = limpo(bruta?.utmCampaign);

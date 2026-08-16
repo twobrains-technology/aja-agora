@@ -4,6 +4,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale/pt-BR";
 import { CalendarIcon, Search, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
@@ -15,6 +16,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { abreviarId, nomeDaFonte } from "@/lib/admin/agrupar-origens";
 
 const CHANNEL_OPTIONS = [
 	{ value: "all", label: "Todos os canais" },
@@ -35,7 +37,30 @@ export type ConversationsFiltersValue = {
 	q: string;
 	from: Date | null;
 	to: Date | null;
+	/** Chave do canal, como a tabela por origem a monta (`campanha:ig`, `direto`). */
+	origem?: string | null;
+	campanha?: string | null;
 };
+
+/**
+ * O nome do canal para quem lê — a mesma tradução da tabela por origem.
+ *
+ * Duplicar o dicionário aqui seria pior do que parece: o painel diria
+ * "Instagram" numa tela e "ig" na outra, para o mesmo recorte. Por isso o nome
+ * sai de `agrupar-origens`, que é onde ele já é decidido.
+ */
+function rotuloDaOrigem(origem: string, campanha: string | null): string {
+	const nome = origem.startsWith("campanha:")
+		? nomeDaFonte(origem.slice("campanha:".length))
+		: origem === "ctwa"
+			? "Click-to-WhatsApp"
+			: origem === "referencia"
+				? "Referência"
+				: origem === "direto"
+					? "Direto"
+					: origem;
+	return campanha ? `${nome} · campanha ${abreviarId(campanha)}` : nome;
+}
 
 export function ConversationsFilters({
 	value,
@@ -64,10 +89,19 @@ export function ConversationsFilters({
 		value.status !== "all" ||
 		value.q !== "" ||
 		value.from !== null ||
-		value.to !== null;
+		value.to !== null ||
+		Boolean(value.origem);
 
 	const clear = () => {
-		onChange({ channel: "all", status: "all", q: "", from: null, to: null });
+		onChange({
+			channel: "all",
+			status: "all",
+			q: "",
+			from: null,
+			to: null,
+			origem: null,
+			campanha: null,
+		});
 		setLocalQ("");
 	};
 
@@ -142,6 +176,25 @@ export function ConversationsFilters({
 					/>
 				</PopoverContent>
 			</Popover>
+
+			{value.origem && (
+				// Chip, e não Select: a lista de origens vive na tela de Performance
+				// e muda com o período. Repetir aquele seletor aqui seria manter dois
+				// lugares em dia; o que esta tela precisa é dizer QUAL recorte está
+				// valendo e deixar sair dele.
+				<Badge variant="secondary" className="h-8 gap-1.5 px-2.5 font-normal">
+					<span className="text-muted-foreground">Origem:</span>
+					{rotuloDaOrigem(value.origem, value.campanha ?? null)}
+					<button
+						type="button"
+						onClick={() => onChange({ origem: null, campanha: null })}
+						aria-label="Remover o filtro de origem"
+						className="text-muted-foreground hover:text-foreground"
+					>
+						<X className="size-3.5" aria-hidden="true" />
+					</button>
+				</Badge>
+			)}
 
 			{hasActive && (
 				<Button variant="ghost" size="sm" onClick={clear}>

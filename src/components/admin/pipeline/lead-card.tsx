@@ -47,6 +47,20 @@ export interface Lead {
 		createdAt: string;
 		updatedAt: string;
 	};
+	/**
+	 * De onde este lead chegou — a campanha, não o canal.
+	 *
+	 * `null` quando a conversa não nasceu de uma visita medida (WhatsApp
+	 * orgânico, importação). Isso é diferente de "direto", que afirma uma
+	 * chegada pela landing sem campanha.
+	 */
+	origem?: {
+		tipo: "campanha" | "click-to-whatsapp" | "referencia" | "direto";
+		fonte: string | null;
+		campanha: string | null;
+		criativo: string | null;
+		label: string;
+	} | null;
 }
 
 const currencyFormatter = new Intl.NumberFormat("pt-BR", {

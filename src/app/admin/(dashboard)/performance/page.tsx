@@ -105,7 +105,11 @@ function PerformanceContent() {
 
 			{pronto ? <SerieAquisicaoChart data={midia.serie} /> : <BlocoSkeleton />}
 
-			{pronto ? <TabelaOrigens origens={midia.origens} /> : <BlocoSkeleton altura={200} />}
+			{pronto ? (
+				<TabelaOrigens origens={midia.origens} de={from} ate={to} />
+			) : (
+				<BlocoSkeleton altura={200} />
+			)}
 		</div>
 	);
 }

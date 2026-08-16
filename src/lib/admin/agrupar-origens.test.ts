@@ -5,7 +5,13 @@
 // quinze linhas assim, todas zeradas menos a primeira, e a soma do canal não
 // existia em lugar nenhum.
 import { describe, expect, it } from "vitest";
-import { abreviarId, agruparPorCanal, nomeDaFonte, rotuloDaCampanha } from "./agrupar-origens";
+import {
+	abreviarId,
+	agruparPorCanal,
+	descreverOrigem,
+	nomeDaFonte,
+	rotuloDaCampanha,
+} from "./agrupar-origens";
 import type { LinhaOrigem } from "./performance-types";
 
 function campanha(
@@ -157,5 +163,47 @@ describe("agruparPorCanal", () => {
 
 	it("lista vazia devolve lista vazia", () => {
 		expect(agruparPorCanal([])).toEqual([]);
+	});
+});
+
+describe("descreverOrigem", () => {
+	const base = { fonte: null, campanha: null, criativo: null, label: "" };
+
+	it("troca o apelido da UTM pelo nome do canal", () => {
+		expect(
+			descreverOrigem({ ...base, tipo: "campanha", fonte: "ig", campanha: "120250956902860104" }),
+		).toBe("Instagram · campanha …860104");
+	});
+
+	it("mantém inteiro o nome de campanha que alguém escolheu", () => {
+		// Truncar "consorcio-agosto" destruiria justamente a informação legível.
+		expect(
+			descreverOrigem({ ...base, tipo: "campanha", fonte: "fb", campanha: "consorcio-agosto" }),
+		).toBe("Facebook · campanha consorcio-agosto");
+	});
+
+	it("diz o canal quando não há campanha", () => {
+		expect(descreverOrigem({ ...base, tipo: "campanha", fonte: "google" })).toBe("Google");
+	});
+
+	it("usa a headline do anúncio no Click-to-WhatsApp", () => {
+		// A headline é o que o time reconhece como "o criativo"; o id do anúncio
+		// não diz nada para quem opera.
+		expect(
+			descreverOrigem({ ...base, tipo: "click-to-whatsapp", criativo: "consórcio sem juros" }),
+		).toBe("Click-to-WhatsApp · consórcio sem juros");
+	});
+
+	it("distingue chegada direta MEDIDA de origem desconhecida", () => {
+		// "Direto" afirma que a pessoa passou pela landing sem anúncio. Quem não
+		// tem visita nenhuma recebe `null` e nem chega aqui — a distinção existe
+		// para o painel não inventar uma chegada que ninguém viu.
+		expect(descreverOrigem({ ...base, tipo: "direto" })).toBe("Chegou direto, sem campanha");
+	});
+
+	it("nomeia o site que indicou", () => {
+		expect(descreverOrigem({ ...base, tipo: "referencia", fonte: "blog.parceiro.com.br" })).toBe(
+			"Veio de blog.parceiro.com.br",
+		);
 	});
 });

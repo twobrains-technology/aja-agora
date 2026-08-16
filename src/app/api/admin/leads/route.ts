@@ -4,6 +4,7 @@ import { leads } from "@/db/schema";
 import { dedupLeadsByContact } from "@/lib/admin/kanban-dedup";
 import type { LeadStage } from "@/lib/admin/lead-transitions";
 import { cardsDaMesaExterna } from "@/lib/admin/mesa-externa-cards";
+import { origemDaVisita } from "@/lib/admin/origem-label";
 import { requireRole } from "@/lib/admin/require-role";
 import { isMesaExterna, raiasVisiveisPara } from "@/lib/admin/role-scope";
 import {
@@ -34,11 +35,34 @@ export async function GET() {
 					createdAt: true,
 					updatedAt: true,
 				},
+				// A visita é o que responde "de qual campanha veio este lead?" — a
+				// pipeline mostrava o canal (web/WhatsApp) e nunca a campanha, então
+				// a pergunta só tinha resposta agregada, na tela de Performance.
+				with: {
+					visit: {
+						columns: {
+							utmSource: true,
+							utmMedium: true,
+							utmCampaign: true,
+							utmContent: true,
+							ctwaSourceId: true,
+							ctwaHeadline: true,
+							referrer: true,
+						},
+					},
+				},
 			},
 		},
 	});
 
-	const comDataEmTexto = allLeads.map((l) => ({ ...l, updatedAt: l.updatedAt.toISOString() }));
+	const comDataEmTexto = allLeads.map((l) => ({
+		...l,
+		updatedAt: l.updatedAt.toISOString(),
+		// `null` quando não há visita, e isso NÃO é o mesmo que "direto": conversa
+		// que nasceu fora da landing (WhatsApp orgânico, importação) nunca teve
+		// chegada medida, e chamá-la de direta afirmaria um fato que ninguém viu.
+		origem: l.conversation?.visit ? origemDaVisita(l.conversation.visit) : null,
+	}));
 
 	// Recorte da MESA EXTERNA — feito aqui, no servidor, e não escondendo coluna
 	// no componente: o que a rota devolve é o que existe pra aquele login. Um

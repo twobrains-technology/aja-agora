@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { contacts } from "@/db/schema";
 import { STAGE_ORDER } from "@/lib/admin/lead-stages";
+import { origemDaVisita } from "@/lib/admin/origem-label";
 import { maskCpf } from "@/lib/conversation/identity";
 
 /**
@@ -70,6 +71,11 @@ export async function getContactDetail(id: string) {
 						orderBy: (m, { asc }) => [asc(m.createdAt)],
 						with: { artifacts: true },
 					},
+					// De onde este cliente chegou. O card do kanban abre ESTE painel
+					// sempre que o lead tem contato unificado, que é o caso comum — sem
+					// a visita aqui, "de qual campanha veio?" ficava sem resposta na
+					// tela onde a pergunta é feita.
+					visit: true,
 				},
 			},
 			leads: { with: { events: true } },
@@ -81,6 +87,24 @@ export async function getContactDetail(id: string) {
 
 	// Canais usados (web/WhatsApp), distintos.
 	const channels = [...new Set(contact.conversations.map((c) => c.channel))];
+
+	// A ORIGEM do cliente — qual anúncio o trouxe.
+	//
+	// Um contato acumula conversas, e cada uma tem sua chegada. Vale a PRIMEIRA
+	// que trouxe campanha: quem viu o anúncio, entrou, e depois voltou digitando
+	// o endereço não deixou de ter vindo da mídia — creditar a volta direta
+	// apagaria da conta justamente o que foi pago. Sem nenhuma campanha, vale a
+	// primeira chegada (que será "direto" ou "referência").
+	const chegadas = contact.conversations
+		// `slice` antes do `sort`: ordenar no lugar mexeria no array que a timeline
+		// e a conversa em curso leem logo abaixo.
+		.slice()
+		.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+		.flatMap((c) => (c.visit ? [origemDaVisita(c.visit)] : []));
+	const origem =
+		chegadas.find((o) => o.tipo === "campanha" || o.tipo === "click-to-whatsapp") ??
+		chegadas[0] ??
+		null;
 
 	// Raia atual = a mais avançada entre os leads do contato.
 	const currentStage =
@@ -133,6 +157,7 @@ export async function getContactDetail(id: string) {
 		channels,
 		currentStage,
 		conversationCount: contact.conversations.length,
+		origem,
 		timeline,
 		proposals: contact.beviProposals,
 		// FIX-50: hierarquiza o presente — a vigente e a conversa ativa.
