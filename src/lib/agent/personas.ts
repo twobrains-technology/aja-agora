@@ -185,6 +185,12 @@ export type ConversationMetadata = {
 	 * (`n1AckAt` e afins) seria mais uma regra escrita duas vezes, que é a causa
 	 * estrutural apurada no dossiê de 2026-08-15. Gravado ANTES do disparo. */
 	acolhidaN1?: { attempts: number; lastAt: number };
+	/** Último conjunto de sinais de reconciliação fala×estado já publicado para
+	 * esta conversa (ver `workers/reconciliacao-cycle.ts`). Existe só para
+	 * idempotência: o ciclo roda a cada 30s e, sem isto, a mesma conversa travada
+	 * publicaria o mesmo alarme milhares de vezes por dia — que é exatamente como
+	 * um alarme verdadeiro deixa de ser lido. */
+	reconciliacao?: { sinais: string };
 	/** FIX-211 — contador de cobranças por gate de COLETA obrigatória (identify/
 	 * credit/lance/...). Incrementado a cada RE-cobrança (turno mudo ou desvio do
 	 * usuário), NÃO na emissão original do gate. Governa a ESCADA de cobrança
