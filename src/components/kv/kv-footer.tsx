@@ -77,18 +77,24 @@ function FooterLinkColumn({ title, links }: { title: string; links: LinkKv[] }) 
 }
 
 /**
- * As URLs das redes ainda não vieram do operador (FIX-353).
+ * Os perfis oficiais da Aja Agora (FIX-353, fechado em 2026-08-16).
  *
- * Constante nomeada em vez do literal `"#"` para que a pendência apareça como
- * pendência: os testes de navegação cobram destino real de todo href, e um "#"
- * anônimo no meio deles é indistinguível do link morto que o cliente reportou.
- * Quando os perfis chegarem, isto some junto com a exceção nos testes.
+ * Os dois ícones passaram meses apontando para `"#"` — link clicável e inerte,
+ * a mesma coisa que o cliente reportou no resto do rodapé. Ficaram por último
+ * porque a URL não estava no nosso alcance: dependia do operador confirmar quais
+ * são os perfis. São estes.
  */
-export const REDE_SOCIAL_PENDENTE = "#";
-
 const SOCIAIS = [
-	{ icon: InstagramIcon, label: "Instagram", href: REDE_SOCIAL_PENDENTE },
-	{ icon: FacebookIcon, label: "Facebook", href: REDE_SOCIAL_PENDENTE },
+	{
+		icon: InstagramIcon,
+		label: "Instagram",
+		href: "https://www.instagram.com/ajaagoraoficial",
+	},
+	{
+		icon: FacebookIcon,
+		label: "Facebook",
+		href: "https://www.facebook.com/ajaagoraoficial",
+	},
 ];
 
 interface KvFooterProps {
@@ -186,6 +192,10 @@ export function KvFooter({ onOpenChat, comCtaFinal = true }: KvFooterProps) {
 								key={social.label}
 								href={social.href}
 								aria-label={social.label}
+								// Outra aba: quem clica aqui está no meio de uma conversa de venda,
+								// e trocar a página pelo Instagram levaria a conversa junto.
+								target="_blank"
+								rel="noopener noreferrer"
 								className="flex size-10 items-center justify-center rounded-full border border-white/40 text-white transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#021628]"
 							>
 								<social.icon className="size-[18px]" strokeWidth={2} />

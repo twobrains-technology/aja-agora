@@ -21,15 +21,26 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { KvFooter, REDE_SOCIAL_PENDENTE } from "./kv-footer";
+import { KvFooter } from "./kv-footer";
 import { RODAPE_CONSORCIOS, RODAPE_NAVEGACAO } from "./navegacao";
 
 afterEach(() => {
 	cleanup();
 });
 
-/** Os ícones de rede social, que ainda esperam a URL do operador (FIX-353). */
-const PENDENTES = new Set(["Instagram", "Facebook"]);
+/**
+ * Os perfis oficiais, confirmados pelo Kairo em 2026-08-16 — o que faltava para
+ * fechar o FIX-353.
+ *
+ * Até aqui os dois ícones apontavam para `"#"`, atrás de uma constante nomeada
+ * (`REDE_SOCIAL_PENDENTE`) que declarava a pendência em vez de escondê-la. A
+ * constante sumiu junto com a espera: o rodapé agora não tem link morto nenhum,
+ * e o teste acima não precisa mais de exceção.
+ */
+const PERFIS = [
+	{ nome: "Instagram", url: "https://www.instagram.com/ajaagoraoficial" },
+	{ nome: "Facebook", url: "https://www.facebook.com/ajaagoraoficial" },
+];
 
 describe("KvFooter — nenhum link morto", () => {
 	it("nenhuma âncora do rodapé aponta para '#'", () => {
@@ -38,26 +49,28 @@ describe("KvFooter — nenhum link morto", () => {
 		const mortos = screen
 			.getAllByRole("link")
 			.filter((a) => a.getAttribute("href") === "#")
-			.map((a) => a.textContent || a.getAttribute("aria-label"))
-			.filter((nome) => !PENDENTES.has(nome ?? ""));
+			.map((a) => a.textContent || a.getAttribute("aria-label"));
 
 		expect(mortos).toEqual([]);
 	});
 
-	it("as redes sociais são a ÚNICA pendência, e declarada", () => {
-		// Se alguém trocar o placeholder por um "#" solto em outro lugar, o teste
-		// acima pega. Este garante que a exceção acima continua sendo exceção: o
-		// dia em que as URLs chegarem, a constante some e este teste cai junto.
-		expect(REDE_SOCIAL_PENDENTE).toBe("#");
-
+	it.each(PERFIS)("$nome leva ao perfil oficial", ({ nome, url }) => {
 		render(<KvFooter onOpenChat={vi.fn()} />);
 
-		for (const nome of PENDENTES) {
-			expect(screen.getByRole("link", { name: nome })).toHaveAttribute(
-				"href",
-				REDE_SOCIAL_PENDENTE,
-			);
-		}
+		expect(screen.getByRole("link", { name: nome })).toHaveAttribute("href", url);
+	});
+
+	it.each(PERFIS)("$nome abre em outra aba, sem levar a venda embora", ({ nome }) => {
+		// A pessoa está no meio de um funil de venda. Trocar a página dela pelo
+		// Instagram na MESMA aba é perder a conversa que estava acontecendo — e o
+		// `rel` fecha a porta de a página de destino mexer nesta (`noopener`) e de
+		// receber de onde ela veio (`noreferrer`).
+		render(<KvFooter onOpenChat={vi.fn()} />);
+
+		const link = screen.getByRole("link", { name: nome });
+		expect(link).toHaveAttribute("target", "_blank");
+		expect(link.getAttribute("rel")).toContain("noopener");
+		expect(link.getAttribute("rel")).toContain("noreferrer");
 	});
 
 	it.each(RODAPE_NAVEGACAO)("coluna Navegação: $label → $href", ({ label, href }) => {
