@@ -34,14 +34,31 @@ import { db } from "@/db";
 import { conversations } from "@/db/schema";
 import { chaveTelefoneBR } from "@/lib/whatsapp/mesmo-numero";
 
+/**
+ * Por que o agente está autorizado a falar.
+ *
+ * `sem-atendimento-aberto` é o caso normal. `handoff-sem-destinatario` é a
+ * EXCEÇÃO VIVA, catalogada em 2026-08-16: existe atendimento aberto para a
+ * pessoa, mas a mensagem não chegou a ninguém (nenhum atendente recebeu o
+ * relay), e o agente assume o turno em vez de deixar o cliente no vácuo —
+ * `route.ts` fazia isso desde sempre, sem nome, e qualquer feature construída
+ * sobre este contrato herdava a exceção sem saber que ela existia.
+ */
+export type MotivoDoAgente = "sem-atendimento-aberto" | "handoff-sem-destinatario";
+
 export type QuemResponde =
 	| {
 			quem: "humano";
 			/** A conversa onde o atendimento vive — nem sempre a do canal de entrada. */
 			conversationId: string;
 			handedOffUserId: string | null;
+			/** Atendimento aberto que ninguém assumiu. Quem fala com o cliente PRECISA
+			 * saber disto: é o estado em que a trava existe e não há humano do outro
+			 * lado. Não muda a decisão (o agente continua calado enquanto a entrega ao
+			 * atendente for possível) — nomeia o caso para quem decide depois. */
+			semDestinatario: boolean;
 	  }
-	| { quem: "agente" };
+	| { quem: "agente"; motivo: MotivoDoAgente };
 
 /**
  * Resolve pelo telefone, cobrindo todos os formatos do mesmo número.
@@ -51,7 +68,7 @@ export type QuemResponde =
 export async function quemRespondePara(
 	identificador: string | null | undefined,
 ): Promise<QuemResponde> {
-	if (!identificador) return { quem: "agente" };
+	if (!identificador) return { quem: "agente", motivo: "sem-atendimento-aberto" };
 
 	// Só as conversas entregues a gente — são poucas, e é o único estado que pode
 	// calar o agente. Filtrar aqui evita varrer a tabela pra comparar chave.
@@ -60,7 +77,7 @@ export async function quemRespondePara(
 		columns: { id: true, waId: true, handedOffUserId: true },
 	});
 
-	if (emAtendimento.length === 0) return { quem: "agente" };
+	if (emAtendimento.length === 0) return { quem: "agente", motivo: "sem-atendimento-aberto" };
 
 	const chave = chaveTelefoneBR(identificador);
 
@@ -74,9 +91,10 @@ export async function quemRespondePara(
 				quem: "humano",
 				conversationId: conv.id,
 				handedOffUserId: conv.handedOffUserId ?? null,
+				semDestinatario: conv.handedOffUserId == null,
 			};
 		}
 	}
 
-	return { quem: "agente" };
+	return { quem: "agente", motivo: "sem-atendimento-aberto" };
 }
