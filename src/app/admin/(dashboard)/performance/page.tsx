@@ -3,17 +3,13 @@
 import { subDays } from "date-fns";
 import { parseAsIsoDate, useQueryState } from "nuqs";
 import { Suspense, useCallback, useEffect, useState } from "react";
-import { ChannelBreakdownChart } from "@/components/admin/dashboard/channel-breakdown-chart";
 import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter";
-import { FunnelChart } from "@/components/admin/dashboard/funnel-chart";
-import { KpiCards } from "@/components/admin/dashboard/kpi-cards";
-import { CoberturaAtribuicaoAviso } from "@/components/admin/performance/cobertura-atribuicao";
 import { FunilMidiaChart } from "@/components/admin/performance/funil-midia-chart";
+import { PortaDoFunilCard } from "@/components/admin/performance/porta-do-funil";
 import { SerieAquisicaoChart } from "@/components/admin/performance/serie-aquisicao-chart";
 import { TabelaOrigens } from "@/components/admin/performance/tabela-origens";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { DashboardResponse } from "@/lib/admin/dashboard-types";
 import type { PerformanceResponse } from "@/lib/admin/performance-types";
 
 function defaultFrom() {
@@ -22,24 +18,6 @@ function defaultFrom() {
 
 function defaultTo() {
 	return new Date();
-}
-
-function KpiSkeleton() {
-	return (
-		<div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-			{["credito", "leads", "conversas", "conversao"].map((slot) => (
-				<Card key={slot}>
-					<CardHeader className="pb-2">
-						<Skeleton className="h-4 w-24" />
-					</CardHeader>
-					<CardContent>
-						<Skeleton className="h-8 w-16 mb-2" />
-						<Skeleton className="h-3 w-32" />
-					</CardContent>
-				</Card>
-			))}
-		</div>
-	);
 }
 
 function BlocoSkeleton({ altura = 300 }: { altura?: number }) {
@@ -60,10 +38,16 @@ function PerformanceContent() {
 	const [to] = useQueryState("to", parseAsIsoDate.withDefault(defaultTo()));
 
 	const [midia, setMidia] = useState<PerformanceResponse | null>(null);
-	const [funilLead, setFunilLead] = useState<DashboardResponse | null>(null);
 	const [carregando, setCarregando] = useState(true);
 	const [erro, setErro] = useState<string | null>(null);
 
+	// UM fetch, e não dois.
+	//
+	// A página puxava também `/api/admin/dashboard` para desenhar um segundo
+	// funil — o comercial, de 9 estágios, medido de outra tabela. Eram duas
+	// escadas na mesma tela, com números que podiam divergir e o leitor sem
+	// saber em qual acreditar. Ficou a que mede o caminho inteiro, da visita ao
+	// contrato; a outra saiu, e o request foi junto.
 	const carregar = useCallback(async () => {
 		setCarregando(true);
 		setErro(null);
@@ -72,20 +56,11 @@ function PerformanceContent() {
 			const params = new URLSearchParams();
 			if (from) params.set("from", from.toISOString());
 			if (to) params.set("to", to.toISOString());
-			const query = params.toString();
 
-			// As duas metades da mesma pergunta: o topo (mídia) e o fundo (funil de
-			// lead que já existia). Em paralelo — uma não depende da outra.
-			const [resMidia, resLead] = await Promise.all([
-				fetch(`/api/admin/performance?${query}`),
-				fetch(`/api/admin/dashboard?${query}`),
-			]);
-
+			const resMidia = await fetch(`/api/admin/performance?${params.toString()}`);
 			if (!resMidia.ok) throw new Error(`Erro ao carregar performance: ${resMidia.status}`);
-			if (!resLead.ok) throw new Error(`Erro ao carregar o funil de leads: ${resLead.status}`);
 
 			setMidia((await resMidia.json()) as PerformanceResponse);
-			setFunilLead((await resLead.json()) as DashboardResponse);
 		} catch (err) {
 			setErro(err instanceof Error ? err.message : "Erro desconhecido");
 		} finally {
@@ -117,36 +92,20 @@ function PerformanceContent() {
 				</div>
 			)}
 
-			{pronto && <CoberturaAtribuicaoAviso cobertura={midia.cobertura} />}
+			{/* A porta vem antes do funil, e a cobertura de atribuição virou a nota de
+			    rodapé dela — a faixa própria disputava atenção com o título da página
+			    para dizer algo que só qualifica estes números. */}
+			{pronto ? (
+				<PortaDoFunilCard porta={midia.porta} cobertura={midia.cobertura} />
+			) : (
+				<BlocoSkeleton altura={140} />
+			)}
 
 			{pronto ? <FunilMidiaChart etapas={midia.funil} /> : <BlocoSkeleton altura={320} />}
 
 			{pronto ? <SerieAquisicaoChart data={midia.serie} /> : <BlocoSkeleton />}
 
 			{pronto ? <TabelaOrigens origens={midia.origens} /> : <BlocoSkeleton altura={200} />}
-
-			<div className="pt-2">
-				<h2 className="text-lg font-semibold tracking-tight">Funil comercial</h2>
-				<p className="text-muted-foreground text-sm mt-1 mb-4">
-					O caminho do lead depois que ele se identifica
-				</p>
-
-				<div className="space-y-6">
-					{funilLead ? <KpiCards kpis={funilLead.kpis} /> : <KpiSkeleton />}
-
-					{funilLead ? (
-						<FunnelChart stages={funilLead.funnel_stages} />
-					) : (
-						<BlocoSkeleton altura={160} />
-					)}
-
-					{funilLead ? (
-						<ChannelBreakdownChart data={funilLead.channel_breakdown} />
-					) : (
-						<BlocoSkeleton />
-					)}
-				</div>
-			</div>
 		</div>
 	);
 }

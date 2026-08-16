@@ -3,6 +3,7 @@ import {
 	computeCobertura,
 	computeFunilMidia,
 	computeOrigens,
+	computePorta,
 	computeSerie,
 } from "@/lib/admin/performance-queries";
 import type { PerformanceResponse } from "@/lib/admin/performance-types";
@@ -26,13 +27,14 @@ export async function GET(request: Request) {
 		);
 	}
 
-	const [funil, origens, serie, cobertura] = await Promise.all([
+	const [funil, porta, origens, serie, cobertura] = await Promise.all([
 		computeFunilMidia(fromDate, toDate),
+		computePorta(fromDate, toDate),
 		computeOrigens(fromDate, toDate),
 		computeSerie(fromDate, toDate),
 		computeCobertura(fromDate, toDate),
 	]);
 
-	const response: PerformanceResponse = { funil, origens, serie, cobertura };
+	const response: PerformanceResponse = { funil, porta, origens, serie, cobertura };
 	return Response.json(response);
 }
