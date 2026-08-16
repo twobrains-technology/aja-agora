@@ -8,7 +8,12 @@ const buttonVariants = cva(
 	{
 		variants: {
 			variant: {
-				default: "bg-primary text-primary-foreground [a]:hover:bg-primary/80",
+				// `hover:` liso, e não `[a]:hover:`. O prefixo `[a]` restringia o hover
+				// aos casos em que o botão é renderizado como âncora (`render={<Link/>}`),
+				// então o botão PRIMÁRIO — o mais usado do admin e do chat — era o único
+				// da lista sem nenhuma reação ao passar o mouse. Todas as outras
+				// variantes abaixo usam `hover:` direto; esta destoava.
+				default: "bg-primary text-primary-foreground hover:bg-primary/80",
 				outline:
 					"border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
 				secondary:

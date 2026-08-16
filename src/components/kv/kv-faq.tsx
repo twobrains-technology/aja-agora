@@ -68,7 +68,10 @@ export function KvFaq({ itens = FAQ_ITEMS }: { itens?: readonly KvFaqItem[] } = 
 									onClick={() => setOpenIndex(isOpen ? null : index)}
 									aria-expanded={isOpen}
 									aria-controls={panelId}
-									className="flex min-h-[77px] w-full items-center justify-between gap-4 px-5 py-4 text-left md:px-[21px]"
+									// A linha inteira é o alvo do clique, então é ela que reage:
+									// o creme do item escurece de leve no hover. Sem isso o
+									// accordion parecia texto, não um controle.
+									className="flex min-h-[77px] w-full items-center justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-[#F1F1DA] md:px-[21px]"
 								>
 									<div className="flex min-w-0 flex-1 flex-col gap-1.5 lg:flex-row lg:items-center lg:gap-4">
 										<span className="text-[20px] font-normal leading-[1.2] text-[#052440] lg:shrink-0 lg:text-[32px] lg:leading-[38px]">

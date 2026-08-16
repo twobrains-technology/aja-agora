@@ -3,6 +3,7 @@ import type { SVGProps } from "react";
 import { Wordmark } from "@/components/brand/wordmark";
 import type { TheaterOpener } from "@/components/chat/theater/theater-context";
 import { Em } from "@/components/kv/em";
+import { type LinkKv, RODAPE_CONSORCIOS, RODAPE_NAVEGACAO } from "@/components/kv/navegacao";
 import { KvContainer } from "@/components/kv/ui/kv-container";
 import { KvCtaButton } from "@/components/kv/ui/kv-cta-button";
 import { KV_RITMO } from "@/components/kv/ui/kv-section";
@@ -35,18 +36,10 @@ function FacebookIcon(props: SVGProps<SVGSVGElement>) {
 	);
 }
 
-const NAV_LINKS = [
-	{ label: "Encontre o consórcio certo", href: "#" },
-	{ label: "Como funcionamos", href: "#" },
-	{ label: "Tipo de Consórcio", href: "#" },
-];
-
-// Sem "Blog": o comp atualizado deixou Recursos com dois itens, e não há blog
-// publicado para onde apontar.
-const RESOURCE_LINKS = [
-	{ label: "Dúvidas", href: "#" },
-	{ label: "Jornada", href: "#" },
-];
+// Sem "Blog": o comp atualizado deixou a segunda coluna com dois itens, e não
+// há blog publicado para onde apontar. Ela também deixou de ser "Recursos":
+// "Jornada" e "Como funcionamos" apontariam para a mesma seção da home, e a
+// coluna rende mais levando às três landings de vertical.
 
 /**
  * Letras miúdas do rodapé. Razão social, CNPJ e endereço são exigência de
@@ -59,11 +52,9 @@ const LETRAS_MIUDAS = [
 	"Ao utilizar este site, você concorda com nossos termos de uso e política de privacidade.",
 ];
 
-type FooterLink = { label: string; href: string };
-
-// Coluna de links do rodapé (título uppercase + lista) — Navegação e Recursos
+// Coluna de links do rodapé (título uppercase + lista) — Navegação e Consórcios
 // têm a mesma estrutura, só o array de links e o aria-label mudam.
-function FooterLinkColumn({ title, links }: { title: string; links: FooterLink[] }) {
+function FooterLinkColumn({ title, links }: { title: string; links: LinkKv[] }) {
 	return (
 		<nav aria-label={title} className="lg:w-[226px]">
 			<h3 className="text-[12px] font-semibold uppercase leading-none tracking-wide text-[#F2F2F2]/60">
@@ -85,11 +76,19 @@ function FooterLinkColumn({ title, links }: { title: string; links: FooterLink[]
 	);
 }
 
-// TODO: URL real das redes sociais da Aja Agora — placeholder até o operador
-// confirmar os perfis (FIX-353).
-const SOCIALS = [
-	{ icon: InstagramIcon, label: "Instagram", href: "#" },
-	{ icon: FacebookIcon, label: "Facebook", href: "#" },
+/**
+ * As URLs das redes ainda não vieram do operador (FIX-353).
+ *
+ * Constante nomeada em vez do literal `"#"` para que a pendência apareça como
+ * pendência: os testes de navegação cobram destino real de todo href, e um "#"
+ * anônimo no meio deles é indistinguível do link morto que o cliente reportou.
+ * Quando os perfis chegarem, isto some junto com a exceção nos testes.
+ */
+export const REDE_SOCIAL_PENDENTE = "#";
+
+const SOCIAIS = [
+	{ icon: InstagramIcon, label: "Instagram", href: REDE_SOCIAL_PENDENTE },
+	{ icon: FacebookIcon, label: "Facebook", href: REDE_SOCIAL_PENDENTE },
 ];
 
 interface KvFooterProps {
@@ -152,10 +151,10 @@ export function KvFooter({ onOpenChat, comCtaFinal = true }: KvFooterProps) {
 							</p>
 						</div>
 
-						{/* Navegação + Recursos */}
+						{/* Navegação + Consórcios */}
 						<div className="flex flex-col gap-10 sm:flex-row sm:gap-12 lg:w-[500px]">
-							<FooterLinkColumn title="Navegação" links={NAV_LINKS} />
-							<FooterLinkColumn title="Recursos" links={RESOURCE_LINKS} />
+							<FooterLinkColumn title="Navegação" links={RODAPE_NAVEGACAO} />
+							<FooterLinkColumn title="Consórcios" links={RODAPE_CONSORCIOS} />
 						</div>
 
 						{/* Contato */}
@@ -182,7 +181,7 @@ export function KvFooter({ onOpenChat, comCtaFinal = true }: KvFooterProps) {
 
 					{/* Redes sociais */}
 					<div className="flex items-center gap-4">
-						{SOCIALS.map((social) => (
+						{SOCIAIS.map((social) => (
 							<a
 								key={social.label}
 								href={social.href}

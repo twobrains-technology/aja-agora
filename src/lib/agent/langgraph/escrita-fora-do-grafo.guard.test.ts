@@ -62,7 +62,10 @@ describe("escrita de estado dentro do turno do grafo", () => {
 
 		for (const area of AREAS_PROIBIDAS) {
 			for (const caminho of arquivosTs(join(RAIZ, area))) {
-				const relativo = caminho.slice(RAIZ.length + 1);
+				// Barra normal, sempre: no Windows o caminho vem com contrabarra e a
+				// comparação com `UNICO_AUTORIZADO` nunca casava — o guard acusava o
+				// próprio `persist.ts`, o arquivo que ele existe para autorizar.
+				const relativo = caminho.slice(RAIZ.length + 1).replaceAll("\\", "/");
 				if (relativo === UNICO_AUTORIZADO) continue;
 				for (const { numero, texto } of linhasDeCodigo(readFileSync(caminho, "utf8"))) {
 					if (ESCRITORES.test(texto)) {
