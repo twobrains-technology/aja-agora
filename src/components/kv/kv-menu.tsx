@@ -87,15 +87,18 @@ function ItemComSubmenu({
 			{aberto ? (
 				<div
 					id={painelId}
-					className="absolute left-0 top-full z-50 min-w-[180px] overflow-hidden rounded-[12px] bg-[#FAFAF3] py-2 shadow-[0_12px_32px_rgba(2,22,40,0.24)]"
+					className="absolute left-0 top-full z-50 min-w-[200px] overflow-hidden rounded-[12px] bg-[#FAFAF3] py-2 shadow-[0_12px_32px_rgba(2,22,40,0.24)]"
 				>
 					{item.submenu.map((sub) => (
 						<a
 							key={sub.href}
 							href={sub.href}
 							onClick={() => setAberto(false)}
-							className="block px-4 py-2.5 text-[16px] leading-[24px] text-[#052440] transition-colors hover:bg-[#052440]/8"
+							className="flex items-center gap-3 px-5 py-2.5 text-[16px] leading-[24px] text-[#052440] transition-colors hover:bg-[#052440]/8"
 						>
+							{/* O ícone repete o rótulo em desenho, não acrescenta informação:
+							    fica `aria-hidden` para o leitor de tela anunciar só "Carro". */}
+							{sub.icone ? <sub.icone aria-hidden="true" className="size-5 shrink-0" /> : null}
 							{sub.label}
 						</a>
 					))}
@@ -183,8 +186,11 @@ export function KvMenu({ onOpenChat, nav = NAV }: KvMenuProps) {
 										key={sub.href}
 										href={sub.href}
 										onClick={() => setMobileOpen(false)}
-										className="block py-3 pl-10 pr-6 text-[16px] font-normal text-white transition-colors hover:text-white/75"
+										className="flex items-center gap-3 py-3 pl-10 pr-6 text-[16px] font-normal text-white transition-colors hover:text-white/75"
 									>
+										{sub.icone ? (
+											<sub.icone aria-hidden="true" className="size-5 shrink-0" />
+										) : null}
 										{sub.label}
 									</a>
 								))}
