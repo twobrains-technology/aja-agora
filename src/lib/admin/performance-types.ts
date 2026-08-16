@@ -47,8 +47,57 @@ export interface EtapaFunilMidia {
 	count: number;
 	/** % em relação ao topo do funil (visitas). */
 	percentDoTopo: number;
+	/**
+	 * % em relação às CONVERSAS — o denominador do funil de produto.
+	 *
+	 * Medir tudo contra as visitas espremia as seis etapas de baixo numa lasca
+	 * de 0,06%: 19 conversas contra 30.147 visitas são três ordens de grandeza,
+	 * e o desenho perdia justamente as etapas que carregam a informação. Visita
+	 * → conversa é outra pergunta, com outro denominador e outra decisão, e por
+	 * isso virou um componente separado ("A porta").
+	 */
+	percentDasConversas: number;
 	/** % que se perdeu da etapa anterior — onde o dinheiro vaza. */
 	quedaDaAnterior: number;
+	/**
+	 * Quantas conversas PARARAM nesta etapa (chegaram aqui e não passaram).
+	 *
+	 * Absoluto, não percentual: "44,4% saíram aqui" sobre 18 conversas é
+	 * precisão falsa — o que se conserta é "8 pararam aqui".
+	 */
+	pararamAqui: number;
+	/**
+	 * Dessas, quantas ainda estão VIVAS — o cliente escreveu nos últimos dias e
+	 * a conversa não foi encerrada.
+	 *
+	 * É a diferença entre duas decisões opostas: conserte o agente (morreu) ou
+	 * puxe de volta (está viva — o watchdog de retomada existe para isso). Sem
+	 * separar, o painel manda consertar o que só precisava de um empurrão.
+	 */
+	aindaVivas: number;
+}
+
+/**
+ * O degrau que não é degrau: quantas chegadas viraram conversa.
+ *
+ * Não é uma etapa do funil — é um limiar, com denominador próprio (visitas) e
+ * uma decisão própria ("dá para confiar nesse número?"). Espremê-lo na mesma
+ * escada das outras etapas foi o que tornou o funil ilegível.
+ */
+export interface PortaDoFunil {
+	visitas: number;
+	conversas: number;
+	/** % das visitas que abriram conversa. */
+	taxaDeEntrada: number;
+	/**
+	 * Por qual porta a conversa entrou.
+	 *
+	 * Era um gráfico de barras próprio, e duas categorias não são um gráfico —
+	 * são uma frase. Como frase o dado continua na tela, ao lado do número que
+	 * ele qualifica, sem gastar um card inteiro.
+	 */
+	web: number;
+	whatsapp: number;
 }
 
 // ─── Desempenho por origem ──────────────────────────────────────────────────
@@ -89,6 +138,7 @@ export interface CoberturaAtribuicao {
 
 export interface PerformanceResponse {
 	funil: EtapaFunilMidia[];
+	porta: PortaDoFunil;
 	origens: LinhaOrigem[];
 	serie: PontoSerie[];
 	cobertura: CoberturaAtribuicao;

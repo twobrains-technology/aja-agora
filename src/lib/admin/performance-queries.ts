@@ -19,7 +19,11 @@ import {
 	type EtapaFunilMidia,
 	type LinhaOrigem,
 	type PontoSerie,
+	type PortaDoFunil,
 } from "./performance-types";
+
+/** Quantos dias sem o cliente escrever até a conversa deixar de contar como viva. */
+const DIAS_PARA_CONSIDERAR_VIVA = 7;
 
 /** Artifacts que provam que o cliente VIU número de oferta na tela. */
 const ARTIFACTS_DE_OFERTA = ["real_offer", "simulation_result"];
@@ -124,25 +128,133 @@ export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<E
         WHERE ${atribuida}) AS fechados
   `);
 
+	// ONDE CADA CONVERSA PAROU — e se ela ainda está de pé.
+	//
+	// O funil dizia "44,4% saíram aqui" e parava por aí. Duas conversas paradas
+	// na mesma etapa pedem decisões opostas: a que morreu manda consertar o
+	// agente; a que ainda responde manda puxar de volta (o watchdog de retomada
+	// existe exatamente para isso). Sem separar, o painel manda consertar o que
+	// só precisava de um empurrão.
+	//
+	// `lastInboundAt` não serve como sinal de vida: é específico do WhatsApp
+	// (schema.ts). A última mensagem do CLIENTE vale nos dois canais.
+	const paradas = await db.execute<Record<string, unknown>>(sql`
+    WITH conv AS (
+      SELECT
+        c.id,
+        c.status,
+        (SELECT max(m.created_at) FROM messages m
+          WHERE m.conversation_id = c.id AND m.role = 'user') AS ultimo_inbound,
+        EXISTS (SELECT 1 FROM messages m
+          WHERE m.conversation_id = c.id AND m.role = 'user') AS engajou,
+        EXISTS (SELECT 1 FROM leads l
+          WHERE l.conversation_id = c.id AND l.is_simulated = false
+            AND (l.phone IS NOT NULL OR l.email IS NOT NULL)) AS identificou,
+        EXISTS (SELECT 1 FROM messages m
+          JOIN artifacts a ON a.message_id = m.id
+          WHERE m.conversation_id = c.id
+            AND a.type IN (${sql.join(
+							ARTIFACTS_DE_OFERTA.map((tipo) => sql`${tipo}`),
+							sql`, `,
+						)})) AS viu_oferta,
+        EXISTS (SELECT 1 FROM bevi_proposals bp
+          WHERE bp.conversation_id = c.id) AS teve_proposta,
+        EXISTS (SELECT 1 FROM leads l
+          WHERE l.conversation_id = c.id AND l.is_simulated = false
+            AND l.stage = 'fechado_ganho') AS fechou
+      FROM conversations c
+      WHERE ${atribuida}
+    ),
+    profundidade AS (
+      SELECT
+        id,
+        CASE
+          WHEN fechou THEN 6
+          WHEN teve_proposta THEN 5
+          WHEN viu_oferta THEN 4
+          WHEN identificou THEN 3
+          WHEN engajou THEN 2
+          ELSE 1
+        END AS etapa,
+        -- Viva = o cliente escreveu na janela recente e ninguém encerrou a
+        -- conversa. Conversa encerrada não é retomável, por mais nova que seja.
+        (ultimo_inbound >= now() - ${sql.raw(`interval '${DIAS_PARA_CONSIDERAR_VIVA} days'`)}
+          AND status = 'active') AS viva
+      FROM conv
+    )
+    SELECT etapa, count(*) AS pararam, count(*) FILTER (WHERE viva) AS vivas
+    FROM profundidade GROUP BY etapa
+  `);
+
+	// Índice da etapa (1..6) → quantas pararam ali e quantas seguem vivas.
+	const pararamPorEtapa = new Map<number, { pararam: number; vivas: number }>();
+	for (const p of paradas.rows) {
+		pararamPorEtapa.set(num(p.etapa), { pararam: num(p.pararam), vivas: num(p.vivas) });
+	}
+
 	const linha = resultado.rows[0] ?? {};
 	const topo = num(linha.visitas);
+	const conversas = num(linha.conversas);
 
 	let anterior = 0;
 	return ETAPAS_FUNIL_MIDIA.map((etapa, i) => {
 		const count = num(linha[etapa.chave]);
 		const quedaDaAnterior =
 			i === 0 || anterior === 0 ? 0 : Math.max(0, pct(anterior - count, anterior));
+		// `visitas` é o índice 0 do array e não é etapa de conversa — a
+		// profundidade 1 ("abriu e não escreveu") casa com `conversas`, no índice 1.
+		const parada = pararamPorEtapa.get(i);
 		const resultadoEtapa: EtapaFunilMidia = {
 			chave: etapa.chave,
 			label: etapa.label,
 			ajuda: etapa.ajuda,
 			count,
 			percentDoTopo: pct(count, topo),
+			percentDasConversas: etapa.chave === "visitas" ? 100 : pct(count, conversas),
 			quedaDaAnterior,
+			pararamAqui: parada?.pararam ?? 0,
+			aindaVivas: parada?.vivas ?? 0,
 		};
 		anterior = count;
 		return resultadoEtapa;
 	});
+}
+
+/**
+ * O limiar de entrada: quantas chegadas viraram conversa.
+ *
+ * Separado do funil de propósito — ver `PortaDoFunil`.
+ */
+export async function computePorta(fromDate: Date, toDate: Date): Promise<PortaDoFunil> {
+	const resultado = await db.execute<Record<string, unknown>>(sql`
+    SELECT
+      (SELECT count(*) FROM visits v
+        WHERE v.created_at BETWEEN ${fromDate} AND ${toDate}) AS visitas,
+      (SELECT count(*) FROM conversations c
+        WHERE c.is_simulated = false
+          AND c.visit_id IS NOT NULL
+          AND c.created_at BETWEEN ${fromDate} AND ${toDate}) AS conversas,
+      (SELECT count(*) FROM conversations c
+        WHERE c.is_simulated = false
+          AND c.visit_id IS NOT NULL
+          AND c.channel = 'web'
+          AND c.created_at BETWEEN ${fromDate} AND ${toDate}) AS web,
+      (SELECT count(*) FROM conversations c
+        WHERE c.is_simulated = false
+          AND c.visit_id IS NOT NULL
+          AND c.channel = 'whatsapp'
+          AND c.created_at BETWEEN ${fromDate} AND ${toDate}) AS whatsapp
+  `);
+	const linha = resultado.rows[0] ?? {};
+	const visitas = num(linha.visitas);
+	const conversas = num(linha.conversas);
+	return {
+		visitas,
+		conversas,
+		taxaDeEntrada: pct(conversas, visitas),
+		web: num(linha.web),
+		whatsapp: num(linha.whatsapp),
+	};
 }
 
 // ─── Desempenho por origem ──────────────────────────────────────────────────
@@ -161,7 +273,11 @@ export async function computeOrigens(fromDate: Date, toDate: Date): Promise<Linh
       END AS referrer_host,
       count(DISTINCT v.id) AS visitas,
       count(DISTINCT c.id) AS conversas,
-      count(DISTINCT l.id) FILTER (WHERE l.phone IS NOT NULL OR l.email IS NOT NULL) AS identificados,
+      -- CONVERSAS identificadas, não leads — a mesma definição que o funil usa
+      -- em computeFunilMidia. Contando leads, uma conversa com dedup imperfeito
+      -- entrava duas vezes: a coluna "Identificados" da tabela podia divergir da
+      -- etapa "Se identificaram" do funil, na mesma tela, com o mesmo rótulo.
+      count(DISTINCT c.id) FILTER (WHERE l.phone IS NOT NULL OR l.email IS NOT NULL) AS identificados,
       count(DISTINCT bp.id) AS propostas,
       count(DISTINCT l.id) FILTER (WHERE l.stage = 'fechado_ganho') AS fechados
     FROM visits v

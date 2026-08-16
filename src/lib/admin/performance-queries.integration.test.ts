@@ -172,6 +172,50 @@ describeIfDb("performance — funil de mídia (integration)", () => {
 			expect(funil[0].percentDoTopo).toBe(100);
 		});
 
+		it("diz quantas conversas PARARAM em cada etapa, em absoluto", async () => {
+			// A semeadura é uma jornada por profundidade, então cada etapa tem
+			// exatamente uma conversa que morreu ali. "8 pararam aqui" é o que se
+			// conserta; "44,4% saíram" sobre 18 conversas é precisão falsa.
+			const funil = await queries.computeFunilMidia(JANELA_DE, JANELA_ATE);
+			const por = Object.fromEntries(funil.map((e) => [e.chave, e.pararamAqui]));
+
+			expect(por.conversas).toBe(1); // abriu e não escreveu
+			expect(por.engajadas).toBe(1); // escreveu e não se identificou
+			expect(por.identificados).toBe(1);
+			expect(por.viram_oferta).toBe(1);
+			expect(por.propostas).toBe(1);
+			expect(por.fechados).toBe(1);
+		});
+
+		it("as paradas somam o total de conversas — ninguém fica de fora", async () => {
+			const funil = await queries.computeFunilMidia(JANELA_DE, JANELA_ATE);
+			const conversas = funil.find((e) => e.chave === "conversas")?.count ?? 0;
+			const somaDasParadas = funil.reduce((acc, e) => acc + e.pararamAqui, 0);
+
+			expect(somaDasParadas).toBe(conversas);
+		});
+
+		it("conversa semeada no passado não conta como viva", async () => {
+			// A semeadura é de 2019: nenhuma tem mensagem recente do cliente, então
+			// todas estão mortas. É o caso que separa "conserte o agente" de "puxe
+			// de volta" — e sem a janela de tempo tudo pareceria retomável.
+			const funil = await queries.computeFunilMidia(JANELA_DE, JANELA_ATE);
+			expect(funil.every((e) => e.aindaVivas === 0)).toBe(true);
+		});
+
+		it("mede as etapas da conversa contra as CONVERSAS, não contra as visitas", async () => {
+			// É o conserto do desenho: contra visitas, 6 de 8 já seria 75% e as
+			// etapas de baixo virariam lascas iguais. Contra conversas, o topo do
+			// funil de produto é 100%.
+			const funil = await queries.computeFunilMidia(JANELA_DE, JANELA_ATE);
+			const conversas = funil.find((e) => e.chave === "conversas");
+			const identificados = funil.find((e) => e.chave === "identificados");
+
+			expect(conversas?.percentDasConversas).toBe(100);
+			// 4 identificados de 6 conversas.
+			expect(identificados?.percentDasConversas).toBeCloseTo(66.7, 1);
+		});
+
 		it("nunca cresce de uma etapa pra outra", async () => {
 			// Este é o defeito que só apareceu na TELA: com conversa sem origem
 			// entrando no funil, "Conversas" dava 328% de "Visitas" e a barra
@@ -234,6 +278,51 @@ describeIfDb("performance — funil de mídia (integration)", () => {
 			);
 
 			expect(vazio.every((e) => e.count === 0 && e.percentDoTopo === 0)).toBe(true);
+		});
+	});
+
+	describe("computePorta", () => {
+		it("separa o limiar de entrada do funil de conversa", async () => {
+			// A porta responde outra pergunta, com outro denominador: quantas
+			// chegadas viraram conversa. 6 de 8 = 75%.
+			const porta = await queries.computePorta(JANELA_DE, JANELA_ATE);
+
+			expect(porta.visitas).toBe(8);
+			expect(porta.conversas).toBe(6);
+			expect(porta.taxaDeEntrada).toBeCloseTo(75, 1);
+		});
+
+		it("diz por qual porta a conversa entrou — web e WhatsApp", async () => {
+			// O split por canal era um gráfico de duas barras: duas categorias não
+			// são um gráfico, são uma frase. Como frase ele cabe aqui e o dado não
+			// sai da tela junto com o gráfico.
+			const [wpp] = await db
+				.insert(schema.conversations)
+				.values({
+					// Reaproveita uma visita já semeada de propósito: assim o total de
+					// CHEGADAS não muda e a asserção isola o que está sendo medido.
+					visitId: visitIds[0],
+					channel: "whatsapp",
+					isSimulated: false,
+					createdAt: DENTRO,
+					updatedAt: DENTRO,
+				})
+				.returning({ id: schema.conversations.id });
+
+			try {
+				const porta = await queries.computePorta(JANELA_DE, JANELA_ATE);
+
+				expect(porta.conversas).toBe(7);
+				expect(porta.web).toBe(6);
+				expect(porta.whatsapp).toBe(1);
+				// A soma das portas é o total: conversa que entrou por um canal que
+				// ninguém previu não pode sumir da conta.
+				expect(porta.web + porta.whatsapp).toBe(porta.conversas);
+			} finally {
+				// Limpa aqui, e não no afterAll: esta conversa a mais mudaria a
+				// contagem exata dos outros testes desta mesma janela.
+				await db.delete(schema.conversations).where(eq(schema.conversations.id, wpp.id));
+			}
 		});
 	});
 

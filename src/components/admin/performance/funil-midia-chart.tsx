@@ -1,46 +1,63 @@
 "use client";
 
-import { TrendingDownIcon } from "lucide-react";
+import { ClockIcon, TrendingDownIcon } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { EtapaFunilMidia } from "@/lib/admin/performance-types";
 
+const nf = new Intl.NumberFormat("pt-BR");
+
 /**
- * Escada vertical, não funil horizontal.
+ * A CONVERSA: das que abriram o chat, onde cada uma parou.
  *
- * Entre visitas e contratos há ordens de grandeza de diferença: num funil
- * horizontal as últimas etapas viram lascas ilegíveis e o operador não enxerga
- * onde vaza. Em barras empilhadas, cada etapa mantém rótulo, número e a queda
- * em relação à anterior — que é a informação que decide o que consertar.
+ * O topo é `conversas`, não `visitas`. Medir tudo contra as visitas espremia as
+ * seis etapas de baixo numa lasca de 0,06% — 19 contra 30.147 são três ordens
+ * de grandeza — e elas ficavam visualmente idênticas, justamente as seis que
+ * carregam a informação de produto. Visita → conversa virou componente próprio
+ * (`PortaDoFunilCard`): outro denominador, outra decisão.
+ *
+ * Escala rejeitada: log (faz 19 parecer 60% de 30.147, troca uma mentira por
+ * outra) e normalizar cada etapa pela anterior (todo funil fica saudável e some
+ * o absoluto, que com N=19 é o que importa).
+ *
+ * A queda é dita em ABSOLUTO e dividida em morto × vivo: "8 pararam aqui · 2
+ * ainda vivas" separa duas decisões opostas — consertar o agente ou puxar de
+ * volta. "44,4% saíram aqui" sobre 18 conversas era precisão falsa e não
+ * apontava nenhuma das duas.
  */
 export function FunilMidiaChart({ etapas }: { etapas: EtapaFunilMidia[] }) {
-	const topo = etapas[0]?.count ?? 0;
-	const vazio = etapas.every((e) => e.count === 0);
+	// A primeira etapa (`visitas`) vive no card da porta — aqui o funil começa
+	// onde a conversa começa.
+	const daConversa = etapas.filter((e) => e.chave !== "visitas");
+	const topo = daConversa[0]?.count ?? 0;
+	const vazio = daConversa.every((e) => e.count === 0);
 
-	// A maior queda é o gargalo — vale destaque, mas nunca só por cor.
-	const maiorQueda = Math.max(...etapas.map((e) => e.quedaDaAnterior), 0);
+	// A maior perda é o gargalo — em absoluto, que é como se decide o conserto.
+	const maiorPerda = Math.max(...daConversa.map((e) => e.pararamAqui), 0);
 
 	return (
 		<Card className="shadow-sm">
 			<CardHeader>
-				<CardTitle>Funil de mídia</CardTitle>
+				<CardTitle>A conversa</CardTitle>
 				<CardDescription>
-					Do anúncio ao contrato, só o tráfego com origem identificada — começa na visita, não no
-					lead
+					Das {nf.format(topo)} que abriram o chat, onde cada uma parou — só conversas com origem
+					conhecida
 				</CardDescription>
 			</CardHeader>
 			<CardContent>
 				{vazio ? (
 					<div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
-						Sem dados no período
+						Sem conversas no período
 					</div>
 				) : (
 					<div className="space-y-3">
-						{etapas.map((etapa, i) => {
-							// Teto em 100% por segurança: a barra é o desenho do funil, e uma
-							// barra estourando a caixa comunicaria erro mesmo quando o número
-							// estivesse certo.
-							const largura = topo > 0 ? Math.min(100, Math.max((etapa.count / topo) * 100, 2)) : 0;
-							const gargalo = i > 0 && etapa.quedaDaAnterior === maiorQueda && maiorQueda > 0;
+						{daConversa.map((etapa, i) => {
+							const largura =
+								topo > 0
+									? Math.min(100, Math.max((etapa.count / topo) * 100, etapa.count > 0 ? 2 : 0))
+									: 0;
+							// Gargalo por VOLUME perdido, e sempre com rótulo escrito: cor
+							// sozinha não carrega estado nesta casa.
+							const gargalo = etapa.pararamAqui === maiorPerda && maiorPerda > 0;
 
 							return (
 								<div key={etapa.chave}>
@@ -50,9 +67,9 @@ export function FunilMidiaChart({ etapas }: { etapas: EtapaFunilMidia[] }) {
 											<span className="text-xs text-muted-foreground truncate">{etapa.ajuda}</span>
 										</div>
 										<div className="flex items-baseline gap-3 shrink-0">
-											<span className="font-bold tabular-nums">{etapa.count}</span>
+											<span className="font-bold tabular-nums">{nf.format(etapa.count)}</span>
 											<span className="text-xs text-muted-foreground tabular-nums w-12 text-right">
-												{etapa.percentDoTopo.toFixed(1)}%
+												{etapa.percentDasConversas.toFixed(0)}%
 											</span>
 										</div>
 									</div>
@@ -61,22 +78,39 @@ export function FunilMidiaChart({ etapas }: { etapas: EtapaFunilMidia[] }) {
 										<div className="h-full bg-chart-1 rounded" style={{ width: `${largura}%` }} />
 									</div>
 
-									{i > 0 && etapa.quedaDaAnterior > 0 && (
-										<p
-											className={`text-xs mt-1 inline-flex items-center gap-1 ${
-												gargalo ? "text-amber-700 font-medium" : "text-muted-foreground"
-											}`}
-										>
-											<TrendingDownIcon className="size-3" aria-hidden="true" />
-											{etapa.quedaDaAnterior.toFixed(1)}% saíram aqui
-											{gargalo && " · maior perda do funil"}
-										</p>
+									{(etapa.pararamAqui > 0 || (i > 0 && etapa.quedaDaAnterior > 0)) && (
+										<div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
+											{etapa.pararamAqui > 0 && (
+												<p
+													className={`text-xs inline-flex items-center gap-1 ${
+														gargalo ? "text-amber-700 font-medium" : "text-muted-foreground"
+													}`}
+												>
+													<TrendingDownIcon className="size-3" aria-hidden="true" />
+													{nf.format(etapa.pararamAqui)}{" "}
+													{etapa.pararamAqui === 1 ? "parou aqui" : "pararam aqui"}
+													{gargalo && " · maior perda do funil"}
+												</p>
+											)}
+											{etapa.aindaVivas > 0 && (
+												<p className="text-xs inline-flex items-center gap-1 text-muted-foreground">
+													<ClockIcon className="size-3" aria-hidden="true" />
+													{nf.format(etapa.aindaVivas)}{" "}
+													{etapa.aindaVivas === 1 ? "ainda viva" : "ainda vivas"}
+												</p>
+											)}
+										</div>
 									)}
 								</div>
 							);
 						})}
 					</div>
 				)}
+
+				<p className="mt-4 text-xs text-muted-foreground">
+					“Ainda viva” = o cliente escreveu nos últimos 7 dias e a conversa não foi encerrada —
+					essas dá para puxar de volta. Contagem de conversas, nunca de leads.
+				</p>
 			</CardContent>
 		</Card>
 	);
