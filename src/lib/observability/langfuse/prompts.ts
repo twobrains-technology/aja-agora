@@ -5,6 +5,31 @@
 // Cache TTL 60s = "edite na UI, o app pega em ≤60s sem deploy".
 import type { TextPromptClient } from "@langfuse/client";
 import { getLangfuseClient } from "./client";
+import { ambienteLangfuse } from "./env";
+import { scoreDeDesyncEmRuntime } from "./prompt-drift";
+
+/** Já avisado nesta instância, por prompt — o cache do SDK é de 60s e o log
+ * repetido a cada turno vira ruído, que é como um alarme real deixa de ser
+ * lido. O score continua sendo emitido em todo turno divergente: é ele que dá a
+ * dimensão temporal no painel. */
+const jaAvisado = new Set<string>();
+
+function reportarDesync(name: string, textoPublicado: string, textoDoCodigo: string): void {
+	const score = scoreDeDesyncEmRuntime(name, textoPublicado, textoDoCodigo);
+	if (!score) {
+		jaAvisado.delete(name); // voltou a bater: o próximo desvio avisa de novo
+		return;
+	}
+	if (!jaAvisado.has(name)) {
+		jaAvisado.add(name);
+		console.error(`[langfuse] ${score.comment}`);
+	}
+	try {
+		getLangfuseClient()?.score.activeTrace({ ...score, environment: ambienteLangfuse() });
+	} catch {
+		// Score é observabilidade: nunca pode derrubar o turno do cliente.
+	}
+}
 
 export const PROMPT_NAMES = {
 	system: "aja-system-prompt",
@@ -34,6 +59,16 @@ export async function fetchManagedPrompt(
 			fetchTimeoutMs: 2_000,
 		});
 		if (prompt.isFallback) return { text: prompt.prompt, lfPrompt: null };
+
+		// O modelo está recebendo o texto PUBLICADO. Se ele difere da constante do
+		// código, o repo deixou de descrever o agente — e é aqui, com as duas
+		// versões na mão, que dá para saber. Cobre as duas direções: código que
+		// ninguém publicou, e texto editado na UI depois do último CI (esse muda o
+		// agente em ≤60s, sem deploy e sem review).
+		//
+		// Em 2026-08-15 essa divergência existia havia 8 dias sem ninguém notar.
+		reportarDesync(name, prompt.prompt, fallbackText);
+
 		return { text: prompt.prompt, lfPrompt: prompt };
 	} catch (err) {
 		console.error(`[langfuse] prompt "${name}" indisponível — usando fallback do código:`, err);

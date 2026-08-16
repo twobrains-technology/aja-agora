@@ -131,3 +131,34 @@ export function resumoDeDrift(drifts: PromptDrift[]): { ok: boolean; texto: stri
 
 	return { ok: false, texto: linhas.join("\n") };
 }
+
+/**
+ * O sinal de RUNTIME — a direção que o CI não alcança.
+ *
+ * `pnpm prompts:check` no CI responde "o código mudou e ninguém publicou?". Ele
+ * não vê o caminho inverso: alguém edita o texto na UI do Langfuse **depois** do
+ * último run, e o agente em produção muda em ≤60s, sem deploy e sem review.
+ *
+ * Quem enxerga as duas direções o tempo todo é o runtime, porque
+ * `fetchManagedPrompt` tem, em todo turno, o texto publicado E a constante do
+ * código na mão. Comparar ali custa uma comparação de string.
+ *
+ * Devolve o score a publicar, ou `null` quando está tudo em dia — o caminho
+ * normal precisa ser silencioso, senão vira ruído e alguém desliga.
+ */
+export function scoreDeDesyncEmRuntime(
+	name: string,
+	textoPublicado: string,
+	textoDoCodigo: string,
+): { name: string; value: string; dataType: "CATEGORICAL"; comment: string } | null {
+	if (normalizar(textoPublicado).join("\n") === normalizar(textoDoCodigo).join("\n")) return null;
+	return {
+		name: "prompt_desync",
+		value: name,
+		dataType: "CATEGORICAL",
+		comment:
+			`O texto com label 'production' difere da constante do código para '${name}'. ` +
+			"O modelo está recebendo o publicado; o repo é só fallback. " +
+			"Rode `pnpm prompts:check` para ver a diferença.",
+	};
+}

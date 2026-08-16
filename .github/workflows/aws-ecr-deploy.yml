@@ -126,6 +126,54 @@ jobs:
             gh pr comment $PR_NUMBER --body "⚠️ **Migration destrutiva detectada:**${findings}\n\nExige aprovação de DBA/sênior. Em prod, deploy aborta sem \`ALLOW_DESTRUCTIVE_MIGRATION=true\` no secret \`tb/prod/<app>/env\`. Ver \`tb-aws-platform/reference/conventions.md → Migrations\`." || true
           fi
 
+  # O agente em produção NÃO roda o prompt do repositório.
+  #
+  # `fetchManagedPrompt` lê a versão com label `production` do Langfuse e só usa a
+  # constante do código como fallback. Editar `system-prompt.ts` /
+  # `turn-analyzer.ts`, commitar e deployar não muda o agente enquanto ninguém
+  # publicar — e ninguém era avisado. Em 2026-08-15 o `aja-turn-analyzer` estava
+  # servindo a v1 de 07/08 enquanto o código, desde 14/08, já trazia os exemplos
+  # que separam "200 por mês" de "200 mil".
+  #
+  # Roda SEMPRE (não só quando os arquivos mudam): a divergência também aparece
+  # pelo outro lado, quando alguém edita o texto na UI do Langfuse — que muda o
+  # agente em ≤60s, sem deploy e sem review.
+  check-prompt-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.ECR_ACCOUNT }}:role/gha-ecs-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Compara o prompt publicado com o do código
+        run: |
+          SECRET_JSON=$(aws secretsmanager get-secret-value \
+            --secret-id "tb/prod/${{ env.APP }}/env" --query SecretString --output text)
+          # As chaves entram só no ambiente deste step — nunca em arquivo, nunca no log.
+          export LANGFUSE_BASE_URL=$(echo "$SECRET_JSON" | jq -r '.LANGFUSE_BASE_URL')
+          export LANGFUSE_PUBLIC_KEY=$(echo "$SECRET_JSON" | jq -r '.LANGFUSE_PUBLIC_KEY')
+          export LANGFUSE_SECRET_KEY=$(echo "$SECRET_JSON" | jq -r '.LANGFUSE_SECRET_KEY')
+          export DATABASE_URL=$(echo "$SECRET_JSON" | jq -r '.DATABASE_URL')
+          if ! pnpm prompts:check; then
+            echo "::error::O prompt publicado em produção difere do código. Rode 'pnpm sync-prompts' apontado para a instância de produção — ou o agente seguirá rodando o texto antigo."
+            exit 1
+          fi
+
   build:
     needs: check-migrations
     # Deploy automático SÓ em push na main (prod) OU disparo manual (workflow_dispatch).

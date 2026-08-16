@@ -9,7 +9,7 @@
 // A comparação é de TEXTO, determinística, sem rede — a busca do publicado é
 // injetada por quem chama (o script `prompts:check`).
 import { describe, expect, it } from "vitest";
-import { compararPromptPublicado, resumoDeDrift } from "./prompt-drift";
+import { compararPromptPublicado, resumoDeDrift, scoreDeDesyncEmRuntime } from "./prompt-drift";
 
 describe("compararPromptPublicado", () => {
 	it("texto publicado idêntico ao do código está em dia", () => {
@@ -109,5 +109,29 @@ describe("resumoDeDrift", () => {
 		const r = resumoDeDrift([{ status: "nao-publicado", name: "aja-system-prompt" }]);
 		expect(r.ok).toBe(false);
 		expect(r.texto).toContain("aja-system-prompt");
+	});
+});
+
+describe("scoreDeDesyncEmRuntime — a direção que o CI não pega", () => {
+	// O CI compara o repo com o publicado no momento do PR. Ele não vê alguém
+	// editar o texto na UI do Langfuse depois — e essa edição muda o agente em
+	// produção em ≤60s, sem deploy e sem review. Só o runtime enxerga isso,
+	// porque ele tem as duas versões na mão em todo turno.
+	it("textos iguais não geram score — o caminho normal tem que ser silencioso", () => {
+		expect(scoreDeDesyncEmRuntime("aja-system-prompt", "mesmo texto", "mesmo texto")).toBeNull();
+	});
+
+	it("textos diferentes geram score categórico com o nome do prompt", () => {
+		const s = scoreDeDesyncEmRuntime("aja-turn-analyzer", "publicado A", "código B");
+		expect(s).not.toBeNull();
+		expect(s?.name).toBe("prompt_desync");
+		expect(s?.value).toBe("aja-turn-analyzer");
+		expect(s?.dataType).toBe("CATEGORICAL");
+	});
+
+	it("diferença só de espaço no fim da linha não gera score", () => {
+		expect(
+			scoreDeDesyncEmRuntime("aja-system-prompt", "linha A\nlinha B", "linha A   \nlinha B\n"),
+		).toBeNull();
 	});
 });
