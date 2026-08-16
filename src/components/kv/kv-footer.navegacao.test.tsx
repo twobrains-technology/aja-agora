@@ -29,18 +29,15 @@ afterEach(() => {
 });
 
 /**
- * Os perfis oficiais, confirmados pelo Kairo em 2026-08-16 — o que faltava para
- * fechar o FIX-353.
+ * O perfil oficial, confirmado em 2026-08-16 — o que faltava para fechar o
+ * FIX-353.
  *
- * Até aqui os dois ícones apontavam para `"#"`, atrás de uma constante nomeada
+ * Até aqui os ícones apontavam para `"#"`, atrás de uma constante nomeada
  * (`REDE_SOCIAL_PENDENTE`) que declarava a pendência em vez de escondê-la. A
- * constante sumiu junto com a espera: o rodapé agora não tem link morto nenhum,
- * e o teste acima não precisa mais de exceção.
+ * constante sumiu junto com a espera: o rodapé não tem mais link morto nenhum,
+ * e o teste acima não precisa de exceção.
  */
-const PERFIS = [
-	{ nome: "Instagram", url: "https://www.instagram.com/ajaagoraoficial" },
-	{ nome: "Facebook", url: "https://www.facebook.com/ajaagoraoficial" },
-];
+const PERFIS = [{ nome: "Instagram", url: "https://www.instagram.com/ajaagoraoficial" }];
 
 describe("KvFooter — nenhum link morto", () => {
 	it("nenhuma âncora do rodapé aponta para '#'", () => {
@@ -58,6 +55,18 @@ describe("KvFooter — nenhum link morto", () => {
 		render(<KvFooter onOpenChat={vi.fn()} />);
 
 		expect(screen.getByRole("link", { name: nome })).toHaveAttribute("href", url);
+	});
+
+	it("não mostra ícone de rede que não tem página", () => {
+		// O Facebook saiu do rodapé em 2026-08-16: `facebook.com/ajaagoraoficial`
+		// responde "Este conteúdo não está disponível no momento" mesmo para quem
+		// está logado. Ícone que leva a uma página de erro da Meta é pior do que
+		// ícone nenhum — e seria o mesmo defeito que este arquivo inteiro existe
+		// para impedir, só que com outra cara. Volta quando a página existir; o
+		// SVG está no histórico deste arquivo.
+		render(<KvFooter onOpenChat={vi.fn()} />);
+
+		expect(screen.queryByRole("link", { name: "Facebook" })).toBeNull();
 	});
 
 	it.each(PERFIS)("$nome abre em outra aba, sem levar a venda embora", ({ nome }) => {

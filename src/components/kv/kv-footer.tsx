@@ -28,13 +28,10 @@ function InstagramIcon(props: SVGProps<SVGSVGElement>) {
 		</svg>
 	);
 }
-function FacebookIcon(props: SVGProps<SVGSVGElement>) {
-	return (
-		<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
-			<path d="M14 9h3V5h-3c-2.2 0-4 1.8-4 4v2H7v4h3v6h4v-6h3l1-4h-4V9c0-.6.4-1 1-1z" />
-		</svg>
-	);
-}
+// O ícone do Facebook saiu daqui em 2026-08-16, junto com o link: a página em
+// `facebook.com/ajaagoraoficial` responde "Este conteúdo não está disponível no
+// momento" mesmo para quem está logado. O SVG está no histórico deste arquivo e
+// volta assim que a página existir.
 
 // Sem "Blog": o comp atualizado deixou a segunda coluna com dois itens, e não
 // há blog publicado para onde apontar. Ela também deixou de ser "Recursos":
@@ -79,21 +76,20 @@ function FooterLinkColumn({ title, links }: { title: string; links: LinkKv[] }) 
 /**
  * Os perfis oficiais da Aja Agora (FIX-353, fechado em 2026-08-16).
  *
- * Os dois ícones passaram meses apontando para `"#"` — link clicável e inerte,
- * a mesma coisa que o cliente reportou no resto do rodapé. Ficaram por último
- * porque a URL não estava no nosso alcance: dependia do operador confirmar quais
- * são os perfis. São estes.
+ * Os ícones passaram meses apontando para `"#"` — link clicável e inerte, a
+ * mesma coisa que o cliente reportou no resto do rodapé. Ficaram por último
+ * porque a URL não estava no nosso alcance: dependia do operador confirmar os
+ * perfis.
+ *
+ * Sobrou um. O Facebook no mesmo caminho não abre, e mostrar o ícone assim mesmo
+ * trocaria o link inerte por um que leva a uma página de erro da Meta — pior,
+ * porque aí a marca aparece quebrada, e não apenas parada.
  */
 const SOCIAIS = [
 	{
 		icon: InstagramIcon,
 		label: "Instagram",
 		href: "https://www.instagram.com/ajaagoraoficial",
-	},
-	{
-		icon: FacebookIcon,
-		label: "Facebook",
-		href: "https://www.facebook.com/ajaagoraoficial",
 	},
 ];
 
