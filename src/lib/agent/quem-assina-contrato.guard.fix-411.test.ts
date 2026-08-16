@@ -41,6 +41,20 @@ const RAIZ = join(process.cwd(), "src");
  * à pergunta "isto é ação estruturada do cliente, ou interpretação de texto?". */
 const AUTORIZADOS = new Map<string, string>([
 	[
+		"lib/agent/aceite.ts",
+		// P0-1 (dossiê 2026-08-15) — o escritor ÚNICO do aceite, para os dois
+		// canais. O gatilho é sempre ação estruturada (clique de card na web,
+		// botão interativo no WhatsApp), e o groupId é conferido contra
+		// `listShownOffersForConversation` antes de amarrar dinheiro — cota que não
+		// foi exibida não ancora nada.
+		//
+		// Ele existe justamente para ENCOLHER esta lista: enquanto a regra estava
+		// escrita em dois lugares, o FIX-386 corrigiu a web e o WhatsApp seguiu
+		// prendendo o funil no gate `decision`, prometendo pré-cadastro sem
+		// proposta (conversa `9b9f9aab`, `bevi_proposals = 0`).
+		"escritor único do aceite — groupId conferido contra as ofertas exibidas, nos dois canais",
+	],
+	[
 		"app/api/chat/route.ts",
 		// Cliques de card: `choose_offer` resolve o groupId contra os artifacts
 		// REAIS já exibidos (`resolveChosenOffer`); `interest` traz a marca no
