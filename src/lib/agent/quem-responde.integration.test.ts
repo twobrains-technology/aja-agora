@@ -94,4 +94,26 @@ describeIfDb("quem responde o cliente — trava por pessoa, não por conversa", 
 		expect((await quemRespondePara(null)).quem).toBe("agente");
 		expect((await quemRespondePara("")).quem).toBe("agente");
 	});
+
+	// A EXCEÇÃO VIVA, catalogada em 2026-08-16.
+	//
+	// `route.ts` já assumia o turno quando o relay falhava ("handoff sem
+	// destinatário — nenhum atendente recebeu"), mas isso existia só como
+	// console.warn: qualquer feature construída sobre este contrato herdava a
+	// exceção sem saber que ela existia. A acolhida N1 foi a primeira a ser
+	// construída em cima dele — daí o nome sair do log e virar campo.
+	it("atendimento aberto que NINGUÉM assumiu é sinalizado, sem mudar quem responde", async () => {
+		const decisao = await quemRespondePara(WA_WHATSAPP);
+		if (decisao.quem !== "humano") throw new Error("esperava humano");
+		// A trava continua de pé — o comportamento não muda…
+		expect(decisao.handedOffUserId).toBeNull();
+		// …mas agora o estado tem nome para quem for decidir depois.
+		expect(decisao.semDestinatario).toBe(true);
+	});
+
+	it("quando o agente responde, o contrato diz POR QUÊ", async () => {
+		const decisao = await quemRespondePara(WA_TERCEIRO);
+		if (decisao.quem !== "agente") throw new Error("esperava agente");
+		expect(decisao.motivo).toBe("sem-atendimento-aberto");
+	});
 });

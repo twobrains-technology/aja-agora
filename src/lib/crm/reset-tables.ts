@@ -32,6 +32,11 @@ export const TABELAS_LIMPAS: readonly string[] = [
 	// Mesa de operação
 	"mesa_handoffs",
 	"mesa_copilot_messages",
+	// A campainha do handoff: entrega/leitura da notificação que chamou o
+	// atendente. É medição de uma conversa específica — sem a conversa, a linha
+	// não significa nada, e um `sent` de teste distorceria o tempo de resposta da
+	// mesa no período novo.
+	"handoff_notifications",
 	// Memória do agente — sem isto, cliente antigo volta e o agente "lembra" de
 	// uma conversa que não existe mais no CRM.
 	"memory_events",

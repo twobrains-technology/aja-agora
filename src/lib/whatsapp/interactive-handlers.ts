@@ -813,9 +813,32 @@ async function handleInterest(ctx: Ctx): Promise<boolean> {
 	// aqui. O clique segue persistido (recordUserClick).
 	const meta = await loadMeta(conversationId);
 	await recordUserClick(ctx);
-	if (!meta.decisionDispatched) {
-		await persistMeta(conversationId, { ...meta, decisionDispatched: true });
-	}
+
+	// P0-1 (dossiê 2026-08-15) — o clique de aceite tem que ESCREVER o aceite.
+	//
+	// Marcar `decisionDispatched` libera a tool-policy, mas não é aceite: o
+	// `nextGate` (qualify-state.ts:559, FIX-386 — "contratar exige um sim") pede
+	// `escolha` ancorada OU `decisionAccepted`. Sem isso o funil voltava a
+	// `decision` em todo turno seguinte, o `contract_form` nunca era emitido, e a
+	// conversa `9b9f9aab` terminou com o agente anunciando um pré-cadastro que não
+	// existia — `bevi_proposals = 0`. O FIX-386 mudou o contrato compartilhado e
+	// só a web foi ajustada; este é o outro lado da mesma regra.
+	//
+	// `interest_<groupId>` carrega a cota; `decision_contratar` é o "sim" sem cota
+	// nomeada. Os dois passam pelo MESMO escritor da web (`aplicarAceiteEstruturado`).
+	const groupIdDoClique = ctx.replyId.startsWith("interest_")
+		? ctx.replyId.slice("interest_".length)
+		: null;
+	const { aplicarAceiteEstruturado } = await import("@/lib/agent/aceite");
+	const { meta: metaComAceite } = await aplicarAceiteEstruturado({
+		conversationId,
+		meta,
+		aceite: { groupId: groupIdDoClique, doCard: meta.recommendedOffer },
+		canal: "whatsapp",
+	});
+
+	await persistMeta(conversationId, { ...metaComAceite, decisionDispatched: true });
+
 	const { buildAdvanceToContractDirective } = await import("@/lib/agent/orchestrator/directives");
 	await runAgentDirective(
 		from,
