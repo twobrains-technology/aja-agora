@@ -8,7 +8,7 @@
   4. Dossiê do especialista incorporado e seus P0 corrigidos com TDD (teste falhando primeiro);
   5. Feature de acolhida N1 pós-handoff criticada pelo especialista e implementada;
   6. `pnpm typecheck` e `pnpm test:unit` verdes no fim.
-- **Status:** EM ANDAMENTO
+- **Status:** COMPLETO (1 pendência: publicar o prompt em produção — só o Kairo)
 
 ## Decisões
 
@@ -125,11 +125,100 @@
 - **Reversibilidade:** fácil — a feature roda por worker, desligável removendo a chamada no ciclo.
 - **Evidência:** 25 testes novos verdes; suíte **393 arquivos / 2939 testes**.
 
+### D7 · 00:24 — a campainha antes do cobertor (commit `016038a7`)
+- **Contexto:** o especialista provou que a mesa não ignorou a cliente — a notificação levou 42 min
+  para ser `delivered` e 17h24 para ser `read`, com o painel sem listeners. Os status já chegavam
+  no webhook e viravam `console.log`; nada era gravado.
+- **Decidi:** tabela `handoff_notifications` (aditiva; migration `0043`), captura do `wamid` no
+  envio, gravação dos status no webhook e quatro sinais. O teste do webhook é de INTEGRAÇÃO contra
+  o Postgres: o que estava quebrado não era cálculo, era o fato não existir — mock de `db` provaria
+  que a função chama o ORM, não que a chamada virou estado.
+- **Detalhe que evitou um bug sutil:** grava o instante que a META informou, não o de agora, e o
+  reenvio (que a Meta faz) não sobrescreve o primeiro — senão a segunda entrega mascara justamente
+  a demora que se quer medir.
+- **Reversibilidade:** média — a migration é `CREATE TABLE` puro, sem alteração de tabela existente.
+- **Evidência:** 4 testes de integração + 9 unitários; o guard do reset de CRM acusou a tabela nova
+  sem classificação, como projetado, e ela entrou em `TABELAS_LIMPAS`.
+
+### D8 · 00:29 — o sinal que os juízes não davam (commit `99798caf`)
+- **Contexto:** no turno que prometeu o contrato inexistente, `judge_avancou` valeu **0,923** e todo
+  indicador estava verde. O defeito não era de fala, era de estado.
+- **Decidi:** dois scores de sessão (`funil_travado_no_fecho`, `venda_prometida_sem_proposta`)
+  derivados **do banco**, sem campo novo. A definição natural usaria o instante em que
+  `decisionDispatched` virou true — mas esse flag é escrito em SETE lugares, e um
+  `decisionDispatchedAt` em todos seria repetir, no remédio, a doença que o dossiê apurou.
+- **Evidência:** sobre a `9b9f9aab` os dois valem 1; sobre a `75f77efd`, que fechou de verdade,
+  nenhum acusa — é esse par que separa detector de reclamação.
+- **Cuidado deliberado:** idempotência por assinatura de sinais. Sem ela, o ciclo de 30s publicaria
+  o mesmo alarme 2.880×/dia, que é como um alarme verdadeiro deixa de ser lido.
+
+### D9 · 00:35 — os dois P0 restantes (commits `d44b887f`, `2ec4e92d`)
+- `tool-io-log.ts` tinha ZERO chamadores desde a migração para LangGraph — a Lei 5 estava escrita,
+  testada e desligada. Religado no `tool-adapter`, que é o único ponto por onde toda tool passa,
+  com teste que fica vermelho se alguém remover a chamada.
+- A exceção viva do invariante (`route.ts` assumindo o turno quando o relay falha) saiu do
+  `console.warn` e virou campo no contrato `quemRespondePara`. **O comportamento não muda** — trocar
+  a decisão junto com o nome seria mexer no invariante mais caro do produto num commit de
+  catalogação.
+
 ## Linha do tempo (resumida)
 - 23:05 — túnel SSM aberto para o RDS de produção (leitura); 6 conversas de 14–15/08 extraídas
 - 23:10 — especialista (`super-especialista-de-ia`) despachado para o dossiê de causa-raiz
 - 23:20 — ambiente do workspace consertado (D1); suíte verde
 - 23:35 — dessincronização do analyzer provada e classificada (D2); ressalva enviada ao especialista
-- 23:42 — Kairo saiu; modo autônomo, foco em documentar a regra + hook obrigatório
+- 23:42 — Kairo saiu; modo autônomo
+- 23:54 — regra + `prompts:check` + hook (`85b5b325`)
+- 00:05 — P0-1 do dossiê: aceite nos dois canais (`c9dc5b70`)
+- 00:12 — feature N1 conforme a crítica (`d8a3fad7`)
+- 00:16 — CI + sinal de runtime do prompt (`bf9dc64e`)
+- 00:24 — campainha do handoff (`016038a7`)
+- 00:29 — reconciliação fala×estado (`99798caf`)
+- 00:35 — tool I/O religado + exceção catalogada (`d44b887f`, `2ec4e92d`)
 
-## Relatório final (preencher ao encerrar)
+## Relatório final
+
+**Status: COMPLETO** (com uma pendência que só você destrava — ver ⚠️ acima).
+
+### Resultado vs critério de pronto
+
+| Critério | Resultado |
+|---|---|
+| Regra do prompt no CLAUDE.md | ✅ seção "O prompt NÃO vive só no repositório" |
+| Verificação determinística, com teste | ✅ `pnpm prompts:check` + 11 testes; rodado contra produção, acusa o `aja-turn-analyzer` e **não** acusa o `aja-system-prompt` — o par que prova que o detector compara a coisa certa |
+| Hook obrigando | ✅ `PostToolUse` avisa ao editar; `Stop` barra uma vez. Testado nos 5 cenários |
+| P0 do dossiê corrigidos com TDD | ✅ os 4 (aceite nos dois canais · reconciliação fala×estado · sinal de prompt · tool I/O) |
+| Feature N1 criticada e implementada | ✅ criticada antes, implementada conforme — inclusive **contra** o meu desenho original |
+| `typecheck` + `test:unit` verdes | ✅ **395 arquivos / 2962 testes**, lint limpo |
+
+### Revisar primeiro (as decisões mais discutíveis)
+
+1. **⚠️ PENDENTE-KAIRO — publicar o `aja-turn-analyzer` em produção.** É a única coisa que ficou
+   parada esperando você. Ver o bloco acima; o `pnpm prompts:check` fica verde depois.
+2. **D2** — eu dei peso alto à dessincronização de prompt e depois **reduzi** o peso ao verificar o
+   caminho do dado. Está classificada como dívida, não como causa. Se você discordar, o lugar de
+   discutir é o `§2.A10` do dossiê.
+3. **D6** — a feature N1 saiu diferente do que você descreveu: **não é inline** quando o cliente
+   escreve, é um worker que decide e re-checa antes de emitir. O motivo é o invariante de 10/08
+   (falar por cima do atendente). Se você quiser mesmo a resposta imediata no inbound, isso muda.
+4. **D9** — o `handoff-sem-destinatario` foi catalogado sem mudar comportamento. Existe uma decisão
+   de produto por trás que eu não tomei: quando ninguém assume o atendimento, o agente **deveria**
+   voltar a falar? Hoje ele cala, e a acolhida N1 é o que cobre o cliente.
+
+### O que NÃO fiz, e por quê
+
+- **Publicar o prompt em produção** — blast radius de produção, decisão sua (§4 do `to-saindo`).
+- **Escalação da campainha** (2º atendente / supervisão quando a notificação não entrega): a
+  medição está de pé, mas *para quem escalar* é política de negócio, não decisão técnica.
+- **P1/P2 dos dois documentos** — ficaram na fila, com critério de aceite escrito: o texto sobre
+  tool derivando do bind, `orientarSobreToolAusente` devolvendo o motivo, o gate não repetindo a
+  pergunta que o modelo acabou de fazer, o prazo voltando a valer no ranking (a Ana pediu 12 meses
+  e levou 47), corpo vazio ao WhatsApp (10 em 4 dias), `/reset` não destruindo a prova, e a nota da
+  web que **nunca foi persistida** (`count(*) = 0`).
+
+### Próximos passos sugeridos
+
+1. Publicar o analyzer (1 comando) e confirmar `pnpm prompts:check` verde.
+2. Deployar — o `contract_form` só passa a ser emitido no WhatsApp depois disso, e é o que
+   destrava a venda que morria no `decision`.
+3. Em ~2 semanas, ler `handoff_notificacao_lida_min` e `funil_travado_no_fecho` e decidir os
+   limiares com dado real, em vez de número redondo.
