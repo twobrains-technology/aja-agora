@@ -103,13 +103,18 @@ export function ConversationsTable() {
 	const [from, setFrom] = useQueryState("from", parseAsIsoDate);
 	const [to, setTo] = useQueryState("to", parseAsIsoDate);
 	const [offset, setOffset] = useQueryState("offset", parseAsInteger.withDefault(0));
+	// Chegam pelo link vindo da tela de Performance ("clicar nas 4 do Instagram
+	// e ver aquelas 4"). Não têm controle próprio na barra: são um recorte que
+	// veio de outra tela, e o que a barra oferece é desfazê-lo.
+	const [origem, setOrigem] = useQueryState("origem", parseAsString);
+	const [campanha, setCampanha] = useQueryState("campanha", parseAsString);
 
 	const [data, setData] = useState<ListResponse | null>(null);
 	const [loadError, setLoadError] = useState<string | null>(null);
 
 	const filtersValue = useMemo<ConversationsFiltersValue>(
-		() => ({ channel, status, q, from, to }),
-		[channel, status, q, from, to],
+		() => ({ channel, status, q, from, to, origem, campanha }),
+		[channel, status, q, from, to, origem, campanha],
 	);
 
 	const handleFiltersChange = useCallback(
@@ -119,9 +124,16 @@ export function ConversationsTable() {
 			if (next.q !== undefined) setQ(next.q === "" ? null : next.q);
 			if (next.from !== undefined) setFrom(next.from);
 			if (next.to !== undefined) setTo(next.to);
+			// Limpar a origem limpa a campanha junto: campanha sem canal é um
+			// recorte que a tela não sabe nomear.
+			if (next.origem !== undefined) {
+				setOrigem(next.origem);
+				if (!next.origem) setCampanha(null);
+			}
+			if (next.campanha !== undefined) setCampanha(next.campanha);
 			setOffset(0);
 		},
-		[setChannel, setStatus, setQ, setFrom, setTo, setOffset],
+		[setChannel, setStatus, setQ, setFrom, setTo, setOffset, setOrigem, setCampanha],
 	);
 
 	useEffect(() => {
@@ -134,6 +146,8 @@ export function ConversationsTable() {
 		if (q) params.set("q", q);
 		if (from) params.set("from", from.toISOString());
 		if (to) params.set("to", to.toISOString());
+		if (origem) params.set("origem", origem);
+		if (campanha) params.set("campanha", campanha);
 
 		setLoadError(null);
 		(async () => {
@@ -155,7 +169,7 @@ export function ConversationsTable() {
 		return () => {
 			cancelled = true;
 		};
-	}, [channel, status, q, from, to, offset]);
+	}, [channel, status, q, from, to, offset, origem, campanha]);
 
 	const total = data?.total ?? 0;
 	const items = data?.items ?? [];

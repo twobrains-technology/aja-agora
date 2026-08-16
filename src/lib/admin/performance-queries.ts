@@ -12,6 +12,7 @@
 
 import { type SQL, sql } from "drizzle-orm";
 import { db } from "@/db";
+import { PADRAO_ROBO_SQL } from "@/lib/attribution/user-agent-robo";
 import { rotularOrigem } from "./origem-label";
 import {
 	type CoberturaAtribuicao,
@@ -24,6 +25,30 @@ import {
 
 /** Quantos dias sem o cliente escrever até a conversa deixar de contar como viva. */
 const DIAS_PARA_CONSIDERAR_VIVA = 7;
+
+/**
+ * A visita é de GENTE — o denominador de toda taxa desta tela.
+ *
+ * Medido no banco de produção em 15/08/2026: de 40.796 visitas em 30 dias,
+ * 38.792 eram máquina, e 33.382 delas o health check do NOSSO ALB, que bate em
+ * `/` a cada 30 segundos e cai no matcher do proxy. Somar máquina e gente no
+ * mesmo denominador fazia a tela mostrar 0,056% de visita → conversa quando a
+ * taxa sobre gente é 1,15% — vinte vezes maior, e é esse número que decide
+ * verba.
+ *
+ * O proxy já não grava mais robô (`src/proxy.ts`), mas o histórico gravado só
+ * fica legível se a leitura classificar também. A lista é a mesma nos dois
+ * lados, exportada de um módulo só.
+ *
+ * **A âncora que impede o erro caro:** visita que PRODUZIU conversa nunca é
+ * classificada como robô, qualquer que seja o user-agent. Fato do servidor
+ * vence heurística — é a mesma regra que o `CLAUDE.md` aplica ao guard de fala,
+ * e é o que protege o cliente atrás de proxy corporativo com header estranho.
+ */
+const VISITA_DE_GENTE = sql`(
+  EXISTS (SELECT 1 FROM conversations cg WHERE cg.visit_id = v.id AND cg.is_simulated = false)
+  OR (v.user_agent IS NOT NULL AND v.user_agent !~* ${PADRAO_ROBO_SQL})
+)`;
 
 /** Artifacts que provam que o cliente VIU número de oferta na tela. */
 const ARTIFACTS_DE_OFERTA = ["real_offer", "simulation_result"];
@@ -91,7 +116,8 @@ export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<E
 	const resultado = await db.execute<Record<string, unknown>>(sql`
     SELECT
       (SELECT count(*) FROM visits v
-        WHERE v.created_at BETWEEN ${fromDate} AND ${toDate}) AS visitas,
+        WHERE v.created_at BETWEEN ${fromDate} AND ${toDate}
+          AND ${VISITA_DE_GENTE}) AS visitas,
 
       (SELECT count(*) FROM conversations c
         WHERE ${atribuida}) AS conversas,
@@ -229,7 +255,8 @@ export async function computePorta(fromDate: Date, toDate: Date): Promise<PortaD
 	const resultado = await db.execute<Record<string, unknown>>(sql`
     SELECT
       (SELECT count(*) FROM visits v
-        WHERE v.created_at BETWEEN ${fromDate} AND ${toDate}) AS visitas,
+        WHERE v.created_at BETWEEN ${fromDate} AND ${toDate}
+          AND ${VISITA_DE_GENTE}) AS visitas,
       (SELECT count(*) FROM conversations c
         WHERE c.is_simulated = false
           AND c.visit_id IS NOT NULL
@@ -265,7 +292,13 @@ export async function computeOrigens(fromDate: Date, toDate: Date): Promise<Linh
 	// mesmo nome na tela.
 	const resultado = await db.execute<Record<string, unknown>>(sql`
     SELECT
-      v.utm_source, v.utm_medium, v.utm_campaign, v.utm_content,
+      -- Fonte em minúscula: o que chega aqui é o que o anunciante DIGITOU na
+      -- UTM, e "IG" e "ig" são a mesma campanha. Sem normalizar, a mesma
+      -- campanha virava duas linhas na tabela com os números partidos — o
+      -- defeito que a consolidação por rótulo, logo abaixo, existe para evitar
+      -- e que ela não pegava por ser sensível a caixa.
+      lower(v.utm_source) AS utm_source,
+      v.utm_medium, v.utm_campaign, v.utm_content,
       v.ctwa_source_id, v.ctwa_headline,
       CASE
         WHEN v.utm_source IS NULL AND v.ctwa_source_id IS NULL AND v.referrer IS NOT NULL
@@ -285,6 +318,7 @@ export async function computeOrigens(fromDate: Date, toDate: Date): Promise<Linh
     LEFT JOIN leads l ON l.conversation_id = c.id AND l.is_simulated = false
     LEFT JOIN bevi_proposals bp ON bp.conversation_id = c.id
     WHERE v.created_at BETWEEN ${fromDate} AND ${toDate}
+      AND ${VISITA_DE_GENTE}
     GROUP BY 1,2,3,4,5,6,7
   `);
 
@@ -333,8 +367,10 @@ export async function computeOrigens(fromDate: Date, toDate: Date): Promise<Linh
 export async function computeSerie(fromDate: Date, toDate: Date): Promise<PontoSerie[]> {
 	const resultado = await db.execute<Record<string, unknown>>(sql`
     WITH v AS (
-      SELECT ${diaLocal(sql`created_at`)} AS dia, count(*) AS total
-      FROM visits WHERE created_at BETWEEN ${fromDate} AND ${toDate} GROUP BY 1
+      SELECT ${diaLocal(sql`v.created_at`)} AS dia, count(*) AS total
+      FROM visits v WHERE v.created_at BETWEEN ${fromDate} AND ${toDate}
+        AND ${VISITA_DE_GENTE}
+      GROUP BY 1
     ),
     -- Mesma população do funil de mídia (conversa COM origem). Contar aqui o
     -- total e lá o atribuído colocaria dois números diferentes com o mesmo

@@ -2,6 +2,7 @@ import { and, count, desc, eq, gte, ilike, lte, or, sql } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { db } from "@/db";
 import { conversationEvaluations, conversations, messages, user as userTable } from "@/db/schema";
+import { condicaoDeOrigem } from "@/lib/admin/filtro-origem";
 import { requireRole } from "@/lib/admin/require-role";
 
 const CHANNELS = ["web", "whatsapp"] as const;
@@ -68,6 +69,13 @@ export async function GET(req: NextRequest) {
 		endOfDay.setHours(23, 59, 59, 999);
 		conditions.push(lte(conversations.updatedAt, endOfDay));
 	}
+
+	// De onde a conversa veio — é o que faz o número clicado na tela de
+	// Performance abrir exatamente aquelas conversas. A precedência é a mesma da
+	// tabela por origem, e há teste de integração comparando os dois lados: se
+	// divergirem, clicar em "4" abre 3, e o painel perde a confiança.
+	const daOrigem = condicaoDeOrigem(sp.get("origem"), sp.get("campanha"));
+	if (daOrigem) conditions.push(daOrigem);
 
 	const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
