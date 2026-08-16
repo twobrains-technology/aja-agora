@@ -14,18 +14,28 @@
  * `navegacao.rotas-existem.test.ts` cobra destino real de cada href daqui.
  */
 
-export type LinkKv = { label: string; href: string };
+import { Car, House, type LucideIcon, Motorbike } from "lucide-react";
+
+export type LinkKv = { label: string; href: string; icone?: LucideIcon };
 
 /**
  * As landings por tipo de bem. São páginas de verdade (`/autos`, `/imoveis`,
  * `/motos`), com hero, números e FAQ próprios — nasceram como destino de
  * campanha e ficaram órfãs, sem nada no site apontando para elas. O menu e o
  * rodapé são as duas portas.
+ *
+ * O ícone mora aqui, e não num mapa `href → ícone` dentro do menu, porque um
+ * segundo lugar descrevendo as mesmas três verticais é exatamente a divergência
+ * que este arquivo veio resolver: renomear um href lá em cima faria o ícone
+ * sumir calado. É `lucide` e não os pictogramas de `components/icons`
+ * (`Carrinho`, `Casinha`, `Motinha`): aqueles são desenhos cheios, feitos para a
+ * grade grande de contemplações, e a 20px ao lado de um rótulo pesariam mais que
+ * o próprio texto.
  */
 export const VERTICAIS: LinkKv[] = [
-	{ label: "Carro", href: "/autos" },
-	{ label: "Imóvel", href: "/imoveis" },
-	{ label: "Moto", href: "/motos" },
+	{ label: "Carro", href: "/autos", icone: Car },
+	{ label: "Imóvel", href: "/imoveis", icone: House },
+	{ label: "Moto", href: "/motos", icone: Motorbike },
 ];
 
 /**
