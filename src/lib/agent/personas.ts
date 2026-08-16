@@ -179,6 +179,12 @@ export type ConversationMetadata = {
 	 * conversa que está quebrando. Zerado a cada turno REAL do cliente — ele
 	 * respondeu, o relógio recomeça. */
 	retomada?: { attempts: number; lastAt: number };
+	/** Acolhidas N1 já disparadas para o cliente que está com a MESA e voltou a
+	 * escrever (ver `lib/mesa/acolhida-n1.ts`). Mesma forma e mesma doutrina da
+	 * `retomada` — de propósito: uma terceira convenção de anti-repetição
+	 * (`n1AckAt` e afins) seria mais uma regra escrita duas vezes, que é a causa
+	 * estrutural apurada no dossiê de 2026-08-15. Gravado ANTES do disparo. */
+	acolhidaN1?: { attempts: number; lastAt: number };
 	/** FIX-211 — contador de cobranças por gate de COLETA obrigatória (identify/
 	 * credit/lance/...). Incrementado a cada RE-cobrança (turno mudo ou desvio do
 	 * usuário), NÃO na emissão original do gate. Governa a ESCADA de cobrança
