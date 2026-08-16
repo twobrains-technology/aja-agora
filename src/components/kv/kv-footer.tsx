@@ -3,6 +3,7 @@ import type { SVGProps } from "react";
 import { Wordmark } from "@/components/brand/wordmark";
 import type { TheaterOpener } from "@/components/chat/theater/theater-context";
 import { Em } from "@/components/kv/em";
+import { type LinkKv, RODAPE_CONSORCIOS, RODAPE_NAVEGACAO } from "@/components/kv/navegacao";
 import { KvContainer } from "@/components/kv/ui/kv-container";
 import { KvCtaButton } from "@/components/kv/ui/kv-cta-button";
 import { KV_RITMO } from "@/components/kv/ui/kv-section";
@@ -27,26 +28,15 @@ function InstagramIcon(props: SVGProps<SVGSVGElement>) {
 		</svg>
 	);
 }
-function FacebookIcon(props: SVGProps<SVGSVGElement>) {
-	return (
-		<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
-			<path d="M14 9h3V5h-3c-2.2 0-4 1.8-4 4v2H7v4h3v6h4v-6h3l1-4h-4V9c0-.6.4-1 1-1z" />
-		</svg>
-	);
-}
+// O ícone do Facebook saiu daqui em 2026-08-16, junto com o link: a página em
+// `facebook.com/ajaagoraoficial` responde "Este conteúdo não está disponível no
+// momento" mesmo para quem está logado. O SVG está no histórico deste arquivo e
+// volta assim que a página existir.
 
-const NAV_LINKS = [
-	{ label: "Encontre o consórcio certo", href: "#" },
-	{ label: "Como funcionamos", href: "#" },
-	{ label: "Tipo de Consórcio", href: "#" },
-];
-
-// Sem "Blog": o comp atualizado deixou Recursos com dois itens, e não há blog
-// publicado para onde apontar.
-const RESOURCE_LINKS = [
-	{ label: "Dúvidas", href: "#" },
-	{ label: "Jornada", href: "#" },
-];
+// Sem "Blog": o comp atualizado deixou a segunda coluna com dois itens, e não
+// há blog publicado para onde apontar. Ela também deixou de ser "Recursos":
+// "Jornada" e "Como funcionamos" apontariam para a mesma seção da home, e a
+// coluna rende mais levando às três landings de vertical.
 
 /**
  * Letras miúdas do rodapé. Razão social, CNPJ e endereço são exigência de
@@ -59,11 +49,9 @@ const LETRAS_MIUDAS = [
 	"Ao utilizar este site, você concorda com nossos termos de uso e política de privacidade.",
 ];
 
-type FooterLink = { label: string; href: string };
-
-// Coluna de links do rodapé (título uppercase + lista) — Navegação e Recursos
+// Coluna de links do rodapé (título uppercase + lista) — Navegação e Consórcios
 // têm a mesma estrutura, só o array de links e o aria-label mudam.
-function FooterLinkColumn({ title, links }: { title: string; links: FooterLink[] }) {
+function FooterLinkColumn({ title, links }: { title: string; links: LinkKv[] }) {
 	return (
 		<nav aria-label={title} className="lg:w-[226px]">
 			<h3 className="text-[12px] font-semibold uppercase leading-none tracking-wide text-[#F2F2F2]/60">
@@ -85,11 +73,24 @@ function FooterLinkColumn({ title, links }: { title: string; links: FooterLink[]
 	);
 }
 
-// TODO: URL real das redes sociais da Aja Agora — placeholder até o operador
-// confirmar os perfis (FIX-353).
-const SOCIALS = [
-	{ icon: InstagramIcon, label: "Instagram", href: "#" },
-	{ icon: FacebookIcon, label: "Facebook", href: "#" },
+/**
+ * Os perfis oficiais da Aja Agora (FIX-353, fechado em 2026-08-16).
+ *
+ * Os ícones passaram meses apontando para `"#"` — link clicável e inerte, a
+ * mesma coisa que o cliente reportou no resto do rodapé. Ficaram por último
+ * porque a URL não estava no nosso alcance: dependia do operador confirmar os
+ * perfis.
+ *
+ * Sobrou um. O Facebook no mesmo caminho não abre, e mostrar o ícone assim mesmo
+ * trocaria o link inerte por um que leva a uma página de erro da Meta — pior,
+ * porque aí a marca aparece quebrada, e não apenas parada.
+ */
+const SOCIAIS = [
+	{
+		icon: InstagramIcon,
+		label: "Instagram",
+		href: "https://www.instagram.com/ajaagoraoficial",
+	},
 ];
 
 interface KvFooterProps {
@@ -152,10 +153,10 @@ export function KvFooter({ onOpenChat, comCtaFinal = true }: KvFooterProps) {
 							</p>
 						</div>
 
-						{/* Navegação + Recursos */}
+						{/* Navegação + Consórcios */}
 						<div className="flex flex-col gap-10 sm:flex-row sm:gap-12 lg:w-[500px]">
-							<FooterLinkColumn title="Navegação" links={NAV_LINKS} />
-							<FooterLinkColumn title="Recursos" links={RESOURCE_LINKS} />
+							<FooterLinkColumn title="Navegação" links={RODAPE_NAVEGACAO} />
+							<FooterLinkColumn title="Consórcios" links={RODAPE_CONSORCIOS} />
 						</div>
 
 						{/* Contato */}
@@ -182,11 +183,15 @@ export function KvFooter({ onOpenChat, comCtaFinal = true }: KvFooterProps) {
 
 					{/* Redes sociais */}
 					<div className="flex items-center gap-4">
-						{SOCIALS.map((social) => (
+						{SOCIAIS.map((social) => (
 							<a
 								key={social.label}
 								href={social.href}
 								aria-label={social.label}
+								// Outra aba: quem clica aqui está no meio de uma conversa de venda,
+								// e trocar a página pelo Instagram levaria a conversa junto.
+								target="_blank"
+								rel="noopener noreferrer"
 								className="flex size-10 items-center justify-center rounded-full border border-white/40 text-white transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#021628]"
 							>
 								<social.icon className="size-[18px]" strokeWidth={2} />

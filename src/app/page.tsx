@@ -39,7 +39,11 @@ function LandingShell() {
 			<div id="como-funciona" className="scroll-mt-24">
 				<KvJourney />
 			</div>
-			<KvTipos onOpenChat={openTheater} />
+			{/* O `id` é o destino do "Tipo de Consórcio" do rodapé, que aparece
+			    também nas verticais e por isso aponta para `/#tipos`. */}
+			<div id="tipos" className="scroll-mt-24">
+				<KvTipos onOpenChat={openTheater} />
+			</div>
 			<KvContemplacao />
 			<div id="faq" className="scroll-mt-24">
 				<KvFaq />

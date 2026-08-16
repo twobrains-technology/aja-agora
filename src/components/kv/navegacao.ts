@@ -1,0 +1,86 @@
+/**
+ * Os links do site público, em um lugar só.
+ *
+ * Existe porque o menu e o rodapé falavam das MESMAS coisas com dados próprios,
+ * e por isso discordavam: cinco links do rodapé eram `href="#"`, e as três
+ * landings de vertical (`/autos`, `/imoveis`, `/motos`) estavam prontas e sem
+ * ninguém apontando para elas. `kv-menu.tsx` já tinha aprendido metade da lição
+ * — derivava o menu das verticais do menu da home em vez de copiar, depois de
+ * as duas divergirem. Isto termina o serviço para o rodapé.
+ *
+ * Os cards de tipo da home NÃO consomem daqui de propósito: eles não navegam,
+ * abrem o chat com o seed do tipo (`kv-tipos.tsx`).
+ *
+ * `navegacao.rotas-existem.test.ts` cobra destino real de cada href daqui.
+ */
+
+export type LinkKv = { label: string; href: string };
+
+/**
+ * As landings por tipo de bem. São páginas de verdade (`/autos`, `/imoveis`,
+ * `/motos`), com hero, números e FAQ próprios — nasceram como destino de
+ * campanha e ficaram órfãs, sem nada no site apontando para elas. O menu e o
+ * rodapé são as duas portas.
+ */
+export const VERTICAIS: LinkKv[] = [
+	{ label: "Carro", href: "/autos" },
+	{ label: "Imóvel", href: "/imoveis" },
+	{ label: "Moto", href: "/motos" },
+];
+
+/**
+ * Um item da barra de menu: ou leva a algum lugar (`href`), ou desdobra em
+ * outros que levam (`submenu`). Nunca os dois — um item que navega E abre
+ * obriga a pessoa a adivinhar o que o clique vai fazer.
+ */
+export type ItemDeMenu =
+	| (LinkKv & { submenu?: never })
+	| { label: string; href?: never; submenu: LinkKv[] };
+
+/** O menu da home. As âncoras são seções desta página. */
+export const NAV: ItemDeMenu[] = [
+	{ label: "Seu Objetivo", href: "#hero" },
+	{ label: "Como funcionamos", href: "#como-funciona" },
+	{ label: "Tipo de Consórcio", submenu: VERTICAIS },
+	{ label: "Quem somos", href: "#confianca" },
+	{ label: "Dúvidas", href: "#faq" },
+];
+
+/** Seções que existem só na home — nas verticais viram link para lá. */
+const SO_NA_HOME = new Set(["#como-funciona", "#confianca"]);
+
+/**
+ * O menu das landings de vertical: os MESMOS itens da home.
+ *
+ * Sai de `NAV` por construção, e não copiado, para que renomear um item na home
+ * não deixe as três verticais para trás — foi assim que elas acabaram com
+ * "Quais motos" e "Moto como renda", um menu diferente por página.
+ *
+ * `#hero` e `#faq` continuam âncoras locais porque as duas seções existem em
+ * toda vertical. "Como funcionamos" e "Quem somos" não existem fora da home,
+ * então apontam para lá: mesmo rótulo, clique vivo.
+ */
+export const NAV_VERTICAL: ItemDeMenu[] = NAV.map((item) =>
+	item.href && SO_NA_HOME.has(item.href) ? { ...item, href: `/${item.href}` } : item,
+);
+
+/** Todo link alcançável por um menu, submenu incluído. */
+export function linksDoMenu(itens: ItemDeMenu[]): LinkKv[] {
+	return itens.flatMap((item) => (item.submenu ? item.submenu : [item]));
+}
+
+/**
+ * Coluna "Navegação" do rodapé.
+ *
+ * Caminho absoluto (`/#...`) e não âncora solta (`#...`): o rodapé aparece nas
+ * quatro landings, e âncora relativa resolve na página atual — de `/motos`, um
+ * `#como-funciona` não acharia nada, porque a seção só existe na home.
+ */
+export const RODAPE_NAVEGACAO: LinkKv[] = [
+	{ label: "Encontre o consórcio certo", href: "/#hero" },
+	{ label: "Como funcionamos", href: "/#como-funciona" },
+	{ label: "Tipo de Consórcio", href: "/#tipos" },
+];
+
+/** Coluna "Consórcios" do rodapé — as mesmas três verticais dos cards. */
+export const RODAPE_CONSORCIOS: LinkKv[] = VERTICAIS;
