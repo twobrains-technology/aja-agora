@@ -9,6 +9,7 @@ import { DynamicStructuredTool } from "@langchain/core/tools";
 import { startActiveObservation } from "@langfuse/tracing";
 import type { Tool as AiSdkTool } from "ai";
 import type { z } from "zod";
+import { logToolError, logToolIO } from "@/lib/agent/orchestrator/tool-io-log";
 import { buildConsorcioTools, type ConsorcioToolsContext } from "@/lib/agent/tools/ai-sdk";
 
 /** `ToolExecutionOptions` mínimo (AI SDK) pra chamar `execute` fora do loop
@@ -23,7 +24,13 @@ function fakeToolExecutionOptions(): { toolCallId: string; messages: never[] } {
 /** Embrulha 1 tool AI-SDK (`{ description, inputSchema, execute }`) numa
  * `DynamicStructuredTool` LangChain. `.invoke(input)` chama o `execute`
  * ORIGINAL — mesma implementação, mesmo `discovery()`/DB por trás. */
-export function toLangChainTool(name: string, aiSdkTool: AiSdkTool): DynamicStructuredTool {
+export function toLangChainTool(
+	name: string,
+	aiSdkTool: AiSdkTool,
+	/** Só para o log de tool I/O — o span do Langfuse já carrega a conversa pelo
+	 * trace ativo. */
+	conversationId?: string,
+): DynamicStructuredTool {
 	const { execute } = aiSdkTool;
 	if (!execute) {
 		throw new Error(
@@ -43,11 +50,38 @@ export function toLangChainTool(name: string, aiSdkTool: AiSdkTool): DynamicStru
 				name,
 				async (span) => {
 					span.update({ input });
+					const opts = fakeToolExecutionOptions();
 					try {
-						const out = await execute(input as never, fakeToolExecutionOptions());
+						const out = await execute(input as never, opts);
 						span.update({ output: out });
+						// Lei 5 (observabilidade de tool I/O): o `tool-io-log.ts` foi escrito
+						// para o runtime do AI SDK e ficou com ZERO chamadores depois da
+						// migração para LangGraph — em três dias de produção não houve uma
+						// única linha `[tool-io]`. O span do Langfuse cobre o caso normal,
+						// mas morre junto com o Langfuse; o log estruturado é o que sobra
+						// para grep e alarme quando a observabilidade está fora.
+						//
+						// Aqui é o lugar certo pelo mesmo motivo que o span está aqui: é o
+						// único ponto por onde TODA tool de negócio passa, tanto o ToolNode
+						// do `converse` quanto a chamada direta do `discovery`.
+						logToolIO({
+							conversationId,
+							stepNumber: 0,
+							toolCalls: [{ toolCallId: opts.toolCallId, toolName: name, input }],
+							toolResults: [{ toolCallId: opts.toolCallId, toolName: name, output: out }],
+						});
 						return out;
 					} catch (err) {
+						logToolError({
+							conversationId,
+							stepNumber: 0,
+							error: {
+								toolCallId: opts.toolCallId,
+								toolName: name,
+								input,
+								errorText: err instanceof Error ? err.message : String(err),
+							},
+						});
 						// Sem este catch a tool que estoura sai do trace como span mudo —
 						// sem output e sem marca de erro, idêntico a um span truncado. O
 						// nível ERROR é o que faz a observação aparecer vermelha na UI e
@@ -75,7 +109,7 @@ export type LangGraphToolset = Record<string, DynamicStructuredTool>;
 export function buildLangGraphTools(ctx: ConsorcioToolsContext): LangGraphToolset {
 	const aiSdkTools = buildConsorcioTools(ctx);
 	const entries = Object.entries(aiSdkTools).map(
-		([name, t]) => [name, toLangChainTool(name, t as AiSdkTool)] as const,
+		([name, t]) => [name, toLangChainTool(name, t as AiSdkTool, ctx.conversationId)] as const,
 	);
 	return Object.fromEntries(entries);
 }

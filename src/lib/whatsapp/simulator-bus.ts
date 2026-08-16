@@ -75,6 +75,18 @@ export function publishToAttendant(
 	bus.emit(event, message);
 }
 
+/**
+ * Quantos painéis estão ouvindo este atendente agora.
+ *
+ * O número já era calculado no `publishToAttendant` e morria no log. Ele é
+ * metade da explicação do incidente de 14/08: no instante do handoff havia ZERO
+ * listeners, ou seja, ninguém com a tela aberta para ver o cliente chegar — e a
+ * outra metade (o WhatsApp do atendente) levou 42 min para entregar.
+ */
+export function contarListenersDoAtendente(phone: string): number {
+	return bus.listenerCount(`sim:attendant:${phone}`);
+}
+
 export function subscribeToAttendant(
 	phone: string,
 	callback: (message: SimulatorMessage) => void,

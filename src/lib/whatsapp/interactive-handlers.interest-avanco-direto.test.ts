@@ -47,6 +47,15 @@ vi.mock("@/db", () => ({
 		},
 	},
 }));
+// P0-1 (2026-08-15): o clique de interesse agora ANCORA o aceite, e para isso
+// confere o groupId contra as ofertas realmente exibidas. Este teste é sobre o
+// avanço (FIX-117), não sobre a âncora — a lista vazia mantém o cenário original
+// (nenhuma oferta casada) e prova que o avanço acontece de qualquer forma.
+// A âncora tem teste próprio em `interactive-handlers.aceite-nos-dois-canais.p0-1`.
+vi.mock("@/lib/agent/orchestrator/choose-offer", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@/lib/agent/orchestrator/choose-offer")>()),
+	listShownOffersForConversation: vi.fn(async () => []),
+}));
 vi.mock("./adapter", () => ({
 	runDirectiveWithOrchestrator: mocks.runDirective,
 	runSearchSummaryWithOrchestrator: mocks.runSearchSummary,

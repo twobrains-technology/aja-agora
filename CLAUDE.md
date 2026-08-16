@@ -75,11 +75,40 @@ cedilha e til. Acento faltando é defeito de entrega.
 | Directives/cards/tool-policy (compartilhado com o grafo) | `src/lib/agent/orchestrator/` |
 | Ordem do funil | `nextGate` em `src/lib/agent/qualify-state.ts` — **o código é a fonte** |
 | Tools por fase | `src/lib/agent/orchestrator/tool-policy.ts` |
-| Prompt | `src/lib/agent/system-prompt.ts` |
+| Prompt | `src/lib/agent/system-prompt.ts` — **mas leia a seção abaixo antes de editar** |
 | Sonda de variância de fala | `pnpm sonda:variancia` |
 
 Documentação em `docs/` é **histórico, não lei**. ADR antigo que não faz sentido hoje: ignore ou
 apague. O código manda.
+
+## ⚠️ O prompt NÃO vive só no repositório
+
+Aqui o código **não** é a fonte da verdade em produção, e essa é a única exceção à frase acima.
+
+`fetchManagedPrompt` (`src/lib/observability/langfuse/prompts.ts`) busca no Langfuse o prompt com
+label `production` e só usa a constante do código como **fallback** (Langfuse fora do ar). Dois
+textos passam por aí: `SYSTEM_PROMPT` (`src/lib/agent/system-prompt.ts`) e
+`BASE_SYSTEM_INSTRUCTION` (`src/lib/agent/turn-analyzer.ts`).
+
+**As duas consequências, que são a mesma moeda:**
+
+- Editar o prompt no código, commitar e **deployar NÃO muda o agente**. Enquanto ninguém publicar,
+  produção continua servindo a versão antiga.
+- Editar o texto na UI do Langfuse **muda o agente em produção em ≤60s**, sem deploy e sem review.
+
+**A regra, então: mexeu em `SYSTEM_PROMPT` ou `BASE_SYSTEM_INSTRUCTION`, o trabalho só acaba com
+`pnpm sync-prompts` rodado contra a instância certa.** O `.env.local` costuma apontar para a
+instância local, e o SDK é no-op por design — sincronizar a errada termina com "ok" sem ter escrito
+nada onde importa. Confira a URL que o script imprime.
+
+`pnpm prompts:check` responde "produção está rodando o que está no repo?" e falha (exit 1) listando
+as linhas divergentes. Rode antes de dar um defeito de fala por corrigido: **você pode estar
+depurando um texto que o modelo nunca recebeu.**
+
+Isto não é hipótese. Em 2026-08-15 o `aja-turn-analyzer` estava publicado na **v1 de 07/08**
+enquanto o código, desde 14/08 (`3deb8207`), já trazia os exemplos que separam "200 por mês"
+(parcela) de "200 mil" (valor do bem) — o fix do incidente que matou uma venda. Ninguém foi
+avisado, porque nenhum teste, log ou alerta olhava para isso.
 
 ## Figma → código
 

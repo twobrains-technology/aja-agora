@@ -1,6 +1,6 @@
 "use client";
 
-import { Bike, Car, Home as HomeIcon, Send } from "lucide-react";
+import { Car, Home as HomeIcon, Motorbike, Send } from "lucide-react";
 import Image from "next/image";
 import { type FormEvent, useRef, useState } from "react";
 
@@ -16,7 +16,10 @@ const KV = "/kv";
 const SEARCH_CHIPS = [
 	{ icon: HomeIcon, label: "Imóvel", fill: "Quero comprar um imóvel." },
 	{ icon: Car, label: "Carro", fill: "Quero comprar um carro." },
-	{ icon: Bike, label: "Moto", fill: "Quero comprar uma moto." },
+	// `Motorbike` e não `Bike`: o lucide `Bike` é bicicleta, com pedal e quadro —
+	// desenho errado para quem vende consórcio de moto, e diferente do que o
+	// submenu de verticais mostra. Os dois falam da mesma coisa, mostram a mesma.
+	{ icon: Motorbike, label: "Moto", fill: "Quero comprar uma moto." },
 ];
 
 interface KvHeroProps {

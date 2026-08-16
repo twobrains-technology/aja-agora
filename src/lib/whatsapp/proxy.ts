@@ -12,7 +12,7 @@
  */
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
-import { conversations, leads, user as userTable } from "@/db/schema";
+import { conversations, handoffNotifications, leads, user as userTable } from "@/db/schema";
 import { applyTrackedStageToLead } from "@/lib/admin/lead-stage-tracker";
 import { transitionLeadStage } from "@/lib/admin/lead-transitions";
 import { buildAdvanceToContractDirective } from "@/lib/agent/orchestrator/directives";
@@ -27,7 +27,7 @@ import { runDirectiveWithOrchestrator } from "./adapter";
 import { sendTextMessage } from "./api";
 import { persistMeta, reloadMeta } from "./meta-helpers";
 import { loadConversationHistory, saveMessage } from "./session";
-import { publishToAttendant } from "./simulator-bus";
+import { contarListenersDoAtendente, publishToAttendant } from "./simulator-bus";
 
 /**
  * Sends a WhatsApp message to an attendant AND mirrors it to the dev simulator
@@ -39,18 +39,27 @@ import { publishToAttendant } from "./simulator-bus";
  * notificação de WhatsApp pro atendente real às 3h da manhã. O painel
  * /admin/simulator/attendant ainda recebe via bus, com badge 🧪 SIMULAÇÃO.
  */
+/**
+ * Devolve o `wamid` do envio — é a chave que casa com os webhooks de status da
+ * Meta (`sent`/`delivered`/`read`). Sem guardá-lo, a pergunta "a campainha
+ * tocou?" não tem resposta: foi o que deixou o incidente de 14/08 parecer
+ * desatenção da mesa quando era a notificação levando 42 min para chegar.
+ */
 async function sendToAttendant(
 	phone: string,
 	text: string,
 	options: { simulated?: boolean } = {},
-): Promise<void> {
+): Promise<{ messageId?: string; listeners: number }> {
+	const listeners = contarListenersDoAtendente(phone);
 	console.log(
-		`[proxy] sendToAttendant phone=${phone} simulated=${options.simulated ?? false} text="${text.slice(0, 60)}"`,
+		`[proxy] sendToAttendant phone=${phone} simulated=${options.simulated ?? false} listeners=${listeners} text="${text.slice(0, 60)}"`,
 	);
+	let messageId: string | undefined;
 	if (!options.simulated) {
-		await sendTextMessage(phone, text);
+		({ messageId } = await sendTextMessage(phone, text));
 	}
 	publishToAttendant(phone, text, { simulated: options.simulated });
+	return { messageId, listeners };
 }
 
 const INTEREST_RE =
@@ -528,10 +537,29 @@ export async function handoffToAgents(
 	].join("\n");
 
 	for (const attendant of attendants) {
-		await sendToAttendant(attendant.phone, agentMessage, { simulated: isSimulated });
+		const { messageId, listeners } = await sendToAttendant(attendant.phone, agentMessage, {
+			simulated: isSimulated,
+		});
 		console.log(
-			`[whatsapp-proxy] Notified attendant ${attendant.name} (${attendant.phone}) simulated=${isSimulated}`,
+			`[whatsapp-proxy] Notified attendant ${attendant.name} (${attendant.phone}) simulated=${isSimulated} listeners=${listeners}`,
 		);
+		// Registra a chamada para que "a campainha tocou?" tenha resposta
+		// consultável. Fire-and-forget e nunca bloqueia o handoff: falhar em
+		// medir a chamada não pode impedir a chamada.
+		if (!isSimulated) {
+			void db
+				.insert(handoffNotifications)
+				.values({
+					conversationId,
+					attendantPhone: attendant.phone,
+					attendantName: attendant.name,
+					wamid: messageId ?? null,
+					listenersNoHandoff: listeners,
+				})
+				.catch((err) =>
+					console.error("[whatsapp-proxy] registro da notificação de handoff falhou:", err),
+				);
+		}
 	}
 
 	const firstName = userName.trim().split(/\s+/)[0];

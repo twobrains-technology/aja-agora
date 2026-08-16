@@ -41,7 +41,8 @@
 		"prepare": "husky",
 		"sonda:intent": "tsx scripts/sonda-intent-aceite.ts",
 		"test:jornada": "bash scripts/test-jornada.sh",
-		"sonda:conversa": "tsx scripts/sonda-conversa-real.ts"
+		"sonda:conversa": "tsx scripts/sonda-conversa-real.ts",
+		"prompts:check": "tsx scripts/prompts-check.ts"
 	},
 	"dependencies": {
 		"@ai-sdk/anthropic": "^3.0.69",

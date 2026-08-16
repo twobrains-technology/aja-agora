@@ -399,8 +399,25 @@ export async function startGateReengageWorker() {
 			// as duas se sobrepõem de propósito, mas cobrar duas vezes seria pior
 			// que não cobrar.
 			const retomada = await runRetomadaCycle();
-			if (result.reengaged > 0 || retomada.retomadas > 0) {
-				console.log(`[gate-reengage-poll] ciclo: ${JSON.stringify({ ...result, ...retomada })}`);
+			// A acolhida N1 é a terceira fonte, e olha o conjunto oposto: conversas
+			// `handed_off`, que as duas anteriores ignoram por construção
+			// (`isConversationPausedOrTerminal`). Roda aqui, e não inline no inbound,
+			// porque falar por cima do atendente é o incidente de 2026-08-10 — o
+			// ciclo relê o estado da mesa imediatamente antes de emitir.
+			const { runAcolhidaN1Cycle } = await import("./acolhida-n1-cycle");
+			const acolhida = await runAcolhidaN1Cycle();
+			// Reconciliação fala×estado: não age sobre a conversa, só publica o sinal
+			// que os juízes LLM não davam — no turno que prometeu um contrato
+			// inexistente, `judge_avancou` valeu 0,923 e todo indicador estava verde.
+			const { runReconciliacaoCycle } = await import("./reconciliacao-cycle");
+			const reconciliacao = await runReconciliacaoCycle();
+			if (reconciliacao.publicadas > 0) {
+				console.log(`[reconciliacao] ${JSON.stringify(reconciliacao.sinais)}`);
+			}
+			if (result.reengaged > 0 || retomada.retomadas > 0 || acolhida.acolhidas > 0) {
+				console.log(
+					`[gate-reengage-poll] ciclo: ${JSON.stringify({ ...result, ...retomada, acolhidasN1: acolhida.acolhidas })}`,
+				);
 			}
 		},
 		{ connection },

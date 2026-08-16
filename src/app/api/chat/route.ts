@@ -10,9 +10,9 @@ import { db } from "@/db";
 import { artifacts as artifactsTable, conversations, leads } from "@/db/schema";
 import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors";
 import { getLeadIdForConversation } from "@/lib/admin/lead-stage-tracker";
+import { aplicarAceiteEstruturado } from "@/lib/agent/aceite";
 import { reengageQuestionForGate } from "@/lib/agent/gate-reengage";
 import {
-	listShownOffersForConversation,
 	resolveChosenOffer,
 	resolveOfferForAdministradora,
 	resolveOfferMentionForConversation,
@@ -483,25 +483,25 @@ export async function POST(req: NextRequest) {
 									// servidor emitiu, e ainda assim é conferido contra as ofertas
 									// REALMENTE exibidas nesta conversa antes de amarrar dinheiro —
 									// mesma precondição que a tool cumpre (FIX-180/413).
-									const exibidas = await listShownOffersForConversation(conversationId);
-									const oferta = exibidas.find((o) => o.groupId === groupId);
-									if (oferta) {
-										const metaAtual = await reloadMeta(conversationId);
-										await persistMeta(conversationId, {
-											...metaAtual,
-											escolha: {
-												groupId,
-												administradora: oferta.administradora ?? administradora,
-												creditValue: oferta.creditValue ?? creditValue,
-												termMonths: oferta.termMonths ?? termMonths,
-												monthlyPayment: oferta.monthlyPayment,
-												origem: "afirmacao",
-											},
-										});
-									} else {
-										console.warn(
-											`[chat] select-group com groupId fora das ofertas exibidas — escolha NÃO ancorada (conv ${conversationId}, group ${groupId})`,
-										);
+									//
+									// P0-1 (dossiê 2026-08-15): a conferência e a escrita saíram daqui
+									// para `@/lib/agent/aceite`, porque esta lógica existia em DUAS
+									// cópias — esta e a do WhatsApp, que simplesmente não gravava o
+									// aceite e prendia o funil no gate `decision` para sempre. Com um
+									// escritor só, corrigir um canal corrige os dois, e o teste de
+									// paridade falha se um deles ganhar uma ação que o outro não tem.
+									const metaAtual = await reloadMeta(conversationId);
+									const { meta: metaComAceite, efeito } = await aplicarAceiteEstruturado({
+										conversationId,
+										meta: metaAtual,
+										aceite: {
+											groupId,
+											doCard: { administradora, creditValue, termMonths },
+										},
+										canal: "web",
+									});
+									if (efeito === "escolha-ancorada") {
+										await persistMeta(conversationId, metaComAceite);
 									}
 									await pipeDirectiveTurn({
 										conversationId,

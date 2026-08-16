@@ -457,6 +457,49 @@ export const leadEvents = pgTable("lead_events", {
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+// A CAMPAINHA do handoff — a notificação que chama o atendente humano.
+//
+// Medido em produção em 2026-08-15, na conversa `75f77efd`: a cliente fechou a
+// proposta numa sexta às 19:02, foi entregue à mesa, escreveu, e ficou 28,9 horas
+// sem resposta. A leitura fácil seria "a mesa não olhou". A verdadeira, provada
+// pelos webhooks de status da Meta, é outra: a notificação levou **42 minutos**
+// para ser `delivered` e **17h24** para ser `read` — e o painel estava com ZERO
+// listeners conectados no instante do handoff.
+//
+// Os status `sent`/`delivered`/`read` já chegavam no webhook e viravam
+// `console.log`. Nada era gravado, então a pergunta "a campainha tocou?" não
+// tinha resposta consultável — e sem ela o time conserta o cliente (acolhida) em
+// vez de consertar a chamada.
+export const handoffNotifications = pgTable(
+	"handoff_notifications",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		conversationId: uuid("conversation_id")
+			.notNull()
+			.references(() => conversations.id, { onDelete: "cascade" }),
+		/** Telefone do atendente notificado. */
+		attendantPhone: varchar("attendant_phone", { length: 32 }).notNull(),
+		attendantName: varchar("attendant_name", { length: 120 }),
+		/** `wamid` devolvido pela Meta no envio — a chave que casa com o webhook de
+		 * status. NULL quando o envio falhou ou a conversa é simulada. */
+		wamid: text(),
+		/** Quantos listeners o bus do painel tinha no instante do handoff. Zero
+		 * significa que ninguém estava com a tela aberta para ver a chegada. */
+		listenersNoHandoff: integer("listeners_no_handoff"),
+		sentAt: timestamp("sent_at", { withTimezone: true }).defaultNow().notNull(),
+		deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+		readAt: timestamp("read_at", { withTimezone: true }),
+		failedAt: timestamp("failed_at", { withTimezone: true }),
+		failureReason: text("failure_reason"),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [
+		// O webhook casa por `wamid` e chega várias vezes (sent → delivered → read).
+		uniqueIndex("handoff_notifications_wamid_idx").on(table.wamid),
+		index("handoff_notifications_conversation_idx").on(table.conversationId),
+	],
+);
+
 // Bevi Proposals (estado do FECHAMENTO real — passo 5 "Contratar")
 // Guarda só o necessário pra retomar a proposta entre turnos (web↔WhatsApp) e
 // pro back office acompanhar. LGPD-mínimo: NÃO armazena CPF — só os IDs Bevi e o
