@@ -54,6 +54,77 @@
   repondo a label `production` na v1. **Depois de publicar, `pnpm prompts:check` passa a ficar
   verde** — é a checagem que estou criando nesta sessão.
 
+### D3 · 23:54 — o conserto é o SINAL, não o texto (commit `85b5b325`)
+- **Contexto:** o Kairo pediu, ao sair: documentar no CLAUDE.md que mexer no prompt exige atualizar
+  no Langfuse, e "se der, faz algum tipo de hook obrigando".
+- **Decidi** três camadas, em vez de só a documentação:
+  1. `src/lib/observability/langfuse/prompt-drift.ts` — comparação pura, sem rede, com 8 testes
+     (escritos ANTES, vistos falhar). Acusa o que falta em produção **e** o que só existe lá
+     (texto editado na UI, sem review — o caminho inverso é tão perigoso quanto).
+  2. `pnpm prompts:check` — busca a label `production` e falha com exit 1. Rodado contra produção,
+     reproduziu o achado e listou as 4 linhas ausentes.
+  3. Hook de projeto (`.claude/hooks/prompt-sync-guard.py` + `.claude/settings.json`): avisa no
+     `PostToolUse` ao editar os arquivos de prompt, e barra o `Stop` **uma vez** se ficaram
+     modificados.
+- **Alternativas:** só escrever a regra no CLAUDE.md (já havia memória sobre isso e o defeito
+  voltou mesmo assim — documento não é guarda); bloquear o Stop indefinidamente (travaria a sessão
+  em laço, já que publicar em prod depende de decisão dele, que nem sempre está disponível);
+  bloquear no pre-commit (o sync acontece no deploy, não no commit — barraria commit legítimo).
+- **Reversibilidade:** fácil (git revert; hook desligável em `/hooks`).
+- **Evidência:** 8 testes verdes; `pnpm prompts:check` contra produção sai 1 e imprime as 4 linhas;
+  hook testado por pipe nos 5 cenários (arquivo de prompt, arquivo qualquer, stop limpo, stop
+  sujo, stop repetido). O teste do hook achou um bug real: em worktree do Superset `.git` é
+  ARQUIVO, e `.git/<subdir>` estourava `NotADirectoryError` — agora resolve por
+  `git rev-parse --absolute-git-dir`.
+
+### D4 · 23:52 — 28 envs de dev preenchidas para destravar o gate
+- **Contexto:** o pre-commit barrou com 5 testes falhando (`IDENTITY_ENC_KEY ausente`,
+  `ECONNREFUSED :3000`). Mesma classe do D1: config ausente parecendo defeito de código.
+- **Decidi:** preencher no `.env.local` todas as envs de `tb/dev/aja-agora/env` que estavam
+  ausentes/vazias (28), exceto `CLAUDE_CODE_OAUTH_TOKEN` (token de ferramenta, não é env de app) e
+  as de infra local do workspace (essas o bootstrap já resolve, ver D1). **Não** usei `--no-verify`.
+- **Reversibilidade:** fácil (arquivo gitignored).
+- **Evidência:** `pnpm test:pre-commit` de 5 falhas → **66 arquivos / 333 testes verdes**.
+- **A fazer (não fiz):** o `bootstrap-workspace.sh` poderia puxar essas envs do Secrets Manager —
+  `local-dev.conf` já declara `AWS_SECRET_NAME`. Ficaria fora do escopo desta sessão; anotado aqui
+  para não se perder.
+
+### D5 · 00:05 — o P0-1 do dossiê, corrigido apagando a segunda cópia (commit `c9dc5b70`)
+- **Contexto:** o especialista provou a causa da venda perdida: o `FIX-386` (28/07) passou a exigir
+  um "sim" para contratar (`nextGate` pede `escolha` ou `decisionAccepted`) e **só a web foi
+  ajustada**. No WhatsApp o clique gravava apenas `decisionDispatched`, o funil voltava a
+  `decision` em todo turno, `contract_form` nunca era emitido e nenhuma proposta chegava à Bevi —
+  daí o agente anunciar um pré-cadastro inexistente na `9b9f9aab`.
+- **Decidi:** não "ensinar o WhatsApp a gravar", e sim criar `lib/agent/aceite.ts` como escritor
+  ÚNICO, usado pelos dois canais, com a mesma precondição (groupId conferido contra as ofertas
+  exibidas). O teste que fecha a classe é o de **paridade de canal**, não os casos individuais.
+- **Alternativas:** replicar a escrita no handler do WhatsApp (mantinha duas cópias e a próxima
+  mudança no contrato reabriria o buraco — foi o que aconteceu no FIX-400 e no FIX-406).
+- **Reversibilidade:** fácil (git revert).
+- **Evidência:** TDD — 4 testes falhando primeiro (`expected undefined to match object`,
+  `expected 'decision' to be 'contract'`), verdes depois. Suíte inteira: **391 arquivos / 2914
+  testes**. O guard `FIX-411` (allowlist de quem cria `escolha`) acusou o arquivo novo, como
+  projetado; declarei com o porquê.
+
+### D6 · 00:12 — a feature N1, com o desenho que a crítica corrigiu (commit `d8a3fad7`)
+- **Contexto:** o Kairo pediu a acolhida N1 pós-handoff. O especialista criticou antes de eu
+  implementar, e mudou três coisas.
+- **Decidi seguir a crítica na íntegra:**
+  1. **A premissa estava errada.** A mesa não ignorou a cliente: a notificação levou 42 min para
+     ser `delivered` e **17h24 para ser `read`**, com o painel sem nenhum listener. O N1 é
+     cobertor; a campainha quebrada é P0 separado (ainda **não** feito — ver pendências).
+  2. **Não é caminho novo:** é o watchdog `retomada` com outro gatilho e outro directive. Recusei
+     inventar `n1AckAt` (seria uma terceira convenção de anti-repetição) e reusei a forma
+     `{attempts, lastAt}`.
+  3. **Não pode ser inline no inbound:** a geração leva 3–8 s e a mesa respondeu em <1 min em três
+     casos reais. A decisão virou função pura, re-lida imediatamente antes de emitir, com teste
+     de corrida. Se a mesa falar nesse intervalo, a acolhida é descartada — e o contador NÃO é
+     revertido, de propósito.
+- **Também recusei, por recomendação dele:** citar tempo de fila (havia handoff aberto há 129 h) e
+  prometer prazo (não existe expediente cadastrado no código).
+- **Reversibilidade:** fácil — a feature roda por worker, desligável removendo a chamada no ciclo.
+- **Evidência:** 25 testes novos verdes; suíte **393 arquivos / 2939 testes**.
+
 ## Linha do tempo (resumida)
 - 23:05 — túnel SSM aberto para o RDS de produção (leitura); 6 conversas de 14–15/08 extraídas
 - 23:10 — especialista (`super-especialista-de-ia`) despachado para o dossiê de causa-raiz

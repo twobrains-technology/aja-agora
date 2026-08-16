@@ -76,6 +76,7 @@ export async function POST(req: NextRequest) {
 
 	// ---- Status updates (sent, delivered, read) ----
 	if (value?.statuses) {
+		const { registrarStatusDaCampainha } = await import("@/lib/mesa/registrar-status-da-campainha");
 		for (const status of value.statuses) {
 			const level = status.status === "failed" ? "error" : "log";
 			const msg = `[whatsapp] Status: ${status.status} | msg: ${status.id} | to: ${status.recipient_id}`;
@@ -86,6 +87,17 @@ export async function POST(req: NextRequest) {
 			} else {
 				console.log(msg);
 			}
+
+			// Até 2026-08-15 a linha acima era TUDO o que acontecia com um status.
+			//
+			// Por isso o incidente da conversa `75f77efd` foi lido como desatenção
+			// da mesa: a notificação do handoff levou 42 min para ser `delivered` e
+			// 17h24 para ser `read`, e esse fato existia só como texto solto no
+			// CloudWatch. Agora, quando o status pertence a uma notificação de
+			// handoff, ele vira estado consultável e sinal. Fire-and-forget: a Meta
+			// re-tenta webhook que não responde 200, e observabilidade não pode
+			// provocar reenvio em loop.
+			void registrarStatusDaCampainha(status);
 		}
 		return NextResponse.json({ status: "ok" });
 	}
