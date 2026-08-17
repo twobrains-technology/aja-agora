@@ -7,7 +7,14 @@ import { type LeadStage, STAGE_ORDER } from "./lead-stages";
  * existia como nome + WhatsApp em `mesa_attendants` e trabalhava pelo copiloto;
  * agora entra no painel — mas enxergando apenas o pedaço do funil que é dele.
  */
-export type Role = "admin" | "viewer" | "attendant" | "mesa_externa";
+export const ROLES = ["admin", "viewer", "attendant", "mesa_externa"] as const;
+
+/**
+ * Derivado de `ROLES` (e não escrito à mão ao lado dele) para que exista UMA
+ * lista só: quem precisa validar um papel em tempo de execução — o script que
+ * cria acesso, por exemplo — lê a mesma coisa que o compilador lê aqui.
+ */
+export type Role = (typeof ROLES)[number];
 
 /** Raia terminal de perda — destino, nunca origem. */
 const PERDIDO = "perdido" satisfies LeadStage;
