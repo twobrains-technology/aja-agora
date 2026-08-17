@@ -44,6 +44,19 @@ export const auth = betterAuth({
 				defaultValue: "viewer",
 				input: false,
 			},
+			// Precisa viajar na sessão para que `proxy.ts` e `require-role.ts`
+			// consigam barrar quem foi desativado sem uma ida ao banco por
+			// requisição. Era escrito (`DELETE /api/admin/attendants/[id]`) e nunca
+			// lido: desligar alguém não tirava o acesso de ninguém.
+			//
+			// `input: false` pela mesma razão da `role` — quem se cadastrasse não
+			// poderia se reativar sozinho pelo corpo do pedido.
+			isActive: {
+				type: "boolean",
+				required: false,
+				defaultValue: true,
+				input: false,
+			},
 		},
 	},
 	plugins: [nextCookies()],
