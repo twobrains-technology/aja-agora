@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
+import { contaDesativada } from "@/lib/admin/require-role";
 import { podeAcessarRota, type Role, rotaInicialDe } from "@/lib/admin/role-scope";
 import { hasCampaignSignal, parseCampaignParams } from "@/lib/attribution/params";
 import { ehRoboDeclarado } from "@/lib/attribution/user-agent-robo";
@@ -14,8 +15,41 @@ import {
 import { recordWebVisit } from "@/lib/attribution/visit-store";
 import { auth } from "@/lib/auth";
 
+/**
+ * O prefixo de cadastro do better-auth. Prefixo, e não `/sign-up/email` exato:
+ * toda a família de cadastro mora sob ele, e plugin novo (magic-link, passkey)
+ * entra por baixo sem passar por revisão nenhuma.
+ */
+const CADASTRO_PUBLICO = "/api/auth/sign-up";
+
 export async function proxy(request: NextRequest) {
 	const { pathname } = request.nextUrl;
+
+	// Ninguém se cadastra sozinho no painel.
+	//
+	// `lib/auth.ts` liga `emailAndPassword` sem `disableSignUp` (default `false`
+	// no better-auth) e `api/auth/[...all]` publica o handler inteiro — então
+	// `POST /api/auth/sign-up/email` estava aberto para a internet. A conta
+	// nascia com o default da coluna, `viewer`, que tem `TODAS_AS_ROTAS` no
+	// `role-scope.ts`: funil, conversas e dados de lead a um cadastro de
+	// distância.
+	//
+	// A trava está aqui e não em `disableSignUp` porque aquela opção é conferida
+	// DENTRO do endpoint `/sign-up/email` — o mesmo que `auth.api.signUpEmail`
+	// executa quando o servidor cria uma conta. Ligá-la mataria junto os cinco
+	// fluxos de convite (`admin/attendants`, `mesa-attendants/[id]/acesso`,
+	// `criar-acesso-admin`, `seed-admin`, `seed-mesa-externa`). O proxy separa os
+	// dois casos sozinho: só a requisição vinda de FORA passa por ele; a chamada
+	// server-side é in-process e não atravessa o matcher.
+	//
+	// Conta no Aja se ganha por convite: quem entra foi convidado por um admin e
+	// recebeu o link de `/onboarding/set-password`.
+	if (pathname === CADASTRO_PUBLICO || pathname.startsWith(`${CADASTRO_PUBLICO}/`)) {
+		return NextResponse.json(
+			{ error: "O cadastro no painel é por convite. Fale com um administrador." },
+			{ status: 403 },
+		);
+	}
 
 	if (pathname.startsWith("/admin") && !pathname.startsWith("/admin/login")) {
 		const session = await auth.api.getSession({
@@ -33,6 +67,15 @@ export async function proxy(request: NextRequest) {
 		//
 		// Camada de navegação, não de dados: o `requireRole` de cada API continua
 		// sendo o que impede um `fetch` direto de ler o que não é dele.
+		// Desativado volta pro login, não pra "casa dela": não existe tela de casa
+		// pra quem foi desligado. A sessão pode continuar válida por até 24h
+		// (`session.expiresIn`), então sem esta checagem o acesso só terminava
+		// quando o cookie expirasse — e o admin que clicou em desativar não tinha
+		// como saber disso.
+		if (contaDesativada(session)) {
+			return NextResponse.redirect(new URL("/admin/login", request.url));
+		}
+
 		const role = ((session.user as { role?: string }).role ?? "viewer") as Role;
 		if (!podeAcessarRota(role, pathname)) {
 			// Volta pra tela de casa dela em vez de um 403 seco — quem tropeça aqui
@@ -159,5 +202,17 @@ async function registrarVisita(request: NextRequest): Promise<NextResponse> {
 export const config = {
 	// Precisa ser literal: o Next lê este array em build time, então ele não pode
 	// sair de `LANDINGS`. O teste é quem mantém os dois em dia.
-	matcher: ["/", "/autos", "/imoveis", "/motos", "/admin", "/admin/((?!login).*)"],
+	matcher: [
+		"/",
+		"/autos",
+		"/imoveis",
+		"/motos",
+		"/admin",
+		"/admin/((?!login).*)",
+		// A rota de cadastro do better-auth. Sem estas duas linhas o proxy nem é
+		// chamado nela e a trava lá em cima vira decoração — o teste continuaria
+		// verde com a porta aberta em produção.
+		"/api/auth/sign-up",
+		"/api/auth/sign-up/:path*",
+	],
 };
