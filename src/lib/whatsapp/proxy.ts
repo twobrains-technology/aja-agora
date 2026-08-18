@@ -357,6 +357,7 @@ export async function handlePendingHandoffText(from: string, text: string): Prom
 			conversationId: handoff.conversationId,
 			directive: buildAdvanceToContractDirective({
 				administradora: metaAncorado.recommendedAdministradora,
+				identidadeJaColetada: metaAncorado.identityCollected === true,
 			}),
 			guardEmptyTurn: true,
 		});

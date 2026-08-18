@@ -19,6 +19,7 @@
 import { and, asc, eq, gt } from "drizzle-orm";
 import { db } from "@/db";
 import { messages } from "@/db/schema";
+import { ehMarcadorDeCard } from "@/lib/conversation/messages";
 
 export async function GET(req: Request) {
 	const url = new URL(req.url);
@@ -49,8 +50,13 @@ export async function GET(req: Request) {
 		.limit(20);
 
 	// Só fala do agente: a do próprio cliente já está na tela dele, e os
-	// marcadores `[card: tipo]` são do log do admin, não da conversa.
-	const novas = linhas.filter((m) => m.role === "assistant" && !m.content.startsWith("[card:"));
+	// marcadores `[card: tipo]` são do log do admin, não da conversa. O
+	// predicado vive em `conversation/messages.ts` — eram quatro cópias soltas
+	// desta regra, com três formatos diferentes, e a cópia que faltava (o
+	// histórico do modelo) foi a que vazou a sintaxe para o cliente em 16/08.
+	const novas = linhas.filter(
+		(m) => m.role === "assistant" && !ehMarcadorDeCard(m.role, m.content),
+	);
 
 	return Response.json(
 		{ messages: novas },

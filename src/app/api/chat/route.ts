@@ -723,7 +723,10 @@ export async function POST(req: NextRequest) {
 									}
 									await pipeDirectiveTurn({
 										conversationId,
-										directive: buildAdvanceToContractDirective({ administradora }),
+										directive: buildAdvanceToContractDirective({
+											administradora,
+											identidadeJaColetada: meta.identityCollected === true,
+										}),
 										contactName,
 										writer,
 										userKey,
@@ -787,7 +790,10 @@ export async function POST(req: NextRequest) {
 									});
 									await pipeDirectiveTurn({
 										conversationId,
-										directive: buildChooseOfferDirective({ administradora }),
+										directive: buildChooseOfferDirective({
+											administradora,
+											identidadeJaColetada: meta.identityCollected === true,
+										}),
 										contactName,
 										writer,
 										userKey,

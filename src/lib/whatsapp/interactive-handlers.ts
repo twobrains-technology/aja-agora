@@ -7,6 +7,7 @@ import { ROUTABLE_CATEGORIES } from "@/lib/agent/personas";
 import { LANCE_EMBUTIDO_DEFAULT_PERCENT, objetivoForPrazo } from "@/lib/agent/qualify-config";
 import { nextGate } from "@/lib/agent/qualify-state";
 import { confirmOffer } from "@/lib/bevi/fulfillment";
+import { registrarCardEnviado } from "@/lib/conversation/cards";
 import { saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta } from "@/lib/conversation/meta";
 import {
@@ -145,6 +146,21 @@ async function handleContractCancel(ctx: Ctx): Promise<boolean> {
 	const meta = await loadMeta(ctx.conversationId);
 	const cleared = { ...meta };
 	delete cleared.contractCollection;
+	// O funil precisa VOLTAR a um estado alcançável. Apagar a coleta e deixar
+	// `contractFormDispatched = true` fazia `nextGate` (qualify-state.ts:567)
+	// devolver o terminal `"search"`: sem card, sem pergunta canônica, e ninguém
+	// mais re-emitindo o formulário — o fecho ficava inalcançável para sempre.
+	//
+	// Aconteceu em prod (`fd76e393`, 16/08/2026 19:22:53). O cliente clicou em
+	// "Ver outras" para COMPARAR — o botão é este `contract_cancel` — e 17
+	// segundos depois escreveu "eh essa emsmo vamos fechar, confirmado". Essa
+	// fala passa em `decideConfirmStage` com `fire`: teria criado a proposta, se
+	// a máquina não estivesse morta. A conversa terminou com o agente anunciando
+	// "Sua proposta está fechada" e `bevi_proposals = 0`.
+	//
+	// Contrato já fechado é TERMINAL e não se reabre — pós-`contractClosed` o
+	// agente não re-apresenta formulário (BUG-POS-FECHAMENTO-NAO-TERMINAL).
+	if (cleared.contractClosed !== true) cleared.contractFormDispatched = false;
 	await persistMeta(ctx.conversationId, cleared);
 	const { CONTRACT_CANCELLED_REPLY } = await import("./contract-capture");
 	await sendTextMessage(ctx.from, CONTRACT_CANCELLED_REPLY);
@@ -473,9 +489,18 @@ async function handleSimulatorOffer(ctx: Ctx): Promise<boolean> {
 		// (route.ts, ramo simulator-offer).
 		await runAgentDirective(from, conversationId, buildDecisionPromptDirective());
 		const { buildDecisionPromptCard } = await import("@/lib/agent/orchestrator/server-cards");
-		const wa = artifactToWhatsApp("decision_prompt", buildDecisionPromptCard(updated).payload);
+		const payload = buildDecisionPromptCard(updated).payload;
+		const wa = artifactToWhatsApp("decision_prompt", payload);
 		if (wa?.type === "interactive" && wa.interactive) {
 			await sendInteractiveMessage(from, wa.interactive);
+			// Mesmo motivo do `handleDecisionOutras`: card entregue e não
+			// registrado deixa o histórico do admin sem o turno inteiro.
+			await registrarCardEnviado({
+				conversationId,
+				tipo: "decision_prompt",
+				payload,
+				channel: "whatsapp",
+			});
 		}
 	}
 	return true;
@@ -762,12 +787,24 @@ async function handleDecisionOutras(ctx: Ctx): Promise<boolean> {
 		const others = await buildOtherOptions(conversationId, meta);
 		await sendTextMessage(from, others.text);
 		await saveMessage(conversationId, "assistant", others.text, "whatsapp");
-		const wa = artifactToWhatsApp("comparison_table", { groups: others.groups });
+		const payload = { groups: others.groups };
+		const wa = artifactToWhatsApp("comparison_table", payload);
 		if (wa?.type === "interactive" && wa.interactive) {
 			await sendInteractiveMessage(from, wa.interactive);
 		} else if (wa?.type === "text" && wa.text) {
 			await sendTextMessage(from, wa.text);
 		}
+		// O card SÓ entra no histórico depois de entregue — e entra, senão o log
+		// do admin mostra o texto de intro sozinho e a conversa parece ter
+		// anunciado opções sem mostrar nenhuma. Foi a leitura errada que a
+		// revisão de `fd76e393` (16/08) fez, investigando um defeito de funil que
+		// não existia.
+		await registrarCardEnviado({
+			conversationId,
+			tipo: "comparison_table",
+			payload,
+			channel: "whatsapp",
+		});
 	} catch {
 		// Espelha o fallback do web (route.ts:539-546): nunca deixa o clique em
 		// silêncio nem cai no modelo.
@@ -843,7 +880,12 @@ async function handleInterest(ctx: Ctx): Promise<boolean> {
 	await runAgentDirective(
 		from,
 		conversationId,
-		buildAdvanceToContractDirective({ administradora: meta.recommendedAdministradora }),
+		buildAdvanceToContractDirective({
+			administradora: meta.recommendedAdministradora,
+			// O exemplo de fechamento não pode mandar pedir dado que o sistema já
+			// tem — foi assim que `fd76e393` pediu CPF a quem já o tinha mandado.
+			identidadeJaColetada: meta.identityCollected === true,
+		}),
 	);
 	return true;
 }

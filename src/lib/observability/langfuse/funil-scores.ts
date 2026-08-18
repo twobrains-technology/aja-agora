@@ -330,22 +330,36 @@ export function registrarValorRevertido(args: {
  * Reproduzido pelo gate em 2026-08-13 (`golden-fecho-nao-anda-pra-tras`, 3 de 4
  * rodadas), e até então sem rastro algum — nem log, nem score.
  *
- * O `comment` carrega o `groupId` que o modelo mandou e quantas ofertas
- * estavam exibidas: com zero exibidas, o problema é a leitura dos artifacts;
- * com N > 0, é o modelo mandando um id que não é de nenhuma delas.
+ * O `comment` carrega o `groupId` que o modelo mandou, quantas ofertas estavam
+ * exibidas e — desde 16/08/2026 — QUAL veto barrou. Sem o motivo, os dois casos
+ * mais diferentes do sistema apareciam iguais: id que não existe (problema de
+ * leitura de artifacts) e aceite não reconhecido (problema de léxico, com o
+ * cliente tendo de fato escolhido). O segundo era o de `fd76e393`, e ele nem
+ * chegava a ser registrado: o veto por falta de aceite pulava o bloco inteiro,
+ * então a conversa que anunciou uma venda inexistente não gerou sinal nenhum.
  */
-export function scoresDeEscolhaNaoAncorada(args: { groupId: string; exibidas: number }): Score[] {
+export function scoresDeEscolhaNaoAncorada(args: {
+	groupId: string;
+	exibidas: number;
+	veto?: string;
+}): Score[] {
 	return [
 		{
 			name: "escolha_nao_ancorou",
 			value: 1,
 			dataType: "BOOLEAN",
-			comment: `groupId=${args.groupId} · ofertas exibidas=${args.exibidas}`,
+			comment:
+				`groupId=${args.groupId} · ofertas exibidas=${args.exibidas}` +
+				(args.veto ? ` · veto=${args.veto}` : ""),
 		},
 	];
 }
 
-export function registrarEscolhaNaoAncorada(args: { groupId: string; exibidas: number }): void {
+export function registrarEscolhaNaoAncorada(args: {
+	groupId: string;
+	exibidas: number;
+	veto?: string;
+}): void {
 	publicar(scoresDeEscolhaNaoAncorada(args), "registrar escolha nao ancorada");
 }
 

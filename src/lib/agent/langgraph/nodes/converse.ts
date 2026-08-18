@@ -15,6 +15,8 @@ import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages
 import { RunnablePassthrough, RunnableSequence } from "@langchain/core/runnables";
 import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
+import { escolhaPodeSerAncorada } from "@/lib/agent/escolha-ancoravel";
+import { blocoDeFechoPendente } from "@/lib/agent/fecho-pendente";
 import {
 	reescreverToolMessagesComFalha,
 	toolAceitouPedido,
@@ -22,7 +24,6 @@ import {
 } from "@/lib/agent/langgraph/tool-falha";
 import type { ChosenOffer } from "@/lib/agent/orchestrator/choose-offer";
 import {
-	administradoraFoiRecusada,
 	listShownOffers,
 	listShownOffersForConversation,
 } from "@/lib/agent/orchestrator/choose-offer";
@@ -34,7 +35,6 @@ import {
 } from "@/lib/agent/orchestrator/sanitizer";
 import { buildGateContextText } from "@/lib/agent/orchestrator/system-context";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
-import { detectYesNoText } from "@/lib/agent/orchestrator/yes-no";
 import { alvoDeBusca } from "@/lib/agent/qualify-answers";
 import { LANCE_EMBUTIDO_DEFAULT_PERCENT } from "@/lib/agent/qualify-config";
 import { querAntecipar, shouldAskMotive } from "@/lib/agent/qualify-state";
@@ -266,6 +266,12 @@ export function createConverseNode(model: BaseChatModel) {
 			// citar uma escondida faz o modelo tomar NoSuchToolError e o turno cair
 			// no fallback enlatado.
 			allowedToolNames: WHAT_IF_TOOL_NAMES,
+			// O turno do cliente vai junto para que `escolher_cota` responda ao
+			// modelo pelo MESMO critério que este nó usa para gravar. Enquanto ela
+			// não tinha isso, dizia "confirmada" para um efeito que o veto abaixo
+			// descartaria — e o modelo anunciava ao cliente a cota confirmada que o
+			// servidor não tinha (`fd76e393`, prod, 16/08/2026).
+			turnoDoCliente: { texto: state.userText ?? "", intent: state.intent },
 		});
 		const whatIfTools = WHAT_IF_TOOL_NAMES.map((name) => tools[name]).filter(
 			(t): t is NonNullable<typeof t> => Boolean(t),
@@ -442,8 +448,21 @@ export function createConverseNode(model: BaseChatModel) {
 						.join("\n") +
 					`\nQuando ele descrever uma delas por característica ("a de menor parcela", "a de prazo ` +
 					`mais curto", "a do Itaú"), RESOLVA você mesmo pela lista e siga — é PROIBIDO devolver ` +
-					`a identificação pra ele.\n` +
-					// Falar os números certos NÃO basta: sem esta chamada o sistema segue
+					`a identificação pra ele.`
+				: null;
+
+		// A instrução da TOOL fica separada da lista de propósito: ela só pode
+		// entrar na janela quando a tool existe no bind.
+		//
+		// O beat da âncora roda SEM tools (`executarBeat(false)`) e remontava o
+		// system com todos os blocos, este incluído. Mandar "chame `escolher_cota`
+		// com o id entre colchetes" a um modelo que não tem tool nenhuma é o
+		// atrator clássico de emitir a chamada como TEXTO — e foi nesse formato,
+		// com o id entre colchetes, que o vazamento chegou à tela do cliente na web
+		// (`ff8f2080`, 16/08/2026: "[card: escolher_cota com id 6a7b59c1…]").
+		const blocoChamarEscolherCota =
+			ofertasExibidas.length > 1
+				? // Falar os números certos NÃO basta: sem esta chamada o sistema segue
 					// ancorado na cota anterior e a contratação fecha errada. Foi assim
 					// que um cliente escolheu a carta de R$ 120 mil com parcela de
 					// R$ 1.289 e recebeu a proposta de outra, de R$ 132 mil e R$ 3.375.
@@ -613,32 +632,40 @@ export function createConverseNode(model: BaseChatModel) {
 					`AQUI A IDENTIFICAÇÃO É POR MENSAGEM: o CPF chega escrito na conversa, e o sistema o ` +
 					`recebe e protege sozinho. NUNCA recuse o CPF que o cliente mandar, nunca diga que ele ` +
 					`"não precisa mandar" nem que "isso fica pra depois, na plataforma" — não existe outra ` +
-					`plataforma neste canal. Se ele já mandou, apenas siga com a conversa.`
+					`plataforma neste canal. Se ele já mandou, apenas siga com a conversa. ` +
+					// O agente pediu "seu WhatsApp pra gente manter contato" a um cliente
+					// que estava falando com ele PELO WhatsApp (`fd76e393`, 16/08/2026
+					// 19:23:24 — "uai, ja estamos falando nele?"). A janela dizia como
+					// ESCREVER no canal, mas nunca dizia o que o canal É: sem esse fato,
+					// o modelo seguiu o roteiro genérico de identificação, que pede CPF
+					// e celular.
+					`E ESTE NÚMERO JÁ É O WHATSAPP DELE: é por ele que vocês estão falando agora. NUNCA ` +
+					`peça "o seu WhatsApp", "um número pra contato" ou "um telefone pra gente te chamar" — ` +
+					`você já está no telefone dele.`
 				: `Vocês estão na WEB, onde existe tela: os dados de identificação (CPF, celular, aceite) ` +
 					`são digitados no formulário que o sistema abre, não por mensagem. Não peça CPF por ` +
 					`texto — mas se o cliente escrever o dele mesmo assim, NUNCA o repreenda nem diga que ` +
 					`ele não devia: agradeça e siga, que o sistema cuida do resto.`;
 
-		// ── O FORMULÁRIO ESTÁ ABERTO E ESPERANDO ELE ──
+		// ── A CONTRATAÇÃO FOI OFERECIDA E AINDA NÃO ACONTECEU ──
 		// No web a contratação se conclui com o cliente confirmando os dados no
 		// formulário (é ali que o consentimento acontece). Quando ele responde por
 		// texto — "pode confirmar sim" —, o modelo achava que estava feito e
 		// respondia "seus dados já estão confirmados no sistema, o pré-cadastro
 		// segue direto": afirmação de uma ação que NÃO aconteceu, e o cliente
 		// ficava esperando ("cadê o passo de contratação? não apareceu nada").
-		// Nunca dar por concluído o que depende dele; e nunca nomear botão (a
-		// mecânica da tela continua invisível).
-		const aguardandoConfirmacaoDoFormulario =
-			state.channel === "web" &&
-			state.funnel.contractFormDispatched === true &&
-			!state.baseMeta.contractClosed;
-		const blocoFormularioAberto = aguardandoConfirmacaoDoFormulario
-			? `A contratação está aberta AGUARDANDO A CONFIRMAÇÃO DELE — ela ainda NÃO aconteceu. É ` +
-				`PROIBIDO dizer que os dados "já estão confirmados", que o cadastro "seguiu" ou que o ` +
-				`próximo passo "vai aparecer": nada avança sem ele confirmar. Se ele disser que confirma, ` +
-				`peça com naturalidade que conclua a confirmação dos dados pra você seguir — sem nomear ` +
-				`botão, campo ou card, e sem dizer que já está feito.`
-			: null;
+		//
+		// A condição era `channel === "web"`, então no WhatsApp este fato nunca
+		// entrava na janela — e é exatamente ali que ele mais falta, porque lá não
+		// há formulário na tela para o cliente ver que falta algo. Em `fd76e393`
+		// (prod, 16/08/2026) o turno final foi "Pronto, Kairo! Sua proposta está
+		// fechada…" com zero propostas no banco. O texto por canal mora em
+		// `agent/fecho-pendente.ts`.
+		const blocoFormularioAberto = blocoDeFechoPendente({
+			channel: state.channel,
+			contractFormDispatched: state.funnel.contractFormDispatched,
+			contractClosed: state.baseMeta.contractClosed,
+		});
 
 		// ── A BUSCA NÃO TROUXE NADA ──
 		// O contexto só falava quando HAVIA oferta. Quando a administradora falhava
@@ -716,7 +743,9 @@ export function createConverseNode(model: BaseChatModel) {
 			? { ...config, metadata: { ...config.metadata, langfusePrompt: lfPrompt } }
 			: config;
 
-		const montarSystem = (conducao: string | null) =>
+		/** `comTools` = este beat tem tools no bind. Instrução de chamar tool só
+		 * entra quando ela existe — ver `blocoChamarEscolherCota`. */
+		const montarSystem = (conducao: string | null, comTools = true) =>
 			new SystemMessage({
 				content: [
 					cacheableSystemBlock(leanSystemPrompt(baseSystemText)),
@@ -732,6 +761,9 @@ export function createConverseNode(model: BaseChatModel) {
 					...(blocoAbandono ? [{ type: "text" as const, text: blocoAbandono }] : []),
 					...(blocoVazia ? [{ type: "text" as const, text: blocoVazia }] : []),
 					...(blocoOpcoesNaTela ? [{ type: "text" as const, text: blocoOpcoesNaTela }] : []),
+					...(comTools && blocoChamarEscolherCota
+						? [{ type: "text" as const, text: blocoChamarEscolherCota }]
+						: []),
 					...(blocoFechamento ? [{ type: "text" as const, text: blocoFechamento }] : []),
 					...(blocoRetomadaPosFechamento
 						? [{ type: "text" as const, text: blocoRetomadaPosFechamento }]
@@ -1084,39 +1116,55 @@ export function createConverseNode(model: BaseChatModel) {
 						// Perder um aceite que o léxico não reconhece custa uma pergunta
 						// repetida — o card de decisão aparece. Ganhar um falso aceite custa um
 						// contrato. É a mesma assimetria que o `yes-no.ts:21` argumenta.
-						const decidiuNesteTurno = detectYesNoText(texto, state.intent ?? "neutral") === true;
+						// FIX-414 — o veto também cobre EXCLUSÃO da marca, não só recusa
+						// genérica. A 11ª revisão mediu a tool ancorando RODOBENS em
+						// "qualquer uma menos a Rodobens, quero fechar" — ou seja, o
+						// caminho "estruturado", que existe pra ser a parede, era mais
+						// permissivo que o resolvedor de texto que ele substitui.
+						//
+						// 16/08/2026: o predicado inteiro saiu daqui para
+						// `agent/escolha-ancoravel.ts` porque a TOOL não o consultava.
+						// Ela respondia "confirmada: true" ao modelo enquanto este bloco
+						// descartava o efeito, e o modelo — corretamente — contava ao
+						// cliente o que a ferramenta lhe dissera: "Pronto! A cota está
+						// confirmada", com `escolha = null` no servidor. Duas cópias da
+						// mesma regra, e a que falava com o modelo estava errada.
 						const gid = (call.args as { groupId?: unknown })?.groupId;
-						if (decidiuNesteTurno && typeof gid === "string" && gid.trim()) {
+						if (typeof gid === "string" && gid.trim()) {
 							const exibidas = await listShownOffersForConversation(state.conversationId).catch(
 								() => [],
 							);
-							const cota = exibidas.find((o) => o.groupId === gid);
-							// FIX-431 — O SILÊNCIO MAIS CARO DO SISTEMA.
-							//
-							// Quando o cliente diz "quero contratar" e a âncora NÃO acontece,
-							// `escolha` não entra no estado, `fechamentoSinalizado` fica falso e
-							// o funil continua no reveal: o cliente pede o contrato e recebe o
-							// card de recomendação de novo. Até aqui isso não deixava rastro
-							// nenhum — nem log, nem score —, então o defeito só aparecia como
-							// "o agente não fecha", sem causa legível.
-							if (!cota) {
+							const veredito = escolhaPodeSerAncorada({
+								texto,
+								intent: state.intent,
+								groupId: gid,
+								exibidas,
+							});
+							if (veredito.ancora) {
+								escolhaRef.cota = veredito.cota;
+							} else {
+								// FIX-431 — O SILÊNCIO MAIS CARO DO SISTEMA.
+								//
+								// Quando o cliente diz "quero contratar" e a âncora NÃO
+								// acontece, `escolha` não entra no estado,
+								// `fechamentoSinalizado` fica falso e o funil continua no
+								// reveal: o cliente pede o contrato e recebe o card de
+								// recomendação de novo. Isso não deixava rastro — nem log,
+								// nem score —, e o defeito só aparecia como "o agente não
+								// fecha", sem causa legível.
+								//
+								// O registro cobria só o groupId inexistente. O veto por falta
+								// de aceite — o que de fato aconteceu em `fd76e393` — era mudo,
+								// e por isso a conversa que anunciou uma venda inexistente não
+								// gerou sinal nenhum no minuto em que aconteceu.
 								console.error(
-									`[escolha-nao-ancorou] groupId=${gid} nao esta entre as ${exibidas.length} ofertas exibidas (conv=${state.conversationId})`,
+									`[escolha-nao-ancorou] veto=${veredito.veto} groupId=${gid} exibidas=${exibidas.length} (conv=${state.conversationId})`,
 								);
-								registrarEscolhaNaoAncorada({ groupId: gid, exibidas: exibidas.length });
-							}
-							// FIX-414 — o veto também cobre EXCLUSÃO da marca, não só recusa
-							// genérica. A 11ª revisão mediu a tool ancorando RODOBENS em
-							// "qualquer uma menos a Rodobens, quero fechar" — ou seja, o
-							// caminho "estruturado", que existe pra ser a parede, era mais
-							// permissivo que o resolvedor de texto que ele substitui.
-							//
-							// Quem decide chamar a tool é o MODELO, lendo o mesmo texto. O
-							// `groupId` ser real não diz nada sobre a intenção: confere-se a
-							// intenção contra a fala, com a MESMA peça que o caminho de texto
-							// usa (`extractNegatedAdministradoras`), não com uma lista nova.
-							if (cota && !administradoraFoiRecusada(texto, exibidas, cota.administradora)) {
-								escolhaRef.cota = cota;
+								registrarEscolhaNaoAncorada({
+									groupId: gid,
+									exibidas: exibidas.length,
+									veto: veredito.veto,
+								});
 							}
 						}
 					}
@@ -1395,6 +1443,8 @@ export function createConverseNode(model: BaseChatModel) {
 							`chamou a atenção dele, o que achou. É só isso: não puxe assunto novo, não peça ` +
 							`dado nenhum, não pergunte sobre a experiência dele com consórcio e não repita os ` +
 							`números que você já disse.`,
+						// Este beat roda sem tools: a janela não pode mandar chamar nenhuma.
+						false,
 					),
 					...loopMessages.slice(1),
 					deixaDaAncora,

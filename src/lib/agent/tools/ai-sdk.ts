@@ -17,11 +17,13 @@ import { GroupNotInDiscoveryError } from "@/lib/adapters/bevi/bevi-self-contract
 import { toModelGroupSummary } from "@/lib/adapters/bevi/offer-mapper";
 import type { GroupSummary, SearchGroupsParams } from "@/lib/adapters/types";
 import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
+import { escolhaPodeSerAncorada, motivoParaOModelo } from "@/lib/agent/escolha-ancoravel";
 import { evaluateActionPrecondition } from "@/lib/agent/orchestrator/action-policy";
 import type { ChosenOffer } from "@/lib/agent/orchestrator/choose-offer";
 import { listShownOffersForConversation } from "@/lib/agent/orchestrator/choose-offer";
 import { CANONICAL_TOPIC_IDS } from "@/lib/agent/orchestrator/topic-catalog";
 import type { ConversationMetadata } from "@/lib/agent/personas";
+import type { UserIntent } from "@/lib/agent/qualify-state";
 import { dinheiroDeclaradoPeloCliente } from "@/lib/agent/qualify-state";
 import { rankGroups, recommendWithFallback } from "@/lib/agent/recommendation";
 import { computeScenarios } from "@/lib/agent/scenarios";
@@ -1262,6 +1264,15 @@ export type ConsorcioToolsContext = {
 	 * policy escondeu faz o modelo tomar NoSuchToolError e o turno inteiro cair no
 	 * fallback enlatado. Ausente → comportamento antigo. */
 	allowedToolNames?: readonly string[];
+	/** O que o cliente disse NESTE turno, com o rótulo do analyzer.
+	 *
+	 * Existe por causa do `escolher_cota`: o veto de ancoragem (FIX-416, aceite
+	 * explícito) morava só no nó `converse` e rodava DEPOIS da tool, então a tool
+	 * respondia "confirmada: true" para um efeito que seria descartado — e o
+	 * modelo anunciava ao cliente a cota "confirmada" que o servidor não tinha
+	 * (prod, `fd76e393`, 16/08/2026). Sem este campo a tool não afirma
+	 * confirmação: confirmar por omissão foi exatamente como o defeito nasceu. */
+	turnoDoCliente?: { texto: string; intent?: UserIntent };
 };
 
 /**
@@ -1787,24 +1798,59 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		execute: async (args: { groupId: string }) => {
 			if (!conversationId) return { erro: "Sem conversa ativa para registrar a escolha." };
 			const exibidas = await listShownOffersForConversation(conversationId).catch(() => []);
-			const cota = exibidas.find((o) => o.groupId === args.groupId);
+
+			// O veto do FIX-416 é aplicado AQUI, com o mesmo predicado que o nó
+			// `converse` usa para gravar (`escolha-ancoravel.ts`). Antes ele existia
+			// só lá, e a tool respondia "confirmada: true" a um efeito que o
+			// `converse` descartaria em silêncio: o modelo então anunciava ao
+			// cliente uma cota confirmada que o servidor não tinha
+			// (`fd76e393`, prod, 16/08/2026 19:21:30).
+			//
+			// Sem o turno no contexto (chamador que não passa `turnoDoCliente`), a
+			// tool não tem como decidir — e então NÃO afirma. Confirmar por omissão
+			// é o defeito original.
+			const veredito = ctx.turnoDoCliente
+				? escolhaPodeSerAncorada({
+						texto: ctx.turnoDoCliente.texto,
+						intent: ctx.turnoDoCliente.intent,
+						groupId: args.groupId,
+						exibidas,
+					})
+				: null;
+
+			if (veredito && !veredito.ancora) {
+				return {
+					confirmada: false,
+					motivo: motivoParaOModelo(veredito.veto),
+					...(veredito.veto === "cota-nao-exibida"
+						? { gruposDisponiveis: exibidas.map((o) => o.groupId).filter(Boolean) }
+						: {}),
+				};
+			}
+
+			const cota = veredito?.ancora
+				? veredito.cota
+				: exibidas.find((o) => o.groupId === args.groupId);
 			if (!cota) {
 				return {
-					erro: "Esse grupo não está entre as cotas que você mostrou nesta conversa. Confira o groupId nos cards e chame de novo — não siga com uma cota que o cliente não viu.",
+					confirmada: false,
+					motivo: motivoParaOModelo("cota-nao-exibida"),
 					gruposDisponiveis: exibidas.map((o) => o.groupId).filter(Boolean),
 				};
 			}
 			// Quem GRAVA é o nó `converse`, pelo estado do grafo — a persistência do
 			// grafo apagaria o que fosse escrito daqui (mesmo padrão do
-			// `ajustar_por_parcela` e do `suggest_handoff`).
+			// `ajustar_por_parcela` e do `suggest_handoff`). Este retorno diz ao
+			// modelo o que o `converse` vai fazer, e agora pelo mesmo critério.
 			return {
-				confirmada: true,
+				confirmada: Boolean(veredito?.ancora),
 				administradora: cota.administradora,
 				creditValue: cota.creditValue,
 				termMonths: cota.termMonths,
 				monthlyPayment: cota.monthlyPayment,
-				aviso:
-					"Cota registrada. Fale os números DESTA cota daqui pra frente — é ela que vai pro contrato.",
+				aviso: veredito?.ancora
+					? "Cota registrada. Fale os números DESTA cota daqui pra frente — é ela que vai pro contrato."
+					: "Ainda NÃO registrei esta cota. Fale os números dela, mas não diga que está confirmada, reservada ou garantida.",
 			};
 		},
 	});
