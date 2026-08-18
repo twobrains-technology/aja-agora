@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
 	processInteractiveReply: vi.fn().mockResolvedValue(undefined),
 	markAsRead: vi.fn().mockResolvedValue(undefined),
 	updateLastInboundAt: vi.fn().mockResolvedValue(undefined),
-	handleDocumentInbound: vi.fn().mockResolvedValue(undefined),
+	receberMidiaDoCliente: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@/lib/whatsapp/template-sync", () => ({
@@ -30,8 +30,8 @@ vi.mock("@/lib/whatsapp/processor", () => ({
 	processInteractiveReply: mocks.processInteractiveReply,
 }));
 vi.mock("@/lib/whatsapp/api", () => ({ markAsRead: mocks.markAsRead }));
-vi.mock("@/lib/whatsapp/document-inbound", () => ({
-	handleDocumentInbound: mocks.handleDocumentInbound,
+vi.mock("@/lib/whatsapp/midia-do-cliente", () => ({
+	receberMidiaDoCliente: mocks.receberMidiaDoCliente,
 }));
 vi.mock("@/app/actions/whatsapp", () => ({ updateLastInboundAt: mocks.updateLastInboundAt }));
 
