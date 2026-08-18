@@ -937,8 +937,12 @@ export async function relayUserToAgent(userWaId: string, text: string): Promise<
 		for (const a of attendants) {
 			await sendToAttendant(a.phone, `*${userName}:*\n${text}`, { simulated: isSimulated });
 		}
+		// `entregues` explícito porque a linha sem ele MENTE: com a lista vazia o
+		// log dizia "User→AllAttendants" tendo mandado para ninguém, e ao investigar
+		// o sumiço da mídia (18/08) essa linha sugeria uma entrega que não houve. A
+		// conversa continua viva pelo painel, mas o log tem que dizer a verdade.
 		console.log(
-			`[whatsapp-proxy] User→AllAttendants: ${userWaId} | "${text.slice(0, 50)}" simulated=${isSimulated}`,
+			`[whatsapp-proxy] User→AllAttendants: ${userWaId} | "${text.slice(0, 50)}" simulated=${isSimulated} entregues=${attendants.length}`,
 		);
 	}
 

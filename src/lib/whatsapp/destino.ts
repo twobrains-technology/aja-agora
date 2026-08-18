@@ -64,7 +64,12 @@ export async function conversasComInbound() {
 export async function conversaDoNumero(waId: string) {
 	const chave = chaveTelefoneBR(waId);
 
+	// Comparação em memória, como `updateLastInboundAt` e `window.ts` já fazem: o
+	// formato do telefone varia demais entre as fontes para um LIKE confiável. Só
+	// as colunas de que os dois chamadores precisam — a linha inteira de toda
+	// conversa seria payload à toa num caminho que roda a cada anexo recebido.
 	const candidatas = await db.query.conversations.findMany({
+		columns: { id: true, waId: true, channel: true, metadata: true },
 		orderBy: [desc(conversations.updatedAt)],
 	});
 
