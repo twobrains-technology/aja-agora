@@ -24,7 +24,7 @@ import { triggerEvalScoring } from "@/lib/eval/trigger";
 import { ehNomeProprioPlausivel } from "@/lib/leads/contact-capture";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { runDirectiveWithOrchestrator } from "./adapter";
-import { sendTextMessage } from "./api";
+import { sendAudioMessage, sendDocumentMessage, sendImageMessage, sendTextMessage } from "./api";
 import { persistMeta, reloadMeta } from "./meta-helpers";
 import { loadConversationHistory, saveMessage } from "./session";
 import { contarListenersDoAtendente, publishToAttendant } from "./simulator-bus";
@@ -937,12 +937,148 @@ export async function relayUserToAgent(userWaId: string, text: string): Promise<
 		for (const a of attendants) {
 			await sendToAttendant(a.phone, `*${userName}:*\n${text}`, { simulated: isSimulated });
 		}
+		// `entregues` explícito porque a linha sem ele MENTE: com a lista vazia o
+		// log dizia "User→AllAttendants" tendo mandado para ninguém, e ao investigar
+		// o sumiço da mídia (18/08) essa linha sugeria uma entrega que não houve. A
+		// conversa continua viva pelo painel, mas o log tem que dizer a verdade.
 		console.log(
-			`[whatsapp-proxy] User→AllAttendants: ${userWaId} | "${text.slice(0, 50)}" simulated=${isSimulated}`,
+			`[whatsapp-proxy] User→AllAttendants: ${userWaId} | "${text.slice(0, 50)}" simulated=${isSimulated} entregues=${attendants.length}`,
 		);
+		// Lista vazia é entrega que não aconteceu — mesmo contrato de
+		// `relayWebUserToAgent` e do relay de mídia. Quem chamar não pode prometer
+		// ao cliente uma mensagem que ninguém recebeu.
+		return attendants.length > 0;
 	}
 
 	return true;
+}
+
+/**
+ * Um aviso do SISTEMA para quem está atendendo — não é fala do cliente.
+ *
+ * Por isso não passa por `saveMessage`: gravar "não consegui baixar o arquivo"
+ * como se o cliente tivesse dito isso envenenaria o histórico e o contexto do
+ * agente. Existe para o caso em que a mídia chegou mas não pôde ser entregue —
+ * o atendente precisa saber que algo veio, senão o sintoma é o mesmo silêncio
+ * que este módulo veio corrigir.
+ */
+export async function relayAvisoAoAtendente(userWaId: string, texto: string): Promise<boolean> {
+	const state = await getHandoffState(userWaId);
+	if (!state?.isHandedOff) return false;
+
+	const userName = state.contactName ?? "Cliente";
+	const isSimulated = state.isSimulated ?? false;
+	const corpo = `⚠️ *${userName}* — ${texto}`;
+
+	if (state.handedOffUserId) {
+		const attendant = await getAttendantById(state.handedOffUserId);
+		if (attendant) {
+			await sendToAttendant(attendant.phone, corpo, { simulated: isSimulated });
+			return true;
+		}
+	}
+
+	const attendants = await getAttendantList();
+	for (const a of attendants) {
+		await sendToAttendant(a.phone, corpo, { simulated: isSimulated });
+	}
+	return attendants.length > 0;
+}
+
+/** O anexo do cliente, já guardado, pronto para seguir ao atendente. */
+export interface AnexoDoCliente {
+	tipo: "image" | "document" | "audio";
+	/** URL assinada — a Meta BUSCA o arquivo nela, não recebe os bytes. */
+	link: string;
+	filename: string;
+	/** Legenda que o cliente digitou junto do anexo, quando digitou. */
+	caption?: string;
+}
+
+const ANEXO_SEM_LEGENDA: Record<AnexoDoCliente["tipo"], string> = {
+	image: "enviou uma imagem",
+	document: "enviou um documento",
+	audio: "enviou um áudio",
+};
+
+/** O que o atendente lê acima do arquivo. Sem o nome, ele não sabe de quem é. */
+function legendaDoAnexo(anexo: AnexoDoCliente, userName: string): string {
+	const texto = anexo.caption?.trim();
+	return texto ? `*${userName}:*\n${texto}` : `*${userName}* ${ANEXO_SEM_LEGENDA[anexo.tipo]}`;
+}
+
+/**
+ * Manda o ARQUIVO para o atendente — não um aviso de que existe um arquivo.
+ *
+ * Espelha `sendToAttendant` (inclusive o espelho no simulador), com a diferença
+ * que a Meta impõe: áudio não aceita legenda, então o nome de quem mandou vai
+ * numa linha de texto antes do arquivo.
+ */
+async function enviarAnexoAoAtendente(
+	phone: string,
+	anexo: AnexoDoCliente,
+	legenda: string,
+	options: { simulated?: boolean } = {},
+): Promise<void> {
+	console.log(
+		`[proxy] enviarAnexoAoAtendente phone=${phone} tipo=${anexo.tipo} filename=${JSON.stringify(anexo.filename)} simulated=${options.simulated ?? false}`,
+	);
+	if (!options.simulated) {
+		if (anexo.tipo === "image") {
+			await sendImageMessage(phone, anexo.link, legenda);
+		} else if (anexo.tipo === "audio") {
+			await sendTextMessage(phone, legenda);
+			await sendAudioMessage(phone, anexo.link);
+		} else {
+			await sendDocumentMessage(phone, anexo.link, anexo.filename, legenda);
+		}
+	}
+	// O painel do simulador não renderiza mídia: leva a legenda com o link, que é
+	// o que dá para abrir de lá.
+	publishToAttendant(phone, `${legenda}\n${anexo.link}`, { simulated: options.simulated });
+}
+
+/**
+ * Relay de MÍDIA do cliente para o atendente — o irmão de `relayUserToAgent`.
+ *
+ * Só entrega: quem grava no histórico e publica na tela é
+ * `receberMidiaDoCliente`, que é dono da chave no storage. Devolve se alguém de
+ * fato recebeu — lista de atendentes vazia é entrega que não aconteceu, e quem
+ * chama não pode tratar isso como sucesso.
+ */
+export async function relayUserMediaToAgent(
+	userWaId: string,
+	anexo: AnexoDoCliente,
+): Promise<boolean> {
+	const state = await getHandoffState(userWaId);
+	if (!state?.isHandedOff || !state.conversationId) return false;
+
+	const userName = state.contactName ?? "Cliente";
+	const isSimulated = state.isSimulated ?? false;
+	const legenda = legendaDoAnexo(anexo, userName);
+
+	if (state.handedOffUserId) {
+		const attendant = await getAttendantById(state.handedOffUserId);
+		if (attendant) {
+			await enviarAnexoAoAtendente(attendant.phone, anexo, legenda, { simulated: isSimulated });
+			console.log(
+				`[whatsapp-proxy] UserMedia→Attendant: ${userWaId} → ${attendant.phone} | ${anexo.tipo} ${anexo.filename} simulated=${isSimulated}`,
+			);
+			return true;
+		}
+		console.warn(
+			`[whatsapp-proxy] Claimed attendant ${state.handedOffUserId} not found in active list`,
+		);
+	}
+
+	const attendants = await getAttendantList();
+	for (const a of attendants) {
+		await enviarAnexoAoAtendente(a.phone, anexo, legenda, { simulated: isSimulated });
+	}
+	console.log(
+		`[whatsapp-proxy] UserMedia→AllAttendants: ${userWaId} | ${anexo.tipo} ${anexo.filename} simulated=${isSimulated} entregues=${attendants.length}`,
+	);
+	return attendants.length > 0;
 }
 
 /** Close a handed-off conversation. */

@@ -4,9 +4,7 @@ import { updateLastInboundAt } from "@/app/actions/whatsapp";
 import { parseCtwaReferral } from "@/lib/attribution/referral";
 import { recordWhatsAppVisit } from "@/lib/attribution/visit-store";
 import { markAsRead } from "@/lib/whatsapp/api";
-import { withConversationLock } from "@/lib/whatsapp/conversation-lock";
-import { handleDocumentInbound } from "@/lib/whatsapp/document-inbound";
-import { registrarMidiaRecebida } from "@/lib/whatsapp/media-inbound";
+import { receberMidiaDoCliente } from "@/lib/whatsapp/midia-do-cliente";
 import { claimInboundMessage } from "@/lib/whatsapp/once";
 import { processInteractiveReply, processTextMessage } from "@/lib/whatsapp/processor";
 
@@ -179,53 +177,44 @@ export async function POST(req: NextRequest) {
 					break;
 				}
 
-				// FIX-122 (D13): mídia inbound (Passo 6 KYC). A copy convida "me manda
-				// a foto do RG/CNH aqui mesmo" — antes a imagem caía no default e era
-				// dropada em silêncio. Agora baixa da Graph API e sobe pro MESMO destino
-				// do web (uploadContractDocument). Async best-effort, mantém o 200
-				// imediato como todo o resto do webhook.
+				// Mídia inbound (foto do RG, comprovante, PDF, áudio) — um caminho só.
+				//
+				// `receberMidiaDoCliente` faz aqui a MESMA pergunta que o texto faz no
+				// processor: quem responde este cliente agora? Havendo atendimento
+				// humano, o arquivo vai para o atendente; senão, segue para o KYC do
+				// agente. Antes eram dois handlers disparados lado a lado, nenhum dos
+				// dois perguntava isso, e o documento sumia no meio do atendimento
+				// (prod, 2026-08-18). Async best-effort, mantém o 200 imediato como
+				// todo o resto do webhook.
 				case "image":
-				case "document": {
-					const media = msgType === "image" ? message.image : message.document;
+				case "document":
+				case "audio":
+				// Vídeo e figurinha caíam no `default` — mesmo sumiço do documento, só
+				// que por outro botão: o do vídeo fica ao lado do de áudio, e cliente
+				// em atendimento grava o documento em vídeo sem pensar duas vezes.
+				case "video":
+				case "sticker": {
+					const media =
+						msgType === "image"
+							? message.image
+							: msgType === "document"
+								? message.document
+								: msgType === "audio"
+									? message.audio
+									: msgType === "video"
+										? message.video
+										: message.sticker;
 					const mediaId = media?.id;
 					if (mediaId) {
-						// Serializado como os demais inbounds: RG frente + verso chegam
-						// em sequência e os dois escrevem `documentSlotsSent` no mesmo
-						// metadata (lost update se rodarem em paralelo).
-						withConversationLock(from, () =>
-							handleDocumentInbound({
-								from,
-								mediaId,
-								filename: message.document?.filename,
-							}),
-						).catch((err) => console.error("[whatsapp] Document inbound error:", err));
-
-						// ORTOGONAL ao KYC acima: aquilo consome a foto como slot da
-						// proposta; isto a registra na timeline, pra o atendente ver no
-						// painel o que o cliente mandou. Fora do lock porque só escreve
-						// uma linha nova em `messages` — não disputa o metadata.
-						registrarMidiaRecebida({
+						receberMidiaDoCliente({
 							from,
 							mediaId,
+							tipo: msgType,
 							filename: message.document?.filename,
 							caption: media?.caption,
 						}).catch((err) => console.error("[whatsapp] Media inbound error:", err));
 					} else {
 						console.warn(`[whatsapp] ${msgType} inbound sem media id — ignorado`);
-					}
-					break;
-				}
-
-				// Áudio caía no `default` e sumia sem deixar rastro: o cliente mandava
-				// um áudio e, do painel, o turno dele simplesmente não existia.
-				case "audio": {
-					const mediaId = message.audio?.id;
-					if (mediaId) {
-						registrarMidiaRecebida({ from, mediaId }).catch((err) =>
-							console.error("[whatsapp] Audio inbound error:", err),
-						);
-					} else {
-						console.warn("[whatsapp] audio inbound sem media id — ignorado");
 					}
 					break;
 				}
