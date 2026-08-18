@@ -14,7 +14,7 @@
  * +62 — código de país da Indonésia. O envio é aceito e não chega em ninguém.
  */
 
-import { eq, isNotNull } from "drizzle-orm";
+import { desc, eq, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
 import { normalizePhoneBR } from "@/lib/memory/identity";
@@ -45,4 +45,33 @@ export async function conversasComInbound() {
 		.select({ waId: conversations.waId, lastInboundAt: conversations.lastInboundAt })
 		.from(conversations)
 		.where(isNotNull(conversations.lastInboundAt));
+}
+
+/**
+ * A conversa desta PESSOA, achada pela chave canônica do telefone.
+ *
+ * Existe porque `eq(conversations.waId, from)` mente: o wa_id que a Meta entrega
+ * para número brasileiro vem sem o nono dígito, e o que a web gravou vem com
+ * ele. Em 2026-08-18 isso derrubou a mídia inbound — o cliente mandou o
+ * documento, a busca exata não achou conversa nenhuma e o arquivo foi para o
+ * chão (`[media-inbound] mídia sem conversa correspondente — ignorada`) enquanto
+ * o `updateLastInboundAt` do mesmo webhook achava duas conversas do mesmo
+ * telefone, porque ele já resolvia por chave.
+ *
+ * Preferência: conversa de WhatsApp (é o canal de onde a mídia veio) e, entre
+ * elas, a mais recentemente movimentada.
+ */
+export async function conversaDoNumero(waId: string) {
+	const chave = chaveTelefoneBR(waId);
+
+	const candidatas = await db.query.conversations.findMany({
+		orderBy: [desc(conversations.updatedAt)],
+	});
+
+	const daPessoa = candidatas.filter((c) =>
+		chave ? chaveTelefoneBR(c.waId) === chave : c.waId === waId,
+	);
+	if (daPessoa.length === 0) return null;
+
+	return daPessoa.find((c) => c.channel === "whatsapp") ?? daPessoa[0];
 }

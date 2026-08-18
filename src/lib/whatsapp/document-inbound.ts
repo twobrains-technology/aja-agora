@@ -14,14 +14,12 @@
 // Deps injetáveis (default = real) pra os testes exercitarem a trajetória sem
 // tocar DB/HTTP — mesmo padrão de `uploadContractDocument(…, gateway)`.
 
-import { eq } from "drizzle-orm";
-import { db } from "@/db";
-import { conversations } from "@/db/schema";
 import type { DocumentSlot } from "@/lib/adapters/proposal-gateway";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { type UploadContractDocInput, uploadContractDocument } from "@/lib/bevi/fulfillment";
 import { metaOf, persistMeta } from "@/lib/conversation/meta";
 import { downloadMedia, sendTextMessage } from "./api";
+import { conversaDoNumero } from "./destino";
 import {
 	documentDownloadFailedToWhatsApp,
 	documentNoConversationToWhatsApp,
@@ -69,11 +67,14 @@ export interface DocumentInboundDeps {
 	reply: (to: string, text: string) => Promise<unknown>;
 }
 
-const defaultDeps: DocumentInboundDeps = {
+/** Exportado para quem já baixou a mídia poder reaproveitar o download —
+ * `midia-do-cliente` injeta o `download` e evita uma segunda ida à Graph API. */
+export const defaultDocumentInboundDeps: DocumentInboundDeps = {
+	// Pela chave canônica do telefone, NUNCA por igualdade de string: o wa_id que
+	// a Meta entrega para número BR não traz o nono dígito, e a busca exata dava
+	// "não há conversa" para cliente que estava conversando (prod, 2026-08-18).
 	loadConversation: async (waId) => {
-		const conv = await db.query.conversations.findFirst({
-			where: eq(conversations.waId, waId),
-		});
+		const conv = await conversaDoNumero(waId);
 		return conv ? { id: conv.id, meta: metaOf(conv) } : null;
 	},
 	persist: persistMeta,
@@ -89,7 +90,7 @@ const defaultDeps: DocumentInboundDeps = {
  */
 export async function handleDocumentInbound(
 	input: DocumentInboundInput,
-	deps: DocumentInboundDeps = defaultDeps,
+	deps: DocumentInboundDeps = defaultDocumentInboundDeps,
 ): Promise<void> {
 	const { from, mediaId, filename } = input;
 

@@ -58,8 +58,14 @@ describe("FIX-122 structural — webhook trata mídia inbound (não dropa a foto
 		expect(src).toContain('case "document"');
 	});
 
-	it("a mídia inbound é delegada ao handleDocumentInbound (não ao default Unhandled)", () => {
-		expect(src).toContain("handleDocumentInbound");
+	it('o switch do webhook tem branch para "audio"', () => {
+		expect(src).toContain('case "audio"');
+	});
+
+	// O ponto de entrada mudou (2026-08-18): o webhook chama UM handler, que
+	// pergunta quem responde o cliente antes de decidir entre atendente e KYC.
+	it("a mídia inbound é delegada ao receberMidiaDoCliente (não ao default Unhandled)", () => {
+		expect(src).toContain("receberMidiaDoCliente");
 	});
 
 	it("a copy documentUploadToWhatsApp continua convidando a foto 'aqui mesmo'", () => {
