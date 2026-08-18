@@ -14,6 +14,7 @@ import {
 } from "@/lib/attribution/visit-cookie";
 import { recordWebVisit } from "@/lib/attribution/visit-store";
 import { auth } from "@/lib/auth";
+import { PARAM_PREVIEW } from "@/lib/heatmap/events";
 
 /**
  * O prefixo de cadastro do better-auth. Prefixo, e não `/sign-up/email` exato:
@@ -85,6 +86,17 @@ export async function proxy(request: NextRequest) {
 	}
 
 	if (ehLanding(pathname)) {
+		// O painel embute a landing num iframe para desenhar o mapa de calor sobre
+		// ela. Aquilo é uma requisição HTTP como qualquer outra e nasceria como
+		// visita: medido em 18/08/2026, abrir a tela levava `visits` de 1 para 2, e
+		// o operador entrava no denominador do funil sem UTM nenhum.
+		//
+		// A marca vem na URL porque é o único canal que um `<iframe src>` tem — não
+		// dá para mandar header. Não é trava de segurança e não precisa ser: quem
+		// forjar o parâmetro só consegue NÃO ser contado.
+		if (request.nextUrl.searchParams.has(PARAM_PREVIEW)) {
+			return NextResponse.next();
+		}
 		return registrarVisita(request);
 	}
 

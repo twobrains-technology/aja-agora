@@ -9,6 +9,12 @@
 				"files": ["src/components/admin/whatsapp-perfil/configuracao-whatsapp.tsx"],
 				"createdAt": "2026-08-13T06:50:41.570Z",
 				"reason": "falso positivo: o src e dinamico (perfil.profile_picture_url, URL assinada da Meta) e o <img> so renderiza dentro do ternario quando a URL existe; o ramo vazio mostra um placeholder proprio com icone"
+			},
+			{
+				"rule": "bounce-easing",
+				"value": "cubic-bezier(0.34, 1.56, 0.64, 1)",
+				"createdAt": "2026-08-18T14:24:35.313Z",
+				"reason": "Kairo decidiu: viu a comparacao lado a lado (GIF do logo real), disse nao notar diferenca e delegou a decisao. Token --ease-spring anima so o bloom dos raios do sol da marca (sun-mark.tsx); overshoot de 10% por 0,6s, imperceptivel. Alterar mexeria na identidade visual sem ganho."
 			}
 		]
 	}

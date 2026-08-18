@@ -50,6 +50,11 @@ export const TABELAS_LIMPAS: readonly string[] = [
 	// Conversões devolvidas à mídia — sinal do funil velho não pode ser reenviado
 	// pro algoritmo depois do marco zero.
 	"conversion_events",
+	// Mapa de calor da landing. Vai junto com `visits`, e não só por simetria: a
+	// FK é `ON DELETE SET NULL`, então preservar aqui deixaria uma multidão de
+	// cliques órfãos, sem campanha e sem desfecho, inflando o denominador do mapa
+	// com o comportamento de gente que o CRM já esqueceu.
+	"page_events",
 ];
 
 /**
