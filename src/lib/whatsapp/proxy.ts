@@ -944,6 +944,10 @@ export async function relayUserToAgent(userWaId: string, text: string): Promise<
 		console.log(
 			`[whatsapp-proxy] User→AllAttendants: ${userWaId} | "${text.slice(0, 50)}" simulated=${isSimulated} entregues=${attendants.length}`,
 		);
+		// Lista vazia é entrega que não aconteceu — mesmo contrato de
+		// `relayWebUserToAgent` e do relay de mídia. Quem chamar não pode prometer
+		// ao cliente uma mensagem que ninguém recebeu.
+		return attendants.length > 0;
 	}
 
 	return true;

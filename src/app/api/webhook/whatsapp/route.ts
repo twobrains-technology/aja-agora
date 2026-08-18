@@ -188,13 +188,22 @@ export async function POST(req: NextRequest) {
 				// todo o resto do webhook.
 				case "image":
 				case "document":
-				case "audio": {
+				case "audio":
+				// Vídeo e figurinha caíam no `default` — mesmo sumiço do documento, só
+				// que por outro botão: o do vídeo fica ao lado do de áudio, e cliente
+				// em atendimento grava o documento em vídeo sem pensar duas vezes.
+				case "video":
+				case "sticker": {
 					const media =
 						msgType === "image"
 							? message.image
 							: msgType === "document"
 								? message.document
-								: message.audio;
+								: msgType === "audio"
+									? message.audio
+									: msgType === "video"
+										? message.video
+										: message.sticker;
 					const mediaId = media?.id;
 					if (mediaId) {
 						receberMidiaDoCliente({

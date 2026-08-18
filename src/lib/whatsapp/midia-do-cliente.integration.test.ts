@@ -178,6 +178,26 @@ describeIfDb("mídia do cliente chega ao atendente (prod 2026-08-18)", () => {
 		expect(paraOCliente).toHaveLength(0);
 	});
 
+	// O cenário do incidente entra pelo ramo do atendimento humano, onde quem casa
+	// o telefone é o `quemRespondePara` — que já resolvia por chave ANTES deste
+	// fix. Quem passou a resolver por chave é o ramo do AGENTE (`conversaDoNumero`,
+	// e o `loadConversation` do KYC), e é ele que este teste tem que exercitar:
+	// sem o caso abaixo, restaurar a igualdade exata deixava a suíte verde.
+	it("sem handoff, o nono dígito também não pode fazer a mídia sumir", async () => {
+		const conv = await semear("62998887711", "active");
+		const kyc = vi.fn(async () => {});
+
+		await midia.receberMidiaDoCliente(
+			{ from: "556298887711", mediaId: "media-doc-9", tipo: "document", filename: "rg.pdf" },
+			{ ...deps, kyc },
+		);
+
+		const msgs = await mensagensDe(conv.id);
+		expect(msgs).toHaveLength(1);
+		expect(msgs[0].mediaFilename).toBe("rg.pdf");
+		expect(kyc).toHaveBeenCalledTimes(1);
+	});
+
 	it("o nono dígito do wa_id não pode fazer a mídia sumir", async () => {
 		// A conversa nasceu pela web, com o número que o cliente digitou…
 		const conv = await semear("62992496793", "handed_off");
@@ -239,6 +259,97 @@ describeIfDb("mídia do cliente chega ao atendente (prod 2026-08-18)", () => {
 		// Áudio não aceita legenda na Meta — vai o aviso com o nome e o arquivo.
 		expect(paraAtendente.some((e) => e.tipo === "audio")).toBe(true);
 		expect(paraAtendente.some((e) => e.tipo === "text" && e.texto?.includes("Aninha"))).toBe(true);
+	});
+
+	it("storage fora do ar não pode levar junto o KYC do cliente", async () => {
+		await semear("5511992220005", "active");
+		const kyc = vi.fn(async () => {});
+
+		await midia.receberMidiaDoCliente(
+			{ from: "5511992220005", mediaId: "media-doc-6", tipo: "image" },
+			{
+				...deps,
+				baixar: async () => ({ bytes: new Uint8Array([1]), mimeType: "image/jpeg" }),
+				guardar: async () => {
+					throw new Error("S3 fora do ar");
+				},
+				kyc,
+			},
+		);
+
+		// Antes deste módulo os dois caminhos eram promises independentes: um
+		// `putObject` quebrado não impedia a foto do RG de virar slot da proposta.
+		expect(kyc).toHaveBeenCalledTimes(1);
+	});
+
+	it("storage fora do ar com humano atendendo avisa o atendente", async () => {
+		await semear("5511991110006", "handed_off");
+
+		await midia.receberMidiaDoCliente(
+			{ from: "5511991110006", mediaId: "media-doc-7", tipo: "document" },
+			{
+				...deps,
+				guardar: async () => {
+					throw new Error("S3 fora do ar");
+				},
+			},
+		);
+
+		const paraAtendente = enviados.filter((e) => e.para === ATENDENTE_FONE);
+		expect(paraAtendente).toHaveLength(1);
+		expect(paraAtendente[0].texto).toContain("não consegui guardar o arquivo");
+	});
+
+	it("nome de arquivo quilométrico não derruba o registro nem o relay", async () => {
+		const conv = await semear("5511990000007", "handed_off");
+		const nomeEnorme = `${"a".repeat(400)}.pdf`;
+
+		await midia.receberMidiaDoCliente(
+			{ from: "5511990000007", mediaId: "media-doc-8", tipo: "document", filename: nomeEnorme },
+			deps,
+		);
+
+		// `mediaFilename` é varchar(255): sem truncar, o insert estoura, a promise
+		// rejeita, o webhook engole no catch — e o atendente fica sem nada.
+		const msgs = await mensagensDe(conv.id);
+		expect(msgs).toHaveLength(1);
+		expect(msgs[0].mediaFilename).toHaveLength(255);
+		expect(enviados.filter((e) => e.para === ATENDENTE_FONE)).toHaveLength(1);
+	});
+
+	it("vídeo entra no histórico como documento e NUNCA no KYC", async () => {
+		const conv = await semear("5511989990008", "active");
+		const kyc = vi.fn(async () => {});
+
+		await midia.receberMidiaDoCliente(
+			{ from: "5511989990008", mediaId: "media-video-1", tipo: "video" },
+			{
+				...deps,
+				baixar: async () => ({ bytes: new Uint8Array([7]), mimeType: "video/mp4" }),
+				kyc,
+			},
+		);
+
+		const msgs = await mensagensDe(conv.id);
+		expect(msgs).toHaveLength(1);
+		expect(msgs[0].mediaType).toBe("document");
+		// Documento de identidade é foto ou PDF — vídeo não vira slot da proposta.
+		expect(kyc).not.toHaveBeenCalled();
+	});
+
+	it("anexo mandado por um ATENDENTE não é tratado como fala de cliente", async () => {
+		const avisar = vi.fn(async (_para: string, _texto: string) => ({}));
+		const kyc = vi.fn(async () => {});
+
+		await midia.receberMidiaDoCliente(
+			{ from: ATENDENTE_FONE, mediaId: "media-doc-99", tipo: "image" },
+			{ ...deps, avisar, kyc },
+		);
+
+		expect(kyc).not.toHaveBeenCalled();
+		// Ele recebia a copy de cliente: "manda um oi que eu começo com você".
+		expect(avisar).toHaveBeenCalledTimes(1);
+		expect(avisar.mock.calls[0]?.[1]).toContain("painel");
 	});
 
 	it("handoff sem ninguém reivindicando entrega a todos os atendentes ativos", async () => {
