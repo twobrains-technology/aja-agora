@@ -25,6 +25,7 @@ vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 
 import { NextRequest } from "next/server";
 
+import { PARAM_PREVIEW } from "@/lib/heatmap/events";
 import { config, ehLanding, LANDINGS, proxy } from "./proxy";
 
 // A lista vem do próprio módulo, e não copiada para cá: assim uma vertical nova
@@ -82,6 +83,23 @@ describe("o proxy grava a chegada em toda landing", () => {
 		await proxy(chegada("/", "", null));
 
 		expect(recordWebVisit).not.toHaveBeenCalled();
+	});
+
+	// O painel embute a landing para desenhar o mapa de calor por cima dela
+	// (`visor-do-mapa.tsx`). Aquele iframe é uma requisição HTTP igual às outras:
+	// medido em 18/08/2026, abrir a tela do mapa com o cookie de visita vencido
+	// levava `visits` de 1 para 2 — o operador entrava no próprio denominador do
+	// funil, sem UTM, e derrubava a taxa de conversão de toda campanha.
+	it("não conta o preview do mapa de calor como chegada de gente", async () => {
+		await proxy(chegada("/", `?${PARAM_PREVIEW}=1`));
+
+		expect(recordWebVisit).not.toHaveBeenCalled();
+	});
+
+	it("segue gravando a chegada de verdade na mesma landing", async () => {
+		await proxy(chegada("/", "?utm_source=meta"));
+
+		expect(recordWebVisit).toHaveBeenCalledTimes(1);
 	});
 });
 

@@ -2,6 +2,7 @@
 
 import { ChatTheater } from "@/components/chat/theater/chat-theater";
 import { TheaterProvider, useTheater } from "@/components/chat/theater/theater-context";
+import { HeatmapTracker } from "@/components/heatmap/heatmap-tracker";
 import { lato, manrope, merriweather } from "@/components/kv/fonts";
 import { KvFaq } from "@/components/kv/kv-faq";
 import { KvFooter } from "@/components/kv/kv-footer";
@@ -34,17 +35,19 @@ function PaginaAuto() {
 		<main
 			className={`${merriweather.variable} ${lato.variable} ${manrope.variable} flex min-h-screen flex-col bg-[var(--aja-paper)] font-sans text-[color:var(--aja-ink)] antialiased`}
 		>
-			<KvMenu onOpenChat={openTheater} nav={NAV_VERTICAL} />
-			<div id="hero" className="scroll-mt-24">
+			<div data-heat="kv-menu">
+				<KvMenu onOpenChat={openTheater} nav={NAV_VERTICAL} />
+			</div>
+			<div id="hero" data-heat="hero-vertical" className="scroll-mt-24">
 				<HeroVertical conteudo={HERO_AUTO} onOpenChat={openTheater} />
 			</div>
-			<div id="proposito" className="scroll-mt-24">
+			<div id="proposito" data-heat="faixa-numeros" className="scroll-mt-24">
 				<FaixaNumeros conteudo={NUMEROS_AUTO} />
 			</div>
-			<div id="upgrade" className="scroll-mt-24">
+			<div id="upgrade" data-heat="bloco-upgrade" className="scroll-mt-24">
 				<BlocoUpgrade conteudo={UPGRADE_AUTO} onOpenChat={openTheater} />
 			</div>
-			<div id="faq" className="scroll-mt-24">
+			<div id="faq" data-heat="kv-faq" className="scroll-mt-24">
 				<KvFaq itens={FAQ_AUTO} />
 			</div>
 			{/* Guia de artigos fora do ar por ora — o blog ainda não existe e todos os
@@ -52,7 +55,10 @@ function PaginaAuto() {
 			    ./conteudo e coberto por verticais.test.ts; para repor, descomente aqui
 			    e o import lá em cima. */}
 			{/* <GuiaArtigos conteudo={GUIA_AUTO} /> */}
-			<KvFooter onOpenChat={openTheater} />
+			<div data-heat="kv-footer">
+				<KvFooter onOpenChat={openTheater} />
+			</div>
+			<HeatmapTracker path="/autos" />
 		</main>
 	);
 }

@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
 import { DM_Mono, Poppins } from "next/font/google";
-import Script from "next/script";
 import { ThemeProvider } from "next-themes";
+import { AnalyticsScripts } from "@/components/analytics/analytics-scripts";
 import { merriweather } from "@/components/kv/fonts";
 import { SITE_URL } from "@/lib/seo/site";
 import "./globals.css";
 
-// Tags do time de anúncio (IDs públicos, não são segredo).
+// IDs públicos das tags. Só o `noscript` de fallback usa daqui; o carregamento
+// normal vive em `AnalyticsScripts`.
 const GTM_ID = "GTM-KZXWKBZ3";
-const GA4_ID = "G-SD0XH0VHED";
 // Meta Pixel — por env var porque o ID muda por ambiente e ainda não existe em
 // dev. Sem a variável, nada é renderizado: melhor não ter pixel do que ter um
 // pixel apontando pra conta de anúncio errada. A atribuição do nosso lado não
@@ -68,37 +68,9 @@ export default function RootLayout({
 			suppressHydrationWarning
 		>
 			<head>
-				<Script id="gtm" strategy="afterInteractive">
-					{`(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
-new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
-j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
-'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
-})(window,document,'script','dataLayer','${GTM_ID}');`}
-				</Script>
-				<Script
-					src={`https://www.googletagmanager.com/gtag/js?id=${GA4_ID}`}
-					strategy="afterInteractive"
-				/>
-				<Script id="ga4" strategy="afterInteractive">
-					{`window.dataLayer = window.dataLayer || [];
-function gtag(){dataLayer.push(arguments);}
-gtag('js', new Date());
-gtag('config', '${GA4_ID}');`}
-				</Script>
-				{META_PIXEL_ID && (
-					<Script id="meta-pixel" strategy="afterInteractive">
-						{`!function(f,b,e,v,n,t,s)
-{if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-n.callMethod.apply(n,arguments):n.queue.push(arguments)};
-if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
-n.queue=[];t=b.createElement(e);t.async=!0;
-t.src=v;s=b.getElementsByTagName(e)[0];
-s.parentNode.insertBefore(t,s)}(window,document,'script',
-'https://connect.facebook.net/en_US/fbevents.js');
-fbq('init', '${META_PIXEL_ID}');
-fbq('track', 'PageView');`}
-					</Script>
-				)}
+				{/* Tags de anúncio. Vivem num componente cliente porque ele se recusa
+				    a rodar dentro de iframe — ver `analytics-scripts.tsx`. */}
+				<AnalyticsScripts />
 			</head>
 			<body className="min-h-full flex flex-col">
 				<noscript>

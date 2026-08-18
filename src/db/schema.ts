@@ -1145,6 +1145,65 @@ export const conversionEvents = pgTable(
 	],
 );
 
+// ─── Mapa de calor da landing ────────────────────────────────────────────────
+//
+// Onde o visitante clica e até onde ele rola. O GA4 diz quantos chegaram e o
+// funil diz quantos fecharam; entre os dois havia um vão de onze seções sobre o
+// qual ninguém tinha número nenhum.
+//
+// A coluna que justifica ser tabela nossa e não ferramenta de terceiro é
+// `visit_id`: com ela o mapa herda campanha, criativo e — via `visits.visitorId`
+// → `leads` — o desfecho. Dá pra perguntar "o mapa de quem FECHOU é diferente do
+// mapa de quem saiu?", que é a pergunta que decide o que muda na página.
+// Clarity e PostHog não respondem isso, porque não sabem quem virou lead.
+//
+// 🔒 Sem PII: `label` passa por `sanitizeLabel` (`src/lib/heatmap/events.ts`),
+// que apaga CPF, e-mail e telefone antes de gravar. Endpoint público e sem
+// sessão ⇒ tudo entra por allowlist (tipo, seção e faixa numérica conhecidos).
+export const pageEventTypeEnum = pgEnum("page_event_type", [
+	"click",
+	"rage_click",
+	"section_view",
+	"scroll_depth",
+]);
+
+export const deviceEnum = pgEnum("device", ["mobile", "tablet", "desktop"]);
+
+export const pageEvents = pgTable(
+	"page_events",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		// `set null` e não `cascade`: purgar uma visita não pode abrir buraco na
+		// série histórica do mapa — o evento anônimo continua valendo pro total.
+		visitId: uuid("visit_id").references(() => visits.id, { onDelete: "set null" }),
+		type: pageEventTypeEnum().notNull(),
+		path: text().notNull(),
+		/** Uma das seções de `SECOES_LANDING`. É por aqui que o funil de scroll fecha. */
+		section: text(),
+		/** Caminho estável do alvo — a âncora que sobrevive à quebra de layout. */
+		selector: text(),
+		/** Texto visível do alvo, já higienizado. É o que torna o mapa legível. */
+		label: text(),
+		// Relativas (0..1), nunca pixel absoluto: a landing é responsiva, e pixel
+		// somaria dois lugares diferentes da tela como se fossem o mesmo ponto.
+		relX: real("rel_x"),
+		relY: real("rel_y"),
+		pageRelX: real("page_rel_x"),
+		pageY: integer("page_y"),
+		scrollPct: integer("scroll_pct"),
+		viewportWidth: integer("viewport_width").notNull(),
+		viewportHeight: integer("viewport_height").notNull(),
+		device: deviceEnum().notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [
+		// A leitura da dashboard é sempre "esta página, neste período".
+		index("page_events_path_created_at_idx").on(table.path, table.createdAt),
+		index("page_events_visit_id_idx").on(table.visitId),
+		index("page_events_type_section_idx").on(table.type, table.section),
+	],
+);
+
 export const whatsappOnceKeys = pgTable(
 	"whatsapp_once_keys",
 	{
