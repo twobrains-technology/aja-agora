@@ -42,7 +42,9 @@
 		"sonda:intent": "tsx scripts/sonda-intent-aceite.ts",
 		"test:jornada": "bash scripts/test-jornada.sh",
 		"sonda:conversa": "tsx scripts/sonda-conversa-real.ts",
-		"prompts:check": "tsx scripts/prompts-check.ts"
+		"prompts:check": "tsx scripts/prompts-check.ts",
+		"sonda:fecho-fantasma": "tsx scripts/sonda-fecho-fantasma.ts",
+		"verifica:reconciliacao": "tsx scripts/verifica-reconciliacao.ts"
 	},
 	"dependencies": {
 		"@ai-sdk/anthropic": "^3.0.69",
