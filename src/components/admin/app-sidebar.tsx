@@ -6,6 +6,7 @@ import {
 	BotIcon,
 	BuildingIcon,
 	ChartPieIcon,
+	FlameIcon,
 	FlaskConicalIcon,
 	HeadsetIcon,
 	KanbanIcon,
@@ -52,6 +53,7 @@ export function AppSidebar({ role = "viewer" }: { role?: Role }) {
 	const menuItems = permitido([
 		{ title: "Agora", href: "/admin", icon: ActivityIcon },
 		{ title: "Performance", href: "/admin/performance", icon: ChartPieIcon },
+		{ title: "Mapa de calor", href: "/admin/mapa-de-calor", icon: FlameIcon },
 	]);
 	const applicationItems = permitido([
 		{ title: "Pipeline", href: "/admin/pipeline", icon: KanbanIcon },
