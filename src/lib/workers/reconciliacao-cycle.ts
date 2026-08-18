@@ -33,6 +33,23 @@ export type LinhaDeReconciliacao = {
 	propostas: number;
 };
 
+/**
+ * As conversas do próximo ciclo, com quem NUNCA foi medido na frente.
+ *
+ * A ordenação não é preferência: sem ela, o `LIMIT` recortava um subconjunto
+ * arbitrário — o Postgres não promete ordem sem `ORDER BY` e, na prática,
+ * devolve as mesmas linhas a cada varredura. Passando do teto por ciclo de
+ * conversas movimentadas na janela, o excedente nunca era avaliado.
+ *
+ * Foi o que aconteceu com `fd76e393` (16/08/2026): a conversa casava com
+ * `venda_prometida_sem_proposta` — anunciou fecho com zero propostas — e
+ * terminou com `reconciliacao` nula. O sinal certo existia e simplesmente não
+ * olhou para ela, sem que nada indicasse isso.
+ *
+ * ⚠️ Nada aqui interpola valor JS dentro de comentário SQL: no template do
+ * drizzle, `${...}` vira PARÂMETRO mesmo dentro de `--`, e a query estoura com
+ * "could not determine data type of parameter $1".
+ */
 export async function findConversasParaReconciliar(): Promise<LinhaDeReconciliacao[]> {
 	const rows = await db.execute(sql`
 		WITH recentes AS (
@@ -40,6 +57,7 @@ export async function findConversasParaReconciliar(): Promise<LinhaDeReconciliac
 			FROM conversations c
 			WHERE c.is_simulated = false
 			  AND c.updated_at > now() - interval '${sql.raw(String(JANELA_HORAS))} hours'
+			ORDER BY (c.metadata->>'reconciliacao' IS NOT NULL), c.updated_at DESC
 			LIMIT ${POR_CICLO}
 		),
 		decisao AS (

@@ -12,6 +12,7 @@ import { conversations } from "@/db/schema";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { nextGate } from "@/lib/agent/qualify-state";
 import type { GatePartData } from "@/lib/chat/ui-message";
+import { ehMarcadorDeCard } from "@/lib/conversation/messages";
 import { gatePartData } from "@/lib/web/adapter";
 
 export interface ResumableMessage {
@@ -98,7 +99,7 @@ export async function getResumableConversation(
 				// texto dela é o próprio card.
 				// Marcador interno NUNCA vira texto na tela — com ou sem artifact
 				// ligado. Sem artifact simplesmente não há o que mostrar.
-				content: /^\[card: .+\]$/.test(m.content.trim()) ? "" : m.content,
+				content: ehMarcadorDeCard(m.role, m.content) ? "" : m.content,
 				...(artifact
 					? { artifact: { type: artifact.type as string, payload: artifact.payload } }
 					: {}),

@@ -269,7 +269,18 @@ const NEGATION_TRIGGER = /\b(PRA LA|DE LADO|ESQUECE|ESQUECA|CANCELA|CANCELE|NAO 
  * Opera sobre texto normalizado (maiúsculas, sem acento). */
 function excluiMarca(clauseNormalizada: string, marcaNormalizada: string): boolean {
 	const M = marcaNormalizada.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-	const artigo = "(?:A|O|AS|OS|ESSA|ESSE|ESTA|ESTE|DA|DO|DE|DAS|DOS)?";
+	// CADEIA de determinantes, não um só. Quando o nome da administradora é
+	// masculino, o português natural encaixa dois entre o gatilho e a marca —
+	// "menos A DO Banco do Brasil" (a cota do banco), "menos A DA Porto". Com um
+	// único determinante opcional, "menos o banco do brasil" era reconhecido e
+	// "menos a do banco do brasil" não: a mesma intenção, com um "do" a mais, e a
+	// cota que o cliente acabara de descartar seguia elegível para o contrato
+	// (encontrado em 16/08/2026).
+	//
+	// Isto é precisão, não vocabulário novo: nenhuma palavra entrou na família
+	// sintática, e o alerta do FIX-412 — ênfase ("quero a do BB, sem a menor
+	// dúvida") NÃO é recusa — continua preso pelas contraprovas do teste.
+	const artigo = "(?:(?:A|O|AS|OS|ESSA|ESSE|ESTA|ESTE|DA|DO|DE|DAS|DOS)\\s+)*";
 	/** Exclusão ANTES da marca: "menos a X", "sem ser a X", "exceto a X". */
 	const antes = new RegExp(
 		`\\b(?:MENOS|SEM SER|SEM|EXCETO|EXCECAO|TIRANDO|TIRA|TIREI|FORA|EXCLUI|EXCLUINDO|NAO SEJA|NAO SER|DESCARTO|DESCARTEI|ELIMINEI|ELIMINANDO)\\s+${artigo}\\s*${M}\\b`,

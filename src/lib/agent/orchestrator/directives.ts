@@ -6,8 +6,35 @@ import type { EphemeralDropReason } from "./sanitizer";
 /** Quem desenha o formulário de contratação: o nó `emitCard` (gate `contract`,
  * determinístico — `present_contract_form` nem existe no toolset) — o modelo
  * não chama ferramenta nenhuma pra isso. */
-function instrucaoDoFormularioDeContrato(): string {
+function instrucaoDoFormularioDeContrato(identidadeJaColetada = false): string {
+	if (identidadeJaColetada) {
+		return `Os dados dele (CPF e celular) JÁ estão no sistema desta conversa — o que falta é só a confirmação dele pra criar o pré-cadastro, e o sistema pede essa confirmação logo depois da sua fala. Você NÃO chama ferramenta nenhuma pra isso, NUNCA pede CPF por texto e NÃO pede nenhum dado que ele já passou. Não descreva a interface ("na tela", "no card"): só conduza até o sim.`;
+	}
 	return `O sistema pede os dados logo depois da sua fala (formulário na web, mensagem no WhatsApp) — você NÃO chama ferramenta nenhuma pra isso e NUNCA pede CPF por texto. Não descreva a interface ("na tela", "no card"): só conduza.`;
+}
+
+/**
+ * A frase-exemplo de fechamento, coerente com o que o sistema JÁ tem.
+ *
+ * O exemplo antigo ("só preciso de uns dados rápidos") era servido mesmo com
+ * `identityCollected = true`, e o modelo o seguia à risca: em `fd76e393`
+ * (prod, 16/08/2026) o turno saiu quase verbatim nele, com "Qual é o seu CPF?"
+ * emendado, para um cliente que tinha mandado o CPF quatro minutos antes — que
+ * respondeu "de novo? ja passei".
+ *
+ * Exemplo que contradiz o estado vence proibição genérica: ele diz o que FAZER,
+ * enquanto as travas dizem o que não fazer. A saída não é a quarta trava, é
+ * tirar a contradição.
+ */
+function exemploDeFechamento(args: {
+	identidadeJaColetada?: boolean;
+	adminFrase?: string;
+}): string {
+	const { identidadeJaColetada, adminFrase = "" } = args;
+	if (identidadeJaColetada) {
+		return `"Boa! Vamos seguir${adminFrase} então. Seus dados já estão comigo aqui, então é só você me confirmar que eu já crio seu pré-cadastro — e já adianto: você não paga nada agora, o pagamento só começa quando chegar o boleto na sua casa."`;
+	}
+	return `"Boa! Vamos seguir${adminFrase} então. Pra garantir seu lugar nesse grupo, só preciso de uns dados rápidos — e já adianto: você não paga nada agora, é só um pré-cadastro, o pagamento só começa quando chegar o boleto na sua casa."`;
 }
 
 // ---- Transition ----
@@ -262,13 +289,18 @@ export function buildTopicPickerBackDirective(): string {
 
 /** FIX-29 — usuário JÁ viu o card de decisão e reafirmou avanco ("Tenho
  * interesse" de novo). Avanca pro passo 5 (contratação real), nunca lead. */
-export function buildAdvanceToContractDirective(_args: { administradora?: string }): string {
+export function buildAdvanceToContractDirective(args: {
+	administradora?: string;
+	/** O CPF e o celular já estão no sistema desta conversa. Muda o exemplo de
+	 * fechamento: com os dados on file, pedir de novo é o defeito de `fd76e393`. */
+	identidadeJaColetada?: boolean;
+}): string {
 	// FIX-256 (rodada 4, veredito Fable FINAL §N-I) — SUPERSEDE o FIX-216:
 	// "reserva"/"pré-reserva" ainda implica compromisso fechado antes da
 	// contratação real, borderline com a linha "nunca 'reservado' antes da
 	// contratação". Trocado por "garantir seu lugar" + "pré-cadastro" — nem
 	// "contratar/fechar" (FIX-216), nem "reserva" (este fix).
-	return `O usuário já viu o card de decisão e reafirmou que quer seguir. FLUXO: escreva 1-2 frases de fechamento no SEU TOM ("Boa! Pra garantir seu lugar nesse grupo, só preciso de uns dados rápidos — e já adianto: você não paga nada agora, é só um pré-cadastro, o pagamento só começa quando chegar o boleto na sua casa.") ${instrucaoDoFormularioDeContrato()} NUNCA inicie captura de lead. NÃO re-apresente search_groups/recommend_groups nem os cards do reveal.`;
+	return `O usuário já viu o card de decisão e reafirmou que quer seguir. FLUXO: escreva 1-2 frases de fechamento no SEU TOM (${exemploDeFechamento({ identidadeJaColetada: args.identidadeJaColetada })}) ${instrucaoDoFormularioDeContrato(args.identidadeJaColetada)} NUNCA inicie captura de lead. NÃO re-apresente search_groups/recommend_groups nem os cards do reveal.`;
 }
 
 /** FIX-195 (P0) — o usuário ESCOLHEU uma cota no seletor do reveal e clicou
@@ -276,12 +308,16 @@ export function buildAdvanceToContractDirective(_args: { administradora?: string
  * re-âncora do meta) — o agente só fecha. PROÍBE re-busca/re-resolução e QUALQUER
  * meta-narrativa de falha técnica (a raiz do loop do P0: "esse grupo deu um
  * problema", "preciso trazer os IDs reais"). CONTRATO com bloco-b (adendo B8). */
-export function buildChooseOfferDirective(args: { administradora?: string }): string {
-	const { administradora } = args;
+export function buildChooseOfferDirective(args: {
+	administradora?: string;
+	/** Ver `buildAdvanceToContractDirective`. */
+	identidadeJaColetada?: boolean;
+}): string {
+	const { administradora, identidadeJaColetada } = args;
 	const adminFrase = administradora ? ` com a ${administradora}` : "";
 	// FIX-256 (rodada 4, veredito Fable FINAL §N-I) — mesma troca de terminologia
 	// do buildAdvanceToContractDirective: nunca "reserva" pré-contratação.
-	return `O usuário ESCOLHEU uma cota específica no seletor do reveal e quer SEGUIR com ela — a decisão JÁ está tomada e o grupo JÁ está resolvido pelo sistema (o groupId veio junto). FLUXO: escreva 1-2 frases de fechamento no SEU TOM (ex.: "Boa! Vamos seguir${adminFrase} então. Pra garantir seu lugar nesse grupo, só preciso de uns dados rápidos — e já adianto: você não paga nada agora, é só um pré-cadastro, o pagamento só começa quando chegar o boleto na sua casa.") ${instrucaoDoFormularioDeContrato()} PROIBIDO neste turno: chamar search_groups, recommend_groups ou simulate_quota; re-apresentar os cards do reveal (present_recommendation_card/present_comparison_table/present_simulation_result); ou "re-resolver"/"re-buscar" o grupo — o groupId já veio resolvido, você NÃO precisa de ferramenta pra isso. NUNCA admita falha técnica nem diga que "esse grupo deu problema", que precisa "trazer os identificadores", que vai buscar de novo ou usar a ferramenta — ZERO meta-narrativa de mecanismo. NUNCA inicie captura de lead.`;
+	return `O usuário ESCOLHEU uma cota específica no seletor do reveal e quer SEGUIR com ela — a decisão JÁ está tomada e o grupo JÁ está resolvido pelo sistema (o groupId veio junto). FLUXO: escreva 1-2 frases de fechamento no SEU TOM (ex.: ${exemploDeFechamento({ identidadeJaColetada, adminFrase })}) ${instrucaoDoFormularioDeContrato(identidadeJaColetada)} PROIBIDO neste turno: chamar search_groups, recommend_groups ou simulate_quota; re-apresentar os cards do reveal (present_recommendation_card/present_comparison_table/present_simulation_result); ou "re-resolver"/"re-buscar" o grupo — o groupId já veio resolvido, você NÃO precisa de ferramenta pra isso. NUNCA admita falha técnica nem diga que "esse grupo deu problema", que precisa "trazer os identificadores", que vai buscar de novo ou usar a ferramenta — ZERO meta-narrativa de mecanismo. NUNCA inicie captura de lead.`;
 }
 
 export function buildSimulationInterestDirective(administradora: string): string {

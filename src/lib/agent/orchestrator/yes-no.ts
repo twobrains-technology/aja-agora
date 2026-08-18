@@ -23,8 +23,22 @@ import type { UserIntent } from "@/lib/agent/qualify-state";
 // o resto fica indefinido e o gate pergunta de novo. Ampliar esta lista é
 // trabalho incremental — e é o trabalho certo, porque cada entrada é uma
 // afirmação inequívoca, enquanto a regra em bloco apostava no infinito.
+// 2026-08-16 — a APRECIAÇÃO entrou na lista. "gostei dessa do bb" foi como o
+// cliente escolheu em `fd76e393`: o analyzer entendeu certo
+// (`intent=ready_to_proceed`, "Intent é aceitação da proposta apresentada"), o
+// léxico não tinha nenhuma forma de elogio, `detectYesNoText` devolveu `null` e
+// a cota escolhida nunca foi ancorada.
+//
+// Entrou como ENTRADA, não como regra em bloco ("ready_to_proceed é sim"), pelo
+// motivo que a linha 21 argumenta e que o FIX-395b já pagou: as recusas também
+// voltam com esse rótulo. Cada forma aqui é uma afirmação inequívoca sobre a
+// coisa mostrada, e as ressalvas continuam sendo tratadas pela adversativa
+// ("gostei, mas achei caro" → indefinido) e pelo guard do condicional.
+//
+// `gostaria` NÃO casa (raiz diferente, e a lookahead final fecha a palavra) —
+// "gostaria de ver outras" não é aceite.
 const YES_TEXT_MARKERS =
-	/\b(sim|quero|considero|considerar|pode|pode ser|mostra|mostrar|topo|bora|vamos|manda ver|manda o contrato|isso mesmo|show|beleza|claro|positivo|certo|ok|aceito|aceita|faz sentido|faz todo sentido|faz total sentido|concordo|perfeito|combinado|isso a[íi]|é ess[ae] que eu quero|por mim (t[áa]|est[áa]) (bom|[óo]timo|tudo bem))(?![\wà-úÀ-Ú])/i;
+	/\b(sim|quero|considero|considerar|pode|pode ser|mostra|mostrar|topo|bora|vamos|manda ver|manda o contrato|isso mesmo|show|beleza|claro|positivo|certo|ok|aceito|aceita|gostei|curti|adorei|amei|fico com ess[ae]|prefiro ess[ae]|ess[ae] mesm[ao]|faz sentido|faz todo sentido|faz total sentido|concordo|perfeito|combinado|isso a[íi]|é ess[ae] que eu quero|por mim (t[áa]|est[áa]) (bom|[óo]timo|tudo bem))(?![\wà-úÀ-Ú])/i;
 const NO_TEXT_MARKERS = /\bn[ãa]o\b/i;
 
 export function detectYesNoText(text: string, intent: UserIntent): boolean | null {
@@ -156,7 +170,16 @@ function avaliarOracao(t: string): boolean | null {
 	if (/\bn[ãa]o sei se\b/i.test(t)) return null;
 	// Afirmação no CONDICIONAL não é aceite: "seria perfeito se a parcela fosse
 	// menor" enuncia uma condição, não um sim.
+	//
+	// A segunda alternativa cobre o sujeito NO MEIO da condicional — "se A
+	// PARCELA fosse menor", "se O PRAZO desse pra encurtar" —, que a lista de
+	// locuções coladas ("se fosse", "se der") não pegava. Achado em 16/08/2026:
+	// "gostei, se a parcela fosse menor eu fechava" passava como aceite, e o
+	// buraco valia para todo o léxico, não só para as formas de apreciação.
 	if (/\b(seria|ficaria|se fosse|se der|se tiver|se você)\b/i.test(t)) return null;
+	if (/\bse\b[^.!?;]{0,24}?\b(fosse|for|tiver|der|desse|estivesse|puder|pudesse)\b/i.test(t)) {
+		return null;
+	}
 	return true;
 }
 

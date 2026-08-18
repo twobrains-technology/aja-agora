@@ -1,3 +1,4 @@
+import { WHAT_IF_TOOL_NAMES } from "@/lib/agent/langgraph/toolset";
 import { isValidCpf, maskCpf } from "@/lib/conversation/identity";
 import { normalizeAdministradora } from "./choose-offer";
 
@@ -399,8 +400,30 @@ export function isMechanismNarrationClaim(segment: string): boolean {
 // CÓDIGO (Lei 4), independe de qual frase o modelo escolher. Mira só os
 // identificadores literais das tools (snake_case do toolset), então não pega
 // copy legítima em português.
-const INTERNAL_TOOL_LEAK_PATTERN =
-	/\b(present_[a-z_]+|search_groups|recommend_groups|simulate_quota|save_contact_name|suggest_handoff|create_lead|update_lead)\b/i;
+// 2026-08-16: a lista era escrita à mão e congelou em ~julho, enquanto o toolset
+// crescia. `escolher_cota`, `ajustar_por_parcela`, `compute_scenarios` e outras
+// seis nunca entraram — e quando o modelo escreveu na tela do cliente
+// "[card: escolher_cota com id 6a7b59c1…]" (prod web, `ff8f2080`), esta barreira
+// olhou, não reconheceu nada e deixou passar.
+//
+// Agora o padrão DERIVA do toolset real (`WHAT_IF_TOOL_NAMES`), que é a mesma
+// fonte que o modelo recebe no bind. Tool nova passa a ser coberta sozinha, e
+// `vazamento-de-tool-deriva-do-toolset.test.ts` deixa o CI vermelho se alguém
+// voltar a manter isto na mão. As tools do runtime Vercel anterior ficam na
+// lista fixa porque ainda aparecem citadas em directive antigo.
+const TOOLS_DO_RUNTIME_ANTERIOR = [
+	"search_groups",
+	"recommend_groups",
+	"create_lead",
+	"update_lead",
+] as const;
+
+const INTERNAL_TOOL_LEAK_PATTERN = new RegExp(
+	`\\b(present_[a-z_]+|${[...WHAT_IF_TOOL_NAMES, ...TOOLS_DO_RUNTIME_ANTERIOR]
+		.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+		.join("|")})\\b`,
+	"i",
+);
 
 /** Um segmento cita o nome literal de uma tool interna (ex.: "vou chamar
  * recommend_groups") — vazamento de pipeline, nunca pode virar bolha. */

@@ -57,6 +57,8 @@ vi.mock("@/db", () => ({
 		query: {
 			conversations: { findFirst: vi.fn(async () => ({ id: CONV_ID, metadata: mocks.meta })) },
 		},
+		// O registro do card grava a linha em `artifacts` junto com o marcador.
+		insert: () => ({ values: async () => undefined }),
 	},
 }));
 vi.mock("./adapter", () => ({
@@ -149,6 +151,37 @@ describe("FIX-119 — WhatsApp decision_outras determinístico (paridade route.t
 			"Ver outras opções",
 			"whatsapp",
 		);
+	});
+
+	// 2026-08-16 — o card ENVIADO por clique não aparecia no log do admin.
+	//
+	// Todo artifact do fluxo do grafo grava um marcador `[card: tipo]`
+	// (`langgraph/nodes/persist.ts`), e é por ele que a conversa é auditada
+	// depois. Os handlers de clique do WhatsApp mandavam o card pela API e não
+	// gravavam nada. Ao revisar a conversa `fd76e393` de produção, o "Ver
+	// outras" aparecia como texto solto — e a conclusão natural, errada, foi
+	// "o agente anunciou opções e não mostrou nenhuma".
+	//
+	// Instrumento cego vira bug fantasma: gasta-se a investigação num defeito
+	// de funil que não existe, enquanto o defeito real segue em pé.
+	it("o card enviado fica registrado no histórico — senão o log do admin mente", async () => {
+		await dispatch("decision_outras");
+		expect(mocks.saveMessage).toHaveBeenCalledWith(
+			CONV_ID,
+			"assistant",
+			"[card: comparison_table]",
+			"whatsapp",
+			undefined,
+		);
+	});
+
+	it("card que NÃO chegou a ser enviado não é registrado como se tivesse", async () => {
+		mocks.sendInteractive.mockRejectedValueOnce(new Error("Meta fora do ar"));
+		await dispatch("decision_outras");
+		const marcadores = mocks.saveMessage.mock.calls.filter((c) =>
+			String(c[2]).startsWith("[card:"),
+		);
+		expect(marcadores).toEqual([]);
 	});
 
 	it("erro em buildOtherOptions NÃO cai em silêncio nem no modelo — texto de fallback", async () => {
