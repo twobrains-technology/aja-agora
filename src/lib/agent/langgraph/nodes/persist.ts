@@ -16,11 +16,12 @@
 import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { artifacts as artifactsTable, conversations as conversationsTable } from "@/db/schema";
+import { conversations as conversationsTable } from "@/db/schema";
 import { turnoEntregouConducao } from "@/lib/agent/conducao";
 import { pendingGateAfterTurn } from "@/lib/agent/gate-reengage";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { shouldMarkDoubtsAddressed } from "@/lib/agent/qualify-state";
+import { registrarCardEnviado } from "@/lib/conversation/cards";
 import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta } from "@/lib/conversation/meta";
 import { registrarEstadoDoFunil } from "@/lib/observability/langfuse/busca-scores";
@@ -135,18 +136,17 @@ export async function persistNode(
 		// Mesmo padrão de `emitServerCard` (orchestrator/index.ts): 1 message
 		// marcador `[card: tipo]` por artifact, pra o log do admin nunca perder
 		// o turno mesmo quando não há texto (BUG-ADMIN-MESSAGE-MISSING).
-		const messageId = await saveMessage(
+		//
+		// O corpo saiu daqui para `conversation/cards.ts` em 16/08/2026, quando
+		// se descobriu que os handlers de clique do WhatsApp mandavam card sem
+		// registrar nada — e a conversa auditada depois parecia ter um turno a
+		// menos. Um lugar só, para as duas pontas não divergirem de novo.
+		await registrarCardEnviado({
 			conversationId,
-			"assistant",
-			`[card: ${ev.artifactType}]`,
-			channel,
-			persona,
-		);
-		await db.insert(artifactsTable).values({
-			messageId,
-			type: ev.artifactType,
+			tipo: ev.artifactType,
 			payload: ev.payload,
-			createdAt: simulatorNow(),
+			channel,
+			personaId: persona,
 		});
 	}
 

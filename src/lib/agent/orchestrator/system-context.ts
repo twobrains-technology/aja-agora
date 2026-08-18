@@ -89,8 +89,15 @@ export const GATE_INTENT: Record<string, string> = {
 	"lance-embutido": "se ele quer considerar lance embutido (usar parte da própria carta)",
 	"simulator-offer": "se ele quer simular a parcela em diferentes meses de contemplação",
 	decision: "se o plano faz sentido pra ele",
+	// O texto descrevia a mecânica da WEB ("O formulário com os dados aparece
+	// logo abaixo da sua fala") e era servido nos DOIS canais — enquanto o bloco
+	// de canal do WhatsApp, na MESMA janela, afirma que não existe tela nem card.
+	// Duas autoridades se contradizendo é o que produziu o CPF pedido três vezes
+	// em `fd76e393` (16/08/2026): o modelo seguiu a mais específica da tarefa, que
+	// era a do canal errado. A mecânica de cada canal mora no bloco de canal
+	// (`langgraph/nodes/converse.ts`); aqui fica só o que vale nos dois.
 	contract:
-		"nada — a decisão JÁ foi tomada e o plano JÁ está escolhido. É PROIBIDO perguntar de novo qual opção ele quer ou pedir que ele confirme a escolha: isso já aconteceu. Sua fala aqui é curta e conduz ao pré-cadastro: diga que vai preparar o cadastro dele e que ele não paga nada agora (o pagamento só começa quando o boleto chegar). O formulário com os dados aparece logo abaixo da sua fala — NUNCA peça CPF ou celular por texto, e nunca diga que a cota está reservada nem prometa prazo de contemplação",
+		"nada — a decisão JÁ foi tomada e o plano JÁ está escolhido. É PROIBIDO perguntar de novo qual opção ele quer ou pedir que ele confirme a escolha: isso já aconteceu. Sua fala aqui é curta e conduz ao pré-cadastro: diga que vai preparar o cadastro dele e que ele não paga nada agora (o pagamento só começa quando o boleto chegar). O sistema cuida de coletar e confirmar os dados logo depois da sua fala — você não pede nada disso por conta própria, e nunca diz que a cota está reservada",
 };
 
 export function buildSystemContext(args: {
