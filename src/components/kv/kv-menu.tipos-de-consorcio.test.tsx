@@ -7,6 +7,12 @@
  * verticais (`/autos`, `/imoveis`, `/motos`) não eram citadas em lugar nenhum
  * do site. As duas reclamações se resolvem no mesmo item.
  *
+ * Quem desdobra é "Seu Objetivo" (decisão do Kairo, 19/08/2026). Antes eram
+ * dois itens para a mesma pergunta: "Seu Objetivo" rolava até o hero e um
+ * "Tipo de Consórcio" ao lado abria as verticais. Escolher o bem É o objetivo
+ * de quem chega — o segundo item repetia a pergunta com outro nome e gastava
+ * espaço da barra.
+ *
  * O painel mobile também é coberto: abaixo de `lg` a barra inteira vira o
  * hambúrguer, e um submenu que existisse só no desktop deixaria o celular —
  * de onde vem a maior parte do tráfego de campanha — sem as verticais.
@@ -24,11 +30,11 @@ afterEach(() => {
 	cleanup();
 });
 
-describe("KvMenu — o item 'Tipo de Consórcio' abre as verticais", () => {
+describe("KvMenu — o item 'Seu Objetivo' abre as verticais", () => {
 	it("o gatilho existe e anuncia que é expansível", () => {
 		render(<KvMenu onOpenChat={vi.fn()} />);
 
-		const gatilho = screen.getByRole("button", { name: /tipo de consórcio/i });
+		const gatilho = screen.getByRole("button", { name: /seu objetivo/i });
 
 		expect(gatilho).toHaveAttribute("aria-expanded", "false");
 	});
@@ -36,7 +42,7 @@ describe("KvMenu — o item 'Tipo de Consórcio' abre as verticais", () => {
 	it("clicar no gatilho revela um link por vertical", () => {
 		render(<KvMenu onOpenChat={vi.fn()} />);
 
-		fireEvent.click(screen.getByRole("button", { name: /tipo de consórcio/i }));
+		fireEvent.click(screen.getByRole("button", { name: /seu objetivo/i }));
 
 		for (const vertical of VERTICAIS) {
 			expect(screen.getByRole("link", { name: vertical.label })).toHaveAttribute(
@@ -48,7 +54,7 @@ describe("KvMenu — o item 'Tipo de Consórcio' abre as verticais", () => {
 
 	it("clicar de novo fecha", () => {
 		render(<KvMenu onOpenChat={vi.fn()} />);
-		const gatilho = screen.getByRole("button", { name: /tipo de consórcio/i });
+		const gatilho = screen.getByRole("button", { name: /seu objetivo/i });
 
 		fireEvent.click(gatilho);
 		fireEvent.click(gatilho);
@@ -59,7 +65,7 @@ describe("KvMenu — o item 'Tipo de Consórcio' abre as verticais", () => {
 
 	it("Escape fecha e devolve o foco ao gatilho", () => {
 		render(<KvMenu onOpenChat={vi.fn()} />);
-		const gatilho = screen.getByRole("button", { name: /tipo de consórcio/i });
+		const gatilho = screen.getByRole("button", { name: /seu objetivo/i });
 
 		fireEvent.click(gatilho);
 		fireEvent.keyDown(gatilho, { key: "Escape" });
