@@ -12,7 +12,6 @@
 
 import { type SQL, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { PADRAO_ROBO_SQL } from "@/lib/attribution/user-agent-robo";
 import { rotularOrigem } from "./origem-label";
 import {
 	type CoberturaAtribuicao,
@@ -22,36 +21,10 @@ import {
 	type PontoSerie,
 	type PortaDoFunil,
 } from "./performance-types";
+import { ARTIFACTS_DE_OFERTA_SQL, VISITA_DE_GENTE } from "./sinais-do-funil";
 
 /** Quantos dias sem o cliente escrever até a conversa deixar de contar como viva. */
 const DIAS_PARA_CONSIDERAR_VIVA = 7;
-
-/**
- * A visita é de GENTE — o denominador de toda taxa desta tela.
- *
- * Medido no banco de produção em 15/08/2026: de 40.796 visitas em 30 dias,
- * 38.792 eram máquina, e 33.382 delas o health check do NOSSO ALB, que bate em
- * `/` a cada 30 segundos e cai no matcher do proxy. Somar máquina e gente no
- * mesmo denominador fazia a tela mostrar 0,056% de visita → conversa quando a
- * taxa sobre gente é 1,15% — vinte vezes maior, e é esse número que decide
- * verba.
- *
- * O proxy já não grava mais robô (`src/proxy.ts`), mas o histórico gravado só
- * fica legível se a leitura classificar também. A lista é a mesma nos dois
- * lados, exportada de um módulo só.
- *
- * **A âncora que impede o erro caro:** visita que PRODUZIU conversa nunca é
- * classificada como robô, qualquer que seja o user-agent. Fato do servidor
- * vence heurística — é a mesma regra que o `CLAUDE.md` aplica ao guard de fala,
- * e é o que protege o cliente atrás de proxy corporativo com header estranho.
- */
-const VISITA_DE_GENTE = sql`(
-  EXISTS (SELECT 1 FROM conversations cg WHERE cg.visit_id = v.id AND cg.is_simulated = false)
-  OR (v.user_agent IS NOT NULL AND v.user_agent !~* ${PADRAO_ROBO_SQL})
-)`;
-
-/** Artifacts que provam que o cliente VIU número de oferta na tela. */
-const ARTIFACTS_DE_OFERTA = ["real_offer", "simulation_result"];
 
 /** O dia que o negócio enxerga. A operação é brasileira; o servidor é UTC. */
 const TZ = "America/Sao_Paulo";
@@ -138,10 +111,7 @@ export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<E
         JOIN messages m ON m.conversation_id = c.id
         JOIN artifacts a ON a.message_id = m.id
         WHERE ${atribuida}
-          AND a.type IN (${sql.join(
-						ARTIFACTS_DE_OFERTA.map((tipo) => sql`${tipo}`),
-						sql`, `,
-					)})) AS viram_oferta,
+          AND a.type IN (${ARTIFACTS_DE_OFERTA_SQL})) AS viram_oferta,
 
       (SELECT count(DISTINCT c.id) FROM conversations c
         JOIN bevi_proposals bp ON bp.conversation_id = c.id
@@ -179,10 +149,7 @@ export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<E
         EXISTS (SELECT 1 FROM messages m
           JOIN artifacts a ON a.message_id = m.id
           WHERE m.conversation_id = c.id
-            AND a.type IN (${sql.join(
-							ARTIFACTS_DE_OFERTA.map((tipo) => sql`${tipo}`),
-							sql`, `,
-						)})) AS viu_oferta,
+            AND a.type IN (${ARTIFACTS_DE_OFERTA_SQL})) AS viu_oferta,
         EXISTS (SELECT 1 FROM bevi_proposals bp
           WHERE bp.conversation_id = c.id) AS teve_proposta,
         EXISTS (SELECT 1 FROM leads l

@@ -85,8 +85,51 @@ export function secoesDe(path: string): readonly string[] {
  */
 export const PARAM_PREVIEW = "heatmap-preview";
 
-export const TIPOS_EVENTO = ["click", "rage_click", "section_view", "scroll_depth"] as const;
+/**
+ * Os quatro da página, e os seis do chat.
+ *
+ * Os de chat entraram em 18/08/2026, e o motivo é o buraco que a primeira tarde
+ * de coleta escancarou: a landing inteira estava medida e o produto — a conversa
+ * — não tinha um único sinal. Abrir o teatro não criava linha em lugar nenhum,
+ * então "abriu o chat" e "escreveu" eram indistinguíveis no banco, e quem abriu
+ * e desistiu diante do palco vazio não existia para ninguém.
+ *
+ * Eles moram AQUI, e não numa tabela própria, porque a pergunta que interessa
+ * atravessa os dois lados: "de quem rolou até o rodapé, quantos abriram o chat,
+ * e quantos desistiram antes de escrever?". Duas tabelas responderiam isso com
+ * um JOIN pela visita — e é o mesmo dado, com o mesmo dono e o mesmo ciclo de
+ * vida. O que muda entre eles é só quais colunas fazem sentido.
+ */
+export const TIPOS_EVENTO = [
+	"click",
+	"rage_click",
+	"section_view",
+	"scroll_depth",
+	/** O teatro montou. `section` = seção do CTA que o abriu; `label` = seed (digitada/chip/vazia). */
+	"chat_open",
+	/**
+	 * A primeira tecla no campo — a intenção de falar, que é o que se pode medir.
+	 * `duracaoMs` = quanto tempo o palco vazio segurou a pessoa antes disso.
+	 *
+	 * Não é o FOCO: o campo se auto-foca ao abrir (`chat-input.tsx`), então
+	 * "focou" mediria o autofoco e daria zero para todo mundo.
+	 */
+	"chat_typing",
+	/** Mensagem enviada. `duracaoMs` = espera desde a abertura (1ª) ou desde a última resposta. */
+	"chat_send",
+	/** Primeira palavra do agente chegou. `duracaoMs` = a espera que a pessoa sentiu. */
+	"chat_receive",
+	/** Toque em qualquer coisa dentro do teatro — card, botão de gate, chip. */
+	"chat_card_click",
+	/** Fechou. `label` = como (x, scrim, esc); `duracaoMs` = a sessão inteira. */
+	"chat_close",
+] as const;
 export type TipoEvento = (typeof TIPOS_EVENTO)[number];
+
+/** Os que falam do chat: sem coordenada, com conversa e com tempo. */
+export function ehEventoDeChat(type: TipoEvento): boolean {
+	return type.startsWith("chat_");
+}
 
 export type Device = "mobile" | "tablet" | "desktop";
 
@@ -108,6 +151,17 @@ const VIEWPORT_MAX = 8000;
 const RAGE_JANELA_MS = 1_000;
 const RAGE_MINIMO = 3;
 
+/**
+ * Teto de duração medida. Uma aba esquecida aberta a noite toda produziria um
+ * `chat_close` de horas, e essa linha sozinha puxaria qualquer média de sessão.
+ * Acima disto o número vira nulo — mas o EVENTO fica: que a pessoa fechou é
+ * fato, quanto tempo levou é medida, e medida ruim se descarta sem levar o fato
+ * junto.
+ */
+const MAX_DURACAO_MS = 4 * 60 * 60 * 1000;
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export interface HeatmapEvent {
 	type: TipoEvento;
 	path: string;
@@ -123,6 +177,10 @@ export interface HeatmapEvent {
 	viewportHeight: number;
 	device: Device;
 	at: number;
+	/** A conversa, quando já existe. Nula em `chat_open` de quem nunca escreveu. */
+	conversationId: string | null;
+	/** O tempo que o evento mede. Cada tipo diz qual (ver `TIPOS_EVENTO`). */
+	duracaoMs: number | null;
 }
 
 export function classifyDevice(viewportWidth: number): Device {
@@ -131,25 +189,27 @@ export function classifyDevice(viewportWidth: number): Device {
 	return "desktop";
 }
 
-// Dado pessoal que o `textContent` do alvo poderia carregar se o clique cair
-// num campo já preenchido. CPF, e-mail e telefone não entram numa tabela de
-// analytics — o funil de verdade já tem esses dados, com consentimento, em
-// `contacts`. Aqui seria cópia sem propósito e passivo de LGPD de graça.
-const PADROES_PII: RegExp[] = [
-	/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g, // CPF, com ou sem máscara
-	/\b[\w.+-]+@[\w-]+\.[\w.-]+\b/g, // e-mail
-	/\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}\b/g, // telefone BR
-];
-
+/**
+ * Normaliza o rótulo do alvo. NÃO filtra conteúdo.
+ *
+ * Havia aqui uma lista de padrões que apagava CPF, e-mail e telefone do
+ * `textContent`. Saiu por decisão do Kairo em 18/08/2026: o objetivo desta
+ * instrumentação é entender o comportamento do usuário por inteiro, e o filtro
+ * cobrava um preço em cima disso — vinha na frente de cada elemento novo que
+ * alguém quisesse medir, e ainda dava a falsa garantia de "tabela sem dado
+ * pessoal", que ele nunca poderia cumprir (nome próprio não tem padrão).
+ *
+ * O que fica é normalização de FORMA, que é o que o agrupamento do painel
+ * precisa: espaço colapsado e teto de tamanho. Os mesmos dados já vivem em
+ * `contacts`/`leads`, com consentimento; o que entra aqui é cópia do que estava
+ * na tela no instante do toque.
+ */
 export function sanitizeLabel(bruto: string | null | undefined): string {
 	if (!bruto) return "";
 
-	let texto = bruto;
-	for (const padrao of PADROES_PII) texto = texto.replace(padrao, "");
-
 	// Colapsa quebra de linha e espaço repetido: o mesmo rótulo não pode virar
 	// duas chaves diferentes no agrupamento só por causa da indentação do JSX.
-	return texto.replace(/\s+/g, " ").trim().slice(0, MAX_LABEL);
+	return bruto.replace(/\s+/g, " ").trim().slice(0, MAX_LABEL);
 }
 
 function numeroRelativo(valor: unknown): number | null {
@@ -246,6 +306,23 @@ export function normalizeEvent(bruto: unknown): HeatmapEvent | null {
 
 	const at = typeof cru.at === "number" && Number.isFinite(cru.at) ? cru.at : 0;
 
+	// Id de conversa forjado NÃO derruba o evento: a coluna é UUID no Postgres e
+	// string torta quebraria o INSERT do lote inteiro, mas o toque em si continua
+	// valendo — sem conversa ele ainda conta no total, como o evento anônimo.
+	const conversationId =
+		typeof cru.conversationId === "string" && UUID_RE.test(cru.conversationId)
+			? cru.conversationId
+			: null;
+
+	const duracaoBruta = cru.duracaoMs;
+	const duracaoMs =
+		typeof duracaoBruta === "number" &&
+		Number.isFinite(duracaoBruta) &&
+		duracaoBruta >= 0 &&
+		duracaoBruta <= MAX_DURACAO_MS
+			? Math.round(duracaoBruta)
+			: null;
+
 	return {
 		type: type as TipoEvento,
 		path,
@@ -261,6 +338,8 @@ export function normalizeEvent(bruto: unknown): HeatmapEvent | null {
 		viewportHeight: Math.round(viewportHeight),
 		device: classifyDevice(viewportWidth),
 		at,
+		conversationId,
+		duracaoMs,
 	};
 }
 

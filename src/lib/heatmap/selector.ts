@@ -23,6 +23,24 @@ const ATRIBUTOS_ESTAVEIS = ["data-heat-id", "data-testid", "id", "name"];
 const CLICAVEIS =
 	"a,button,summary,input,select,textarea,label,[role=button],[role=link],[data-heat-id]";
 
+/**
+ * O que está por CIMA da landing: o teatro do chat (portal no `<body>` com
+ * `role="dialog"`) e o popup de retomada.
+ *
+ * Eles NÃO são excluídos da coleta — o comportamento dentro do chat é o que mais
+ * interessa (decisão do Kairo, 18/08/2026). O que muda é o CANAL: clique aqui
+ * dentro não entra no mapa de calor da página, porque a coordenada seria
+ * `clientY + scrollY` sobre um elemento `fixed` e o ponto cairia desenhado numa
+ * seção que ninguém tocou. Entra pelos eventos de chat, que gravam ação e
+ * sequência em vez de posição.
+ */
+export const SOBREPOSTOS = "[role=dialog],[role=alertdialog]";
+
+/** O clique caiu dentro do teatro/modal, e não na página por baixo. */
+export function ehSobreposto(node: Element | null): boolean {
+	return Boolean(node?.closest(SOBREPOSTOS));
+}
+
 /** Profundidade máxima do caminho. Segura o tamanho da coluna no banco. */
 const MAX_NIVEIS = 6;
 
