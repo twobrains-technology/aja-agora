@@ -47,11 +47,21 @@ export type ItemDeMenu =
 	| (LinkKv & { submenu?: never })
 	| { label: string; href?: never; submenu: LinkKv[] };
 
-/** O menu da home. As âncoras são seções desta página. */
+/**
+ * O menu da home. As âncoras são seções desta página.
+ *
+ * "Seu Objetivo" é quem desdobra nas verticais (decisão do Kairo, 19/08/2026).
+ * Antes eram dois itens para a mesma pergunta: este rolava até o hero e um
+ * "Tipo de Consórcio" ao lado abria carro/imóvel/moto. Escolher o bem É o
+ * objetivo de quem chega — o segundo item repetia a pergunta com outro nome e
+ * gastava espaço da barra.
+ *
+ * O `#hero` não fica órfão: o logo volta ao início (`kv-menu.logo-volta-para-o-
+ * inicio.test.tsx`) e o rodapé mantém "Encontre o consórcio certo".
+ */
 export const NAV: ItemDeMenu[] = [
-	{ label: "Seu Objetivo", href: "#hero" },
+	{ label: "Seu Objetivo", submenu: VERTICAIS },
 	{ label: "Como funcionamos", href: "#como-funciona" },
-	{ label: "Tipo de Consórcio", submenu: VERTICAIS },
 	{ label: "Quem somos", href: "#confianca" },
 	{ label: "Dúvidas", href: "#faq" },
 ];
