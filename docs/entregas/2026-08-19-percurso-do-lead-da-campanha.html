@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Percurso do lead da campanha — dossiê de entrega</title>
+<link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+
+<header>
+  <h1>O percurso do lead da campanha</h1>
+  <p class="sub">
+    Dossiê de entrega · 19/08/2026 · <code>aja-agora</code><br>
+    PRs <strong>#83</strong>, <strong>#84</strong> e <strong>#85</strong> (release) · em produção desde 01:42 UTC
+  </p>
+  <p>
+    <span class="pill p-ok">EM PRODUÇÃO</span>
+    <span class="pill p-ok">3 defeitos próprios corrigidos</span>
+    <span class="pill p-aviso">2 pontos em aberto</span>
+  </p>
+</header>
+
+<nav class="card">
+  <strong>Índice</strong>
+  <ol>
+    <li><a href="#macro">O que passou a existir</a></li>
+    <li><a href="#arquitetura">A decisão de arquitetura</a></li>
+    <li><a href="#codigo">Onde o código mudou</a></li>
+    <li><a href="#superficie">Impacto na superfície</a></li>
+    <li><a href="#riscos">Pontos de risco</a></li>
+    <li><a href="#aberto">O que ficou em aberto</a></li>
+    <li><a href="#validar">Como validar você mesmo</a></li>
+  </ol>
+</nav>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="macro">
+<h2>1 · O que passou a existir</h2>
+
+<p>
+  A campanha rodava e não havia como saber que passo o lead percorreu — nem se
+  ele chegou a conversar. O painel respondia em dois extremos e deixava um vão
+  no meio:
+</p>
+
+<ul>
+  <li><strong>Performance</strong> dava o agregado: <em>“30.147 visitas → 19 conversas”</em>.</li>
+  <li><strong>Pipeline</strong> e a ficha do contato davam o nominal — mas só
+      <em>depois</em> que a pessoa deixava telefone.</li>
+</ul>
+
+<p>
+  Quem clicou no anúncio e não falou, e quem falou e não se identificou, não
+  aparecia nominalmente em lugar nenhum: em <em>Conversas</em> não existe (não há
+  conversa), em <em>Pipeline</em> também não (não há lead), na ficha menos ainda
+  (não há contato). É justamente essa faixa que decide se o problema está no
+  anúncio, na landing ou no agente.
+</p>
+
+<p>
+  <code>/admin/percurso</code> fecha o vão: <strong>uma linha por pessoa</strong>,
+  com o degrau exato onde ela parou.
+</p>
+
+<div class="fluxo">
+  <span class="no novo">Só chegou</span>
+  <span class="no novo">Olhou a página</span>
+  <span class="no">Abriu o chat</span>
+  <span class="no">Escreveu</span>
+  <span class="no">Se identificou</span>
+  <span class="no">Viu oferta</span>
+  <span class="no">Proposta</span>
+  <span class="no">Fechado</span>
+</div>
+
+<p>
+  Os dois primeiros degraus (em destaque) são novos e são o motivo da tela
+  existir. Do terceiro em diante são exatamente as etapas de
+  <code>ETAPAS_FUNIL_MIDIA</code>, lendo os <strong>mesmos</strong> fatos — cada
+  degrau vem da tabela que é dona dele:
+</p>
+
+<table>
+  <thead><tr><th>Degrau</th><th>Fato que o sustenta</th></tr></thead>
+  <tbody>
+    <tr><td>Só chegou</td><td><code>visits</code></td></tr>
+    <tr><td>Olhou a página</td><td><code>page_events</code></td></tr>
+    <tr><td>Abriu o chat</td><td><code>conversations</code></td></tr>
+    <tr><td>Escreveu</td><td><code>messages</code></td></tr>
+    <tr><td>Se identificou</td><td><code>leads</code></td></tr>
+    <tr><td>Viu oferta</td><td><code>artifacts</code></td></tr>
+    <tr><td>Proposta</td><td><code>bevi_proposals</code></td></tr>
+    <tr><td>Fechado</td><td><code>leads.stage</code></td></tr>
+  </tbody>
+</table>
+
+<p>
+  Duas coisas mais entraram no mesmo release: <strong>cada etapa do funil de
+  mídia virou link</strong> para essa lista (o funil dizia “8 pararam aqui” e não
+  havia como perguntar quem eram os 8), e <strong>seis eventos novos de
+  conversa</strong> — <code>chat_open</code>, <code>chat_typing</code>,
+  <code>chat_send</code>, <code>chat_receive</code>, <code>chat_card_click</code>,
+  <code>chat_close</code> — porque o funil só começava a existir quando a pessoa
+  escrevia.
+</p>
+
+<div class="card">
+  <strong>Um dado já existia e ninguém lia.</strong>
+  <code>conversations.metadata.maxStageReached</code> guarda o avanço de quem
+  nunca virou lead desde o <code>lead-stage-tracker</code>. Nenhuma tela do
+  painel consultava esse campo.
+</div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="arquitetura">
+<h2>2 · A decisão de arquitetura</h2>
+
+<p>A escolha real foi <strong>qual é a unidade da linha</strong>.</p>
+
+<table>
+  <thead><tr><th>Opção</th><th>Por que não</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>Uma linha por <strong>chegada</strong> (visita)</td>
+      <td>Mais fiel ao custo de mídia — cada clique é pago. Mas a mesma pessoa
+          aparece várias vezes e a leitura de “até onde ele foi” fica repartida.</td>
+    </tr>
+    <tr>
+      <td>Uma linha por <strong>conversa</strong></td>
+      <td>Casaria com os números de Performance, mas apagaria por construção
+          quem nunca abriu conversa — que é o motivo da tela existir.</td>
+    </tr>
+    <tr>
+      <td><strong>Uma linha por pessoa</strong> ✓</td>
+      <td>Escolhida. Chave: o contato quando conhecido, senão o visitante.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p><strong>O que a escolha custa, e que o comparativo não pode esconder:</strong></p>
+
+<ul>
+  <li>
+    Os números <strong>não batem</strong> com os de Performance, porque lá a
+    unidade é a conversa. Nos dados de teste, 40 conversas viraram 14 pessoas —
+    27 delas eram do mesmo contato. A tela diz isso em voz alta no rodapé, mas
+    quem cruzar as duas telas de olho vai estranhar.
+  </li>
+  <li>
+    O agrupamento depende da qualidade do <code>contactId</code>. Identidade mal
+    resolvida funde ou separa pessoas, e a lista herda o erro sem sinalizá-lo.
+  </li>
+</ul>
+
+<div class="card">
+  <strong>Um módulo nasceu para evitar duas verdades.</strong>
+  <code>sinais-do-funil.ts</code> saiu de dentro de <code>performance-queries.ts</code>
+  e concentra <code>VISITA_DE_GENTE</code> e <code>ARTIFACTS_DE_OFERTA</code>.
+  Sem isso, duas telas do painel responderiam “viu oferta” com regras diferentes,
+  e a que o time acreditasse seria a última que ele abriu.
+</div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="codigo">
+<h2>3 · Onde o código mudou</h2>
+
+<p class="sub">Números de <code>coletar-fatos.sh</code> e <code>wc -l</code>, não de memória.</p>
+
+<h3>Arquivos novos — remover volta ao estado anterior</h3>
+<table>
+  <thead><tr><th>Arquivo</th><th>Linhas</th><th>Papel</th></tr></thead>
+  <tbody>
+    <tr><td><code>src/lib/admin/percurso-queries.ts</code></td><td>352</td><td>Dados · a query com as CTEs por pessoa</td></tr>
+    <tr><td><code>src/lib/admin/percurso-types.ts</code></td><td>172</td><td>Núcleo · os oito degraus e o contrato</td></tr>
+    <tr><td><code>src/lib/admin/sinais-do-funil.ts</code></td><td>40</td><td>Núcleo · critérios compartilhados com Performance</td></tr>
+    <tr><td><code>src/app/api/admin/percurso/route.ts</code></td><td>71</td><td>Servidor · GET com <code>requireRole</code></td></tr>
+    <tr><td><code>src/app/admin/(dashboard)/percurso/page.tsx</code></td><td>305</td><td>Interface · a tela</td></tr>
+    <tr><td><code>src/components/admin/percurso/tabela-percurso.tsx</code></td><td>203</td><td>Interface · a lista nominal</td></tr>
+    <tr><td><code>src/components/admin/percurso/escada-do-percurso.tsx</code></td><td>101</td><td>Interface · a escada clicável</td></tr>
+    <tr><td><code>src/lib/admin/percurso-queries.integration.test.ts</code></td><td>470</td><td>Teste · 11 casos, Postgres real</td></tr>
+    <tr><td><code>src/components/admin/percurso/percurso.na-tela.test.tsx</code></td><td>218</td><td>Teste · 12 casos de componente</td></tr>
+    <tr><td><code>…/funil-midia-chart.leva-ao-percurso.test.tsx</code></td><td>85</td><td>Teste · 4 casos, a ponte</td></tr>
+    <tr><td><code>src/db/schema.corrente-de-aquisicao.test.ts</code></td><td>54</td><td>Teste · 2 casos, o índice</td></tr>
+  </tbody>
+</table>
+
+<h3>Arquivos existentes tocados — onde mora a chance de quebrar</h3>
+<table>
+  <thead><tr><th>Arquivo</th><th>Δ</th><th>O que mudou, e por quê</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>src/lib/admin/performance-queries.ts</code></td><td>39</td>
+      <td>Passou a importar de <code>sinais-do-funil</code> em vez de declarar
+          <code>VISITA_DE_GENTE</code> e <code>ARTIFACTS_DE_OFERTA</code> localmente.
+          Refactor sem mudança de comportamento — os 146 testes de
+          <code>src/lib/admin</code> seguem verdes.</td>
+    </tr>
+    <tr>
+      <td><code>src/components/admin/performance/funil-midia-chart.tsx</code></td><td>47</td>
+      <td>Cada etapa virou <code>&lt;Link&gt;</code> para o percurso, levando período e degrau.</td>
+    </tr>
+    <tr>
+      <td><code>src/lib/admin/filtro-origem.ts</code></td><td>12</td>
+      <td>Exporta <code>predicadoDeOrigemNaVisita</code>. O <code>condicaoDeOrigem</code>
+          existente embrulha o predicado num <code>EXISTS</code> sobre
+          <code>conversations.visit_id</code> — o que apagaria quem nunca abriu conversa,
+          justamente na tela feita para mostrá-lo.</td>
+    </tr>
+    <tr>
+      <td><code>src/db/schema.ts</code></td><td>27</td>
+      <td>Índice <code>conversations_visit_id_idx</code>; e as colunas de chat em
+          <code>page_events</code> (do commit de observabilidade).</td>
+    </tr>
+    <tr>
+      <td><code>src/components/admin/app-sidebar.tsx</code></td><td>2</td>
+      <td>Item “Percurso do lead” no menu.</td>
+    </tr>
+    <tr>
+      <td><code>src/app/admin/(dashboard)/performance/page.tsx</code></td><td>6</td>
+      <td>Passa o período ao funil, para o link não abrir outro intervalo.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p class="sub">
+  Total do release: <strong>32 arquivos, 7.038 inserções, 146 remoções</strong>.
+  Deste total, <code>drizzle/meta/0045_snapshot.json</code> sozinho responde por
+  3.998 linhas — é artefato gerado pelo drizzle-kit, não código escrito.
+</p>
+</section>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="superficie">
+<h2>4 · Impacto na superfície</h2>
+
+<table>
+  <thead><tr><th>Superfície</th><th>O que a pessoa sente</th><th>Risco</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>/admin/percurso</code> <em>(nova)</em></td>
+      <td>Escada de oito degraus com contagem de pessoas + lista nominal
+          filtrável. Abre o histórico em painel lateral.</td>
+      <td>Baixo — leitura</td>
+    </tr>
+    <tr>
+      <td><code>GET /api/admin/percurso</code> <em>(nova)</em></td>
+      <td>Duas consultas agregadas por carga. <code>requireRole(admin, viewer, attendant)</code>;
+          <code>mesa_externa</code> não alcança.</td>
+      <td>Médio — custo no banco</td>
+    </tr>
+    <tr>
+      <td><code>/admin/performance</code></td>
+      <td>Etapas do funil agora são clicáveis, com chevron e chamada no rodapé.</td>
+      <td>Baixo</td>
+    </tr>
+    <tr>
+      <td>Teatro de chat <em>(cliente)</em></td>
+      <td>Passa a emitir seis eventos para <code>/api/track</code>. Rota que já
+          existia e é best-effort — falha nela não derruba a conversa.</td>
+      <td>Médio — único ponto no caminho do cliente</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="card">
+  <strong>Sobre a prova visual.</strong> A tela foi pilotada ao vivo pelo
+  <code>claude-in-chrome</code> contra a stack local com 133 visitas semeadas:
+  clique no degrau, alternância “parou aqui” × “chegou ao menos aí”, a ponte
+  vinda do funil de Performance e a abertura da ficha — todos confirmados, e as
+  capturas foram mostradas na sessão. <strong>As imagens não estão embutidas
+  aqui</strong>: na hora de recapturar para o documento, a aba do MCP voltou ao
+  estado <code>visibilityState: hidden</code> e não consegui destravá-la de novo.
+  O que substitui a imagem são as medições de DOM da seção 5, que são
+  verificáveis por quem repetir o roteiro da seção 7.
+</div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="riscos">
+<h2>5 · Pontos de risco</h2>
+
+<p class="sub">
+  Começando pelos defeitos que eu mesmo introduzi. Os três só apareceram com
+  dados reais na tela — nenhum deles quebrava teste, typecheck ou lint.
+</p>
+
+<div class="risco alto">
+  <h3>ALTO · CORRIGIDO — a linha dizia “Beatriz”, a ficha abria “Kairo”</h3>
+  <p>
+    <strong>O que era:</strong> a lista mostrava o nome do <em>lead</em> (o que o
+    agente captou naquela conversa) e o painel de ficha mostrava o nome do
+    <em>contato</em> (a identidade resolvida). O mesmo cliente tinha leads
+    chamados “Madalena”, “Mario” e “Beatriz”. Duas identidades para a mesma linha
+    fazem desconfiar do painel inteiro — e com razão.
+  </p>
+  <p>
+    <strong>Correção:</strong> CTE <code>contato</code> na query, com
+    <code>COALESCE(ct.name, lp.name)</code>. Quando existe contato unificado, ele
+    é quem a pessoa é.
+  </p>
+  <div class="prova">-- no banco, para o contato 1429f80f
+contato | Kairo    | 62992496793
+lead    | Madalena | 62992496793
+lead    | Mario    | 62992496793
+
+teste (antes do fix):  expected 'Nome do Lead' to be 'Nome do Contato'
+na tela (após o fix):  "Kairo 62992496793"   ← igual à ficha</div>
+  <p>
+    <strong>Cobertura:</strong> <code>percurso-queries.integration.test.ts</code>
+    → “mostra o nome do CONTATO, o mesmo que a ficha abre”.
+  </p>
+</div>
+
+<div class="risco medio">
+  <h3>MÉDIO · CORRIGIDO — a lista nascia fora da tela</h3>
+  <p>
+    <strong>O que era:</strong> a escada de oito degraus ocupava a primeira dobra
+    inteira. Quem abria a tela para ver <em>quem</em> via oito barras e precisava
+    rolar antes da primeira linha.
+  </p>
+  <p><strong>Correção:</strong> barra de <code>h-5</code> para <code>h-3</code>, espaçamento e padding reduzidos.</p>
+  <div class="prova">medido no DOM, viewport de 807px:
+  antes → altura da escada 646px · topo da tabela em y=873  (fora da tela)
+  depois → altura da escada 494px · topo da tabela em y=721  (dentro)</div>
+</div>
+
+<div class="risco medio">
+  <h3>MÉDIO · CORRIGIDO — cinco linhas “Joana” indistinguíveis</h3>
+  <p>
+    <strong>O que era:</strong> o filtro “Escreveu” trouxe cinco pessoas de mesmo
+    nome, de campanhas e dias diferentes, sem telefone e sem nada que dissesse
+    qual era qual.
+  </p>
+  <p>
+    <strong>Correção:</strong> telefone quando existe; senão, a marca do visitante
+    — a mesma que já nomeia os anônimos.
+  </p>
+  <div class="prova">antes  → ["Joana", "Joana", "Joana", "Anônimo 267e", ...]
+depois → ["Joana visitante f1fe", "Joana visitante f739",
+          "Joana visitante 26bf", "Anônimo 267e", ...]</div>
+  <p><strong>Cobertura:</strong> <code>percurso.na-tela.test.tsx</code> → “distingue duas pessoas de mesmo nome que não deixaram telefone”.</p>
+</div>
+
+<div class="risco medio">
+  <h3>MÉDIO · CORRIGIDO — a tela consultava o banco duas vezes por carga</h3>
+  <p>
+    <strong>O que era:</strong> <code>subDays(new Date(), 30)</code> dentro do
+    <code>withDefault</code> do nuqs é recalculado a cada render, então
+    <code>from</code> era um objeto novo toda vez e o <code>useCallback</code>
+    nunca estabilizava.
+  </p>
+  <div class="prova">nos logs do servidor, uma única carga da tela:
+  GET /api/admin/percurso?from=…T23:27:51.697Z…
+  GET /api/admin/percurso?from=…T23:27:52.076Z…   ← 379ms depois, outra janela
+
+depois do fix: 1 requisição por carga (medido no browser: reqs = 1)</div>
+  <p><strong>Correção:</strong> período padrão congelado por montagem (<code>useState</code>) e dependências pelo instante (<code>getTime()</code>), não pela instância.</p>
+</div>
+
+<div class="risco alto">
+  <h3>ALTO · CORRIGIDO — a corrente de aquisição não era indexada</h3>
+  <p>
+    <strong>O que era (herdado, não meu):</strong>
+    <code>conversations.visit_id</code> nunca teve índice, e é a aresta que
+    <em>toda</em> leitura de aquisição percorre — o <code>EXISTS</code> de
+    <code>VISITA_DE_GENTE</code> roda uma vez por visita. O Percurso não criou o
+    problema, mas o agravaria: passou a dar <code>JOIN</code> por cima.
+  </p>
+  <div class="prova">volume real de produção (40.134 visitas, 5.134 conversas):
+  sem índice → 157 ms  (mediana de 3; a primeira, fria, deu 323 ms)
+  com índice →  52 ms  (mediana de 3)
+
+3× — e a distância CRESCE com o histórico: o seq scan é linear
+no total de conversas, que só aumenta.</div>
+  <p>
+    <strong>Cobertura:</strong> <code>schema.corrente-de-aquisicao.test.ts</code>.
+    Estrutural de propósito: índice que some não quebra nada, a tela só fica mais
+    lenta, e ninguém liga a lentidão ao commit que a causou.
+  </p>
+</div>
+
+<h3>Riscos que permanecem</h3>
+
+<div class="risco baixo">
+  <h3>BAIXO · ACEITO — o <code>CREATE INDEX</code> sem <code>CONCURRENTLY</code></h3>
+  <p>
+    É o que o drizzle-kit gera. Trava escrita em <code>conversations</code>
+    enquanto constrói. No tamanho atual da tabela isso é rápido, e o deploy
+    passou sem incidente (rollout do ECS concluiu, zero erro no log), mas numa
+    tabela grande seria uma janela de bloqueio.
+  </p>
+</div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="aberto">
+<h2>6 · O que ficou em aberto</h2>
+
+<div class="card">
+  <h3>1 · A tela não tem teto de custo, e o custo cresce sozinho</h3>
+  <p>
+    A query varre <code>visits</code> do período inteiro em CTEs encadeadas, e o
+    resumo roda uma segunda vez sobre a mesma base. Com o índice a leitura caiu
+    para ~52 ms nos 40 mil registros de 30 dias, mas <code>visits</code> não tem
+    purga: o custo acompanha o histórico, e o padrão de 30 dias esconde isso de
+    quem só abre a tela com o filtro default. <strong>Não medi</strong> o
+    comportamento com 6 ou 12 meses de dado.
+  </p>
+  <p><em>O que eu faria a seguir:</em> medir com um ano de volume e, se preciso, materializar a escada.</p>
+</div>
+
+<div class="card">
+  <h3>2 · Metade do release não passou pelo meu crivo</h3>
+  <p>
+    O commit <code>cf4a97d6</code> (seis eventos de chat, <code>fila.ts</code>,
+    mudanças no teatro e no provider) <strong>não é trabalho meu</strong>: veio de
+    outra sessão que editava o mesmo worktree. Verifiquei que passa no gate
+    completo e escrevi a mensagem a partir do que o diff faz — mas
+    <strong>não revisei as decisões de design dele</strong>, e ele é o único
+    ponto deste release que toca o caminho do cliente.
+  </p>
+  <p><em>O que eu faria a seguir:</em> um <code>/code-review</code> em cima desse commit.</p>
+</div>
+
+<div class="card">
+  <h3>3 · A prova visual do dossiê ficou incompleta</h3>
+  <p>
+    A validação na tela aconteceu e foi mostrada na sessão, mas não consegui
+    recapturar as imagens para embutir aqui — a aba do MCP voltou a
+    <code>hidden</code>. Ao insistir por atalho de teclado, um <code>Cmd+N</code>
+    vazou para o <strong>Mail</strong>, que estava em foco, com uma janela de
+    composição aberta. A janela continuou aberta como rascunho (nada foi
+    enviado), mas <strong>vale conferir o conteúdo dela</strong>.
+  </p>
+</div>
+
+<div class="card">
+  <h3>4 · Três testes falham em workspace novo, e não são deste trabalho</h3>
+  <p>
+    <code>cenario-tool-le-o-estado-do-turno</code> e
+    <code>cenario-valor-inflado.fix-378</code> quebram com
+    <code>BeviConfigError</code> porque o <code>.env.local</code> gerado pelo
+    bootstrap nasce com <code>BEVI_SELFCONTRACT_HASH</code> vazio.
+  </p>
+  <div class="prova">prova de que é ambiente, não código:
+  BEVI_SELFCONTRACT_HASH=qualquer-coisa pnpm test:unit  →  3 verdes
+
+resolvido neste workspace puxando 10 envs de tb/dev/aja-agora/env
+(Secrets Manager, perfil tb-prod) — o bootstrap ainda não faz isso sozinho.</div>
+</div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="validar">
+<h2>7 · Como validar você mesmo</h2>
+
+<h3>Na tela</h3>
+<ol class="checklist">
+  <li><strong>Abra <code>/admin/percurso</code>.</strong> Esperado: escada de oito
+      degraus, a soma dos degraus igual ao total de pessoas do rodapé, e a
+      primeira linha da lista visível sem rolar.</li>
+  <li><strong>Clique no degrau “Escreveu”.</strong> Esperado: URL vira
+      <code>?passo=escreveu</code>, o degrau ganha moldura e o texto
+      “· filtrando”, e toda linha da lista mostra “Escreveu”.</li>
+  <li><strong>Clique em “Ver quem chegou ao menos aí”.</strong> Esperado: o total
+      <em>cresce</em> (passa a incluir quem foi além) e a lista passa a misturar
+      degraus mais avançados.</li>
+  <li><strong>Procure alguém com “Não falou”.</strong> Esperado: existir. É a
+      faixa que nenhuma outra tela mostra; o botão da direita diz “nada a ler”,
+      porque não há conversa para abrir.</li>
+  <li><strong>Em <code>/admin/performance</code>, clique numa etapa do funil.</strong>
+      Esperado: abre o percurso já filtrado no degrau equivalente e
+      <em>no mesmo período</em>.</li>
+  <li><strong>Duas pessoas de mesmo nome.</strong> Esperado: telefone embaixo do
+      nome; sem telefone, “visitante &lt;marca&gt;”.</li>
+</ol>
+
+<h3>Conferindo os riscos corrigidos</h3>
+<div class="prova"># o índice existe?  (esperado: conversations_visit_id_idx)
+select indexname from pg_indexes
+ where tablename='conversations' and indexdef like '%visit_id%';
+
+# a tela consulta o banco uma vez por carga?  (esperado: 1)
+docker logs aja-app-spring-boat --tail 40 | grep -c "api/admin/percurso?from"
+
+# nome da linha == nome da ficha?  (esperado: o mesmo texto nos dois)
+abrir /admin/percurso, ler a coluna Pessoa, clicar em "Ver ficha"</div>
+
+<h3>Pelos testes — resultado da última execução</h3>
+<div class="prova">pnpm test:unit                    → 420 arquivos · 3259 passaram · 1 skip
+integração (route. + integration) →  75 arquivos ·  385 passaram
+só o percurso                     →   4 arquivos ·   29 passaram
+pnpm lint                         → 1243 arquivos · sem erro
+npx tsc --noEmit                  → sem erro
+
+⚠ test:unit exige BEVI_SELFCONTRACT_HASH preenchido (ver seção 6, item 4)</div>
+
+<h3>Em produção</h3>
+<div class="prova">commit do release          61729500
+tag da imagem no ECR      sha-6172950            ← bate com o commit
+digest no ECR             sha256:948f3cf262a638c7…
+digest da task RUNNING    sha256:948f3cf262a638c7…  ← idêntico
+imagem empurrada 22:42:11 · task iniciada 22:43:06  ← subiu depois
+
+[migrate-guard] OK — schema atualizado
+✓ Ready in 0ms
+erros no log nos 18 min seguintes: 0</div>
+
+<p class="sub">
+  A conferência de digest não é zelo excessivo: este projeto já passou
+  <strong>8 dias em produção rodando a imagem antiga</strong> com todo deploy se
+  reportando verde. Workflow verde não prova o que está no ar.
+</p>
+</section>
+
+<footer>
+  <p class="sub">
+    Gerado em 19/08/2026 · branch <code>indexa-corrente-de-aquisicao</code> → <code>develop</code> → <code>main</code><br>
+    Commits: <code>cad53212</code> · <code>cf4a97d6</code> · <code>b338032e</code>
+  </p>
+</footer>
+
+</body>
+</html>
