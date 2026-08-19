@@ -28,7 +28,7 @@ export function condicaoDeOrigem(origem: string | null, campanha?: string | null
 	const chave = origem?.trim();
 	if (!chave) return null;
 
-	const predicado = predicadoDaVisita(chave, campanha?.trim() || null);
+	const predicado = predicadoDeOrigemNaVisita(chave, campanha?.trim() || null);
 	if (!predicado) return null;
 
 	// EXISTS correlacionado, e não JOIN: a rota já monta a lista com subqueries
@@ -39,7 +39,15 @@ export function condicaoDeOrigem(origem: string | null, campanha?: string | null
   )`;
 }
 
-function predicadoDaVisita(chave: string, campanha: string | null): SQL | null {
+/**
+ * O predicado sobre a linha de `visits` (alias `v`), sem o `EXISTS` em volta.
+ *
+ * Exportado para a tela de Percurso, que já parte de `visits` e não precisa
+ * (nem pode) correlacionar de novo por `conversations.visit_id` — quem só
+ * chegou e nunca abriu conversa sumiria do filtro justamente na tela feita para
+ * mostrá-lo.
+ */
+export function predicadoDeOrigemNaVisita(chave: string, campanha: string | null): SQL | null {
 	if (chave.startsWith(PREFIXO_CAMPANHA)) {
 		const fonte = chave.slice(PREFIXO_CAMPANHA.length);
 		if (!fonte) return null;

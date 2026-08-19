@@ -1,7 +1,9 @@
 "use client";
 
-import { ClockIcon, TrendingDownIcon } from "lucide-react";
+import { ChevronRightIcon, ClockIcon, TrendingDownIcon } from "lucide-react";
+import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PASSO_DA_ETAPA_DO_FUNIL } from "@/lib/admin/percurso-types";
 import type { EtapaFunilMidia } from "@/lib/admin/performance-types";
 
 const nf = new Intl.NumberFormat("pt-BR");
@@ -23,8 +25,33 @@ const nf = new Intl.NumberFormat("pt-BR");
  * ainda vivas" separa duas decisões opostas — consertar o agente ou puxar de
  * volta. "44,4% saíram aqui" sobre 18 conversas era precisão falsa e não
  * apontava nenhuma das duas.
+ *
+ * Cada etapa leva ao PERCURSO, filtrado por ela. É o passo que faltava: o funil
+ * dizia "8 pararam aqui" e não havia como perguntar QUEM são esses 8 — o painel
+ * mostrava o buraco e escondia quem caiu nele. Lá a unidade é a pessoa e aqui é
+ * a conversa, então os dois números não coincidem de propósito; a escada da
+ * outra tela explica a diferença em voz alta.
  */
-export function FunilMidiaChart({ etapas }: { etapas: EtapaFunilMidia[] }) {
+export function FunilMidiaChart({
+	etapas,
+	de,
+	ate,
+}: {
+	etapas: EtapaFunilMidia[];
+	/** O período viaja no link — sem ele a lista que abre não é a que foi clicada. */
+	de?: Date | null;
+	ate?: Date | null;
+}) {
+	const linkDoPercurso = (chave: EtapaFunilMidia["chave"]) => {
+		const p = new URLSearchParams();
+		const passo = PASSO_DA_ETAPA_DO_FUNIL[chave];
+		if (passo) p.set("passo", passo);
+		if (de) p.set("from", de.toISOString());
+		if (ate) p.set("to", ate.toISOString());
+		const qs = p.toString();
+		return qs ? `/admin/percurso?${qs}` : "/admin/percurso";
+	};
+
 	// A primeira etapa (`visitas`) vive no card da porta — aqui o funil começa
 	// onde a conversa começa.
 	const daConversa = etapas.filter((e) => e.chave !== "visitas");
@@ -60,11 +87,20 @@ export function FunilMidiaChart({ etapas }: { etapas: EtapaFunilMidia[] }) {
 							const gargalo = etapa.pararamAqui === maiorPerda && maiorPerda > 0;
 
 							return (
-								<div key={etapa.chave}>
+								<Link
+									key={etapa.chave}
+									href={linkDoPercurso(etapa.chave)}
+									className="block rounded-md px-2 py-1.5 -mx-2 transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+									title={`Ver quem parou em ${etapa.label}`}
+								>
 									<div className="flex items-baseline justify-between gap-3 mb-1">
 										<div className="flex items-baseline gap-2 min-w-0">
 											<span className="font-medium text-sm">{etapa.label}</span>
 											<span className="text-xs text-muted-foreground truncate">{etapa.ajuda}</span>
+											<ChevronRightIcon
+												className="size-3 text-muted-foreground shrink-0"
+												aria-hidden="true"
+											/>
 										</div>
 										<div className="flex items-baseline gap-3 shrink-0">
 											<span className="font-bold tabular-nums">{nf.format(etapa.count)}</span>
@@ -101,7 +137,7 @@ export function FunilMidiaChart({ etapas }: { etapas: EtapaFunilMidia[] }) {
 											)}
 										</div>
 									)}
-								</div>
+								</Link>
 							);
 						})}
 					</div>
@@ -109,7 +145,8 @@ export function FunilMidiaChart({ etapas }: { etapas: EtapaFunilMidia[] }) {
 
 				<p className="mt-4 text-xs text-muted-foreground">
 					“Ainda viva” = o cliente escreveu nos últimos 7 dias e a conversa não foi encerrada —
-					essas dá para puxar de volta. Contagem de conversas, nunca de leads.
+					essas dá para puxar de volta. Contagem de conversas, nunca de leads. Clique numa etapa
+					para ver, nome a nome, quem parou nela.
 				</p>
 			</CardContent>
 		</Card>
