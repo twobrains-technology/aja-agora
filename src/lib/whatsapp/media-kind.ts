@@ -1,5 +1,13 @@
-/** As três categorias de anexo que o painel envia. */
-export type TipoDeMidia = "image" | "document" | "audio";
+/**
+ * As categorias de anexo que o WhatsApp trata como tipos de mensagem próprios.
+ *
+ * `video` entrou em 2026-08-18: até então vídeo caía no curinga `document` e
+ * chegava ao painel como "Documento recebido", com nome `documento.bin`. A Meta
+ * tem tipo e limite próprios para vídeo, e quem atende precisa reconhecer na
+ * hora que o cliente gravou alguma coisa — não abrir um "documento" para
+ * descobrir.
+ */
+export type TipoDeMidia = "image" | "document" | "audio" | "video";
 
 /**
  * Teto por categoria, em bytes — os limites da Cloud API da Meta.
@@ -8,12 +16,14 @@ export type TipoDeMidia = "image" | "document" | "audio";
 export const LIMITES_DE_TAMANHO: Record<TipoDeMidia, number> = {
 	image: 5 * 1024 * 1024,
 	audio: 16 * 1024 * 1024,
+	video: 16 * 1024 * 1024,
 	document: 100 * 1024 * 1024,
 };
 
 const ROTULO: Record<TipoDeMidia, string> = {
 	image: "imagem",
 	audio: "áudio",
+	video: "vídeo",
 	document: "documento",
 };
 
@@ -49,6 +59,7 @@ export function tipoDeMidia(mimeType: string): TipoDeMidia | null {
 	if (!mime) return null;
 	if (IMAGENS.has(mime)) return "image";
 	if (mime.startsWith("audio/")) return "audio";
+	if (mime.startsWith("video/")) return "video";
 	return "document";
 }
 

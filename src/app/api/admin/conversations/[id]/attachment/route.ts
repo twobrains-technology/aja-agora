@@ -5,7 +5,12 @@ import { requireRole } from "@/lib/admin/require-role";
 import { isMesaExterna } from "@/lib/admin/role-scope";
 import { conversaPertenceAoAtendente, getMesaAttendantByUserId } from "@/lib/mesa/handoff";
 import { getClientDocsStorageConfig, getSignedDownloadUrl, putObject } from "@/lib/storage";
-import { sendAudioMessage, sendDocumentMessage, sendImageMessage } from "@/lib/whatsapp/api";
+import {
+	sendAudioMessage,
+	sendDocumentMessage,
+	sendImageMessage,
+	sendVideoMessage,
+} from "@/lib/whatsapp/api";
 import { validarAnexo } from "@/lib/whatsapp/media-kind";
 import { isWindowOpen } from "@/lib/whatsapp/window";
 
@@ -17,7 +22,7 @@ import { isWindowOpen } from "@/lib/whatsapp/window";
 const EXPIRACAO_PARA_A_META_SEGUNDOS = 15 * 60;
 
 /**
- * POST — envia um ANEXO (imagem, documento ou áudio) do painel para o cliente.
+ * POST — envia um ANEXO (imagem, vídeo, documento ou áudio) do painel ao cliente.
  *
  * Corpo `multipart/form-data`: `file` (obrigatório) e `caption` (opcional).
  *
@@ -136,6 +141,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 	try {
 		if (tipo === "image") {
 			({ messageId } = await sendImageMessage(conv.waId, link, caption));
+		} else if (tipo === "video") {
+			({ messageId } = await sendVideoMessage(conv.waId, link, caption));
 		} else if (tipo === "audio") {
 			({ messageId } = await sendAudioMessage(conv.waId, link));
 		} else {

@@ -57,6 +57,9 @@ const EXTENSAO_POR_MIME: Record<string, string> = {
 	"audio/mpeg": "mp3",
 	"audio/mp4": "m4a",
 	"audio/amr": "amr",
+	"video/mp4": "mp4",
+	"video/3gpp": "3gp",
+	"video/quicktime": "mov",
 };
 
 /** O que a timeline mostra quando o anexo veio sem legenda. */
@@ -64,15 +67,16 @@ const DESCRICAO: Record<TipoDeMidia, string> = {
 	image: "Imagem recebida",
 	document: "Documento recebido",
 	audio: "Áudio recebido",
+	video: "Vídeo recebido",
 };
 
 /**
- * O `type` que a Meta manda no webhook — mais largo que `TipoDeMidia`, porque
- * o cliente também grava vídeo e manda figurinha, e o botão do vídeo fica ao
- * lado do de áudio. Vídeo e sticker viram `document` no histórico (é o tipo
- * curinga), mas NUNCA entram no KYC: documento de identidade é foto ou PDF.
+ * O `type` que a Meta manda no webhook — mais largo que `TipoDeMidia` por causa
+ * da figurinha, que não é categoria de anexo nossa. Vídeo tem categoria própria
+ * desde 2026-08-18; figurinha continua entrando como documento, que é o curinga.
+ * Nenhum dos dois entra no KYC: documento de identidade é foto ou PDF.
  */
-export type TipoInboundDoWhatsApp = TipoDeMidia | "video" | "sticker";
+export type TipoInboundDoWhatsApp = TipoDeMidia | "sticker";
 
 export interface MidiaDoClienteInput {
 	/** waId do cliente (o `from` do webhook). */
@@ -127,7 +131,8 @@ function nomeDoArquivo(tipo: TipoDeMidia, mimeType: string, filename?: string): 
 	const informado = filename?.trim();
 	if (informado) return informado;
 	const extensao = EXTENSAO_POR_MIME[mimeType] ?? "bin";
-	return `${{ image: "imagem", document: "documento", audio: "audio" }[tipo]}.${extensao}`;
+	const base = { image: "imagem", document: "documento", audio: "audio", video: "video" }[tipo];
+	return `${base}.${extensao}`;
 }
 
 /**
@@ -202,7 +207,7 @@ export async function receberMidiaDoCliente(
 		return;
 	}
 
-	const tipo = tipoDeMidia(media.mimeType) ?? (input.tipo === "audio" ? "audio" : "document");
+	const tipo = tipoDeMidia(media.mimeType) ?? (input.tipo === "sticker" ? "document" : input.tipo);
 	const extensao = EXTENSAO_POR_MIME[media.mimeType] ?? "bin";
 	const key = `conversas/${conv.id}/recebidos/${crypto.randomUUID()}.${extensao}`;
 

@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 /** Anexo exibido dentro da bolha. `url` é o endpoint que assina e redireciona
  *  (`/api/admin/messages/[id]/media`) — nunca uma URL assinada guardada. */
 export interface BubbleAttachment {
-	tipo: "image" | "document" | "audio";
+	tipo: "image" | "document" | "audio" | "video";
 	url: string;
 	filename?: string | null;
 }
@@ -58,6 +58,18 @@ export function WhatsAppBubble({
 								alt={attachment.filename ?? "Imagem enviada na conversa"}
 								className="max-h-64 w-full rounded object-cover"
 							/>
+						) : attachment.tipo === "video" ? (
+							// O vídeo toca na própria conversa, como no WhatsApp: quem atende
+							// precisa ver o que o cliente gravou sem baixar arquivo. Chegava
+							// aqui como "Documento recebido" até 18/08.
+							<video
+								src={attachment.url}
+								controls
+								preload="metadata"
+								className="max-h-64 w-full rounded bg-black object-contain"
+							>
+								<track kind="captions" />
+							</video>
 						) : (
 							<span className="flex items-center gap-2 rounded bg-black/5 px-2 py-1.5 dark:bg-white/10">
 								{attachment.tipo === "audio" ? (

@@ -30,6 +30,16 @@ describe("classificação do anexo", () => {
 		expect(tipoDeMidia("audio/mpeg")).toBe("audio");
 	});
 
+	// Reportado pelo Kairo em 2026-08-18, testando em produção: mandou um vídeo
+	// pelo WhatsApp e ele chegou ao painel como "Documento recebido", com nome
+	// `documento.bin`. Vídeo caía no curinga `document` porque nunca teve
+	// categoria própria — e a Meta tem, com limite e tipo de mensagem próprios.
+	it("vídeo é vídeo, não documento", () => {
+		expect(tipoDeMidia("video/mp4")).toBe("video");
+		expect(tipoDeMidia("video/3gpp")).toBe("video");
+		expect(tipoDeMidia("video/quicktime")).toBe("video");
+	});
+
 	it("mime desconhecido cai em documento — anexo não vira erro por ser exótico", () => {
 		expect(tipoDeMidia("application/x-coisa-estranha")).toBe("document");
 	});
@@ -65,6 +75,19 @@ describe("validação antes de subir o arquivo", () => {
 			nome: "contrato.pdf",
 		});
 		expect(r.ok).toBe(true);
+	});
+
+	it("vídeo até 16 MB passa; acima disso o limite é dito em português", () => {
+		expect(
+			validarAnexo({ mimeType: "video/mp4", tamanho: 10_000_000, nome: "documento.mp4" }).ok,
+		).toBe(true);
+		const r = validarAnexo({
+			mimeType: "video/mp4",
+			tamanho: LIMITES_DE_TAMANHO.video + 1,
+			nome: "longo.mp4",
+		});
+		expect(r.ok).toBe(false);
+		if (!r.ok) expect(r.motivo).toMatch(/v[íi]deo/i);
 	});
 
 	it("arquivo vazio é barrado", () => {
