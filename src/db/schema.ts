@@ -358,6 +358,13 @@ export const conversations = pgTable(
 	},
 	(table) => [
 		index("conversations_wa_id_idx").on(table.waId),
+		// A corrente visita → conversa é percorrida em TODA leitura de aquisição:
+		// o `VISITA_DE_GENTE` de `sinais-do-funil` faz um EXISTS por visita, e o
+		// Percurso ainda dá JOIN por cima. Sem este índice cada visita virava um
+		// seq scan de `conversations` — medido em 18/08/2026 com o volume real de
+		// produção (40.134 visitas, 5.134 conversas): 157ms sem, 52ms com, e a
+		// distância cresce com o histórico, porque o custo do seq scan é linear.
+		index("conversations_visit_id_idx").on(table.visitId),
 		index("conversations_handed_off_user_id_idx").on(table.handedOffUserId),
 		index("conversations_last_inbound_at_idx").on(table.lastInboundAt),
 	],
