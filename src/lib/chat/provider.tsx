@@ -12,6 +12,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { chatConversaConhecida, chatEnviou, chatRecebeu } from "@/lib/heatmap/chat";
 import { generateId } from "@/lib/utils/id";
 import type { ChatAction } from "./actions";
 import { appendBusMessage } from "./bus-merge";
@@ -135,6 +136,35 @@ export function ChatProvider({
 	const setMessagesRef = useRef(chat.setMessages);
 	setMessagesRef.current = chat.setMessages;
 
+	// A ESPERA QUE A PESSOA SENTIU.
+	//
+	// Marcada na primeira PALAVRA visível do agente, e não na virada de status
+	// para "streaming": o `web/adapter.ts` manda um batimento a cada 8s durante
+	// buscas longas (data-part transiente, `keepalive`), e o status vira
+	// "streaming" com ele — mediríamos o nosso próprio keepalive, não a espera.
+	// Quem desiste, desiste olhando para o silêncio.
+	const recebidoNoTurnoRef = useRef(true);
+	useEffect(() => {
+		if (recebidoNoTurnoRef.current) return;
+
+		const ultima = chat.messages[chat.messages.length - 1];
+		if (ultima?.role !== "assistant") return;
+
+		const temTexto = ultima.parts?.some(
+			(parte) => parte.type === "text" && parte.text.trim().length > 0,
+		);
+		if (!temTexto) return;
+
+		recebidoNoTurnoRef.current = true;
+		chatRecebeu();
+	}, [chat.messages]);
+
+	// A conversa desta thread — o que liga os eventos de chat ao funil. Vale
+	// também na retomada, quando o id vem pronto do servidor.
+	useEffect(() => {
+		chatConversaConhecida(conversationId);
+	}, [conversationId]);
+
 	// FIX-110 — watchdog de stream preso. Se o stream MORRER sem emitir fim nem
 	// erro (conexão/proxy caiu no meio), o useChat ficaria preso em
 	// "submitted"/"streaming" pra sempre e o ChatInput (disabled durante o
@@ -229,6 +259,8 @@ export function ChatProvider({
 
 	const sendUserMessage = useCallback(
 		async (text: string, opts?: { isResumeGreeting?: boolean }) => {
+			chatEnviou();
+			recebidoNoTurnoRef.current = false;
 			await chat.sendMessage(
 				{ text },
 				opts?.isResumeGreeting ? { body: { isResumeGreeting: true } } : undefined,
@@ -239,6 +271,10 @@ export function ChatProvider({
 
 	const sendAction = useCallback(
 		async (action: ChatAction, label: string) => {
+			// Ação de card conta como turno: é a pessoa respondendo ao agente, e a
+			// espera pela resposta é a mesma que a de uma mensagem digitada.
+			chatEnviou();
+			recebidoNoTurnoRef.current = false;
 			await chat.sendMessage({ text: label }, { body: { action } });
 		},
 		[chat],

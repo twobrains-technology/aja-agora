@@ -40,6 +40,8 @@ export async function recordPageEvents(
 				viewportWidth: evento.viewportWidth,
 				viewportHeight: evento.viewportHeight,
 				device: evento.device,
+				conversationId: evento.conversationId,
+				duracaoMs: evento.duracaoMs,
 			})),
 		);
 		return eventos.length;

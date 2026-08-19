@@ -5,6 +5,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { createPortal } from "react-dom";
 
 import { SunMark } from "@/components/brand/sun-mark";
+import { chatAbriu, chatFechou, type SaidaDeChat } from "@/lib/heatmap/chat";
+import { secaoDe } from "@/lib/heatmap/selector";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import { TheaterChat } from "./theater-chat";
 import { useTheater } from "./theater-context";
@@ -126,12 +128,36 @@ export function ChatTheater() {
 		window.setTimeout(() => setSettled(true), 640);
 	}, [applyGeometry, originRef]);
 
+	/**
+	 * Fecha registrando POR ONDE a pessoa saiu.
+	 *
+	 * X, scrim e Esc são três desistências diferentes — sair pelo scrim é quem
+	 * tocou fora sem querer ou desistiu de vez; o X é decisão. Sem distinguir,
+	 * o painel veria só "fechou" e não teria o que fazer com isso.
+	 *
+	 * A marcação vem ANTES de `closeTheater`: o desmonte encerra a sessão, e um
+	 * evento emitido depois cairia fora dela e seria descartado.
+	 */
+	const fecharPor = useCallback(
+		(saida: SaidaDeChat) => {
+			chatFechou(saida);
+			closeTheater();
+		},
+		[closeTheater],
+	);
+
 	// Monta ao abrir; dispara o morph reverso ao fechar.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: reage só à troca de isOpen
 	useEffect(() => {
 		if (isOpen) {
 			closingRef.current = false;
 			setMounted(true);
+			// A seção sai do elemento que abriu o teatro — é o que responde "de qual
+			// CTA vem quem conversa", ligando o mapa da página ao funil.
+			chatAbriu({
+				secao: secaoDe(originRef.current),
+				seed: seed.trim() ? seedOrigin : "vazia",
+			});
 		} else if (mounted && !closingRef.current) {
 			runClose();
 		}
@@ -147,7 +173,7 @@ export function ChatTheater() {
 	useEffect(() => {
 		if (!mounted) return;
 		const onKey = (e: KeyboardEvent) => {
-			if (e.key === "Escape") closeTheater();
+			if (e.key === "Escape") fecharPor("esc");
 		};
 		const onResize = () => {
 			if (!reduceRef.current) applyGeometry();
@@ -158,7 +184,7 @@ export function ChatTheater() {
 			window.removeEventListener("keydown", onKey);
 			window.removeEventListener("resize", onResize);
 		};
-	}, [mounted, closeTheater, applyGeometry]);
+	}, [mounted, fecharPor, applyGeometry]);
 
 	if (!mounted) return null;
 
@@ -176,7 +202,7 @@ export function ChatTheater() {
 			<button
 				type="button"
 				ref={scrimRef}
-				onClick={closeTheater}
+				onClick={() => fecharPor("scrim")}
 				aria-label="Fechar conversa"
 				tabIndex={-1}
 				data-testid="theater-scrim"
@@ -207,7 +233,7 @@ export function ChatTheater() {
 					</div>
 					<button
 						type="button"
-						onClick={closeTheater}
+						onClick={() => fecharPor("x")}
 						aria-label="Fechar conversa"
 						data-testid="theater-close"
 						className="flex size-[38px] shrink-0 items-center justify-center rounded-[11px] border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"

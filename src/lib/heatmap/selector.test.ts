@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { alvoDoClique, caminhoEstavel, rotuloDe, secaoDe } from "./selector";
+import { alvoDoClique, caminhoEstavel, ehSobreposto, rotuloDe, secaoDe } from "./selector";
 
 function montar(html: string) {
 	document.body.innerHTML = html;
@@ -29,6 +29,30 @@ describe("alvoDoClique", () => {
 
 	it("aceita null sem quebrar", () => {
 		expect(alvoDoClique(null)).toBeNull();
+	});
+
+	it("reconhece o que está dentro de um diálogo, sem descartar o clique", () => {
+		// O teatro do chat é um portal no `<body>` com `role="dialog"`, sobreposto
+		// à landing. Medido em produção na primeira tarde de coleta (18/08/2026),
+		// ele liderava a lista de cliques da página: "Enviar mensagem", "Fechar
+		// conversa", "Confirmar e contratar".
+		//
+		// O clique continua sendo coletado — é o comportamento que mais interessa.
+		// O que `ehSobreposto` decide é o CANAL: dentro do diálogo o evento vai
+		// como ação de chat, sem coordenada, porque `clientY + scrollY` sobre um
+		// elemento `fixed` desenharia o ponto numa seção que ninguém tocou.
+		montar(`
+			<div data-heat="kv-hero"><button id="cta">Fale com a AJA</button></div>
+			<div role="dialog" aria-label="Conversa com a Aja Agora">
+				<button id="enviar"><span id="txt-enviar">Enviar mensagem</span></button>
+			</div>
+		`);
+
+		expect(ehSobreposto(document.getElementById("txt-enviar"))).toBe(true);
+		expect(ehSobreposto(document.getElementById("cta"))).toBe(false);
+		// E o alvo continua resolvendo normalmente dos dois lados.
+		expect(alvoDoClique(document.getElementById("txt-enviar"))?.id).toBe("enviar");
+		expect(alvoDoClique(document.getElementById("cta"))?.id).toBe("cta");
 	});
 });
 

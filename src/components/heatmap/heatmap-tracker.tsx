@@ -1,6 +1,6 @@
 "use client";
 
-// Coletor do mapa de calor. Monta uma vez por landing e não renderiza nada.
+// Coletor da landing. Monta uma vez por página e não renderiza nada.
 //
 // As três regras que moldam o arquivo:
 //
@@ -8,26 +8,31 @@
 //    só é lido dentro de `requestAnimationFrame`, e nada mede layout no caminho
 //    do clique além do `getBoundingClientRect` do próprio alvo.
 // 2. **Não pode perder o fim da sessão.** É justamente quem vai embora que
-//    interessa. Por isso o despejo final vai por `sendBeacon` no `pagehide` e no
-//    `visibilitychange`, que sobrevivem ao fechamento da aba — `fetch` comum
-//    seria cancelado.
+//    interessa — o despejo final é da fila (`fila.ts`), que sobrevive ao
+//    fechamento da aba por `sendBeacon`.
 // 3. **Nunca derruba a página.** Qualquer erro aqui é engolido: analytics não
 //    tem o direito de quebrar a navegação de quem ia comprar.
 //
+// A fila e o envio saíram daqui em 18/08/2026, quando o chat também passou a
+// emitir evento: o teatro é um portal fora desta árvore, e duas filas
+// concorrentes partiriam a mesma sessão em dois lotes.
+//
 // Sobre consentimento: a landing já serve GTM, GA4 e Meta Pixel
 // (`src/app/layout.tsx`), que rastreiam bem mais que isto e mandam pra fora.
-// Este coletor grava menos, no NOSSO banco, sem PII (ver `sanitizeLabel`). Se um
-// dia entrar banner de consentimento, ele governa os quatro juntos — pôr trava
-// só aqui daria a impressão de proteção sem mudar o que sai do navegador.
+// Este coletor grava no NOSSO banco. Se um dia entrar banner de consentimento,
+// ele governa os quatro juntos — pôr trava só aqui daria a impressão de
+// proteção sem mudar o que sai do navegador.
 
 import { useEffect, useRef } from "react";
-import { MAX_EVENTS_POR_LOTE } from "@/lib/heatmap/events";
-import { alvoDoClique, caminhoEstavel, rotuloDe, secaoDe } from "@/lib/heatmap/selector";
-
-const ENDPOINT = "/api/track";
-
-/** Intervalo do despejo periódico. Mais curto encheria a rede à toa. */
-const INTERVALO_FLUSH_MS = 5_000;
+import { chatTocou } from "@/lib/heatmap/chat";
+import { despejar, enfileirar } from "@/lib/heatmap/fila";
+import {
+	alvoDoClique,
+	caminhoEstavel,
+	ehSobreposto,
+	rotuloDe,
+	secaoDe,
+} from "@/lib/heatmap/selector";
 
 /** Marcos de rolagem. Percentual contínuo não informa mais e multiplica linha. */
 const MARCOS_SCROLL = [25, 50, 75, 100];
@@ -35,11 +40,8 @@ const MARCOS_SCROLL = [25, 50, 75, 100];
 /** Parte da seção visível que conta como "viu". Metade evita contar raspão. */
 const LIMIAR_SECAO = 0.5;
 
-type EventoCru = Record<string, unknown>;
-
 export function HeatmapTracker({ path }: { path: string }) {
 	// Refs e não estado: nada aqui deve provocar renderização.
-	const fila = useRef<EventoCru[]>([]);
 	const secoesVistas = useRef(new Set<string>());
 	const marcosAtingidos = useRef(new Set<number>());
 
@@ -52,57 +54,26 @@ export function HeatmapTracker({ path }: { path: string }) {
 		// cliques nele, e a tela passaria a medir quem a estava lendo.
 		if (window.self !== window.top) return;
 
-		const viewport = () => ({
-			viewportWidth: window.innerWidth,
-			viewportHeight: window.innerHeight,
-		});
-
-		const enfileirar = (evento: EventoCru) => {
-			fila.current.push({ ...evento, path, at: Date.now(), ...viewport() });
-			if (fila.current.length >= MAX_EVENTS_POR_LOTE) despejar();
-		};
-
-		/**
-		 * Manda o que estiver na fila. `sendBeacon` primeiro porque é o único que
-		 * sobrevive ao fechamento da aba; `fetch` com `keepalive` é a reserva pra
-		 * navegador que recusa o beacon (payload grande, por exemplo).
-		 */
-		const despejar = () => {
-			if (fila.current.length === 0) return;
-
-			const lote = fila.current;
-			fila.current = [];
-
-			try {
-				const corpo = JSON.stringify({ events: lote });
-				const enviou = navigator.sendBeacon?.(
-					ENDPOINT,
-					new Blob([corpo], { type: "application/json" }),
-				);
-
-				if (!enviou) {
-					void fetch(ENDPOINT, {
-						method: "POST",
-						headers: { "Content-Type": "application/json" },
-						body: corpo,
-						keepalive: true,
-					}).catch(() => {});
-				}
-			} catch {
-				// Evento perdido é evento perdido. A página segue.
-			}
-		};
-
 		const aoClicar = (evento: MouseEvent) => {
 			try {
 				const alvo = alvoDoClique(evento.target as Element | null);
 				if (!alvo) return;
+
+				// O toque caiu dentro do teatro do chat (ou de um modal). Vira evento
+				// de chat, e não ponto no mapa: o painel é `fixed`, então
+				// `clientY + scrollY` desenharia a batida sobre uma seção da página
+				// que a pessoa nunca tocou. O QUE foi tocado continua registrado.
+				if (ehSobreposto(alvo)) {
+					chatTocou({ selector: caminhoEstavel(alvo), label: rotuloDe(alvo) });
+					return;
+				}
 
 				const caixa = alvo.getBoundingClientRect();
 				const larguraPagina = document.documentElement.scrollWidth || window.innerWidth;
 
 				enfileirar({
 					type: "click",
+					path,
 					section: secaoDe(alvo),
 					selector: caminhoEstavel(alvo),
 					label: rotuloDe(alvo),
@@ -137,7 +108,7 @@ export function HeatmapTracker({ path }: { path: string }) {
 					for (const marco of MARCOS_SCROLL) {
 						if (pct >= marco && !marcosAtingidos.current.has(marco)) {
 							marcosAtingidos.current.add(marco);
-							enfileirar({ type: "scroll_depth", scrollPct: marco });
+							enfileirar({ type: "scroll_depth", path, scrollPct: marco });
 						}
 					}
 				} catch {
@@ -155,7 +126,7 @@ export function HeatmapTracker({ path }: { path: string }) {
 					if (!nome || !entrada.isIntersecting || secoesVistas.current.has(nome)) continue;
 
 					secoesVistas.current.add(nome);
-					enfileirar({ type: "section_view", section: nome });
+					enfileirar({ type: "section_view", path, section: nome });
 					observador.unobserve(entrada.target);
 				}
 			},
@@ -164,25 +135,14 @@ export function HeatmapTracker({ path }: { path: string }) {
 
 		for (const secao of document.querySelectorAll("[data-heat]")) observador.observe(secao);
 
-		const aoEsconder = () => {
-			if (document.visibilityState === "hidden") despejar();
-		};
-
 		document.addEventListener("click", aoClicar, { capture: true, passive: true });
 		window.addEventListener("scroll", aoRolar, { passive: true });
-		document.addEventListener("visibilitychange", aoEsconder);
-		window.addEventListener("pagehide", despejar);
-
-		const timer = window.setInterval(despejar, INTERVALO_FLUSH_MS);
 
 		return () => {
 			despejar();
 			observador.disconnect();
-			window.clearInterval(timer);
 			document.removeEventListener("click", aoClicar, { capture: true });
 			window.removeEventListener("scroll", aoRolar);
-			document.removeEventListener("visibilitychange", aoEsconder);
-			window.removeEventListener("pagehide", despejar);
 		};
 	}, [path]);
 

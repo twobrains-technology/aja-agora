@@ -1160,11 +1160,23 @@ export const conversionEvents = pgTable(
 // 🔒 Sem PII: `label` passa por `sanitizeLabel` (`src/lib/heatmap/events.ts`),
 // que apaga CPF, e-mail e telefone antes de gravar. Endpoint público e sem
 // sessão ⇒ tudo entra por allowlist (tipo, seção e faixa numérica conhecidos).
+// Os seis últimos entraram em 18/08/2026, e fecham o vão do lado do produto: a
+// landing estava medida seção a seção e a CONVERSA não tinha sinal nenhum.
+// Abrir o teatro não criava linha em lugar algum — `conversations` só nasce no
+// primeiro `POST /api/chat` —, então quem abriu o chat e desistiu diante do
+// palco vazio era indistinguível de quem nunca clicou. A ordem da lista é a
+// ordem em que a pessoa passa por eles.
 export const pageEventTypeEnum = pgEnum("page_event_type", [
 	"click",
 	"rage_click",
 	"section_view",
 	"scroll_depth",
+	"chat_open",
+	"chat_typing",
+	"chat_send",
+	"chat_receive",
+	"chat_card_click",
+	"chat_close",
 ]);
 
 export const deviceEnum = pgEnum("device", ["mobile", "tablet", "desktop"]);
@@ -1194,6 +1206,18 @@ export const pageEvents = pgTable(
 		viewportWidth: integer("viewport_width").notNull(),
 		viewportHeight: integer("viewport_height").notNull(),
 		device: deviceEnum().notNull(),
+		// A conversa que o evento de chat toca. Nula nos eventos de página e no
+		// `chat_open` de quem abriu e nunca escreveu — que é justamente a pessoa
+		// que estes eventos existem para enxergar, então exigir a FK aqui
+		// descartaria o caso de uso.
+		//
+		// `set null` e não `cascade`, pelo mesmo motivo do `visit_id`: apagar uma
+		// conversa não pode abrir buraco na série de comportamento.
+		conversationId: uuid("conversation_id").references(() => conversations.id, {
+			onDelete: "set null",
+		}),
+		/** O tempo que o evento mede — espera do agente, tempo até escrever, sessão inteira. */
+		duracaoMs: integer("duracao_ms"),
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	},
 	(table) => [
@@ -1201,6 +1225,9 @@ export const pageEvents = pgTable(
 		index("page_events_path_created_at_idx").on(table.path, table.createdAt),
 		index("page_events_visit_id_idx").on(table.visitId),
 		index("page_events_type_section_idx").on(table.type, table.section),
+		// "O que aconteceu nesta conversa, na ordem" — a leitura do percurso de
+		// chat, que sem índice varreria a tabela inteira de eventos de página.
+		index("page_events_conversation_id_idx").on(table.conversationId, table.createdAt),
 	],
 );
 
