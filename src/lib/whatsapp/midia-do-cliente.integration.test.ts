@@ -55,6 +55,10 @@ vi.mock("./api", async (original) => {
 			enviados.push({ tipo: "audio", para, link });
 			return { messageId: `mock-${crypto.randomUUID()}` };
 		}),
+		sendVideoMessage: vi.fn(async (para: string, link: string, texto?: string) => {
+			enviados.push({ tipo: "video", para, link, texto });
+			return { messageId: `mock-${crypto.randomUUID()}` };
+		}),
 	};
 });
 
@@ -317,7 +321,7 @@ describeIfDb("mídia do cliente chega ao atendente (prod 2026-08-18)", () => {
 		expect(enviados.filter((e) => e.para === ATENDENTE_FONE)).toHaveLength(1);
 	});
 
-	it("vídeo entra no histórico como documento e NUNCA no KYC", async () => {
+	it("vídeo entra no histórico COMO VÍDEO e NUNCA no KYC", async () => {
 		const conv = await semear("5511989990008", "active");
 		const kyc = vi.fn(async () => {});
 
@@ -332,9 +336,26 @@ describeIfDb("mídia do cliente chega ao atendente (prod 2026-08-18)", () => {
 
 		const msgs = await mensagensDe(conv.id);
 		expect(msgs).toHaveLength(1);
-		expect(msgs[0].mediaType).toBe("document");
+		// Chegava como "Documento recebido", nome `documento.bin` (prod, 18/08).
+		expect(msgs[0].mediaType).toBe("video");
+		expect(msgs[0].content).toBe("Vídeo recebido");
+		expect(msgs[0].mediaKey).toMatch(/\.mp4$/);
 		// Documento de identidade é foto ou PDF — vídeo não vira slot da proposta.
 		expect(kyc).not.toHaveBeenCalled();
+	});
+
+	it("o vídeo chega ao atendente como vídeo, com nome de arquivo de vídeo", async () => {
+		await semear("5511988880009", "handed_off");
+
+		await midia.receberMidiaDoCliente(
+			{ from: "5511988880009", mediaId: "media-video-2", tipo: "video" },
+			{ ...deps, baixar: async () => ({ bytes: new Uint8Array([7]), mimeType: "video/mp4" }) },
+		);
+
+		const paraAtendente = enviados.filter((e) => e.para === ATENDENTE_FONE);
+		expect(paraAtendente).toHaveLength(1);
+		expect(paraAtendente[0].tipo).toBe("video");
+		expect(paraAtendente[0].texto).toContain("Aninha");
 	});
 
 	it("anexo mandado por um ATENDENTE não é tratado como fala de cliente", async () => {

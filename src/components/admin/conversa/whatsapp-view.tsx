@@ -79,8 +79,12 @@ export function WhatsAppView({
 
 function anexoDe(m: MensagemDaConversa): BubbleAttachment | null {
 	if (!m.mediaType) return null;
+	// `video` entrou em 18/08: antes ele caía neste mesmo `else` e a conversa
+	// mostrava "Documento recebido" para um vídeo que o cliente gravou.
 	const tipo =
-		m.mediaType === "image" || m.mediaType === "audio" ? m.mediaType : ("document" as const);
+		m.mediaType === "image" || m.mediaType === "audio" || m.mediaType === "video"
+			? m.mediaType
+			: ("document" as const);
 	return {
 		tipo,
 		// Endpoint que assina na hora — o histórico nunca guarda URL que expira.
