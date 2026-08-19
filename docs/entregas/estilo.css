@@ -1,0 +1,534 @@
+/* Estilo do dossiê de entrega.
+ *
+ * Duas exigências moldaram cada regra: precisa ser legível na tela E virar um
+ * PDF decente na impressão (é como o Kairo lê e repassa). Por isso as cores de
+ * fundo são claras, o índice some no print e nada depende de hover.
+ *
+ * Paleta puxada da marca (papel/tinta/coral). Estado NUNCA é dado só por cor —
+ * toda etiqueta tem texto, porque cor sozinha não é sinal.
+ */
+:root {
+	--tinta: #021628;
+	--papel: #fafaf3;
+	--branco: #fff;
+	--areia: #e8e3d3;
+	--coral: #f2404f;
+	--grave: #9e0f1b;
+	--bom: #1b5231;
+	--bom-bg: #e2ede5;
+	--alerta: #8a5a00;
+	--alerta-bg: #fbf0dc;
+	--cinza: #5a6b7c;
+	--cinza2: #7a8894;
+}
+* {
+	box-sizing: border-box;
+}
+html {
+	scroll-behavior: smooth;
+	-webkit-text-size-adjust: 100%;
+}
+body {
+	margin: 0;
+	background: var(--papel);
+	color: var(--tinta);
+	font:
+		16px / 1.6 -apple-system,
+		BlinkMacSystemFont,
+		"Segoe UI",
+		Helvetica,
+		sans-serif;
+	-webkit-font-smoothing: antialiased;
+	overflow-wrap: break-word;
+}
+.wrap {
+	max-width: 1080px;
+	margin: 0 auto;
+	padding: 44px 28px 90px;
+}
+h1 {
+	font-size: 34px;
+	line-height: 1.15;
+	letter-spacing: -0.025em;
+	margin: 0 0 8px;
+}
+.lede {
+	font-size: 17px;
+	color: var(--cinza);
+	margin: 0 0 10px;
+	max-width: 76ch;
+}
+.meta {
+	font-size: 13px;
+	color: var(--cinza2);
+	margin: 0 0 30px;
+}
+h2 {
+	font-size: 12px;
+	text-transform: uppercase;
+	letter-spacing: 0.11em;
+	color: var(--cinza);
+	font-weight: 750;
+	margin: 0 0 16px;
+	padding-top: 6px;
+}
+h3 {
+	font-size: 19px;
+	margin: 0 0 6px;
+	letter-spacing: -0.01em;
+}
+section {
+	margin-bottom: 52px;
+	scroll-margin-top: 20px;
+}
+p {
+	margin: 0 0 12px;
+}
+.card {
+	background: var(--branco);
+	border: 1px solid var(--areia);
+	border-radius: 14px;
+	padding: 22px 26px;
+	margin-bottom: 14px;
+}
+code {
+	font:
+		13px ui-monospace,
+		SFMono-Regular,
+		Menlo,
+		monospace;
+	background: #f1eee2;
+	padding: 2px 6px;
+	border-radius: 5px;
+	white-space: nowrap;
+}
+
+.pill {
+	display: inline-block;
+	font-size: 10.5px;
+	font-weight: 800;
+	letter-spacing: 0.06em;
+	padding: 4px 10px;
+	border-radius: 20px;
+	vertical-align: middle;
+}
+.p-ok {
+	background: var(--bom-bg);
+	color: var(--bom);
+}
+.p-risco {
+	background: #fde7e9;
+	color: var(--grave);
+}
+.p-aviso {
+	background: var(--alerta-bg);
+	color: var(--alerta);
+}
+.p-neutro {
+	background: #edeae0;
+	color: var(--cinza);
+}
+
+.idx {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+	gap: 8px;
+	margin-bottom: 40px;
+}
+.idx a {
+	display: block;
+	padding: 11px 13px;
+	background: var(--branco);
+	border: 1px solid var(--areia);
+	border-radius: 10px;
+	text-decoration: none;
+	color: var(--tinta);
+	font-size: 13.5px;
+	font-weight: 600;
+}
+.idx a:hover {
+	border-color: var(--tinta);
+}
+.idx a span {
+	display: block;
+	font-weight: 400;
+	font-size: 11.5px;
+	color: var(--cinza2);
+	margin-top: 2px;
+}
+
+/* fluxo macro — o desenho de "como o dado anda" */
+.fluxo {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: stretch;
+	gap: 10px;
+	margin: 6px 0 4px;
+}
+.no {
+	flex: 1;
+	min-width: 150px;
+	background: var(--branco);
+	border: 1px solid var(--areia);
+	border-radius: 11px;
+	padding: 13px 15px;
+}
+.no.novo {
+	border-color: var(--coral);
+	border-width: 2px;
+}
+.no .q {
+	font-size: 10px;
+	font-weight: 800;
+	letter-spacing: 0.06em;
+	color: var(--cinza2);
+	margin-bottom: 5px;
+}
+.no .t {
+	font-weight: 650;
+	font-size: 14.5px;
+	margin-bottom: 3px;
+}
+.no .d {
+	font-size: 12.5px;
+	color: var(--cinza);
+	line-height: 1.45;
+}
+.seta {
+	align-self: center;
+	color: #c4bca6;
+	font-size: 20px;
+	flex: 0 0 auto;
+}
+.legenda {
+	font-size: 12.5px;
+	color: var(--cinza2);
+	margin-top: 8px;
+}
+.legenda i {
+	display: inline-block;
+	width: 11px;
+	height: 11px;
+	border-radius: 3px;
+	vertical-align: -1px;
+	border: 2px solid var(--coral);
+	margin-right: 5px;
+}
+
+table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 13.5px;
+}
+th {
+	text-align: left;
+	font-size: 10.5px;
+	text-transform: uppercase;
+	letter-spacing: 0.07em;
+	color: var(--cinza2);
+	font-weight: 750;
+	padding: 0 10px 9px;
+	border-bottom: 1px solid var(--areia);
+}
+td {
+	padding: 10px;
+	border-bottom: 1px solid #f2efe6;
+	vertical-align: top;
+}
+tr:last-child td {
+	border-bottom: 0;
+}
+td.num {
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	color: var(--cinza);
+}
+td code {
+	font-size: 12.5px;
+}
+.grupo td {
+	padding: 14px 10px 6px;
+	font-size: 10.5px;
+	letter-spacing: 0.07em;
+	color: var(--cinza2);
+	font-weight: 750;
+	border: 0;
+}
+.sub {
+	font-size: 12px;
+	color: var(--cinza2);
+	display: block;
+	margin-top: 2px;
+	line-height: 1.4;
+}
+
+/* riscos — a barra lateral dá a severidade sem depender de ler a etiqueta */
+.risco {
+	border-left: 4px solid var(--areia);
+	padding-left: 18px;
+	margin-bottom: 26px;
+}
+.risco.alto {
+	border-left-color: var(--grave);
+}
+.risco.medio {
+	border-left-color: var(--alerta);
+}
+.risco.baixo {
+	border-left-color: #c4bca6;
+}
+.risco h3 {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	flex-wrap: wrap;
+}
+
+/* bloco de prova: white-space PRE é obrigatório — sem ele o terminal colapsa
+   numa linha só e a evidência vira ilegível. */
+.prova {
+	background: #0e1b26;
+	color: #d7e3ec;
+	border-radius: 9px;
+	padding: 14px 16px;
+	margin: 10px 0 0;
+	font:
+		12.5px / 1.7 ui-monospace,
+		SFMono-Regular,
+		Menlo,
+		monospace;
+	overflow-x: auto;
+	white-space: pre;
+	tab-size: 2;
+}
+.prova .g {
+	color: #7ed9a0;
+}
+.prova .r {
+	color: #ff8b95;
+}
+.prova .c {
+	color: #7f95a6;
+}
+
+.checklist {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+}
+.checklist li {
+	padding: 11px 0 11px 30px;
+	border-bottom: 1px solid #f2efe6;
+	position: relative;
+	font-size: 14.5px;
+}
+.checklist li:last-child {
+	border-bottom: 0;
+}
+.checklist li::before {
+	content: "";
+	position: absolute;
+	left: 4px;
+	top: 16px;
+	width: 13px;
+	height: 13px;
+	border: 2px solid #c4bca6;
+	border-radius: 3.5px;
+}
+.checklist li > b {
+	display: block;
+	font-weight: 650;
+}
+.checklist li span {
+	font-size: 12.5px;
+	color: var(--cinza);
+}
+.checklist li span b {
+	display: inline;
+	font-weight: 700;
+}
+
+.nums {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+	gap: 10px;
+	margin-bottom: 8px;
+}
+.nums div {
+	background: var(--branco);
+	border: 1px solid var(--areia);
+	border-radius: 11px;
+	padding: 13px 15px;
+}
+.nums b {
+	display: block;
+	font-size: 24px;
+	font-variant-numeric: tabular-nums;
+	letter-spacing: -0.02em;
+}
+.nums span {
+	font-size: 12px;
+	color: var(--cinza2);
+}
+
+.aviso {
+	background: var(--alerta-bg);
+	border: 1px solid #ebd9b4;
+	border-radius: 11px;
+	padding: 15px 18px;
+	font-size: 14px;
+	margin-bottom: 14px;
+}
+
+/* captura de tela — a prova visual do que mudou */
+figure {
+	margin: 14px 0 0;
+}
+figure img {
+	width: 100%;
+	border: 1px solid var(--areia);
+	border-radius: 10px;
+	display: block;
+}
+figcaption {
+	font-size: 12.5px;
+	color: var(--cinza2);
+	margin-top: 7px;
+}
+
+footer {
+	border-top: 1px solid var(--areia);
+	padding-top: 20px;
+	font-size: 13px;
+	color: var(--cinza2);
+}
+
+/* ── Celular ────────────────────────────────────────────────────────────────
+ * O dossiê chega ao Kairo pelo WhatsApp e é aberto no telefone ANTES de ser
+ * aberto no computador — então esta faixa não é acessório, é o caminho
+ * principal de leitura. Até 18/08/2026 a única media query aqui era a de
+ * impressão, e no telefone o documento saía com rolagem lateral: caminho de
+ * arquivo em <code> não quebrava (`white-space:nowrap`) e esticava a página
+ * inteira, e tabela de três colunas não tinha para onde escapar.
+ */
+@media (max-width: 560px) {
+	.wrap {
+		padding: 26px 16px 60px;
+	}
+	h1 {
+		font-size: 26px;
+		letter-spacing: -0.02em;
+	}
+	.lede {
+		font-size: 15.5px;
+	}
+	h3 {
+		font-size: 17px;
+	}
+	section {
+		margin-bottom: 38px;
+	}
+	.card {
+		padding: 17px 16px;
+		border-radius: 12px;
+	}
+
+	/* Caminho de arquivo é o texto mais longo do documento e vinha sem permissão
+     de quebrar — bastava um `src/components/…/heatmap-tracker.tsx` para toda a
+     página passar a rolar de lado. */
+	code {
+		white-space: normal;
+		overflow-wrap: anywhere;
+	}
+
+	/* A tabela rola sozinha em vez de esticar o documento. `display:block` é o
+     que dá o overflow — sem isso a largura vaza para o body. */
+	table {
+		display: block;
+		overflow-x: auto;
+		-webkit-overflow-scrolling: touch;
+		font-size: 13px;
+	}
+	th,
+	td {
+		padding: 9px 8px;
+	}
+
+	/* O fluxo vira vertical: as setas apontavam para a direita e, com os nós
+     empilhados, apontariam para o nada. */
+	.fluxo {
+		flex-direction: column;
+		gap: 8px;
+	}
+	.no {
+		min-width: 0;
+		width: 100%;
+	}
+	.seta {
+		display: none;
+	}
+
+	.idx {
+		grid-template-columns: 1fr 1fr;
+		gap: 7px;
+	}
+	.idx a {
+		padding: 9px 11px;
+		font-size: 12.5px;
+	}
+
+	.risco {
+		padding-left: 13px;
+		margin-bottom: 22px;
+	}
+	.prova {
+		font-size: 11px;
+		line-height: 1.6;
+		padding: 12px 13px;
+		border-radius: 8px;
+	}
+	.nums {
+		grid-template-columns: 1fr 1fr;
+		gap: 8px;
+	}
+	.nums b {
+		font-size: 21px;
+	}
+	.checklist li {
+		font-size: 14px;
+	}
+}
+
+/* Telefone pequeno (≤380px): o índice em duas colunas passa a truncar rótulo. */
+@media (max-width: 380px) {
+	.idx {
+		grid-template-columns: 1fr;
+	}
+	.nums {
+		grid-template-columns: 1fr;
+	}
+}
+
+@media print {
+	.idx {
+		display: none;
+	} /* navegação não serve no papel */
+	body {
+		background: #fff;
+	}
+	.card,
+	.no,
+	.nums div,
+	.risco,
+	figure {
+		break-inside: avoid;
+	}
+	h2 {
+		break-after: avoid;
+	}
+	a {
+		text-decoration: none;
+		color: inherit;
+	}
+}
