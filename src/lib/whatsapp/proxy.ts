@@ -24,7 +24,14 @@ import { triggerEvalScoring } from "@/lib/eval/trigger";
 import { ehNomeProprioPlausivel } from "@/lib/leads/contact-capture";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 import { runDirectiveWithOrchestrator } from "./adapter";
-import { sendAudioMessage, sendDocumentMessage, sendImageMessage, sendTextMessage } from "./api";
+import {
+	sendAudioMessage,
+	sendDocumentMessage,
+	sendImageMessage,
+	sendTextMessage,
+	sendVideoMessage,
+} from "./api";
+import type { TipoDeMidia } from "./media-kind";
 import { persistMeta, reloadMeta } from "./meta-helpers";
 import { loadConversationHistory, saveMessage } from "./session";
 import { contarListenersDoAtendente, publishToAttendant } from "./simulator-bus";
@@ -987,7 +994,7 @@ export async function relayAvisoAoAtendente(userWaId: string, texto: string): Pr
 
 /** O anexo do cliente, já guardado, pronto para seguir ao atendente. */
 export interface AnexoDoCliente {
-	tipo: "image" | "document" | "audio";
+	tipo: TipoDeMidia;
 	/** URL assinada — a Meta BUSCA o arquivo nela, não recebe os bytes. */
 	link: string;
 	filename: string;
@@ -999,6 +1006,7 @@ const ANEXO_SEM_LEGENDA: Record<AnexoDoCliente["tipo"], string> = {
 	image: "enviou uma imagem",
 	document: "enviou um documento",
 	audio: "enviou um áudio",
+	video: "enviou um vídeo",
 };
 
 /** O que o atendente lê acima do arquivo. Sem o nome, ele não sabe de quem é. */
@@ -1026,6 +1034,8 @@ async function enviarAnexoAoAtendente(
 	if (!options.simulated) {
 		if (anexo.tipo === "image") {
 			await sendImageMessage(phone, anexo.link, legenda);
+		} else if (anexo.tipo === "video") {
+			await sendVideoMessage(phone, anexo.link, legenda);
 		} else if (anexo.tipo === "audio") {
 			await sendTextMessage(phone, legenda);
 			await sendAudioMessage(phone, anexo.link);

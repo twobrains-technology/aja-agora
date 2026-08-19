@@ -168,6 +168,23 @@ export async function sendAudioMessage(to: string, link: string) {
 	return callApi(phoneNumberId, accessToken, { to, type: "audio", audio: { link } });
 }
 
+/** Envia VÍDEO por link, mesmo contrato do documento e da imagem: a Meta busca
+ * o arquivo na URL. Aceita `caption`, ao contrário do áudio. */
+export async function sendVideoMessage(to: string, link: string, caption?: string) {
+	const maskedTo = to.length > 6 ? `${to.slice(0, 4)}…${to.slice(-2)}` : to;
+	console.log(`[whatsapp-out:video] to=${maskedTo} caption=${JSON.stringify(caption ?? "")}`);
+	if (isSimulatedWaId(to)) {
+		publishToClient(to, { type: "text", text: `${caption ? `${caption}\n` : ""}${link}` });
+		return simulatedAck();
+	}
+	const { accessToken, phoneNumberId } = getConfig();
+	return callApi(phoneNumberId, accessToken, {
+		to,
+		type: "video",
+		video: { link, ...(caption ? { caption } : {}) },
+	});
+}
+
 export async function sendReplyButtons(
 	to: string,
 	body: string,
