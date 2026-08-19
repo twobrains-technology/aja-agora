@@ -52,17 +52,14 @@ describe("sanitizeLabel", () => {
 		expect(sanitizeLabel(longo)).toHaveLength(80);
 	});
 
-	it("apaga o que parece dado pessoal digitado, não importa o alvo", () => {
-		// O coletor lê textContent do alvo. Num input preenchido isso viria a ser
-		// o que o visitante digitou — CPF, e-mail e telefone NUNCA podem entrar
-		// numa tabela de analytics.
-		expect(sanitizeLabel("123.456.789-09")).toBe("");
-		expect(sanitizeLabel("12345678909")).toBe("");
-		expect(sanitizeLabel("fulano@exemplo.com.br")).toBe("");
-		expect(sanitizeLabel("(62) 99999-8888")).toBe("");
-		// O buraco deixado pelo telefone some no colapso de espaço — o rótulo
-		// continua legível no painel, sem o dado pessoal.
-		expect(sanitizeLabel("Fale com (62) 99999-8888 agora")).toBe("Fale com agora");
+	it("preserva o texto do alvo como estava na tela — inclusive dado do cliente", () => {
+		// A filtragem de CPF/e-mail/telefone saiu em 18/08/2026 (ver `sanitizeLabel`).
+		// O rótulo é o retrato do que a pessoa tocou, e é assim que ele serve pra
+		// reconstruir o comportamento: um card de confirmação tem que aparecer no
+		// painel como card de confirmação, não como frase com buracos.
+		const cartao = "Vamos confirmar seu plano CPF 123.456.789-09 Celular (62) 99999-8888";
+
+		expect(sanitizeLabel(cartao)).toBe(cartao);
 	});
 
 	it("devolve vazio pra rótulo ausente ou só espaço", () => {
@@ -170,6 +167,97 @@ describe("normalizeEvent", () => {
 
 	it("recusa seção que não é uma das seções conhecidas da landing", () => {
 		expect(normalizeEvent(cliqueCru({ section: "seção-inventada" }))).toBeNull();
+	});
+});
+
+describe("normalizeEvent — eventos de chat", () => {
+	/** O que o teatro manda. Sem coordenada: o painel é `fixed`, posição não diz nada. */
+	function chatCru(over: Record<string, unknown> = {}) {
+		return {
+			type: "chat_open",
+			path: "/",
+			viewportWidth: 390,
+			viewportHeight: 844,
+			at: AGORA,
+			...over,
+		};
+	}
+
+	it("aceita a abertura do teatro, com a seção do CTA que a originou", () => {
+		// A seção responde a pergunta que decide a landing: o CTA do hero traz
+		// gente que conversa, ou é o do rodapé, depois de ler a página inteira?
+		expect(normalizeEvent(chatCru({ section: "kv-footer", label: "vazia" }))).toMatchObject({
+			type: "chat_open",
+			section: "kv-footer",
+			label: "vazia",
+			device: "mobile",
+		});
+	});
+
+	it("guarda a conversa quando ela existe, e segue sem ela quando não existe", () => {
+		// Abrir o teatro NÃO cria conversa — é justamente o buraco que estes
+		// eventos existem pra tapar. Exigir `conversationId` aqui descartaria
+		// exatamente quem abriu e nunca escreveu.
+		const comConversa = normalizeEvent(
+			chatCru({ conversationId: "3f2504e0-4f89-41d3-9a0c-0305e82c3301" }),
+		);
+		expect(comConversa?.conversationId).toBe("3f2504e0-4f89-41d3-9a0c-0305e82c3301");
+
+		expect(normalizeEvent(chatCru())?.conversationId).toBeNull();
+	});
+
+	it("descarta id de conversa forjado sem perder o evento", () => {
+		// Endpoint público: qualquer um manda o que quiser nesse campo. Coluna é
+		// UUID no Postgres, e string torta quebraria o INSERT do lote inteiro.
+		const evento = normalizeEvent(chatCru({ conversationId: "'; drop table --" }));
+
+		expect(evento).not.toBeNull();
+		expect(evento?.conversationId).toBeNull();
+	});
+
+	it("mede a espera: o tempo vem no evento, não é inferido depois", () => {
+		// `chat_receive` responde quanto a pessoa esperou o agente. Inferir isso
+		// por diferença de `created_at` mediria o atraso do lote, não a espera.
+		expect(normalizeEvent(chatCru({ type: "chat_receive", duracaoMs: 4200 }))?.duracaoMs).toBe(
+			4200,
+		);
+		expect(normalizeEvent(chatCru({ type: "chat_typing", duracaoMs: 900 }))?.duracaoMs).toBe(900);
+	});
+
+	it("zera duração impossível, mas mantém o evento — o fato vale mais que o número", () => {
+		expect(normalizeEvent(chatCru({ type: "chat_close", duracaoMs: -5 }))?.duracaoMs).toBeNull();
+		expect(
+			normalizeEvent(chatCru({ type: "chat_close", duracaoMs: 99_999_999_999 }))?.duracaoMs,
+		).toBeNull();
+		expect(normalizeEvent(chatCru({ type: "chat_close" }))).not.toBeNull();
+	});
+
+	it("registra COMO a pessoa fechou — X, scrim ou Esc são desistências diferentes", () => {
+		expect(normalizeEvent(chatCru({ type: "chat_close", label: "scrim" }))).toMatchObject({
+			type: "chat_close",
+			label: "scrim",
+		});
+	});
+
+	it("aceita toque dentro do chat sem coordenada nenhuma", () => {
+		// O clique da landing exige `relX/relY/pageRelX`. Aqui não: o teatro é
+		// `fixed`, e `clientY + scrollY` desenharia o ponto numa seção da página
+		// que a pessoa nunca tocou. O que importa é O QUE foi tocado.
+		expect(
+			normalizeEvent(
+				chatCru({
+					type: "chat_card_click",
+					selector: "@data-heat-id=card-simular",
+					label: "Simular ITAÚ",
+				}),
+			),
+		).toMatchObject({
+			type: "chat_card_click",
+			selector: "@data-heat-id=card-simular",
+			label: "Simular ITAÚ",
+			relX: null,
+			pageRelX: null,
+		});
 	});
 });
 

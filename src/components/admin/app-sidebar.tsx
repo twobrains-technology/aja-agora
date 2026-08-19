@@ -8,6 +8,7 @@ import {
 	ChartPieIcon,
 	FlameIcon,
 	FlaskConicalIcon,
+	FootprintsIcon,
 	HeadsetIcon,
 	KanbanIcon,
 	MessageSquareTextIcon,
@@ -54,6 +55,7 @@ export function AppSidebar({ role = "viewer" }: { role?: Role }) {
 		{ title: "Agora", href: "/admin", icon: ActivityIcon },
 		{ title: "Performance", href: "/admin/performance", icon: ChartPieIcon },
 		{ title: "Mapa de calor", href: "/admin/mapa-de-calor", icon: FlameIcon },
+		{ title: "Percurso do lead", href: "/admin/percurso", icon: FootprintsIcon },
 	]);
 	const applicationItems = permitido([
 		{ title: "Pipeline", href: "/admin/pipeline", icon: KanbanIcon },

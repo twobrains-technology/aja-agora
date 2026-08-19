@@ -101,7 +101,11 @@ function PerformanceContent() {
 				<BlocoSkeleton altura={140} />
 			)}
 
-			{pronto ? <FunilMidiaChart etapas={midia.funil} /> : <BlocoSkeleton altura={320} />}
+			{pronto ? (
+				<FunilMidiaChart etapas={midia.funil} de={from} ate={to} />
+			) : (
+				<BlocoSkeleton altura={320} />
+			)}
 
 			{pronto ? <SerieAquisicaoChart data={midia.serie} /> : <BlocoSkeleton />}
 

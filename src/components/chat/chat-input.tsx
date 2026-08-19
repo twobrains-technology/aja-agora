@@ -4,6 +4,7 @@ import { Send } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useChatContext } from "@/lib/chat/provider";
+import { chatDigitou } from "@/lib/heatmap/chat";
 import { cn } from "@/lib/utils";
 
 interface ChatInputProps {
@@ -96,6 +97,10 @@ export function ChatInput({ isStreaming, variant = "default" }: ChatInputProps) 
 					ref={textareaRef}
 					value={value}
 					onChange={(e) => {
+						// Primeira tecla da sessão = a intenção de falar. Só aqui, e não no
+						// `onFocus`: o campo se auto-foca no mount e a cada fim de streaming
+						// (effect acima), então foco mediria o nosso próprio código.
+						chatDigitou();
 						setValue(e.target.value);
 						handleInput();
 					}}
