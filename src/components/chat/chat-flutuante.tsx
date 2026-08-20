@@ -1,13 +1,28 @@
 "use client";
 
-import { MessageCircleMore } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { useTheater } from "@/components/chat/theater/theater-context";
+import { WhatsappGlyph } from "@/components/icons/whatsapp-glyph";
+import { WHATSAPP_OFICIAL_DIGITOS } from "@/lib/bevi/closing-presentation";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 
 /** Quanto a página precisa ficar quieta para o rótulo voltar. */
 const PARADA_MS = 500;
+
+/** A fala que já vai escrita para o cliente só apertar enviar. Sem ela, quem
+ *  chega no WhatsApp encara uma conversa vazia e trava; e do outro lado é o
+ *  MESMO agente, que começa a conversa sabendo de onde a pessoa veio. */
+const PRIMEIRA_FALA = "Oi! Quero comparar consórcios.";
+
+/**
+ * `wa.me` é o link universal da Meta e é o que resolve o pedido do celular:
+ * no telefone ele abre o APP nativo do WhatsApp direto (o `intent` de Android e
+ * o universal link de iOS ficam por conta do próprio sistema), e no desktop cai
+ * no WhatsApp Web. Um esquema `whatsapp://` faria o app abrir no celular e dar
+ * página morta em qualquer computador.
+ */
+const LINK_WHATSAPP = `https://wa.me/${WHATSAPP_OFICIAL_DIGITOS}?text=${encodeURIComponent(PRIMEIRA_FALA)}`;
 
 /**
  * `true` enquanto a página está rolando; volta a `false` quando ela sossega.
@@ -47,8 +62,8 @@ function useRolando(ativo: boolean): boolean {
 }
 
 /**
- * Botão flutuante do chat — fica parado no canto inferior direito da TELA e não
- * acompanha o conteúdo, em qualquer ponto da rolagem (pedido do cliente,
+ * Botão flutuante do WhatsApp — fica parado no canto inferior direito da TELA e
+ * não acompanha o conteúdo, em qualquer ponto da rolagem (pedido do cliente,
  * 2026-08-20).
  *
  * O problema que resolve: no celular, todo caminho para a conversa estava no
@@ -56,22 +71,23 @@ function useRolando(ativo: boolean): boolean {
  * ficou interessado o bastante para descer — tinha que voltar ao hero para
  * falar com a Aja.
  *
+ * **Leva para o WhatsApp, e não para o chat da própria página** (decisão do
+ * Kairo, 20/08/2026, na segunda rodada do dia). Os dois falam com o mesmo
+ * agente, mas a conversa que continua no telefone da pessoa sobrevive ao fechar
+ * da aba — e é lá que o atendente humano assume no fim do funil. O chat web
+ * continua a um toque no hero e no fecho da página.
+ *
  * **O rótulo recolhe enquanto a página rola e volta quando ela para.** Um
  * retângulo escuro parado por cima do conteúdo em movimento é o que faz widget
  * de chat parecer anúncio; recolhido, sobra o círculo, que ocupa pouco e
  * continua dizendo o que é. A AÇÃO nunca some junto: o botão segue clicável o
  * tempo todo, inclusive no meio da rolagem — some o rótulo, não o alvo.
  *
- * Vale nas duas larguras. Nasceu só no mobile e perdeu o `md:hidden` quando o
- * desktop foi alinhado ao mesmo desenho: o hero passou a ter UM CTA, então lá
- * também existe página demais entre o topo e a próxima chance de conversar.
- *
- * Consome `useTheater()` direto em vez de receber `onOpenChat` por prop: ele é
- * montado ao lado do `<ChatTheater/>`, fora da árvore das seções, e passar a
- * função por seis páginas só para chegar aqui seria fiação sem ganho.
+ * Continua consultando `useTheater()` por um motivo só: sumir enquanto o teatro
+ * está aberto.
  */
 export function ChatFlutuante() {
-	const { isOpen, openTheater } = useTheater();
+	const { isOpen } = useTheater();
 	const reduzido = useReducedMotion();
 
 	// Com `prefers-reduced-motion` o rótulo fica sempre aberto: recolher e abrir
@@ -80,30 +96,34 @@ export function ChatFlutuante() {
 	const recolhido = useRolando(!isOpen && !reduzido);
 
 	// Some com o teatro aberto. O `z-40` já o deixa por baixo do overlay (`z-[90]`
-	// em chat-theater.tsx), mas um botão vivo atrás do scrim é alvo de toque
-	// fantasma — e o morph de entrada sai deste elemento, que não pode estar
-	// desaparecendo por baixo ao mesmo tempo.
+	// em chat-theater.tsx), mas um alvo vivo atrás do scrim é toque fantasma.
 	if (isOpen) return null;
 
 	return (
-		<button
-			type="button"
-			onClick={(e) => openTheater("", e.currentTarget)}
-			aria-label="Fale com a gente"
+		<a
+			href={LINK_WHATSAPP}
+			target="_blank"
+			// `noopener`: sem ele a aba do WhatsApp recebe `window.opener` e pode
+			// mexer nesta página.
+			rel="noopener noreferrer"
+			aria-label="Fale no WhatsApp"
 			// `data-heat-id` dá identidade estável a ele no mapa de calor: o botão
 			// vive fora de qualquer `[data-heat]`, então o caminho estrutural não
 			// diria nada (ver ATRIBUTOS_ESTAVEIS em src/lib/heatmap/selector.ts).
-			data-heat-id="chat-flutuante"
+			// Nome novo porque a AÇÃO mudou: somar o clique de "abre o chat daqui"
+			// com o de "sai para o WhatsApp" na mesma série compararia coisas
+			// diferentes.
+			data-heat-id="whatsapp-flutuante"
 			data-recolhido={recolhido ? "" : undefined}
 			// `env(safe-area-inset-bottom)`: sem isso o botão fica embaixo da barra
 			// de endereço do Safari no iPhone, que é exatamente aquele canto.
 			style={{ bottom: "calc(1rem + env(safe-area-inset-bottom))" }}
 			className="fixed right-4 z-40 flex items-center md:right-6"
 		>
-			{/* `aria-hidden` no rótulo porque o nome acessível já vem do `aria-label`
-			    do botão. Sem isso o leitor de tela anunciaria a frase duas vezes — e,
-			    pior, o nome do botão MUDARIA ao rolar. Para quem lê a tela, este
-			    botão se chama a mesma coisa o tempo todo.
+			{/* `aria-hidden` no rótulo porque o nome acessível já vem do `aria-label`.
+			    Sem isso o leitor de tela anunciaria a frase duas vezes — e, pior, o
+			    nome do botão MUDARIA ao rolar. Para quem lê a tela, este botão se
+			    chama a mesma coisa o tempo todo.
 
 			    Recolhe por `max-w` + `opacity`, e não por `display`: `display` não
 			    anima, então o corte seria instantâneo — o oposto do pedido.
@@ -117,17 +137,15 @@ export function ChatFlutuante() {
 						: "mr-2 max-w-[200px] translate-x-0 px-3.5 opacity-100"
 				}`}
 			>
-				Fale com a gente
+				Fale no WhatsApp
 			</span>
-			{/* AZUL DA MARCA, e não o coral (decisão do Kairo, 20/08/2026): `--aja-blue`
-			    #036eff, o mesmo token de `globals.css`. O coral é a cor dos CTAs de
-			    conversão da página (KvCtaButton); este botão acompanha a rolagem por
-			    cima de todas as seções, e repetir o coral fazia ele ler como "mais um
-			    CTA" em vez de atalho permanente para a conversa. A sombra segue a cor
-			    do botão, como era com o coral. */}
-			<span className="flex size-14 shrink-0 items-center justify-center rounded-full bg-[#036EFF] text-white shadow-[0_8px_24px_-4px_#036EFF80]">
-				<MessageCircleMore className="size-6" strokeWidth={2} aria-hidden="true" />
+			{/* VERDE DA MARCA DO WHATSAPP (#25D366), o mesmo já usado no card de
+			    handoff e no opt-in. A cor aqui não é enfeite: é o que faz o círculo
+			    ser lido como "isto abre o WhatsApp" antes de qualquer texto. A sombra
+			    segue a cor do botão. */}
+			<span className="flex size-14 shrink-0 items-center justify-center rounded-full bg-[#25D366] text-white shadow-[0_8px_24px_-4px_#25D36680]">
+				<WhatsappGlyph className="size-7" />
 			</span>
-		</button>
+		</a>
 	);
 }

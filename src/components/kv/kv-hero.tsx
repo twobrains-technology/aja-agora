@@ -18,9 +18,8 @@ const SEARCH_CHIPS = [
 	{
 		icon: HomeIcon,
 		label: "Imóvel",
-		// `apoio` só aparece no trio; o chip dentro do card mostra apenas o rótulo.
-		// Uma lista só para os dois porque é a MESMA categoria: duas listas
-		// divergiriam na primeira vez que alguém trocasse uma frase-semente.
+		// Uma lista só, e um lugar só na tela desde 20/08: o trio que ficava fora
+		// do card oferecia esta mesma escolha uma segunda vez.
 		apoio: "Casa, apê ou terreno",
 		fill: "Quero comprar um imóvel.",
 	},
@@ -55,10 +54,13 @@ interface KvHeroProps {
 //
 //   • sem pílula — a frase virou assinatura de marca no rodapé
 //     (<KvIndependente/>), onde não compete com nada;
-//   • o problema abre a seção, em texto puro, acima da manchete;
+//   • a manchete abre a seção — o parágrafo do problema que estava acima dela
+//     saiu na segunda rodada do dia, por empurrar a manchete para fora da
+//     primeira dobra no celular;
 //   • a promessa fecha em uma linha, e os três caminhos viram o TRIO, visual e
-//     clicável;
-//   • o card se chama "Fale com a Aja" e diz o que fazer com os chips;
+//     clicável — que na segunda rodada do dia entrou PARA DENTRO do card, no
+//     lugar das pílulas: eram a mesma escolha oferecida duas vezes;
+//   • o card se chama "Fale com a Aja" e diz o que fazer com o trio;
 //   • o campo digita sozinho, em vez de placeholder parado;
 //   • um CTA dentro do card ("Quero minha simulação") e UM abaixo dele.
 //
@@ -91,13 +93,13 @@ export function KvHero({ onOpenChat }: KvHeroProps) {
 			<KvContainer className="grid items-center gap-12 lg:grid-cols-[560px_1fr] lg:gap-[80px]">
 				{/* Coluna de texto */}
 				<div className="max-w-[560px]">
-					{/* O problema vem antes da promessa, e em texto puro — o que a pílula
-					    tinha de errado não era a frase, era parecer um botão. */}
-					<p className="max-w-[507px] text-[15px] leading-[1.4] text-[#2D2D2D] md:text-[18px] md:leading-[1.45]">
-						Comparar tudo isso sozinho leva tempo e aumenta a chance de uma escolha ruim.
-					</p>
-
-					<h1 className="mt-4 text-[40px] font-normal leading-[1.08] tracking-[-0.01em] text-[#021628] md:mt-5 md:text-[56px] md:leading-[62px]">
+					{/* A manchete abre a seção. O parágrafo do problema ("Comparar tudo
+					    isso sozinho leva tempo…") saiu daqui em 20/08 (decisão do Kairo):
+					    empurrava a manchete para baixo da dobra no celular, e quem chega
+					    já sabe que comparar sozinho é chato — o que ele não sabe é que
+					    existe um lugar onde isso já está comparado, que é o que a
+					    manchete diz. */}
+					<h1 className="text-[40px] font-normal leading-[1.08] tracking-[-0.01em] text-[#021628] md:text-[56px] md:leading-[62px]">
 						<Em>Compare</Em> consórcios
 						<br />
 						entre diversas
@@ -111,51 +113,23 @@ export function KvHero({ onOpenChat }: KvHeroProps) {
 						A Aja reúne essas informações em um único lugar para <Em>facilitar sua decisão.</Em>
 					</p>
 
-					{/* Trio Imóvel/Carro/Moto — o resto do parágrafo do comp virou isto.
-					    São botões, e não enfeite: é o bloco mais visível da coluna, e
-					    mandar o cliente pro chat com a categoria já escolhida é o que ele
-					    existe pra fazer.
-
-					    O `aria-label` NÃO pode ser só "Carro": os chips dentro do card já
-					    têm esse nome, e dois botões com o mesmo nome acessível deixam a
-					    página ambígua pra leitor de tela (e pro `getByRole` dos testes). */}
-					<ul className="mt-6 grid max-w-[514px] grid-cols-3 gap-3 md:mt-7 md:gap-4">
-						{SEARCH_CHIPS.map((chip) => (
-							<li key={chip.label}>
-								<button
-									type="button"
-									aria-label={`Consórcio de ${chip.label.toLowerCase()}`}
-									onClick={(e) => onOpenChat(chip.fill, e.currentTarget, "chip")}
-									className="flex w-full flex-col items-center gap-2 rounded-[12px] border border-[#021628]/10 bg-white/60 px-2 py-3 text-center transition-colors hover:border-[#F2404F]/30 hover:bg-white md:gap-2.5 md:py-4"
-								>
-									<span className="flex size-11 items-center justify-center rounded-full bg-[#FFE0E3] md:size-12">
-										<chip.icon className="size-5 text-[#F2404F] md:size-6" strokeWidth={1.75} />
-									</span>
-									<span className="text-[14px] font-semibold leading-none text-[#021628] md:text-[15px]">
-										{chip.label}
-									</span>
-									<span className="text-[11px] leading-[1.25] text-[#6B6B66] md:text-[12px]">
-										{chip.apoio}
-									</span>
-								</button>
-							</li>
-						))}
-					</ul>
-
-					{/* Search card */}
+					{/* Search card — o único bloco de escolha da coluna. O trio que ficava
+					    aqui fora saiu em 20/08 (decisão do Kairo): ele e as pílulas de
+					    dentro do card ofereciam a MESMA escolha duas vezes, uma logo
+					    embaixo da outra. Sobrou uma, no lugar onde a ação acontece. */}
 					<form
 						ref={formRef}
 						onSubmit={submit}
-						className={`mt-6 max-w-[514px] rounded-[12px] bg-white px-6 pb-4 pt-3 ${CARD_SHADOW} md:mt-7`}
+						className={`mt-5 max-w-[514px] rounded-[16px] bg-white px-5 pb-5 pt-4 ${CARD_SHADOW} sm:px-6 md:mt-7`}
 					>
 						<div className="flex items-start gap-2.5 pt-1">
-							<span className="flex size-[31px] shrink-0 items-center justify-center rounded-full bg-[#021628]">
-								<AjaMark className="w-[18px] text-white" />
+							<span className="flex size-[36px] shrink-0 items-center justify-center rounded-full bg-[#021628]">
+								<AjaMark className="w-[21px] text-white" />
 							</span>
 							{/* A chamada que instrui. "Consultor independente" dizia o que a Aja
 							    é; isto diz o que fazer com os chips logo abaixo. */}
 							<span className="flex flex-col">
-								<span className="text-[18px] leading-tight text-[#000]">Fale com a Aja</span>
+								<span className="text-[20px] leading-tight text-[#000]">Fale com a Aja</span>
 								<span className="mt-0.5 text-[13px] leading-[1.3] text-[#6B6B66]">
 									Selecione o tipo de consórcio para comparar
 								</span>
@@ -169,24 +143,40 @@ export function KvHero({ onOpenChat }: KvHeroProps) {
 							onBlur={() => setFocado(false)}
 							placeholder={placeholder}
 							aria-label="O que você está buscando?"
-							className="mt-3 w-full bg-transparent text-[18px] font-light text-[#021628] outline-none placeholder:text-[#6B6B66]"
+							className="mt-4 min-h-[44px] w-full bg-transparent text-[19px] font-light leading-[1.35] text-[#021628] outline-none placeholder:text-[#6B6B66]"
 						/>
-						<div className="mt-4 flex flex-wrap items-center gap-2 gap-y-2 sm:flex-nowrap sm:gap-3">
+						{/* O seletor de categoria, no tamanho de card — era a pílula de 96x27
+						    do comp, e passou a ser este trio quando o de fora saiu. Alvo de
+						    dedo de verdade, e o `apoio` responde a dúvida que a pílula
+						    deixava aberta ("moto de trabalho conta?").
+
+						    `aria-label` com o rótulo puro: sem ele o nome acessível seria a
+						    frase inteira do cartão ("Carro Zero km ou seminovo"), e quem
+						    navega por voz teria que dizer tudo pra tocar num botão que se
+						    chama Carro.
+
+						    Regra que não mudou (FIX-75): o que a pessoa DIGITOU vence o
+						    canned do chip. */}
+						<div className="mt-4 grid grid-cols-3 gap-2.5 sm:gap-3">
 							{SEARCH_CHIPS.map((chip) => (
 								<button
 									key={chip.label}
 									type="button"
+									aria-label={chip.label}
 									onClick={(e) =>
 										value.trim()
 											? onOpenChat(value.trim(), e.currentTarget, "digitada")
 											: onOpenChat(chip.fill, e.currentTarget, "chip")
 									}
-									// Pílula com contorno navy, e não retângulo chapado: no comp os três
-									// chips são `Button` 96x27 com stroke #052440 e raio total.
-									className="inline-flex w-[96px] items-center justify-center gap-1.5 rounded-full border border-[#052440] bg-[#FBFBF9] px-3.5 py-1.5 text-[10px] font-semibold text-[#021628] transition-colors hover:bg-[#F2404F]/10"
+									className="flex h-full w-full flex-col items-center justify-start gap-2 rounded-[12px] border border-[#021628]/10 bg-[#FBFBF9] px-2 py-4 text-center transition-colors hover:border-[#F2404F]/30 hover:bg-white"
 								>
-									<chip.icon className="size-3.5" strokeWidth={1.5} />
-									{chip.label}
+									<span className="flex size-12 items-center justify-center rounded-full bg-[#FFE0E3]">
+										<chip.icon className="size-6 text-[#F2404F]" strokeWidth={1.75} />
+									</span>
+									<span className="text-[15px] font-semibold leading-none text-[#021628]">
+										{chip.label}
+									</span>
+									<span className="text-[11px] leading-[1.2] text-[#6B6B66]">{chip.apoio}</span>
 								</button>
 							))}
 						</div>
@@ -194,7 +184,7 @@ export function KvHero({ onOpenChat }: KvHeroProps) {
 						    acontecer ao ser tocado, e 37px é alvo pequeno pra dedo — este é
 						    o botão que fecha a ação principal da página. Mesmo molde do card
 						    das verticais (hero-vertical.tsx). */}
-						<KvCtaButton type="submit" className="mt-4 h-12 w-full text-[15px]">
+						<KvCtaButton type="submit" className="mt-4 h-[54px] w-full text-[16px]">
 							Quero minha simulação
 						</KvCtaButton>
 					</form>
