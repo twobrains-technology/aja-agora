@@ -28,7 +28,11 @@
 // mesma fala (FIX-414: "qualquer uma menos a Rodobens, quero fechar").
 
 import type { ChosenOffer } from "@/lib/agent/orchestrator/choose-offer";
-import { administradoraFoiRecusada } from "@/lib/agent/orchestrator/choose-offer";
+import {
+	administradoraFoiRecusada,
+	falaExcluiPorCaracteristica,
+	resolveEscolhaOfertada,
+} from "@/lib/agent/orchestrator/choose-offer";
 import { detectYesNoText } from "@/lib/agent/orchestrator/yes-no";
 import type { UserIntent } from "@/lib/agent/qualify-state";
 
@@ -57,13 +61,61 @@ export function escolhaPodeSerAncorada(args: {
 	groupId: string;
 	/** As cotas REALMENTE exibidas nesta conversa. */
 	exibidas: ChosenOffer[];
+	/**
+	 * O FATO DE SERVIDOR que abre a segunda porta: no turno anterior o servidor
+	 * ofereceu ESTAS cotas como escolha (atalhos coagidos a partir dos rótulos —
+	 * ver `coerceEscolhaNosAtalhos`). Ausente = nenhuma pergunta de escolha
+	 * pendente, e vale só o aceite explícito de sempre.
+	 */
+	escolhaOfertada?: { groupIds: string[] };
 }): ResultadoDeAncoragem {
-	const { texto, intent, groupId, exibidas } = args;
+	const { texto, intent, groupId, exibidas, escolhaOfertada } = args;
 
 	const cota = exibidas.find((o) => o.groupId === groupId);
 	if (!cota) return { ancora: false, veto: "cota-nao-exibida" };
 
-	if (detectYesNoText(texto, intent ?? "neutral") !== true) {
+	// PORTA 2 — ELE RESPONDEU À PERGUNTA QUE O AGENTE FEZ.
+	//
+	// A parede do FIX-406 ("texto livre não assina") engoliu a porta legítima: o
+	// agente perguntava "qual das duas você prefere?" com dois atalhos, a cliente
+	// respondia "a de prazo mais curto" — e o sistema tratava como se ela não
+	// tivesse escolhido nada, porque não era "sim" nem "não". Cliente cooperativa,
+	// usando só o que o produto lhe ofereceu, sem caminho até o contrato.
+	//
+	// Isto NÃO reabre o texto livre. São três exigências simultâneas, todas
+	// verificáveis, e a primeira é estado do servidor:
+	//   1. o SERVIDOR ofereceu uma escolha entre cotas específicas no turno
+	//      anterior (`escolhaOfertada`, coagida por ele mesmo — não é o modelo
+	//      que declara isso);
+	//   2. a fala resolve DETERMINISTICAMENTE para UMA daquelas cotas
+	//      (`resolveEscolhaOfertada`, o mesmo resolvedor por marca/característica
+	//      que o resto do sistema usa, sobre um conjunto FECHADO de 2-3 cotas);
+	//   3. a cota resolvida é a MESMA que o modelo indicou — se ele apontar outra,
+	//      quem manda é a fala do cliente, e nada ancora.
+	//
+	// Pergunta em aberto e recusa seguem barradas logo abaixo, pelos mesmos
+	// predicados de sempre.
+	const perguntaAberta =
+		intent === "asking_question" ||
+		intent === "expressing_doubt" ||
+		intent === "confused" ||
+		intent === "off_topic" ||
+		intent === "wants_more_options";
+	const respondeuAEscolhaOfertada =
+		!perguntaAberta &&
+		intent !== "declines" &&
+		// "qualquer uma MENOS a de prazo mais curto" DESCREVE a cota para
+		// descartá-la. `administradoraFoiRecusada` não pega quando as duas cotas
+		// são da mesma administradora — que é o caso da pergunta de escolha típica.
+		!falaExcluiPorCaracteristica(texto) &&
+		(escolhaOfertada?.groupIds.length ?? 0) > 0 &&
+		escolhaOfertada?.groupIds.includes(groupId) === true &&
+		resolveEscolhaOfertada(
+			exibidas.filter((o) => escolhaOfertada.groupIds.includes(o.groupId)),
+			texto,
+		)?.groupId === groupId;
+
+	if (!respondeuAEscolhaOfertada && detectYesNoText(texto, intent ?? "neutral") !== true) {
 		return { ancora: false, veto: "sem-aceite-explicito" };
 	}
 

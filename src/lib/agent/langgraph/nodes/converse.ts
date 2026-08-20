@@ -24,6 +24,7 @@ import {
 } from "@/lib/agent/langgraph/tool-falha";
 import type { ChosenOffer } from "@/lib/agent/orchestrator/choose-offer";
 import {
+	coerceEscolhaNosAtalhos,
 	listShownOffers,
 	listShownOffersForConversation,
 } from "@/lib/agent/orchestrator/choose-offer";
@@ -55,7 +56,12 @@ import { pausaDeConversa, RITMO } from "../ritmo";
 import type { AgentGraphStateType, FunnelState } from "../state";
 import { buildLangGraphTools } from "../tool-adapter";
 import { WHAT_IF_TOOL_NAMES } from "../toolset";
-import { blocoDeBemAbandonado, blocoDeBuscaVazia, blocoDoQueEstaNaTela } from "./contexto-da-tela";
+import {
+	blocoDeBemAbandonado,
+	blocoDeBuscaVazia,
+	blocoDeOpcoesNaTela,
+	blocoDoQueEstaNaTela,
+} from "./contexto-da-tela";
 import { artifactAllowed, type GuardContext } from "./guarded-artifact";
 
 const MAX_TOOL_LOOP_ITERATIONS = 4;
@@ -284,6 +290,16 @@ export function createConverseNode(model: BaseChatModel) {
 		const handoffRef: { pedido: { reason: string } | null } = { pedido: null };
 		/** Cota efetivamente apresentada neste turno — vira a âncora do estado. */
 		const ancoraRef: { nova: FunnelState["recommendedOffer"] | null } = { nova: null };
+		/** As cotas que os ATALHOS deste turno oferecem como escolha (coagidas
+		 * server-side a partir dos rótulos — ver `coerceEscolhaNosAtalhos`). É o
+		 * fato que autoriza ancorar a resposta do cliente no turno seguinte: ele
+		 * respondeu à pergunta que o próprio agente fez, entre cotas que o
+		 * SERVIDOR nomeou. */
+		const escolhaOfertadaRef: { groupIds: string[] | null } = { groupIds: null };
+		/** Uma simulação chegou à tela neste turno. Marca o cliente como "dentro do
+		 * simulador" — daí em diante o gate `timeframe` para de barrar o fechamento
+		 * (o prazo desejado é insumo do simulador, e ele já está nele). */
+		const simulouRef = { apresentou: false };
 		/** Faixa de busca reposicionada por pedido de parcela menor. */
 		const novaFaixaRef: {
 			faixa: { creditMax: number; creditMin: number; parcelaAlvo: number } | null;
@@ -432,24 +448,11 @@ export function createConverseNode(model: BaseChatModel) {
 						ofertasNaTela: ofertasExibidas,
 					})
 				: null;
-		const blocoOpcoesNaTela =
-			ofertasExibidas.length > 1
-				? `OPÇÕES QUE ELE JÁ VIU nesta conversa (você TEM esta lista — nunca peça pra ele repetir ` +
-					`valor, administradora ou prazo de algo que já está na tela):\n` +
-					ofertasExibidas
-						.slice(0, 8)
-						.map(
-							(o) =>
-								`- [${o.groupId ?? "sem-id"}] ${o.administradora ?? "?"}: ` +
-								`carta ${o.creditValue ? brl(o.creditValue) : "?"}, ` +
-								`parcela ${o.monthlyPayment ? brl(o.monthlyPayment) : "?"}` +
-								`${o.termMonths ? ` em ${o.termMonths} meses` : ""}`,
-						)
-						.join("\n") +
-					`\nQuando ele descrever uma delas por característica ("a de menor parcela", "a de prazo ` +
-					`mais curto", "a do Itaú"), RESOLVA você mesmo pela lista e siga — é PROIBIDO devolver ` +
-					`a identificação pra ele.`
-				: null;
+		// A lista do que ele já viu, COM contemplados por mês — o dado que decide
+		// compra de consórcio e que ficava só no objeto do servidor (D4). O corte
+		// de oito itens também saiu daqui: escondia a 11ª cota e o agente contou
+		// errado o que estava na tela. Ver `blocoDeOpcoesNaTela`.
+		const blocoOpcoesNaTela = blocoDeOpcoesNaTela(ofertasExibidas);
 
 		// A instrução da TOOL fica separada da lista de propósito: ela só pode
 		// entrar na janela quando a tool existe no bind.
@@ -1139,6 +1142,11 @@ export function createConverseNode(model: BaseChatModel) {
 								intent: state.intent,
 								groupId: gid,
 								exibidas,
+								// O fato de servidor que abre a segunda porta: os atalhos do
+								// turno anterior ofereceram estas cotas como escolha (D6).
+								...(state.funnel.escolhaOfertada
+									? { escolhaOfertada: state.funnel.escolhaOfertada }
+									: {}),
 							});
 							if (veredito.ancora) {
 								escolhaRef.cota = veredito.cota;
@@ -1210,9 +1218,58 @@ export function createConverseNode(model: BaseChatModel) {
 							// remontar a lista ("quero ver mais opções"). Report de 05/08,
 							// reproduzido pelo gate em 13/08 assim que os cenários pararam
 							// de ficar SKIPPED. Invariante — vive aqui, não no prompt.
-							const payloadFinal = payloadSemOfertasRepetidas(
+							let payloadFinal = payloadSemOfertasRepetidas(
 								coagirContraEscolha(artifactType, call.args, state.funnel.escolha),
 							);
+							// O ATALHO QUE ESCOLHE COTA PASSA A CARREGAR A COTA (D6).
+							//
+							// "Qual delas você prefere? [A de menor parcela] [A de prazo mais
+							// curto]" era a pergunta certa com o botão errado: o atalho manda
+							// TEXTO, e o texto não ancorava escolha nenhuma (FIX-406). A
+							// cliente respondia com precisão e o funil ficava três portões
+							// atrás.
+							//
+							// O MODELO declara de quais cotas está falando (ele acabou de
+							// citá-las) e o SERVIDOR confere: o id existe entre as exibidas? o
+							// rótulo do botão aponta para a cota declarada? Só então o clique
+							// vira `choose_offer` estruturado, igualzinho ao do card — e o
+							// estado guarda quais cotas foram ofertadas, para o caso de ela
+							// responder digitando. Ver `coerceEscolhaNosAtalhos`.
+							if (artifactType === "quick_reply") {
+								const p = payloadFinal as {
+									options?: Array<{ label?: unknown; groupId?: unknown }>;
+								};
+								const declaradas = (p.options ?? []).map((o) => ({
+									label: typeof o?.label === "string" ? o.label : "",
+									...(typeof o?.groupId === "string" ? { groupId: o.groupId } : {}),
+								}));
+								const conferidas = coerceEscolhaNosAtalhos(declaradas, ofertasExibidas);
+								const comCota = conferidas.filter((o) => o.groupId);
+								if (comCota.length >= 2) {
+									payloadFinal = {
+										...(payloadFinal as Record<string, unknown>),
+										options: (p.options ?? []).map((o, i) => ({
+											...(o as Record<string, unknown>),
+											// O id que vale é o CONFERIDO pelo servidor — nunca o que
+											// veio na tool sem checagem.
+											...(conferidas[i]?.groupId
+												? { groupId: conferidas[i].groupId }
+												: { groupId: undefined }),
+										})),
+									};
+									escolhaOfertadaRef.groupIds = comCota.map((o) => o.groupId as string);
+								} else {
+									// Nenhuma escolha reconhecida: o atalho volta a ser texto puro,
+									// sem id nenhum viajando para o cliente.
+									payloadFinal = {
+										...(payloadFinal as Record<string, unknown>),
+										options: (p.options ?? []).map((o) => {
+											const { groupId: _descartado, ...resto } = o as Record<string, unknown>;
+											return resto;
+										}),
+									};
+								}
+							}
 							// O CARD SAI AGORA, COLADO NA FALA QUE O ANUNCIOU.
 							//
 							// Visto ao vivo (Kairo, 2026-07-30): o agente apresentava a carta do
@@ -1261,6 +1318,7 @@ export function createConverseNode(model: BaseChatModel) {
 							const credito = num(p.creditValue);
 							const parcela = num(p.monthlyPayment);
 							const prazo = num(p.termMonths);
+							if (artifactType === "simulation_result") simulouRef.apresentou = true;
 							if (
 								(artifactType === "recommendation_card" || artifactType === "simulation_result") &&
 								credito &&
@@ -1542,10 +1600,23 @@ export function createConverseNode(model: BaseChatModel) {
 			handoffRef.pedido ||
 			ancoraRef.nova ||
 			novaFaixaRef.faixa ||
-			escolhaRef.cota
+			escolhaRef.cota ||
+			escolhaOfertadaRef.groupIds ||
+			simulouRef.apresentou ||
+			(state.isUserTurn && state.funnel.escolhaOfertada)
 				? {
 						funnel: {
 							...state.funnel,
+							...(simulouRef.apresentou ? { simulacaoApresentada: true } : {}),
+							// A pergunta de escolha vale para o turno SEGUINTE, e só para ele:
+							// o turno do cliente a consome, respondida ou não. Sem consumir,
+							// um "a de menor parcela" solto três turnos depois ancoraria uma
+							// escolha que ninguém tinha pedido agora.
+							...(escolhaOfertadaRef.groupIds
+								? { escolhaOfertada: { groupIds: escolhaOfertadaRef.groupIds } }
+								: state.isUserTurn
+									? { escolhaOfertada: undefined }
+									: {}),
 							...(novaFaixaRef.faixa
 								? {
 										// NÃO zere `discoveredCreditTarget` aqui. Ele é o snapshot da

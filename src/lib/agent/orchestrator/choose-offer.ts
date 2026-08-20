@@ -620,7 +620,7 @@ export function resolveOfertaPorCriterio(offers: ChosenOffer[], text: string): C
 	 * Devolve o valor junto com a cota pra o comparador nunca precisar reafirmar
 	 * que o campo existe — quem filtrou já provou. */
 	const extremo = (
-		campo: "monthlyPayment" | "termMonths" | "creditValue",
+		campo: "monthlyPayment" | "termMonths" | "creditValue" | "availableSlots",
 		lado: "menor" | "maior",
 	): ChosenOffer | null => {
 		const candidatas = offers.flatMap((o) => {
@@ -628,13 +628,25 @@ export function resolveOfertaPorCriterio(offers: ChosenOffer[], text: string): C
 			return typeof v === "number" ? [{ oferta: o, valor: v }] : [];
 		});
 		if (candidatas.length === 0) return null;
-		return candidatas.reduce((a, b) =>
+		const alvo = candidatas.reduce((a, b) =>
 			lado === "menor" ? (b.valor < a.valor ? b : a) : b.valor > a.valor ? b : a,
-		).oferta;
+		);
+		// EMPATE NÃO É RESPOSTA. Duas cotas com a mesma parcela e um "a de menor
+		// parcela" não apontam uma delas — apontam as duas, e escolher a primeira
+		// do array é decidir no chute (Lei 3). Antes isto era silencioso; com a
+		// porta de escolha por característica aberta (PRD 19/08/2026, D6) o custo
+		// do chute passou a ser um contrato na cota errada.
+		if (candidatas.filter((c) => c.valor === alvo.valor).length > 1) return null;
+		return alvo.oferta;
 	};
 
+	// "menos" entra junto de "menor": "a de MENOS parcela" é a variante coloquial
+	// mais provável depois da canônica, e ficava sem resolver — a porta que o PRD
+	// abriu se fechando na segunda forma de dizer a mesma coisa. A exclusão
+	// ("qualquer uma MENOS a de…") é barrada antes, por adjacência, em
+	// `falaExcluiPorCaracteristica`.
 	const menorParcela =
-		/\b(menor|mais baixa|mais barata|mais em conta|mais leve)\b.{0,20}\bparcela|\bparcela\b.{0,20}\b(menor|mais baixa|mais barata|mais em conta|mais leve)\b/.test(
+		/\b(menor|menos|mais baixa|mais barata|mais em conta|mais leve)\b.{0,20}\bparcela|\bparcela\b.{0,20}\b(menor|menos|mais baixa|mais barata|mais em conta|mais leve)\b/.test(
 			t,
 		);
 	const maiorPrazo =
@@ -647,7 +659,22 @@ export function resolveOfertaPorCriterio(offers: ChosenOffer[], text: string): C
 		);
 	const maiorCarta =
 		/\b(maior|mais alta)\b.{0,20}\bcarta\b|\bcarta\b.{0,20}\b(maior|mais alta)\b/.test(t);
+	// CONTEMPLAÇÃO — o critério nº 1 de quem compra consórcio, e o único que o
+	// resolvedor não conhecia (achado da revisão de 19/08/2026). Desde o PRD
+	// "Destravar o agente" o produto INSTRUI o vendedor a comparar por
+	// contemplados/mês; o cliente que ecoa esse critério ("a que contempla mais
+	// rápido") precisa ser entendido, ou a porta que acabou de abrir se fecha
+	// justamente na resposta que o próprio agente induziu.
+	//
+	// A fonte é a CONTAGEM real (`availableSlots` = `monthlyAwardedQuotas`):
+	// mais contemplados por mês = mais chance por assembleia. Nunca "taxa".
+	const maisContempla =
+		/\bcontempl\w*\b.{0,24}\b(mais r[áa]pid\w+|antes|primeiro)\b/.test(t) ||
+		/\b(mais r[áa]pid\w+|antes|primeiro)\b.{0,24}\bcontempl\w*/.test(t) ||
+		/\b(mais|maior)\b.{0,20}\bcontemplad\w+\b/.test(t) ||
+		/\bcontemplad\w+\b.{0,20}\b(mais|maior)\b/.test(t);
 
+	if (maisContempla) return extremo("availableSlots", "maior");
 	if (menorParcela) return extremo("monthlyPayment", "menor");
 	if (maiorPrazo) return extremo("termMonths", "maior");
 	if (menorPrazo) return extremo("termMonths", "menor");
@@ -758,4 +785,128 @@ export function buildMentionedOfferDirective(offer: ChosenOffer): string {
 		`search_groups de novo pra achar esse grupo, NÃO invente nem adivinhe outro id/sentinela. ` +
 		`NUNCA negue que essa oferta existe: ela está na tabela/card que você mesmo apresentou.`
 	);
+}
+
+/**
+ * O cliente respondeu à pergunta de escolha que o SERVIDOR ofereceu — qual das
+ * cotas ofertadas ele apontou?
+ *
+ * Difere de `resolveAdministradoraMentionForConversation` em dois pontos que
+ * são a razão de existir: o conjunto é FECHADO (só as cotas que o servidor pôs
+ * como atalho no turno anterior, tipicamente duas ou três) e a ambiguidade
+ * NUNCA é resolvida no chute — duas cotas da mesma administradora e uma fala
+ * que só cita a marca devolvem `null`, porque ela não escolheu entre as duas.
+ *
+ * Característica primeiro: os atalhos que o produto oferece são justamente
+ * "a de menor parcela" / "a de prazo mais curto", e é assim que o cliente
+ * responde. A marca só decide quando ela é única no conjunto.
+ */
+/** A fala EXCLUI em vez de escolher ("qualquer uma menos a de prazo mais
+ * curto", "sem ser a de menor parcela", "tirando a do Itaú")?
+ *
+ * `administradoraFoiRecusada` cobre a exclusão por MARCA; este cobre a exclusão
+ * por CARACTERÍSTICA, que é como o cliente descarta quando as duas cotas são da
+ * mesma administradora — exatamente o caso da conversa da Rute. Mesma família
+ * sintática de `excluiMarca`, sem vocabulário novo: o gatilho tem que estar
+ * ANTES do que está sendo excluído.
+ *
+ * Conservador de propósito: na dúvida, não ancora. Perder um aceite custa uma
+ * pergunta repetida; ancorar o que ele descartou custa o contrato.
+ *
+ * A fronteira medida, para quem for mexer: falas que EXCLUEM e ESCOLHEM na mesma
+ * frase ("tirando as caras, a de menor parcela") caem no veto. É perda de recall
+ * conhecida e aceita — a assimetria está do lado certo. */
+export function falaExcluiPorCaracteristica(texto: string): boolean {
+	const t = normalizeAdministradora(texto ?? "");
+	// ADJACÊNCIA, como em `excluiMarca`. O gatilho solto na frase reintroduzia o
+	// erro que o FIX-412 pagou com "sem": "a de MENOS parcela" — a variante
+	// coloquial de "a de menor parcela" — virava recusa, e a porta que este PRD
+	// abriu se fechava na fala mais provável depois da canônica. A exclusão só
+	// conta quando incide sobre o QUE VEM DEPOIS: "menos A de prazo curto",
+	// "exceto A do Itaú", "sem ser A de menor parcela".
+	return /\b(?:MENOS|SEM SER|EXCETO|EXCECAO|TIRANDO|FORA|EXCLUINDO|NAO SEJA|NAO SER)\s+(?:A|O|AS|OS|ESSA|ESSE|ESTA|ESTE|UMA|UM|DA|DO|DE)\b/.test(
+		t,
+	);
+}
+
+export function resolveEscolhaOfertada(
+	ofertadas: ChosenOffer[],
+	texto: string,
+): ChosenOffer | null {
+	if (!texto?.trim() || ofertadas.length === 0) return null;
+	const porCriterio = resolveOfertaPorCriterio(ofertadas, texto);
+	if (porCriterio) return porCriterio;
+	const porMarca = resolveAdministradoraMention(ofertadas, texto);
+	if (!porMarca?.administradora) return null;
+	const marca = normalizeAdministradora(porMarca.administradora);
+	const mesmaMarca = ofertadas.filter(
+		(o) => o.administradora && normalizeAdministradora(o.administradora) === marca,
+	);
+	return mesmaMarca.length === 1 ? porMarca : null;
+}
+
+/**
+ * O ATALHO QUE ESCOLHE COTA PASSA A CARREGAR A COTA.
+ *
+ * `present_quick_reply` manda TEXTO por design (`quick-reply.tsx`), e é isso
+ * que mantinha a regra de ouro do FIX-406 de pé: cota, escolha e contrato só
+ * por ação estruturada. Só que o modelo usa esses atalhos justamente para a
+ * pergunta que mais decide a venda — "qual das duas você prefere?" — e aí o
+ * clique da cliente virava uma frase que o servidor recusava ancorar. Ela
+ * respondia com precisão, e nada acontecia (PRD 19/08/2026, D6).
+ *
+ * ## Quem sabe o quê
+ *
+ * O MODELO sabe de quais cotas ele está falando (ele acabou de citar "as duas
+ * do Itaú") e declara o `groupId` de cada opção. O SERVIDOR não confia nisso de
+ * graça, e faz duas conferências:
+ *
+ *  1. **existe?** — o id tem que estar entre as cotas REALMENTE exibidas nesta
+ *     conversa. Grupo inventado não vira botão (Lei 3);
+ *  2. **o rótulo bate?** — quando o texto do botão descreve a cota por
+ *     característica ("a de menor parcela"), o servidor resolve isso
+ *     DETERMINISTICAMENTE dentro do conjunto declarado. Se a descrição apontar
+ *     para outra cota do conjunto, o id daquela opção CAI: o cliente clica no
+ *     que está escrito, e escrito ≠ declarado é o caminho para fechar contrato
+ *     na cota errada.
+ *
+ * Sem `groupId` declarado, nada é adivinhado pelo rótulo — "a de menor parcela"
+ * resolvido contra a tela INTEIRA pode apontar uma cota que a pergunta nem
+ * mencionava. O atalho segue como texto puro, exatamente como sempre foi.
+ */
+export function coerceEscolhaNosAtalhos(
+	options: Array<{ label: string; groupId?: string }>,
+	exibidas: ChosenOffer[],
+): Array<{ label: string; groupId?: string }> {
+	const semCota = options.map((o) => ({ label: o.label }));
+	if (exibidas.length < 2) return semCota;
+
+	const declaradas = options
+		.map((o) => exibidas.find((e) => e.groupId === o.groupId))
+		.filter((c): c is ChosenOffer => Boolean(c));
+	// Escolha exige alternativa: uma cota só (ou nenhuma) não é uma pergunta de
+	// "qual delas".
+	if (new Set(declaradas.map((c) => c.groupId)).size < 2) return semCota;
+
+	const conferidas = options.map((o) => {
+		const declarada = exibidas.find((e) => e.groupId === o.groupId);
+		if (!declarada?.groupId) return { label: o.label };
+		const peloRotulo = resolveEscolhaOfertada(declaradas, o.label);
+		// FAIL-CLOSED: o servidor só assina o que ele mesmo consegue explicar.
+		//
+		// Enquanto o rótulo não-resolvível mantinha o id do modelo, "A que
+		// contempla mais rápido" apontando para a cota que contempla MENOS
+		// passava — o cliente clica no que está escrito e o contrato sai no que o
+		// modelo declarou. É a mesma classe do "botão do card vira mentira do
+		// servidor" que já custou uma venda (medido pela revisão de 19/08/2026).
+		//
+		// Não resolveu, ou resolveu para outra cota? O id cai e o atalho volta a
+		// ser texto puro. Custa um turno; o contrário custa um contrato.
+		if (!peloRotulo || peloRotulo.groupId !== declarada.groupId) return { label: o.label };
+		return { label: o.label, groupId: declarada.groupId };
+	});
+	const ids = conferidas.map((o) => o.groupId).filter(Boolean);
+	// Dois rótulos apontando a MESMA cota não é escolha entre alternativas.
+	if (new Set(ids).size < 2) return semCota;
+	return conferidas;
 }

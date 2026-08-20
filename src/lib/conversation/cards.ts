@@ -58,3 +58,35 @@ export async function registrarCardEnviado(args: {
 	});
 	return messageId;
 }
+
+/**
+ * O payload do ÚLTIMO `quick_reply` que o servidor emitiu nesta conversa.
+ *
+ * Existe para o WhatsApp poder tratar o tap do botão como CLIQUE: o `qr_${i}`
+ * carrega só o índice, e é aqui que se recupera qual cota aquele índice
+ * representa (`options[i].groupId`, já conferido pelo servidor na emissão —
+ * `coerceEscolhaNosAtalhos`). Sem isto, o tap depende do TÍTULO, que a API
+ * trunca em 20 caracteres e transforma a escolha do cliente numa frase que não
+ * ancora nada.
+ *
+ * `null` quando não há atalho emitido — o chamador cai no caminho de texto.
+ */
+export async function ultimoQuickReply(
+	conversationId: string,
+): Promise<{ options?: Array<{ label?: unknown; groupId?: unknown }> } | null> {
+	const { messages: messagesTable } = await import("@/db/schema");
+	const { and, desc, eq } = await import("drizzle-orm");
+	const [row] = await db
+		.select({ payload: artifactsTable.payload })
+		.from(artifactsTable)
+		.innerJoin(messagesTable, eq(artifactsTable.messageId, messagesTable.id))
+		.where(
+			and(eq(messagesTable.conversationId, conversationId), eq(artifactsTable.type, "quick_reply")),
+		)
+		.orderBy(desc(artifactsTable.createdAt))
+		.limit(1);
+	const payload = row?.payload;
+	return payload && typeof payload === "object" && !Array.isArray(payload)
+		? (payload as { options?: Array<{ label?: unknown; groupId?: unknown }> })
+		: null;
+}

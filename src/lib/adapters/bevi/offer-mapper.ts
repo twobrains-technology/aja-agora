@@ -180,7 +180,6 @@ export function beviOfferToGroupSummary(offer: BeviOffer): GroupSummary {
 		// (contagem). Ausente (retorno enxuto real) → 0; NUNCA derivado de
 		// taxaContemplacao (fração ≠ contagem). O runner coage o hero com este valor.
 		availableSlots: offer.monthlyAwardedQuotas ?? 0,
-		contemplationRate: offer.monthlyAwardedQuotas ?? 0,
 		// FIX-193: critério interno de ranking/dedup — leitura defensiva pros dois
 		// shapes (enxuto `grupo` × rico `group`). NUNCA sai pra UI (toModelGroupSummary
 		// os strippa; a coerção do card também os descarta).

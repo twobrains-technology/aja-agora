@@ -149,8 +149,14 @@ export type FunnelState = {
 	/** FIX-372: idempotência do card `scarcity`, separada de `decisionDispatched`
 	 * — ver `ConversationMetadata.scarcityDispatched`. */
 	scarcityDispatched?: boolean;
+	/** Uma simulação de cota já foi mostrada nesta conversa — ver
+	 * `ConversationMetadata.simulacaoApresentada`. */
+	simulacaoApresentada?: boolean;
 	/** A cota que o cliente escolheu — ver `ConversationMetadata.escolha`. */
 	escolha?: ConversationMetadata["escolha"];
+	/** As cotas que os ATALHOS do turno anterior ofereceram como escolha — ver
+	 * `ConversationMetadata.escolhaOfertada`. */
+	escolhaOfertada?: ConversationMetadata["escolhaOfertada"];
 	/** O agente pediu atendimento humano. Sem isto no slice, a promessa "já
 	 * encaminhei pra alguém te ajudar" não virava estado nenhum. */
 	handoffSuggested?: boolean;
@@ -230,7 +236,9 @@ export const FUNNEL_KEYS = {
 	decisionDispatched: true,
 	decisionAccepted: true,
 	scarcityDispatched: true,
+	simulacaoApresentada: true,
 	escolha: true,
+	escolhaOfertada: true,
 	handoffSuggested: true,
 	handoffReason: true,
 	contractFormDispatched: true,
@@ -292,7 +300,9 @@ export function funnelFromMeta(meta: ConversationMetadata): FunnelState {
 		decisionDispatched: meta.decisionDispatched ?? false,
 		decisionAccepted: meta.decisionAccepted,
 		scarcityDispatched: meta.scarcityDispatched,
+		simulacaoApresentada: meta.simulacaoApresentada,
 		escolha: meta.escolha,
+		escolhaOfertada: meta.escolhaOfertada,
 		contractOffer: meta.contractOffer,
 		handoffSuggested: meta.handoffSuggested,
 		handoffReason: meta.handoffReason,

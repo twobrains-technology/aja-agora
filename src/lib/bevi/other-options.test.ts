@@ -68,7 +68,6 @@ describe("FIX-28 — dedupe + exclusão precisa da recomendada", () => {
 			termMonths: 117,
 			totalParticipants: 400,
 			availableSlots: 5,
-			contemplationRate: 2,
 			...over,
 		};
 	}

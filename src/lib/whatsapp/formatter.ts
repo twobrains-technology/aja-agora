@@ -1,6 +1,7 @@
 import { gateQuestion, LANCE_EMBUTIDO_ASK } from "@/lib/agent/orchestrator/gate-questions";
 import { DECISION_PROMPT_OPTIONS, DECISION_PROMPT_QUESTION } from "@/lib/chat/types";
 import { isValidCpf, maskCpf } from "@/lib/conversation/identity";
+import { idDoAtalho, type PayloadDeAtalho } from "./quick-reply-tap";
 
 // FIX-337 (invariante I6, docs/jornada/decisoes-do-cliente.md): dado sensível
 // não pode trafegar em texto plano no WhatsApp. O modelo não tem nenhuma
@@ -135,6 +136,13 @@ export interface WhatsAppResponse {
 	interactive?: WhatsAppInteractive;
 }
 
+/** Cotas contempladas por mês, quando o dado REAL veio (nunca 0/fabricado).
+ * Aceita o payload antigo (`contempladosMes` do hero) além do campo canônico. */
+function contempladosPorMes(p: Record<string, unknown>): number | null {
+	const bruto = typeof p.availableSlots === "number" ? p.availableSlots : p.contempladosMes;
+	return typeof bruto === "number" && bruto > 0 ? bruto : null;
+}
+
 export function groupCardToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
 	const p = payload;
 	const body = [
@@ -144,7 +152,11 @@ export function groupCardToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 		// Bernardo 2026-06-11: sem taxa admin no card (assusta o leigo) — composição
 		// completa na proposta (PDF) pré-assinatura. Ver docs/jornada/CONTEXT.md.
 		`Prazo: ${p.termMonths} meses`,
-		`Contemplação: ${(p.contemplationRate as number).toFixed(1)}%/assembleia`,
+		// CONTAGEM, NUNCA PORCENTAGEM. O campo de origem é `monthlyAwardedQuotas`
+		// (cotas contempladas por mês); aqui ele saía como "15.0%/assembleia" e o
+		// cliente lia uma probabilidade que ninguém mediu. A web já corrigira isso
+		// no FIX-231 — o WhatsApp ficou para trás. Sem dado real, a linha some.
+		...(contempladosPorMes(p) ? [`${contempladosPorMes(p)} contemplados/mês`] : []),
 	].join("\n");
 
 	return {
@@ -266,7 +278,7 @@ export function recommendationToWhatsApp(payload: Record<string, unknown>): What
 		`${formatBRL(p.creditValue as number)} • ${formatBRL(p.monthlyPayment as number)}/mês`,
 		// Bernardo 2026-06-11: sem % admin no card (assusta o leigo).
 		`${p.termMonths} meses`,
-		`${(p.contemplationRate as number).toFixed(1)}% contemplação`,
+		...(contempladosPorMes(p) ? [`${contempladosPorMes(p)} contemplados/mês`] : []),
 	].join("\n");
 
 	return {
@@ -1390,16 +1402,28 @@ export function quickReplyToWhatsApp(payload: Record<string, unknown>): WhatsApp
 	const options = payload.options as Array<{ label?: unknown }> | undefined;
 	if (!Array.isArray(options) || options.length === 0) return null;
 
+	// O id leva a ASSINATURA do atalho, não só o índice: o botão não expira na
+	// tela do WhatsApp, e um tap num atalho de dois turnos atrás era resolvido
+	// contra o atalho mais recente — ancorando a cota errada. Ver
+	// `quick-reply-tap.ts`, que é a FONTE ÚNICA do formato do id (`idDoAtalho`) —
+	// remontar a string aqui é como os dois lados divergem depois.
+	//
+	// ATENÇÃO: o índice é o do PAYLOAD, carregado pelo pipeline. O descarte de rótulo
+	// vazio abaixo muda as posições, e o servidor resolve contra a lista
+	// ORIGINAL: contar sobre o array já filtrado fazia o cliente tocar num botão
+	// e o servidor ancorar a cota de outro. Mesmo defeito que este trabalho
+	// existe para matar, dentro do próprio conserto.
 	const buttons = options
-		.map((o) => (typeof o?.label === "string" ? o.label.trim() : ""))
-		.filter((label) => label.length > 0)
+		.map((o, i) => ({ i, label: typeof o?.label === "string" ? o.label.trim() : "" }))
+		.filter(({ label }) => label.length > 0)
 		// 3 é o teto do WhatsApp pra botões de resposta, e 20 chars é o teto do
 		// título. O schema da tool já limita, mas o formatter não pode confiar num
-		// limite que vive do outro lado do modelo.
+		// limite que vive do outro lado do modelo — e isso vale para o comprimento
+		// tanto quanto para o vazio.
 		.slice(0, 3)
-		.map((label, i) => ({
+		.map(({ i, label }) => ({
 			type: "reply" as const,
-			reply: { id: `qr_${i}`, title: label.slice(0, 20) },
+			reply: { id: idDoAtalho(i, payload as PayloadDeAtalho), title: label.slice(0, 20) },
 		}));
 	if (buttons.length === 0) return null;
 

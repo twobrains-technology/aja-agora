@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Destravar o agente — dossiê de entrega</title>
+<link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+
+<header>
+  <h1>Destravar o agente do Aja Agora</h1>
+  <p class="sub">
+    Dossiê de entrega · 19/08/2026 · <code>aja-agora</code><br>
+    Implementação do PRD “Destravar o agente para que ele conduza até a proposta”,
+    nascido da autópsia da conversa da <strong>Rute</strong> (produção, 19/08, 17h22).
+  </p>
+  <p>
+    <span class="pill p-ok">10 DEFEITOS TRATADOS</span>
+    <span class="pill p-ok">SUÍTE VERDE 3.752</span>
+    <span class="pill p-ok">CRÍTICO: 10/10</span>
+    <span class="pill p-aviso">PROMPT NÃO PUBLICADO</span>
+    <span class="pill p-aviso">SEM SMOKE AO VIVO</span>
+  </p>
+</header>
+
+<div class="card">
+  <strong>O veredito da revisão independente</strong>
+  <p>
+    O agente crítico de IA revisou este trabalho <strong>cinco vezes</strong>,
+    com sondas próprias contra o código e testes de mutação. A nota subiu
+    <strong>7 → 8 → 8 → 9 → 10</strong>, e cada degrau custou um defeito real:
+  </p>
+  <ul>
+    <li><strong>7 → 8</strong>: a coerção do atalho era <em>fail-open</em> (o
+        clique podia fechar contrato na cota errada) e o critério de
+        contemplação não existia no resolvedor.</li>
+    <li><strong>8 → 9</strong>: o próprio conserto desalinhou o índice do botão
+        no WhatsApp — o mesmo defeito, dentro do remédio.</li>
+    <li><strong>9 → 10</strong>: o caminho feliz do tap não tinha teste; ele
+        provou por <em>sabotagem</em> que o handler podia estar morto com 542
+        testes verdes.</li>
+  </ul>
+  <p>
+    No fechamento, ele aplicou <strong>sete mutações independentes</strong> no
+    handler e o teste novo pegou as sete. Veredito: <em>“não encontrei nada que
+    precise ser consertado antes de mergear”</em>.
+  </p>
+</div>
+
+<nav class="card">
+  <strong>Índice</strong>
+  <ol>
+    <li><a href="#macro">O que passou a existir</a></li>
+    <li><a href="#arquitetura">A decisão de arquitetura</a></li>
+    <li><a href="#codigo">Onde o código mudou</a></li>
+    <li><a href="#superficie">Impacto na superfície</a></li>
+    <li><a href="#riscos">Pontos de risco</a></li>
+    <li><a href="#aberto">O que ficou em aberto</a></li>
+    <li><a href="#validar">Como validar você mesmo</a></li>
+  </ol>
+</nav>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="macro">
+<h2>1 · O que passou a existir</h2>
+
+<p>
+  Uma cliente real entrou no chat às 17h22, disse que queria comprar uma casa,
+  corrigiu o valor por conta própria, entregou CPF e WhatsApp, viu onze ofertas
+  reais, <strong>declarou em voz alta o critério de compra dela</strong>, escolheu
+  a administradora, escolheu a cota, recebeu a simulação e clicou no botão que
+  prometia responder à pergunta que ela mesma tinha feito.
+</p>
+
+<p>
+  Foi embora sem proposta, <strong>seis minutos e trinta e sete segundos</strong>
+  depois de começar. Ela fez tudo o que se pede de um lead. O agente é que não
+  fechou — e não por falar mal: por três mentiras do sistema.
+</p>
+
+<div class="card">
+  <strong>As três mentiras, e o que passou a acontecer</strong>
+  <table>
+    <thead><tr><th>O que o sistema fazia</th><th>O que passou a fazer</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Ela perguntou qual cota contempla mais rápido. O servidor sabia
+            (Banco do Brasil, 15/mês, contra 4 do Itaú, e ainda R$&nbsp;1.488 mais
+            barata) e <strong>nunca mandou o dado ao modelo</strong>. Ele devolveu
+            a decisão pra ela, que escolheu a pior opção no critério dela.</td>
+        <td>Contemplados por mês de <strong>cada cota</strong> entram na janela do
+            modelo, com instrução afirmativa de comparar e recomendar. O corte que
+            escondia a 11ª cota saiu.</td>
+      </tr>
+      <tr>
+        <td>Ela respondeu “A de prazo mais curto” à pergunta de escolha do próprio
+            agente. O código exigia um “sim” literal e
+            <strong>tratou como se ela não tivesse escolhido nada</strong>: funil
+            parado três portões atrás, contrato inalcançável.</td>
+        <td>O atalho de escolha passa a carregar a cota (conferida pelo servidor);
+            o clique vira ação estruturada, e a resposta digitada ancora quando
+            resolve para uma das cotas que o servidor ofereceu.</td>
+      </tr>
+      <tr>
+        <td>Ela clicou em “Ver cenários de contemplação”. O front colapsava
+            qualquer intenção desconhecida em “Ajustar valor” e o servidor dizia
+            ao modelo que ela <strong>queria mudar o valor do bem</strong>. Ele
+            obedeceu e perguntou o valor — com a simulação na tela. Foi a última
+            mensagem da conversa.</td>
+        <td>Intenção virou lista fechada, cada uma com handler próprio (os
+            cenários já existiam no toolset). Intenção desconhecida entra como a
+            <em>fala</em> do cliente, nunca como outra intenção.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<p>
+  E o defeito que o Kairo destacou como foco: <strong>pedir o nome no vácuo</strong>.
+  Ela respondeu à pergunta do agente sobre o tipo do imóvel dentro do campo do
+  nome — o único campo com onde digitar — e o servidor, <em>sem passar pelo
+  modelo</em>, cuspiu “Pode me dizer como prefere ser chamado(a)?”. Nenhuma
+  palavra sobre o que ela acabou de contar. O “em condomínio” morreu ali e o tipo
+  do imóvel foi perguntado três vezes na mesma conversa.
+</p>
+
+<div class="fluxo">
+  <div class="no">cliente digita no card do nome</div>
+  <div class="no">servidor valida</div>
+  <div class="no novo">não é nome? o conteúdo REENTRA como fala do cliente</div>
+  <div class="no novo">analyzer extrai o que houver (bem, valor)</div>
+  <div class="no novo">modelo responde com a pergunta anterior no contexto</div>
+</div>
+
+<p>
+  Não se escreveu uma frase melhor no servidor: o servidor não sabe o que ela
+  disse antes. Quem sabe é o modelo, e o caminho de entrada dele é o turno.
+</p>
+
+<p>
+  Fecha o pacote a quarta correção, que é a razão de ninguém ter percebido as
+  outras três: <strong>a avaliação automática deu 0,85 de conversão para essa
+  conversa</strong> e marcou como alucinação a única disciplina que o agente
+  cumpriu à risca.
+</p>
+</section>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="arquitetura">
+<h2>2 · A decisão de arquitetura</h2>
+
+<p>
+  A escolha difícil foi a do defeito D6 — <em>reabrir a porta da escolha sem
+  reabrir o vazamento que oito revisões fecharam</em> (FIX-400/406: “texto livre
+  não assina contrato”). Três caminhos estavam na mesa:
+</p>
+
+<table>
+  <thead><tr><th>Opção</th><th>Por que foi descartada / escolhida</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>Aceitar resolução por característica no texto livre</td>
+      <td><strong>Descartada.</strong> É exatamente a parede que o FIX-406 levantou
+          depois de oito vazamentos. “A de menor parcela” dito numa pergunta não é
+          escolha.</td>
+    </tr>
+    <tr>
+      <td>Resolver o rótulo do atalho no servidor, sozinho</td>
+      <td><strong>Descartada depois de medir.</strong> O rótulo é resolvido contra
+          a tela INTEIRA: com o agente perguntando entre as duas cotas do Itaú,
+          “a de menor parcela” resolvia para o <em>Banco do Brasil</em> — a cota
+          mais barata da tela, que a pergunta nem mencionava. Ancorar aí seria
+          fechar contrato na cota errada.</td>
+    </tr>
+    <tr>
+      <td><strong>O modelo declara, o servidor confere</strong> (escolhida)</td>
+      <td>O modelo sabe de quais cotas ele está falando e declara o
+          <code>groupId</code> de cada atalho. O servidor confere duas coisas:
+          <strong>(1)</strong> o id existe entre as cotas realmente exibidas;
+          <strong>(2)</strong> o rótulo, resolvido dentro do conjunto declarado,
+          aponta para a cota declarada — se divergir, o id cai. O que o cliente lê
+          é o que vale.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  <strong>O que a opção escolhida NÃO dá:</strong> se o modelo não declarar os
+  ids, nada é adivinhado — o atalho continua sendo texto puro e a escolha
+  continua exigindo o clique no card. Ou seja, o destravamento depende de o
+  modelo cooperar num campo opcional. Preferiu-se isso a adivinhar: um atalho que
+  não ancora custa um turno; um atalho que ancora a cota errada custa um contrato.
+</p>
+
+<p>
+  A ancoragem final continua exigindo <strong>fato de servidor</strong>
+  (<code>escolhaOfertada</code>, gravada pelo próprio servidor no turno anterior)
+  + resolução determinística + concordância com o que o modelo indicou na tool.
+  Fora dessa tripla, vale o veto de sempre.
+</p>
+</section>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="codigo">
+<h2>3 · Onde o código mudou</h2>
+
+<p class="sub">Números de <code>git diff --numstat</code>: 70 arquivos tocados,
+<strong>+1.328 / −322</strong>, mais 20 arquivos novos (19 deles de teste).</p>
+
+<h3>Arquivos novos</h3>
+<table>
+  <thead><tr><th>Arquivo</th><th>Papel</th></tr></thead>
+  <tbody>
+    <tr><td><code>src/lib/leads/nome-plausivel.ts</code></td>
+        <td>Núcleo — o predicado “isto é nome de gente?” sem banco, para servidor e card usarem o MESMO fato.</td></tr>
+    <tr><td><code>src/lib/agent/langgraph/cenario-jornada-rute.test.ts</code></td>
+        <td>Prova ponta a ponta: grafo real + Postgres, reencenando os turnos 24→26 da conversa.</td></tr>
+    <tr><td>+18 arquivos de teste</td>
+        <td>Um por defeito: nome sem contexto, botão fantasma, contemplados no contexto, escolha ancorável, conversão por desfecho, arredondamento, sinais determinísticos, repetição, funil parado, portão de uso único, mina do card pendente, contemplados na UI, WhatsApp em porcentagem.</td></tr>
+  </tbody>
+</table>
+
+<h3>Arquivos existentes — o que mudou e por quê</h3>
+<table>
+  <thead><tr><th>Arquivo</th><th>Mudança</th></tr></thead>
+  <tbody>
+    <tr><td><code>app/api/chat/route.ts</code> <span class="sub">+99</span></td>
+        <td>Nome recusado reentra como turno de cliente (D1); handlers de
+            <code>view-scenarios</code> e <code>compare-financing</code>;
+            registro do sinal <code>botao_fantasma</code>.</td></tr>
+    <tr><td><code>agent/escolha-ancoravel.ts</code> <span class="sub">+53</span></td>
+        <td>A “porta 2”: responder à pergunta de escolha do agente ancora, com as
+            três exigências simultâneas.</td></tr>
+    <tr><td><code>orchestrator/choose-offer.ts</code> <span class="sub">+86</span></td>
+        <td><code>resolveEscolhaOfertada</code> (conjunto fechado, sem chute em
+            ambiguidade) e <code>coerceEscolhaNosAtalhos</code> (declara ×
+            confere).</td></tr>
+    <tr><td><code>langgraph/nodes/contexto-da-tela.ts</code> <span class="sub">+66</span></td>
+        <td><code>blocoDeOpcoesNaTela</code>: contemplados por mês por cota, lista
+            inteira, e a instrução de comparar por contagem.</td></tr>
+    <tr><td><code>langgraph/nodes/converse.ts</code> <span class="sub">+112/−…</span></td>
+        <td>Coerção do atalho, gravação de <code>escolhaOfertada</code> e
+            <code>simulacaoApresentada</code>, consumo da oferta no turno do cliente.</td></tr>
+    <tr><td><code>agent/qualify-state.ts</code> <span class="sub">+27</span></td>
+        <td><code>timeframe</code> não barra quem já viu simulação; a decisão abre
+            para quem respondeu a pergunta de escolha.</td></tr>
+    <tr><td><code>eval/scorer-internals.ts</code>, <code>eval/signals.ts</code>,
+            <code>eval/rubric.ts</code>, <code>eval/scorer.ts</code></td>
+        <td>Conversão por desfecho; <code>propostas</code>/<code>contratoFechado</code>
+            nos sinais; alertas determinísticos na avaliação; arredondamento deixa
+            de ser alucinação; rubrica descreve o produto real (fecha contrato).</td></tr>
+    <tr><td><code>observability/reconciliacao-fala-estado.ts</code>,
+            <code>workers/reconciliacao-cycle.ts</code></td>
+        <td>Sinais <code>funil_parado_pre_decisao</code> e
+            <code>escolha_falada_nao_ancorada</code> + os insumos no SQL.</td></tr>
+    <tr><td><code>orchestrator/sanitizer.ts</code> <span class="sub">−…</span></td>
+        <td>Guard de FALA sobre “taxa de contemplação” aposentado (regex sobre
+            léxico, sem fato que a contradiga). O guard estático de payload fica.</td></tr>
+    <tr><td><code>adapters/types.ts</code>, <code>bevi/offer-mapper.ts</code>,
+            <code>chat/types.ts</code>, <code>tools/ai-sdk.ts</code></td>
+        <td>Campo <code>contemplationRate</code> removido: era cópia literal de
+            <code>availableSlots</code> sob um nome que mentia.</td></tr>
+    <tr><td><code>whatsapp/formatter.ts</code></td>
+        <td>Contemplados deixam de sair como porcentagem.</td></tr>
+  </tbody>
+</table>
+</section>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="superficie">
+<h2>4 · Impacto na superfície</h2>
+
+<table>
+  <thead><tr><th>Superfície</th><th>O que a pessoa sente</th></tr></thead>
+  <tbody>
+    <tr><td>Card de simulação (web)</td>
+        <td>“Ver cenários de contemplação” passa a mostrar os cenários; “Comparar
+            com financiamento” compara. Botão desconhecido vira a fala dele, não
+            outra ação.</td></tr>
+    <tr><td>Atalhos de resposta (web e WhatsApp)</td>
+        <td>Quando o atalho escolhe uma cota, o clique vale como escolha — o funil
+            anda até o formulário em vez de repetir a pergunta.</td></tr>
+    <tr><td>Comparativo de cotas (web)</td>
+        <td>Passa a mostrar <strong>contemplados/mês</strong> por cota. O agente
+            deixa de afirmar que os cards mostram o que eles não mostravam.</td></tr>
+    <tr><td>Card do grupo (web)</td>
+        <td>Some a duplicidade “Vagas” + “Contemplados/mês” (era o mesmo número,
+            com dois rótulos, um deles errado).</td></tr>
+    <tr><td>WhatsApp</td>
+        <td>“Contemplação: 15.0%/assembleia” vira “15 contemplados/mês”. Era
+            número errado na cara do cliente.</td></tr>
+    <tr><td>Card do nome</td>
+        <td>O que a pessoa digita vai como ela escreveu; o prefixo “Pode me chamar
+            de …” só entra quando é nome.</td></tr>
+    <tr><td>WhatsApp — escolha de cota</td>
+        <td>Lá o atalho vira botão nativo, que devolve TEXTO (não há clique
+            estruturado de card). É exatamente a “porta 2” que passa a valer:
+            responder “a de prazo mais curto” ancora, porque o servidor sabe
+            quais cotas ele ofereceu. O canal que mais precisava foi o que menos
+            tinha caminho.</td></tr>
+    <tr><td>Painel de avaliação (interno)</td>
+        <td>A nota de conversão passa a medir desfecho, e os alertas
+            determinísticos encabeçam os <em>top issues</em>.</td></tr>
+  </tbody>
+</table>
+</section>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="riscos">
+<h2>5 · Pontos de risco</h2>
+
+<div class="risco alto">
+<h3><span class="pill p-risco">GRAVE · CORRIGIDO</span> PRÓPRIO · A primeira versão da escolha por atalho ancorava a cota errada</h3>
+<p>
+  A implementação inicial resolvia o rótulo do atalho contra <em>toda</em> a tela.
+  Com o agente perguntando entre as duas cotas do Itaú, “A de menor parcela”
+  resolvia para o Banco do Brasil — a cota mais barata da conversa, que a
+  pergunta não mencionava. Um clique inocente amarraria o contrato na cota errada:
+  o defeito mais caro que este repositório já pagou.
+</p>
+<p><strong>Correção:</strong> o modelo declara os ids das cotas em jogo e o
+   servidor confere existência + concordância com o rótulo.</p>
+<div class="prova">antes: coerção pelo rótulo → "A de menor parcela" = bb-217 (Banco do Brasil)
+depois: conjunto declarado {itau-158, itau-147} → "A de menor parcela" = itau-158 ✓</div>
+<p><strong>Cobertura:</strong>
+   <code>src/lib/agent/langgraph/cenario-jornada-rute.test.ts</code> (o teste que
+   apanhou o defeito) e
+   <code>src/lib/agent/escolha-ancoravel.resposta-a-pergunta-do-agente.test.ts</code>.</p>
+</div>
+
+<div class="risco alto">
+<h3><span class="pill p-risco">GRAVE · CORRIGIDO</span> HERDADO · O WhatsApp mostrava a contagem como porcentagem</h3>
+<p>
+  Achado fora do PRD, enquanto se limpava o campo morto: o formatter imprimia
+  <code>contemplationRate.toFixed(1) + "%/assembleia"</code> para um dado que é
+  contagem de cotas por mês. O cliente do WhatsApp lia “15,0% de chance por
+  assembleia” onde o fato é “15 cotas contempladas por mês”. A web já tinha
+  corrigido isso no FIX-231; o WhatsApp ficou para trás.
+</p>
+<div class="prova">antes: "Contemplação: 15.0%/assembleia"
+depois: "15 contemplados/mês"  ·  sem dado real → a linha some (nunca 0)</div>
+<p><strong>Cobertura:</strong>
+   <code>src/lib/whatsapp/formatter.contemplados-nao-e-percentual.test.ts</code>.</p>
+</div>
+
+<div class="risco alto">
+<h3><span class="pill p-risco">GRAVE · CORRIGIDO</span> PRÓPRIO · A coerção do atalho era <em>fail-open</em></h3>
+<p>
+  Achado da revisão independente. Quando o rótulo do botão não resolvia
+  ("A que contempla mais rápido", "A primeira"), o <code>groupId</code> que o
+  MODELO declarou era mantido sem conferência. Com o Banco do Brasil a 15
+  contemplados/mês e o Itaú a 4 na tela, o botão que prometia a mais rápida
+  apontando para a mais lenta passava: o cliente clica no que está escrito e o
+  contrato sai no que o modelo declarou.
+</p>
+<div class="prova">antes: rótulo não-resolvível → id do modelo SOBREVIVE
+depois: rótulo não-resolvível → id CAI, atalho vira texto puro</div>
+<p><strong>Cobertura:</strong>
+   <code>src/lib/agent/orchestrator/coerce-escolha-nos-atalhos.test.ts</code>
+   (quatro quadrantes: resolve-e-bate, resolve-e-diverge, não-resolve, menos de
+   duas cotas).</p>
+</div>
+
+<div class="risco alto">
+<h3><span class="pill p-risco">GRAVE · CORRIGIDO</span> PRÓPRIO · No WhatsApp, o tap num atalho ANTIGO ancorava a cota errada</h3>
+<p>
+  O botão não expira na tela do WhatsApp. Com o id carregando só o índice
+  (<code>qr_1</code>), um toque num atalho de dois turnos atrás era resolvido
+  contra o atalho mais recente — turno A oferecia [Itaú 158, Itaú 147], turno B
+  oferecia [BB, Porto], e o toque em A ancorava Porto. É o D7 do PRD por outra
+  porta: o clique virando outra coisa.
+</p>
+<div class="prova">antes: qr_1 → resolvido contra o atalho VIGENTE (porto-90) ✗
+depois: qr_1_&lt;assinatura&gt; → assinatura não bate → não ancora, cai no texto ✓</div>
+<p><strong>Cobertura:</strong>
+   <code>src/lib/whatsapp/quick-reply-tap-ancora.test.ts</code>.</p>
+</div>
+
+<div class="risco medio">
+<h3><span class="pill p-aviso">MÉDIO · CORRIGIDO</span> PRÓPRIO · O tap podia atropelar o atendente humano</h3>
+<p>
+  O caminho interativo do WhatsApp não passa pela checagem de handoff do
+  processador (que só cobre texto) — cada handler que age faz a sua, e o novo
+  entrou sem. Com o atendente na conversa, um toque no botão gravaria escolha e
+  cota do contrato, com o bot falando por cima.
+</p>
+<p><strong>Cobertura:</strong>
+   <code>src/lib/whatsapp/quick-reply-tap.handoff.test.ts</code> — verificado que
+   FALHA sem a guarda (removi, quebrou; restaurei, passou), então não é um teste
+   que passa por acidente.</p>
+</div>
+
+<div class="risco medio">
+<h3><span class="pill p-aviso">MÉDIO · CORRIGIDO</span> PRÓPRIO · A guarda de exclusão vetava a própria escolha</h3>
+<p>
+  A primeira versão de <code>falaExcluiPorCaracteristica</code> casava "menos"
+  solto na frase — e "a de <strong>menos</strong> parcela", a variante coloquial
+  mais provável depois da canônica, virava recusa. É o erro que o FIX-412 já
+  pagou com a preposição "sem": gatilho sem adjacência transforma ênfase em
+  negativa.
+</p>
+<div class="prova">"qualquer uma menos a de prazo mais curto" → veta  (certo)
+"a de menos parcela"                      → ANCORA  (era veta)
+"a que tem menos parcela"                 → ANCORA  (era veta)</div>
+</div>
+
+<div class="risco medio">
+<h3><span class="pill p-aviso">MÉDIO · CORRIGIDO</span> PRÓPRIO · O caminho novo do WhatsApp podia estar morto sem ninguém notar</h3>
+<p>
+  A revisão provou por <em>sabotagem</em>: inserindo um <code>return false</code>
+  no meio do handler novo — que assim nunca ancorava, nunca persistia, nunca
+  conduzia — <strong>542 testes continuavam verdes</strong>. Havia o resolvedor
+  puro e o caso negativo do handoff; faltava o controle positivo, e sem ele não
+  dá para distinguir "a guarda funcionou" de "o caminho nunca rodou".
+</p>
+<p><strong>Cobertura:</strong>
+   <code>src/lib/whatsapp/quick-reply-tap.ancora.test.ts</code> — e a mesma
+   sabotagem foi repetida para provar que o teste novo <em>falha</em> sem o
+   caminho vivo.</p>
+</div>
+
+<div class="risco baixo">
+<h3><span class="pill p-ok">BAIXO · CORRIGIDO</span> HERDADO · Um teste falhava por dado residual do banco compartilhado</h3>
+<p>
+  A falha intermitente que aparecia na suíte não era deste trabalho:
+  <code>recovery.integration.test.ts</code> usava telefones FIXOS para provar
+  "telefone sem contato", e o banco de desenvolvimento é compartilhado — bastou
+  alguém criar um contato com aquele número. Teste que falha por resíduo de
+  terceiro ensina a suíte inteira a ser ignorada.
+</p>
+<div class="prova">antes: número fixo "62900000000" → falha determinística hoje
+depois: telefone sorteado e CONFERIDO no banco  ·  3 execuções seguidas verdes</div>
+<p>
+  A segunda fonte da mesma flakiness era vizinha:
+  <code>percurso-queries.integration.test.ts</code> isolava-se numa janela de
+  data FIXA (maio/2019). Isso protege contra o que já está no banco, mas não
+  contra <em>outra execução do mesmo arquivo</em> — e os agentes de revisão
+  rodavam a suíte em paralelo. Cada execução passou a sortear a própria janela.
+</p>
+<div class="prova">três execuções SIMULTÂNEAS do mesmo arquivo: 11/11, 11/11, 11/11
+suíte completa, três vezes seguidas: 3.752 passed | 6 skipped</div>
+</div>
+
+<div class="risco medio">
+<h3><span class="pill p-aviso">MÉDIO · TRATADO</span> PRÓPRIO · Empate de critério poderia ancorar no chute</h3>
+<p>
+  Se dois rótulos resolvessem para a mesma cota (empate de prazo, por exemplo), a
+  coerção anexaria ids iguais e a “escolha” não separaria nada. Nesse caso o
+  atalho volta a ser texto puro — decidir no empate é justamente o que a Lei 3
+  proíbe.
+</p>
+<p><strong>Cobertura:</strong> <code>coerceEscolhaNosAtalhos</code>, guarda de
+   ids duplicados; caso coberto pelo cenário com duas cotas da mesma
+   administradora.</p>
+</div>
+
+<div class="risco medio">
+<h3><span class="pill p-aviso">MÉDIO · INTENCIONAL</span> PRÓPRIO · Mudança de comportamento na nota de conversão</h3>
+<p>
+  Conversas antigas reavaliadas passam a pontuar bem mais baixo — captura de lead
+  sem proposta caiu de <strong>1,0</strong> para <strong>0,4</strong>. Isso é
+  intencional (o produto fecha contrato, não captura lead), mas quem comparar o
+  painel de hoje com o de ontem vai ver uma queda que não é piora do agente.
+</p>
+<div class="prova">fixture happy-path (lead capturado, zero propostas)
+antes: conversao 1.00   ·   depois: conversao 0.40</div>
+<p><strong>Cobertura:</strong> <code>src/lib/eval/conversao-mede-desfecho.test.ts</code>
+   e <code>src/lib/eval/scorer.test.ts</code> (régua reescrita, com o motivo no
+   comentário).</p>
+</div>
+
+<div class="risco baixo">
+<h3><span class="pill p-ok">BAIXO · ACEITO</span> PRÓPRIO · O portão da experiência pode perguntar uma vez a mais</h3>
+<p>
+  O gate <code>experience</code> deixou de ser consumido em turno gerado por
+  instrução do sistema. Se o cliente ignorar a pergunta e falar de outra coisa,
+  ela pode reaparecer uma vez no turno seguinte — o preço de não queimar o
+  portão sem ninguém ter perguntado nada (que foi o que aconteceu com a Rute).
+</p>
+<p><strong>Cobertura:</strong>
+   <code>src/lib/agent/langgraph/nodes/emit-card.portao-nao-queima-sozinho.test.ts</code>.</p>
+</div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="aberto">
+<h2>6 · O que ficou em aberto</h2>
+
+<div class="card">
+<h3>1 · O prompt novo NÃO está em produção</h3>
+<p>
+  A linha que manda o agente responder “qual contempla mais rápido” com o número
+  real entrou em <code>SYSTEM_PROMPT</code> — e produção lê o Langfuse, não o
+  repositório. <code>pnpm prompts:check</code> já acusa a divergência:
+</p>
+<div class="prova">✗ aja-system-prompt (produção está na v3):
+  Está no código e NÃO em produção (1 linha(s))</div>
+<p>
+  Publicar (<code>pnpm sync-prompts</code> contra
+  <code>langfuse.twobrainstechnology.com</code>) muda o agente em produção em
+  ≤60s, sem deploy e sem review — por isso <strong>não foi feito sem a sua
+  palavra</strong>. O dado em si (contemplados por mês por cota) já vai ao modelo
+  pelo bloco de contexto, que é código e não depende de publicação.
+</p>
+</div>
+
+<div class="card">
+<h3>2 · Sem smoke visual ao vivo</h3>
+<p>
+  As mudanças de tela têm teste de componente e o funil tem cenário com grafo
+  real + Postgres, mas ninguém <em>olhou</em> a tela rodando. O que falta é subir
+  o ambiente e pilotar a jornada até o formulário.
+</p>
+</div>
+
+<div class="card">
+<h3>3 · O kanban ainda não deriva do fato “existe proposta”</h3>
+<p>
+  O PRD observou que 3 de 7 conversas com proposta real estão marcadas como
+  <em>perdido</em>. A <strong>nota</strong> deixou de depender disso (agora ela
+  olha <code>bevi_proposals</code>), mas o estágio do lead continua como está:
+  perder <em>depois</em> de gerar proposta é um desfecho legítimo, e mexer nisso
+  sem medir qual dos dois casos ocorreu seria cravar sem evidência.
+</p>
+</div>
+
+<div class="card">
+<h3>4 · O eco de números do cliente é uma fronteira, não um cheque em branco</h3>
+<p>
+  Números que o CLIENTE disse passaram a contar como fonte conhecida — sem isso,
+  o agente repetir "uma casa de R$ 400 mil" (o valor que ela mesma acabara de
+  informar) era marcado como alucinação. O limite disso: se o cliente disser
+  "R$ 3.000 por mês" falando de orçamento e o agente afirmar uma parcela de
+  R$ 3.000 que não existe em oferta nenhuma, o detector determinístico não pega
+  — quem pega é o juiz. Fronteira conhecida, registrada aqui de propósito.
+</p>
+</div>
+
+<div class="card">
+<h3>5 · Repetição virou número, não trava</h3>
+<p>
+  O pedido de CPF saiu duas vezes quase idêntico (turnos 12 e 15). Isso agora é
+  medido (<code>repeticoesDoAgente</code>) e vai à rubrica — não virou regex. A
+  correção de fato depende de olhar a distribuição no Langfuse sobre volume.
+</p>
+</div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="validar">
+<h2>7 · Como validar você mesmo</h2>
+
+<div class="card">
+  <strong>A prova que veio de PRODUÇÃO, não de fixture</strong>
+  <p>
+    Túnel SSM só-leitura contra o RDS de produção, conversa
+    <code>88384596</code> (a da Rute), rodando <code>computeSignals</code> +
+    <code>computeConversaoDimension</code> do código NOVO sobre as linhas REAIS.
+    Nada foi gravado; o túnel foi fechado em seguida.
+  </p>
+  <div class="prova">ANTES (o que está gravado em produção)
+  conversao ......... 0.85    hallucination ..... true
+  numeros "sem fonte" 5       topIssues ......... nenhum sobre o funil
+
+DEPOIS (código novo, mesmas linhas do banco)
+  conversao ......... 0.25    numeros "sem fonte" 0
+  alertas ........... funil_parado_pre_decisao, escolha_falada_nao_ancorada,
+                      venda_prometida_sem_proposta</div>
+  <p>
+    O PRD pedia conversão ≤ 0,4, <code>hallucination = false</code> e
+    <code>funil_parado_pre_decisao = 1</code>. Os três batem. E a medição ainda
+    expôs dois falsos positivos que nenhum teste tinha: a ESCALA ("R$ 500 mil"
+    lido como 500) e o eco do valor que a PRÓPRIA cliente informou ("R$ 400
+    mil") — os dois corrigidos, com teste.
+  </p>
+</div>
+
+<ul class="checklist">
+  <li><strong>A suíte inteira</strong>: <code>pnpm vitest run</code> — 3.752
+      testes, 6 pulados, zero vermelhos, três execuções seguidas.</li>
+  <li><strong>O caminho do dinheiro</strong>:
+      <code>pnpm test:caminho-do-dinheiro</code> — 77 arquivos, 390 testes.</li>
+  <li><strong>A conversa da Rute</strong>:
+      <code>pnpm vitest run cenario-jornada-rute</code> — os quatro casos incluem
+      a prova de que a mesma frase <em>não</em> ancora sem a pergunta de escolha.</li>
+  <li><strong>O foco do pedido</strong>:
+      <code>pnpm vitest run route.nome-nao-reconhecido</code> — “Casa em
+      condomínio” no campo do nome vira turno do cliente, e a frase fixa do
+      servidor não existe mais.</li>
+  <li><strong>Tipos e lint</strong>: <code>pnpm typecheck</code> e
+      <code>pnpm lint</code>, ambos limpos.</li>
+  <li><strong>A falha intermitente foi caçada até a raiz</strong>: era o
+      <code>recovery.integration.test.ts</code> dependendo de um telefone fixo
+      num banco compartilhado — pré-existente, não deste trabalho, corrigido
+      junto. Depois disso, três execuções completas seguidas verdes.</li>
+  <li><strong>Prompt × produção</strong>: <code>pnpm prompts:check</code> — deve
+      acusar a linha nova até você mandar publicar.</li>
+</ul>
+</section>
+
+</body>
+</html>

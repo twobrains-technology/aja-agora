@@ -1,7 +1,8 @@
 // O PERCURSO de cada pessoa que chegou pela campanha (integration-db).
 //
 // Mesma disciplina do teste do funil de mídia: Postgres real e uma JANELA DE
-// DATA ISOLADA (2019), pra que o que já existe no banco do workspace não entre
+// DATA ISOLADA (sorteada por execução), pra que o que já existe no banco do
+// workspace — ou outra execução simultânea — não entre
 // na conta e a asserção possa ser exata, não "maior que zero".
 //
 // O que este arquivo protege é o motivo da tela existir: quem clicou no anúncio
@@ -17,10 +18,23 @@ import type { PassoDoPercurso } from "./percurso-types";
 const HAS_DB = Boolean(process.env.DATABASE_URL) && !process.env.DATABASE_URL?.includes("sentinel");
 const describeIfDb = HAS_DB ? describe : describe.skip;
 
-const JANELA_DE = new Date("2019-05-01T00:00:00Z");
-const JANELA_ATE = new Date("2019-05-31T23:59:59Z");
-const DENTRO = new Date("2019-05-15T12:00:00Z");
-const DEPOIS = new Date("2019-05-16T12:00:00Z");
+// A JANELA É PRÓPRIA DE CADA EXECUÇÃO.
+//
+// Era fixa em maio/2019 — e a janela isola contra o que já existe no banco, mas
+// não contra OUTRA execução deste mesmo arquivo. O Postgres é compartilhado
+// entre os agentes que rodam a suíte, e duas execuções simultâneas semeavam na
+// mesma janela: uma via as pessoas da outra e as contagens exatas (que são o
+// valor deste teste) caíam. Aparecia como falha intermitente, do tipo que
+// ninguém consegue reproduzir e todo mundo aprende a ignorar.
+//
+// Sorteando o mês dentro de uma faixa histórica ampla, cada execução ganha o seu
+// pedaço de calendário. O `afterAll` continua limpando o que semeou.
+const ANO = 1970 + Math.floor(Math.random() * 45);
+const MES = String(1 + Math.floor(Math.random() * 12)).padStart(2, "0");
+const JANELA_DE = new Date(`${ANO}-${MES}-01T00:00:00Z`);
+const JANELA_ATE = new Date(`${ANO}-${MES}-28T23:59:59Z`);
+const DENTRO = new Date(`${ANO}-${MES}-15T12:00:00Z`);
+const DEPOIS = new Date(`${ANO}-${MES}-16T12:00:00Z`);
 
 describeIfDb("percurso — até onde cada pessoa foi (integration)", () => {
 	let db: typeof import("@/db").db;

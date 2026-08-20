@@ -22,7 +22,6 @@ const payload: GroupCardPayload = {
 	adminFeePercent: 18,
 	termMonths: 80,
 	availableSlots: 2,
-	contemplationRate: 2,
 };
 
 describe("FIX-223 — lance médio no group-card", () => {

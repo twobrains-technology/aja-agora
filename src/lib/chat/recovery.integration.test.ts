@@ -19,6 +19,28 @@ describeIfDb("FIX-47 — recuperação cross-device (integration)", () => {
 	let contactId: string;
 	let convId: string;
 
+	/**
+	 * Um telefone que comprovadamente NÃO tem contato — conferido no banco, não
+	 * presumido.
+	 *
+	 * Os dois casos abaixo usavam números fixos ("62900000000"), e o banco de
+	 * desenvolvimento é compartilhado: bastou alguém criar um contato com esse
+	 * número, em qualquer outra execução, para o teste passar a falhar sozinho —
+	 * o que ele acusa não é o produto, é o resíduo. Teste que falha por dado de
+	 * terceiro ensina a suíte inteira a ser ignorada.
+	 */
+	async function telefoneSemContato(): Promise<string> {
+		for (let tentativa = 0; tentativa < 20; tentativa++) {
+			const candidato = `629${String(Math.floor(Math.random() * 100_000_000)).padStart(8, "0")}`;
+			const existe = await db
+				.select({ id: schema.contacts.id })
+				.from(schema.contacts)
+				.where(eq(schema.contacts.phone, candidato));
+			if (existe.length === 0) return candidato;
+		}
+		throw new Error("não achei telefone livre — o banco de teste está poluído demais");
+	}
+
 	beforeAll(async () => {
 		({ db } = await import("@/db"));
 		schema = await import("@/db/schema");
@@ -73,7 +95,7 @@ describeIfDb("FIX-47 — recuperação cross-device (integration)", () => {
 	});
 
 	it("telefone desconhecido → found:false (não cria contato)", async () => {
-		const UNKNOWN = "62900000017";
+		const UNKNOWN = await telefoneSemContato();
 		const light = await rec.getLightContext({ phone: UNKNOWN });
 		expect(light.found).toBe(false);
 		// isolation-safe: o telefone específico não materializou contato
@@ -97,7 +119,7 @@ describeIfDb("FIX-47 — recuperação cross-device (integration)", () => {
 	});
 
 	it("requestRecoveryOtp pra telefone sem contato → found:false (não envia)", async () => {
-		const req = await rec.requestRecoveryOtp("62900000000");
+		const req = await rec.requestRecoveryOtp(await telefoneSemContato());
 		expect(req.found).toBe(false);
 		expect(req.devCode).toBeUndefined();
 	});

@@ -43,7 +43,6 @@ const rec: RecommendationCardPayload = {
 	monthlyPayment: 2_365.57,
 	adminFeePercent: 18,
 	termMonths: 72,
-	contemplationRate: 0,
 	availableSlots: 0,
 	score: 0.91,
 	scoreBreakdown: { monthlyFit: 0.9, contemplation: 0.8, adminFee: 0.9, termMatch: 1 },
@@ -62,7 +61,6 @@ const cmp: ComparisonTablePayload = {
 			adminFeePercent: 18,
 			termMonths: 72,
 			availableSlots: 0,
-			contemplationRate: 0,
 		},
 		{
 			id: "itau",
@@ -75,7 +73,6 @@ const cmp: ComparisonTablePayload = {
 			adminFeePercent: 16,
 			termMonths: 60,
 			availableSlots: 2,
-			contemplationRate: 2,
 		},
 	],
 };
@@ -160,11 +157,16 @@ describe("FIX-196 — hero + seletor de cotas", () => {
 		);
 	});
 
-	it("contemplação OCULTA quando availableSlots=0 (§3.1 — nunca % de taxa)", () => {
+	// PRD 19/08/2026 (P1): o chip do seletor TAMBÉM passou a mostrar contemplados
+	// por mês — antes o dado existia só no hero, e o agente chegou a afirmar que
+	// "os cards mostram a contemplação" com o comparativo mudo. Por isso as buscas
+	// abaixo são escopadas: o hero é uma coisa, cada chip é outra.
+	it("contemplação OCULTA no hero quando availableSlots=0 (§3.1 — nunca % de taxa)", () => {
 		renderReveal();
-		// BB (recomendada, availableSlots 0) → sem linha de contemplação
-		expect(screen.queryByText(/contemplados\/m[êe]s/i)).toBeNull();
-		// e jamais a taxa como % (contemplationRate)
+		// BB (recomendada, availableSlots 0) → sem linha de contemplação no hero
+		expect(screen.queryByText(/^Contemplados\/mês$/)).toBeNull();
+		expect(screen.queryByTestId("quota-chip-contemplados-bb")).toBeNull();
+		// e jamais a contemplação como %
 		expect(document.body.textContent ?? "").not.toMatch(/0[,.]0?%/);
 	});
 
@@ -175,8 +177,11 @@ describe("FIX-196 — hero + seletor de cotas", () => {
 			groups: [{ ...cmp.groups[0], availableSlots: 3 }, cmp.groups[1]],
 		};
 		renderReveal(recWithSlots, cmpWithSlots);
-		expect(screen.getByText(/contemplados\/m[êe]s/i)).toBeTruthy();
+		expect(screen.getByText(/^Contemplados\/mês$/)).toBeTruthy();
 		expect(screen.getByText(/3 por m[êe]s/i)).toBeTruthy();
+		// e o chip da cota também informa, com o dado dela
+		expect(screen.getByTestId("quota-chip-contemplados-bb").textContent).toContain("3");
+		expect(screen.getByTestId("quota-chip-contemplados-itau").textContent).toContain("2");
 	});
 });
 

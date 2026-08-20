@@ -27,7 +27,6 @@ const payload: ComparisonTablePayload = {
 			monthlyPayment: 5978,
 			adminFeePercent: 18,
 			termMonths: 29,
-			contemplationRate: 2,
 			availableSlots: 6,
 		},
 		{
@@ -38,7 +37,6 @@ const payload: ComparisonTablePayload = {
 			monthlyPayment: 3200,
 			adminFeePercent: 16,
 			termMonths: 60,
-			contemplationRate: 2,
 			availableSlots: 4,
 		},
 	],

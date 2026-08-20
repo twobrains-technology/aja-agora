@@ -11,7 +11,6 @@ export interface GroupCardPayload {
 	adminFeePercent: number;
 	termMonths: number;
 	availableSlots: number;
-	contemplationRate: number;
 	/** FIX-191 (CONTRATO bloco-b, adendo B8): identificadores REAIS coagidos
 	 * server-side pra o seletor emitir `choose_offer` com o grupo já resolvido.
 	 * `groupId`/`quotaId` == `id` (quotaId opaco da Bevi); `ofertaId` é o UUID de
@@ -71,9 +70,24 @@ export interface SimulationResultPayload {
 	/** CTAs explícitas pro fechamento (bug #12). */
 	actions?: Array<{
 		label: string;
-		intent: string;
+		/** Lista FECHADA (D7, 19/08/2026): cada intenção tem handler próprio no
+		 * card e no route. Enquanto era `string`, o card colapsava tudo que não
+		 * conhecia em "Ajustar valor" e o servidor jurava ao modelo que o cliente
+		 * queria mudar o valor do bem — clicando em "Ver cenários de contemplação".
+		 * O tipo do payload persistido segue tolerante a valores antigos (`string`
+		 * é o que está gravado no banco); quem restringe na ENTRADA é o schema da
+		 * tool (`ai-sdk.ts`), e quem trata o desconhecido é o card. */
+		intent: SimulationActionIntent | (string & {});
 	}>;
 }
+
+/** As intenções que um botão secundário do card de simulação pode carregar. */
+export type SimulationActionIntent =
+	| "adjust_value"
+	| "new_simulation"
+	| "compare_other"
+	| "view_scenarios"
+	| "compare_financing";
 
 export interface RecommendationCardPayload {
 	id: string;
@@ -83,7 +97,6 @@ export interface RecommendationCardPayload {
 	monthlyPayment: number;
 	adminFeePercent: number;
 	termMonths: number;
-	contemplationRate: number;
 	/** docx passo 4 (resumo por opção): qtde de contemplados por MÊS — dado REAL
 	 * da oferta Bevi (monthlyAwardedQuotas/availableSlots). Contagem, não %.
 	 * FIX-191: coagido server-side a partir do availableSlots real (>0); nunca
@@ -149,6 +162,11 @@ export interface QuickReplyOption {
 	 * tivesse digitado. Quem carrega valor estruturado é card de oferta. */
 	value?: string;
 	emoji?: string;
+	/** A cota que ESTE atalho escolhe (D6). Nunca vem do modelo: o servidor
+	 * resolve o rótulo ("a de prazo mais curto") contra as cotas REAIS já
+	 * exibidas e anexa o id (`coerceEscolhaNosAtalhos`). Presente = o clique vira
+	 * `choose_offer` estruturado, o mesmo caminho do botão do card. */
+	groupId?: string;
 }
 
 export interface QuickReplyPayload {

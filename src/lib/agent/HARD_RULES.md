@@ -171,7 +171,9 @@ Substitutos ✅: "entendo bem" / "antecipar a contemplação" / descrever a situ
 
 Vale também o comparativo sem fonte ("uma das mais baixas da faixa") — mesma classe de risco da regra de taxa de administração (Bv2-06, CDC art. 37).
 
-**Barreira em CÓDIGO (Lei 4):** `orchestrator/sanitizer.ts` (`isTaxaContemplacaoClaim`) dropa esses segmentos em runtime. O guard estático (`no-taxa-contemplacao.guard.test.ts`) cobre payload/UI/tools; este cobre a FALA do LLM.
+**Barreira em CÓDIGO:** o guard estático (`no-taxa-contemplacao.guard.test.ts`) cobre payload/UI/tools — campo sem semântica documentada não viaja.
+
+2026-08-19 (PRD "Destravar o agente"): o guard de FALA (`isTaxaContemplacaoClaim`, regex no sanitizer) foi **APOSENTADO**, pelo mesmo motivo do `banned-lexicon` acima. Era blocklist sobre léxico, sem fato de servidor que a frase contradissesse, e não convergia: a paráfrase real da produção ("taxa MÉDIA de contemplação por assembleia") passava ilesa. Pior, a mordaça vinha SEM a alternativa — o modelo não recebia o número permitido e ficava mudo no assunto que mais decide venda de consórcio. Agora o contexto entrega **contemplados por mês por cota** (`blocoDeOpcoesNaTela`, langgraph/nodes/contexto-da-tela.ts) e instrui ali mesmo qual expressão não usar.
 
 ---
 

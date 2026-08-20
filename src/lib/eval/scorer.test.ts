@@ -16,42 +16,56 @@ const baseSignals = (overrides: Partial<DeterministicSignals> = {}): Determinist
 	conversionStage: "novo",
 	hasLead: false,
 	personaSegments: [],
+	propostas: 0,
+	contratoFechado: false,
+	alertas: [],
+	repeticoesDoAgente: 0,
 	...overrides,
 });
 
-describe("scoreConversao — mapping stage → score", () => {
+// A RÉGUA MUDOU EM 19/08/2026 (PRD §5.1): conversão passou a medir DESFECHO
+// (proposta gerada / contrato fechado), e o estágio do lead só refina dentro da
+// faixa. O mapa fixo antigo dava 0,85 a uma conversa com zero propostas — e
+// 1,0 a quem morreu `qualificado`, acima de quem mandou proposta. Os casos
+// abaixo foram reescritos contra a régua nova; a cobertura fina do teto e da
+// monotonicidade vive em `conversao-mede-desfecho.test.ts`.
+const SEM_PROPOSTA = { propostas: 0, contratoFechado: false };
+const COM_PROPOSTA = { propostas: 1, contratoFechado: false };
+
+describe("scoreConversao — o desfecho manda, o estágio refina", () => {
 	it("novo = 0", () => {
-		expect(scoreConversao("novo", false)).toBe(0);
+		expect(scoreConversao("novo", false, SEM_PROPOSTA)).toBe(0);
 	});
 
-	it("engajado: hasLead muda nota (0.4 vs 0.6)", () => {
-		expect(scoreConversao("engajado", false)).toBe(0.4);
-		expect(scoreConversao("engajado", true)).toBe(0.6);
-	});
-
-	it("qualificado sem lead = 0.7 (qualificação parcial), com lead = 1.0", () => {
-		expect(scoreConversao("qualificado", false)).toBe(0.7);
-		expect(scoreConversao("qualificado", true)).toBe(1.0);
-	});
-
-	it("fechado_ganho = 1.0 e perdido = 0.1 (não é 0 — agente ainda tentou)", () => {
-		expect(scoreConversao("fechado_ganho", true)).toBe(1.0);
-		expect(scoreConversao("perdido", true)).toBe(0.1);
-	});
-
-	// FIX-43: split do fechamento (na_administradora → aguardando_pagamento →
-	// fechado_ganho). São estágios pós-proposta, quase-fechados → score alto,
-	// acima de proposta_enviada (0.95) e abaixo de fechado_ganho (1.0). Antes
-	// caíam no fallback `return 0.0` (tratados como "novo") — bug silencioso.
-	it("na_administradora e aguardando_pagamento pontuam alto (pós-proposta, quase-fechados)", () => {
-		expect(scoreConversao("na_administradora", true)).toBeGreaterThan(0.95);
-		expect(scoreConversao("na_administradora", true)).toBeLessThan(1.0);
-		expect(scoreConversao("aguardando_pagamento", true)).toBeGreaterThan(0.95);
-		expect(scoreConversao("aguardando_pagamento", true)).toBeLessThan(1.0);
-		// monotônico: aguardando_pagamento mais perto do fechamento que na_administradora
-		expect(scoreConversao("aguardando_pagamento", true)).toBeGreaterThan(
-			scoreConversao("na_administradora", true),
+	it("engajado sem proposta: hasLead ainda diferencia, mas em patamar baixo", () => {
+		expect(scoreConversao("engajado", false, SEM_PROPOSTA)).toBeLessThan(
+			scoreConversao("engajado", true, SEM_PROPOSTA),
 		);
+		expect(scoreConversao("engajado", true, SEM_PROPOSTA)).toBeLessThan(0.4);
+	});
+
+	it("qualificado com lead e sem proposta bate no teto — não passa dele", () => {
+		expect(scoreConversao("qualificado", false, SEM_PROPOSTA)).toBeLessThan(
+			scoreConversao("qualificado", true, SEM_PROPOSTA),
+		);
+		expect(scoreConversao("qualificado", true, SEM_PROPOSTA)).toBe(0.4);
+	});
+
+	it("fechado_ganho = 1.0; perdido sem proposta fica no chão", () => {
+		expect(scoreConversao("fechado_ganho", true, COM_PROPOSTA)).toBe(1.0);
+		expect(scoreConversao("perdido", true, SEM_PROPOSTA)).toBeLessThan(0.1);
+	});
+
+	// FIX-43 continua valendo DENTRO da faixa pós-proposta: os estágios
+	// quase-fechados pontuam acima de `proposta_enviada` e abaixo do fechamento.
+	it("na_administradora e aguardando_pagamento seguem monotônicos, com proposta real", () => {
+		expect(scoreConversao("na_administradora", true, COM_PROPOSTA)).toBeGreaterThan(
+			scoreConversao("proposta_enviada", true, COM_PROPOSTA),
+		);
+		expect(scoreConversao("aguardando_pagamento", true, COM_PROPOSTA)).toBeGreaterThan(
+			scoreConversao("na_administradora", true, COM_PROPOSTA),
+		);
+		expect(scoreConversao("aguardando_pagamento", true, COM_PROPOSTA)).toBeLessThan(1.0);
 	});
 });
 
@@ -62,6 +76,8 @@ describe("computeConversaoDimension — reasoning carrega contexto", () => {
 		);
 		expect(d.reasoning).toContain("qualificado");
 		expect(d.reasoning).toContain("sim");
+		// O desfecho é a primeira coisa que o reasoning informa (PRD §5.1).
+		expect(d.reasoning).toMatch(/Propostas geradas: \d+/);
 	});
 });
 

@@ -478,7 +478,19 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 		// seguidos enquanto o agente respondia que ainda não havia proposta.
 		// `escolha` era o único sinal de fechamento aqui; `decisionAccepted` e o
 		// formulário já na tela valem o mesmo (ver `fechamentoSinalizado`).
-		if (!fechamentoSinalizado(meta) && q.prazoMeses === undefined) return "timeframe";
+		//
+		// A SIMULAÇÃO NA TELA JÁ É A RESPOSTA (PRD 19/08/2026, §4.2). Quem chegou a
+		// ver a simulação de uma cota está DENTRO do simulador — perguntar "em
+		// quanto tempo você quer ser contemplado?" ali é o funil andando para trás,
+		// em pleno fechamento. O dado continua útil e continua sendo pedido a quem
+		// ainda não simulou nada; ele só deixa de ser pedágio de quem já passou.
+		if (
+			!fechamentoSinalizado(meta) &&
+			meta.simulacaoApresentada !== true &&
+			q.prazoMeses === undefined
+		) {
+			return "timeframe";
+		}
 	}
 
 	// FIX-215 (Refino Ata 2026-07-04): a conversa de lance (recurso próprio +
@@ -790,6 +802,19 @@ export function decideShowGate(args: {
 	// NÃO dispara em what-if (providing_info → re-simular), pergunta, dúvida nem
 	// off-topic. Idempotência garantida por decisionDispatched no orquestrador.
 	if (gate === "decision") {
+		// ELE RESPONDEU À PERGUNTA QUE O AGENTE FEZ (PRD 19/08/2026, D6).
+		//
+		// "A de prazo mais curto" é a resposta mais decidida que uma conversa pode
+		// ter — e sai do analyzer como `providing_info`, que este gate barrava. A
+		// cliente escolheu, e o card de decisão nunca apareceu.
+		//
+		// A abertura é ANCORADA no fato de servidor: `escolhaOfertada` só existe
+		// quando o PRÓPRIO servidor pôs cotas específicas como alternativa no turno
+		// anterior. What-if solto ("e se fosse R$ 300 mil?") continua sendo
+		// `providing_info` sem oferta pendente — e continua não abrindo nada.
+		if (intent === "providing_info" && (meta.escolhaOfertada?.groupIds.length ?? 0) > 0) {
+			return true;
+		}
 		return intent === "ready_to_proceed" || intent === "neutral";
 	}
 

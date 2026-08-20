@@ -47,6 +47,26 @@
 //
 // Teste que passa sem exercitar o caminho é pior que cobertura ausente — a
 // ausência a gente enxerga.
+//
+// 2026-08-19 (PRD "Destravar o agente", D6) — A PORTA QUE SE ABRIU AO LADO
+// DESTA PAREDE, e por que ela não a derruba.
+//
+// A parede continua de pé: TEXTO LIVRE não assina. O que se descobriu em
+// produção é que ela tinha engolido, junto, a porta legítima — o cliente
+// respondendo à pergunta de escolha que o PRÓPRIO agente fez, com os atalhos
+// que o PRÓPRIO produto ofereceu ("A de prazo mais curto"). Ele cooperava e não
+// tinha caminho até o contrato.
+//
+// A porta nova exige TRÊS fatos simultâneos, e o primeiro é estado do servidor,
+// não interpretação de fala: (1) o servidor ofertou uma escolha entre cotas
+// específicas no turno anterior (`escolhaOfertada`, coagida por ele mesmo a
+// partir dos atalhos), (2) a fala resolve deterministicamente para UMA daquelas
+// cotas, (3) é a MESMA que o modelo indicou. Fora disso, o veto é o de sempre.
+//
+// A prova de que as duas coisas convivem está em `cenario-jornada-rute.test.ts`:
+// lá, a mesma frase ancora COM a pergunta de escolha aberta e NÃO ancora sem
+// ela.
+
 import { afterAll, describe, expect, it } from "vitest";
 import { buscaDoMock } from "./testing/grupos-do-mock";
 import { limparCenario, runScenario } from "./testing/scenario";
@@ -226,5 +246,27 @@ describeIfDb("FIX-406 — nomear cota move a conversa, não assina contrato", ()
 
 		expect(r.meta.escolha).toBeUndefined();
 		expect(r.meta.recommendedOffer?.administradora).not.toBe("RODOBENS");
+	});
+	it("a porta nova exige a oferta do SERVIDOR — nomear continua não assinando", async () => {
+		// PRD 19/08/2026 (D6): responder à pergunta de escolha do agente passou a
+		// ancorar, mas SÓ com `escolhaOfertada` no estado (fato que o servidor
+		// grava ao emitir os atalhos). Nomear a marca solto, como aqui, segue
+		// movendo a conversa e não assinando nada — que é o invariante deste
+		// arquivo.
+		const r = await runScenario({
+			busca: buscaDoMock(96),
+			metaInicial: ANTES_DA_BUSCA,
+			turns: [
+				BUSCA,
+				{
+					user: "quero a do Banco do Brasil",
+					intent: "providing_info",
+					beats: [{ text: "Boa escolha." }, { text: "Alguma dúvida?" }],
+				},
+			],
+		});
+		criadas.push(r.conversationId);
+		expect(r.meta.escolha).toBeUndefined();
+		expect(r.meta.contractOffer).toBeUndefined();
 	});
 });

@@ -26,7 +26,6 @@ describe("FIX-340(b) — título do botão 'Tenho interesse!' nunca carrega \\n 
 			creditValue: 100000,
 			monthlyPayment: 1000,
 			termMonths: 60,
-			contemplationRate: 2.5,
 		});
 		for (const title of allButtonTitles(payload)) {
 			expect(title).not.toMatch(/\n/);
@@ -55,7 +54,6 @@ describe("FIX-340(b) — título do botão 'Tenho interesse!' nunca carrega \\n 
 			creditValue: 100000,
 			monthlyPayment: 1000,
 			termMonths: 60,
-			contemplationRate: 2.5,
 			score: 0.9,
 		});
 		for (const title of allButtonTitles(payload)) {
