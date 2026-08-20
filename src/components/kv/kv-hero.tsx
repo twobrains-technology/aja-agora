@@ -1,6 +1,6 @@
 "use client";
 
-import { Car, Home as HomeIcon, Motorbike, Send } from "lucide-react";
+import { Car, Home as HomeIcon, Motorbike } from "lucide-react";
 import Image from "next/image";
 import { type FormEvent, useRef, useState } from "react";
 
@@ -18,9 +18,9 @@ const SEARCH_CHIPS = [
 	{
 		icon: HomeIcon,
 		label: "Imóvel",
-		// `apoio` só aparece no trio do mobile; o chip dentro do card mostra apenas
-		// o rótulo. Uma lista só para os dois porque é a MESMA categoria: duas
-		// listas divergiriam na primeira vez que alguém trocasse uma frase-semente.
+		// `apoio` só aparece no trio; o chip dentro do card mostra apenas o rótulo.
+		// Uma lista só para os dois porque é a MESMA categoria: duas listas
+		// divergiriam na primeira vez que alguém trocasse uma frase-semente.
 		apoio: "Casa, apê ou terreno",
 		fill: "Quero comprar um imóvel.",
 	},
@@ -45,23 +45,27 @@ interface KvHeroProps {
 // desfocado no canto inferior-esquerdo.
 //
 // ---------------------------------------------------------------------------
-// O mobile diverge do desktop DE PROPÓSITO (pedido do cliente, 2026-08-20).
+// DIVERGE DO COMP, e de propósito (marcações do cliente, 2026-08-20).
 //
-// Os pares `md:hidden` / `hidden md:…` espalhados aqui não são descuido: no
-// celular o topo empilhava pílula + manchete + parágrafo + card + dois CTAs, e a
-// pílula escura competia com os botões de verdade. O que muda abaixo de `md`:
+// O comp empilhava pílula escura, manchete, parágrafo, card e DOIS botões de
+// conversão. A pílula parecia um botão e disputava o toque com os CTAs de
+// verdade; o parágrafo era parede de texto onde cabia algo visual; e o card se
+// apresentava como "Consultor independente", que diz o que a Aja É e não o que
+// fazer ali. O que está aqui hoje:
 //
-//   • a pílula "o jeito independente…" sai (a frase reaparece em faixa própria
-//     antes do rodapé — <KvIndependente/>);
-//   • no lugar dela sobe a primeira frase do parágrafo, em texto puro;
-//   • o resto do parágrafo vira o TRIO Imóvel/Carro/Moto, visual e clicável;
-//   • o card se apresenta como "Fale com a Aja" e diz o que fazer ali;
+//   • sem pílula — a frase virou assinatura de marca no rodapé
+//     (<KvIndependente/>), onde não compete com nada;
+//   • o problema abre a seção, em texto puro, acima da manchete;
+//   • a promessa fecha em uma linha, e os três caminhos viram o TRIO, visual e
+//     clicável;
+//   • o card se chama "Fale com a Aja" e diz o que fazer com os chips;
 //   • o campo digita sozinho, em vez de placeholder parado;
-//   • o aviãozinho vira o CTA "Quero minha simulação";
-//   • "Fale com a AJA" abaixo do card sai — a chamada agora é o título do card.
+//   • um CTA dentro do card ("Quero minha simulação") e UM abaixo dele.
 //
-// O desktop segue idêntico ao comp do Figma. Mexer num lado sem olhar o outro é
-// o jeito de deixar as duas versões dizendo coisas diferentes.
+// As medidas do comp que sobrevivem (coluna de 560px, manchete de 56/62,
+// colagem 1999/1909) continuam valendo — o que mudou foi o conteúdo da coluna,
+// não a grade. Isto nasceu num ajuste só de mobile e foi unificado em seguida:
+// manter dois desenhos era manter dois produtos na mesma página.
 // ---------------------------------------------------------------------------
 export function KvHero({ onOpenChat }: KvHeroProps) {
 	const [value, setValue] = useState("");
@@ -87,18 +91,13 @@ export function KvHero({ onOpenChat }: KvHeroProps) {
 			<KvContainer className="grid items-center gap-12 lg:grid-cols-[560px_1fr] lg:gap-[80px]">
 				{/* Coluna de texto */}
 				<div className="max-w-[560px]">
-					<span className="hidden items-center gap-2 rounded-full bg-[#021628] py-1.5 pl-3.5 pr-4 text-[16px] font-semibold text-[#FAFAF3] md:inline-flex">
-						<AjaMark className="h-3 w-auto text-[#FAFAF3]" />o jeito independente de escolher
-						consórcio
-					</span>
-
-					{/* Mobile: o problema vem antes da promessa, e em texto puro — o que a
-					    pílula tinha de errado não era a frase, era parecer um botão. */}
-					<p className="text-[15px] leading-[1.4] text-[#2D2D2D] md:hidden">
+					{/* O problema vem antes da promessa, e em texto puro — o que a pílula
+					    tinha de errado não era a frase, era parecer um botão. */}
+					<p className="max-w-[507px] text-[15px] leading-[1.4] text-[#2D2D2D] md:text-[18px] md:leading-[1.45]">
 						Comparar tudo isso sozinho leva tempo e aumenta a chance de uma escolha ruim.
 					</p>
 
-					<h1 className="mt-4 text-[40px] font-normal leading-[1.08] tracking-[-0.01em] text-[#021628] md:mt-6 md:text-[56px] md:leading-[62px]">
+					<h1 className="mt-4 text-[40px] font-normal leading-[1.08] tracking-[-0.01em] text-[#021628] md:mt-5 md:text-[56px] md:leading-[62px]">
 						<Em>Compare</Em> consórcios
 						<br />
 						entre diversas
@@ -106,41 +105,38 @@ export function KvHero({ onOpenChat }: KvHeroProps) {
 						<Em>administradoras</Em>
 					</h1>
 
-					<p className="mt-6 hidden max-w-[507px] text-[18px] leading-[1.35] text-[#2D2D2D] md:block md:text-[22px] md:leading-[26px]">
-						Comparar tudo isso sozinho leva tempo e aumenta a chance de uma escolha ruim.
-						<br />A Aja reúne essas informações em um único lugar para{" "}
-						<Em>facilitar sua decisão.</Em>
-					</p>
-
-					{/* Mobile: a promessa curta, e logo os três caminhos. */}
-					<p className="mt-4 text-[16px] leading-[1.35] text-[#2D2D2D] md:hidden">
+					{/* A promessa em uma linha. Era a segunda metade do parágrafo do comp;
+					    a primeira subiu para cima da manchete. */}
+					<p className="mt-4 max-w-[507px] text-[16px] leading-[1.35] text-[#2D2D2D] md:mt-5 md:text-[20px] md:leading-[26px]">
 						A Aja reúne essas informações em um único lugar para <Em>facilitar sua decisão.</Em>
 					</p>
 
-					{/* Trio Imóvel/Carro/Moto — o parágrafo do desktop virou isto no celular.
-					    São botões, e não enfeite: é o bloco mais visível da tela, e mandar o
-					    cliente pro chat com a categoria já escolhida é o que ele existe pra
-					    fazer.
+					{/* Trio Imóvel/Carro/Moto — o resto do parágrafo do comp virou isto.
+					    São botões, e não enfeite: é o bloco mais visível da coluna, e
+					    mandar o cliente pro chat com a categoria já escolhida é o que ele
+					    existe pra fazer.
 
 					    O `aria-label` NÃO pode ser só "Carro": os chips dentro do card já
 					    têm esse nome, e dois botões com o mesmo nome acessível deixam a
 					    página ambígua pra leitor de tela (e pro `getByRole` dos testes). */}
-					<ul className="mt-6 grid grid-cols-3 gap-3 md:hidden">
+					<ul className="mt-6 grid max-w-[514px] grid-cols-3 gap-3 md:mt-7 md:gap-4">
 						{SEARCH_CHIPS.map((chip) => (
 							<li key={chip.label}>
 								<button
 									type="button"
 									aria-label={`Consórcio de ${chip.label.toLowerCase()}`}
 									onClick={(e) => onOpenChat(chip.fill, e.currentTarget, "chip")}
-									className="flex w-full flex-col items-center gap-2 rounded-[12px] border border-[#021628]/10 bg-white/60 px-2 py-3 text-center transition-colors hover:bg-white"
+									className="flex w-full flex-col items-center gap-2 rounded-[12px] border border-[#021628]/10 bg-white/60 px-2 py-3 text-center transition-colors hover:border-[#F2404F]/30 hover:bg-white md:gap-2.5 md:py-4"
 								>
-									<span className="flex size-11 items-center justify-center rounded-full bg-[#FFE0E3]">
-										<chip.icon className="size-5 text-[#F2404F]" strokeWidth={1.75} />
+									<span className="flex size-11 items-center justify-center rounded-full bg-[#FFE0E3] md:size-12">
+										<chip.icon className="size-5 text-[#F2404F] md:size-6" strokeWidth={1.75} />
 									</span>
-									<span className="text-[14px] font-semibold leading-none text-[#021628]">
+									<span className="text-[14px] font-semibold leading-none text-[#021628] md:text-[15px]">
 										{chip.label}
 									</span>
-									<span className="text-[11px] leading-[1.25] text-[#6B6B66]">{chip.apoio}</span>
+									<span className="text-[11px] leading-[1.25] text-[#6B6B66] md:text-[12px]">
+										{chip.apoio}
+									</span>
 								</button>
 							</li>
 						))}
@@ -150,20 +146,15 @@ export function KvHero({ onOpenChat }: KvHeroProps) {
 					<form
 						ref={formRef}
 						onSubmit={submit}
-						className={`mt-8 max-w-[514px] rounded-[12px] bg-white px-6 pb-3 pt-3 ${CARD_SHADOW}`}
+						className={`mt-6 max-w-[514px] rounded-[12px] bg-white px-6 pb-4 pt-3 ${CARD_SHADOW} md:mt-7`}
 					>
-						{/* `items-start` no mobile por causa do subtítulo de duas linhas; o desktop
-						    fica no `items-center` do comp, onde o título é uma linha só. */}
-						<div className="flex items-start gap-2.5 pt-1 md:items-center">
+						<div className="flex items-start gap-2.5 pt-1">
 							<span className="flex size-[31px] shrink-0 items-center justify-center rounded-full bg-[#021628]">
 								<AjaMark className="w-[18px] text-white" />
 							</span>
-							<span className="hidden text-[18px] text-[#000] md:inline">
-								Consultor independente
-							</span>
-							{/* Mobile: a chamada que instrui. "Consultor independente" dizia o que
-							    a Aja é; isto diz o que fazer com os chips logo abaixo. */}
-							<span className="flex flex-col md:hidden">
+							{/* A chamada que instrui. "Consultor independente" dizia o que a Aja
+							    é; isto diz o que fazer com os chips logo abaixo. */}
+							<span className="flex flex-col">
 								<span className="text-[18px] leading-tight text-[#000]">Fale com a Aja</span>
 								<span className="mt-0.5 text-[13px] leading-[1.3] text-[#6B6B66]">
 									Selecione o tipo de consórcio para comparar
@@ -198,35 +189,21 @@ export function KvHero({ onOpenChat }: KvHeroProps) {
 									{chip.label}
 								</button>
 							))}
-							<button
-								type="submit"
-								aria-label="Enviar"
-								// O rosa claro do comp é discreto demais para sinalizar sozinho que
-								// isto envia a busca: no hover ele vira o vermelho da marca, com o
-								// ícone em branco.
-								className="hidden size-[37px] shrink-0 items-center justify-center rounded-[6px] bg-[#FFE0E3] text-[#F2404F] transition-colors hover:bg-[#F2404F] hover:text-white sm:ml-auto md:flex"
-							>
-								<Send className="size-4" strokeWidth={2} />
-							</button>
 						</div>
-						{/* Mobile: o aviãozinho não dizia o que ia acontecer ao ser tocado, e é
-						    alvo pequeno pra dedo. Mesmo molde do card das verticais. */}
-						<KvCtaButton type="submit" className="mb-1 mt-4 h-12 w-full text-[15px] md:hidden">
+						{/* O aviãozinho do comp saiu daqui. Um ícone não dizia o que ia
+						    acontecer ao ser tocado, e 37px é alvo pequeno pra dedo — este é
+						    o botão que fecha a ação principal da página. Mesmo molde do card
+						    das verticais (hero-vertical.tsx). */}
+						<KvCtaButton type="submit" className="mt-4 h-12 w-full text-[15px]">
 							Quero minha simulação
 						</KvCtaButton>
 					</form>
 
-					{/* CTAs */}
+					{/* UM CTA, e não dois. "Fale com a AJA" saiu: essa chamada agora é o
+					    título do card acima, e repeti-la aqui era o CTA duplicado que o
+					    cliente marcou. Ela continua existindo no fecho da página
+					    (kv-footer.tsx), que é outro momento do funil. */}
 					<div className="mt-8 flex flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:gap-5">
-						{/* "Fale com a AJA" só no desktop: no mobile essa chamada virou o
-						    título do card acima, e repeti-la aqui é o CTA duplicado que o
-						    cliente marcou no comp. */}
-						<KvCtaButton
-							className="hidden md:inline-flex"
-							onClick={(e) => onOpenChat("", e.currentTarget)}
-						>
-							Fale com a AJA
-						</KvCtaButton>
 						<KvCtaButton variant="outline" onClick={(e) => onOpenChat("", e.currentTarget)}>
 							Encontre o consórcio certo
 						</KvCtaButton>

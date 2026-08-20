@@ -3,14 +3,14 @@
  * A faixa "O jeito independente de escolher consórcio" no rodapé (pedido do
  * cliente, 2026-08-20).
  *
- * A frase saiu da pílula do hero no mobile — lá ela parecia um botão e disputava
- * o toque com os CTAs de verdade — e foi parar aqui, ENTRE o "Busque a melhor
+ * A frase saiu da pílula do hero — lá ela parecia um botão e disputava o toque
+ * com os CTAs de verdade — e foi parar aqui, ENTRE o "Busque a melhor
  * alternativa" e a faixa navy. A posição é o pedido, e é o que se perde primeiro
  * quando alguém reorganiza o rodapé.
  *
  * O outro caso é o que a mudança quase criou: a mesma frase já existia embaixo
- * do wordmark, dentro da faixa navy. Sem cuidado, o celular passaria a mostrá-la
- * duas vezes com ~100px de distância.
+ * do wordmark, dentro da faixa navy. Sem cuidado, a página passaria a mostrá-la
+ * duas vezes com ~100px de distância — por isso a de lá saiu.
  */
 
 import { cleanup, render, screen } from "@testing-library/react";
@@ -59,22 +59,15 @@ describe("faixa 'jeito independente' no rodapé", () => {
 		).toBeTruthy();
 	});
 
-	it("a frase é de UM breakpoint por vez — nunca duplicada na mesma tela", () => {
+	it("a frase aparece UMA vez — a linha embaixo do wordmark saiu", () => {
 		const { container } = render(<KvFooter onOpenChat={vi.fn()} />);
 
-		// happy-dom não aplica CSS, então as duas versões coexistem no DOM. O que
-		// este caso trava é que cada uma leve o guarda do SEU lado: a da faixa some
-		// no desktop, a do wordmark some no mobile. Tirar qualquer um dos dois faz
-		// a frase aparecer repetida a ~100px de distância.
+		// A frase vivia também embaixo do wordmark, dentro da faixa navy. Com a
+		// faixa logo acima, viravam duas ocorrências em ~100px — repetição que lê
+		// como defeito de render, não como assinatura. Repor a de lá quebra isto.
 		const achadas = ocorrencias(container);
-		expect(achadas).toHaveLength(2);
-
-		const daFaixa = achadas.find((el) => el.closest("section"));
-		const doWordmark = achadas.find((el) => !el.closest("section"));
-
-		expect(daFaixa?.closest("section")?.className).toContain("md:hidden");
-		expect(doWordmark?.className).toContain("hidden");
-		expect(doWordmark?.className).toContain("md:block");
+		expect(achadas).toHaveLength(1);
+		expect(achadas[0]?.closest("section")).not.toBeNull();
 	});
 
 	it("some no rodapé sem CTA final (política, termos) — nada muda ali", () => {

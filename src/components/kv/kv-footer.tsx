@@ -137,10 +137,10 @@ export function KvFooter({ onOpenChat, comCtaFinal = true }: KvFooterProps) {
 				</KvContainer>
 			) : null}
 
-			{/* A assinatura de marca que saiu da pílula do hero no mobile, entre o
-			    "Busque a melhor alternativa" e a faixa navy. Mora aqui dentro, e não
-			    na página, porque a posição pedida é ENTRE dois pedaços do próprio
-			    rodapé — de fora não dá pra chegar nesse meio. */}
+			{/* A assinatura de marca que saiu da pílula do hero, entre o "Busque a
+			    melhor alternativa" e a faixa navy. Mora aqui dentro, e não na página,
+			    porque a posição é ENTRE dois pedaços do próprio rodapé — de fora não
+			    dá pra chegar nesse meio. */}
 			<KvIndependente />
 
 			{/* Footer */}
@@ -155,14 +155,10 @@ export function KvFooter({ onOpenChat, comCtaFinal = true }: KvFooterProps) {
 						{/* Marca */}
 						<div className="flex flex-col items-start gap-3 lg:w-[360px]">
 							<Wordmark className="h-[58px] w-auto text-[#F2F2F2]" />
-							{/* `hidden md:block`: no mobile a mesma frase acabou de aparecer na
-							    faixa logo acima (<KvIndependente/>), e repeti-la a 100px de
-							    distância lê como defeito de render, não como assinatura. No
-							    desktop a faixa não existe e este parágrafo é o único lugar
-							    onde a frase aparece. */}
-							<p className="hidden text-[14px] leading-[2] text-[#F2F2F2] md:block">
-								O jeito independente de escolher consórcio
-							</p>
+							{/* Aqui havia "O jeito independente de escolher consórcio". A frase
+							    saiu porque <KvIndependente/>, logo acima, já a diz — e a ~100px
+							    de distância a repetição lê como defeito de render, não como
+							    assinatura. Está no histórico deste arquivo. */}
 						</div>
 
 						{/* Navegação + Consórcios */}

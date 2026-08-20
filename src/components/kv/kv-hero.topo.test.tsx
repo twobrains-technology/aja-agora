@@ -1,15 +1,15 @@
 // @vitest-environment happy-dom
 /**
- * O topo da home no CELULAR (pedido do cliente, 2026-08-20).
+ * O topo da home redesenhado (marcações do cliente, 2026-08-20).
  *
- * O hero passou a divergir do desktop abaixo de `md`: a pílula "o jeito
- * independente" saiu, o parágrafo virou o trio Imóvel/Carro/Moto, o card se
- * apresenta como "Fale com a Aja" e o aviãozinho virou "Quero minha simulação".
+ * A pílula "o jeito independente" saiu, o parágrafo virou o trio
+ * Imóvel/Carro/Moto, o card se apresenta como "Fale com a Aja" e o aviãozinho
+ * virou "Quero minha simulação". Nasceu só no mobile e foi unificado em seguida
+ * — hoje é UM desenho, nas duas larguras.
  *
- * O que estes casos protegem não é o CSS — `md:hidden` não existe em happy-dom,
- * e os dois lados convivem no DOM. É a INTEGRAÇÃO: os elementos novos existem,
- * têm nome acessível PRÓPRIO (o trio não pode se chamar "Carro", que já é o chip
- * do card) e levam ao Modo Teatro com a semente certa. Um trio bonito e inerte
+ * O que estes casos protegem é a INTEGRAÇÃO: os elementos novos existem, têm
+ * nome acessível PRÓPRIO (o trio não pode se chamar "Carro", que já é o chip do
+ * card) e levam ao Modo Teatro com a semente certa. Um trio bonito e inerte
  * foi exatamente o defeito que o FIX-351 encontrou nos CTAs.
  */
 
@@ -25,9 +25,9 @@ vi.mock("next/image", () => ({
 import { KvHero } from "./kv-hero";
 
 beforeEach(() => {
-	// Largura de celular: é o que `useIsMobile` lê (window.innerWidth < 768).
+	// `useReducedMotion` consulta matchMedia; happy-dom nem sempre traz o método.
 	window.matchMedia = vi.fn().mockImplementation((query: string) => ({
-		matches: query.includes("max-width"),
+		matches: false,
 		media: query,
 		onchange: null,
 		addListener: vi.fn(),
@@ -36,14 +36,13 @@ beforeEach(() => {
 		removeEventListener: vi.fn(),
 		dispatchEvent: vi.fn(),
 	})) as unknown as typeof window.matchMedia;
-	window.innerWidth = 390;
 });
 
 afterEach(() => {
 	cleanup();
 });
 
-describe("KvHero no mobile", () => {
+describe("KvHero — topo redesenhado", () => {
 	it("o card se apresenta como 'Fale com a Aja' e diz o que fazer com os chips", () => {
 		render(<KvHero onOpenChat={vi.fn()} />);
 
@@ -95,5 +94,14 @@ describe("KvHero no mobile", () => {
 		// Sem timer avançado o placeholder é a frase 1 inteira (estado congelado);
 		// o que importa aqui é que o campo nunca fica sem convite nenhum.
 		expect(screen.getByRole("textbox").getAttribute("placeholder")).toBeTruthy();
+	});
+
+	it("a pílula 'o jeito independente' não está mais no hero", () => {
+		// Ela parecia um botão e disputava o toque com os CTAs de verdade. A frase
+		// virou assinatura de marca no rodapé (<KvIndependente/>) — repor aqui
+		// desfaz a marcação do cliente e quebra isto.
+		render(<KvHero onOpenChat={vi.fn()} />);
+
+		expect(screen.queryByText(/jeito independente de escolher/i)).toBeNull();
 	});
 });
