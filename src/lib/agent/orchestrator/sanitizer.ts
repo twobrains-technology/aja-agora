@@ -209,22 +209,25 @@ export function isPrematureReservationClaim(
 	return PREMATURE_RESERVATION_PATTERNS.some((rx) => rx.test(s));
 }
 
-// FIX-243 (rodada 2, Fable r1, §D5.2 do veredito — 05-compliance-e-dados.md):
-// `taxaContemplacao` é campo PROIBIDO — semântica não documentada pela Bevi
-// (registro honesto da spec: foi inferência sem base durante a prototipagem).
-// O guard estático (`no-taxa-contemplacao.guard.test.ts`) só cobre payload/UI;
-// a FALA do LLM vazava o conceito como argumento de venda ("A ITAÚ se destaca
-// pela boa taxa de contemplação"). Fonte permitida de sinal de contemplação:
-// `monthlyAwardedQuotas`/contemplados por mês (contagem REAL), nunca "taxa".
-const TAXA_CONTEMPLACAO_PATTERNS: RegExp[] = [/\btaxa\s+de\s+contempla[çc][ãa]o\b/i];
-
-/** Um segmento cita "taxa de contemplação" (campo proibido, sem semântica
- * documentada) — não pode virar bolha. */
-export function isTaxaContemplacaoClaim(segment: string): boolean {
-	const s = segment.trim();
-	if (!s) return false;
-	return TAXA_CONTEMPLACAO_PATTERNS.some((rx) => rx.test(s));
-}
+// APOSENTADO EM 19/08/2026 — `isTaxaContemplacaoClaim` (regex sobre a fala).
+//
+// Era uma lista de bloqueio por expressão regular sobre o que o modelo diz, sem
+// nenhum FATO de servidor que a frase contradissesse: "taxa de contemplação" é
+// léxico, não estado. O próprio CLAUDE.md deste projeto descreve o padrão e o
+// custo dele — e a sonda do PRD mostrou que já não convergia: a paráfrase real
+// da produção ("taxa MÉDIA de contemplação por assembleia", turno 22 da conversa
+// da Rute) passava ilesa pelo filtro.
+//
+// Pior: a mordaça foi aplicada SEM entregar ao modelo o dado permitido. Proibir
+// o vocabulário do assunto que mais decide venda de consórcio, sem dar o número
+// que pode ser dito, deixou o agente mudo justamente na pergunta do cliente.
+// Agora o contexto leva contemplados por mês por cota (`blocoDeOpcoesNaTela`) e
+// diz, ali, qual expressão não usar — instrução onde o dado está, não regex no
+// meio do stream.
+//
+// O que PERMANECE: o guard estático de payload (`no-taxa-contemplacao.guard.test.ts`),
+// que impede o campo `taxaContemplacao` de viajar para a UI/tools. Campo sem
+// semântica documentada não deve trafegar — isso é invariante de verdade.
 
 // FIX-334 (rodada 2, veredito Sonnet — dossiê imóvel, "Você tem a Itaú em
 // destaque com score de 73%"): regressão contra decisão de produto já
@@ -907,7 +910,6 @@ export type EphemeralDropReason =
 	| "prazo-reduction"
 	| "premature-reservation"
 	| "banned-lexicon"
-	| "taxa-contemplacao"
 	| "proactive-callback"
 	| "mechanism-narration"
 	| "fabricated-state"
@@ -945,7 +947,6 @@ function factualDropReason(
 	if (isTechnicalFallback(segment)) return "technical-fallback";
 	if (isPrazoReductionClaim(segment)) return "prazo-reduction";
 	if (isPrematureReservationClaim(segment, ctx)) return "premature-reservation";
-	if (isTaxaContemplacaoClaim(segment)) return "taxa-contemplacao";
 	if (isMechanismNarrationClaim(segment)) return "mechanism-narration";
 	if (isInternalToolLeak(segment)) return "internal-tool-leak";
 	if (isPrematureRevealScenario(segment, ctx)) return "premature-reveal-scenario";

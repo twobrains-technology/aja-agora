@@ -57,7 +57,6 @@ export const groupCardSchema = z.object({
 	adminFeePercent: z.number().describe("Taxa de administracao em percentual"),
 	termMonths: z.number().int().describe("Prazo em meses"),
 	availableSlots: z.number().int().describe("Vagas disponiveis"),
-	contemplationRate: z.number().describe("Taxa media de contemplacao por assembleia"),
 	// FIX-223: lance medio (R$) — copie LITERAL de search_groups/recommend_groups
 	// quando presente; omita o campo se a fonte nao trouxer (NUNCA invente).
 	avgBidValue: z.number().optional().describe("Lance medio do grupo em reais, quando a fonte traz"),
@@ -66,9 +65,8 @@ export const groupCardSchema = z.object({
 export const comparisonTableSchema = z.object({
 	groups: z
 		.array(
-			groupCardSchema.omit({ availableSlots: true, contemplationRate: true }).extend({
+			groupCardSchema.omit({ availableSlots: true }).extend({
 				availableSlots: z.number(),
-				contemplationRate: z.number(),
 			}),
 		)
 		.describe("Array de grupos para comparar"),
@@ -127,10 +125,26 @@ export const simulationResultSchema = z.object({
 		.array(
 			z.object({
 				label: z.string().describe("Texto visivel do botao (ex: 'Ajustar valor')"),
+				// LISTA FECHADA — allowlist, nunca texto livre (D7, 19/08/2026).
+				//
+				// Com `z.string()` aqui, o modelo escrevia a intencao que quisesse
+				// ("view_scenarios") e o front colapsava tudo que nao conhecia em
+				// "Ajustar valor": o cliente clicava em ver cenarios de contemplacao e
+				// o servidor mandava ao modelo que ele queria MUDAR o valor do bem. A
+				// fala seguinte era honesta — a instrucao e que era falsa.
+				//
+				// Cada valor daqui tem handler proprio no card e no route. Intencao
+				// fora da lista nem sai do schema.
 				intent: z
-					.string()
+					.enum([
+						"adjust_value",
+						"new_simulation",
+						"compare_other",
+						"view_scenarios",
+						"compare_financing",
+					])
 					.describe(
-						"Intent enviado ao agente ao clicar (ex: 'adjust_value', 'new_simulation', 'compare_other')",
+						"Intent enviado ao agente ao clicar. adjust_value/new_simulation = reabrir o what-if; compare_other = ver outras administradoras; view_scenarios = cenarios de contemplacao (lance x mes-alvo); compare_financing = consorcio x financiamento.",
 					),
 			}),
 		)
@@ -151,7 +165,6 @@ export const recommendationSchema = z.object({
 	monthlyPayment: z.number().describe("Parcela mensal em reais"),
 	adminFeePercent: z.number().describe("Taxa de administracao em percentual"),
 	termMonths: z.number().int().describe("Prazo em meses"),
-	contemplationRate: z.number().describe("Taxa media de contemplacao por assembleia"),
 	// FIX-191: `contempladosMes` DEIXOU de ser input da LLM (era a origem do "36/mês"
 	// fabricado — spec §2). Agora o runner coage o hero contra o grupo REAL do turno
 	// (coerceRecommendationPayload) e re-adiciona contempladosMes SÓ do availableSlots
@@ -230,9 +243,21 @@ export const quickReplySchema = z.object({
 			z.object({
 				label: z
 					.string()
-					.max(24)
+					// 20, e não 24: é o teto de título de botão da API do WhatsApp
+					// (`formatter.ts`), que TRUNCA o excedente. Com 21 caracteres, "A de
+					// prazo mais curto" chegava de volta como "A de prazo mais curt" e
+					// nenhum resolvedor entendia a escolha do cliente — o defeito D6
+					// intacto no canal de maior volume. O schema é o lugar de impedir,
+					// porque é o único que o modelo lê.
+					.max(20)
 					.describe(
-						"O texto do botão, do jeito que o CLIENTE responderia: 'Pode buscar', 'Prefiro a de 190 mil', 'Me explica melhor'. Curto (até 24 caracteres) e em primeira pessoa.",
+						"O texto do botão, do jeito que o CLIENTE responderia: 'Pode buscar', 'Prefiro a de 190 mil', 'Me explica melhor'. Curto (ATE 20 caracteres — o WhatsApp corta o que passar disso) e em primeira pessoa.",
+					),
+				groupId: z
+					.string()
+					.optional()
+					.describe(
+						"QUANDO — e SOMENTE quando — este atalho for o cliente ESCOLHENDO uma das cotas que voce mostrou, passe aqui o groupId EXATO dessa cota, como veio no card. Com ele o clique vira escolha de verdade e a contratacao sai na cota certa; sem ele o atalho e so texto. NUNCA invente id, e nao preencha em atalho que nao escolhe cota ('Me explica melhor', 'Pode buscar'). ⚠️ O SERVIDOR CONFERE o rotulo contra a cota: escreva o botao DESCREVENDO a cota por uma caracteristica que ele entende — 'A de menor parcela', 'A de prazo mais curto', 'A de prazo mais longo', 'A de maior carta', 'A que contempla mais rapido', ou o NOME da administradora quando so uma delas esta em jogo ('A do Itau'). Rotulo vago ('A primeira', 'Essa mesma', 'A mais barata pra mim') o servidor nao consegue conferir e o atalho perde a cota — o cliente clica e nada acontece.",
 					),
 			}),
 		)
@@ -1809,12 +1834,20 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 			// Sem o turno no contexto (chamador que não passa `turnoDoCliente`), a
 			// tool não tem como decidir — e então NÃO afirma. Confirmar por omissão
 			// é o defeito original.
+			const metaDoTurno = await metaAtual();
 			const veredito = ctx.turnoDoCliente
 				? escolhaPodeSerAncorada({
 						texto: ctx.turnoDoCliente.texto,
 						intent: ctx.turnoDoCliente.intent,
 						groupId: args.groupId,
 						exibidas,
+						// Mesmo fato que o nó `converse` consulta para GRAVAR: os atalhos
+						// que o servidor ofereceu no turno anterior. As duas leituras têm
+						// que ser a mesma, ou a tool volta a dizer ao modelo algo que o
+						// servidor não vai fazer (`fd76e393`).
+						...(metaDoTurno?.escolhaOfertada
+							? { escolhaOfertada: metaDoTurno.escolhaOfertada }
+							: {}),
 					})
 				: null;
 

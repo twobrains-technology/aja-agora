@@ -35,7 +35,6 @@ describe("WhatsApp — sem composição de custos nas mensagens (Bernardo 2026-0
 		monthlyPayment: 5715,
 		adminFeePercent: 18,
 		termMonths: 200,
-		contemplationRate: 2,
 		score: 0.9,
 	};
 
@@ -47,7 +46,6 @@ describe("WhatsApp — sem composição de custos nas mensagens (Bernardo 2026-0
 		monthlyPayment: 5715,
 		adminFeePercent: 18,
 		termMonths: 200,
-		contemplationRate: 2,
 	};
 
 	it("simulationResultToWhatsApp não menciona taxa admin / fundo reserva / seguro / custo total / taxa efetiva", () => {

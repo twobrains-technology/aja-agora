@@ -13,8 +13,14 @@ export interface GroupSummary {
 	adminFeePercent: number;
 	termMonths: number;
 	totalParticipants: number;
+	/** Cotas contempladas por mês (`monthlyAwardedQuotas`) — CONTAGEM real, o
+	 * único sinal de velocidade de contemplação que este produto usa.
+	 *
+	 * O campo `contemplationRate` que existia ao lado saiu em 19/08/2026: era
+	 * cópia LITERAL deste valor (offer-mapper gravava o mesmo número nos dois) com
+	 * um nome que mentia — e o nome vazou para a tela, virando "15.0%/assembleia"
+	 * no WhatsApp para um dado que é "15 cotas por mês". */
 	availableSlots: number;
-	contemplationRate: number; // % historically contemplated per month
 	// FIX-193: critérios INTERNOS de ranking/dedup — NUNCA vão pra UI. `tipoOferta`
 	// (SPECIAL_OFFER|FREE_BID) desempata por afinidade de lance; `grupo` (nº do
 	// grupo) dedupa o mesmo grupo vindo em 2 modalidades. Stripados no

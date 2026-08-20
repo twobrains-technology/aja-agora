@@ -31,7 +31,6 @@ export interface RevealGroupLike {
 	adminFeePercent?: number;
 	termMonths?: number;
 	availableSlots?: number;
-	contemplationRate?: number;
 	/** UUID de sessão da oferta (Bevi) — campo do CONTRATO, quando propagado. */
 	ofertaId?: string;
 	/** FIX-334: posição ordinal no ranking de `recommend_groups` (0 = melhor) —
@@ -135,7 +134,6 @@ export function coerceRevealCota(
 	out.monthlyPayment = group.monthlyPayment;
 	out.termMonths = group.termMonths;
 	if (typeof group.adminFeePercent === "number") out.adminFeePercent = group.adminFeePercent;
-	if (typeof group.contemplationRate === "number") out.contemplationRate = group.contemplationRate;
 	if (typeof group.availableSlots === "number") out.availableSlots = group.availableSlots;
 	if (typeof group.ofertaId === "string" && group.ofertaId.length > 0)
 		out.ofertaId = group.ofertaId;
@@ -199,7 +197,6 @@ export function coerceRecommendationPayload(
 				termMonths: group.termMonths as number,
 				totalParticipants: 0,
 				availableSlots: group.availableSlots ?? 0,
-				contemplationRate: group.contemplationRate ?? 0,
 			},
 			scoringInput,
 		);

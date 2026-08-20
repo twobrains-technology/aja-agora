@@ -220,12 +220,28 @@ export async function emitCardNode(
 	// cards sem nada a responder (sessão `ff8f2080`, produção 2026-08-13). Quando
 	// a âncora conduz, nada muda — o gate continua suprimido e não há pergunta
 	// dupla.
+	// O GATE OPCIONAL NÃO SE PENDURA SOB A RESPOSTA DE UM CLIQUE (D9).
+	//
+	// `decideShowGate` devolve `true` para todo turno server-authored de
+	// propósito (FIX-206: clique → directive → próximo passo no mesmo turno), e
+	// isso vale para os gates de COLETA. Para o `experience` — que é opcional,
+	// de uso único e existe para ajudar a vender — o efeito era outro: o cliente
+	// pedia os cenários de contemplação e recebia, embaixo da resposta, os chips
+	// de "você já fez consórcio antes?". Pergunta que ninguém fez, no meio do
+	// assunto que ele pediu; e, na conversa da Rute, o portão ainda foi queimado
+	// sem que a pergunta aparecesse em lugar nenhum.
+	//
+	// Ele espera o turno do cliente. Nada se perde: `nextGate` continua devolvendo
+	// `experience` enquanto a resposta não vier.
+	const gateOpcionalEmTurnoDoSistema = !state.isUserTurn && state.gate === "experience";
+
 	const revelouSemConduzir = state.apresentaOfertaNesteTurno && state.ancoraFalhou;
 	const gateDoTurno =
 		(((state.apresentaOfertaNesteTurno && !revelouSemConduzir) || turnoJaPedeAcao) &&
 			!GATES_DE_ACAO.has(String(state.gate ?? ""))) ||
 		perguntaEmbutidoNoEscuro ||
-		cardDeNomeAtropelaAFala
+		cardDeNomeAtropelaAFala ||
+		gateOpcionalEmTurnoDoSistema
 			? undefined
 			: state.gate;
 	if (gateDoTurno) {
@@ -434,7 +450,15 @@ export async function emitCardNode(
 	// O gate `experience` foi perguntado NESTE turno — não pergunta de novo. Ver
 	// a nota em `nextGate`: era o único gate opcional sem guarda de idempotência,
 	// e reaparecia turno após turno enquanto a resposta não viesse.
-	if (gateDoTurno === "experience" && !funnel.experienceDispatched) {
+	//
+	// ⚠️ SÓ EM TURNO DO CLIENTE (D9, conversa da Rute, 19/08/2026). O estado final
+	// dela tinha `experienceDispatched = true` e a pergunta não aparece em lugar
+	// nenhum da transcrição: o portão foi queimado num turno gerado por INSTRUÇÃO
+	// DO SISTEMA (clique que virou directive), em pleno fechamento. Uso único
+	// gasto sem ninguém ter perguntado nada — o dado que ajuda a vender some para
+	// sempre. Turno do cliente consome normal: ali a pergunta foi de fato feita a
+	// ele.
+	if (gateDoTurno === "experience" && !funnel.experienceDispatched && state.isUserTurn) {
 		funnel = { ...funnel, experienceDispatched: true };
 	}
 	// Marca que o card do nome já cedeu a vez — no próximo turno ele sai de

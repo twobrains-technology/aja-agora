@@ -297,8 +297,31 @@ export async function advanceFunnelNode(
 				mencionada.groupId && mencionada.groupId !== funnel.recommendedOffer?.groupId,
 			);
 			const herdado = trocouDeGrupo ? undefined : funnel.recommendedOffer;
+			// A MINA ARMADA (D8, conversa da Rute).
+			//
+			// Estado final dela: cota em foco = ITAÚ, e um `pendingRecommendationCard`
+			// do BANCO DO BRASIL esperando a vez. O card guardado é liberado assim que
+			// a experiência resolve — no turno seguinte a cliente veria um destaque do
+			// BB surgir do nada, depois de ter escolhido o Itaú e recebido a simulação
+			// dele. Dois trilhos paralelos correndo ao mesmo tempo.
+			//
+			// A conversa mudou de cota: a recomendação guardada da cota ANTERIOR
+			// morre aqui. Guardar uma recomendação que a conversa já deixou para trás
+			// não é cautela, é contradição agendada.
+			const cardPendenteEDeOutraCota =
+				Boolean(funnel.pendingRecommendationCard) &&
+				(() => {
+					const card = funnel.pendingRecommendationCard as
+						| { id?: string; groupId?: string; administradora?: string }
+						| undefined;
+					if (!card) return false;
+					const idDoCard = card.groupId ?? card.id;
+					if (idDoCard && mencionada.groupId) return idDoCard !== mencionada.groupId;
+					return (card.administradora ?? "") !== (mencionada.administradora ?? "");
+				})();
 			funnel = {
 				...funnel,
+				...(cardPendenteEDeOutraCota ? { pendingRecommendationCard: undefined } : {}),
 				recommendedAdministradora: mencionada.administradora ?? funnel.recommendedAdministradora,
 				recommendedOffer: {
 					...(mencionada.groupId

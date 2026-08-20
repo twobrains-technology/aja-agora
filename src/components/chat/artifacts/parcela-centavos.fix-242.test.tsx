@@ -46,7 +46,6 @@ describe("FIX-242 — ComparisonTable: parcela com centavos, carta sem centavos"
 				adminFeePercent: 18,
 				termMonths: 80,
 				availableSlots: 3,
-				contemplationRate: 0.5,
 			},
 		],
 	};

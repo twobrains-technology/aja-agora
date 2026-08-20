@@ -32,7 +32,7 @@ function CostLine({ label, value, bold = false }: CostLineProps) {
 }
 
 export function SimulationResult({ payload }: { payload: SimulationResultPayload }) {
-	const { sendAction, status } = useChatContext();
+	const { sendAction, sendUserMessage, status } = useChatContext();
 	const isStreaming = status === "submitted" || status === "streaming";
 
 	const handleInterest = () => {
@@ -54,23 +54,67 @@ export function SimulationResult({ payload }: { payload: SimulationResultPayload
 	// FIX-29: o kind vem do INTENT da action (não mais "interest" pra tudo).
 	// "Comparar outra adm" → outras opções; ajuste/nova simulação → reabre o
 	// what-if. "interest" é EXCLUSIVO do botão "Tenho interesse" (handleInterest).
+	//
+	// D7 (19/08/2026) — CADA INTENÇÃO NO SEU HANDLER, E NENHUMA TRADUÇÃO.
+	//
+	// O `else` deste bloco mandava TUDO que não fosse `compare_other` para
+	// `adjust-value`, e o directive de "Ajustar valor" diz ao modelo que o cliente
+	// quer MUDAR o valor do bem. Uma cliente clicou em "Ver cenários de
+	// contemplação" e ouviu, com a simulação na tela, "qual valor você gostaria de
+	// simular?". Foi a última mensagem da conversa.
+	//
+	// Intenção que o card não conhece NÃO vira outra intenção: entra como a fala
+	// do cliente, com o rótulo que ele leu no botão. Pior caso, o modelo lê o
+	// pedido verdadeiro e responde — nunca um pedido que ninguém fez.
 	const handleAction = (action: { label: string; intent: string }) => {
 		if (isStreaming) return;
 		if (action.intent === "compare_other") {
-			void sendAction({ kind: "show-other-options", label: action.label }, action.label);
+			void sendAction(
+				{ kind: "show-other-options", label: action.label, intent: "compare_other" },
+				action.label,
+			);
 			return;
 		}
-		// adjust_value, new_simulation e qualquer outro intent secundário reabrem o
-		// ajuste — nunca o funil de fechamento.
-		void sendAction(
-			{
-				kind: "adjust-value",
-				administradora: payload.administradora,
-				creditValue: payload.creditValue,
-				label: action.label,
-			},
-			action.label,
-		);
+		if (action.intent === "view_scenarios") {
+			void sendAction(
+				{
+					kind: "view-scenarios",
+					intent: "view_scenarios",
+					administradora: payload.administradora,
+					...(payload.groupId ? { groupId: payload.groupId } : {}),
+					label: action.label,
+				},
+				action.label,
+			);
+			return;
+		}
+		if (action.intent === "compare_financing") {
+			void sendAction(
+				{
+					kind: "compare-financing",
+					intent: "compare_financing",
+					administradora: payload.administradora,
+					creditValue: payload.creditValue,
+					label: action.label,
+				},
+				action.label,
+			);
+			return;
+		}
+		if (action.intent === "adjust_value" || action.intent === "new_simulation") {
+			void sendAction(
+				{
+					kind: "adjust-value",
+					intent: action.intent === "new_simulation" ? "new_simulation" : "adjust_value",
+					administradora: payload.administradora,
+					creditValue: payload.creditValue,
+					label: action.label,
+				},
+				action.label,
+			);
+			return;
+		}
+		void sendUserMessage(action.label);
 	};
 
 	return (

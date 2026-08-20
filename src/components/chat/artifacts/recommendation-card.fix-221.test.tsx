@@ -28,7 +28,6 @@ const payload: RecommendationCardPayload = {
 	monthlyPayment: 1_500,
 	adminFeePercent: 18,
 	termMonths: 80,
-	contemplationRate: 0,
 	score: 0.8,
 	scoreBreakdown: { monthlyFit: 0.8, contemplation: 0.5, adminFee: 0.5, termMatch: 0.5 },
 };
