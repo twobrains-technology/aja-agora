@@ -13,7 +13,7 @@
  *    scrim, e o morph de entrada sai de um elemento que está sumindo por baixo.
  */
 
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { WHATSAPP_OFICIAL_DIGITOS } from "@/lib/bevi/closing-presentation";
@@ -21,10 +21,10 @@ import { WHATSAPP_OFICIAL_DIGITOS } from "@/lib/bevi/closing-presentation";
 import { ChatFlutuante } from "./chat-flutuante";
 import { TheaterProvider, useTheater } from "./theater/theater-context";
 
-/** `useReducedMotion` consulta matchMedia; happy-dom nem sempre traz o método. */
-function ambiente({ reduzido = false } = {}) {
+/** happy-dom nem sempre traz `matchMedia`, e a árvore do teatro consulta. */
+function ambiente() {
 	window.matchMedia = vi.fn().mockImplementation((query: string) => ({
-		matches: query.includes("prefers-reduced-motion") ? reduzido : false,
+		matches: false,
 		media: query,
 		onchange: null,
 		addListener: vi.fn(),
@@ -37,30 +37,14 @@ function ambiente({ reduzido = false } = {}) {
 
 beforeEach(() => {
 	ambiente();
-	vi.useFakeTimers();
 });
 
 afterEach(() => {
 	cleanup();
-	vi.useRealTimers();
 });
 
 function botao() {
 	return screen.getByRole("link", { name: "Fale no WhatsApp" });
-}
-
-/** Uma "rolada": o evento que o listener escuta. */
-function rolar() {
-	act(() => {
-		window.dispatchEvent(new Event("scroll"));
-	});
-}
-
-/** A tela sossega — o debounce fecha. */
-function sossegar() {
-	act(() => {
-		vi.advanceTimersByTime(500);
-	});
 }
 
 /**
@@ -137,61 +121,5 @@ describe("ChatFlutuante", () => {
 		montar();
 
 		expect(botao().getAttribute("data-heat-id")).toBe("whatsapp-flutuante");
-	});
-
-	describe("o rótulo acompanha a rolagem", () => {
-		it("com a tela parada, o rótulo está aberto", () => {
-			montar();
-
-			expect(botao().hasAttribute("data-recolhido")).toBe(false);
-		});
-
-		it("ao rolar, o rótulo recolhe — mas o botão continua clicável", () => {
-			montar();
-
-			rolar();
-
-			expect(botao().hasAttribute("data-recolhido")).toBe(true);
-
-			// O que recolhe é o RÓTULO. Sumir com o alvo no meio da rolagem seria
-			// tirar a conversa da mão de quem está justamente procurando por ela.
-			expect(botao().getAttribute("href")).toContain("wa.me");
-		});
-
-		it("quando a tela para, o rótulo volta", () => {
-			montar();
-
-			rolar();
-			expect(botao().hasAttribute("data-recolhido")).toBe(true);
-
-			sossegar();
-			expect(botao().hasAttribute("data-recolhido")).toBe(false);
-		});
-
-		it("rolagem contínua segura o rótulo recolhido — não pisca entre eventos", () => {
-			montar();
-
-			// Cada evento empurra o prazo pra frente. Com throttle em vez de
-			// debounce, o rótulo abriria e fecharia no meio da rolagem.
-			for (let i = 0; i < 5; i += 1) {
-				rolar();
-				act(() => {
-					vi.advanceTimersByTime(300);
-				});
-				expect(botao().hasAttribute("data-recolhido")).toBe(true);
-			}
-
-			sossegar();
-			expect(botao().hasAttribute("data-recolhido")).toBe(false);
-		});
-
-		it("com prefers-reduced-motion o rótulo fica sempre aberto", () => {
-			ambiente({ reduzido: true });
-			montar();
-
-			rolar();
-
-			expect(botao().hasAttribute("data-recolhido")).toBe(false);
-		});
 	});
 });
