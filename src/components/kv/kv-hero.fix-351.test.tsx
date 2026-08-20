@@ -43,22 +43,27 @@ afterEach(() => {
 });
 
 describe("FIX-351 — KvHero chama onOpenChat", () => {
-	it("o hero tem UM CTA abaixo do card — 'Fale com a AJA' saiu de lá", () => {
-		// 2026-08-20: a chamada virou o título do card ("Fale com a Aja"), e
-		// repeti-la logo abaixo era o CTA duplicado que o cliente marcou. Ela
-		// continua existindo no fecho da página (kv-footer.tsx), que é outro
-		// momento do funil — este caso trava só o hero.
+	it("NENHUM CTA solto abaixo do card — os dois saíram do hero", () => {
+		// 2026-08-20, em duas etapas do mesmo dia: de manhã o "Fale com a AJA"
+		// virou o título do card; à tarde o "Encontre o consórcio certo" também
+		// saiu (decisão do Kairo). Três caminhos para a mesma conversa, empilhados,
+		// era o que o cliente marcou nos prints.
+		//
+		// Os dois continuam existindo no fecho da página (kv-footer.tsx), que é
+		// outro momento do funil — este caso trava só o hero.
 		render(<KvHero onOpenChat={vi.fn()} />);
 
 		expect(screen.queryByRole("button", { name: "Fale com a AJA" })).toBeNull();
-		expect(screen.getByRole("button", { name: "Encontre o consórcio certo" })).toBeTruthy();
+		expect(screen.queryByRole("button", { name: "Encontre o consórcio certo" })).toBeNull();
 	});
 
-	it("clicar em 'Encontre o consórcio certo' chama onOpenChat com seed vazio", () => {
+	it("o que fecha a ação no hero é o CTA de dentro do card", () => {
+		// O controle positivo da remoção acima: sem ele, apagar o botão do card
+		// junto deixaria os dois casos verdes com o hero sem saída nenhuma.
 		const onOpenChat = vi.fn();
 		render(<KvHero onOpenChat={onOpenChat} />);
 
-		fireEvent.click(screen.getByRole("button", { name: "Encontre o consórcio certo" }));
+		fireEvent.click(screen.getByRole("button", { name: "Quero minha simulação" }));
 
 		expect(onOpenChat).toHaveBeenCalledTimes(1);
 		expect(onOpenChat.mock.calls[0][0]).toBe("");

@@ -119,7 +119,13 @@ export function ChatFlutuante() {
 			>
 				Fale com a gente
 			</span>
-			<span className="flex size-14 shrink-0 items-center justify-center rounded-full bg-[#F2404F] text-white shadow-[0_8px_24px_-4px_#F2404F80]">
+			{/* AZUL DA MARCA, e não o coral (decisão do Kairo, 20/08/2026): `--aja-blue`
+			    #036eff, o mesmo token de `globals.css`. O coral é a cor dos CTAs de
+			    conversão da página (KvCtaButton); este botão acompanha a rolagem por
+			    cima de todas as seções, e repetir o coral fazia ele ler como "mais um
+			    CTA" em vez de atalho permanente para a conversa. A sombra segue a cor
+			    do botão, como era com o coral. */}
+			<span className="flex size-14 shrink-0 items-center justify-center rounded-full bg-[#036EFF] text-white shadow-[0_8px_24px_-4px_#036EFF80]">
 				<MessageCircleMore className="size-6" strokeWidth={2} aria-hidden="true" />
 			</span>
 		</button>

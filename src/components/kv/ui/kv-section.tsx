@@ -32,8 +32,15 @@ import { cn } from "@/lib/utils";
  * a ~55% e arredondados na escala do Tailwind — proporção, não medida.
  */
 export const KV_RITMO = {
-	/** Encosta no menu, não em outra seção: 144px é o que o comp abre até o badge. */
-	hero: "pt-12 pb-14 md:pt-36 md:pb-[151px]",
+	/** Encosta no menu, não em outra seção: 144px é o que o comp abre até o badge.
+	 *
+	 * O respiro do CELULAR encolheu em 20/08/2026 (pedido do Kairo): 48 → 28px no
+	 * topo e 56 → 40px na base. A primeira dobra é a única que compete com a
+	 * altura da tela — o que estiver abaixo do vão só existe depois de uma
+	 * rolagem —, e a barra acima também ficou 40% mais baixa no mesmo pedido:
+	 * manter o vão antigo devolveria, em espaço vazio, o que a barra economizou.
+	 * O desktop segue o comp. */
+	hero: "pt-7 pb-10 md:pt-36 md:pb-[151px]",
 	jornada: "pt-8 pb-12 md:pt-[62px] md:pb-[92px]",
 	/** 85 e não 108: a serpentina da jornada acima já desce além do último texto. */
 	tipos: "pt-11 pb-16 md:pt-[85px] md:pb-[119px]",

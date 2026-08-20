@@ -199,15 +199,15 @@ export function KvHero({ onOpenChat }: KvHeroProps) {
 						</KvCtaButton>
 					</form>
 
-					{/* UM CTA, e não dois. "Fale com a AJA" saiu: essa chamada agora é o
-					    título do card acima, e repeti-la aqui era o CTA duplicado que o
-					    cliente marcou. Ela continua existindo no fecho da página
-					    (kv-footer.tsx), que é outro momento do funil. */}
-					<div className="mt-8 flex flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:gap-5">
-						<KvCtaButton variant="outline" onClick={(e) => onOpenChat("", e.currentTarget)}>
-							Encontre o consórcio certo
-						</KvCtaButton>
-					</div>
+					{/* NENHUM CTA SOLTO ABAIXO DO CARD (decisão do Kairo, 20/08/2026).
+					    Hoje de manhã saiu o "Fale com a AJA" — a chamada virou o título do
+					    card — e agora sai também o "Encontre o consórcio certo": o card
+					    fecha a ação com o "Quero minha simulação", e o trio acima já leva
+					    à conversa com a categoria escolhida. Três caminhos para o mesmo
+					    lugar, um embaixo do outro, é o empilhamento que o cliente marcou.
+
+					    A conversa continua alcançável de qualquer ponto da página pelo
+					    botão flutuante (<ChatFlutuante/>) e pelo fecho (kv-footer.tsx). */}
 				</div>
 
 				{/* Colagem de fotos — PNG único (tríptico + consultora + sunburst + balões
