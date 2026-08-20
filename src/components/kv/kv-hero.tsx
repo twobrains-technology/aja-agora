@@ -120,7 +120,7 @@ export function KvHero({ onOpenChat }: KvHeroProps) {
 					<form
 						ref={formRef}
 						onSubmit={submit}
-						className={`mt-5 max-w-[514px] rounded-[16px] bg-white px-5 pb-5 pt-4 ${CARD_SHADOW} sm:px-6 md:mt-7`}
+						className={`mt-5 max-w-[514px] rounded-[16px] bg-white px-5 pb-6 pt-5 ${CARD_SHADOW} sm:px-6 md:mt-7`}
 					>
 						<div className="flex items-start gap-2.5 pt-1">
 							<span className="flex size-[36px] shrink-0 items-center justify-center rounded-full bg-[#021628]">
@@ -168,7 +168,7 @@ export function KvHero({ onOpenChat }: KvHeroProps) {
 											? onOpenChat(value.trim(), e.currentTarget, "digitada")
 											: onOpenChat(chip.fill, e.currentTarget, "chip")
 									}
-									className="flex h-full w-full flex-col items-center justify-start gap-2 rounded-[12px] border border-[#021628]/10 bg-[#FBFBF9] px-2 py-4 text-center transition-colors hover:border-[#F2404F]/30 hover:bg-white"
+									className="flex h-full w-full flex-col items-center justify-start gap-2 rounded-[12px] border border-[#021628]/10 bg-[#FBFBF9] px-2 py-5 text-center transition-colors hover:border-[#F2404F]/30 hover:bg-white"
 								>
 									<span className="flex size-12 items-center justify-center rounded-full bg-[#FFE0E3]">
 										<chip.icon className="size-6 text-[#F2404F]" strokeWidth={1.75} />
@@ -184,7 +184,7 @@ export function KvHero({ onOpenChat }: KvHeroProps) {
 						    acontecer ao ser tocado, e 37px é alvo pequeno pra dedo — este é
 						    o botão que fecha a ação principal da página. Mesmo molde do card
 						    das verticais (hero-vertical.tsx). */}
-						<KvCtaButton type="submit" className="mt-4 h-[54px] w-full text-[16px]">
+						<KvCtaButton type="submit" className="mt-4 h-[58px] w-full text-[16px]">
 							Quero minha simulação
 						</KvCtaButton>
 					</form>
