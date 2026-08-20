@@ -62,8 +62,9 @@ function useRolando(ativo: boolean): boolean {
  * continua dizendo o que é. A AÇÃO nunca some junto: o botão segue clicável o
  * tempo todo, inclusive no meio da rolagem — some o rótulo, não o alvo.
  *
- * **Só no mobile** (`md:hidden`): no desktop os CTAs ficam visíveis por mais
- * tempo e o cliente pediu explicitamente para não mexer naquela largura.
+ * Vale nas duas larguras. Nasceu só no mobile e perdeu o `md:hidden` quando o
+ * desktop foi alinhado ao mesmo desenho: o hero passou a ter UM CTA, então lá
+ * também existe página demais entre o topo e a próxima chance de conversar.
  *
  * Consome `useTheater()` direto em vez de receber `onOpenChat` por prop: ele é
  * montado ao lado do `<ChatTheater/>`, fora da árvore das seções, e passar a
@@ -97,7 +98,7 @@ export function ChatFlutuante() {
 			// `env(safe-area-inset-bottom)`: sem isso o botão fica embaixo da barra
 			// de endereço do Safari no iPhone, que é exatamente aquele canto.
 			style={{ bottom: "calc(1rem + env(safe-area-inset-bottom))" }}
-			className="fixed right-4 z-40 flex items-center md:hidden"
+			className="fixed right-4 z-40 flex items-center md:right-6"
 		>
 			{/* `aria-hidden` no rótulo porque o nome acessível já vem do `aria-label`
 			    do botão. Sem isso o leitor de tela anunciaria a frase duas vezes — e,

@@ -6,11 +6,11 @@
  *
  * 1. **disputar o campo com quem está escrevendo** — timer rodando enquanto a
  *    pessoa digita é render gasto num texto que nem aparece;
- * 2. **piscar na primeira carga** — o hook só sabe que está num celular depois
- *    do primeiro efeito, então o instante 0 do estado animado TEM que ser igual
- *    ao do congelado, senão o campo mostra a frase, esvazia e redigita;
- * 3. **rodar onde não devia** — desktop e `prefers-reduced-motion` não podem
- *    agendar timer nenhum.
+ * 2. **piscar na primeira carga** — o hook só sabe da preferência de movimento
+ *    depois do primeiro efeito, então o instante 0 do estado animado TEM que ser
+ *    igual ao do congelado, senão o campo mostra a frase, esvazia e redigita;
+ * 3. **rodar onde não devia** — com `prefers-reduced-motion` não pode agendar
+ *    timer nenhum.
  */
 
 import { act, renderHook } from "@testing-library/react";
@@ -58,7 +58,7 @@ afterEach(() => {
 });
 
 describe("usePlaceholderDigitando", () => {
-	it("no mobile, começa com a frase inteira e depois apaga — nunca pisca vazio", () => {
+	it("começa com a frase inteira e depois apaga — nunca pisca vazio", () => {
 		ambiente({ mobile: true, reduzido: false });
 
 		const { result } = renderHook(() =>
@@ -121,17 +121,20 @@ describe("usePlaceholderDigitando", () => {
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
-	it("no desktop fica estático e não agenda timer", () => {
+	it("anima em qualquer largura — o gate de mobile saiu", () => {
+		// Nasceu só no mobile (2026-08-20) e perdeu o `useIsMobile` quando o desktop
+		// foi alinhado ao mesmo desenho. Um campo que convida no celular e fica
+		// parado no monitor eram dois produtos na mesma página.
 		ambiente({ mobile: false, reduzido: false });
 
 		const { result } = renderHook(() =>
 			usePlaceholderDigitando({ valor: "", focado: false, frases: FRASES }),
 		);
 
-		tique(10_000);
+		tique(1600);
+		tique(30);
 
-		expect(result.current).toBe("abc");
-		expect(vi.getTimerCount()).toBe(0);
+		expect(result.current).toBe("ab");
 	});
 
 	it("com prefers-reduced-motion fica estático mesmo no mobile", () => {

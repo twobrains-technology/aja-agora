@@ -1,10 +1,13 @@
 // @vitest-environment happy-dom
 /**
- * FIX-351 (topo de funil /kv) — os CTAs do Hero ("Fale com a AJA",
- * "Encontre o consórcio certo") e o composer do search-card (chips +
- * "Enviar") eram inertes: réplica visual do Figma que nunca recebeu a
+ * FIX-351 (topo de funil /kv) — os CTAs do Hero e o composer do search-card
+ * (chips + envio) eram inertes: réplica visual do Figma que nunca recebeu a
  * integração com o Modo Teatro (onOpenChat/TheaterOpener), no mesmo padrão
  * de src/components/landing/hero.tsx (FIX-75: texto digitado vence o chip).
+ *
+ * O topo foi redesenhado em 2026-08-20 e os rótulos mudaram ("Fale com a AJA"
+ * saiu de lá, o aviãozinho virou "Quero minha simulação"), mas o que estes
+ * casos medem é o mesmo de sempre: nenhum controle daqui pode ser enfeite.
  */
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -18,14 +21,10 @@ vi.mock("next/image", () => ({
 
 import { KvHero } from "./kv-hero";
 
-// O hero passou a consultar `matchMedia` (useIsMobile / useReducedMotion, para o
-// placeholder que se digita sozinho no mobile). happy-dom nem sempre traz o
-// método; sem o stub o componente quebra na montagem e TODO caso aqui falha por
-// um motivo que nada tem a ver com o que eles medem.
-//
-// `matches: false` + largura de desktop: estes casos são os do comp de 1440,
-// onde a pílula, o aviãozinho e os dois CTAs continuam valendo. O mobile tem
-// arquivo próprio (kv-hero.mobile.test.tsx).
+// O hero consulta `matchMedia` (useReducedMotion, para o placeholder que se
+// digita sozinho). happy-dom nem sempre traz o método; sem o stub o componente
+// quebra na montagem e TODO caso aqui falha por um motivo que nada tem a ver
+// com o que eles medem. `matches: false` = sem `prefers-reduced-motion`.
 beforeEach(() => {
 	window.matchMedia = vi.fn().mockImplementation((query: string) => ({
 		matches: false,
@@ -37,7 +36,6 @@ beforeEach(() => {
 		removeEventListener: vi.fn(),
 		dispatchEvent: vi.fn(),
 	})) as unknown as typeof window.matchMedia;
-	window.innerWidth = 1440;
 });
 
 afterEach(() => {
@@ -45,14 +43,15 @@ afterEach(() => {
 });
 
 describe("FIX-351 — KvHero chama onOpenChat", () => {
-	it("clicar em 'Fale com a AJA' chama onOpenChat com seed vazio", () => {
-		const onOpenChat = vi.fn();
-		render(<KvHero onOpenChat={onOpenChat} />);
+	it("o hero tem UM CTA abaixo do card — 'Fale com a AJA' saiu de lá", () => {
+		// 2026-08-20: a chamada virou o título do card ("Fale com a Aja"), e
+		// repeti-la logo abaixo era o CTA duplicado que o cliente marcou. Ela
+		// continua existindo no fecho da página (kv-footer.tsx), que é outro
+		// momento do funil — este caso trava só o hero.
+		render(<KvHero onOpenChat={vi.fn()} />);
 
-		fireEvent.click(screen.getByRole("button", { name: "Fale com a AJA" }));
-
-		expect(onOpenChat).toHaveBeenCalledTimes(1);
-		expect(onOpenChat.mock.calls[0][0]).toBe("");
+		expect(screen.queryByRole("button", { name: "Fale com a AJA" })).toBeNull();
+		expect(screen.getByRole("button", { name: "Encontre o consórcio certo" })).toBeTruthy();
 	});
 
 	it("clicar em 'Encontre o consórcio certo' chama onOpenChat com seed vazio", () => {
@@ -85,13 +84,17 @@ describe("FIX-351 — KvHero chama onOpenChat", () => {
 		expect(onOpenChat.mock.calls[0][0]).toBe("Quero um carro até R$ 60 mil.");
 	});
 
-	it("'Enviar' do search-card submete o texto digitado", () => {
+	it("o CTA do search-card submete o texto digitado", () => {
+		// Era o botão de aviãozinho (aria-label "Enviar"); virou "Quero minha
+		// simulação" em 2026-08-20 — um ícone não dizia o que ia acontecer, e 37px
+		// é alvo pequeno pra dedo. O contrato aqui não mudou: o que foi digitado é
+		// o que chega ao teatro.
 		const onOpenChat = vi.fn();
 		render(<KvHero onOpenChat={onOpenChat} />);
 
 		const input = screen.getByRole("textbox");
 		fireEvent.change(input, { target: { value: "Quero um apê de R$ 300 mil." } });
-		fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
+		fireEvent.click(screen.getByRole("button", { name: "Quero minha simulação" }));
 
 		expect(onOpenChat.mock.calls[0][0]).toBe("Quero um apê de R$ 300 mil.");
 	});

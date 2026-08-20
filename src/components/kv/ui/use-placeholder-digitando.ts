@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 
-import { useIsMobile } from "@/hooks/use-mobile";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 
 /**
@@ -49,11 +48,13 @@ interface Opcoes {
 /**
  * Placeholder que se escreve sozinho, alternando entre as perguntas.
  *
- * **Só no mobile.** É o que o cliente pediu (2026-08-20) e o que o breakpoint do
- * `useIsMobile` define — 768px, o mesmo `md` do Tailwind que esconde/mostra os
- * blocos duplicados do hero. Fora dele, e com `prefers-reduced-motion`, devolve
- * a primeira frase parada e **não agenda timer nenhum**: uma animação infinita
- * rodando num desktop que nem a mostra é bateria queimada à toa.
+ * Vale nas duas larguras. Nasceu só no mobile (pedido de 2026-08-20) e perdeu o
+ * gate de largura quando o desktop foi alinhado ao mesmo desenho: um campo que
+ * convida no celular e fica parado no monitor eram dois produtos diferentes na
+ * mesma tela.
+ *
+ * Com `prefers-reduced-motion` devolve a primeira frase parada e **não agenda
+ * timer nenhum** — animação infinita que ninguém pediu é bateria queimada à toa.
  *
  * **Congela com campo preenchido ou focado.** Um placeholder que continua
  * dançando enquanto a pessoa digita é ruído em cima da própria escrita dela — e
@@ -61,22 +62,21 @@ interface Opcoes {
  * render. Ao congelar volta pra frase 1 inteira, que é o estado legível.
  */
 export function usePlaceholderDigitando({ valor, focado, frases = PERGUNTAS_DO_CAMPO }: Opcoes) {
-	const isMobile = useIsMobile();
 	const reduzido = useReducedMotion();
 
 	// Começa com a frase 1 INTEIRA, em "segurando", e não vazia em "digitando".
 	//
-	// Não é detalhe de estilo: `useIsMobile` só sabe a largura DEPOIS do primeiro
-	// efeito, então o primeiro render é sempre o congelado (frase 1 inteira). Se a
-	// animação começasse do zero, o celular mostraria a frase completa, piscaria
-	// pra vazio e só então digitaria — um flash a cada carga da home. Começando
-	// cheia, o estado animado do instante 0 é IDÊNTICO ao congelado, e a primeira
-	// coisa que se vê é a frase apagando, que é o começo natural do ciclo.
+	// Não é detalhe de estilo: `useReducedMotion` só sabe da preferência DEPOIS do
+	// primeiro efeito, então o primeiro render é sempre o congelado (frase 1
+	// inteira). Se a animação começasse do zero, a página mostraria a frase
+	// completa, piscaria pra vazio e só então digitaria — um flash a cada carga.
+	// Começando cheia, o estado animado do instante 0 é IDÊNTICO ao congelado, e a
+	// primeira coisa que se vê é a frase apagando, que é o começo natural do ciclo.
 	const [indice, setIndice] = useState(0);
 	const [letras, setLetras] = useState(() => (frases[0] ?? "").length);
 	const [fase, setFase] = useState<Fase>("segurando");
 
-	const parado = !isMobile || reduzido || valor !== "" || focado;
+	const parado = reduzido || valor !== "" || focado;
 	const inicial = frases[0] ?? "";
 	const frase = frases[indice] ?? inicial;
 
@@ -127,7 +127,7 @@ export function usePlaceholderDigitando({ valor, focado, frases = PERGUNTAS_DO_C
 		return () => clearTimeout(id);
 	}, [parado, fase, letras, frase, frases.length]);
 
-	// Congelado (desktop, motion reduzido, campo em uso) → frase 1 inteira.
+	// Congelado (motion reduzido, campo em uso) → frase 1 inteira.
 	if (parado) return inicial;
 
 	return frase.slice(0, letras);
