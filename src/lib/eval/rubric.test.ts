@@ -20,6 +20,10 @@ const baseSignals = (overrides: Partial<DeterministicSignals> = {}): Determinist
 	conversionStage: "engajado",
 	hasLead: false,
 	personaSegments: [],
+	propostas: 0,
+	contratoFechado: false,
+	alertas: [],
+	repeticoesDoAgente: 0,
 	...overrides,
 });
 

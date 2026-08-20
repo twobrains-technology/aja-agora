@@ -24,6 +24,7 @@ describe("computeSignals — replyRate", () => {
 			...Array.from({ length: 5 }, (_, i) => assistantMsg(`a${i}`, "x")),
 		];
 		const r = computeSignals({
+			propostas: 0,
 			metadata: null,
 			channel: "web",
 			messages,
@@ -41,6 +42,7 @@ describe("computeSignals — replyRate", () => {
 			assistantMsg("a1", "x"),
 		];
 		const r = computeSignals({
+			propostas: 0,
 			metadata: null,
 			channel: "web",
 			messages,
@@ -52,6 +54,7 @@ describe("computeSignals — replyRate", () => {
 
 	it("retorna 1 quando não tem assistant turns (evita divisão por zero)", () => {
 		const r = computeSignals({
+			propostas: 0,
 			metadata: null,
 			channel: "web",
 			messages: [],
@@ -65,6 +68,7 @@ describe("computeSignals — replyRate", () => {
 describe("computeSignals — qualifyCoverage por categoria", () => {
 	it("imovel exige creditRange + prazoMeses", () => {
 		const semNada = computeSignals({
+			propostas: 0,
 			metadata: { currentCategory: "imovel" },
 			channel: "web",
 			messages: [],
@@ -77,6 +81,7 @@ describe("computeSignals — qualifyCoverage por categoria", () => {
 		);
 
 		const completo = computeSignals({
+			propostas: 0,
 			metadata: {
 				currentCategory: "imovel",
 				qualifyAnswers: { creditMin: 100000, prazoMeses: 60 },
@@ -92,6 +97,7 @@ describe("computeSignals — qualifyCoverage por categoria", () => {
 
 	it("auto exige creditRange + hasLance — só credito = 0.5", () => {
 		const r = computeSignals({
+			propostas: 0,
 			metadata: {
 				currentCategory: "auto",
 				qualifyAnswers: { creditMin: 50000, creditMax: 80000 },
@@ -107,6 +113,7 @@ describe("computeSignals — qualifyCoverage por categoria", () => {
 
 	it("retorna 0 sem categoria — não dá pra exigir nada sem saber o que precisa", () => {
 		const r = computeSignals({
+			propostas: 0,
 			metadata: {},
 			channel: "web",
 			messages: [],
@@ -121,6 +128,7 @@ describe("computeSignals — qualifyCoverage por categoria", () => {
 describe("computeSignals — numbersInTextFlagged (cross-check anti-alucinação)", () => {
 	it("flagga R$ 850 sem artifact correspondente", () => {
 		const r = computeSignals({
+			propostas: 0,
 			metadata: null,
 			channel: "web",
 			messages: [assistantMsg("a1", "A parcela é de R$ 850 ao mês")],
@@ -132,6 +140,7 @@ describe("computeSignals — numbersInTextFlagged (cross-check anti-alucinação
 
 	it("não flagga quando artifact tem o valor (texto corresponde a fonte)", () => {
 		const r = computeSignals({
+			propostas: 0,
 			metadata: null,
 			channel: "web",
 			messages: [assistantMsg("a1", "A parcela é de R$ 850 ao mês")],
@@ -143,6 +152,7 @@ describe("computeSignals — numbersInTextFlagged (cross-check anti-alucinação
 
 	it("ignora números em mensagens do user (só policia o agente)", () => {
 		const r = computeSignals({
+			propostas: 0,
 			metadata: null,
 			channel: "web",
 			messages: [userMsg("u1", "Quero pagar R$ 500")],
@@ -154,6 +164,7 @@ describe("computeSignals — numbersInTextFlagged (cross-check anti-alucinação
 
 	it("não flagga 18% quando artifact tem 0.18 (forma decimal vs integer percent)", () => {
 		const r = computeSignals({
+			propostas: 0,
 			metadata: null,
 			channel: "web",
 			messages: [assistantMsg("a1", "A taxa é 18% ao ano")],
@@ -213,6 +224,7 @@ describe("computePersonaSegments — multi-persona", () => {
 describe("computeSignals — qualifyCoverage agregada multi-categoria", () => {
 	it("agrega filled/required entre currentCategory + qualifyAnswersByCategory", () => {
 		const r = computeSignals({
+			propostas: 0,
 			metadata: {
 				currentCategory: "auto",
 				personasSeen: ["imovel", "auto"],
@@ -235,6 +247,7 @@ describe("computeSignals — qualifyCoverage agregada multi-categoria", () => {
 
 	it("missing fields são prefixados com a categoria", () => {
 		const r = computeSignals({
+			propostas: 0,
 			metadata: {
 				currentCategory: "auto",
 				personasSeen: ["imovel"],
@@ -258,6 +271,7 @@ describe("computeSignals — qualifyCoverage agregada multi-categoria", () => {
 describe("computeSignals — dropOffGate (integração com qualify-state)", () => {
 	it("retorna o próximo gate pendente conforme nextGate()", () => {
 		const r = computeSignals({
+			propostas: 0,
 			metadata: {
 				desireAsked: true,
 				currentCategory: "imovel",
@@ -280,6 +294,7 @@ describe("computeSignals — dropOffGate (integração com qualify-state)", () =
 
 	it("retorna null sem categoria (sem fluxo de gates)", () => {
 		const r = computeSignals({
+			propostas: 0,
 			metadata: {},
 			channel: "web",
 			messages: [],

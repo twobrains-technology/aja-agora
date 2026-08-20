@@ -355,6 +355,71 @@ export function scoresDeEscolhaNaoAncorada(args: {
 	];
 }
 
+/**
+ * A qual `kind` de ação cada intenção de botão do card de simulação pertence.
+ *
+ * É a MESMA tradução que o card faz (`simulation-result.tsx`) — escrita aqui
+ * para poder ser CONFERIDA. Enquanto ela existia só no front, um `else` mandava
+ * toda intenção desconhecida para `adjust-value` e ninguém tinha como saber:
+ * o clique da cliente virava outro clique, em silêncio (PRD §5.5).
+ */
+const KIND_ESPERADO_POR_INTENT: Record<string, string> = {
+	adjust_value: "adjust-value",
+	new_simulation: "adjust-value",
+	view_scenarios: "view-scenarios",
+	compare_financing: "compare-financing",
+	compare_other: "show-other-options",
+};
+
+/**
+ * O clique chegou ao servidor como o cliente o viu na tela?
+ *
+ * PURO — o alarme é a comparação entre o que o botão DIZIA (a intenção que o
+ * card declarou) e o que o servidor RECEBEU (o kind da ação). Divergência
+ * significa que alguém traduziu o clique no caminho, e é assim que uma cliente
+ * pede cenários de contemplação e ouve "qual valor você quer simular?".
+ *
+ * Sem intenção declarada (card antigo já renderizado, WhatsApp) não há o que
+ * comparar — e alarme sem base é ruído, então fica em silêncio.
+ */
+export function scoreDeBotaoFantasma(args: { kind: string; intent?: string }): Array<{
+	name: string;
+	value: number;
+	dataType: "BOOLEAN";
+	comment: string;
+}> {
+	if (!args.intent) return [];
+	const esperado = KIND_ESPERADO_POR_INTENT[args.intent];
+	if (!esperado || esperado === args.kind) return [];
+	return [
+		{
+			name: "botao_fantasma",
+			value: 1,
+			dataType: "BOOLEAN",
+			comment:
+				`O cliente clicou num botão de intenção "${args.intent}" e o servidor recebeu ` +
+				`"${args.kind}". O clique foi traduzido no caminho — o agente vai responder a um ` +
+				"pedido que ninguém fez.",
+		},
+	];
+}
+
+/** Publica `botao_fantasma` no trace ATIVO. No-op sem credencial e sem
+ * divergência. */
+export function registrarBotaoFantasma(args: { kind: string; intent?: string }): void {
+	const scores = scoreDeBotaoFantasma(args);
+	if (scores.length === 0) return;
+	console.error(
+		JSON.stringify({
+			level: "error",
+			source: "botao-fantasma",
+			kind: args.kind,
+			intent: args.intent,
+		}),
+	);
+	publicar(scores, "registrar botao fantasma");
+}
+
 export function registrarEscolhaNaoAncorada(args: {
 	groupId: string;
 	exibidas: number;

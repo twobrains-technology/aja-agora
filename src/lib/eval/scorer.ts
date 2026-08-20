@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { count, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { conversationEvaluations, conversations } from "@/db/schema";
+import { beviProposals, conversationEvaluations, conversations } from "@/db/schema";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { getPersonaForAdmin } from "@/lib/agent/personas-repo";
 import { isEligibleForEval } from "./eligibility";
@@ -66,6 +66,15 @@ export async function scoreConversation(
 	const metadata = (conv.metadata ?? null) as ConversationMetadata | null;
 	const lead = pickPrimaryLead(conv.leads);
 
+	// O DESFECHO REAL DA CONVERSA (PRD §5.1). A nota de conversão era um mapa de
+	// estágio de lead — e estágio é promovido a `em_negociacao` em qualquer turno
+	// de usuário pós-reveal. Uma conversa que morreu sem proposta tirava 0,85. A
+	// contagem abaixo é o fato que ninguém consultava.
+	const [{ total: propostas } = { total: 0 }] = await db
+		.select({ total: count() })
+		.from(beviProposals)
+		.where(eq(beviProposals.conversationId, conversationId));
+
 	const messages = conv.messages.map((m) => ({
 		id: m.id,
 		role: m.role,
@@ -108,6 +117,8 @@ export async function scoreConversation(
 			lead,
 			personas,
 			metadata,
+			propostas: Number(propostas ?? 0),
+			contratoFechado: metadata?.contractClosed === true,
 		},
 		judgeImpl,
 	);

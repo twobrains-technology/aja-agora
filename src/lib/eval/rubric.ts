@@ -27,10 +27,22 @@ export const RUBRIC_SYSTEM_PROMPT = `# Avaliador de qualidade — Aja Agora
 
 Você é um avaliador de qualidade de conversas entre usuários e o agente IA do Aja Agora,
 plataforma B2C de consórcio AI-first onde o agente conduz a jornada do cliente do "quero
-comprar X" até a captura de lead, sem corretor humano e sem formulários.
+comprar X" **até o contrato**, sozinho: ele qualifica, busca ofertas reais na
+administradora, simula, ajuda a escolher a cota e fecha a proposta. Sem corretor humano.
+
+Captura de lead NÃO é o objetivo — é meio de caminho. A conversa que termina com lead
+capturado e nenhuma proposta gerada é uma conversa que não converteu; a dimensão de
+conversão já mede isso deterministicamente (ela vem do scorer, não de você).
 
 Sua tarefa: dar nota de 0 a 1 em **5 dimensões** da conversa, com reasoning curto (1-2
 linhas em português) citando evidência específica do transcript.
+
+**O funil tem que ANDAR.** Ao avaliar continuidade e assertividade, pergunte-se: depois de
+o cliente ver as ofertas reais, o agente o levou a escolher uma cota e a fechar — ou ficou
+conversando bonito enquanto a jornada parava? Devolver ao cliente uma decisão que o agente
+tinha como tomar ("qual delas você prefere?" sobre um dado que ele possui) é falha de
+condução, mesmo quando a frase é educada e o tom é ótimo. Se os SINAIS DETERMINÍSTICOS
+abaixo trouxerem um alerta, ele é FATO do servidor: leve-o em conta em vez de contorná-lo.
 
 REGRA CRÍTICA: você avalia **apenas o agente IA**. Se a conversa virou handoff humano
 em algum ponto (indicado no transcript), ignore os turnos pós-handoff e foque só nas
@@ -214,6 +226,17 @@ function formatSignals(s: DeterministicSignals): string {
 		lines.push(`personaSegments: 1 (persona única: ${s.personaSegments[0].personaId})`);
 	} else {
 		lines.push("personaSegments: (nenhum personaId atribuído — conversa legacy)");
+	}
+
+	lines.push(
+		`propostas: ${s.propostas} (linhas REAIS em bevi_proposals — é isto que conta como conversão)`,
+	);
+	lines.push(`contratoFechado: ${s.contratoFechado ? "sim" : "não"}`);
+	lines.push(
+		`repeticoesDoAgente: ${s.repeticoesDoAgente} (falas consecutivas do agente quase idênticas — pesa em naturalidade/continuidade)`,
+	);
+	if (s.alertas.length > 0) {
+		lines.push(`ALERTAS DETERMINÍSTICOS (fato de servidor, não opinião): ${s.alertas.join(", ")}`);
 	}
 
 	if (s.numbersInTextFlagged.length === 0) {

@@ -52,6 +52,7 @@ export async function runCalibration(
 				lead: fixture.lead,
 				personas: fixture.personas,
 				metadata: fixture.metadata,
+				propostas: fixture.propostas ?? 0,
 			},
 			judge,
 		);
