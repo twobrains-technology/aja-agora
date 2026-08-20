@@ -3,6 +3,7 @@ import type { SVGProps } from "react";
 import { Wordmark } from "@/components/brand/wordmark";
 import type { TheaterOpener } from "@/components/chat/theater/theater-context";
 import { Em } from "@/components/kv/em";
+import { KvIndependente } from "@/components/kv/kv-independente";
 import { type LinkKv, RODAPE_CONSORCIOS, RODAPE_NAVEGACAO } from "@/components/kv/navegacao";
 import { KvContainer } from "@/components/kv/ui/kv-container";
 import { KvCtaButton } from "@/components/kv/ui/kv-cta-button";
@@ -136,6 +137,12 @@ export function KvFooter({ onOpenChat, comCtaFinal = true }: KvFooterProps) {
 				</KvContainer>
 			) : null}
 
+			{/* A assinatura de marca que saiu da pílula do hero no mobile, entre o
+			    "Busque a melhor alternativa" e a faixa navy. Mora aqui dentro, e não
+			    na página, porque a posição pedida é ENTRE dois pedaços do próprio
+			    rodapé — de fora não dá pra chegar nesse meio. */}
+			<KvIndependente />
+
 			{/* Footer */}
 			{/* Respiros do comp: 64px em cima, 64px nas laterais e 36px abaixo dos
 			    links. Os 191px que havia embaixo vinham de medir o rodapé no frame
@@ -148,7 +155,12 @@ export function KvFooter({ onOpenChat, comCtaFinal = true }: KvFooterProps) {
 						{/* Marca */}
 						<div className="flex flex-col items-start gap-3 lg:w-[360px]">
 							<Wordmark className="h-[58px] w-auto text-[#F2F2F2]" />
-							<p className="text-[14px] leading-[2] text-[#F2F2F2]">
+							{/* `hidden md:block`: no mobile a mesma frase acabou de aparecer na
+							    faixa logo acima (<KvIndependente/>), e repeti-la a 100px de
+							    distância lê como defeito de render, não como assinatura. No
+							    desktop a faixa não existe e este parágrafo é o único lugar
+							    onde a frase aparece. */}
+							<p className="hidden text-[14px] leading-[2] text-[#F2F2F2] md:block">
 								O jeito independente de escolher consórcio
 							</p>
 						</div>

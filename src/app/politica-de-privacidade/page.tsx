@@ -1,5 +1,6 @@
 "use client";
 
+import { ChatFlutuante } from "@/components/chat/chat-flutuante";
 import { ChatTheater } from "@/components/chat/theater/chat-theater";
 import { TheaterProvider, useTheater } from "@/components/chat/theater/theater-context";
 import { lato, manrope, merriweather } from "@/components/kv/fonts";
@@ -20,6 +21,10 @@ export default function PoliticaDePrivacidadePage() {
 			<PaginaPolitica />
 			{/* Overlay "Modo Teatro" — morfa do elemento clicado sobre a página desfocada. */}
 			<ChatTheater />
+			{/* Botão flutuante do chat, parado no canto da tela durante toda a rolagem
+			    (só no mobile). Fica FORA do <main> e ao lado do teatro de propósito:
+			    é cromo da janela, não conteúdo de seção. */}
+			<ChatFlutuante />
 		</TheaterProvider>
 	);
 }

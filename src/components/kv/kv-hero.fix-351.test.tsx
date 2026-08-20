@@ -9,7 +9,7 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/image", () => ({
 	// biome-ignore lint/suspicious/noExplicitAny: mock simples de next/image pro teste
@@ -17,6 +17,28 @@ vi.mock("next/image", () => ({
 }));
 
 import { KvHero } from "./kv-hero";
+
+// O hero passou a consultar `matchMedia` (useIsMobile / useReducedMotion, para o
+// placeholder que se digita sozinho no mobile). happy-dom nem sempre traz o
+// método; sem o stub o componente quebra na montagem e TODO caso aqui falha por
+// um motivo que nada tem a ver com o que eles medem.
+//
+// `matches: false` + largura de desktop: estes casos são os do comp de 1440,
+// onde a pílula, o aviãozinho e os dois CTAs continuam valendo. O mobile tem
+// arquivo próprio (kv-hero.mobile.test.tsx).
+beforeEach(() => {
+	window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+		matches: false,
+		media: query,
+		onchange: null,
+		addListener: vi.fn(),
+		removeListener: vi.fn(),
+		addEventListener: vi.fn(),
+		removeEventListener: vi.fn(),
+		dispatchEvent: vi.fn(),
+	})) as unknown as typeof window.matchMedia;
+	window.innerWidth = 1440;
+});
 
 afterEach(() => {
 	cleanup();
