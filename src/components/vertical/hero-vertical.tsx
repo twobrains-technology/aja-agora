@@ -68,6 +68,14 @@ export type HeroVerticalConteudo = {
 	sementeVazia: string;
 	/** Fala do cliente montada a partir da parcela que ele escolheu (origem "digitada"). */
 	semente: (parcela: string) => string;
+	/**
+	 * Fala do cliente montada a partir do VALOR DA CARTA, para quem chega de
+	 * anúncio de catálogo (`/autos?bem=50000`). É outra frase, e não a `semente`
+	 * acima, porque o que o anúncio prometeu foi o bem, não a parcela — repetir
+	 * a fala de parcela aqui faria o chat responder a uma pergunta que a pessoa
+	 * não fez.
+	 */
+	sementeDeValor: (valor: string) => string;
 };
 
 interface HeroVerticalProps {

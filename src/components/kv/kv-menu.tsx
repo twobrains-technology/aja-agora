@@ -120,8 +120,14 @@ export function KvMenu({ onOpenChat, nav = NAV }: KvMenuProps) {
 	return (
 		<header className="relative w-full bg-[#052440]">
 			{/* 96px de altura e conteúdo começando em 64px — o comp põe o logo em x=64,
-			    a mesma coluna da faixa navy do rodapé (`px-6 md:px-16` lá também). */}
-			<KvContainer className="flex h-[96px] max-w-[1440px] items-center justify-between md:px-16">
+			    a mesma coluna da faixa navy do rodapé (`px-6 md:px-16` lá também).
+			
+			    NO CELULAR A BARRA É 40% MAIS BAIXA (pedido do Kairo, 20/08/2026):
+			    96 → 58px. Numa tela de 812px de altura, os 96px do comp comiam 12%
+			    do que se vê antes de rolar — e essa barra não é conteúdo, é cromo.
+			    O wordmark encolhe na mesma proporção (56 → 34px), senão ele não
+			    caberia na barra nova. O desktop segue o comp, intacto. */}
+			<KvContainer className="flex h-[58px] max-w-[1440px] items-center justify-between md:h-[96px] md:px-16">
 				{/* O logo volta para o início — `/` e não `#hero`, porque este mesmo
 				    cabeçalho renderiza nas três verticais e âncora resolveria na página
 				    atual. O `aria-hidden` no SVG passa o nome acessível para o link: o
@@ -132,7 +138,7 @@ export function KvMenu({ onOpenChat, nav = NAV }: KvMenuProps) {
 					aria-label="Aja Agora — ir para o início"
 					className="shrink-0 transition-opacity hover:opacity-75"
 				>
-					<Wordmark className="h-[56px] w-auto text-white" aria-hidden="true" />
+					<Wordmark className="h-[34px] w-auto text-white md:h-[56px]" aria-hidden="true" />
 				</Link>
 
 				{/* Corta em `lg` e não antes: com cinco itens, o texto da barra passa de

@@ -45,6 +45,7 @@ export const HERO_IMOVEL: HeroVerticalConteudo = {
 	// da colagem. Declarar aqui desenharia a pill uma segunda vez por cima.
 	sementeVazia: "Quero comprar um imóvel.",
 	semente: (parcela) => `Quero um imóvel. Consigo pagar ${parcela}.`,
+	sementeDeValor: (valor) => `Quero um imóvel de ${valor}.`,
 };
 
 export const NUMEROS_IMOVEL: FaixaNumerosConteudo = {

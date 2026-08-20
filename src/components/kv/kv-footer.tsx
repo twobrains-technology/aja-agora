@@ -3,6 +3,7 @@ import type { SVGProps } from "react";
 import { Wordmark } from "@/components/brand/wordmark";
 import type { TheaterOpener } from "@/components/chat/theater/theater-context";
 import { Em } from "@/components/kv/em";
+import { KvIndependente } from "@/components/kv/kv-independente";
 import { type LinkKv, RODAPE_CONSORCIOS, RODAPE_NAVEGACAO } from "@/components/kv/navegacao";
 import { KvContainer } from "@/components/kv/ui/kv-container";
 import { KvCtaButton } from "@/components/kv/ui/kv-cta-button";
@@ -136,6 +137,12 @@ export function KvFooter({ onOpenChat, comCtaFinal = true }: KvFooterProps) {
 				</KvContainer>
 			) : null}
 
+			{/* A assinatura de marca que saiu da pílula do hero, entre o "Busque a
+			    melhor alternativa" e a faixa navy. Mora aqui dentro, e não na página,
+			    porque a posição é ENTRE dois pedaços do próprio rodapé — de fora não
+			    dá pra chegar nesse meio. */}
+			<KvIndependente />
+
 			{/* Footer */}
 			{/* Respiros do comp: 64px em cima, 64px nas laterais e 36px abaixo dos
 			    links. Os 191px que havia embaixo vinham de medir o rodapé no frame
@@ -148,9 +155,10 @@ export function KvFooter({ onOpenChat, comCtaFinal = true }: KvFooterProps) {
 						{/* Marca */}
 						<div className="flex flex-col items-start gap-3 lg:w-[360px]">
 							<Wordmark className="h-[58px] w-auto text-[#F2F2F2]" />
-							<p className="text-[14px] leading-[2] text-[#F2F2F2]">
-								O jeito independente de escolher consórcio
-							</p>
+							{/* Aqui havia "O jeito independente de escolher consórcio". A frase
+							    saiu porque <KvIndependente/>, logo acima, já a diz — e a ~100px
+							    de distância a repetição lê como defeito de render, não como
+							    assinatura. Está no histórico deste arquivo. */}
 						</div>
 
 						{/* Navegação + Consórcios */}

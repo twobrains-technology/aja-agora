@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feed de catálogo da Meta — dossiê de entrega</title>
+<link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+
+<header>
+  <h1>O consórcio virou produto anunciável</h1>
+  <p class="sub">
+    Dossiê de entrega · 20/08/2026 · <code>aja-agora</code><br>
+    branch <code>develop</code> · <strong>não commitado</strong> · 10 arquivos novos, 7 tocados
+  </p>
+  <p>
+    <span class="pill p-ok">34 testes verdes</span>
+    <span class="pill p-ok">typecheck limpo</span>
+    <span class="pill p-ok">2 defeitos próprios corrigidos</span>
+    <span class="pill p-risco">1 ciclo incompleto</span>
+    <span class="pill p-aviso">1 política não confirmada</span>
+  </p>
+</header>
+
+<nav class="card">
+  <strong>Índice</strong>
+  <ol>
+    <li><a href="#macro">O que passou a existir</a></li>
+    <li><a href="#campos">Os campos do XML, um a um</a></li>
+    <li><a href="#arquitetura">A decisão de arquitetura</a></li>
+    <li><a href="#codigo">Onde o código mudou</a></li>
+    <li><a href="#superficie">Impacto na superfície</a></li>
+    <li><a href="#riscos">Pontos de risco</a></li>
+    <li><a href="#aberto">O que ficou em aberto</a></li>
+    <li><a href="#validar">Como validar você mesmo</a></li>
+  </ol>
+</nav>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="macro">
+<h2>1 · O que passou a existir</h2>
+
+<p>
+  As landings <code>/autos</code>, <code>/motos</code> e <code>/imoveis</code>
+  nasceram para receber campanha — está escrito no próprio
+  <code>sitemap.ts</code>: <em>“nasceram para receber campanha, e a campanha não
+  deixa rastro que o robô siga”</em>. Só que, para a Meta, o Aja Agora não era um
+  <strong>produto</strong>: era um site. Sem catálogo não existe anúncio de
+  catálogo, não existe remarketing dinâmico e não existe card com preço.
+</p>
+
+<p>
+  Agora existe <code>https://ajaagora.com.br/feed/meta.xml</code>: um feed RSS
+  2.0 com <strong>34 cartas de crédito</strong> — 14 de carro, 8 de moto, 12 de
+  imóvel —, cada uma com a parcela estimada, a imagem da vertical e um link que
+  <strong>continua a conversa dentro do chat</strong> com o valor que o anúncio
+  prometeu.
+</p>
+
+<div class="fluxo">
+  <span class="no novo">CREDIT_BOUNDS</span>
+  <span class="no novo">faixas comerciais</span>
+  <span class="no novo">plan-estimate</span>
+  <span class="no novo">/feed/meta.xml</span>
+  <span class="no novo">Commerce Manager</span>
+  <span class="no">anúncio</span>
+  <span class="no novo">?bem=50000</span>
+  <span class="no">Modo Teatro</span>
+  <span class="no">agente</span>
+</div>
+
+<p class="legenda">
+  Em destaque, o que nasceu. As caixas neutras já existiam — o feed não inventa
+  jornada nova: ele desemboca no mesmo chat de sempre, só que já sabendo o valor.
+</p>
+
+<p>
+  O catálogo é <strong>derivado do código</strong>, não digitado. As faixas saem
+  de <code>CREDIT_BOUNDS</code> (<code>src/lib/agent/qualify-config.ts:81</code>),
+  a mesma tabela que o funil usa; a parcela sai de <code>computePlanEstimate</code>,
+  a mesma função que a landing já mostra. Se o teto de auto mudar de R$ 500 mil
+  para R$ 600 mil, o feed muda no deploy seguinte sem ninguém reexportar planilha.
+</p>
+</section>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="campos">
+<h2>2 · Os campos do XML, um a um</h2>
+
+<p>
+  A Meta lê catálogo em CSV, TSV, XLSX, Google Sheets e <strong>XML (RSS 2.0 ou
+  Atom 1.0)</strong>. No XML, os campos vivem no <em>namespace do Google Merchant
+  Center</em> — é por isso que a raiz declara
+  <code>xmlns:g="http://base.google.com/ns/1.0"</code> e a maioria das tags leva
+  o prefixo <code>g:</code>. A doc é explícita:
+  <em>“The prefix ‘g’ is required for attributes in Google Merchant Center
+  namespace.”</em>
+</p>
+
+<p>Este é um item real do nosso feed, como a Meta o recebe:</p>
+
+<div class="prova">&lt;item&gt;
+  &lt;g:id&gt;auto-50000&lt;/g:id&gt;
+  &lt;g:title&gt;Consórcio de carro — carta de R$ 50.000&lt;/g:title&gt;
+  &lt;g:description&gt;Carta de crédito de R$ 50.000 para comprar carro novo ou
+    usado… Parcela estimada de R$ 718,75 por mês em 80 meses…&lt;/g:description&gt;
+  &lt;g:availability&gt;in stock&lt;/g:availability&gt;
+  &lt;g:condition&gt;new&lt;/g:condition&gt;
+  &lt;g:price&gt;718.75 BRL&lt;/g:price&gt;
+  &lt;g:link&gt;https://ajaagora.com.br/autos?bem=50000&amp;amp;utm_source=meta…&lt;/g:link&gt;
+  &lt;g:image_link&gt;https://ajaagora.com.br/kv/auto-hero-colagem.png&lt;/g:image_link&gt;
+  &lt;g:brand&gt;Aja Agora&lt;/g:brand&gt;
+  &lt;product_type&gt;Consórcio &amp;gt; Carro&lt;/product_type&gt;
+  &lt;custom_label_0&gt;auto&lt;/custom_label_0&gt;
+  &lt;custom_label_1&gt;50000&lt;/custom_label_1&gt;
+&lt;/item&gt;</div>
+
+<h3>Os nove obrigatórios</h3>
+
+<table>
+<thead><tr><th>Campo</th><th>O que a Meta exige</th><th>O que pusemos, e por quê</th></tr></thead>
+<tbody>
+<tr>
+  <td><code>g:id</code></td>
+  <td>Identificador único, até 100 caracteres. Estável entre atualizações.</td>
+  <td><code>auto-50000</code> — vertical + valor da carta. É <strong>a chave que
+      casa o feed com os eventos de conversão</strong> (<code>content_ids</code>
+      da CAPI): mudar o formato depois quebra a ligação.</td>
+</tr>
+<tr>
+  <td><code>g:title</code></td>
+  <td>Até 200 caracteres; a Meta recomenda 65.</td>
+  <td><em>“Consórcio de carro — carta de R$ 50.000”</em>. É o que aparece grande
+      no card, então nomeia o produto pelo que a pessoa procura.</td>
+</tr>
+<tr>
+  <td><code>g:description</code></td>
+  <td>Até 9.999 caracteres.</td>
+  <td>Cobertura do bem + parcela + prazo + a ressalva de que o número é
+      <strong>estimativa</strong>. Isso não é enfeite: nenhum valor aqui vem da
+      administradora, e dizer isso é o que separa anúncio de promessa.</td>
+</tr>
+<tr>
+  <td><code>g:availability</code></td>
+  <td>Vocabulário fechado: <code>in stock</code> ou <code>out of stock</code>.</td>
+  <td><code>in stock</code> fixo. Consórcio não tem estoque — mas o campo é
+      obrigatório e não aceita valor livre.</td>
+</tr>
+<tr>
+  <td><code>g:condition</code></td>
+  <td>Vocabulário fechado: <code>new</code>, <code>refurbished</code>, <code>used</code>.</td>
+  <td><code>new</code>. Mesma história: campo sem sentido para o produto, exigido
+      pelo formato.</td>
+</tr>
+<tr>
+  <td><code>g:price</code></td>
+  <td>Número, espaço, código ISO 4217. <strong>Ponto</strong> como separador
+      decimal, nunca vírgula; sem símbolo de moeda.</td>
+  <td><code>718.75 BRL</code> — a <strong>parcela mensal</strong>, não a carta.
+      É o número que decide a compra em consórcio e é o que a Meta estampa no
+      card. Cuidado ao mexer: <code>R$ 718,75</code> faz a Meta rejeitar o item.</td>
+</tr>
+<tr>
+  <td><code>g:link</code></td>
+  <td>URL da página <em>do produto</em> — não da home, não da Página do Facebook.</td>
+  <td>A landing da vertical com <code>?bem=50000</code> e as UTMs. Todo
+      <code>&amp;</code> vira <code>&amp;amp;</code>: <strong>“&amp;” cru é o jeito
+      mais comum de a Meta recusar o arquivo inteiro</strong> por XML inválido.</td>
+</tr>
+<tr>
+  <td><code>g:image_link</code></td>
+  <td>Mínimo 500×500 px, até 8 MB, JPEG ou PNG. URL absoluta.</td>
+  <td>A colagem do hero de cada vertical. Medidas conferidas:
+      auto 2579×2047 (1,0 MB), imóvel 2678×2043 (0,7 MB), moto 1320×1004 (0,3 MB).</td>
+</tr>
+<tr>
+  <td><code>g:brand</code></td>
+  <td>Até 100 caracteres. Obrigatório (ou <code>mpn</code>/<code>gtin</code>, que
+      não existem aqui).</td>
+  <td><code>Aja Agora</code>.</td>
+</tr>
+</tbody>
+</table>
+
+<h3>Os opcionais que valem a pena — e a pegadinha do prefixo</h3>
+
+<p>
+  <strong>Nem todo campo mora no namespace <code>g:</code>.</strong> A doc da Meta
+  escreve <code>product_type</code> e <code>custom_label_*</code>
+  <em>sem</em> prefixo. Com <code>g:</code> eles não quebram o feed — são
+  <strong>ignorados em silêncio</strong>, que é pior: o feed importa, o painel diz
+  “tudo certo”, e os conjuntos de produtos simplesmente não filtram nada. Foi o
+  primeiro defeito desta entrega (§6).
+</p>
+
+<table>
+<thead><tr><th>Campo</th><th>Prefixo</th><th>Para que serve aqui</th></tr></thead>
+<tbody>
+<tr><td><code>product_type</code></td><td><strong>sem</strong> <code>g:</code></td>
+    <td>Taxonomia própria, até 750 caracteres, com <code>&gt;</code> separando
+        níveis: <em>“Consórcio &gt; Carro”</em>.</td></tr>
+<tr><td><code>custom_label_0</code></td><td><strong>sem</strong> <code>g:</code></td>
+    <td>A vertical (<code>auto</code>/<code>moto</code>/<code>imovel</code>). É por
+        ele que se monta <em>um conjunto de produtos por vertical</em> no
+        Gerenciador, sem depender de casar texto do título.</td></tr>
+<tr><td><code>custom_label_1</code></td><td><strong>sem</strong> <code>g:</code></td>
+    <td>O valor da carta, cru. Serve para separar campanha de faixa baixa da de
+        faixa alta.</td></tr>
+<tr><td><code>g:sale_price</code></td><td>com <code>g:</code></td>
+    <td>Não usamos. Existe para preço promocional e precisa ser menor que o
+        <code>price</code>.</td></tr>
+<tr><td><code>g:google_product_category</code></td><td>com <code>g:</code></td>
+    <td>Não usamos. É a taxonomia do Google; opcional para a Meta.</td></tr>
+</tbody>
+</table>
+
+<h3>A casca do arquivo</h3>
+
+<p>
+  RSS 2.0 exige <code>&lt;channel&gt;</code> com <code>title</code>,
+  <code>link</code> e <code>description</code> antes dos itens — os três estão
+  lá. O documento abre com
+  <code>&lt;?xml version="1.0" encoding="UTF-8"?&gt;</code>, e o UTF-8 não é
+  detalhe: é o que faz “Consórcio”, “crédito” e “imóvel” chegarem com acento no
+  card do anúncio.
+</p>
+
+<p>
+  <strong>Como a Meta busca:</strong> Commerce Manager → Catálogo → Fontes de
+  dados → <em>Feed agendado</em>, apontando para a URL. A busca pode ser
+  <strong>horária, diária ou semanal</strong>; a URL tem que apontar para o
+  arquivo, não para o site. Limite de 1 milhão de itens por feed — estamos em 34.
+</p>
+</section>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="arquitetura">
+<h2>3 · A decisão de arquitetura</h2>
+
+<table>
+<thead><tr><th>Escolha</th><th>Alternativa descartada</th><th>Por quê</th><th>O que se perde</th></tr></thead>
+<tbody>
+<tr>
+  <td><strong>Item = faixa de crédito × vertical</strong> (34 itens)</td>
+  <td>Um item por vertical (3 itens)</td>
+  <td>Com 3 itens o algoritmo não tem o que testar. Com 34, ele descobre sozinho
+      qual faixa converte.</td>
+  <td>Mais itens para revisar quando a copy mudar.</td>
+</tr>
+<tr>
+  <td><strong>Estimativa do <code>plan-estimate</code></strong></td>
+  <td>Oferta real da Bevi (grupo/cota)</td>
+  <td>Impossível hoje: a busca real exige CPF + celular + LGPD por conversa
+      (<code>bevi-self-contract-adapter.ts:126</code>). Não existe grupo real para
+      publicar em arquivo público.</td>
+  <td>O número do anúncio <strong>não é</strong> oferta da administradora — e por
+      isso toda descrição diz “estimada”.</td>
+</tr>
+<tr>
+  <td><strong><code>price</code> = parcela mensal</strong></td>
+  <td><code>price</code> = valor da carta</td>
+  <td>Decisão sua: em consórcio quem decide é a parcela. “R$ 718,75” convida;
+      “R$ 50.000” assusta.</td>
+  <td>Alguém pode ler “R$ 718,75” como preço total do produto. O título ao lado
+      (“carta de R$ 50.000”) é o que desfaz.</td>
+</tr>
+<tr>
+  <td><strong>Rota Next servindo o XML</strong></td>
+  <td>Arquivo estático subido à mão</td>
+  <td>O catálogo é derivado do código. Upload manual desatualiza no primeiro
+      ajuste de faixa — e ninguém percebe.</td>
+  <td>Depende do site estar de pé na hora da busca da Meta.</td>
+</tr>
+<tr>
+  <td><strong>Escala comercial (20, 25, 30, 40, 50, 60, 75, 100…)</strong></td>
+  <td>O <code>step</code> do slider (10 mil em 10 mil)</td>
+  <td>O step geraria 49 itens de auto quase idênticos (80k e 90k). A escala cobre
+      a faixa inteira com granularidade fina embaixo, onde está o volume.</td>
+  <td>Uma pessoa que queira exatamente R$ 85.000 não tem card próprio — cai no de
+      R$ 75.000 ou no de R$ 100.000.</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+  <strong>Uma regra do projeto amarrou o desenho:</strong> nenhuma faixa abaixo do
+  piso que a Bevi busca entra no feed. Moto começa em R$ 8.000 no slider, mas
+  <code>creditoBuscavel</code> recusa abaixo de R$ 15.000 — anunciar carta de
+  R$ 10.000 seria vender o que o próprio funil barra no turno seguinte.
+</p>
+</section>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="codigo">
+<h2>4 · Onde o código mudou</h2>
+
+<h3>Arquivos novos (725 linhas)</h3>
+
+<table>
+<thead><tr><th>Arquivo</th><th>Linhas</th><th>Papel</th></tr></thead>
+<tbody>
+<tr><td colspan="3" class="grupo">Núcleo do catálogo</td></tr>
+<tr><td><code>src/lib/catalogo/itens.ts</code></td><td>177</td>
+    <td>Faixas comerciais, parcela, título, descrição e link de cada carta.</td></tr>
+<tr><td><code>src/lib/catalogo/meta-feed.ts</code></td><td>102</td>
+    <td>Serialização RSS 2.0, escape de XML e a divisão entre campo com e sem
+        prefixo <code>g:</code>.</td></tr>
+<tr><td><code>src/lib/catalogo/deep-link.ts</code></td><td>44</td>
+    <td>Leitura do <code>?bem=</code>: tolerante na entrada, rigorosa na saída.</td></tr>
+<tr><td colspan="3" class="grupo">Servidor</td></tr>
+<tr><td><code>src/app/feed/meta.xml/route.ts</code></td><td>28</td>
+    <td>A rota pública, estática, com <code>content-type</code> de XML.</td></tr>
+<tr><td colspan="3" class="grupo">Interface</td></tr>
+<tr><td><code>src/components/vertical/semente-de-campanha.tsx</code></td><td>55</td>
+    <td>Abre o chat com o valor que o anúncio prometeu.</td></tr>
+<tr><td colspan="3" class="grupo">Testes</td></tr>
+<tr><td><code>itens.test.ts</code> · <code>meta-feed.test.ts</code> ·
+        <code>deep-link.test.ts</code> · <code>route.test.ts</code> ·
+        <code>semente-de-campanha.test.tsx</code></td><td>319</td>
+    <td>34 casos: campos obrigatórios, formato do preço, escape do
+        <code>&amp;</code>, piso da Bevi, deep link e abertura do chat.</td></tr>
+</tbody>
+</table>
+
+<h3>Arquivos existentes tocados (23 linhas, todas adições)</h3>
+
+<table>
+<thead><tr><th>Arquivo</th><th>Δ</th><th>O que mudou, e por quê</th></tr></thead>
+<tbody>
+<tr><td><code>src/components/vertical/hero-vertical.tsx</code></td><td>+8</td>
+    <td>O tipo do conteúdo ganhou <code>sementeDeValor</code>. Nenhuma linha de
+        render foi tocada — o hero desenha igual.</td></tr>
+<tr><td><code>(verticais)/{autos,motos,imoveis}/conteudo.ts</code></td><td>+1 cada</td>
+    <td>A frase da vertical para quem chega por valor (“Quero um carro de
+        R$ 50.000.”). Texto de vertical mora no conteúdo, como todo o resto.</td></tr>
+<tr><td><code>(verticais)/{autos,motos,imoveis}/page.tsx</code></td><td>+4 cada</td>
+    <td>Monta <code>&lt;SementeDeCampanha&gt;</code> dentro do
+        <code>TheaterProvider</code>. Não renderiza nada.</td></tr>
+</tbody>
+</table>
+
+<p class="aviso">
+  <strong>Fora do meu escopo:</strong> a árvore de trabalho também tem
+  <code>chat-flutuante.tsx</code>, <code>kv-hero.tsx</code>,
+  <code>kv-hero.fix-351.test.tsx</code>, <code>kv-menu.tsx</code> e
+  <code>kv-section.tsx</code> alterados. Não foram tocados por esta entrega e
+  entram no mesmo <code>git status</code> — conferir antes de commitar tudo junto.
+</p>
+</section>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="superficie">
+<h2>5 · Impacto na superfície</h2>
+
+<table>
+<thead><tr><th>Superfície</th><th>O que muda</th><th>Risco</th></tr></thead>
+<tbody>
+<tr><td><code>GET /feed/meta.xml</code> <em>(nova)</em></td>
+    <td>Página pública, estática, 39 KB, 34 itens. Não passa pelo
+        <code>proxy.ts</code> (não está no <code>matcher</code>), então
+        <strong>não gera visita</strong> no painel.</td>
+    <td><span class="pill p-ok">BAIXO</span> — só leitura, sem estado.</td></tr>
+<tr><td><code>/autos</code>, <code>/motos</code>, <code>/imoveis</code></td>
+    <td>Com <code>?bem=</code> válido, o Modo Teatro <strong>abre sozinho</strong>
+        e manda a primeira mensagem. Sem o parâmetro, a página é exatamente a de
+        antes.</td>
+    <td><span class="pill p-risco">MÉDIO</span> — inicia conversa (e chamada de
+        LLM) sem clique. Ver §6.</td></tr>
+<tr><td>Painel de performance</td>
+    <td>A taxa <em>visita → conversa</em> das verticais deve subir: quem chega de
+        catálogo já entra conversando.</td>
+    <td><span class="pill p-aviso">AVISO</span> — a série histórica muda de
+        significado a partir da primeira campanha.</td></tr>
+</tbody>
+</table>
+
+<p class="aviso">
+  <strong>Sem captura de tela.</strong> Você pediu modo urgência (“não precisa
+  fazer testes”), então não pilotei o browser. O comportamento visual —
+  o teatro abrindo com a frase certa — está coberto por teste de componente
+  (<code>semente-de-campanha.test.tsx</code>), mas <strong>quem viu a tela ainda
+  não foi ninguém</strong>. O roteiro de §8 leva 40 segundos.
+</p>
+</section>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="riscos">
+<h2>6 · Pontos de risco</h2>
+
+<div class="risco alto">
+<h3>1 · <span class="pill p-ok">CORRIGIDO</span> Os campos de segmentação iam ser ignorados em silêncio</h3>
+<p>
+  <strong>O que era:</strong> escrevi <code>product_type</code> e
+  <code>custom_label_*</code> com o prefixo <code>g:</code>, por analogia com os
+  outros campos. A doc da Meta os escreve <strong>sem prefixo</strong>. O efeito
+  não é erro visível: o feed importa, o painel diz que está tudo certo, e os
+  conjuntos de produtos por vertical não filtram nada — descobre-se semanas
+  depois, tentando entender por que a campanha de moto está mostrando imóvel.
+</p>
+<p><strong>Correção:</strong> <code>campoSemPrefixo()</code> separado de
+   <code>campo()</code>, com o porquê escrito no código.</p>
+<div class="prova">antes:  &lt;g:product_type&gt;Consórcio &gt; auto&lt;/g:product_type&gt;
+depois: &lt;product_type&gt;Consórcio &gt; Carro&lt;/product_type&gt;
+        &lt;custom_label_0&gt;auto&lt;/custom_label_0&gt;</div>
+<p><strong>Como foi pego:</strong> conferindo campo a campo contra
+   <code>developers.facebook.com/documentation/ads-commerce/catalog/reference</code>
+   — não por teste. Nenhum teste meu pegaria isso: eu teria testado o meu próprio
+   erro.</p>
+</div>
+
+<div class="risco alto">
+<h3>2 · <span class="pill p-ok">CORRIGIDO</span> O remarketing dinâmico perderia o valor anunciado</h3>
+<p>
+  <strong>O que era:</strong> marquei a semente do deep link como origem
+  <code>"chip"</code>. Só que <code>theater-chat.tsx:176</code> descarta a semente
+  de <code>"chip"</code> quando já existe conversa anterior e manda
+  <strong>“Voltei”</strong> no lugar — regra certa para o botão genérico (“Quero
+  comprar um carro.”), que não carrega informação. Aqui carrega: o cliente acabou
+  de escolher um card de R$ 200.000. E como remarketing dinâmico de catálogo é
+  quase todo <em>visitante recorrente</em>, o caso principal do produto era
+  justamente o que ia falhar: o anúncio prometeria a carta e a conversa começaria
+  com “Voltei”.
+</p>
+<p><strong>Correção:</strong> origem <code>"digitada"</code>. Trocar de faixa de
+   valor no meio do funil é re-descoberta legítima, e o funil já sabe lidar com
+   isso (FIX-68).</p>
+<div class="prova">antes:  visitante recorrente + ?bem=200000  →  "Voltei"
+depois: visitante recorrente + ?bem=200000  →  "Quero um carro de R$ 200.000."</div>
+<p><strong>Cobertura:</strong>
+   <code>src/components/vertical/semente-de-campanha.test.tsx</code> — 4 casos.</p>
+</div>
+
+<div class="risco medio">
+<h3>3 · <span class="pill p-ok">JÁ COBERTO</span> O robô da Meta poderia inflar as visitas</h3>
+<p>
+  <strong>A suspeita:</strong> a Meta faz <em>scrape</em> do <code>link</code> de
+  cada item para validar o feed. Com 34 itens, isso são 34 acessos a landings que
+  o <code>proxy.ts</code> conta como visita — exatamente o defeito que já aconteceu
+  aqui com o health check do ALB (33.382 visitas falsas em 30 dias).
+</p>
+<p>
+  <strong>Verificado:</strong> <code>facebookexternalhit</code> já está na lista de
+  robôs declarados, desde antes desta entrega. A visita não nasce.
+</p>
+<div class="prova">src/lib/attribution/user-agent-robo.ts:29
+  const TOKENS_DE_ROBO = [ "ELB-HealthChecker", "facebookexternalhit", … ]</div>
+<p>Nada a fazer. Registrado porque era o risco mais provável, e provar que não
+   existe vale tanto quanto corrigir.</p>
+</div>
+
+<div class="risco medio">
+<h3>4 · <span class="pill p-risco">NÃO RESOLVIDO</span> Cada chegada de anúncio inicia uma conversa</h3>
+<p>
+  Foi a sua escolha (“a landing lê a querystring e já abre o chat semeado”), e é o
+  que faz o anúncio e a página contarem a mesma história. A consequência é que
+  <strong>a conversa começa — e o LLM é chamado — sem que a pessoa clique em
+  nada</strong>. Quem clicou por engano e voltou gera um turno pago.
+</p>
+<p>
+  Não mexi porque a decisão é sua. Se o custo incomodar, o meio-termo é abrir o
+  teatro com a frase <em>no composer</em>, esperando o envio — uma linha em
+  <code>semente-de-campanha.tsx</code>.
+</p>
+</div>
+
+<div class="risco baixo">
+<h3>5 · <span class="pill p-aviso">POR DESENHO</span> O número do anúncio é estimativa</h3>
+<p>
+  <code>718.75 BRL</code> sai de <code>computePlanEstimate</code> — premissas de
+  mercado documentadas (prazo típico e taxa de administração por categoria), não
+  da Bevi. É a mesma estimativa que a landing já publica (“R$ 680/mês” no hero de
+  auto), e toda descrição do feed diz isso com todas as letras. Se um dia a Bevi
+  expuser grupos sem CPF, o feed passa a ter oferta real e esta ressalva sai.
+</p>
+</div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="aberto">
+<h2>7 · O que ficou em aberto</h2>
+
+<h3>1 · O ciclo do catálogo não fecha na conversão <span class="pill p-risco">IMPORTANTE</span></h3>
+<p>
+  Já mandamos <code>Lead</code> e <code>Purchase</code> pela CAPI, mas o
+  <code>custom_data</code> leva só <code>currency</code> e <code>value</code>
+  (<code>src/lib/conversions/meta-capi.ts:68</code>). <strong>Sem
+  <code>content_ids</code> e <code>content_type: "product"</code>, a Meta não sabe
+  qual carta gerou a venda.</strong> O catálogo serve para anunciar, mas o
+  remarketing dinâmico (“mostre de novo a carta de R$ 50 mil para quem olhou”) e a
+  otimização por produto ficam cegos.
+</p>
+<p>
+  É o próximo passo natural, e é pequeno: o <code>id</code> do item já é derivável
+  do valor do bem que o lead declarou. Não fiz porque não estava no escopo do que
+  você pediu — mas sem isso metade do valor do catálogo fica na mesa.
+</p>
+
+<h3>2 · A política da Meta para serviço financeiro não foi confirmada <span class="pill p-aviso">HIPÓTESE</span></h3>
+<p>
+  Consórcio é produto financeiro, e a Meta expandiu as <em>categorias especiais de
+  anúncio</em> para produtos e serviços financeiros. <strong>Não consegui confirmar
+  se é obrigatória no Brasil</strong> — as páginas da Central de Ajuda não abrem por
+  requisição automática, e as fontes secundárias só falam de EUA, Canadá e parte da
+  Europa. Trato como hipótese, não como fato.
+</p>
+<p>
+  Se for exigida, a segmentação fica restrita (sem idade fechada, sem gênero, sem
+  CEP fino, público semelhante limitado). <strong>Como conferir em 1 minuto:</strong>
+  criar uma campanha rascunho no Gerenciador — ele mostra a exigência na tela de
+  criação. Isso não bloqueia o feed; muda o alcance da campanha.
+</p>
+
+<h3>3 · Uma imagem só por vertical</h3>
+<p>
+  Os 14 itens de auto usam a mesma colagem do hero. Funciona, mas o card de
+  R$ 20.000 e o de R$ 500.000 aparecem iguais — e o criativo é metade do
+  desempenho em anúncio de catálogo. Arte por faixa (ou ao menos por três faixas)
+  é ganho provável. As colagens também não são quadradas (~1,26:1) e a Meta
+  recorta.
+</p>
+
+<h3>4 · O feed não é monitorado</h3>
+<p>
+  Se um dia <code>SITE_URL</code> apontar para o lugar errado, ou uma imagem for
+  renomeada, o feed continua respondendo 200 com link ou imagem quebrada. A Meta
+  avisa por e-mail no painel de diagnóstico do catálogo, mas nada nosso olha para
+  isso. Piora sozinho: cada arte renomeada é um item morto que ninguém vê.
+</p>
+
+<h3>5 · Testes: verdes, e um recorte só</h3>
+<p>
+  Os 34 casos cobrem o que escrevi. A suíte completa do projeto
+  <strong>não</strong> foi executada nesta sessão — você pediu modo urgência. O
+  <code>typecheck</code> passou limpo em todo o repositório.
+</p>
+</section>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="validar">
+<h2>8 · Como validar você mesmo</h2>
+
+<h3>Na tela (40 segundos)</h3>
+<ol class="checklist">
+  <li>Abrir <code>/feed/meta.xml</code> — esperado: XML com
+      <code>&lt;rss version="2.0"&gt;</code> e 34 <code>&lt;item&gt;</code>.</li>
+  <li>Abrir <code>/autos?bem=50000</code> — esperado: o Modo Teatro abre sozinho e
+      a primeira mensagem é <em>“Quero um carro de R$ 50.000.”</em>.</li>
+  <li>Abrir <code>/autos</code> sem parâmetro — esperado: a landing de sempre,
+      nada abre.</li>
+  <li>Abrir <code>/motos?bem=900</code> — esperado: nada abre (abaixo do piso da
+      Bevi).</li>
+  <li>Abrir <code>/imoveis?bem=400000</code> — esperado:
+      <em>“Quero um imóvel de R$ 400.000.”</em>.</li>
+</ol>
+
+<h3>Conferindo os riscos corrigidos</h3>
+<div class="prova"># Risco 1 — os campos de segmentação SEM prefixo g:
+curl -s localhost:3000/feed/meta.xml | grep -c '&lt;custom_label_0&gt;'
+# esperado: 34   (se vier 0, o prefixo voltou)
+
+# Risco 1 — nenhum "&" cru (o que faz a Meta recusar o arquivo)
+curl -s localhost:3000/feed/meta.xml | grep -cP '&amp;(?!amp;|lt;|gt;|quot;|apos;)'
+# esperado: 0
+
+# Preço no formato da Meta: número, ponto, espaço, ISO
+curl -s localhost:3000/feed/meta.xml | grep -oP '(?&lt;=&lt;g:price&gt;)[^&lt;]+' | head -3
+# esperado: 287.50 BRL / 359.38 BRL / 431.25 BRL
+
+# Nenhuma carta abaixo do piso da Bevi (R$ 15.000)
+curl -s localhost:3000/feed/meta.xml | grep -oP '(?&lt;=&lt;custom_label_1&gt;)[0-9]+' | sort -n | head -1
+# esperado: 15000</div>
+
+<h3>Pelos testes</h3>
+<div class="prova">$ pnpm vitest run src/lib/catalogo src/components/vertical/semente-de-campanha src/app/feed
+  Test Files  5 passed (5)
+       Tests  34 passed (34)
+
+$ pnpm typecheck
+  (sem saída — limpo)
+
+$ pnpm lint
+  Found 5 warnings   ← pré-existentes, em teste de WhatsApp; nenhum erro</div>
+
+<h3>Quando for ligar na Meta</h3>
+<ol class="checklist">
+  <li>Commerce Manager → Catálogo → <strong>Fontes de dados</strong> → Feed agendado.</li>
+  <li>URL: <code>https://ajaagora.com.br/feed/meta.xml</code> · frequência
+      <strong>diária</strong> (o conteúdo só muda em deploy).</li>
+  <li>Conferir no diagnóstico: 34 itens importados, 0 erros.</li>
+  <li>Criar campanha rascunho e ver se o Gerenciador exige
+      <strong>categoria especial de anúncio</strong> (§7.2).</li>
+</ol>
+</section>
+
+<footer class="meta">
+  <p>
+    Gerado em 20/08/2026 · <code>aja-agora</code> · branch <code>develop</code>,
+    sem commit. Feed conferido contra a documentação da Meta
+    (<em>catalog/fields</em> e <em>ads-commerce/catalog/reference</em>) em
+    20/08/2026.
+  </p>
+</footer>
+
+</body>
+</html>

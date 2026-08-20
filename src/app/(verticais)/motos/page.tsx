@@ -1,5 +1,6 @@
 "use client";
 
+import { ChatFlutuante } from "@/components/chat/chat-flutuante";
 import { ChatTheater } from "@/components/chat/theater/chat-theater";
 import { TheaterProvider, useTheater } from "@/components/chat/theater/theater-context";
 import { HeatmapTracker } from "@/components/heatmap/heatmap-tracker";
@@ -11,6 +12,7 @@ import { BlocoPassos } from "@/components/vertical/bloco-passos";
 import { FaixaNumeros } from "@/components/vertical/faixa-numeros";
 // import { GuiaArtigos } from "@/components/vertical/guia-artigos";
 import { HeroVertical } from "@/components/vertical/hero-vertical";
+import { SementeDeCampanha } from "@/components/vertical/semente-de-campanha";
 
 import { FAQ_MOTO, HERO_MOTO, NUMEROS_MOTO, PASSOS_MOTO } from "./conteudo";
 
@@ -22,9 +24,16 @@ import { FAQ_MOTO, HERO_MOTO, NUMEROS_MOTO, PASSOS_MOTO } from "./conteudo";
 export default function ConsorcioMotoPage() {
 	return (
 		<TheaterProvider>
+			{/* Chegada de anúncio de catálogo (`?bem=50000`): abre a conversa já
+			    com o valor da carta que o card prometeu. */}
+			<SementeDeCampanha semente={HERO_MOTO.sementeDeValor} />
 			<PaginaMoto />
 			{/* Overlay "Modo Teatro" — morfa do elemento clicado sobre a landing desfocada. */}
 			<ChatTheater />
+			{/* Botão flutuante do chat, parado no canto da tela durante toda a rolagem
+			    (só no mobile). Fica FORA do <main> e ao lado do teatro de propósito:
+			    é cromo da janela, não conteúdo de seção. */}
+			<ChatFlutuante />
 		</TheaterProvider>
 	);
 }
