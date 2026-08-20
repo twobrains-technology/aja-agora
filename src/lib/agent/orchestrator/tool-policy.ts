@@ -48,9 +48,14 @@ const BASE = [
 	"save_contact_whatsapp",
 	"check_proposal_status",
 	// Atalhos de resposta pra pergunta do próprio modelo. Entra no BASE porque
-	// não existe fase do funil em que facilitar a resposta do cliente atrapalhe:
-	// o payload não carrega valor estruturado, então nada nele pode ancorar cota
-	// ou fechar contrato — é texto, como se ele tivesse digitado.
+	// não existe fase do funil em que facilitar a resposta do cliente atrapalhe.
+	//
+	// ⚠️ Desde 19/08/2026 o payload PODE carregar cota: quando o atalho é o
+	// cliente escolhendo entre cotas que o agente acabou de mostrar, o servidor
+	// confere o `groupId` declarado contra as ofertas exibidas e contra o próprio
+	// rótulo (`coerceEscolhaNosAtalhos`) — e só então o clique ancora, pelo mesmo
+	// caminho do botão do card. O que o modelo escreve continua não valendo nada
+	// sozinho; quem assina é a conferência do servidor.
 	"present_quick_reply",
 ];
 

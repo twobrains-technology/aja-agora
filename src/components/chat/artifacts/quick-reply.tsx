@@ -23,17 +23,34 @@ export function QuickReply({
 	payload: QuickReplyPayload;
 	active?: boolean;
 }) {
-	const { sendUserMessage, status } = useChatContext();
+	const { sendAction, sendUserMessage, status } = useChatContext();
 	const [submitted, setSubmitted] = useState(false);
 	const isStreaming = status === "submitted" || status === "streaming";
 
 	const onSelect = useCallback(
-		async (label: string) => {
+		async (opt: QuickReplyPayload["options"][number]) => {
 			if (submitted) return;
 			setSubmitted(true);
-			await sendUserMessage(label);
+			// D6 — O ATALHO QUE ESCOLHE COTA É CLIQUE, NÃO FRASE.
+			//
+			// `groupId` aqui NUNCA vem do modelo: o servidor resolve o rótulo contra
+			// as cotas REAIS já exibidas e só então o anexa (`coerceEscolhaNosAtalhos`).
+			// Com ele, o caminho é o mesmo do botão do card — `choose_offer`, que
+			// ancora a cota e libera o fechamento. Sem ele, texto puro como sempre.
+			//
+			// A cliente da conversa de 19/08 respondeu "a de prazo mais curto" à
+			// pergunta do próprio agente e o funil ficou parado três portões atrás,
+			// porque a resposta chegava como texto e texto não ancora escolha.
+			if (opt.groupId) {
+				await sendAction(
+					{ kind: "choose_offer", groupId: opt.groupId, label: opt.label },
+					opt.label,
+				);
+				return;
+			}
+			await sendUserMessage(opt.label);
 		},
-		[sendUserMessage, submitted],
+		[sendAction, sendUserMessage, submitted],
 	);
 
 	const options = Array.isArray(payload?.options) ? payload.options : [];
@@ -50,7 +67,7 @@ export function QuickReply({
 				<button
 					key={opt.value || opt.label}
 					type="button"
-					onClick={() => onSelect(opt.label)}
+					onClick={() => onSelect(opt)}
 					disabled={isStreaming}
 					// Mesmo desenho dos chips de gate: pill de borda fina sobre o fundo do
 					// chat. Dois formatos diferentes de atalho na mesma tela leriam como

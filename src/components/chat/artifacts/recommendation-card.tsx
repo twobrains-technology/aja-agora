@@ -102,7 +102,7 @@ export function RecommendationCard({ payload }: { payload: RecommendationCardPay
 	const logoUrl = cota?.logoUrl ?? payload.logoUrl;
 
 	// FIX-196/§3.1 — contemplação SÓ como contagem coagida (availableSlots real);
-	// nunca `taxaContemplacao`/`contemplationRate` como %. Ausente/0 → linha oculta.
+	// nunca uma FRAÇÃO apresentada como %. Ausente/0 → linha oculta.
 	const contempladosMes = cota
 		? cota.availableSlots
 		: (payload.availableSlots ?? payload.contempladosMes ?? 0);

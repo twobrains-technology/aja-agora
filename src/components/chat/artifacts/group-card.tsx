@@ -163,21 +163,18 @@ export function GroupCard({ payload }: { payload: GroupCardPayload }) {
 								<p className="aja-num text-sm font-semibold mt-0.5">{payload.termMonths} meses</p>
 							</div>
 						)}
-						{typeof payload.availableSlots === "number" && (
-							<div>
-								<p className="text-xs text-muted-foreground m-0">Vagas</p>
-								<p className="aja-num text-sm font-semibold mt-0.5">{payload.availableSlots}</p>
-							</div>
-						)}
-						{/* FIX-231: `contemplationRate` é, na origem, `monthlyAwardedQuotas`
-						    (contagem real de contemplados/mês, offer-mapper.ts:132-133) — NUNCA
-						    uma fração. Mostrar como "%" era enganoso; segue o mesmo padrão de
-						    contagem do recommendation-card. Ausente/0 → linha omitida. */}
-						{(payload.contemplationRate ?? 0) > 0 && (
+						{/* CONTEMPLADOS/MÊS — uma linha, um número.
+						    Havia duas: "Vagas" (availableSlots) e "Contemplados/mês"
+						    (contemplationRate). Os dois campos carregavam o MESMO valor
+						    (`monthlyAwardedQuotas`, offer-mapper), então o card mostrava o mesmo
+						    dado duas vezes, um deles com rótulo errado. `contemplationRate` foi
+						    aposentado em 19/08/2026; sobra a contagem real, e 0/ausente esconde
+						    a linha (nunca fabrica). */}
+						{(payload.availableSlots ?? 0) > 0 && (
 							<div>
 								<p className="text-xs text-muted-foreground m-0">Contemplados/mês</p>
 								<p className="aja-num text-sm font-semibold mt-0.5">
-									{payload.contemplationRate} por mês
+									{payload.availableSlots} por mês
 								</p>
 							</div>
 						)}

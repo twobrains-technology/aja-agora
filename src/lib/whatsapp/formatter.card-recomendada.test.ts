@@ -13,7 +13,6 @@ const rec = {
 	creditValue: 80000,
 	monthlyPayment: 1200,
 	termMonths: 80,
-	contemplationRate: 2,
 	score: 0.92,
 };
 

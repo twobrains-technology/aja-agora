@@ -39,6 +39,10 @@ const baseArgs = {
 		conversionStage: "qualificado",
 		hasLead: true,
 		personaSegments: [],
+		propostas: 1,
+		contratoFechado: false,
+		alertas: [],
+		repeticoesDoAgente: 0,
 	} satisfies DeterministicSignals,
 };
 

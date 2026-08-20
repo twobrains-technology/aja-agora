@@ -31,6 +31,11 @@ export type LinhaDeReconciliacao = {
 	contratoOferecido: boolean;
 	mensagensDoUsuarioAposDecisao: number;
 	propostas: number;
+	revealCompleted: boolean;
+	mensagensDoUsuarioAposReveal: number;
+	escolhaAncorada: boolean;
+	cotaDoContrato: boolean;
+	apontouUmaCota: boolean;
 };
 
 /**
@@ -72,6 +77,23 @@ export async function findConversasParaReconciliar(): Promise<LinhaDeReconciliac
 			FROM artifacts a
 			JOIN messages m ON m.id = a.message_id
 			WHERE a.type = 'contract_form'
+		),
+		-- O instante do REVEAL: a primeira vez que ofertas reais chegaram à tela.
+		-- É daqui que se mede se o funil andou depois de o cliente ver o que
+		-- existe — o trecho onde a conversa da Rute morreu (PRD §5.4).
+		reveal AS (
+			SELECT m.conversation_id, min(a.created_at) AS em
+			FROM artifacts a
+			JOIN messages m ON m.id = a.message_id
+			WHERE a.type IN ('comparison_table', 'recommendation_card')
+			GROUP BY m.conversation_id
+		),
+		-- Simulou uma cota específica = o servidor SABIA qual cota o cliente quer.
+		simulou AS (
+			SELECT DISTINCT m.conversation_id
+			FROM artifacts a
+			JOIN messages m ON m.id = a.message_id
+			WHERE a.type = 'simulation_result'
 		)
 		SELECT r.id, r.metadata,
 		       r.metadata->>'maxStageReached' AS "maxStageReached",
@@ -84,10 +106,21 @@ export async function findConversasParaReconciliar(): Promise<LinhaDeReconciliac
 		       ), 0)::int AS "mensagensDoUsuarioAposDecisao",
 		       coalesce((
 		         SELECT count(*) FROM bevi_proposals p WHERE p.conversation_id = r.id
-		       ), 0)::int AS "propostas"
+		       ), 0)::int AS "propostas",
+		       (rv.em IS NOT NULL) AS "revealCompleted",
+		       coalesce((
+		         SELECT count(*) FROM messages um
+		         WHERE um.conversation_id = r.id AND um.role = 'user'
+		           AND rv.em IS NOT NULL AND um.created_at > rv.em
+		       ), 0)::int AS "mensagensDoUsuarioAposReveal",
+		       (r.metadata->'escolha' IS NOT NULL) AS "escolhaAncorada",
+		       (r.metadata->'contractOffer' IS NOT NULL) AS "cotaDoContrato",
+		       (sm.conversation_id IS NOT NULL) AS "apontouUmaCota"
 		FROM recentes r
 		LEFT JOIN decisao d ON d.conversation_id = r.id
 		LEFT JOIN contrato ct ON ct.conversation_id = r.id
+		LEFT JOIN reveal rv ON rv.conversation_id = r.id
+		LEFT JOIN simulou sm ON sm.conversation_id = r.id
 	`);
 	return (
 		Array.isArray(rows) ? rows : ((rows as { rows?: unknown[] }).rows ?? [])
@@ -117,6 +150,11 @@ export async function runReconciliacaoCycle(
 				contratoOferecido: Boolean(linha.contratoOferecido),
 				mensagensDoUsuarioAposDecisao: Number(linha.mensagensDoUsuarioAposDecisao ?? 0),
 				propostas: Number(linha.propostas ?? 0),
+				revealCompleted: Boolean(linha.revealCompleted),
+				mensagensDoUsuarioAposReveal: Number(linha.mensagensDoUsuarioAposReveal ?? 0),
+				escolhaAncorada: Boolean(linha.escolhaAncorada),
+				cotaDoContrato: Boolean(linha.cotaDoContrato),
+				apontouUmaCota: Boolean(linha.apontouUmaCota),
 			});
 
 			const meta = metaOf(linha);

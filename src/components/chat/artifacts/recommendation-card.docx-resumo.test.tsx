@@ -6,7 +6,7 @@ import { RecommendationCard } from "./recommendation-card";
 
 // docx passo 4 (linha 38): resumo por opção = valor da carta · parcela · prazo ·
 // TIPO DE GRUPO · lance/embutido · qtde de CONTEMPLADOS/MÊS. Os dois últimos
-// faltavam no card (e contemplationRate da Bevi é CONTAGEM, não percentual).
+// faltavam no card (e a contemplação da Bevi é CONTAGEM, não percentual).
 
 vi.mock("@/lib/chat/provider", () => ({
 	useChatContext: () => ({
@@ -23,7 +23,6 @@ const payload: RecommendationCardPayload = {
 	monthlyPayment: 980,
 	adminFeePercent: 18,
 	termMonths: 80,
-	contemplationRate: 2,
 	contempladosMes: 2,
 	score: 0.91,
 	scoreBreakdown: { monthlyFit: 0.9, contemplation: 0.8, adminFee: 0.9, termMatch: 1 },

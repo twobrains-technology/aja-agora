@@ -375,6 +375,24 @@ export type ConversationMetadata = {
 		 * no funil, ou afirmação de avanço sobre uma âncora única. */
 		origem: "mencao" | "criterio" | "afirmacao";
 	};
+	/** Uma SIMULAÇÃO de cota já foi apresentada nesta conversa (o card
+	 * `simulation_result` chegou à tela). Fato de servidor: é o que separa quem
+	 * ainda está escolhendo faixa de quem já está dentro do simulador — e é por
+	 * isso que o gate `timeframe` deixa de barrar o fechamento daí em diante
+	 * (PRD 19/08/2026, §4.2). */
+	simulacaoApresentada?: boolean;
+	/** AS COTAS QUE O AGENTE PÔS EM ESCOLHA NO ÚLTIMO TURNO.
+	 *
+	 * Fato de servidor, não declaração do modelo: quando os atalhos de resposta
+	 * rápida têm rótulos que RESOLVEM contra cotas exibidas ("a de menor
+	 * parcela", "a de prazo mais curto"), o servidor anexa os `groupId` reais
+	 * (`coerceEscolhaNosAtalhos`) e guarda aqui quais foram oferecidas.
+	 *
+	 * É o que autoriza `escolhaPodeSerAncorada` a aceitar a resposta do cliente
+	 * por característica — ele está respondendo à pergunta que o agente acabou de
+	 * fazer, entre alternativas que o SERVIDOR nomeou. Sem este campo, vale só o
+	 * aceite explícito (FIX-406). Consumido no turno seguinte do cliente. */
+	escolhaOfertada?: { groupIds: string[] };
 	/** docx passo 5: resumo da contratação por WhatsApp NÃO foi enviado (canal
 	 * não configurado ou falha) — pendência observável, nunca envio fingido. */
 	contractSummaryPending?: boolean;

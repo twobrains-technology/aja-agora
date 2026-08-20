@@ -25,7 +25,6 @@ const rec = (rawCreditValue?: number): RecommendationCardPayload => ({
 	monthlyPayment: 2_365.57,
 	adminFeePercent: 18,
 	termMonths: 72,
-	contemplationRate: 0,
 	score: 0.9,
 	scoreBreakdown: { monthlyFit: 0.9, contemplation: 0.8, adminFee: 0.9, termMatch: 1 },
 	rawCreditValue,
