@@ -12,6 +12,7 @@ import { BlocoPassos } from "@/components/vertical/bloco-passos";
 import { FaixaNumeros } from "@/components/vertical/faixa-numeros";
 // import { GuiaArtigos } from "@/components/vertical/guia-artigos";
 import { HeroVertical } from "@/components/vertical/hero-vertical";
+import { SementeDeCampanha } from "@/components/vertical/semente-de-campanha";
 
 import { FAQ_MOTO, HERO_MOTO, NUMEROS_MOTO, PASSOS_MOTO } from "./conteudo";
 
@@ -23,6 +24,9 @@ import { FAQ_MOTO, HERO_MOTO, NUMEROS_MOTO, PASSOS_MOTO } from "./conteudo";
 export default function ConsorcioMotoPage() {
 	return (
 		<TheaterProvider>
+			{/* Chegada de anúncio de catálogo (`?bem=50000`): abre a conversa já
+			    com o valor da carta que o card prometeu. */}
+			<SementeDeCampanha semente={HERO_MOTO.sementeDeValor} />
 			<PaginaMoto />
 			{/* Overlay "Modo Teatro" — morfa do elemento clicado sobre a landing desfocada. */}
 			<ChatTheater />

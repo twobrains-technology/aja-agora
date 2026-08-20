@@ -62,6 +62,7 @@ export const HERO_MOTO: HeroVerticalConteudo = {
 	// colagem. Declarar aqui desenharia a pill uma segunda vez por cima.
 	sementeVazia: "Quero comprar uma moto.",
 	semente: (parcela) => `Quero uma moto. Consigo pagar ${parcela}.`,
+	sementeDeValor: (valor) => `Quero uma moto de ${valor}.`,
 };
 
 export const NUMEROS_MOTO: FaixaNumerosConteudo = {

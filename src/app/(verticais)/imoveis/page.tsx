@@ -12,6 +12,7 @@ import { BlocoFormas } from "@/components/vertical/bloco-formas";
 import { FaixaNumeros } from "@/components/vertical/faixa-numeros";
 // import { GuiaArtigos } from "@/components/vertical/guia-artigos";
 import { HeroVertical } from "@/components/vertical/hero-vertical";
+import { SementeDeCampanha } from "@/components/vertical/semente-de-campanha";
 
 import { FAQ_IMOVEL, FGTS_IMOVEL, HERO_IMOVEL, NUMEROS_IMOVEL } from "./conteudo";
 
@@ -21,6 +22,9 @@ import { FAQ_IMOVEL, FGTS_IMOVEL, HERO_IMOVEL, NUMEROS_IMOVEL } from "./conteudo
 export default function ConsorcioImovelPage() {
 	return (
 		<TheaterProvider>
+			{/* Chegada de anúncio de catálogo (`?bem=50000`): abre a conversa já
+			    com o valor da carta que o card prometeu. */}
+			<SementeDeCampanha semente={HERO_IMOVEL.sementeDeValor} />
 			<PaginaImovel />
 			{/* Overlay "Modo Teatro" — morfa do elemento clicado sobre a landing desfocada. */}
 			<ChatTheater />

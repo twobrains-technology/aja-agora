@@ -12,6 +12,7 @@ import { BlocoUpgrade } from "@/components/vertical/bloco-upgrade";
 import { FaixaNumeros } from "@/components/vertical/faixa-numeros";
 // import { GuiaArtigos } from "@/components/vertical/guia-artigos";
 import { HeroVertical } from "@/components/vertical/hero-vertical";
+import { SementeDeCampanha } from "@/components/vertical/semente-de-campanha";
 
 import { FAQ_AUTO, HERO_AUTO, NUMEROS_AUTO, UPGRADE_AUTO } from "./conteudo";
 
@@ -22,6 +23,9 @@ import { FAQ_AUTO, HERO_AUTO, NUMEROS_AUTO, UPGRADE_AUTO } from "./conteudo";
 export default function ConsorcioAutoPage() {
 	return (
 		<TheaterProvider>
+			{/* Chegada de anúncio de catálogo (`?bem=50000`): abre a conversa já
+			    com o valor da carta que o card prometeu. */}
+			<SementeDeCampanha semente={HERO_AUTO.sementeDeValor} />
 			<PaginaAuto />
 			{/* Overlay "Modo Teatro" — morfa do elemento clicado sobre a landing desfocada. */}
 			<ChatTheater />
