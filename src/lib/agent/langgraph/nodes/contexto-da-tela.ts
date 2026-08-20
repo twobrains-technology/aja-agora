@@ -23,6 +23,12 @@ export type OfertaNaTela = {
 	creditValue?: number | null;
 	monthlyPayment?: number | null;
 	termMonths?: number | null;
+	/** Contemplados por mês do grupo (`monthlyAwardedQuotas` na Bevi). É o ÚNICO
+	 * sinal de velocidade de contemplação que este produto permite citar — e é
+	 * também o critério que mais decide venda de consórcio. Ficava só no objeto
+	 * do servidor: o cliente perguntava "qual contempla mais rápido?" e o modelo,
+	 * sem o dado, devolvia a pergunta. Ver `blocoDeOpcoesNaTela`. */
+	availableSlots?: number | null;
 };
 
 const brl = (v: number) =>
@@ -247,5 +253,83 @@ A CONTA, já feita — use estes números e NÃO invente outros:
 		`Não peça desculpa repetida nem prometa buscar de novo com o mesmo valor: já foi buscado. ` +
 		`O caminho é propor um ajuste concreto — outra faixa, outro prazo, outra categoria.` +
 		veredito
+	);
+}
+
+/**
+ * AS OPÇÕES QUE ELE JÁ VIU — com o número que decide a compra.
+ *
+ * Este bloco morava inline no `converse` e serializava administradora, carta,
+ * parcela e prazo. Faltavam duas coisas, e as duas custaram uma venda em
+ * 19/08/2026:
+ *
+ *   • **contemplados por mês**. A cliente perguntou qual cota contempla mais
+ *     rápido. O servidor sabia (Banco do Brasil 15/mês contra 4 do Itaú, e
+ *     ainda R$ 1.488 mais barata), o modelo não. Ele devolveu a decisão a ela,
+ *     que escolheu justamente a pior opção no critério dela própria.
+ *   • **a lista inteira**. O corte `.slice(0, 8)` deixava a 11ª cota fora da
+ *     janela, e o agente afirmou "o Itaú tem duas opções na tela" havendo três.
+ *     O corte protegia contra prompt gigante; onze linhas de texto não são um
+ *     problema de janela, e contar errado a tela é.
+ *
+ * A regra do léxico continua de pé, mas agora com a alternativa na mão: compare
+ * pela CONTAGEM real, nunca por "taxa de contemplação" (campo da Bevi sem
+ * semântica documentada — ver `HARD_RULES.md` §1.10). Proibir sem entregar o
+ * dado permitido foi o que deixou o agente mudo sobre o assunto.
+ */
+/** Teto da lista no contexto. Não é o `.slice(0, 8)` de volta: aquele era MUDO —
+ * escondia a 11ª cota e o agente contava errado o que estava na tela. Aqui o
+ * teto é alto (cobre com folga uma busca inteira) e, quando alcançado, o corte
+ * é DITO ao modelo, que então sabe que não está vendo tudo. Conversa com várias
+ * buscas acumula dezenas de cotas exibidas, e janela tem limite. */
+const TETO_DE_COTAS_NO_CONTEXTO = 20;
+
+export function blocoDeOpcoesNaTela(ofertas: OfertaNaTela[]): string | null {
+	if (ofertas.length <= 1) return null;
+	// As ÚLTIMAS são as que estão na tela agora — quando há corte, é o começo da
+	// lista (buscas antigas) que sai.
+	const omitidas = Math.max(0, ofertas.length - TETO_DE_COTAS_NO_CONTEXTO);
+	const visiveis = omitidas > 0 ? ofertas.slice(-TETO_DE_COTAS_NO_CONTEXTO) : ofertas;
+	const linhas = visiveis.map((o) => {
+		const contemplados =
+			typeof o.availableSlots === "number" && o.availableSlots > 0
+				? `, ${o.availableSlots} contemplados por mês`
+				: "";
+		return (
+			`- [${o.groupId ?? "sem-id"}] ${o.administradora ?? "?"}: ` +
+			`carta ${o.creditValue ? brl(o.creditValue) : "?"}, ` +
+			`parcela ${o.monthlyPayment ? brl(o.monthlyPayment) : "?"}` +
+			`${o.termMonths ? ` em ${o.termMonths} meses` : ""}` +
+			contemplados
+		);
+	});
+	const avisoDeCorte =
+		omitidas > 0
+			? `\n(São ${ofertas.length} cotas exibidas nesta conversa ao todo; listei as ${visiveis.length} ` +
+				`mais recentes e omiti mais ${omitidas} cotas de buscas anteriores — NÃO afirme quantas opções ` +
+				`existem na tela, você não está vendo todas.)`
+			: "";
+	const temContemplados = visiveis.some(
+		(o) => typeof o.availableSlots === "number" && o.availableSlots > 0,
+	);
+	const sobreContemplacao = temContemplados
+		? `\nQuando ele perguntar qual contempla mais rápido — a pergunta nº 1 de quem compra ` +
+			`consórcio —, RESPONDA com estes números: mais contemplados por mês é mais chance por ` +
+			`assembleia. Compare as cotas por essa contagem à vontade, diga qual sai na frente e ` +
+			`por quê, e ligue isso ao que ele já contou que quer. Nunca use a expressão "taxa de ` +
+			`contemplação" (é outro campo, sem significado definido) e nunca prometa contemplação ` +
+			`em mês certo: lance antecipa, sorteio é sorteio.`
+		: `\nNENHUMA destas cotas trouxe o número de contemplados por mês. Se ele perguntar qual ` +
+			`contempla mais rápido, diga que não tem esse dado para estes grupos em vez de comparar ` +
+			`no escuro — e conduza pelo que você TEM (parcela, prazo, lance).`;
+	return (
+		`OPÇÕES QUE ELE JÁ VIU nesta conversa (você TEM esta lista — nunca peça pra ele repetir ` +
+		`valor, administradora ou prazo de algo que já está na tela):\n` +
+		linhas.join("\n") +
+		avisoDeCorte +
+		`\nQuando ele descrever uma delas por característica ("a de menor parcela", "a de prazo ` +
+		`mais curto", "a do Itaú"), RESOLVA você mesmo pela lista e siga — é PROIBIDO devolver ` +
+		`a identificação pra ele.` +
+		sobreContemplacao
 	);
 }

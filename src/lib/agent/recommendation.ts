@@ -192,7 +192,7 @@ export function scoreGroup(group: GroupSummary, input: ScoringInput): ScoredGrou
 	const factors = {
 		creditProximity: creditProximityScore(group.creditValue, input.creditMax),
 		monthlyFit: monthlyFitScore(group.monthlyPayment, input.budget),
-		contemplation: contemplationScore(group.contemplationRate),
+		contemplation: contemplationScore(group.availableSlots),
 		adminFee: adminFeeScore(group.adminFeePercent, group.category),
 		termMatch: termMatchScore(group.termMonths, input.desiredTermMonths),
 		bidReach: bidReachScore(group.avgBidValue, input.lanceDisponivel),

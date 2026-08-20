@@ -21,11 +21,13 @@ import {
 	buildAdjustValueDirective,
 	buildAdvanceToContractDirective,
 	buildChooseOfferDirective,
+	buildCompareFinancingDirective,
 	buildGroupSelectedDirective,
 	buildNameCapturedDirective,
 	buildToolErrorRecoveryResolvedFallback,
 	buildTopicPickerAnswerDirective,
 	buildTopicPickerBackDirective,
+	buildViewScenariosDirective,
 } from "@/lib/agent/orchestrator/directives";
 import { detectBackIntent, popNavState, pushNavState } from "@/lib/agent/orchestrator/navigation";
 import { type ConversationMetadata, type Persona, ROUTABLE_CATEGORIES } from "@/lib/agent/personas";
@@ -71,6 +73,7 @@ import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { normalizePhoneBR } from "@/lib/leads/phone";
 import { COOKIE_MAX_AGE_SECONDS, COOKIE_NAME, generateCookieValue } from "@/lib/memory/identity";
 import { checkRateLimit } from "@/lib/middleware/rate-limit";
+import { registrarBotaoFantasma } from "@/lib/observability/langfuse/funil-scores";
 import { withLangfuseTurn } from "@/lib/observability/langfuse/turn";
 import { collectAgentText } from "@/lib/observability/langfuse/ui-writer";
 import { instrumentWriter, TurnTrace } from "@/lib/telemetry/turn-trace";
@@ -401,7 +404,15 @@ export async function POST(req: NextRequest) {
 		// silencioso), o frontend ainda envia o label do botão via
 		// `chat.sendMessage({ text: label })`, então `lastUserText` captura.
 		const actionLabel = lastUserText(body.messages);
-		if (actionLabel) {
+		// EXCEÇÃO (D1, conversa da Rute): o card do NOME é o único cujo conteúdo
+		// pode não ser resposta à pergunta do card. Quem digita "Casa em
+		// condomínio" ali está respondendo à pergunta que o AGENTE fez no texto, e
+		// esse conteúdo volta ao turno como fala do cliente — quem o persiste,
+		// então, é o próprio turno (`persist`), não esta linha. Salvar aqui
+		// duplicaria a mensagem no histórico. O branch do gate `name` grava no
+		// caminho feliz, onde nenhum turno de usuário roda.
+		const falaPersistidaNoBranch = body.action.kind === "gate" && body.action.gate === "name";
+		if (actionLabel && !falaPersistidaNoBranch) {
 			await saveMessage(conversationId, "user", actionLabel, "web");
 		}
 
@@ -437,6 +448,22 @@ export async function POST(req: NextRequest) {
 							});
 						}
 						try {
+							// O CLIQUE CHEGOU COMO O CLIENTE O VIU? (D7, sinal `botao_fantasma`)
+							//
+							// O card declara a intenção do botão junto da ação; aqui o servidor
+							// confere contra o `kind` que recebeu. Divergência significa que
+							// alguém traduziu o clique no caminho — foi assim que "Ver cenários
+							// de contemplação" virou "Ajustar valor" e o agente perguntou o valor
+							// do bem com a simulação na tela, sem deixar rastro nenhum.
+							const acaoDoClique = body.action;
+							if (acaoDoClique) {
+								registrarBotaoFantasma({
+									kind: acaoDoClique.kind,
+									...("intent" in acaoDoClique && typeof acaoDoClique.intent === "string"
+										? { intent: acaoDoClique.intent }
+										: {}),
+								});
+							}
 							await withSimulatorClockIfNeeded(conv ?? null, async () => {
 								if (body.action?.kind === "category") {
 									if (!(ROUTABLE_CATEGORIES as readonly string[]).includes(body.action.category))
@@ -810,6 +837,42 @@ export async function POST(req: NextRequest) {
 										directive: buildAdjustValueDirective({
 											administradora: body.action.administradora,
 											currentCreditValue: body.action.creditValue,
+										}),
+										contactName,
+										writer,
+										userKey,
+									});
+									return;
+								}
+
+								// D7 — "Ver cenários de contemplação". Este handler não existia: a
+								// ação caía no `adjust-value` e o directive dizia ao modelo que o
+								// cliente queria mudar o valor do bem. As tools do cálculo
+								// (`compute_scenarios` + `present_scenarios`) já estavam no toolset
+								// do grafo; era só o clique nunca chegar até lá.
+								if (body.action?.kind === "view-scenarios") {
+									await pipeDirectiveTurn({
+										conversationId,
+										directive: buildViewScenariosDirective({
+											administradora: body.action.administradora,
+											...(body.action.groupId ? { groupId: body.action.groupId } : {}),
+										}),
+										contactName,
+										writer,
+										userKey,
+									});
+									return;
+								}
+
+								// D7 — "Comparar com financiamento", mesma família.
+								if (body.action?.kind === "compare-financing") {
+									await pipeDirectiveTurn({
+										conversationId,
+										directive: buildCompareFinancingDirective({
+											administradora: body.action.administradora,
+											...(typeof body.action.creditValue === "number"
+												? { currentCreditValue: body.action.creditValue }
+												: {}),
 										}),
 										contactName,
 										writer,
@@ -1226,14 +1289,45 @@ export async function POST(req: NextRequest) {
 									const { saveContactName } = await import("@/lib/leads/contact-capture");
 									const res = await saveContactName(conversationId, action.value.name);
 									if (!res.ok) {
-										await writeAndSaveText(
-											writer,
+										// D1 — O NOME NUNCA É PEDIDO NO VÁCUO.
+										//
+										// Aqui o servidor respondia sozinho, sem passar pelo modelo:
+										// "Pode me dizer como prefere ser chamado(a)?". Em produção
+										// (19/08/2026) isso saiu logo depois de a cliente responder,
+										// no campo do nome, à pergunta que o AGENTE tinha feito sobre
+										// o tipo do imóvel — "Casa em condomínio". A frase fixa não
+										// dizia uma palavra sobre o que ela acabou de contar, o
+										// "em condomínio" morreu ali, e o tipo do imóvel foi
+										// perguntado três vezes na mesma conversa.
+										//
+										// Escrever uma frase melhor no servidor não resolve: o
+										// servidor não sabe o que ela disse antes. Quem sabe é o
+										// modelo, e o caminho de entrada dele é o turno. Então o
+										// conteúdo REENTRA como fala do cliente — passa pelo
+										// analyzer (que extrai bem/valor/o que houver), o funil
+										// recalcula o gate (segue `name`, o nome não veio) e o
+										// modelo reage ao conteúdo antes de perguntar de novo, com
+										// as palavras dele. O card do nome volta pelo caminho normal.
+										// Campo vazio não vira turno de cliente: o modelo receberia um
+										// turno sem nada a responder e o cliente ficaria diante do
+										// silêncio. Aí sim vale a pergunta canônica do gate — ela é a
+										// rede, não a resposta padrão.
+										const conteudo = action.value.name.trim();
+										if (!conteudo) {
+											await pipeGatePrompt({ conversationId, gate: "name", writer });
+											return;
+										}
+										await pipeUserTurn({
 											conversationId,
-											meta.currentPersona ?? null,
-											"Pode me dizer como prefere ser chamado(a)? Pode ser só o primeiro nome.",
-										);
-										await pipeGatePrompt({ conversationId, gate: "name", writer });
+											userText: conteudo,
+											contactName,
+											writer,
+											userKey,
+										});
 										return;
+									}
+									if (actionLabel) {
+										await saveMessage(conversationId, "user", actionLabel, "web");
 									}
 									const fresh = await db.query.conversations.findFirst({
 										where: eq(conversations.id, conversationId),

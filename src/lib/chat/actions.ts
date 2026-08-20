@@ -1,5 +1,6 @@
 import type { Category, ExperiencePrev } from "@/lib/agent/personas";
 import type { PlanIntent } from "@/lib/agent/qualify-config";
+import type { SimulationActionIntent } from "./types";
 
 /**
  * Single source of truth for all client → server actions in the chat.
@@ -78,10 +79,40 @@ export type ChatAction =
 	// FIX-29: "Ajustar valor"/"Nova simulação" do card de simulação — reabre o
 	// what-if (perguntar novo valor), NUNCA inicia fechamento. Kind próprio pra
 	// não cair no handler de avanço (interest). creditValue = valor atual do card.
-	| { kind: "adjust-value"; administradora: string; creditValue?: number; label: string }
+	| {
+			kind: "adjust-value";
+			administradora: string;
+			creditValue?: number;
+			label: string;
+			/** A intenção que o BOTÃO declarava (D7). Vai junto para o servidor poder
+			 * conferir que o clique chegou como o cliente o viu — é o sinal
+			 * `botao_fantasma`. Opcional: card antigo já na tela não a manda. */
+			intent?: SimulationActionIntent;
+	  }
 	// docx passo 4: "Quero ver outras opções" — surfacing DETERMINÍSTICO das
 	// outras ofertas da descoberta (sem free-run do modelo).
-	| { kind: "show-other-options"; label?: string }
+	| { kind: "show-other-options"; label?: string; intent?: SimulationActionIntent }
+	// D7 (19/08/2026) — "Ver cenários de contemplação". O botão existia no card e
+	// não tinha handler: caía no `adjust-value`, e o cliente que perguntava QUANDO
+	// seria contemplado ouvia "qual valor você quer simular?". As tools do cálculo
+	// (`compute_scenarios` + `present_scenarios`) já estavam no toolset — faltava o
+	// clique chegar ao grafo.
+	| {
+			kind: "view-scenarios";
+			administradora: string;
+			groupId?: string;
+			label: string;
+			intent?: SimulationActionIntent;
+	  }
+	// D7 — "Comparar com financiamento": mesma família, handler próprio
+	// (`compare_with_financing` + `present_financing_comparison`).
+	| {
+			kind: "compare-financing";
+			administradora: string;
+			creditValue?: number;
+			label: string;
+			intent?: SimulationActionIntent;
+	  }
 	| { kind: "whatsapp_optin"; phone: string }
 	// FIX-27: número já informado → confirmação de canal sem re-digitar (o route
 	// usa o telefone já salvo no lead). Consentimento LGPD preservado.

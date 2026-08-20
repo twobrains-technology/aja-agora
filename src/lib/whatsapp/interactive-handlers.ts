@@ -97,6 +97,7 @@ export async function dispatchInteractiveReply(input: DispatchInput): Promise<bo
 	};
 	const { replyId } = ctx;
 
+	if (replyId.startsWith("qr_")) return handleQuickReplyTap(ctx);
 	if (replyId === "handoff_confirm") return handleHandoffConfirm(ctx);
 	if (replyId === "handoff_decline") return handleHandoffDecline(ctx);
 	if (replyId.startsWith("category_")) return handleCategory(ctx);
@@ -677,6 +678,73 @@ async function anchorRecommendedOffer(
 				}
 			: {}),
 	});
+}
+
+/**
+ * TAP NO ATALHO DE RESPOSTA — quando ele escolhe uma cota, vale como CLIQUE.
+ *
+ * O botão devolvia só o título como texto, e o título vem truncado em 20 chars
+ * pela API ("A de prazo mais curto" → "A de prazo mais curt"). No canal de maior
+ * volume, a escolha feita com um toque não ancorava nada — o defeito D6 do PRD,
+ * intacto no WhatsApp (revisão de 19/08/2026, P1-2).
+ *
+ * O `qr_${i}` carrega o índice; o `groupId` de cada opção foi conferido pelo
+ * SERVIDOR na emissão (`coerceEscolhaNosAtalhos`). Resolvendo um pelo outro, o
+ * tap segue o MESMO caminho do clique da web: `aplicarAceiteEstruturado` +
+ * `buildChooseOfferDirective`.
+ *
+ * Atalho sem cota (o caso comum — "Pode buscar", "Me explica melhor") devolve
+ * `false` e cai no fallback de texto de sempre. Nada muda para ele.
+ */
+async function handleQuickReplyTap(ctx: Ctx): Promise<boolean> {
+	const { from, replyId, conversationId } = ctx;
+	// ATENDENTE HUMANO NA CONVERSA: o bot não fala por cima, e muito menos
+	// ancora contrato. O caminho INTERATIVO não passa pela checagem do
+	// `processor` (que só cobre texto), então cada handler que age faz a sua —
+	// `handleInterest` e `handleDecisionEspecialista` já fazem. Sem isto, um
+	// botão antigo na tela viraria escolha de cota no meio de um atendimento
+	// humano.
+	const handoff = await getHandoffState(from);
+	if (handoff?.isHandedOff) return false;
+
+	const { ultimoQuickReply } = await import("@/lib/conversation/cards");
+	const payload = await ultimoQuickReply(conversationId).catch(() => null);
+	const { cotaDoTapDeAtalho } = await import("./quick-reply-tap");
+	const groupId = cotaDoTapDeAtalho(replyId, payload);
+	if (!groupId) return false;
+
+	const meta = await loadMeta(conversationId);
+
+	const { aplicarAceiteEstruturado } = await import("@/lib/agent/aceite");
+	const { meta: metaComAceite, efeito } = await aplicarAceiteEstruturado({
+		conversationId,
+		meta,
+		aceite: { groupId, doCard: meta.recommendedOffer },
+		canal: "whatsapp",
+	});
+	// O DIRECTIVE SÓ AFIRMA O QUE O SERVIDOR FEZ.
+	//
+	// `buildChooseOfferDirective` diz ao modelo que o cliente escolheu a cota. Se
+	// a âncora NÃO aconteceu (a cota não estava entre as exibidas), mandá-lo
+	// assim mesmo é o defeito-mãe deste PRD em escala pequena: o servidor
+	// mentindo para o modelo. Devolvendo `false`, o dispatcher trata o tap como
+	// TEXTO — e é o turno de texto que persiste a fala, por isso o
+	// `recordUserClick` fica DEPOIS desta linha (antes, gravava em dobro).
+	if (efeito !== "escolha-ancorada") return false;
+
+	await recordUserClick(ctx);
+	await persistMeta(conversationId, { ...metaComAceite, decisionDispatched: true });
+
+	const { buildChooseOfferDirective } = await import("@/lib/agent/orchestrator/directives");
+	await runAgentDirective(
+		from,
+		conversationId,
+		buildChooseOfferDirective({
+			administradora: metaComAceite.recommendedAdministradora,
+			identidadeJaColetada: meta.identityCollected === true,
+		}),
+	);
+	return true;
 }
 
 async function handleGroupSelected(ctx: Ctx): Promise<boolean> {

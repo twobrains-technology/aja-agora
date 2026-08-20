@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useChatContext } from "@/lib/chat/provider";
+import { ehNomeProprioPlausivel } from "@/lib/leads/nome-plausivel";
 
 // FIX-17 — gate do nome em card com input FOCADO (passo 1 da jornada canônica:
 // "Como posso te chamar?"). Era a única coleta texto-livre do funil; no mobile
@@ -35,7 +36,20 @@ export function NamePrompt({ active = true }: { active?: boolean }) {
 		if (trimmed.length === 0) return;
 		submittingRef.current = true;
 		setSubmitted(true);
-		const label = `Pode me chamar de ${trimmed}`;
+		// O PREFIXO SÓ VALE QUANDO O CONTEÚDO É UM NOME.
+		//
+		// Produção, 19/08/2026: o agente perguntou o tipo do imóvel, o card do nome
+		// estava na tela (é o único campo com onde digitar), e a cliente respondeu
+		// ali — "Casa em condomínio". O histórico gravou "Pode me chamar de Casa em
+		// condominio", uma frase que ela nunca disse, e é esse texto que o modelo lê
+		// no turno seguinte. Perder o dado já seria ruim; distorcer a intenção dela
+		// na entrada é pior, porque o agente passa a conversar com uma invenção.
+		//
+		// Mesmo predicado que o servidor usa antes de gravar o nome — um fato só,
+		// dos dois lados (`nome-plausivel.ts`).
+		const primeiroToken = trimmed.split(/\s+/)[0] ?? "";
+		const pareceNome = /^[\p{L}'-]+$/u.test(primeiroToken) && ehNomeProprioPlausivel(primeiroToken);
+		const label = pareceNome ? `Pode me chamar de ${trimmed}` : trimmed;
 		void sendAction({ kind: "gate", gate: "name", value: { name: trimmed }, label }, label);
 	};
 

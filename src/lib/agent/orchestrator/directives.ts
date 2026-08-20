@@ -268,6 +268,34 @@ export function buildAdjustValueDirective(args: {
 	return `Usuário clicou "Ajustar valor" no card de simulação de "${administradora}"${valorCtx}. Ele quer MUDAR o valor do bem, e o OPOSTO de avancar pro fechamento. FLUXO: pergunte em UMA frase, no SEU TOM, qual o novo valor do bem (ou a parcela mensal) que ele quer simular. NÃO simule ainda — espere a resposta com o novo valor. PROIBIDO neste turno: iniciar qualquer fechamento, reserva, contratação ou card de decisão. NUNCA diga "vou reservar essa opção" nem prometa atendente/consultor — "ajustar valor" e o contrario de fechar.`;
 }
 
+/** D7 (19/08/2026) — clique em "Ver cenários de contemplação" no card de
+ * simulação. O botão existia, e o clique caía no handler de "Ajustar valor":
+ * quem perguntava QUANDO seria contemplado ouvia "qual valor você quer
+ * simular?", com a simulação na tela. As tools do cálculo já estavam no
+ * toolset; o clique é que não chegava ao grafo. */
+export function buildViewScenariosDirective(args: {
+	administradora: string;
+	groupId?: string;
+}): string {
+	const { administradora, groupId } = args;
+	const id = groupId ? ` (groupId="${groupId}")` : "";
+	return `O cliente clicou "Ver cenários de contemplação" no card de simulação da "${administradora}"${id}. Ele quer saber QUANDO consegue ser contemplado e o que cada caminho exige. FLUXO: (1) uma frase curta no SEU TOM anunciando que vai mostrar os caminhos — proibido descrever números em texto, isso é o trabalho do card; (2) chame \`compute_scenarios\`; (3) chame \`present_scenarios\` com o retorno dela. Todos os números vêm da tool — NUNCA invente lance, prazo ou percentual. É estimativa, não garantia: diga isso em UMA ressalva discreta. PROIBIDO neste turno: perguntar de novo o valor, reabrir a simulação ou tratar isto como recusa.`;
+}
+
+/** D7 — clique em "Comparar com financiamento" no card de simulação. Mesma
+ * família do anterior: intenção que existia no botão e não tinha handler. */
+export function buildCompareFinancingDirective(args: {
+	administradora: string;
+	currentCreditValue?: number;
+}): string {
+	const { administradora, currentCreditValue } = args;
+	const valorCtx =
+		typeof currentCreditValue === "number" && currentCreditValue > 0
+			? ` (carta de R$ ${currentCreditValue.toLocaleString("pt-BR")})`
+			: "";
+	return `O cliente clicou "Comparar com financiamento" no card de simulação da "${administradora}"${valorCtx}. FLUXO: (1) uma frase curta no SEU TOM; (2) chame \`compare_with_financing\`; (3) chame \`present_financing_comparison\` com o retorno dela. Os números da comparação vêm da tool, e a premissa (taxa estimada) tem que ser dita — é comparação de estimativa, não promessa. PROIBIDO neste turno: perguntar o valor do bem de novo ou iniciar fechamento.`;
+}
+
 /** FIX-313 (rodada 10, onda 4 — achado na Rodada A.3 de verificação): clique
  * num chip do `topic_picker` (menu de dúvidas pós-experience, ex.: "o que é
  * lance?") chegava SEM tratamento dedicado em route.ts — caía no `kind ===
@@ -524,7 +552,6 @@ const EMPTY_TURN_RETRY_REASON_LABELS: Record<EphemeralDropReason, string> = {
 		"prometeu reduzir o PRAZO do consórcio (o lance só reduz a parcela, nunca o prazo)",
 	"premature-reservation": "afirmou que a cota já está reservada ou garantida antes da contratação",
 	"banned-lexicon": "usou uma gíria fora do tom da conversa",
-	"taxa-contemplacao": 'citou "taxa de contemplação", que não existe nos dados reais',
 	"proactive-callback":
 		"prometeu retornar ou entrar em contato depois (este canal não tem esse recurso)",
 	"mechanism-narration":

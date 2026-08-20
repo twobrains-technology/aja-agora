@@ -27,13 +27,17 @@ describe("computeEvalFromData — agregação básica", () => {
 				lead: FIXTURE_HAPPY_PATH.lead,
 				personas: FIXTURE_HAPPY_PATH.personas,
 				metadata: FIXTURE_HAPPY_PATH.metadata,
+				propostas: FIXTURE_HAPPY_PATH.propostas ?? 0,
 			},
 			judge,
 		);
 		expect(out.kind).toBe("success");
 		if (out.kind !== "success") return;
 		expect(out.overallScore).toBeGreaterThanOrEqual(0.6);
-		expect(out.dimensions.conversao.score).toBe(1.0); // qualificado + lead
+		// A régua mudou em 19/08/2026 (PRD §5.1): lead capturado sem proposta não é
+		// conversão — o produto fecha contrato, e o fixture não gerou proposta
+		// nenhuma. Antes isto valia 1,0, acima de quem mandou proposta.
+		expect(out.dimensions.conversao.score).toBe(0.4); // qualificado + lead, sem proposta
 		expect(out.flags.hallucination).toBe(false);
 	});
 
@@ -50,6 +54,7 @@ describe("computeEvalFromData — agregação básica", () => {
 				lead: FIXTURE_HALLUCINATION.lead,
 				personas: FIXTURE_HALLUCINATION.personas,
 				metadata: FIXTURE_HALLUCINATION.metadata,
+				propostas: FIXTURE_HALLUCINATION.propostas ?? 0,
 			},
 			judge,
 		);
@@ -73,6 +78,7 @@ describe("computeEvalFromData — agregação básica", () => {
 				lead: FIXTURE_HAPPY_PATH.lead,
 				personas: FIXTURE_HAPPY_PATH.personas,
 				metadata: FIXTURE_HAPPY_PATH.metadata,
+				propostas: FIXTURE_HAPPY_PATH.propostas ?? 0,
 			},
 			judge,
 		);
@@ -96,6 +102,7 @@ describe("computeEvalFromData — agregação básica", () => {
 				lead: FIXTURE_MULTI_PERSONA.lead,
 				personas: FIXTURE_MULTI_PERSONA.personas,
 				metadata: FIXTURE_MULTI_PERSONA.metadata,
+				propostas: FIXTURE_MULTI_PERSONA.propostas ?? 0,
 			},
 			judge,
 		);
@@ -124,6 +131,7 @@ describe("computeEvalFromData — agregação básica", () => {
 				lead: FIXTURE_HAPPY_PATH.lead,
 				personas: FIXTURE_HAPPY_PATH.personas,
 				metadata: FIXTURE_HAPPY_PATH.metadata,
+				propostas: FIXTURE_HAPPY_PATH.propostas ?? 0,
 			},
 			failingJudge,
 		);

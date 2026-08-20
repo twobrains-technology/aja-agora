@@ -5,7 +5,7 @@
  * hero visual do card (fonte grande), com a parcela abaixo, discreta. Lance
  * médio vira linha de detalhe própria, fora do grid de métricas.
  *
- * Bug real encontrado na exploração: o card mostrava `contemplationRate` com
+ * Bug real encontrado na exploração: o card mostrava a contemplação com
  * `%` (ex. "36,0%"), mas o dado é `monthlyAwardedQuotas` — uma CONTAGEM real
  * de contemplados/mês (offer-mapper.ts:132-133), nunca uma fração. Corrige
  * pro mesmo padrão do recommendation-card ("Contemplados/mês").
@@ -29,7 +29,6 @@ const payload: GroupCardPayload = {
 	adminFeePercent: 18,
 	termMonths: 80,
 	availableSlots: 36,
-	contemplationRate: 36,
 };
 
 describe("GroupCard — carta em destaque, parcela discreta (FIX-231)", () => {
@@ -68,7 +67,7 @@ describe("GroupCard — carta em destaque, parcela discreta (FIX-231)", () => {
 	});
 
 	it("omite a linha de contemplação quando a contagem é 0", () => {
-		render(<GroupCard payload={{ ...payload, contemplationRate: 0 }} />);
+		render(<GroupCard payload={{ ...payload, availableSlots: 0 }} />);
 		expect(screen.queryByText(/contemplados\/m[êe]s/i)).toBeNull();
 	});
 });

@@ -29,6 +29,11 @@ export type EvalInput = {
 	lead: SignalsLead;
 	personas: PersonaContext[];
 	metadata: Parameters<typeof computeSignals>[0]["metadata"];
+	/** Propostas REAIS desta conversa (`bevi_proposals`) — a nota de conversão
+	 * deixou de ser mapa de estágio e passou a medir desfecho (PRD §5.1). */
+	propostas: number;
+	/** O self-service concluiu o contrato (`metadata.contractClosed`). */
+	contratoFechado?: boolean;
 };
 
 export type EvalComputedSuccess = {
@@ -65,6 +70,8 @@ export async function computeEvalFromData(input: EvalInput, judge: JudgeFn): Pro
 		messages: input.messages,
 		artifacts: input.artifacts,
 		lead: input.lead,
+		propostas: input.propostas,
+		...(input.contratoFechado !== undefined ? { contratoFechado: input.contratoFechado } : {}),
 	});
 
 	const transcript = buildTranscript({
@@ -112,7 +119,14 @@ export async function computeEvalFromData(input: EvalInput, judge: JudgeFn): Pro
 		overallScore: Math.min(1, Math.max(0, overallScore)),
 		dimensions,
 		flags,
-		topIssues: judgeResponse.result.topIssues.slice(0, 3),
+		// PROVA ANTES DE HIPÓTESE (PRD §5.4). O sinal determinístico encabeça a
+		// lista: ele é fato de servidor, o juiz é opinião de modelo. Na conversa
+		// que motivou isto, as cinco dimensões saíram altas e o funil estava
+		// morto — nenhum `topIssue` do juiz mencionava o que de fato aconteceu.
+		// Os alertas entram INTEIROS (são no máximo quatro, todos determinísticos) e
+		// os três do juiz continuam vindo atrás. Cortar em três engolia a opinião do
+		// juiz numa conversa com dois alertas — e as duas coisas informam.
+		topIssues: [...signals.alertas, ...judgeResponse.result.topIssues.slice(0, 3)],
 		topStrengths: judgeResponse.result.topStrengths.slice(0, 3),
 		tokensInput: judgeResponse.tokensInput,
 		tokensOutput: judgeResponse.tokensOutput,

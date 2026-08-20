@@ -100,6 +100,8 @@ const FUNIL_COMPLETO: FunnelState = {
 		monthlyPayment: 2_100,
 		origem: "criterio",
 	},
+	escolhaOfertada: { groupIds: ["grupo-escolhido-9", "grupo-alternativo-3"] },
+	simulacaoApresentada: true,
 	handoffSuggested: true,
 	handoffReason: "cliente pediu falar com humano",
 	contractFormDispatched: true,

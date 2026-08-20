@@ -31,6 +31,26 @@
 //
 // O que NÃO ancora mais: `origem: "afirmacao"` e `origem: "criterio"`. As duas
 // eram inferência sobre texto livre.
+//
+// 2026-08-19 (PRD "Destravar o agente", D6) — A PORTA QUE SE ABRIU AO LADO
+// DESTA PAREDE, e por que ela não a derruba.
+//
+// A parede continua de pé: TEXTO LIVRE não assina. O que se descobriu em
+// produção é que ela tinha engolido, junto, a porta legítima — o cliente
+// respondendo à pergunta de escolha que o PRÓPRIO agente fez, com os atalhos
+// que o PRÓPRIO produto ofereceu ("A de prazo mais curto"). Ele cooperava e não
+// tinha caminho até o contrato.
+//
+// A porta nova exige TRÊS fatos simultâneos, e o primeiro é estado do servidor,
+// não interpretação de fala: (1) o servidor ofertou uma escolha entre cotas
+// específicas no turno anterior (`escolhaOfertada`, coagida por ele mesmo a
+// partir dos atalhos), (2) a fala resolve deterministicamente para UMA daquelas
+// cotas, (3) é a MESMA que o modelo indicou. Fora disso, o veto é o de sempre.
+//
+// A prova de que as duas coisas convivem está em `cenario-jornada-rute.test.ts`:
+// lá, a mesma frase ancora COM a pergunta de escolha aberta e NÃO ancora sem
+// ela.
+
 import { afterAll, describe, expect, it } from "vitest";
 import { buscaDoMock } from "./testing/grupos-do-mock";
 import { limparCenario, runScenario } from "./testing/scenario";
@@ -130,6 +150,26 @@ describeIfDb("FIX-400 — texto livre nunca ancora escolha", () => {
 		});
 		criadas.push(r.conversationId);
 		expect(r.meta.escolha).toBeUndefined();
+	});
+
+	it("o CAMINHO NOVO (atalho de escolha) não afrouxa nada aqui", async () => {
+		// PRD 19/08/2026: a porta 2 exige que o SERVIDOR tenha ofertado a escolha
+		// no turno anterior. Estas mesmas falas, sem essa oferta no estado,
+		// continuam sem ancorar — a parede segue de pé exatamente onde estava.
+		const r = await runScenario({
+			busca: buscaDoMock(96),
+			metaInicial: COM_OFERTA_ANCORADA,
+			turns: [
+				{
+					user: "a de menor parcela",
+					intent: "providing_info",
+					beats: [{ text: "Certo." }],
+				},
+			],
+		});
+		criadas.push(r.conversationId);
+		expect(r.meta.escolha).toBeUndefined();
+		expect(r.meta.escolhaOfertada).toBeUndefined();
 	});
 
 	it("recusa segue sem ancorar (o invariante do FIX-388 não regride)", async () => {

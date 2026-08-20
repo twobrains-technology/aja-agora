@@ -140,6 +140,21 @@ export function ComparisonTable({ payload }: { payload: ComparisonTablePayload }
 							</p>
 						</div>
 
+						{/* CONTEMPLADOS POR MÊS — o critério nº 1 de quem compra consórcio.
+						    O agente chegou a dizer "os cards mostram a taxa média de
+						    contemplação" com a tabela sem uma linha sobre o assunto (PRD
+						    19/08/2026, D4). É CONTAGEM real (`monthlyAwardedQuotas`), nunca
+						    percentual: 0/ausente esconde a linha, jamais vira "0/mês". */}
+						{(group.availableSlots ?? 0) > 0 && (
+							<p
+								data-testid={`comparison-chip-contemplados-${group.id}`}
+								className="text-xs text-muted-foreground"
+							>
+								<b className="aja-num font-semibold text-foreground">{group.availableSlots}</b>{" "}
+								contemplados/mês
+							</p>
+						)}
+
 						{/* FIX-231 — lance médio, linha discreta, só com dado real (D11). */}
 						{group.avgBidValue != null && (
 							<p
@@ -291,6 +306,18 @@ function QuotaChip({
 					Prazo <b className="aja-num font-semibold text-foreground">{cota.termMonths}m</b>
 				</p>
 			</div>
+
+			{/* Contemplados/mês — mesma regra do carrossel: contagem real, some
+			    quando o dado não veio. Ver a nota acima. */}
+			{cota.availableSlots > 0 && (
+				<p
+					data-testid={`quota-chip-contemplados-${cota.groupId}`}
+					className="text-xs text-muted-foreground"
+				>
+					<b className="aja-num font-semibold text-foreground">{cota.availableSlots}</b>{" "}
+					contemplados/mês
+				</p>
+			)}
 
 			{/* FIX-231 — lance médio, linha discreta, só com dado real (D11). */}
 			{cota.avgBidValue != null && (

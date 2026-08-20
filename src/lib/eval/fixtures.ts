@@ -46,6 +46,10 @@ export type Fixture = {
 	messages: SignalsMessage[];
 	artifacts: SignalsArtifact[];
 	lead: SignalsLead;
+	/** Propostas REAIS da conversa (`bevi_proposals`). Ausente = nenhuma — o
+	 * default honesto, já que a maioria das conversas não chega lá. Alimenta a
+	 * dimensão de conversão, que passou a medir desfecho (PRD §5.1). */
+	propostas?: number;
 	expectations: FixtureExpectations;
 };
 
