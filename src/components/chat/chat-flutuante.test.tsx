@@ -57,7 +57,7 @@ function Espiao() {
 	return (
 		<>
 			<output data-testid="espiao">{isOpen ? `aberto:${seed}` : "fechado"}</output>
-			<button type="button" data-testid="abrir-teatro" onClick={() => openTheater("")}>
+			<button type="button" data-testid="abrir-teatro" onClick={() => openTheater("", null)}>
 				abrir
 			</button>
 		</>

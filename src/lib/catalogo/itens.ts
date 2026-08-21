@@ -175,3 +175,32 @@ export function itensDoCatalogo(): ItemCatalogo[] {
 		}),
 	);
 }
+
+/**
+ * O item do catálogo que corresponde a um valor de bem REAL do funil.
+ *
+ * O feed publica faixas comerciais (R$ 75.000, R$ 100.000); o cliente pede
+ * R$ 83.000. Para a Meta reconhecer o `content_id`, ele tem que ser um id que
+ * EXISTE no catálogo — id inventado é ignorado em silêncio, que é o pior modo
+ * de falhar. Por isso a correspondência é pela faixa mais próxima, e não pelo
+ * valor cru.
+ *
+ * Empate (valor exatamente no meio de duas faixas) fica com a MENOR: o card
+ * anunciado passa a ser o mais barato dos dois, que é o lado seguro para uma
+ * promessa de parcela.
+ */
+export function idDoItemMaisProximo(
+	categoria: Category,
+	valorDoBem: number | null | undefined,
+): string | null {
+	if (valorDoBem == null || !Number.isFinite(valorDoBem) || valorDoBem <= 0) return null;
+
+	const faixas = faixasDeCredito(categoria);
+	if (faixas.length === 0) return null;
+
+	const maisProxima = faixas.reduce((melhor, atual) =>
+		Math.abs(atual - valorDoBem) < Math.abs(melhor - valorDoBem) ? atual : melhor,
+	);
+
+	return `${categoria}-${maisProxima}`;
+}

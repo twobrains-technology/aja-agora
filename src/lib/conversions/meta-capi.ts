@@ -36,6 +36,8 @@ export interface EventoParaEnvio {
 	hashedPhone: string | null;
 	fbc: string | null;
 	fbp: string | null;
+	/** Item do catálogo (`auto-50000`). Nulo quando não deu para determinar. */
+	contentId?: string | null;
 	ctwaClid: string | null;
 	actionSource: string;
 }
@@ -68,6 +70,15 @@ export function montarPayload(eventos: EventoParaEnvio[], cfg: ConversionsConfig
 			const customData: Record<string, unknown> = { currency: evento.currency };
 			const valor = evento.value === null ? null : Number(evento.value);
 			if (valor !== null && Number.isFinite(valor)) customData.value = valor;
+
+			// O que liga a conversão ao CATÁLOGO. Sem estes dois campos a Meta sabe
+			// que houve venda, mas não de qual carta — e anúncio de catálogo não
+			// consegue remostrar o item certo a quem já olhou. `content_type` é
+			// vocabulário fechado: só `product` ou `product_group`.
+			if (evento.contentId) {
+				customData.content_ids = [evento.contentId];
+				customData.content_type = "product";
+			}
 
 			return {
 				event_name: NOME_META[evento.eventName] ?? evento.eventName,

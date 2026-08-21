@@ -27,6 +27,9 @@ export interface WebVisitInput {
 	visitId: string;
 	visitorId: string;
 	params: CampaignParams;
+	/** `_fbp` do pixel, cru (a Meta exige sem hash). Nulo quando o pixel ainda
+	 * não rodou — a primeira visita de um navegador chega antes do cookie. */
+	fbp?: string | null;
 	landingPath: string;
 	referrer: string | null;
 	userAgent: string | null;
@@ -57,6 +60,7 @@ export async function recordWebVisit(input: WebVisitInput): Promise<void> {
 				utmTerm: input.params.utmTerm,
 				gclid: input.params.gclid,
 				fbclid: input.params.fbclid,
+				fbp: input.fbp ?? null,
 				userAgent: input.userAgent,
 			})
 			.onConflictDoNothing();

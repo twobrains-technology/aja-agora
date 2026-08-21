@@ -11,8 +11,9 @@
 
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { conversations, conversionEvents, leads, visits } from "@/db/schema";
+import { beviProposals, conversations, conversionEvents, leads, visits } from "@/db/schema";
 import type { LeadStage } from "@/lib/admin/lead-stages";
+import { contentIdDoEvento, numeroOuNulo } from "./conteudo-do-evento";
 import { hashEmail, hashPhone, montarFbc } from "./hash";
 
 export type ConversionEventName = "lead_qualificado" | "proposta_criada" | "contrato_fechado";
@@ -67,6 +68,36 @@ export async function registrarConversao(input: {
 		// Click-to-WhatsApp exige `action_source` próprio; o resto é web.
 		const ehCtwa = Boolean(visita?.ctwaClid);
 
+		// A carta a que este marco se refere. A proposta manda quando existe (é
+		// escolha real do cliente na administradora); sem ela, a landing/campanha
+		// dá a vertical e o valor declarado dá a faixa. Sem categoria nenhuma o
+		// evento sai sem `content_id`, como saía antes — chutar seria pior.
+		const proposta = await db.query.beviProposals.findFirst({
+			where: eq(beviProposals.leadId, lead.id),
+			orderBy: (t, { desc }) => [desc(t.createdAt)],
+		});
+
+		const creditoDaProposta = numeroOuNulo(proposta?.creditValue);
+		const creditoDoLead = numeroOuNulo(lead.creditValue);
+
+		const contentId = contentIdDoEvento({
+			segmentoBevi: proposta?.segmento,
+			creditoDaProposta,
+			creditoDoLead,
+			landingPath: visita?.landingPath,
+			utmCampaign: visita?.utmCampaign,
+		});
+
+		// O VALOR do marco. A proposta manda sobre o lead, e não é preferência de
+		// estilo: medido em produção em 20/08/2026, `leads.credit_value` estava
+		// NULO em 27 de 27 leads — inclusive nos dois `contrato_fechado`, cujas
+		// propostas Bevi tinham R$ 150.000 e R$ 499.633,76 gravados. Com o valor
+		// vindo só do lead, TODO Purchase saía sem `value`, e a Meta responde a
+		// isso do pior jeito possível: aceita o evento e o exclui da otimização de
+		// receita, sem falhar em lugar nenhum. Foi o que o Gerenciador acusou
+		// ("Chave: value, currency — value: missing").
+		const valorDoEvento = creditoDaProposta ?? creditoDoLead;
+
 		await db
 			.insert(conversionEvents)
 			.values({
@@ -77,13 +108,15 @@ export async function registrarConversao(input: {
 				destination: "meta",
 				eventKey: `${lead.id}:${input.eventName}`,
 				occurredAt: input.occurredAt ?? new Date(),
-				value: lead.creditValue,
+				value: valorDoEvento === null ? null : valorDoEvento.toFixed(2),
 				currency: "BRL",
 				// PII só entra hasheada — esta tabela não é cópia do cadastro.
 				hashedEmail: hashEmail(lead.email),
 				hashedPhone: hashPhone(lead.phone),
 				fbc: montarFbc(visita?.fbclid, visita?.createdAt?.getTime() ?? Date.now()),
-				fbp: null,
+				// O `_fbp` que o pixel gravou no navegador, capturado na visita.
+				fbp: visita?.fbp ?? null,
+				contentId,
 				ctwaClid: visita?.ctwaClid ?? null,
 				actionSource: ehCtwa ? "business_messaging" : "website",
 			})

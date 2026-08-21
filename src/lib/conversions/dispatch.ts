@@ -80,6 +80,7 @@ export async function despacharConversoesPendentes(limite = 500): Promise<Result
 		fbp: linha.fbp,
 		ctwaClid: linha.ctwaClid,
 		actionSource: linha.actionSource,
+		contentId: linha.contentId,
 	}));
 
 	const naJanela = paraEnvio.filter((evento) => !expirouParaMeta(evento));
