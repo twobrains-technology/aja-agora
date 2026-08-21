@@ -162,6 +162,12 @@ async function registrarVisita(request: NextRequest): Promise<NextResponse> {
 	const agora = Date.now();
 	const campanha = parseCampaignParams(request.nextUrl.searchParams);
 
+	// `_fbp`: o id que o pixel do navegador grava para ESTE navegador. Ele já
+	// chega nesta requisição, e sem lê-lo aqui a Conversions API sai com `fbp`
+	// nulo — correspondência de evento jogada fora de graça. O `fbclid` diz de
+	// qual anúncio a pessoa veio; o `_fbp` diz que é o mesmo aparelho, e a Meta
+	// usa os dois. Não é PII e não vai hasheado (exigência da própria Meta).
+
 	// Visitante (device). Criado já na primeira chegada — antes só nascia no
 	// primeiro POST /api/chat, então quem visitava e ia embora era invisível.
 	const visitorAtual = request.cookies.get(VISITOR_COOKIE)?.value;
@@ -181,6 +187,7 @@ async function registrarVisita(request: NextRequest): Promise<NextResponse> {
 			visitId: visita.visitId,
 			visitorId,
 			params: campanha,
+			fbp: request.cookies.get("_fbp")?.value ?? null,
 			landingPath: request.nextUrl.pathname,
 			referrer: request.headers.get("referer"),
 			userAgent: request.headers.get("user-agent"),

@@ -320,6 +320,12 @@ export const visits = pgTable(
 		ctwaSourceUrl: text("ctwa_source_url"),
 		ctwaSourceType: text("ctwa_source_type"),
 		ctwaHeadline: text("ctwa_headline"),
+		// `_fbp` — o id que o pixel do navegador grava para ESTE navegador. Não
+		// diz de qual anúncio a pessoa veio (isso é o `fbclid`/`fbc`); diz "é o
+		// mesmo aparelho". A Meta usa os dois para reconhecer quem converteu, e
+		// mandar só um deixa correspondência na mesa de graça: o cookie já chega
+		// na mesma requisição em que a visita é gravada.
+		fbp: text(),
 		userAgent: text("user_agent"),
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	},
@@ -1130,6 +1136,10 @@ export const conversionEvents = pgTable(
 		fbc: text(),
 		fbp: text(),
 		ctwaClid: text("ctwa_clid"),
+		/** O item do catálogo (`auto-50000`) a que este marco se refere.
+		 * Sem ele a Meta sabe QUE houve venda, mas não DE QUÊ — e anúncio de
+		 * catálogo não consegue remostrar a carta certa a quem já olhou. */
+		contentId: text("content_id"),
 		/** `website` ou `business_messaging` (Click-to-WhatsApp). */
 		actionSource: varchar("action_source", { length: 30 }).notNull(),
 

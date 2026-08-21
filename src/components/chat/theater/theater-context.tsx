@@ -11,6 +11,8 @@ import {
 	useState,
 } from "react";
 
+import { rastrearChatIniciado } from "@/lib/analytics/meta-pixel";
+
 /** De onde a semente veio. `"digitada"` é fala REAL do cliente (o que ele
  * escreveu no composer); `"chip"` é uma frase de ENTRADA que o próprio produto
  * escreveu pelo botão clicado ("Quero comprar um carro."). A diferença importa
@@ -59,6 +61,12 @@ export function TheaterProvider({ children }: { children: ReactNode }) {
 		setSeed(nextSeed);
 		setSeedOrigin(origin);
 		setIsOpen(true);
+
+		// "Começou a conversar" — para a mídia. Fica AQUI, e não em cada botão,
+		// porque este é o ponto único por onde todo caminho de abertura passa:
+		// hero, menu, rodapé, flutuante e a chegada por anúncio de catálogo. O
+		// guard de dupla-abertura acima já garante um evento por conversa.
+		rastrearChatIniciado({ origem: origin });
 	}, []);
 
 	const closeTheater = useCallback(() => {
