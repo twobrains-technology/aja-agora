@@ -6,7 +6,7 @@ import { type FormEvent, useRef, useState } from "react";
 
 import { AjaMark } from "@/components/brand/aja-mark";
 import type { TheaterOpener } from "@/components/chat/theater/theater-context";
-import { Em } from "@/components/kv/em";
+import { HERO_CONSULTIVO, type HeroConteudo } from "@/components/kv/heros";
 import { CARD_SHADOW, KvContainer } from "@/components/kv/ui/kv-container";
 import { KvCtaButton } from "@/components/kv/ui/kv-cta-button";
 import { KV_RITMO, KvSection } from "@/components/kv/ui/kv-section";
@@ -37,6 +37,15 @@ const SEARCH_CHIPS = [
 
 interface KvHeroProps {
 	onOpenChat: TheaterOpener;
+	/**
+	 * O texto do topo — chapéu, manchete e linha de apoio. Vem de `heros.tsx`,
+	 * onde as variantes do teste A/B moram.
+	 *
+	 * Tem default, e o default é o que está em produção: assim o componente
+	 * continua montável sem prop (é o que os testes e qualquer uso novo fazem),
+	 * e ninguém precisa saber que existe um teste rodando para usar o hero.
+	 */
+	conteudo?: HeroConteudo;
 }
 
 // Hero (Figma frame 'Hero' 1440x873): duas colunas — bloco de texto + colagem de fotos
@@ -69,7 +78,7 @@ interface KvHeroProps {
 // não a grade. Isto nasceu num ajuste só de mobile e foi unificado em seguida:
 // manter dois desenhos era manter dois produtos na mesma página.
 // ---------------------------------------------------------------------------
-export function KvHero({ onOpenChat }: KvHeroProps) {
+export function KvHero({ onOpenChat, conteudo = HERO_CONSULTIVO }: KvHeroProps) {
 	const [value, setValue] = useState("");
 	const [focado, setFocado] = useState(false);
 	const formRef = useRef<HTMLFormElement>(null);
@@ -93,6 +102,15 @@ export function KvHero({ onOpenChat }: KvHeroProps) {
 			<KvContainer className="grid items-center gap-12 lg:grid-cols-[560px_1fr] lg:gap-[80px]">
 				{/* Coluna de texto */}
 				<div className="max-w-[560px]">
+					{/* O chapéu, quando a variante tem um. TEXTO e não pílula: o comp
+					    original trazia isto num retângulo escuro que parecia botão e
+					    disputava o toque com os CTAs de verdade. */}
+					{conteudo.eyebrow ? (
+						<p className="mb-3 text-[13px] font-semibold uppercase tracking-[0.08em] text-[#F2404F] md:mb-4 md:text-[14px]">
+							{conteudo.eyebrow}
+						</p>
+					) : null}
+
 					{/* A manchete abre a seção. O parágrafo do problema ("Comparar tudo
 					    isso sozinho leva tempo…") saiu daqui em 20/08 (decisão do Kairo):
 					    empurrava a manchete para baixo da dobra no celular, e quem chega
@@ -100,17 +118,13 @@ export function KvHero({ onOpenChat }: KvHeroProps) {
 					    existe um lugar onde isso já está comparado, que é o que a
 					    manchete diz. */}
 					<h1 className="text-[40px] font-normal leading-[1.08] tracking-[-0.01em] text-[#021628] md:text-[56px] md:leading-[62px]">
-						<Em>Compare</Em> consórcios
-						<br />
-						entre diversas
-						<br />
-						<Em>administradoras</Em>
+						{conteudo.manchete}
 					</h1>
 
 					{/* A promessa em uma linha. Era a segunda metade do parágrafo do comp;
 					    a primeira subiu para cima da manchete. */}
 					<p className="mt-4 max-w-[507px] text-[16px] leading-[1.35] text-[#2D2D2D] md:mt-5 md:text-[20px] md:leading-[26px]">
-						A Aja reúne essas informações em um único lugar para <Em>facilitar sua decisão.</Em>
+						{conteudo.apoio}
 					</p>
 
 					{/* Search card — o único bloco de escolha da coluna. O trio que ficava
