@@ -6,7 +6,9 @@ import { LandingKv } from "@/components/kv/landing-kv";
 /**
  * A home com o hero DIRETO — a variante em teste (comp "TESTE A", 2026-08-21).
  *
- * É a mesma landing da `/`, com três frases trocadas: só o registro de variantes
+ * É a mesma landing da `/`, com a manchete e a linha de apoio trocadas (o
+ * chapéu é o mesmo nas duas, de propósito: variar dois blocos ao mesmo tempo
+ * impediria de saber qual deles moveu o resultado): só o registro de variantes
  * (`heros.tsx`) muda, o resto do arquivo é uma casca. Nada aqui deve virar uma
  * segunda landing.
  *

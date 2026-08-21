@@ -15,6 +15,21 @@ import { Em } from "@/components/kv/em";
  * — DIRETO"), e não de letra: daqui a três variantes ninguém lembra o que era a
  * "C", mas todo mundo entende "direto".
  */
+/**
+ * O chapéu, igual em todas as variantes (decisão do Kairo, 21/08/2026).
+ *
+ * **"Parceria" e não "consultoria"**, que era o que o comp trazia: é o termo que
+ * o site já usa em toda parte — a própria meta description da home abre com
+ * "Parceria independente de consórcio". Duas palavras para a mesma coisa em
+ * duas partes da mesma página é o tipo de incoerência que ninguém reporta e
+ * todo mundo sente.
+ *
+ * Está numa constante, e não repetido em cada variante, por dois motivos: a
+ * palavra vai mudar de novo antes da manchete mudar, e um teste A/B em que o
+ * chapéu varia junto com a manchete não diz qual dos dois causou o resultado.
+ */
+const CHAPEU = "Parceria independente";
+
 export interface HeroConteudo {
 	/** Chapéu acima da manchete. TEXTO, nunca botão — a pílula do comp original
 	 *  saiu justamente por parecer clicável e disputar o toque com os CTAs. */
@@ -24,17 +39,14 @@ export interface HeroConteudo {
 }
 
 /**
- * O que está no ar desde sempre, e o controle do teste.
+ * O que está no ar, e o controle do teste.
  *
  * Descreve o MECANISMO: comparar entre administradoras. É verdade verificável e
  * carrega as palavras que o H1 precisa ter ("consórcios", "administradoras"),
  * mas põe o trabalho no colo de quem chegou justamente cansado de comparar.
- *
- * Está sem chapéu de propósito. O comp propõe "CONSULTORIA INDEPENDENTE" nas
- * duas variantes, mas ligá-lo aqui mudaria o controle — e um teste com duas
- * diferenças ao mesmo tempo não diz qual delas causou o resultado.
  */
 export const HERO_CONSULTIVO: HeroConteudo = {
+	eyebrow: CHAPEU,
 	manchete: (
 		<>
 			<Em>Compare</Em> consórcios
@@ -73,7 +85,7 @@ export const HERO_CONSULTIVO: HeroConteudo = {
  * `<br/>` cravado quebraria feio fora da largura em que foi desenhado.
  */
 export const HERO_DIRETO: HeroConteudo = {
-	eyebrow: "Consultoria independente",
+	eyebrow: CHAPEU,
 	manchete: (
 		<>
 			A AJA encontra <Em>a menor parcela</Em> pro crédito que você procura.
