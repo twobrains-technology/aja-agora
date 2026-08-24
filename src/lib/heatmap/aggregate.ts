@@ -103,15 +103,21 @@ export function montarFunilDeSecoes(contagens: ContagemSecao[], path: string): D
  *
  * O alvo sem rótulo cai no seletor: linha vazia no painel é linha que ninguém
  * consegue interpretar, e imagem ou ícone clicado costuma não ter texto.
+ *
+ * `totalDeCliques` é o total do PERÍODO, e é parâmetro justamente porque não dá
+ * para deduzi-lo daqui: a consulta corta a cauda longa em `MAX_ALVOS`, então a
+ * soma do que chega nesta função é menor que os cliques da página. Somando o que
+ * recebia, cada fatia saía inflada na proporção do que foi cortado — na home da
+ * produção, 40 alvos cobriam 73,2% dos cliques e o líder aparecia com 5,4% em
+ * vez de 3,9%. As fatias fechavam 100% entre si e não fechavam com o número de
+ * cliques impresso uma linha acima, na mesma tela.
  */
-export function montarAlvos(contagens: ContagemAlvo[]): AlvoDoMapa[] {
-	const total = contagens.reduce((soma, c) => soma + c.cliques, 0);
-
+export function montarAlvos(contagens: ContagemAlvo[], totalDeCliques: number): AlvoDoMapa[] {
 	return contagens
 		.map((contagem) => ({
 			...contagem,
 			label: contagem.label || contagem.selector || "(sem rótulo)",
-			sharePct: total > 0 ? arredondar((contagem.cliques / total) * 100) : 0,
+			sharePct: totalDeCliques > 0 ? arredondar((contagem.cliques / totalDeCliques) * 100) : 0,
 			suspeito:
 				contagem.cliques + contagem.rageCliques > 0 &&
 				contagem.rageCliques / (contagem.cliques + contagem.rageCliques) > LIMIAR_SUSPEITO,

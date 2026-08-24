@@ -152,10 +152,13 @@ describe("montarFunilDeSecoes", () => {
 
 describe("montarAlvos", () => {
 	it("ordena por clique e calcula a fatia de cada alvo", () => {
-		const alvos = montarAlvos([
-			{ selector: "b", label: "Ver ofertas", section: "kv-tipos", cliques: 30, rageCliques: 0 },
-			{ selector: "a", label: "Simular agora", section: "kv-hero", cliques: 70, rageCliques: 0 },
-		]);
+		const alvos = montarAlvos(
+			[
+				{ selector: "b", label: "Ver ofertas", section: "kv-tipos", cliques: 30, rageCliques: 0 },
+				{ selector: "a", label: "Simular agora", section: "kv-hero", cliques: 70, rageCliques: 0 },
+			],
+			100,
+		);
 
 		expect(alvos[0]).toMatchObject({ label: "Simular agora", cliques: 70, sharePct: 70 });
 		expect(alvos[1]).toMatchObject({ label: "Ver ofertas", sharePct: 30 });
@@ -164,24 +167,53 @@ describe("montarAlvos", () => {
 	it("marca como suspeito o alvo onde a raiva passa de um terço dos cliques", () => {
 		// É o sinal que aponta DEFEITO, não preferência: algo parece clicável e não
 		// responde. Vale mais que a nuvem de calor inteira.
-		const alvos = montarAlvos([
-			{ selector: "a", label: "Simular agora", section: "kv-hero", cliques: 100, rageCliques: 2 },
-			{ selector: "c", label: "Card do plano", section: "kv-tipos", cliques: 10, rageCliques: 7 },
-		]);
+		const alvos = montarAlvos(
+			[
+				{ selector: "a", label: "Simular agora", section: "kv-hero", cliques: 100, rageCliques: 2 },
+				{ selector: "c", label: "Card do plano", section: "kv-tipos", cliques: 10, rageCliques: 7 },
+			],
+			110,
+		);
 
 		expect(alvos.find((a) => a.label === "Simular agora")?.suspeito).toBe(false);
 		expect(alvos.find((a) => a.label === "Card do plano")?.suspeito).toBe(true);
 	});
 
 	it("dá nome ao alvo sem rótulo em vez de mostrar linha vazia no painel", () => {
-		const alvos = montarAlvos([
-			{ selector: "main>div[2]>img[0]", label: "", section: "kv-hero", cliques: 5, rageCliques: 0 },
-		]);
+		const alvos = montarAlvos(
+			[
+				{
+					selector: "main>div[2]>img[0]",
+					label: "",
+					section: "kv-hero",
+					cliques: 5,
+					rageCliques: 0,
+				},
+			],
+			5,
+		);
 
 		expect(alvos[0].label).toBe("main>div[2]>img[0]");
 	});
 
 	it("devolve lista vazia sem quebrar quando não houve clique", () => {
-		expect(montarAlvos([])).toEqual([]);
+		expect(montarAlvos([], 0)).toEqual([]);
+	});
+
+	it("divide pelos cliques do período, não pelo pedaço da cauda que coube na lista", () => {
+		// A consulta corta em `MAX_ALVOS`. Aqui chegam dois alvos que somam 40
+		// cliques, de uma página que teve 200: a fatia do líder é 15% da página, e
+		// não 75% do que sobrou na lista. É esse 75% que não fechava com o total de
+		// cliques impresso na linha de cima da mesma tela.
+		const alvos = montarAlvos(
+			[
+				{ selector: "a", label: "Simular agora", section: "kv-hero", cliques: 30, rageCliques: 0 },
+				{ selector: "b", label: "Ver ofertas", section: "kv-tipos", cliques: 10, rageCliques: 0 },
+			],
+			200,
+		);
+
+		expect(alvos[0].sharePct).toBe(15);
+		expect(alvos[1].sharePct).toBe(5);
 	});
 });
