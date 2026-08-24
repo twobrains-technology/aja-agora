@@ -50,29 +50,39 @@ describe("KvHero — topo redesenhado", () => {
 		expect(screen.getByText("Selecione o tipo de consórcio para comparar")).toBeTruthy();
 	});
 
+	// O TRIO MUDOU DE LUGAR, e estes casos vieram junto.
+	//
+	// Ele nasceu FORA do card, com nome acessível próprio ("Consórcio de carro")
+	// justamente para não colidir com o chip de dentro. Em 20/08/2026 os dois
+	// viraram um: o de fora saiu, porque oferecia a mesma escolha uma segunda vez
+	// (está escrito em `SEARCH_CHIPS`, em `kv-hero.tsx`). O que estes casos
+	// protegem continua igual — a escolha de categoria não pode ser um enfeite
+	// inerte, tem que levar ao Modo Teatro com a semente certa, que foi o defeito
+	// do FIX-351. Só o nome do botão mudou.
 	it.each([
-		["imóvel", "Quero comprar um imóvel."],
-		["carro", "Quero comprar um carro."],
-		["moto", "Quero comprar uma moto."],
-	])("o trio '%s' abre o teatro com a semente da categoria", (categoria, semente) => {
+		["Imóvel", "Quero comprar um imóvel."],
+		["Carro", "Quero comprar um carro."],
+		["Moto", "Quero comprar uma moto."],
+	])("o chip '%s' abre o teatro com a semente da categoria", (categoria, semente) => {
 		const onOpenChat = vi.fn();
 		render(<KvHero onOpenChat={onOpenChat} />);
 
-		fireEvent.click(screen.getByRole("button", { name: `Consórcio de ${categoria}` }));
+		fireEvent.click(screen.getByRole("button", { name: categoria }));
 
 		expect(onOpenChat).toHaveBeenCalledTimes(1);
 		expect(onOpenChat.mock.calls[0][0]).toBe(semente);
 		expect(onOpenChat.mock.calls[0][2]).toBe("chip");
 	});
 
-	it("o trio NÃO rouba o nome acessível dos chips do card", () => {
+	it("oferece a categoria UMA vez só — a duplicata é o que a consolidação matou", () => {
 		render(<KvHero onOpenChat={vi.fn()} />);
 
-		// Se o trio se chamasse "Carro", isto acharia dois e estouraria — e um
-		// leitor de tela leria dois botões idênticos que fazem coisas parecidas
-		// mas não iguais.
-		expect(screen.getByRole("button", { name: "Carro" })).toBeTruthy();
-		expect(screen.getByRole("button", { name: "Consórcio de carro" })).toBeTruthy();
+		// `getAllByRole` e não `getByRole`: o que se quer provar aqui é a
+		// contagem. Repor o trio de fora faria dois botões oferecerem a mesma
+		// escolha, e um leitor de tela leria a lista duas vezes.
+		for (const categoria of ["Imóvel", "Carro", "Moto"]) {
+			expect(screen.getAllByRole("button", { name: categoria })).toHaveLength(1);
+		}
 	});
 
 	it("'Quero minha simulação' submete o texto digitado", () => {
