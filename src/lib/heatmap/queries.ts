@@ -70,20 +70,24 @@ const MAX_ALVOS = 40;
  * A âncora vale aqui igual: visita que PRODUZIU conversa nunca é robô, seja qual
  * for o user-agent — fato do servidor vence heurística sobre texto livre.
  *
- * Evento anônimo (`visit_id IS NULL`) entra: ele não tem visita pra classificar,
- * e descartá-lo abriria buraco no mapa justamente do visitante que bloqueia
- * cookie.
+ * **Evento anônimo (`visit_id IS NULL`) fica de fora, e isso mudou em
+ * 24/08/2026.** Ele entrava só no recorte "todos os visitantes", porque o filtro
+ * de desfecho o descarta por construção — sem visita não há como saber no que
+ * ele deu. O efeito era a linha de números do cabeçalho falar de duas
+ * populações: `cliques` contava o anônimo e `visitantes` não, então a razão
+ * entre os dois não fechava e, num recorte estreito, dava para ver cliques com
+ * zero visitante. Pior: a tela pede ao operador que COMPARE "todos" com "só quem
+ * virou lead", e a linha de base incluía gente que o outro recorte jamais
+ * alcançaria. Medido na produção: 17 eventos anônimos em 2.204 (0,8%), 5 deles
+ * cliques — o preço de perdê-los é pequeno perto de um denominador que mente.
  */
-const EVENTO_DE_GENTE = sql`(
-  pe.visit_id IS NULL
-  OR EXISTS (
-    SELECT 1 FROM visits v
-    WHERE v.id = pe.visit_id
-      AND (
-        EXISTS (SELECT 1 FROM conversations cg WHERE cg.visit_id = v.id AND cg.is_simulated = false)
-        OR (v.user_agent IS NOT NULL AND v.user_agent !~* ${PADRAO_ROBO_SQL})
-      )
-  )
+const EVENTO_DE_GENTE = sql`EXISTS (
+  SELECT 1 FROM visits v
+  WHERE v.id = pe.visit_id
+    AND (
+      EXISTS (SELECT 1 FROM conversations cg WHERE cg.visit_id = v.id AND cg.is_simulated = false)
+      OR (v.user_agent IS NOT NULL AND v.user_agent !~* ${PADRAO_ROBO_SQL})
+    )
 )`;
 
 /**
@@ -132,15 +136,39 @@ export async function computeMapaDeCalor(filtro: FiltroMapa): Promise<MapaDeCalo
     AND ${EVENTO_DE_GENTE}
   `;
 
-	const [totais, secoes, alvos, pontos] = await Promise.all([
+	const [totais, rolagem, secoes, alvos, pontos] = await Promise.all([
 		db.execute<Record<string, unknown>>(sql`
       SELECT
         count(DISTINCT pe.visit_id) AS visitantes,
         count(*) FILTER (WHERE pe.type = 'click') AS cliques,
-        count(*) FILTER (WHERE pe.type = 'rage_click') AS rage_cliques,
-        COALESCE(avg(pe.scroll_pct) FILTER (WHERE pe.type = 'scroll_depth'), 0) AS scroll_medio
+        count(*) FILTER (WHERE pe.type = 'rage_click') AS rage_cliques
       FROM page_events pe
       WHERE ${base}
+    `),
+
+		// ROLAGEM MÉDIA — a média do ponto MAIS FUNDO de cada visitante.
+		//
+		// Saiu da consulta acima em 24/08/2026, e não por arrumação: como
+		// `avg(scroll_pct)` sobre as linhas gravadas ela estava errada. O coletor
+		// grava um marco por faixa cruzada (`MARCOS_SCROLL`, em
+		// `heatmap-tracker.tsx`), então quem lê a página inteira deixa 25, 50, 75 e
+		// 100 — quatro linhas, média 62,5. **O número era matematicamente incapaz
+		// de chegar a 100%**, qualquer que fosse a página: uma landing cujos
+		// visitantes rolassem TODOS até o rodapé mostraria 62,5%. O piso tinha o
+		// mesmo vício ao contrário — quem para no primeiro quarto deixa uma linha
+		// só, e puxa a média para 25.
+		//
+		// Foi assim que, em 24/08/2026, a produção mostrava `/autos` com 58,3% de
+		// rolagem média tendo TODOS os visitantes rolado até o fim (100% de
+		// verdade), e `/motos` com 62,5% no lugar de 100%.
+		db.execute<Record<string, unknown>>(sql`
+      SELECT COALESCE(avg(mais_fundo), 0) AS scroll_medio
+      FROM (
+        SELECT max(pe.scroll_pct) AS mais_fundo
+        FROM page_events pe
+        WHERE ${base} AND pe.type = 'scroll_depth' AND pe.scroll_pct IS NOT NULL
+        GROUP BY pe.visit_id
+      ) por_visitante
     `),
 
 		// Visitante DISTINTO por seção: uma pessoa que rola pra cima e pra baixo
@@ -185,17 +213,25 @@ export async function computeMapaDeCalor(filtro: FiltroMapa): Promise<MapaDeCalo
 	]);
 
 	const linha = totais.rows[0] ?? {};
+	const cliques = num(linha.cliques);
 
 	return {
 		path,
 		visitantes: num(linha.visitantes),
-		cliques: num(linha.cliques),
+		cliques,
 		rageCliques: num(linha.rage_cliques),
-		scrollMedio: Math.round(num(linha.scroll_medio)),
+		scrollMedio: Math.round(num(rolagem.rows[0]?.scroll_medio)),
 		funil: montarFunilDeSecoes(
 			secoes.rows.map((r) => ({ section: String(r.section), visitantes: num(r.visitantes) })),
 			path,
 		),
+		// O total de cliques do PERÍODO vai junto de propósito. A consulta acima
+		// devolve os `MAX_ALVOS` primeiros, e `montarAlvos` dividia pela soma do que
+		// recebia — ou seja, pela cauda que coube na lista. Medido na produção em
+		// 24/08/2026: a home tem 109 seletores distintos, os 40 devolvidos cobrem
+		// 205 dos 280 cliques (73,2%), e o alvo mais clicado aparecia com 5,4%
+		// quando a fatia dele sobre a página é 3,9%. A tela imprime "280 cliques"
+		// uma linha acima da lista: os dois números tinham que fechar.
 		alvos: montarAlvos(
 			alvos.rows.map((r) => ({
 				selector: r.selector ? String(r.selector) : null,
@@ -204,6 +240,7 @@ export async function computeMapaDeCalor(filtro: FiltroMapa): Promise<MapaDeCalo
 				cliques: num(r.cliques),
 				rageCliques: num(r.rage_cliques),
 			})),
+			cliques,
 		),
 		pontos: pontos.rows.map((r) => ({
 			x: num(r.x),

@@ -127,11 +127,34 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
       ORDER BY vi.visitor_id, c.updated_at ASC
     ),
 
+    -- Os dois sinais que vêm do mapa de calor, e que separam quem só bateu na
+    -- porta de quem chegou a ler a página.
+    --
+    -- "olhou" exige INTERAÇÃO — clique ou rolagem. Era qualquer evento da
+    -- visita, e isso incluía section_view, que dispara sozinho no primeiro
+    -- quadro: o hero e a barra fixa já estão a mais de 50% na tela sem ninguém
+    -- rolar nada (LIMIAR_SECAO, em heatmap-tracker.tsx). Medido na produção em
+    -- 24/08/2026: 536 visitas tinham section_view e só 96 tinham rolagem ou
+    -- clique — 82% do degrau "Olhou a página" era gente que apenas carregou a
+    -- página, e a ajuda do degrau prometia "rolou ou clicou".
+    --
+    -- "abriu_teatro" é o fato que faltava. O degrau "Abriu o chat" era derivado
+    -- de conversa SEM mensagem do cliente, e a conversa só nasce no primeiro
+    -- POST /api/chat — ou seja, depois de escrever. O degrau era estruturalmente
+    -- vazio (zero pessoas em 30 dias de produção), e quem abriu o teatro e
+    -- desistiu diante do palco vazio — exatamente quem ele existe para mostrar —
+    -- caía um degrau abaixo, no meio de quem nunca chegou perto do chat. O
+    -- evento existe desde 18/08 (chat_open, 30 em 30 dias) e nenhuma consulta o
+    -- lia.
     por_visita AS (
       SELECT vi.*,
              COALESCE(id.contact_id::text, vi.visitor_id) AS chave,
              id.contact_id,
-             EXISTS (SELECT 1 FROM page_events pe WHERE pe.visit_id = vi.id) AS olhou
+             EXISTS (SELECT 1 FROM page_events pe
+               WHERE pe.visit_id = vi.id
+                 AND pe.type IN ('click', 'rage_click', 'scroll_depth')) AS olhou,
+             EXISTS (SELECT 1 FROM page_events pe
+               WHERE pe.visit_id = vi.id AND pe.type = 'chat_open') AS abriu_teatro
       FROM visita vi
       LEFT JOIN identidade id ON id.visitor_id = vi.visitor_id
     ),
@@ -160,7 +183,8 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
              count(*) AS chegadas,
              min(pv.created_at) AS primeira_chegada,
              max(pv.created_at) AS ultima_chegada,
-             bool_or(pv.olhou) AS olhou
+             bool_or(pv.olhou) AS olhou,
+             bool_or(pv.abriu_teatro) AS abriu_teatro
       FROM por_visita pv
       GROUP BY pv.chave
     ),
@@ -230,7 +254,7 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
                WHEN COALESCE(cp.viu_oferta, false) THEN 6
                WHEN COALESCE(cp.identificou, false) THEN 5
                WHEN COALESCE(cp.escreveu, false) THEN 4
-               WHEN COALESCE(cp.conversas, 0) > 0 THEN 3
+               WHEN COALESCE(cp.conversas, 0) > 0 OR p.abriu_teatro THEN 3
                WHEN p.olhou THEN 2
                ELSE 1
              END AS profundidade

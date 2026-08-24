@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LANDINGS_COM_MAPA } from "@/lib/heatmap/events";
-import type { MapaDeCalor } from "@/lib/heatmap/queries";
+import type { FiltroDevice, MapaDeCalor } from "@/lib/heatmap/queries";
 import { cn } from "@/lib/utils";
 
 const NOME_DA_PAGINA: Record<string, string> = {
@@ -46,11 +46,26 @@ const DESFECHOS = [
 ];
 
 const DEVICES = [
-	{ valor: "todos", rotulo: "Todos os aparelhos" },
 	{ valor: "mobile", rotulo: "Celular" },
-	{ valor: "tablet", rotulo: "Tablet" },
 	{ valor: "desktop", rotulo: "Computador" },
+	{ valor: "tablet", rotulo: "Tablet" },
+	{ valor: "todos", rotulo: "Todos os aparelhos" },
 ];
+
+/**
+ * O aparelho com que a tela abre — celular, e isso não é preferência.
+ *
+ * O clique é gravado com `pageY` absoluto, em pixels do documento que a pessoa
+ * viu. Documento de celular e de desktop têm alturas completamente diferentes,
+ * então a nuvem só cai sobre o componente certo quando o recorte tem UM aparelho
+ * e o preview é renderizado na largura dele. "Todos os aparelhos" mistura as
+ * duas réguas — continua na lista para quem quiser o total de cliques, mas
+ * deixou de ser o padrão, e a tela avisa.
+ *
+ * Medido na produção em 24/08/2026: 91,2% dos visitantes do mapa são mobile
+ * (505 de 554). Abrir no desktop era abrir no layout de 8% da audiência.
+ */
+const DEVICE_PADRAO = "mobile";
 
 const MODOS: { valor: ModoDoMapa; rotulo: string; icone: typeof MousePointerClickIcon }[] = [
 	{ valor: "cliques", rotulo: "Cliques", icone: MousePointerClickIcon },
@@ -74,7 +89,7 @@ function MapaDeCalorContent() {
 	const [from] = useQueryState("from", parseAsIsoDate.withDefault(subDays(new Date(), 30)));
 	const [to] = useQueryState("to", parseAsIsoDate.withDefault(new Date()));
 	const [path, setPath] = useQueryState("path", parseAsString.withDefault("/"));
-	const [device, setDevice] = useQueryState("device", parseAsString.withDefault("todos"));
+	const [device, setDevice] = useQueryState("device", parseAsString.withDefault(DEVICE_PADRAO));
 	const [desfecho, setDesfecho] = useQueryState("desfecho", parseAsString.withDefault("todos"));
 	const [modo, setModo] = useState<ModoDoMapa>("cliques");
 
@@ -210,6 +225,15 @@ function MapaDeCalorContent() {
 				)}
 			</div>
 
+			{device === "todos" && (
+				<p className="rounded-lg border bg-muted/40 p-3 text-muted-foreground text-sm">
+					<strong>A nuvem mistura aparelhos neste recorte.</strong> O clique é gravado na altura do
+					documento que a pessoa viu, e a página do celular é bem mais alta que a do computador — os
+					números do cabeçalho continuam certos, mas a posição da mancha só é confiável com um
+					aparelho escolhido.
+				</p>
+			)}
+
 			{desfecho !== "todos" && (
 				<p className="rounded-lg border bg-muted/40 p-3 text-muted-foreground text-sm">
 					Recorte por desfecho: visitante sem cookie de visita fica de fora, porque não há como
@@ -220,7 +244,13 @@ function MapaDeCalorContent() {
 
 			<div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_330px]">
 				{pronto ? (
-					<VisorDoMapa path={mapa.path} modo={modo} pontos={mapa.pontos} funil={mapa.funil} />
+					<VisorDoMapa
+						path={mapa.path}
+						modo={modo}
+						pontos={mapa.pontos}
+						funil={mapa.funil}
+						device={device as FiltroDevice}
+					/>
 				) : (
 					<Skeleton className="h-[720px] w-full" />
 				)}

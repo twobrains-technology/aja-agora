@@ -481,4 +481,85 @@ describeIfDb("percurso — até onde cada pessoa foi (integration)", () => {
 			expect(pessoas[0].stageDoLead).toBe("perdido");
 		});
 	});
+	// ── O QUE CONTA COMO SINAL, degrau a degrau ─────────────────────────────
+	//
+	// Os dois primeiros degraus são derivados de `page_events`, e é aí que a
+	// escada estava afirmando comportamento que o dado não sustenta:
+	//
+	// - "Olhou a página" bastava QUALQUER evento da visita — e `section_view`
+	//   dispara sozinho, no primeiro quadro, porque o hero e a barra fixa já
+	//   estão a mais de 50% na tela sem ninguém rolar nada. Medido em produção
+	//   em 24/08/2026: 536 visitas com `section_view` contra 96 com rolagem ou
+	//   clique de verdade — 82% do degrau era gente que só carregou a página.
+	// - "Abriu o chat" era derivado de conversa SEM mensagem do cliente, e a
+	//   conversa só nasce no primeiro `POST /api/chat`, ou seja, depois de a
+	//   pessoa escrever. O degrau é estruturalmente vazio, e quem abriu o teatro
+	//   e desistiu diante do palco vazio — que é exatamente quem ele deveria
+	//   mostrar — caía um degrau abaixo. O fato existe desde 18/08 em
+	//   `page_events.chat_open` (30 eventos em 30 dias na produção) e nenhuma
+	//   consulta o lia.
+	describe("o que conta como sinal", () => {
+		const SO_SECAO = `v-so-secao-${crypto.randomUUID()}`;
+		const ABRIU_O_TEATRO = `v-abriu-teatro-${crypto.randomUUID()}`;
+
+		/** Uma visita crua, sem nenhum evento pendurado. */
+		async function visitaNua(visitorId: string): Promise<string> {
+			const [visita] = await db
+				.insert(schema.visits)
+				.values({
+					visitorId,
+					channel: "web",
+					landingPath: "/motos",
+					createdAt: DENTRO,
+					userAgent: UA_GENTE,
+					utmSource: "instagram",
+					utmCampaign: "camp-sinal",
+				})
+				.returning({ id: schema.visits.id });
+			visitIds.push(visita.id);
+			return visita.id;
+		}
+
+		async function evento(
+			visitId: string,
+			type: "section_view" | "chat_open",
+			section: string,
+		): Promise<void> {
+			await db.insert(schema.pageEvents).values({
+				visitId,
+				type,
+				path: "/motos",
+				section,
+				viewportWidth: 390,
+				viewportHeight: 844,
+				device: "mobile",
+				createdAt: DENTRO,
+			});
+		}
+
+		beforeAll(async () => {
+			await evento(await visitaNua(SO_SECAO), "section_view", "kv-hero");
+			await evento(await visitaNua(ABRIU_O_TEATRO), "chat_open", "kv-hero");
+		});
+
+		async function pessoaDe(visitorId: string) {
+			const { pessoas } = await queries.listarPercurso({
+				from: JANELA_DE,
+				to: JANELA_ATE,
+				limit: 200,
+			});
+			return pessoas.find((p) => p.visitorId === visitorId);
+		}
+
+		it("não chama de leitura a seção que apareceu sozinha na tela", async () => {
+			const pessoa = await pessoaDe(SO_SECAO);
+			expect(pessoa?.passo).toBe("so_chegou");
+		});
+
+		it("mostra no degrau do chat quem abriu o teatro e desistiu antes de escrever", async () => {
+			const pessoa = await pessoaDe(ABRIU_O_TEATRO);
+			expect(pessoa?.conversas).toBe(0);
+			expect(pessoa?.passo).toBe("abriu_o_chat");
+		});
+	});
 });

@@ -33,7 +33,14 @@ export const PASSOS_DO_PERCURSO = [
 	{
 		chave: "so_chegou",
 		label: "Só chegou",
-		ajuda: "Abriu a página e saiu sem rolar nem clicar",
+		// A ajuda dizia "abriu a página e saiu sem rolar nem clicar", e isso era
+		// afirmar comportamento sobre AUSÊNCIA de sinal. O degrau é o que sobra
+		// quando a visita não deixou evento nenhum, e há três motivos possíveis —
+		// a pessoa saiu na hora, o script não rodou, ou a visita é anterior ao
+		// coletor (que só existe desde 18/08/2026). Em 24/08 esse terceiro caso
+		// era 2.713 das 5.593 visitas humanas dos 30 dias: quase metade do degrau
+		// era falta de medição sendo lida como desinteresse.
+		ajuda: "Chegou e não deixou sinal de leitura",
 	},
 	{
 		chave: "olhou_a_pagina",
@@ -43,7 +50,10 @@ export const PASSOS_DO_PERCURSO = [
 	{
 		chave: "abriu_o_chat",
 		label: "Abriu o chat",
-		ajuda: "A conversa começou e ele não chegou a escrever",
+		// "A conversa começou" era o critério errado: a conversa nasce no primeiro
+		// `POST /api/chat`, depois de a pessoa escrever. Quem este degrau existe
+		// para mostrar é quem abriu o teatro e desistiu diante do palco vazio.
+		ajuda: "Abriu o chat e desistiu antes de escrever",
 	},
 	{ chave: "escreveu", label: "Escreveu", ajuda: "Mandou ao menos uma mensagem" },
 	{ chave: "se_identificou", label: "Se identificou", ajuda: "Deixou telefone ou e-mail" },

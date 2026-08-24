@@ -17,12 +17,25 @@ import { LANDINGS_COM_MAPA, SECOES_POR_LANDING } from "./events";
 
 const RAIZ = join(__dirname, "../../..");
 
-/** Onde mora o arquivo de cada landing. */
+/**
+ * Onde mora o JSX de cada landing.
+ *
+ * A home saiu de `src/app/page.tsx` em 21/08/2026 (`d845b10e`), quando o teste
+ * A/B de hero moveu a página inteira para `landing-kv.tsx` — um componente
+ * servido por `/` e por `/direto`. O `page.tsx` virou uma casca de três linhas,
+ * e este teste passou a ler a casca: nenhuma marcação, nenhum coletor. Ele
+ * ficou VERMELHO desde então, o que é melhor do que verde, mas ninguém o viu, e
+ * enquanto isso o único guarda das seções da página mais visitada estava fora do
+ * ar.
+ */
 function arquivoDa(path: string): string {
 	return path === "/"
-		? join(RAIZ, "src/app/page.tsx")
+		? join(RAIZ, "src/components/kv/landing-kv.tsx")
 		: join(RAIZ, `src/app/(verticais)${path}/page.tsx`);
 }
+
+/** As cascas que servem a home — cada uma escolhe o path que o mapa grava. */
+const CASCAS_DA_HOME = ["src/app/page.tsx", "src/app/direto/page.tsx"];
 
 function marcacoesDe(path: string): string[] {
 	const fonte = readFileSync(arquivoDa(path), "utf8");
@@ -41,6 +54,31 @@ describe.each(LANDINGS_COM_MAPA)("marcação de %s", (path) => {
 	it("monta o coletor apontando para a própria página", () => {
 		const fonte = readFileSync(arquivoDa(path), "utf8");
 
-		expect(fonte).toContain(`<HeatmapTracker path="${path}" />`);
+		// A home recebe o path por prop, porque a mesma árvore serve `/` e
+		// `/direto`; as verticais o escrevem literal.
+		const esperado =
+			path === "/" ? "<HeatmapTracker path={heatPath} />" : `<HeatmapTracker path="${path}" />`;
+
+		expect(fonte).toContain(esperado);
+	});
+});
+
+/**
+ * As duas rotas que servem a home TÊM que gravar como `/`.
+ *
+ * `SECOES_POR_LANDING` é indexada por path: uma casca que passasse
+ * `heatPath="/direto"` faria o servidor recusar toda seção em silêncio, e o
+ * mapa da variante em teste ficaria vazio sem ninguém saber por quê. É o mesmo
+ * modo de falha que este arquivo existe para pegar, um nível acima.
+ */
+describe("as cascas da home", () => {
+	it("gravam todas como / — o path que o visitante vê na barra de endereços", () => {
+		for (const casca of CASCAS_DA_HOME) {
+			const fonte = readFileSync(join(RAIZ, casca), "utf8");
+			const heatPath = fonte.match(/heatPath="([^"]+)"/)?.[1];
+
+			// Sem a prop vale o default de `LandingKv`, que é `/`.
+			expect(heatPath ?? "/", `${casca} grava no path errado`).toBe("/");
+		}
 	});
 });

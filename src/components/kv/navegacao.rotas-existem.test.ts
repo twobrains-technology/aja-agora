@@ -68,12 +68,32 @@ function rotasQueExistem(dir: string, prefixo = ""): Map<string, string> {
 
 const ROTAS = rotasQueExistem(APP);
 
+/**
+ * A rota cuja página é só uma CASCA — o conteúdo (e os `id`) vive no componente.
+ *
+ * `src/app/page.tsx` tem três linhas desde 21/08/2026 (`d845b10e`): o teste A/B
+ * de hero moveu a home inteira para `landing-kv.tsx`, servida também por
+ * `/direto`. Os `id` das seções foram junto, e este teste passou a ler uma casca
+ * sem `id` nenhum — acusando âncora quebrada em cinco links que funcionam
+ * perfeitamente na tela. Falha ruidosa e falsa gasta a confiança do teste tão
+ * rápido quanto falha silenciosa.
+ */
+const CORPO_DA_ROTA: Record<string, string> = {
+	"/": join(KV, "landing-kv.tsx"),
+};
+
 /** Os `id` que a página declara — o destino possível de uma âncora `#`. */
 function ancorasDaPagina(rota: string): Set<string> {
 	const arquivo = ROTAS.get(rota);
 	if (!arquivo) return new Set();
-	const fonte = readFileSync(arquivo, "utf8");
-	return new Set([...fonte.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
+
+	const fontes = [arquivo, CORPO_DA_ROTA[rota]]
+		.filter((caminho): caminho is string => Boolean(caminho) && existsSync(caminho))
+		.map((caminho) => readFileSync(caminho, "utf8"));
+
+	return new Set(
+		fontes.flatMap((fonte) => [...fonte.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1])),
+	);
 }
 
 /**
