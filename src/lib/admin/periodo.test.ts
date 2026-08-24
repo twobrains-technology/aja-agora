@@ -7,12 +7,14 @@
 
 import { describe, expect, it } from "vitest";
 import {
+	diaDeHoje,
 	diaDoNegocio,
 	fimDoDia,
 	inicioDoDia,
 	instanteDoParametro,
 	periodoPadrao,
 	resolverPeriodo,
+	TZ_NEGOCIO,
 } from "./periodo";
 
 /** Uma quarta-feira comum, 15h em Brasília (18h UTC). */
@@ -107,5 +109,29 @@ describe("resolver o que veio na URL", () => {
 	it("recusa data inválida em vez de silenciosamente mostrar outro período", () => {
 		expect(resolverPeriodo("qualquer coisa", null, TARDE)).toBeNull();
 		expect(resolverPeriodo(null, "31/02/2026", TARDE)).toBeNull();
+	});
+});
+
+describe("o valor que o FILTRO mostra", () => {
+	// Esta seção nasceu de um defeito visto na tela, em produção, com typecheck e
+	// 3.445 testes verdes: o campo "Até" saía do servidor escrito 25/08 e o
+	// navegador o reescrevia como 24/08 na hidratação. A causa foi usar o
+	// INSTANTE de fim de dia como valor do campo — 23:59:59.999 em Brasília é
+	// 02:59 UTC do dia seguinte, e o Next renderiza a página num processo UTC.
+	it("é o mesmo dia lido em UTC e em Brasília — servidor e navegador concordam", () => {
+		const hoje = diaDeHoje(NOITE);
+
+		expect(hoje.toLocaleDateString("en-CA", { timeZone: "UTC" })).toBe("2026-08-19");
+		expect(hoje.toLocaleDateString("en-CA", { timeZone: TZ_NEGOCIO })).toBe("2026-08-19");
+	});
+
+	it("o FIM do dia não serve como valor de campo, e é por isso que existem os dois", () => {
+		// Deixado explícito para que ninguém "simplifique" o filtro de volta para
+		// `periodoPadrao().ate`: o instante está certo para CONSULTAR e errado para
+		// MOSTRAR.
+		const fim = periodoPadrao(TARDE).ate;
+
+		expect(fim.toLocaleDateString("en-CA", { timeZone: TZ_NEGOCIO })).toBe("2026-08-19");
+		expect(fim.toLocaleDateString("en-CA", { timeZone: "UTC" })).toBe("2026-08-20");
 	});
 });

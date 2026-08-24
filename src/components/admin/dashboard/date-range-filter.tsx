@@ -15,17 +15,20 @@ import { useQueryState } from "nuqs";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { diaComoData, diaDoNegocio, periodoPadrao } from "@/lib/admin/periodo";
+import { diaComoData, diaDeHoje, diaDoNegocio } from "@/lib/admin/periodo";
 import { parseAsDiaDoNegocio } from "@/lib/admin/periodo-querystring";
 
 /** Quantos dias o atalho "30d" abre. */
 const DIAS_DO_ATALHO_LONGO = 30;
 
 export function DateRangeFilter() {
-	const padrao = periodoPadrao();
+	// DIA, não instante: o campo é renderizado no servidor (UTC) e no navegador
+	// (Brasília), e só o dia ancorado ao meio-dia UTC escreve a mesma data nos
+	// dois. Ver o aviso em `periodoPadrao`.
+	const hoje = diaDeHoje();
 
-	const [from, setFrom] = useQueryState("from", parseAsDiaDoNegocio.withDefault(padrao.de));
-	const [to, setTo] = useQueryState("to", parseAsDiaDoNegocio.withDefault(padrao.ate));
+	const [from, setFrom] = useQueryState("from", parseAsDiaDoNegocio.withDefault(hoje));
+	const [to, setTo] = useQueryState("to", parseAsDiaDoNegocio.withDefault(hoje));
 
 	/** Limpa a querystring: sem parâmetro, o padrão é hoje — nas telas e no servidor. */
 	const verHoje = () => {
@@ -44,7 +47,7 @@ export function DateRangeFilter() {
 		definir(data ? diaComoData(diaDoNegocio(data)) : null);
 
 	const ehHoje =
-		diaDoNegocio(from) === diaDoNegocio(padrao.de) && diaDoNegocio(to) === diaDoNegocio(padrao.ate);
+		diaDoNegocio(from) === diaDoNegocio(hoje) && diaDoNegocio(to) === diaDoNegocio(hoje);
 
 	return (
 		<div className="flex items-center gap-2">
