@@ -20,8 +20,17 @@ export function ListaDeAlvos({ alvos }: { alvos: AlvoDoMapa[] }) {
 		return (
 			<div className="flex h-full flex-col justify-center gap-1 rounded-lg border border-dashed p-6 text-center">
 				<p className="font-medium text-sm">Nenhum clique neste recorte</p>
+				{/* O APARELHO vem primeiro, e passou a vir em 24/08/2026, quando a tela
+				    deixou de abrir em "todos" e passou a abrir em celular — é o filtro
+				    que o operador não escolheu e por isso o último em que ele pensa.
+				    Nas três verticais isso é imediato: medido na produção no mesmo dia,
+				    `/autos`, `/imoveis` e `/motos` não tiveram UM visitante de celular
+				    em 30 dias (todo o tráfego delas é desktop), então a tela abre vazia
+				    numa página que teve cliques. Mandar mexer no período e no desfecho
+				    era mandar procurar no lugar errado. */}
 				<p className="text-muted-foreground text-xs">
-					Amplie o período ou tire o filtro de desfecho para ver os cliques da página.
+					Troque o aparelho, amplie o período ou tire o filtro de desfecho para ver os cliques da
+					página.
 				</p>
 			</div>
 		);
