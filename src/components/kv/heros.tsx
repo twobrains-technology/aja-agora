@@ -58,8 +58,7 @@ export const HERO_CONSULTIVO: HeroConteudo = {
 	),
 	apoio: (
 		<>
-			A Aja reúne essas informações em um único lugar para{" "}
-			<Em>facilitar sua decisão.</Em>
+			A Aja reúne essas informações em um único lugar para <Em>facilitar sua decisão.</Em>
 		</>
 	),
 };
@@ -93,8 +92,7 @@ export const HERO_DIRETO: HeroConteudo = {
 	),
 	apoio: (
 		<>
-			<Em>A gente compara isso com você</Em> e explica cada diferença, de maneira
-			independente.
+			<Em>A gente compara isso com você</Em> e explica cada diferença, de maneira independente.
 		</>
 	),
 };
