@@ -24,7 +24,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { DegrauDoFunil } from "@/lib/heatmap/aggregate";
 import { PARAM_PREVIEW } from "@/lib/heatmap/events";
-import type { PontoDoMapa } from "@/lib/heatmap/queries";
+import type { FiltroDevice, PontoDoMapa } from "@/lib/heatmap/queries";
 import { NOME_DA_SECAO } from "./nomes";
 
 /** Raio do borrão de cada clique, em px do documento. */
@@ -44,8 +44,35 @@ const ALTURA_VISOR = 720;
  */
 const RESOLUCAO = 0.5;
 
-/** Largura em que a landing é renderizada antes de encolher para caber. */
-const LARGURA_DESKTOP = 1280;
+/**
+ * A largura em que a landing é renderizada no preview — UMA POR APARELHO.
+ *
+ * Era 1.280px fixos, e é aí que estava o defeito que mais estraga esta tela: o
+ * clique é gravado com `pageY` ABSOLUTO, em pixels do documento que a pessoa
+ * teve na frente (`heatmap-tracker.tsx`). O documento do celular é várias vezes
+ * mais alto que o do desktop — a landing empilha o que lá fica lado a lado — de
+ * modo que um toque a 5.000px no celular, desenhado sobre a página renderizada a
+ * 1.280px, cai numa seção que a pessoa nunca tocou. O mapa parecia certo e
+ * apontava para o componente errado.
+ *
+ * Medido na produção em 24/08/2026: **91,2% dos visitantes são mobile** (505 de
+ * 554), 8,1% desktop e 0,7% tablet. Ou seja, a esmagadora maioria da nuvem
+ * estava sendo desenhada sobre um layout que quase ninguém viu.
+ *
+ * Os valores são a MEDIANA real de cada faixa, e não um aparelho de catálogo:
+ * mobile 390 (as larguras mais comuns são 384, 392, 360 e 375), tablet 806,
+ * desktop 1.512 — este último renderizado a 1.280 porque é onde o container da
+ * landing satura, e acima disso só cresce a margem.
+ *
+ * `todos` cai no mobile de propósito: se é para desenhar um layout só, que seja
+ * o dos 91%. A tela avisa em voz alta que o recorte mistura aparelhos.
+ */
+export const LARGURA_DE_PREVIEW: Record<FiltroDevice, number> = {
+	mobile: 390,
+	tablet: 806,
+	desktop: 1280,
+	todos: 390,
+};
 
 export type ModoDoMapa = "cliques" | "rolagem";
 
@@ -60,21 +87,27 @@ interface Props {
 	modo: ModoDoMapa;
 	pontos: PontoDoMapa[];
 	funil: DegrauDoFunil[];
+	/**
+	 * O aparelho do recorte — é ele que decide a LARGURA em que a landing é
+	 * renderizada aqui, e portanto se a nuvem cai sobre o componente certo.
+	 */
+	device: FiltroDevice;
 }
 
-export function VisorDoMapa({ path, modo, pontos, funil }: Props) {
+export function VisorDoMapa({ path, modo, pontos, funil, device }: Props) {
+	const larguraDePreview = LARGURA_DE_PREVIEW[device] ?? LARGURA_DE_PREVIEW.mobile;
 	const canvasRef = useRef<HTMLCanvasElement>(null);
 	const iframeRef = useRef<HTMLIFrameElement>(null);
 	const janelaRef = useRef<HTMLDivElement>(null);
 
 	const [alturaPagina, setAlturaPagina] = useState<number | null>(null);
-	const [larguraPagina, setLarguraPagina] = useState(LARGURA_DESKTOP);
+	const [larguraPagina, setLarguraPagina] = useState(larguraDePreview);
 	const [larguraJanela, setLarguraJanela] = useState(0);
 	const [secoes, setSecoes] = useState<PosicaoSecao[]>([]);
 
-	// A landing é renderizada na largura de um desktop (é assim que ela se
-	// comporta de verdade) e depois encolhida para caber. Sem isto o operador via
-	// só a faixa esquerda: medido em 17/08/2026, 1.280px dentro de 572px.
+	// A landing é renderizada na largura do APARELHO do recorte e depois encolhida
+	// para caber, se precisar. Sem o encolhimento o operador via só a faixa
+	// esquerda no desktop: medido em 17/08/2026, 1.280px dentro de 572px.
 	useEffect(() => {
 		const janela = janelaRef.current;
 		if (!janela) return;
@@ -96,7 +129,7 @@ export function VisorDoMapa({ path, modo, pontos, funil }: Props) {
 
 		try {
 			setAlturaPagina(doc.documentElement.scrollHeight);
-			setLarguraPagina(doc.documentElement.scrollWidth || LARGURA_DESKTOP);
+			setLarguraPagina(doc.documentElement.scrollWidth || larguraDePreview);
 
 			setSecoes(
 				Array.from(doc.querySelectorAll("[data-heat]")).map((elemento) => {
@@ -113,7 +146,7 @@ export function VisorDoMapa({ path, modo, pontos, funil }: Props) {
 			// régua o mapa ainda desenha — em altura arbitrária, mas desenha.
 			setAlturaPagina(3000);
 		}
-	}, []);
+	}, [larguraDePreview]);
 
 	useEffect(() => {
 		const iframe = iframeRef.current;
@@ -129,6 +162,17 @@ export function VisorDoMapa({ path, modo, pontos, funil }: Props) {
 			window.clearTimeout(remedida);
 		};
 	}, [medirPagina]);
+
+	// TROCOU DE APARELHO: a landing precisa refluir na nova largura antes de ser
+	// medida de novo. O iframe não recarrega — só muda de tamanho —, então o
+	// `load` não dispara e sem esta remedida a régua e a altura do visor ficariam
+	// congeladas no layout anterior, que é o desalinhamento que este arquivo
+	// acabou de sair de corrigir.
+	useEffect(() => {
+		setLarguraPagina(larguraDePreview);
+		const refluiu = window.setTimeout(medirPagina, 400);
+		return () => window.clearTimeout(refluiu);
+	}, [larguraDePreview, medirPagina]);
 
 	useEffect(() => {
 		const canvas = canvasRef.current;
@@ -177,11 +221,15 @@ export function VisorDoMapa({ path, modo, pontos, funil }: Props) {
 				    Escalar só o iframe desalinharia a nuvem do conteúdo. */}
 				<div ref={janelaRef} className="relative min-w-0 flex-1">
 					<div
-						className="absolute top-0 left-0 origin-top-left"
+						className="absolute top-0 origin-top-left"
 						style={{
 							height: alturaPagina ?? ALTURA_VISOR,
 							width: larguraPagina,
 							transform: `scale(${escala})`,
+							// Coluna estreita (o celular, que é o padrão) fica CENTRADA no visor.
+							// Encostada à esquerda ela deixava dois terços da tela vazios à
+							// direita, e a página — que é a peça — parecia um erro de layout.
+							left: Math.max(0, (larguraJanela - larguraPagina * escala) / 2),
 						}}
 					>
 						<iframe
