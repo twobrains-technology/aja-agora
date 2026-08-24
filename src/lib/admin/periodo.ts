@@ -119,14 +119,31 @@ export interface Periodo {
 }
 
 /**
- * O período com que o painel abre: HOJE, inteiro.
+ * O período com que o painel abre: HOJE, inteiro. **Instantes — para consultar.**
  *
  * Era "os últimos 30 dias". Mudou a pedido do Kairo em 24/08/2026 — a pergunta
  * do dia a dia é "o que está acontecendo hoje", e trinta dias diluem justamente
  * o que se quer ver. Os outros períodos continuam a um clique, no filtro.
+ *
+ * ⚠️ **Não use isto como valor de campo do filtro.** O `ate` é 23:59:59.999
+ * local, ou seja, 02:59 UTC do dia SEGUINTE — e o Next renderiza a página no
+ * servidor, que roda em UTC. O campo saía do servidor escrito "25/08" e o
+ * navegador o reescrevia como "24/08" na hidratação: o operador via a data
+ * piscar e trocar. Para o campo existe `diaDeHoje`.
  */
 export function periodoPadrao(agora: Date = new Date()): Periodo {
 	return { de: inicioDoDia(agora), ate: fimDoDia(agora) };
+}
+
+/**
+ * HOJE como DIA — o valor que o filtro guarda e mostra.
+ *
+ * Ancorado ao meio-dia UTC, e é isso que o torna estável: renderizado no
+ * servidor (UTC) ou no navegador (Brasília), escreve a mesma data. Quem
+ * transforma este dia em janela de tempo é `resolverPeriodo`, do outro lado.
+ */
+export function diaDeHoje(agora: Date = new Date()): Date {
+	return diaComoData(diaDoNegocio(agora));
 }
 
 /**

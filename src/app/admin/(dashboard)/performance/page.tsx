@@ -10,13 +10,13 @@ import { TabelaOrigens } from "@/components/admin/performance/tabela-origens";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { PerformanceResponse } from "@/lib/admin/performance-types";
-import { periodoPadrao } from "@/lib/admin/periodo";
+import { diaDeHoje } from "@/lib/admin/periodo";
 import { parseAsDiaDoNegocio } from "@/lib/admin/periodo-querystring";
 
 // O período padrão vive em `periodo.ts` — desde 24/08/2026 é HOJE, e é o mesmo
 // objeto que o filtro e a rota resolvem.
-const defaultFrom = () => periodoPadrao().de;
-const defaultTo = () => periodoPadrao().ate;
+const defaultFrom = () => diaDeHoje();
+const defaultTo = () => diaDeHoje();
 
 function BlocoSkeleton({ altura = 300 }: { altura?: number }) {
 	return (

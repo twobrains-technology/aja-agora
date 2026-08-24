@@ -20,7 +20,7 @@ import {
 	type PercursoResponse,
 	type PessoaDoPercurso,
 } from "@/lib/admin/percurso-types";
-import { periodoPadrao } from "@/lib/admin/periodo";
+import { diaDeHoje } from "@/lib/admin/periodo";
 import { parseAsDiaDoNegocio } from "@/lib/admin/periodo-querystring";
 
 const POR_PAGINA = 50;
@@ -40,7 +40,7 @@ const nf = new Intl.NumberFormat("pt-BR");
  * QUAL é o período mora em `periodo.ts` — desde 24/08/2026, hoje.
  */
 function usarPeriodoPadrao() {
-	const [padrao] = useState(() => periodoPadrao());
+	const [padrao] = useState(() => ({ de: diaDeHoje(), ate: diaDeHoje() }));
 	return padrao;
 }
 

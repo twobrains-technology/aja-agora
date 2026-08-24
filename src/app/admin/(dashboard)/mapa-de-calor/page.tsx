@@ -27,7 +27,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { periodoPadrao } from "@/lib/admin/periodo";
+import { diaDeHoje } from "@/lib/admin/periodo";
 import { parseAsDiaDoNegocio } from "@/lib/admin/periodo-querystring";
 import { LANDINGS_COM_MAPA } from "@/lib/heatmap/events";
 import type { FiltroDevice, MapaDeCalor } from "@/lib/heatmap/queries";
@@ -90,9 +90,9 @@ function MapaDeCalorContent() {
 	// O padrão é HOJE, e vem de `periodo.ts` — o mesmo módulo que o filtro e a
 	// rota usam. Antes cada tela repetia `subDays(new Date(), 30)` por conta
 	// própria, e nada garantia que as três estivessem falando do mesmo período.
-	const [padrao] = useState(() => periodoPadrao());
-	const [from] = useQueryState("from", parseAsDiaDoNegocio.withDefault(padrao.de));
-	const [to] = useQueryState("to", parseAsDiaDoNegocio.withDefault(padrao.ate));
+	const [hoje] = useState(() => diaDeHoje());
+	const [from] = useQueryState("from", parseAsDiaDoNegocio.withDefault(hoje));
+	const [to] = useQueryState("to", parseAsDiaDoNegocio.withDefault(hoje));
 	const [path, setPath] = useQueryState("path", parseAsString.withDefault("/"));
 	const [device, setDevice] = useQueryState("device", parseAsString.withDefault(DEVICE_PADRAO));
 	const [desfecho, setDesfecho] = useQueryState("desfecho", parseAsString.withDefault("todos"));
