@@ -1,8 +1,7 @@
 "use client";
 
-import { subDays } from "date-fns";
 import { SearchIcon, XIcon } from "lucide-react";
-import { parseAsInteger, parseAsIsoDate, parseAsString, useQueryState } from "nuqs";
+import { parseAsInteger, parseAsString, useQueryState } from "nuqs";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { ConversationDetailPanel } from "@/components/admin/conversations/conversation-detail-panel";
 import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter";
@@ -21,6 +20,8 @@ import {
 	type PercursoResponse,
 	type PessoaDoPercurso,
 } from "@/lib/admin/percurso-types";
+import { periodoPadrao } from "@/lib/admin/periodo";
+import { parseAsDiaDoNegocio } from "@/lib/admin/periodo-querystring";
 
 const POR_PAGINA = 50;
 const nf = new Intl.NumberFormat("pt-BR");
@@ -28,16 +29,18 @@ const nf = new Intl.NumberFormat("pt-BR");
 /**
  * O período padrão, decidido UMA vez por montagem.
  *
- * Chamar `subDays(new Date(), 30)` direto no `withDefault` parece inofensivo e
- * não é: o valor é recalculado a cada render, então `from` é um objeto novo
- * toda vez, o `useCallback` que carrega os dados nunca estabiliza e a tela
- * dispara a consulta duas vezes por carga — medido nos logs do servidor, com os
- * dois pedidos separados por 300ms e com janelas de data diferentes. Numa tela
- * cujo agregado varre `visits` do período inteiro, isso é o dobro de trabalho no
+ * Calcular no corpo do componente parece inofensivo e não é: o valor é
+ * recalculado a cada render, então `from` é um objeto novo toda vez, o
+ * `useCallback` que carrega os dados nunca estabiliza e a tela dispara a
+ * consulta duas vezes por carga — medido nos logs do servidor, com os dois
+ * pedidos separados por 300ms e com janelas de data diferentes. Numa tela cujo
+ * agregado varre `visits` do período inteiro, isso é o dobro de trabalho no
  * banco por carga, para responder a mesma pergunta.
+ *
+ * QUAL é o período mora em `periodo.ts` — desde 24/08/2026, hoje.
  */
 function usarPeriodoPadrao() {
-	const [padrao] = useState(() => ({ de: subDays(new Date(), 30), ate: new Date() }));
+	const [padrao] = useState(() => periodoPadrao());
 	return padrao;
 }
 
@@ -70,8 +73,8 @@ function BlocoSkeleton({ altura = 280 }: { altura?: number }) {
 
 function PercursoContent() {
 	const padrao = usarPeriodoPadrao();
-	const [fromUrl] = useQueryState("from", parseAsIsoDate);
-	const [toUrl] = useQueryState("to", parseAsIsoDate);
+	const [fromUrl] = useQueryState("from", parseAsDiaDoNegocio);
+	const [toUrl] = useQueryState("to", parseAsDiaDoNegocio);
 	const from = fromUrl ?? padrao.de;
 	const to = toUrl ?? padrao.ate;
 	const [passo, setPasso] = useQueryState("passo", parseAsString);
@@ -99,8 +102,8 @@ function PercursoContent() {
 		return () => clearTimeout(id);
 	}, [busca, q, setQ, setOffset]);
 
-	// Depender do INSTANTE e não da instância: `parseAsIsoDate` devolve um `Date`
-	// novo a cada render mesmo quando a URL não mudou.
+	// Depender do INSTANTE e não da instância: o parser devolve um `Date` novo a
+	// cada render mesmo quando a URL não mudou.
 	const deMs = from.getTime();
 	const ateMs = to.getTime();
 

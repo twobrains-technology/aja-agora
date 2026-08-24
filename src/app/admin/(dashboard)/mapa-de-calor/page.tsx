@@ -13,9 +13,8 @@
 // entre os dois é o que diz o que mudar na página. Ferramenta de terceiro não
 // tem essa coluna, porque não conhece `leads`.
 
-import { subDays } from "date-fns";
 import { MousePointerClickIcon, ScrollTextIcon } from "lucide-react";
-import { parseAsIsoDate, parseAsString, useQueryState } from "nuqs";
+import { parseAsString, useQueryState } from "nuqs";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter";
 import { ListaDeAlvos } from "@/components/admin/heatmap/lista-de-alvos";
@@ -28,6 +27,8 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { periodoPadrao } from "@/lib/admin/periodo";
+import { parseAsDiaDoNegocio } from "@/lib/admin/periodo-querystring";
 import { LANDINGS_COM_MAPA } from "@/lib/heatmap/events";
 import type { FiltroDevice, MapaDeCalor } from "@/lib/heatmap/queries";
 import { cn } from "@/lib/utils";
@@ -86,8 +87,12 @@ export default function MapaDeCalorPage() {
 }
 
 function MapaDeCalorContent() {
-	const [from] = useQueryState("from", parseAsIsoDate.withDefault(subDays(new Date(), 30)));
-	const [to] = useQueryState("to", parseAsIsoDate.withDefault(new Date()));
+	// O padrão é HOJE, e vem de `periodo.ts` — o mesmo módulo que o filtro e a
+	// rota usam. Antes cada tela repetia `subDays(new Date(), 30)` por conta
+	// própria, e nada garantia que as três estivessem falando do mesmo período.
+	const [padrao] = useState(() => periodoPadrao());
+	const [from] = useQueryState("from", parseAsDiaDoNegocio.withDefault(padrao.de));
+	const [to] = useQueryState("to", parseAsDiaDoNegocio.withDefault(padrao.ate));
 	const [path, setPath] = useQueryState("path", parseAsString.withDefault("/"));
 	const [device, setDevice] = useQueryState("device", parseAsString.withDefault(DEVICE_PADRAO));
 	const [desfecho, setDesfecho] = useQueryState("desfecho", parseAsString.withDefault("todos"));
