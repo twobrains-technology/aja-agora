@@ -1,39 +1,57 @@
 "use client";
 
+// O filtro de período do painel.
+//
+// O que ele guarda na URL é um DIA (`2026-08-24`), não um instante — quem
+// resolve o dia em começo e fim de janela é `resolverPeriodo`, no servidor. A
+// divisão importa: dia é o que o operador escolhe e o que cabe num link
+// compartilhado; instante é o que o Postgres compara. Misturar os dois foi o que
+// fez o intervalo comer o último dia e escorregar um dia na releitura.
+
 import { format, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale/pt-BR";
-import { CalendarIcon, RotateCcw } from "lucide-react";
-import { parseAsIsoDate, useQueryState } from "nuqs";
+import { CalendarIcon } from "lucide-react";
+import { useQueryState } from "nuqs";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { diaComoData, diaDoNegocio, periodoPadrao } from "@/lib/admin/periodo";
+import { parseAsDiaDoNegocio } from "@/lib/admin/periodo-querystring";
 
-const DEFAULT_DAYS = 30;
-
-function defaultFrom() {
-	return subDays(new Date(), DEFAULT_DAYS);
-}
-
-function defaultTo() {
-	return new Date();
-}
+/** Quantos dias o atalho "30d" abre. */
+const DIAS_DO_ATALHO_LONGO = 30;
 
 export function DateRangeFilter() {
-	const [from, setFrom] = useQueryState("from", parseAsIsoDate.withDefault(defaultFrom()));
-	const [to, setTo] = useQueryState("to", parseAsIsoDate.withDefault(defaultTo()));
+	const padrao = periodoPadrao();
 
-	const resetToDefaults = () => {
+	const [from, setFrom] = useQueryState("from", parseAsDiaDoNegocio.withDefault(padrao.de));
+	const [to, setTo] = useQueryState("to", parseAsDiaDoNegocio.withDefault(padrao.ate));
+
+	/** Limpa a querystring: sem parâmetro, o padrão é hoje — nas telas e no servidor. */
+	const verHoje = () => {
 		setFrom(null);
 		setTo(null);
 	};
 
+	const verUltimosDias = () => {
+		setFrom(diaComoData(diaDoNegocio(subDays(new Date(), DIAS_DO_ATALHO_LONGO))));
+		setTo(diaComoData(diaDoNegocio(new Date())));
+	};
+
+	// O calendário devolve meia-noite LOCAL; o que vai para a URL é o dia do
+	// negócio daquela data, ancorado ao meio-dia UTC.
+	const escolher = (definir: (d: Date | null) => void) => (data: Date | undefined) =>
+		definir(data ? diaComoData(diaDoNegocio(data)) : null);
+
+	const ehHoje =
+		diaDoNegocio(from) === diaDoNegocio(padrao.de) && diaDoNegocio(to) === diaDoNegocio(padrao.ate);
+
 	return (
 		<div className="flex items-center gap-2">
-			<span className="text-sm text-muted-foreground hidden sm:inline">Período:</span>
+			<span className="hidden text-muted-foreground text-sm sm:inline">Período:</span>
 
-			{/* From date picker */}
 			<Popover>
-				<PopoverTrigger className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs h-8 hover:bg-accent hover:text-accent-foreground cursor-pointer">
+				<PopoverTrigger className="inline-flex h-8 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs hover:bg-accent hover:text-accent-foreground">
 					<CalendarIcon className="size-3.5" />
 					{from ? format(from, "dd/MM/yyyy", { locale: ptBR }) : "De"}
 				</PopoverTrigger>
@@ -41,40 +59,51 @@ export function DateRangeFilter() {
 					<Calendar
 						mode="single"
 						selected={from ?? undefined}
-						onSelect={(date) => setFrom(date ?? null)}
+						onSelect={escolher(setFrom)}
 						locale={ptBR}
 					/>
 				</PopoverContent>
 			</Popover>
 
-			<span className="text-xs text-muted-foreground">-</span>
+			<span className="text-muted-foreground text-xs">-</span>
 
-			{/* To date picker */}
 			<Popover>
-				<PopoverTrigger className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs h-8 hover:bg-accent hover:text-accent-foreground cursor-pointer">
+				<PopoverTrigger className="inline-flex h-8 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs hover:bg-accent hover:text-accent-foreground">
 					<CalendarIcon className="size-3.5" />
-					{to ? format(to, "dd/MM/yyyy", { locale: ptBR }) : "Ate"}
+					{to ? format(to, "dd/MM/yyyy", { locale: ptBR }) : "Até"}
 				</PopoverTrigger>
 				<PopoverContent className="w-auto p-0" align="end">
 					<Calendar
 						mode="single"
 						selected={to ?? undefined}
-						onSelect={(date) => setTo(date ?? null)}
+						onSelect={escolher(setTo)}
 						locale={ptBR}
 					/>
 				</PopoverContent>
 			</Popover>
 
-			{/* Quick reset button */}
+			{/* Os dois atalhos. "Hoje" ganha estado escrito (`aria-pressed` e o
+			    realce do botão), nunca só cor — quem lê a tela precisa saber em qual
+			    período está sem depender de enxergar o destaque. */}
+			<Button
+				variant={ehHoje ? "secondary" : "ghost"}
+				size="sm"
+				className="h-8 gap-1 text-xs"
+				onClick={verHoje}
+				aria-pressed={ehHoje}
+				title="Só o dia de hoje"
+			>
+				Hoje
+			</Button>
+
 			<Button
 				variant="ghost"
 				size="sm"
-				className="h-8 text-xs gap-1"
-				onClick={resetToDefaults}
-				title="Ultimos 30 dias"
+				className="h-8 gap-1 text-xs"
+				onClick={verUltimosDias}
+				title="Últimos 30 dias"
 			>
-				<RotateCcw className="size-3" />
-				<span className="hidden sm:inline">30d</span>
+				30d
 			</Button>
 		</div>
 	);

@@ -1,7 +1,6 @@
 // GET /api/admin/heatmap — leitura do mapa de calor para o painel.
 
-import { subDays } from "date-fns";
-
+import { resolverPeriodo } from "@/lib/admin/periodo";
 import { requireRole } from "@/lib/admin/require-role";
 import { ehPathDeLanding, LANDINGS_COM_MAPA } from "@/lib/heatmap/events";
 import { computeMapaDeCalor, type Desfecho, type FiltroDevice } from "@/lib/heatmap/queries";
@@ -23,17 +22,19 @@ export async function GET(request: Request) {
 		);
 	}
 
-	const fromParam = searchParams.get("from");
-	const toParam = searchParams.get("to");
-	const from = fromParam ? new Date(fromParam) : subDays(new Date(), 30);
-	const to = toParam ? new Date(toParam) : new Date();
+	// Dia inteiro, no fuso do negócio, e HOJE quando não vem nada — a mesma regra
+	// que o filtro da tela usa. Ver `periodo.ts`: antes, `to` colava na meia-noite
+	// do último dia e comia o dia que o operador tinha acabado de pedir.
+	const periodo = resolverPeriodo(searchParams.get("from"), searchParams.get("to"));
 
-	if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+	if (!periodo) {
 		return Response.json(
 			{ error: "Formato de data inválido. Use ISO 8601 (ex.: 2026-08-01)." },
 			{ status: 400 },
 		);
 	}
+
+	const { de: from, ate: to } = periodo;
 
 	const deviceParam = searchParams.get("device") ?? "todos";
 	const desfechoParam = searchParams.get("desfecho") ?? "todos";

@@ -1,4 +1,3 @@
-import { subDays } from "date-fns";
 import type { NextRequest } from "next/server";
 import { listarPercurso } from "@/lib/admin/percurso-queries";
 import {
@@ -6,6 +5,7 @@ import {
 	ORDEM_DOS_PASSOS,
 	type PassoDoPercurso,
 } from "@/lib/admin/percurso-types";
+import { resolverPeriodo } from "@/lib/admin/periodo";
 import { requireRole } from "@/lib/admin/require-role";
 
 const LIMITE_PADRAO = 50;
@@ -41,17 +41,19 @@ export async function GET(req: NextRequest) {
 	if (error) return error;
 
 	const sp = req.nextUrl.searchParams;
-	const fromParam = sp.get("from");
-	const toParam = sp.get("to");
-	const to = toParam ? new Date(toParam) : new Date();
-	const from = fromParam ? new Date(fromParam) : subDays(new Date(), 30);
 
-	if (Number.isNaN(to.getTime()) || Number.isNaN(from.getTime())) {
+	// Dia inteiro, no fuso do negócio, e HOJE quando não vem nada — a mesma regra
+	// que o filtro da tela usa (`periodo.ts`).
+	const periodo = resolverPeriodo(sp.get("from"), sp.get("to"));
+
+	if (!periodo) {
 		return Response.json(
 			{ error: "Formato de data inválido. Use ISO 8601 (ex.: 2026-08-01)." },
 			{ status: 400 },
 		);
 	}
+
+	const { de: from, ate: to } = periodo;
 
 	const modo: ModoDoPasso = sp.get("modo") === "alcancou" ? "alcancou" : "parou";
 

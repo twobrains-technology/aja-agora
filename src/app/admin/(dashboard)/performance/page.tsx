@@ -1,7 +1,6 @@
 "use client";
 
-import { subDays } from "date-fns";
-import { parseAsIsoDate, useQueryState } from "nuqs";
+import { useQueryState } from "nuqs";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter";
 import { FunilMidiaChart } from "@/components/admin/performance/funil-midia-chart";
@@ -11,14 +10,13 @@ import { TabelaOrigens } from "@/components/admin/performance/tabela-origens";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { PerformanceResponse } from "@/lib/admin/performance-types";
+import { periodoPadrao } from "@/lib/admin/periodo";
+import { parseAsDiaDoNegocio } from "@/lib/admin/periodo-querystring";
 
-function defaultFrom() {
-	return subDays(new Date(), 30);
-}
-
-function defaultTo() {
-	return new Date();
-}
+// O período padrão vive em `periodo.ts` — desde 24/08/2026 é HOJE, e é o mesmo
+// objeto que o filtro e a rota resolvem.
+const defaultFrom = () => periodoPadrao().de;
+const defaultTo = () => periodoPadrao().ate;
 
 function BlocoSkeleton({ altura = 300 }: { altura?: number }) {
 	return (
@@ -34,8 +32,8 @@ function BlocoSkeleton({ altura = 300 }: { altura?: number }) {
 }
 
 function PerformanceContent() {
-	const [from] = useQueryState("from", parseAsIsoDate.withDefault(defaultFrom()));
-	const [to] = useQueryState("to", parseAsIsoDate.withDefault(defaultTo()));
+	const [from] = useQueryState("from", parseAsDiaDoNegocio.withDefault(defaultFrom()));
+	const [to] = useQueryState("to", parseAsDiaDoNegocio.withDefault(defaultTo()));
 
 	const [midia, setMidia] = useState<PerformanceResponse | null>(null);
 	const [carregando, setCarregando] = useState(true);

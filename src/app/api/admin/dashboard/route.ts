@@ -1,4 +1,3 @@
-import { subDays } from "date-fns";
 import {
 	computeChannelBreakdown,
 	computeDailyVolume,
@@ -6,27 +5,27 @@ import {
 	computeKpis,
 } from "@/lib/admin/dashboard-queries";
 import type { DashboardResponse } from "@/lib/admin/dashboard-types";
+import { resolverPeriodo } from "@/lib/admin/periodo";
 import { requireRole } from "@/lib/admin/require-role";
 
 export async function GET(request: Request) {
 	const { error } = await requireRole("admin", "viewer", "attendant");
 	if (error) return error;
 
-	// Parse date range from query params (defaults: last 30 days)
 	const { searchParams } = new URL(request.url);
-	const fromParam = searchParams.get("from");
-	const toParam = searchParams.get("to");
 
-	const toDate = toParam ? new Date(toParam) : new Date();
-	const fromDate = fromParam ? new Date(fromParam) : subDays(new Date(), 30);
+	// Dia inteiro, no fuso do negócio, e HOJE quando não vem nada — a mesma regra
+	// que o filtro da tela usa (`periodo.ts`).
+	const periodo = resolverPeriodo(searchParams.get("from"), searchParams.get("to"));
 
-	// Validate dates
-	if (Number.isNaN(toDate.getTime()) || Number.isNaN(fromDate.getTime())) {
+	if (!periodo) {
 		return Response.json(
-			{ error: "Invalid date format. Use ISO 8601 (e.g. 2026-04-01)." },
+			{ error: "Formato de data inválido. Use ISO 8601 (ex.: 2026-08-01)." },
 			{ status: 400 },
 		);
 	}
+
+	const { de: fromDate, ate: toDate } = periodo;
 
 	// Run all aggregations in parallel
 	const [kpis, funnelStages, dailyVolume, channelBreakdown] = await Promise.all([
