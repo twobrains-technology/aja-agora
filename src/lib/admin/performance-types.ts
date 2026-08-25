@@ -85,9 +85,22 @@ export interface EtapaFunilMidia {
  * escada das outras etapas foi o que tornou o funil ilegível.
  */
 export interface PortaDoFunil {
+	/**
+	 * PESSOAS únicas que chegaram no período — o número em destaque, e o mesmo
+	 * que a tela de Percurso mostra.
+	 *
+	 * Passou a ser o protagonista em 24/08/2026, por decisão do Kairo. Antes o
+	 * destaque era `visitas`, e as três telas de medição abriam com três números
+	 * diferentes para a mesma pergunta ("quanta gente chegou?"): 756 aqui, 261 no
+	 * Percurso, 150 no Mapa de calor. Nenhum estava errado e nenhum fechava com o
+	 * vizinho — e um painel em que os números não batem não é consultado, é
+	 * discutido.
+	 */
+	pessoas: number;
+	/** Chegadas (sessões). Uma pessoa pode chegar mais de uma vez. */
 	visitas: number;
 	conversas: number;
-	/** % das visitas que abriram conversa. */
+	/** % das PESSOAS que abriram conversa. */
 	taxaDeEntrada: number;
 	/**
 	 * Por qual porta a conversa entrou.
