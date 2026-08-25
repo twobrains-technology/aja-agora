@@ -34,6 +34,19 @@ COPY . .
 # resolver node_modules.
 RUN pnpm db:migrate:bundle
 
+# Bundle do worker de retomada (FIX-44 / FIX-207), pelo mesmo motivo do
+# migrate-guard acima: o estágio `runner` recebe só o `.next/standalone`, que
+# traz exclusivamente o que o SERVIDOR importa — `scripts/proposal-worker.ts` e
+# todo o `src/lib/workers/` ficavam de fora da imagem.
+#
+# Isso não apareceu como falha de infra, e é o que o tornou caro: em 24/08/2026
+# o achado veio pelo lado do negócio — os processos de retomada, re-engajamento e
+# acolhida existiam em código, com teste, e NUNCA tinham executado em produção.
+# Seis pessoas deixaram telefone em três dias e nenhuma foi procurada. Não havia
+# erro em log nenhum: o worker não falhava, ele simplesmente não existia na
+# imagem, e nada no pipeline perguntava por ele.
+RUN pnpm worker:proposal:bundle
+
 # `NEXT_PUBLIC_*` é ASSADO no bundle em build-time — não adianta pôr no task
 # definition. O pipeline (.github/workflows/aws-ecr-deploy.yml) lê os `ARG`
 # declarados aqui e monta um build-arg pra cada um com o valor do Secrets
@@ -71,6 +84,11 @@ COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/drizzle ./drizzle
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/migrate-guard.bundle.cjs ./scripts/migrate-guard.bundle.cjs
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
+
+# Worker de retomada — o serviço `aja-agora-worker-prod` roda ESTE arquivo com
+# `node` puro (mesma imagem do app, comando diferente e SKIP_MIGRATIONS=true:
+# quem aplica migration é a task do app, não a do worker).
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/proposal-worker.bundle.cjs ./scripts/proposal-worker.bundle.cjs
 
 # Entrypoint padrão TwoBrains — roda migrations antes do CMD
 COPY --chown=nextjs:nodejs docker-entrypoint.sh /app/docker-entrypoint.sh
