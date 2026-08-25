@@ -45,7 +45,21 @@ export function FunilMidiaChart({
 	const linkDoPercurso = (chave: EtapaFunilMidia["chave"]) => {
 		const p = new URLSearchParams();
 		const passo = PASSO_DA_ETAPA_DO_FUNIL[chave];
-		if (passo) p.set("passo", passo);
+		if (passo) {
+			p.set("passo", passo);
+			// `alcancou`, e não o padrão `parou`: o número impresso ao lado do rótulo é
+			// CUMULATIVO ("chegaram até aqui"), e o padrão da tela de destino é
+			// TERMINAL ("pararam aqui"). Clicar levava de uma grandeza para outra.
+			//
+			// Foi o defeito que o operador viu em 24/08/2026: o funil dizia "8
+			// abriram conversa", ele clicou, e recebeu uma lista vazia — porque
+			// ninguém PAROU em "Abriu o chat" (todos os que abriram escreveram, e
+			// caíram em degraus mais fundos). O painel parecia quebrado estando certo.
+			//
+			// Quem quiser o corte terminal continua a um clique: a tela de destino tem
+			// o botão "Ver só quem parou aí".
+			p.set("modo", "alcancou");
+		}
 		if (de) p.set("from", de.toISOString());
 		if (ate) p.set("to", ate.toISOString());
 		const qs = p.toString();
@@ -91,7 +105,7 @@ export function FunilMidiaChart({
 									key={etapa.chave}
 									href={linkDoPercurso(etapa.chave)}
 									className="block rounded-md px-2 py-1.5 -mx-2 transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-									title={`Ver quem parou em ${etapa.label}`}
+									title={`Ver quem chegou a ${etapa.label}`}
 								>
 									<div className="flex items-baseline justify-between gap-3 mb-1">
 										<div className="flex items-baseline gap-2 min-w-0">
@@ -146,7 +160,7 @@ export function FunilMidiaChart({
 				<p className="mt-4 text-xs text-muted-foreground">
 					“Ainda viva” = o cliente escreveu nos últimos 7 dias e a conversa não foi encerrada —
 					essas dá para puxar de volta. Contagem de conversas, nunca de leads. Clique numa etapa
-					para ver, nome a nome, quem parou nela.
+					para ver, nome a nome, quem chegou até ela.
 				</p>
 			</CardContent>
 		</Card>

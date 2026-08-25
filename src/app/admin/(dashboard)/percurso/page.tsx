@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { abreviarId, nomeDaFonte } from "@/lib/admin/agrupar-origens";
 import {
 	ORDEM_DOS_PASSOS,
+	PASSOS_DO_PERCURSO,
 	type PassoDoPercurso,
 	type PercursoResponse,
 	type PessoaDoPercurso,
@@ -137,9 +138,52 @@ function PercursoContent() {
 		void carregar();
 	}, [carregar]);
 
+	/**
+	 * A frase da lista vazia.
+	 *
+	 * "Ninguém no período com esses filtros" é indistinguível de painel quebrado, e
+	 * foi assim que a lista vazia de "Abriu o chat" foi lida em 24/08/2026. Num
+	 * degrau TERMINAL, vazio quase sempre é boa notícia: ninguém empacou ali. A
+	 * frase diz isso e aponta quantas pessoas passaram pelo degrau e seguiram.
+	 */
 	const passoAtual = ORDEM_DOS_PASSOS.includes(passo as PassoDoPercurso)
 		? (passo as PassoDoPercurso)
 		: null;
+
+	// Quantas pessoas chegaram AO MENOS a este degrau — a soma da escada dali para
+	// baixo. É o número que transforma "ninguém aqui" em informação.
+	const alcancaram = passoAtual
+		? (data?.resumo ?? [])
+				.slice(ORDEM_DOS_PASSOS.indexOf(passoAtual))
+				.reduce((soma, r) => soma + r.pessoas, 0)
+		: 0;
+
+	const rotuloDoPassoAtual = passoAtual
+		? (PASSOS_DO_PERCURSO.find((p) => p.chave === passoAtual)?.label ?? passoAtual)
+		: "";
+
+	const mensagemDeVazio =
+		passoAtual && modo === "parou" ? (
+			alcancaram > 0 ? (
+				<>
+					<strong className="block text-foreground">
+						Ninguém parou em “{rotuloDoPassoAtual}” — e isso costuma ser boa notícia.
+					</strong>
+					<span className="mt-1 block">
+						Este degrau só recebe quem chegou até aqui e não avançou. As{" "}
+						<strong>{nf.format(alcancaram)}</strong>{" "}
+						{alcancaram === 1 ? "pessoa que chegou" : "pessoas que chegaram"} a este ponto no
+						período seguiram adiante.
+					</span>
+					<Button variant="outline" size="sm" className="mt-3" onClick={() => setModo("alcancou")}>
+						Ver {alcancaram === 1 ? "a que chegou" : `as ${nf.format(alcancaram)} que chegaram`} ao
+						menos aqui
+					</Button>
+				</>
+			) : (
+				<>Ninguém chegou a “{rotuloDoPassoAtual}” no período.</>
+			)
+		) : undefined;
 
 	const selecionarPasso = (proximo: PassoDoPercurso | null) => {
 		setPasso(proximo);
@@ -176,6 +220,7 @@ function PercursoContent() {
 				<EscadaDoPercurso
 					resumo={data.resumo}
 					total={data.totalDePessoas}
+					totalDeConversas={data.totalDeConversas}
 					selecionado={passoAtual}
 					onSelecionar={selecionarPasso}
 				/>
@@ -243,10 +288,23 @@ function PercursoContent() {
 				)}
 
 				{data && (
+					// Com degrau filtrado, o denominador é o total de PESSOAS do período —
+					// não o de chegadas. A frase antiga imprimia "0 pessoas · 395 chegadas
+					// no período", dois números com denominadores diferentes lado a lado, e
+					// foi lida como painel quebrado em 24/08/2026.
 					<span className="text-sm text-muted-foreground ml-auto tabular-nums">
-						{nf.format(data.total)} {data.total === 1 ? "pessoa" : "pessoas"} ·{" "}
-						{nf.format(data.totalDeChegadas)} {data.totalDeChegadas === 1 ? "chegada" : "chegadas"}{" "}
-						no período
+						{passoAtual ? (
+							<>
+								{nf.format(data.total)} de {nf.format(data.totalDePessoas)}{" "}
+								{data.totalDePessoas === 1 ? "pessoa" : "pessoas"} do período
+							</>
+						) : (
+							<>
+								{nf.format(data.total)} {data.total === 1 ? "pessoa" : "pessoas"} ·{" "}
+								{nf.format(data.totalDeChegadas)}{" "}
+								{data.totalDeChegadas === 1 ? "chegada" : "chegadas"} no período
+							</>
+						)}
 					</span>
 				)}
 			</div>
@@ -254,7 +312,12 @@ function PercursoContent() {
 			{carregando && !data ? (
 				<Skeleton className="h-64 w-full" />
 			) : (
-				<TabelaPercurso pessoas={data?.pessoas ?? []} carregando={carregando} onAbrir={setAberta} />
+				<TabelaPercurso
+					pessoas={data?.pessoas ?? []}
+					carregando={carregando}
+					onAbrir={setAberta}
+					vazio={mensagemDeVazio}
+				/>
 			)}
 
 			{data && data.total > POR_PAGINA && (

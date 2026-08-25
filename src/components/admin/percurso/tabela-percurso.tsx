@@ -3,6 +3,7 @@
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale/pt-BR";
 import { MessageSquareIcon, MessageSquareOffIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -63,6 +64,7 @@ export function TabelaPercurso({
 	pessoas,
 	carregando,
 	onAbrir,
+	vazio,
 }: {
 	pessoas: PessoaDoPercurso[];
 	carregando: boolean;
@@ -76,11 +78,20 @@ export function TabelaPercurso({
 	 * estava para não ver o que veio ver.
 	 */
 	onAbrir: (pessoa: PessoaDoPercurso) => void;
+	/**
+	 * O que dizer quando a lista sai vazia.
+	 *
+	 * "Ninguém no período com esses filtros" é indistinguível de painel quebrado —
+	 * foi assim que a lista vazia de "Abriu o chat" foi lida em 24/08/2026. Um
+	 * degrau terminal vazio costuma ser boa notícia (ninguém parou ali), e quem
+	 * monta a frase é a tela, que conhece o degrau e a escada.
+	 */
+	vazio?: ReactNode;
 }) {
 	if (!carregando && pessoas.length === 0) {
 		return (
 			<div className="rounded-md border p-8 text-center text-sm text-muted-foreground">
-				Ninguém no período com esses filtros.
+				{vazio ?? "Ninguém no período com esses filtros."}
 			</div>
 		);
 	}

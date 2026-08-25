@@ -112,7 +112,7 @@ const EVENTO_DE_GENTE = sql`EXISTS (
  * não há como saber o desfecho. É o preço correto a pagar — o filtro promete
  * "quem virou lead", e incluir quem não dá pra classificar mentiria no número.
  */
-function recorteDesfecho(desfecho: Desfecho): SQL {
+function recorteDesfecho(desfecho: Desfecho, colunaVisita: SQL = sql`pe.visit_id`): SQL {
 	if (desfecho === "todos") return sql`TRUE`;
 
 	const estagio = desfecho === "ganho" ? sql` AND l.stage = 'fechado_ganho'` : sql``;
@@ -120,7 +120,7 @@ function recorteDesfecho(desfecho: Desfecho): SQL {
 	return sql`EXISTS (
     SELECT 1 FROM conversations c
     JOIN leads l ON l.conversation_id = c.id
-    WHERE c.visit_id = pe.visit_id
+    WHERE c.visit_id = ${colunaVisita}
       AND c.is_simulated = false
       AND l.is_simulated = false${estagio}
   )`;
@@ -161,17 +161,34 @@ export async function computeMapaDeCalor(filtro: FiltroMapa): Promise<MapaDeCalo
       WHERE ${base}
     `),
 
-		// O denominador: quem CHEGOU nesta página no período, tenha deixado rastro
-		// ou não. Fora do recorte de aparelho de propósito — aparelho é atributo do
-		// EVENTO, e quem não deixou evento não tem aparelho conhecido. Pedir device
-		// aqui excluiria justamente a parte silenciosa que este número existe para
-		// revelar.
+		// O denominador: quem esteve NESTA página no período, tenha deixado rastro ou
+		// não.
+		//
+		// Três cuidados, e os três nasceram de o número poder passar de 100%:
+		//
+		// 1. **Página.** Não basta `landing_path`: quem cai na home e navega para
+		//    `/autos` deixa evento em `/autos` sem ter entrado por ela — estaria no
+		//    numerador e fora do denominador. Por isso a união com "deixou evento
+		//    aqui", que garante que o numerador seja sempre um subconjunto.
+		// 2. **Desfecho.** Vai junto: com "só quem virou lead" selecionado, comparar
+		//    lead contra todo mundo é comparar duas populações.
+		// 3. **Aparelho fica de fora, e isso é deliberado.** Aparelho é atributo do
+		//    EVENTO — quem não deixou evento não tem aparelho conhecido, e é
+		//    justamente essa parte silenciosa que este denominador existe para
+		//    revelar. A tela diz isso em palavras, ao lado do número.
 		db.execute<Record<string, unknown>>(sql`
       SELECT count(DISTINCT ${chaveDaPessoa(from, to)}) AS pessoas
       FROM visits v
-      WHERE v.landing_path = ${path}
-        AND v.created_at BETWEEN ${from} AND ${to}
+      WHERE v.created_at BETWEEN ${from} AND ${to}
         AND ${VISITA_DE_GENTE}
+        AND ${recorteDesfecho(desfecho, sql`v.id`)}
+        AND (
+          v.landing_path = ${path}
+          OR EXISTS (
+            SELECT 1 FROM page_events pe2
+            WHERE pe2.visit_id = v.id AND pe2.path = ${path}
+          )
+        )
     `),
 
 		// ROLAGEM MÉDIA — a média do ponto MAIS FUNDO de cada visitante.

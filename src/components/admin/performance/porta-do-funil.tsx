@@ -47,10 +47,21 @@ export function PortaDoFunilCard({
 
 					<ArrowRightIcon className="size-5 text-muted-foreground mb-6" aria-hidden="true" />
 
+					{/* PESSOAS, como no número da esquerda e como na escada do Percurso.
+					    Em 24/08/2026, com as chegadas já corrigidas, esta tela dizia "8
+					    abriram conversa" e o Percurso somava 7 — 8 conversas de 7 pessoas,
+					    porque alguém abriu o chat duas vezes com 15 segundos de diferença.
+					    Os dois estavam certos, e o operador via o painel se contradizendo. */}
 					<div>
-						<p className="text-3xl font-bold tabular-nums">{nf.format(porta.conversas)}</p>
+						<p className="text-3xl font-bold tabular-nums">
+							{nf.format(porta.pessoasQueConversaram)}
+						</p>
 						<p className="text-sm text-muted-foreground">
-							abriram conversa
+							falaram com o agente (com origem conhecida)
+							<span className="block text-xs tabular-nums">
+								{nf.format(porta.conversas)}{" "}
+								{porta.conversas === 1 ? "conversa ao todo" : "conversas ao todo"}
+							</span>
 							{/* Por qual porta cada uma entrou. Era um gráfico de duas barras;
 							    duas categorias são uma frase, e como frase o dado sobrevive ao
 							    corte do gráfico. */}
@@ -78,8 +89,9 @@ export function PortaDoFunilCard({
 					<InfoIcon className="size-3.5 mt-0.5 shrink-0" aria-hidden="true" />
 					<span>
 						{nf.format(cobertura.conversasComOrigem)} de {nf.format(cobertura.conversasTotal)}{" "}
-						conversas têm origem conhecida ({cobertura.percent.toFixed(0)}%). As demais entram no
-						funil abaixo, mas não na tabela por origem — nasceram fora da landing.
+						conversas têm origem conhecida ({cobertura.percent.toFixed(0)}%). As demais{" "}
+						<strong>não aparecem em nenhum número desta tela</strong> — nasceram fora da landing, e
+						todo o funil abaixo exige origem conhecida.
 					</span>
 				</p>
 			</CardContent>

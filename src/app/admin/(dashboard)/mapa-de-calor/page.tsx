@@ -235,12 +235,31 @@ function MapaDeCalorContent() {
 						/>
 						<Numero valor={mapa.cliques} rotulo="cliques" />
 						<Numero valor={mapa.rageCliques} rotulo="de raiva" />
-						<Numero valor={mapa.scrollMedio} rotulo="de rolagem média" sufixo="%" />
+						{/* "entre quem rolou" não é rodapé, é parte do número. O coletor só
+						    grava marco de rolagem para quem rola; quem sai sem rolar não entra
+						    no denominador. Sem essa palavra, uma landing em que metade sai no
+						    primeiro quadro mostra "58% de rolagem média" falando da outra
+						    metade. */}
+						<Numero
+							valor={mapa.scrollMedio}
+							rotulo="de rolagem média, entre quem rolou"
+							sufixo="%"
+						/>
 					</>
 				) : (
 					<Skeleton className="h-5 w-96" />
 				)}
 			</div>
+
+			{device !== "todos" && (
+				<p className="rounded-lg border bg-muted/40 p-3 text-muted-foreground text-sm">
+					<strong>O aparelho vale para o mapa, não para o denominador.</strong> Os cliques, a
+					rolagem e a nuvem abaixo são só de {device === "mobile" ? "celular" : device}; o total de
+					pessoas ao lado conta todo mundo que esteve na página, em qualquer aparelho. É de
+					propósito: aparelho é atributo do evento, e quem sai sem deixar evento — a parte
+					silenciosa que este número existe para mostrar — não tem aparelho conhecido.
+				</p>
+			)}
 
 			{device === "todos" && (
 				<p className="rounded-lg border bg-muted/40 p-3 text-muted-foreground text-sm">

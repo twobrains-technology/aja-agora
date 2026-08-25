@@ -26,6 +26,7 @@
 import { useEffect, useRef } from "react";
 import { chatTocou } from "@/lib/heatmap/chat";
 import { despejar, enfileirar } from "@/lib/heatmap/fila";
+import { secaoFoiVista } from "@/lib/heatmap/secao-vista";
 import {
 	alvoDoClique,
 	caminhoEstavel,
@@ -34,11 +35,25 @@ import {
 	secaoDe,
 } from "@/lib/heatmap/selector";
 
-/** Marcos de rolagem. Percentual contínuo não informa mais e multiplica linha. */
-const MARCOS_SCROLL = [25, 50, 75, 100];
+/**
+ * Marcos de rolagem. Percentual contínuo não informa mais e multiplica linha.
+ *
+ * O 10 entrou em 24/08/2026 porque a home tem ~8.800px: no celular, 25% já são
+ * quase três telas, e quem rolava uma ou duas não deixava marco nenhum. Em três
+ * dias de produção só 27 de 608 pessoas apareceram com rolagem — não porque as
+ * outras não rolaram, mas porque a régua começava longe demais.
+ */
+const MARCOS_SCROLL = [10, 25, 50, 75, 100];
 
-/** Parte da seção visível que conta como "viu". Metade evita contar raspão. */
-const LIMIAR_SECAO = 0.5;
+/**
+ * Os pontos em que o observador acorda.
+ *
+ * Precisa incluir frações BAIXAS: com `threshold: 0.5` sozinho, seção mais alta
+ * que duas telas nunca dispara o callback, porque a fração visível dela jamais
+ * chega a 50%. Quem decide se conta é `secaoFoiVista`; estes números só definem
+ * quando a pergunta é feita.
+ */
+const PONTOS_DE_OBSERVACAO = [0, 0.1, 0.25, 0.5, 0.75];
 
 export function HeatmapTracker({ path }: { path: string }) {
 	// Refs e não estado: nada aqui deve provocar renderização.
@@ -125,12 +140,26 @@ export function HeatmapTracker({ path }: { path: string }) {
 					const nome = entrada.target.getAttribute("data-heat");
 					if (!nome || !entrada.isIntersecting || secoesVistas.current.has(nome)) continue;
 
+					// Metade da seção OU metade da tela — ver `secao-vista.ts`. A segunda
+					// condição é a que faltava, e sem ela as seções altas da home
+					// apareciam com zero visitante no painel.
+					const alturaDaJanela = entrada.rootBounds?.height ?? window.innerHeight;
+					if (
+						!secaoFoiVista({
+							fracaoDaSecao: entrada.intersectionRatio,
+							alturaVisivelPx: entrada.intersectionRect.height,
+							alturaDaJanelaPx: alturaDaJanela,
+						})
+					) {
+						continue;
+					}
+
 					secoesVistas.current.add(nome);
 					enfileirar({ type: "section_view", path, section: nome });
 					observador.unobserve(entrada.target);
 				}
 			},
-			{ threshold: LIMIAR_SECAO },
+			{ threshold: PONTOS_DE_OBSERVACAO },
 		);
 
 		for (const secao of document.querySelectorAll("[data-heat]")) observador.observe(secao);
