@@ -312,7 +312,7 @@ function MapaDeCalorContent() {
 								desenhar. Amplie o período no “30d” para ver os dias em que houve movimento.
 							</>
 						) : (
-							<>Ninguém chegou a esta página no período. Amplie o período no “30d”.</>
+							"Ninguém chegou a esta página no período. Amplie o período no “30d”."
 						)}
 					</span>
 				</div>
