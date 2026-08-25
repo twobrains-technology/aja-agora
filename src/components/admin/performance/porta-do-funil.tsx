@@ -28,9 +28,21 @@ export function PortaDoFunilCard({
 		<Card className="shadow-sm">
 			<CardContent className="pt-6">
 				<div className="flex flex-wrap items-end gap-x-8 gap-y-4">
+					{/* PESSOAS em destaque, chegadas como sublinha.
+					    Até 24/08/2026 o número grande era o de chegadas, e as três telas
+					    de medição abriam com três números diferentes para a mesma
+					    pergunta: 756 aqui, 261 no Percurso, 150 no Mapa de calor. O
+					    grande agora é o mesmo nas três; a chegada continua visível porque
+					    "quantas vezes voltaram" também informa, só não é o protagonista. */}
 					<div>
-						<p className="text-3xl font-bold tabular-nums">{nf.format(porta.visitas)}</p>
-						<p className="text-sm text-muted-foreground">chegadas no período</p>
+						<p className="text-3xl font-bold tabular-nums">{nf.format(porta.pessoas)}</p>
+						<p className="text-sm text-muted-foreground">
+							pessoas chegaram
+							<span className="block text-xs tabular-nums">
+								{nf.format(porta.visitas)}{" "}
+								{porta.visitas === 1 ? "chegada ao todo" : "chegadas ao todo"}
+							</span>
+						</p>
 					</div>
 
 					<ArrowRightIcon className="size-5 text-muted-foreground mb-6" aria-hidden="true" />

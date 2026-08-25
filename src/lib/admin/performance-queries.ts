@@ -21,7 +21,13 @@ import {
 	type PontoSerie,
 	type PortaDoFunil,
 } from "./performance-types";
-import { ARTIFACTS_DE_OFERTA_SQL, VISITA_DE_GENTE } from "./sinais-do-funil";
+import {
+	ARTIFACTS_DE_OFERTA_SQL,
+	chaveDaPessoa,
+	VISITA_CONTAVEL,
+	VISITA_DE_GENTE,
+	VISITA_NAO_E_ECO,
+} from "./sinais-do-funil";
 
 /** Quantos dias sem o cliente escrever até a conversa deixar de contar como viva. */
 const DIAS_PARA_CONSIDERAR_VIVA = 7;
@@ -90,7 +96,7 @@ export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<E
     SELECT
       (SELECT count(*) FROM visits v
         WHERE v.created_at BETWEEN ${fromDate} AND ${toDate}
-          AND ${VISITA_DE_GENTE}) AS visitas,
+          AND ${VISITA_CONTAVEL}) AS visitas,
 
       (SELECT count(*) FROM conversations c
         WHERE ${atribuida}) AS conversas,
@@ -221,9 +227,15 @@ export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<E
 export async function computePorta(fromDate: Date, toDate: Date): Promise<PortaDoFunil> {
 	const resultado = await db.execute<Record<string, unknown>>(sql`
     SELECT
+      -- PESSOAS, com a MESMA chave que a tela de Percurso usa (sinais-do-funil).
+      -- Duas telas contando a mesma população por definicoes diferentes foi o
+      -- defeito que este numero existe para fechar.
+      (SELECT count(DISTINCT ${chaveDaPessoa(fromDate, toDate)}) FROM visits v
+        WHERE v.created_at BETWEEN ${fromDate} AND ${toDate}
+          AND ${VISITA_DE_GENTE}) AS pessoas,
       (SELECT count(*) FROM visits v
         WHERE v.created_at BETWEEN ${fromDate} AND ${toDate}
-          AND ${VISITA_DE_GENTE}) AS visitas,
+          AND ${VISITA_CONTAVEL}) AS visitas,
       (SELECT count(*) FROM conversations c
         WHERE c.is_simulated = false
           AND c.visit_id IS NOT NULL
@@ -240,12 +252,16 @@ export async function computePorta(fromDate: Date, toDate: Date): Promise<PortaD
           AND c.created_at BETWEEN ${fromDate} AND ${toDate}) AS whatsapp
   `);
 	const linha = resultado.rows[0] ?? {};
+	const pessoas = num(linha.pessoas);
 	const visitas = num(linha.visitas);
 	const conversas = num(linha.conversas);
 	return {
+		pessoas,
 		visitas,
 		conversas,
-		taxaDeEntrada: pct(conversas, visitas),
+		// Sobre PESSOAS, não sobre chegadas: contar a mesma pessoa quatro vezes no
+		// denominador afundava a taxa sem que nada tivesse piorado na operação.
+		taxaDeEntrada: pct(conversas, pessoas),
 		web: num(linha.web),
 		whatsapp: num(linha.whatsapp),
 	};
@@ -271,7 +287,11 @@ export async function computeOrigens(fromDate: Date, toDate: Date): Promise<Linh
         WHEN v.utm_source IS NULL AND v.ctwa_source_id IS NULL AND v.referrer IS NOT NULL
         THEN split_part(regexp_replace(v.referrer, '^https?://', ''), '/', 1)
       END AS referrer_host,
-      count(DISTINCT v.id) AS visitas,
+      -- Só a CONTAGEM despreza o eco. O eco não pode sair do WHERE porque a
+      -- conversa fica ligada à ÚLTIMA visita da rajada (o cookie da sessão
+      -- termina apontando para ela): filtrar as linhas aqui apagaria da tabela
+      -- por origem 18 das 47 conversas com visita, medido em produção.
+      count(DISTINCT v.id) FILTER (WHERE ${VISITA_NAO_E_ECO}) AS visitas,
       count(DISTINCT c.id) AS conversas,
       -- CONVERSAS identificadas, não leads — a mesma definição que o funil usa
       -- em computeFunilMidia. Contando leads, uma conversa com dedup imperfeito
@@ -336,7 +356,7 @@ export async function computeSerie(fromDate: Date, toDate: Date): Promise<PontoS
     WITH v AS (
       SELECT ${diaLocal(sql`v.created_at`)} AS dia, count(*) AS total
       FROM visits v WHERE v.created_at BETWEEN ${fromDate} AND ${toDate}
-        AND ${VISITA_DE_GENTE}
+        AND ${VISITA_CONTAVEL}
       GROUP BY 1
     ),
     -- Mesma população do funil de mídia (conversa COM origem). Contar aqui o

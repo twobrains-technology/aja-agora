@@ -10,7 +10,7 @@
 
 import { type SQL, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { PADRAO_ROBO_SQL } from "@/lib/attribution/user-agent-robo";
+import { chaveDaPessoa, VISITA_DE_GENTE } from "@/lib/admin/sinais-do-funil";
 import { type AlvoDoMapa, type DegrauDoFunil, montarAlvos, montarFunilDeSecoes } from "./aggregate";
 import type { Device } from "./events";
 
@@ -37,7 +37,24 @@ export interface PontoDoMapa {
 
 export interface MapaDeCalor {
 	path: string;
+	/**
+	 * PESSOAS que deixaram algum evento nesta página, no recorte escolhido.
+	 *
+	 * Era `count(DISTINCT visit_id)` e virou pessoa em 24/08/2026, pela mesma
+	 * razão que a tela de Performance: as três telas de medição abriam com três
+	 * números diferentes para "quanta gente veio", e o operador não tinha como
+	 * saber qual acreditar. A chave é a de `sinais-do-funil`, a MESMA do Percurso.
+	 */
 	visitantes: number;
+	/**
+	 * Quantas pessoas chegaram NESTA página no período — o denominador que faltava.
+	 *
+	 * Sem ele, "150 visitantes" parecia o total de quem visitou a Home, quando é
+	 * só quem deixou rastro: em 24/08 foram 150 de 261, e as 111 restantes não
+	 * eram gente que não interessou — eram gente que saiu antes de o coletor ter
+	 * o que gravar. O número sozinho contava a metade otimista da história.
+	 */
+	pessoasNaPagina: number;
 	cliques: number;
 	rageCliques: number;
 	scrollMedio: number;
@@ -84,10 +101,7 @@ const MAX_ALVOS = 40;
 const EVENTO_DE_GENTE = sql`EXISTS (
   SELECT 1 FROM visits v
   WHERE v.id = pe.visit_id
-    AND (
-      EXISTS (SELECT 1 FROM conversations cg WHERE cg.visit_id = v.id AND cg.is_simulated = false)
-      OR (v.user_agent IS NOT NULL AND v.user_agent !~* ${PADRAO_ROBO_SQL})
-    )
+    AND ${VISITA_DE_GENTE}
 )`;
 
 /**
@@ -136,14 +150,28 @@ export async function computeMapaDeCalor(filtro: FiltroMapa): Promise<MapaDeCalo
     AND ${EVENTO_DE_GENTE}
   `;
 
-	const [totais, rolagem, secoes, alvos, pontos] = await Promise.all([
+	const [totais, naPagina, rolagem, secoes, alvos, pontos] = await Promise.all([
 		db.execute<Record<string, unknown>>(sql`
       SELECT
-        count(DISTINCT pe.visit_id) AS visitantes,
+        count(DISTINCT ${chaveDaPessoa(from, to)}) AS visitantes,
         count(*) FILTER (WHERE pe.type = 'click') AS cliques,
         count(*) FILTER (WHERE pe.type = 'rage_click') AS rage_cliques
       FROM page_events pe
+      JOIN visits v ON v.id = pe.visit_id
       WHERE ${base}
+    `),
+
+		// O denominador: quem CHEGOU nesta página no período, tenha deixado rastro
+		// ou não. Fora do recorte de aparelho de propósito — aparelho é atributo do
+		// EVENTO, e quem não deixou evento não tem aparelho conhecido. Pedir device
+		// aqui excluiria justamente a parte silenciosa que este número existe para
+		// revelar.
+		db.execute<Record<string, unknown>>(sql`
+      SELECT count(DISTINCT ${chaveDaPessoa(from, to)}) AS pessoas
+      FROM visits v
+      WHERE v.landing_path = ${path}
+        AND v.created_at BETWEEN ${from} AND ${to}
+        AND ${VISITA_DE_GENTE}
     `),
 
 		// ROLAGEM MÉDIA — a média do ponto MAIS FUNDO de cada visitante.
@@ -218,6 +246,7 @@ export async function computeMapaDeCalor(filtro: FiltroMapa): Promise<MapaDeCalo
 	return {
 		path,
 		visitantes: num(linha.visitantes),
+		pessoasNaPagina: num(naPagina.rows[0]?.pessoas),
 		cliques,
 		rageCliques: num(linha.rage_cliques),
 		scrollMedio: Math.round(num(rolagem.rows[0]?.scroll_medio)),

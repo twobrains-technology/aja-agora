@@ -220,7 +220,19 @@ function MapaDeCalorContent() {
 			<div className="flex flex-wrap items-baseline gap-x-6 gap-y-2 text-sm">
 				{pronto ? (
 					<>
-						<Numero valor={mapa.visitantes} rotulo="visitantes" />
+						{/* "X de Y pessoas": o denominador entrou em 24/08/2026 porque o
+						    número sozinho era lido como "quanta gente veio à Home", quando é
+						    "quanta gente deixou rastro". A diferença — 150 de 261 no dia em
+						    que isto foi escrito — é a parte silenciosa da página, e ela é o
+						    dado mais importante desta tela. */}
+						<Numero
+							valor={mapa.visitantes}
+							rotulo={
+								mapa.pessoasNaPagina > 0
+									? `de ${mapa.pessoasNaPagina.toLocaleString("pt-BR")} pessoas deixaram sinal`
+									: "pessoas deixaram sinal"
+							}
+						/>
 						<Numero valor={mapa.cliques} rotulo="cliques" />
 						<Numero valor={mapa.rageCliques} rotulo="de raiva" />
 						<Numero valor={mapa.scrollMedio} rotulo="de rolagem média" sufixo="%" />

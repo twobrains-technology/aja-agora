@@ -27,7 +27,12 @@ import {
 	type PessoaDoPercurso,
 	type ResumoDoPasso,
 } from "./percurso-types";
-import { ARTIFACTS_DE_OFERTA_SQL, VISITA_DE_GENTE } from "./sinais-do-funil";
+import {
+	ARTIFACTS_DE_OFERTA_SQL,
+	chaveDaPessoa,
+	VISITA_DE_GENTE,
+	VISITA_NAO_E_ECO,
+} from "./sinais-do-funil";
 
 /** Teto de linhas por página. Acima disso a tela deixa de ser lista e vira dump. */
 const LIMITE_MAXIMO = 200;
@@ -74,6 +79,9 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
 	// veio daqui".
 	const filtroOrigem = origem ? sql` AND ${origem}` : sql``;
 
+	// A chave da pessoa, com o alias deste CTE (`vi`), montada uma vez só.
+	const chave = chaveDaPessoa(filtro.from, filtro.to, sql`vi.visitor_id`);
+
 	const busca = filtro.q?.trim();
 	const filtroBusca = busca
 		? sql` WHERE (lp.name ILIKE ${`%${busca}%`} OR lp.phone ILIKE ${`%${busca}%`}
@@ -84,7 +92,20 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
     WITH visita AS (
       SELECT v.id, v.visitor_id, v.created_at, v.landing_path, v.channel,
              v.utm_source, v.utm_medium, v.utm_campaign, v.utm_content,
-             v.ctwa_source_id, v.ctwa_headline, v.referrer
+             v.ctwa_source_id, v.ctwa_headline, v.referrer,
+             -- A marca do eco vem como COLUNA, e não como filtro do CTE, e essa
+             -- distinção é a diferença entre corrigir e estragar. O eco tem que
+             -- sair da CONTAGEM de chegadas; ele não pode sair da leitura dos
+             -- sinais, porque é justamente nele que o comportamento está
+             -- gravado — o cookie da sessão termina apontando para a última
+             -- visita da rajada, então é ela que o coletor carimba nos eventos
+             -- e é ela que a conversa referencia.
+             --
+             -- Medido em produção (13/08 a 24/08): das 566 visitas com evento,
+             -- 406 eram eco; das 47 com conversa, 18. Um filtro cego no CTE
+             -- derrubaria 49 das 77 pessoas do degrau "Olhou a página" — 64% —
+             -- e o painel teria trocado um número inflado por um número mudo.
+             ${VISITA_NAO_E_ECO} AS conta_como_chegada
       FROM visits v
       WHERE v.created_at BETWEEN ${filtro.from} AND ${filtro.to}
         AND ${VISITA_DE_GENTE}${filtroOrigem}
@@ -117,16 +138,6 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
       WHERE c.is_simulated = false
     ),
 
-    -- O contato do visitante, quando alguma conversa dele já o resolveu. É o que
-    -- funde a chegada pela web e a pelo WhatsApp da MESMA pessoa numa linha só.
-    identidade AS (
-      SELECT DISTINCT ON (vi.visitor_id) vi.visitor_id, c.contact_id
-      FROM visita vi
-      JOIN conv c ON c.visit_id = vi.id
-      WHERE c.contact_id IS NOT NULL
-      ORDER BY vi.visitor_id, c.updated_at ASC
-    ),
-
     -- Os dois sinais que vêm do mapa de calor, e que separam quem só bateu na
     -- porta de quem chegou a ler a página.
     --
@@ -148,15 +159,17 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
     -- lia.
     por_visita AS (
       SELECT vi.*,
-             COALESCE(id.contact_id::text, vi.visitor_id) AS chave,
-             id.contact_id,
+             -- A chave da pessoa vem de sinais-do-funil, e não de um CTE local:
+             -- as telas de Performance e Mapa de calor contam a MESMA população,
+             -- e duas definicoes equivalentes divergem no primeiro caso raro.
+             ${chave} AS chave,
+             NULLIF(${chave}, vi.visitor_id)::uuid AS contact_id,
              EXISTS (SELECT 1 FROM page_events pe
                WHERE pe.visit_id = vi.id
                  AND pe.type IN ('click', 'rage_click', 'scroll_depth')) AS olhou,
              EXISTS (SELECT 1 FROM page_events pe
                WHERE pe.visit_id = vi.id AND pe.type = 'chat_open') AS abriu_teatro
       FROM visita vi
-      LEFT JOIN identidade id ON id.visitor_id = vi.visitor_id
     ),
 
     -- A chegada que CREDITA a origem: a primeira que trouxe campanha; sem
@@ -180,7 +193,7 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
       SELECT pv.chave,
              min(pv.contact_id::text) AS contact_id,
              (array_agg(pv.visitor_id ORDER BY pv.created_at))[1] AS visitor_id,
-             count(*) AS chegadas,
+             count(*) FILTER (WHERE pv.conta_como_chegada) AS chegadas,
              min(pv.created_at) AS primeira_chegada,
              max(pv.created_at) AS ultima_chegada,
              bool_or(pv.olhou) AS olhou,
