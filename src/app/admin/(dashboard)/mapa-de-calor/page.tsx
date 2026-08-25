@@ -273,14 +273,24 @@ function MapaDeCalorContent() {
 			{pronto && mapa.pessoasPorPagina.length > 0 && (
 				<p className="text-muted-foreground text-sm">
 					No período, <strong>{totalDePessoasNoSite.toLocaleString("pt-BR")}</strong>{" "}
-					{totalDePessoasNoSite === 1 ? "pessoa chegou" : "pessoas chegaram"} ao site —{" "}
+					{totalDePessoasNoSite === 1 ? "pessoa chegou" : "pessoas chegaram"} ao site. Por onde{" "}
+					{totalDePessoasNoSite === 1 ? "entrou" : "entraram"}:{" "}
 					{mapa.pessoasPorPagina
 						.map(
-							(p) => `${p.pessoas.toLocaleString("pt-BR")} em ${NOME_DA_PAGINA[p.path] ?? p.path}`,
+							(p) => `${p.pessoas.toLocaleString("pt-BR")} na ${NOME_DA_PAGINA[p.path] ?? p.path}`,
 						)
 						.join(" · ")}
 					. É este total que as telas de Performance e Percurso mostram; aqui você vê uma página por
-					vez.
+					vez.{" "}
+					{/* Entrada e presença são coisas diferentes, e a diferença aparece na tela:
+					    o denominador acima conta quem ESTEVE na página, inclusive quem entrou
+					    por outra e navegou até ela — sem isso o numerador podia ser maior que o
+					    denominador e a fração passar de 100%. Dizer "por onde entraram" aqui é o
+					    que impede a soma de parecer errada quando os dois números divergem. */}
+					<span className="italic">
+						Quem entra por uma página e navega para outra conta na entrada de uma e na presença da
+						outra.
+					</span>
 				</p>
 			)}
 
