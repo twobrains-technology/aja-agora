@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { contaDesativada } from "@/lib/admin/require-role";
 import { podeAcessarRota, type Role, rotaInicialDe } from "@/lib/admin/role-scope";
-import { hasCampaignSignal, parseCampaignParams } from "@/lib/attribution/params";
+import { assinaturaDaCampanha, parseCampaignParams } from "@/lib/attribution/params";
 import { ehRoboDeclarado } from "@/lib/attribution/user-agent-robo";
 import {
 	decideVisit,
@@ -123,6 +123,52 @@ export function ehLanding(pathname: string): boolean {
 }
 
 /**
+ * O parâmetro que o Next põe na URL de toda requisição RSC feita por `fetch` —
+ * ou seja, em todo prefetch do App Router. É a chave de cache que a própria doc
+ * manda o CDN usar, e aqui é o sinal que separa o roteador de uma pessoa.
+ */
+const PARAM_RSC = "_rsc";
+
+/**
+ * A requisição é o roteador do Next buscando dados, não gente chegando.
+ *
+ * **Por que não basta ler os headers.** O código lia `rsc`, `next-router-prefetch`
+ * e `purpose`, e acreditava estar coberto — havia até teste verde provando isso.
+ * Medido em produção em 24/08/2026, contra o domínio e contra o ALB (sem o
+ * Cloudflare no meio): dos três, só `purpose: prefetch` chega até aqui, e esse é
+ * a grafia antiga, que navegador nenhum manda hoje. `rsc` e `next-router-prefetch`
+ * alcançam o roteador do Next — a resposta volta `text/x-component` — mas voltam
+ * `null` em `request.headers` dentro do proxy. O teste unitário passava porque no
+ * Node os headers estão lá; a trava só era decoração no ar.
+ *
+ * **O que isso custava.** Depois de hidratar, o App Router dispara `fetch` de
+ * prefetch para a própria rota, e como a URL corrente carrega os UTMs, o prefetch
+ * os carrega junto. `decideVisit` abre visita nova sempre que há campanha, então o
+ * cookie não absorvia a repetição: uma navegação virava QUATRO linhas em `visits`,
+ * reproduzido duas vezes no navegador. Em 24/08 foram 390 de 756 chegadas do dia
+ * (51,6%), e só no tráfego pago — a tela dizia 756 chegadas onde havia 261 pessoas.
+ *
+ * Os headers seguem checados porque são o contrato documentado e podem voltar a
+ * funcionar; o que mudou é não depender só deles. `Sec-Purpose` entrou junto: é o
+ * header que Chrome manda desde as Speculation Rules, e ninguém o lia.
+ *
+ * Errar para o lado de NÃO contar é o lado certo: perde-se uma linha de
+ * atribuição, nunca uma venda. É a mesma escolha do `PARAM_PREVIEW`.
+ */
+function ehBuscaDoRoteador(request: NextRequest): boolean {
+	if (request.nextUrl.searchParams.has(PARAM_RSC)) return true;
+
+	const secPurpose = request.headers.get("sec-purpose");
+	if (secPurpose?.includes("prefetch")) return true;
+
+	return (
+		request.headers.get("next-router-prefetch") !== null ||
+		request.headers.get("purpose") === "prefetch" ||
+		request.headers.get("rsc") !== null
+	);
+}
+
+/**
  * Registra a chegada à landing — origem de mídia gravada NO SERVIDOR.
  *
  * Fica no proxy, e não num pixel de navegador, porque pixel perde de 20% a 30%
@@ -138,8 +184,9 @@ export function ehLanding(pathname: string): boolean {
 async function registrarVisita(request: NextRequest): Promise<NextResponse> {
 	const response = NextResponse.next();
 
-	// Prefetch e navegação RSC não são chegada de gente: contá-las inflaria o
-	// denominador de toda taxa de conversão da dashboard.
+	// Prefetch e navegação RSC não são chegada de gente: contá-las infla o
+	// denominador de toda taxa de conversão do painel. Ver `ehBuscaDoRoteador`,
+	// logo abaixo — a checagem por header, sozinha, não funcionava.
 	//
 	// Robô declarado entra no mesmo `if` pelo mesmo motivo, e a conta é maior do
 	// que a do prefetch: medido em produção em 15/08/2026, 38.792 das 40.796
@@ -150,12 +197,7 @@ async function registrarVisita(request: NextRequest): Promise<NextResponse> {
 	// Aqui a sujeira para de NASCER. O histórico já gravado continua precisando
 	// da mesma classificação na leitura (`performance-queries.ts`) — é a mesma
 	// lista, exportada uma vez só.
-	if (
-		request.headers.get("next-router-prefetch") !== null ||
-		request.headers.get("purpose") === "prefetch" ||
-		request.headers.get("rsc") !== null ||
-		ehRoboDeclarado(request.headers.get("user-agent"))
-	) {
+	if (ehBuscaDoRoteador(request) || ehRoboDeclarado(request.headers.get("user-agent"))) {
 		return response;
 	}
 
@@ -175,7 +217,9 @@ async function registrarVisita(request: NextRequest): Promise<NextResponse> {
 
 	const visita = decideVisit({
 		rawCookie: request.cookies.get(VISIT_COOKIE)?.value,
-		hasCampaign: hasCampaignSignal(campanha),
+		// A ASSINATURA do criativo, não "tem campanha?": ver `decideVisit`. Com o
+		// booleano, todo refresh da página do anúncio abria uma visita nova.
+		assinaturaDaCampanha: assinaturaDaCampanha(campanha),
 		nowMs: agora,
 	});
 

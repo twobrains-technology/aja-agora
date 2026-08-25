@@ -12,15 +12,27 @@ const AGORA = 1_770_000_000_000;
 const VISITA_ANTERIOR = "8f1c9c7e-4a2b-4d33-9f10-0f7d2a6b1c55";
 const VISITA_NOVA = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
 
-function decidir(rawCookie: string | null, hasCampaign: boolean, nowMs = AGORA) {
-	return decideVisit({ rawCookie, hasCampaign, nowMs, newId: () => VISITA_NOVA });
+/** A assinatura de um criativo qualquer — o que importa aqui é ela existir ou não. */
+const CRIATIVO = "1abc23d";
+
+function decidir(rawCookie: string | null, veioDeAnuncio: boolean, nowMs = AGORA) {
+	return decideVisit({
+		rawCookie,
+		assinaturaDaCampanha: veioDeAnuncio ? CRIATIVO : null,
+		nowMs,
+		newId: () => VISITA_NOVA,
+	});
 }
 
 describe("parseVisitCookie", () => {
 	it("faz o ciclo completo de ida e volta", () => {
 		const cookie = encodeVisitCookie(VISITA_ANTERIOR, AGORA);
 
-		expect(parseVisitCookie(cookie)).toEqual({ visitId: VISITA_ANTERIOR, atMs: AGORA });
+		expect(parseVisitCookie(cookie)).toEqual({
+			visitId: VISITA_ANTERIOR,
+			atMs: AGORA,
+			assinatura: null,
+		});
 	});
 
 	it("rejeita cookie corrompido, adulterado ou de formato antigo", () => {
@@ -54,7 +66,11 @@ describe("decideVisit", () => {
 
 		const { cookieValue } = decidir(cookie, false);
 
-		expect(parseVisitCookie(cookieValue)).toEqual({ visitId: VISITA_ANTERIOR, atMs: AGORA });
+		expect(parseVisitCookie(cookieValue)).toEqual({
+			visitId: VISITA_ANTERIOR,
+			atMs: AGORA,
+			assinatura: null,
+		});
 	});
 
 	it("abre visita nova quando a anterior passou da janela", () => {
@@ -65,7 +81,10 @@ describe("decideVisit", () => {
 
 	it("abre visita nova quando o visitante volta por um anúncio, mesmo dentro da janela", () => {
 		// Clicar num anúncio é chegada nova: se herdasse a visita anterior, o
-		// criativo que trouxe a pessoa de volta ficaria sem crédito nenhum.
+		// criativo que trouxe a pessoa de volta ficaria sem crédito nenhum. Desde
+		// 24/08/2026 o que se compara é QUAL criativo — aqui a visita corrente não
+		// tem assinatura nenhuma, então o anúncio é sempre um criativo novo. O caso
+		// do MESMO criativo repetido mora em `visita-por-criativo.test.ts`.
 		const cookie = encodeVisitCookie(VISITA_ANTERIOR, AGORA - 60 * 1000);
 
 		expect(decidir(cookie, true)).toMatchObject({ visitId: VISITA_NOVA, isNew: true });
@@ -74,7 +93,11 @@ describe("decideVisit", () => {
 	it("carimba o cookie com a visita decidida", () => {
 		const { visitId, cookieValue } = decidir(null, true);
 
-		expect(parseVisitCookie(cookieValue)).toEqual({ visitId, atMs: AGORA });
+		expect(parseVisitCookie(cookieValue)).toEqual({
+			visitId,
+			atMs: AGORA,
+			assinatura: CRIATIVO,
+		});
 	});
 });
 

@@ -60,3 +60,46 @@ export function parseCampaignParams(input: CampaignParamsInput): CampaignParams 
 export function hasCampaignSignal(params: CampaignParams): boolean {
 	return Object.values(params).some((value) => value !== null);
 }
+
+/** Separador improvável dentro de uma UTM — evita que "a|b" e "a" + "|b" colidam. */
+const SEPARADOR = "\u0001";
+
+/**
+ * A assinatura do CRIATIVO desta chegada — `null` quando não há mídia na URL.
+ *
+ * Existe porque `hasCampaignSignal` responde a pergunta errada para decidir
+ * visita. Ele diz SE há campanha; o que decide se a pessoa chegou de novo é QUAL
+ * campanha. Enquanto a decisão foi tomada sobre o booleano, toda requisição
+ * repetida carregando os mesmos UTMs abria uma visita: medido em produção em
+ * 24/08/2026, 181 de 830 chegadas (21,8%) eram o mesmo visitante com o mesmo
+ * criativo em menos de 30 minutos — refresh contado como aquisição.
+ *
+ * FNV-1a de 32 bits em base36: cabe em 7 caracteres, não tem ponto (que é o
+ * separador do cookie) e é determinístico sem depender de `crypto` — este módulo
+ * roda no proxy, e é chamado em toda chegada. Não é hash de segurança e não
+ * precisa ser: colisão aqui funde duas chegadas de criativos diferentes numa,
+ * e o espaço de criativos simultâneos de uma operação é da ordem de dezenas.
+ */
+export function assinaturaDaCampanha(params: CampaignParams): string | null {
+	if (!hasCampaignSignal(params)) return null;
+
+	const texto = [
+		params.utmSource,
+		params.utmMedium,
+		params.utmCampaign,
+		params.utmContent,
+		params.utmTerm,
+		params.gclid,
+		params.fbclid,
+	]
+		.map((valor) => valor ?? "")
+		.join(SEPARADOR);
+
+	let hash = 0x811c9dc5;
+	for (let i = 0; i < texto.length; i++) {
+		hash ^= texto.charCodeAt(i);
+		hash = Math.imul(hash, 0x01000193) >>> 0;
+	}
+
+	return hash.toString(36);
+}
