@@ -131,6 +131,14 @@ function MapaDeCalorContent() {
 
 	const pronto = !carregando && mapa !== null;
 
+	// O total do site no período — a soma das páginas. É o número que Performance e
+	// Percurso imprimem, e tê-lo aqui é o que permite ao operador fechar a conta
+	// sem trocar de tela.
+	const totalDePessoasNoSite = (mapa?.pessoasPorPagina ?? []).reduce(
+		(soma, p) => soma + p.pessoas,
+		0,
+	);
+
 	return (
 		<div className="flex flex-col gap-5">
 			<div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -220,17 +228,23 @@ function MapaDeCalorContent() {
 			<div className="flex flex-wrap items-baseline gap-x-6 gap-y-2 text-sm">
 				{pronto ? (
 					<>
-						{/* "X de Y pessoas": o denominador entrou em 24/08/2026 porque o
-						    número sozinho era lido como "quanta gente veio à Home", quando é
-						    "quanta gente deixou rastro". A diferença — 150 de 261 no dia em
-						    que isto foi escrito — é a parte silenciosa da página, e ela é o
-						    dado mais importante desta tela. */}
+						{/* "X de Y pessoas NA <página>": o denominador entrou em 24/08/2026
+						    porque o número sozinho era lido como "quanta gente veio à Home",
+						    quando é "quanta gente deixou rastro" — e a diferença é a parte
+						    silenciosa da página, o dado mais importante desta tela.
+						
+						    O nome da página entrou junto, no mesmo dia e pela mesma razão que
+						    tudo o mais aqui: esta tela é de UMA página, e as de Performance e
+						    Percurso somam todas as landings. Em 24/08 eram 280 na Home contra
+						    291 no total (8 em /motos, 3 em /autos) — a conta fecha, mas quem
+						    lia "de 280 pessoas" ao lado de "291 pessoas chegaram" não tinha
+						    como saber disso, e um número que não diz de onde é vira suspeita. */}
 						<Numero
 							valor={mapa.visitantes}
 							rotulo={
 								mapa.pessoasNaPagina > 0
-									? `de ${mapa.pessoasNaPagina.toLocaleString("pt-BR")} pessoas deixaram sinal`
-									: "pessoas deixaram sinal"
+									? `de ${mapa.pessoasNaPagina.toLocaleString("pt-BR")} pessoas na ${NOME_DA_PAGINA[path] ?? path} deixaram sinal`
+									: `pessoas na ${NOME_DA_PAGINA[path] ?? path} deixaram sinal`
 							}
 						/>
 						<Numero valor={mapa.cliques} rotulo="cliques" />
@@ -250,6 +264,49 @@ function MapaDeCalorContent() {
 					<Skeleton className="h-5 w-96" />
 				)}
 			</div>
+
+			{/* A LINHA QUE FECHA A CONTA.
+			    Esta tela é de UMA página; Performance e Percurso somam todas as
+			    landings. Em 24/08/2026 isso apareceu como "de 280 pessoas" aqui contra
+			    "291 pessoas chegaram" lá, e a pergunta foi imediata. Os dois estavam
+			    certos — faltava a tela mostrar a divisão. */}
+			{pronto && mapa.pessoasPorPagina.length > 0 && (
+				<p className="text-muted-foreground text-sm">
+					No período, <strong>{totalDePessoasNoSite.toLocaleString("pt-BR")}</strong>{" "}
+					{totalDePessoasNoSite === 1 ? "pessoa chegou" : "pessoas chegaram"} ao site —{" "}
+					{mapa.pessoasPorPagina
+						.map(
+							(p) => `${p.pessoas.toLocaleString("pt-BR")} em ${NOME_DA_PAGINA[p.path] ?? p.path}`,
+						)
+						.join(" · ")}
+					. É este total que as telas de Performance e Percurso mostram; aqui você vê uma página por
+					vez.
+				</p>
+			)}
+
+			{/* Página sem sinal no período: dizer POR QUE, em vez de mostrar uma tela
+			    vazia que parece defeito. O coletor funciona nas verticais (58 eventos
+			    em /autos, 45 em /imoveis, 42 em /motos entre 19 e 23/08); o que falta é
+			    movimento no dia — e com o período abrindo em HOJE isso é comum. */}
+			{pronto && mapa.visitantes === 0 && (
+				<div className="rounded-lg border bg-muted/40 p-4 text-sm">
+					<strong className="block">
+						Ninguém deixou sinal em {NOME_DA_PAGINA[path] ?? path} neste período.
+					</strong>
+					<span className="mt-1 block text-muted-foreground">
+						{mapa.pessoasNaPagina > 0 ? (
+							<>
+								{mapa.pessoasNaPagina.toLocaleString("pt-BR")}{" "}
+								{mapa.pessoasNaPagina === 1 ? "pessoa chegou" : "pessoas chegaram"} a esta página e{" "}
+								{mapa.pessoasNaPagina === 1 ? "saiu" : "saíram"} sem rolar nem clicar — não há o que
+								desenhar. Amplie o período no “30d” para ver os dias em que houve movimento.
+							</>
+						) : (
+							<>Ninguém chegou a esta página no período. Amplie o período no “30d”.</>
+						)}
+					</span>
+				</div>
+			)}
 
 			{device !== "todos" && (
 				<p className="rounded-lg border bg-muted/40 p-3 text-muted-foreground text-sm">

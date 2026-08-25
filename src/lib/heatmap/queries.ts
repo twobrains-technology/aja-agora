@@ -55,6 +55,19 @@ export interface MapaDeCalor {
 	 * o que gravar. O número sozinho contava a metade otimista da história.
 	 */
 	pessoasNaPagina: number;
+	/**
+	 * Quantas pessoas chegaram ao site no período, página por página — a linha que
+	 * faz esta tela FECHAR com Performance e Percurso.
+	 *
+	 * Sem ela o operador via "de 280 pessoas" aqui e "291 pessoas chegaram" lá, e
+	 * não tinha como saber que a diferença são as 11 que entraram por /motos e
+	 * /autos. Número que não fecha com o vizinho vira suspeita — ainda mais depois
+	 * de um dia em que o painel realmente estava inflado.
+	 *
+	 * Fora de todo recorte de propósito (página, aparelho, desfecho): ela existe
+	 * para reconciliar com telas que não conhecem nenhum dos três.
+	 */
+	pessoasPorPagina: { path: string; pessoas: number }[];
 	cliques: number;
 	rageCliques: number;
 	scrollMedio: number;
@@ -150,7 +163,7 @@ export async function computeMapaDeCalor(filtro: FiltroMapa): Promise<MapaDeCalo
     AND ${EVENTO_DE_GENTE}
   `;
 
-	const [totais, naPagina, rolagem, secoes, alvos, pontos] = await Promise.all([
+	const [totais, naPagina, porPagina, rolagem, secoes, alvos, pontos] = await Promise.all([
 		db.execute<Record<string, unknown>>(sql`
       SELECT
         count(DISTINCT ${chaveDaPessoa(from, to)}) AS visitantes,
@@ -189,6 +202,18 @@ export async function computeMapaDeCalor(filtro: FiltroMapa): Promise<MapaDeCalo
             WHERE pe2.visit_id = v.id AND pe2.path = ${path}
           )
         )
+    `),
+
+		// A divisão do período entre as páginas — a ponte com as outras telas.
+		// Fora de todo recorte de propósito: ela existe para reconciliar com
+		// Performance e Percurso, que não conhecem página nem aparelho.
+		db.execute<Record<string, unknown>>(sql`
+      SELECT v.landing_path AS path, count(DISTINCT ${chaveDaPessoa(from, to)}) AS pessoas
+      FROM visits v
+      WHERE v.created_at BETWEEN ${from} AND ${to}
+        AND ${VISITA_DE_GENTE}
+      GROUP BY v.landing_path
+      ORDER BY 2 DESC
     `),
 
 		// ROLAGEM MÉDIA — a média do ponto MAIS FUNDO de cada visitante.
@@ -264,6 +289,10 @@ export async function computeMapaDeCalor(filtro: FiltroMapa): Promise<MapaDeCalo
 		path,
 		visitantes: num(linha.visitantes),
 		pessoasNaPagina: num(naPagina.rows[0]?.pessoas),
+		pessoasPorPagina: porPagina.rows.map((r) => ({
+			path: r.path ? String(r.path) : "—",
+			pessoas: num(r.pessoas),
+		})),
 		cliques,
 		rageCliques: num(linha.rage_cliques),
 		scrollMedio: Math.round(num(rolagem.rows[0]?.scroll_medio)),
