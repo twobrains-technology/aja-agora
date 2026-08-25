@@ -213,6 +213,16 @@ describe("a escada do percurso", () => {
 			<EscadaDoPercurso resumo={RESUMO} total={75} selecionado={null} onSelecionar={() => {}} />,
 		);
 
-		expect(screen.getByText(/não por clique no anúncio/)).toBeTruthy();
+		// O rodapé passou a nomear as três unidades (pessoa, conversa, clique) e a dar
+		// a OPERAÇÃO que fecha a conta com a tela de Performance — antes ele dava só
+		// a direção ("são menores"), e quem via 8 lá e 7 aqui não sabia se sumiu
+		// alguém. O texto é quebrado em vários elementos, daí o matcher por função.
+		// `getAllByText` porque o texto atravessa vários elementos e cada ancestral
+		// casa junto; o que importa é ele estar na tela.
+		expect(
+			screen.getAllByText((_, no) =>
+				/não por conversa nem por clique no anúncio/.test(no?.textContent ?? ""),
+			).length,
+		).toBeGreaterThan(0);
 	});
 });

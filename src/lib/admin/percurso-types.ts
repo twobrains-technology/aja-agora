@@ -179,4 +179,13 @@ export interface PercursoResponse {
 	totalDePessoas: number;
 	/** Chegadas no período — quantos cliques as pessoas somaram. */
 	totalDeChegadas: number;
+	/**
+	 * Conversas abertas por essas pessoas — o número que falta para fechar a conta
+	 * com a tela de Performance.
+	 *
+	 * O rodapé explicava a DIREÇÃO ("menores que Performance") e não a OPERAÇÃO.
+	 * Quem via 8 lá e 7 aqui não tinha como saber se sumiu alguém. Com este número
+	 * a diferença fica visível: são as mesmas pessoas, contadas por conversa.
+	 */
+	totalDeConversas: number;
 }

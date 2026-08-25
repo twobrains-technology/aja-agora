@@ -240,6 +240,17 @@ export async function computePorta(fromDate: Date, toDate: Date): Promise<PortaD
         WHERE c.is_simulated = false
           AND c.visit_id IS NOT NULL
           AND c.created_at BETWEEN ${fromDate} AND ${toDate}) AS conversas,
+      -- As mesmas conversas, contadas por PESSOA. É este o número que fecha com a
+      -- escada do Percurso; "conversas" fica ao lado, como sublinha.
+      -- A visita TAMBÉM precisa estar no período. Sem isso, quem chegou ontem às
+      -- 23h e abriu o chat hoje às 00h10 entra no numerador e não no denominador,
+      -- e a taxa passa de 100%. Com a janela de um dia isso deixa de ser borda.
+      (SELECT count(DISTINCT ${chaveDaPessoa(fromDate, toDate)})
+        FROM conversations c
+        JOIN visits v ON v.id = c.visit_id
+        WHERE c.is_simulated = false
+          AND c.created_at BETWEEN ${fromDate} AND ${toDate}
+          AND v.created_at BETWEEN ${fromDate} AND ${toDate}) AS pessoas_que_conversaram,
       (SELECT count(*) FROM conversations c
         WHERE c.is_simulated = false
           AND c.visit_id IS NOT NULL
@@ -255,13 +266,16 @@ export async function computePorta(fromDate: Date, toDate: Date): Promise<PortaD
 	const pessoas = num(linha.pessoas);
 	const visitas = num(linha.visitas);
 	const conversas = num(linha.conversas);
+	const pessoasQueConversaram = num(linha.pessoas_que_conversaram);
 	return {
 		pessoas,
 		visitas,
+		pessoasQueConversaram,
 		conversas,
-		// Sobre PESSOAS, não sobre chegadas: contar a mesma pessoa quatro vezes no
-		// denominador afundava a taxa sem que nada tivesse piorado na operação.
-		taxaDeEntrada: pct(conversas, pessoas),
+		// Pessoa sobre pessoa, nas duas pontas. Com conversas em cima e pessoas
+		// embaixo, a taxa passava de 100% no dia em que alguém abrisse o chat duas
+		// vezes — e era exatamente esse alguém que fazia as duas telas divergirem.
+		taxaDeEntrada: pct(pessoasQueConversaram, pessoas),
 		web: num(linha.web),
 		whatsapp: num(linha.whatsapp),
 	};

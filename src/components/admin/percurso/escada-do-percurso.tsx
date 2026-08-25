@@ -22,11 +22,14 @@ const nf = new Intl.NumberFormat("pt-BR");
 export function EscadaDoPercurso({
 	resumo,
 	total,
+	totalDeConversas = 0,
 	selecionado,
 	onSelecionar,
 }: {
 	resumo: ResumoDoPasso[];
 	total: number;
+	/** Conversas abertas por essas pessoas — o que fecha a conta com Performance. */
+	totalDeConversas?: number;
 	selecionado: PassoDoPercurso | null;
 	onSelecionar: (passo: PassoDoPercurso | null) => void;
 }) {
@@ -90,9 +93,18 @@ export function EscadaDoPercurso({
 				<p className="mt-4 text-xs text-muted-foreground inline-flex items-start gap-1.5">
 					<UsersIcon className="size-3 mt-0.5 shrink-0" aria-hidden="true" />
 					<span>
-						Uma linha por <strong>pessoa</strong>, não por clique no anúncio: quem voltou três vezes
-						conta uma vez, no degrau mais fundo que alcançou. Por isso estes números são menores que
-						os da tela de Performance, que conta conversas.
+						Uma linha por <strong>pessoa</strong>, não por conversa nem por clique no anúncio: quem
+						voltou três vezes conta uma vez, no degrau mais fundo que alcançou.
+						{totalDeConversas > 0 && (
+							<>
+								{" "}
+								Estas pessoas abriram <strong>{totalDeConversas}</strong>{" "}
+								{totalDeConversas === 1 ? "conversa" : "conversas"} — é por isso que a tela de
+								Performance, que conta conversa, mostra um número maior. A diferença é sempre alguém
+								que abriu o chat mais de uma vez, ou conversa que começou no dia seguinte à chegada;
+								nunca gente que sumiu.
+							</>
+						)}
 					</span>
 				</p>
 			</CardContent>

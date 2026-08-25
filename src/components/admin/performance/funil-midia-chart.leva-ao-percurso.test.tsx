@@ -74,7 +74,25 @@ describe("funil de mídia — cada etapa leva ao percurso", () => {
 		render(<FunilMidiaChart etapas={ETAPAS} />);
 		const href = hrefDe("Fechados");
 
-		expect(href).toBe("/admin/percurso?passo=fechado");
+		expect(href).toBe("/admin/percurso?passo=fechado&modo=alcancou");
+	});
+
+	it("abre a lista em ALCANÇOU, porque o número clicado é cumulativo", () => {
+		// O defeito que este caso fixa, visto na tela em 24/08/2026: o funil dizia
+		// "8 abriram conversa", o operador clicou, e recebeu uma lista VAZIA. Os
+		// dois números estavam certos e falavam de coisas diferentes — o do funil é
+		// cumulativo ("chegaram até aqui") e o padrão da tela de destino é terminal
+		// ("pararam aqui"). Ninguém tinha parado em "Abriu o chat" porque todos os
+		// que abriram escreveram e caíram em degraus mais fundos.
+		//
+		// O teste anterior passava com a ponte enganando: ele conferia o degrau e o
+		// período, e nunca o modo.
+		render(<FunilMidiaChart etapas={ETAPAS} de={DE} ate={ATE} />);
+
+		for (const rotulo of ["Conversas", "Engajaram", "Se identificaram", "Viram oferta"]) {
+			expect(hrefDe(rotulo), `${rotulo} tem que abrir em alcancou`).toContain("modo=alcancou");
+			expect(hrefDe(rotulo)).not.toContain("modo=parou");
+		}
 	});
 
 	it("não mostra a etapa de visitas — ela vive no card da porta", () => {

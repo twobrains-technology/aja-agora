@@ -99,8 +99,20 @@ export interface PortaDoFunil {
 	pessoas: number;
 	/** Chegadas (sessões). Uma pessoa pode chegar mais de uma vez. */
 	visitas: number;
+	/**
+	 * PESSOAS que abriram conversa — o número que fecha com a escada do Percurso.
+	 *
+	 * Existe porque unificar só o TOPO não bastou. Em 24/08/2026, com as chegadas
+	 * já corrigidas, esta tela dizia "8 abriram conversa" e o Percurso somava 7
+	 * (5 escreveram + 1 se identificou + 1 viu oferta). Os dois estavam certos: são
+	 * 8 conversas de 7 pessoas, porque alguém abriu o chat duas vezes com 15
+	 * segundos de diferença. Mas o operador não tem como saber isso olhando, e o
+	 * que ele vê é o painel se contradizendo de novo.
+	 */
+	pessoasQueConversaram: number;
+	/** Conversas abertas. Uma pessoa pode abrir mais de uma. */
 	conversas: number;
-	/** % das PESSOAS que abriram conversa. */
+	/** % das PESSOAS que chegaram e falaram com o agente. */
 	taxaDeEntrada: number;
 	/**
 	 * Por qual porta a conversa entrou.

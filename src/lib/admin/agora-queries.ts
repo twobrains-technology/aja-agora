@@ -64,11 +64,19 @@ export async function computePulso(): Promise<PulsoAgora> {
       -- "Hoje" começa à meia-noite em Brasília. A forma anterior, com um cast
       -- para date, voltava a virar instante no fuso da SESSÃO, que em produção é
       -- UTC: o card contava a partir das 21h de ontem. Ver dia-do-negocio-sql.ts.
+      -- Telefone OU e-mail, o MESMO critério que Performance e Percurso usam para
+      -- "Se identificou". Sem ele este card contava também o lead que nasce só
+      -- com o nome (saveContactName grava os dois campos nulos), e duas telas
+      -- diziam números diferentes para a mesma palavra no mesmo dia.
       (SELECT count(*) FROM leads
         WHERE is_simulated = false
+          AND (phone IS NOT NULL OR email IS NOT NULL)
           AND created_at >= ${INICIO_DE_HOJE}) AS leads_hoje,
 
-      (SELECT count(*) FROM lead_events le
+      -- count(DISTINCT lead_id), não count(*): a transição aceita regressão, então
+      -- um contrato que voltou e foi readiantado no mesmo dia contava duas vezes
+      -- no cartão de dinheiro.
+      (SELECT count(DISTINCT le.lead_id) FROM lead_events le
         JOIN leads l ON l.id = le.lead_id AND l.is_simulated = false
         WHERE le.to_stage = 'fechado_ganho'
           AND le.created_at >= ${INICIO_DE_HOJE}) AS fechados_hoje

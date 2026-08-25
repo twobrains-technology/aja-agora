@@ -319,7 +319,9 @@ export async function listarPercurso(filtro: FiltroPercurso): Promise<PercursoRe
     `),
 		db.execute<Record<string, unknown>>(sql`
       ${base}
-      SELECT profundidade, count(*) AS pessoas, COALESCE(sum(chegadas), 0) AS chegadas
+      SELECT profundidade, count(*) AS pessoas,
+             COALESCE(sum(chegadas), 0) AS chegadas,
+             COALESCE(sum(conversas), 0) AS conversas
       FROM filtrado GROUP BY profundidade
     `),
 	]);
@@ -327,11 +329,13 @@ export async function listarPercurso(filtro: FiltroPercurso): Promise<PercursoRe
 	const pessoasPorProfundidade = new Map<number, number>();
 	let totalDePessoas = 0;
 	let totalDeChegadas = 0;
+	let totalDeConversas = 0;
 	for (const linha of escada.rows) {
 		const pessoas = num(linha.pessoas);
 		pessoasPorProfundidade.set(num(linha.profundidade), pessoas);
 		totalDePessoas += pessoas;
 		totalDeChegadas += num(linha.chegadas);
+		totalDeConversas += num(linha.conversas);
 	}
 
 	const resumo: ResumoDoPasso[] = PASSOS_DO_PERCURSO.map((passo, indice) => ({
@@ -385,5 +389,6 @@ export async function listarPercurso(filtro: FiltroPercurso): Promise<PercursoRe
 		resumo,
 		totalDePessoas,
 		totalDeChegadas,
+		totalDeConversas,
 	};
 }
