@@ -16,8 +16,10 @@ import {
 	JANELA_AO_VIVO_MIN,
 	type PulsoAgora,
 } from "./agora-types";
+import { INICIO_DE_HOJE } from "./dia-do-negocio-sql";
 import type { LeadStage } from "./lead-stages";
 import { rotularOrigem } from "./origem-label";
+import { VISITA_CONTAVEL } from "./sinais-do-funil";
 
 function num(valor: unknown): number {
 	return Number(valor ?? 0) || 0;
@@ -26,8 +28,17 @@ function num(valor: unknown): number {
 export async function computePulso(): Promise<PulsoAgora> {
 	const resultado = await db.execute<Record<string, unknown>>(sql`
     SELECT
-      (SELECT count(*) FROM visits
-        WHERE created_at > now() - interval '1 hour') AS visitas_ultima_hora,
+      -- Só gente, com o MESMO critério das outras três telas (VISITA_DE_GENTE).
+      -- Sem ele este card falava de uma população diferente de todo o resto do
+      -- painel: em 15/08/2026, 38.792 das 40.796 visitas de 30 dias eram máquina,
+      -- e o health check do ALB sozinho batia na home a cada 30 segundos. Hoje o
+      -- proxy barra o robô na entrada e o número coincide, o que torna a
+      -- divergência invisível — e é justamente por isso que ela precisa morrer
+      -- aqui: na próxima onda de robô com user-agent novo, esta tela subiria e as
+      -- outras não, sem nada denunciando qual das duas mente.
+      (SELECT count(*) FROM visits v
+        WHERE v.created_at > now() - interval '1 hour'
+          AND ${VISITA_CONTAVEL}) AS visitas_ultima_hora,
 
       (SELECT count(DISTINCT c.id) FROM conversations c
         JOIN messages m ON m.conversation_id = c.id
@@ -50,14 +61,17 @@ export async function computePulso(): Promise<PulsoAgora> {
       (SELECT count(*) FROM mesa_handoffs
         WHERE status = 'em_andamento') AS em_atendimento_na_mesa,
 
+      -- "Hoje" começa à meia-noite em Brasília. A forma anterior, com um cast
+      -- para date, voltava a virar instante no fuso da SESSÃO, que em produção é
+      -- UTC: o card contava a partir das 21h de ontem. Ver dia-do-negocio-sql.ts.
       (SELECT count(*) FROM leads
         WHERE is_simulated = false
-          AND created_at >= (now() AT TIME ZONE 'America/Sao_Paulo')::date) AS leads_hoje,
+          AND created_at >= ${INICIO_DE_HOJE}) AS leads_hoje,
 
       (SELECT count(*) FROM lead_events le
         JOIN leads l ON l.id = le.lead_id AND l.is_simulated = false
         WHERE le.to_stage = 'fechado_ganho'
-          AND le.created_at >= (now() AT TIME ZONE 'America/Sao_Paulo')::date) AS fechados_hoje
+          AND le.created_at >= ${INICIO_DE_HOJE}) AS fechados_hoje
   `);
 
 	const linha = resultado.rows[0] ?? {};

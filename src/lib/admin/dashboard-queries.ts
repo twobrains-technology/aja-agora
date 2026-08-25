@@ -14,6 +14,7 @@ import {
 	type FunnelStage,
 	type KpiData,
 } from "./dashboard-types";
+import { INICIO_DE_HOJE, INICIO_DE_ONTEM } from "./dia-do-negocio-sql";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -54,9 +55,10 @@ export async function computeKpis(fromDate: Date, toDate: Date): Promise<KpiData
 		db
 			.select({ count: count() })
 			.from(leads)
-			.where(
-				and(realLeads, gte(leads.createdAt, sql`(NOW() AT TIME ZONE 'America/Sao_Paulo')::date`)),
-			),
+			// Meia-noite em Brasília, e não `::date` — aquela forma voltava a virar
+			// instante no fuso da SESSÃO (UTC em produção) e o "hoje" começava às
+			// 21h de ontem. Ver `dia-do-negocio-sql.ts`.
+			.where(and(realLeads, gte(leads.createdAt, INICIO_DE_HOJE))),
 
 		db.execute(sql`
       SELECT COALESCE(
@@ -90,14 +92,7 @@ export async function computeKpis(fromDate: Date, toDate: Date): Promise<KpiData
 			.select({ count: count() })
 			.from(leads)
 			.where(
-				and(
-					realLeads,
-					gte(
-						leads.createdAt,
-						sql`((NOW() AT TIME ZONE 'America/Sao_Paulo') - INTERVAL '1 day')::date`,
-					),
-					lte(leads.createdAt, sql`(NOW() AT TIME ZONE 'America/Sao_Paulo')::date`),
-				),
+				and(realLeads, gte(leads.createdAt, INICIO_DE_ONTEM), lte(leads.createdAt, INICIO_DE_HOJE)),
 			),
 
 		db.execute(sql`
@@ -200,15 +195,20 @@ export async function computeFunnelStages(fromDate: Date, toDate: Date): Promise
 // ─── Daily Volume ───────────────────────────────────────────────────────────
 
 export async function computeDailyVolume(fromDate: Date, toDate: Date): Promise<DailyVolume[]> {
+	// `to_char`, e não `DATE(...)`: a coluna `date` do Postgres volta do driver
+	// `pg` como um objeto `Date` (parser do OID 1082), então a chave gravada no
+	// Map abaixo era um Date e a chave procurada era a string `yyyy-MM-dd` — o
+	// `get` nunca casava e TODO dia do gráfico saía zero, com o KPI de total ao
+	// lado mostrando o número certo. `performance-queries.ts` já documentava esta
+	// armadilha e a evitava; esta consulta ficou para trás.
+	const dia = sql<string>`to_char(${leads.createdAt} AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD')`;
+
 	const rows = await db
-		.select({
-			date: sql<string>`DATE(${leads.createdAt} AT TIME ZONE 'America/Sao_Paulo')`.as("date"),
-			count: count(),
-		})
+		.select({ date: dia.as("date"), count: count() })
 		.from(leads)
 		.where(and(realLeads, gte(leads.createdAt, fromDate), lte(leads.createdAt, toDate)))
-		.groupBy(sql`DATE(${leads.createdAt} AT TIME ZONE 'America/Sao_Paulo')`)
-		.orderBy(sql`DATE(${leads.createdAt} AT TIME ZONE 'America/Sao_Paulo')`);
+		.groupBy(dia)
+		.orderBy(dia);
 
 	// Build lookup from query results
 	const countByDate = new Map<string, number>();

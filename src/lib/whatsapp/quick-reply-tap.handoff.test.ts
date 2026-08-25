@@ -22,12 +22,6 @@ const cards = vi.hoisted(() => ({
 	registrarCardEnviado: vi.fn(),
 }));
 const aceite = vi.hoisted(() => ({ aplicarAceiteEstruturado: vi.fn() }));
-const adapter = vi.hoisted(() => ({
-	runAgentTurnForWhatsapp: vi.fn(async () => {}),
-	consumeEvents: vi.fn(async () => {}),
-	pipeDirectiveTurnWhatsapp: vi.fn(async () => {}),
-}));
-
 vi.mock("@/lib/whatsapp/proxy", () => proxy);
 vi.mock("./proxy", () => proxy);
 vi.mock("@/lib/conversation/cards", () => cards);
