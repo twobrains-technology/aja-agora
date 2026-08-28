@@ -212,9 +212,11 @@ export function KvHero({ onOpenChat, conteudo = HERO_CONSULTIVO }: KvHeroProps) 
 					    é o empilhamento que o cliente marcou.
 
 					    O "Comparar agora" que voltou em 28/08 (Figma 941:1153 e 945:1547,
-					    comentário #141) NÃO desfaz isso: ele fica depois da colagem, que
-					    no celular é o fim da primeira dobra — outra altura de página e
-					    outro momento de leitura, não um terceiro botão na mesma pilha.
+					    comentário #141) NÃO desfaz isso: ele é só de mobile e fica
+					    depois da colagem, quando este card já saiu da tela — outra
+					    altura de página, não um terceiro botão na mesma pilha. No
+					    desktop, onde o card fica visível ao lado da colagem, ele não
+					    existe.
 
 					    A conversa continua alcançável de qualquer ponto da página pelo
 					    botão flutuante (<ChatFlutuante/>) e pelo fecho (kv-footer.tsx). */}
@@ -240,17 +242,18 @@ export function KvHero({ onOpenChat, conteudo = HERO_CONSULTIVO }: KvHeroProps) 
 					/>
 				</div>
 
-				{/* O fecho da primeira dobra. Depois da colagem porque é ali que o
-				    argumento visual termina — quem rolou até o fim dos quatro balões
-				    ("Autorizadas pelo Banco Central", "Análise imparcial"...) acabou de
-				    ler o motivo, e é o momento de oferecer o passo.
+				{/* SÓ ABAIXO DE lg, que é onde o comp o desenhou (frames mobile
+				    941:1153 e 945:1547; nenhum dos dois desktop o traz).
 
-				    `col-span-full` porque o próprio KvContainer é o grid de duas
-				    colunas: sem isso o botão vira um terceiro item e, no desktop, cai
-				    numa linha nova embaixo da COLUNA DO TEXTO, à esquerda e desalinhado
-				    de tudo. Ocupando a linha inteira ele centraliza sob a dobra nos
-				    dois layouts. */}
-				<div className="col-span-full mt-6 flex justify-center md:mt-10">
+				    E o motivo do comp se sustenta: no celular a coluna empilha, então
+				    quando a colagem acaba o card "Fale com a Aja" já saiu da tela — o
+				    visitante acabou de ler os quatro balões ("Autorizadas pelo Banco
+				    Central", "Análise imparcial"...) e não tem o que tocar sem rolar de
+				    volta. No desktop as duas colunas são lado a lado: o card está
+				    visível o tempo todo à esquerda da colagem, e um botão aqui embaixo
+				    seria a segunda chamada da MESMA dobra, na mesma altura de olho —
+				    exatamente o empilhamento que saiu em 483e07d4. */}
+				<div className="mt-6 flex justify-center md:mt-10 lg:hidden">
 					<KvCtaButton
 						onClick={(e) => onOpenChat("", e.currentTarget)}
 						className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F2404F] focus-visible:ring-offset-2 focus-visible:ring-offset-[#FAFAF3]"
