@@ -4,16 +4,21 @@
  * cliente, 2026-08-20).
  *
  * A frase saiu da pílula do hero — lá ela parecia um botão e disputava o toque
- * com os CTAs de verdade — e foi parar aqui, ENTRE o "Busque a melhor
- * alternativa" e a faixa navy. A posição é o pedido, e é o que se perde primeiro
- * quando alguém reorganiza o rodapé.
+ * com os CTAs de verdade — e foi parar aqui, logo acima da faixa navy. A posição
+ * é o pedido, e é o que se perde primeiro quando alguém reorganiza o rodapé.
+ *
+ * Em 28/08 a faixa virou também o FECHO de conversão (Figma 731:6575,
+ * comentário #145): o bloco "Busque a melhor alternativa", com os dois botões
+ * que vinham antes dela, saiu, e sobrou um "Comparar agora" aqui dentro. O teste
+ * de posição ancorava no texto daquele bloco; agora ancora na faixa navy abaixo,
+ * que é o que o pedido de fato descreve.
  *
  * O outro caso é o que a mudança quase criou: a mesma frase já existia embaixo
  * do wordmark, dentro da faixa navy. Sem cuidado, a página passaria a mostrá-la
  * duas vezes com ~100px de distância — por isso a de lá saiu.
  */
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { KvFooter } from "./kv-footer";
@@ -39,11 +44,10 @@ function ocorrencias(container: HTMLElement): HTMLParagraphElement[] {
 }
 
 describe("faixa 'jeito independente' no rodapé", () => {
-	it("aparece entre o 'Busque a melhor alternativa' e a faixa navy", () => {
+	it("aparece logo acima da faixa navy", () => {
 		const { container } = render(<KvFooter onOpenChat={vi.fn()} />);
 
 		const rodape = container.querySelector("footer");
-		const cta = screen.getByText(/Busque a melhor/i);
 		const faixa = container.querySelector("section");
 		const navy = rodape?.querySelector(".bg-\\[\\#021628\\]");
 
@@ -52,11 +56,31 @@ describe("faixa 'jeito independente' no rodapé", () => {
 
 		// `DOCUMENT_POSITION_FOLLOWING` = o argumento vem DEPOIS do nó.
 		expect(
-			cta.compareDocumentPosition(faixa as Node) & Node.DOCUMENT_POSITION_FOLLOWING,
-		).toBeTruthy();
-		expect(
 			(faixa as Node).compareDocumentPosition(navy as Node) & Node.DOCUMENT_POSITION_FOLLOWING,
 		).toBeTruthy();
+	});
+
+	it("o fecho da página é UM CTA, e ele mora na faixa", () => {
+		// Antes eram duas chamadas ("Fale com a AJA", "Encontre o consórcio certo")
+		// num bloco próprio, mais a faixa sem botão — três alvos para a mesma
+		// conversa nos últimos 300px. Repor qualquer um deles quebra isto.
+		const { container } = render(<KvFooter onOpenChat={vi.fn()} />);
+		const faixa = container.querySelector("section");
+
+		expect(screen.queryByText(/Busque a melhor/i)).toBeNull();
+		expect(screen.getAllByRole("button")).toHaveLength(1);
+		expect(screen.getByRole("button", { name: "Comparar agora" })).toBe(
+			faixa?.querySelector("button"),
+		);
+	});
+
+	it("o CTA da faixa abre a conversa", () => {
+		const onOpenChat = vi.fn();
+		render(<KvFooter onOpenChat={onOpenChat} />);
+
+		fireEvent.click(screen.getByRole("button", { name: "Comparar agora" }));
+
+		expect(onOpenChat).toHaveBeenCalledTimes(1);
 	});
 
 	it("a frase aparece UMA vez — a linha embaixo do wordmark saiu", () => {
@@ -70,12 +94,16 @@ describe("faixa 'jeito independente' no rodapé", () => {
 		expect(achadas[0]?.closest("section")).not.toBeNull();
 	});
 
-	it("some no rodapé sem CTA final (política, termos) — nada muda ali", () => {
+	it("sem CTA final (política, termos, 404): a faixa vem, o botão não", () => {
 		// `comCtaFinal={false}` é o rodapé das páginas de conformidade. A faixa
-		// continua vindo: ela é assinatura de marca, não parte do funil de venda.
+		// continua vindo: ela é assinatura de marca, não parte do funil de venda —
+		// e é justamente a parte de funil (o botão) que precisa sumir. Desde que o
+		// CTA passou a morar DENTRO da faixa, esconder um sem esconder o outro
+		// virou possível, e é o que este caso trava.
 		const { container } = render(<KvFooter onOpenChat={vi.fn()} comCtaFinal={false} />);
 
-		expect(screen.queryByText(/Busque a melhor/i)).toBeNull();
 		expect(container.querySelector("section")).not.toBeNull();
+		expect(ocorrencias(container)).toHaveLength(1);
+		expect(screen.queryByRole("button", { name: "Comparar agora" })).toBeNull();
 	});
 });
