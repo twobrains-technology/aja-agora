@@ -74,7 +74,7 @@ interface KvHeroProps {
 //   • um CTA dentro do card ("Quero minha simulação") e UM abaixo dele.
 //
 // As medidas do comp que sobrevivem (coluna de 560px, manchete de 56/62,
-// colagem 1999/1909) continuam valendo — o que mudou foi o conteúdo da coluna,
+// colagem 1419/1355) continuam valendo — o que mudou foi o conteúdo da coluna,
 // não a grade. Isto nasceu num ajuste só de mobile e foi unificado em seguida:
 // manter dois desenhos era manter dois produtos na mesma página.
 // ---------------------------------------------------------------------------
@@ -216,12 +216,18 @@ export function KvHero({ onOpenChat, conteudo = HERO_CONSULTIVO }: KvHeroProps) 
 
 				{/* Colagem de fotos — PNG único (tríptico + consultora + sunburst + balões
 				    já compostos na arte), substitui os componentes separados anteriores. */}
-				<div className="relative mx-auto aspect-[1999/1909] w-full max-w-[560px]">
+				<div className="relative mx-auto aspect-[1419/1355] w-full max-w-[560px]">
 					<Image
 						src={`${KV}/hero-collage.png`}
-						alt="Consultora da Aja Agora cercada por opções de carro, moto e imóvel, com balões de chat mostrando a conversa com o consórcio"
+						alt="Consultora da Aja Agora cercada por opções de carro, moto e imóvel, com balões destacando administradoras autorizadas pelo Banco Central, parcelas reduzidas, análise imparcial e o lance médio ideal, sem custo extra"
 						fill
-						sizes="(min-width: 1024px) 560px, 90vw"
+						/* O box tem 560px, mas o hint pede 1120: assim o browser baixa a
+						   variante de 1200px e reduz para 560 na tela — 2x de supersampling,
+						   que é o que mantém o texto fino dos balões legível também em
+						   monitor 1x. Em tela 2x o pedido sobe para 2048 e o otimizador
+						   entrega a fonte nativa (1419px) sem ampliar. No mobile fica 90vw:
+						   celular já é 3x e aí a densidade vem sozinha, sem gastar dados. */
+						sizes="(min-width: 1024px) 1120px, 90vw"
 						priority
 						quality={100}
 						className="object-contain"

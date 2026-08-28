@@ -20,6 +20,11 @@ const nextConfig: NextConfig = {
 		"aja-*.orb.local",
 	],
 	images: {
+		// Next 16 só aceita os `quality` que estiverem nesta lista — o default é
+		// [75], e um `quality={100}` fora dela não dá erro: o componente cai
+		// calado para 75 no srcset. Era o que acontecia com a colagem da hero
+		// (kv-hero.tsx), arte com texto fino nos balões, servida em WebP 75.
+		qualities: [75, 100],
 		remotePatterns: [
 			{
 				protocol: "https",
