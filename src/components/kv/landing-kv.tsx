@@ -68,7 +68,7 @@ function LandingShell({ hero, heatPath }: Required<LandingKvProps>) {
 				<KvHero onOpenChat={openTheater} conteudo={hero} />
 			</div>
 			<div id="como-funciona" data-heat="kv-journey" className="scroll-mt-24">
-				<KvJourney />
+				<KvJourney onOpenChat={openTheater} />
 			</div>
 			{/* O `id` é o destino do "Tipo de Consórcio" do rodapé, que aparece
 			    também nas verticais e por isso aponta para `/#tipos`. */}
@@ -82,7 +82,7 @@ function LandingShell({ hero, heatPath }: Required<LandingKvProps>) {
 				<KvFaq />
 			</div>
 			<div data-heat="kv-numbers">
-				<KvNumbers />
+				<KvNumbers onOpenChat={openTheater} />
 			</div>
 			<div data-heat="kv-depoimentos">
 				<KvDepoimentos onOpenChat={openTheater} />

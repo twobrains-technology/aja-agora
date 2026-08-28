@@ -52,17 +52,27 @@ type TipoCard = {
 // invadem o texto abaixo) — o cutout NUNCA é cortado (object-contain o mantém inteiro).
 const IMAGE_AREA_CLASS = "relative h-[220px] overflow-hidden md:h-[248px]";
 
+// O MESMO rótulo nos três cards (Figma 924:4514, comentário #142 de 20/08). Os
+// três CTAs diferentes de antes ("Buscar alternativas", "Achar parcela
+// perfeita") faziam a mesma ação parecer três ações; com o rótulo repetido, o
+// que distingue os cards é o card, não o botão.
+//
+// O comp escreve "Compara opções", que é imperativo de "tu" e destoa do resto
+// do site (todo tratado por "você": "Compare", "Busque", "Encontre"). Entra no
+// infinitivo, que é como os outros CTAs de comparação já aparecem ("Comparar
+// agora") — o mesmo desvio de grafia que o comp já trazia em "QUAL A SUA
+// PROPÓSITO" e entrou corrigido logo abaixo.
+const BOTAO_CARD = "Comparar opções";
+
 const CARDS: TipoCard[] = [
 	{
 		id: "carro",
 		title: "Carro",
 		descriptionLead: "Para gerar renda",
 		descriptionRestLines: [", ganhar mobilidade ou conquistar o carro que faz sentido para você."],
-		// O comp escreve "Compara opções"; entra no infinitivo, como os outros dois
-		// CTAs ("Buscar alternativas", "Achar parcela perfeita").
-		button: "Comparar opções",
+		button: BOTAO_CARD,
 		seed: "Quero comprar um carro.",
-		tags: ["Viagens", "Primeiro carro", "Autonomia"],
+		tags: ["Autonomia", "Primeiro carro", "Viagens"],
 		image: {
 			src: "image-3.png",
 			alt: "Carro em estrada ao entardecer",
@@ -89,9 +99,9 @@ const CARDS: TipoCard[] = [
 			"e transforme cada parcela em",
 			"patrimônio e saia do Aluguel.",
 		],
-		button: "Buscar alternativas",
+		button: BOTAO_CARD,
 		seed: "Quero comprar um imóvel.",
-		tags: ["Sair do aluguel", "Casa própria", "Patrimônio"],
+		tags: ["Patrimônio", "Casa própria", "Sair do aluguel"],
 		image: {
 			src: "image-1.png",
 			alt: "Casa própria conquistada",
@@ -111,9 +121,9 @@ const CARDS: TipoCard[] = [
 		descriptionLead: "Saia da moto alugada,",
 		descriptionBreakAfterLead: true,
 		descriptionRestLines: ["escape do trânsito ou realize", "o sonho da moto própria."],
-		button: "Achar parcela perfeita",
+		button: BOTAO_CARD,
 		seed: "Quero comprar uma moto.",
-		tags: ["Trânsito", "Economia", "Mobilidade"],
+		tags: ["Mobilidade", "Economia", "Trânsito"],
 		image: {
 			src: "image-2.png",
 			alt: "Motocicleta em destaque",
@@ -237,16 +247,24 @@ export function KvTipos({ onOpenChat }: KvTiposProps) {
 								>
 									{card.button}
 								</KvCtaButton>
-								<div className="mt-6 flex flex-wrap items-center justify-center gap-1.5">
-									{card.tags.map((tag) => (
-										<span
-											key={tag}
-											className="whitespace-nowrap rounded-full border border-[#052440]/40 px-2.5 py-1 text-[12px] font-semibold leading-[16px] text-[#052440]"
-										>
+								{/* Linha corrida com bolinhas, e não mais três pílulas contornadas
+								    (Figma 924:4514: um único texto "Autonomia  •  Primeiro carro  •
+								    Viagens", Poppins 12/400 #052440). A pílula tinha o mesmo raio
+								    total do CTA logo acima e pesava como se também fosse clicável —
+								    três falsos botões embaixo do botão de verdade. Como texto, a
+								    hierarquia do card volta a ter um alvo só. */}
+								<p className="mt-6 flex flex-wrap items-center justify-center text-center text-[12px] font-normal leading-[16px] text-[#052440]">
+									{card.tags.map((tag, i) => (
+										<span key={tag} className="whitespace-nowrap">
+											{i > 0 ? (
+												<span aria-hidden="true" className="px-2 text-[#052440]/45">
+													•
+												</span>
+											) : null}
 											{tag}
 										</span>
 									))}
-								</div>
+								</p>
 							</div>
 						</article>
 					))}
