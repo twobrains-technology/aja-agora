@@ -1,8 +1,12 @@
+"use client";
+
 import { Building2, DollarSign, TrendingUp, Users } from "lucide-react";
 
+import type { TheaterOpener } from "@/components/chat/theater/theater-context";
 import { Em } from "@/components/kv/em";
 import { FONTE_ABAC, FONTE_ABAC_CLASS } from "@/components/kv/fonte-abac";
 import { KvContainer } from "@/components/kv/ui/kv-container";
+import { KvCtaButton } from "@/components/kv/ui/kv-cta-button";
 import { KvEyebrow } from "@/components/kv/ui/kv-eyebrow";
 import { KV_RITMO, KvSection } from "@/components/kv/ui/kv-section";
 
@@ -68,7 +72,11 @@ const MARQUEE_TEXT = MARQUEE_SEGMENTS.map((segment) => segment.text).join("");
 // Seção "Big Numbers" (Figma: Group 123 → big-numbers-consorcio + Marquee Ticker).
 // Bloco navy full-bleed com blobs desfocados, header centralizado e 4 cards de
 // métrica; abaixo, uma faixa coral com texto rolando em loop contínuo (CSS puro).
-export function KvNumbers() {
+interface KvNumbersProps {
+	onOpenChat: TheaterOpener;
+}
+
+export function KvNumbers({ onOpenChat }: KvNumbersProps) {
 	return (
 		<>
 			<KvSection rhythm={KV_RITMO.numeros} className="overflow-hidden bg-[#021628]">
@@ -97,6 +105,16 @@ export function KvNumbers() {
 							Investir em consórcio é a escolha inteligente de milhões de brasileiros para construir
 							patrimônio com segurança, planejamento e sem juros abusivos.
 						</p>
+						{/* Figma 731:6575 (comentário #144, 20/08): a seção fechava só com os
+						    quatro números e a fonte da ABAC. O argumento estava montado e não
+						    tinha para onde ir — quem se convenceu aqui precisava rolar até o
+						    rodapé para agir. */}
+						<KvCtaButton
+							onClick={(e) => onOpenChat("", e.currentTarget)}
+							className="mt-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F2404F] focus-visible:ring-offset-2 focus-visible:ring-offset-[#021628]"
+						>
+							Comparar agora
+						</KvCtaButton>
 					</div>
 
 					{/* Cards de métrica */}

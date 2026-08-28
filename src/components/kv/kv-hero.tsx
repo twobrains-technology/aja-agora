@@ -203,12 +203,18 @@ export function KvHero({ onOpenChat, conteudo = HERO_CONSULTIVO }: KvHeroProps) 
 						</KvCtaButton>
 					</form>
 
-					{/* NENHUM CTA SOLTO ABAIXO DO CARD (decisão do Kairo, 20/08/2026).
-					    Hoje de manhã saiu o "Fale com a AJA" — a chamada virou o título do
-					    card — e agora sai também o "Encontre o consórcio certo": o card
-					    fecha a ação com o "Quero minha simulação", e o trio acima já leva
-					    à conversa com a categoria escolhida. Três caminhos para o mesmo
-					    lugar, um embaixo do outro, é o empilhamento que o cliente marcou.
+					{/* Nada de CTA aqui, colado no card (decisão do Kairo, 20/08/2026).
+					    Naquele dia saíram os dois que ficavam neste ponto: de manhã o
+					    "Fale com a AJA" — a chamada virou o título do card — e à tarde o
+					    "Encontre o consórcio certo". O card fecha a ação com o "Quero
+					    minha simulação", e o trio acima já leva à conversa com a categoria
+					    escolhida. Três caminhos para o mesmo lugar, um embaixo do outro,
+					    é o empilhamento que o cliente marcou.
+
+					    O "Comparar agora" que voltou em 28/08 (Figma 941:1153 e 945:1547,
+					    comentário #141) NÃO desfaz isso: ele fica depois da colagem, que
+					    no celular é o fim da primeira dobra — outra altura de página e
+					    outro momento de leitura, não um terceiro botão na mesma pilha.
 
 					    A conversa continua alcançável de qualquer ponto da página pelo
 					    botão flutuante (<ChatFlutuante/>) e pelo fecho (kv-footer.tsx). */}
@@ -232,6 +238,25 @@ export function KvHero({ onOpenChat, conteudo = HERO_CONSULTIVO }: KvHeroProps) 
 						quality={100}
 						className="object-contain"
 					/>
+				</div>
+
+				{/* O fecho da primeira dobra. Depois da colagem porque é ali que o
+				    argumento visual termina — quem rolou até o fim dos quatro balões
+				    ("Autorizadas pelo Banco Central", "Análise imparcial"...) acabou de
+				    ler o motivo, e é o momento de oferecer o passo.
+
+				    `col-span-full` porque o próprio KvContainer é o grid de duas
+				    colunas: sem isso o botão vira um terceiro item e, no desktop, cai
+				    numa linha nova embaixo da COLUNA DO TEXTO, à esquerda e desalinhado
+				    de tudo. Ocupando a linha inteira ele centraliza sob a dobra nos
+				    dois layouts. */}
+				<div className="col-span-full mt-6 flex justify-center md:mt-10">
+					<KvCtaButton
+						onClick={(e) => onOpenChat("", e.currentTarget)}
+						className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F2404F] focus-visible:ring-offset-2 focus-visible:ring-offset-[#FAFAF3]"
+					>
+						Comparar agora
+					</KvCtaButton>
 				</div>
 			</KvContainer>
 		</KvSection>

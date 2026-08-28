@@ -1,7 +1,11 @@
+"use client";
+
 import type { ReactNode } from "react";
 
+import type { TheaterOpener } from "@/components/chat/theater/theater-context";
 import { Em } from "@/components/kv/em";
 import { CARD_SHADOW, KvContainer } from "@/components/kv/ui/kv-container";
+import { KvCtaButton } from "@/components/kv/ui/kv-cta-button";
 import { KvEyebrow } from "@/components/kv/ui/kv-eyebrow";
 import { KV_RITMO, KvSection } from "@/components/kv/ui/kv-section";
 
@@ -195,6 +199,20 @@ function StepCircle({ step, size }: { step: JourneyStep; size: number }) {
 // ícones (ver comentário de CANVAS_W acima) reposiciona o desenho no canvas.
 const WAVE_BOX = { left: 170, top: 169, width: 893, height: 297 };
 
+/**
+ * Passo depois do qual entra o CTA da jornada (Figma `como-funciona-mobile`
+ * 731:7716, comentário #143 de 20/08).
+ *
+ * É o meio da jornada de propósito: "Fundo comum" é o último passo que ainda
+ * explica COMO funciona; de "Sorteio ou Lance" em diante já é o que acontece
+ * depois de contratar. Quem entendeu até aqui entendeu o produto — e a seção
+ * tinha seis passos até o fim sem oferecer nada para fazer com isso.
+ *
+ * Casado pelo título e não por índice: reordenar `STEPS` não pode mover o CTA
+ * para debaixo de um passo qualquer em silêncio.
+ */
+const PASSO_DO_CTA = "Fundo comum";
+
 // Jornada - Como Funciona: eyebrow + título centralizados, seguidos dos 6 passos.
 //
 // Mobile (<lg): coluna única centralizada, círculo de 80px por passo, conector
@@ -203,7 +221,11 @@ const WAVE_BOX = { left: 170, top: 169, width: 893, height: 297 };
 // Desktop (lg+): os 6 passos posicionados em absoluto formando uma onda em S,
 // ligados por uma faixa coral de raios (a "jornada"), com o texto acima (picos)
 // e abaixo (vales).
-export function KvJourney() {
+interface KvJourneyProps {
+	onOpenChat: TheaterOpener;
+}
+
+export function KvJourney({ onOpenChat }: KvJourneyProps) {
 	return (
 		<KvSection
 			rhythm={KV_RITMO.jornada}
@@ -270,6 +292,17 @@ export function KvJourney() {
 									<StepDescription text={step.description} emphasis={step.emphasis} />
 								</p>
 							</div>
+							{/* Dentro do <li>, e não entre dois <li>: `<ol>` só aceita `<li>`
+							    como filho, e um botão solto ali é HTML inválido que o React
+							    renderiza sem reclamar e o leitor de tela lê fora da lista. */}
+							{step.title === PASSO_DO_CTA ? (
+								<KvCtaButton
+									onClick={(e) => onOpenChat("", e.currentTarget)}
+									className="relative z-10 mt-6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F2404F] focus-visible:ring-offset-2 focus-visible:ring-offset-[#FAFAF3]"
+								>
+									Comparar agora
+								</KvCtaButton>
+							) : null}
 						</li>
 					))}
 				</ol>
@@ -338,6 +371,20 @@ export function KvJourney() {
 							</div>
 						);
 					})}
+				</div>
+
+				{/* O Figma só desenhou este CTA no frame mobile (`como-funciona-mobile`).
+				    No desktop a onda em S é uma tela de posições absolutas, sem um meio
+				    onde encaixar o botão sem atravessar a faixa coral — então ele fecha
+				    a seção, centralizado. Um CTA que existe no celular e some no
+				    desktop lê como defeito, não como decisão. */}
+				<div className="mt-10 hidden justify-center lg:flex">
+					<KvCtaButton
+						onClick={(e) => onOpenChat("", e.currentTarget)}
+						className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F2404F] focus-visible:ring-offset-2 focus-visible:ring-offset-[#FAFAF3]"
+					>
+						Comparar agora
+					</KvCtaButton>
 				</div>
 			</KvContainer>
 		</KvSection>

@@ -2,12 +2,8 @@ import type { SVGProps } from "react";
 
 import { Wordmark } from "@/components/brand/wordmark";
 import type { TheaterOpener } from "@/components/chat/theater/theater-context";
-import { Em } from "@/components/kv/em";
 import { KvIndependente } from "@/components/kv/kv-independente";
 import { type LinkKv, RODAPE_CONSORCIOS, RODAPE_NAVEGACAO } from "@/components/kv/navegacao";
-import { KvContainer } from "@/components/kv/ui/kv-container";
-import { KvCtaButton } from "@/components/kv/ui/kv-cta-button";
-import { KV_RITMO } from "@/components/kv/ui/kv-section";
 
 // Ícones de marca (o lucide-react do projeto não exporta social icons por
 // questão de trademark). SVGs inline, currentColor.
@@ -100,48 +96,32 @@ interface KvFooterProps {
 	comCtaFinal?: boolean;
 }
 
-// Frame 'CTA Final + Footer' (1440x615): CTA sobre fundo claro (headline +
-// 2 botões) seguido do rodapé navy (marca, navegação, contato, redes sociais
-// e linha legal). Todo o bloco é o landmark <footer> da página.
+// Frame 'CTA Final + Footer': o fecho sobre fundo claro seguido do rodapé navy
+// (marca, navegação, contato, redes sociais e linha legal). Todo o bloco é o
+// landmark <footer> da página.
+//
+// **O fecho é UM CTA, e mora em <KvIndependente/>** (Figma 731:6575, comentário
+// #145 de 20/08). Aqui havia antes um bloco próprio — "Busque a melhor
+// alternativa" com "Fale com a AJA" e "Encontre o consórcio certo" — e logo
+// abaixo dele a faixa da assinatura. Eram duas headlines e três botões nos
+// últimos 300px da página, todos levando à mesma conversa. Sobrou a assinatura
+// com um botão só; o histórico deste arquivo tem o bloco antigo inteiro.
 //
 // `comCtaFinal` existe porque as páginas de conformidade (política de
 // privacidade e 404) trazem só a parte navy: nos frames 625:4545 e 625:4639 o
-// filho é o `Footer - AJA` puro, sem o "Busque a melhor alternativa". Faz
-// sentido — quem caiu num 404 ou foi ler a política não está no fim de um funil
-// de venda para levar uma chamada de conversão na cara.
+// filho é o `Footer - AJA` puro, sem chamada de conversão. Faz sentido — quem
+// caiu num 404 ou foi ler a política não está no fim de um funil de venda para
+// levar uma chamada na cara. Hoje ele não esconde mais um bloco inteiro: apenas
+// deixa de passar o `onOpenChat` para a faixa, que então vem sem o botão.
 export function KvFooter({ onOpenChat, comCtaFinal = true }: KvFooterProps) {
 	return (
 		<footer className="bg-[#FAFAF3]">
-			{comCtaFinal ? (
-				<KvContainer
-					className={`flex flex-col gap-8 ${KV_RITMO.rodape} lg:flex-row lg:items-center lg:justify-between`}
-				>
-					<h2 className="max-w-[815px] font-[family-name:var(--font-merriweather)] text-[32px] font-normal leading-[1.2] text-[#021628] md:text-[44px] md:leading-[62px]">
-						Busque a melhor <Em>alternativa</Em>
-					</h2>
-					<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-5">
-						<KvCtaButton
-							onClick={(e) => onOpenChat("", e.currentTarget)}
-							className="focus-visible:ring-2 focus-visible:ring-[#F2404F] focus-visible:ring-offset-2 focus-visible:ring-offset-[#FAFAF3] focus-visible:outline-none"
-						>
-							Fale com a AJA
-						</KvCtaButton>
-						<KvCtaButton
-							variant="outline"
-							onClick={(e) => onOpenChat("", e.currentTarget)}
-							className="border-2 hover:bg-transparent hover:text-[#F2404F] focus-visible:ring-2 focus-visible:ring-[#021628] focus-visible:ring-offset-2 focus-visible:ring-offset-[#FAFAF3] focus-visible:outline-none"
-						>
-							Encontre o consórcio certo
-						</KvCtaButton>
-					</div>
-				</KvContainer>
-			) : null}
-
-			{/* A assinatura de marca que saiu da pílula do hero, entre o "Busque a
-			    melhor alternativa" e a faixa navy. Mora aqui dentro, e não na página,
-			    porque a posição é ENTRE dois pedaços do próprio rodapé — de fora não
-			    dá pra chegar nesse meio. */}
-			<KvIndependente />
+			{/* A assinatura de marca que saiu da pílula do hero, hoje também o fecho
+			    de conversão da página. Mora aqui dentro, e não na página, porque a
+			    posição é ENTRE dois pedaços do próprio rodapé — de fora não dá pra
+			    chegar nesse meio. O respiro do topo vem do `KV_RITMO.rodape` que o
+			    bloco removido carregava; agora é a própria faixa que o aplica. */}
+			<KvIndependente onOpenChat={comCtaFinal ? onOpenChat : undefined} />
 
 			{/* Footer */}
 			{/* Respiros do comp: 64px em cima, 64px nas laterais e 36px abaixo dos
