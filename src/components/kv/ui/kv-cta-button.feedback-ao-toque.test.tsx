@@ -8,9 +8,12 @@
  * `hover` não existe em celular — ou seja, no aparelho onde está o tráfego pago
  * inteiro, todo botão da home era tocado sem devolver nenhum sinal.
  *
- * O sintoma disso já estava medido no nosso próprio mapa de calor: **15
- * `rage_click` sobre o hero no mobile** (produção, 18–30/08). `rage_click` é
- * literalmente "toquei e não aconteceu nada visível, então toquei de novo".
+ * A razão se basta sozinha, e é importante NÃO emprestar prova de outro item:
+ * dos 15 `rage_click` medidos no hero entre 18 e 30/08, **14 estão sobre
+ * elemento não-interativo** (parágrafo, `<h1>`, a área da colagem) e apenas um
+ * sobre alvo clicável. Aquele número é a evidência do item A2 — arte que
+ * promete toque e não entrega. Este item se justifica pelo fato simples de que
+ * hover não existe em dedo.
  *
  * O estado vive no ÁTOMO — que é a razão de o `KvCtaButton` existir: um lugar
  * só resolve as 8 seções que o usam, e a nona nasce corrigida.

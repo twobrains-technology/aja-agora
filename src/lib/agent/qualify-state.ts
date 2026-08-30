@@ -941,10 +941,17 @@ export function decideShowGate(args: {
 	// é perguntar o que o cliente acabou de responder — o que o FIX-399c, 160
 	// linhas abaixo, já proíbe para o resto do funil.
 	//
+	// `wants_more_options` entra pela mesma porta: com a vitrine ligada o `name`
+	// também acontece no FECHO, e ali "quero ver todas as opções" devolveria o
+	// card do nome no lugar das opções. O FIX-183 já estabelece que pedir mais
+	// opções nunca abre gate estruturado — o nome não é exceção.
+	//
 	// Somado ao escape de `STUCK_ESCAPE_GATES`, é o par que impede este gate de
 	// virar porta fechada: quem recusa não é insistido, e quem não responde é
 	// dispensado depois do teto.
-	if (gate === "name" && intent === "declines") return false;
+	if (gate === "name" && (intent === "declines" || intent === "wants_more_options")) {
+		return false;
+	}
 
 	if (
 		(gate === "experience" || gate === "identify" || gate === "name") &&

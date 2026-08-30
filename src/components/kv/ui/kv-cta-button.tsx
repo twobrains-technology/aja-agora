@@ -13,9 +13,12 @@ type KvCtaButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 // celular — que é onde está o tráfego pago inteiro. Na prática, no aparelho
 // que importa, todo CTA da home era tocado e não devolvia sinal nenhum.
 //
-// Não é teoria: o nosso próprio mapa de calor mediu **15 `rage_click` sobre o
-// hero no mobile** entre 18 e 30/08. `rage_click` é o registro de "toquei, não
-// vi nada acontecer, toquei de novo".
+// A razão é essa, e ela se basta — `hover` não existe em toque. Vale registrar
+// o que o mapa de calor NÃO prova aqui, para o número não ser reusado errado:
+// os 15 `rage_click` medidos no hero entre 18 e 30/08 estão, 14 deles, sobre
+// elemento NÃO-interativo (o parágrafo, o `<h1>`, a área da colagem). Aquilo é
+// evidência do item A2 — arte que promete toque e não entrega —, não deste. Um
+// único rage caiu sobre um alvo clicável.
 //
 // O estado mora no ÁTOMO porque é exatamente para isso que ele existe: um lugar
 // resolve as 8 seções que o usam, e a nona nasce corrigida.

@@ -156,6 +156,21 @@ describe("rede 3 — recusar o nome não devolve a mesma pergunta", () => {
 		).toBe(false);
 	});
 
+	it("nem para quem pediu mais opções — o card do nome não rouba a resposta", async () => {
+		// Com a vitrine ligada, o `name` também acontece no FECHO. Ali "quero ver
+		// todas" devolveria o card do nome no lugar das opções — o FIX-183 já
+		// proíbe isso para o resto do funil.
+		const { decideShowGate } = await import("./qualify-state");
+		expect(
+			decideShowGate({
+				gate: "name",
+				intent: "wants_more_options",
+				meta: noGateDoNome(),
+				isUserTurn: true,
+			}),
+		).toBe(false);
+	});
+
 	it("mas continua aparecendo para quem só respondeu outra coisa", () => {
 		// A recusa é o único caso novo — o resto do comportamento fica igual, senão
 		// o gate voltaria a ser invisível como era antes de 30/08.
