@@ -13,6 +13,7 @@
 //   - Click-to-WhatsApp usa `action_source: "business_messaging"` +
 //     `messaging_channel: "whatsapp"` + `user_data.ctwa_clid`.
 
+import { NOME_CHAT_INICIADO } from "./chave-do-inicio-de-conversa";
 import type { ConversionsConfig } from "./config";
 
 /** Nomes internos → nomes que a Meta entende. */
@@ -20,6 +21,12 @@ const NOME_META: Record<string, string> = {
 	lead_qualificado: "Lead",
 	proposta_criada: "InitiateCheckout",
 	contrato_fechado: "Purchase",
+	// Evento PERSONALIZADO — não existe no vocabulário padrão da Meta, e é assim
+	// que tem que ser: mandá-lo como `Lead` o misturaria com o marco de venda que
+	// já usa esse nome, e a campanha passaria a otimizar por quem abre o chat
+	// achando que otimiza por quem qualifica. O nome é o MESMO do `trackCustom`
+	// do pixel — deduplicação exige nome e id iguais nos dois caminhos.
+	chat_iniciado: NOME_CHAT_INICIADO,
 };
 
 /** A Meta recusa evento com mais de 7 dias. */

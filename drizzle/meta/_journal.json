@@ -337,6 +337,20 @@
       "when": 1787270633306,
       "tag": "0047_petite_rictor",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1788123920622,
+      "tag": "0048_chat_iniciado_no_capi",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1788123924739,
+      "tag": "0049_codigo_de_origem_do_site",
+      "breakpoints": true
     }
   ]
 }

@@ -11,7 +11,7 @@ import {
 	useState,
 } from "react";
 
-import { rastrearChatIniciado } from "@/lib/analytics/meta-pixel";
+import { avisarServidorDoChatIniciado, rastrearChatIniciado } from "@/lib/analytics/meta-pixel";
 
 /** De onde a semente veio. `"digitada"` é fala REAL do cliente (o que ele
  * escreveu no composer); `"chip"` é uma frase de ENTRADA que o próprio produto
@@ -66,7 +66,17 @@ export function TheaterProvider({ children }: { children: ReactNode }) {
 		// porque este é o ponto único por onde todo caminho de abertura passa:
 		// hero, menu, rodapé, flutuante e a chegada por anúncio de catálogo. O
 		// guard de dupla-abertura acima já garante um evento por conversa.
-		rastrearChatIniciado({ origem: origin });
+		//
+		// B3 (30/08/2026) — o mesmo evento passa a existir do lado do SERVIDOR.
+		// O id é sorteado UMA vez e vai para os dois caminhos: para o pixel como
+		// `eventID`, para o beacon como `eventId`. É esse par que faz a Meta
+		// reconhecer os dois como o mesmo início de conversa em vez de contar
+		// dois — e é o caminho do servidor que sobrevive a bloqueador de anúncio
+		// e ao ITP do iOS, que é onde o sinal se perdia justamente no público
+		// que mais importa.
+		const eventId = crypto.randomUUID();
+		rastrearChatIniciado({ origem: origin, eventId });
+		avisarServidorDoChatIniciado(eventId);
 	}, []);
 
 	const closeTheater = useCallback(() => {

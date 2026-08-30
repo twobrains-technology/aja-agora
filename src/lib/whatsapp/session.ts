@@ -7,6 +7,7 @@ import {
 	loadConversationHistory,
 	saveMessage as saveMessageWithChannel,
 } from "@/lib/conversation/messages";
+import { registrarInicioDeConversa } from "@/lib/conversions/inicio-de-conversa";
 import { isSimulatedWaId } from "./simulator-bus";
 
 export { loadConversationHistory };
@@ -75,6 +76,29 @@ export async function getOrCreateConversation(
 		// Não bloqueia a criação da conversation se o insert do lead falhar
 		// (ex: race condition raro). Lead pode ser criado depois via handoff.
 		console.error(`[whatsapp-session] failed to seed lead for conversation ${conv.id}:`, err);
+	}
+
+	// B3 — o "início de conversa" também no WhatsApp (30/08/2026).
+	//
+	// Na web este evento nasce no navegador (abertura do teatro) e é confirmado
+	// pelo beacon; aqui não existe navegador nenhum, então o servidor é o ÚNICO
+	// lugar onde ele pode nascer — e é justamente o caso em que o caminho
+	// client-side sozinho deixaria a campanha cega.
+	//
+	// E é o evento de melhor correspondência que esta operação produz: o `waId`
+	// É o telefone da pessoa, conhecido desde o primeiro segundo. Na medição de
+	// EMQ (item B2) nenhum evento saía com e-mail; o telefone é o que temos, e
+	// aqui ele vem de graça.
+	//
+	// `conv.id` como `eventId` porque a conversa de WhatsApp é criada uma vez só
+	// (idempotente pelo `wa_id`) — então a chave é naturalmente única e o
+	// reprocessamento de webhook não vira segundo sinal.
+	if (!isSimulated) {
+		void registrarInicioDeConversa({
+			eventId: conv.id,
+			visitId,
+			conversationId: conv.id,
+		});
 	}
 
 	console.log(
