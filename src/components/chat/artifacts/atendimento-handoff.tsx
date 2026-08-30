@@ -2,6 +2,7 @@
 
 import { WhatsappGlyph } from "@/components/icons/whatsapp-glyph";
 import { Button } from "@/components/ui/button";
+import { carimbarOrigem, lerCodigoDeOrigemDoCookie } from "@/lib/attribution/codigo-de-origem";
 import type { AtendimentoHandoffPayload } from "@/lib/chat/types";
 
 // O ÚLTIMO passo da jornada: dizer, com clareza, o que acontece depois do
@@ -43,9 +44,23 @@ export function AtendimentoHandoff({ payload }: { payload: AtendimentoHandoffPay
 				type="button"
 				className="w-full h-[46px] min-h-[44px] gap-2 rounded-full bg-primary text-sm font-semibold text-primary-foreground hover:brightness-105"
 				data-testid="atendimento-whatsapp"
+				// A3 aplicado ao ponto onde a continuidade mais vale (30/08/2026).
+				//
+				// Este é o salto web → WhatsApp no MAIOR momento de intenção do funil:
+				// o cliente acabou de fechar a proposta. Sem carimbo, a conversa que
+				// nasce do outro lado é órfã de origem, e a venda inteira — que veio de
+				// um anúncio, passou pelo site e fechou no WhatsApp — aparece no
+				// relatório como duas coisas sem parentesco.
+				//
+				// O código é lido no CLIQUE (e não na montagem): este card pode ficar na
+				// tela por bastante tempo enquanto o cliente lê, e o que interessa é a
+				// visita corrente no instante do salto.
 				onClick={() =>
 					window.open(
-						waLink(payload.numero, payload.mensagemInicial),
+						waLink(
+							payload.numero,
+							carimbarOrigem(payload.mensagemInicial ?? "", lerCodigoDeOrigemDoCookie()),
+						),
 						"_blank",
 						"noopener,noreferrer",
 					)
