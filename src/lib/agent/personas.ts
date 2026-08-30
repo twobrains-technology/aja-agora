@@ -159,6 +159,25 @@ export type ConversationMetadata = {
 	 * fez sobre outro assunto — no próximo turno ele sai de qualquer jeito. Ver
 	 * `deveEmitirCardDeNome` (emit-card.ts). */
 	nameCardAdiado?: boolean;
+	/** O card do gate `name` JÁ FOI EXIBIDO ao cliente ao menos uma vez.
+	 *
+	 *  É o fato de servidor que autoriza `captureAnswerNode` a ler uma resposta
+	 *  curta como o nome da pessoa. Sem ele, a captura se apoiava só em "o gate
+	 *  ativo é `name`" — premissa que era verdadeira enquanto esse gate só
+	 *  existia no primeiro contato, e que quebrou em 30/08/2026, quando ele
+	 *  desceu para depois do valor do bem.
+	 *
+	 *  O que a quebra produzia (reproduzido em cenário): o MODELO pergunta "novo
+	 *  ou usado?", o cliente responde "SUV" — ao modelo —, e o servidor grava
+	 *  `contactName = "Suv"`. É a mesma família dos leads que nasceram "Uma",
+	 *  "Sujo" e "Voltei", e que até aqui era combatida por lista de palavras.
+	 *  Ancorar no fato ("eu perguntei?") fecha a classe inteira em vez de fechar
+	 *  uma palavra por vez.
+	 *
+	 *  Monotônico de propósito: uma vez perguntado, a pergunta continua de pé
+	 *  até ser respondida — e quando ela é, `contactName` deixa de ser nulo e a
+	 *  captura para sozinha. */
+	nameCardExibido?: boolean;
 	/** Set when user clicks "Entender mais antes"; cleared after their reply lands. */
 	pendingFollowUp?: boolean;
 	/** FIX-207 (watchdog de inatividade) — epoch ms de quando um turno de usuário

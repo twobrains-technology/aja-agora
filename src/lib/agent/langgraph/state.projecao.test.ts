@@ -81,6 +81,7 @@ const FUNIL_COMPLETO: FunnelState = {
 	explicouComoFunciona: true,
 	experienceDispatched: true,
 	nameCardAdiado: true,
+	nameCardExibido: true,
 	topicPickerDispatched: true,
 	recoConsentDispatched: true,
 	recoConsentAnswered: true,

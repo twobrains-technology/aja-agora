@@ -23,13 +23,20 @@ import { describe, expect, it } from "vitest";
 import { captureAnswerNode } from "@/lib/agent/langgraph/nodes/capture";
 import type { AgentGraphStateType } from "@/lib/agent/langgraph/state";
 
-/** Estado mínimo do turno em que o cliente responde o gate do nome. */
+/** Estado mínimo do turno em que o cliente responde o gate do nome.
+ *
+ *  `nameCardExibido` entrou no fixture em 30/08/2026: desde então o servidor só
+ *  lê uma resposta como nome quando o CARD do nome de fato apareceu — não basta
+ *  o gate estar ativo. Sem esse fato, o turno em que o modelo pergunta outra
+ *  coisa batizava o lead com a resposta dele ("SUV", "Apartamento"). Ver
+ *  `cenario-nome-nao-e-a-resposta-do-modelo.test.ts`. */
 function noGateDoNome(userText: string): AgentGraphStateType {
 	return {
 		isUserTurn: true,
 		userText,
 		gate: "name",
 		contactName: null,
+		funnel: { nameCardExibido: true },
 	} as unknown as AgentGraphStateType;
 }
 

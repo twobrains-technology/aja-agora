@@ -72,8 +72,24 @@ export function captureAnswerNode(state: AgentGraphStateType): Partial<AgentGrap
 	// NÃO lê (medido: 2 conversas no app, o modelo saudou pelo nome e não chamou a
 	// tool nenhuma vez). A regra passou para o `SYSTEM_PROMPT`, e o servidor
 	// continua ancorando o que a tool tenta gravar (`nomeAncoradoNaFala`).
+	// E SÓ DEPOIS DE O CARD TER APARECIDO (30/08/2026).
+	//
+	// O parágrafo acima diz que "aqui dentro do gate a heurística é segura porque
+	// a pergunta ACABOU de ser feita". Essa premissa valia enquanto o gate `name`
+	// só existia no primeiro contato. Desde 30/08 ele desce para depois do valor
+	// do bem — e ali o cliente está respondendo ao MODELO, não ao funil:
+	//
+	//   🤖 (modelo)  Boa escolha. Prefere sedã ou SUV?
+	//   👤           SUV
+	//   → contactName = "Suv"
+	//
+	// Reproduzido em cenário no mesmo dia. É a mesma família de "Uma", "Sujo" e
+	// "Voltei", e ela não se fecha acrescentando palavra à lista: fecha-se
+	// perguntando ao servidor se ELE fez a pergunta. `nameCardExibido` é esse
+	// fato — marcado em `emit-card.ts` no turno em que o card sai de verdade,
+	// nunca quando ele cede a vez.
 	const gateRespondido = state.gate ?? state.answeredGate;
-	if (gateRespondido === "name" && !state.contactName) {
+	if (gateRespondido === "name" && state.funnel.nameCardExibido && !state.contactName) {
 		const name = extractName(text);
 		if (name) return { contactName: name };
 	}

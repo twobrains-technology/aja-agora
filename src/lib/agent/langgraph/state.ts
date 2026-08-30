@@ -124,6 +124,25 @@ export type FunnelState = {
 	 * refém: no turno seguinte o card sai de qualquer jeito. Ver
 	 * `deveEmitirCardDeNome` (emit-card.ts) e o FIX-379. */
 	nameCardAdiado?: boolean;
+	/** O card do gate `name` JÁ FOI EXIBIDO ao cliente ao menos uma vez.
+	 *
+	 *  É o fato de servidor que autoriza `captureAnswerNode` a ler uma resposta
+	 *  curta como o nome da pessoa. Sem ele, a captura se apoiava só em "o gate
+	 *  ativo é `name`" — premissa que era verdadeira enquanto esse gate só
+	 *  existia no primeiro contato, e que quebrou em 30/08/2026, quando ele
+	 *  desceu para depois do valor do bem.
+	 *
+	 *  O que a quebra produzia (reproduzido em cenário): o MODELO pergunta "novo
+	 *  ou usado?", o cliente responde "SUV" — ao modelo —, e o servidor grava
+	 *  `contactName = "Suv"`. É a mesma família dos leads que nasceram "Uma",
+	 *  "Sujo" e "Voltei", e que até aqui era combatida por lista de palavras.
+	 *  Ancorar no fato ("eu perguntei?") fecha a classe inteira em vez de fechar
+	 *  uma palavra por vez.
+	 *
+	 *  Monotônico de propósito: uma vez perguntado, a pergunta continua de pé
+	 *  até ser respondida — e quando ela é, `contactName` deixa de ser nulo e a
+	 *  captura para sozinha. */
+	nameCardExibido?: boolean;
 	// FIX-360 — card único (`topic_picker`) pro usuário novato logo após
 	// `experience` resolver, antes do convite de recomendação.
 	topicPickerDispatched?: boolean;
@@ -225,6 +244,7 @@ export const FUNNEL_KEYS = {
 	explicouComoFunciona: true,
 	experienceDispatched: true,
 	nameCardAdiado: true,
+	nameCardExibido: true,
 	topicPickerDispatched: true,
 	recoConsentDispatched: true,
 	recoConsentAnswered: true,
@@ -289,6 +309,7 @@ export function funnelFromMeta(meta: ConversationMetadata): FunnelState {
 		explicouComoFunciona: meta.explicouComoFunciona,
 		experienceDispatched: meta.experienceDispatched,
 		nameCardAdiado: meta.nameCardAdiado,
+		nameCardExibido: meta.nameCardExibido,
 		topicPickerDispatched: meta.topicPickerDispatched,
 		recoConsentDispatched: meta.recoConsentDispatched,
 		recoConsentAnswered: meta.recoConsentAnswered,

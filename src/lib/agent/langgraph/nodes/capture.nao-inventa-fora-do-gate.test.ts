@@ -33,6 +33,12 @@ function foraDoGate(userText: string, extra: Partial<AgentGraphStateType> = {}) 
 		userText,
 		gate: "search",
 		contactName: null,
+		// O card do nome já apareceu em algum momento — é o que isola o caso deste
+		// arquivo (estar FORA do gate) do caso do
+		// `cenario-nome-nao-e-a-resposta-do-modelo.test.ts` (estar no gate sem o
+		// card ter saído). Sem o fixture, os dois se confundiriam e este arquivo
+		// passaria pelo motivo errado.
+		funnel: { nameCardExibido: true },
 		...extra,
 	} as unknown as AgentGraphStateType;
 }
@@ -64,5 +70,19 @@ describe("captureAnswerNode — fora do gate `name` não se grava nome", () => {
 			contactName: "Mirella",
 		});
 		expect(captureAnswerNode(foraDoGate("uma casa", { gate: "name" }))).toEqual({});
+	});
+
+	it("e NEM no gate `name` captura antes de o card ter aparecido (30/08/2026)", () => {
+		// A trava nova. Com o gate `name` vivendo depois do valor do bem, ele pode
+		// estar ativo enquanto o MODELO pergunta outra coisa — e aí a resposta é
+		// para ele, não para o funil.
+		const semCard = {
+			isUserTurn: true,
+			userText: "Mirella",
+			gate: "name",
+			contactName: null,
+			funnel: {},
+		} as unknown as AgentGraphStateType;
+		expect(captureAnswerNode(semCard)).toEqual({});
 	});
 });
