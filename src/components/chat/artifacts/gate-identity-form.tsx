@@ -1,26 +1,21 @@
 "use client";
 
-import { ShieldCheck } from "lucide-react";
+import { Landmark, Lock, ShieldCheck } from "lucide-react";
 import { useRef, useState } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useChatContext } from "@/lib/chat/provider";
+import { mascararCelular, mascararCpf, somenteDigitos } from "@/lib/forms/mascaras";
 
 // Gate "identify" (D1, docs/jornada/CONTEXT.md) — fim do passo 2: CPF + celular
 // + aceite LGPD ANTES da busca (a Bevi não simula sem identidade). Mesmo padrão
 // de máscara e guard anti duplo-clique do ContractForm (EC-7).
 
-const onlyDigits = (s: string) => s.replace(/\D/g, "");
-const maskCpf = (s: string) =>
-	onlyDigits(s)
-		.slice(0, 11)
-		.replace(/(\d{3})(\d)/, "$1.$2")
-		.replace(/(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
-		.replace(/(\d{3})\.(\d{3})\.(\d{3})(\d)/, "$1.$2.$3-$4");
-const maskPhone = (s: string) =>
-	onlyDigits(s)
-		.slice(0, 11)
-		.replace(/(\d{2})(\d)/, "($1) $2")
-		.replace(/(\(\d{2}\) \d{5})(\d)/, "$1-$2");
+// Máscaras de `@/lib/forms/mascaras` — este arquivo e o `contract-form.tsx`
+// tinham a MESMA cópia literal. Ver o cabeçalho de lá para o porquê da fonte
+// única (e para o caso da colagem de CPF já formatado, item C6).
+const onlyDigits = somenteDigitos;
+const maskCpf = mascararCpf;
+const maskPhone = mascararCelular;
 
 export function GateIdentityForm({
 	prefilledPhone,
@@ -94,6 +89,27 @@ export function GateIdentityForm({
 				{noFecho ? "Pra seguir com essa cota" : "Pra buscar suas ofertas reais"}
 			</p>
 
+			{/* C5 — a AUTORIDADE que a landing já assina, trazida para dentro do
+			    chat (30/08/2026).
+
+			    A credencial não é nova: a colagem do hero e a seção de independência
+			    citam administradoras autorizadas pelo Banco Central desde sempre. O
+			    que não acontecia era ela ATRAVESSAR para o único lugar onde o dado
+			    sensível é pedido — quem abre o teatro pelo rodapé chega aqui sem ter
+			    lido nada disso. É a mesma função da bandeira de cartão no checkout:
+			    reduzir o risco percebido no instante da entrega.
+
+			    A frase sai da política de privacidade ("administradoras de consórcio
+			    credenciadas pelo Banco Central do Brasil"), não de um argumento de
+			    venda inventado para este card. */}
+			<p className="flex items-start gap-2 text-[11px] leading-[1.45] text-muted-foreground">
+				<Landmark className="mt-px size-3.5 shrink-0 text-foreground" aria-hidden />
+				<span>
+					Comparamos <span className="font-medium text-foreground">administradoras</span>{" "}
+					<span className="font-medium text-foreground">autorizadas pelo Banco Central</span>.
+				</span>
+			</p>
+
 			{/* CPF */}
 			<div className="flex flex-col gap-1.5">
 				<label htmlFor="identify-cpf" className="text-xs font-semibold text-foreground">
@@ -148,6 +164,29 @@ export function GateIdentityForm({
 					<span className="text-foreground font-medium">Não é compromisso de contratação.</span>
 				</span>
 			</label>
+
+			{/* C2 — a GARANTIA, logo abaixo do aceite (30/08/2026).
+
+			    O card só tinha o aceite LGPD, e aceite é o contrário de garantia: é
+			    uma autorização que EU peço, somada ao CPF que EU peço. No silêncio
+			    sobre o destino do dado, quem lê preenche com a pior hipótese —
+			    consulta de crédito, ligação de vendas, base revendida.
+
+			    Fica DEPOIS do aceite de propósito: primeiro a pessoa lê o que está
+			    autorizando, depois o que não vai acontecer. Invertido, a garantia
+			    viraria preâmbulo de venda e o aceite, letra miúda.
+
+			    A frase sai da política de privacidade ("Não vendemos seus dados
+			    cadastrais") e para aí. Nada de "nunca ligamos" ou "sem spam": a mesa
+			    LIGA para o lead, e promessa que a operação não cumpre custa mais caro
+			    do que o silêncio que ela substitui. */}
+			<p className="flex items-start gap-2 rounded-[8px] bg-secondary px-2.5 py-2 text-[11px] leading-[1.45] text-muted-foreground">
+				<Lock className="mt-px size-3.5 shrink-0 text-foreground" aria-hidden />
+				<span>
+					<span className="font-medium text-foreground">Seus dados não são vendidos.</span> Servem{" "}
+					{noFecho ? "só pra fechar essa cota" : "só pra essa busca"}.
+				</span>
+			</p>
 
 			{/* CTA */}
 			<button

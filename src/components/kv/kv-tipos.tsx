@@ -40,6 +40,16 @@ type TipoCard = {
 	 *  sem forma própria no Figma) → nenhuma decoração, só o fundo do card. */
 	decoration?: {
 		src: string;
+		/** Dimensões INTRÍNSECAS do SVG (o `viewBox` do arquivo).
+		 *
+		 *  Não controlam o tamanho na tela — quem faz isso é o `className`. Elas
+		 *  existem para o navegador saber a PROPORÇÃO antes de o arquivo chegar e
+		 *  reservar a caixa: sem isso o Lighthouse acusa `unsized-images` (medido
+		 *  em produção, 30/08/2026) e qualquer mudança futura no layout do card
+		 *  vira salto de conteúdo. Aqui o CLS ainda é 0 porque o container tem
+		 *  altura fixa — este é o conserto de um risco, não de um sintoma. */
+		width: number;
+		height: number;
 		className: string;
 		/** Alinhamento do wrapper que centraliza a decoração (Figma: Imóvel cola
 		 *  à esquerda, Moto cola no topo do card) — default é centro nos 2 eixos. */
@@ -58,11 +68,18 @@ const IMAGE_AREA_CLASS = "relative h-[220px] overflow-hidden md:h-[248px]";
 // que distingue os cards é o card, não o botão.
 //
 // O comp escreve "Compara opções", que é imperativo de "tu" e destoa do resto
-// do site (todo tratado por "você": "Compare", "Busque", "Encontre"). Entra no
-// infinitivo, que é como os outros CTAs de comparação já aparecem ("Comparar
-// agora") — o mesmo desvio de grafia que o comp já trazia em "QUAL A SUA
-// PROPÓSITO" e entrou corrigido logo abaixo.
-const BOTAO_CARD = "Comparar opções";
+// do site (todo tratado por "você": "Compare", "Busque", "Encontre"). Entrou no
+// infinitivo, que é como os outros CTAs de comparação já apareciam — o mesmo
+// desvio de grafia que o comp já trazia em "QUAL A SUA PROPÓSITO" e entrou
+// corrigido logo abaixo.
+//
+// 2026-08-30 (A5) — e deixou de ser "Comparar opções" para ser exatamente o
+// mesmo rótulo do resto do site. A diferença de duas palavras não dizia nada
+// que o card já não dissesse, e era mais um verbo para o visitante processar:
+// a auditoria de 28/08 contou 7+ rótulos de CTA na landing, e é a REPETIÇÃO do
+// mesmo que constrói reconhecimento. Quem varre e impede a volta dos primos é
+// `cta-rotulo-unico.test.tsx`.
+const BOTAO_CARD = "Comparar agora";
 
 const CARDS: TipoCard[] = [
 	{
@@ -86,6 +103,8 @@ const CARDS: TipoCard[] = [
 		},
 		decoration: {
 			src: "tipo-carro.svg",
+			width: 188,
+			height: 247,
 			className: "h-[100%] w-auto shrink-0",
 			align: "items-center justify-start",
 		},
@@ -111,6 +130,8 @@ const CARDS: TipoCard[] = [
 		},
 		decoration: {
 			src: "tipo-imovel.svg",
+			width: 227,
+			height: 264,
 			className: "h-[100%] w-auto shrink-0",
 			align: "items-center justify-end",
 		},
@@ -131,6 +152,8 @@ const CARDS: TipoCard[] = [
 		},
 		decoration: {
 			src: "tipo-moto.svg",
+			width: 271,
+			height: 142,
 			className: "w-[70%] h-auto shrink-0",
 			align: "items-start justify-center",
 		},
@@ -200,6 +223,8 @@ export function KvTipos({ onOpenChat }: KvTiposProps) {
 											<img
 												src={`${KV}/${card.decoration.src}`}
 												alt=""
+												width={card.decoration.width}
+												height={card.decoration.height}
 												className={card.decoration.className}
 											/>
 										</div>

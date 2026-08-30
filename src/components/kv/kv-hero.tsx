@@ -149,6 +149,23 @@ export function KvHero({ onOpenChat, conteudo = HERO_CONSULTIVO }: KvHeroProps) 
 								</span>
 							</span>
 						</div>
+						{/* A MOLDURA (A6 da planilha, item A1 do plano — 30/08/2026).
+						    O campo era `bg-transparent outline-none`: dissolvia no cartão
+						    branco e não se apresentava como área de digitação. O que
+						    sinalizava "aqui se escreve" era só o placeholder que se digita
+						    sozinho — bonito, mas não é affordance: texto animado também
+						    aparece em banner, e ninguém tenta digitar num banner.
+
+						    O dado que fecha o diagnóstico (produção, 16–30/08): das 75
+						    aberturas do teatro medidas, só 3 vieram com semente `digitada`.
+						    O campo levou 12 cliques no período contra 44 nos três blocos
+						    logo abaixo. Não é preferência pelo chip — é o campo não se
+						    oferecendo.
+
+						    A borda, o raio e o anel de foco são os MESMOS do formulário de
+						    identidade do chat (`gate-identity-form.tsx`), de propósito: o
+						    site e a conversa passam a dizer "aqui se digita" do mesmo
+						    jeito, e mexer no token muda os dois juntos. */}
 						<input
 							type="text"
 							value={value}
@@ -157,7 +174,7 @@ export function KvHero({ onOpenChat, conteudo = HERO_CONSULTIVO }: KvHeroProps) 
 							onBlur={() => setFocado(false)}
 							placeholder={placeholder}
 							aria-label="O que você está buscando?"
-							className="mt-4 min-h-[44px] w-full bg-transparent text-[19px] font-light leading-[1.35] text-[#021628] outline-none placeholder:text-[#6B6B66]"
+							className="mt-4 min-h-[52px] w-full cursor-text rounded-xl border border-input bg-[#FBFBF9] px-[13px] text-[19px] font-light leading-[1.35] text-[#021628] outline-none transition-[border-color,box-shadow] placeholder:text-[#6B6B66] focus:border-[var(--ring)] focus:shadow-[var(--shadow-focus)]"
 						/>
 						{/* O seletor de categoria, no tamanho de card — era a pílula de 96x27
 						    do comp, e passou a ser este trio quando o de fora saiu. Alvo de
@@ -182,7 +199,11 @@ export function KvHero({ onOpenChat, conteudo = HERO_CONSULTIVO }: KvHeroProps) 
 											? onOpenChat(value.trim(), e.currentTarget, "digitada")
 											: onOpenChat(chip.fill, e.currentTarget, "chip")
 									}
-									className="flex h-full w-full flex-col items-center justify-start gap-2 rounded-[12px] border border-[#021628]/10 bg-[#FBFBF9] px-2 py-5 text-center transition-colors hover:border-[#F2404F]/30 hover:bg-white"
+									// `active:` além do `hover:` (A6, 30/08/2026): hover não
+									// existe em celular, e é no celular que estes três blocos
+									// são o caminho mais usado para a conversa (44 cliques em
+									// 15 dias, contra 12 no campo de texto acima).
+									className="flex h-full w-full flex-col items-center justify-start gap-2 rounded-[12px] border border-[#021628]/10 bg-[#FBFBF9] px-2 py-5 text-center transition-[border-color,background-color,transform] hover:border-[#F2404F]/30 hover:bg-white active:scale-[0.97] active:border-[#F2404F]/40 active:bg-white motion-reduce:active:scale-100"
 								>
 									<span className="flex size-12 items-center justify-center rounded-full bg-[#FFE0E3]">
 										<chip.icon className="size-6 text-[#F2404F]" strokeWidth={1.75} />
