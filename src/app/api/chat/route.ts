@@ -68,11 +68,7 @@ import {
 	maskPhoneForDisplay,
 	storeIdentity,
 } from "@/lib/conversation/identity";
-import {
-	contarFalasDoCliente,
-	loadConversationHistory,
-	saveMessage,
-} from "@/lib/conversation/messages";
+import { loadConversationHistory, saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { normalizePhoneBR } from "@/lib/leads/phone";
 import { COOKIE_MAX_AGE_SECONDS, COOKIE_NAME, generateCookieValue } from "@/lib/memory/identity";
@@ -430,10 +426,6 @@ export async function POST(req: NextRequest) {
 					channel: "web",
 					persona: meta.currentPersona ?? null,
 				});
-				// Quantas falas do cliente havia ANTES desta — 0 no primeiro contato.
-				// É o que permite ao score `primeira_resposta_com_numero` existir; ver
-				// `funil-scores.ts`. A fala corrente já foi salva, daí o `-1`.
-				trace.setTurnoDoCliente(Math.max(0, (await contarFalasDoCliente(conversationId)) - 1));
 				// Trace Langfuse do turno — o consumo do stream inteiro acontece DENTRO
 				// do wrapper (mesmo requisito do simulator-clock): é o que mantém os
 				// spans do grafo/tools/analyzer no contexto do trace.
@@ -1704,8 +1696,6 @@ export async function POST(req: NextRequest) {
 				channel: "web",
 				persona: meta.currentPersona ?? null,
 			});
-			// Ver a nota no outro ponto de criação do trace, acima.
-			trace.setTurnoDoCliente(Math.max(0, (await contarFalasDoCliente(conversationId)) - 1));
 			await withLangfuseTurn(
 				{
 					conversationId,

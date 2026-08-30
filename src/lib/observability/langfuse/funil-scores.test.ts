@@ -304,7 +304,29 @@ describe("primeira_resposta_com_numero — o sinal que prova a campanha de 30/08
 	it("vale 1 quando o primeiro turno entrega o card do valor", () => {
 		// A mudança inteira: quem clica num chip de categoria recebe a agulha com
 		// a parcela estimada em vez de "que legal, já tem um em mente?".
-		expect(valor(record({ turnoDoCliente: 0, gate: "credit" }))).toBe(1);
+		expect(valor(record({ turnoDoCliente: 0, gate: "credit", channel: "web" }))).toBe(1);
+	});
+
+	it("no WhatsApp o mesmo gate NÃO vale 1 — lá não há agulha nem número", () => {
+		// A agulha com a parcela estimada é da web. No WhatsApp o gate `credit` sai
+		// como texto ("E quanto custa esse Corolla hoje?"), sem número nenhum —
+		// medir a rota em vez da entrega faria o score mentir no canal para onde o
+		// item A3 canaliza tráfego.
+		expect(valor(record({ turnoDoCliente: 0, gate: "credit", channel: "whatsapp" }))).toBe(0);
+	});
+
+	it("mas a carta real conta em QUALQUER canal", () => {
+		expect(
+			valor(
+				record({
+					turnoDoCliente: 0,
+					gate: "search",
+					channel: "whatsapp",
+					artifactsEmitted: ["comparison_table"],
+					artifactCount: 1,
+				}),
+			),
+		).toBe(1);
 	});
 
 	it("vale 1 quando o primeiro turno já entrega a carta real", () => {
@@ -337,13 +359,13 @@ describe("primeira_resposta_com_numero — o sinal que prova a campanha de 30/08
 	});
 
 	it("NÃO é emitido fora do primeiro turno", () => {
-		expect(valor(record({ turnoDoCliente: 1, gate: "credit" }))).toBeUndefined();
-		expect(valor(record({ turnoDoCliente: 7, gate: "credit" }))).toBeUndefined();
+		expect(valor(record({ turnoDoCliente: 1, gate: "credit", channel: "web" }))).toBeUndefined();
+		expect(valor(record({ turnoDoCliente: 7, gate: "credit", channel: "web" }))).toBeUndefined();
 	});
 
 	it("nem quando o chamador não soube dizer qual turno é", () => {
 		// Melhor não emitir do que afirmar que era o primeiro.
-		expect(valor(record({ turnoDoCliente: null, gate: "credit" }))).toBeUndefined();
+		expect(valor(record({ turnoDoCliente: null, gate: "credit", channel: "web" }))).toBeUndefined();
 	});
 });
 
@@ -357,5 +379,27 @@ describe("a régua de profundidade acompanhou a mudança de posição do `name`"
 
 	it("e ainda vem antes do pedido de documento", () => {
 		expect(profundidadeDoGate("name")).toBeLessThan(profundidadeDoGate("identify") as number);
+	});
+
+	it("nenhum degrau empata — senão `max(funil_passo)` deixa de distinguir", () => {
+		// `name` e `timeframe` tinham o mesmo valor, e são perdas de naturezas
+		// diferentes, com consertos diferentes.
+		const valores = Object.keys({
+			name: 0,
+			desire: 0,
+			experience: 0,
+			credit: 0,
+			timeframe: 0,
+			identify: 0,
+			search: 0,
+			"reco-consent": 0,
+			lance: 0,
+			"lance-value": 0,
+			"lance-embutido": 0,
+			"simulator-offer": 0,
+			decision: 0,
+			contract: 0,
+		}).map((g) => profundidadeDoGate(g));
+		expect(new Set(valores).size).toBe(valores.length);
 	});
 });

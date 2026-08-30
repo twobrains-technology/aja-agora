@@ -62,17 +62,21 @@ const PROFUNDIDADE_DO_GATE: Record<string, number> = {
 	desire: 2,
 	experience: 3,
 	credit: 4,
+	// `name` e `timeframe` NÃO podem empatar: com o mesmo valor,
+	// `max(funil_passo)` deixa de distinguir uma conversa que parou no nome de
+	// uma que parou no prazo — perdas de naturezas diferentes, com consertos
+	// diferentes. Os degraus abaixo desceram um para abrir espaço.
 	name: 5,
-	timeframe: 5,
-	identify: 6,
-	search: 7,
-	"reco-consent": 8,
-	lance: 9,
-	"lance-value": 10,
-	"lance-embutido": 11,
-	"simulator-offer": 12,
-	decision: 13,
-	contract: 14,
+	timeframe: 6,
+	identify: 7,
+	search: 8,
+	"reco-consent": 9,
+	lance: 10,
+	"lance-value": 11,
+	"lance-embutido": 12,
+	"simulator-offer": 13,
+	decision: 14,
+	contract: 15,
 };
 
 /** Maior profundidade da régua — o denominador de "% do funil percorrido". */
@@ -157,15 +161,23 @@ export function scoresDoTurno(record: TurnTraceRecord): Score[] {
 	// `turnoDoCliente` nulo (chamador que não soube informar) não emite nada, em
 	// vez de mentir que era o primeiro.
 	if (record.turnoDoCliente === 0) {
+		// O QUE CONTA É ENTREGA, NÃO INTENÇÃO DE ROTA.
+		//
+		// A primeira versão media só `gate === "credit"`, e isso mede o que o funil
+		// DECIDIU, não o que o cliente VIU. A agulha com a parcela estimada é da
+		// WEB: no WhatsApp o mesmo gate sai como texto ("E quanto custa esse
+		// Corolla hoje?"), sem número nenhum. O score diria 1 para um turno que não
+		// entregou nada — e mentiria justamente no canal para onde o item A3
+		// canaliza tráfego.
+		//
+		// Os artifacts de oferta contam em qualquer canal: quem já chegou com tudo
+		// pula a agulha e vê a carta real, que é número de verdade.
+		const agulhaComEstimativa = record.gate === "credit" && record.channel === "web";
+		const cartaNaTela = record.artifactsEmitted.some((a) => ARTIFACTS_DE_OFERTA.has(a));
+
 		scores.push({
 			name: "primeira_resposta_com_numero",
-			// O card do valor é o que carrega a parcela estimada; os artifacts de
-			// oferta são o caso de quem já chegou com tudo e pulou direto para a
-			// carta real. Os dois são "número na tela".
-			value:
-				record.gate === "credit" || record.artifactsEmitted.some((a) => ARTIFACTS_DE_OFERTA.has(a))
-					? 1
-					: 0,
+			value: agulhaComEstimativa || cartaNaTela ? 1 : 0,
 			dataType: "BOOLEAN",
 		});
 	}

@@ -46,6 +46,20 @@
 // O que sobra depois disto (584 KB de JS próprio, 314 KB de fonte, TBT ainda
 // alto) é bloco de performance com orçamento e medição antes/depois — não cabia
 // numa campanha de conversão, e está registrado no dossiê de 30/08.
+//
+// ⚠️ EFEITO COLATERAL QUE PRECISA SER AVISADO ANTES DO DEPLOY.
+//
+// `lazyOnload` dispara no `window.load` — e quem sai aos oito segundos NUNCA o
+// alcança. Ou seja: **as sessões do GA4 vão cair**, e a queda é de medição, não
+// de tráfego. Sem avisar, a agência lê isso como público sumindo bem no meio da
+// avaliação da campanha, e a conclusão errada é fácil de tirar.
+//
+// E há uma pergunta que só a agência responde: se houver tag de CONVERSÃO
+// dentro do container do GTM, ela passa a não disparar em bounce. Isso é
+// decisão do Gustavo antes do deploy, não descoberta depois — está no passo a
+// passo do dossiê.
+//
+// O Meta Pixel não entra nessa conta, e é por isso que ele ficou onde estava.
 
 import Script from "next/script";
 

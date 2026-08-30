@@ -263,6 +263,9 @@ export function recordTurnEvent(trace: TurnTrace, ev: TurnEvent): void {
 		case "lead-stage":
 			trace.setLeadStage(ev.stage);
 			break;
+		case "turno-do-cliente":
+			trace.setTurnoDoCliente(ev.indice);
+			break;
 		case "meta-update":
 			if (ev.meta?.currentPersona) trace.setPersona(ev.meta.currentPersona);
 			break;

@@ -28,7 +28,7 @@
  * outra, maior.
  */
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/chat/provider", () => ({
@@ -68,8 +68,16 @@ describe("C2 — garantia de privacidade no ponto do pedido", () => {
 		expect(screen.queryByText(/só pra essa busca/i)).toBeNull();
 	});
 
-	it("o aceite LGPD continua onde estava — garantia não substitui autorização", () => {
+	it("o aceite LGPD continua existindo — garantia não substitui autorização", () => {
+		// Desde o C7 (30/08/2026) o card tem dois passos, e o aceite vive no
+		// SEGUNDO, junto do CPF. A garantia não o substituiu — ele só deixou de
+		// dividir a primeira tela com ele.
 		render(<GateIdentityForm />);
+		fireEvent.change(screen.getByTestId("identify-phone"), {
+			target: { value: "11999998888" },
+		});
+		fireEvent.click(screen.getByTestId("identify-avancar"));
+
 		expect(screen.getByText(/Autorizo a consulta dos meus dados/i)).toBeTruthy();
 		expect(screen.getByTestId("identify-lgpd")).toBeTruthy();
 	});
@@ -85,10 +93,18 @@ describe("C2 — garantia de privacidade no ponto do pedido", () => {
 });
 
 describe("o card continua funcionando", () => {
-	it("os três campos e o botão seguem lá", () => {
+	it("os três campos e o botão seguem lá — agora em dois passos", () => {
+		// O C7 dividiu o card: celular primeiro, CPF e aceite depois. O que este
+		// caso protege continua sendo o mesmo — nenhum campo sumiu no caminho.
 		render(<GateIdentityForm />);
-		expect(screen.getByTestId("identify-cpf")).toBeTruthy();
 		expect(screen.getByTestId("identify-phone")).toBeTruthy();
+
+		fireEvent.change(screen.getByTestId("identify-phone"), {
+			target: { value: "11999998888" },
+		});
+		fireEvent.click(screen.getByTestId("identify-avancar"));
+
+		expect(screen.getByTestId("identify-cpf")).toBeTruthy();
 		expect(screen.getByTestId("identify-lgpd")).toBeTruthy();
 		expect(screen.getByTestId("identify-submit")).toBeTruthy();
 	});

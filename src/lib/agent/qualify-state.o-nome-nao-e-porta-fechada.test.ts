@@ -36,15 +36,23 @@
  * para o lance.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { NON_REENGAGE_GATES, pendingGateAfterTurn } from "./gate-reengage";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// O classificador é dublado: o que estes casos provam é a CADEIA
+// `analyzeAndMerge → nextGate(hasContactName real) → registerGateStuckTurn`,
+// não a qualidade da classificação (que tem arquivo próprio). Sem o dublê cada
+// caso levava ~8 s batendo no modelo, e teste lento é teste que alguém desliga.
+vi.mock("@/lib/agent/turn-analyzer", async (importOriginal) => {
+	const real = await importOriginal<typeof import("@/lib/agent/turn-analyzer")>();
+	return {
+		...real,
+		analyzeTurn: vi.fn(async () => ({ intent: "neutral" as const, extracted: {} })),
+	};
+});
+
+import { NON_REENGAGE_GATES, pendingGateAfterTurn, SPECIALIST_EXIT_OFFER } from "./gate-reengage";
 import type { ConversationMetadata } from "./personas";
-import {
-	GATE_STUCK_ESCAPE_THRESHOLD,
-	nextGate,
-	registerGateStuckTurn,
-	STUCK_ESCAPE_GATES,
-} from "./qualify-state";
+import { GATE_STUCK_ESCAPE_THRESHOLD, nextGate, STUCK_ESCAPE_GATES } from "./qualify-state";
 
 const ENV_ORIGINAL = { ...process.env };
 
@@ -73,14 +81,27 @@ describe("rede 1 — o gate tem escape, e ele não fabrica nome", () => {
 		expect(STUCK_ESCAPE_GATES.has("name")).toBe(true);
 	});
 
-	it("depois do teto, o funil DESISTE da pergunta e segue", () => {
-		let meta = noGateDoNome();
+	it("depois do teto, o funil DESISTE da pergunta e segue", async () => {
+		// ⚠️ ATRAVÉS DE `analyzeAndMerge`, não chamando `registerGateStuckTurn`
+		// direto — e essa diferença é o item inteiro.
+		//
+		// A primeira versão deste teste alimentava o contador na mão, em laço. Ele
+		// ficava verde enquanto o escape era CÓDIGO MORTO em produção: o único
+		// chamador de `registerGateStuckTurn` passava `hasContactName: true` fixo,
+		// então `nextGate` nunca lhe entregava `name`, o contador nunca subia e
+		// `nomeDispensado` nunca era gravado. O teste fornecia o input que o
+		// caminho real não conseguia produzir — o anti-padrão que o CLAUDE.md
+		// nomeia, aplicado ao conserto de um P0.
+		//
+		// Passando pelo caminho de verdade, se o escape voltar a ser inalcançável
+		// este arquivo fica vermelho.
+		const { analyzeAndMerge } = await import("./orchestrator/analyze");
+		const meta = noGateDoNome();
 		expect(nextGate(meta, SEM_NOME)).toBe("name");
 
 		for (let i = 0; i < GATE_STUCK_ESCAPE_THRESHOLD; i++) {
-			const patch = registerGateStuckTurn(meta, "name");
-			expect(patch).not.toBeNull();
-			meta = { ...meta, ...patch } as ConversationMetadata;
+			// Turno sem progresso: o cliente responde algo que não é um nome.
+			await analyzeAndMerge("prefiro não dizer", "consultor" as never, meta, null, false);
 		}
 
 		expect(meta.nomeDispensado).toBe(true);
@@ -88,21 +109,36 @@ describe("rede 1 — o gate tem escape, e ele não fabrica nome", () => {
 		expect(nextGate(meta, SEM_NOME)).toBe("identify");
 	});
 
-	it("o escape NÃO inventa um nome", () => {
-		let meta = noGateDoNome();
+	it("o escape NÃO inventa um nome", async () => {
+		const { analyzeAndMerge } = await import("./orchestrator/analyze");
+		const meta = noGateDoNome();
 		for (let i = 0; i < GATE_STUCK_ESCAPE_THRESHOLD; i++) {
-			meta = { ...meta, ...registerGateStuckTurn(meta, "name") } as ConversationMetadata;
+			await analyzeAndMerge("depois eu falo", "consultor" as never, meta, null, false);
 		}
 		// Nada em `qualifyAnswers` que pareça um nome, e nenhum campo de nome
 		// gravado: desistir da pergunta é diferente de responder por ele.
 		expect(JSON.stringify(meta.qualifyAnswers ?? {})).not.toMatch(/nome|name/i);
 	});
 
-	it("antes do teto ele ainda insiste — o escape é última saída, não a primeira", () => {
+	it("antes do teto ele ainda insiste — o escape é última saída, não a primeira", async () => {
+		const { analyzeAndMerge } = await import("./orchestrator/analyze");
 		const meta = noGateDoNome();
-		const patch = registerGateStuckTurn(meta, "name");
-		expect(patch?.nomeDispensado).toBeUndefined();
-		expect(nextGate({ ...meta, ...patch } as ConversationMetadata, SEM_NOME)).toBe("name");
+		await analyzeAndMerge("prefiro não dizer", "consultor" as never, meta, null, false);
+
+		expect(meta.nomeDispensado).toBeUndefined();
+		expect(nextGate(meta, SEM_NOME)).toBe("name");
+	});
+
+	it("e com o nome conhecido, o contador nem começa", async () => {
+		// O `hasContactName` real é o que faz o escape existir. Se ele voltar a ser
+		// um `true` fixo, este caso continua verde e o de cima fica vermelho — é o
+		// par que denuncia a regressão.
+		const { analyzeAndMerge } = await import("./orchestrator/analyze");
+		const meta = noGateDoNome();
+		for (let i = 0; i < GATE_STUCK_ESCAPE_THRESHOLD + 1; i++) {
+			await analyzeAndMerge("prefiro não dizer", "consultor" as never, meta, null, true);
+		}
+		expect(meta.gateStuckTurns?.name ?? 0).toBe(0);
 	});
 });
 
@@ -133,6 +169,42 @@ describe("rede 2 — o watchdog enxerga quem some neste gate", () => {
 				hasContactName: true,
 			}),
 		).toBe("identify");
+	});
+
+	it("a cobrança EXISTE nos dois canais — inclusive na web, onde a mudança vive", async () => {
+		// O buraco que a revisão pegou: `gateQuestion("name", …, "web")` devolve
+		// null por design (na web o card É a pergunta), então a re-cobrança saía
+		// vazia. O poll fazia `continue` DEPOIS de já ter apagado o marcador e
+		// ANTES do bump de tentativa — o lead ficava preso em 1 para sempre e a
+		// 4ª cobrança, que oferece o especialista, nunca chegava.
+		//
+		// E era o canal que importa: a agulha com estimativa é web-only, e as 71
+		// conversas medidas são web.
+		const { reengageQuestionForGate } = await import("./gate-reengage");
+
+		for (const canal of ["web", "whatsapp"] as const) {
+			expect(
+				reengageQuestionForGate("name", "imovel", 1, undefined, undefined, canal),
+				`${canal} · 1ª cobrança`,
+			).toContain("como posso te chamar");
+			// A escada sobe.
+			expect(
+				reengageQuestionForGate("name", "imovel", 2, undefined, undefined, canal),
+				`${canal} · 2ª`,
+			).toContain("rapidinho");
+			// E o teto oferece a saída em vez de perguntar de novo.
+			expect(
+				reengageQuestionForGate("name", "imovel", 4, undefined, undefined, canal),
+				`${canal} · teto`,
+			).toBe(SPECIALIST_EXIT_OFFER);
+		}
+	});
+
+	it("mas no PRIMEIRO contato o reengajamento não inventa pergunta", async () => {
+		// Sem categoria é o começo da conversa, onde o directive de abertura já
+		// pergunta o nome. Duplicar ali é o que o FIX-17 evitou.
+		const { reengageQuestionForGate } = await import("./gate-reengage");
+		expect(reengageQuestionForGate("name", null, 1, undefined, undefined, "web")).toBeNull();
 	});
 
 	it("e o guard de turno-mudo do WhatsApp passa a re-cobrar o nome", async () => {
@@ -201,12 +273,13 @@ describe("rede 3 — recusar o nome não devolve a mesma pergunta", () => {
 });
 
 describe("a jornada de quem recusa o nome chega ao documento do mesmo jeito", () => {
-	it("recusa + teto de tentativas → `identify`, sem nome inventado", () => {
-		let meta = noGateDoNome();
+	it("recusa + teto de tentativas → `identify`, sem nome inventado", async () => {
+		const { analyzeAndMerge } = await import("./orchestrator/analyze");
+		const meta = noGateDoNome();
 
 		// Três turnos em que a resposta não é um nome.
 		for (let i = 0; i < GATE_STUCK_ESCAPE_THRESHOLD; i++) {
-			meta = { ...meta, ...registerGateStuckTurn(meta, "name") } as ConversationMetadata;
+			await analyzeAndMerge("prefiro não passar meu nome", "consultor" as never, meta, null, false);
 		}
 
 		expect(nextGate(meta, SEM_NOME)).toBe("identify");

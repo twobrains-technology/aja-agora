@@ -246,6 +246,21 @@ export async function persistNode(
 	}
 
 	const events: TurnEvent[] = [];
+
+	// QUAL TURNO É ESTE — a posição, não o conteúdo.
+	//
+	// Alimenta o score `primeira_resposta_com_numero`, que é como se saberá,
+	// daqui a duas semanas, se a mudança do primeiro turno funcionou. A conta é
+	// sobre `state.messages`, que o grafo já tem em mãos: quantas falas do
+	// cliente existiam ANTES desta. A do turno corrente já entrou no histórico,
+	// daí o `-1`.
+	//
+	// Aqui e não no `route.ts`: este nó roda nos DOIS canais, e o sink do
+	// TurnTrace — que é quem publica o score — é o único ponto por onde web e
+	// WhatsApp passam. A primeira versão contava por query dentro do route, o
+	// que deixava o WhatsApp de fora e punha um COUNT no caminho quente.
+	const falasDoCliente = state.messages.filter((m) => m.getType() === "human").length;
+	events.push({ type: "turno-do-cliente", indice: Math.max(0, falasDoCliente - 1) });
 	// Proxy determinístico de `lead-stage` (TODO rodada-1: paridade fina com
 	// `LEAD_STAGE_BY_TOOL`, runner.ts — hoje disparado por tool específica, não
 	// por transição de funil). `recordStageReached` (chamado pelos adapters,

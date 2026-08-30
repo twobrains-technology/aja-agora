@@ -152,6 +152,32 @@ export function reengageQuestionForGate(
 	// compromisso" — continua exclusiva dos gates de COLETA: insistir assim num
 	// convite como "posso te mostrar a que eu recomendo?" seria pressão indevida.)
 	if (attempt >= 4 && isMandatoryCollectionGate(gate)) return SPECIALIST_EXIT_OFFER;
+
+	// O `name` PRECISA de texto próprio aqui, e só aqui (30/08/2026).
+	//
+	// `gateQuestion("name", …, "web")` devolve `null` de propósito: no fluxo
+	// normal da web o CARD é a pergunta, e um texto igual acima dele seria a
+	// pergunta duas vezes (é o que o FIX-17 evitou). Mas o reengajamento **não
+	// tem card**: o worker roda num processo separado do app, sem sessão SSE, e
+	// o que ele faz é persistir uma MENSAGEM do assistente.
+	//
+	// Sem esta linha, o caminho era mudo e pior que mudo: `reengageQuestionForGate`
+	// devolvia null, o poll fazia `continue` — **depois** de já ter apagado
+	// `pendingGate`/`pendingGateSince` e **antes** do bump de `gateAttempts`. O
+	// marcador era consumido e descartado, a tentativa ficava presa em 1 para
+	// sempre, e a 4ª (que teria a oferta de especialista) nunca chegava.
+	//
+	// E era o canal que importa: a mudança de 30/08 que pôs o `name` no meio do
+	// funil é web-only (a agulha com estimativa é da web), e as 71 conversas
+	// medidas são web. A rede cobria só o WhatsApp, onde este gate quase não
+	// dispara.
+	if (gate === "name" && category) {
+		const base = "Antes de eu buscar as ofertas, como posso te chamar?";
+		if (attempt <= 1) return base;
+		if (attempt === 2) return `${base}\n\nSó falta isso pra eu seguir — é rapidinho.`;
+		return `${base}\n\nÉ seguro e sem compromisso. Só preciso disso pra continuar.`;
+	}
+
 	const base = gateQuestion(gate, category ?? null, creditValue, channel, creditMentionedAtDesire);
 	if (!base) return null;
 	if (!isMandatoryCollectionGate(gate)) return base;

@@ -33,7 +33,7 @@ vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 
 import { NextRequest } from "next/server";
 
-import { codigoDaVisita, COOKIE_CODIGO } from "@/lib/attribution/codigo-de-origem";
+import { COOKIE_CODIGO, codigoDaVisita } from "@/lib/attribution/codigo-de-origem";
 import { parseVisitCookie, VISIT_COOKIE } from "@/lib/attribution/visit-cookie";
 import { PARAM_PREVIEW } from "@/lib/heatmap/events";
 import { config, LANDINGS, proxy } from "./proxy";
