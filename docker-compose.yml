@@ -118,7 +118,16 @@ services:
       FEATURE_LANDING_PAGE: ${FEATURE_LANDING_PAGE:-true}
       # Bevi é a fonte ÚNICA (mock em runtime PROIBIDO — docs/jornada/CONTEXT.md).
       BEVI_SELFCONTRACT_BASE_URL: ${BEVI_SELFCONTRACT_BASE_URL:-}
+      BEVI_SELFCONTRACT_HASH: ${BEVI_SELFCONTRACT_HASH:-}
       PROPOSAL_GATEWAY: ${PROPOSAL_GATEWAY:-bevi}
+      # VITRINE — o par CPF+celular DA CASA que deixa a carta aparecer antes de o
+      # cliente se identificar (ver `src/lib/bevi/identidade-vitrine.ts`). Vazio
+      # DESLIGA a vitrine e o funil volta a exigir o CPF antes da busca; é o kill
+      # switch, e por isso não tem default nenhum aqui.
+      VITRINE_CPF: ${VITRINE_CPF:-}
+      VITRINE_CELULAR: ${VITRINE_CELULAR:-}
+      # Chave de cifra do CPF em repouso — sem ela `storeIdentity` derruba o turno.
+      IDENTITY_ENC_KEY: ${IDENTITY_ENC_KEY:-}
       # Observabilidade Langfuse — vazio = no-op (o código usa `?.trim() ||`,
       # então a string vazia que o `:-` materializa é segura).
       LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-}
