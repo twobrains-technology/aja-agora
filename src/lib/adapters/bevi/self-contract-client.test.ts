@@ -76,7 +76,8 @@ describe("BeviSelfContractClient — contract contra capturas reais", () => {
 	function mockFetchSequence(...payloads: unknown[]) {
 		const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
 			calls.push({ url, init });
-			return { json: async () => payloads.shift() } as Response;
+			// `ok`/`status`: `getMultiProposal` confere `res.ok` desde 2026-08-27.
+			return { ok: true, status: 200, json: async () => payloads.shift() } as Response;
 		});
 		globalThis.fetch = fetchMock as typeof fetch;
 		return fetchMock;

@@ -15,7 +15,7 @@
 // "Duplicated Hash" (proposta ativa) é tratado como retomada, não como fatal.
 // Validação ao vivo pendente na homologação (pendência D3).
 
-import { BeviConfigError, DuplicatedProposalError, toBeviError } from "./bevi-errors";
+import { BeviApiError, BeviConfigError, DuplicatedProposalError, toBeviError } from "./bevi-errors";
 import type { BeviOffer } from "./offer-mapper";
 import { logTrilho } from "./trilho-log";
 
@@ -312,6 +312,21 @@ export class BeviSelfContractClient {
 					signal: AbortSignal.timeout(TIMEOUT_MS),
 				},
 			);
+			// `res.ok` conferido de propósito (2026-08-27): sem isto, um corpo JSON de
+			// erro (400/500) caía no `Array.isArray` abaixo, virava `[]`, e o
+			// verificador de dono do fecho concluía "a proposta não é deste CPF" —
+			// recusando uma contratação legítima com o rótulo errado
+			// (`PropostaDeOutroTitularError` para o que é indisponibilidade da API).
+			// Falhar continua sendo o comportamento certo; mentir sobre o motivo, não.
+			if (!res.ok) {
+				throw new BeviApiError(
+					res.status,
+					`get-multi-proposal falhou (HTTP ${res.status}) — sem isto não dá para ` +
+						"confirmar de quem é a proposta corrente da loja.",
+					[],
+					null,
+				);
+			}
 			const data = (await res.json()) as SelfContractProposalRef[];
 			logTrilho({
 				trilho: "B",
