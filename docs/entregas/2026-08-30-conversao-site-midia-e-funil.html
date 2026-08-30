@@ -117,7 +117,7 @@
 <tr><td><b>C7</b> Quebrar o pedido duplo em dois passos</td><td><span class="pill p-risco">NÃO FEITO</span></td><td>Ver seção 8 — e o card ficou <i>maior</i>, não menor.</td></tr>
 <tr><td><b>D1</b> Instrumentar as 3 sub-etapas do handoff</td><td><span class="pill p-ok">FEITO</span></td><td>Funil por sub-etapa com p50/p90, no painel de Performance. O dado nunca faltou; faltava alguém olhar.</td></tr>
 <tr><td><b>D2</b> Link direto no lugar de pedir "oi"</td><td><span class="pill p-ok">ENCERRADO</span></td><td>Já resolvido; e o carimbo do A3 entrou nele — é o salto web→WhatsApp no maior momento de intenção.</td></tr>
-<tr><td><b>D3</b> SLA de resposta humana</td><td><span class="pill p-aviso">MEDIÇÃO SIM, ALARME NÃO</span></td><td>p50/p90 por estágio + lista de parados com nome e telefone. O alarme por Monitor ficou de fora — seção 8.</td></tr>
+<tr><td><b>D3</b> SLA de resposta humana</td><td><span class="pill p-aviso">MEDIÇÃO SIM, ALARME NÃO</span></td><td>p50/p90 por estágio + lista de parados com nome e telefone. E a medição já achou o problema: <b>p50 de 401 h (16,7 dias)</b> nos 6 handoffs da base. O alarme por Monitor ficou de fora — seção 8.</td></tr>
 <tr><td><b>D4</b> Reengajamento automático</td><td><span class="pill p-ok">VALIDADO</span></td><td>6 handoffs no período, 1 sem resposta do cliente. Sem volume que justifique construção; a campainha do D3 cobre.</td></tr>
 <tr><td><b>D5</b> CTA de confirmação antes da troca de canal</td><td><span class="pill p-ok">JÁ EXISTIA</span></td><td>Verificado antes de construir: a cascata já exige aceite explícito e o formulário antes de qualquer handoff. Um terceiro portão somaria atrito. 7 casos registram isso.</td></tr>
 <tr><td><b>E1</b> SLA de documentos pós-proposta</td><td><span class="pill p-aviso">MEDIÇÃO SIM, ALARME NÃO</span></td><td>Mesmo instrumento do D3. E a tela declara quando a amostra não sustenta taxa de fechamento — com 2 propostas, qualquer número depois dela é hipótese.</td></tr>
@@ -332,10 +332,18 @@ TOTAL ........ 1.691 KB (70 req)</span></div>
 <p>É uma troca consciente (as duas linhas atacam a desconfiança, que é o que a auditoria apontou como causa), mas o resultado é que a tela do CPF tem hoje mais conteúdo do que tinha. Se o C7 for executado, vale medir o card inteiro, não cada linha.</p>
 </div>
 
-<div class="risco medio">
-<h3>D3 e E1 — entreguei medição, o plano pedia campainha</h3>
-<p>O item pede alarme via Langfuse Monitors. O que existe é uma lista no painel de Performance, com nome e telefone de quem está parado além do limite. <b>É uma tela que alguém precisa abrir</b> — e o próprio incidente que motiva o item (notificação lida 17h24 depois) é sobre coisa que ninguém abriu.</p>
-<p>O que falta: um Monitor sobre o score de sessão, disparando para o grupo de sustentação. É meia hora de trabalho e depende de decidir <b>para quem</b> ele toca.</p>
+<div class="risco alto">
+<h3>D3 e E1 — a medição mostrou algo pior do que a falta do alarme</h3>
+<p>Com o instrumento novo apontado para os dados reais:</p>
+<div class="prova"><span class="g">mesa_handoffs (toda a base)
+  6 handoffs · 5 ainda abertos
+  p50 = 401,5 h   (16,7 dias)
+  p90 = 485,2 h   (20,2 dias)
+
+handoff_notifications
+  0 linhas em toda a base</span></div>
+<p><b>Metade de um mês é a mediana</b>, não a cauda. E a tabela de notificação está vazia porque o caminho mudou — o atendente atende pelo painel, não pelo WhatsApp —, então o incidente de 14/08 (42 min para entregar, 17h24 para ler) não é sequer o pior caso: hoje não há notificação nenhuma sendo registrada.</p>
+<p><b>O que entreguei:</b> a lista de parados, com nome e telefone, no painel de Performance. <b>O que falta:</b> o alarme por Langfuse Monitor, que o plano nomeia. É uma tela que alguém precisa abrir — e o próprio incidente que motiva o item é sobre coisa que ninguém abriu. São ~30 minutos de trabalho, e dependem de decidir <b>para quem</b> ele toca (o grupo de sustentação, presumo, mas é decisão sua).</p>
 </div>
 
 <div class="risco baixo">
@@ -347,8 +355,13 @@ TOTAL ........ 1.691 KB (70 req)</span></div>
 </div>
 
 <div class="risco baixo">
-<h3>Três consultas de medição quebraram e ficaram no arquivo</h3>
-<p>Em <code>docs/medicoes/</code> há três saídas com erro de SQL (uma coluna que não existe, um operador de <code>LIKE</code> sobre enum, e uma reconexão de túnel). Nenhuma delas sustenta conclusão citada — os números do dossiê vêm das consultas que rodaram. Ficam no arquivo de propósito: evidência editada não é evidência.</p>
+<h3>Três consultas quebraram na primeira passada — e foram refeitas <span class="pill p-ok">RESOLVIDO</span></h3>
+<p>As saídas com erro ficam no arquivo de propósito (evidência editada não é evidência), e as três estão refeitas em <code>docs/medicoes/2026-08-30-consultas-refeitas.txt</code>, com a causa de cada uma:</p>
+<ul>
+<li>a que procurava o gate <code>identify</code> como artefato buscava algo <b>que não existe</b> — card de gate não é persistido, só os de dado. Refeita sobre <code>conversations.metadata</code>, que é onde o estado do funil vive;</li>
+<li>a do funil de chat faltava o cast do enum para <code>text</code> antes do <code>LIKE</code>;</li>
+<li>a de notificações de handoff apontava para uma tabela <b>vazia em toda a base</b> — e essa era a informação, não o erro.</li>
+</ul>
 </div>
 
 <h2 id="validar">9 · Como conferir você mesmo</h2>
