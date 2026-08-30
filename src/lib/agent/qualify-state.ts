@@ -1,3 +1,4 @@
+import { vitrineDisponivel } from "@/lib/bevi/identidade-vitrine";
 import { creditoBuscavel } from "@/lib/consorcio/credito-minimo";
 import { revealValueTargetChanged } from "./orchestrator/tool-policy";
 import type { ConversationMetadata, QualifyAnswers } from "./personas";
@@ -301,6 +302,29 @@ export function fechamentoSinalizado(meta: ConversationMetadata): boolean {
 	);
 }
 
+/**
+ * O cliente já disse o suficiente para a Bevi simular? (valor do bem OU parcela,
+ * mais a categoria implícita no funil.)
+ *
+ * É o ÚNICO pré-requisito de dado que sobrou antes da primeira carta. Nome,
+ * motivo e CPF ajudam a vender, mas nenhum deles é insumo da busca — e cobrá-los
+ * antes da oferta é o que fazia 49,4% das conversas morrerem sem ver preço.
+ */
+function temAlvoDeBusca(meta: ConversationMetadata): boolean {
+	const q = meta.qualifyAnswers ?? {};
+	const temValor =
+		creditoBuscavel(q.creditMax, q.creditoMinimoInformado) || (q.parcelaAlvo ?? 0) > 0;
+	// A CATEGORIA FAZ PARTE DO ALVO.
+	//
+	// Sem ela, `readyForDiscovery` (route.ts) recusa a busca — e um atalho que só
+	// olhasse o valor mandaria o funil para `search`, que é TERMINAL e MUDO: nada
+	// perguntado, nada buscado, cliente parado olhando para a tela. É o caso real
+	// da conv 06163675, em que a pessoa escreveu apenas "80000" e precisava ouvir
+	// "carro, moto ou imóvel?". Alvo de busca é o que a administradora precisa
+	// para simular: valor E segmento.
+	return temValor && Boolean(meta.currentCategory);
+}
+
 export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: boolean }): Gate {
 	// FIX-364 (bloco-h-resume-mesa): contrato fechado é estado TERMINAL —
 	// checa ANTES de qualquer outro gate, independente de qual flag
@@ -318,14 +342,28 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	// "name" complementa com input focado (gateQuestion('name')=null não duplica).
 	// Antes era "doubts-wait" (no-op) e o nome era pedido só por texto livre —
 	// inconsistente com o resto do funil e ruim no mobile (teclado não abria).
-	if (opts && opts.hasContactName === false) return "name";
+	//
+	// 2026-08-27 — o nome deixa de BLOQUEAR quem já trouxe o alvo de busca. Em
+	// produção (10-26/08) 49,4% das conversas morreram exatamente aqui, com 1,3
+	// turno de média: gente que escreveu "Quero um carro ate R$ 80 mil" e ouviu
+	// de volta uma pergunta. Nenhuma vitrine pede o nome do cliente antes de
+	// deixar ele ver a etiqueta. Quem chegou sem alvo continua sendo recebido
+	// pelo nome — a conversa começa igual para quem só disse "oi".
+	if (opts && opts.hasContactName === false && !temAlvoDeBusca(meta)) return "name";
 
 	// FIX-233 (handoff agente-vendas-consorcio, 2026-07-09): gate `desire`,
 	// NÃO bloqueante — duas perguntas curtas (bem específico + motivo de agora),
 	// logo após o nome. `desireAsked` é marcado na EMISSÃO (padrão de
 	// `consentOffered`/`simulatorOfferDispatched`), não na resposta: se o
 	// usuário pular, o funil segue normal — nunca mais re-emite este gate.
-	if (!meta.desireAsked) return "desire";
+	//
+	// 2026-08-27 — como o `name`, o `desire` deixa de barrar quem já trouxe o alvo
+	// de busca. Quem escreve "Quero um carro ate R$ 80 mil" já respondeu as duas
+	// perguntas deste gate na própria frase; devolvê-las é o agente ignorando o
+	// que o cliente acabou de dizer. No Langfuse de produção o `desire` aparece em
+	// 27,8% dos `gate_afundado`. Para quem chega sem alvo nenhum — a maioria — o
+	// gate continua igual, porque é ali que ele constrói o desejo que vende.
+	if (!meta.desireAsked && !temAlvoDeBusca(meta)) return "desire";
 
 	if (meta.pendingFollowUp) return "doubts-wait";
 
@@ -355,7 +393,7 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	if (q.creditMax === undefined && (q.parcelaAlvo ?? 0) <= 0) return "credit";
 	if (q.creditMax === undefined) {
 		// Alvo e a parcela — as checagens de piso de CREDITO abaixo nao se aplicam.
-		if (!meta.identityCollected) return "identify";
+		if (!meta.identityCollected && !vitrineDisponivel()) return "identify";
 		if (!meta.searchDispatched) return "search";
 	}
 	// FIX-377 — valor ABAIXO DO PISO conta como valor ausente: a busca nessa
@@ -371,7 +409,18 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	// não achou e pede outro) em vez de prometer de novo. Um vazio é acidente
 	// (Bevi instável); dois é a faixa.
 	if ((meta.discoveryEmptyStreak ?? 0) >= 2 && !meta.searchDispatched) return "credit";
-	if (!meta.identityCollected) return "identify";
+	// A IDENTIDADE DESCE PARA O FECHO (2026-08-27).
+	//
+	// O invariante da administradora nunca foi "o cliente entrega o CPF antes de
+	// ver oferta" — era "a proposta Bevi exige um par CPF+celular válido"
+	// (`ensureOffers`, bevi-self-contract-adapter.ts). A vitrine satisfaz esse
+	// par com a identidade DA CASA, então o pedágio sai do caminho do cliente e
+	// vai para onde ele faz sentido: a hora de trocar documento por contrato
+	// (o `identify` no bloco pós-reveal, mais abaixo).
+	//
+	// Sem vitrine configurada, nada disto vale e o funil antigo volta inteiro —
+	// desligar é apagar uma env, não reverter um commit.
+	if (!meta.identityCollected && !vitrineDisponivel()) return "identify";
 
 	// FIX-215 (Refino Ata 2026-07-04, item 1 — P0): o funil pula DIRETO de
 	// `credit` (valor) pra `search` — a pergunta de lance ("Pretende dar um
@@ -576,6 +625,16 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 		// contractClosed` que existia aqui morreu de redundante — o
 		// short-circuit no topo da função já garante contractClosed !== true
 		// neste ponto.
+		// A TROCA JUSTA: documento por contrato.
+		//
+		// Com a vitrine, o cliente chega aqui sabendo exatamente o que está
+		// comprando — viu as cartas, comparou, escolheu. É neste ponto que o CPF
+		// deixa de ser pedágio e passa a ser parte do fecho, que é como todo
+		// vendedor sempre trabalhou. A exigência da Bevi continua de pé: sem
+		// CPF+celular REAIS não há proposta (e `startContract` recusa o CPF da
+		// vitrine — ver `ContratacaoComIdentidadeDeVitrineError`). O que mudou
+		// foi o MOMENTO, não a regra.
+		if (!meta.identityCollected) return "identify";
 		if (!meta.contractFormDispatched) return "contract";
 	}
 	return "search"; // terminal — com searchDispatched=true o orquestrador encerra cedo

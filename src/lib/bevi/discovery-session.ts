@@ -12,6 +12,7 @@ import type { ConversationMetadata } from "@/lib/agent/personas";
 import { LANCE_EMBUTIDO_DEFAULT_PERCENT } from "@/lib/agent/qualify-config";
 import { loadIdentity } from "@/lib/conversation/identity";
 import { reloadMeta } from "@/lib/conversation/meta";
+import { identidadeDeVitrine } from "./identidade-vitrine";
 
 // FIX-219 (Ata 2026-07-04, item 4): a Bevi não informa se a cota aceita
 // embutido, e a conversa de lance só acontece PÓS-reveal (FIX-215) — na 1ª
@@ -40,7 +41,13 @@ export function discoverySessionForConversation(
 	const loadIdentityImpl = deps.loadIdentityImpl ?? loadIdentity;
 	const reloadMetaImpl = deps.reloadMetaImpl ?? reloadMeta;
 	return {
-		getIdentity: () => loadIdentityImpl(conversationId),
+		// A identidade REAL do cliente manda sempre que existe — depois do fecho,
+		// a re-simulação que ancora o contrato precisa sair da conta de quem vai
+		// assinar. Só quando ela não existe é que a casa empresta a sua para
+		// montar a prateleira (ver `identidade-vitrine.ts`): era o `null` daqui
+		// que fazia `ensureOffers` lançar IdentityNotCollectedError e obrigava o
+		// funil a cobrar o CPF antes de mostrar qualquer oferta.
+		getIdentity: async () => (await loadIdentityImpl(conversationId)) ?? identidadeDeVitrine(),
 		getSimulationPrefs: async () => prefsFromMeta(await reloadMetaImpl(conversationId)),
 	};
 }
