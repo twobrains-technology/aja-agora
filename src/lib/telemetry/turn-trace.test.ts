@@ -337,3 +337,47 @@ describe("FIX-250 — getTraceForWriter (fecha o gap de suppression/usage no can
 		expect(getTraceForWriter(writer)).toBeUndefined();
 	});
 });
+
+// ── O trace tem que atravessar QUALQUER camada de proxy ─────────────────────
+//
+// O FIX-250 (bloco acima) registrou o trace num WeakMap com o writer
+// instrumentado como CHAVE. Funcionava — até alguém envolver aquele writer em
+// mais um proxy. Foi o que `collectAgentText` passou a fazer em `route.ts`:
+//
+//     collectAgentText(instrumentWriter(rawWriter, trace))
+//
+// O WeakMap guarda o proxy de DENTRO; `pipeOrchestratorToWriter` recebe o de
+// FORA. `getTraceForWriter` devolve undefined, e os três campos que dependem
+// dele voltaram calados ao estado pré-FIX-250: `suppressed` sempre `[]`,
+// `cacheRead`/`cacheWrite` sempre nulos no canal web. Medido ao vivo em
+// 30/08/2026 num turno real — nada ficou vermelho, nada foi avisado.
+//
+// A chave-por-identidade é frágil por construção: ela obriga TODO wrapper novo
+// a lembrar de se registrar, e wrapper que esquece falha em silêncio. O símbolo
+// abaixo inverte isso — o trace viaja no próprio writer, e qualquer proxy que
+// faça `Reflect.get` passthrough (que é o que ambos fazem) o propaga sozinho.
+describe("o trace sobrevive a um segundo proxy por cima do instrumentado", () => {
+	const criaWriter = () => ({ write: vi.fn(), merge: vi.fn(), onError: vi.fn() });
+
+	/** Um passthrough puro, como o `collectAgentText` de `route.ts`. */
+	const reenvolver = <T extends object>(alvo: T): T =>
+		new Proxy(alvo, { get: (t, p, r) => Reflect.get(t, p, r) });
+
+	it("achado ao vivo: com o re-proxy, o trace continua alcançável", () => {
+		const trace = new TurnTrace({ channel: "web", conversationId: "c1" });
+		const instrumentado = instrumentWriter(criaWriter() as never, trace);
+
+		expect(getTraceForWriter(reenvolver(instrumentado))).toBe(trace);
+	});
+
+	it("vale para quantas camadas houver — o wrapper novo não precisa saber disso", () => {
+		const trace = new TurnTrace({ channel: "web", conversationId: "c2" });
+		const instrumentado = instrumentWriter(criaWriter() as never, trace);
+
+		expect(getTraceForWriter(reenvolver(reenvolver(reenvolver(instrumentado))))).toBe(trace);
+	});
+
+	it("writer não instrumentado continua sem trace, mesmo re-envolvido", () => {
+		expect(getTraceForWriter(reenvolver(criaWriter()))).toBeUndefined();
+	});
+});

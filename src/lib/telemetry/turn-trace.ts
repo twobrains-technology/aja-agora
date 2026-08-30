@@ -365,16 +365,38 @@ export async function* traceTurnEvents(
 // stream bruto de TurnEvents (`pipeOrchestratorToWriter`) recupera o MESMO
 // trace pelo writer instrumentado e alimenta suppression/usage direto, sem
 // precisar mudar a assinatura de nenhuma função pipeXxx em route.ts.
-const writerTraces = new WeakMap<object, TurnTrace>();
+//
+// ── Por que SÍMBOLO, e não um WeakMap indexado pelo writer ──────────────────
+//
+// A primeira versão disto foi um `WeakMap<object, TurnTrace>` com o writer
+// instrumentado como chave. Chave por IDENTIDADE quebra assim que alguém põe
+// mais um proxy por cima — e foi exatamente o que `route.ts` passou a fazer:
+// `collectAgentText(instrumentWriter(rawWriter, trace))`. O mapa guardava o
+// proxy de dentro, `pipeOrchestratorToWriter` recebia o de fora, e os três
+// campos que dependem daqui voltaram calados ao estado pré-FIX-250 (medido em
+// 30/08/2026: `suppressed` `[]` e `cacheRead`/`cacheWrite` nulos num turno web
+// real). Nada quebra, nada fica vermelho — o pior modo de falha que existe.
+//
+// O símbolo põe o trace DENTRO do writer. Todo proxy passthrough o propaga
+// sozinho pelo `Reflect.get`, então wrapper novo nasce funcionando sem saber
+// que esta linha existe. É a diferença entre um invariante e uma convenção que
+// alguém precisa lembrar de seguir.
+const TRACE_DO_WRITER = Symbol.for("aja.turnTrace");
 
-/** Recupera o `TurnTrace` registrado por `instrumentWriter` pra este writer
- * (o mesmo objeto instrumentado que circula pelas funções pipeXxx). undefined
- * quando o writer não foi instrumentado — nunca lança. */
+/** Recupera o `TurnTrace` que `instrumentWriter` embutiu neste writer —
+ * inclusive através de camadas de proxy passthrough. undefined quando o writer
+ * não foi instrumentado; nunca lança. */
 export function getTraceForWriter(writer: unknown): TurnTrace | undefined {
 	if (writer === null || (typeof writer !== "object" && typeof writer !== "function")) {
 		return undefined;
 	}
-	return writerTraces.get(writer as object);
+	try {
+		const achado = (writer as Record<symbol, unknown>)[TRACE_DO_WRITER];
+		return achado instanceof TurnTrace ? achado : undefined;
+	} catch {
+		// getter hostil num proxy alheio nunca derruba a telemetria
+		return undefined;
+	}
 }
 
 /** Tap por PROXY do writer (funil de consumo da web SSE). Forwarda TODA chamada
@@ -387,6 +409,7 @@ export function instrumentWriter<M extends UIMessage>(
 ): UIMessageStreamWriter<M> {
 	const proxy = new Proxy(writer, {
 		get(target, prop, receiver) {
+			if (prop === TRACE_DO_WRITER) return trace;
 			if (prop === "write") {
 				return (part: Parameters<UIMessageStreamWriter<M>["write"]>[0]) => {
 					try {
@@ -401,6 +424,5 @@ export function instrumentWriter<M extends UIMessage>(
 			return typeof value === "function" ? value.bind(target) : value;
 		},
 	});
-	writerTraces.set(proxy, trace);
 	return proxy;
 }

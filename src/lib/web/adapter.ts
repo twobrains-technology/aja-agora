@@ -519,6 +519,16 @@ export async function pipeOrchestratorToWriter(
 					getTraceForWriter(writer)?.setCache(ev.cacheRead, ev.cacheWrite);
 					break;
 
+				// Telemetria pura, mesmo padrão de `suppression`/`usage`: nunca vira
+				// UI part, mas precisa chegar ao trace. Sem este case, o score
+				// `primeira_resposta_com_numero` só existiria no WhatsApp — e a
+				// mudança que ele mede (a agulha com a parcela estimada no primeiro
+				// turno) é WEB-ONLY. O sinal nasceria cego para o canal inteiro que
+				// ele foi feito para medir.
+				case "turno-do-cliente":
+					getTraceForWriter(writer)?.setTurnoDoCliente(ev.indice);
+					break;
+
 				// FIX-269 (rodada 7, veredito Fable r6, nit de observabilidade): o
 				// finishReason REAL do orquestrador (ex.: "tool-error-recovered")
 				// nunca chegava ao trace no canal web — este case era agrupado como
