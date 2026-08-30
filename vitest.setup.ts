@@ -21,6 +21,21 @@ try {
 	// .env opcional (baseline; só preenche o que ainda não foi setado)
 }
 
+// A VITRINE NASCE DESLIGADA NA SUÍTE.
+//
+// `VITRINE_CPF`/`VITRINE_CELULAR` mudam o FUNIL (a busca deixa de exigir o CPF
+// do cliente), e o `.env.local` de quem desenvolve a feature os tem. Herdá-los
+// aqui faz testes que nada têm a ver com a vitrine mudarem de comportamento:
+// `route.closing-persistence` passou a disparar busca REAL na Bevi num cenário
+// pré-reveal e a estourar 20s de timeout — com a suíte "verde" para quem rodava
+// só o filtro de unit, que exclui `route*`.
+//
+// Quem TESTA a vitrine a liga explicitamente no próprio arquivo (e restaura
+// depois). Default desligado mantém a suíte hermética e reproduzível em
+// qualquer máquina, com ou sem `.env.local`.
+process.env.VITRINE_CPF = "";
+process.env.VITRINE_CELULAR = "";
+
 // Sentinel DATABASE_URL pra módulos que importam @/db em testes que não tocam DB.
 // Em testes que de fato consultam DB, override no próprio test ou via .env real.
 if (!process.env.DATABASE_URL) {

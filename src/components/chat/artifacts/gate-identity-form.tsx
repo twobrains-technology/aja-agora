@@ -25,10 +25,23 @@ const maskPhone = (s: string) =>
 export function GateIdentityForm({
 	prefilledPhone,
 	active = true,
+	momento = "pre-busca",
 }: {
 	prefilledPhone?: string | null;
 	active?: boolean;
+	/** Onde do funil este form está aparecendo — a copy segue isso. Com a
+	 *  vitrine ligada ele vive no fecho; desligada, volta a ser pré-busca, e
+	 *  falar da "cota" antes de o cliente ver alguma seria falso.
+	 *
+	 *  Em nenhum dos dois o botão promete RESERVA: este passo só grava a
+	 *  identidade. A proposta na administradora nasce no card seguinte, e o
+	 *  CLAUDE.md proíbe "cota reservada" antes da contratação. */
+	momento?: "pre-busca" | "fecho";
 }) {
+	const noFecho = momento === "fecho";
+	const rotuloDoEnvio = noFecho
+		? "Enviei meus dados pra seguir com a cota"
+		: "Enviei meus dados pra buscar as ofertas";
 	const { sendAction, status } = useChatContext();
 	const isStreaming = status === "submitted" || status === "streaming";
 	const [cpf, setCpf] = useState("");
@@ -65,15 +78,21 @@ export function GateIdentityForm({
 				kind: "gate",
 				gate: "identify",
 				value: { cpf: cpfDigits, celular: phoneDigits, lgpd: true },
-				label: "Enviei meus dados pra buscar as ofertas",
+				// Este rótulo é PERSISTIDO como fala do cliente e relido pelo modelo
+				// nos turnos seguintes. No fecho, "pra buscar as ofertas" ensinaria a
+				// ordem antiga a partir da própria transcrição — a classe de defeito
+				// "botão do card vira mentira do servidor".
+				label: rotuloDoEnvio,
 			},
-			"Enviei meus dados pra buscar as ofertas",
+			rotuloDoEnvio,
 		);
 	};
 
 	return (
 		<div className="w-full max-w-[340px] bg-card border border-[color:var(--border-strong)] rounded-[12px] shadow-[var(--shadow-md)] p-[18px] flex flex-col gap-[14px]">
-			<p className="text-sm font-semibold text-foreground">Pra buscar suas ofertas reais</p>
+			<p className="text-sm font-semibold text-foreground">
+				{noFecho ? "Pra seguir com essa cota" : "Pra buscar suas ofertas reais"}
+			</p>
 
 			{/* CPF */}
 			<div className="flex flex-col gap-1.5">
@@ -124,8 +143,8 @@ export function GateIdentityForm({
 					className="mt-0.5 shrink-0"
 				/>
 				<span>
-					Autorizo a consulta dos meus dados nas administradoras parceiras (LGPD) pra simular as
-					ofertas.{" "}
+					Autorizo a consulta dos meus dados nas administradoras parceiras (LGPD){" "}
+					{noFecho ? "pra seguir com a contratação" : "pra simular as ofertas"}.{" "}
 					<span className="text-foreground font-medium">Não é compromisso de contratação.</span>
 				</span>
 			</label>
@@ -139,7 +158,7 @@ export function GateIdentityForm({
 				className="w-full min-h-[44px] flex items-center justify-center gap-2 rounded-full bg-primary text-primary-foreground text-sm font-semibold transition-[opacity,box-shadow] hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
 			>
 				<ShieldCheck className="size-4" />
-				Buscar minhas ofertas
+				{noFecho ? "Confirmar meus dados" : "Buscar minhas ofertas"}
 			</button>
 		</div>
 	);

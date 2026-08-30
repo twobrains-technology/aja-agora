@@ -71,11 +71,18 @@ export type GatePartData =
 			fields: SliderField[];
 	  }
 	| {
-			// Gate "identify" (D1, docs/jornada/CONTEXT.md) — form CPF + celular +
-			// aceite LGPD ao fim do passo 2. A Bevi exige identidade antes de simular.
+			// Gate "identify" — form CPF + celular + aceite LGPD.
+			//
+			// `momento` diz ONDE do funil ele está acontecendo, e a copy do card
+			// segue isso: com a vitrine ligada ele vive no FECHO (o cliente já viu
+			// as cartas e escolheu uma, então o dado é para reservar aquela cota);
+			// com a vitrine desligada volta a ser PRÉ-BUSCA, e prometer reserva de
+			// uma cota que ninguém viu seria falso. Ausente = "pre-busca", que
+			// preserva o comportamento de qualquer chamador antigo.
 			kind: "identity";
 			gate: "identify";
 			prefilledPhone?: string | null;
+			momento?: "pre-busca" | "fecho";
 	  };
 
 export type TransitionPartData = {

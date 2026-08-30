@@ -1,5 +1,6 @@
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import type { Gate } from "@/lib/agent/qualify-state";
+import { vitrineDisponivel } from "@/lib/bevi/identidade-vitrine";
 import { buildMentionedOfferDirective, type ChosenOffer } from "./choose-offer";
 import type { ChatMessage } from "./types";
 
@@ -29,9 +30,33 @@ export function looksLikeIdentityResendComplaint(text: string): boolean {
  * Morava em `langgraph/nodes/converse.ts` como função local; subiu pra cá
  * (FIX-393) porque a única dependência dela é o `GATE_INTENT` logo abaixo — e
  * porque um contexto que decide o que o cliente lê merece teste próprio. */
+/**
+ * A intenção do gate, resolvida para o MOMENTO em que ele acontece.
+ *
+ * Só o `identify` é condicional, e por um motivo concreto: a vitrine o moveu de
+ * antes da busca para o fecho, e a justificativa que ele carregava ("a
+ * administradora exige pra trazer as ofertas reais") vira falsa quando as
+ * ofertas já estão na tela. Esta é a autoridade mais específica da janela do
+ * modelo naquele turno — deixá-la desatualizada faz o modelo mentir mesmo com
+ * todas as outras copies corretas.
+ */
+export function gateIntent(gate: string | undefined): string | undefined {
+	if (!gate) return undefined;
+	if (gate === "identify" && vitrineDisponivel()) {
+		return (
+			"o CPF e o celular dele — ele já escolheu a cota, então diga que é pra seguir " +
+			"com ela e que os dados ficam protegidos pela LGPD, numa frase só, sem soar " +
+			"burocrático. NÃO pergunte mais nada neste turno: nada de entrada, valor de " +
+			"lance ou prazo — uma segunda pergunta aqui atropela o formulário que está " +
+			"entrando na tela"
+		);
+	}
+	return GATE_INTENT[gate];
+}
+
 export function buildGateContextText(gate: string | undefined, temCard: boolean): string | null {
 	if (!gate) return null;
-	const intent = GATE_INTENT[gate];
+	const intent = gateIntent(gate);
 	if (!intent) return null;
 	return (
 		`Próximo passo do funil: descobrir ${intent}. Faça VOCÊ essa pergunta, com as suas ` +
@@ -65,6 +90,10 @@ export const GATE_INTENT: Record<string, string> = {
 	// que o formulário de CPF entrou na tela (28/07) — duas perguntas diferentes
 	// de uma vez, e ele não teve como responder a da fala. Pior: "entrada" é
 	// conversa de LANCE, que saiu do meio do funil (FIX-215) e vive pós-reveal.
+	// A justificativa deste gate é resolvida em `gateIntent()`, porque ela DEPENDE
+	// do momento: antes da busca, a administradora exige o dado para trazer as
+	// ofertas; no fecho (com a vitrine), as ofertas já estão na tela e essa frase
+	// vira mentira. O texto abaixo é o do mundo pré-vitrine.
 	identify:
 		"o CPF e o celular dele — diga POR QUE precisa (a administradora exige pra trazer as ofertas reais) e que os dados ficam protegidos pela LGPD, numa frase só, sem soar burocrático. NÃO pergunte mais nada neste turno: nada de entrada, valor de lance ou prazo — o lance só entra na conversa DEPOIS das ofertas reais aparecerem, e uma segunda pergunta aqui atropela o formulário que está entrando na tela",
 	// FIX-392: a instrução antiga era 'se ele já fez consórcio antes. Se ele
@@ -166,7 +195,7 @@ export function buildSystemContext(args: {
 	// já vai perguntar por conta própria (confusedAboutGate cobre o caso do "não
 	// entendi"), não duplicamos a instrução.
 	if (pendingGate && !confusedAboutGate) {
-		const intent = GATE_INTENT[pendingGate];
+		const intent = gateIntent(pendingGate);
 		if (intent) {
 			out.push({
 				role: "system",
@@ -184,7 +213,11 @@ export function buildSystemContext(args: {
 	}
 
 	if (confusedAboutGate) {
-		const intent = GATE_INTENT[confusedAboutGate];
+		// Pelo resolvedor, não pelo mapa cru: o `identify` tem texto diferente
+		// conforme o momento, e o cliente confuso é justamente quem mais ouviria a
+		// justificativa errada ("a administradora exige pra trazer as ofertas")
+		// com as ofertas já na tela.
+		const intent = gateIntent(confusedAboutGate);
 		out.push({
 			role: "system",
 			content:

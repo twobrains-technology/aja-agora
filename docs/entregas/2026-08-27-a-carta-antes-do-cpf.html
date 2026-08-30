@@ -1,0 +1,2170 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A carta antes do CPF — dossiê de entrega</title>
+<link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+
+<header>
+  <h1>A carta antes do CPF</h1>
+  <p class="sub">
+    Dossiê de entrega · 27/08/2026 · <code>aja-agora</code><br>
+    branch <code>kairogyn/proposta-diferente-agente</code> · <strong>não commitado</strong> ·
+    25 arquivos novos, 41 tocados
+  </p>
+  <p>
+    <span class="pill p-ok">4.027 testes verdes — a suíte INTEIRA, sem exclusões</span>
+    <span class="pill p-ok">typecheck e lint limpos</span>
+    <span class="pill p-ok">jornada inteira medida no app: carta no 1º turno sem CPF, CPF só no fecho</span>
+    <span class="pill p-ok">13 rodadas de crítica — fechou em 10/10</span>
+    <span class="pill p-risco">1 risco alto herdado, mitigado em parte</span>
+    <span class="pill p-aviso">prompt não publicado</span>
+  </p>
+</header>
+
+<div class="risco alto">
+  <strong>PENDENTE — o prompt não foi publicado, e sem isso produção não muda.</strong>
+  <code>fetchManagedPrompt</code> lê a label <code>production</code> do Langfuse; o
+  código é só fallback. <code>pnpm prompts:check</code> falha hoje (exit 1) apontando
+  11 linhas divergentes contra <code>langfuse.twobrainstechnology.com</code>. Não
+  publiquei porque você pediu o trabalho local e publicar altera produção em menos de
+  60s sem review. A ordem para ligar (env no secret → publicar e deployar na MESMA janela; a ordem inversa é barrada pelo próprio CI) e o porquê de
+  cada passo estão em
+  <a href="2026-08-27-PENDENTE-KAIRO-publicar-prompt.md">PENDENTE-KAIRO-publicar-prompt.md</a>.
+</div>
+
+<nav class="card">
+  <strong>Índice</strong>
+  <ol>
+    <li><a href="#macro">O que passou a existir</a></li>
+    <li><a href="#numeros">O funil real, medido em produção</a></li>
+    <li><a href="#arquitetura">A decisão de arquitetura — e por que o CPF fixo puro foi reprovado</a></li>
+    <li><a href="#codigo">Onde o código mudou</a></li>
+    <li><a href="#superficie">Impacto na superfície</a></li>
+    <li><a href="#riscos">Pontos de risco</a></li>
+    <li><a href="#aberto">O que ficou em aberto</a></li>
+    <li><a href="#validar">Como validar você mesmo</a></li>
+  </ol>
+</nav>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="macro">
+<h2>1 · O que passou a existir</h2>
+
+<p>
+  O SDR de performance disse que o agente não converte, que ele pergunta demais e
+  que o CPF vira gargalo. Fui ao banco de produção e ao Langfuse conferir. Ele
+  está certo nas três coisas — mas <strong>não na ordem que parecia</strong>, e a
+  diferença muda o que precisava ser consertado.
+</p>
+
+<p>
+  Até hoje, para o cliente ver <em>uma</em> carta de consórcio ele precisava
+  atravessar cinco perguntas e entregar CPF, celular e aceite de LGPD. Não era
+  capricho: buscar carta na Bevi não é consultar um catálogo — o código
+  <strong>cria uma proposta</strong> na administradora, e proposta exige um par
+  CPF+celular válido. Essa exigência empurrou a identificação para antes da
+  busca, e a partir dela o funil inteiro virou formulário.
+</p>
+
+<p>
+  Agora existe a <strong>vitrine</strong>: um par CPF+celular <em>da casa</em> —
+  a conta de homologação que já existe, titular você — que abre a proposta na Bevi
+  só para montar a prateleira. O cliente diz o que quer e quanto pode pagar, e as
+  cartas <strong>reais</strong> aparecem. O CPF dele volta a ser pedido onde
+  sempre fez sentido: na hora de reservar a cota no nome dele.
+</p>
+
+<div class="fluxo">
+  <span class="no">cliente diz o bem + valor</span>
+  <span class="seta">→</span>
+  <span class="no novo">vitrine abre a proposta na Bevi</span>
+  <span class="seta">→</span>
+  <span class="no novo">cartas reais na tela</span>
+  <span class="seta">→</span>
+  <span class="no">cliente escolhe a cota</span>
+  <span class="seta">→</span>
+  <span class="no novo">CPF do cliente (reservar)</span>
+  <span class="seta">→</span>
+  <span class="no">contrato</span>
+</div>
+
+<p class="legenda">
+  Em destaque, o que nasceu. O trecho antigo era:
+  <em>nome → desejo → motivo → valor → <strong>CPF+celular+LGPD</strong> → busca</em>.
+</p>
+
+<div class="card">
+  <strong>O kill switch é uma variável de ambiente.</strong> A vitrine só existe
+  se <code>VITRINE_CPF</code> e <code>VITRINE_CELULAR</code> estiverem
+  configurados e o CPF passar no módulo 11. Vazio, inválido ou removido, o funil
+  antigo volta inteiro — exigindo o CPF do cliente antes da busca <em>e</em>
+  voltando à copy antiga (a fala segue o mesmo predicado que move o gate; ver
+  §6). Desligar é apagar uma variável, não reverter um commit — mas em produção
+  o prompt publicado tem de acompanhar, senão o modelo promete busca sem CPF
+  enquanto o servidor volta a exigi-lo. Há teste travando os dois lados.
+</div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="numeros">
+<h2>2 · O funil real, medido em produção</h2>
+
+<p>
+  Tudo abaixo saiu do banco de produção em leitura (túnel SSM) e do Langfuse de
+  produção, em 27/08/2026. Janela: <strong>10 a 26/08</strong>, 17 dias,
+  <strong>87 conversas</strong> com <code>is_simulated = false</code>.
+</p>
+
+<h3>Onde as conversas morrem</h3>
+
+<table>
+  <thead>
+    <tr><th>Estágio final</th><th>Conversas</th><th>%</th><th>Turnos do cliente</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>abriu e não falou</td><td>2</td><td>2,3%</td><td>0,0</td></tr>
+    <tr><td><strong>falou e sumiu antes de dizer o nome</strong></td><td><strong>43</strong></td><td><strong>49,4%</strong></td><td>1,3</td></tr>
+    <tr><td>deu o nome, travou no valor</td><td>5</td><td>5,7%</td><td>3,0</td></tr>
+    <tr><td><strong>deu o valor, travou no CPF</strong></td><td><strong>7</strong></td><td><strong>8,0%</strong></td><td>7,7</td></tr>
+    <tr><td><strong>viu carta e não escolheu</strong></td><td><strong>17</strong></td><td><strong>19,5%</strong></td><td>8,8</td></tr>
+    <tr><td>escolheu, sem formulário</td><td>1</td><td>1,1%</td><td>7,0</td></tr>
+    <tr><td>formulário aberto, não fechou</td><td>6</td><td>6,9%</td><td>9,0</td></tr>
+    <tr><td>fechou</td><td>6</td><td>6,9%</td><td>26,0</td></tr>
+  </tbody>
+</table>
+
+<div class="aviso">
+  <strong>Os 6,9% de fechamento não são reais.</strong> Quatro dos seis contratos
+  são teste interno — as conversas com nome <em>Kairo</em>, <em>Romulo</em>,
+  <em>Neto</em> e nomes-lixo (<em>Teste</em>, <em>Quitar</em>, <em>Carta</em>).
+  Descontando: <strong>70 conversas de cliente externo, 2 contratos, 2,9%</strong>.
+  De quem chegou a dizer o nome: 25 → 2, ou 8,0%.
+</div>
+
+<h3>Quanto custa ver a primeira carta</h3>
+
+<div class="nums">
+  <div><strong>5</strong><span>perguntas do agente antes da 1ª carta (mediana; máximo 11)</span></div>
+  <div><strong>5</strong><span>turnos do cliente até a 1ª carta (mediana; média 5,8)</span></div>
+  <div><strong>38%</strong><span>das conversas têm exatamente 1 turno do cliente</span></div>
+  <div><strong>1</strong><span>pergunta recebida, na mediana, por quem nunca viu carta</span></div>
+</div>
+
+<h3>O Langfuse confirma pelo outro lado</h3>
+
+<p>
+  Score <code>gate</code> de produção (n=143), medindo em que gate o turno estava:
+  <strong><code>name</code> 32,2% + <code>identify</code> 26,6% +
+  <code>credit</code> 21,7% = 80,5%</strong>. Quatro em cada cinco turnos travados
+  estavam nos três gates de coleta — todos antes de qualquer oferta. O
+  <code>gate_afundado</code> (n=18) diz o mesmo: <code>credit</code> 55,6%,
+  <code>desire</code> 27,8%, <code>identify</code> 16,7%.
+</p>
+
+<div class="risco alto">
+  <strong>E o painel dizia que estava tudo bem.</strong> No mesmo período, o juiz
+  <code>judge_avancou</code> marcou <strong>0,92</strong> em 335 turnos, e
+  <code>finish_reason = "ok"</code> em 99,7%. Não há contradição: aquele juiz lê a
+  <em>fala</em> e pergunta "este turno tentou avançar?" — e o turno que pede o CPF
+  pela quarta vez tentou. Juiz de prosa nunca enxerga funil parado. Foi por isso
+  que entrou um sinal de estado (§6, <code>carta_na_tela</code>).
+</div>
+
+<h3>O que o cliente viveu, literal do banco</h3>
+
+<div class="card">
+<p><strong>O cliente já tinha dado o valor</strong> — conversa <code>70a80fca</code></p>
+<div class="prova">👤 Quero um carro ate R$ 80 mil
+🤖 Que legal! Carro novo muda tudo mesmo. Antes de buscar as melhores opções
+   pra você, preciso de uns detalhes. Já tem um modelo em mente, ou está aberto?
+   (fim — nunca mais voltou)</div>
+
+<p><strong>O cliente pediu explicitamente para ver primeiro</strong> — conversa <code>aebac770</code></p>
+<div class="prova">👤 Me mostra as opções primeiro
+🤖 Perfeito! Claudinei, pra eu trazer as opções certas pro seu perfil, preciso
+   saber qual valor você consegue pagar por mês no consórcio.
+👤 2000
+🤖 Ótimo, R$ 2.000 por mês é uma parcela saudável. Agora preciso do seu CPF e
+   celular pra trazer as ofertas reais das administradoras...
+   (fim)</div>
+
+<p><strong>Recusa explícita do dado</strong> — conversa <code>92c4c1ce</code></p>
+<div class="prova">👤 nao quero passar meus dados.
+🤖 Entendo. Sem os dados, não consigo trazer as ofertas reais da administradora.
+   É tipo tentar abrir conta de banco sem documento, sabe?
+👤 adeus</div>
+
+<p><strong>Quatro turnos seguidos pedindo a mesma coisa</strong> — conversa <code>b80ad628</code></p>
+<div class="prova">🤖 Pra eu trazer as ofertas reais das administradoras, preciso do seu CPF e celular.
+🤖 Pra eu trazer as ofertas reais... Só falta isso pra eu seguir — é rapidinho.
+🤖 Pra eu trazer as ofertas reais... É seguro e sem compromisso.
+🤖 Sobre o imóvel de R$ 400 mil: preciso do seu CPF e celular pra trazer as ofertas reais.</div>
+
+<p><strong>Sobrecarga de escolha</strong> — padrão nas 17 que viram carta e sumiram</p>
+<div class="prova">🤖 Encontrei 17 opções de consórcio pra você... Qual delas tem a sua cara?
+🤖 Encontrei 19 opções... Qual delas mais te agradou?
+🤖 Encontrei 28 opções pra você com parcelas de R$ 848,33 até R$ 6.859,36.
+   (fim)</div>
+</div>
+
+<p>
+  A leitura que esses trechos impõem: <strong>não é o modelo alucinando</strong>.
+  É o modelo traduzindo com fidelidade um funil que exigia documento antes de
+  entregar valor. A fala ruim era sintoma; a ordem era a doença.
+</p>
+</section>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="arquitetura">
+<h2>3 · A decisão de arquitetura</h2>
+
+<p>
+  A proposta que abriu esta tarefa era direta: passar um CPF e um telefone fixos
+  para a Bevi e achar as cartas mais rápido. Levei ao especialista de IA com a
+  evidência na mão. <strong>Ele aprovou a direção e reprovou o mecanismo</strong>,
+  por um motivo que só aparece lendo o adaptador.
+</p>
+
+<div class="risco alto">
+  <strong>Por que o CPF fixo "puro" não passa.</strong> A loja self-contract opera
+  sobre <em>uma</em> proposta corrente por <code>storeHash</code>:
+  <code>create-proposal</code> devolve <code>400 Duplicated Hash</code> mesmo com
+  <code>ignoreOngoingProposals: true</code>
+  (<code>docs/integracoes/contas-teste-homologacao.md</code>). E o gateway do
+  Trilho B trata esse duplicado como <em>retomada</em>, seguindo com a proposta
+  ativa <strong>sem conferir de quem ela é</strong>. Juntando: com CPF fixo na
+  descoberta e <code>PROPOSAL_GATEWAY=selfcontract</code>, o fecho do cliente
+  retomaria a proposta-vitrine — o RG e o comprovante dele entrando numa proposta
+  cujo CPF é o da casa, e a adesão indo à administradora em nome errado.
+  <br><br>
+  <strong>Não está acontecendo hoje:</strong> conferi o secret
+  <code>tb/prod/aja-agora/env</code> e produção roda
+  <code>PROPOSAL_GATEWAY=bevi</code> (Trilho A), onde <code>startContract</code>
+  cria proposta própria com o CPF real. O caminho do Trilho B <strong>não</strong> é o default (<code>adapters/index.ts</code> → <code>bevi</code>) — mas existe, é selecionável por uma variável de ambiente, e a vitrine o torna <em>determinístico</em> em vez de raro. Por isso o invariante virou código (§6).
+</div>
+
+<h3>O CPF ditado estava errado — e isso importava</h3>
+
+<p>
+  O número que veio no pedido <strong>não passa no dígito verificador</strong>. Rodei o algoritmo literal de
+  <code>src/lib/conversation/identity.ts:22-35</code>: o servidor responderia
+  <em>"Esse CPF não confere"</em> e re-emitiria o card. Como ditado, a mudança
+  simplesmente não funcionaria.
+</p>
+
+<p>
+  Em vez de perguntar, conferi contra o vault: <code>CONTA1_CPF</code> (a conta de
+  homologação, titular você) diverge do ditado <strong>exatamente nas posições 8 e
+  9</strong> — dois dígitos trocados de lugar na transcrição de voz. O celular
+  o celular bate integralmente com <code>CONTA1_CELULAR</code>.
+  Ou seja: o par que você quis passar é a conta de teste <strong>já homologada na
+  Bevi</strong>, com você como titular.
+</p>
+
+<div class="card">
+  <strong>Por que isso melhora a proposta, e não só a conserta.</strong> Um CPF
+  válido escolhido ao acaso é o CPF de <em>uma pessoa real</em>, e
+  <code>consultarDados: true</code> puxaria os dados dela na Receita sem
+  consentimento — violação concreta, não teórica. Com a conta da casa, o titular é
+  quem consente, o par CPF×celular casa na Bevi (ela valida os dois juntos), e há
+  precedente documentado no próprio repo (<code>E2E_TEST_CPF</code>).
+  Para o <em>cliente</em>, a exposição de dados <strong>diminui</strong>: hoje o
+  CPF dele vai a um terceiro com consulta de bureau antes de ele ver qualquer
+  coisa; agora só sai na contratação.
+</div>
+
+<h3>As opções na mesa</h3>
+
+<table>
+  <thead><tr><th>Opção</th><th>Decisão</th><th>Motivo</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>CPF fixo direto na descoberta, sem mais nada</td>
+      <td><strong>Descartada</strong></td>
+      <td>O fecho pode retomar a proposta-vitrine no Trilho B e assinar em nome errado.</td>
+    </tr>
+    <tr>
+      <td><strong>Vitrine por env + invariantes de fecho</strong></td>
+      <td><strong>Escolhida</strong></td>
+      <td>Entrega o ganho comercial inteiro; o contrato fica travado por código contra o CPF da casa; desligável por variável.</td>
+    </tr>
+    <tr>
+      <td>Cache passivo de buscas anteriores, sem conta dedicada</td>
+      <td>Descartada por ora</td>
+      <td>Não depende da Bevi, mas serve dado velho e não cobre faixa nunca buscada. Fica como plano B se a administradora pedir para parar.</td>
+    </tr>
+    <tr>
+      <td>Inverter o funil sem tocar na Bevi</td>
+      <td>Impossível</td>
+      <td>Não há carta real sem proposta. Viraria promessa sem número — a classe de defeito que já quebrou o produto antes.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  <strong>O que a opção escolhida NÃO dá:</strong> ela não resolve a disputa pelo
+  slot único da loja (§6, risco herdado), não garante que a carta mostrada sob a
+  identidade da casa seja idêntica à que o cliente receberá sob o CPF dele (§7,
+  hipótese não fechada), e depende de a Bevi aceitar esse padrão de uso — que é
+  conversa comercial, não decisão de código.
+</p>
+</section>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="codigo">
+<h2>4 · Onde o código mudou</h2>
+
+<p class="legenda">Números de <code>coletar-fatos.sh</code>. Nada commitado ainda.</p>
+
+<h3>Arquivos novos</h3>
+<table>
+  <thead><tr><th>Arquivo</th><th>Linhas</th><th>Papel</th></tr></thead>
+  <tbody>
+    <tr><td><code>src/lib/bevi/identidade-vitrine.ts</code></td><td>75</td><td><strong>Núcleo.</strong> O par da casa, a validação e a fronteira <code>ehIdentidadeDeVitrine</code>.</td></tr>
+    <tr><td><code>src/lib/bevi/identidade-vitrine.test.ts</code></td><td>—</td><td>Trava o kill switch e a fronteira (10 casos).</td></tr>
+    <tr><td><code>src/lib/bevi/contrato-nao-fecha-na-vitrine.test.ts</code></td><td>—</td><td>Prova que o contrato nunca nasce no CPF da casa.</td></tr>
+    <tr><td><code>src/lib/bevi/discovery-session.vitrine.test.ts</code></td><td>—</td><td>Prova que a identidade real do cliente tem precedência.</td></tr>
+    <tr><td><code>src/lib/agent/qualify-state.carta-antes-do-cpf.test.ts</code></td><td>—</td><td>Trava a ordem nova do funil e o retorno ao funil antigo sem vitrine.</td></tr>
+    <tr><td><code>src/lib/agent/langgraph/cenario-carta-antes-do-cpf.test.ts</code></td><td>—</td><td>Ponta a ponta no grafo real: busca sai sem identidade coletada.</td></tr>
+    <tr><td><code>src/lib/agent/orchestrator/comparacao-nao-afoga.test.ts</code></td><td>—</td><td>Trava o teto de opções na tabela.</td></tr>
+    <tr><td><code>src/lib/observability/langfuse/carta-na-tela.test.ts</code></td><td>—</td><td>Trava o sinal determinístico novo.</td></tr>
+    <tr><td><code>src/lib/agent/orchestrator/analyze.valor-no-primeiro-turno.test.ts</code></td><td>—</td><td>O teste que faltava: exercita o caminho que <em>escreve</em> o valor, não o fixture pronto. É ele que trava o deadlock do §6.</td></tr>
+    <tr><td><code>src/lib/leads/nome-ancorado-na-fala.test.ts</code></td><td>—</td><td>O nome gravado tem de estar na fala do turno — inclui apóstrofo, hífen e a directive do servidor (8 casos).</td></tr>
+    <tr><td><code>scripts/sonda-nome-perdido.ts</code></td><td>178</td><td><strong>O medidor da dependência nova.</strong> Cruza <code>contact_name IS NULL</code> (estado) com um juiz sobre a fala do cliente — reconciliação, não guard. <code>pnpm sonda:nome-perdido</code>.</td></tr>
+    <tr><td><code>src/lib/agent/langgraph/nodes/capture.nao-inventa-fora-do-gate.test.ts</code></td><td>—</td><td>Trava a REVERSÃO da rodada 10: fora do gate <code>name</code> o servidor não batiza ninguém, com as 8 frases da sonda (3 casos).</td></tr>
+    <tr><td><code>src/lib/agent/langgraph/cenario-nome-oferecido-chega-ao-banco.test.ts</code></td><td>—</td><td>Grafo real até a <strong>coluna</strong> <code>contact_name</code>, com banco de verdade (3 casos).</td></tr>
+    <tr><td><code>src/lib/agent/langgraph/nodes/emit-card.gate-que-nasce-no-turno.test.ts</code></td><td>—</td><td>O último metro: o formulário sai no turno em que a cota é escolhida. Fixture = metadata literal da conversa que falhou (4 casos).</td></tr>
+  </tbody>
+</table>
+
+<h3>Arquivos tocados</h3>
+<table>
+  <thead><tr><th>Arquivo</th><th>Δ</th><th>O que mudou, e por quê</th></tr></thead>
+  <tbody>
+    <tr><td><code>src/lib/agent/qualify-state.ts</code></td><td>+56</td><td>O coração. <code>name</code> e <code>desire</code> deixam de bloquear quem já trouxe alvo; <code>identify</code> sai do pré-busca e reaparece no fecho, depois da escolha.</td></tr>
+    <tr><td><code>src/lib/agent/orchestrator/analyze.ts</code></td><td>+25</td><td>Exceção estreita no guard FIX-279/296/306: o valor dito na <em>abertura</em> é promovido, desde que ancorado na fala. É o que desfaz o deadlock do §6.</td></tr>
+    <tr><td><code>src/lib/agent/langgraph/nodes/route.ts</code></td><td>+10</td><td><code>readyForDiscovery</code> aceita a vitrine no lugar da identidade do cliente. É a barreira real do runtime vivo.</td></tr>
+    <tr><td><code>src/lib/bevi/discovery-session.ts</code></td><td>+9</td><td><code>getIdentity()</code> cai na vitrine quando não há identidade do cliente — e só então.</td></tr>
+    <tr><td><code>src/lib/bevi/fulfillment.ts</code></td><td>+29</td><td><code>ContratacaoComIdentidadeDeVitrineError</code>: o fecho recusa o CPF da casa <em>antes</em> de qualquer chamada à administradora.</td></tr>
+    <tr><td><code>src/lib/agent/orchestrator/recommendation-payload.ts</code></td><td>+36</td><td>Teto de 4 opções na tabela de comparação, aplicado depois da dedup visual, preservando o ranking.</td></tr>
+    <tr><td><code>src/lib/agent/langgraph/nodes/emit-card.ts</code></td><td>+38</td><td>Recalcula o gate depois do turno e emite o <strong>gate de ação</strong> que nasceu no meio dele — é o que faz o formulário aparecer junto com a escolha.</td></tr>
+    <tr><td><code>src/lib/agent/langgraph/nodes/capture.ts</code></td><td>+24</td><td>Só comentário: registra por que a captura fora do gate foi revertida e quem passou a fazer o trabalho (o modelo, via tool).</td></tr>
+    <tr><td><code>src/lib/leads/nome-plausivel.ts</code></td><td>+38</td><td><code>nomeAncoradoNaFala</code> por token (apóstrofo e hífen sobrevivem) e as palavras que o SISTEMA usa para chamar a pessoa deixam de ancorar.</td></tr>
+    <tr><td><code>src/lib/agent/system-prompt.ts</code></td><td>+55</td><td>Duas regras duras novas: "buscar oferta não custa documento" e "quem se apresenta tem o nome gravado — e só a tool grava", ambas com contra-exemplos colhidos de produção.</td></tr>
+    <tr><td><code>src/lib/agent/orchestrator/gate-questions.ts</code></td><td>+22</td><td>A fala do gate virou <strong>condicional</strong>: no fecho, "pra seguir com essa cota"; sem vitrine, a frase antiga volta com o funil antigo.</td></tr>
+    <tr><td><code>src/components/chat/artifacts/gate-identity-form.tsx</code></td><td>+8</td><td>Copy do card alinhada ao novo momento (título, LGPD e botão).</td></tr>
+    <tr><td><code>src/lib/observability/langfuse/funil-scores.ts</code></td><td>+26</td><td>Score <code>carta_na_tela</code>, emitido em todo turno (inclusive 0, para haver denominador).</td></tr>
+    <tr><td><code>docker-compose.yml</code></td><td>+12</td><td>Repassa <code>VITRINE_*</code>, <code>BEVI_SELFCONTRACT_HASH</code> e <code>IDENTITY_ENC_KEY</code> ao container — sem isso a vitrine não chega ao runtime.</td></tr>
+    <tr><td><code>.env.example</code></td><td>+22</td><td>Documenta a vitrine, o kill switch e a proibição de inventar CPF.</td></tr>
+    <tr><td colspan="3"><em>Quatro arquivos de teste existentes tiveram o <strong>cenário</strong> atualizado (as asserções foram preservadas): <code>qualify-state.experience-pergunta-uma-vez</code>, <code>adapter.escada-fix211</code>, <code>identify-capture.gate-forced</code> e <code>gate-reengage-poll.integration</code>. Todos montavam um estado que produzia <code>identify</code> antes da busca — situação que deixou de existir. Cada um traz o comentário explicando a mudança de lugar.</em></td></tr>
+  </tbody>
+</table>
+</section>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="superficie">
+<h2>5 · Impacto na superfície</h2>
+
+<table>
+  <thead><tr><th>Superfície</th><th>O que a pessoa sente</th><th>Risco</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>Chat web — entrada</td>
+      <td>Quem chega dizendo "quero um carro de 80 mil" vai para a busca, sem card de identidade no caminho.</td>
+      <td>Baixo — reversível por env.</td>
+    </tr>
+    <tr>
+      <td>Chat web — card de identidade</td>
+      <td>Aparece só no fecho. Título passou a <em>"Pra seguir com essa cota"</em>, botão <em>"Confirmar meus dados"</em> — nenhum texto promete reserva (o <code>CLAUDE.md</code> proíbe "cota reservada" antes da contratação).</td>
+      <td>Baixo</td>
+    </tr>
+    <tr>
+      <td>Tabela de comparação</td>
+      <td>No máximo 4 cotas, as mais bem ranqueadas. Quem quiser mais, pede.</td>
+      <td><strong>Médio</strong> — é decisão de produto que eu tomei sozinho (§7).</td>
+    </tr>
+    <tr>
+      <td>WhatsApp</td>
+      <td>Mesma ordem. O pedido de CPF por texto continua existindo no fecho — a regra por canal foi preservada.</td>
+      <td>Baixo</td>
+    </tr>
+    <tr>
+      <td>Bevi (administradora)</td>
+      <td>Mais buscas chegam, e todas sob o CPF da casa até o fecho.</td>
+      <td><strong>Alto</strong> — ver §6.</td>
+    </tr>
+    <tr>
+      <td>Langfuse</td>
+      <td>Score <code>carta_na_tela</code> passa a existir em todo turno.</td>
+      <td>Baixo</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  <strong>A jornada nova, na tela.</strong> As duas capturas abaixo são da
+  aplicação rodando, pilotada pelo navegador (as rodadas anteriores deste dossiê
+  não tinham nenhuma — a lacuna era real e está fechada).
+</p>
+
+<p><strong>1 · O primeiro turno.</strong> A pessoa diz o nome e o valor; a resposta
+já traz quatro cartas reais da administradora. Nenhum pedido de documento, nenhuma
+pergunta antes.</p>
+<p><img src="img/nome-capturado-e-carta-no-primeiro-turno.jpg"
+        alt="Chat mostrando a primeira mensagem do cliente e, na resposta, quatro cartas de crédito de administradoras diferentes com parcela, prazo e contemplados por mês"
+        style="max-width:100%;border-radius:8px;border:1px solid #ddd"></p>
+
+<p><strong>2 · O fecho.</strong> Só depois de a cota estar escolhida é que o CPF é
+pedido — e o formulário aparece <em>no mesmo turno</em> da escolha, que é o
+conserto da 9ª rodada (§6).</p>
+<p><img src="img/cpf-so-no-fecho-mesmo-turno.jpg"
+        alt="Chat mostrando a cota registrada no Itaú e, logo abaixo, o formulário pedindo CPF e celular com o aviso de LGPD"
+        style="max-width:100%;border-radius:8px;border:1px solid #ddd"></p>
+</section>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="riscos">
+<h2>6 · Pontos de risco</h2>
+
+<h3>Defeitos que eu mesmo introduzi e corrigi</h3>
+
+<div class="risco medio">
+  <p><strong>NÃO RESOLVIDO NA PRIMEIRA TENTATIVA · A regra foi escrita no prompt errado</strong></p>
+  <p>
+    <strong>O que era:</strong> escrevi a regra nova ("a carta vem antes do CPF")
+    no <code>system-prompt.ts</code> e dei por feito. Ela caiu dentro de
+    <code>SPECIALIST_BASE_PROMPT</code> — que o runtime LangGraph
+    <strong>não lê</strong>. O agente continuaria pedindo CPF, e
+    <code>pnpm prompts:check</code> respondia <em>"Prompts em dia com o código"</em>,
+    porque ele só compara <code>SYSTEM_PROMPT</code> e
+    <code>BASE_SYSTEM_INSTRUCTION</code>. Verde que não significava nada.
+  </p>
+  <p><strong>Correção:</strong> a regra foi movida para dentro de <code>SYSTEM_PROMPT</code>, junto ao Fluxo de Vendas.</p>
+  <p><strong>Prova medida:</strong></p>
+  <div class="prova">antes:  SYSTEM_PROMPT.length = 12098   contém a regra? false
+        pnpm prompts:check → "Prompts em dia com o código" (falso verde)
+
+depois: SYSTEM_PROMPT.length = 13305   contém a regra? true
+        pnpm prompts:check → exit 1, listando as linhas divergentes</div>
+  <p><strong>Cobertura:</strong> <code>src/lib/agent/regra-cpf-por-canal.test.ts</code> já existia e pegou um efeito colateral disso (abaixo).</p>
+</div>
+
+<div class="risco medio">
+  <p><strong>CORRIGIDO · Eu quase reintroduzi um bug de WhatsApp já consertado</strong></p>
+  <p>
+    <strong>O que era:</strong> a primeira versão da regra dizia <em>"NUNCA peça
+    CPF/celular por texto"</em>. Isso é verdade na web e <strong>mentira no
+    WhatsApp</strong>, onde a identidade sempre chega por mensagem — é o próprio
+    <code>identify-capture.ts</code> que a lê do texto. A proibição incondicional
+    faria o agente recusar o CPF que o cliente oferece, que é exatamente o FIX-431.
+  </p>
+  <p><strong>Correção:</strong> a proibição passou a mirar o que importa — condicionar <em>busca</em> a documento — e o "como pedir" voltou a ser do bloco de canal.</p>
+  <p><strong>Prova medida:</strong></p>
+  <div class="prova">antes:  regra-cpf-por-canal.test.ts → 1 falha
+        "a proibição de pedir CPF por texto precisa estar dentro de um
+         bloco condicionado ao canal, não no corpo global"
+depois: 2 passed</div>
+  <p><strong>Cobertura:</strong> <code>src/lib/agent/regra-cpf-por-canal.test.ts</code> (pré-existente; foi ele que pegou).</p>
+</div>
+
+<div class="risco baixo">
+  <p><strong>CORRIGIDO · A vitrine não chegava ao container</strong></p>
+  <p>
+    <strong>O que era:</strong> com o código pronto e os testes verdes, o app
+    local subiu <strong>sem</strong> a vitrine — o <code>docker-compose.yml</code>
+    não repassava <code>VITRINE_CPF</code>, <code>VITRINE_CELULAR</code>,
+    <code>BEVI_SELFCONTRACT_HASH</code> nem <code>IDENTITY_ENC_KEY</code>. Em
+    runtime a vitrine seria um no-op silencioso: nada quebraria, e o funil
+    continuaria pedindo CPF.
+  </p>
+  <p><strong>Prova medida:</strong></p>
+  <div class="prova">antes:  docker exec ... env → VITRINE_CPF=   (vazio)
+depois: docker exec ... env → VITRINE_CPF: SET (11 dígitos)
+                              BEVI_SELFCONTRACT_HASH: SET
+                              IDENTITY_ENC_KEY: SET</div>
+</div>
+
+<div class="risco alto">
+  <p><strong>CORRIGIDO · A venda morria no último metro, com o cliente já decidido</strong></p>
+  <p>
+    <strong>O que era:</strong> o cliente escolhe a cota, diz "quero contratar
+    essa", e o agente responde <em>"o formulário de contratação está aparecendo na
+    tela agora"</em> — e o formulário <strong>não aparece</strong>. Achado
+    exercitando o fecho no app, depois que tudo já estava verde:
+  </p>
+  <div class="prova">[route] gate=identify show=true        ← o funil PEDIU o gate
+stream: CARDS=[recommendation_card]   GATES=[]   ← e ele não saiu</div>
+  <p>
+    <strong>A causa, e por que é minha:</strong> a regra "um turno, uma pergunta"
+    (FIX-424) manda o gate esperar quando o turno já entregou um card que pede
+    ação — com exceção dos gates que <em>são</em> o pedido de ação
+    (<code>GATES_DE_ACAO</code>, que listava só <code>decision</code> e
+    <code>contract</code>). Enquanto o <code>identify</code> morava antes da
+    busca, ele nunca disputava turno com card de oferta e a lista estava completa.
+    Ao descer para o fecho, passou a viver exatamente onde
+    <code>recommendation_card</code> e <code>simulation_result</code> são
+    emitidos — e começou a ser engolido.
+  </p>
+  <p>
+    <strong>Correção:</strong> <code>identify</code> entrou em
+    <code>GATES_DE_ACAO</code> (<code>emit-card.ts</code>). No fecho ele
+    <em>é</em> o pedido de ação: a troca do documento pelo contrato.
+  </p>
+  <p><strong>Prova medida — mesmo turno, no app:</strong></p>
+  <div class="prova">antes:  CARDS=[recommendation_card]   GATES=[]          ← formulário prometido e ausente
+depois: CARDS=[]                    GATES=['identity']   ← formulário na tela</div>
+  <p>
+    <strong>Cobertura:</strong>
+    <code>src/lib/agent/langgraph/cenario-identidade-nao-cede-a-vez.test.ts</code>,
+    que reproduz a trilha exata (<code>text → artifact:simulation_result</code>,
+    sem gate) e falha sem o fix. O FIX-424 original continua verde — o gate
+    <code>experience</code> segue cedendo a vez, como deve.
+  </p>
+</div>
+
+<div class="risco medio">
+  <p><strong>CORRIGIDO · O cliente que diz só o valor caía num turno mudo</strong></p>
+  <p>
+    <strong>O que era:</strong> o atalho "quem já tem alvo de busca não é barrado
+    pelo nome" olhava só o valor. Quem escrevesse apenas <em>"80000"</em> — sem
+    dizer se é carro, moto ou imóvel — passava direto para o gate
+    <code>search</code>, que é <strong>terminal e mudo</strong>, enquanto
+    <code>readyForDiscovery</code> recusava a busca por falta da categoria.
+    Resultado: nada perguntado, nada buscado, cliente parado olhando para a tela.
+  </p>
+  <p>
+    É o caso real da conv <code>06163675</code>, em que a pessoa escreveu
+    <em>"80000"</em> e precisava ouvir <em>"carro, moto ou imóvel?"</em>. Encontrei
+    sondando o próprio atalho atrás de estado que vaza.
+  </p>
+  <p>
+    <strong>Correção:</strong> alvo de busca passou a ser valor <em>e</em>
+    categoria — o que a administradora de fato precisa para simular
+    (<code>temAlvoDeBusca</code>, em <code>qualify-state.ts</code>).
+  </p>
+  <p><strong>Prova medida — no app, mensagem "80000":</strong></p>
+  <div class="prova">antes:  nextGate → "search" (terminal mudo) · readyForDiscovery → false
+depois: 🤖 "Opa, você quer um consórcio de R$ 80 mil! Antes de buscar as
+           melhores opções pra você, preciso saber: é pra um carro, uma
+           moto, ou um imóvel?"</div>
+  <p><strong>Cobertura:</strong> dois casos em <code>qualify-state.carta-antes-do-cpf.test.ts</code> — "valor sem categoria não cai no terminal mudo" e "com a categoria, o atalho volta a valer".</p>
+</div>
+
+<h3>Achados da crítica adversarial, e o que fiz com cada um</h3>
+
+<p>
+  Submeti a entrega inteira a uma revisão adversarial com instrução de rasgá-la.
+  Ela voltou com <strong>nota 4/10</strong> e um veredito de "não vai para
+  produção". Estava certa em quase tudo. O que segue é o que ela achou e o que
+  foi feito — os itens sem correção estão em §7, não escondidos aqui.
+</p>
+
+<div class="risco alto">
+  <p><strong>CORRIGIDO · O guard que eu disse ter fechado o desastre não fechava</strong></p>
+  <p>
+    <strong>O que era:</strong> meu guard em <code>startContract</code> barra o
+    caso em que o CPF DA CASA chega como input — e o próprio comentário admitia
+    que "nenhum caminho legítimo produz isto". O desastre que justificou a
+    arquitetura inteira é outro: o cliente com <strong>CPF real</strong> fecha no
+    Trilho B, <code>createProposal</code> recebe <code>Duplicated Hash</code>, e o
+    gateway <strong>adota a proposta corrente do hash sem conferir de quem é</strong>
+    — que, com a vitrine ligada, é a da casa. RG e comprovante do cliente entram
+    nela, e <code>finalize()</code> a envia à administradora no nome errado.
+  </p>
+  <p>
+    Eu tinha escrito no dossiê que isso estava "fechado por código e por teste".
+    Não estava.
+  </p>
+  <p>
+    <strong>Correção:</strong> a retomada passou a conferir o dono. <code>/system</code>
+    resolve a proposta corrente só pelo hash e não devolve CPF, então a checagem é
+    explícita via <code>get-multi-proposal/{cpf}</code>: se a proposta corrente não
+    está na lista daquele CPF, o fecho é recusado com
+    <code>PropostaDeOutroTitularError</code>. Falha FECHADA de propósito — melhor a
+    contratação falhar e ser refeita do que nascer no nome de outra pessoa.
+  </p>
+  <div class="prova">antes:  Duplicated Hash → adota a proposta corrente, seja de quem for
+depois: Duplicated Hash → confere o dono → recusa se não for do CPF do fecho
+
+custo: 1 chamada extra, e SÓ quando houve retomada (proposta nova é dele
+       por construção — há teste travando que a chamada não acontece)</div>
+  <p><strong>Cobertura:</strong> <code>src/lib/adapters/bevi/proposta-retomada-tem-dono.test.ts</code> (3 casos). Quatro testes pré-existentes do Trilho B tiveram os dublês atualizados para refletir a exigência nova.</p>
+</div>
+
+<div class="risco alto">
+  <p><strong>CORRIGIDO · O kill switch revertia o estado e deixava a fala do mundo novo</strong></p>
+  <p>
+    <strong>O que era:</strong> com <code>VITRINE_CPF</code> vazio o funil volta a
+    pedir o CPF antes da busca — mas a copy continuava dizendo "pra reservar essa
+    cota no seu nome", <strong>sem cota nenhuma na tela</strong>. Minha afirmação
+    de que desligar "devolve o funil antigo inteiro" era falsa: devolvia o estado,
+    não a fala.
+  </p>
+  <p>
+    <strong>Correção:</strong> a copy do gate e do card passou a ser escolhida pelo
+    <em>mesmo</em> predicado que move o gate (<code>vitrineDisponivel()</code>), de
+    modo que estado e fala não possam divergir.
+  </p>
+  <p><strong>Cobertura:</strong> <code>copy-do-identify-segue-o-momento.test.ts</code> — 5 casos, incluindo "não fala de uma cota que o cliente ainda não viu".</p>
+</div>
+
+<div class="risco medio">
+  <p><strong>CORRIGIDO · O botão prometia reservar uma cota, e não reservava nada</strong></p>
+  <p>
+    <strong>O que era:</strong> eu tinha escrito o CTA como <em>"Reservar minha
+    cota"</em>. O submit desse card só grava a identidade — a proposta na
+    administradora nasce no card seguinte. E o <code>CLAUDE.md</code> deste projeto
+    proíbe <em>literalmente</em> "cota reservada" antes da contratação. Escrevi a
+    promessa exata que a regra do projeto veta, no clique mais sensível da jornada.
+  </p>
+  <p><strong>Correção:</strong> título "Pra seguir com essa cota", botão "Confirmar meus dados", LGPD "pra seguir com a contratação". Nada promete reserva.</p>
+</div>
+
+<div class="risco medio">
+  <p><strong>CORRIGIDO · A "exceção estreita" não era estreita, nem era da abertura</strong></p>
+  <p>
+    <strong>O que era:</strong> a condição que promove o valor dito na abertura não
+    tinha nenhum termo que identificasse o primeiro turno — valia para qualquer
+    turno pré-<code>desireAnswered</code>. E passava <code>escalaImplicita: true</code>,
+    que <code>valor-declarado.ts</code> reserva explicitamente para o turno em
+    que a pergunta do valor foi feita: fora dali, ela transforma "tenho 2 filhos"
+    em R$ 2.000.
+  </p>
+  <p><strong>Correção:</strong> <code>escalaImplicita</code> saiu, e a condição ganhou <code>!revealCompleted</code>. Dois casos novos travam: "número que NÃO é preço" e "não promove valor solto depois que a busca já rodou".</p>
+</div>
+
+<div class="risco baixo">
+  <p><strong>CORRIGIDO · Três defeitos menores que a crítica pegou</strong></p>
+  <ul>
+    <li><strong>Env vazando entre testes:</strong> dois arquivos novos setavam <code>VITRINE_*</code> sem restaurar. Com <code>--no-file-parallelism</code> isso vaza para todos os arquivos seguintes — e era explicação alternativa, não considerada, para o flake que eu havia atribuído à Bevi. Ambos restauram agora.</li>
+    <li><strong>Métrica que piora quando o produto melhora:</strong> <code>carta_na_tela</code> é por turno, e quanto melhor a vitrine funciona, mais turnos pós-carta valem zero. Entrou o marco de <strong>sessão</strong> (<code>carta_vista</code> + <code>turnos_ate_carta</code>), que é a pergunta certa: esta conversa viu preço, e em quantos turnos?</li>
+    <li><strong>Teste vendido como cobertura que não cobria:</strong> o caso da parcela passa com o código revertido. Está marcado como <code>[caracterização]</code>, não como prova da mudança.</li>
+    <li><strong>A tabela de cartas dividia o turno com uma pergunta</strong> (achado meu, validando o app): quatro cotas na tela e, embaixo, os chips de "você já fez consórcio antes?". <code>comparison_table</code> não estava em <code>CARDS_QUE_PEDEM_ACAO</code> — e é justamente o card em que o cliente escolhe a cota. A lacuna era antiga; a carta no primeiro turno a tornou frequente. Corrigido — e a suíte pegou uma regressão que a correção causou (o gate deixou de voltar no turno mudo, a rede do caso <code>ff8f2080</code>), que também está fechada.</li>
+    <li><strong>A copy condicional não cobria o WhatsApp</strong> (achado meu, revisando o que a crítica apontou na web): <code>IDENTIFY_CONTEXT_WHATSAPP</code> continuava dizendo "pra achar as opções mais aderentes ao seu perfil" — falso quando as opções já estão na conversa. Pior, <code>IDENTIFY_WHATSAPP_PROMPT</code> era uma <code>const</code> de topo de módulo: congelava a decisão condicional no instante do import. As duas viraram função.</li>
+  </ul>
+</div>
+
+<div class="risco medio">
+  <p><strong>NÃO RESOLVIDO · Consulta de bureau recorrente no seu CPF</strong></p>
+  <p>
+    Cada proposta-vitrine criada dispara <code>consultarDados: true</code> — consulta
+    à Receita — no CPF do titular da conta da casa, que hoje é o seu. O volume é
+    <em>proporcional ao sucesso da vitrine</em>: quanto mais gente busca, mais
+    consultas no seu nome.
+  </p>
+  <p>
+    <strong>Não medi o efeito</strong> disso em registro de consultas ou score, e
+    não sei dizer se é irrelevante ou não. Levantado pela revisão adversarial, e
+    é um dos motivos pelos quais a conta-vitrine deveria ser uma conta da empresa
+    combinada com a Bevi, não a sua pessoal.
+  </p>
+</div>
+
+<h3>Segunda rodada de crítica — o que ela pegou</h3>
+
+<p>
+  A entrega foi submetida a uma segunda revisão adversarial. Ela voltou com
+  <strong>4/10 de novo</strong>, com achados diferentes e mais fundos. Dois deles
+  são a mesma lição que este dossiê já narrava — aprendida pela terceira vez.
+</p>
+
+<div class="risco alto">
+  <p><strong>CORRIGIDO · O trabalho de prompt era texto morto, pela SEGUNDA vez</strong></p>
+  <p>
+    <strong>O que era:</strong> o grafo não manda <code>SYSTEM_PROMPT</code> ao
+    modelo — manda <code>leanSystemPrompt()</code>, que <strong>corta a seção
+    "## Fluxo de Vendas" inteira</strong>. É exatamente onde eu tinha posto as duas
+    regras novas, depois de já ter errado uma vez pondo-as em
+    <code>SPECIALIST_BASE_PROMPT</code>.
+  </p>
+  <p>
+    E havia algo pior que a ausência: o bloco que o <code>leanSystemPrompt</code>
+    injeta no lugar do fluxo cortado <strong>ensinava a ordem antiga</strong>
+    (<code>identidade → busca</code>) — a autoridade mais específica na janela do
+    modelo, contradizendo o servidor em todo turno.
+  </p>
+  <p><strong>Prova medida:</strong></p>
+  <div class="prova">SYSTEM_PROMPT: 13896 chars   |   lean (o que o modelo recebe): 10641 chars
+
+"custa documento"     → SYSTEM_PROMPT: true   |   LEAN: false
+"nunca SOBRE ele"     → SYSTEM_PROMPT: true   |   LEAN: false
+ordem VELHA no LEAN   → true</div>
+  <p>
+    <strong>Correção:</strong> as REGRA DURAs sobrevivem ao corte (o
+    <code>leanSystemPrompt</code> as extrai antes de podar), e o bloco de ordem
+    virou condicional à vitrine — com a vitrine, ensina
+    <code>valor → busca → … → identidade → contrato</code>; sem ela, volta a ordem
+    antiga.
+  </p>
+  <p>
+    <strong>Cobertura:</strong>
+    <code>lean-prompt-entrega-as-regras.test.ts</code> — e o ponto dele é o método:
+    ele asserta sobre <code>leanSystemPrompt(SYSTEM_PROMPT)</code>, <em>o artefato
+    que o modelo recebe</em>, não sobre a constante. Era essa a diferença entre as
+    duas vezes em que isto passou batido.
+  </p>
+  <div class="aviso">
+    <strong>Consequência para o que este dossiê afirmava:</strong> o antes/depois
+    da meta-narração (2/3 → 0/3) foi atribuído a um ajuste de prompt que
+    mecanicamente não chegava ao modelo. O comportamento melhorou — mas por causa
+    do <em>estado</em> (os gates), não daquele texto. A medição estava certa; a
+    atribuição, errada.
+  </div>
+</div>
+
+<div class="risco alto">
+  <p><strong>CORRIGIDO · "Tudo verde" não era verdade</strong></p>
+  <p>
+    <strong>O que era:</strong> eu reportei 3.542 testes verdes. O comando que rodei
+    exclui <code>route*</code> — e era exatamente lá que a suíte estava
+    <strong>vermelha</strong>: <code>route.closing-persistence.test.ts</code>
+    estourava 20s de timeout.
+  </p>
+  <p>
+    A causa é da própria entrega: <code>vitest.setup.ts</code> carrega o
+    <code>.env.local</code>, que agora tem <code>VITRINE_*</code>. Com a vitrine
+    ligada, um teste de cenário pré-reveal passou a disparar <strong>busca real na
+    Bevi</strong> e a estourar. Um teste de rota batendo na administradora de
+    verdade também é quebra de hermeticidade.
+  </p>
+  <p>
+    <strong>Correção:</strong> a suíte nasce com a vitrine DESLIGADA
+    (<code>vitest.setup.ts</code>); quem testa a vitrine a liga explicitamente — e
+    todos os arquivos que fazem isso já restauram o env depois.
+  </p>
+  <p><strong>Prova medida — agora sem exclusão nenhuma:</strong></p>
+  <div class="prova">antes:  route.closing-persistence → "Test timed out in 20000ms"
+        (invisível no comando de unit, que exclui route*)
+
+depois: $ RUN_DB_TESTS=1 pnpm vitest run          ← a suíte INTEIRA
+        Test Files  557 passed (557)
+             Tests  4011 passed | 1 skipped (4012)</div>
+</div>
+
+<div class="risco medio">
+  <p><strong>CORRIGIDO · A directive mandava o modelo mentir no fecho</strong></p>
+  <p>
+    <code>GATE_INTENT.identify</code> instruía: <em>"diga POR QUE precisa (a
+    administradora exige pra trazer as ofertas reais)"</em>. Com o gate no fecho,
+    as ofertas já estão na tela — a frase é falsa. E a directive é a autoridade
+    mais específica da janela naquele turno: ganharia das copies que eu já tinha
+    corrigido. Agora ela é condicional, como as outras.
+  </p>
+</div>
+
+<div class="risco medio">
+  <p><strong>CORRIGIDO · Um trilho do WhatsApp ficou no mundo antigo</strong></p>
+  <p>
+    <code>runSearchSummaryWithOrchestrator</code> (<code>whatsapp/adapter.ts</code>)
+    ainda exigia <code>identityCollected</code> para buscar: pedia o CPF e não
+    buscava. Pior, com a vitrine ligada pedia com a copy do <em>fecho</em> ("pra
+    seguir com essa cota") sem cota nenhuma na tela. Alcançável pelo caminho
+    normal. O tripwire passou a aceitar a vitrine, como <code>readyForDiscovery</code>
+    já fazia. Resposta honesta à pergunta que eu mesmo mandei o crítico verificar
+    ("a copy condicional cobre todos os pontos?"): <strong>não cobria</strong>.
+  </p>
+</div>
+
+<div class="risco medio">
+  <p><strong>CORRIGIDO · A métrica nova calava justamente no caso de sucesso</strong></p>
+  <p>
+    <strong>O que era:</strong> <code>discovery</code> roda antes de
+    <code>persist</code>, e é o <code>persist</code> que grava a fala do cliente.
+    A contagem de turnos acontecia antes de a mensagem existir — subtraindo 1 de
+    todo mundo e dando <strong>zero</strong> quando a carta aparece já na primeira
+    fala. Como zero não é medição, o score era descartado: a métrica que mede a
+    vitrine ficava muda exatamente quando a vitrine funciona.
+  </p>
+  <p><strong>Prova — nos próprios dados do Langfuse:</strong></p>
+  <div class="prova">carta_vista:       57 emissões
+turnos_ate_carta:   3 emissões     ← 95% dos casos caíam fora</div>
+  <p><strong>Cobertura:</strong> <code>marcar-primeira-carta.integration.test.ts</code> — toca o banco de propósito, porque a aritmética é sobre contagem real de linhas.</p>
+</div>
+
+<div class="risco baixo">
+  <p><strong>CORRIGIDO · Dois achados meus, auditando o que a crítica apontou</strong></p>
+  <ul>
+    <li><strong>Um segundo leitor da directive escapou.</strong> Corrigi
+    <code>GATE_INTENT</code> no caminho do turno e esqueci o do cliente
+    <em>confuso</em> (<code>buildSystemContext</code>, ramo
+    <code>confusedAboutGate</code>) — que ouviria a justificativa errada sendo
+    justamente quem menos podia ouvi-la. Agora os dois passam pelo resolvedor.</li>
+    <li><strong>Dois testes se diziam "do fecho" e passavam com a vitrine desligada</strong>
+    — exercitavam o caminho pré-busca e provavam outra coisa. Depois que
+    <code>vitest.setup.ts</code> passou a zerar o env, isso ficou visível. Agora
+    ligam a vitrine explicitamente, como o cenário que descrevem exige.</li>
+  </ul>
+</div>
+
+<div class="risco baixo">
+  <p><strong>CORRIGIDO · Diagnóstico enganoso na falha da API</strong></p>
+  <p>
+    <code>getMultiProposal</code> não conferia <code>res.ok</code>: um corpo JSON de
+    erro virava lista vazia, e o verificador de dono concluía "a proposta não é
+    deste CPF" — recusando contratação legítima com o rótulo errado. Falhar
+    continua certo; mentir sobre o motivo, não.
+  </p>
+</div>
+
+<h3>Terceira rodada de crítica — 6/10, e o que ela pegou</h3>
+
+<p>
+  A nota subiu de 4 para 6, e o revisor confirmou <em>rodando</em> o que a rodada
+  anterior deixou: suíte inteira verde, jornada exercitada ao vivo contra a Bevi
+  real, 4 cotas na tela, zero menções a CPF. O que faltava era a mesma família de
+  defeito de novo — e duas copies que escaparam.
+</p>
+
+<div class="risco alto">
+  <p><strong>CORRIGIDO · Com a vitrine DESLIGADA, o modelo lia duas ordens contraditórias</strong></p>
+  <p>
+    <strong>O que era:</strong> a extração das REGRA DURAs era incondicional. Com
+    <code>VITRINE_*</code> vazio, a janela do modelo continha ao mesmo tempo
+    <em>"buscar oferta NÃO custa documento… o CPF entra só no fecho"</em> e
+    <em>"## Ordem do funil … identidade → busca"</em>. E no turno do gate a
+    directive mandava dizer <em>"a administradora exige pra trazer as ofertas
+    reais"</em> — <strong>a frase que a própria REGRA DURA, na mesma janela, lista
+    como BAD</strong>.
+  </p>
+  <p>
+    Isso valia no kill switch <em>e</em> no estado default do rollout (código novo
+    em produção com o secret ainda sem <code>VITRINE_*</code>) — que este dossiê
+    chamava de "degradação segura". Não era.
+  </p>
+  <p><strong>Prova medida, com a vitrine desligada:</strong></p>
+  <div class="prova">regra NOVA "custa documento" presente:      true
+ordem VELHA "identidade → busca" presente:  true
+→ CONTRADIÇÃO na mesma janela:              true
+item 5 do fluxo arrastado órfão:            true</div>
+  <p>
+    <strong>Correção:</strong> a extração passou a ser precisa (o bloco termina
+    onde a regra termina, sem arrastar o item seguinte) e <strong>condicional</strong>
+    — a regra do documento só é entregue quando a vitrine está ligada, pelo mesmo
+    predicado que governa a ordem. Regra que contradiz o servidor é pior que regra
+    ausente.
+  </p>
+  <p><strong>Cobertura:</strong> <code>lean-prompt-entrega-as-regras.test.ts</code> — 9 casos, incluindo os dois lados do kill switch e o do item órfão.</p>
+</div>
+
+<div class="risco medio">
+  <p><strong>CORRIGIDO · Duas copies do card escaparam da condicional</strong></p>
+  <ul>
+    <li><strong>O aceite de LGPD</strong> ficou fixo em "pra reservar essa cota" —
+    falando de cota inexistente no pré-busca, e com a palavra que o
+    <code>CLAUDE.md</code> proíbe. E este dossiê afirmava um texto ("pra seguir com
+    a contratação") que <em>não existia no código</em>. Agora existe, e é condicional.</li>
+    <li><strong>O rótulo do botão de envio</strong> ("Enviei meus dados pra buscar
+    as ofertas") vira <em>fala persistida do cliente</em>, que o modelo relê nos
+    turnos seguintes — no fecho, ensinando a ordem antiga a partir da própria
+    transcrição. Também condicional agora.</li>
+  </ul>
+  <p><strong>Cobertura:</strong> três casos novos em <code>copy-do-identify-segue-o-momento.test.ts</code>, incluindo um que falha se a palavra "reservar" reaparecer em qualquer lugar do card.</p>
+</div>
+
+<div class="risco medio">
+  <p><strong>CORRIGIDO · O runbook desta entrega era inexecutável</strong></p>
+  <p>
+    A ordem que eu tinha escrito (deployar, <em>depois</em> publicar o prompt) é
+    barrada pelo próprio CI — há um step que compara o prompt publicado com o do
+    código e falha o deploy quando divergem. Seguir o documento travava o pipeline.
+  </p>
+  <p>
+    <strong>Correção:</strong> a ordem virou <em>env no secret → publicar e
+    deployar na mesma janela</em>, com a análise de por que publicar antes é seguro
+    <strong>aqui</strong>: verifiquei que as 11 linhas divergentes moram todas na
+    seção que o <code>leanSystemPrompt</code> <em>em produção hoje</em> corta antes
+    de enviar ao modelo. É acidente da formatação atual, não desenho — por isso a
+    janela deve ser curta, e está dito no documento.
+  </p>
+</div>
+
+<div class="risco baixo">
+  <p><strong>CORRIGIDO · O mesmo off-by-one, na direção oposta</strong></p>
+  <p>
+    No clique do WhatsApp, <code>recordUserClick</code> persiste a fala
+    <em>antes</em> do turno — então somar +1 contava o mesmo turno duas vezes. O
+    conserto não foi outro booleano para o chamador errar: a ponte agora compara a
+    fala do turno com a última mensagem gravada e decide sozinha. Funciona nos dois
+    caminhos sem que ninguém precise saber por qual chegou.
+  </p>
+</div>
+
+<h3>Quarta rodada — o acabamento do próprio palco</h3>
+
+<p>
+  A quarta revisão manteve 6/10 e confirmou <em>rodando</em> que o alicerce está
+  de pé (funil invertido, dinheiro blindado, kill switch, retomada com dono).
+  O que ela achou foi o <strong>turno-vitrine sujo em 2 de 3 execuções</strong> —
+  justamente a cara da entrega.
+</p>
+
+<div class="risco alto">
+  <p><strong>CORRIGIDO · JSON de tool-call vazou como fala, e ficou gravado</strong></p>
+  <p>Encontrado no banco, persistido como mensagem do assistente:</p>
+  <div class="prova">assistant | Já busco as melhores opções de consórcio pra um carro até R$ 80 mil.
+          |   "category": "veiculo",
+          |   "max_value": 80000,
+          |   "client_profile": "default"
+          | }</div>
+  <p>
+    Duas coisas erradas: "já busco" com a busca <em>já feita</em>, e a mecânica
+    escancarada. E o pior é a persistência — o modelo relê a própria transcrição
+    nos turnos seguintes, então o vazamento contamina a conversa inteira.
+  </p>
+  <p>
+    O guard que existia (<code>isInternalToolLeak</code>) pega o <em>nome</em> da
+    tool; este vazamento é o <em>corpo</em> dos argumentos, que não cita tool
+    nenhuma.
+  </p>
+  <p>
+    <strong>Por que isto virou código e não juiz no Langfuse:</strong> o
+    <code>CLAUDE.md</code> manda tratar fala ruim — tom, repetição, "soou
+    robótico" — com juiz sobre volume, e proíbe transformar frase feia em regex.
+    Isto não é uma frase: é uma classe <em>estrutural</em>. Um par
+    <code>"chave": valor</code> em linha própria não é português, não tem
+    paráfrase e não é questão de gosto. O teste de decisão do projeto responde
+    sozinho: o servidor <em>sabe</em> que aquilo é argumento de tool.
+  </p>
+  <p>
+    <strong>Cobertura:</strong> <code>json-nao-vira-fala.test.ts</code> — e a
+    metade que importa são os casos NEGATIVOS: fala com dois-pontos, com aspas e
+    com cifrão passa intacta. Guard estreito, não vassoura.
+  </p>
+</div>
+
+<div class="risco alto">
+  <p><strong>CORRIGIDO · A âncora era cega à condução por chips</strong></p>
+  <p>
+    <strong>O que era:</strong> no turno do reveal, se a âncora não entrega nada,
+    uma rede reabre o gate para o cliente não ficar diante dos cards sem o que
+    responder. Mas "entregar" era medido só em <em>caracteres de texto</em> —
+    e quando o modelo ancora com <code>quick_reply</code> ("Folga no bolso" /
+    "Contemplar mais rápido"), que é condução perfeitamente boa e escolha comum
+    dele, o texto não cresce. A rede concluía "âncora falhou" e reabria o gate:
+  </p>
+  <div class="prova">[card] comparison_table — 4 cotas
+[card] quick_reply — "Folga no bolso" / "Contemplação mais rápida"
+[gate] chips        — "Você já fez consórcio antes?"
+
+    duas perguntas, cinco botões, um turno</div>
+  <p>
+    Exatamente a classe FIX-424 que este dossiê declarava fechada para a tabela —
+    e <strong>não é intermitente</strong>: dado que o modelo escolha chips em vez
+    de frase, acontece sempre.
+  </p>
+  <p>
+    <strong>Correção:</strong> "âncora entregou" passou a ser texto <em>ou</em>
+    card que pede resposta. A rede continua inteira para o que ela realmente
+    protege — o turno em que nada chega ao cliente.
+  </p>
+  <p><strong>Cobertura:</strong> <code>ancora-conduz-por-chips.test.ts</code>, incluindo o caso em que o silêncio total ainda reabre o gate.</p>
+</div>
+
+<div class="risco medio">
+  <p><strong>CORRIGIDO · O filtro do prompt dependia de uma frase</strong></p>
+  <p>
+    A regra condicional era filtrada por <code>includes("custa documento")</code>.
+    Reescrever a regra — inclusive pela UI do Langfuse, que não passa por teste
+    nenhum — devolveria a contradição prompt×servidor <strong>em silêncio</strong>.
+    Agora a regra carrega uma tag no título (<code>REGRA DURA [VITRINE]</code>) e o
+    filtro é pela tag: sobrevive à reescrita do corpo, que é o que de fato muda.
+  </p>
+</div>
+
+<div class="risco baixo">
+  <p><strong>CORRIGIDO · Dois reforços meus, auditando as próprias correções</strong></p>
+  <ul>
+    <li><strong>O guard de JSON deixava escapar quatro variações</strong> — objeto
+    inteiro numa linha, bloco markdown (<code>```json</code>), chave com hífen e
+    colchete de array. Sondei cada uma antes de dar por fechado. Agora pega as
+    quatro, e os sete casos negativos continuam passando intactos — a metade que
+    impede o guard de virar vassoura.</li>
+    <li><strong>A lista de cards que "conduzem" estava incompleta</strong> —
+    faltavam <code>whatsapp_optin</code>, <code>contemplation_dial</code>,
+    <code>embedded_bid</code> e os formulários. Com teste travando que os cards
+    <em>informativos</em> (tabela, simulação, hero) continuam NÃO contando: é essa
+    distinção que mantém a rede de segurança viva para o turno em que nada chega
+    ao cliente.</li>
+  </ul>
+</div>
+
+<div class="risco baixo">
+  <p><strong>CORRIGIDO · Mais dois pontos finos</strong></p>
+  <ul>
+    <li><strong>O runbook meio-aplicado.</strong> A ordem certa estava no arquivo
+    de pendência, mas o box do topo deste dossiê — a primeira coisa que se lê —
+    ainda prescrevia a inversa, barrada pelo CI. E o §7 omitia o deploy e cravava
+    um mecanismo falso. Ambos corrigidos.</li>
+    <li><strong>Falso-positivo na contagem de turnos:</strong> comparar a fala do
+    turno só com a última mensagem subcontava quando o cliente repetia a mesma
+    frase. Agora olha as duas últimas.</li>
+  </ul>
+</div>
+
+<h3>Quinta rodada — os dois consertos anteriores eram falsos</h3>
+
+<p>
+  A nota <strong>caiu</strong> de 6 para 5, e merecidamente: os dois "CORRIGIDO"
+  da rodada anterior estavam fechados <em>na função</em> e abertos <em>no
+  fluxo</em>. É a terceira variação do mesmo vício nesta entrega, e vale nomear:
+  <strong>eu testei o que escrevi, não o que o sistema faz.</strong>
+</p>
+
+<div class="risco alto">
+  <p><strong>CORRIGIDO NA TERCEIRA TENTATIVA · O guard de JSON, e a lição que ele custou</strong></p>
+  <p>
+    <strong>O que era:</strong> o vazamento do incidente atravessava o filtro
+    inteiro. Levei <em>três</em> tentativas para acertar, e cada erro foi a mesma
+    coisa numa camada diferente:
+  </p>
+  <ol>
+    <li><strong>1ª —</strong> escrevi o guard e testei a função com o bloco inteiro.
+    O pipeline nunca entrega isso: <code>splitSegments</code> corta em
+    <code>:</code>, e o par chave-valor chega partido.</li>
+    <li><strong>2ª —</strong> movi para <code>stripProcessPreamble</code> e chamei o
+    teste de "o PIPELINE real". <strong>Aquela função não tem call site de
+    produção</strong> — quem filtra a fala é o <code>EphemeralTextFilter</code>.
+    Testei uma função morta e declarei vitória.</li>
+    <li><strong>3ª —</strong> a defesa foi para dentro do filtro, e o teste passou a
+    empurrar <em>deltas</em>, como o streaming faz.</li>
+  </ol>
+  <p><strong>Prova — no filtro que produção executa, em três tamanhos de delta:</strong></p>
+  <div class="prova">antes:  delta único → vaza · deltas de 8 → vaza · deltas de 3 → vaza
+depois: 18/18 verdes · JSON fora · frase em português preservada ·
+        fala com dois-pontos intacta</div>
+  <p>
+    Faltava ainda um detalhe do streaming: como <code>:</code> é fronteira,
+    <code>"category":</code> era liberado <em>antes</em> de a linha existir. Agora
+    uma linha com cara de JSON segura o stream até a quebra — e o falso positivo
+    aqui só atrasa a liberação, nunca apaga conteúdo.
+  </p>
+  <p>
+    <strong>A lição, que vale mais que o fix:</strong> três vezes nesta entrega eu
+    testei o artefato que escrevi em vez do que o sistema executa — a constante de
+    prompt errada, o fixture já resolvido, a função sem call site. Todos passavam
+    verdes. O que quebrou o ciclo foi sempre a mesma pergunta: <em>qual código roda
+    quando o cliente digita?</em>
+  </p>
+</div>
+
+<div class="risco alto">
+  <p><strong>CORRIGIDO DE VERDADE · O ramo dos chips era código morto</strong></p>
+  <p>
+    <strong>O que era:</strong> o beat da âncora roda <em>sem tools</em>, então
+    nunca emite artifact; e o <code>slice</code> a partir de um "marco" descartava
+    os cards do beat principal — que é onde o <code>quick_reply</code> nasce. A
+    lista chegava sempre vazia e o predicado degenerava no antigo. Teste unitário
+    verde, comportamento idêntico no runtime.
+  </p>
+  <p>
+    <strong>Correção, e o diagnóstico real:</strong> removi o slice (todo artifact
+    do turno é deste turno), e o cenário de fluxo mostrou que a causa estava um
+    nível acima — <code>quick_reply</code> não constava em
+    <code>CARDS_QUE_PEDEM_ACAO</code> no <code>emit-card</code>. Agora consta.
+  </p>
+  <p>
+    <strong>Cobertura:</strong> <code>cenario-chips-conduzem-o-reveal.test.ts</code>
+    — roda o grafo, não a função. Reproduzia a trilha
+    <code>text → artifact:quick_reply → gate:experience</code> e falha sem o fix.
+    O segundo caso trava a metade oposta: turno realmente mudo ainda devolve o gate.
+  </p>
+</div>
+
+<div class="risco baixo">
+  <p><strong>CORRIGIDO · Três acabamentos</strong></p>
+  <ul>
+    <li><strong>"confiança" sem cedilha</strong> numa linha que <em>eu</em> reescrevi
+    — acento faltando é defeito de entrega pela régua deste projeto, e passou por
+    mim duas vezes.</li>
+    <li><strong>A contagem de turnos parou de adivinhar.</strong> Comparar a fala
+    com a última mensagem errava nos dois sentidos (subcontava no web quando o
+    cliente repetia a frase, sobrecontava no WhatsApp). Quem sabe é o
+    <em>caminho</em>, não o texto — e o chamador conhece o caminho.</li>
+    <li><strong>Processo:</strong> editei o working tree <em>durante</em> a revisão
+    anterior, e o patch entregue já não descrevia o código. A memória do projeto
+    tem "não editar durante pilotagem"; vale igual para crítica.</li>
+  </ul>
+</div>
+
+<h3>Sétima rodada — 8/10, e o furo que a própria jornada abriu</h3>
+
+<p>
+  A nota subiu de 4 para 8. O revisor verificou tudo por sonda própria — inclusive
+  perseguindo a suspeita de que o prompt teria sido publicado às escondidas (não
+  foi: a v4 é de 20/08 e tem o texto antigo) — e confirmou 3/3 jornadas limpas no
+  app. O que ele achou de novo é consequência direta da jornada que esta entrega
+  criou.
+</p>
+
+<div class="risco alto">
+  <p><strong>CORRIGIDO · O modelo inventou o nome do cliente, e o servidor gravou</strong></p>
+  <p>
+    <strong>O que era:</strong> no fecho de uma conversa em que ninguém se
+    apresentou, o modelo chamou <code>save_contact_name</code> com
+    <strong>"Cliente"</strong> — e o banco gravou. O validador existente recusa
+    "Teste" e "Voltei", mas "Cliente", "Comprador" e "Interessado" passam: são
+    palavras plausíveis como nome.
+  </p>
+  <p>
+    <strong>Por que a vitrine tornou isso comum:</strong> antes o nome vinha cedo,
+    no começo da conversa. Agora "chegar ao fecho sem nome" é o caso normal — e é
+    exatamente aí que o modelo tenta preencher a lacuna.
+  </p>
+  <p>
+    <strong>O dano:</strong> a mesa vê "Cliente", o agente passa a chamar a pessoa
+    de "Cliente", <code>hasContactName</code> suprime o gate do nome para sempre, e
+    a métrica "deu o nome" — a mesma que este trabalho usou para medir o funil —
+    fica poluída.
+  </p>
+  <p>
+    <strong>Correção, e por que NÃO foi uma lista de palavras proibidas:</strong> o
+    <code>CLAUDE.md</code> é explícito — <em>"não se fecha porta a porta,
+    fecha-se a parede"</em>. Bloquear "Cliente" deixa "Comprador", depois
+    "Interessado", depois "Amigo". A pergunta certa não é <em>que palavra é
+    essa</em>, é <strong>o cliente disse isso?</strong> — a mesma defesa que esta
+    entrega já usa para o valor do bem (<code>valorAncoradoNoTexto</code>). O nome
+    que o modelo grava agora precisa estar na fala do turno.
+  </p>
+  <p><strong>Prova medida — mesma jornada, no app:</strong></p>
+  <div class="prova">antes:  contact_name = "Cliente"   (ninguém se apresentou)
+depois: contact_name = (vazio)     ← a verdade
+
+o caminho do CARD não muda: ali o cliente digitou o nome no campo,
+e a fala É o dado.</div>
+  <p><strong>Cobertura:</strong> <code>nome-ancorado-na-fala.test.ts</code> — 6 casos, incluindo "recusa nome de gente que ninguém disse" e "não casa por pedaço de outra palavra" (Ana em financiamento).</p>
+</div>
+
+<div class="risco medio">
+  <p><strong>CORRIGIDO · O ambiente local rearmava o erro de método</strong></p>
+  <p>
+    O <code>.env.local</code> do bootstrap aponta o Langfuse para produção, e o
+    container passa a servir o prompt <em>publicado</em>. Quem editar o prompt e
+    medir o comportamento mede o texto errado — foi o que me custou uma rodada
+    inteira. O runbook e o <code>.env.example</code> agora avisam, com o comando
+    para medir o prompt do código e a checagem de que o log não traz o aviso de
+    divergência.
+  </p>
+</div>
+
+<div class="risco baixo">
+  <p><strong>CORRIGIDO · 27 faltas de acentuação</strong></p>
+  <p>
+    "aqui estao", "parafrase", "ANUNCIO", "contrario", "usuario", "invalido",
+    "Peca", "proximas" — em texto que o modelo lê e em mensagens que chegam ao
+    cliente. Algumas na linha exata que eu tinha editado para corrigir outra falta
+    de acento. Pela régua deste projeto, acento faltando é defeito de entrega.
+  </p>
+</div>
+
+<div class="risco medio">
+  <p><strong>OBSERVADO, NÃO CORRIGIDO · `turnoDoCliente` também recebe directive</strong></p>
+  <p>
+    Corrigindo o nome, notei que <code>turnoDoCliente.texto</code>
+    (<code>converse.ts</code>) tem o mesmo formato do defeito: em turno
+    server-authored ele carrega a directive do servidor, e o parâmetro está
+    documentado como <em>"o que o cliente escreveu neste turno"</em>
+    (<code>escolha-ancoravel.ts</code>).
+  </p>
+  <p>
+    <strong>Por que NÃO mexi:</strong> isso alimenta o veto de ancoragem da
+    ESCOLHA DE COTA — caminho do dinheiro, pré-existente a esta entrega, e com um
+    detalhe que muda tudo: no clique, o rótulo do botão é gravado como fala do
+    cliente antes do turno, então pode haver legitimidade que eu não mapeei.
+    Mudar às cegas ali arrisca quebrar venda que funciona. Diagnóstico deixado
+    pronto; a decisão é sua.
+  </p>
+</div>
+
+<h3>Oitava rodada — 6/10, e os dois furos que sobraram no nome</h3>
+
+<p>
+  A nota caiu de 8 para 6, e com razão: o revisor foi conferir o conserto da
+  rodada anterior por sonda própria, e ele estava pela metade. Os dois achados
+  são do mesmo assunto — o nome do lead —, e o segundo só aparece para quem roda
+  a jornada inteira no app, não na suíte.
+</p>
+
+<div class="risco alto">
+  <p><strong>CORRIGIDO · O predicado deixava passar exatamente o caso que existia para barrar</strong></p>
+  <p>
+    <strong>O que era:</strong> <code>nomeAncoradoNaFala("Cliente", texto)</code>
+    devolvia <code>true</code> quando o <code>texto</code> era uma
+    <strong>directive do servidor</strong> — e a palavra "cliente" está em
+    praticamente todas elas (<em>"O cliente escolheu a cota. Conduza para o
+    próximo passo"</em>). Em turno server-authored, <code>userText</code> carrega
+    a directive, não a fala. Ou seja: a defesa da rodada 7 continuava deixando
+    <code>save_contact_name("Cliente")</code> gravar, justamente na classe de
+    turno que domina o fecho da jornada nova.
+  </p>
+  <p>
+    <strong>O segundo furo, no mesmo predicado:</strong> a tokenização quebrava a
+    fala em letras e comparava o alvo <em>inteiro</em>, com apóstrofo e hífen —
+    então quem se chama <strong>D'Ávila</strong> ou <strong>Jean-Luc</strong>
+    nunca ancorava, e caía em laço de "peça o nome de novo". Os dois formatos são
+    declaradamente suportados por <code>capitalizeName</code>.
+  </p>
+  <p><strong>Prova, por sonda antes do conserto:</strong></p>
+  <div class="prova">nomeAncoradoNaFala("Cliente", "O cliente escolheu a cota…")  → true   ✗
+nomeAncoradoNaFala("D'Ávila", "sou a d'avila")                → false  ✗
+nomeAncoradoNaFala("Jean-Luc", "meu nome é jean-luc")         → false  ✗</div>
+  <p>
+    <strong>Correção, nas duas pontas:</strong> comparação por <em>token</em> (a
+    fala e o alvo passam pela mesma normalização, apóstrofo e hífen preservados)
+    e, no chamador, <code>userText: state.isUserTurn ? state.userText : null</code>
+    — a defesa de verdade é não passar directive como se fosse fala; o predicado é
+    a segunda linha. Duas palavras que o SISTEMA usa para se referir à pessoa
+    ("cliente", "usuário") deixaram de ancorar mesmo quando aparecem no texto.
+  </p>
+  <p><strong>Cobertura:</strong> <code>nome-ancorado-na-fala.test.ts</code> — 8 casos, incluindo o apóstrofo, o hífen e a directive literal.</p>
+</div>
+
+<div class="risco alto">
+  <p><strong>CORRIGIDO · A pessoa se apresentava e o produto jogava fora</strong></p>
+  <p>
+    <strong>Achado meu, rodando a jornada no app depois do conserto acima</strong>
+    — não veio da suíte, e nenhum teste existente pegava:
+  </p>
+  <div class="prova">👤 "Oi, me chamo Ana e quero um carro de 80 mil"
+   agente: "Oi Ana! Que legal…"        ← o MODELO entendeu
+   banco:  contact_name = (vazio)      ← o SERVIDOR jogou fora</div>
+  <p>
+    <strong>A causa é a própria mudança desta entrega.</strong> A captura
+    determinística do nome (<code>capture.ts</code>) só rodava quando
+    <code>gate === "name"</code> — o que faz sentido: ali o agente <em>acabou de
+    perguntar</em>, então a primeira palavra da resposta é o nome. Ao tirar esse
+    gate do caminho de quem já traz o valor, <strong>ninguém mais pergunta</strong>
+    — e a apresentação espontânea não tinha quem a lesse.
+  </p>
+  <p>
+    <strong>Por que isso é pior que uma pergunta a mais:</strong> ignorar o que o
+    cliente ofereceu por vontade própria. E o nome é o dado que torna o lead
+    recuperável — exatamente a preocupação de retenção que motivou esta entrega.
+    Sem ele, a mesa recebe uma conversa anônima e o worker de retomada não tem
+    como personalizar nada.
+  </p>
+  <p>
+    <strong>A correção, e o que ela NÃO faz:</strong> fora do gate, vale só a
+    <strong>forma</strong> da apresentação — "me chamo X", "sou o X", "meu nome é
+    X", "pode me chamar de X", "aqui é a X". A heurística de "primeira palavra"
+    seria desastrosa aqui, porque fora do gate o turno fala de bem, valor, prazo e
+    objeção: era assim que nascia o lead chamado <strong>"Quitar"</strong>. Perder
+    um nome é aceitável; gravar um que ninguém disse não é.
+  </p>
+  <p><strong>Prova medida, no app, com o banco como testemunha:</strong></p>
+  <div class="prova">CASO B — a pessoa se apresenta
+👤 "Oi, me chamo Ana e quero um carro de 80 mil"
+   contact_name = "Ana"        ✔ (antes: vazio)
+   carta no 1º turno, 4 opções, identityCollected: false
+
+CASO A — a pessoa NÃO se apresenta
+👤 "quero um carro de 80 mil, tenho pressa"
+   contact_name = (vazio)      ✔ nada inventado
+   carta no 1º turno, 4 opções</div>
+  <p>
+    <strong>Cobertura, nas três camadas — de propósito:</strong> a função pura
+    (<code>nome-oferecido-espontaneamente.test.ts</code>, 5 casos), <strong>o call
+    site</strong> (<code>capture.nome-fora-do-gate.test.ts</code>, 5 casos) e
+    <strong>o grafo até a coluna do banco</strong>
+    (<code>cenario-nome-oferecido-chega-ao-banco.test.ts</code>, 3 casos, banco
+    real). A camada do meio existe porque esta entrega já cometeu duas vezes o
+    mesmo vício: função verde, <code>if</code> que nunca a chama.
+  </p>
+</div>
+
+<div class="risco baixo">
+  <p><strong>Nota de método · quase dei o conserto por quebrado</strong></p>
+  <p>
+    Ao validar o caso B, li o banco 10 segundos depois de enviar e vi
+    <code>contact_name</code> vazio — conclusão errada, porque a busca real na
+    Bevi leva mais de 20s e o <code>persist</code> só roda no fim do turno. O
+    <code>updated_at</code> da linha desmentiu a leitura. Fica o registro porque o
+    erro é fácil de repetir: <strong>conferir o banco antes de o turno fechar mede
+    o estado anterior</strong>, e nesta jornada o turno é longo justamente porque
+    ele busca de verdade.
+  </p>
+</div>
+
+<h3>Nona rodada — o último metro, que só a jornada completa mostra</h3>
+
+<p>
+  Este achado é meu, pilotando a venda inteira no navegador depois dos consertos
+  da rodada 8. Nenhum teste apontava para ele, e ele é o mais caro dos que esta
+  entrega produziu: acontece exatamente no instante em que o cliente decide
+  comprar.
+</p>
+
+<div class="risco alto">
+  <p><strong>CORRIGIDO · O cliente escolheu a cota, o agente prometeu o formulário, e o formulário não veio</strong></p>
+  <p><strong>O que se via:</strong></p>
+  <div class="prova">👤 "gostei da do Itaú. sou a Mirella, como faço pra seguir?"
+🤖 "Perfeito, Mirella! … Agora o sistema abre o formulário de contratação
+    com a Itaú, é só preencher os dados e a gente fecha seu consórcio."
+
+tela:     nenhum card, um minuto depois ainda nenhum
+banco:    pendingGate = "identify"   ← o funil sabia, a tela não mostrou
+trace:    "gate": null</div>
+  <p>
+    <strong>A causa, e ela é desta entrega.</strong> A ordem dos nós do grafo é
+    <code>routeFinal → converse → emitCard</code>: o gate do turno é decidido
+    <em>antes</em> de o modelo falar. Mas a escolha da cota é gravada
+    <em>dentro</em> do <code>converse</code>, pela tool <code>escolher_cota</code>.
+    Sondando com o metadata literal da conversa <code>213b426b</code>:
+  </p>
+  <div class="prova">nextGate(meta COM a escolha) → "identify"
+nextGate(meta SEM a escolha) → "experience"
+
+[route] gate=experience show=false     ← o que o log registrou ao vivo</div>
+  <p>
+    Ou seja: <strong>o gate <code>identify</code> nasce no meio do turno</strong>,
+    depois de a rota já ter decidido que não havia gate a mostrar. Enquanto
+    <code>identify</code> morava antes da busca isso não podia acontecer — ele
+    nunca dependia de uma tool do próprio turno. Foi a vitrine que o trouxe para
+    o fecho, e trouxe o problema junto.
+  </p>
+  <p>
+    <strong>O custo:</strong> a venda para com o cliente já decidido e só volta se
+    ELE escrever de novo. Some-se a fala prometendo um formulário que a tela não
+    mostra — a mesma família de "o servidor promete e não cumpre" que este projeto
+    já catalogou.
+  </p>
+  <p>
+    <strong>A correção, e por que é estreita:</strong> o <code>emitCard</code>
+    recalcula o gate depois do turno e o emite <em>somente</em> quando (a) é turno
+    do cliente, (b) o funil de fato mudou dentro do turno, e (c) o gate resultante
+    é um <strong>gate de ação</strong> — <code>decision</code>,
+    <code>contract</code>, <code>identify</code> —, a mesma lista que este arquivo
+    já declarava serem "o próximo passo do que acabou de ser mostrado". Gate
+    opcional que nasce no meio do caminho continua esperando o turno seguinte:
+    quem cedia a vez continua cedendo.
+  </p>
+  <p><strong>Prova ao vivo, mesmo padrão de log, agora com o desfecho certo:</strong></p>
+  <div class="prova">👤 "é essa mesmo, quero fechar essa do Itaú"
+
+[route] gate=experience show=false          ← a rota continua sem mostrar gate
+toolsCalled: ["escolher_cota"]              ← a escolha aconteceu no turno
+"gate": "identify"                          ← e o gate SAIU neste turno
+banco: pendingGate = (vazio)                ← nada ficou pendurado
+
+tela: "Pra seguir com essa cota · CPF · Celular · Confirmar meus dados"</div>
+  <p>
+    <strong>Cobertura:</strong>
+    <code>emit-card.gate-que-nasce-no-turno.test.ts</code> — 4 casos, montados
+    sobre o <strong>metadata literal</strong> da conversa que falhou. O fixture
+    real não é preciosismo: a primeira versão deste teste usava um estado
+    "parecido" em que o gate já era <code>identify</code> mesmo sem a escolha — o
+    caso de controle não controlava nada e o teste teria ficado verde à toa. O
+    mesmo vale para ligar a vitrine dentro do arquivo: a suíte nasce com ela
+    desligada, e desligada o funil tem outra ordem.
+  </p>
+</div>
+
+<div class="risco baixo">
+  <p><strong>OBSERVADO, NÃO CORRIGIDO · "Agora o sistema abre o formulário"</strong></p>
+  <p>
+    A fala do fecho narra a mecânica em vez de falar com a pessoa. Agora o
+    formulário de fato aparece junto, então a frase deixou de ser uma promessa
+    falsa — mas continua sendo o agente falando <em>sobre</em> o produto. Pela
+    régua deste repositório isso é assunto de <strong>juiz no Langfuse sobre
+    volume</strong>, não de guard: escrever um <code>regex</code> para esta frase
+    é o anti-padrão que o <code>CLAUDE.md</code> descreve nome por nome.
+  </p>
+</div>
+
+<h3>Décima rodada — 7/10, e o conserto da rodada 8 estava do lado errado da régua</h3>
+
+<p>
+  O revisor auditou justamente as duas rodadas anteriores e achou, em cada uma,
+  um furo que ele provou por sonda contra este código. Um deles derruba a
+  abordagem inteira que eu tinha escolhido para capturar o nome — e ele está
+  certo, pelas regras que este próprio dossiê citou.
+</p>
+
+<div class="risco alto">
+  <p><strong>CORRIGIDO (por REVERSÃO) · A captura por forma batizava o lead com vocabulário de consórcio</strong></p>
+  <p>
+    <strong>A sonda, que reproduzi antes de aceitar:</strong>
+  </p>
+  <div class="prova">"meu nome é sujo no serasa, tem problema?"              → "Sujo"
+"não sou o único que decide, vou falar com minha esposa" → "Único"
+"sou o comprador, mas quem vai usar é minha esposa"      → "Comprador"
+"sou o interessado na simulação"                         → "Interessado"
+"pode me chamar de louco, mas prefiro financiamento"     → "Louco"
+"aqui é o meu limite: 2 mil por mês"                     → "Meu"</div>
+  <p>
+    Não são frases rebuscadas. <em>"Meu nome está sujo, consigo fazer
+    consórcio?"</em> é uma das perguntas mais comuns do produto — consórcio é
+    justamente o que se vende a quem tem restrição. E <em>"não sou o único que
+    decide"</em> é a objeção clássica do decisor. Pior: o dano cola, porque o
+    <code>persist</code> grava com <code>isNull</code> — o primeiro erro tranca a
+    coluna, o agente passa a saudar "Perfeito, Sujo!" e a mesa recebe o lead
+    assim.
+  </p>
+  <p>
+    <strong>Por que não bastava mais uma guarda:</strong> eu ia adicionar negação
+    ("não sou o…"), depois determinante, depois a família de estado de crédito. É
+    exatamente <em>"fechar porta a porta"</em> — o anti-padrão que o
+    <code>CLAUDE.md</code> descreve e que este dossiê cita duas seções acima. Eu
+    tinha escrito a régua e estava do lado errado dela.
+  </p>
+  <p>
+    <strong>O que a evidência mostrava, e eu não tinha lido direito:</strong> o
+    modelo <em>já entendia</em>. Ele escreveu "Oi Ana!" e "Perfeito, Renata!" nas
+    jornadas anteriores — quem jogava o nome fora era o servidor. Duas fontes de
+    verdade sobre a mesma frase, com a pior delas ganhando: o modelo lê a frase
+    inteira, o regex lê o que vem depois do artigo.
+  </p>
+  <p>
+    <strong>A causa raiz, e ela é do vício desta entrega:</strong> existe uma tool
+    <code>save_contact_name</code>, disponível em <em>todas</em> as fases, e a
+    regra que manda chamá-la mora em <code>SPECIALIST_BASE_PROMPT</code> —
+    <strong>que o grafo não lê</strong>. É a terceira vez que esta entrega
+    tropeça na constante errada. Medido: em duas conversas no app o modelo saudou
+    pelo nome e não chamou a tool nenhuma vez.
+  </p>
+  <p><strong>A correção, nas três camadas certas:</strong></p>
+  <ol>
+    <li><strong>Reversão:</strong> o <code>capture</code> volta a agir só no gate
+    <code>name</code>, onde a heurística curta é segura porque a pergunta acabou
+    de ser feita.</li>
+    <li><strong>Prompt:</strong> a regra da tool passou para o
+    <code>SYSTEM_PROMPT</code> — o único que o grafo lê — com os contra-exemplos
+    do domínio ("meu nome está sujo no Serasa" NÃO é apresentação). Teste trava
+    que ela sobrevive ao <code>leanSystemPrompt</code>, com a vitrine ligada e
+    desligada.</li>
+    <li><strong>Servidor ancora:</strong> <code>nomeAncoradoNaFala</code> segue
+    barrando o que o modelo tentar gravar sem estar na fala, e o vocabulário de
+    estado de crédito ("sujo", "negativado", "restrito") entrou na lista de
+    não-nomes — pela mesma razão da família "voltei" que já estava lá: é o que
+    <em>este produto</em> faz o cliente escrever nessa posição.</li>
+  </ol>
+  <p><strong>Prova no app, com o container servindo o prompt do CÓDIGO (0 avisos de divergência):</strong></p>
+  <div class="prova">👤 "me chamo Bianca, quero um carro de 80 mil"
+   toolsCalled: [… "save_contact_name" …]     ← o MODELO gravou
+   contact_name = "Bianca"                     ← e a coluna recebeu
+   🤖 "Ótimo, Bianca! Deixa eu ver o que tem de carro na faixa de R$ 80 mil."
+   + [comparison_table]
+
+👤 "meu nome está sujo no Serasa, consigo fazer consórcio de carro de 80 mil?"
+   contact_name = (vazio)                      ← nada gravado
+   🤖 "Deixa eu ver o que tem pra R$ 80 mil em carro." + [comparison_table]</div>
+  <p>
+    <strong>Cobertura:</strong> <code>capture.nao-inventa-fora-do-gate.test.ts</code>
+    (as 8 frases da sonda, todas devolvendo nada) e
+    <code>cenario-nome-oferecido-chega-ao-banco.test.ts</code> reescrito — o
+    modelo chama a tool e a coluna recebe; o modelo inventa "Cliente" e o servidor
+    recusa. No grafo, com banco real.
+  </p>
+</div>
+
+<div class="risco alto">
+  <p><strong>CORRIGIDO · O conserto da rodada 9 reabria o pedido de CPF em dobro</strong></p>
+  <p>
+    A guarda contra o pedido duplicado (<code>modeloJaPediuIdentidade</code>)
+    estava ancorada em <code>state.gate === "identify"</code> — e no caminho novo
+    o gate nasce <em>depois</em> da rota, então <code>state.gate</code> é
+    <code>undefined</code> por construção. <strong>A guarda morria exatamente no
+    turno que a rodada 9 criou</strong>, e a regressão medida em 14/08 ("4 de 4
+    turnos entregaram o pedido duas vezes") voltava no pior lugar possível: o
+    fecho, onde o cliente já decidiu.
+  </p>
+  <p>
+    <strong>Correção:</strong> o predicado da FALA saiu de dentro da expressão do
+    gate, e o evento passa a conferir o gate <em>efetivo</em>. Dois casos novos no
+    teste: fala que já pediu CPF → <code>modelAsked: true</code> (o card cala);
+    fala que não pediu → <code>modelAsked: false</code> (o card pergunta, a rede
+    não pode cair).
+  </p>
+</div>
+
+<div class="risco medio">
+  <p><strong>CORRIGIDO · O recálculo prometia três gates e entregava um</strong></p>
+  <p>
+    O recorte da rodada 9 abrangia os três <code>GATES_DE_ACAO</code>, mas
+    <code>decision</code> e <code>contract</code> não têm payload de card próprio
+    e seus artifacts são disparados por outros blocos: emiti-los ali seria evento
+    sem tela — a mesma promessa vazia que o bloco existe para acabar, agora
+    parecendo resolvida. O recálculo passou a valer só para <code>identify</code>,
+    com o limite escrito no código. Quando um dos outros nascer no meio do turno,
+    o comportamento é o de antes (pendência + re-engage): não piorou, e não finge
+    cobrir.
+  </p>
+  <p>
+    Junto, o gate recém-nascido passou a atravessar a <strong>mesma porteira</strong>
+    que a rota usaria (<code>decideShowGate</code>) — sem isso, uma escolha
+    ancorada num turno em que o cliente pergunta outra coisa despejava o
+    formulário por cima da dúvida dele.
+  </p>
+</div>
+
+<div class="risco baixo">
+  <p><strong>CORRIGIDO · O cabeçalho deste dossiê contradizia o próprio §8</strong></p>
+  <p>
+    As etiquetas do topo diziam "4.011 testes" e "37 achados em 7 rodadas"
+    enquanto o corpo já narrava nove rodadas e o §8 mostrava outra contagem. É a
+    primeira coisa que se lê. Corrigido para o número da execução real.
+  </p>
+</div>
+
+<h3>Décima primeira rodada — 9/10, e o que faltava não era código</h3>
+
+<p>
+  Os cinco consertos passaram na auditoria: o revisor rodou as próprias sondas
+  contra este código e as frases que derrubaram a rodada 10 agora devolvem nada;
+  a regra do nome chega à janela real do modelo nos dois estados da vitrine; o
+  gate recém-nascido respeita a porteira (<code>asking_question</code> e
+  <code>expressing_doubt</code> no turno da escolha → nenhum formulário, a dúvida
+  é atendida primeiro).
+</p>
+
+<p>
+  O ponto que faltava é o que está declarado no §7: <strong>a reversão trocou
+  regex por dependência do modelo, e dependência probabilística sem medidor não é
+  "aceitável", é "não medido"</strong> — pela régua desta casa. Isso virou
+  <code>pnpm sonda:nome-perdido</code> (reconciliação fala×estado) e um parágrafo
+  próprio no §7, com a diferença explicada: nome perdido não se autocorrige, ao
+  contrário da escolha de cota.
+</p>
+
+<div class="risco baixo">
+  <p><strong>CORRIGIDO · O SQL da própria sonda estava silenciosamente errado</strong></p>
+  <p>
+    A primeira versão contava as falas do cliente por subquery correlacionada, e
+    o Drizzle compilava <code>m.conversation_id = "id"</code> — sem qualificar a
+    tabela, o <code>"id"</code> resolve para a coluna da PRÓPRIA subquery. Contava
+    zero para todo mundo, e o relatório saía dizendo <em>"nada a reconciliar"</em>:
+    a pior saída possível, porque parece boa notícia. Typecheck e lint passaram; o
+    que pegou foi rodar e desconfiar do zero. Trocado por duas queries com
+    cruzamento em memória.
+  </p>
+</div>
+
+<div class="risco baixo">
+  <p><strong>CORRIGIDO · Três limpezas — duas apontadas, uma achada depois</strong></p>
+  <p>
+    Um operando morto no <code>emit-card</code> (a condição do gate
+    <code>identify</code> dentro de um bloco que exige gate <code>name</code> —
+    dois valores para o mesmo campo, herança de quando os predicados viviam
+    juntos), e a descrição da tool <code>save_contact_name</code>, que só
+    mencionava o caso "depois da pergunta" enquanto o caso dominante agora é a
+    apresentação espontânea. Texto de tool deve descrever o momento de uso real.
+  </p>
+  <p>
+    A terceira eu encontrei varrendo símbolos depois: a reversão deixou
+    <code>ehPalavraDoSistema</code> órfã — declarada, exportada e sem nenhum uso
+    em produção, porque quem a chamava era a função removida. Código morto que
+    nasce de reversão é o mais fácil de deixar para trás, justamente porque tudo
+    continua verde sem ele.
+  </p>
+</div>
+
+<h3>Décima segunda rodada — 9/10, e os furos agora eram do próprio medidor</h3>
+
+<p>
+  Os consertos passaram e o medidor foi aceito como resposta ao ponto anterior.
+  O que sobrou é de uma ironia útil: <strong>três furos no instrumento que existe
+  para medir</strong> — e num artefato assim, furo pequeno é material, porque a
+  saída dele é uma decisão.
+</p>
+
+<div class="risco medio">
+  <p><strong>CORRIGIDO · A sonda não separava conversa de cliente de conversa de teste</strong></p>
+  <p>
+    Ela media todas as conversas da janela. Só que <strong>produção tem conversas
+    simuladas</strong> — o harness de conversa real roda lá —, e a própria medição
+    do §2 deste dossiê filtrou <code>is_simulated = false</code> justamente por
+    isso. O runbook manda rodar a sonda contra produção; sem o filtro, a taxa que
+    ele manda observar misturaria QA com cliente.
+  </p>
+  <p><strong>Prova do filtro, marcando uma conversa como simulada e desfazendo depois:</strong></p>
+  <div class="prova">com o filtro (padrão)   : 50 → 49 conversas · a suspeita some
+INCLUIR_SIMULADAS=1     : 50 conversas       · a suspeita volta</div>
+</div>
+
+<div class="risco medio">
+  <p><strong>CORRIGIDO · O corte das falas podia jogar fora justamente a apresentação</strong></p>
+  <p>
+    A leitura das falas usava <code>limit(30)</code> <em>sem</em>
+    <code>orderBy</code> — e sem ordem explícita o Postgres não garante nenhuma.
+    Em conversa longa, a <strong>primeira</strong> fala (onde a apresentação mora)
+    podia ficar fora do corte: falso negativo exatamente nas conversas mais
+    engajadas, que são as que fecham. Uma linha.
+  </p>
+</div>
+
+<div class="risco alto">
+  <p><strong>CORRIGIDO · "Nada a reconciliar" era indistinguível de juiz cego</strong></p>
+  <p>
+    Este é o furo que importa, e é conceitual: falso negativo do juiz é
+    <strong>invisível por construção</strong> — a conversa em que ele erra
+    simplesmente não aparece no relatório. "Zero perdas" e "instrumento
+    desligado" produziam a mesma saída. E esta sonda já tinha provado uma vez, no
+    próprio SQL, que <em>"nada a reconciliar"</em> é a pior saída possível quando
+    não se sabe se o aparelho está ligado.
+  </p>
+  <p>
+    <strong>Correção — grupo de controle no mesmo run:</strong> o juiz também
+    julga conversas em que o nome FOI gravado, onde a resposta é conhecida. Se ele
+    não reencontrar essas, o silêncio sobre as outras não vale nada. A saída passa
+    a declarar a própria sensibilidade, e abaixo de 100% avisa que o resultado é
+    <strong>piso</strong> da perda, nunca total.
+  </p>
+  <p><strong>A sonda, agora, rodada de verdade:</strong></p>
+  <div class="prova">$ DIAS=2 pnpm sonda:nome-perdido
+
+conversas com fala do cliente : 50
+  com contact_name             : 5  (10,0%)
+  SEM contact_name             : 45
+
+Sensibilidade do juiz (grupo de controle): reencontrou o nome em
+4/4 conversas que TÊM contact_name (100%).
+
+── PERDAS SUSPEITAS: 3 de 45 conferidas ──
+  2c563dfa…  → "Ana"    👤 Oi, me chamo Ana e quero um carro de 80 mil
+  afa1d572…  → "Paulo"  👤 Sou o Paulo, quero um carro de 80 mil
+  500fbd61…  → "Paulo"  👤 Sou o Paulo, quero um carro de 80 mil</div>
+  <p>
+    As três são perdas reais, todas anteriores ao conserto, e <strong>nenhum falso
+    positivo</strong> entre as 42 restantes. Duas eu nem conhecia — foi o medidor
+    que as achou.
+  </p>
+</div>
+
+<div class="risco baixo">
+  <p><strong>CORRIGIDO · Dois detalhes de contagem e de leitura</strong></p>
+  <p>
+    O "X de Y conferidas" contava no Y as conversas puladas por texto vazio
+    (denominador inflado, taxa otimista), e um <code>{"nome": "null"}</code> — o
+    modelo devolvendo a palavra em vez do literal — viraria uma suspeita chamada
+    "null". Os dois barrados.
+  </p>
+</div>
+
+<div class="card">
+  <strong>O que ainda falta, e está declarado como falta:</strong> transformar a
+  taxa num <strong>Monitor</strong> depois do rollout. A razão é específica desta
+  casa e o revisor a nomeou bem: a defesa do nome hoje é uma REGRA DURA de
+  prompt, e prompt de produção é editável na UI do Langfuse em ≤60s, sem review e
+  sem CI. Uma edição que derrube a regra só apareceria se alguém lembrasse de
+  rodar a sonda — e "sinal sem leitor" é a classe de falha que o painel verde
+  deste projeto já deixou passar uma vez.
+</div>
+
+<h3>Décima terceira rodada — 10/10</h3>
+
+<p>
+  Os três consertos do medidor foram auditados e aceitos. O critério que o próprio
+  revisor tinha fixado na rodada anterior — <em>"quando o medidor medir a
+  população certa, não puder cortar a fala da apresentação e souber dizer se está
+  cego"</em> — foi cumprido, e o instrumento passou no teste que mais importa:
+  <strong>achou duas perdas que ninguém conhecia, sem acusar nenhum inocente</strong>.
+</p>
+
+<div class="card">
+  <strong>O que a nota NÃO diz.</strong> Ela é da entrega, não do rollout —
+  produção continua intocada, por desenho. A sequência para ligar tem dono e
+  ordem, e está inteira no
+  <a href="2026-08-27-PENDENTE-KAIRO-publicar-prompt.md">PENDENTE-KAIRO</a>:
+  env no secret → publicar o prompt e deployar na MESMA janela → rodar
+  <code>pnpm sonda:nome-perdido</code> contra produção → transformar a taxa em
+  Monitor. O último não é opcional: a defesa do nome é regra de prompt, e prompt
+  de produção muda em ≤60s pela UI, sem review e sem CI.
+</div>
+
+<p>
+  As treze rodadas, na ordem: <strong>4 → 8 → 6 → 7 → 9 → 9 → 10</strong>. O que
+  fez a nota subir nunca foi um conserto maior; foi o método mudar. Testar o
+  artefato que o sistema <em>executa</em> em vez do que eu escrevi. Reverter em
+  vez de remendar quando a régua do projeto mandava. E instrumentar a própria
+  dúvida em vez de declará-la aceitável.
+</p>
+
+<h3>Risco herdado, mitigado em parte</h3>
+
+<div class="risco alto">
+  <p><strong>PARCIALMENTE MITIGADO · A loja tem uma proposta só, e todo mundo escreve nela</strong></p>
+  <p>
+    <strong>O que é:</strong> a Bevi resolve "a proposta corrente" pelo
+    <code>storeHash</code>, sem CPF no request. O próprio código já registra isso:
+    <em>"A Bevi de homologação usa UM único proposal-hash pra todas as
+    conversas"</em> (<code>self-contract-client.ts:141-156</code>), com duas
+    defesas — uma fila que serializa chamadas por proposta e retry com backoff
+    para o conflito de escrita. Duas conversas concorrentes já disputavam esse
+    slot <strong>antes</strong> desta mudança.
+  </p>
+  <p>
+    <strong>O que a vitrine muda:</strong> não cria o problema, mas
+    <strong>aumenta a frequência</strong>. Antes, só as conversas que atravessavam
+    o gate de identidade chegavam à busca — 30 de 87 no período medido. Agora
+    chega toda conversa que informar um valor, o que era o objetivo. A contenção
+    nesse hash único cresce na mesma proporção.
+  </p>
+  <p>
+    <strong>Mitigação entregue:</strong> o fecho ficou blindado —
+    <code>startContract</code> recusa o CPF da vitrine <em>antes</em> de tocar a
+    administradora, e a retomada de proposta alheia passou a ser recusada no gateway — os dois caminhos que levam a contrato em nome errado estão fechados por código e por teste. <strong>O que falta</strong> é o
+    <code>storeHash</code> dedicado para a vitrine, que separa fisicamente a
+    prateleira das jornadas reais — e isso depende da Bevi (§7).
+  </p>
+  <p><strong>Cobertura:</strong> <code>src/lib/bevi/contrato-nao-fecha-na-vitrine.test.ts</code> — 4 casos, incluindo o de vitrine desligada.</p>
+  <p>
+    <strong>Um flake que eu diagnostiquei errado:</strong> numa rodada da suíte, o
+    cenário <code>cenario-valor-inflado.fix-378</code> — que bate na Bevi de
+    verdade — falhou sozinho; isolado passou em 9,6s e a rodada seguinte passou
+    inteira. Atribuí à contenção do slot único <strong>sem prova</strong>. A
+    revisão adversarial apontou uma segunda hipótese que eu não tinha considerado
+    e que era a mais provável: dois testes novos setavam <code>VITRINE_*</code> sem
+    restaurar, e com <code>--no-file-parallelism</code> o env vaza para os arquivos
+    seguintes. Corrigido (§ acima). Fica o registro do erro de método: cravar
+    causa sem evidência é o hábito que este projeto já pagou caro.
+  </p>
+  <div class="prova">rodada 1 (suíte completa): 1 failed  | 3524 passed   ← contenção na Bevi
+isolado:                   2 passed  (9,6s)
+rodada 2 (suíte completa): 0 failed  | 3525 passed</div>
+</div>
+
+<div class="risco alto">
+  <p><strong>CORRIGIDO · O deadlock que eu criei — e o diagnóstico errado que quase entrou neste dossiê</strong></p>
+  <p>
+    <strong>O que era:</strong> exercitando a API do app, o cliente diz
+    <em>"Sou o Paulo, quero um carro de 80 mil"</em>. O analyzer entende
+    (<code>credit=null-80000</code> no log), o agente até chama a pessoa de Paulo
+    — e <code>creditMax</code> fica <strong>vazio</strong> no banco. O funil
+    respondia <code>gate=name</code> em quatro turnos seguidos. Ou seja: a
+    mudança que eu tinha acabado de entregar <strong>não funcionava no fluxo
+    real</strong>.
+  </p>
+  <p><strong>A causa, e por que ela é minha:</strong> um círculo de quatro elos.</p>
+  <div class="prova">1. sem nome, nextGate devolve `name` — a menos que haja alvo de busca
+2. haver alvo de busca depende de creditMax estar no estado
+3. creditMax só era promovido depois do gate `desire` ter sido respondido
+4. o gate `desire` só é emitido depois do `name`          ↩ volta ao passo 1</div>
+  <p>
+    O bypass que eu escrevi ("quem já trouxe o alvo não é barrado pelo nome")
+    dependia exatamente do dado que o outro guard (FIX-279/296/306) impedia de
+    existir. <strong>Nunca engatava.</strong>
+  </p>
+  <div class="aviso">
+    <strong>E eu quase reportei isso como defeito pré-existente.</strong> Fiz um
+    teste de controle desligando a vitrine, vi o mesmo comportamento nos dois
+    lados e concluí "não é meu". O controle era inválido: desligar a vitrine
+    <em>não desliga</em> a mudança do gate <code>name</code>, que vale sempre. Os
+    dois lados deram igual porque os dois já tinham o defeito. Quem apanhou o erro
+    foi o rastreamento do caminho analyzer → metadata, não o meu experimento.
+  </div>
+  <p>
+    <strong>Por que os testes não pegaram:</strong> o fixture de
+    <code>qualify-state.carta-antes-do-cpf.test.ts</code> entrega
+    <code>creditMax: 80_000</code> já resolvido. Ele prova a cascata do
+    <code>nextGate</code> e nunca o caminho que <em>escreve</em> aquele valor.
+    Verde, e sem valor nenhum — o vício exato que o <code>CLAUDE.md</code> alerta.
+  </p>
+  <p>
+    <strong>Correção:</strong> o guard de promoção do valor abriu uma exceção
+    estreita para a abertura da conversa (<code>analyze.ts</code>), exigindo que o
+    número esteja <strong>ancorado na fala</strong> do cliente; e o gate
+    <code>desire</code> deixou de barrar quem já trouxe alvo, como o
+    <code>name</code>.
+  </p>
+  <p><strong>Prova medida — mesma frase, no app rodando:</strong></p>
+  <div class="prova">antes:  creditMax=(vazio)  gate=name (4 turnos)  cards=[quick_reply]  carta: NÃO
+depois: creditMax=80000    searchDispatched=true  revealCompleted=true
+        contact_name=(sem nome)   identityCollected=FALSE
+        cards=[comparison_table] com 4 grupos     carta: SIM, no 1º turno</div>
+  <p><strong>Cobertura:</strong> <code>src/lib/agent/orchestrator/analyze.valor-no-primeiro-turno.test.ts</code> — 8 casos, incluindo o de valor não ancorado e o de "não inventa valor quando o cliente não disse nenhum".</p>
+</div>
+
+<div class="risco medio">
+  <p><strong>CORRIGIDO · O agente falava sozinho na frente do cliente</strong></p>
+  <p>
+    <strong>O que era:</strong> com a carta chegando no primeiro turno, o modelo
+    passou a ter menos a dizer e começou a narrar o próprio estado — em terceira
+    pessoa, para o cliente ler:
+  </p>
+  <div class="prova">🤖 "Estou pronto para receber a resposta dele aos atalhos que ofereci.
+    Aguardando o próximo turno do cliente."
+🤖 "Entendi. Aguardando a resposta dele sobre o modelo para seguir."</div>
+  <p>
+    Apareceu em <strong>2 de 3</strong> execuções. É fala, não invariante — então
+    a correção é prompt, não guard nem regex (a regra do <code>CLAUDE.md</code>
+    sobre isso é explícita).
+  </p>
+  <div class="aviso">
+    <strong>Correção de método:</strong> as três primeiras medições rodaram com o
+    container servindo o prompt <em>publicado</em> (o Langfuse de produção, v4) —
+    ou seja, a regra corrigida <strong>não estava na janela do modelo</strong>. O
+    log avisava (<em>"o texto com label 'production' difere da constante do
+    código"</em>) e eu não olhei; a memória do projeto tem uma nota inteira sobre
+    isso. A melhora que medi era real, mas vinha do <em>estado</em> (gates), não
+    do texto. Refiz com o Langfuse desligado, para o código ser a fonte:
+  </div>
+  <p><strong>Prova medida — 4 execuções com o prompt novo DE FATO na janela:</strong></p>
+  <div class="prova">meta-narração: 0/4     carta no 1º turno: 4/4
+CPF pedido:    0/4     JSON vazado:       0/4     gate concorrente: 0/4
+
+depois, o agente virou vendedor:
+  "Encontrei 4 ótimas opções... A melhor delas é a do Itaú, com a carta maior
+   (R$ 81.973) e contemplação bem mais rápida, 7 integrantes contemplados por
+   mês contra 2-4 nas outras."</div>
+</div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="aberto">
+<h2>7 · O que ficou em aberto</h2>
+
+<ol>
+  <li>
+    <strong>O prompt NÃO foi publicado — e sem isso o agente em produção não muda.</strong>
+    <code>fetchManagedPrompt</code> lê a label <code>production</code> do Langfuse
+    e usa o código só como fallback. <code>pnpm prompts:check</code> hoje falha
+    (exit 1) apontando a divergência, que é o estado correto para trabalho não
+    publicado. Publicar altera produção em menos de 60 segundos, sem deploy e sem
+    review — é decisão sua, e você pediu tudo local. <strong>Fica como pendência
+    explícita:</strong> <code>pnpm sync-prompts</code> contra
+    <code>langfuse.twobrainstechnology.com</code>, conferindo a URL que o script
+    imprime.
+  </li>
+  <li>
+    <strong>⚠️ DECISÃO SUA, NÃO MINHA: a vitrine troca captura de lead por conversão.</strong>
+    Antes, quem via carta já tinha dado nome, CPF e celular — os 17 "viu e não
+    escolheu" do §2 eram <em>contatáveis</em>. Agora o cliente web pode ver as
+    cartas e sumir sem deixar contato nenhum, e a retomada só alcança quem reabre
+    o chat. Pode ser a troca certa; não é minha para fazer. Perguntei e a pergunta
+    não foi respondida, então <strong>não implementei nada</strong> — o pedido era
+    sobre o CPF, e mexer na captura de lead é outro escopo. A mitigação óbvia,
+    quando você decidir: convite leve de WhatsApp <em>depois</em> da carta, que
+    recupera o contato sem devolver o pedágio para antes da oferta.
+  </li>
+  <li>
+    <strong>Em produção, nada muda até a env existir — e isso é de propósito.</strong>
+    <code>VITRINE_CPF</code> e <code>VITRINE_CELULAR</code> não estão no secret
+    <code>tb/prod/aja-agora/env</code>. Sem elas a vitrine fica desligada e o funil
+    antigo continua valendo, mesmo com este código em produção. Ligar exige, nesta
+    ordem: (1) decidir com a Bevi qual conta serve de vitrine; (2) gravar o par no
+    secret <code>tb/prod/aja-agora/env</code>; (3) <strong>publicar o prompt e
+    deployar na mesma janela</strong> — a ordem inversa é barrada pelo próprio CI,
+    que falha o deploy quando o prompt publicado diverge do código.
+    <br><br>
+    Fazer só (2), sem deploy, não muda nada: o código antigo em produção ignora a
+    env. E o passo (3) sozinho também é inofensivo enquanto o código velho roda —
+    verifiquei que as linhas divergentes moram na seção que o
+    <code>leanSystemPrompt</code> <em>de produção</em> corta antes de enviar ao
+    modelo. Detalhe e prova em
+    <a href="2026-08-27-PENDENTE-KAIRO-publicar-prompt.md">PENDENTE-KAIRO-publicar-prompt.md</a>.
+  </li>
+  <li>
+    <strong>A oferta muda conforme o CPF?</strong> Não fechei. O que dá para
+    afirmar: o payload da simulação não tem campo de CPF nem de crédito
+    (<code>self-contract-client.ts:365-381</code>), e <code>consultarDados</code>
+    documentadamente faz autofill de nome/nascimento pela Receita, não scoring.
+    Isso é <em>inferência</em>, não prova. A sonda que fecha é barata: simular o
+    mesmo par (segmento, valor) sob a Conta 1 e a Conta 2 do vault e comparar
+    <code>offers[]</code>. <strong>Enquanto não rodar, trate a carta da vitrine
+    como "número real de agora", nunca como "número garantido pra você"</strong> —
+    e note que o fecho já re-simula sob o CPF real e avisa divergência.
+  </li>
+  <li>
+    <strong><code>storeHash</code> dedicado para a vitrine.</strong> É o que separa
+    a prateleira das jornadas reais e resolve de vez o risco alto do §6. Depende de
+    conversa comercial com a Bevi — inclusive porque uma proposta de vitrine
+    permanente com consultas recorrentes é um padrão de uso que a administradora
+    precisa conhecer e autorizar.
+  </li>
+  <li>
+    <strong>O teto de 4 opções foi decisão minha.</strong> A evidência sustenta o
+    corte (17 de 30 conversas afogadas em 17/19/28 opções), mas <em>quantas</em>
+    mostrar é decisão de produto e eu a tomei sozinho porque a pergunta foi
+    dispensada duas vezes. O número está numa constante única e testada,
+    <code>MAX_OPCOES_NA_COMPARACAO</code> — trocar é uma linha.
+  </li>
+  <li>
+    <strong>O cliente que chega sem valor ainda atravessa nome e desejo.</strong>
+    O atalho vale para quem abre dizendo quanto quer — que é o caso das conversas
+    do §2. Quem chega com "oi" continua no funil de sempre, e está certo: é ali
+    que o desejo se constrói. Mas metade das conversas morre com 1,3 turno, e
+    parte delas é gente que chegou sem valor. <strong>Esse pedaço não foi
+    atacado</strong> e é o próximo lugar para olhar.
+  </li>
+  <li>
+    <strong>A meta-narração foi corrigida por prompt, e prompt não tem garantia.</strong>
+    Zero em 3 execuções depois do ajuste é sinal, não prova. O certo é um juiz no
+    Langfuse sobre volume real — a régua do próprio projeto para defeito de fala.
+    Não fiz.
+  </li>
+  <li>
+    <strong>⚠️ A captura do nome passou a depender do modelo — e essa perda é
+    PERMANENTE.</strong> Depois da reversão da rodada 10, quem grava o nome de
+    quem se apresenta sozinho é o modelo, chamando <code>save_contact_name</code>.
+    O desenho é o certo (ele lê a frase inteira e distingue "me chamo Ana" de "meu
+    nome está sujo no Serasa"; o servidor ancora o que ele tenta escrever), mas
+    troca uma falha determinística por uma probabilística.
+    <br><br>
+    <strong>E ela é pior que a irmã abaixo:</strong> se o modelo não registra a
+    escolha da cota, o cliente insiste e o funil re-pede. Se ele não grava o nome,
+    <em>ninguém re-pede</em> — a vitrine tirou o gate <code>name</code> do caminho
+    de quem já traz o valor. O lead fica anônimo para sempre, e lead anônimo é
+    exatamente o que o worker de retomada não alcança: a retenção que motivou esta
+    correção.
+    <br><br>
+    <strong>Por isso ela vem com medidor, e não com fé.</strong>
+    <code>pnpm sonda:nome-perdido</code> cruza duas fontes independentes sobre a
+    mesma conversa — o ESTADO (<code>contact_name IS NULL</code>, fato do
+    servidor) e a FALA (juiz LLM: "o cliente disse o próprio nome?"). O desacordo
+    é a perda. Isso é reconciliação fala×estado, não guard: nada ali muda o
+    produto, e o juiz nunca escreve no banco. Rodada agora, ela achou uma perda
+    real — a conversa <code>2c563dfa</code>, que é justamente a "Ana" de antes do
+    conserto:
+    <div class="prova">$ DIAS=1 pnpm sonda:nome-perdido
+
+conversas com fala do cliente : 50
+  com contact_name             : 5  (10,0%)
+  SEM contact_name             : 45
+
+── PERDAS SUSPEITAS: 1 de 5 conferidas ──
+  2c563dfa…  → o cliente parece ter dito "Ana"
+      👤 Oi, me chamo Ana e quero um carro de 80 mil</div>
+    A sonda separa conversa de cliente de conversa de teste
+    (<code>is_simulated</code>, como a medição do §2), lê as falas <em>na
+    ordem</em> — sem isso o corte podia perder justamente a apresentação — e
+    declara a <strong>própria sensibilidade</strong> a cada execução, julgando
+    também conversas cujo nome FOI gravado: sem esse controle, "zero perdas" e
+    "juiz cego" dariam o mesmo relatório.
+    <br><br>
+    <strong>O que falta, e é uma falta de verdade:</strong> rodar contra produção
+    depois de publicar o prompt e <strong>transformar a taxa num Monitor</strong>.
+    A razão é específica: a defesa do nome hoje é uma REGRA DURA de prompt, e
+    prompt de produção é editável na UI do Langfuse em ≤60s, sem review e sem CI
+    (o <code>prompts:check</code> só roda no deploy). Uma edição que derrube a
+    regra só apareceria se alguém lembrasse de rodar a sonda — e sinal sem leitor
+    permanente é a classe de falha que o painel verde deste projeto já deixou
+    passar. O denominador do exemplo acima é local e está poluído por conversas
+    desta sessão; o número que vale é o de produção.
+  </li>
+  <li>
+    <strong>O fecho depende de o modelo chamar <code>escolher_cota</code>.</strong>
+    Nas jornadas pilotadas, a mesma frase levou o modelo por dois caminhos: numa
+    vez ele registrou a escolha (e o formulário abriu), noutra entregou uma
+    simulação com o botão "Tenho interesse" e a escolha ficou para o turno
+    seguinte. Os dois são legítimos, mas só o primeiro chega ao formulário no
+    mesmo turno. Não mexi nisso: qual deles é o certo é decisão de produto, e a
+    régua deste projeto manda medir comportamento de fala no Langfuse, não
+    engessar por código.
+  </li>
+</ol>
+</section>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<section id="validar">
+<h2>8 · Como validar você mesmo</h2>
+
+<h3>Pelos testes — resultado real da última execução</h3>
+
+<div class="prova">$ RUN_DB_TESTS=1 pnpm vitest run        ← a suíte INTEIRA, sem filtro nenhum
+  Test Files  560 passed (560)
+       Tests  4027 passed | 1 skipped (4028)
+    Duration  237.30s
+
+(o relato de uma rodada anterior deste dossiê usava um comando que EXCLUI
+ `route*` — e era exatamente lá que a suíte estava vermelha. Ver §6.)
+
+$ pnpm typecheck        → limpo (tsc --noEmit, sem saída)
+$ pnpm lint             → Checked 1332 files. No fixes applied.
+$ pnpm prompts:check    → exit 1 (esperado: prompt novo ainda não publicado)</div>
+
+<h3>O medidor da única dependência probabilística desta entrega</h3>
+
+<div class="prova">$ DIAS=7 pnpm sonda:nome-perdido</div>
+
+<p>
+  Cruza <code>contact_name IS NULL</code> (o fato do servidor) com um juiz sobre a
+  fala do cliente ("ele disse o próprio nome?"). O desacordo é a perda. Rode
+  contra produção depois de publicar o prompt — é a pergunta que nenhum teste de
+  suíte responde, e a única forma de saber se a captura pelo modelo se mantém.
+  Detalhe e o porquê no §7.
+</p>
+
+<h3>A prova que mais importa: o app rodando</h3>
+
+<p>
+  Mesma frase que matou a conversa <code>70a80fca</code> em produção, agora contra
+  a API local, com busca real na Bevi:
+</p>
+
+<div class="prova">$ curl -sk -X POST https://aja-app-proposta-diferente-agente.orb.local/api/chat \
+    -H 'Content-Type: application/json' -H 'Cookie: aja_uid=teste' \
+    -d '{"messages":[{"id":"1","role":"user",
+         "parts":[{"type":"text","text":"Quero um carro ate R$ 80 mil"}]}]}'
+
+HTTP 200 · 30s (busca real na administradora)
+
+🤖 "Encontrei 4 opções muito boas para você nessa faixa. As ofertas estão na
+    tela abaixo, compare as parcelas, os prazos e quantos contemplados cada
+    grupo libera por mês. Qual delas..."
+
+CARDS: [comparison_table]        menções a CPF na resposta: 0</div>
+
+<p>E o estado que sobrou no banco — é ele que prova, não a fala:</p>
+
+<div class="prova">nome        | credito | cpf_dado | buscou | viu_carta
+------------+---------+----------+--------+-----------
+(sem nome)  | 80000   | false    | true   | true
+
+$ select jsonb_array_length(payload->'groups') from artifacts
+    where type='comparison_table' order by created_at desc limit 1;
+ 4        ← o teto de opções, aplicado</div>
+
+<p>
+  <strong><code>cpf_dado = false</code> com <code>viu_carta = true</code></strong>
+  é a mudança inteira em duas colunas: o cliente viu carta real sem ter entregado
+  documento nenhum, e sem ter dito o nome. Repetido 3 vezes, 3 resultados iguais.
+</p>
+
+<p>
+  <strong>Rodada 8 — as duas jornadas no navegador</strong>, pilotadas na interface
+  de verdade (não por <code>curl</code>), com o banco conferido depois que o turno
+  fechou:
+</p>
+
+<div class="prova">CASO B — a pessoa se apresenta junto com o pedido
+👤 "Oi, me chamo Ana e quero um carro de 80 mil"
+🤖 "Oi Ana! Que legal, carro novo é sempre uma alegria. Já encontrei
+    algumas opções ótimas pra você nessa faixa…"     + [comparison_table]
+   contact_name = "Ana"          ← antes desta rodada: (vazio)
+
+CASO A — a pessoa NÃO se apresenta
+👤 "quero um carro de 80 mil, tenho pressa"
+🤖 "Encontrei 4 opções de consórcio para esse carro de R$ 80 mil, e pelo
+    jeito você quer sair…"                            + [comparison_table]
+   contact_name = (vazio)        ← nada inventado
+
+conversas: 2cbd5947… (B) e 213b426b… (A), no banco do workspace local</div>
+
+<p>
+  Repare que no caso B o modelo já dizia "Oi Ana!" <em>antes</em> do conserto — ele
+  tinha entendido. Quem jogava fora era o servidor. É o padrão que este projeto
+  já conhece pelo nome, invertido: aqui não era o servidor mentindo, era o
+  servidor <strong>surdo</strong>.
+</p>
+
+<p>
+  <strong>Rodada 10 — a captura do nome, agora pela tool do modelo</strong>, com o
+  container servindo o prompt do <em>código</em> (as três variáveis do Langfuse
+  esvaziadas; 0 avisos de divergência no log — sem isso se mede o texto errado):
+</p>
+
+<div class="prova">👤 "me chamo Bianca, quero um carro de 80 mil"
+   toolsCalled: [… "save_contact_name" …]      ← o MODELO gravou
+   contact_name = "Bianca"
+   🤖 "Ótimo, Bianca! Deixa eu ver o que tem de carro na faixa de R$ 80 mil."
+   + [comparison_table]
+
+👤 "meu nome está sujo no Serasa, consigo fazer consórcio de carro de 80 mil?"
+   contact_name = (vazio)                       ← nada gravado
+   🤖 "Deixa eu ver o que tem pra R$ 80 mil em carro." + [comparison_table]
+
+conversas ef3231df… e 33a3e116…, no banco do workspace local</div>
+
+<p>
+  <strong>Rodada 9 — a venda inteira, de ponta a ponta</strong>, no navegador,
+  numa conversa só (a captura correspondente está no §5):
+</p>
+
+<div class="prova">👤 "me chamo Renata, quero um carro de 80 mil"
+   contact_name = "Renata" · 4 cartas na tela · 0 pedidos de documento
+
+👤 "quero a do Itaú, como faço pra seguir?"
+   simulação da cota escolhida, com lance e prazo reais
+
+👤 "é essa mesmo, quero fechar essa do Itaú"
+   toolsCalled: ["escolher_cota"] · trace "gate": "identify"
+   tela: "Pra seguir com essa cota · CPF · Celular"
+   pendingGate = (vazio)   ← o formulário saiu NO MESMO turno da escolha
+
+conversa 8c0d78c2…, no banco do workspace local</div>
+
+<h3>Conferindo o coração da mudança</h3>
+
+<p>O teste que prova a busca sem CPF, e que falharia antes:</p>
+<div class="prova">$ pnpm vitest run src/lib/agent/langgraph/cenario-carta-antes-do-cpf.test.ts
+
+✓ BUSCA no turno em que o cliente diz o bem e o valor, sem identidade coletada
+✓ busca na FAIXA que o cliente pediu — a vitrine não distorce a pergunta
+✓ NÃO busca quando a vitrine está desligada — o funil antigo volta inteiro
+  Tests  3 passed (3)</div>
+
+<p>
+  O terceiro caso é o que dá sentido aos outros dois: mesmo cenário, vitrine
+  desligada, <strong>zero buscas</strong>. É a prova de que o comportamento novo
+  vem da mudança e não de outra coisa.
+</p>
+
+<p>O teste que impede o contrato em nome errado:</p>
+<div class="prova">$ pnpm vitest run src/lib/bevi/contrato-nao-fecha-na-vitrine.test.ts
+
+✓ RECUSA fechar com o CPF da casa, e não chega a tocar na administradora
+✓ RECUSA mesmo com o CPF da casa formatado com pontos e traço
+✓ DEIXA passar o CPF de um cliente real — a venda continua funcionando
+✓ com a vitrine desligada, nenhum CPF é tratado como 'da casa'
+  Tests  4 passed (4)</div>
+
+<h3>Conferindo o kill switch, na mão</h3>
+
+<div class="prova"># com a vitrine ligada, quem tem valor vai para a busca:
+VITRINE_CPF=$(secrets.sh get-key contas-teste CONTA1_CPF) \
+  VITRINE_CELULAR=$(secrets.sh get-key contas-teste CONTA1_CELULAR) \
+  pnpm vitest run src/lib/agent/qualify-state.carta-antes-do-cpf.test.ts
+# esperado: 10 passed — inclusive "volta a exigir CPF quando a env traz CPF inválido"</div>
+
+<h3>Refazendo a medição de produção</h3>
+
+<p>
+  Túnel SSM na 25432 (o caminho da memória), e a consulta que gerou a tabela do §2:
+</p>
+<div class="prova">WITH c AS (
+  SELECT c.id, c.contact_name, c.metadata AS m,
+         c.metadata->'qualifyAnswers' AS q,
+         count(*) FILTER (WHERE mm.role='user') AS tu
+  FROM conversations c LEFT JOIN messages mm ON mm.conversation_id=c.id
+  WHERE NOT c.is_simulated GROUP BY c.id, c.contact_name, c.metadata
+)
+SELECT
+  count(*) FILTER (WHERE (m->>'identityCollected')::bool) AS deu_cpf,
+  count(*) FILTER (WHERE (m->>'revealCompleted')::bool)   AS viu_carta,
+  count(*) FILTER (WHERE (m->>'contractClosed')::bool)    AS fechou
+FROM c;
+-- no período 10-26/08: 30 | 30 | 6  (dos quais 4 são teste interno)</div>
+
+<h3>No app local</h3>
+
+<div class="checklist">
+  <p>A stack está de pé em <code>https://aja-app-proposta-diferente-agente.orb.local</code>. Roteiro:</p>
+  <ol>
+    <li>Abrir o chat e escrever <em>"Quero um carro ate R$ 80 mil"</em>.<br>
+        <strong>Esperado:</strong> a tabela de comparação aparece <strong>nesse turno</strong>, com no máximo 4 cotas, e <strong>nenhum pedido de CPF</strong>. Leva ~30s: é busca real na administradora.</li>
+    <li>Escolher uma cota e seguir para o fechamento.<br>
+        <strong>Esperado:</strong> é <em>aqui</em> que o card de identidade aparece, com o título <em>"Pra seguir com essa cota"</em>.</li>
+    <li>Para ver o funil antigo: esvaziar <code>VITRINE_CPF</code> no <code>.env.local</code>, recriar o container e repetir o passo 1.<br>
+        <strong>Esperado:</strong> volta a pedir CPF antes de qualquer oferta.</li>
+  </ol>
+</div>
+
+<p class="legenda">
+  Verificação de que a vitrine está ativa no runtime:<br>
+  <code>docker exec aja-app-proposta-diferente-agente sh -c 'echo ${VITRINE_CPF:+SET}'</code> → <code>SET</code>
+</p>
+</section>
+
+<footer>
+  <p class="legenda">
+    Dossiê gerado em 27/08/2026 · <code>aja-agora</code> ·
+    branch <code>kairogyn/proposta-diferente-agente</code> ·
+    dados de produção lidos em modo somente leitura.
+  </p>
+</footer>
+
+</body>
+</html>

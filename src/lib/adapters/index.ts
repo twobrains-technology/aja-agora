@@ -1,4 +1,5 @@
 import { discoverySessionForConversation } from "@/lib/bevi/discovery-session";
+import { vitrineDisponivel } from "@/lib/bevi/identidade-vitrine";
 import { BeviApiAdapter } from "./bevi/bevi-api-adapter";
 import { BeviSelfContractAdapter } from "./bevi/bevi-self-contract-adapter";
 import { BeviSelfContractProposalGateway } from "./bevi/bevi-self-contract-proposal-gateway";
@@ -71,6 +72,26 @@ function createGateway(): ProposalGateway {
 		// fecha via Trilho B (self-contract), que já descobre. Ver
 		// docs/correcoes/decisions/2026-06-28-bloco-c-fechamento-trilho-b.md.
 		case "selfcontract":
+			// VITRINE + TRILHO B = FECHO IMPOSSÍVEL. Recusa no boot, não no cliente.
+			//
+			// A loja self-contract tem UMA proposta corrente por `storeHash`. Com a
+			// vitrine ligada, essa proposta é quase sempre a da casa — então todo
+			// fecho de cliente bate em `Duplicated Hash`, a retomada confere o dono e
+			// recusa com `PropostaDeOutroTitularError`. A recusa está certa (é ela
+			// que impede contrato em nome errado), mas o resultado é que NENHUMA
+			// venda fecha, e o cliente descobre isso no último clique.
+			//
+			// Uma env separava o desastre da paralisia; agora nenhuma das duas passa
+			// em silêncio. Para usar o Trilho B, desligue a vitrine — ou peça à Bevi
+			// um `storeHash` dedicado para ela, que é o desenho recomendado.
+			if (vitrineDisponivel()) {
+				throw new Error(
+					'PROPOSAL_GATEWAY="selfcontract" é incompatível com a VITRINE ligada: ' +
+						"a loja tem uma proposta corrente por storeHash, então todo fechamento " +
+						"cairia na proposta da casa e seria recusado (PropostaDeOutroTitularError). " +
+						"Desligue VITRINE_CPF/VITRINE_CELULAR ou use um storeHash dedicado à vitrine.",
+				);
+			}
 			return new BeviSelfContractProposalGateway(new BeviSelfContractClient());
 		case "mock":
 			throw new Error(

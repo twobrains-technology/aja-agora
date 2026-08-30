@@ -565,6 +565,8 @@ const EMPTY_TURN_RETRY_REASON_LABELS: Record<EphemeralDropReason, string> = {
 	"hallucinated-administradora":
 		"citou uma administradora que não está entre as ofertas reais desta conversa",
 	"internal-tool-leak": "escreveu o nome de uma ferramenta interna em vez de falar com o usuário",
+	"json-fragment-leak":
+		"deixou escapar o corpo de uma chamada interna (JSON de argumentos) no meio da fala",
 	"premature-reveal-scenario":
 		"narrou o cenário de lance/contemplação/sorteio no reveal, antes de perguntar se o usuário já conhece consórcio",
 	"sem-conteudo": "a frase não tinha nenhuma letra ou número (só pontuação solta)",

@@ -349,7 +349,41 @@ export function buildComparisonTableFromRevealGroups(
 		logosByAdministradora,
 		knownCreditValueByGroupId,
 	);
-	return semOfertasVisualmenteIguais(payload);
+	return limitarOpcoesDaComparacao(semOfertasVisualmenteIguais(payload));
+}
+
+/**
+ * Quantas cotas a tabela mostra, no máximo.
+ *
+ * Quatro é a recomendação mais três alternativas — a mesma aritmética de
+ * qualquer vitrine que espera uma decisão, e não uma pesquisa.
+ */
+export const MAX_OPCOES_NA_COMPARACAO = 4;
+
+/**
+ * Corta a tabela no que cabe numa decisão.
+ *
+ * Das 30 conversas que viram carta em produção (10-26/08/2026), 17 nunca
+ * escolheram — e o último turno delas é invariavelmente "encontrei 17/19/28
+ * opções... qual delas?". Gente que já tinha investido 8,8 turnos e entregue
+ * CPF, afogada na hora de decidir.
+ *
+ * A dedup visual (`semOfertasVisualmenteIguais`) tira o que é repetido; este
+ * corte tira o que é DEMAIS. Vem depois dela de propósito: primeiro some o
+ * ruído, e só então se conta quantas opções distintas sobraram — cortar antes
+ * gastaria vagas com linhas que o cliente leria como iguais.
+ *
+ * A ordem é preservada porque ela é o ranking (`pickBestRankedGroup` e a
+ * expansão de faixa já decidiram o mérito): ficam as melhores, não as que a
+ * Bevi devolveu primeiro. O convite a ver o resto continua existindo e continua
+ * sendo do modelo — o cliente que pedir "ver outras opções" recebe.
+ */
+export function limitarOpcoesDaComparacao(
+	payload: Record<string, unknown>,
+): Record<string, unknown> {
+	const groups = payload.groups;
+	if (!Array.isArray(groups) || groups.length <= MAX_OPCOES_NA_COMPARACAO) return payload;
+	return { ...payload, groups: groups.slice(0, MAX_OPCOES_NA_COMPARACAO) };
 }
 
 /**

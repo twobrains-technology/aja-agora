@@ -428,6 +428,57 @@ const INTERNAL_TOOL_LEAK_PATTERN = new RegExp(
 	"i",
 );
 
+/**
+ * O segmento é fragmento de JSON de argumentos de tool?
+ *
+ * `isInternalToolLeak` (abaixo) pega o NOME da tool. Este pega o CORPO — que não
+ * cita tool nenhuma e por isso escapava. Visto ao vivo e PERSISTIDO no banco:
+ *
+ *   assistant | Já busco as melhores opções de consórcio pra um carro até R$ 80 mil.
+ *             |   "category": "veiculo",
+ *             |   "max_value": 80000,
+ *             | }
+ *
+ * Pior que aparecer na tela: fica gravado, e o modelo relê a própria transcrição
+ * nos turnos seguintes.
+ *
+ * Isto é ESTRUTURA, não fala: um par `"chave": valor` em linha própria não é
+ * português, não tem paráfrase e não é questão de tom — é a diferença entre o
+ * que vira código e o que vira juiz no Langfuse (CLAUDE.md). O padrão é estreito
+ * de propósito: exige a linha INTEIRA ser o fragmento, com chave em ASCII
+ * snake_case. Fala com dois-pontos, aspas ou cifrão passa intacta — há teste
+ * para cada um desses casos, e eles são a metade que importa.
+ */
+const JSON_KV_LINE = /^\s*"[a-z][a-z0-9_-]*"\s*:\s*.+?,?\s*$/i;
+/** Delimitador solto: `{`, `}`, `[`, `]`, com vírgula opcional. */
+const JSON_BRACE_LINE = /^\s*[{}[\]]\s*,?\s*$/;
+/** Objeto inteiro numa linha: `{"a": 1, "b": 2}` — precisa ter par chave:valor. */
+const JSON_INLINE_OBJECT = /^\s*[{[][\s\S]*"[a-z][a-z0-9_-]*"\s*:[\s\S]*[}\]]\s*,?\s*$/i;
+/** Cerca de bloco de código (```json, ```) — o modelo às vezes embrulha assim. */
+const FENCE_LINE = /^\s*```[a-z]*\s*$/i;
+
+export function isJsonFragmentLeak(segment: string): boolean {
+	const bruto = segment.trim();
+	if (!bruto) return false;
+	// Objeto inteiro numa linha só passava batido no teste linha-a-linha.
+	if (JSON_INLINE_OBJECT.test(bruto)) return true;
+
+	const linhas = bruto
+		.split("\n")
+		.map((l) => l.trim())
+		.filter(Boolean);
+	if (linhas.length === 0) return false;
+
+	// A cerca de markdown não é conteúdo: ela não conta a favor nem contra.
+	// O que decide é o que está DENTRO — por isso um bloco ```…``` com fala de
+	// verdade continua passando (há teste).
+	const conteudo = linhas.filter((l) => !FENCE_LINE.test(l));
+	if (conteudo.length === 0) return false;
+	return conteudo.every(
+		(l) => JSON_KV_LINE.test(l) || JSON_BRACE_LINE.test(l) || JSON_INLINE_OBJECT.test(l),
+	);
+}
+
 /** Um segmento cita o nome literal de uma tool interna (ex.: "vou chamar
  * recommend_groups") — vazamento de pipeline, nunca pode virar bolha. */
 export function isInternalToolLeak(segment: string): boolean {
@@ -917,6 +968,9 @@ export type EphemeralDropReason =
 	| "score-percentage"
 	| "hallucinated-administradora"
 	| "internal-tool-leak"
+	/** Corpo JSON de argumentos de tool que escapou como fala. Visto ao vivo e
+	 * PERSISTIDO no banco — o modelo relê a própria transcrição depois. */
+	| "json-fragment-leak"
 	| "premature-reveal-scenario"
 	/** Resíduo de split: caractere visível sem nenhuma letra ou dígito (")" que
 	 * sobrou de uma reticência). Nunca é fala. */
@@ -949,6 +1003,7 @@ function factualDropReason(
 	if (isPrematureReservationClaim(segment, ctx)) return "premature-reservation";
 	if (isMechanismNarrationClaim(segment)) return "mechanism-narration";
 	if (isInternalToolLeak(segment)) return "internal-tool-leak";
+	if (isJsonFragmentLeak(segment)) return "json-fragment-leak";
 	if (isPrematureRevealScenario(segment, ctx)) return "premature-reveal-scenario";
 	if (isFabricatedStateSegment(segment, ctx)) return "fabricated-state";
 	if (isPrematureTopOfferClaim(segment, ctx)) return "premature-top-offer";
@@ -1087,9 +1142,33 @@ export function splitSegments(text: string): string[] {
  * recebido / re-busca de catálogo) contra o fato real. Sem `ctx` (chamadas
  * pré-existentes), o comportamento é idêntico ao anterior.
  */
+/**
+ * Tira do texto as LINHAS que são fragmento de JSON, preservando a fala.
+ *
+ * Roda antes de `splitSegments` de propósito (ver `stripProcessPreamble`): depois
+ * do split, o par chave-valor já foi partido no `:` e não há mais o que
+ * reconhecer. Aqui cada linha é avaliada inteira, que é a forma como o modelo de
+ * fato emite o vazamento.
+ */
+function removerLinhasDeJson(text: string): string {
+	if (!text.includes("\n")) return isJsonFragmentLeak(text) ? "" : text;
+	const linhas = text.split("\n");
+	const mantidas = linhas.filter((l) => !l.trim() || !isJsonFragmentLeak(l));
+	return mantidas.join("\n");
+}
+
 export function stripProcessPreamble(text: string, ctx?: StateVerificationContext): string {
 	if (!text) return text;
-	const segments = splitSegments(text);
+	// O JSON sai ANTES do split por segmento, e a ordem é o conserto.
+	//
+	// `splitSegments` trata `:` como fronteira — então `"category": "veiculo",`
+	// chega aos guards partido em dois pedaços que não parecem JSON nenhum, e o
+	// vazamento atravessava tudo com os testes verdes (eles alimentavam o guard
+	// com o bloco inteiro, que o pipeline nunca produz). A fronteira certa aqui é
+	// a LINHA: JSON de argumento vem sempre em linha própria.
+	const semJson = removerLinhasDeJson(text);
+	if (!semJson.trim()) return "";
+	const segments = splitSegments(semJson);
 	const survivors = segments.filter((seg) => !isEphemeralSegment(seg, ctx));
 	// FIX-298: nunca mais de 1 sentença interrogativa por balão — só a ÚLTIMA
 	// pergunta sobrevive; perguntas anteriores no mesmo texto são dropadas.
@@ -1154,11 +1233,61 @@ export class EphemeralTextFilter {
 	constructor(private readonly getContext?: () => StateVerificationContext) {}
 
 	/** Alimenta um delta; devolve o texto LIMPO pronto pra emitir agora. */
+	/**
+	 * Tira as LINHAS COMPLETAS que são fragmento de JSON do buffer pendente.
+	 *
+	 * Só mexe em linha fechada (isto é, seguida de `\n`): a última linha pode
+	 * estar pela metade no stream, e julgá-la agora poderia podar uma frase que
+	 * ainda vai chegar inteira. O `flush()` cuida da cauda.
+	 */
+	private semLinhasDeJson(texto: string): string {
+		const ultimaQuebra = texto.lastIndexOf("\n");
+		if (ultimaQuebra < 0) return texto;
+		const fechadas = texto.slice(0, ultimaQuebra + 1);
+		const cauda = texto.slice(ultimaQuebra + 1);
+		const limpas = fechadas
+			.split("\n")
+			.filter((linha, i, arr) => {
+				// o último item do split de "a\nb\n" é "" — preserva a quebra final
+				if (i === arr.length - 1 && linha === "") return true;
+				return !linha.trim() || !isJsonFragmentLeak(linha);
+			})
+			.join("\n");
+		return limpas + cauda;
+	}
+
+	/** A linha que está sendo escrita agora tem cara de JSON de argumento? */
+	private linhaEmCursoParecJson(): boolean {
+		const emCurso = this.pending.slice(this.pending.lastIndexOf("\n") + 1).trimStart();
+		if (!emCurso) return false;
+		// Conservador: só aspas-abre-chave e delimitadores. Fala em português não
+		// começa assim, e um falso positivo aqui só ATRASA a liberação até o `\n`
+		// (a linha sai inteira depois), nunca apaga conteúdo.
+		return /^"[a-z][a-z0-9_-]*"?\s*:?/i.test(emCurso) || /^[{}[\]]/.test(emCurso);
+	}
+
 	push(delta: string): string {
 		// Normaliza ANTES de procurar fronteira/segmentar: emoji-como-pontuação
 		// corrompia `splitSegments` e desligava os guards silenciosamente.
 		this.pending = this.semRaciocinio(normalizeEmojiToPunctuation(this.pending + delta));
-		const idx = lastBoundaryIndex(this.pending);
+		// E o JSON sai ANTES da segmentação, pelo mesmo motivo.
+		//
+		// `splitSegments` trata `:` como fronteira: `"category": "veiculo",` vira
+		// `"category":` (que ainda vira GANCHO, por terminar em `:`) e ` "veiculo",`
+		// — dois pedaços que não parecem JSON, e que o filtro depois REEMENDA,
+		// reconstruindo o vazamento. A fronteira certa é a LINHA, que é como o
+		// modelo emite. Custou três rodadas de revisão descobrir que o guard estava
+		// plantado numa função sem call site de produção.
+		this.pending = this.semLinhasDeJson(this.pending);
+		// LINHA SUSPEITA SEGURA O STREAM até fechar.
+		//
+		// Sem isto o conserto acima não alcança o streaming real: `:` é fronteira
+		// de segmento, então `"category":` é liberado ANTES de o `\n` chegar — e
+		// sai antes de a linha existir para ser julgada. Quando a linha em curso
+		// começa como JSON, a única fronteira que vale é a quebra de linha.
+		const idx = this.linhaEmCursoParecJson()
+			? this.pending.lastIndexOf("\n")
+			: lastBoundaryIndex(this.pending);
 		if (idx < 0) return "";
 		const complete = this.pending.slice(0, idx + 1);
 		this.pending = this.pending.slice(idx + 1);
@@ -1199,7 +1328,9 @@ export class EphemeralTextFilter {
 	 * isto no fim de verdade do turno — pra fronteiras INTERMEDIÁRIAS (troca de
 	 * bloco, pré-tool-call), use `flushPending()`. */
 	flush(): string {
-		const rest = this.pending;
+		// A cauda é a última linha, que o `push` deixou passar por ainda poder
+		// estar incompleta. Agora ela fechou: se for JSON, não é fala.
+		const rest = isJsonFragmentLeak(this.pending) ? "" : this.pending;
 		this.pending = "";
 		let out = rest ? this.filterComplete(rest) : "";
 		// FIX-431 (P1 #9) — o gancho que anuncia um CARD tem o que anunciar.

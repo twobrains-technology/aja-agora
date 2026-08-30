@@ -54,8 +54,20 @@ describe("experience pergunta uma vez", () => {
 
 	it("gate de COLETA continua insistindo mesmo depois de já ter sido mostrado", () => {
 		// Sem identidade a Bevi não contrata — esse não é opcional e não cede.
+		//
+		// 2026-08-27: com a vitrine, o `identify` deixou de ser pedágio pré-busca e
+		// desceu para o fecho. O que este teste protege não mudou (gate de coleta
+		// obrigatória não cede como o `experience` cede); mudou ONDE ele acontece —
+		// então o cenário precisa de uma cota já escolhida, que é o ponto em que o
+		// CPF passa a ser exigido. Antes daí, `nextGate` devolve `decision`, porque
+		// é isso que falta: o cliente ainda não disse qual quer.
 		const gate = nextGate(
-			{ ...posReveal, experienceDispatched: true, identityCollected: false },
+			{
+				...posReveal,
+				experienceDispatched: true,
+				identityCollected: false,
+				escolha: { groupId: "g-1", origem: "mencao" },
+			} as typeof posReveal,
 			{ hasContactName: true },
 		);
 		expect(gate).toBe("identify");

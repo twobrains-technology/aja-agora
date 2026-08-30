@@ -65,6 +65,15 @@ export function profundidadeDoGate(gate: string | null): number | null {
 	return PROFUNDIDADE_DO_GATE[gate] ?? null;
 }
 
+/**
+ * Os artifacts que colocam PREÇO REAL na frente do cliente.
+ *
+ * Mesma definição que `sinais-do-funil.ts` usa no banco para "viu oferta", mais
+ * o `comparison_table` — que é a primeira coisa que o cliente vê no reveal e,
+ * portanto, o momento em que a conversa deixa de ser promessa.
+ */
+const ARTIFACTS_DE_OFERTA = new Set(["comparison_table", "recommendation_card", "real_offer"]);
+
 export type Score = {
 	name: string;
 	value: string | number;
@@ -92,6 +101,23 @@ export function scoresDoTurno(record: TurnTraceRecord): Score[] {
 			scores.push({ name: "funil_passo", value: passo, dataType: "NUMERIC" });
 		}
 	}
+
+	// A CARTA CHEGOU À TELA? — o contraponte determinístico do `judge_avancou`.
+	//
+	// Em produção (14-26/08/2026) o `judge_avancou` deu 0,92 em 335 turnos
+	// enquanto 70 conversas de cliente externo fechavam 2 contratos. Não há
+	// contradição: aquele juiz lê a FALA e pergunta "este turno tentou avançar?",
+	// e o turno que pede o CPF pela quarta vez tentou. Funil parado é estado, e
+	// só um sinal de estado o enxerga.
+	//
+	// Emitido em TODO turno de propósito, inclusive como 0: score que só aparece
+	// quando vale 1 não tem denominador, e a média no Langfuse viraria 1,0 para
+	// sempre — o mesmo vício que este sinal existe para corrigir.
+	scores.push({
+		name: "carta_na_tela",
+		value: record.artifactsEmitted.some((a) => ARTIFACTS_DE_OFERTA.has(a)) ? 1 : 0,
+		dataType: "BOOLEAN",
+	});
 
 	// Turno mudo: o agente processou e não escreveu UMA letra. Do lado do
 	// cliente é a app travada. Hoje isso só aparecia se alguém lesse o log.

@@ -36,7 +36,7 @@ import type {
 	SimulationResult,
 	UploadDocumentInput,
 } from "../proposal-gateway";
-import { DuplicatedProposalError } from "./bevi-errors";
+import { DuplicatedProposalError, PropostaDeOutroTitularError } from "./bevi-errors";
 import { type BeviOffer, normalizeAdministradoraName } from "./offer-mapper";
 import type { BeviSelfContractClient, SelfContractSimulationInput } from "./self-contract-client";
 
@@ -140,6 +140,7 @@ export class BeviSelfContractProposalGateway implements ProposalGateway {
 	 * proposta que a descoberta criou — não criamos outra, só resolvemos o
 	 * proposalId real dela via /system. */
 	async createProposal(input: CreateProposalInput): Promise<CreateProposalResult> {
+		let retomou = false;
 		try {
 			await this.client.createProposal({
 				cpf: input.cpf,
@@ -152,8 +153,28 @@ export class BeviSelfContractProposalGateway implements ProposalGateway {
 			if (!(err instanceof DuplicatedProposalError)) throw err;
 			// proposta ativa pro hash — retomada (mesmo tratamento que
 			// BeviSelfContractAdapter.ensureOffers já faz na descoberta).
+			retomou = true;
 		}
 		const state = await this.client.getSystemState();
+
+		// A RETOMADA PRECISA CONFERIR O DONO (2026-08-27).
+		//
+		// `/system` resolve a proposta corrente só pelo `storeHash` — não devolve
+		// CPF. Enquanto toda proposta nascia do próprio cliente, adotar a corrente
+		// era seguro. Com a vitrine, a proposta corrente é quase sempre a da CASA
+		// (aberta para montar a prateleira de ofertas), e adotá-la aqui significa
+		// anexar o RG e o comprovante DESTE cliente a uma proposta de outro
+		// titular — e `finalize()` enviá-la assim à administradora.
+		//
+		// Só custa uma chamada quando houve retomada: proposta recém-criada é dele
+		// por construção.
+		if (retomou) {
+			const doCliente = await this.client.getMultiProposal(input.cpf);
+			if (!doCliente.some((p) => p.proposalId === state.proposalId)) {
+				throw new PropostaDeOutroTitularError(state.proposalId);
+			}
+		}
+
 		this.proposalId = state.proposalId;
 		return { proposalId: state.proposalId };
 	}

@@ -13,6 +13,7 @@ import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { planTransition } from "@/lib/agent/orchestrator/transition";
 import type { Category, ConversationMetadata, Persona } from "@/lib/agent/personas";
 import { type Gate, nextGate } from "@/lib/agent/qualify-state";
+import { vitrineDisponivel } from "@/lib/bevi/identidade-vitrine";
 import { EMPTY_TURN_FALLBACK } from "@/lib/chat/empty-turn-guard";
 import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
@@ -243,8 +244,8 @@ async function gateTextPrompt(
 // FIX-212 (educação curta antes do card).
 async function gateContextBeat(gate: Gate, _conversationId: string): Promise<string | null> {
 	if (gate === "identify") {
-		const { IDENTIFY_CONTEXT_WHATSAPP } = await import("./identify-capture");
-		return IDENTIFY_CONTEXT_WHATSAPP;
+		const { identifyContextWhatsapp } = await import("./identify-capture");
+		return identifyContextWhatsapp();
 	}
 	// O `lance-embutido` NÃO tem mais beat fixo. O texto que existia aqui
 	// (`lanceEmbutidoEdu`) ensinava o conselho ERRADO — "na sua carta de
@@ -789,11 +790,19 @@ export async function runSearchSummaryWithOrchestrator(args: {
 	const { from, conversationId } = args;
 	const refreshed = await reloadMeta(conversationId);
 	if (refreshed.searchDispatched) return;
-	// Tripwire D1: busca real exige identidade (a Bevi não simula sem CPF).
-	// Sem ela, pede o CPF por texto (celular = o próprio waId) — nunca buscar.
-	if (!refreshed.identityCollected) {
-		const { IDENTIFY_WHATSAPP_PROMPT } = await import("./identify-capture");
-		await sendText(from, IDENTIFY_WHATSAPP_PROMPT);
+	// Tripwire D1: a busca real exige um par CPF+celular — a Bevi não simula sem
+	// proposta, e proposta exige identidade.
+	//
+	// 2026-08-27 — quem satisfaz esse par passou a poder ser a VITRINE (a
+	// identidade da casa), como já acontece em `readyForDiscovery`. Sem esta
+	// linha, este trilho ficava no mundo antigo: pedia o CPF e não buscava, e
+	// com a vitrine ligada pedia com a copy do FECHO ("pra seguir com essa
+	// cota") sem cota nenhuma na tela. Ele é alcançável pelo caminho normal —
+	// `handleHandoffDecline` quando o gate é `search` sem identidade, que é o
+	// estado comum agora.
+	if (!refreshed.identityCollected && !vitrineDisponivel()) {
+		const { identifyWhatsappPrompt } = await import("./identify-capture");
+		await sendText(from, identifyWhatsappPrompt());
 		return;
 	}
 	const category = refreshed.currentCategory;
@@ -833,13 +842,11 @@ export async function fireGate(
 	// saindo sempre, porque este caminho é server-authored (clique/retomada), sem
 	// texto do modelo pra entregar o gate.
 	if (gate === "identify") {
-		const { IDENTIFY_CONTEXT_WHATSAPP, IDENTIFY_WHATSAPP_PROMPT } = await import(
-			"./identify-capture"
-		);
+		const { identifyContextWhatsapp, identifyWhatsappPrompt } = await import("./identify-capture");
 		if (await claimContextBeat(conversationId, gate)) {
-			await sendText(from, IDENTIFY_CONTEXT_WHATSAPP);
+			await sendText(from, identifyContextWhatsapp());
 		}
-		await sendText(from, IDENTIFY_WHATSAPP_PROMPT);
+		await sendText(from, identifyWhatsappPrompt());
 		return;
 	}
 	// FIX-212 (split 2 tempos): gates com contexto fixo (lance-embutido: educação)

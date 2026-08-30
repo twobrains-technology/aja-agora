@@ -46,6 +46,7 @@
 		"sonda:conversa": "tsx scripts/sonda-conversa-real.ts",
 		"prompts:check": "tsx scripts/prompts-check.ts",
 		"sonda:fecho-fantasma": "tsx scripts/sonda-fecho-fantasma.ts",
+		"sonda:nome-perdido": "tsx scripts/sonda-nome-perdido.ts",
 		"verifica:reconciliacao": "tsx scripts/verifica-reconciliacao.ts"
 	},
 	"dependencies": {

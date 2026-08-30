@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import errDuplicated from "../adapters/bevi/__fixtures__/err-selfcontract-duplicated.json";
 import okChoose from "../adapters/bevi/__fixtures__/ok-selfcontract-choose.json";
 import okFinalize from "../adapters/bevi/__fixtures__/ok-selfcontract-finalize.json";
+// 2026-08-27 — a retomada agora confere o dono da proposta corrente (com a
+// vitrine, ela costuma ser a da casa). Nestes cenários ela É do cliente, então
+// a retomada segue legítima e o fluxo do passo 5 não muda.
+import okMultiProposal from "../adapters/bevi/__fixtures__/ok-selfcontract-multi-proposal.json";
 import okSegments from "../adapters/bevi/__fixtures__/ok-selfcontract-segments.json";
 import okSimulation from "../adapters/bevi/__fixtures__/ok-selfcontract-simulation.json";
 import okSystem from "../adapters/bevi/__fixtures__/ok-selfcontract-system.json";
@@ -48,13 +52,15 @@ beforeEach(() => store.clear());
 // proposalNumber. Doc: docs/correcoes/decisions/2026-06-28-bloco-c-fechamento-trilho-b.md
 describe("fulfillment — passo 5 Contratar via Trilho B (self-contract)", () => {
 	function mockFetchSequence(...payloads: unknown[]) {
-		const fetchMock = vi.fn(async () => ({ json: async () => payloads.shift() }) as Response);
+		const fetchMock = vi.fn(
+			async () => ({ ok: true, status: 200, json: async () => payloads.shift() }) as Response,
+		);
 		globalThis.fetch = fetchMock as typeof fetch;
 		return fetchMock;
 	}
 
 	it("startContract REUSA a proposta ativa (Duplicated Hash) — não cria proposta nova", async () => {
-		mockFetchSequence(errDuplicated, okSystem, okSegments, okSimulation);
+		mockFetchSequence(errDuplicated, okSystem, okMultiProposal, okSegments, okSimulation);
 		const gw = new BeviSelfContractProposalGateway(new BeviSelfContractClient(CONFIG));
 		const createSpy = vi.spyOn(gw, "createProposal");
 
@@ -65,7 +71,15 @@ describe("fulfillment — passo 5 Contratar via Trilho B (self-contract)", () =>
 	});
 
 	it("confirmOffer chama finalize() e devolve proposalNumber; sem consortiumProposalLink", async () => {
-		mockFetchSequence(errDuplicated, okSystem, okSegments, okSimulation, okChoose, okFinalize);
+		mockFetchSequence(
+			errDuplicated,
+			okSystem,
+			okMultiProposal,
+			okSegments,
+			okSimulation,
+			okChoose,
+			okFinalize,
+		);
 		const gw = new BeviSelfContractProposalGateway(new BeviSelfContractClient(CONFIG));
 
 		await startContract("conv-sc-2", input, gw);
@@ -79,6 +93,7 @@ describe("fulfillment — passo 5 Contratar via Trilho B (self-contract)", () =>
 		const fetchMock = mockFetchSequence(
 			errDuplicated,
 			okSystem,
+			okMultiProposal,
 			okSegments,
 			okSimulation,
 			okChoose,

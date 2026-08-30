@@ -1,5 +1,6 @@
 import type { Category, QualifyAnswers } from "@/lib/agent/personas";
 import type { Gate } from "@/lib/agent/qualify-state";
+import { vitrineDisponivel } from "@/lib/bevi/identidade-vitrine";
 
 // REMOVIDO em 2026-07-13 (ADR revoga-jornada-soberana): `CLARIFY_LEAD_IN`
 // ("Sem problemas, deixa eu simplificar:") era emitido num curto-circuito ANTES
@@ -220,9 +221,24 @@ export function gateQuestion(
 			// administradoras, preciso do seu CPF e WhatsApp". O WhatsApp segue
 			// com o beat de contexto próprio (identify-capture.ts,
 			// IDENTIFY_CONTEXT_WHATSAPP) — fora de escopo deste fix.
+			// 2026-08-27 — A COPY SEGUE O MOMENTO DO GATE.
+			//
+			// Com a vitrine ligada, o `identify` só acontece no FECHO (o cliente já
+			// viu as cartas e escolheu uma), e a justificativa verdadeira é reservar
+			// aquela cota. Sem vitrine, ele volta a ser o pedágio PRÉ-BUSCA, e aí
+			// "reservar essa cota" seria promessa sobre algo que o cliente ainda não
+			// viu — exatamente a classe de fala que este projeto trata como defeito.
+			//
+			// O predicado é o mesmo que move o gate (`vitrineDisponivel`), então
+			// estado e fala não podem divergir: desligar a vitrine devolve as duas.
+			if (!vitrineDisponivel()) {
+				return channel === "web"
+					? "Pra eu trazer as ofertas reais das administradoras, preciso do seu CPF e celular."
+					: "Me manda seu CPF, só os números. Seu celular eu já pego aqui do WhatsApp.";
+			}
 			return channel === "web"
-				? "Pra eu trazer as ofertas reais das administradoras, preciso do seu CPF e celular."
-				: "Me manda seu CPF, só os números. Seu celular eu já pego aqui do WhatsApp.";
+				? "Pra seguir com essa cota, preciso do seu CPF e celular."
+				: "Pra seguir com essa cota, me manda seu CPF, só os números. O celular eu já pego aqui do WhatsApp.";
 		case "simulator-offer":
 			// docx passo 4 (linha 34): oferta literal do simulador.
 			return (

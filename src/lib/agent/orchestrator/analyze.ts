@@ -4,6 +4,7 @@ import { aplicarFaixaDeCredito } from "@/lib/agent/qualify-answers";
 import { clampCreditToCategory, objetivoForPrazo } from "@/lib/agent/qualify-config";
 import { type Gate, nextGate, registerGateStuckTurn } from "@/lib/agent/qualify-state";
 import { analyzeTurn, type TurnAnalysis } from "@/lib/agent/turn-analyzer";
+import { valorAncoradoNoTexto } from "@/lib/agent/valor-declarado";
 
 // FIX-74 (QA dono-de-produto 2026-07-02): a jornada AUTO web em prod pulou o
 // gate "timeframe" — o usuário disse só "…R$ 70 mil, gastando perto de R$ 900
@@ -228,9 +229,48 @@ export async function analyzeAndMerge(
 	// menos?" — o snapshot pré-mutação ainda lê `false` nesse turno). Sem
 	// `desireAnsweredThisTurn`, o valor caía só em `creditMentionedAtDesire` e
 	// nunca era promovido — `nextGate()` travava em "credit" pra sempre.
+	// 2026-08-27 — O CLIENTE QUE ABRE DIZENDO O VALOR.
+	//
+	// Os guards acima pressupõem que o valor chega DEPOIS do gate `desire`, e por
+	// isso exigem `desireAnswered`. Com a carta vindo antes do CPF, quem escreve
+	// "Quero um carro ate R$ 80 mil" na primeira mensagem deveria ir direto para a
+	// busca — mas o valor dele morria aqui, e o efeito era circular: sem
+	// `creditMax` não há alvo de busca; sem alvo, `nextGate` devolve `name`; com
+	// `name` ativo o gate `desire` nunca é emitido; sem `desire` respondido o
+	// valor nunca é promovido. Medido no app: `gate=name` em quatro turnos
+	// seguidos, com o analyzer acertando `credit=null-80000` em todos.
+	//
+	// A abertura é o único caso em que o guard não protege nada: a pergunta
+	// dedicada do valor, que ele existe para preservar, não teria o que perguntar
+	// a quem acabou de dizer o número.
+	//
+	// A ancoragem é o que impede isto de virar captura no escuro — o analyzer é um
+	// LLM e às vezes devolve valor que o cliente não disse (FIX-378).
+	//
+	// Aqui a exigência é mais dura que a de `valorAncoradoNoTexto` sozinho: ele
+	// devolve `true` quando o texto não traz número NENHUM (correto no caso geral,
+	// porque o valor pode ter vindo do slider ou de um turno anterior). Na
+	// abertura não existe turno anterior nem slider — se o cliente não escreveu o
+	// número, não há valor declarado a promover.
+	//
+	// `escalaImplicita` fica FORA de propósito: ela existe para o turno em que a
+	// pergunta do valor foi feita, onde "238" pode significar R$ 238 mil
+	// (`valor-declarado.ts:87-89`). Na abertura ninguém perguntou nada — o número
+	// solto pode ser idade, ano ou quantidade de filhos, e multiplicá-lo por mil
+	// mandaria a busca para uma faixa que o cliente nunca pediu.
+	const aberturaComValorDeclarado =
+		q.creditMax === undefined &&
+		!meta.desireAnswered &&
+		!meta.searchDispatched &&
+		!meta.revealCompleted &&
+		sourceCreditMax !== null &&
+		/\d/.test(text ?? "") &&
+		valorAncoradoNoTexto(text ?? "", sourceCreditMax);
+
 	if (
 		sourceCreditMax !== null &&
 		((q.creditMax === undefined && (desireAnsweredBeforeThisTurn || desireAnsweredThisTurn)) ||
+			aberturaComValorDeclarado ||
 			isRevealRefit ||
 			isCorrecaoDoValor)
 	) {

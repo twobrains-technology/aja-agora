@@ -27,7 +27,7 @@ import {
 	buildTwoPathsCard,
 } from "@/lib/agent/orchestrator/server-cards";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
-import type { Gate } from "@/lib/agent/qualify-state";
+import { decideShowGate, type Gate, nextGate } from "@/lib/agent/qualify-state";
 import { loadIdentity } from "@/lib/conversation/identity";
 import { projectToMeta } from "../emit";
 import type { AgentGraphStateType, FunnelState } from "../state";
@@ -146,7 +146,18 @@ export async function emitCardNode(
 	// acabou de ser mostrado ("esse plano faz sentido?" / o formulário). Suspendê-los
 	// junto atrasava em um turno inteiro quem chega decidido, que é exatamente o
 	// cliente que a gente menos pode fazer esperar.
-	const GATES_DE_ACAO = new Set(["decision", "contract"]);
+	// Os gates que SÃO o pedido de ação do turno — eles não cedem a vez para um
+	// card, porque são o passo seguinte da venda, não uma pergunta paralela.
+	//
+	// `identify` entrou aqui em 2026-08-27, junto com a vitrine. Enquanto ele
+	// morava antes da busca, nunca disputava turno com card de oferta e a lista
+	// estava completa; ao descer para o fecho, passou a viver exatamente onde
+	// `recommendation_card` e `simulation_result` são emitidos — e começou a ser
+	// engolido por eles. O sintoma, medido no app: `[route] gate=identify
+	// show=true`, o agente anunciando "o formulário está aparecendo na tela
+	// agora", e nenhum gate no stream. A venda morre no último metro, com o
+	// cliente já decidido.
+	const GATES_DE_ACAO = new Set(["decision", "contract", "identify"]);
 
 	// UM TURNO, UMA PERGUNTA — vale também pro card que o MODELO emitiu.
 	//
@@ -163,6 +174,19 @@ export async function emitCardNode(
 		"simulation_result",
 		"recommendation_card",
 		"group_card",
+		// 2026-08-27 — `comparison_table` faltava nesta lista, e ela é justamente o
+		// card em que o cliente ESCOLHE a cota. Visto no app: quatro cartas na tela
+		// e, embaixo, os chips de "você já fez consórcio antes?". A lacuna é antiga;
+		// o que mudou foi a frequência — antes a tabela e o `experience` caíam em
+		// turnos diferentes, com o gate `identify` entre os dois. Com a carta no
+		// primeiro turno, passaram a colidir quase sempre.
+		"comparison_table",
+		// 2026-08-27 — `quick_reply` é a forma mais comum de o modelo ancorar o
+		// turno do reveal ("Folga no bolso" / "Contemplar mais rápido"), e ele
+		// pede resposta como qualquer outro CTA. Sem ele aqui, os chips do modelo
+		// e os chips do gate caíam juntos: duas perguntas, cinco botões, um turno
+		// — reproduzido em cenário (`cenario-chips-conduzem-o-reveal`).
+		"quick_reply",
 		"decision_prompt",
 		"contract_form",
 		"two_paths",
@@ -199,17 +223,28 @@ export async function emitCardNode(
 	// medido em 14/08: 4 de 4 turnos de identidade entregaram o pedido duas vezes,
 	// a fala do modelo e, colada, a canônica do canal. É o turno de maior atrito
 	// da jornada — pedir o CPF em dobro ali é o pior lugar para soar automático.
-	const modeloJaPediuIdentidade =
-		state.gate === "identify" &&
-		pediuIdentidade(state.events.map((ev) => (ev.type === "text-delta" ? ev.text : "")).join(""));
-
+	//
+	// ⚠️ O predicado é a FALA, e o gate é conferido à parte. Enquanto os dois
+	// estavam na mesma expressão (`state.gate === "identify" && pediu…`), a guarda
+	// morria exatamente no turno que o recálculo abaixo criou: ali o gate nasce
+	// DEPOIS da rota, então `state.gate` é `undefined` por construção e o pedido
+	// voltava a sair em dobro — no fecho, o pior turno possível.
+	const falaPediuIdentidade = pediuIdentidade(
+		state.events.map((ev) => (ev.type === "text-delta" ? ev.text : "")).join(""),
+	);
 	// O card do nome espera quando a fala do turno perguntou OUTRA coisa — sem
 	// isto ele aparecia mudo embaixo de "já tem uma ideia do que procura?" e
 	// roubava a resposta da pergunta do agente. Ver `deveEmitirCardDeNome`.
+	//
+	// `modelAsked` aqui é só `modelAskedQuestion`: o operando que existia ao lado
+	// (`state.gate === "identify" && falaPediuIdentidade`) nunca podia ser
+	// verdadeiro dentro de um bloco que exige `state.gate === "name"` — dois
+	// valores diferentes para o mesmo campo. Era herança do tempo em que o
+	// predicado da fala e o do gate viviam na mesma variável.
 	const cardDeNomeAtropelaAFala =
 		state.gate === "name" &&
 		!deveEmitirCardDeNome({
-			modelAsked: state.modelAskedQuestion || modeloJaPediuIdentidade,
+			modelAsked: state.modelAskedQuestion,
 			modelAskedForName: state.modelAskedForName,
 			jaAdiouUmaVez: funnel.nameCardAdiado,
 		});
@@ -236,15 +271,80 @@ export async function emitCardNode(
 	const gateOpcionalEmTurnoDoSistema = !state.isUserTurn && state.gate === "experience";
 
 	const revelouSemConduzir = state.apresentaOfertaNesteTurno && state.ancoraFalhou;
+	// A rede vale para as DUAS formas de "o card é a pergunta do turno".
+	//
+	// `revelouSemConduzir` precisa anular tanto a apresentação quanto o
+	// `turnoJaPedeAcao` — senão o gate segue suprimido num turno em que a âncora
+	// não entregou texto, e o cliente fica olhando os cards sem nada convidando a
+	// responder (sessão `ff8f2080`, produção 2026-08-13). Antes de
+	// `comparison_table` entrar em `CARDS_QUE_PEDEM_ACAO` isso não aparecia,
+	// porque no turno do reveal o único sinal era `apresentaOfertaNesteTurno` —
+	// que já era anulado. Com a tabela na lista, os dois precisam ceder juntos.
+	const cardEhAPerguntaDoTurno =
+		(state.apresentaOfertaNesteTurno || turnoJaPedeAcao) && !revelouSemConduzir;
 	const gateDoTurno =
-		(((state.apresentaOfertaNesteTurno && !revelouSemConduzir) || turnoJaPedeAcao) &&
-			!GATES_DE_ACAO.has(String(state.gate ?? ""))) ||
+		(cardEhAPerguntaDoTurno && !GATES_DE_ACAO.has(String(state.gate ?? ""))) ||
 		perguntaEmbutidoNoEscuro ||
 		cardDeNomeAtropelaAFala ||
 		gateOpcionalEmTurnoDoSistema
 			? undefined
 			: state.gate;
-	if (gateDoTurno) {
+	// O FUNIL AVANÇA DEPOIS DE A ROTA JÁ TER DECIDIDO — e é no fecho que isso dói.
+	//
+	// A ordem dos nós é `routeFinal → converse → emitCard`: o gate é escolhido
+	// ANTES de o modelo falar, mas a escolha da cota é gravada DENTRO do
+	// `converse` (tool `escolher_cota`). No turno em que o cliente escolhe, a
+	// rota ainda via `experience` e não mostrou gate nenhum; o `identify` só
+	// passou a existir quando o turno já estava acabando.
+	//
+	// Medido no app, conversa `213b426b`, com o metadata literal dela na sonda:
+	//
+	//   nextGate(meta COM a escolha) → "identify"
+	//   nextGate(meta SEM a escolha) → "experience"
+	//
+	//   🤖 "Agora o sistema abre o formulário de contratação com a Itaú"
+	//   tela: nenhum card · metadata: pendingGate = "identify"
+	//
+	// O agente prometeu e a tela não cumpriu; a venda ficou esperando o cliente
+	// escrever de novo. Enquanto `identify` morava antes da busca isso não
+	// existia — ele nunca dependia de uma tool do próprio turno. A vitrine o
+	// trouxe para o fecho, e trouxe o problema junto.
+	//
+	// O recorte é estreito de propósito: só os GATES DE AÇÃO (que este arquivo já
+	// declara serem "o próximo passo do que acabou de ser mostrado"), só em turno
+	// do cliente, e só quando o funil de fato mudou dentro do turno. Gate opcional
+	// que nasce no meio do caminho continua esperando o turno seguinte.
+	//
+	// Só `identify` entra aqui, e não os três GATES_DE_ACAO. `decision` e
+	// `contract` não têm payload de card próprio (`gatePartData` devolve `null`
+	// para os dois) e seus artifacts — `decision_prompt`, `contract_form` — são
+	// disparados por blocos que leem `state.gate`, mais abaixo. Emiti-los por aqui
+	// seria evento sem tela: a mesma promessa vazia que este bloco existe para
+	// acabar, agora parecendo resolvida. Quando um deles nascer no meio do turno,
+	// o comportamento segue o de antes (pendência + re-engage) — não pioro, e não
+	// finjo cobrir.
+	const GATES_QUE_NASCEM_NO_TURNO = new Set(["identify"]);
+	const metaAposOTurno = projectToMeta(state);
+	const gateAposOTurno = nextGate(metaAposOTurno, {
+		hasContactName: Boolean(state.contactName),
+	});
+	const gateDeAcaoNasceuNesteTurno =
+		state.isUserTurn &&
+		!gateDoTurno &&
+		gateAposOTurno !== state.answeredGate &&
+		GATES_QUE_NASCEM_NO_TURNO.has(gateAposOTurno) &&
+		// O gate recém-nascido passa pela MESMA porteira que a rota usaria. Sem
+		// isto, uma escolha ancorada num turno em que o cliente está perguntando
+		// outra coisa despejava o formulário por cima da dúvida dele.
+		decideShowGate({
+			gate: gateAposOTurno,
+			intent: state.intent ?? "neutral",
+			meta: metaAposOTurno,
+			isUserTurn: state.isUserTurn,
+		});
+	const gateFinal = gateDoTurno ?? (gateDeAcaoNasceuNesteTurno ? gateAposOTurno : undefined);
+
+	if (gateFinal) {
 		// `modelAsked`: o `converse` agora é CIENTE do gate (via `GATE_INTENT`) e
 		// faz a pergunta com as palavras dele. Se produziu texto neste turno, o
 		// adapter NÃO deve reinjetar a pergunta canônica (`gateQuestion`) — senão
@@ -258,8 +358,8 @@ export async function emitCardNode(
 		// ninguém perguntando nada.
 		events.push({
 			type: "gate",
-			gate: gateDoTurno,
-			modelAsked: state.modelAskedQuestion || modeloJaPediuIdentidade,
+			gate: gateFinal,
+			modelAsked: state.modelAskedQuestion || (gateFinal === "identify" && falaPediuIdentidade),
 		});
 	}
 

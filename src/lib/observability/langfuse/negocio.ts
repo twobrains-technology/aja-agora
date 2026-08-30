@@ -79,3 +79,53 @@ export function registrarMarcoDeNegocio(marco: MarcoDeNegocio): void {
 		console.error("[langfuse] marco de negócio falhou (ignorado):", err);
 	}
 }
+
+/**
+ * A PRIMEIRA CARTA da conversa — score de SESSÃO, emitido uma vez.
+ *
+ * `carta_na_tela` (funil-scores.ts) mede um TURNO, e por isso responde a
+ * pergunta errada para avaliar a vitrine: quanto melhor ela funciona, mais
+ * turnos a conversa ganha DEPOIS da carta (escolha, dúvida, fecho) — todos
+ * valendo zero. A média por turno cai justamente quando o produto melhora.
+ *
+ * A pergunta que importa é por CONVERSA: ela chegou a ver preço, e em quantos
+ * turnos? Foi essa a métrica levantada à mão no banco para diagnosticar o funil
+ * (mediana de 5 turnos até a primeira carta, 34% das conversas chegando lá);
+ * aqui ela vira dimensão viva, sem depender de alguém rodar SQL.
+ *
+ * Silencioso e sem efeito sem credencial ou sem conversa. Simulada fica de
+ * fora pelo mesmo motivo dos outros marcos: contaminar a métrica com teste é
+ * pior do que não tê-la.
+ */
+export function registrarPrimeiraCarta(marco: {
+	conversationId: string | null;
+	/** Turnos do CLIENTE até esta carta aparecer (1 = viu já na primeira fala). */
+	turnosAteACarta: number;
+	isSimulated: boolean;
+}): void {
+	if (marco.isSimulated) return;
+	if (!marco.conversationId) return;
+	const client = getLangfuseClient();
+	if (!client) return;
+
+	try {
+		client.score.create({
+			name: "carta_vista",
+			value: 1,
+			dataType: "BOOLEAN",
+			sessionId: marco.conversationId,
+			environment: ambienteLangfuse(),
+		});
+		if (Number.isFinite(marco.turnosAteACarta) && marco.turnosAteACarta > 0) {
+			client.score.create({
+				name: "turnos_ate_carta",
+				value: marco.turnosAteACarta,
+				dataType: "NUMERIC",
+				sessionId: marco.conversationId,
+				environment: ambienteLangfuse(),
+			});
+		}
+	} catch (err) {
+		console.error("[langfuse] marco da primeira carta falhou (ignorado):", err);
+	}
+}

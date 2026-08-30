@@ -42,6 +42,22 @@ const NAO_SAO_NOMES = new Set([
 	"uma",
 	"uns",
 	"umas",
+	// Estado de crédito — o vocabulário que ESTE produto provoca. "Meu nome está
+	// sujo no Serasa, consigo fazer consórcio?" é uma das perguntas mais comuns do
+	// domínio (consórcio é justamente o que se vende a quem tem restrição), e ela
+	// contém a forma exata de uma apresentação: "meu nome é sujo". Sonda de
+	// 27/08/2026: a frase batizava o lead de "Sujo".
+	//
+	// Como a família "voltei" logo abaixo, isto não é caçar frase — é reconhecer
+	// que o produto faz o cliente escrever estas palavras nesta posição.
+	"sujo",
+	"suja",
+	"limpo",
+	"limpa",
+	"negativado",
+	"negativada",
+	"restrito",
+	"restrita",
 	// retomada e presença — a família que causou o defeito
 	"voltei",
 	"voltou",
@@ -138,3 +154,69 @@ export function ehNomeProprioPlausivel(token: string): boolean {
 	if (!normalizado) return false;
 	return !NAO_SAO_NOMES.has(normalizado);
 }
+
+/**
+ * O nome que vamos gravar foi DITO pelo cliente neste turno?
+ *
+ * `ehNomeProprioPlausivel` responde "isto parece um nome?" — e é a pergunta
+ * errada sozinha. "Cliente", "Comprador" e "Interessado" parecem nomes, e foi
+ * assim que uma conversa em que ninguém se apresentou terminou com
+ * `contact_name = "Cliente"` no banco: o modelo chamou `save_contact_name` para
+ * preencher a lacuna, e o servidor obedeceu.
+ *
+ * A pergunta certa é a da Lei 3 do projeto — o dado está ancorado no que a
+ * pessoa disse? É a mesma defesa que `valorAncoradoNoTexto` faz para o valor do
+ * bem, e vale pelo mesmo motivo: bloquear palavra por palavra não converge
+ * ("não se fecha porta a porta, fecha-se a parede"), porque a próxima paráfrase
+ * do modelo é "Comprador", depois "Interessado", depois "Amigo".
+ *
+ * Compara sem acento e sem caixa (o cliente digita "fabio" e vira "Fábio"), e
+ * exige limite de palavra — para "Ana" não ancorar em "financiamento".
+ */
+export function nomeAncoradoNaFala(
+	nome: string,
+	falaDoCliente: string | null | undefined,
+): boolean {
+	const fala = (falaDoCliente ?? "").trim();
+	if (!fala || !nome.trim()) return false;
+	const normalizar = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+	const alvo = normalizar(nome.trim());
+	if (!alvo) return false;
+
+	// PLACEHOLDER NÃO É NOME, mesmo aparecendo na fala.
+	//
+	// Segunda linha de defesa: a primeira é o chamador não passar directive do
+	// servidor como se fosse fala do cliente (`converse.ts`). Se passar, a palavra
+	// "cliente" está em praticamente toda directive — e era assim que
+	// `save_contact_name("Cliente")` voltava a gravar. Aqui a lista é curta e
+	// fechada de propósito: são termos que o SISTEMA usa para se referir à pessoa,
+	// não nomes que alguém tem.
+	if (PALAVRAS_QUE_O_SISTEMA_USA.has(alvo)) return false;
+
+	// A fala é quebrada em tokens de letras; o alvo precisa da mesma régua, senão
+	// "D'Ávila" e "Jean-Luc" — que `capitalizeName` declara suportar — nunca
+	// ancoram. Nome composto casa como sequência CONTÍGUA de tokens.
+	const tokensDaFala = normalizar(fala)
+		.split(/[^\p{L}]+/u)
+		.filter(Boolean);
+	const tokensDoNome = alvo.split(/[^\p{L}]+/u).filter(Boolean);
+	if (tokensDoNome.length === 0) return false;
+	return tokensDaFala.some((_, i) => tokensDoNome.every((t, j) => tokensDaFala[i + j] === t));
+}
+
+/**
+ * Como o SISTEMA chama a pessoa — nunca como ela se chama.
+ *
+ * Curta e fechada: não é uma blocklist de nomes feios (isso não convergiria — ver
+ * `CLAUDE.md`, "não se fecha porta a porta"), é o vocabulário com que o servidor
+ * se refere ao interlocutor nas suas próprias instruções. Se um desses aparecer
+ * como "nome", a origem é a mecânica, não a pessoa.
+ */
+const PALAVRAS_QUE_O_SISTEMA_USA: ReadonlySet<string> = new Set([
+	"cliente",
+	"usuario",
+	"sistema",
+	"agente",
+	"assistente",
+	"card",
+]);

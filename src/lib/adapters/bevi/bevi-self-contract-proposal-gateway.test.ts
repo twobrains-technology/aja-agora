@@ -3,6 +3,7 @@ import errDuplicated from "./__fixtures__/err-selfcontract-duplicated.json";
 import okChoose from "./__fixtures__/ok-selfcontract-choose.json";
 import okCreate from "./__fixtures__/ok-selfcontract-create.json";
 import okFinalize from "./__fixtures__/ok-selfcontract-finalize.json";
+import okMultiProposal from "./__fixtures__/ok-selfcontract-multi-proposal.json";
 import okSegments from "./__fixtures__/ok-selfcontract-segments.json";
 import okSimulation from "./__fixtures__/ok-selfcontract-simulation.json";
 import okSystem from "./__fixtures__/ok-selfcontract-system.json";
@@ -18,7 +19,9 @@ describe("BeviSelfContractProposalGateway", () => {
 	function mockFetchSequence(...payloads: unknown[]) {
 		const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
 			calls.push({ url, init });
-			return { json: async () => payloads.shift() } as Response;
+			// `ok`/`status` fazem parte do contrato: `getMultiProposal` confere
+			// `res.ok` desde 2026-08-27, e um dublê sem eles testaria outra coisa.
+			return { ok: true, status: 200, json: async () => payloads.shift() } as Response;
 		});
 		globalThis.fetch = fetchMock as typeof fetch;
 		return fetchMock;
@@ -98,7 +101,11 @@ describe("BeviSelfContractProposalGateway", () => {
 	});
 
 	it("createProposal com Duplicated Hash (proposta já ativa) RETOMA — resolve o proposalId via /system", async () => {
-		mockFetchSequence(errDuplicated, okSystem);
+		// 2026-08-27 — a retomada passou a CONFERIR o dono: com a vitrine, a
+		// proposta corrente do hash costuma ser a da casa, e adotá-la às cegas
+		// assinaria em nome de outro titular. Aqui ela É do cliente, então a
+		// retomada segue legítima (ver `proposta-retomada-tem-dono.test.ts`).
+		mockFetchSequence(errDuplicated, okSystem, okMultiProposal);
 		const created = await gateway.createProposal({
 			cpf: "12345678900",
 			celular: "62999887766",
@@ -106,7 +113,7 @@ describe("BeviSelfContractProposalGateway", () => {
 			consultaDados: true,
 		});
 		expect(created.proposalId).toBe("6a1f9a2ecf5174e43aa4b201");
-		expect(calls).toHaveLength(2); // create-proposal (400) + /system (resolve)
+		expect(calls).toHaveLength(3); // create-proposal (400) + /system + get-multi-proposal (dono)
 	});
 
 	it("chooseOffer sem simulate() prévio lança erro claro (sem oferta cacheada)", async () => {

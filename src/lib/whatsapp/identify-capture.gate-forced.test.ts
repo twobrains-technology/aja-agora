@@ -7,7 +7,7 @@
 // vira código, não regra-no-prompt): enquanto nextGate==="identify", TODO texto
 // tem que ser interceptado — captured, invalid ou ask-cpf — nunca handled:false.
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 
 const CONV_ID = "conv-identify-fix217";
@@ -48,7 +48,21 @@ vi.mock("@/lib/conversation/identity", async (orig) => ({
 	storeIdentity: mocks.storeIdentity,
 }));
 
-import { captureIdentifyText, IDENTIFY_WHATSAPP_PROMPT, waIdToCelular } from "./identify-capture";
+import { captureIdentifyText, identifyWhatsappPrompt, waIdToCelular } from "./identify-capture";
+
+// O cenário declarado é o do FECHO, e ele só existe com a vitrine ligada — sem
+// ela o `identify` volta a ser pré-busca e o teste provaria outro caminho.
+// `vitest.setup.ts` zera estas envs por default (a suíte nasce sem vitrine).
+const ENV_ORIGINAL = { ...process.env };
+
+beforeEach(() => {
+	process.env.VITRINE_CPF = "11144477735";
+	process.env.VITRINE_CELULAR = "62992496793";
+});
+
+afterEach(() => {
+	process.env = { ...ENV_ORIGINAL };
+});
 
 function setMeta(meta: ConversationMetadata) {
 	mocks.metaStore[CONV_ID] = meta;
@@ -57,13 +71,23 @@ function setMeta(meta: ConversationMetadata) {
 // FIX-296 (rodada 10, 2026-07-12): `credit` passou a preceder `identify` no
 // funil (reversão consciente do FIX-53) — pra `nextGate` chegar genuinamente
 // em `identify`, o valor do bem (`creditMax`) já precisa estar resolvido.
+// 2026-08-27 — a vitrine tirou o `identify` de antes da busca: hoje o cliente vê
+// as cartas com a identidade DA CASA e só entrega o CPF ao fechar. Para
+// `nextGate` chegar genuinamente em `identify` (que é a condição de
+// `captureIdentifyText` interceptar), o cenário agora é o do FECHO — reveal
+// feito e cota escolhida. O que o teste cobre segue idêntico: durante o gate, o
+// CPF é capturado pelo servidor e o DV é conferido.
 const IDENTIFY_READY: ConversationMetadata = {
 	desireAsked: true,
 	experiencePrev: "first",
 	qualifyConsented: true,
 	identityCollected: false,
-	qualifyAnswers: { creditMax: 80_000 },
-} as ConversationMetadata;
+	searchDispatched: true,
+	revealCompleted: true,
+	experienceDispatched: true,
+	escolha: { groupId: "g-1", origem: "mencao" },
+	qualifyAnswers: { creditMax: 80_000, prazoMeses: 48, hasLance: "no" },
+} as unknown as ConversationMetadata;
 
 beforeEach(() => {
 	for (const k of Object.keys(mocks.metaStore)) delete mocks.metaStore[k];
@@ -145,10 +169,10 @@ describe("captureIdentifyText — fora do gate não intercepta (paridade com o r
 	});
 });
 
-describe("IDENTIFY_WHATSAPP_PROMPT — celular NUNCA é pedido (paridade: celular = waId)", () => {
+describe("identifyWhatsappPrompt() — celular NUNCA é pedido (paridade: celular = waId)", () => {
 	it("pede CPF mas não menciona celular/telefone como algo a informar", () => {
-		expect(IDENTIFY_WHATSAPP_PROMPT.toLowerCase()).toMatch(/cpf/);
-		expect(IDENTIFY_WHATSAPP_PROMPT.toLowerCase()).not.toMatch(
+		expect(identifyWhatsappPrompt().toLowerCase()).toMatch(/cpf/);
+		expect(identifyWhatsappPrompt().toLowerCase()).not.toMatch(
 			/(me (manda|passa|envia)|informe|preciso do?) (o )?(seu )?(celular|telefone|whatsapp)/,
 		);
 	});

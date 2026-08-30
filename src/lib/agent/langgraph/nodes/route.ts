@@ -9,6 +9,7 @@
 
 import { alvoDeBusca } from "@/lib/agent/qualify-answers";
 import { decideShowGate, nextGate, shouldAskMotive } from "@/lib/agent/qualify-state";
+import { vitrineDisponivel } from "@/lib/bevi/identidade-vitrine";
 import { creditoBuscavel } from "@/lib/consorcio/credito-minimo";
 import { projectToMeta } from "../emit";
 import type { AgentGraphStateType, FunnelState } from "../state";
@@ -41,7 +42,14 @@ function mesmoAlvoJaTentado(funnel: FunnelState): boolean {
 
 export function readyForDiscovery(funnel: FunnelState): boolean {
 	const base =
-		funnel.identityCollected &&
+		// A identidade deixa de ser pré-requisito da BUSCA (2026-08-27): quando há
+		// vitrine configurada, a proposta Bevi que a simulação exige é criada com
+		// a identidade da casa (`identidade-vitrine.ts`) e o cliente vê a carta
+		// antes de entregar documento nenhum. Sem vitrine, a condição volta a ser
+		// exatamente a de antes. O CPF real continua obrigatório para CONTRATAR —
+		// `nextGate` pede no fecho e `startContract` recusa a identidade de
+		// vitrine.
+		(funnel.identityCollected || vitrineDisponivel()) &&
 		// FIX-377 — não basta EXISTIR: tem que ser buscável. Faixa abaixo do piso
 		// da Bevi volta vazia sempre, e o `discovery` tratava vazio com silêncio +
 		// retry liberado — o que virava loop de "vou pesquisar agora". Barrar aqui
