@@ -10,6 +10,7 @@ import { Slider } from "@/components/ui/slider";
 import { parseValorDoBem } from "@/lib/agent/qualify-config";
 import { useChatContext } from "@/lib/chat/provider";
 import type { ValuePickerField, ValuePickerPayload } from "@/lib/chat/types";
+import { parcelaEstimadaDeMercado } from "@/lib/consorcio/plan-estimate";
 
 export type { ValuePickerField, ValuePickerPayload };
 
@@ -71,6 +72,23 @@ export function ValuePicker({
 		setValue(parseValorDoBem(text) ?? field.min);
 	};
 
+	// C1 — A FAIXA ESTIMADA, ANTES DE PEDIR QUALQUER DADO (30/08/2026).
+	//
+	// A auditoria de 28/08 trata isto como a alavanca principal do funil: o bot
+	// pedia o dado mais sensível do Brasil antes de entregar um único número.
+	// O motor já existia (`plan-estimate.ts`, "modo estimativa de mercado"), mas
+	// o card que o usava foi aposentado no FIX-115 e não era emitido em lugar
+	// nenhum — medido no banco de produção em 30/08: ZERO artefatos de
+	// estimativa em toda a base.
+	//
+	// Ela vive AQUI, na própria agulha, e não num card à parte, por dois
+	// motivos. Primeiro, este é o card que o cliente já vê no instante em que
+	// informa o valor — então a reciprocidade não custa um turno a mais
+	// justamente no trecho onde 65% das conversas morrem. Segundo, o número se
+	// move com a agulha, o que responde a pergunta que a pessoa realmente tem:
+	// "e se eu pegar um mais barato?".
+	const estimativa = parcelaEstimadaDeMercado(payload.category, value);
+
 	const handleSubmit = () => {
 		setSubmitted(true);
 		if (onSubmit) {
@@ -126,6 +144,31 @@ export function ValuePicker({
 							disabled={submitted}
 						/>
 					</div>
+
+					{/* O SELO NÃO É ENFEITE. O invariante do projeto é que número de
+					    administradora sai de tool, nunca da cabeça do modelo nem da
+					    nossa. Esta conta é premissa de mercado documentada
+					    (`TYPICAL_ADMIN_FEE_PCT` / `TYPICAL_TERM_MONTHS`), e a tela tem
+					    que dizer isso na cara: sem o selo a estimativa vira promessa, e
+					    a oferta real que chega depois vira decepção. */}
+					{estimativa ? (
+						<div className="rounded-[10px] bg-secondary px-3 py-2.5">
+							<p data-testid="parcela-estimada" className="text-sm text-foreground">
+								Fica por volta de{" "}
+								<span className="font-semibold tabular-nums">
+									R$ {Math.round(estimativa.parcela).toLocaleString("pt-BR")}
+								</span>
+								<span className="text-muted-foreground">/mês</span>{" "}
+								<span className="text-muted-foreground">em {estimativa.prazoMeses}x</span>
+							</p>
+							<p
+								data-testid="parcela-estimada-selo"
+								className="mt-0.5 text-[11px] leading-[1.35] text-muted-foreground"
+							>
+								Estimativa de mercado — os valores reais vêm da busca nas administradoras.
+							</p>
+						</div>
+					) : null}
 
 					<Button
 						onClick={handleSubmit}

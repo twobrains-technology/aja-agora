@@ -81,6 +81,19 @@ describeIfDb("FIX-379 — primeiro turno sem nome: o funil tem que pedir o nome"
 		});
 		criadas.push(r.conversationId);
 
-		expect(r.turns[1].trilha).toContain("gate:name");
+		// O CONTRATO É "UM CARD ENTRA", E ELE CONTINUA DE PÉ — o que mudou é QUAL
+		// (30/08/2026).
+		//
+		// "Quero comprar um carro." traz a categoria, e desde 30/08 quem já disse
+		// o que quer não é recebido pelo nome: o card que entra é o do VALOR, com
+		// a parcela estimada na tela. Foi essa troca que a medição de produção
+		// pediu — das 71 conversas de 16–30/08, 34 morreram na primeira resposta,
+		// quase todas depois de um chip de categoria responder com uma pergunta.
+		//
+		// A preocupação que gerou o FIX-379 é outra e continua coberta: o funil
+		// não fica refém do modelo. Ele insistiu em não perguntar nada útil por
+		// dois turnos e mesmo assim um card entrou, com o campo que o funil
+		// precisa preencher.
+		expect(r.turns[1].trilha).toContain("gate:credit");
 	});
 });
