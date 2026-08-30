@@ -82,32 +82,35 @@ export function rastrearChatIniciado(params: ChatIniciadoParams = {}): void {
  * Avisa o servidor que o teatro abriu, para o mesmo evento existir do lado de
  * lá (item B3).
  *
- * `sendBeacon` e não `fetch`: a abertura do teatro é seguida de uma animação e,
- * às vezes, de a pessoa fechar a aba. `sendBeacon` entrega mesmo com a página
- * sumindo e não disputa banda com o carregamento do chat. Quando ele não existe
- * (Safari antigo), cai num `fetch` com `keepalive`, que faz o mesmo.
+ * **`sendBeacon` e SÓ ele.** A abertura do teatro é seguida de uma animação e,
+ * às vezes, de a pessoa fechar a aba: `sendBeacon` entrega mesmo com a página
+ * sumindo, é enfileirado pelo navegador fora da main thread e não disputa banda
+ * com o carregamento do chat.
  *
- * Não devolve nada e nunca lança: perder este beacon custa um sinal de mídia,
- * jamais a abertura do chat.
+ * Havia aqui um fallback em `fetch({ keepalive: true })` para o caso de
+ * `sendBeacon` não existir. Ele saiu em 30/08/2026, e não por estilo: em
+ * ambiente sem `sendBeacon` — que é o caso do `happy-dom` — aquele `fetch`
+ * disparava REQUISIÇÃO DE REDE DE VERDADE a partir de um teste unitário. Com o
+ * servidor de desenvolvimento de pé, um `pnpm test:unit` gravava
+ * `chat_iniciado` no banco local; e a rejeição do fetch abortado no teardown
+ * escapava do `.catch`, deixando a suíte com 10 `Unhandled Error` e **exit 1**
+ * com 3.718 testes verdes na tela.
+ *
+ * Perder o fallback não custa nada real: `sendBeacon` é suportado em todos os
+ * navegadores desde 2016, e o único ambiente sem ele é justamente o de teste.
+ * A ausência silenciosa é o comportamento certo — o pixel do lado do cliente
+ * continua disparando, e o que se perde é a metade server-side de um sinal de
+ * mídia, jamais a abertura do chat.
  */
 export function avisarServidorDoChatIniciado(eventId: string): void {
 	if (typeof window === "undefined") return;
+	if (typeof navigator.sendBeacon !== "function") return;
 
-	const corpo = JSON.stringify({ eventId });
 	try {
-		if (typeof navigator.sendBeacon === "function") {
-			navigator.sendBeacon(
-				"/api/track/chat-iniciado",
-				new Blob([corpo], { type: "application/json" }),
-			);
-			return;
-		}
-		void fetch("/api/track/chat-iniciado", {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: corpo,
-			keepalive: true,
-		}).catch(() => {});
+		navigator.sendBeacon(
+			"/api/track/chat-iniciado",
+			new Blob([JSON.stringify({ eventId })], { type: "application/json" }),
+		);
 	} catch {
 		// Medir nunca derruba o produto.
 	}

@@ -83,8 +83,24 @@ export interface SubEtapaHandoff {
 	ajuda: string;
 	/** Leads que ALCANÇARAM este estágio (em qualquer momento, não "estão nele"). */
 	alcancaram: number;
-	/** % de quem alcançou a sub-etapa ANTERIOR e chegou nesta. */
+	/**
+	 * % de quem chegou a esta etapa OU a qualquer posterior, sobre quem chegou à
+	 * anterior (ou a qualquer posterior a ela).
+	 *
+	 * O denominador é acumulado PARA A FRENTE, e isso é o item inteiro:
+	 * `transitionLeadStage` é forward-only e **não grava os estágios pulados**.
+	 * Um lead que vai de `qualificado` direto para `proposta_enviada` — três
+	 * ocorrências no recorte de 30/08 — nunca aparece em `em_negociacao`, e uma
+	 * conta ingênua "alcançaram nesta ÷ alcançaram na anterior" exibiria mais de
+	 * 100% na etapa seguinte. Funil que cresce é o defeito que
+	 * `performance-types.ts` já documenta na tela vizinha.
+	 *
+	 * Com o acumulado, a leitura volta a ser a que o nome promete: de quem chegou
+	 * até aqui, quantos seguiram.
+	 */
 	percentDaAnterior: number;
+	/** Quem chegou a esta etapa OU passou dela — o denominador honesto acima. */
+	alcancaramOuAlem: number;
 	/** Horas medianas gastas NESTE estágio antes de sair dele. `null` sem amostra. */
 	horasP50: number | null;
 	/** Horas no percentil 90 — a cauda, que é onde a venda se perde. */
@@ -212,20 +228,37 @@ export async function computeFunilDeHandoff(
 
 	const porEstagio = new Map(resultado.rows.map((linha) => [String(linha.estagio), linha]));
 
-	let anterior = 0;
-	const etapas: SubEtapaHandoff[] = SUB_ETAPAS_HANDOFF.map((etapa, indice) => {
+	// Quem chegou a cada etapa, cru.
+	const brutos = SUB_ETAPAS_HANDOFF.map((etapa) => {
 		const linha = porEstagio.get(etapa.estagio) ?? {};
-		const alcancaram = num(linha.alcancaram);
+		return { etapa, linha, alcancaram: num(linha.alcancaram) };
+	});
+
+	// E o acumulado PARA A FRENTE — a correção do pulo de estágio. Ver o
+	// docblock de `percentDaAnterior`: sem isto o painel exibe ">100% da
+	// anterior" toda vez que um lead salta uma etapa, o que os dados do próprio
+	// dia já produzem (`qualificado → proposta_enviada`, 3 ocorrências).
+	const acumulado: number[] = new Array(brutos.length).fill(0);
+	for (let i = brutos.length - 1; i >= 0; i--) {
+		acumulado[i] = Math.max(brutos[i].alcancaram, acumulado[i + 1] ?? 0);
+	}
+
+	const etapas: SubEtapaHandoff[] = brutos.map(({ etapa, linha, alcancaram }, indice) => {
+		const anterior = indice === 0 ? 0 : acumulado[indice - 1];
 		// A primeira etapa é o topo deste funil: 100% por definição, não 0%.
 		const percentDaAnterior =
-			indice === 0 ? 100 : anterior > 0 ? Math.round((alcancaram / anterior) * 1000) / 10 : 0;
-		anterior = alcancaram;
+			indice === 0
+				? 100
+				: anterior > 0
+					? Math.round((acumulado[indice] / anterior) * 1000) / 10
+					: 0;
 
 		return {
 			estagio: etapa.estagio,
 			label: etapa.label,
 			ajuda: etapa.ajuda,
 			alcancaram,
+			alcancaramOuAlem: acumulado[indice],
 			percentDaAnterior,
 			horasP50: numOuNulo(linha.p50),
 			horasP90: numOuNulo(linha.p90),
@@ -252,8 +285,24 @@ export async function computeFunilDeHandoff(
  * O que importa aqui não é "quando ele entrou", é "há quanto tempo ninguém
  * mexe".
  *
- * Estágios TERMINAIS (`fechado_ganho`, `perdido`) ficam de fora: parado ali é o
- * fim da história, não um lead abandonado.
+ * ── Duas correções de 30/08/2026, as duas sobre o mesmo risco ───────────────
+ *
+ * **A lista é ALLOWLIST**, e começa em `qualificado`. O filtro por exclusão
+ * ("tudo menos `fechado_ganho`, `perdido` e `novo`") deixava `engajado` entrar
+ * — e `engajado` é estágio PRÉ-handoff: o próprio `SUB_ETAPAS_HANDOFF` começa
+ * em `qualificado`, "o bot entregou o lead ao time". Com 11 leads em `engajado`
+ * no recorte do dia, um terço da lista seria de gente que a mesa nunca recebeu.
+ * É exatamente assim que se constrói o alarme que a operação desliga na
+ * primeira semana — e aí volta a não haver campainha nenhuma.
+ *
+ * **O relógio é a última TRANSIÇÃO DE ESTÁGIO, não `leads.updated_at`.** Aquela
+ * coluna tem `$onUpdate` e é bumpada por qualquer escrita na linha, inclusive
+ * por manutenção que nada tem a ver com atendimento (`contacts/backfill.ts`,
+ * `contacts/resolve.ts`). Um backfill zeraria todos os relógios de SLA em
+ * silêncio, e a tela diria que a mesa está em dia no dia seguinte a um lead
+ * esquecido há duas semanas. `lead_events` é append-only e só registra
+ * movimento real do funil: é ele que responde "há quanto tempo ninguém age",
+ * que é a pergunta que o item faz.
  */
 export async function computeLeadsParados(
 	limiteHoras: number = LIMITE_SLA_HORAS_PADRAO,
@@ -263,13 +312,30 @@ export async function computeLeadsParados(
            l.name,
            l.phone,
            l.stage::text AS estagio,
-           l.updated_at,
-           EXTRACT(EPOCH FROM (now() - l.updated_at)) / 3600.0 AS horas
+           -- O relogio e a ULTIMA TRANSICAO DE ESTAGIO, nunca updated_at.
+           -- Ver o comentario acima da funcao: updated_at e bumpado por
+           -- qualquer escrita na linha, inclusive manutencao.
+           COALESCE(
+             (SELECT max(e.created_at) FROM lead_events e WHERE e.lead_id = l.id),
+             l.created_at
+           ) AS desde,
+           EXTRACT(EPOCH FROM (now() - COALESCE(
+             (SELECT max(e.created_at) FROM lead_events e WHERE e.lead_id = l.id),
+             l.created_at
+           ))) / 3600.0 AS horas
       FROM leads l
      WHERE l.is_simulated = false
-       AND l.stage::text NOT IN ('fechado_ganho', 'perdido', 'novo')
-       AND l.updated_at < now() - make_interval(hours => ${limiteHoras})
-     ORDER BY l.updated_at ASC
+       -- ALLOWLIST, e nao "tudo menos tres" -- ver o comentario da funcao.
+       AND l.stage::text IN (
+         'qualificado', 'em_negociacao', 'proposta_enviada',
+         'na_administradora', 'em_atendimento', 'aguardando_pagamento'
+       )
+       AND COALESCE(
+             (SELECT max(e.created_at) FROM lead_events e WHERE e.lead_id = l.id),
+             l.created_at
+           ) < now() - make_interval(hours => ${limiteHoras})
+     -- Mais antigo primeiro: e ele quem a mesa tem que ligar agora.
+     ORDER BY desde ASC
      LIMIT 100
   `);
 
@@ -278,7 +344,7 @@ export async function computeLeadsParados(
 		nome: linha.name === null ? null : String(linha.name),
 		telefone: linha.phone === null ? null : String(linha.phone),
 		estagio: String(linha.estagio) as EstagioHandoff,
-		desdeISO: new Date(linha.updated_at as string).toISOString(),
+		desdeISO: new Date(linha.desde as string).toISOString(),
 		horasParado: numOuNulo(linha.horas) ?? 0,
 	}));
 }

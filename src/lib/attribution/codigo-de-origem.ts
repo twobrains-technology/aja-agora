@@ -32,10 +32,15 @@
 // retroativamente para toda visita que já existe, e desligar é parar de
 // carimbar — não reverter migration.
 //
-// 32 bits dão 4,3 bilhões de valores. Com o volume desta operação (~4,5 mil
-// visitas/mês) a chance de dois códigos iguais na janela de 24h é desprezível,
-// e mesmo assim a resolução devolve a visita MAIS RECENTE: colisão viraria
-// atribuição errada de uma conversa, nunca dado trocado de cliente.
+// 32 bits dão 4,3 bilhões de valores. O volume desta operação, medido na janela
+// limpa de 16–30/08/2026 (depois do fix de prefetch), é de ~5,3 mil visitas em
+// 15 dias — ordem de 10 mil/mês. A tabela inteira tem 46 mil linhas em 28 dias
+// porque a metade anterior a 16/08 é eco de prefetch, corrigido desde então.
+//
+// Em qualquer um dos dois números a chance de dois códigos iguais DENTRO da
+// janela de 24h é desprezível, e mesmo assim a resolução devolve a visita MAIS
+// RECENTE: colisão viraria atribuição errada de uma conversa, nunca dado
+// trocado de cliente.
 
 /** Quantos caracteres do UUID entram no código. Ver o cabeçalho. */
 const TAMANHO = 8;
@@ -68,6 +73,16 @@ export function codigoDaVisita(visitId: string | null | undefined): string | nul
 export function carimbarOrigem(fala: string, codigo: string | null | undefined): string {
 	const limpo = fala.trim();
 	if (!codigo || !CODIGO_RE.test(codigo)) return limpo;
+	// FALA VAZIA NÃO GANHA CARIMBO.
+	//
+	// Sem esta linha, `carimbarOrigem("", "a1b2c3d4")` devolvia `" (ref
+	// a1b2c3d4)"` — e o card de handoff do fecho, cujo `mensagemInicial` é
+	// opcional, abriria o WhatsApp com um código opaco e nada mais. No momento de
+	// maior intenção do funil, o cliente veria uma caixa de envio contendo um
+	// texto que ele não escreveu e não entende, em vez da caixa em branco que
+	// tinha antes. Trocar "sem texto" por "texto errado" é pior do que não
+	// carimbar.
+	if (!limpo) return "";
 	return `${limpo} (ref ${codigo.toLowerCase()})`;
 }
 

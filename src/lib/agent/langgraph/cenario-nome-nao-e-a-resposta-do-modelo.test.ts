@@ -110,6 +110,54 @@ describeIfDb("o nome do cliente não é a resposta que ele deu ao modelo", () =>
 		expect(await nomeGravado(r.conversationId)).toBe("Marina");
 	});
 
+	it("depois do card, uma PERGUNTA do cliente não deixa a guarda desarmada", async () => {
+		// O caso que a primeira versão do guard deixava passar, e que só apareceu
+		// na revisão: `nameCardExibido` era monotônico, então bastava um turno em
+		// que o card fosse suprimido para a captura voltar a valer para sempre.
+		//
+		//   turno 1  card do nome SAI
+		//   turno 2  cliente pergunta a taxa → `asking_question` suprime o card,
+		//            mas `routeNode` grava `answeredGate: "name"` do mesmo jeito;
+		//            o modelo responde e emenda "prefere prazo curto ou longo?"
+		//   turno 3  cliente responde "Curto"  → viraria o nome dele
+		const r = await runScenario({
+			contactName: null,
+			metaInicial: { currentCategory: "auto", qualifyAnswers: { creditMax: 90_000 } },
+			turns: [
+				{ user: "Pode seguir", beats: [{ text: "Claro." }] },
+				{
+					user: "Qual é a taxa de administração?",
+					beats: [
+						{
+							text: "Fica entre 15% e 18%, diluída nas parcelas. Prefere prazo curto ou longo?",
+						},
+					],
+				},
+				{ user: "Curto", beats: [{ text: "Anotado." }] },
+			],
+		});
+		criadas.push(r.conversationId);
+
+		expect(await nomeGravado(r.conversationId)).not.toBe("Curto");
+	});
+
+	it("a autorização vale UM turno, não a conversa inteira", async () => {
+		// Mesmo desenho, com o vocabulário de imóvel: o que protege não é a lista
+		// de palavras, é o escopo do fato.
+		const r = await runScenario({
+			contactName: null,
+			metaInicial: { currentCategory: "imovel", qualifyAnswers: { creditMax: 400_000 } },
+			turns: [
+				{ user: "Pode seguir", beats: [{ text: "Claro." }] },
+				{ user: "Como funciona o lance?", beats: [{ text: "Explico. Casa ou apartamento?" }] },
+				{ user: "Apartamento", beats: [{ text: "Boa." }] },
+			],
+		});
+		criadas.push(r.conversationId);
+
+		expect(await nomeGravado(r.conversationId)).not.toBe("Apartamento");
+	});
+
 	it("no primeiro contato nada muda — o card sai e o nome é capturado", async () => {
 		// O caminho que sempre funcionou continua igual: quem chega sem dizer o
 		// que quer é recebido pelo nome, e a resposta é o nome.

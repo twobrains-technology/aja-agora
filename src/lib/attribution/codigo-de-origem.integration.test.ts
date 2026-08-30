@@ -60,6 +60,9 @@ describeIfDb("A3 — origem do site sobrevive ao salto para o WhatsApp (integrat
 			convIds.push(...convs.map((c) => c.id));
 		}
 		if (convIds.length > 0) {
+			await db
+				.delete(schema.conversionEvents)
+				.where(inArray(schema.conversionEvents.conversationId, convIds));
 			await db.delete(schema.leads).where(inArray(schema.leads.conversationId, convIds));
 			await db.delete(schema.conversations).where(inArray(schema.conversations.id, convIds));
 		}
@@ -164,6 +167,38 @@ describeIfDb("A3 — origem do site sobrevive ao salto para o WhatsApp (integrat
 			where: eq(schema.conversations.id, conv.id),
 		});
 		expect(conversa?.visitId).toBe(doAnuncio);
+	});
+
+	it("o EVENTO de mídia também nasce com a origem — não só a conversa", async () => {
+		// O furo que a revisão pegou: `getOrCreateConversation` dispara o
+		// `chat_iniciado` (item B3) na criação, e ele é idempotente pela chave. Com
+		// o vínculo acontecendo DEPOIS, o sinal que ensina a campanha saía sem
+		// `fbc`, sem `fbp` e sem visita — justamente para o tráfego que este
+		// arquivo existe para recuperar. `%Conv Chat` consertava; a otimização,
+		// não.
+		const visitId = await visitaDoSite({ utmCampaign: "bofu-imovel", fbclid: "IwAR-b3-site" });
+		const waId = novoWaId();
+
+		await vincularVisitaDoSite(waId, codigoDaVisita(visitId) as string);
+
+		const [evento] = await db
+			.select({
+				visitId: schema.conversionEvents.visitId,
+				fbc: schema.conversionEvents.fbc,
+				fbp: schema.conversionEvents.fbp,
+				nome: schema.conversionEvents.eventName,
+			})
+			.from(schema.conversionEvents)
+			.innerJoin(
+				schema.conversations,
+				eq(schema.conversations.id, schema.conversionEvents.conversationId),
+			)
+			.where(eq(schema.conversations.waId, waId));
+
+		expect(evento?.nome).toBe("chat_iniciado");
+		expect(evento?.visitId).toBe(visitId);
+		expect(evento?.fbc).toContain("IwAR-b3-site");
+		expect(evento?.fbp).toBe("fb.1.1700000000000.1234567890");
 	});
 
 	it("código que não existe não inventa origem nem derruba a conversa", async () => {

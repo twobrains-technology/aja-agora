@@ -14,7 +14,7 @@
  *
  *   • **34 das 71 (49%) morrem com UMA fala do cliente.** A mediana de quem
  *     não chega ao valor é de 1 fala. 46 (65%) não passam do começo.
- *   • **De quem chega ao valor, 86% entrega o CPF** (19 de 22) e 100% vê carta.
+ *   • **De quem chega ao valor, 86% entrega o CPF** (19 de 22), e os 19 veem carta.
  *
  * Ou seja: o CPF não é o pedágio. A auditoria viu "69% somem" e atribuiu ao
  * pedido de CPF; os 69% somem ANTES, entre a primeira fala e o valor do bem.

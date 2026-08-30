@@ -54,12 +54,30 @@ export async function vincularVisitaDoSite(waId: string, codigo: string): Promis
 			return null;
 		}
 
-		// Cria a conversa se ela ainda não existe. É a MESMA função que o
-		// processador chamaria segundos depois (idempotente pelo `wa_id`) — fazê-lo
-		// aqui, com `await`, garante que a origem esteja gravada antes do primeiro
-		// turno, e não numa corrida contra ele.
-		await getOrCreateConversation(waId);
+		// Cria a conversa se ela ainda não existe, JÁ COM A VISITA. É a mesma
+		// função que o processador chamaria segundos depois (idempotente pelo
+		// `wa_id`) — fazê-lo aqui, com `await`, garante que a origem esteja gravada
+		// antes do primeiro turno, e não numa corrida contra ele.
+		//
+		// Passar o `visitId` adiante não é detalhe: `getOrCreateConversation` dispara
+		// o evento `chat_iniciado` (item B3) na criação, e ele é idempotente pela
+		// chave — nasceu sem origem, fica sem origem para sempre. Sem este
+		// argumento, o sinal que ensina a campanha saía cego exatamente para o
+		// tráfego que este arquivo existe para recuperar.
+		const { id: conversationId, isNew } = await getOrCreateConversation(waId, visitId);
 
+		if (isNew) {
+			// Nasceu agora, já com a visita dentro — nada a atualizar.
+			console.log(
+				`[whatsapp-origem] conversa ${conversationId} nasceu com a visita ${visitId} (código ${codigo})`,
+			);
+			return conversationId;
+		}
+
+		// A conversa já existia. Preenche a origem SÓ quando ela está nula: uma que
+		// veio de anúncio Click-to-WhatsApp não é reescrita por um código antigo
+		// que o cliente colou junto. Origem gravada é fato; código no texto é
+		// pista, e pista não derruba fato.
 		const [atualizada] = await db
 			.update(conversations)
 			.set({ visitId })

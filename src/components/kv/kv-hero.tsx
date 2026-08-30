@@ -157,7 +157,7 @@ export function KvHero({ onOpenChat, conteudo = HERO_CONSULTIVO }: KvHeroProps) 
 						    aparece em banner, e ninguém tenta digitar num banner.
 
 						    O dado que fecha o diagnóstico (produção, 16–30/08): das 75
-						    aberturas do teatro medidas, só 3 vieram com semente `digitada`.
+						    aberturas do teatro medidas, só 4 vieram com semente `digitada`.
 						    O campo levou 12 cliques no período contra 44 nos três blocos
 						    logo abaixo. Não é preferência pelo chip — é o campo não se
 						    oferecendo.

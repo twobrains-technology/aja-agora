@@ -66,10 +66,8 @@ describe("captureAnswerNode — fora do gate `name` não se grava nome", () => {
 	});
 
 	it("o gate `name` continua capturando — a reversão não mexeu nele", () => {
-		expect(captureAnswerNode(foraDoGate("Mirella", { gate: "name" }))).toEqual({
-			contactName: "Mirella",
-		});
-		expect(captureAnswerNode(foraDoGate("uma casa", { gate: "name" }))).toEqual({});
+		expect(captureAnswerNode(foraDoGate("Mirella", { gate: "name" })).contactName).toBe("Mirella");
+		expect(captureAnswerNode(foraDoGate("uma casa", { gate: "name" })).contactName).toBeUndefined();
 	});
 
 	it("e NEM no gate `name` captura antes de o card ter aparecido (30/08/2026)", () => {
@@ -83,6 +81,6 @@ describe("captureAnswerNode — fora do gate `name` não se grava nome", () => {
 			contactName: null,
 			funnel: {},
 		} as unknown as AgentGraphStateType;
-		expect(captureAnswerNode(semCard)).toEqual({});
+		expect(captureAnswerNode(semCard).contactName).toBeUndefined();
 	});
 });

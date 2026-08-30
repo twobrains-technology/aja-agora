@@ -12,7 +12,7 @@
  * também aparece em banner, e ninguém tenta digitar dentro de um banner.
  *
  * **O dado que fecha o diagnóstico** (produção, 16–30/08): das 75 aberturas do
- * teatro medidas no mapa de calor, só **3** vieram com semente `digitada` — 37
+ * teatro medidas no mapa de calor, só **4** vieram com semente `digitada` — 37
  * vieram de chip e 34 vazias. O campo do hero recebeu 12 cliques no período,
  * contra 44 nos três blocos de categoria logo abaixo dele. Não é que as pessoas
  * prefiram o chip: é que o campo não se oferece.

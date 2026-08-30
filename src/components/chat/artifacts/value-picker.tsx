@@ -17,9 +17,15 @@ export type { ValuePickerField, ValuePickerPayload };
 // FIX-107 (revisão da jornada de entrada, 2026-06-28): a web trocou o value_picker
 // COMPLEXO (3 sliders interligados valor/parcela/prazo — FIX-16, com recálculo via
 // engine value-picker-link) por uma AGULHA SIMPLES só do VALOR DO BEM, de R$ 10.000
-// em R$ 10.000. Decisão do Kairo: o valor é coletado por conversa; a parcela vem das
-// ofertas REAIS da Bevi (não é mais estimada/derivada na entrada) e o prazo saiu da
-// entrada. Este slider é só o apoio visual pro "quanto custa o que você quer".
+// em R$ 10.000. Decisão do Kairo: o valor é coletado por conversa, e o prazo saiu
+// da entrada.
+//
+// ⚠️ A parte "a parcela vem das ofertas REAIS da Bevi, não é mais estimada na
+// entrada" VALEU ATÉ 30/08/2026 e não vale mais — ver o bloco da estimativa lá
+// embaixo. A agulha única continua (os três sliders interligados não voltaram);
+// o que voltou é a parcela como LEITURA ao lado dela, com selo obrigatório. A
+// razão original do FIX-107 é o que sustenta o selo: número de administradora
+// sai de tool, e o que está na tela aqui é premissa de mercado documentada.
 //
 // TODO(bloco-jornada-entrada): o agente para de emitir present_value_picker na
 // entrada (valor por conversa, FIX-104). Quando o shape final do que o backend

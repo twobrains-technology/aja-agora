@@ -125,9 +125,20 @@ describeIfDb("D1 — funil por sub-etapa do handoff (integration)", () => {
 		// O lead que ENTROU num estágio e não saiu ainda não tem duração — contá-lo
 		// como zero puxaria a mediana para baixo e a tela diria que a mesa é rápida
 		// justamente por causa de quem está parado.
+		//
+		// Um lead que ENTRA e fica: o estágio final dele não pode ganhar p50.
+		await leadComTrilha([
+			{ de: "novo", para: "aguardando_pagamento", em: new Date("2026-08-15T10:00:00Z") },
+		]);
+
 		const funil = await computeFunilDeHandoff(DE, ATE);
+		const parado = funil.etapas.find((e) => e.estagio === "aguardando_pagamento");
+		expect(parado?.alcancaram).toBeGreaterThan(0);
+		expect(parado?.horasP50).toBeNull();
+
+		// E onde há p50, ele é positivo — zero seria a duração de quem não saiu.
 		for (const etapa of funil.etapas) {
-			if (etapa.horasP50 !== null) expect(etapa.horasP50).toBeGreaterThan(0);
+			if (etapa.horasP50 !== null) expect(etapa.horasP50, etapa.estagio).toBeGreaterThan(0);
 		}
 	});
 
@@ -148,29 +159,70 @@ describeIfDb("D1 — funil por sub-etapa do handoff (integration)", () => {
 		// O funil real admite regressão (um lead volta de `perdido` para
 		// `em_atendimento`). Contar as duas passagens como duas pessoas faria a
 		// etapa ter mais gente do que a anterior.
+		//
+		// Medido por DIFERENÇA — antes e depois de inserir o lead —, e não por um
+		// teto folgado: `toBeLessThan(passagens + 100)` passaria com qualquer
+		// número e mediria o próprio teste.
+		const antes = await computeFunilDeHandoff(DE, ATE);
+		const emAtendimentoAntes =
+			antes.etapas.find((e) => e.estagio === "em_atendimento")?.alcancaram ?? 0;
+
 		const leadId = await leadComTrilha([
 			{ de: "novo", para: "em_atendimento", em: new Date("2026-08-06T10:00:00Z") },
 			{ de: "em_atendimento", para: "aguardando_pagamento", em: new Date("2026-08-07T10:00:00Z") },
 			{ de: "aguardando_pagamento", para: "em_atendimento", em: new Date("2026-08-08T10:00:00Z") },
 		]);
-		expect(leadId).toBeTruthy();
 
-		const funil = await computeFunilDeHandoff(DE, ATE);
-		const emAtendimento = funil.etapas.find((e) => e.estagio === "em_atendimento");
 		const eventos = await db.query.leadEvents.findMany({});
 		const passagens = eventos.filter(
 			(e) => e.leadId === leadId && e.toStage === "em_atendimento",
 		).length;
-
 		expect(passagens).toBe(2);
-		expect(emAtendimento?.alcancaram).toBeLessThan(passagens + 100);
+
+		const depois = await computeFunilDeHandoff(DE, ATE);
+		const emAtendimentoDepois =
+			depois.etapas.find((e) => e.estagio === "em_atendimento")?.alcancaram ?? 0;
+
+		// Duas passagens, UMA pessoa a mais na etapa.
+		expect(emAtendimentoDepois - emAtendimentoAntes).toBe(1);
+	});
+
+	it("a taxa entre etapas sobrevive ao PULO de estágio — nunca passa de 100%", async () => {
+		// `transitionLeadStage` é forward-only e não grava os estágios pulados. Um
+		// lead que vai de `qualificado` direto para `proposta_enviada` — três
+		// ocorrências no recorte de produção de 30/08 — nunca aparece em
+		// `em_negociacao`. Com denominador ingênuo, a etapa seguinte exibiria mais
+		// de 100% "da anterior": um funil que cresce, que é o defeito que a tela
+		// vizinha já documenta.
+		await leadComTrilha([
+			{ de: "novo", para: "qualificado", em: new Date("2026-08-14T09:00:00Z") },
+			// Pula `em_negociacao`.
+			{ de: "qualificado", para: "proposta_enviada", em: new Date("2026-08-14T10:00:00Z") },
+		]);
+
+		const funil = await computeFunilDeHandoff(DE, ATE);
+		for (const etapa of funil.etapas) {
+			expect(etapa.percentDaAnterior, etapa.estagio).toBeLessThanOrEqual(100);
+		}
+	});
+
+	it("o acumulado para a frente é monotônico — é o que faz a taxa fechar", async () => {
+		const funil = await computeFunilDeHandoff(DE, ATE);
+		for (let i = 1; i < funil.etapas.length; i++) {
+			expect(
+				funil.etapas[i - 1].alcancaramOuAlem,
+				`${funil.etapas[i - 1].estagio} → ${funil.etapas[i].estagio}`,
+			).toBeGreaterThanOrEqual(funil.etapas[i].alcancaramOuAlem);
+		}
 	});
 
 	it("declara quando a amostra não sustenta taxa de fechamento", async () => {
 		// Com n baixo, qualquer taxa depois de "proposta enviada" é hipótese — e a
-		// tela precisa dizer isso em vez de deixar o leitor supor.
+		// tela precisa dizer isso em vez de deixar o leitor supor. O que se afirma
+		// aqui é a REGRA (10 propostas), não o tipo do campo.
 		const funil = await computeFunilDeHandoff(DE, ATE);
-		expect(typeof funil.amostraSuficiente).toBe("boolean");
+		const propostas = funil.etapas.find((e) => e.estagio === "proposta_enviada")?.alcancaram ?? 0;
+		expect(funil.amostraSuficiente).toBe(propostas >= 10);
 	});
 });
 
@@ -259,6 +311,37 @@ describeIfDb("D3/E1 — a campainha do SLA (integration)", () => {
 		for (let i = 1; i < parados.length; i++) {
 			expect(parados[i - 1].horasParado).toBeGreaterThanOrEqual(parados[i].horasParado);
 		}
+	});
+
+	it("lead PRÉ-handoff não entra na lista — a mesa nunca o recebeu", async () => {
+		// `engajado` é estágio do bot, não da mesa: o funil de handoff começa em
+		// `qualificado`. Um terço da lista seria de gente que ninguém deveria
+		// cobrar — e é assim que o alarme vira ruído e é desligado.
+		const id = await leadParadoHa(200, "engajado", "Ainda com o bot");
+		expect((await computeLeadsParados(24)).find((p) => p.leadId === id)).toBeUndefined();
+	});
+
+	it("o relógio não é zerado por escrita de manutenção na linha", async () => {
+		// `leads.updated_at` tem `$onUpdate`: um backfill de contatos bumpa a
+		// coluna e zeraria o SLA de todo mundo em silêncio. O relógio é a última
+		// TRANSIÇÃO de estágio, que é append-only.
+		const { db } = await import("@/db");
+		const schemaMod = await import("@/db/schema");
+		const { eq } = await import("drizzle-orm");
+
+		const id = await leadParadoHa(60, "proposta_enviada", "Esquecido há 60h");
+		// Simula o backfill: toca a linha AGORA, sem nenhuma transição de estágio.
+		await db
+			.update(schemaMod.leads)
+			.set({ name: "Esquecido há 60h " })
+			.where(eq(schemaMod.leads.id, id));
+
+		const achado = (await computeLeadsParados(24)).find((p) => p.leadId === id);
+		expect(
+			achado,
+			"o lead esquecido não pode sumir da lista por causa de um backfill",
+		).toBeTruthy();
+		expect(achado?.horasParado).toBeGreaterThan(24);
 	});
 
 	it("o limite é parâmetro — a mesa aperta quando o processo suportar", async () => {

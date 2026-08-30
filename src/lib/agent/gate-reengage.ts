@@ -35,7 +35,19 @@ export const NON_REENGAGE_GATES: ReadonlySet<Gate> = new Set<Gate>([
 	"doubts-wait",
 	"search",
 	"decision",
-	"name",
+	// `name` SAIU daqui em 30/08/2026.
+	//
+	// Ele estava nesta lista por um motivo que deixou de valer: enquanto vivia
+	// no 1º contato, o pedido do nome saía no texto do directive de abertura e
+	// não havia card de WhatsApp para reabrir — reengajar não fazia sentido
+	// porque não havia conversa para retomar.
+	//
+	// Desde que o gate desceu para entre o valor do bem e o pedido de documento,
+	// quem some nele é o oposto disso: alguém que escolheu a categoria, arrastou
+	// a agulha até o valor e parou na pergunta seguinte. É o lead mais valioso
+	// que este funil produz — 86% de quem chega ao valor entrega o CPF (medido
+	// em produção, 16–30/08) — e era o único gate do meio do funil que o
+	// watchdog não via.
 ]);
 
 /**
@@ -78,10 +90,22 @@ export const SPECIALIST_EXIT_OFFER =
 
 /**
  * Gate de ENTREGA OBRIGATÓRIA no WhatsApp: COLLECTION_GATES (credit/lance/...) +
- * `identify`. É a classe que o guard re-cobra em vez de deixar o funil parado.
+ * `identify` + `name`. É a classe que o guard re-cobra em vez de deixar o funil
+ * parado.
+ *
+ * `name` entrou em 30/08/2026, junto com a mudança que o pôs entre o valor do
+ * bem e o pedido de documento. No 1º contato ele não pertencia aqui: a pergunta
+ * saía no directive de abertura e não havia o que re-cobrar. Na posição nova ele
+ * é bloqueante como os outros — e no WhatsApp, sem esta entrada, um turno que
+ * fechasse mudo deixava a conversa parada com o cliente esperando uma pergunta
+ * que ninguém repetiria.
+ *
+ * Re-cobrar não vira armadilha: `STUCK_ESCAPE_GATES` inclui `name` desde a mesma
+ * data, então depois do teto o funil desiste da pergunta (`nomeDispensado`) e
+ * segue — sem nunca inventar um nome.
  */
 export function isMandatoryCollectionGate(gate: Gate): boolean {
-	return COLLECTION_GATES.has(gate) || gate === "identify";
+	return COLLECTION_GATES.has(gate) || gate === "identify" || gate === "name";
 }
 
 /**

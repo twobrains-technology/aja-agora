@@ -55,6 +55,16 @@ describe("carimbarOrigem", () => {
 		);
 	});
 
+	it("fala VAZIA não vira só o código", () => {
+		// O card de handoff do fecho tem `mensagemInicial` opcional. Sem esta
+		// guarda, o botão "Falar no WhatsApp" abria a conversa com " (ref
+		// a1b2c3d4)" na caixa de envio — um texto que o cliente não escreveu e não
+		// entende, no momento de maior intenção do funil. Trocar "sem texto" por
+		// "texto errado" é pior do que não carimbar.
+		expect(carimbarOrigem("", "a1b2c3d4")).toBe("");
+		expect(carimbarOrigem("   ", "a1b2c3d4")).toBe("");
+	});
+
 	it("recusa código com formato errado em vez de carimbar lixo", () => {
 		expect(carimbarOrigem("Oi!", "não-é-código")).toBe("Oi!");
 		expect(carimbarOrigem("Oi!", "a1b2c3")).toBe("Oi!");

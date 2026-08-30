@@ -72,7 +72,7 @@ export function captureAnswerNode(state: AgentGraphStateType): Partial<AgentGrap
 	// NÃO lê (medido: 2 conversas no app, o modelo saudou pelo nome e não chamou a
 	// tool nenhuma vez). A regra passou para o `SYSTEM_PROMPT`, e o servidor
 	// continua ancorando o que a tool tenta gravar (`nomeAncoradoNaFala`).
-	// E SÓ DEPOIS DE O CARD TER APARECIDO (30/08/2026).
+	// E SÓ SE O CARD SAIU NO TURNO ANTERIOR (30/08/2026).
 	//
 	// O parágrafo acima diz que "aqui dentro do gate a heurística é segura porque
 	// a pergunta ACABOU de ser feita". Essa premissa valia enquanto o gate `name`
@@ -85,13 +85,26 @@ export function captureAnswerNode(state: AgentGraphStateType): Partial<AgentGrap
 	//
 	// Reproduzido em cenário no mesmo dia. É a mesma família de "Uma", "Sujo" e
 	// "Voltei", e ela não se fecha acrescentando palavra à lista: fecha-se
-	// perguntando ao servidor se ELE fez a pergunta. `nameCardExibido` é esse
-	// fato — marcado em `emit-card.ts` no turno em que o card sai de verdade,
-	// nunca quando ele cede a vez.
+	// perguntando ao servidor se ELE fez a pergunta.
+	//
+	// ⚠️ E a pergunta é "saiu no turno ANTERIOR?", não "já saiu alguma vez?".
+	// A primeira versão deste guard era monotônica, e isso deixava a guarda
+	// desarmada pelo resto da conversa: bastava o cliente perguntar a taxa de
+	// administração — `asking_question` suprime o card, mas `routeNode` grava
+	// `answeredGate: "name"` mesmo assim — e o modelo emendar "prefere prazo
+	// curto ou longo?" para "Curto" virar o nome dele no turno seguinte. A
+	// mesma armadilha, um turno adiante.
+	//
+	// O flag é CONSUMIDO aqui e remarcado por `emitCardNode` quando o card sai
+	// de novo. `capture` roda antes de `emitCard` no grafo, então o ciclo fecha
+	// dentro do mesmo turno.
 	const gateRespondido = state.gate ?? state.answeredGate;
-	if (gateRespondido === "name" && state.funnel.nameCardExibido && !state.contactName) {
-		const name = extractName(text);
-		if (name) return { contactName: name };
-	}
-	return {};
+	if (gateRespondido !== "name" || !state.funnel.nameCardExibido) return {};
+
+	// Consome: a autorização vale para ESTA resposta e acaba aqui.
+	const consumido = { funnel: { ...state.funnel, nameCardExibido: false } };
+	if (state.contactName) return consumido;
+
+	const name = extractName(text);
+	return name ? { ...consumido, contactName: name } : consumido;
 }

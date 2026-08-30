@@ -92,6 +92,35 @@ describe("mascararCelular", () => {
 		expect(mascararCelular(um)).toBe(um);
 	});
 
+	it("colar com +55 NÃO come os dois últimos dígitos", () => {
+		// O defeito que a revisão pegou (30/08/2026): o corte era `slice(0, 11)`
+		// pela esquerda, então `+55 11 99999-9999` virava `(55) 11999-9999` — 55 é
+		// DDD do Rio Grande do Sul, o número perde o fim, o formulário aceita (11
+		// dígitos, bem-formados) e a mesa liga para um telefone que não existe.
+		//
+		// E colar com `+55` é exatamente o que o WhatsApp copia.
+		expect(mascararCelular("+55 11 99999-9999")).toBe("(11) 99999-9999");
+		expect(mascararCelular("5511999999999")).toBe("(11) 99999-9999");
+		expect(mascararCelular("+55 (11) 99999-9999")).toBe("(11) 99999-9999");
+	});
+
+	it("o zero de discagem interurbana também sai pela frente", () => {
+		expect(mascararCelular("011 99999-9999")).toBe("(11) 99999-9999");
+		expect(mascararCelular("011 3333-4444")).toBe("(11) 3333-4444");
+	});
+
+	it("mas um DDD que COMEÇA com 55 continua valendo", () => {
+		// 55 é DDD de Santa Maria/RS. Um número local de 11 dígitos não pode ser
+		// confundido com DDI — a regra só age a partir de 12 dígitos, que é onde o
+		// DDI de fato aparece.
+		expect(mascararCelular("55999998888")).toBe("(55) 99999-8888");
+		expect(mascararCelular("5533334444")).toBe("(55) 3333-4444");
+	});
+
+	it("digitação a mais ainda é cortada pelo fim — não há regra que diga qual sobra", () => {
+		expect(mascararCelular("119999999999999")).toBe("(11) 99999-9999");
+	});
+
 	it("apagar não trava", () => {
 		expect(mascararCelular("(11) 99999-999")).toBe("(11) 9999-9999");
 		expect(mascararCelular("(11) 9999")).toBe("(11) 9999");

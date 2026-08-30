@@ -83,6 +83,18 @@ export const STUCK_ESCAPE_GATES: ReadonlySet<Gate> = new Set<Gate>([
 	// percebia porque o agente seguia conversando educadamente). Com o teto de
 	// tentativas, o funil segue sem impor o hero — quem quiser ver, pede.
 	"reco-consent",
+	// `name` entra em 30/08/2026, junto com a mudança que o tirou do primeiro
+	// contato e o pôs entre o valor do bem e o pedido de documento.
+	//
+	// No primeiro contato ele não precisava de escape: era o único gate na mesa,
+	// e quem não respondia simplesmente não tinha conversa. Na posição nova ele
+	// vira exatamente o caso que este set existe para cobrir — cliente que já
+	// informou categoria e valor responde "prefiro não dizer" ou "depois",
+	// `extractName` recusa (e deve recusar), e `nextGate` devolve `name` a cada
+	// turno para sempre. O funil congela no segmento em que 86% entrega o CPF.
+	//
+	// O default dele NÃO é um nome assumido — ver `stuckGateDefaultPatch`.
+	"name",
 ]);
 
 /** FIX-305 — teto de tentativas sem progresso antes de assumir o default (Kairo,
@@ -182,6 +194,12 @@ export function registerGateStuckTurn(
 		// zeraria o contador a cada teto e continuaria pendente para sempre: o
 		// escape existiria no papel e não no funil.
 		...(gate === "reco-consent" ? { recoConsentAnswered: true, recoConsentDeclined: true } : {}),
+		// O nome também mora fora de `qualifyAnswers` — e, diferente de todos os
+		// outros escapes, o default aqui é DESISTIR DA PERGUNTA, não responder
+		// por ele. Nome assumido chegaria à mesa como se o cliente o tivesse
+		// dito, e o agente passaria a chamá-lo assim; é a mesma linha que
+		// `dinheiroDeclaradoPeloCliente` traça para o lance.
+		...(gate === "name" ? { nomeDispensado: true } : {}),
 	};
 }
 
@@ -362,7 +380,7 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	//      mente, ou está explorando opções?                            — fim —
 	//
 	// Do outro lado da mesma medição: de quem CHEGA a informar o valor, 86%
-	// entrega o CPF (19 de 22) e 100% vê carta. O pedágio deste funil nunca foi
+	// entrega o CPF (19 de 22), e os 19 veem carta. O pedágio deste funil nunca foi
 	// o CPF — era a primeira resposta não devolver nada.
 	//
 	// Então é a mesma decisão de 27/08 (que tirou `name` e `desire` da frente de
@@ -436,7 +454,7 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	// conversas que informaram o valor têm nome, e 19 de 19 que deram CPF
 	// também. Deixar de perguntar entregaria à mesa um lead com CPF e telefone e
 	// sem nome — trocaria um problema por outro.
-	const faltaONome = Boolean(opts && opts.hasContactName === false);
+	const faltaONome = Boolean(opts && opts.hasContactName === false) && !meta.nomeDispensado;
 
 	if (q.creditMax === undefined) {
 		// Alvo e a parcela — as checagens de piso de CREDITO abaixo nao se aplicam.
@@ -914,6 +932,20 @@ export function decideShowGate(args: {
 	// `deveEmitirCardDeNome` faz o card CEDER A VEZ uma vez quando o modelo
 	// perguntou outra coisa no mesmo turno. Uma decide se o funil quer o card; a
 	// outra, se ele cabe naquele balão.
+	// `declines` fica FORA para o `name` (30/08/2026, segunda rodada).
+	//
+	// `experience` e `identify` são gates de COLETA obrigatória — sem CPF a Bevi
+	// não simula nem contrata, então eles não cedem nem a quem recusa. O nome
+	// não é assim: ele ajuda a vender e a mesa a atender, mas nada no produto
+	// depende dele. Insistir com o card depois de "prefiro não passar meu nome"
+	// é perguntar o que o cliente acabou de responder — o que o FIX-399c, 160
+	// linhas abaixo, já proíbe para o resto do funil.
+	//
+	// Somado ao escape de `STUCK_ESCAPE_GATES`, é o par que impede este gate de
+	// virar porta fechada: quem recusa não é insistido, e quem não responde é
+	// dispensado depois do teto.
+	if (gate === "name" && intent === "declines") return false;
+
 	if (
 		(gate === "experience" || gate === "identify" || gate === "name") &&
 		!(

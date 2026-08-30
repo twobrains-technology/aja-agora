@@ -250,7 +250,26 @@ export async function persistNode(
 	// `LEAD_STAGE_BY_TOOL`, runner.ts — hoje disparado por tool específica, não
 	// por transição de funil). `recordStageReached` (chamado pelos adapters,
 	// intactos) é forward-only e idempotente — reemitir a cada turno é seguro.
-	if (funnel.desireAsked) events.push({ type: "lead-stage", stage: "engajado" });
+	// "ENGAJADO" DEIXOU DE DEPENDER DE `desireAsked` (30/08/2026).
+	//
+	// O proxy era o gate `desire` ter sido perguntado. Isso funcionava enquanto
+	// todo mundo passava por ele; desde que a categoria dispensa a abertura
+	// (`nextGate`), 90% das entradas medidas pulam o `desire` inteiro — e o
+	// degrau `engajado` do funil sumiria junto, para todo mundo que entra por
+	// chip.
+	//
+	// Seria a pior classe de erro de medição: o painel construído neste mesmo
+	// trabalho passaria a mostrar uma QUEDA de conversão que é, na verdade, a
+	// própria mudança de instrumentação. A evidência de que é grande está no
+	// dado do dia: `novo → engajado` = 44 contra `engajado → qualificado` = 32.
+	//
+	// A âncora nova é o fato que a mudança não move: o cliente disse o que quer.
+	// Ter categoria definida OU ter passado pelo `desire` são as duas formas de
+	// chegar lá, e as duas significam a mesma coisa para o negócio — a conversa
+	// saiu do "oi" e virou assunto.
+	if (funnel.desireAsked || funnel.currentCategory) {
+		events.push({ type: "lead-stage", stage: "engajado" });
+	}
 	if (funnel.identityCollected) events.push({ type: "lead-stage", stage: "qualificado" });
 	// A negociação começa AQUI, não na mesa: o cliente já viu os grupos reais
 	// (`revealCompleted`) e voltou a falar sobre eles — está negociando, e o

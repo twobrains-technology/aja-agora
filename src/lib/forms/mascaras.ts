@@ -25,6 +25,42 @@
 export const somenteDigitos = (valor: string): string => valor.replace(/\D/g, "");
 
 /**
+ * Reduz uma sequência de dígitos ao par DDD + número, descartando o que sobra
+ * PELA FRENTE — nunca pelo fim.
+ *
+ * **O defeito que isto conserta (30/08/2026).** A máscara cortava em
+ * `slice(0, 11)`, e o corte pela esquerda transforma telefone certo em telefone
+ * errado e plausível:
+ *
+ *   "+55 11 99999-9999"  →  (55) 11999-9999   ← 55 é DDD do RS; o número perdeu
+ *                                                os dois últimos dígitos
+ *   "011 99999-9999"     →  (01) 19999-9999
+ *
+ * Colar o telefone com `+55` é exatamente o que o WhatsApp copia, e o formulário
+ * aceita o resultado (11 dígitos, bem-formados). O servidor recebe um número
+ * válido que não existe, e a mesa liga para ele. Um dígito a menos no fim é um
+ * erro que ninguém percebe até a venda não acontecer.
+ *
+ * Duas regras, nesta ordem, e as duas são de FORMA — não adivinham nada:
+ *  1. `55` na frente de 12 ou 13 dígitos é DDI do Brasil (o país não tem DDD
+ *     com 12+ dígitos depois dele);
+ *  2. `0` na frente é prefixo de discagem interurbana. **DDD brasileiro nunca
+ *     começa com zero** (a numeração vai de 11 a 99), então o zero à frente
+ *     nunca pertence ao número — não importa o comprimento.
+ */
+function normalizarParaDddENumero(digitos: string): string {
+	let d = digitos;
+	if (d.length >= 12 && d.startsWith("55")) d = d.slice(2);
+	// `> 2` e não `> 11`: quem cola "011 3333-4444" tem exatos 11 dígitos, e
+	// cortar pelo fim ali produziria `(01) 13333-444`. O piso existe só para
+	// quem está DIGITANDO — o "0" sozinho aparece na tela até virar DDD.
+	while (d.length > 2 && d.startsWith("0")) d = d.slice(1);
+	// O que ainda sobrar é digitação a mais — aí sim o corte é pelo fim, porque
+	// não há regra de forma que diga qual dígito é o intruso.
+	return d.slice(0, 11);
+}
+
+/**
  * `000.000.000-00`.
  *
  * O caminho é sempre "reduzir a dígitos → remontar", e nunca "inserir o
@@ -63,12 +99,12 @@ export const mascararCpf = (valor: string): string =>
  * Mesma regra de colagem do CPF: reduz a dígitos antes de remontar, então
  * `(11) 99999-9999` colado volta idêntico.
  *
- * ⚠️ Isto é APRESENTAÇÃO. O corte em 11 dígitos descarta o DDI de um
- * `+55 11 99999-9999`, e quem grava o telefone não pode depender disso — a
- * normalização de verdade (E.164, 10 vs 11) é do servidor.
+ * ⚠️ Isto é APRESENTAÇÃO — mas apresentação que descarta dígito produz telefone
+ * ERRADO e plausível, e por isso o corte não pode ser cego. Ver
+ * `normalizarParaDddENumero` logo abaixo.
  */
 export const mascararCelular = (valor: string): string => {
-	const d = somenteDigitos(valor).slice(0, 11);
+	const d = normalizarParaDddENumero(somenteDigitos(valor));
 	if (d.length <= 2) return d;
 
 	const ddd = d.slice(0, 2);
