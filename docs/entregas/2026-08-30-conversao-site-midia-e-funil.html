@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conversão: site, mídia e funil — os 26 itens da planilha do Gustavo</title>
+<link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+<div class="wrap">
+
+<h1>Conversão: site, mídia e funil</h1>
+<p class="lede">Os 26 itens das abas <b>Site (CRO)</b> e <b>Plano de Ação por Etapa</b> da planilha do Gustavo (28/08), executados de ponta a ponta — e uma medição que mostrou que a auditoria tinha mirado no lugar errado.</p>
+<p class="meta">30 de agosto de 2026 · branch <code>kairogyn/ajustes-gustavo-28-08</code> · 12 commits sobre <code>develop</code> · 491 arquivos de teste, 3.747 verdes, exit 0</p>
+
+<div class="idx">
+  <a href="#macro"><span>1</span> O que passou a existir</a>
+  <a href="#achado"><span>2</span> O achado que reordenou o plano</a>
+  <a href="#itens"><span>3</span> Os 26 itens, um a um</a>
+  <a href="#codigo"><span>4</span> Onde o código mudou</a>
+  <a href="#superficie"><span>5</span> O que muda na tela</a>
+  <a href="#riscos"><span>6</span> Riscos — inclusive os que eu criei</a>
+  <a href="#meta"><span>7</span> O que falta do lado da Meta</a>
+  <a href="#aberto"><span>8</span> O que ficou em aberto</a>
+  <a href="#validar"><span>9</span> Como conferir você mesmo</a>
+</div>
+
+<h2 id="macro">1 · O que passou a existir</h2>
+
+<p>A auditoria externa olhou a produção de ~20/08 e apontou 26 ações. Antes de executá-las, medi o funil no banco de produção — e o número que sustentava a lista inteira estava lendo o lugar errado. O trabalho seguiu os 26 itens, mas a <b>ordem de prioridade mudou por causa do dado</b>.</p>
+
+<p>Três coisas passaram a existir:</p>
+
+<div class="fluxo">
+  <div class="no"><span class="q">Anúncio</span><span class="t">clique pago</span></div>
+  <span class="seta">→</span>
+  <div class="no"><span class="q">Site</span><span class="t">visita gravada</span></div>
+  <span class="seta">→</span>
+  <div class="no novo"><span class="q">1º turno</span><span class="t">card com número</span><span class="d">era elogio + pergunta</span></div>
+  <span class="seta">→</span>
+  <div class="no"><span class="q">Valor</span><span class="t">agulha</span></div>
+  <span class="seta">→</span>
+  <div class="no novo"><span class="q">Nome</span><span class="t">desceu pra cá</span><span class="d">era o 1º gate</span></div>
+  <span class="seta">→</span>
+  <div class="no"><span class="q">CPF</span><span class="t">identidade</span></div>
+  <span class="seta">→</span>
+  <div class="no"><span class="q">Carta</span><span class="t">oferta real</span></div>
+  <span class="seta">→</span>
+  <div class="no novo"><span class="q">Mesa</span><span class="t">funil por sub-etapa</span><span class="d">era caixa-preta</span></div>
+</div>
+
+<div class="fluxo">
+  <div class="no"><span class="q">Site</span><span class="t">botão do WhatsApp</span></div>
+  <span class="seta">→</span>
+  <div class="no novo"><span class="q">Carimbo</span><span class="t">(ref a1b2c3d4)</span><span class="d">não existia</span></div>
+  <span class="seta">→</span>
+  <div class="no novo"><span class="q">Webhook</span><span class="t">resolve a visita</span></div>
+  <span class="seta">→</span>
+  <div class="no novo"><span class="q">Conversa</span><span class="t">com origem</span><span class="d">era 0%</span></div>
+  <span class="seta">→</span>
+  <div class="no novo"><span class="q">Meta</span><span class="t">chat_iniciado no CAPI</span><span class="d">só existia no browser</span></div>
+</div>
+
+<p class="legenda"><i></i> caixa destacada = nasceu neste trabalho</p>
+
+<h2 id="achado">2 · O achado que reordenou o plano</h2>
+
+<p>A planilha diz: <i>"69% das pessoas somem quando o bot pede o CPF"</i>, e monta seis itens em cima disso (C1 a C7). Medi o funil real no banco de produção, na janela limpa de 16 a 30/08 — depois do fix de prefetch, então são chegadas de gente:</p>
+
+<div class="prova"><span class="g">71 conversas web reais
+70 falaram alguma coisa
+22 informaram o valor do bem     ← 68,6% somem ANTES daqui
+19 entregaram o CPF              ← 86,4% de quem chega, entrega
+19 viram carta
+ 2 propostas</span></div>
+
+<p><b>O CPF não é o pedágio.</b> De quem chega até ele, 86% entrega. Os 69% somem antes — e <b>34 das 71 conversas (49%) morrem com uma única fala do cliente</b>. Nas 34, o padrão é o mesmo em todas, literal do banco:</p>
+
+<div class="prova"><span class="g">👤 Quero comprar um imóvel.
+🤖 Que ótimo! Imóvel é um investimento que muda a vida.
+   Já tem um em mente, ou está explorando opções?
+                                                    — fim —
+
+👤 Imóvel
+🤖 Que legal! Antes de eu te ajudar a encontrar o consórcio
+   perfeito, como posso te chamar?
+                                                    — fim —</span></div>
+
+<p>A pessoa clicou num chip dizendo exatamente o que queria e recebeu de volta um elogio e uma pergunta. Nenhum número na tela. É o mesmo princípio que o item C1 defende — dar valor antes de pedir dado — aplicado ao ponto onde a perda de fato acontece.</p>
+
+<p><span class="pill p-ok">Decisão sua</span> Você aprovou aplicar o princípio ali: quem chega com a categoria escolhida vai direto ao valor, e a agulha passa a mostrar a parcela estimada ao vivo.</p>
+
+<h2 id="itens">3 · Os 26 itens, um a um</h2>
+
+<table>
+<thead><tr><th>Item</th><th>Situação</th><th>Prova</th></tr></thead>
+<tbody>
+<tr><td><b>A1</b> Affordance do campo do agente</td><td><span class="pill p-ok">FEITO</span></td><td>Moldura, raio e anel de foco iguais aos do form do chat. Dado: das 75 aberturas do teatro, só 4 vieram com semente digitada; o campo levou 12 cliques contra 44 nos blocos abaixo. <code>kv-hero.campo-parece-campo.test.tsx</code></td></tr>
+<tr><td><b>A2</b> Bolhas decorativas do hero</td><td><span class="pill p-aviso">MEDIDO · vai pro Lucas</span></td><td><b>103 cliques em elemento morto</b> no hero, com <b>14 dos 15 rage_click</b>. Contra 84 cliques em alvo clicável, com 1 rage. A arte promete toque e não entrega — o pedido ao Figma tem evidência.</td></tr>
+<tr><td><b>A3</b> Sticky de chat + furo de medição</td><td><span class="pill p-ok">FEITO</span></td><td>87 toques no botão, 58 visitantes, 6 conversas de WhatsApp nascidas — <b>as 6 com origem nula</b>. Carimbo <code>(ref …)</code> + resolução no webhook. 8 testes de integração.</td></tr>
+<tr><td><b>A4</b> Reformular a 1ª dobra mobile</td><td><span class="pill p-ok">ENCERRADO</span></td><td>Já estava entregue em 20/08. Confirmado no smoke ao vivo — captura na seção 5.</td></tr>
+<tr><td><b>A5</b> CTA unificado sitewide</td><td><span class="pill p-ok">FEITO</span></td><td>De 4 rótulos para 1 (<code>Comparar agora</code>), com a exceção do submit do hero. Decisão sua. <code>cta-rotulo-unico.test.tsx</code> varre as seções e impede a volta.</td></tr>
+<tr><td><b>A6</b> Feedback visual ao toque</td><td><span class="pill p-ok">FEITO</span></td><td>Estado <code>active:</code> no átomo (resolve as 8 seções) e nos blocos do hero, respeitando <code>prefers-reduced-motion</code>. 7 casos de teste.</td></tr>
+<tr><td><b>A7</b> Core Web Vitals + UTM/pixel</td><td><span class="pill p-aviso">PARCIAL</span></td><td>Lighthouse real: <b>score 29, LCP 7,7 s, FCP 7,7 s</b>. Diagnóstico invertido — não é a colagem. GTM e GA4 adiados; Pixel intocado. Ver seção 8.</td></tr>
+<tr><td><b>A8</b> Scroll-depth por seção</td><td><span class="pill p-ok">MEDIDO</span></td><td>Curva na seção 5. Já existia; foi <i>usado</i>.</td></tr>
+<tr><td><b>B1</b> Propagar UTM até "chat iniciado"</td><td><span class="pill p-ok">AUDITADO</span></td><td>89,6% das conversas com visita; 35,1% com campanha. As de WhatsApp eram 0% — é o que o A3 fecha.</td></tr>
+<tr><td><b>B2</b> Auditoria de Event Match Quality</td><td><span class="pill p-ok">FEITO (nosso lado)</span></td><td><code>_fbp</code> estava em <b>683 de 46.135 visitas (1,5%)</b> e em 2 dos 22 eventos enviados. Passa a ser completado pelo beacon. Leitura da nota é do Gustavo — seção 7.</td></tr>
+<tr><td><b>B3</b> Evento de otimização "Início de Conversa"</td><td><span class="pill p-ok">FEITO</span></td><td>Existe no servidor, com dedup contra o pixel por <code>eventID</code> compartilhado. 12 testes de integração. Ativação na conta é do Gustavo — seção 7.</td></tr>
+<tr><td><b>B4</b> Consolidar CBO + ABO</td><td><span class="pill p-neutro">DO GUSTAVO</span></td><td>Operação de conta. Passo a passo na seção 7.</td></tr>
+<tr><td><b>B5</b> Peso orçamentário do remarketing</td><td><span class="pill p-neutro">DO GUSTAVO</span></td><td>Idem, com a ressalva de que depende do B2.</td></tr>
+<tr><td><b>C1</b> Faixa estimada antes do CPF</td><td><span class="pill p-ok">FEITO</span></td><td>O motor existia desde o FIX-3 e <b>nunca era emitido</b> — zero artefatos de estimativa em toda a base. Agora vive na agulha, com selo. Captura na seção 5.</td></tr>
+<tr><td><b>C2</b> Garantia de privacidade no pedido</td><td><span class="pill p-ok">FEITO</span></td><td>Linha ancorada na política de privacidade que já existe. 9 casos, incluindo um que proíbe promessa que a operação não cumpre.</td></tr>
+<tr><td><b>C3</b> Desacoplar WhatsApp e CPF</td><td><span class="pill p-aviso">DEPENDE DE ENV</span></td><td>A vitrine (#112) já faz isso e está <b>desligada</b>: <code>VITRINE_CPF</code>/<code>VITRINE_CELULAR</code> não existem em dev nem em prod. Seção 8.</td></tr>
+<tr><td><b>C4</b> CPF como 2º microcompromisso</td><td><span class="pill p-aviso">DEPENDE DE ENV</span></td><td>Mesma dependência do C3.</td></tr>
+<tr><td><b>C5</b> Prova social no pedido</td><td><span class="pill p-ok">FEITO</span></td><td>A credencial que a landing já assina passou a viajar para dentro do chat.</td></tr>
+<tr><td><b>C6</b> Fricção de digitação do CPF</td><td><span class="pill p-ok">FEITO + 2 DEFEITOS</span></td><td>Máscaras em fonte única. Escrevendo o teste apareceram dois defeitos reais: fixo saía <code>(11) 33334-444</code>, e colar <code>+55</code> comia os dois últimos dígitos.</td></tr>
+<tr><td><b>C7</b> Quebrar o pedido duplo em dois passos</td><td><span class="pill p-risco">NÃO FEITO</span></td><td>Ver seção 8 — e o card ficou <i>maior</i>, não menor.</td></tr>
+<tr><td><b>D1</b> Instrumentar as 3 sub-etapas do handoff</td><td><span class="pill p-ok">FEITO</span></td><td>Funil por sub-etapa com p50/p90, no painel de Performance. O dado nunca faltou; faltava alguém olhar.</td></tr>
+<tr><td><b>D2</b> Link direto no lugar de pedir "oi"</td><td><span class="pill p-ok">ENCERRADO</span></td><td>Já resolvido; e o carimbo do A3 entrou nele — é o salto web→WhatsApp no maior momento de intenção.</td></tr>
+<tr><td><b>D3</b> SLA de resposta humana</td><td><span class="pill p-aviso">MEDIÇÃO SIM, ALARME NÃO</span></td><td>p50/p90 por estágio + lista de parados com nome e telefone. O alarme por Monitor ficou de fora — seção 8.</td></tr>
+<tr><td><b>D4</b> Reengajamento automático</td><td><span class="pill p-ok">VALIDADO</span></td><td>6 handoffs no período, 1 sem resposta do cliente. Sem volume que justifique construção; a campainha do D3 cobre.</td></tr>
+<tr><td><b>D5</b> CTA de confirmação antes da troca de canal</td><td><span class="pill p-ok">JÁ EXISTIA</span></td><td>Verificado antes de construir: a cascata já exige aceite explícito e o formulário antes de qualquer handoff. Um terceiro portão somaria atrito. 7 casos registram isso.</td></tr>
+<tr><td><b>E1</b> SLA de documentos pós-proposta</td><td><span class="pill p-aviso">MEDIÇÃO SIM, ALARME NÃO</span></td><td>Mesmo instrumento do D3. E a tela declara quando a amostra não sustenta taxa de fechamento — com 2 propostas, qualquer número depois dela é hipótese.</td></tr>
+</tbody>
+</table>
+
+<p><b>Placar:</b> 16 feitos com prova · 4 encerrados/validados sem precisar de construção · 4 parciais com o motivo nomeado · 2 do Gustavo.</p>
+
+<h2 id="codigo">4 · Onde o código mudou</h2>
+
+<p>12 commits, 73 arquivos, +13.485 linhas. Os números saem de <code>git diff --stat</code>, não de memória.</p>
+
+<h3>Arquivos novos</h3>
+<table>
+<thead><tr><th>Arquivo</th><th>Papel</th></tr></thead>
+<tbody>
+<tr><td><code>lib/attribution/codigo-de-origem.ts</code></td><td>O carimbo <code>(ref …)</code> — derivar, carimbar, extrair, remover.</td></tr>
+<tr><td><code>lib/whatsapp/vinculo-com-o-site.ts</code></td><td>Amarra a conversa de WhatsApp à visita do site.</td></tr>
+<tr><td><code>lib/conversions/inicio-de-conversa.ts</code></td><td>O <code>chat_iniciado</code> server-side.</td></tr>
+<tr><td><code>lib/conversions/chave-do-inicio-de-conversa.ts</code></td><td>A chave de dedup, compartilhada por pixel e CAPI.</td></tr>
+<tr><td><code>lib/admin/handoff-queries.ts</code></td><td>Funil por sub-etapa + lista de parados (D1/D3/E1).</td></tr>
+<tr><td><code>lib/forms/mascaras.ts</code></td><td>CPF e celular — a cópia que existia em dois arquivos.</td></tr>
+<tr><td><code>components/admin/performance/funil-de-handoff.tsx</code></td><td>A tela do D1.</td></tr>
+<tr><td><code>app/api/track/chat-iniciado/route.ts</code></td><td>O beacon do B3.</td></tr>
+<tr><td><code>drizzle/0048…, 0049…</code></td><td>Enum <code>chat_iniciado</code> + índice de expressão parcial para o carimbo.</td></tr>
+<tr><td>+ 12 arquivos de teste</td><td>Todos com o cenário concreto no cabeçalho.</td></tr>
+</tbody>
+</table>
+
+<h3>Arquivos existentes tocados — onde mora o risco</h3>
+<table>
+<thead><tr><th>Arquivo</th><th>O que mudou, e por quê</th></tr></thead>
+<tbody>
+<tr><td><code>lib/agent/qualify-state.ts</code></td><td><b>A cascata do funil.</b> Categoria dispensa <code>name</code>/<code>desire</code>; o nome desce para colado ao <code>identify</code>; ganha escape e deixa de insistir sobre quem recusa. É a mudança de maior alcance do trabalho.</td></tr>
+<tr><td><code>lib/agent/langgraph/nodes/capture.ts</code></td><td>O servidor só lê resposta como nome se o card saiu <b>no turno anterior</b>. Fecha a classe do lead que nasceu "Suv".</td></tr>
+<tr><td><code>lib/agent/langgraph/nodes/emit-card.ts</code></td><td>Marca o fato que autoriza a captura acima.</td></tr>
+<tr><td><code>lib/agent/langgraph/nodes/persist.ts</code></td><td>O degrau <code>engajado</code> deixa de depender de <code>desireAsked</code> — senão o painel mediria a própria mudança.</td></tr>
+<tr><td><code>lib/agent/gate-reengage.ts</code></td><td>O watchdog volta a enxergar quem some no gate do nome.</td></tr>
+<tr><td><code>components/chat/artifacts/value-picker.tsx</code></td><td>A parcela estimada, com selo. Reversão parcial e consciente do FIX-107.</td></tr>
+<tr><td><code>components/chat/artifacts/gate-identity-form.tsx</code></td><td>Garantia (C2) e autoridade (C5), ancoradas na política de privacidade.</td></tr>
+<tr><td><code>components/kv/ui/kv-cta-button.tsx</code></td><td>Estado <code>active:</code> — um arquivo resolve as 8 seções.</td></tr>
+<tr><td><code>components/analytics/analytics-scripts.tsx</code></td><td>GTM e GA4 para <code>lazyOnload</code>; Pixel intocado.</td></tr>
+<tr><td><code>lib/conversions/dispatch.ts</code></td><td>Dois lotes: sinal de interesse não derruba marco de venda.</td></tr>
+<tr><td><code>lib/observability/langfuse/funil-scores.ts</code></td><td>O score que prova a campanha + a régua de profundidade corrigida.</td></tr>
+<tr><td><code>proxy.ts</code></td><td>Cookie espelho do código de origem (não-httpOnly, só o prefixo público).</td></tr>
+<tr><td><code>vitest.setup.ts</code></td><td><code>sendBeacon</code> vira no-op na suíte — teste unitário não faz rede.</td></tr>
+</tbody>
+</table>
+
+<h2 id="superficie">5 · O que muda na tela</h2>
+
+<h3>O primeiro turno, ao vivo</h3>
+<p>Chip "Imóvel" clicado. Antes: elogio e pergunta. Agora:</p>
+<img src="img/primeiro-turno-com-numero.jpg" alt="Chat mostrando o card do valor com a linha 'Fica por volta de R$ 2.370/mês em 200x' e o selo de estimativa" style="max-width:100%;border-radius:8px;border:1px solid #ddd">
+<p class="meta">Capturado no ambiente local rodando, pelo navegador — não é mockup. O selo <i>"Estimativa de mercado — os valores reais vêm da busca nas administradoras"</i> é obrigatório e testado: sem ele a estimativa vira promessa.</p>
+
+<h3>O campo do hero (A1)</h3>
+<img src="img/campo-com-moldura.jpg" alt="Hero da home com o campo de busca agora com borda visível" style="max-width:100%;border-radius:8px;border:1px solid #ddd">
+
+<h3>A curva de scroll (A8) — 18 a 30/08</h3>
+<div class="prova"><span class="g">kv-menu ........... 1.243 visitas   98,0%
+kv-hero ........... 1.126           88,8%
+kv-journey ........   146           11,5%   ← a queda é aqui
+kv-tipos ..........   117            9,2%
+kv-contemplacao ...   116            9,1%
+kv-faq ............   110            8,7%
+kv-numbers ........    83            6,5%
+kv-depoimentos ....    66            5,2%
+kv-confianca ......    61            4,8%
+kv-footer .........    59            4,7%
+kv-comparacao .....    54            4,3%</span></div>
+<p><b>87% das visitas nunca passam do hero.</b> A queda de 88,8% para 11,5% entre a segunda e a terceira seção é o número que deve priorizar qualquer trabalho futuro de página — e é o argumento a favor de o hero carregar a conversão inteira, como carrega hoje.</p>
+<p class="meta">⚠️ A coleta começou em 18/08. Janela anterior a essa data é <b>período sem medição</b>, não comportamento.</p>
+
+<h2 id="riscos">6 · Riscos — inclusive os que eu criei</h2>
+
+<div class="risco alto">
+<h3>ALTO · O funil travava no gate do nome <span class="pill p-ok">CORRIGIDO</span></h3>
+<p><b>O que era:</b> ao mover o gate do nome para o meio do funil, ele caiu numa regra escrita quando ele só existia no primeiro contato — <code>decideShowGate</code> só liberava gate neutro quando não havia dado de qualificação. Com o valor informado, <code>nextGate</code> devolvia <code>name</code> para sempre e o card nunca aparecia. Funil parado, agente conversando educadamente, venda congelada.</p>
+<p><b>Como apareceu:</b> no smoke ao vivo, no browser. Typecheck e 3.700 testes estavam verdes.</p>
+<div class="prova"><span class="g">antes:  turno 1 → ['text']   turno 2 → ['text']   turno 3 → ['text']
+depois: turno 1 → ['text']   turno 2 → ['text','gate:name']</span></div>
+<p><b>Cobertura:</b> <code>cenario-primeira-resposta-tem-numero.test.ts</code></p>
+</div>
+
+<div class="risco alto">
+<h3>ALTO · Um lead nasceu chamado "Suv" <span class="pill p-ok">CORRIGIDO</span></h3>
+<p><b>O que era:</b> o servidor lia qualquer resposta curta como nome enquanto o gate <code>name</code> estivesse ativo. Isso era seguro quando ele só existia no primeiro contato — na posição nova, o cliente está respondendo ao <i>modelo</i>.</p>
+<div class="prova"><span class="g">🤖 (modelo)  Boa escolha. Prefere sedã ou SUV?
+👤           SUV
+→ contact_name = "Suv"        (lido do banco, não hipótese)</span></div>
+<p><b>Correção:</b> não é mais uma palavra na lista. A lista já guardava "Uma", "Sujo" e "Voltei" — os três leads reais que nasceram assim — e não cobre "SUV", "Sedã", "Prata". A parede é um fato do servidor: <i>o card do nome saiu no turno anterior?</i>. E vale <b>um turno</b>, não a conversa inteira — na primeira versão era monotônico, e bastava o cliente perguntar a taxa de administração para "Curto" virar o nome dele no turno seguinte.</p>
+<p><b>Cobertura:</b> <code>cenario-nome-nao-e-a-resposta-do-modelo.test.ts</code>, 6 casos.</p>
+</div>
+
+<div class="risco alto">
+<h3>ALTO · O gate do nome sem rede, no segmento mais valioso <span class="pill p-ok">CORRIGIDO</span></h3>
+<p><b>O que era:</b> o gate foi para o meio do funil sem as três proteções que gate do meio do funil tem. Não estava em <code>STUCK_ESCAPE_GATES</code> (quem responde "prefiro não dizer" travava para sempre), estava em <code>NON_REENGAGE_GATES</code> (o watchdog não via quem sumia nele) e não tinha entrega no WhatsApp. Tudo isso na população em que <b>86% entrega o CPF</b>.</p>
+<p><b>Correção:</b> escape que <i>desiste da pergunta</i> em vez de inventar nome; watchdog e guard de turno-mudo voltam a enxergá-lo; texto próprio no WhatsApp; e recusa não devolve o card.</p>
+<p><b>Cobertura:</b> <code>qualify-state.o-nome-nao-e-porta-fechada.test.ts</code>, 12 casos.</p>
+</div>
+
+<div class="risco medio">
+<h3>MÉDIO · O sinal novo podia derrubar a venda no mesmo lote <span class="pill p-ok">CORRIGIDO</span></h3>
+<p><b>O que era:</b> <code>dispatch.ts</code> manda tudo à Meta numa chamada e marca <code>failed</code> no lote inteiro. Com o <code>chat_iniciado</code> — evento personalizado, o de maior chance de recusa, e 3× mais frequente que os marcos de venda — uma recusa dele levaria junto o <code>Purchase</code> de uma venda de seis dígitos. Com o erro apontando o campo errado, ninguém iria procurá-la.</p>
+<p><b>Correção:</b> dois lotes, divididos por natureza. Fila só de venda continua sendo uma chamada.</p>
+<p><b>Cobertura:</b> <code>dispatch.sinal-nao-derruba-venda.test.ts</code></p>
+</div>
+
+<div class="risco medio">
+<h3>MÉDIO · A suíte estava vermelha e eu disse que estava verde <span class="pill p-ok">CORRIGIDO</span></h3>
+<p><b>O que era:</b> <code>pnpm test:unit</code> saía com <b>exit 1</b> e 3.718 testes verdes na tela — dez <code>Unhandled Rejection</code>. O <code>sendBeacon</code> do happy-dom não é no-op: abre requisição HTTP de verdade, e com o servidor de dev de pé um teste de <i>componente</i> gravava <code>chat_iniciado</code> no banco local.</p>
+<p><b>Meu erro de verificação:</b> eu filtrava a saída por <code>Tests</code> e <code>Test Files</code>, e a linha <code>Errors</code> ficava fora do grep. Passei a usar o exit code.</p>
+<div class="prova"><span class="g">antes:  EXIT=1 · Tests 3718 passed · Errors 10
+depois: EXIT=0 · Tests 3747 passed · Errors 0</span></div>
+</div>
+
+<div class="risco medio">
+<h3>MÉDIO · O painel novo mediria a própria mudança <span class="pill p-ok">CORRIGIDO</span></h3>
+<p>Três defeitos de medição que a mudança do funil criaria em silêncio, todos corrigidos:</p>
+<ul>
+<li>o degrau <b>engajado</b> dependia de <code>desireAsked</code>, e a categoria agora dispensa o <code>desire</code> para 90% das entradas — o kanban mostraria uma queda que é instrumentação;</li>
+<li>a <b>régua de profundidade</b> dava <code>name: 1</code>, então quem informasse o valor e chegasse ao nome registraria profundidade 1;</li>
+<li><code>percentDaAnterior</code> assumia escada, mas o funil <b>pula estágio</b> — exibiria "&gt;100% da anterior".</li>
+</ul>
+</div>
+
+<div class="risco medio">
+<h3>MÉDIO · Dois defeitos silenciosos que entregavam dado errado <span class="pill p-ok">CORRIGIDO</span></h3>
+<div class="prova"><span class="g">carimbarOrigem("", codigo)
+  antes:  " (ref a1b2c3d4)"
+  depois: ""
+  → o card do FECHO abriria o WhatsApp
+    só com um código opaco
+
+mascararCelular("+55 11 99999-9999")
+  antes:  "(55) 11999-9999"
+  depois: "(11) 99999-9999"
+  → 55 é DDD do RS; o número perdia os
+    2 últimos dígitos, o form aceitava,
+    e a mesa ligava pra quem não existe</span></div>
+</div>
+
+<div class="risco baixo">
+<h3>BAIXO · Herdado — o A3 e o B3 não compunham <span class="pill p-ok">CORRIGIDO</span></h3>
+<p>O evento de início de conversa nascia na criação da conversa, e o vínculo de origem acontecia depois. Como o evento é idempotente pela chave, ele saía sem <code>fbc</code>, sem <code>fbp</code> e sem visita — justamente para o tráfego que o A3 recupera. O <code>%Conv Chat</code> consertava; o sinal que ensina a campanha, não.</p>
+</div>
+
+<h2 id="meta">7 · O que falta do lado da Meta</h2>
+
+<p>Três itens dependem do Gerenciador de Anúncios e da conta. O nosso lado está pronto e testado; abaixo está o passo a passo do que falta, na ordem.</p>
+
+<h3>7.1 · Ligar o envio de conversões e conferir o evento novo <span class="pill p-neutro">30 min</span></h3>
+<ol>
+<li>No <b>Gerenciador de Eventos</b> → seu pixel → aba <b>Testar eventos</b>, copie o <i>código de teste</i>.</li>
+<li>Peça para adicionar <code>META_CAPI_TEST_EVENT_CODE</code> ao secret <code>tb/prod/aja-agora/env</code> (temporário).</li>
+<li>Abra o chat em produção. Em <b>Testar eventos</b> devem aparecer <b>duas</b> entradas de <code>ChatIniciado</code> — uma "Navegador", outra "Servidor" — <b>fundidas na mesma linha</b>. Se aparecerem separadas, a deduplicação não pegou: avise, é o <code>eventID</code>.</li>
+<li>Remova o código de teste.</li>
+</ol>
+
+<h3>7.2 · Trocar o evento de otimização das campanhas (item B3) <span class="pill p-neutro">o de maior impacto</span></h3>
+<ol>
+<li>Gerenciador de Eventos → <b>Conversões personalizadas</b> → <b>Criar</b>.</li>
+<li>Fonte: o pixel. Regra: <b>Evento = <code>ChatIniciado</code></b>. Nome sugerido: "Conversa iniciada — Aja".</li>
+<li>Não marque valor de conversão: este evento é <b>sinal de interesse</b>, não receita. Ele nunca chega com <code>value</code>, de propósito.</li>
+<li>Nas campanhas <b>MOFU e BOFU</b>, troque o objetivo de otimização de tráfego para essa conversão personalizada.</li>
+<li><b>Deixe o RMKT de fora nesta primeira rodada</b> — ele já tem o melhor CTR do conjunto (12,21%) e mudar duas coisas ao mesmo tempo impede a leitura.</li>
+<li>Espere <b>7 dias</b> antes de julgar: o conjunto sai da fase de aprendizagem em ~50 eventos.</li>
+</ol>
+<p class="meta">Por que isso importa: o <code>ChatIniciado</code> existia só no navegador. Bloqueador de anúncio e ITP do iOS não comem sinal ao acaso — comem preferencialmente o público de maior valor, e a campanha aprenderia com uma amostra enviesada sem nada parecer errado no painel.</p>
+
+<h3>7.3 · Ler a nota de Event Match Quality (item B2) <span class="pill p-neutro">15 min</span></h3>
+<ol>
+<li>Gerenciador de Eventos → seu pixel → <b>Visão geral</b> → coluna <b>Qualidade da correspondência de eventos</b>.</li>
+<li>Anote a nota de <code>Lead</code>, <code>InitiateCheckout</code> e <code>Purchase</code> <b>hoje</b>, antes do deploy.</li>
+<li>Reanote <b>7 dias depois</b>. A correção do <code>_fbp</code> deve mover: ele estava em 1,5% das visitas e em 2 dos 22 eventos enviados.</li>
+<li>Se a nota continuar baixa, o próximo passo é <b>e-mail</b> — nenhum evento nosso sai com e-mail hoje, porque a operação não o coleta. Isso é decisão de produto, não bug.</li>
+</ol>
+
+<h3>7.4 · Estrutura de campanha (itens B4 e B5) <span class="pill p-neutro">do Gustavo</span></h3>
+<p>Não há código envolvido. O que registro aqui, para o antes/depois existir:</p>
+<ul>
+<li><b>B4 — consolidar em CBO.</b> Três campanhas (BOFU R$ 174, MOFU R$ 202, RMKT R$ 122) têm volume baixo demais para sair da aprendizagem; o MOFU tem o CPM mais caro do conjunto (R$ 107) por causa disso. <b>Anote CPM e CPC por campanha antes de mexer</b>, e releia 14 dias depois.</li>
+<li><b>B5 — aumentar o remarketing.</b> Maior CTR do conjunto (12,21% contra média de 5,68%) com o menor orçamento. <b>Ressalva nossa:</b> remarketing só escala se as audiências estiverem sendo alimentadas — o que depende do 7.3. Com EMQ ruim, aumentar orçamento gasta mais para alcançar as mesmas pessoas.</li>
+</ul>
+
+<h3>7.5 · O que <b>não</b> depende da Meta, mas depende de você</h3>
+<ul>
+<li><b>Ligar a vitrine</b> (itens C3 e C4). <code>VITRINE_CPF</code> e <code>VITRINE_CELULAR</code> não existem em <code>tb/dev/aja-agora/env</code> nem em <code>tb/prod/aja-agora/env</code> — conferido hoje. Com elas, o cliente vê cartas reais antes de entregar documento. Precisa de um par CPF+celular de conta homologada na Bevi.</li>
+<li><b>As imagens do hero</b> — com o Lucas. Ver A2 na seção 8.</li>
+</ul>
+
+<h2 id="aberto">8 · O que ficou em aberto</h2>
+
+<div class="risco medio">
+<h3>A performance da home é, pelos números, a maior alavanca isolada que sobrou</h3>
+<p>Lighthouse mobile contra produção: <b>score 29, LCP 7,7 s, FCP 7,7 s, TBT 2.890 ms, TTI 14,3 s</b>. FCP e LCP iguais dizem que <b>nada pinta até 7,7 s</b>.</p>
+<div class="prova"><span class="g">Script ....... 1.094 KB (30 req)   ← 65% do peso
+  terceiros ..... 511 KB           (adiei 285 KB: GTM + GA4)
+  nosso JS ...... 584 KB           ← não tocado
+Font ........... 314 KB (13 req)   ← 193 KB só de Merriweather variável
+Image .......... 212 KB            ← a colagem são 200 KB = 12% da página
+TOTAL ........ 1.691 KB (70 req)</span></div>
+<p><b>O diagnóstico do plano estava invertido:</b> a colagem do hero era o suspeito nomeado e é 12% do peso. Adiei GTM e GA4 (285 KB e ~1.020 ms fora do caminho crítico) sem tocar no Pixel. O resto — 584 KB de JS próprio, 314 KB de fonte — é bloco de performance com orçamento e medição antes/depois, não cabia numa campanha de conversão.</p>
+<p><b>E isso casa com o Connect Rate de 94%</b>: 6 de cada 100 cliques pagos não viram sessão. Em 2.473 cliques/mês são ~149 pessoas pagas que esperam oito segundos de tela branca e voltam.</p>
+<p class="meta">A pergunta sobre a colagem (manter q100 / baixar para q75 / arte mobile) foi dispensada no meio do trabalho. Os números para decidir: no celular ela pesa 200 KB em DPR 2 e 348 KB em DPR 3; com q75 seriam 71 KB e 115 KB.</p>
+</div>
+
+<div class="risco medio">
+<h3>C7 — a parede do formulário ficou maior, não menor</h3>
+<p>O item pede quebrar o pedido de CPF + celular + LGPD em dois passos. Não foi feito: ele dependia do C3, que depende da vitrine desligada. <b>E os itens C2 e C5 acrescentaram duas linhas ao mesmo card</b> — a garantia de privacidade e a credencial do Banco Central.</p>
+<p>É uma troca consciente (as duas linhas atacam a desconfiança, que é o que a auditoria apontou como causa), mas o resultado é que a tela do CPF tem hoje mais conteúdo do que tinha. Se o C7 for executado, vale medir o card inteiro, não cada linha.</p>
+</div>
+
+<div class="risco medio">
+<h3>D3 e E1 — entreguei medição, o plano pedia campainha</h3>
+<p>O item pede alarme via Langfuse Monitors. O que existe é uma lista no painel de Performance, com nome e telefone de quem está parado além do limite. <b>É uma tela que alguém precisa abrir</b> — e o próprio incidente que motiva o item (notificação lida 17h24 depois) é sobre coisa que ninguém abriu.</p>
+<p>O que falta: um Monitor sobre o score de sessão, disparando para o grupo de sustentação. É meia hora de trabalho e depende de decidir <b>para quem</b> ele toca.</p>
+</div>
+
+<div class="risco baixo">
+<h3>A2 — a evidência está pronta, a arte é do Lucas</h3>
+<div class="prova"><span class="g">Cliques no hero, por tipo de alvo (18–30/08):
+  elemento MORTO ....... 103 cliques,  14 rage_click
+  alvo clicável .........  84 cliques,   1 rage_click</span></div>
+<p>Os balões da colagem prometem toque e não entregam, em 103 cliques. O pedido ao Figma tem número: ou os balões viram alvo de verdade, ou a arte deixa de sugerir que são clicáveis.</p>
+</div>
+
+<div class="risco baixo">
+<h3>Três consultas de medição quebraram e ficaram no arquivo</h3>
+<p>Em <code>docs/medicoes/</code> há três saídas com erro de SQL (uma coluna que não existe, um operador de <code>LIKE</code> sobre enum, e uma reconexão de túnel). Nenhuma delas sustenta conclusão citada — os números do dossiê vêm das consultas que rodaram. Ficam no arquivo de propósito: evidência editada não é evidência.</p>
+</div>
+
+<h2 id="validar">9 · Como conferir você mesmo</h2>
+
+<h3>9.1 · Na tela</h3>
+<div class="checklist">
+<p><b>1. O primeiro turno.</b> Abra a home, clique no chip <b>Imóvel</b>. <br><i>Esperado:</i> a resposta traz o card do valor com "Fica por volta de R$ 2.370/mês em 200x" e o selo de estimativa. Não deve haver "como posso te chamar?" nesse turno.</p>
+<p><b>2. O campo do hero.</b> Olhe o card "Fale com a Aja". <br><i>Esperado:</i> o campo tem borda visível e o cursor vira barra de texto ao passar por cima.</p>
+<p><b>3. O CTA.</b> Role a página inteira. <br><i>Esperado:</i> todo botão diz "Comparar agora", exceto o de dentro do card do hero, que diz "Quero minha simulação".</p>
+<p><b>4. O toque.</b> No celular, pressione e segure qualquer botão vermelho. <br><i>Esperado:</i> ele escurece e encolhe levemente enquanto pressionado.</p>
+<p><b>5. O painel.</b> Abra <code>/admin/performance</code>. <br><i>Esperado:</i> abaixo do funil de mídia, um bloco "Depois do handoff" com sete etapas, tempo mediano e p90, e a lista de parados.</p>
+</div>
+
+<h3>9.2 · Conferindo os riscos corrigidos</h3>
+<div class="prova"><span class="g"># O lead não nasce mais chamado "Suv"
+docker exec aja-app-ajustes-gustavo-28-08 npx vitest run --silent \
+  src/lib/agent/langgraph/cenario-nome-nao-e-a-resposta-do-modelo.test.ts
+# esperado: 6 passed
+
+# O gate do nome tem as três redes
+docker exec aja-app-ajustes-gustavo-28-08 npx vitest run --silent \
+  src/lib/agent/qualify-state.o-nome-nao-e-porta-fechada.test.ts
+# esperado: 12 passed
+
+# O telefone com +55 não perde dígito
+docker exec aja-app-ajustes-gustavo-28-08 npx vitest run --silent \
+  src/lib/forms/mascaras.test.ts
+# esperado: 18 passed</span></div>
+
+<h3>9.3 · Pelos testes — resultado da última execução</h3>
+<div class="prova"><span class="g">$ docker exec aja-app-ajustes-gustavo-28-08 pnpm test:unit
+  Test Files  491 passed (491)
+       Tests  3747 passed | 1 skipped (3748)
+       EXIT=0
+
+$ npx biome check src/
+  Checked 1281 files. No fixes applied.   (0 erros, 0 avisos)
+
+$ npx tsc --noEmit
+  (sem saída)</span></div>
+
+<p class="meta">Nenhum teste vermelho, conhecido ou herdado. O ambiente local está de pé em <code>https://aja-ajustes-gustavo-28-08.orb.local</code>.</p>
+
+</div>
+</body>
+</html>
