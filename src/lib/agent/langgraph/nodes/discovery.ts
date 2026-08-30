@@ -77,6 +77,7 @@ export function buildRecommendedOfferSnapshot(
 const PRAZO_ALVO_MENOR_PARCELA = 120;
 
 import type { LangGraphRunnableConfig } from "@langchain/langgraph";
+import { marcarPrimeiraCarta } from "@/lib/observability/langfuse/marcar-primeira-carta";
 import type { AgentGraphStateType, FunnelState } from "../state";
 import { buildLangGraphTools } from "../tool-adapter";
 import { artifactAllowed, type GuardContext } from "./guarded-artifact";
@@ -316,6 +317,28 @@ export async function discoveryNode(
 			parcelaAlvo: funnel.qualifyAnswers.parcelaAlvo,
 			monthlyPayment: recommendedOffer.monthlyPayment,
 		});
+	}
+
+	// A PRIMEIRA CARTA DA CONVERSA — marco de sessão, uma vez só.
+	//
+	// `carta_na_tela` (funil-scores) mede turno e não responde "esta conversa
+	// chegou a ver preço, e em quantos turnos?". Essa é a pergunta que
+	// diagnosticou o funil no banco e é a que mede se a vitrine funcionou.
+	// `revealCompleted` ainda é false neste ponto (ele vira true no retorno
+	// abaixo), então esta condição é verdadeira exatamente uma vez por conversa —
+	// re-descoberta por troca de faixa não reemite.
+	if (!funnel.revealCompleted) {
+		// `!isUserTurn` é o critério, e ele vale nos dois canais.
+		//
+		// Turno server-authored (clique num card, retomada) nunca acrescenta fala
+		// nova: o label do clique já foi gravado ANTES — na web por `route.ts`, no
+		// WhatsApp por `recordUserClick`. Turno de usuário, ao contrário, traz uma
+		// fala que só o `persist` grava, DEPOIS deste nó.
+		//
+		// A versão anterior olhava o canal (`whatsapp && !isUserTurn`) e por isso
+		// sobrecontava +1 em todo clique da web — inclusive o do slider de valor,
+		// que com a vitrine é justamente o gatilho mais comum da primeira carta.
+		void marcarPrimeiraCarta(conversationId, !state.isUserTurn);
 	}
 
 	// Os ARTIFACTS não saem aqui — quem entrega é o `converse` (entre os dois

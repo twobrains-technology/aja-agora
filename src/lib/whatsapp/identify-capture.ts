@@ -10,6 +10,7 @@ import { db } from "@/db";
 import { conversations } from "@/db/schema";
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { nextGate } from "@/lib/agent/qualify-state";
+import { vitrineDisponivel } from "@/lib/bevi/identidade-vitrine";
 import { isValidCpf, storeIdentity } from "@/lib/conversation/identity";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { isSimulatedWaId } from "./simulator-bus";
@@ -19,9 +20,23 @@ import { isSimulatedWaId } from "./simulator-bus";
  * — que JUSTIFICA o pedido do CPF, mais o aviso LGPD (consentimento por conduta:
  * enviar o CPF autoriza a consulta). Fixo e determinístico: não deixamos o gancho
  * a cargo do LLM. Curto, sem emoji, sem hedge ("não é compromisso nenhum, tá?"). */
-export const IDENTIFY_CONTEXT_WHATSAPP =
-	"Pra eu analisar várias administradoras e achar as opções mais aderentes ao seu " +
-	"perfil, preciso confirmar quem é você. Seus dados ficam protegidos (LGPD).";
+export function identifyContextWhatsapp(): string {
+	// 2026-08-27 — a justificativa acompanha o MOMENTO do gate. Com a vitrine, as
+	// opções já foram achadas e estão na conversa quando o CPF é pedido; dizer
+	// "pra achar as opções aderentes ao seu perfil" ali seria falso, e o cliente
+	// que acabou de comparar cartas percebe. Sem vitrine o gate volta a ser
+	// pré-busca e a frase original volta com ele.
+	if (!vitrineDisponivel()) {
+		return (
+			"Pra eu analisar várias administradoras e achar as opções mais aderentes ao seu " +
+			"perfil, preciso confirmar quem é você. Seus dados ficam protegidos (LGPD)."
+		);
+	}
+	return (
+		"Pra seguir com a cota que você escolheu, preciso confirmar quem é você. " +
+		"Seus dados ficam protegidos (LGPD)."
+	);
+}
 
 /** Beat 2 (PEDIDO) do identify — FONTE ÚNICA (FIX-210). Antes havia dois textos
  * concorrentes (este e gateQuestion("identify")), o que gerava inconsistência
@@ -29,7 +44,12 @@ export const IDENTIFY_CONTEXT_WHATSAPP =
  * gateQuestion("identify") — o pedido curto. O contexto (beat 1,
  * IDENTIFY_CONTEXT_WHATSAPP) sai como balão próprio antes deste. No WhatsApp o
  * celular já é o waId — só falta o CPF. */
-export const IDENTIFY_WHATSAPP_PROMPT = gateQuestion("identify") as string;
+// FUNÇÃO, não `const`: a copy do `identify` é condicional (segue o momento do
+// gate), e uma constante de topo de módulo congelaria a decisão no instante do
+// import — antes mesmo de o ambiente estar lido.
+export function identifyWhatsappPrompt(): string {
+	return gateQuestion("identify") as string;
+}
 
 export const IDENTIFY_INVALID_CPF_REPLY =
 	"Hmm, esse CPF não confere — dá uma olhadinha nos números e me manda de novo?";

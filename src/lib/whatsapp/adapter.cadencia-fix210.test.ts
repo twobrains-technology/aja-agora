@@ -92,12 +92,15 @@ describe("FIX-210 — cadência 2-tempos: contexto e pedido em balões SEPARADOS
 		// O contexto fixo (gancho docx + LGPD) continua sendo entregue, em balão próprio.
 		const contexto = baloes.find((t) => /lgpd/i.test(t));
 		expect(contexto).toBeDefined();
-		expect(contexto).toMatch(/administradoras/i);
-		expect(contexto).toMatch(/aderentes ao seu perfil/i);
+		// 2026-08-27 — a copy do contexto virou CONDICIONAL (segue o momento do
+		// gate: pré-busca × fecho). O que este teste protege é a CADÊNCIA, não a
+		// frase: contexto e pedido em balões separados. A frase de cada momento
+		// tem teste próprio em `copy-do-identify-segue-o-momento.test.ts`.
+		expect(contexto).toMatch(/lgpd/i);
 		// E o pedido do CPF é um beat PRÓPRIO — nunca colado no contexto.
 		const pedido = baloes.at(-1) as string;
 		expect(pedido).toMatch(/cpf/i);
-		expect(pedido).not.toMatch(/administradoras/i);
+		expect(pedido).not.toBe(contexto);
 	});
 
 	it("gate identify sem reação do LLM → ainda 2 balões (contexto fixo + pedido)", async () => {
@@ -110,16 +113,22 @@ describe("FIX-210 — cadência 2-tempos: contexto e pedido em balões SEPARADOS
 
 		await processWithOrchestrator(WA, "oi");
 
+		// Dois balões: contexto (com o aviso LGPD) e, separado, o pedido do CPF.
+		// A frase do contexto é condicional desde 2026-08-27 — o invariante aqui é
+		// a CADÊNCIA, e a copy de cada momento tem teste próprio.
 		expect(mocks.sendText).toHaveBeenCalledTimes(2);
-		expect(mocks.sendText.mock.calls[0]?.[1]).toMatch(/administradoras/i);
+		expect(mocks.sendText.mock.calls[0]?.[1]).toMatch(/lgpd/i);
 		expect(mocks.sendText.mock.calls[1]?.[1]).toMatch(/cpf/i);
 	});
 });
 
 describe("FIX-210 — identify unificado num texto só, curto, sem 'CPF e celular'", () => {
-	it("IDENTIFY_WHATSAPP_PROMPT e gateQuestion('identify') são a MESMA copy", async () => {
-		const { IDENTIFY_WHATSAPP_PROMPT } = await import("./identify-capture");
-		expect(IDENTIFY_WHATSAPP_PROMPT).toBe(gateQuestion("identify"));
+	it("identifyWhatsappPrompt() e gateQuestion('identify') são a MESMA copy", async () => {
+		// Virou função em 2026-08-27: a copy do `identify` passou a ser condicional
+		// (segue o momento do gate), e uma const de topo de módulo congelaria a
+		// decisão no import. A fonte única continua sendo `gateQuestion`.
+		const { identifyWhatsappPrompt } = await import("./identify-capture");
+		expect(identifyWhatsappPrompt()).toBe(gateQuestion("identify"));
 	});
 
 	it("o pedido é curto (≤ 160 chars) e não pede 'CPF e celular' (só o CPF)", () => {

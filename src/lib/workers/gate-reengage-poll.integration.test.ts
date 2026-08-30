@@ -40,6 +40,21 @@ function pendingMeta(over: Partial<ConversationMetadata> = {}): ConversationMeta
 	};
 }
 
+/**
+ * O estado em que o gate `identify` de fato acontece desde 2026-08-27: o cliente
+ * já viu as cartas (a vitrine dispensa o CPF para buscar) e já escolheu uma —
+ * é aí que o documento é pedido, para reservar a cota no nome dele.
+ */
+const META_IDENTIFY_NO_FECHO: Partial<ConversationMetadata> = {
+	pendingGate: "identify",
+	identityCollected: false,
+	searchDispatched: true,
+	revealCompleted: true,
+	experienceDispatched: true,
+	escolha: { groupId: "g-1", origem: "mencao" },
+	qualifyAnswers: { creditMax: 120_000, prazoMeses: 48, hasLance: "no" },
+} as Partial<ConversationMetadata>;
+
 describeIfDb("FIX-207 gate-reengage worker — re-abre o funil parado no WhatsApp", () => {
 	const created: string[] = [];
 	const fire = vi.fn().mockResolvedValue(undefined);
@@ -202,9 +217,11 @@ describeIfDb("FIX-302 gate-reengage worker — canal WEB (sem sessão SSE viva)"
 		// Este cenário testa especificamente o gate `identify` (copy "CPF e
 		// celular") — o default de pendingMeta() é "credit" (1º gate pós-desire,
 		// FIX-296), então precisa do override explícito.
-		const { id, cookie } = await seedWeb(
-			pendingMeta({ pendingGate: "identify", qualifyAnswers: { creditMax: 120_000 } }),
-		);
+		//
+		// 2026-08-27: com a vitrine, o `identify` desceu para o FECHO — só existe
+		// depois do reveal e de uma cota escolhida. O estado abaixo é o daquele
+		// momento; a escada de reengajamento que o teste cobre é a mesma.
+		const { id, cookie } = await seedWeb(pendingMeta(META_IDENTIFY_NO_FECHO));
 
 		const result = await runReengageCycle({ now: NOW });
 
@@ -225,10 +242,8 @@ describeIfDb("FIX-302 gate-reengage worker — canal WEB (sem sessão SSE viva)"
 
 	it("escada completa (4 tentativas) no canal web: pergunta direta → incentivo → reforço → oferta de especialista", async () => {
 		// Mesma razão do teste acima: escada testada contra a copy do gate
-		// `identify` ("CPF e celular"), default de pendingMeta() é "credit".
-		const { id, cookie } = await seedWeb(
-			pendingMeta({ pendingGate: "identify", qualifyAnswers: { creditMax: 120_000 } }),
-		);
+		// `identify` ("CPF e celular"), que hoje vive no fecho (ver acima).
+		const { id, cookie } = await seedWeb(pendingMeta(META_IDENTIFY_NO_FECHO));
 
 		let now = NOW;
 		for (let attempt = 1; attempt <= 4; attempt++) {

@@ -15,6 +15,7 @@ import {
 	TIMEFRAME_OPTIONS as TIMEFRAME_CONFIG,
 } from "@/lib/agent/qualify-config";
 import { type Gate, shouldAskMotive } from "@/lib/agent/qualify-state";
+import { vitrineDisponivel } from "@/lib/bevi/identidade-vitrine";
 import { EMPTY_TURN_FALLBACK } from "@/lib/chat/empty-turn-guard";
 import type { ArtifactType } from "@/lib/chat/types";
 import type {
@@ -185,8 +186,15 @@ export function gatePartData(gate: Gate, meta: ConversationMetadata): GatePartDa
 				options: LANCE_EMBUTIDO_OPTIONS.map((o) => ({ value: o.token, label: o.title })),
 			};
 		case "identify":
-			// D1: form CPF + celular + LGPD antes da busca (a Bevi exige pra simular).
-			return { kind: "identity", gate: "identify", prefilledPhone: null };
+			// A Bevi exige CPF+celular para abrir proposta. Com a vitrine, quem
+			// satisfaz essa exigência na busca é a identidade da casa, e este form
+			// desce para o fecho — a copy acompanha (ver `momento`).
+			return {
+				kind: "identity",
+				gate: "identify",
+				prefilledPhone: null,
+				momento: vitrineDisponivel() ? "fecho" : "pre-busca",
+			};
 		case "simulator-offer":
 			// docx passo 4: oferta do simulador na sequência do reveal.
 			return {

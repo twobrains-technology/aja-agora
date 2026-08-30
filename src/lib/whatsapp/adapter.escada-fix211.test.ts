@@ -61,9 +61,20 @@ async function* emit(events: TurnEvent[]): AsyncGenerator<TurnEvent> {
 	for (const ev of events) yield ev;
 }
 
-// meta onde o funil está TRAVADO no gate identify (consent dado, valor já
-// coletado, sem identidade). FIX-296 (rodada 10): credit precede identify —
-// pra nextGate chegar genuinamente em identify, o valor já precisa constar.
+// meta onde o funil está TRAVADO no gate identify (valor coletado, cota já
+// escolhida, sem identidade).
+//
+// 2026-08-27 — a vitrine tirou o `identify` de antes da busca, então o estado
+// que trava nele mudou de lugar: agora é o FECHO (reveal feito, cota escolhida,
+// CPF ainda não entregue). O que este arquivo protege continua valendo palavra
+// por palavra — cobrança de gate obrigatório é do turno MUDO, nunca colada num
+// turno que falou — só o cenário que produz o gate é outro.
+//
+// Vale notar por que isso importa: era exatamente esta escada que produzia a
+// conv b80ad628 de produção, com o agente repetindo "preciso do seu CPF e
+// celular" em quatro turnos seguidos antes de o cliente ver uma única oferta.
+// Pré-reveal essa cobrança não existe mais; no fecho, onde o cliente já sabe o
+// que está comprando, ela segue coberta.
 function identifyPendingMeta(over: Partial<ConversationMetadata> = {}): ConversationMetadata {
 	return {
 		desireAsked: true,
@@ -71,9 +82,13 @@ function identifyPendingMeta(over: Partial<ConversationMetadata> = {}): Conversa
 		currentPersona: "helena-auto",
 		experiencePrev: "returning",
 		qualifyConsented: true,
-		qualifyAnswers: { creditMax: 80_000 },
+		searchDispatched: true,
+		revealCompleted: true,
+		experienceDispatched: true,
+		escolha: { groupId: "g-1", origem: "mencao" },
+		qualifyAnswers: { creditMax: 80_000, prazoMeses: 48, hasLance: "no" },
 		...over,
-	} as ConversationMetadata;
+	} as unknown as ConversationMetadata;
 }
 
 beforeEach(() => {

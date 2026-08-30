@@ -41,6 +41,7 @@ import { LANCE_EMBUTIDO_DEFAULT_PERCENT } from "@/lib/agent/qualify-config";
 import { querAntecipar, shouldAskMotive } from "@/lib/agent/qualify-state";
 import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
+import { vitrineDisponivel } from "@/lib/bevi/identidade-vitrine";
 import type { ArtifactType } from "@/lib/chat/types";
 import { registrarFalaContraCatalogo } from "@/lib/observability/langfuse/busca-scores";
 import { registrarToolsRecusadas } from "@/lib/observability/langfuse/conducao-scores";
@@ -92,6 +93,52 @@ export function pedeFalaDepoisDasTools(nomes: readonly string[]): boolean {
  * `buildConciergePrompt` completos (exemplos por persona, injeção de
  * identidade da persona DB) — esta fundação usa o prompt base genérico.
  */
+/**
+ * A âncora do turno do reveal entregou alguma coisa ao cliente?
+ *
+ * "Entregar" não é só escrever: um `quick_reply` com as opções de caminho
+ * ("Folga no bolso" / "Contemplar mais rápido") conduz tão bem quanto uma frase
+ * — melhor, no celular. Medir só caracteres fazia a rede de segurança concluir
+ * "âncora falhou" e reabrir o gate do funil embaixo dos cards: duas perguntas e
+ * cinco botões no mesmo turno, que é o defeito que o FIX-424 existe para evitar.
+ *
+ * A rede continua inteira para o que ela realmente protege — o turno em que nada
+ * chega ao cliente (sessão `ff8f2080`: cards na tela e nenhum convite a
+ * responder).
+ */
+export function ancoraEntregouAlgo(args: {
+	charsAntes: number | null;
+	charsDepois: number;
+	artifactsDoBeat: readonly string[];
+}): boolean {
+	if (args.charsAntes === null) return true; // âncora nem foi tentada
+	if (args.charsDepois > args.charsAntes) return true;
+	return args.artifactsDoBeat.some((t) => CARDS_QUE_PERGUNTAM.has(t));
+}
+
+/**
+ * Cards que, sozinhos, dão ao cliente o que responder.
+ *
+ * O critério é estreito: só entra o que pede INTERAÇÃO (botão, campo, escolha).
+ * `comparison_table`, `simulation_result` e afins ficam de fora de propósito —
+ * são informativos, e um turno que só os mostra continua mudo do ponto de vista
+ * de "o que eu faço agora?". É essa distinção que mantém a rede de segurança
+ * viva para o caso que ela existe para cobrir (sessão `ff8f2080`).
+ */
+const CARDS_QUE_PERGUNTAM: ReadonlySet<string> = new Set([
+	"quick_reply",
+	"value_picker",
+	"topic_picker",
+	"two_paths",
+	"decision_prompt",
+	"whatsapp_optin",
+	"contemplation_dial",
+	"embedded_bid",
+	"lead_form",
+	"contract_form",
+	"document_upload",
+]);
+
 export function leanSystemPrompt(base: string = SYSTEM_PROMPT): string {
 	const flowHeading = "## Fluxo de Vendas";
 	const nextHeading = "## Regras de Ouro";
@@ -100,15 +147,103 @@ export function leanSystemPrompt(base: string = SYSTEM_PROMPT): string {
 	if (flowStart === -1 || nextStart === -1) return base;
 	const before = base.slice(0, flowStart);
 	const after = base.slice(nextStart);
-	return `${before}${after}
+	// AS REGRAS DURAS SOBREVIVEM AO CORTE (2026-08-27).
+	//
+	// A poda existe por custo de contexto e continua valendo — mas ela recortava
+	// a seção "## Fluxo de Vendas" inteira, e é lá que moram as regras que
+	// governam a FALA. Resultado medido: `SYSTEM_PROMPT` tinha a regra de "buscar
+	// oferta não custa documento", e o texto que chegava ao modelo NÃO tinha —
+	// enquanto o bloco substituto abaixo ensinava a ordem antiga em todo turno.
+	//
+	// Trabalho de prompt que não sobrevive ao recorte é texto morto, e o
+	// `prompts:check` não pega (ele compara a constante, não o que é enviado).
+	// Ver `lean-prompt-entrega-as-regras.test.ts`, que asserta sobre ESTE
+	// retorno — o único artefato que o modelo de fato recebe.
+	const regrasDuras = extrairRegrasDuras(base.slice(flowStart, nextStart)).join("\n\n");
+	return `${before}${after}${regrasDuras ? `\n\n${regrasDuras}` : ""}
 
 ## Ordem do funil
-A ordem de coleta (nome → objetivo → valor do bem → identidade → busca →
-recomendação) é decidida pelo SISTEMA (grafo de estado), não por você — nunca
-tente "pular etapas" sozinho nem anuncie a mecânica pro usuário. Fale
-livremente sobre o que ele trouxer; quando o sistema decidir que é hora de um
-próximo passo estruturado, ele te avisa (ferramenta liberada ou card na
-tela).`;
+${ordemDoFunil()}`;
+}
+
+/**
+ * As REGRA DURAs que precisam sobreviver ao recorte do fluxo — e só as que valem
+ * no mundo atual.
+ *
+ * Duas coisas que a versão ingênua (fatiar por linha em branco e filtrar quem
+ * contém "REGRA DURA") errava, as duas medidas por sonda:
+ *
+ *  - **Arrastava vizinho.** Sem uma linha em branco entre a regra e o item
+ *    seguinte do fluxo, o "5. Feche (self-service)" vinha de carona, órfão do
+ *    fluxo que acabou de ser cortado. Aqui o bloco termina onde a regra termina:
+ *    na próxima linha que abre um item numerado ou um novo negrito de topo.
+ *
+ *  - **Entregava regra de outro mundo.** A regra de que buscar oferta não custa
+ *    documento só é verdadeira com a vitrine ligada. Sem ela, o modelo recebia
+ *    essa regra E o bloco de ordem dizendo `identidade → busca` — duas ordens
+ *    contraditórias na mesma janela, no kill switch e no estado default do
+ *    rollout. Regra que contradiz o servidor é pior que regra ausente.
+ */
+function extrairRegrasDuras(fluxo: string): string[] {
+	const linhas = fluxo.split("\n");
+	const blocos: string[] = [];
+	let atual: string[] | null = null;
+	const abreOutroItem = (l: string) => /^\s*\d+\.\s+\*\*/.test(l) || /^\s*##\s/.test(l);
+	for (const linha of linhas) {
+		if (linha.includes("**REGRA DURA")) {
+			if (atual) blocos.push(atual.join("\n").trimEnd());
+			atual = [linha];
+			continue;
+		}
+		if (!atual) continue;
+		if (abreOutroItem(linha)) {
+			blocos.push(atual.join("\n").trimEnd());
+			atual = null;
+			continue;
+		}
+		atual.push(linha);
+	}
+	if (atual) blocos.push(atual.join("\n").trimEnd());
+
+	// Regras marcadas `[VITRINE]` só valem no mundo COM vitrine — sem ela sairiam
+	// contradizendo o bloco de ordem na MESMA janela do modelo.
+	//
+	// O marcador é ESTRUTURAL de propósito. A primeira versão filtrava pela frase
+	// ("custa documento"), e isso quebrava em silêncio se alguém reescrevesse a
+	// regra — inclusive pela UI do Langfuse, que edita este texto sem passar por
+	// teste nenhum. Uma tag no TÍTULO sobrevive à reescrita do corpo, que é o que
+	// de fato costuma mudar.
+	return vitrineDisponivel() ? blocos : blocos.filter((b) => !REGRA_DE_VITRINE.test(b));
+}
+
+/** O título da regra traz a tag de escopo? (`**REGRA DURA [VITRINE] — …`) */
+const REGRA_DE_VITRINE = /\*\*REGRA DURA\s*\[VITRINE\]/i;
+
+/**
+ * A ordem que o modelo deve assumir — e ela DEPENDE da vitrine.
+ *
+ * Este bloco é a autoridade mais específica na janela sobre o desenho do funil.
+ * Enquanto ele afirmasse `identidade → busca` com a vitrine ligada, o modelo
+ * ouviria do prompt o oposto do que o servidor faz — e é justamente a
+ * contradição servidor×prompt que este projeto já pagou caro para aprender a
+ * evitar. Por isso a frase acompanha o mesmo predicado que move o gate.
+ */
+function ordemDoFunil(): string {
+	const cauda =
+		"é decidida pelo SISTEMA (grafo de estado), não por você — nunca tente " +
+		'"pular etapas" sozinho nem anuncie a mecânica pro usuário. Fale livremente ' +
+		"sobre o que ele trouxer; quando o sistema decidir que é hora de um próximo " +
+		"passo estruturado, ele te avisa (ferramenta liberada ou card na tela).";
+	if (!vitrineDisponivel()) {
+		return `A ordem de coleta (nome → objetivo → valor do bem → identidade → busca →
+recomendação) ${cauda}`;
+	}
+	return `A ordem (bem → valor → busca → recomendação → escolha → identidade → contrato)
+${cauda}
+
+Repare onde a identidade entra: no FIM. As cartas reais aparecem com o valor que
+o cliente deu, sem documento nenhum — o CPF só é pedido depois que ele escolheu
+a cota, e quem pede é o sistema.`;
 }
 
 /** FIX-368 (rodada 2, veredito do juiz — 3/3 personas reproduziram): o
@@ -244,6 +379,16 @@ export function createConverseNode(model: BaseChatModel) {
 		const tools = buildLangGraphTools({
 			conversationId: state.conversationId,
 			channel: state.channel,
+			// Âncora do que o modelo tentar GRAVAR neste turno (hoje: o nome).
+			//
+			// `null` em turno server-authored, e a condição é o conserto: nesses
+			// turnos `state.userText` carrega a DIRECTIVE do servidor, não fala do
+			// cliente — e a palavra "cliente" aparece em praticamente toda directive.
+			// Sem o `isUserTurn`, `save_contact_name("Cliente")` voltava a ancorar e
+			// gravar, justamente na classe de turno que domina o fecho da jornada
+			// (o fecho é dirigido por cliques). O comentário anterior aqui afirmava
+			// essa recusa — mas o código não a fazia.
+			userText: state.isUserTurn ? state.userText : null,
 			hasLance: state.funnel.qualifyAnswers?.hasLance === "yes",
 			// A MESMA fonte que este nó usa. O `persist` é o último nó do turno, então
 			// no turno da descoberta o banco ainda não tem a oferta que o `discovery`
@@ -1586,8 +1731,26 @@ export function createConverseNode(model: BaseChatModel) {
 		// A âncora foi tentada e não entregou nada? Medido depois do `flush()`, de
 		// propósito: o que ela escreveu pode ter ficado retido no filtro até aqui,
 		// e olhar antes contaria como silêncio uma fala que o cliente recebeu.
-		const ancoraFalhou =
-			ancoraCharsRef.antes !== null && (textoDoTurno + tail).length <= ancoraCharsRef.antes;
+		// TODO artifact deste turno conta — não só os do beat da âncora.
+		//
+		// A primeira versão fatiava a partir de um marco, para pegar "só o que a
+		// âncora emitiu". Era código morto por duas razões, e as duas importam: o
+		// beat da âncora roda SEM tools (`executarBeat(false)`), então nunca emite
+		// artifact nenhum; e `events` nasce vazio a cada turno, então não existe
+		// "card de turno anterior" de que o slice protegesse. Resultado: a lista
+		// chegava sempre vazia e o predicado degenerava no antigo — só caracteres.
+		//
+		// A pergunta que importa não é "quem emitiu", é "o cliente tem o que
+		// responder AGORA?". O `quick_reply` do incidente nasce no beat principal,
+		// e ele conduz igual.
+		const artifactsDoTurno = events
+			.filter((ev): ev is Extract<TurnEvent, { type: "artifact" }> => ev.type === "artifact")
+			.map((ev) => ev.artifactType);
+		const ancoraFalhou = !ancoraEntregouAlgo({
+			charsAntes: ancoraCharsRef.antes,
+			charsDepois: (textoDoTurno + tail).length,
+			artifactsDoBeat: artifactsDoTurno,
+		});
 
 		return {
 			messages: newMessages,
