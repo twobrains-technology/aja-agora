@@ -67,6 +67,20 @@ export type TurnTraceRecord = {
 	finishReason: string | null;
 	/** Epoch ms do início do turno (ordenação na ingestão). */
 	startedAt: number;
+	/**
+	 * Quantas falas do CLIENTE esta conversa já tinha quando o turno começou —
+	 * `0` no primeiro contato.
+	 *
+	 * Existe por causa de um sinal que a campanha de conversão de 30/08/2026
+	 * precisa e não tinha como produzir: "a PRIMEIRA resposta do agente entregou
+	 * um número?". A medição que motivou a mudança mostrou 34 de 70 conversas
+	 * morrendo exatamente ali, e sem saber qual turno é o primeiro não há como
+	 * afirmar, daqui a duas semanas, se o conserto funcionou.
+	 *
+	 * `null` quando o chamador não soube informar — o score simplesmente não é
+	 * emitido, em vez de mentir que era o primeiro turno.
+	 */
+	turnoDoCliente: number | null;
 };
 
 export type TurnTraceContext = {
@@ -122,6 +136,7 @@ export class TurnTrace {
 	private handoff = false;
 	private transitionedTo: string | null = null;
 	private leadStage: string | null = null;
+	private turnoDoCliente: number | null = null;
 	private finishReason: string | null = null;
 	private finalized = false;
 
@@ -158,6 +173,11 @@ export class TurnTrace {
 	}
 	setLeadStage(stage: string): void {
 		this.leadStage = stage;
+	}
+	/** Quantas falas do cliente a conversa tinha ANTES deste turno. Ver o campo
+	 *  homônimo em `TurnTraceRecord`. */
+	setTurnoDoCliente(indice: number): void {
+		this.turnoDoCliente = indice;
 	}
 	setFinish(reason: string): void {
 		this.finishReason = reason;
@@ -201,6 +221,7 @@ export class TurnTrace {
 			durationMs: Math.max(0, this.deps.now() - this.startedAt),
 			finishReason: this.finishReason,
 			startedAt: this.startedAt,
+			turnoDoCliente: this.turnoDoCliente,
 		};
 	}
 

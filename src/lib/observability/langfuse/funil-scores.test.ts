@@ -31,6 +31,7 @@ function record(over: Partial<TurnTraceRecord> = {}): TurnTraceRecord {
 		durationMs: 100,
 		finishReason: null,
 		startedAt: 0,
+		turnoDoCliente: null,
 		...over,
 	};
 }
@@ -240,6 +241,7 @@ describe("turno mudo × card sem fala", () => {
 		durationMs: 10,
 		finishReason: null,
 		startedAt: 0,
+		turnoDoCliente: null,
 	};
 
 	function valor(scores: ReturnType<typeof scoresDoTurno>, nome: string) {
@@ -292,5 +294,68 @@ describe("fala podada e valor revertido", () => {
 		expect(
 			scoresDeValorRevertido({ valorRecusado: 1_000_000, veioDoEscape: false })[0].comment,
 		).toBe("1000000");
+	});
+});
+
+describe("primeira_resposta_com_numero — o sinal que prova a campanha de 30/08", () => {
+	const valor = (r: TurnTraceRecord) =>
+		scoresDoTurno(r).find((s) => s.name === "primeira_resposta_com_numero")?.value;
+
+	it("vale 1 quando o primeiro turno entrega o card do valor", () => {
+		// A mudança inteira: quem clica num chip de categoria recebe a agulha com
+		// a parcela estimada em vez de "que legal, já tem um em mente?".
+		expect(valor(record({ turnoDoCliente: 0, gate: "credit" }))).toBe(1);
+	});
+
+	it("vale 1 quando o primeiro turno já entrega a carta real", () => {
+		// Quem chega com tudo (categoria + valor) e a vitrine está ligada pula o
+		// card da agulha e vai direto à oferta. Também é número na tela.
+		expect(
+			valor(
+				record({
+					turnoDoCliente: 0,
+					gate: "search",
+					artifactsEmitted: ["comparison_table"],
+					artifactCount: 1,
+				}),
+			),
+		).toBe(1);
+	});
+
+	it("vale 0 quando o primeiro turno é só pergunta — e é ESTE o caso que se quer contar", () => {
+		// O comportamento que matava 49% das conversas: elogio + pergunta, sem
+		// nada na tela.
+		expect(valor(record({ turnoDoCliente: 0, gate: "name" }))).toBe(0);
+		expect(valor(record({ turnoDoCliente: 0, gate: "desire" }))).toBe(0);
+	});
+
+	it("emite 0 em vez de nada — score que só aparece quando vale 1 não tem denominador", () => {
+		// É o mesmo vício que `carta_na_tela` documenta: sem o zero, a média no
+		// Langfuse vira 1,0 para sempre e o sinal passa a medir a si mesmo.
+		const s = scoresDoTurno(record({ turnoDoCliente: 0, gate: "name" }));
+		expect(s.some((x) => x.name === "primeira_resposta_com_numero")).toBe(true);
+	});
+
+	it("NÃO é emitido fora do primeiro turno", () => {
+		expect(valor(record({ turnoDoCliente: 1, gate: "credit" }))).toBeUndefined();
+		expect(valor(record({ turnoDoCliente: 7, gate: "credit" }))).toBeUndefined();
+	});
+
+	it("nem quando o chamador não soube dizer qual turno é", () => {
+		// Melhor não emitir do que afirmar que era o primeiro.
+		expect(valor(record({ turnoDoCliente: null, gate: "credit" }))).toBeUndefined();
+	});
+});
+
+describe("a régua de profundidade acompanhou a mudança de posição do `name`", () => {
+	it("o nome vale mais que o valor do bem — porque agora vem depois dele", () => {
+		// Com `name: 1`, uma conversa que informou o valor e chegou ao nome
+		// registraria profundidade 1, e `max(funil_passo)` por sessão mostraria uma
+		// QUEDA de conversão que é a própria mudança de instrumentação.
+		expect(profundidadeDoGate("name")).toBeGreaterThan(profundidadeDoGate("credit") as number);
+	});
+
+	it("e ainda vem antes do pedido de documento", () => {
+		expect(profundidadeDoGate("name")).toBeLessThan(profundidadeDoGate("identify") as number);
 	});
 });

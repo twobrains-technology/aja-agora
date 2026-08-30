@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { messages as messagesTable } from "@/db/schema";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
@@ -95,4 +95,30 @@ export async function saveMessage(
 		.returning({ id: messagesTable.id });
 
 	return msg.id;
+}
+
+/**
+ * Quantas falas do CLIENTE esta conversa já tem.
+ *
+ * Serve a um sinal só, e ele é o da campanha de conversão de 30/08/2026: "a
+ * PRIMEIRA resposta do agente entregou um número?". A medição que motivou a
+ * mudança mostrou 34 de 70 conversas morrendo exatamente no primeiro turno, e
+ * sem saber qual turno é o primeiro não há como afirmar, daqui a duas semanas,
+ * se o conserto funcionou.
+ *
+ * Um `COUNT` sobre índice, uma vez por turno. Devolve `0` se falhar — o score
+ * que depende disto simplesmente não é emitido, e telemetria nunca derruba o
+ * turno.
+ */
+export async function contarFalasDoCliente(conversationId: string): Promise<number> {
+	try {
+		const [linha] = await db
+			.select({ n: count() })
+			.from(messagesTable)
+			.where(and(eq(messagesTable.conversationId, conversationId), eq(messagesTable.role, "user")));
+		return Number(linha?.n ?? 0);
+	} catch (err) {
+		console.error("[messages] falha ao contar falas do cliente (ignorado):", err);
+		return 0;
+	}
 }

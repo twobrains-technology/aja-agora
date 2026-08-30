@@ -41,10 +41,28 @@ import { ambienteLangfuse } from "./env";
  * como profundidade.
  */
 const PROFUNDIDADE_DO_GATE: Record<string, number> = {
-	name: 1,
+	// `name` VALE 5, e não 1 (corrigido em 30/08/2026).
+	//
+	// A régua nasceu com o nome em primeiro lugar porque ele ERA o primeiro
+	// gate da conversa. Desde 30/08 ele tem duas posições: continua abrindo a
+	// conversa de quem chega sem dizer nada, mas para quem entra pela categoria
+	// — 90% das entradas medidas — ele acontece DEPOIS do valor do bem, colado
+	// ao pedido de documento.
+	//
+	// Com o valor antigo, uma conversa que chegasse até ali registraria
+	// profundidade 1, e `max(funil_passo)` por sessão — que é justamente a
+	// métrica de "quão longe o cliente foi" — mostraria uma QUEDA de conversão
+	// que é a própria mudança de instrumentação. O mesmo vício que
+	// `desireAsked` produzia no degrau `engajado` do kanban, por outra porta.
+	//
+	// 5 é a posição REAL na cascata pós-mudança: depois de `credit` (4), antes
+	// de `identify` (6). Quem cai no nome pelo caminho antigo (primeiro contato)
+	// aparece um degrau acima do que aparecia — e isso é honesto: ele de fato
+	// disse alguma coisa antes de chegar lá.
 	desire: 2,
 	experience: 3,
 	credit: 4,
+	name: 5,
 	timeframe: 5,
 	identify: 6,
 	search: 7,
@@ -118,6 +136,39 @@ export function scoresDoTurno(record: TurnTraceRecord): Score[] {
 		value: record.artifactsEmitted.some((a) => ARTIFACTS_DE_OFERTA.has(a)) ? 1 : 0,
 		dataType: "BOOLEAN",
 	});
+
+	// A PRIMEIRA RESPOSTA ENTREGOU UM NÚMERO? — o sinal que prova (ou desmente)
+	// a campanha de conversão de 30/08/2026.
+	//
+	// A medição que motivou a mudança é dura: das 70 conversas web reais entre
+	// 16 e 30/08, **34 (49%) morreram com uma única fala do cliente**, quase
+	// todas depois de a pessoa clicar num chip de categoria e receber de volta
+	// um elogio e uma pergunta. A resposta foi tirar `name` e `desire` da frente
+	// de quem já disse o que quer e mandar o funil direto ao `credit`, cujo card
+	// mostra a parcela estimada.
+	//
+	// Sem este score, daqui a duas semanas ninguém sabe se aquilo funcionou. O
+	// `judge_avancou` não serve: ele lê a FALA e pergunta "este turno tentou
+	// avançar?" — e o turno que elogia e pergunta tentou. É a mesma razão pela
+	// qual `carta_na_tela` existe ao lado dele. Funil parado é ESTADO.
+	//
+	// Emitido só no PRIMEIRO turno, e como 0 ou 1 — nunca ausente quando é 0,
+	// senão a média no Langfuse vira 1,0 para sempre e o sinal mede a si mesmo.
+	// `turnoDoCliente` nulo (chamador que não soube informar) não emite nada, em
+	// vez de mentir que era o primeiro.
+	if (record.turnoDoCliente === 0) {
+		scores.push({
+			name: "primeira_resposta_com_numero",
+			// O card do valor é o que carrega a parcela estimada; os artifacts de
+			// oferta são o caso de quem já chegou com tudo e pulou direto para a
+			// carta real. Os dois são "número na tela".
+			value:
+				record.gate === "credit" || record.artifactsEmitted.some((a) => ARTIFACTS_DE_OFERTA.has(a))
+					? 1
+					: 0,
+			dataType: "BOOLEAN",
+		});
+	}
 
 	// Turno mudo: o agente processou e não escreveu UMA letra. Do lado do
 	// cliente é a app travada. Hoje isso só aparecia se alguém lesse o log.
