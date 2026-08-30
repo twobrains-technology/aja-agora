@@ -1155,22 +1155,22 @@ export const consorcioTools = {
 
 	save_contact_name: tool({
 		description:
-			"Salva o nome do usuario capturado conversacionalmente. Chame IMEDIATAMENTE apos o usuario responder a pergunta 'como posso te chamar?'. Extraia SO o primeiro nome (ex: de 'sou o Alan Carlos da Silva' -> 'Alan'). Idempotente — chamar 2x com mesmo nome e seguro. NAO chame sem ter um nome real do usuario.",
+			"Salva o nome do usuário. Chame IMEDIATAMENTE em DOIS casos: (1) o usuário respondeu à pergunta 'como posso te chamar?'; (2) ele se apresentou por conta própria, no meio de qualquer frase ('me chamo Ana e quero um carro de 80 mil') — este segundo caso é hoje o mais comum, porque o funil não pergunta o nome de quem já traz o valor. Extraia SÓ o primeiro nome (de 'sou o Alan Carlos da Silva' -> 'Alan'). NÃO chame quando a palavra depois de 'sou'/'meu nome é' não for uma apresentação: 'meu nome está sujo no Serasa' fala de crédito, 'sou o comprador'/'sou aposentado' é papel. Idempotente — chamar 2x com o mesmo nome é seguro. NUNCA chame sem um nome real dito pelo usuário.",
 		inputSchema: z.object({
 			conversationId: z.string().describe("ID da conversa atual"),
 			name: z
 				.string()
 				.min(2)
 				.max(30)
-				.describe("Primeiro nome do usuario, sem titulos ou sobrenomes"),
+				.describe("Primeiro nome do usuário, sem títulos ou sobrenomes"),
 		}),
 		execute: async (args) => {
 			const { saveContactName } = await import("@/lib/leads/contact-capture");
 			const result = await saveContactName(args.conversationId, args.name);
 			if (!result.ok) {
-				return `[Nome invalido: ${result.error}. Peca o nome novamente de forma natural.]`;
+				return `[Nome inválido: ${result.error}. Peça o nome novamente de forma natural.]`;
 			}
-			return `[Nome '${args.name}' salvo. Use-o nas proximas respostas.]`;
+			return `[Nome '${args.name}' salvo. Use-o nas próximas respostas.]`;
 		},
 	}),
 
@@ -1261,6 +1261,18 @@ export type ConsorcioToolsContext = {
 	/** UUID da conversation atual. Pode ser undefined em paths admin/preview que não persistem. */
 	conversationId?: string;
 	channel?: "web" | "whatsapp";
+	/** A fala do cliente NESTE turno — âncora para o que o modelo tentar gravar.
+	 *
+	 * Hoje usada só por `save_contact_name`: o modelo chamou a tool com "Cliente"
+	 * numa conversa em que ninguém se apresentou, e o banco gravou. Nome é
+	 * entidade; entidade não-ancorada não vira dado (Lei 3).
+	 *
+	 * ⚠️ Quem preenche isto tem que garantir que é fala do CLIENTE. Em turno
+	 * server-authored o `state.userText` do grafo carrega a DIRECTIVE do servidor,
+	 * e passá-la aqui ancoraria "Cliente" (a palavra está em quase toda directive)
+	 * — por isso `converse.ts` só passa quando `isUserTurn`. `null`/ausente =
+	 * nada a ancorar, e a gravação por tool é recusada. */
+	userText?: string | null;
 	/** FIX-193: perfil de lance do usuário (meta.qualifyAnswers.hasLance==="yes").
 	 * Alimenta o desempate de tipoOferta no ranking (recommend_groups) — critério
 	 * INTERNO, injetado via contexto da request (nunca input da LLM). */
@@ -1307,7 +1319,7 @@ export type ConsorcioToolsContext = {
  * schema e induz hallucination).
  */
 export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
-	const { conversationId, hasLance, reuseShownGroupsOnly, allowedToolNames } = ctx;
+	const { conversationId, hasLance, reuseShownGroupsOnly, allowedToolNames, userText } = ctx;
 
 	// FIX-179: o que já foi REALMENTE exibido em tela pro usuário nesta
 	// conversa — seed via DB (turnos anteriores), atualizado ao vivo conforme
@@ -1368,24 +1380,25 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 
 	const save_contact_name = tool({
 		description:
-			"Salva o nome do usuario capturado conversacionalmente. Chame IMEDIATAMENTE apos o usuario responder a pergunta 'como posso te chamar?'. Extraia SO o primeiro nome (ex: de 'sou o Alan Carlos da Silva' -> 'Alan'). Idempotente — chamar 2x com mesmo nome e seguro. NAO chame sem ter um nome real do usuario.",
+			"Salva o nome do usuário. Chame IMEDIATAMENTE em DOIS casos: (1) o usuário respondeu à pergunta 'como posso te chamar?'; (2) ele se apresentou por conta própria, no meio de qualquer frase ('me chamo Ana e quero um carro de 80 mil') — este segundo caso é hoje o mais comum, porque o funil não pergunta o nome de quem já traz o valor. Extraia SÓ o primeiro nome (de 'sou o Alan Carlos da Silva' -> 'Alan'). NÃO chame quando a palavra depois de 'sou'/'meu nome é' não for uma apresentação: 'meu nome está sujo no Serasa' fala de crédito, 'sou o comprador'/'sou aposentado' é papel. Idempotente — chamar 2x com o mesmo nome é seguro. NUNCA chame sem um nome real dito pelo usuário.",
 		inputSchema: z.object({
 			name: z
 				.string()
 				.min(2)
 				.max(30)
-				.describe("Primeiro nome do usuario, sem titulos ou sobrenomes"),
+				.describe("Primeiro nome do usuário, sem títulos ou sobrenomes"),
 		}),
 		execute: async ({ name }: { name: string }) => {
 			if (!conversationId) {
-				return "[Erro: conversationId nao disponivel no contexto deste turno — tool nao pode persistir.]";
+				return "[Erro: conversationId não disponível no contexto deste turno — tool não pode persistir.]";
 			}
 			const { saveContactName } = await import("@/lib/leads/contact-capture");
-			const result = await saveContactName(conversationId, name);
+			// Ancorado na fala: o nome tem que ter sido DITO neste turno.
+			const result = await saveContactName(conversationId, name, { ancorarEm: userText });
 			if (!result.ok) {
-				return `[Nome invalido: ${result.error}. Peca o nome novamente de forma natural.]`;
+				return `[Nome inválido: ${result.error}. Peça o nome novamente de forma natural.]`;
 			}
-			return `[Nome '${name}' salvo. Use-o nas proximas respostas.]`;
+			return `[Nome '${name}' salvo. Use-o nas próximas respostas.]`;
 		},
 	});
 
@@ -1397,7 +1410,7 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		}),
 		execute: async ({ phone }: { phone: string }) => {
 			if (!conversationId) {
-				return "[Erro: conversationId nao disponivel no contexto deste turno — tool nao pode persistir.]";
+				return "[Erro: conversationId não disponível no contexto deste turno — tool não pode persistir.]";
 			}
 			const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
 			const result = await saveContactWhatsapp(conversationId, phone);

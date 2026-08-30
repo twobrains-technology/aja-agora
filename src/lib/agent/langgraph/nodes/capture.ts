@@ -48,6 +48,30 @@ export function captureAnswerNode(state: AgentGraphStateType): Partial<AgentGrap
 	const text = (state.userText ?? "").trim();
 	if (!text) return {};
 
+	// SÓ NO GATE `name`. FORA DELE, QUEM EXTRAI É O MODELO.
+	//
+	// A apresentação espontânea ("me chamo Ana e quero um carro de 80 mil") também
+	// precisa ser capturada — a vitrine tirou o gate `name` do caminho de quem já
+	// traz o valor, então ninguém mais PERGUNTA o nome. Mas ela NÃO é capturada
+	// aqui, e a tentativa de fazê-lo foi revertida em 27/08/2026 com a sonda na
+	// mão: um predicado de FORMA ("sou o X", "meu nome é X") batiza o lead com o
+	// que vier depois do artigo, e em consórcio o que vem depois é do domínio:
+	//
+	//   "meu nome é sujo no serasa, tem problema?"        → "Sujo"
+	//   "não sou o único que decide, vou falar com a esposa" → "Único"
+	//   "sou o comprador, mas quem vai usar é minha esposa"  → "Comprador"
+	//
+	// Nenhuma guarda fecha isso: é a lista de palavras contra a língua, e o
+	// `CLAUDE.md` já nomeia o desfecho ("não se fecha porta a porta"). Aqui dentro
+	// do gate a heurística é segura porque a pergunta ACABOU de ser feita e a
+	// resposta é curta; fora dele, o turno fala de bem, valor, prazo e objeção.
+	//
+	// Quem lê a frase inteira e sabe distinguir apresentação de "meu nome está
+	// sujo" é o modelo — e ele já tem `save_contact_name` no toolset base. O que
+	// faltava era pedir: a regra estava em `SPECIALIST_BASE_PROMPT`, que o grafo
+	// NÃO lê (medido: 2 conversas no app, o modelo saudou pelo nome e não chamou a
+	// tool nenhuma vez). A regra passou para o `SYSTEM_PROMPT`, e o servidor
+	// continua ancorando o que a tool tenta gravar (`nomeAncoradoNaFala`).
 	const gateRespondido = state.gate ?? state.answeredGate;
 	if (gateRespondido === "name" && !state.contactName) {
 		const name = extractName(text);
