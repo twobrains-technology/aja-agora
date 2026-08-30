@@ -145,6 +145,18 @@ export type FunnelState = {
 	 *  `captureAnswerNode` consome e apaga; `emitCardNode` remarca quando o card
 	 *  sai de novo. */
 	nameCardExibido?: boolean;
+	/** Quantas falas do CLIENTE esta conversa já teve, contadas pelo `persist`.
+	 *
+	 *  Existe porque `state.messages.length` NÃO serve para isso: `run-turn.ts`
+	 *  monta a lista por dois caminhos (banco no primeiro turno, checkpointer +
+	 *  `resume` nos seguintes), e a fala corrente entra em momentos diferentes em
+	 *  cada um. Medido ao vivo em 30/08/2026, a contagem por mensagem deu
+	 *  0 → 1 → 3 numa conversa de três falas.
+	 *
+	 *  Turno de SERVIDOR (directive, retomada) não incrementa — não é fala do
+	 *  cliente, e contá-la gastaria o índice 0, que é o que o score
+	 *  `primeira_resposta_com_numero` observa. */
+	turnosDoCliente?: number;
 	/** O funil DESISTIU de perguntar o nome, depois de tentar sem progresso.
 	 *
 	 *  É o escape do gate `name` na posição nova (depois do valor do bem). Sem
@@ -261,6 +273,7 @@ export const FUNNEL_KEYS = {
 	experienceDispatched: true,
 	nameCardAdiado: true,
 	nameCardExibido: true,
+	turnosDoCliente: true,
 	nomeDispensado: true,
 	topicPickerDispatched: true,
 	recoConsentDispatched: true,
@@ -327,6 +340,7 @@ export function funnelFromMeta(meta: ConversationMetadata): FunnelState {
 		experienceDispatched: meta.experienceDispatched,
 		nameCardAdiado: meta.nameCardAdiado,
 		nameCardExibido: meta.nameCardExibido,
+		turnosDoCliente: meta.turnosDoCliente,
 		nomeDispensado: meta.nomeDispensado,
 		topicPickerDispatched: meta.topicPickerDispatched,
 		recoConsentDispatched: meta.recoConsentDispatched,

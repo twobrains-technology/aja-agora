@@ -180,6 +180,8 @@ export type ConversationMetadata = {
 	 *  `captureAnswerNode` consome e apaga; `emitCardNode` remarca quando o card
 	 *  sai de novo. */
 	nameCardExibido?: boolean;
+	/** Espelho de `FunnelState.turnosDoCliente` — ver a doc lá. */
+	turnosDoCliente?: number;
 	/** O funil DESISTIU de perguntar o nome, depois de tentar sem progresso.
 	 *
 	 *  É o escape do gate `name` na posição nova (depois do valor do bem). Sem

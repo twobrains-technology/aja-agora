@@ -150,6 +150,34 @@ export async function persistNode(
 		});
 	}
 
+	// ── O índice deste turno do cliente ─────────────────────────────────────
+	//
+	// `funnel.turnosDoCliente` é o contador; o índice do turno corrente é o valor
+	// de ANTES do incremento. O evento correspondente só é empurrado lá embaixo,
+	// junto dos outros — mas o INCREMENTO tem que acontecer aqui, acima do
+	// `projectToMeta`, senão o contador não entra no metadata e cada turno relê
+	// zero do banco (o teste `cenario-o-indice-do-turno-e-exato` fixa isso: com o
+	// incremento embaixo, os três turnos anunciavam `[0], [0], [0]`).
+	//
+	// A primeira versão contava `state.messages.filter(human).length - 1`. Não
+	// funciona: `run-turn.ts` monta `messages` por dois caminhos (banco no
+	// primeiro turno, checkpointer + `resume` nos seguintes) e a fala corrente
+	// entra em momentos diferentes em cada um. Numa conversa real de três falas,
+	// o smoke de 30/08/2026 registrou 0 → 1 → 3.
+	//
+	// Aqui e não no `route.ts`: este nó roda nos DOIS canais, e o sink do
+	// TurnTrace — que é quem publica o score — é o único ponto por onde web e
+	// WhatsApp passam. A primeira versão contava por query dentro do route, o
+	// que deixava o WhatsApp de fora e punha um COUNT no caminho quente.
+	//
+	// Turno de SERVIDOR não conta: directive e retomada não são fala do cliente,
+	// e gastariam o índice 0 — que é o que `primeira_resposta_com_numero` lê.
+	let indiceDoTurno: number | null = null;
+	if (isUserTurn) {
+		indiceDoTurno = funnel.turnosDoCliente ?? 0;
+		funnel = { ...funnel, turnosDoCliente: indiceDoTurno + 1 };
+	}
+
 	const projetado = projectToMeta({ ...state, funnel });
 
 	// FIX-207 (watchdog) — o marcador que o worker `gate-reengage-poll` procura.
@@ -252,15 +280,7 @@ export async function persistNode(
 	// Alimenta o score `primeira_resposta_com_numero`, que é como se saberá,
 	// daqui a duas semanas, se a mudança do primeiro turno funcionou. A conta é
 	// sobre `state.messages`, que o grafo já tem em mãos: quantas falas do
-	// cliente existiam ANTES desta. A do turno corrente já entrou no histórico,
-	// daí o `-1`.
-	//
-	// Aqui e não no `route.ts`: este nó roda nos DOIS canais, e o sink do
-	// TurnTrace — que é quem publica o score — é o único ponto por onde web e
-	// WhatsApp passam. A primeira versão contava por query dentro do route, o
-	// que deixava o WhatsApp de fora e punha um COUNT no caminho quente.
-	const falasDoCliente = state.messages.filter((m) => m.getType() === "human").length;
-	events.push({ type: "turno-do-cliente", indice: Math.max(0, falasDoCliente - 1) });
+	if (indiceDoTurno !== null) events.push({ type: "turno-do-cliente", indice: indiceDoTurno });
 	// Proxy determinístico de `lead-stage` (TODO rodada-1: paridade fina com
 	// `LEAD_STAGE_BY_TOOL`, runner.ts — hoje disparado por tool específica, não
 	// por transição de funil). `recordStageReached` (chamado pelos adapters,
