@@ -147,7 +147,12 @@ describe("o alarme não repete os mesmos nomes todo dia", () => {
 
 	it("NÃO repete quem já foi alertado", async () => {
 		computeLeadsParados.mockResolvedValue([
-			parado({ nome: "Esquecido", horasParado: 401, slaAlertadoEm: "2026-08-20T10:00:00.000Z" }),
+			parado({
+				nome: "Esquecido",
+				horasParado: 401,
+				desdeISO: "2026-08-14T10:00:00.000Z",
+				slaAlertadoEm: "2026-08-20T10:00:00.000Z",
+			}),
 		]);
 
 		const r = await runSlaDaMesaCycle();
@@ -187,11 +192,60 @@ describe("o alarme não repete os mesmos nomes todo dia", () => {
 		expect(marcarSlaAlertado).not.toHaveBeenCalled();
 	});
 
+	it("esquecido DE NOVO volta a tocar — o alarme é por episódio, não por vida do lead", async () => {
+		// `slaAlertadoEm !== null` silenciava o lead para sempre. Com p50 de 16,7
+		// dias, "esquecido, resgatado e esquecido de novo" não é exótico: é o
+		// segundo abandono, e ele chegava mudo — contado só no rodapé.
+		//
+		// O discriminante é a ÚLTIMA MOVIMENTAÇÃO, que a consulta já devolve em
+		// `desdeISO`. Alerta anterior à movimentação = episódio novo.
+		computeLeadsParados.mockResolvedValue([
+			parado({
+				nome: "Esquecido de novo",
+				horasParado: 30,
+				slaAlertadoEm: "2026-08-01T10:00:00.000Z", // avisado em agosto…
+				desdeISO: "2026-08-30T10:00:00.000Z", // …e o lead andou depois disso
+			}),
+		]);
+
+		const r = await runSlaDaMesaCycle();
+
+		expect(r.enviado).toBe(true);
+		expect(sendEmail.mock.calls[0][0].text).toContain("Esquecido de novo");
+	});
+
+	it("o mesmo episódio não toca duas vezes", async () => {
+		// Aviso POSTERIOR à última movimentação: é o mesmo abandono, já anunciado.
+		computeLeadsParados.mockResolvedValue([
+			parado({
+				nome: "Mesmo episódio",
+				horasParado: 401,
+				desdeISO: "2026-08-14T10:00:00.000Z",
+				slaAlertadoEm: "2026-08-20T10:00:00.000Z",
+			}),
+		]);
+
+		const r = await runSlaDaMesaCycle();
+
+		expect(r.enviado).toBe(false);
+		expect(r.jaAlertados).toBe(1);
+	});
+
 	it("mas não esconde os antigos: diz quantos são e há quanto tempo", async () => {
 		computeLeadsParados.mockResolvedValue([
 			parado({ nome: "Recém-parado", horasParado: 26 }),
-			parado({ nome: "Esquecido", horasParado: 401, slaAlertadoEm: "2026-08-20T10:00:00.000Z" }),
-			parado({ nome: "Outro antigo", horasParado: 300, slaAlertadoEm: "2026-08-25T10:00:00.000Z" }),
+			parado({
+				nome: "Esquecido",
+				horasParado: 401,
+				desdeISO: "2026-08-14T10:00:00.000Z",
+				slaAlertadoEm: "2026-08-20T10:00:00.000Z",
+			}),
+			parado({
+				nome: "Outro antigo",
+				horasParado: 300,
+				desdeISO: "2026-08-18T10:00:00.000Z",
+				slaAlertadoEm: "2026-08-25T10:00:00.000Z",
+			}),
 		]);
 
 		await runSlaDaMesaCycle();
@@ -208,7 +262,11 @@ describe("o alarme não repete os mesmos nomes todo dia", () => {
 	it("o resultado declara os dois números", async () => {
 		computeLeadsParados.mockResolvedValue([
 			parado({ horasParado: 26 }),
-			parado({ horasParado: 401, slaAlertadoEm: "2026-08-20T10:00:00.000Z" }),
+			parado({
+				horasParado: 401,
+				desdeISO: "2026-08-14T10:00:00.000Z",
+				slaAlertadoEm: "2026-08-20T10:00:00.000Z",
+			}),
 		]);
 
 		const r = await runSlaDaMesaCycle();

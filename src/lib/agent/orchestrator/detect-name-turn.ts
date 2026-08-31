@@ -74,9 +74,15 @@ export function perguntouONome(texto: string | undefined | null): boolean {
  * `perguntouONome` (acima) tem três consumidores, e o custo do erro é oposto
  * entre eles:
  *
- *   `deveEmitirCardDeNome` e `isLikelyNameResponse` decidem TELA. Falso positivo
- *   custa zero (o card cede a vez à toa); falso negativo custa a pergunta de
- *   nome em dobro no mesmo balão — o caso que o FIX-379 descreve.
+ *   `deveEmitirCardDeNome` e `isLikelyNameResponse` decidem TELA. Falso negativo
+ *   custa a pergunta de nome em dobro no mesmo balão — o caso que o FIX-379
+ *   descreve. Falso positivo custa MENOS, mas não custa zero: quando o modelo
+ *   perguntou OUTRA coisa, ele faz o card sair junto ("…no nome da Embracon,
+ *   tudo bem?" + campo de nome embaixo), roubando a resposta da pergunta que
+ *   foi de fato feita — é o caso do Erik. Só no ramo em que o modelo não
+ *   perguntou nada o custo é realmente nulo. A direção do erro é a benigna (um
+ *   card um turno antes, contra um nome que não é capturado), e é isso que
+ *   justifica o largo aqui — não a ausência de custo.
  *
  *   `captureAnswerNode` decide ESCRITA. Falso positivo custa um lead com nome
  *   errado chegando à mesa — o lead "Suv".

@@ -175,10 +175,15 @@ describe("os dois predicados, lado a lado", () => {
 
 	it("o largo reconhece algumas afirmações, e isso é aceito de propósito", () => {
 		// A folga faz "Vou deixar o seu plano no nome da Embracon" casar no largo.
-		// Fica assim porque o custo é desprezível: o largo só decide se o card do
-		// nome sai JUNTO com a fala, e ele só é consultado quando o gate já é
-		// `name` — situação em que o card apareceria de qualquer jeito
-		// (`deveEmitirCardDeNome` devolve true quando o modelo não perguntou nada).
+		//
+		// Fica assim, mas o custo NÃO é zero — eu tinha escrito que era, e a sonda
+		// da revisão me corrigiu. Quando o modelo perguntou outra coisa (e este
+		// exemplo termina em "tudo bem?", que é pergunta), o falso positivo faz o
+		// card sair JUNTO, roubando a resposta da pergunta real: o caso do Erik.
+		// Só no ramo em que o modelo não perguntou nada o custo é nulo de fato.
+		//
+		// O que justifica manter é a DIREÇÃO do erro, não a ausência dele: um card
+		// um turno antes contra um nome que não é capturado.
 		//
 		// O que NÃO pode acontecer é uma dessas autorizar escrita, e o caso acima
 		// trava isso. Este aqui existe para o comportamento ficar declarado em vez

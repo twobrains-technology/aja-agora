@@ -30,7 +30,11 @@
 // execução por período, mesmo com mais de uma instância do worker de pé. Sem
 // isso, o ciclo de 30s mandaria 2.880 e-mails por dia.
 
-import { computeLeadsParados, marcarSlaAlertado } from "@/lib/admin/handoff-queries";
+import {
+	computeLeadsParados,
+	type LeadParado,
+	marcarSlaAlertado,
+} from "@/lib/admin/handoff-queries";
 import { sendEmail } from "@/lib/email/sendgrid";
 
 /** 24 h. Um dia útil inteiro sem ninguém tocar num lead que a mesa já recebeu é
@@ -123,8 +127,18 @@ export async function runSlaDaMesaCycle(): Promise<ResultadoSlaDaMesa> {
 	// quanto tempo durar a lacuna. Ela vive em `leads.sla_alertado_em`, e não em
 	// `lead_events`, porque aquela tabela É o relógio do SLA — escrever nela
 	// faria o lead parecer tocado e sair da lista.
-	const novos = parados.filter((p) => p.slaAlertadoEm === null);
-	const jaAlertados = parados.filter((p) => p.slaAlertadoEm !== null);
+	// O critério é EPISÓDIO, não vida do lead: alerta quem nunca foi avisado, e
+	// também quem foi avisado ANTES da última movimentação de estágio.
+	//
+	// `slaAlertadoEm !== null` sozinho silenciava o lead para sempre. Com p50 de
+	// 16,7 dias, "esquecido, resgatado e esquecido de novo" não é caso exótico —
+	// e o segundo abandono chegava mudo, contado só no rodapé. O discriminante
+	// já vinha na consulta: `desdeISO` é `max(lead_events.created_at)`, o mesmo
+	// relógio que define o SLA. Aviso anterior a ele = episódio novo.
+	const ehEpisodioNovo = (p: LeadParado) =>
+		p.slaAlertadoEm === null || p.slaAlertadoEm < p.desdeISO;
+	const novos = parados.filter(ehEpisodioNovo);
+	const jaAlertados = parados.filter((p) => !ehEpisodioNovo(p));
 
 	if (novos.length === 0) {
 		return { novos: 0, jaAlertados: jaAlertados.length, enviado: false };
