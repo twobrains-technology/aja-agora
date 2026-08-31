@@ -11,7 +11,7 @@
 
 <h1>Conversão: site, mídia e funil</h1>
 <p class="lede">Os 26 itens das abas <b>Site (CRO)</b> e <b>Plano de Ação por Etapa</b> da planilha do Gustavo (28/08), executados de ponta a ponta — e uma medição que mostrou que a auditoria tinha mirado no lugar errado.</p>
-<p class="meta">30 de agosto de 2026 · branch <code>kairogyn/ajustes-gustavo-28-08</code> · 12 commits sobre <code>develop</code> · 491 arquivos de teste, 3.747 verdes, exit 0</p>
+<p class="meta">30–31 de agosto de 2026 · branch <code>kairogyn/ajustes-gustavo-28-08</code> · 23 commits sobre <code>develop</code> · 582 arquivos de teste, 4.265 verdes, exit 0 · typecheck e lint limpos</p>
 
 <div class="idx">
   <a href="#macro"><span>1</span> O que passou a existir</a>
@@ -114,13 +114,13 @@
 <tr><td><b>C4</b> CPF como 2º microcompromisso</td><td><span class="pill p-aviso">DEPENDE DE ENV</span></td><td>Mesma dependência do C3.</td></tr>
 <tr><td><b>C5</b> Prova social no pedido</td><td><span class="pill p-ok">FEITO</span></td><td>A credencial que a landing já assina passou a viajar para dentro do chat.</td></tr>
 <tr><td><b>C6</b> Fricção de digitação do CPF</td><td><span class="pill p-ok">FEITO + 2 DEFEITOS</span></td><td>Máscaras em fonte única. Escrevendo o teste apareceram dois defeitos reais: fixo saía <code>(11) 33334-444</code>, e colar <code>+55</code> comia os dois últimos dígitos.</td></tr>
-<tr><td><b>C7</b> Quebrar o pedido duplo em dois passos</td><td><span class="pill p-risco">NÃO FEITO</span></td><td>Ver seção 8 — e o card ficou <i>maior</i>, não menor.</td></tr>
+<tr><td><b>C7</b> Quebrar o pedido duplo em dois passos</td><td><span class="pill p-ok">FEITO</span></td><td>Celular no passo 1, CPF+LGPD no passo 2. <b>Corrigido em 30/08 após revisão</b> — este dossiê dizia "não feito". Ver seção 8.</td></tr>
 <tr><td><b>D1</b> Instrumentar as 3 sub-etapas do handoff</td><td><span class="pill p-ok">FEITO</span></td><td>Funil por sub-etapa com p50/p90, no painel de Performance. O dado nunca faltou; faltava alguém olhar.</td></tr>
 <tr><td><b>D2</b> Link direto no lugar de pedir "oi"</td><td><span class="pill p-ok">ENCERRADO</span></td><td>Já resolvido; e o carimbo do A3 entrou nele — é o salto web→WhatsApp no maior momento de intenção.</td></tr>
-<tr><td><b>D3</b> SLA de resposta humana</td><td><span class="pill p-aviso">MEDIÇÃO SIM, ALARME NÃO</span></td><td>p50/p90 por estágio + lista de parados com nome e telefone. E a medição já achou o problema: <b>p50 de 401 h (16,7 dias)</b> nos 6 handoffs da base. O alarme por Monitor ficou de fora — seção 8.</td></tr>
+<tr><td><b>D3</b> SLA de resposta humana</td><td><span class="pill p-ok">FEITO</span></td><td>p50/p90 por estágio + lista de parados, <b>e a campainha</b>: e-mail diário com quem está parado, no worker que já roda em ECS. A medição já achou o problema: <b>p50 de 401 h (16,7 dias)</b> nos 6 handoffs da base. <b>Alarme entregue em 30/08 após revisão</b> — seção 8.</td></tr>
 <tr><td><b>D4</b> Reengajamento automático</td><td><span class="pill p-ok">VALIDADO</span></td><td>6 handoffs no período, 1 sem resposta do cliente. Sem volume que justifique construção; a campainha do D3 cobre.</td></tr>
 <tr><td><b>D5</b> CTA de confirmação antes da troca de canal</td><td><span class="pill p-ok">JÁ EXISTIA</span></td><td>Verificado antes de construir: a cascata já exige aceite explícito e o formulário antes de qualquer handoff. Um terceiro portão somaria atrito. 7 casos registram isso.</td></tr>
-<tr><td><b>E1</b> SLA de documentos pós-proposta</td><td><span class="pill p-aviso">MEDIÇÃO SIM, ALARME NÃO</span></td><td>Mesmo instrumento do D3. E a tela declara quando a amostra não sustenta taxa de fechamento — com 2 propostas, qualquer número depois dela é hipótese.</td></tr>
+<tr><td><b>E1</b> SLA de documentos pós-proposta</td><td><span class="pill p-ok">FEITO</span></td><td>Mesmo instrumento e mesma campainha do D3 — a allowlist já inclui <code>proposta_enviada</code>, <code>na_administradora</code> e <code>aguardando_pagamento</code>, que são a fase pós-proposta. A tela declara quando a amostra não sustenta taxa de fechamento: com 2 propostas, qualquer número depois dela é hipótese.</td></tr>
 </tbody>
 </table>
 
@@ -128,7 +128,7 @@
 
 <h2 id="codigo">4 · Onde o código mudou</h2>
 
-<p>12 commits, 73 arquivos, +13.485 linhas. Os números saem de <code>git diff --stat</code>, não de memória.</p>
+<p>23 commits, 113 arquivos, +17.125 / −722 linhas. Os números saem de <code>git diff --stat</code>, não de memória — e essa distinção deixou de ser retórica nesta entrega: na primeira versão deste dossiê o item C7 foi dado como não feito enquanto o diff mostrava 208 linhas de card reescrito. A narrativa do que se quis fazer erra; o <code>--stat</code> não.</p>
 
 <h3>Arquivos novos</h3>
 <table>
@@ -157,7 +157,7 @@
 <tr><td><code>lib/agent/langgraph/nodes/persist.ts</code></td><td>O degrau <code>engajado</code> deixa de depender de <code>desireAsked</code> — senão o painel mediria a própria mudança.</td></tr>
 <tr><td><code>lib/agent/gate-reengage.ts</code></td><td>O watchdog volta a enxergar quem some no gate do nome.</td></tr>
 <tr><td><code>components/chat/artifacts/value-picker.tsx</code></td><td>A parcela estimada, com selo. Reversão parcial e consciente do FIX-107.</td></tr>
-<tr><td><code>components/chat/artifacts/gate-identity-form.tsx</code></td><td>Garantia (C2) e autoridade (C5), ancoradas na política de privacidade.</td></tr>
+<tr><td><code>components/chat/artifacts/gate-identity-form.tsx</code></td><td>Garantia (C2) e autoridade (C5), ancoradas na política de privacidade; <b>dois passos (C7)</b> — celular, depois CPF+LGPD; e nome próprio no mapa de calor para os três botões, que é o que separa o C7 dos outros dois na medição.</td></tr>
 <tr><td><code>components/kv/ui/kv-cta-button.tsx</code></td><td>Estado <code>active:</code> — um arquivo resolve as 8 seções.</td></tr>
 <tr><td><code>components/analytics/analytics-scripts.tsx</code></td><td>GTM e GA4 para <code>lazyOnload</code>; Pixel intocado.</td></tr>
 <tr><td><code>lib/conversions/dispatch.ts</code></td><td>Dois lotes: sinal de interesse não derruba marco de venda.</td></tr>
@@ -168,6 +168,15 @@
 </table>
 
 <h2 id="superficie">5 · O que muda na tela</h2>
+
+<div class="card">
+<h3>O C7 rodando — um dado por vez</h3>
+<p>Capturado no chat de pé, em 31/08, depois da correção do nome. O celular vem sozinho; o CPF só na tela seguinte. A credencial do Banco Central (C5) e a garantia de privacidade (C2) acompanham os dois passos — escondê-las no passo do CPF desfaria os dois itens para caber neste.</p>
+<p><img src="img/c7-passo-1-so-o-celular.png" alt="Passo 1 do card de identidade: apenas o campo de celular, com a credencial do Banco Central e a garantia de que os dados não são vendidos" style="max-width:100%;border-radius:8px"></p>
+<p><img src="img/c7-passo-2-so-o-cpf.png" alt="Passo 2 do card de identidade: apenas o CPF, o aceite LGPD, o botão de buscar ofertas e o link para corrigir o celular" style="max-width:100%;border-radius:8px"></p>
+<p class="meta">Repare no <i>"Marina, perfeito!"</i> da primeira imagem: é o nome capturado do turno anterior sendo usado — a prova de que a correção acima chegou à tela, e não só ao teste.</p>
+</div>
+
 
 <h3>O primeiro turno, ao vivo</h3>
 <p>Chip "Imóvel" clicado. Antes: elogio e pergunta. Agora:</p>
@@ -193,6 +202,50 @@ kv-comparacao .....    54            4,3%</span></div>
 <p class="meta">⚠️ A coleta começou em 18/08. Janela anterior a essa data é <b>período sem medição</b>, não comportamento.</p>
 
 <h2 id="riscos">6 · Riscos — inclusive os que eu criei</h2>
+
+<p class="meta"><b>Rodada de 30/08, depois da revisão crítica.</b> Três coisas mudaram depois que este dossiê foi enviado pela primeira vez: o registro errado do C7 (seção 8), e os dois defeitos abaixo — nenhum dos quais aparecia em teste, typecheck ou log.</p>
+
+<div class="risco alto">
+<h3>ALTO · A telemetria da web estava calada há semanas <span class="pill p-ok">CORRIGIDO</span></h3>
+<p><b>O que era:</b> <code>instrumentWriter</code> guardava o trace num <code>WeakMap</code> indexado pelo objeto do writer. Chave por identidade quebra quando alguém põe outro proxy por cima — e <code>route.ts:442</code> faz isso: <code>collectAgentText(instrumentWriter(rawWriter, trace))</code>. O mapa guardava o proxy de dentro; quem consulta recebe o de fora.</p>
+<p><b>O efeito:</b> três campos do <code>TurnTrace</code> voltaram calados ao estado anterior ao fix que os criou — <code>suppressed</code> sempre vazio, <code>cacheRead</code> e <code>cacheWrite</code> sempre nulos, <b>no canal web</b>. Ninguém foi avisado: não existe teste que falhe quando um número para de ser coletado, e um campo nulo parece um turno sem cache.</p>
+<div class="prova"><span class="g">turno real, antes:   cacheRead = None    suppressed = []
+turno real, depois:  cacheRead = 11611   suppressed = []</span></div>
+<p><b>Como apareceu:</b> ao instrumentar o índice do turno, meu campo novo também vinha nulo. O log temporário mostrou que o evento CHEGAVA — o que faltava era o trace.</p>
+<p><b>A correção não é registrar o proxy novo</b>, que exigiria todo wrapper futuro lembrar de se registrar. O trace passou a viajar dentro do writer, num símbolo: qualquer proxy que faça <code>Reflect.get</code> passthrough o propaga sozinho.</p>
+<p><b>Cobertura:</b> <code>turn-trace.test.ts</code> — três casos, um deles com três camadas de proxy.</p>
+</div>
+
+<div class="risco alto">
+<h3>ALTO · O agente pedia o nome duas vezes <span class="pill p-ok">CORRIGIDO</span></h3>
+<p><b>Como apareceu:</b> pilotando o chat no browser para capturar as telas deste dossiê. Não havia teste vermelho, e o smoke por API não pegava — o defeito depende da fala exata que o modelo escolhe.</p>
+<div class="prova"><span class="g">🤖  Perfeito! R$ 80 mil é um bom orçamento para um carro legal.
+    Qual é o seu primeiro nome, pra eu poder te chamar?
+👤  Marina
+🤖  Prazer, Marina!
+📋  [card]  Como posso te chamar?          ← pedindo de novo</span></div>
+<p><b>O modelo entendeu; o servidor não gravou.</b> E como não gravou, a cascata continuou devolvendo o gate do nome, e o card foi pendurado embaixo da própria confirmação — no gate mais frágil do funil, pedindo o dado que a pessoa acabara de dar.</p>
+<p><b>Duas causas, e a segunda é minha.</b> A primeira: o detector de "o agente pediu o nome" exigia <code>seu nome</code> colado, e <i>"seu <b>primeiro</b> nome"</i> tem uma palavra no meio. A segunda: a trava que eu criei nesta branch contra o lead chamado "Suv" aceitava uma única autorização — a do card. Quando quem pergunta é o modelo (e o card cede a vez de propósito), não havia autorização nenhuma.</p>
+<p><b>A correção não é mais um padrão na lista.</b> O detector passou a aceitar até duas palavras entre o possessivo e "nome" — a forma da pergunta, não uma instância dela; acrescentar <code>/seu primeiro nome/</code> resolveria hoje e falharia em "seu nome completo". E a captura passou a aceitar a segunda âncora (<i>o modelo pediu o nome no turno anterior</i>), que é o mesmo tipo de fato do servidor. O lead "Suv" continua impossível, com caso próprio.</p>
+<p><b>Cobertura:</b> <code>detect-name-turn.test.ts</code> (14 casos, incluindo os que devem continuar negativos) e <code>cenario-o-nome-que-o-modelo-pediu.test.ts</code> (4 casos no grafo — um deles prova o caminho em que o card é suprimido, que é o único que exige a segunda âncora).</p>
+</div>
+
+<div class="risco medio">
+<h3>MÉDIO · O índice do turno pulava o número 2 <span class="pill p-ok">CORRIGIDO</span></h3>
+<p><b>O que era:</b> o sinal novo do primeiro turno (item do bloco C) contava as falas do cliente por <code>state.messages</code>. Numa conversa real de três falas, saiu <b>0 → 1 → 3</b>.</p>
+<p><b>A causa:</b> <code>run-turn.ts</code> monta essa lista por dois caminhos — do banco no primeiro turno, do checkpointer nos seguintes —, e a fala corrente entra em momentos diferentes em cada um.</p>
+<p><b>Por que importa mesmo o score estando certo:</b> o score só olha o zero, e o zero acontecia uma vez só. Mas o campo tem nome de contagem e vai para o painel; o primeiro que ler "turno 3" numa conversa de 3 falas vai depurar a conversa, não o contador. É a mesma família de defeito que esta entrega vem perseguindo — o número que o servidor publica tem de ser verdade.</p>
+<div class="prova"><span class="g">mesma conversa, três falas, antes:   0 → 1 → 3
+mesma conversa, três falas, depois:  0 → 1 → 2</span></div>
+<p><b>Cobertura:</b> <code>cenario-o-indice-do-turno-e-exato.test.ts</code>, no grafo de verdade.</p>
+</div>
+
+<div class="risco baixo">
+<h3>BAIXO · O typecheck escondia erro real atrás de 82 falsos <span class="pill p-ok">CORRIGIDO</span></h3>
+<p><b>O que era:</b> o <code>tsconfig.json</code> gerado pelo Next inclui <code>.next/dev/types</code>, que o Turbopack reescreve continuamente. Com o dev server de pé, <code>pnpm typecheck</code> reportava 82 erros de sintaxe em código que ninguém escreveu — e as linhas mudavam a cada execução.</p>
+<p><b>Por que não é cosmético:</b> no meio desses 82 estava um erro <i>de verdade</i> — um campo novo que faltava numa guarda de exaustividade <code>Record&lt;keyof FunnelState, true&gt;</code>. Só apareceu ao desligar o container e rodar de novo. Typecheck que só é confiável com a aplicação desligada é typecheck que ninguém roda.</p>
+<p><b>Correção:</b> <code>tsconfig.typecheck.json</code>, que não checa <code>.next/</code>. Nada se perde: a validação de rota já vinha corrompida em dev, e o <code>next build</code> valida por conta própria.</p>
+</div>
 
 <div class="risco alto">
 <h3>ALTO · O funil travava no gate do nome <span class="pill p-ok">CORRIGIDO</span></h3>
@@ -330,9 +383,15 @@ TOTAL ........ 1.691 KB (70 req)</span></div>
 </div>
 
 <div class="risco medio">
-<h3>C7 — a parede do formulário ficou maior, não menor</h3>
-<p>O item pede quebrar o pedido de CPF + celular + LGPD em dois passos. Não foi feito: ele dependia do C3, que depende da vitrine desligada. <b>E os itens C2 e C5 acrescentaram duas linhas ao mesmo card</b> — a garantia de privacidade e a credencial do Banco Central.</p>
-<p>É uma troca consciente (as duas linhas atacam a desconfiança, que é o que a auditoria apontou como causa), mas o resultado é que a tela do CPF tem hoje mais conteúdo do que tinha. Se o C7 for executado, vale medir o card inteiro, não cada linha.</p>
+<h3>C7 — foi feito, e este dossiê dizia que não</h3>
+<p><b>Correção de registro.</b> A versão deste documento que chegou pelo WhatsApp em 30/08 afirmava, em dois lugares, que o C7 não tinha sido feito. <b>Estava errado.</b> O card de identidade foi partido em dois passos no commit <code>15407e32</code> — celular primeiro, CPF e aceite LGPD depois —, e o erro entrou no <i>mesmo</i> commit que fez a mudança: a mensagem do commit não mencionou, e o texto antigo daqui não foi atualizado junto. Apontado na revisão crítica da entrega.</p>
+<p>O que existe hoje: passo 1 pede só o celular; passo 2 traz CPF e aceite, com botão de voltar para corrigir o número. Quem chega pelo WhatsApp começa no passo 2, porque lá o celular já é conhecido. O card do histórico continua mostrando tudo de uma vez e inerte. O invariante não mudou — o envio segue exigindo os três, e a Bevi recebe o mesmo payload.</p>
+<p><b>A consequência que importa para a leitura da campanha.</b> Três mudanças entraram no <i>mesmo</i> card, na <i>mesma</i> janela: a garantia de privacidade (C2), a credencial do Banco Central (C5) e os dois passos (C7). O critério que o PRD declara para o bloco C é a taxa do gate <code>identify</code> — e essa taxa passou a medir as três de uma vez. <b>Se subir, não se sabe qual delas; se cair, não se sabe o que reverter.</b> O próprio PRD adverte contra isso na entrada do C7 ("três experimentos disputando o mesmo card não produzem leitura"), e a advertência não foi respeitada.</p>
+<p><b>O que foi feito para reduzir o dano</b> (30/08, depois da revisão): os três botões do card ganharam nome próprio no mapa de calor — <code>identify-passo-1-ok</code>, <code>identify-envio</code> e <code>identify-voltar-ao-passo-1</code>. Com eles, a taxa do <code>identify</code> deixa de ser um número só e vira três, na mesma tabela <code>page_events</code>:</p>
+<div class="prova"><span class="g">avancou / chegaram ao gate   → o primeiro degrau custou?
+enviou  / avancou             → o segundo degrau custou?
+voltou                        → o celular estava errado, ou houve hesitação no CPF</span></div>
+<p>Isso separa o C7 dos outros dois. <b>C2 e C5 continuam sem separação entre si</b> — são texto no card, não deixam rastro de interação —, e essa parte não tem conserto retroativo: para distingui-las seria preciso um A/B que não foi montado. Fica registrado como limite conhecido da medição desta janela, não como número que alguém possa reivindicar depois.</p>
 </div>
 
 <div class="risco alto">
@@ -346,7 +405,16 @@ TOTAL ........ 1.691 KB (70 req)</span></div>
 handoff_notifications
   0 linhas em toda a base</span></div>
 <p><b>Metade de um mês é a mediana</b>, não a cauda. E a tabela de notificação está vazia porque o caminho mudou — o atendente atende pelo painel, não pelo WhatsApp —, então o incidente de 14/08 (42 min para entregar, 17h24 para ler) não é sequer o pior caso: hoje não há notificação nenhuma sendo registrada.</p>
-<p><b>O que entreguei:</b> a lista de parados, com nome e telefone, no painel de Performance. <b>O que falta:</b> o alarme por Langfuse Monitor, que o plano nomeia. É uma tela que alguém precisa abrir — e o próprio incidente que motiva o item é sobre coisa que ninguém abriu. São ~30 minutos de trabalho, e dependem de decidir <b>para quem</b> ele toca (o grupo de sustentação, presumo, mas é decisão sua).</p>
+<p><b>O que entreguei na primeira rodada:</b> a lista de parados, com nome e telefone, no painel de Performance. <b>O que faltava:</b> o alarme. E a falta era grave pelo motivo exato do item — uma tela que alguém precisa abrir, para um incidente cuja causa é ninguém ter aberto a tela.</p>
+<p><b>Entregue em 30/08, depois da revisão.</b> Um e-mail diário com quem está parado, disparado pelo worker BullMQ que já roda em ECS (<code>aja-agora-worker-prod</code>) — o quinto ciclo dele, com job repetível próprio de 24 h.</p>
+<p><b>Não é o Monitor do Langfuse que o plano nomeia</b>, e a diferença não é de conveniência: <b>Monitor observa trace, e handoff parado é ausência de trace.</b> O lead esquecido há 16 dias não gera evento nenhum — é justamente por isso que ninguém o viu. Alarme que dispara com evento não pega silêncio.</p>
+<p>Três decisões que valem registro, porque são o que separa um alarme vivo de um alarme desligado na primeira semana:</p>
+<ul>
+<li><b>Cala a boca quando a mesa está em dia.</b> Zero parados, zero e-mail.</li>
+<li><b>Não tem consulta própria</b> — chama a mesma função que pinta a lista na tela. Duas consultas para a mesma pergunta divergem no primeiro ajuste de regra, e aí o e-mail e o painel passam a contar histórias diferentes sobre o mesmo lead.</li>
+<li><b>O ritmo é do BullMQ, não de um <code>if</code> de relógio.</b> O job repetível é persistido no Redis, então vale entre reinícios e entre instâncias. E o handler ramifica por nome do job: sem isso, ou o alarme rodaria no período de 30 s do funil (~2.880 e-mails por dia), ou o funil inteiro passaria a rodar uma vez por dia — silenciosamente, matando venda. Os dois modos de falha têm teste.</li>
+</ul>
+<p class="meta">⚠️ <b>Falta uma decisão sua, e sem ela o alarme nasce mudo:</b> para quem ele toca. <code>ALERTA_SLA_MESA_TO</code> não tem default no código — vazio significa que ele registra no log e não envia, que é a regra de isolamento da casa (e-mail cravado em código é como alerta de um domínio termina na caixa de outro). Presumo o grupo de sustentação, mas o endereço é seu. <code>SLA_MESA_LIMITE_HORAS</code> vem com 24 h, que é 16× mais rápido que a mediana atual.</p>
 </div>
 
 <div class="risco baixo">
@@ -395,18 +463,24 @@ docker exec aja-app-ajustes-gustavo-28-08 npx vitest run --silent \
 # esperado: 18 passed</span></div>
 
 <h3>9.3 · Pelos testes — resultado da última execução</h3>
-<div class="prova"><span class="g">$ docker exec aja-app-ajustes-gustavo-28-08 pnpm test:unit
-  Test Files  491 passed (491)
-       Tests  3747 passed | 1 skipped (3748)
-       EXIT=0
+<div class="prova"><span class="g">$ docker exec aja-app-ajustes-gustavo-28-08 pnpm vitest run
+  Test Files  582 passed | 3 skipped (585)
+       Tests  4265 passed | 6 skipped (4271)
+       TESTES_EXIT=0
 
-$ npx biome check src/
-  Checked 1281 files. No fixes applied.   (0 erros, 0 avisos)
+$ pnpm biome check --write src/
+  BIOME=0
 
-$ npx tsc --noEmit
-  (sem saída)</span></div>
+$ pnpm typecheck
+  TSC=0</span></div>
 
-<p class="meta">Nenhum teste vermelho, conhecido ou herdado. O ambiente local está de pé em <code>https://aja-ajustes-gustavo-28-08.orb.local</code>.</p>
+<p class="meta">Nenhum teste vermelho, conhecido ou herdado. Estes números são da suíte INTEIRA (<code>vitest run</code>), não do <code>test:unit</code> — que exclui rota, integração e builder, e por isso reportava 491 arquivos. Os 3 arquivos pulados dependem de credencial da Bevi que não existe no ambiente local.</p>
+
+<p class="meta"><b>O exit code é o que vale, e isto já custou caro nesta entrega.</b> Numa rodada anterior eu dei a suíte por verde filtrando a saída por <code>Tests</code> e <code>Test Files</code> — e a linha <code>Errors 10</code> ficava fora do grep, com o processo saindo em 1. Ver o risco correspondente na seção 6.</p>
+
+<p class="meta"><b>Sobre o typecheck:</b> ele passou a rodar por <code>tsconfig.typecheck.json</code>, que não checa <code>.next/</code>. Com o servidor de dev de pé, o Turbopack reescreve os tipos gerados enquanto o <code>tsc</code> os lê, e o resultado eram 82 erros de sintaxe em código que ninguém escreveu — com um erro real escondido no meio. Também na seção 6.</p>
+
+<p class="meta">O ambiente local está de pé em <code>https://aja-ajustes-gustavo-28-08.orb.local</code>.</p>
 
 </div>
 </body>
