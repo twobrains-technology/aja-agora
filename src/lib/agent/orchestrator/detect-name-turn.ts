@@ -46,39 +46,67 @@ export function perguntouONome(texto: string | undefined | null): boolean {
 		/como\s+(te\s+|posso\s+(te\s+)?|prefere\s+ser\s+|gosta\s+de\s+ser\s+)?(chamar|chamad[oa]|chama)\b/.test(
 			prev,
 		) ||
-		// PEDIDO de nome: forma interrogativa + possessivo + "nome".
+		// FOLGA entre o possessivo e "nome" — até duas palavras.
 		//
-		// Duas correções de 31/08/2026, na mesma linha e em direções opostas.
+		// Os padrões antigos exigiam `seu nome` ADJACENTE, e a variação mais
+		// natural que o modelo escreve escapava: ao vivo, ele perguntou "Qual é o
+		// seu PRIMEIRO nome, pra eu poder te chamar?", o cliente respondeu
+		// "Marina", o agente disse "Prazer, Marina!" — e o servidor emitiu embaixo
+		// o card "Como posso te chamar?", pedindo de novo o que ela acabara de dar.
 		//
-		// **Folga entre o possessivo e "nome".** Os padrões antigos exigiam
-		// `seu nome` ADJACENTE, e a variação mais natural que o modelo escreve
-		// escapava: ao vivo, ele perguntou "Qual é o seu PRIMEIRO nome, pra eu
-		// poder te chamar?", o cliente respondeu "Marina", o agente disse "Prazer,
-		// Marina!" — e o servidor emitiu embaixo o card "Como posso te chamar?",
-		// pedindo de novo o que a pessoa acabara de dizer.
+		// A folga é a FORMA da pergunta, não mais uma instância dela: cobre
+		// "seu primeiro nome", "seu nome completo", "teu nome de batismo". Somar
+		// `/seu primeiro nome/` à lista consertaria só aquele caso e falharia no
+		// seguinte — o "porta a porta" que o CLAUDE.md nomeia.
 		//
-		// **Âncora interrogativa antes.** A folga sozinha ficou larga demais, e o
-		// custo disso mudou de tamanho no mesmo dia: este predicado deixou de
-		// decidir só a aparição de um CARD (onde falso positivo custa zero) e
-		// passou a autorizar a ESCRITA de `contactName` em `capture.ts`.
-		// Levantado na revisão crítica, com frases plausíveis de consórcio que
-		// casavam com a folga:
-		//
-		//   "No seu caso o nome da administradora aparece no contrato."
-		//   "Vou deixar o seu plano no nome da Embracon, tudo bem?"
-		//   "A carta sai no seu próprio nome, não no da administradora."
-		//
-		// Nenhuma é pergunta. O que as separa não é vocabulário — é a FORMA:
-		// pedido de nome começa por interrogativo ou por verbo de pedir. Exigir
-		// isso deixa o predicado mais ESTREITO que a versão original, não mais
-		// largo, e é o que permite manter a folga sem reabrir a porta do "Suv".
-		//
-		// O corte em `[^?.!]` prende a âncora à mesma oração: sem ele, um "qual"
-		// numa frase e um "seu nome" na seguinte casariam.
-		/\b(qual|como|me\s+diz|me\s+diga|diga|dizer|informe|informa)\b[^?.!]{0,40}(seu|teu)(\s+\S+){0,2}\s+nome\b/.test(
+		// O teto de duas palavras impede a folga de atravessar a frase: sem ele,
+		// um "seu" no começo e um "nome" seis palavras depois casariam.
+		/(seu|teu)(\s+\S+){0,2}\s+nome\b/.test(prev) ||
+		/como\s+(voce\s+)?se\s+chama/.test(prev)
+	);
+}
+
+/**
+ * O texto pede o nome de forma INEQUÍVOCA — pergunta explícita, não menção.
+ *
+ * ── Por que existe um segundo predicado ─────────────────────────────────────
+ *
+ * `perguntouONome` (acima) tem três consumidores, e o custo do erro é oposto
+ * entre eles:
+ *
+ *   `deveEmitirCardDeNome` e `isLikelyNameResponse` decidem TELA. Falso positivo
+ *   custa zero (o card cede a vez à toa); falso negativo custa a pergunta de
+ *   nome em dobro no mesmo balão — o caso que o FIX-379 descreve.
+ *
+ *   `captureAnswerNode` decide ESCRITA. Falso positivo custa um lead com nome
+ *   errado chegando à mesa — o lead "Suv".
+ *
+ * Em 31/08/2026 os dois foram colapsados num predicado só, com a âncora
+ * interrogativa aplicada a todos. O efeito, medido na revisão: cinco falsos
+ * positivos viraram cinco falsos NEGATIVOS ("Seu nome?", "Me passa seu nome?",
+ * "Preciso do seu nome pra seguir"), e essa cobertura a base tinha. Trocar a
+ * pergunta duplicada por outra pergunta duplicada não é conserto.
+ *
+ * Então são dois. Este é o estreito, e ele é subconjunto do largo por
+ * construção — nunca autoriza escrita sobre um turno que a tela nem reconheceu
+ * como pedido (há teste travando isso).
+ *
+ * A âncora é a FORMA interrogativa antes do possessivo. É ela que separa
+ * "Qual é o seu primeiro nome?" de "Vou deixar o seu plano no nome da
+ * Embracon" — o vocabulário é o mesmo, a forma não. O corte em `[^?.!]` prende
+ * a âncora à mesma oração: sem ele, um "qual" numa frase e um "seu nome" na
+ * seguinte casariam.
+ */
+export function pediuONomeExplicitamente(texto: string | undefined | null): boolean {
+	const prev = stripAccents((texto ?? "").toLowerCase());
+	return (
+		/como\s+(te\s+|posso\s+(te\s+)?|prefere\s+ser\s+|gosta\s+de\s+ser\s+)?(chamar|chamad[oa]|chama)\b/.test(
 			prev,
 		) ||
-		/como\s+(voce\s+)?se\s+chama/.test(prev)
+		/como\s+(voce\s+)?se\s+chama/.test(prev) ||
+		/\b(qual|como|me\s+diz|me\s+diga|diga|dizer|informe|informa)\b[^?.!]{0,40}(seu|teu)(\s+\S+){0,2}\s+nome\b/.test(
+			prev,
+		)
 	);
 }
 

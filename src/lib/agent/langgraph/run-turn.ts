@@ -116,6 +116,7 @@ export function createRunTurnLangGraph(deps?: {
 				modelAskedQuestion: false,
 				ancoraFalhou: false,
 				modelAskedForName: false,
+				pedidoDeNomeExplicito: false,
 				apresentaOfertaNesteTurno: false,
 				streamedArtifactIds: [],
 				funnel: funnelFromMeta(baseMeta),

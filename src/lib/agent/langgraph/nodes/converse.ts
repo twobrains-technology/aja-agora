@@ -29,7 +29,10 @@ import {
 	listShownOffersForConversation,
 } from "@/lib/agent/orchestrator/choose-offer";
 import { payloadSemOfertasRepetidas } from "@/lib/agent/orchestrator/dedup-ofertas";
-import { perguntouONome } from "@/lib/agent/orchestrator/detect-name-turn";
+import {
+	pediuONomeExplicitamente,
+	perguntouONome,
+} from "@/lib/agent/orchestrator/detect-name-turn";
 import {
 	contemPerguntaQueOcupaCota,
 	EphemeralTextFilter,
@@ -1706,6 +1709,9 @@ export function createConverseNode(model: BaseChatModel) {
 		// pergunta sobre o imóvel e roubava a resposta dela (ver
 		// `deveEmitirCardDeNome`).
 		const modelAskedForName = perguntouONome(textoDoTurno + tail);
+		// O estreito, que autoriza a ESCRITA do nome em `captureAnswerNode`. O
+		// largo acima continua decidindo só se o card sai junto com a fala.
+		const pedidoDeNomeExplicito = pediuONomeExplicitamente(textoDoTurno + tail);
 
 		// FIX-431 (P1 #11) — O MODELO PRECISA SABER O QUE NÃO FOI ENTREGUE.
 		//
@@ -1757,6 +1763,7 @@ export function createConverseNode(model: BaseChatModel) {
 			events,
 			modelAskedQuestion,
 			modelAskedForName,
+			pedidoDeNomeExplicito,
 			ancoraFalhou,
 			streamedArtifactIds,
 			...(deveExplicarComoFunciona ||

@@ -435,6 +435,24 @@ export const AgentGraphState = Annotation.Root({
 		default: () => false,
 	}),
 
+	/** O modelo pediu o nome de forma INEQUÍVOCA neste turno — pergunta
+	 *  explícita, não menção.
+	 *
+	 *  Irmão estreito de `modelAskedForName`, e a diferença entre os dois é o
+	 *  custo do erro de cada consumidor: aquele decide se o CARD sai junto com a
+	 *  fala (errar custa um card a mais ou a menos); este AUTORIZA a escrita de
+	 *  `contactName` em `captureAnswerNode` (errar custa um lead com nome errado
+	 *  chegando à mesa — o lead "Suv").
+	 *
+	 *  Foram um só por algumas horas em 31/08/2026, e o colapso trocou cinco
+	 *  falsos positivos por cinco falsos negativos: "Seu nome?" e "Me passa seu
+	 *  nome?" deixaram de ser reconhecidos, e o card voltava a perguntar em
+	 *  dobro. Ver `detect-name-turn.test.ts`, tabela dos dois predicados. */
+	pedidoDeNomeExplicito: Annotation<boolean>({
+		reducer: (a, b) => b ?? a,
+		default: () => false,
+	}),
+
 	/** Este turno APRESENTA uma oferta ao cliente — a lista recém-buscada
 	 * (`discovery`) ou o card de recomendação que estava pendente (`advance`).
 	 * É o que separa os DOIS TEMPOS da apresentação: primeiro o vendedor conta o

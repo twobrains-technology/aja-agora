@@ -114,14 +114,14 @@ export function captureAnswerNode(state: AgentGraphStateType): Partial<AgentGrap
 	// O modelo entendeu e o servidor não gravou; sem gravar, `nextGate` continua
 	// devolvendo `name` e o card vai pendurado embaixo da própria confirmação.
 	//
-	// `modelAskedForName` é o mesmo tipo de âncora que `nameCardExibido`: um
+	// `pedidoDeNomeExplicito` é o mesmo tipo de âncora que `nameCardExibido`: um
 	// FATO do servidor sobre o turno anterior (o texto emitido pediu o nome),
 	// não um palpite sobre a resposta. E não precisa ser consumido — `converse`
 	// o reescreve a cada turno. Se o modelo pede o nome no turno N e no N+1
 	// pergunta a carroceria, o sinal já é falso quando "SUV" chega no N+2: é
 	// exatamente o lead "Suv", e ele continua impossível.
 	const gateRespondido = state.gate ?? state.answeredGate;
-	const perguntaFoiFeita = state.funnel.nameCardExibido || state.modelAskedForName;
+	const perguntaFoiFeita = state.funnel.nameCardExibido || state.pedidoDeNomeExplicito;
 	if (gateRespondido !== "name" || !perguntaFoiFeita) return {};
 
 	// Consome: a autorização do CARD vale para ESTA resposta e acaba aqui.

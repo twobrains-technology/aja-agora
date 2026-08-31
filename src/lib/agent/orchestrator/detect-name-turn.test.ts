@@ -42,7 +42,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { perguntouONome } from "./detect-name-turn";
+import { pediuONomeExplicitamente, perguntouONome } from "./detect-name-turn";
 
 describe("o agente pediu o nome", () => {
 	it.each([
@@ -92,8 +92,10 @@ describe("o agente NÃO pediu o nome", () => {
 		"A carta sai no seu próprio nome, não no da administradora.",
 		"Confirmando: o seu novo nome de usuário no portal.",
 		"Esse é o seu grupo, o nome dele é 1042.",
-	])("afirmação com 'seu … nome' não é pedido de nome: %s", (fala) => {
-		expect(perguntouONome(fala)).toBe(false);
+	])("afirmação com 'seu … nome' não AUTORIZA escrita: %s", (fala) => {
+		// Contra o predicado ESTREITO, que é o que autoriza `contactName`. O largo
+		// pode reconhecê-las — ver a tabela dos dois predicados, no fim do arquivo.
+		expect(pediuONomeExplicitamente(fala)).toBe(false);
 	});
 
 	it("a folga não atravessa a frase inteira", () => {
@@ -103,5 +105,93 @@ describe("o agente NÃO pediu o nome", () => {
 		expect(
 			perguntouONome("Esse é o seu grupo, com a taxa mais baixa que achei em nome da Bevi"),
 		).toBe(false);
+	});
+});
+
+// ── DOIS predicados, porque são dois riscos assimétricos ────────────────────
+//
+// Levantado na revisão crítica de 31/08/2026, depois de eu ter colapsado os
+// dois num só e trocado cinco falsos positivos por cinco falsos NEGATIVOS.
+//
+// O predicado tem três consumidores, e o custo do erro é oposto entre eles:
+//
+//   `deveEmitirCardDeNome` (emit-card)  — falso positivo custa ZERO; falso
+//   `isLikelyNameResponse` (orchestr.)    negativo custa a pergunta de nome em
+//                                         dobro, que é o caso do FIX-379;
+//
+//   `captureAnswerNode` (capture)       — falso positivo custa um LEAD com nome
+//                                         errado chegando à mesa.
+//
+// Um predicado só não serve aos dois. O largo dirige a decisão de tela; o
+// estreito autoriza a escrita. A tabela abaixo é a régua: nenhuma frase pode
+// mudar de lado sem alguém ver.
+describe("os dois predicados, lado a lado", () => {
+	const PEDIDOS_CLAROS = [
+		"Como posso te chamar?",
+		"Qual é o seu primeiro nome, pra eu poder te chamar?",
+		"Pode me dizer seu nome?",
+	];
+
+	// Pedidos SEM forma interrogativa antes do possessivo. O largo os reconhece;
+	// o estreito não — e é justamente por isso que o estreito não decide tela.
+	const PEDIDOS_SEM_INTERROGATIVO = [
+		"Seu nome?",
+		"Preciso do seu nome pra seguir com a busca",
+		"Me passa seu nome?",
+		"E o seu nome, qual é?",
+		"Antes de buscar as ofertas: seu nome?",
+	];
+
+	// Afirmações de consórcio que contêm "seu … nome". Nenhum dos dois pode
+	// tratá-las como pedido — no estreito porque autorizaria escrita, no largo
+	// porque o card sumiria quando devia aparecer.
+	const AFIRMACOES = [
+		"No seu caso o nome da administradora aparece no contrato.",
+		"Vou deixar o seu plano no nome da Embracon, tudo bem?",
+		"A carta sai no seu próprio nome, não no da administradora.",
+		"Confirmando: o seu novo nome de usuário no portal.",
+		"Esse é o seu grupo, o nome dele é 1042.",
+	];
+
+	it.each(PEDIDOS_CLAROS)("os dois reconhecem o pedido claro: %s", (fala) => {
+		expect(perguntouONome(fala)).toBe(true);
+		expect(pediuONomeExplicitamente(fala)).toBe(true);
+	});
+
+	it.each(PEDIDOS_SEM_INTERROGATIVO)(
+		"o LARGO reconhece, o estreito não — e a tela é do largo: %s",
+		(fala) => {
+			// Sem isto, o card não cede a vez e a pessoa lê duas perguntas de nome
+			// no mesmo balão (FIX-379). Era a cobertura que a base tinha e o
+			// estreitamento tirou.
+			expect(perguntouONome(fala)).toBe(true);
+			expect(pediuONomeExplicitamente(fala)).toBe(false);
+		},
+	);
+
+	it.each(AFIRMACOES)("o ESTREITO recusa a afirmação — é ele que autoriza escrita: %s", (fala) => {
+		expect(pediuONomeExplicitamente(fala)).toBe(false);
+	});
+
+	it("o largo reconhece algumas afirmações, e isso é aceito de propósito", () => {
+		// A folga faz "Vou deixar o seu plano no nome da Embracon" casar no largo.
+		// Fica assim porque o custo é desprezível: o largo só decide se o card do
+		// nome sai JUNTO com a fala, e ele só é consultado quando o gate já é
+		// `name` — situação em que o card apareceria de qualquer jeito
+		// (`deveEmitirCardDeNome` devolve true quando o modelo não perguntou nada).
+		//
+		// O que NÃO pode acontecer é uma dessas autorizar escrita, e o caso acima
+		// trava isso. Este aqui existe para o comportamento ficar declarado em vez
+		// de descoberto: se um dia o largo passar a alimentar escrita, o teste de
+		// subconjunto abaixo continua verde e ESTE é o que conta a história.
+		expect(perguntouONome("Vou deixar o seu plano no nome da Embracon, tudo bem?")).toBe(true);
+	});
+
+	it("o estreito é subconjunto do largo — nunca autoriza o que a tela nem viu", () => {
+		for (const fala of [...PEDIDOS_CLAROS, ...PEDIDOS_SEM_INTERROGATIVO, ...AFIRMACOES]) {
+			if (pediuONomeExplicitamente(fala)) {
+				expect(perguntouONome(fala), `"${fala}" autoriza escrita sem ser pedido`).toBe(true);
+			}
+		}
 	});
 });
