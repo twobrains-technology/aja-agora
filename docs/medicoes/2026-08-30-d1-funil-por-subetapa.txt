@@ -1,0 +1,44 @@
+=== D1.1 · Transicoes de estagio registradas (todos os tempos) ===
++----------------------+----------------------+----+-----------------------------+
+|      from_stage      |       to_stage       | n  | horas_medias_desde_anterior |
++----------------------+----------------------+----+-----------------------------+
+| novo                 | engajado             | 44 |                             |
+| engajado             | qualificado          | 32 |                         0.1 |
+| qualificado          | em_negociacao        | 17 |                         4.6 |
+| em_atendimento       | aguardando_pagamento |  6 |                        43.5 |
+| em_negociacao        | proposta_enviada     |  5 |                         0.1 |
+| aguardando_pagamento | em_atendimento       |  3 |                         0.0 |
+| qualificado          | proposta_enviada     |  3 |                         0.0 |
+| proposta_enviada     | na_administradora    |  3 |                         0.0 |
+| proposta_enviada     | em_atendimento       |  3 |                         0.0 |
+| fechado_ganho        | perdido              |  3 |                         4.0 |
+| em_atendimento       | perdido              |  3 |                        17.8 |
+| na_administradora    | em_atendimento       |  2 |                         0.1 |
+| em_atendimento       | fechado_ganho        |  2 |                       134.9 |
+| perdido              | em_atendimento       |  2 |                        92.1 |
+| em_negociacao        | perdido              |  1 |                        67.3 |
+| qualificado          | perdido              |  1 |                        73.5 |
+| aguardando_pagamento | fechado_ganho        |  1 |                         0.0 |
+| aguardando_pagamento | perdido              |  1 |                         0.0 |
+| fechado_ganho        | em_atendimento       |  1 |                         0.0 |
+| engajado             | perdido              |  1 |                        21.6 |
+| proposta_enviada     | perdido              |  1 |                       336.2 |
+| perdido              | fechado_ganho        |  1 |                         0.0 |
++----------------------+----------------------+----+-----------------------------+
+(22 rows)
+
+=== D1.2 · Leads por estagio atual ===
++----------------------+-------+
+|        stage         | count |
++----------------------+-------+
+| qualificado          |    11 |
+| em_negociacao        |    11 |
+| engajado             |    11 |
+| perdido              |     8 |
+| aguardando_pagamento |     1 |
+| em_atendimento       |     1 |
+| proposta_enviada     |     1 |
++----------------------+-------+
+(7 rows)
+
+=== D3.1 · Handoffs para a mesa e tempo ate atendimento ===

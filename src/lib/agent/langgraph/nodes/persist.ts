@@ -39,6 +39,37 @@ export function pareceDirectiveDeServidor(texto: string): boolean {
 	);
 }
 
+/**
+ * De que número o contador de turnos começa.
+ *
+ * `funnel.turnosDoCliente` nasceu em 31/08/2026, então TODA conversa anterior a
+ * essa data — e toda conversa que o worker de retomada acorda — chega sem o
+ * campo. Com um `?? 0` seco, o primeiro turno depois da volta se declararia
+ * turno ZERO, que é exatamente a condição do score
+ * `primeira_resposta_com_numero`: uma conversa de dez turnos emitiria o score
+ * da primeira resposta, sujando o instrumento que vai julgar a campanha.
+ *
+ * A semente sai de `messages`, que foi descartada como contador CONTÍNUO (dava
+ * 0 → 1 → 3, porque `run-turn.ts` monta a lista por dois caminhos). Como
+ * semente ela serve: é lida uma vez só, no turno em que o campo está ausente —
+ * e esse é sempre o primeiro turno de uma thread nova do grafo, o ramo `else`
+ * de `run-turn.ts`, o único que popula `messages` a partir de
+ * `loadConversationHistory`. Ali a lista é o histórico do banco, e é exata. Do
+ * turno seguinte em diante o contador é próprio e esta função não roda.
+ *
+ * `??` e não `||`: zero persistido é um valor legítimo (a conversa que de fato
+ * está no turno zero), e `||` o trocaria pela semente.
+ */
+export function sementeDoContador(
+	turnosPersistidos: number | undefined,
+	messages: readonly { getType: () => string }[],
+): number {
+	if (turnosPersistidos !== undefined) return turnosPersistidos;
+	// `-1` porque a fala CORRENTE já está na lista quando este nó roda — medido,
+	// não deduzido: sem ele o cenário de três turnos passou a contar 1, 2, 3.
+	return Math.max(0, messages.filter((m) => m.getType() === "human").length - 1);
+}
+
 export async function persistNode(
 	state: AgentGraphStateType,
 	config?: LangGraphRunnableConfig,
@@ -150,6 +181,46 @@ export async function persistNode(
 		});
 	}
 
+	// ── O índice deste turno do cliente ─────────────────────────────────────
+	//
+	// `funnel.turnosDoCliente` é o contador; o índice do turno corrente é o valor
+	// de ANTES do incremento. O evento correspondente só é empurrado lá embaixo,
+	// junto dos outros — mas o INCREMENTO tem que acontecer aqui, acima do
+	// `projectToMeta`, senão o contador não entra no metadata e cada turno relê
+	// zero do banco (o teste `cenario-o-indice-do-turno-e-exato` fixa isso: com o
+	// incremento embaixo, os três turnos anunciavam `[0], [0], [0]`).
+	//
+	// A primeira versão contava `state.messages.filter(human).length - 1`. Não
+	// funciona: `run-turn.ts` monta `messages` por dois caminhos (banco no
+	// primeiro turno, checkpointer + `resume` nos seguintes) e a fala corrente
+	// entra em momentos diferentes em cada um. Numa conversa real de três falas,
+	// o smoke de 30/08/2026 registrou 0 → 1 → 3.
+	//
+	// Aqui e não no `route.ts`: este nó roda nos DOIS canais, e o sink do
+	// TurnTrace — que é quem publica o score — é o único ponto por onde web e
+	// WhatsApp passam. A primeira versão contava por query dentro do route, o
+	// que deixava o WhatsApp de fora e punha um COUNT no caminho quente.
+	//
+	// Turno de SERVIDOR não conta: directive e retomada não são fala do cliente,
+	// e gastariam o índice 0 — que é o que `primeira_resposta_com_numero` lê.
+	//
+	// A semente é calculada em TODO turno, inclusive nos de servidor — só o
+	// INCREMENTO é exclusivo do cliente. A ordem importa: a retomada entra como
+	// directive (`isUserTurn: false`) e é a primeira coisa que roda quando o
+	// worker acorda uma conversa antiga. Semeando só em turno de cliente, aquela
+	// directive já teria entrado em `messages` sem que o contador existisse, e o
+	// turno seguinte — o primeiro do cliente — se declararia um índice adiante do
+	// real. Semeando aqui, o contador nasce com o histórico certo antes de
+	// qualquer fala nova.
+	const contador = sementeDoContador(funnel.turnosDoCliente, state.messages);
+	let indiceDoTurno: number | null = null;
+	if (isUserTurn) {
+		indiceDoTurno = contador;
+		funnel = { ...funnel, turnosDoCliente: contador + 1 };
+	} else if (funnel.turnosDoCliente === undefined) {
+		funnel = { ...funnel, turnosDoCliente: contador };
+	}
+
 	const projetado = projectToMeta({ ...state, funnel });
 
 	// FIX-207 (watchdog) — o marcador que o worker `gate-reengage-poll` procura.
@@ -246,11 +317,37 @@ export async function persistNode(
 	}
 
 	const events: TurnEvent[] = [];
+
+	// QUAL TURNO É ESTE — a posição, não o conteúdo.
+	//
+	// Alimenta o score `primeira_resposta_com_numero`, que é como se saberá,
+	// daqui a duas semanas, se a mudança do primeiro turno funcionou. A conta é
+	// sobre `state.messages`, que o grafo já tem em mãos: quantas falas do
+	if (indiceDoTurno !== null) events.push({ type: "turno-do-cliente", indice: indiceDoTurno });
 	// Proxy determinístico de `lead-stage` (TODO rodada-1: paridade fina com
 	// `LEAD_STAGE_BY_TOOL`, runner.ts — hoje disparado por tool específica, não
 	// por transição de funil). `recordStageReached` (chamado pelos adapters,
 	// intactos) é forward-only e idempotente — reemitir a cada turno é seguro.
-	if (funnel.desireAsked) events.push({ type: "lead-stage", stage: "engajado" });
+	// "ENGAJADO" DEIXOU DE DEPENDER DE `desireAsked` (30/08/2026).
+	//
+	// O proxy era o gate `desire` ter sido perguntado. Isso funcionava enquanto
+	// todo mundo passava por ele; desde que a categoria dispensa a abertura
+	// (`nextGate`), 90% das entradas medidas pulam o `desire` inteiro — e o
+	// degrau `engajado` do funil sumiria junto, para todo mundo que entra por
+	// chip.
+	//
+	// Seria a pior classe de erro de medição: o painel construído neste mesmo
+	// trabalho passaria a mostrar uma QUEDA de conversão que é, na verdade, a
+	// própria mudança de instrumentação. A evidência de que é grande está no
+	// dado do dia: `novo → engajado` = 44 contra `engajado → qualificado` = 32.
+	//
+	// A âncora nova é o fato que a mudança não move: o cliente disse o que quer.
+	// Ter categoria definida OU ter passado pelo `desire` são as duas formas de
+	// chegar lá, e as duas significam a mesma coisa para o negócio — a conversa
+	// saiu do "oi" e virou assunto.
+	if (funnel.desireAsked || funnel.currentCategory) {
+		events.push({ type: "lead-stage", stage: "engajado" });
+	}
 	if (funnel.identityCollected) events.push({ type: "lead-stage", stage: "qualificado" });
 	// A negociação começa AQUI, não na mesa: o cliente já viu os grupos reais
 	// (`revealCompleted`) e voltou a falar sobre eles — está negociando, e o

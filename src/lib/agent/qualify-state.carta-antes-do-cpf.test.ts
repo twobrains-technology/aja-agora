@@ -97,12 +97,27 @@ describe("nextGate — o caminho até a primeira carta", () => {
 	});
 
 	it("ainda pergunta o nome de quem não trouxe alvo nenhum — a conversa começa igual", () => {
-		const soAbriu = {
+		// "Alvo nenhum" passou a significar NEM valor NEM categoria (30/08/2026).
+		// Antes esta fixture trazia `currentCategory: "auto"` e mesmo assim
+		// esperava o nome — e era justamente esse caso, o do chip da landing, que
+		// matava 49% das conversas na primeira resposta. Ver
+		// `qualify-state.primeira-resposta-tem-numero.test.ts`.
+		const soAbriu = { qualifyAnswers: {} } as ConversationMetadata;
+
+		expect(nextGate(soAbriu, { hasContactName: false })).toBe("name");
+	});
+
+	it("mas quem clicou num CHIP já disse o que quer — vai para o valor", () => {
+		// A extensão de 30/08 da mesma decisão: a categoria vale o que o alvo
+		// completo vale para dispensar a abertura. O card do valor mostra a
+		// parcela estimada, então a primeira resposta tem número em vez de
+		// pergunta.
+		const clicouNoChip = {
 			currentCategory: "auto",
 			qualifyAnswers: {},
 		} as ConversationMetadata;
 
-		expect(nextGate(soAbriu, { hasContactName: false })).toBe("name");
+		expect(nextGate(clicouNoChip, { hasContactName: false })).toBe("credit");
 	});
 
 	it("VALOR SEM CATEGORIA continua conduzindo — não cai no terminal mudo", () => {

@@ -36,6 +36,33 @@ try {
 process.env.VITRINE_CPF = "";
 process.env.VITRINE_CELULAR = "";
 
+// ── ANALYTICS NÃO SAI PARA A REDE NA SUÍTE ──
+//
+// `navigator.sendBeacon` do `happy-dom` NÃO é um no-op: ele abre uma requisição
+// HTTP de verdade. Como os beacons deste produto apontam para caminhos
+// relativos, o `happy-dom` os resolve contra `http://localhost:3000` — e com o
+// servidor de desenvolvimento de pé, um `pnpm test:unit` passava a gravar
+// `chat_iniciado` e eventos de mapa de calor no banco local, a partir de testes
+// de COMPONENTE que só queriam renderizar uma tela.
+//
+// Pior que a escrita indevida era o efeito na suíte: a requisição é abortada no
+// teardown do ambiente, a rejeição escapa de dentro do `Fetch` do `happy-dom`
+// (fora do alcance do `.catch` de quem chamou) e o vitest a reporta como
+// `Unhandled Rejection`. Resultado em 30/08/2026: **3.718 testes verdes na tela
+// e exit 1**, com dez erros que não pertenciam a teste nenhum.
+//
+// A troca por um no-op é a regra de higiene que faltava, não uma gambiarra:
+// teste unitário não faz rede. Quem precisar afirmar que o beacon foi
+// DISPARADO continua podendo — basta espionar `navigator.sendBeacon` no próprio
+// arquivo, que é o que um teste de analytics deve fazer.
+if (typeof globalThis.navigator === "object" && globalThis.navigator !== null) {
+	Object.defineProperty(globalThis.navigator, "sendBeacon", {
+		configurable: true,
+		writable: true,
+		value: () => true,
+	});
+}
+
 // Sentinel DATABASE_URL pra módulos que importam @/db em testes que não tocam DB.
 // Em testes que de fato consultam DB, override no próprio test ou via .env real.
 if (!process.env.DATABASE_URL) {

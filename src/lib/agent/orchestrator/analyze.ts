@@ -80,6 +80,31 @@ export async function analyzeAndMerge(
 	 * Ancora o classificador (ver `analyzeTurn`). Opcional: sem ela o
 	 * comportamento é o de antes. */
 	lastAssistantText?: string | null,
+	/**
+	 * A conversa já sabe o nome do cliente?
+	 *
+	 * Entrou em 30/08/2026, e é a correção de um `true` FIXO que estava aqui
+	 * desde sempre. Enquanto o gate `name` só existia no primeiro contato, o
+	 * atalho era inofensivo: `nextGate` nunca devolveria `name` neste ponto de
+	 * qualquer jeito. Com o gate agora vivendo entre o valor do bem e o pedido
+	 * de documento, o `true` fixo produzia dois defeitos silenciosos ao mesmo
+	 * tempo:
+	 *
+	 *  1. **a âncora do classificador apontava para o gate errado.** O
+	 *     `analyzeTurn` recebe "o funil está aguardando: X" para saber a que
+	 *     pergunta a mensagem responde — e dizia `identify` no turno em que a
+	 *     tela pergunta o NOME. É exatamente a classe de erro que o FIX-236
+	 *     criou esta âncora para evitar;
+	 *  2. **o escape do gate `name` virava código morto.** `registerGateStuckTurn`
+	 *     só é chamado com o gate que este arquivo calcula; com `true` fixo ele
+	 *     nunca via `name`, o contador nunca subia, o teto nunca chegava e
+	 *     `nomeDispensado` nunca era gravado. O escape existia no papel e não no
+	 *     funil — o mesmo desfecho que o comentário do `reco-consent`, em
+	 *     `qualify-state.ts`, já descrevia.
+	 *
+	 * Default `true` preserva o comportamento de quem ainda não passa o valor.
+	 */
+	hasContactName = true,
 ): Promise<AnalyzeResult> {
 	// FIX-236: snapshot do gate REALMENTE ativo pro usuário NESTE turno, antes
 	// de qualquer merge desta função alterar o estado (ver guard de hasLance
@@ -89,7 +114,7 @@ export async function analyzeAndMerge(
 	// classificador a que pergunta a mensagem responde. Sem ela, "não" respondido
 	// ao lance virava resposta do prazo — e cada erro desses virou um guard nesta
 	// função pra desfazer a extração errada.
-	const activeGateAtTurnStart = nextGate(meta, { hasContactName: true });
+	const activeGateAtTurnStart = nextGate(meta, { hasContactName });
 	const analysis = await analyzeTurn(text, currentPersona, meta, {
 		activeGate: activeGateAtTurnStart,
 		lastAssistantText,
@@ -455,7 +480,7 @@ export async function analyzeAndMerge(
 	// tentativa; no teto, assume um default e o funil avança (nunca trava).
 	// Só STUCK_ESCAPE_GATES agem aqui — os demais devolvem null (nada a fazer).
 	let stuckGateDefaultApplied: Gate | null = null;
-	const gateAfterMerge = nextGate(meta, { hasContactName: true });
+	const gateAfterMerge = nextGate(meta, { hasContactName });
 	if (gateAfterMerge === activeGateAtTurnStart) {
 		const stuckPatch = registerGateStuckTurn(meta, gateAfterMerge);
 		if (stuckPatch) {

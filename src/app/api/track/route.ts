@@ -13,7 +13,7 @@
 import type { NextRequest } from "next/server";
 import { ehRoboDeclarado } from "@/lib/attribution/user-agent-robo";
 import { VISIT_COOKIE } from "@/lib/attribution/visit-cookie";
-import { resolveVisitIdFromCookie } from "@/lib/attribution/visit-store";
+import { completarFbpDaVisita, resolveVisitIdFromCookie } from "@/lib/attribution/visit-store";
 import { marcarRageClicks, normalizeLote } from "@/lib/heatmap/events";
 import { recordPageEvents } from "@/lib/heatmap/store";
 import { checkRateLimit } from "@/lib/middleware/rate-limit";
@@ -57,6 +57,30 @@ export async function POST(req: NextRequest) {
 	// carga antes do proxy carimbar). O evento entra anônimo em vez de ser
 	// descartado: pro total do mapa ele conta igual, só não cruza com campanha.
 	const visitId = await resolveVisitIdFromCookie(req.cookies.get(VISIT_COOKIE)?.value);
+
+	// B2 — COMPLETA O `_fbp` DA VISITA (30/08/2026).
+	//
+	// O proxy lê `_fbp` do cookie da requisição, e na primeira chegada de um
+	// navegador ele ainda não existe: quem grava o `_fbp` é o pixel, depois que
+	// a página carregou. Como quase todo tráfego pago é primeira chegada, o
+	// campo ficava nulo justamente onde ele vale — medido em produção em
+	// 30/08/2026: **683 de 46.135 visitas com `fbp` (1,5%)**, e só 2 dos 42
+	// eventos de conversão já enviados o carregavam.
+	//
+	// `fbp` é o que diz à Meta "é o mesmo aparelho". Sem ele o evento chega e é
+	// casado com quase ninguém — é a metade nossa da nota de Event Match Quality
+	// que a planilha manda auditar.
+	//
+	// Vem pelo beacon do mapa de calor, que já dispara em TODA visita e já
+	// resolveu o cookie: um endpoint novo seria uma requisição a mais por
+	// visitante para completar um campo. O valor vem do corpo porque `_fbp` é
+	// cookie de primeira parte do domínio e o servidor o receberia de qualquer
+	// jeito — só que tarde demais, na requisição SEGUINTE, que para a maioria
+	// das visitas nunca acontece.
+	if (visitId) {
+		const { fbp } = (body as { fbp?: unknown }) ?? {};
+		if (typeof fbp === "string") await completarFbpDaVisita(visitId, fbp);
+	}
 
 	await recordPageEvents(marcarRageClicks(eventos), visitId);
 

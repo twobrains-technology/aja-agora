@@ -5,6 +5,7 @@
  * Compartilhado entre a rota da API e a UI.
  */
 
+import type { FunilDeHandoff } from "./handoff-queries";
 import type { Origem } from "./origem-label";
 
 // ─── Funil de mídia ─────────────────────────────────────────────────────────
@@ -167,4 +168,12 @@ export interface PerformanceResponse {
 	origens: LinhaOrigem[];
 	serie: PontoSerie[];
 	cobertura: CoberturaAtribuicao;
+	/**
+	 * O que acontece DEPOIS que o bot entrega o lead ao time (item D1).
+	 *
+	 * Vive ao lado do funil de mídia e não dentro dele: o de cima mede o que o
+	 * produto faz sozinho, este mede o que a mesa faz. Somar os dois numa escada
+	 * só esconderia justamente a fronteira que interessa — a passagem de bastão.
+	 */
+	handoff: FunilDeHandoff;
 }

@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { contaDesativada } from "@/lib/admin/require-role";
 import { podeAcessarRota, type Role, rotaInicialDe } from "@/lib/admin/role-scope";
+import { COOKIE_CODIGO, codigoDaVisita } from "@/lib/attribution/codigo-de-origem";
 import { assinaturaDaCampanha, parseCampaignParams } from "@/lib/attribution/params";
 import { ehRoboDeclarado } from "@/lib/attribution/user-agent-robo";
 import {
@@ -258,6 +259,31 @@ async function registrarVisita(request: NextRequest): Promise<NextResponse> {
 		...opcoesCookie,
 		maxAge: VISIT_COOKIE_MAX_AGE_SECONDS,
 	});
+
+	// O ESPELHO LEGÍVEL POR JS (A3, 30/08/2026).
+	//
+	// O botão flutuante do WhatsApp precisa carimbar a origem no texto da
+	// primeira fala, e para isso precisa saber qual é a visita corrente. O
+	// `aja_visit` acima é `httpOnly` — e continua sendo, porque ele é a âncora
+	// da visita e não tem por que estar ao alcance de script de terceiro.
+	//
+	// Este aqui carrega SÓ o prefixo público do id, que é exatamente o que vai
+	// virar texto visível na tela do cliente daqui a um toque. Saber o código de
+	// uma visita não lê nem escreve nada: no pior caso alguém reivindica a
+	// atribuição de uma visita alheia, o que estraga uma linha de relatório e
+	// mais nada.
+	//
+	// Cookie e não prop de servidor porque o `<ChatFlutuante/>` é renderizado
+	// dentro de um componente cliente em cinco páginas diferentes — atravessar
+	// isso por prop seria cinco pontos para esquecer um.
+	const codigo = codigoDaVisita(visita.visitId);
+	if (codigo) {
+		response.cookies.set(COOKIE_CODIGO, codigo, {
+			...opcoesCookie,
+			httpOnly: false,
+			maxAge: VISIT_COOKIE_MAX_AGE_SECONDS,
+		});
+	}
 
 	return response;
 }

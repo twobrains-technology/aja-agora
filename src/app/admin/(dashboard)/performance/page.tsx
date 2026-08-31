@@ -3,6 +3,7 @@
 import { useQueryState } from "nuqs";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter";
+import { FunilDeHandoffCard } from "@/components/admin/performance/funil-de-handoff";
 import { FunilMidiaChart } from "@/components/admin/performance/funil-midia-chart";
 import { PortaDoFunilCard } from "@/components/admin/performance/porta-do-funil";
 import { SerieAquisicaoChart } from "@/components/admin/performance/serie-aquisicao-chart";
@@ -104,6 +105,14 @@ function PerformanceContent() {
 			) : (
 				<BlocoSkeleton altura={320} />
 			)}
+
+			{/* O funil da MESA vem logo abaixo do funil do produto, e nesta ordem de
+			    propósito: o de cima termina em "viram oferta / propostas", que é
+			    exatamente onde o de baixo começa. Quem lê a página de cima para
+			    baixo percorre a jornada inteira sem trocar de tela — e a fronteira
+			    entre "o que o bot faz" e "o que a mesa faz" fica visível, que é a
+			    passagem de bastão onde a auditoria suspeita da perda. */}
+			{pronto ? <FunilDeHandoffCard handoff={midia.handoff} /> : <BlocoSkeleton altura={360} />}
 
 			{pronto ? <SerieAquisicaoChart data={midia.serie} /> : <BlocoSkeleton />}
 

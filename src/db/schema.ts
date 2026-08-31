@@ -57,10 +57,31 @@ export const actorTypeEnum = pgEnum("actor_type", ["system", "admin"]);
 // ─── Conversões devolvidas à mídia (CAPI) ────────────────────────────────────
 // Os marcos que valem sinal pro algoritmo de anúncio. Poucos e de propósito:
 // evento demais ensina o algoritmo a buscar curioso, não comprador.
+//
+// `chat_iniciado` entrou em 30/08/2026 (item B3) e é de OUTRA natureza — está
+// aqui embaixo, separado, porque a distinção é o que impede o item de virar o
+// erro que o parágrafo acima previne.
 export const conversionEventNameEnum = pgEnum("conversion_event_name", [
 	"lead_qualificado",
 	"proposta_criada",
 	"contrato_fechado",
+	/**
+	 * SINAL, não marco de negócio.
+	 *
+	 * A campanha otimiza hoje por tráfego, e trocar o evento de otimização para
+	 * "início de conversa" é a ação de maior impacto estimado da aba de mídia da
+	 * planilha (+50% a +90% relativo). Só que o `ChatIniciado` existia **apenas
+	 * no navegador** (`meta-pixel.ts`, `trackCustom`), e otimizar campanha por um
+	 * evento que só existe client-side é o caminho frágil: bloqueador de anúncio,
+	 * iOS e falha de rede comem o sinal exatamente no público que mais importa.
+	 *
+	 * Ele NÃO se junta aos três marcos acima na conversão de negócio: quem
+	 * abre o chat é interesse, não compra, e ensinar o algoritmo a buscar quem
+	 * abre chat é ensinar a buscar curioso. A separação é operacional no
+	 * Gerenciador (conversão personalizada própria), e aqui é semântica: este
+	 * evento nunca carrega `value`.
+	 */
+	"chat_iniciado",
 ]);
 
 export const conversionDestinationEnum = pgEnum("conversion_destination", ["meta"]);
@@ -446,6 +467,22 @@ export const leads = pgTable(
 		stage: leadStageEnum("stage").default("novo").notNull(),
 		creditValue: numeric("credit_value", { precision: 12, scale: 2 }),
 		isSimulated: boolean("is_simulated").default(false).notNull(),
+		/** Quando a campainha do SLA (D3/E1) avisou sobre este lead pela última vez.
+		 *
+		 *  A primeira versão do alarme deduplicava por JANELA — alertava quem
+		 *  estava parado entre `limite` e `limite + intervalo do ciclo`. Funciona
+		 *  enquanto todo ciclo roda: um deploy, um restart de task no ECS ou um
+		 *  blip do Redis e o lead que cruzou o limite durante a lacuna chega ao
+		 *  ciclo seguinte já fora da janela — vira contagem no rodapé e **nunca é
+		 *  alertado individualmente**. O alarme pulando, em silêncio, exatamente o
+		 *  lead esquecido que ele existe para pegar.
+		 *
+		 *  Fica em `leads` e não em `lead_events` de propósito: aquela tabela É o
+		 *  relógio do SLA (`max(created_at)` em `computeLeadsParados`), e escrever
+		 *  um evento ali faria o lead parecer tocado e SAIR da lista — o alarme
+		 *  apagaria a si mesmo. Uma coluna aqui bumpa `updated_at`, que desde a
+		 *  correção de 30/08 não é mais o relógio de nada. */
+		slaAlertadoEm: timestamp("sla_alertado_em", { withTimezone: true }),
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 	},

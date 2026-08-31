@@ -177,7 +177,19 @@ async function gateInteractive(
 // Mario." e parava — turno morto, usuário sem saber o que dizer — enquanto o
 // directive de primeiro contato ainda promete que "o sistema pergunta o próximo
 // passo em seguida". Na web a pergunta saía normal. Travado em `paridade-gates.test.ts`.
-export const WHATSAPP_TEXT_GATES = new Set<Gate>(["desire", "credit", "identify", "reco-consent"]);
+// `name` entrou em 2026-08-30, junto com a mudança que lhe deu uma segunda
+// posição no funil (entre o valor do bem e o pedido de documento). No primeiro
+// contato ele continua saindo pelo directive de abertura e `gateQuestion`
+// devolve `null` — nada duplica. Na posição nova, sem esta entrada, o gate caía
+// em `[gate-undelivered]` e nem entrava no score de entrega do canal: mudo, e
+// invisível para quem mede.
+export const WHATSAPP_TEXT_GATES = new Set<Gate>([
+	"desire",
+	"credit",
+	"identify",
+	"reco-consent",
+	"name",
+]);
 
 // FIX-349 (P1.2, veredito rodada 4): subconjunto de `WHATSAPP_TEXT_GATES` SEM
 // NENHUM fallback estrutural (nem interactive, nem card) — a heurística

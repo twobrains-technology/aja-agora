@@ -8,22 +8,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useChatContext } from "@/lib/chat/provider";
 import type { ContractFormPayload } from "@/lib/chat/types";
+import { mascararCelular, mascararCpf, somenteDigitos } from "@/lib/forms/mascaras";
 
 // Passo 5 "Contratar" — coleta CPF + celular + aceite LGPD e cria a proposta REAL
 // na administradora (action contract-submit). NUNCA por texto livre.
 
-const onlyDigits = (s: string) => s.replace(/\D/g, "");
-const maskCpf = (s: string) =>
-	onlyDigits(s)
-		.slice(0, 11)
-		.replace(/(\d{3})(\d)/, "$1.$2")
-		.replace(/(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
-		.replace(/(\d{3})\.(\d{3})\.(\d{3})(\d)/, "$1.$2.$3-$4");
-const maskPhone = (s: string) =>
-	onlyDigits(s)
-		.slice(0, 11)
-		.replace(/(\d{2})(\d)/, "($1) $2")
-		.replace(/(\(\d{2}\) \d{5})(\d)/, "$1-$2");
+// As máscaras vêm de `@/lib/forms/mascaras` — eram uma cópia literal das do
+// `gate-identity-form.tsx`, e cópia de máscara é duplicação que não dá sintoma
+// até alguém corrigir um caso de borda só num dos lados. Ver o cabeçalho de lá.
+const onlyDigits = somenteDigitos;
+const maskCpf = mascararCpf;
+const maskPhone = mascararCelular;
 
 export function ContractForm({ payload }: { payload: ContractFormPayload }) {
 	const { sendAction, status } = useChatContext();

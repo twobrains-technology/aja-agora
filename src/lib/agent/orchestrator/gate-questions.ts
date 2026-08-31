@@ -107,6 +107,20 @@ const DESIRE_QUESTIONS: Record<Category, string> = {
  */
 const DESIRE_ABERTURA = "Me conta o que você quer conquistar: um carro, uma moto ou um imóvel?";
 
+/** A pergunta do nome, em UMA fala.
+ *
+ *  Dois lugares a dizem, e por motivos diferentes: aqui, quando o WhatsApp
+ *  precisa de texto porque não tem card; e `reengageQuestionForGate`, quando o
+ *  cliente ignorou o card na web. Ter a frase escrita duas vezes não dá sintoma
+ *  — dá DIVERGÊNCIA: alguém melhora a copy num arquivo, o outro segue com a
+ *  antiga, e o mesmo cliente ouve duas versões da mesma pergunta conforme o
+ *  caminho que tomou. É a razão pela qual `mascaras.ts` foi extraído nesta
+ *  mesma branch.
+ *
+ *  O reengajamento a usa como BASE e acrescenta a escada de insistência — a
+ *  primeira fala é idêntica de propósito. */
+export const PERGUNTA_DO_NOME = "Antes de eu buscar as ofertas, como posso te chamar?";
+
 export function gateQuestion(
 	gate: Gate,
 	category?: Category | null,
@@ -137,7 +151,24 @@ export function gateQuestion(
 			// FIX-17: a pergunta do nome ("Como posso te chamar?") já sai no TEXTO
 			// do agente (directive de primeiro contato). O card só complementa com
 			// input focado — null aqui evita a pergunta aparecer duas vezes.
-			return null;
+			//
+			// 2026-08-30 — O GATE GANHOU UMA SEGUNDA POSIÇÃO, E LÁ ELE FICAVA MUDO.
+			//
+			// Desde que o `name` desceu para entre o valor do bem e o pedido de
+			// documento, ele acontece num ponto onde NÃO existe directive de
+			// abertura — e no WhatsApp não existe card. Resultado: `fireGate` não
+			// tinha o que enviar, o gate caía em `[gate-undelivered]` e o cliente
+			// ficava esperando uma pergunta que nunca chegou. Justamente no canal
+			// para onde o item A3 acabou de canalizar tráfego.
+			//
+			// O discriminante é a CATEGORIA, e ele é exato: quem cai em `name` no
+			// primeiro contato não disse o que quer (se tivesse dito, o funil teria
+			// pulado direto para o valor); quem cai nele na posição do meio tem
+			// categoria por definição.
+			//
+			// Só no WhatsApp: na web o card É a pergunta, e um texto aqui a
+			// duplicaria — que é exatamente o que o FIX-17 evitou.
+			return channel === "whatsapp" && category ? PERGUNTA_DO_NOME : null;
 		case "desire":
 			return category ? DESIRE_QUESTIONS[category] : DESIRE_ABERTURA;
 		case "experience":

@@ -1,0 +1,43 @@
+=== FINAL.1 · A janela limpa: visitas, pessoas e conversas ===
++-------------+------------+-----------+--------------------+------------+
+| visitas_web | visitantes | conversas | conversas_whatsapp | com_origem |
++-------------+------------+-----------+--------------------+------------+
+|        5285 |       2531 |        78 |                  6 |         70 |
++-------------+------------+-----------+--------------------+------------+
+(1 row)
+
+=== FINAL.2 · O que o A3 recupera: toques no botao vs conversas de WhatsApp ===
++-----------------+------------------------+-----------------------+-----------------+
+| toques_no_botao | visitantes_que_tocaram | conversas_wa_nascidas | com_origem_hoje |
++-----------------+------------------------+-----------------------+-----------------+
+|              87 |                     58 |                     6 |               0 |
++-----------------+------------------------+-----------------------+-----------------+
+(1 row)
+
+=== FINAL.3 · A curva de scroll da home, para o relatorio (18-30/08) ===
++-----------------+---------+------+
+|     section     | visitas | pct  |
++-----------------+---------+------+
+| kv-menu         |    1243 | 98.0 |
+| kv-hero         |    1126 | 88.8 |
+| kv-journey      |     146 | 11.5 |
+| kv-tipos        |     117 |  9.2 |
+| kv-contemplacao |     116 |  9.1 |
+| kv-faq          |     110 |  8.7 |
+| kv-numbers      |      83 |  6.5 |
+| kv-depoimentos  |      66 |  5.2 |
+| kv-confianca    |      61 |  4.8 |
+| kv-footer       |      59 |  4.7 |
+| kv-comparacao   |      54 |  4.3 |
++-----------------+---------+------+
+(11 rows)
+
+=== FINAL.4 · A2: toque morto no hero (elemento nao-clicavel) ===
++----------------+------+---------+
+|      tipo      | rage | cliques |
++----------------+------+---------+
+| elemento MORTO |   14 |     103 |
+| alvo clicavel  |    1 |      84 |
++----------------+------+---------+
+(2 rows)
+

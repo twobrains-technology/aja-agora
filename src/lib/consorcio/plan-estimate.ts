@@ -89,6 +89,38 @@ function estimatePayment(assetValue: number, category: Category, termMonths: num
 	return round2(total / Math.max(1, termMonths));
 }
 
+/**
+ * A FAIXA que o cliente vê ANTES de entregar qualquer dado (item C1).
+ *
+ * É o mínimo honesto que dá para dizer sobre um valor de bem sem consultar a
+ * administradora: custo total típico da categoria (bem + taxa de administração
+ * média de mercado) diluído no prazo típico daquele tipo de grupo. Nada aqui
+ * vem da Bevi, e é por isso que quem exibe TEM que exibir com o selo de
+ * estimativa — o invariante do projeto é que número de administradora sai de
+ * tool, nunca da nossa cabeça.
+ *
+ * **Por que ela passou a importar.** Medido em produção em 30/08/2026, na
+ * janela limpa de 16–30/08: das 70 conversas em que o cliente falou alguma
+ * coisa, **34 (49%) morreram na PRIMEIRA resposta** e 46 (65%) nunca chegaram a
+ * informar o valor do bem. Nas 34, o padrão é o mesmo em todas: a pessoa clica
+ * num chip dizendo o que quer e recebe de volta um elogio e uma pergunta — "Que
+ * ótimo! Imóvel é um investimento que muda a vida. Já tem um em mente?" —, sem
+ * um número na tela. Do outro lado da mesma medição: de quem CHEGA a informar o
+ * valor, **86% entrega o CPF**. O pedágio do funil nunca foi o CPF; era a
+ * primeira resposta não dar nada em troca.
+ *
+ * Devolve `null` para valor não positivo em vez de zero: "R$ 0/mês" é pior do
+ * que silêncio.
+ */
+export function parcelaEstimadaDeMercado(
+	category: Category,
+	assetValue: number,
+): { parcela: number; prazoMeses: number } | null {
+	if (!Number.isFinite(assetValue) || assetValue <= 0) return null;
+	const prazoMeses = TYPICAL_TERM_MONTHS[category];
+	return { parcela: estimatePayment(assetValue, category, prazoMeses), prazoMeses };
+}
+
 export function computePlanEstimate(input: PlanEstimateInput): PlanEstimate {
 	const assetValue = Math.max(0, input.assetValue);
 	const category = input.category;

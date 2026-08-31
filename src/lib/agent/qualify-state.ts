@@ -83,6 +83,18 @@ export const STUCK_ESCAPE_GATES: ReadonlySet<Gate> = new Set<Gate>([
 	// percebia porque o agente seguia conversando educadamente). Com o teto de
 	// tentativas, o funil segue sem impor o hero — quem quiser ver, pede.
 	"reco-consent",
+	// `name` entra em 30/08/2026, junto com a mudança que o tirou do primeiro
+	// contato e o pôs entre o valor do bem e o pedido de documento.
+	//
+	// No primeiro contato ele não precisava de escape: era o único gate na mesa,
+	// e quem não respondia simplesmente não tinha conversa. Na posição nova ele
+	// vira exatamente o caso que este set existe para cobrir — cliente que já
+	// informou categoria e valor responde "prefiro não dizer" ou "depois",
+	// `extractName` recusa (e deve recusar), e `nextGate` devolve `name` a cada
+	// turno para sempre. O funil congela no segmento em que 86% entrega o CPF.
+	//
+	// O default dele NÃO é um nome assumido — ver `stuckGateDefaultPatch`.
+	"name",
 ]);
 
 /** FIX-305 — teto de tentativas sem progresso antes de assumir o default (Kairo,
@@ -182,6 +194,12 @@ export function registerGateStuckTurn(
 		// zeraria o contador a cada teto e continuaria pendente para sempre: o
 		// escape existiria no papel e não no funil.
 		...(gate === "reco-consent" ? { recoConsentAnswered: true, recoConsentDeclined: true } : {}),
+		// O nome também mora fora de `qualifyAnswers` — e, diferente de todos os
+		// outros escapes, o default aqui é DESISTIR DA PERGUNTA, não responder
+		// por ele. Nome assumido chegaria à mesa como se o cliente o tivesse
+		// dito, e o agente passaria a chamá-lo assim; é a mesma linha que
+		// `dinheiroDeclaradoPeloCliente` traça para o lance.
+		...(gate === "name" ? { nomeDispensado: true } : {}),
 	};
 }
 
@@ -349,7 +367,31 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	// de volta uma pergunta. Nenhuma vitrine pede o nome do cliente antes de
 	// deixar ele ver a etiqueta. Quem chegou sem alvo continua sendo recebido
 	// pelo nome — a conversa começa igual para quem só disse "oi".
-	if (opts && opts.hasContactName === false && !temAlvoDeBusca(meta)) return "name";
+	// A CATEGORIA VALE O MESMO QUE O ALVO COMPLETO (2026-08-30).
+	//
+	// Medido no banco de produção na janela limpa de 16–30/08 (71 conversas web
+	// reais): **34 delas, 49%, morrem com UMA fala do cliente** e 46 (65%) nunca
+	// chegam a informar o valor do bem. Nas 34, o padrão é sempre o mesmo — a
+	// pessoa clica num chip da landing dizendo exatamente o que quer e recebe de
+	// volta um elogio e uma pergunta:
+	//
+	//   👤 Quero comprar um imóvel.
+	//   🤖 Que ótimo! Imóvel é um investimento que muda a vida. Já tem um em
+	//      mente, ou está explorando opções?                            — fim —
+	//
+	// Do outro lado da mesma medição: de quem CHEGA a informar o valor, 86%
+	// entrega o CPF (19 de 22), e os 19 veem carta. O pedágio deste funil nunca foi
+	// o CPF — era a primeira resposta não devolver nada.
+	//
+	// Então é a mesma decisão de 27/08 (que tirou `name` e `desire` da frente de
+	// quem trazia alvo COMPLETO), aplicada ao caso que sobrou e que a medição
+	// mostra ser 90% das entradas: quem já disse O QUE quer vai direto ao
+	// `credit`, que é o card da agulha — e que desde 30/08 mostra a parcela
+	// estimada ao vivo (`value-picker.tsx`). A primeira resposta passa a ter
+	// número na tela em vez de pergunta.
+	const jaDisseOQueQuer = temAlvoDeBusca(meta) || Boolean(meta.currentCategory);
+
+	if (opts && opts.hasContactName === false && !jaDisseOQueQuer) return "name";
 
 	// FIX-233 (handoff agente-vendas-consorcio, 2026-07-09): gate `desire`,
 	// NÃO bloqueante — duas perguntas curtas (bem específico + motivo de agora),
@@ -363,7 +405,7 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	// que o cliente acabou de dizer. No Langfuse de produção o `desire` aparece em
 	// 27,8% dos `gate_afundado`. Para quem chega sem alvo nenhum — a maioria — o
 	// gate continua igual, porque é ali que ele constrói o desejo que vende.
-	if (!meta.desireAsked && !temAlvoDeBusca(meta)) return "desire";
+	if (!meta.desireAsked && !jaDisseOQueQuer) return "desire";
 
 	if (meta.pendingFollowUp) return "doubts-wait";
 
@@ -391,9 +433,35 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	// caminho real (Bevi `valor_parcela`), nao um fallback. Sem isto o cliente
 	// que so diz "1500 por mes" nunca sai daqui.
 	if (q.creditMax === undefined && (q.parcelaAlvo ?? 0) <= 0) return "credit";
+	// O NOME NÃO SUMIU — DESCEU (2026-08-30).
+	//
+	// Quem entrou pela categoria pulou o gate lá em cima para não gastar a
+	// primeira resposta numa pergunta. Ele volta aqui, **colado ao pedido de
+	// documento** — e nunca antes da carta.
+	//
+	// A posição é o item inteiro. Pedir CPF a alguém de quem não se sabe o nome
+	// é a ordem errada em qualquer balcão; mas exigir o nome para DEIXAR OLHAR a
+	// etiqueta é o pedágio que a decisão de 27/08 removeu ("nenhuma vitrine de
+	// loja pede o nome do cliente antes de deixar ele olhar o preço"). Entre as
+	// duas coisas há um lugar só, e é este.
+	//
+	// Consequência prática, e é a que se quer: com a vitrine LIGADA o cliente vê
+	// as cartas primeiro e o nome é pedido no fecho, junto do documento. Sem
+	// vitrine — o estado real de produção em 30/08/2026 — ele vem logo depois do
+	// valor, com a parcela estimada já na tela.
+	//
+	// Continua BLOQUEANTE de propósito. Medido em produção (16–30/08): 22 de 22
+	// conversas que informaram o valor têm nome, e 19 de 19 que deram CPF
+	// também. Deixar de perguntar entregaria à mesa um lead com CPF e telefone e
+	// sem nome — trocaria um problema por outro.
+	const faltaONome = Boolean(opts && opts.hasContactName === false) && !meta.nomeDispensado;
+
 	if (q.creditMax === undefined) {
 		// Alvo e a parcela — as checagens de piso de CREDITO abaixo nao se aplicam.
-		if (!meta.identityCollected && !vitrineDisponivel()) return "identify";
+		if (!meta.identityCollected && !vitrineDisponivel()) {
+			if (faltaONome) return "name";
+			return "identify";
+		}
 		if (!meta.searchDispatched) return "search";
 	}
 	// FIX-377 — valor ABAIXO DO PISO conta como valor ausente: a busca nessa
@@ -420,7 +488,11 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	//
 	// Sem vitrine configurada, nada disto vale e o funil antigo volta inteiro —
 	// desligar é apagar uma env, não reverter um commit.
-	if (!meta.identityCollected && !vitrineDisponivel()) return "identify";
+	if (!meta.identityCollected && !vitrineDisponivel()) {
+		// O nome vem primeiro — ver `faltaONome` acima.
+		if (faltaONome) return "name";
+		return "identify";
+	}
 
 	// FIX-215 (Refino Ata 2026-07-04, item 1 — P0): o funil pula DIRETO de
 	// `credit` (valor) pra `search` — a pergunta de lance ("Pretende dar um
@@ -634,6 +706,9 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 		// CPF+celular REAIS não há proposta (e `startContract` recusa o CPF da
 		// vitrine — ver `ContratacaoComIdentidadeDeVitrineError`). O que mudou
 		// foi o MOMENTO, não a regra.
+		// O nome antes do documento, também no fecho — é aqui que ele é pedido
+		// quando a vitrine está ligada e o cliente viu as cartas primeiro.
+		if (!meta.identityCollected && faltaONome) return "name";
 		if (!meta.identityCollected) return "identify";
 		if (!meta.contractFormDispatched) return "contract";
 	}
@@ -833,8 +908,53 @@ export function decideShowGate(args: {
 	// oposto. `identify` NÃO entra na exceção: é gate de COLETA, e sem CPF a Bevi
 	// não simula nem contrata, então ele não cede nem pra quem quer fechar.
 	if (gate === "experience" && intent === "ready_to_proceed") return false;
+	// `name` ENTRA AQUI EM 30/08/2026, e o motivo é um defeito que o smoke pegou.
+	//
+	// Com o gate do nome descido para depois do valor (ver `nextGate`), ele passou
+	// a cair no bloco final desta função — que libera gate `neutral` apenas
+	// quando `hasNoQualifyData`, isto é, quando NÃO existe `creditMax`. Aquela
+	// regra foi escrita quando o nome só podia acontecer no primeiro contato, e
+	// ali ela estava certa. Na posição nova ela vira uma armadilha: o cliente
+	// informa o valor, `nextGate` devolve `name` para sempre e o card não aparece
+	// nunca. Funil travado, agente conversando educadamente, venda parada — o
+	// "gate afundado" que `STUCK_ESCAPE_GATES` descreve.
+	//
+	// Visto ao vivo no smoke local de 30/08/2026 e depois reproduzido de forma
+	// determinística em `cenario-primeira-resposta-tem-numero.test.ts`: três
+	// turnos seguidos com a trilha `['text']` e nenhum card.
+	//
+	// O nome pertence a este grupo pelo mesmo critério que `experience` e
+	// `identify`: é pergunta ESTRUTURAL da cascata, não ancorada em nenhuma
+	// oferta específica. Aparece sempre, menos quando o cliente está perguntando,
+	// em dúvida, confuso ou fora do assunto — aí o agente atende primeiro.
+	//
+	// A proteção do FIX-379 continua por cima e é outra camada:
+	// `deveEmitirCardDeNome` faz o card CEDER A VEZ uma vez quando o modelo
+	// perguntou outra coisa no mesmo turno. Uma decide se o funil quer o card; a
+	// outra, se ele cabe naquele balão.
+	// `declines` fica FORA para o `name` (30/08/2026, segunda rodada).
+	//
+	// `experience` e `identify` são gates de COLETA obrigatória — sem CPF a Bevi
+	// não simula nem contrata, então eles não cedem nem a quem recusa. O nome
+	// não é assim: ele ajuda a vender e a mesa a atender, mas nada no produto
+	// depende dele. Insistir com o card depois de "prefiro não passar meu nome"
+	// é perguntar o que o cliente acabou de responder — o que o FIX-399c, 160
+	// linhas abaixo, já proíbe para o resto do funil.
+	//
+	// `wants_more_options` entra pela mesma porta: com a vitrine ligada o `name`
+	// também acontece no FECHO, e ali "quero ver todas as opções" devolveria o
+	// card do nome no lugar das opções. O FIX-183 já estabelece que pedir mais
+	// opções nunca abre gate estruturado — o nome não é exceção.
+	//
+	// Somado ao escape de `STUCK_ESCAPE_GATES`, é o par que impede este gate de
+	// virar porta fechada: quem recusa não é insistido, e quem não responde é
+	// dispensado depois do teto.
+	if (gate === "name" && (intent === "declines" || intent === "wants_more_options")) {
+		return false;
+	}
+
 	if (
-		(gate === "experience" || gate === "identify") &&
+		(gate === "experience" || gate === "identify" || gate === "name") &&
 		!(
 			intent === "asking_question" ||
 			intent === "expressing_doubt" ||

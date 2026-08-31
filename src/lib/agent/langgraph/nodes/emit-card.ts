@@ -567,5 +567,20 @@ export async function emitCardNode(
 	if (cardDeNomeAtropelaAFala && !funnel.nameCardAdiado) {
 		funnel = { ...funnel, nameCardAdiado: true };
 	}
+	// E marca quando ele de fato SAIU — que é outro fato, e o que autoriza o
+	// servidor a ler a próxima resposta curta como o nome da pessoa.
+	//
+	// A captura em `captureAnswerNode` se apoiava só em "o gate ativo é `name`".
+	// Isso bastava enquanto esse gate só existia no primeiro contato, onde a
+	// única pergunta na mesa é o nome. Desde 30/08/2026 ele desce para depois do
+	// valor do bem, e ali o cliente está respondendo ao MODELO: reproduzido em
+	// cenário, "novo ou usado?" → "SUV" → `contactName = "Suv"`.
+	//
+	// Perguntar "eu exibi o card?" fecha a classe inteira. A alternativa — mais
+	// uma palavra na lista de `ehNomeProprioPlausivel` — é a lista contra a
+	// língua, que o CLAUDE.md já nomeia como o caminho que não converge.
+	if (gateDoTurno === "name" && !cardDeNomeAtropelaAFala && !funnel.nameCardExibido) {
+		funnel = { ...funnel, nameCardExibido: true };
+	}
 	return { funnel, events };
 }

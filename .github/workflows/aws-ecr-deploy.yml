@@ -275,6 +275,38 @@ jobs:
             --query 'service.deployments[0].{status:status,rolloutState:rolloutState,taskDefinition:taskDefinition}' \
             --output table
 
+      # O WORKER roda a MESMA imagem do app (`prod:latest`), com outro command
+      # (`node scripts/proposal-worker.bundle.cjs`). Como o passo acima força só
+      # `<app>-<env>`, o serviço do worker continuava servindo a imagem antiga
+      # depois de um deploy — e o que vive nele é justamente o que não tem
+      # request para revelar a defasagem: re-engajamento, retomada, acolhida N1,
+      # reconciliação e a campainha do SLA. Nenhum deles falha alto; eles
+      # simplesmente continuam rodando a versão anterior, em silêncio.
+      #
+      # Descoberto em 31/08/2026, ao deployar a campainha do SLA (D3/E1): o
+      # ciclo novo não chegaria a produção com o pipeline como estava.
+      #
+      # `|| true` de propósito: o serviço de worker existe só em prod. Em dev
+      # não há `aja-agora-worker-dev`, e a ausência não pode falhar o deploy.
+      - name: Force ECS worker service to pull new image
+        run: |
+          CLUSTER="tb-cluster"
+          WORKER="${{ env.APP }}-worker-${{ steps.vars.outputs.env }}"
+          if aws ecs describe-services --cluster "$CLUSTER" --services "$WORKER" \
+               --region "${{ env.AWS_REGION }}" \
+               --query 'services[0].status' --output text 2>/dev/null | grep -q ACTIVE; then
+            echo "Forcing new deployment on worker=$WORKER"
+            aws ecs update-service \
+              --cluster "$CLUSTER" \
+              --service "$WORKER" \
+              --force-new-deployment \
+              --region "${{ env.AWS_REGION }}" \
+              --query 'service.deployments[0].{status:status,rolloutState:rolloutState}' \
+              --output table
+          else
+            echo "Serviço $WORKER não existe neste ambiente — nada a fazer."
+          fi
+
       - name: Wait ECS rollout completion
         run: |
           CLUSTER="tb-cluster"

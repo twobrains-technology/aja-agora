@@ -1,0 +1,1 @@
+ALTER TYPE "public"."conversion_event_name" ADD VALUE 'chat_iniciado';

@@ -23,13 +23,20 @@ import { describe, expect, it } from "vitest";
 import { captureAnswerNode } from "@/lib/agent/langgraph/nodes/capture";
 import type { AgentGraphStateType } from "@/lib/agent/langgraph/state";
 
-/** Estado mínimo do turno em que o cliente responde o gate do nome. */
+/** Estado mínimo do turno em que o cliente responde o gate do nome.
+ *
+ *  `nameCardExibido` entrou no fixture em 30/08/2026: desde então o servidor só
+ *  lê uma resposta como nome quando o CARD do nome de fato apareceu — não basta
+ *  o gate estar ativo. Sem esse fato, o turno em que o modelo pergunta outra
+ *  coisa batizava o lead com a resposta dele ("SUV", "Apartamento"). Ver
+ *  `cenario-nome-nao-e-a-resposta-do-modelo.test.ts`. */
 function noGateDoNome(userText: string): AgentGraphStateType {
 	return {
 		isUserTurn: true,
 		userText,
 		gate: "name",
 		contactName: null,
+		funnel: { nameCardExibido: true },
 	} as unknown as AgentGraphStateType;
 }
 
@@ -43,18 +50,20 @@ describe("captureAnswerNode — o que NÃO é nome", () => {
 	// oito palavras que nunca abrem uma apresentação em português. Isso não é
 	// caçar frase por frase: é gramática, e o conjunto não cresce amanhã.
 	it("artigo indefinido não vira nome (o caso 'Uma', da sonda de 14/08)", () => {
-		expect(captureAnswerNode(noGateDoNome("uma casa"))).toEqual({});
-		expect(captureAnswerNode(noGateDoNome("um carro"))).toEqual({});
-		expect(captureAnswerNode(noGateDoNome("uma moto"))).toEqual({});
+		expect(captureAnswerNode(noGateDoNome("uma casa")).contactName).toBeUndefined();
+		expect(captureAnswerNode(noGateDoNome("um carro")).contactName).toBeUndefined();
+		expect(captureAnswerNode(noGateDoNome("uma moto")).contactName).toBeUndefined();
 	});
 
 	it("artigo definido também não (o apartamento, a casa)", () => {
-		expect(captureAnswerNode(noGateDoNome("o apartamento"))).toEqual({});
-		expect(captureAnswerNode(noGateDoNome("a casa"))).toEqual({});
+		expect(captureAnswerNode(noGateDoNome("o apartamento")).contactName).toBeUndefined();
+		expect(captureAnswerNode(noGateDoNome("a casa")).contactName).toBeUndefined();
 	});
 
 	it("rótulo de botão não vira nome (o caso 'Quitar', literal de produção)", () => {
-		expect(captureAnswerNode(noGateDoNome("Quitar o financiamento atual"))).toEqual({});
+		expect(
+			captureAnswerNode(noGateDoNome("Quitar o financiamento atual")).contactName,
+		).toBeUndefined();
 	});
 
 	it("frase não vira nome — apresentação é resposta curta", () => {
@@ -64,28 +73,24 @@ describe("captureAnswerNode — o que NÃO é nome", () => {
 			"Quero saber como funciona o consórcio",
 			"Comprar um carro para trabalhar",
 		]) {
-			expect(captureAnswerNode(noGateDoNome(t)), t).toEqual({});
+			expect(captureAnswerNode(noGateDoNome(t)).contactName, t).toBeUndefined();
 		}
 	});
 
 	it("palavra que não é nome de gente continua barrada", () => {
 		for (const t of ["Voltei", "Teste", "Ainda", "Beleza"]) {
-			expect(captureAnswerNode(noGateDoNome(t)), t).toEqual({});
+			expect(captureAnswerNode(noGateDoNome(t)).contactName, t).toBeUndefined();
 		}
 	});
 
 	it("apresentação de verdade continua sendo capturada", () => {
-		expect(captureAnswerNode(noGateDoNome("Romulo"))).toEqual({ contactName: "Romulo" });
-		expect(captureAnswerNode(noGateDoNome("Pode me chamar de Kairo"))).toEqual({
-			contactName: "Kairo",
-		});
-		expect(captureAnswerNode(noGateDoNome("sou o Erik"))).toEqual({ contactName: "Erik" });
-		expect(captureAnswerNode(noGateDoNome("meu nome é Monique"))).toEqual({
-			contactName: "Monique",
-		});
+		expect(captureAnswerNode(noGateDoNome("Romulo")).contactName).toBe("Romulo");
+		expect(captureAnswerNode(noGateDoNome("Pode me chamar de Kairo")).contactName).toBe("Kairo");
+		expect(captureAnswerNode(noGateDoNome("sou o Erik")).contactName).toBe("Erik");
+		expect(captureAnswerNode(noGateDoNome("meu nome é Monique")).contactName).toBe("Monique");
 	});
 
 	it("nome composto curto passa", () => {
-		expect(captureAnswerNode(noGateDoNome("Ana Clara"))).toEqual({ contactName: "Ana" });
+		expect(captureAnswerNode(noGateDoNome("Ana Clara")).contactName).toBe("Ana");
 	});
 });

@@ -8,7 +8,7 @@
 // conversando; perdemos a linha da campanha, não o lead. Por isso todo caminho
 // aqui é best-effort com log — mas com log de verdade, nunca `catch {}` mudo.
 
-import { and, desc, eq, gt, notExists } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, notExists, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations, visits } from "@/db/schema";
 import type { CampaignParams } from "./params";
@@ -174,4 +174,89 @@ export async function resolveVisitIdFromCookie(
 	const cookie = parseVisitCookie(rawCookie);
 	if (!cookie) return null;
 	return (await visitExists(cookie.visitId)) ? cookie.visitId : null;
+}
+
+/**
+ * Quanto tempo depois de sair do site um código de origem ainda vale.
+ *
+ * O caminho real é de segundos — a pessoa toca no botão flutuante e o WhatsApp
+ * abre com a fala já escrita. A folga de 24h cobre quem tocou, foi fazer outra
+ * coisa e só apertou enviar depois; passou disso, a chegada é OUTRA e amarrá-la
+ * à visita antiga daria crédito ao criativo errado.
+ */
+const JANELA_CODIGO_DE_ORIGEM_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * A visita web por trás de um código de origem (A3).
+ *
+ * O código é o prefixo do próprio UUID (ver `codigo-de-origem.ts`), então a
+ * busca é por prefixo — servida pelo índice de expressão
+ * `visits_codigo_de_origem_idx`. Sem ele isto seria varredura de tabela em cima
+ * do caminho quente do webhook.
+ *
+ * Devolve a MAIS RECENTE dentro da janela: em 32 bits de código, duas visitas
+ * iguais são improváveis, e quando acontecer é a chegada de agora que descreve
+ * como a pessoa chegou agora.
+ *
+ * Só visita `web`: o código nasce no site. Aceitar `whatsapp` aqui deixaria uma
+ * conversa de WhatsApp reivindicar a visita de outra conversa de WhatsApp.
+ */
+export async function resolverVisitaPorCodigo(
+	codigo: string,
+	nowMs: number = Date.now(),
+): Promise<string | null> {
+	try {
+		const [visita] = await db
+			.select({ id: visits.id })
+			.from(visits)
+			.where(
+				and(
+					sql`left(${visits.id}::text, 8) = ${codigo.toLowerCase()}`,
+					eq(visits.channel, "web"),
+					gt(visits.createdAt, new Date(nowMs - JANELA_CODIGO_DE_ORIGEM_MS)),
+				),
+			)
+			.orderBy(desc(visits.createdAt))
+			.limit(1);
+
+		return visita?.id ?? null;
+	} catch (err) {
+		console.error("[attribution] falha ao resolver código de origem:", err);
+		return null;
+	}
+}
+
+/**
+ * Completa o `_fbp` de uma visita que nasceu sem ele (item B2).
+ *
+ * O proxy lê `_fbp` do cookie da requisição, e na PRIMEIRA chegada de um
+ * navegador ele ainda não existe — quem o grava é o pixel, depois que a página
+ * carregou. Como quase todo tráfego pago é primeira chegada, o campo ficava
+ * nulo justamente onde ele vale: medido em produção em 30/08/2026, **683 de
+ * 46.135 visitas com `fbp` (1,5%)**, e 2 dos 42 eventos de conversão já
+ * enviados.
+ *
+ * `fbp` é o que diz à Meta "é o mesmo aparelho" — o `fbclid`/`fbc` diz de qual
+ * anúncio a pessoa veio, e ela usa os dois. Sem ele o evento é aceito e casado
+ * com quase ninguém, que é a metade NOSSA da nota de Event Match Quality.
+ *
+ * Só preenche quando está nulo: um `_fbp` mais novo chegando depois não pode
+ * reescrever o que a visita registrou na hora, senão o evento passaria a
+ * afirmar um aparelho diferente do que de fato originou a conversão.
+ *
+ * O formato é validado porque o valor vem do CORPO de um endpoint público:
+ * `fb.<subdomain_index>.<timestamp>.<random>` é o que a Meta define, e o que
+ * não bate seria lixo enviado como identidade.
+ */
+export async function completarFbpDaVisita(visitId: string, fbp: string): Promise<void> {
+	if (!/^fb\.\d+\.\d+\.\d+$/.test(fbp)) return;
+
+	try {
+		await db
+			.update(visits)
+			.set({ fbp })
+			.where(and(eq(visits.id, visitId), isNull(visits.fbp)));
+	} catch (err) {
+		console.error("[attribution] falha ao completar _fbp da visita:", err);
+	}
 }

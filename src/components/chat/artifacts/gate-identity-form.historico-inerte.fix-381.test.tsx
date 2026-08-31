@@ -16,7 +16,7 @@
  * Card histórico é registro do que aconteceu, não um formulário a preencher.
  */
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GateIdentityForm } from "./gate-identity-form";
 
@@ -42,8 +42,16 @@ describe("GateIdentityForm — card do histórico não aceita digitação (FIX-3
 
 	it("mantém os campos utilizáveis no card ativo", () => {
 		// Sem esta metade o fix viraria "ninguém preenche nada".
+		//
+		// Desde o C7 (30/08/2026) o card ativo abre em dois passos: o celular
+		// sozinho, e o CPF depois. O card do HISTÓRICO continua mostrando tudo de
+		// uma vez — é registro do que aconteceu, e um passo a passo congelado no
+		// meio contaria a história pela metade.
 		render(<GateIdentityForm active={true} />);
-		expect(campo("000.000.000-00").disabled).toBe(false);
 		expect(campo("(11) 99999-9999").disabled).toBe(false);
+
+		fireEvent.change(campo("(11) 99999-9999"), { target: { value: "11999998888" } });
+		fireEvent.click(screen.getByTestId("identify-avancar"));
+		expect(campo("000.000.000-00").disabled).toBe(false);
 	});
 });

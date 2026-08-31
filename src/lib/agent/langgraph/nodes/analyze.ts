@@ -44,6 +44,11 @@ export function createAnalyzeNode(analyze: AnalyzeFn = analyzeAndMerge) {
 			state.funnel.currentPersona,
 			meta,
 			ultimaFalaDoAgente || null,
+			// O nome REAL, não o `true` fixo que estava lá dentro. É o que faz o
+			// escape do gate `name` existir no funil e não só no papel, e o que
+			// impede a âncora do classificador de dizer "aguardando: identify" no
+			// turno em que a tela pergunta o nome.
+			Boolean(state.contactName),
 		);
 
 		// ── O DINHEIRO QUE ELE TEM NÃO É O PREÇO DO QUE ELE QUER ──
