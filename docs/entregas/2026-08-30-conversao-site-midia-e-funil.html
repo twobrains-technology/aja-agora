@@ -11,7 +11,7 @@
 
 <h1>Conversão: site, mídia e funil</h1>
 <p class="lede">Os 26 itens das abas <b>Site (CRO)</b> e <b>Plano de Ação por Etapa</b> da planilha do Gustavo (28/08), executados de ponta a ponta — e uma medição que mostrou que a auditoria tinha mirado no lugar errado.</p>
-<p class="meta">30–31 de agosto de 2026 · branch <code>kairogyn/ajustes-gustavo-28-08</code> · 30 commits sobre <code>develop</code> · 583 arquivos de teste, 4.281 verdes · testes, lint e typecheck verdes na mesma execução</p>
+<p class="meta">30–31 de agosto de 2026 · branch <code>kairogyn/ajustes-gustavo-28-08</code> · 33 commits sobre <code>develop</code> · 583 arquivos de teste, 4.299 verdes · testes, lint e typecheck verdes na mesma execução</p>
 
 <div class="idx">
   <a href="#macro"><span>1</span> O que passou a existir</a>
@@ -128,7 +128,7 @@
 
 <h2 id="codigo">4 · Onde o código mudou</h2>
 
-<p>30 commits, 116 arquivos, +17.454 / −231 linhas. Os números saem de <code>git diff --stat</code>, não de memória — e essa distinção deixou de ser retórica nesta entrega: na primeira versão deste dossiê o item C7 foi dado como não feito enquanto o diff mostrava 208 linhas de card reescrito. A narrativa do que se quis fazer erra; o <code>--stat</code> não.</p>
+<p>32 commits, 120 arquivos, +21.976 / −232 linhas. Os números saem de <code>git diff --stat</code>, não de memória — e essa distinção deixou de ser retórica nesta entrega: na primeira versão deste dossiê o item C7 foi dado como não feito enquanto o diff mostrava 208 linhas de card reescrito. A narrativa do que se quis fazer erra; o <code>--stat</code> não.</p>
 
 <h3>Arquivos novos</h3>
 <table>
@@ -227,7 +227,9 @@ turno real, depois:  cacheRead = 11611   suppressed = []</span></div>
 <p><b>O modelo entendeu; o servidor não gravou.</b> E como não gravou, a cascata continuou devolvendo o gate do nome, e o card foi pendurado embaixo da própria confirmação — no gate mais frágil do funil, pedindo o dado que a pessoa acabara de dar.</p>
 <p><b>Duas causas, e a segunda é minha.</b> A primeira: o detector de "o agente pediu o nome" exigia <code>seu nome</code> colado, e <i>"seu <b>primeiro</b> nome"</i> tem uma palavra no meio. A segunda: a trava que eu criei nesta branch contra o lead chamado "Suv" aceitava uma única autorização — a do card. Quando quem pergunta é o modelo (e o card cede a vez de propósito), não havia autorização nenhuma.</p>
 <p><b>A correção não é mais um padrão na lista.</b> O detector passou a aceitar até duas palavras entre o possessivo e "nome" — a forma da pergunta, não uma instância dela; acrescentar <code>/seu primeiro nome/</code> resolveria hoje e falharia em "seu nome completo". E a captura passou a aceitar a segunda âncora (<i>o modelo pediu o nome no turno anterior</i>), que é o mesmo tipo de fato do servidor. O lead "Suv" continua impossível, com caso próprio.</p>
-<p><b>Cobertura:</b> <code>detect-name-turn.test.ts</code> (14 casos, incluindo os que devem continuar negativos) e <code>cenario-o-nome-que-o-modelo-pediu.test.ts</code> (4 casos no grafo — um deles prova o caminho em que o card é suprimido, que é o único que exige a segunda âncora).</p>
+<p><b>E a correção teve um segundo tempo, porque a primeira versão dela regrediu outra coisa.</b> Ao estreitar o detector para não autorizar escrita indevida, cinco formas legítimas de pedir o nome deixaram de ser reconhecidas — <i>"Seu nome?"</i>, <i>"Me passa seu nome?"</i>, <i>"Preciso do seu nome pra seguir"</i>. Falso negativo ali faz o card não ceder a vez, e a pessoa lê duas perguntas de nome no mesmo balão: eu tinha trocado uma pergunta duplicada por outra.</p>
+<p>A causa foi colapsar num predicado só dois consumidores cujo custo de erro aponta em direções opostas — a <b>tela</b> (um card a mais não custa nada; um card a menos custa a pergunta em dobro) e a <b>escrita</b> (um falso positivo custa um lead com nome errado chegando à mesa). Agora são dois predicados, e o estreito é subconjunto do largo por construção, com teste travando isso.</p>
+<p><b>Cobertura:</b> <code>detect-name-turn.test.ts</code> (34 casos, com a tabela dos dois predicados lado a lado) e <code>cenario-o-nome-que-o-modelo-pediu.test.ts</code> (5 casos no grafo — um prova o caminho em que o card é suprimido, outro registra, com a sonda no comentário, uma alternativa que parecia mais sólida e reabriria o defeito).</p>
 </div>
 
 <div class="risco medio">
@@ -417,8 +419,8 @@ handoff_notifications
 <p><b>Que o BullMQ aceita os dois períodos na mesma fila não foi suposto</b> — foi verificado contra o Redis real do ambiente, e não contra o mock do teste:</p>
 <div class="prova"><span class="g">$ node .dois-repeat.mjs        # Queue.getRepeatableJobs()
 [{"nome":"poll","every":"30000"},{"nome":"sla-da-mesa","every":"86400000"}]</span></div>
-<p><b>E ele não repete os mesmos nomes.</b> A primeira versão mandava a lista inteira a cada ciclo — com ~24 leads na allowlist e p50 de 16,7 dias, a mesa receberia os mesmos ~24 nomes todo dia e criaria um filtro de caixa de entrada na primeira semana. Trocar "tela que ninguém abre" por "e-mail que a mesa filtra" chega no mesmo lugar por outra estrada. Agora ele alerta só quem <b>cruzou</b> o limite desde o ciclo anterior; os antigos entram como contagem e tempo do mais antigo, para a mesa não perder a noção do tamanho da pilha.</p>
-<p class="meta">A marca de "já alertei" <b>não</b> foi para <code>lead_events</code>, que seria o lugar óbvio: aquela tabela <i>é</i> o relógio do SLA (<code>max(created_at)</code>), e escrever nela faria o lead parecer tocado e sair da lista — o alarme apagaria a si mesmo. A janela de cruzamento dispensa estado novo.</p>
+<p><b>E ele não repete os mesmos nomes.</b> A primeira versão mandava a lista inteira a cada ciclo — com ~24 leads na allowlist e p50 de 16,7 dias, a mesa receberia os mesmos ~24 nomes todo dia e criaria um filtro de caixa de entrada na primeira semana. Trocar "tela que ninguém abre" por "e-mail que a mesa filtra" chega no mesmo lugar por outra estrada. Agora ele alerta só quem <b>ainda não foi avisado</b>; os antigos entram como contagem e tempo do mais antigo, para a mesa não perder a noção do tamanho da pilha.</p>
+<p class="meta">A marca de "já alertei" é a coluna <code>leads.sla_alertado_em</code>, e <b>não</b> um evento em <code>lead_events</code>, que seria o lugar óbvio: aquela tabela <i>é</i> o relógio do SLA (<code>max(created_at)</code>), e escrever nela faria o lead parecer tocado e sair da lista — o alarme apagaria a si mesmo. Uma primeira versão deduplicava por <i>janela</i>, sem estado nenhum; ela perdia o lead que cruzasse o limite durante um ciclo que não rodou (deploy, restart de task, blip do Redis) — o alarme pulando em silêncio justamente o esquecido. A marca é escrita só depois do envio confirmado: e-mail que falhou não pode silenciar ninguém.</p>
 <p class="meta">⚠️ <b>Falta uma decisão sua, e sem ela o alarme nasce mudo:</b> para quem ele toca. <code>ALERTA_SLA_MESA_TO</code> não tem default no código — vazio significa que ele registra no log e não envia, que é a regra de isolamento da casa (e-mail cravado em código é como alerta de um domínio termina na caixa de outro). Presumo o grupo de sustentação, mas o endereço é seu. <code>SLA_MESA_LIMITE_HORAS</code> vem com 24 h, que é 16× mais rápido que a mediana atual.</p>
 </div>
 
@@ -470,7 +472,7 @@ docker exec aja-app-ajustes-gustavo-28-08 npx vitest run --silent \
 <h3>9.3 · Pelos testes — resultado da última execução</h3>
 <div class="prova"><span class="g">$ pnpm vitest run   &&   pnpm lint   &&   pnpm typecheck
   Test Files  583 passed | 3 skipped (586)
-       Tests  4281 passed | 6 skipped (4287)
+       Tests  4299 passed | 6 skipped (4305)
 
   TESTES=0
   LINT=0
