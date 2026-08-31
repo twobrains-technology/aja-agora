@@ -39,6 +39,37 @@ export function pareceDirectiveDeServidor(texto: string): boolean {
 	);
 }
 
+/**
+ * De que número o contador de turnos começa.
+ *
+ * `funnel.turnosDoCliente` nasceu em 31/08/2026, então TODA conversa anterior a
+ * essa data — e toda conversa que o worker de retomada acorda — chega sem o
+ * campo. Com um `?? 0` seco, o primeiro turno depois da volta se declararia
+ * turno ZERO, que é exatamente a condição do score
+ * `primeira_resposta_com_numero`: uma conversa de dez turnos emitiria o score
+ * da primeira resposta, sujando o instrumento que vai julgar a campanha.
+ *
+ * A semente sai de `messages`, que foi descartada como contador CONTÍNUO (dava
+ * 0 → 1 → 3, porque `run-turn.ts` monta a lista por dois caminhos). Como
+ * semente ela serve: é lida uma vez só, no turno em que o campo está ausente —
+ * e esse é sempre o primeiro turno de uma thread nova do grafo, o ramo `else`
+ * de `run-turn.ts`, o único que popula `messages` a partir de
+ * `loadConversationHistory`. Ali a lista é o histórico do banco, e é exata. Do
+ * turno seguinte em diante o contador é próprio e esta função não roda.
+ *
+ * `??` e não `||`: zero persistido é um valor legítimo (a conversa que de fato
+ * está no turno zero), e `||` o trocaria pela semente.
+ */
+export function sementeDoContador(
+	turnosPersistidos: number | undefined,
+	messages: readonly { getType: () => string }[],
+): number {
+	if (turnosPersistidos !== undefined) return turnosPersistidos;
+	// `-1` porque a fala CORRENTE já está na lista quando este nó roda — medido,
+	// não deduzido: sem ele o cenário de três turnos passou a contar 1, 2, 3.
+	return Math.max(0, messages.filter((m) => m.getType() === "human").length - 1);
+}
+
 export async function persistNode(
 	state: AgentGraphStateType,
 	config?: LangGraphRunnableConfig,
@@ -172,10 +203,22 @@ export async function persistNode(
 	//
 	// Turno de SERVIDOR não conta: directive e retomada não são fala do cliente,
 	// e gastariam o índice 0 — que é o que `primeira_resposta_com_numero` lê.
+	//
+	// A semente é calculada em TODO turno, inclusive nos de servidor — só o
+	// INCREMENTO é exclusivo do cliente. A ordem importa: a retomada entra como
+	// directive (`isUserTurn: false`) e é a primeira coisa que roda quando o
+	// worker acorda uma conversa antiga. Semeando só em turno de cliente, aquela
+	// directive já teria entrado em `messages` sem que o contador existisse, e o
+	// turno seguinte — o primeiro do cliente — se declararia um índice adiante do
+	// real. Semeando aqui, o contador nasce com o histórico certo antes de
+	// qualquer fala nova.
+	const contador = sementeDoContador(funnel.turnosDoCliente, state.messages);
 	let indiceDoTurno: number | null = null;
 	if (isUserTurn) {
-		indiceDoTurno = funnel.turnosDoCliente ?? 0;
-		funnel = { ...funnel, turnosDoCliente: indiceDoTurno + 1 };
+		indiceDoTurno = contador;
+		funnel = { ...funnel, turnosDoCliente: contador + 1 };
+	} else if (funnel.turnosDoCliente === undefined) {
+		funnel = { ...funnel, turnosDoCliente: contador };
 	}
 
 	const projetado = projectToMeta({ ...state, funnel });
