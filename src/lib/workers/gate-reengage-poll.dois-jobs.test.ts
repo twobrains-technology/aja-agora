@@ -25,7 +25,9 @@ type OpcoesDeJob = { repeat?: { every?: number } };
 const add = vi.hoisted(() =>
 	vi.fn(async (_nome: string, _dados: unknown, _opcoes?: OpcoesDeJob) => {}),
 );
-const runSlaDaMesaCycle = vi.hoisted(() => vi.fn(async () => ({ parados: 0, enviado: false })));
+const runSlaDaMesaCycle = vi.hoisted(() =>
+	vi.fn(async () => ({ novos: 0, jaAlertados: 0, enviado: false })),
+);
 const runReengageCycle = vi.hoisted(() => vi.fn(async () => ({ reengaged: 0 })));
 const runRetomadaCycle = vi.hoisted(() => vi.fn(async () => ({ retomadas: 0 })));
 const runAcolhidaN1Cycle = vi.hoisted(() => vi.fn(async () => ({ acolhidas: 0 })));
@@ -77,10 +79,8 @@ describe("os dois jobs repetíveis", () => {
 		const alarme = registros.find((r) => r.nome === "sla-da-mesa");
 
 		expect(funil?.every).toBe(30_000);
-		// Amarrado à MESMA constante que o ciclo usa como largura da janela de
-		// cruzamento. Um `24` escrito à mão aqui e outro lá divergem em silêncio,
-		// e o efeito é lead que atravessa a janela sem alerta (ou alertado duas
-		// vezes) — sem nada ficar vermelho.
+		// Vem da constante do próprio ciclo: a frequência com que a mesa é cobrada
+		// se decide junto do alarme, não no bootstrap do worker do funil.
 		expect(alarme?.every).toBe(INTERVALO_DO_CICLO_HORAS * 60 * 60 * 1000);
 	});
 

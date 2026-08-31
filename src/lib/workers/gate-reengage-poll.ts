@@ -371,11 +371,9 @@ const POLL_INTERVAL_MS = Number(process.env.GATE_REENGAGE_POLL_INTERVAL_MS ?? 30
  *  No período do funil, o mesmo alarme mandaria ~2.880 e-mails por dia — e a
  *  mesa desligaria a campainha na primeira manhã. */
 //
-// O número vem de `INTERVALO_DO_CICLO_HORAS`, e não de um `24` escrito aqui,
-// porque o ciclo usa o MESMO valor como largura da janela de cruzamento: ele
-// alerta quem está parado entre `limite` e `limite + intervalo`. Se os dois
-// números divergirem, ou algum lead atravessa a janela sem nunca ser alertado
-// (período > janela), ou é alertado duas vezes (período < janela). Um lugar só.
+// O número vem de `INTERVALO_DO_CICLO_HORAS`, ao lado do ciclo que ele governa —
+// é lá que se decide com que frequência a mesa é cobrada, não aqui no meio do
+// bootstrap do worker do funil.
 const SLA_MESA_INTERVAL_MS = INTERVALO_DO_CICLO_HORAS * 60 * 60 * 1000;
 const JOB_FUNIL = "poll";
 const JOB_SLA_MESA = "sla-da-mesa";
@@ -427,7 +425,7 @@ export async function startGateReengageWorker() {
 			if (job?.name === JOB_SLA_MESA) {
 				const { runSlaDaMesaCycle } = await import("./sla-da-mesa-cycle");
 				const sla = await runSlaDaMesaCycle();
-				if (sla.cruzaram > 0 || sla.continuamParados > 0)
+				if (sla.novos > 0 || sla.jaAlertados > 0)
 					console.log(`[sla-da-mesa] ${JSON.stringify(sla)}`);
 				return;
 			}

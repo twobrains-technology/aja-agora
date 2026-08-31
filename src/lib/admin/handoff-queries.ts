@@ -35,8 +35,9 @@
 // todo mundo e some dentro dela. A mediana diz como é o caso típico; o p90 diz
 // o quão ruim fica a cauda — e é a cauda que perde venda.
 
-import { sql } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
+import { leads } from "@/db/schema";
 import type { LeadStage } from "./lead-stages";
 
 /**
@@ -116,6 +117,12 @@ export interface LeadParado {
 	estagio: EstagioHandoff;
 	desdeISO: string;
 	horasParado: number;
+	/** Quando a campainha do SLA avisou sobre este lead. `null` = nunca.
+	 *
+	 *  É o que impede o alarme de repetir os mesmos nomes todo dia — e o que o
+	 *  faz NÃO perder quem cruzou o limite durante um ciclo que não rodou (ver
+	 *  `sla-da-mesa-cycle.ts`). A tela não usa; quem usa é o worker. */
+	slaAlertadoEm: string | null;
 }
 
 export interface FunilDeHandoff {
@@ -319,6 +326,7 @@ export async function computeLeadsParados(
              (SELECT max(e.created_at) FROM lead_events e WHERE e.lead_id = l.id),
              l.created_at
            ) AS desde,
+           l.sla_alertado_em,
            EXTRACT(EPOCH FROM (now() - COALESCE(
              (SELECT max(e.created_at) FROM lead_events e WHERE e.lead_id = l.id),
              l.created_at
@@ -346,5 +354,27 @@ export async function computeLeadsParados(
 		estagio: String(linha.estagio) as EstagioHandoff,
 		desdeISO: new Date(linha.desde as string).toISOString(),
 		horasParado: numOuNulo(linha.horas) ?? 0,
+		slaAlertadoEm:
+			linha.sla_alertado_em === null || linha.sla_alertado_em === undefined
+				? null
+				: new Date(linha.sla_alertado_em as string).toISOString(),
 	}));
+}
+
+/**
+ * Carimba os leads que a campainha do SLA acabou de anunciar.
+ *
+ * Chamada DEPOIS do envio, nunca antes: marcar um lead cujo e-mail falhou o
+ * silenciaria para sempre — o alarme perderia justamente quem ele não
+ * conseguiu anunciar.
+ *
+ * Escreve em `leads`, e isso bumpa `updated_at`. É seguro desde a correção de
+ * 30/08/2026: o relógio do SLA passou a ser `max(lead_events.created_at)`
+ * justamente porque `updated_at` era bumpado por manutenção. Se um dia alguém
+ * voltar o relógio para `updated_at`, esta função passa a apagar da lista todo
+ * lead que ela anuncia — o alarme comendo o próprio rastro.
+ */
+export async function marcarSlaAlertado(leadIds: string[]): Promise<void> {
+	if (leadIds.length === 0) return;
+	await db.update(leads).set({ slaAlertadoEm: new Date() }).where(inArray(leads.id, leadIds));
 }

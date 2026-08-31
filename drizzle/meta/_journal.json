@@ -351,6 +351,13 @@
       "when": 1788123924739,
       "tag": "0049_codigo_de_origem_do_site",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1788150732002,
+      "tag": "0050_sla_alertado_em",
+      "breakpoints": true
     }
   ]
 }

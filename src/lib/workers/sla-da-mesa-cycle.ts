@@ -30,23 +30,23 @@
 // execução por período, mesmo com mais de uma instância do worker de pé. Sem
 // isso, o ciclo de 30s mandaria 2.880 e-mails por dia.
 
-import { computeLeadsParados } from "@/lib/admin/handoff-queries";
+import { computeLeadsParados, marcarSlaAlertado } from "@/lib/admin/handoff-queries";
 import { sendEmail } from "@/lib/email/sendgrid";
 
 /** 24 h. Um dia útil inteiro sem ninguém tocar num lead que a mesa já recebeu é
  *  o mínimo defensável — e ainda assim é 16× mais rápido que a mediana atual. */
 const LIMITE_PADRAO_HORAS = 24;
 
-/** Quanto tempo separa dois ciclos. É a LARGURA DA JANELA de cruzamento, e
- *  precisa bater com o `repeat` do job em `gate-reengage-poll.ts` — janela menor
- *  que o intervalo deixa lead passar sem alerta; maior, alerta duas vezes. */
+/** Quanto tempo separa dois ciclos — o `repeat` do job em `gate-reengage-poll.ts`
+ *  deriva daqui. Não é mais a largura de nenhuma janela: o dedup passou a ser
+ *  por marca no banco (ver abaixo). */
 export const INTERVALO_DO_CICLO_HORAS = 24;
 
 export type ResultadoSlaDaMesa = {
-	/** Quem CRUZOU o limite desde o ciclo anterior — os nomes que vão no e-mail. */
-	cruzaram: number;
-	/** Quem já estava parado antes disso — vai como contagem, não como lista. */
-	continuamParados: number;
+	/** Quem ainda não tinha sido alertado — os nomes que vão no e-mail. */
+	novos: number;
+	/** Quem já recebeu aviso em algum ciclo anterior — vira contagem, não lista. */
+	jaAlertados: number;
 	enviado: boolean;
 };
 
@@ -105,55 +105,59 @@ export async function runSlaDaMesaCycle(): Promise<ResultadoSlaDaMesa> {
 	const limite = limiteHoras();
 	const parados = await computeLeadsParados(limite);
 
-	// ── Só quem CRUZOU o limite desde o ciclo anterior ───────────────────────
+	// ── Só quem ainda NÃO foi alertado ───────────────────────────────────────
 	//
 	// A primeira versão mandava a lista inteira a cada ciclo. Com o estado real
 	// medido (~24 leads na allowlist, p50 de 16,7 dias), a mesa receberia os
-	// mesmos ~24 nomes todo dia — e desligaria a campainha na primeira semana,
-	// que é exatamente o modo de falha que este ciclo existe para evitar.
+	// mesmos ~24 nomes todo dia e criaria um filtro de caixa de entrada — o modo
+	// de falha que este arquivo nomeia duas vezes.
 	//
-	// A janela tem a largura do intervalo do ciclo, então cada lead cai nela uma
-	// vez só. Não precisa de estado novo — e é bom que não precise: o lugar
-	// óbvio para marcar "já alertei" seria `lead_events`, mas aquela tabela É o
-	// relógio do SLA (`max(created_at)` em `computeLeadsParados`), e escrever nela
-	// faria o lead parecer tocado e sair da lista. O alarme apagaria a si mesmo.
-	const cruzaram = parados.filter((p) => p.horasParado < limite + INTERVALO_DO_CICLO_HORAS);
-	const antigos = parados.filter((p) => p.horasParado >= limite + INTERVALO_DO_CICLO_HORAS);
+	// A segunda deduplicava por JANELA (parado entre `limite` e
+	// `limite + intervalo`). Funciona enquanto todo ciclo roda: um deploy, um
+	// restart de task no ECS ou um blip do Redis, e o lead que cruzou durante a
+	// lacuna chega ao ciclo seguinte já fora da janela — vira contagem no rodapé
+	// e nunca é alertado individualmente. O alarme pulando em silêncio
+	// exatamente o lead esquecido que ele existe para pegar.
+	//
+	// A marca não tem esse buraco: quem não foi anunciado continua pendente por
+	// quanto tempo durar a lacuna. Ela vive em `leads.sla_alertado_em`, e não em
+	// `lead_events`, porque aquela tabela É o relógio do SLA — escrever nela
+	// faria o lead parecer tocado e sair da lista.
+	const novos = parados.filter((p) => p.slaAlertadoEm === null);
+	const jaAlertados = parados.filter((p) => p.slaAlertadoEm !== null);
 
-	// Ninguém novo: silêncio. Os antigos já foram avisados quando cruzaram, e
-	// repeti-los é o que faz a mesa criar filtro de caixa de entrada.
-	if (cruzaram.length === 0) {
-		return { cruzaram: 0, continuamParados: antigos.length, enviado: false };
+	if (novos.length === 0) {
+		return { novos: 0, jaAlertados: jaAlertados.length, enviado: false };
 	}
 
 	const para = destinatarios();
 	if (para.length === 0) {
 		console.error(
-			`[sla-da-mesa] ${cruzaram.length} lead(s) cruzaram ${limite}h, mas ALERTA_SLA_MESA_TO está vazio — nenhum e-mail enviado`,
+			`[sla-da-mesa] ${novos.length} lead(s) parados além de ${limite}h, mas ALERTA_SLA_MESA_TO está vazio — nenhum e-mail enviado`,
 		);
-		return { cruzaram: cruzaram.length, continuamParados: antigos.length, enviado: false };
+		return { novos: novos.length, jaAlertados: jaAlertados.length, enviado: false };
 	}
 
 	// Mais antigo primeiro — é ele que a mesa tem que ligar agora.
-	const lista = [...cruzaram].sort((a, b) => b.horasParado - a.horasParado);
+	const lista = [...novos].sort((a, b) => b.horasParado - a.horasParado);
 	const pior = lista[0];
 
 	const plural = lista.length === 1 ? "1 lead parado" : `${lista.length} leads parados`;
 	const subject = `[AJA] ${plural} — o mais antigo há ${emDias(pior.horasParado)}`;
 
 	// A pilha antiga entra como NÚMERO, nunca como lista de nomes: silenciar o
-	// antigo é o objetivo, apagá-lo faria a mesa perder a noção do tamanho da
+	// já-avisado é o objetivo, apagá-lo faria a mesa perder a noção do tamanho da
 	// pilha — e é ela que diz se a situação melhora ou piora.
-	const maisAntigo = antigos.reduce((a, p) => (p.horasParado > a ? p.horasParado : a), 0);
+	const maisAntigo = jaAlertados.reduce((a, p) => (p.horasParado > a ? p.horasParado : a), 0);
 	const rodape =
-		antigos.length === 0
+		jaAlertados.length === 0
 			? []
 			: [
-					`Além destes, ${antigos.length} lead(s) continuam parados de ciclos anteriores — o mais antigo há ${emDias(maisAntigo)}. Não são repetidos aqui todo dia de propósito; a lista completa está em /admin/performance.`,
+					`Além destes, ${jaAlertados.length} lead(s) continuam parados e já foram avisados antes — o mais antigo há ${emDias(maisAntigo)}. Não são repetidos aqui todo dia de propósito; a lista completa está em /admin/performance.`,
 				];
 
 	const text = [
-		`${plural} — cruzaram ${limite}h sem nenhuma movimentação de estágio desde o último aviso.`,
+		`${plural} há mais de ${limite}h sem nenhuma movimentação de estágio, e ainda sem aviso.`,
 		"",
 		...lista.map(linhaDeTexto),
 		"",
@@ -163,7 +167,7 @@ export async function runSlaDaMesaCycle(): Promise<ResultadoSlaDaMesa> {
 	].join("\n");
 
 	const html = [
-		`<p><b>${plural}</b> — cruzaram ${limite}h sem nenhuma movimentação de estágio desde o último aviso.</p>`,
+		`<p><b>${plural}</b> há mais de ${limite}h sem nenhuma movimentação de estágio, e ainda sem aviso.</p>`,
 		"<ul>",
 		...lista.map(
 			(p) =>
@@ -178,11 +182,16 @@ export async function runSlaDaMesaCycle(): Promise<ResultadoSlaDaMesa> {
 		await sendEmail({ to: para.join(","), subject, html, text });
 	} catch (erro) {
 		console.error("[sla-da-mesa] envio falhou:", erro);
-		return { cruzaram: lista.length, continuamParados: antigos.length, enviado: false };
+		// NÃO marca. Marcar um lead cujo e-mail falhou o silenciaria para sempre —
+		// o alarme perderia justamente quem ele não conseguiu anunciar.
+		return { novos: lista.length, jaAlertados: jaAlertados.length, enviado: false };
 	}
 
+	// Só depois do envio confirmado.
+	await marcarSlaAlertado(lista.map((p) => p.leadId));
+
 	console.log(
-		`[sla-da-mesa] alerta enviado: ${lista.length} cruzaram ${limite}h · ${antigos.length} de ciclos anteriores`,
+		`[sla-da-mesa] alerta enviado: ${lista.length} novo(s) além de ${limite}h · ${jaAlertados.length} já avisados`,
 	);
-	return { cruzaram: lista.length, continuamParados: antigos.length, enviado: true };
+	return { novos: lista.length, jaAlertados: jaAlertados.length, enviado: true };
 }

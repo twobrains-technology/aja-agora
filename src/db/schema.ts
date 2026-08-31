@@ -467,6 +467,22 @@ export const leads = pgTable(
 		stage: leadStageEnum("stage").default("novo").notNull(),
 		creditValue: numeric("credit_value", { precision: 12, scale: 2 }),
 		isSimulated: boolean("is_simulated").default(false).notNull(),
+		/** Quando a campainha do SLA (D3/E1) avisou sobre este lead pela última vez.
+		 *
+		 *  A primeira versão do alarme deduplicava por JANELA — alertava quem
+		 *  estava parado entre `limite` e `limite + intervalo do ciclo`. Funciona
+		 *  enquanto todo ciclo roda: um deploy, um restart de task no ECS ou um
+		 *  blip do Redis e o lead que cruzou o limite durante a lacuna chega ao
+		 *  ciclo seguinte já fora da janela — vira contagem no rodapé e **nunca é
+		 *  alertado individualmente**. O alarme pulando, em silêncio, exatamente o
+		 *  lead esquecido que ele existe para pegar.
+		 *
+		 *  Fica em `leads` e não em `lead_events` de propósito: aquela tabela É o
+		 *  relógio do SLA (`max(created_at)` em `computeLeadsParados`), e escrever
+		 *  um evento ali faria o lead parecer tocado e SAIR da lista — o alarme
+		 *  apagaria a si mesmo. Uma coluna aqui bumpa `updated_at`, que desde a
+		 *  correção de 30/08 não é mais o relógio de nada. */
+		slaAlertadoEm: timestamp("sla_alertado_em", { withTimezone: true }),
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 	},
