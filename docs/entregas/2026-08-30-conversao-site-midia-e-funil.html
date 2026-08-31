@@ -414,6 +414,9 @@ handoff_notifications
 <li><b>Não tem consulta própria</b> — chama a mesma função que pinta a lista na tela. Duas consultas para a mesma pergunta divergem no primeiro ajuste de regra, e aí o e-mail e o painel passam a contar histórias diferentes sobre o mesmo lead.</li>
 <li><b>O ritmo é do BullMQ, não de um <code>if</code> de relógio.</b> O job repetível é persistido no Redis, então vale entre reinícios e entre instâncias. E o handler ramifica por nome do job: sem isso, ou o alarme rodaria no período de 30 s do funil (~2.880 e-mails por dia), ou o funil inteiro passaria a rodar uma vez por dia — silenciosamente, matando venda. Os dois modos de falha têm teste.</li>
 </ul>
+<p><b>Que o BullMQ aceita os dois períodos na mesma fila não foi suposto</b> — foi verificado contra o Redis real do ambiente, e não contra o mock do teste:</p>
+<div class="prova"><span class="g">$ node .dois-repeat.mjs        # Queue.getRepeatableJobs()
+[{"nome":"poll","every":"30000"},{"nome":"sla-da-mesa","every":"86400000"}]</span></div>
 <p class="meta">⚠️ <b>Falta uma decisão sua, e sem ela o alarme nasce mudo:</b> para quem ele toca. <code>ALERTA_SLA_MESA_TO</code> não tem default no código — vazio significa que ele registra no log e não envia, que é a regra de isolamento da casa (e-mail cravado em código é como alerta de um domínio termina na caixa de outro). Presumo o grupo de sustentação, mas o endereço é seu. <code>SLA_MESA_LIMITE_HORAS</code> vem com 24 h, que é 16× mais rápido que a mediana atual.</p>
 </div>
 
