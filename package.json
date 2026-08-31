@@ -12,7 +12,7 @@
 		"start": "next start",
 		"lint": "biome check .",
 		"format": "biome check --write .",
-		"typecheck": "tsc --noEmit",
+		"typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
 		"db:generate": "drizzle-kit generate",
 		"db:migrate": "drizzle-kit migrate",
 		"db:migrate:bundle": "esbuild scripts/migrate-guard.mjs --bundle --platform=node --target=node22 --format=cjs --packages=bundle --outfile=scripts/migrate-guard.bundle.cjs",
