@@ -40,7 +40,7 @@ vi.mock("@/lib/chat/provider", () => ({
 	useChatContext: () => ({ sendAction: vi.fn(), status: "ready" }),
 }));
 
-import { caminhoEstavel } from "@/lib/heatmap/selector";
+import { alvoDoClique, caminhoEstavel, ehSobreposto } from "@/lib/heatmap/selector";
 import { GateIdentityForm } from "./gate-identity-form";
 
 afterEach(cleanup);
@@ -81,5 +81,42 @@ describe("C7 — os três momentos do card têm nome próprio no mapa de calor",
 		render(<GateIdentityForm active={false} />);
 		const enviar = screen.getByTestId("identify-submit");
 		expect(caminhoEstavel(enviar)).not.toBe("@data-heat-id=identify-envio");
+	});
+});
+
+// ── O elo que faz o sinal EXISTIR ───────────────────────────────────────────
+//
+// Nomear o botão não basta. Entre o `data-heat-id` e a linha em `page_events`
+// há uma cadeia que precisa fechar inteira, e ela vive fora deste componente:
+//
+//   1. o clique cai no `<span>` do rótulo, não no `<button>` → `alvoDoClique`
+//      sobe até o elemento clicável;
+//   2. `ehSobreposto` reconhece que o toque foi DENTRO do teatro (que é um
+//      `role="dialog"`) e manda para `chatTocou` em vez de virar ponto no mapa
+//      da página — o teatro é `fixed`, e a coordenada desenharia a batida sobre
+//      uma seção que ninguém tocou;
+//   3. `caminhoEstavel` resolve o alvo pelo `data-heat-id`.
+//
+// Se qualquer um dos três não fechar, o sinal não existe e NADA fica vermelho —
+// é o mesmo no-op silencioso que a revisão desta branch encontrou no item A3,
+// onde o cookie do carimbo não tinha teste e o item inteiro podia virar decoração.
+describe("a cadeia até o evento, e não só o atributo", () => {
+	it("clique no rótulo dentro do teatro chega como toque de card, com o nome certo", () => {
+		const { container } = render(
+			// O teatro real é `role="dialog"` (chat-theater.tsx). É esse atributo que
+			// `ehSobreposto` procura.
+			<div role="dialog">
+				<GateIdentityForm />
+			</div>,
+		);
+
+		const botao = screen.getByTestId("identify-avancar");
+		// O que o navegador entrega é o nó mais interno — aqui, o texto do botão.
+		const batido = botao.firstChild instanceof Element ? botao.firstChild : botao;
+
+		const alvo = alvoDoClique(batido);
+		expect(ehSobreposto(alvo)).toBe(true);
+		expect(caminhoEstavel(alvo)).toBe("@data-heat-id=identify-passo-1-ok");
+		expect(container.querySelector('[role="dialog"]')).toBeTruthy();
 	});
 });
