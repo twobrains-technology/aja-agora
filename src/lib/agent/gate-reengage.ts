@@ -8,7 +8,7 @@
 // re-engajar. Espelha `isStreamStuck` (chat/stream-watchdog.ts). O worker
 // (workers/gate-reengage-poll.ts) só arma o ciclo recorrente.
 
-import { gateQuestion } from "./orchestrator/gate-questions";
+import { gateQuestion, PERGUNTA_DO_NOME } from "./orchestrator/gate-questions";
 import type { Category, ConversationMetadata } from "./personas";
 import { COLLECTION_GATES, type Gate, nextGate } from "./qualify-state";
 
@@ -172,7 +172,7 @@ export function reengageQuestionForGate(
 	// medidas são web. A rede cobria só o WhatsApp, onde este gate quase não
 	// dispara.
 	if (gate === "name" && category) {
-		const base = "Antes de eu buscar as ofertas, como posso te chamar?";
+		const base = PERGUNTA_DO_NOME;
 		if (attempt <= 1) return base;
 		if (attempt === 2) return `${base}\n\nSó falta isso pra eu seguir — é rapidinho.`;
 		return `${base}\n\nÉ seguro e sem compromisso. Só preciso disso pra continuar.`;

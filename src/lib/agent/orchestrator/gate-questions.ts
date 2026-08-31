@@ -107,6 +107,20 @@ const DESIRE_QUESTIONS: Record<Category, string> = {
  */
 const DESIRE_ABERTURA = "Me conta o que você quer conquistar: um carro, uma moto ou um imóvel?";
 
+/** A pergunta do nome, em UMA fala.
+ *
+ *  Dois lugares a dizem, e por motivos diferentes: aqui, quando o WhatsApp
+ *  precisa de texto porque não tem card; e `reengageQuestionForGate`, quando o
+ *  cliente ignorou o card na web. Ter a frase escrita duas vezes não dá sintoma
+ *  — dá DIVERGÊNCIA: alguém melhora a copy num arquivo, o outro segue com a
+ *  antiga, e o mesmo cliente ouve duas versões da mesma pergunta conforme o
+ *  caminho que tomou. É a razão pela qual `mascaras.ts` foi extraído nesta
+ *  mesma branch.
+ *
+ *  O reengajamento a usa como BASE e acrescenta a escada de insistência — a
+ *  primeira fala é idêntica de propósito. */
+export const PERGUNTA_DO_NOME = "Antes de eu buscar as ofertas, como posso te chamar?";
+
 export function gateQuestion(
 	gate: Gate,
 	category?: Category | null,
@@ -154,9 +168,7 @@ export function gateQuestion(
 			//
 			// Só no WhatsApp: na web o card É a pergunta, e um texto aqui a
 			// duplicaria — que é exatamente o que o FIX-17 evitou.
-			return channel === "whatsapp" && category
-				? "Antes de eu buscar as ofertas, como posso te chamar?"
-				: null;
+			return channel === "whatsapp" && category ? PERGUNTA_DO_NOME : null;
 		case "desire":
 			return category ? DESIRE_QUESTIONS[category] : DESIRE_ABERTURA;
 		case "experience":
