@@ -478,6 +478,13 @@ docker exec aja-app-ajustes-gustavo-28-08 npx vitest run --silent \
   LINT=0
   TSC=0</span></div>
 
+<p><b>E as migrations foram aplicadas num banco criado do zero</b>, que é o caminho que produção percorre — não só no banco do workspace, onde elas já estavam aplicadas e um erro de ordem não apareceria:</p>
+<div class="prova"><span class="g">$ createdb aja_migracao_limpa && pnpm drizzle-kit migrate
+  [✓] migrations applied successfully!
+
+  chat_iniciado no enum:        1
+  índice do código de origem:   1
+  coluna sla_alertado_em:       1</span></div>
 <p class="meta"><b>Os três na mesma execução, e isso é correção de método.</b> Nas rodadas anteriores eu declarei o lint verde tendo rodado <code>biome check src/</code> — que não cobre <code>docs/</code>, onde o CSS deste dossiê estava desformatado e fazia <code>pnpm lint</code> sair 1. Três rodadas seguidas tiveram uma declaração que não sobreviveu à conferência de quem revisou; passei a rodar o comando do repositório inteiro e a ler o exit code antes de escrever qualquer número aqui.</p>
 
 <p class="meta">Nenhum teste vermelho, conhecido ou herdado. Estes números são da suíte INTEIRA (<code>vitest run</code>), não do <code>test:unit</code> — que exclui rota, integração e builder, e por isso reportava 491 arquivos. Os 3 arquivos pulados dependem de credencial da Bevi que não existe no ambiente local.</p>
