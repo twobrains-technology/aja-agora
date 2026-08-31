@@ -53,6 +53,19 @@ export function GateIdentityForm({
 	// vivos e dava pra preencher o morto (aconteceu no smoke).
 	const inerte = isStreaming || submitted || !active;
 
+	// ── O sinal da fronteira dos passos (C7, 30/08/2026) ────────────────────
+	//
+	// `heatmap-tracker` escuta todo clique dentro do teatro e resolve o alvo por
+	// `caminhoEstavel`, que prefere `data-heat-id` a qualquer outra âncora. Um
+	// nome aqui basta para o evento `chat_card_click` existir — nenhuma linha de
+	// coleta, nenhuma chamada nova.
+	//
+	// Só no card VIVO. O card do histórico (`active: false`) renderiza os dois
+	// passos de uma vez e não responde a clique; nomeá-lo faria um toque sem
+	// efeito contar como travessia de fronteira, inflando justamente o
+	// numerador que este sinal existe para medir.
+	const heat = (id: string) => (active ? { "data-heat-id": id } : {});
+
 	const cpfDigits = onlyDigits(cpf);
 	const phoneDigits = onlyDigits(phone);
 
@@ -236,6 +249,7 @@ export function GateIdentityForm({
 						onClick={submit}
 						disabled={!valid}
 						data-testid="identify-submit"
+						{...heat("identify-envio")}
 						className="w-full min-h-[44px] flex items-center justify-center gap-2 rounded-full bg-primary text-primary-foreground text-sm font-semibold transition-[opacity,box-shadow] hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
 					>
 						<ShieldCheck className="size-4" />
@@ -250,6 +264,7 @@ export function GateIdentityForm({
 							onClick={() => setPasso(1)}
 							disabled={inerte}
 							data-testid="identify-voltar"
+							{...heat("identify-voltar-ao-passo-1")}
 							className="text-[11px] text-muted-foreground underline underline-offset-2 transition-opacity hover:opacity-70 disabled:opacity-40"
 						>
 							Corrigir meu celular
@@ -262,6 +277,7 @@ export function GateIdentityForm({
 					onClick={() => setPasso(2)}
 					disabled={!podeAvancar}
 					data-testid="identify-avancar"
+					{...heat("identify-passo-1-ok")}
 					className="w-full min-h-[44px] flex items-center justify-center gap-2 rounded-full bg-primary text-primary-foreground text-sm font-semibold transition-[opacity,box-shadow] hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
 				>
 					Continuar
