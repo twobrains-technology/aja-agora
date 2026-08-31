@@ -11,7 +11,7 @@
 
 <h1>Conversão: site, mídia e funil</h1>
 <p class="lede">Os 26 itens das abas <b>Site (CRO)</b> e <b>Plano de Ação por Etapa</b> da planilha do Gustavo (28/08), executados de ponta a ponta — e uma medição que mostrou que a auditoria tinha mirado no lugar errado.</p>
-<p class="meta">30–31 de agosto de 2026 · branch <code>kairogyn/ajustes-gustavo-28-08</code> · 33 commits sobre <code>develop</code> · 583 arquivos de teste, 4.299 verdes · testes, lint e typecheck verdes na mesma execução</p>
+<p class="meta">30–31 de agosto de 2026 · branch <code>kairogyn/ajustes-gustavo-28-08</code> · 36 commits sobre <code>develop</code> · 583 arquivos de teste, 4.301 verdes · testes, lint e typecheck verdes na mesma execução</p>
 
 <div class="idx">
   <a href="#macro"><span>1</span> O que passou a existir</a>
@@ -128,7 +128,7 @@
 
 <h2 id="codigo">4 · Onde o código mudou</h2>
 
-<p>32 commits, 120 arquivos, +21.976 / −232 linhas. Os números saem de <code>git diff --stat</code>, não de memória — e essa distinção deixou de ser retórica nesta entrega: na primeira versão deste dossiê o item C7 foi dado como não feito enquanto o diff mostrava 208 linhas de card reescrito. A narrativa do que se quis fazer erra; o <code>--stat</code> não.</p>
+<p>34 commits, 120 arquivos, +22.109 / −232 linhas. Os números saem de <code>git diff --stat</code>, não de memória — e essa distinção deixou de ser retórica nesta entrega: na primeira versão deste dossiê o item C7 foi dado como não feito enquanto o diff mostrava 208 linhas de card reescrito. A narrativa do que se quis fazer erra; o <code>--stat</code> não.</p>
 
 <h3>Arquivos novos</h3>
 <table>
@@ -420,7 +420,7 @@ handoff_notifications
 <div class="prova"><span class="g">$ node .dois-repeat.mjs        # Queue.getRepeatableJobs()
 [{"nome":"poll","every":"30000"},{"nome":"sla-da-mesa","every":"86400000"}]</span></div>
 <p><b>E ele não repete os mesmos nomes.</b> A primeira versão mandava a lista inteira a cada ciclo — com ~24 leads na allowlist e p50 de 16,7 dias, a mesa receberia os mesmos ~24 nomes todo dia e criaria um filtro de caixa de entrada na primeira semana. Trocar "tela que ninguém abre" por "e-mail que a mesa filtra" chega no mesmo lugar por outra estrada. Agora ele alerta só quem <b>ainda não foi avisado</b>; os antigos entram como contagem e tempo do mais antigo, para a mesa não perder a noção do tamanho da pilha.</p>
-<p class="meta">A marca de "já alertei" é a coluna <code>leads.sla_alertado_em</code>, e <b>não</b> um evento em <code>lead_events</code>, que seria o lugar óbvio: aquela tabela <i>é</i> o relógio do SLA (<code>max(created_at)</code>), e escrever nela faria o lead parecer tocado e sair da lista — o alarme apagaria a si mesmo. Uma primeira versão deduplicava por <i>janela</i>, sem estado nenhum; ela perdia o lead que cruzasse o limite durante um ciclo que não rodou (deploy, restart de task, blip do Redis) — o alarme pulando em silêncio justamente o esquecido. A marca é escrita só depois do envio confirmado: e-mail que falhou não pode silenciar ninguém.</p>
+<p class="meta">A marca de "já alertei" é a coluna <code>leads.sla_alertado_em</code>, e <b>não</b> um evento em <code>lead_events</code>, que seria o lugar óbvio: aquela tabela <i>é</i> o relógio do SLA (<code>max(created_at)</code>), e escrever nela faria o lead parecer tocado e sair da lista — o alarme apagaria a si mesmo. Uma primeira versão deduplicava por <i>janela</i>, sem estado nenhum; ela perdia o lead que cruzasse o limite durante um ciclo que não rodou (deploy, restart de task, blip do Redis) — o alarme pulando em silêncio justamente o esquecido. A marca é escrita só depois do envio confirmado: e-mail que falhou não pode silenciar ninguém. E o critério é <b>episódio</b>, não vida do lead — quem foi avisado, resgatado e parou de novo volta a tocar, porque o aviso é comparado com a última movimentação de estágio.</p>
 <p class="meta">⚠️ <b>Falta uma decisão sua, e sem ela o alarme nasce mudo:</b> para quem ele toca. <code>ALERTA_SLA_MESA_TO</code> não tem default no código — vazio significa que ele registra no log e não envia, que é a regra de isolamento da casa (e-mail cravado em código é como alerta de um domínio termina na caixa de outro). Presumo o grupo de sustentação, mas o endereço é seu. <code>SLA_MESA_LIMITE_HORAS</code> vem com 24 h, que é 16× mais rápido que a mediana atual.</p>
 </div>
 
@@ -472,7 +472,7 @@ docker exec aja-app-ajustes-gustavo-28-08 npx vitest run --silent \
 <h3>9.3 · Pelos testes — resultado da última execução</h3>
 <div class="prova"><span class="g">$ pnpm vitest run   &&   pnpm lint   &&   pnpm typecheck
   Test Files  583 passed | 3 skipped (586)
-       Tests  4299 passed | 6 skipped (4305)
+       Tests  4301 passed | 6 skipped (4307)
 
   TESTES=0
   LINT=0
