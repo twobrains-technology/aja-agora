@@ -1,0 +1,16 @@
+=== ESTADO DE PRODUÇÃO ANTES DO DEPLOY — 2026-08-31T13:45:02Z ===
+
+-- imagem em execução --
+{
+    "started": "2026-08-28T17:58:14.950000-03:00",
+    "digest": "sha256:5489a1859742b8dd003e5178194e5572e25fa2d11169e577472e4f5083fec253"
+}
+
+-- worker --
+{
+    "started": "2026-08-25T18:34:40.589000-03:00",
+    "digest": "sha256:9289c1eaf348db346b076281cdc937a4cf614eae3bec74b5feae38d8afd398c5"
+}
+
+-- resposta do site --
+  https://ajaagora.com.br  HTTP 200  0.309469s

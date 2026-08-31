@@ -41,9 +41,21 @@ import { sendEmail } from "@/lib/email/sendgrid";
  *  o mínimo defensável — e ainda assim é 16× mais rápido que a mediana atual. */
 const LIMITE_PADRAO_HORAS = 24;
 
-/** Quanto tempo separa dois ciclos — o `repeat` do job em `gate-reengage-poll.ts`
- *  deriva daqui. Não é mais a largura de nenhuma janela: o dedup passou a ser
- *  por marca no banco (ver abaixo). */
+/** A HORA em que a campainha toca, em cron UTC — 12:00 UTC = 9h de Brasília.
+ *
+ *  É `pattern` e não `every` de propósito, e a diferença não é cosmética: o
+ *  `every` do BullMQ alinha à ÉPOCA, não ao momento do registro. Medido contra
+ *  o Redis antes de trocar: `every: 24h` agendava a próxima execução para
+ *  meia-noite UTC — **21h de Brasília**. Um alerta operacional que chega às 21h
+ *  é lido no dia seguinte, ou não é lido; e o item existe justamente porque
+ *  ninguém abria a tela.
+ *
+ *  9h é o começo do expediente da mesa: o lead esquecido aparece na caixa antes
+ *  do primeiro café, não depois do jantar. */
+export const CRON_DA_CAMPAINHA = "0 12 * * *";
+
+/** Quanto tempo separa dois disparos, em horas. Deriva do cron acima e serve
+ *  para quem precisa raciocinar sobre a cadência (não para agendar). */
 export const INTERVALO_DO_CICLO_HORAS = 24;
 
 export type ResultadoSlaDaMesa = {

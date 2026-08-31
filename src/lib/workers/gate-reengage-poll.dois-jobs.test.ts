@@ -19,9 +19,9 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { INTERVALO_DO_CICLO_HORAS } from "./sla-da-mesa-cycle";
+import { CRON_DA_CAMPAINHA } from "./sla-da-mesa-cycle";
 
-type OpcoesDeJob = { repeat?: { every?: number } };
+type OpcoesDeJob = { repeat?: { every?: number; pattern?: string } };
 const add = vi.hoisted(() =>
 	vi.fn(async (_nome: string, _dados: unknown, _opcoes?: OpcoesDeJob) => {}),
 );
@@ -73,15 +73,21 @@ describe("os dois jobs repetíveis", () => {
 		const { startGateReengageWorker } = await import("./gate-reengage-poll");
 		await startGateReengageWorker();
 
-		const registros = add.mock.calls.map((c) => ({ nome: c[0], every: c[2]?.repeat?.every }));
+		const registros = add.mock.calls.map((c) => ({
+			nome: c[0],
+			every: c[2]?.repeat?.every,
+			pattern: c[2]?.repeat?.pattern,
+		}));
 
 		const funil = registros.find((r) => r.nome === "poll");
 		const alarme = registros.find((r) => r.nome === "sla-da-mesa");
 
 		expect(funil?.every).toBe(30_000);
-		// Vem da constante do próprio ciclo: a frequência com que a mesa é cobrada
-		// se decide junto do alarme, não no bootstrap do worker do funil.
-		expect(alarme?.every).toBe(INTERVALO_DO_CICLO_HORAS * 60 * 60 * 1000);
+		// O alarme é agendado por CRON, não por intervalo — e isso não é detalhe:
+		// o `every` do BullMQ alinha à época, e 24h caía à meia-noite UTC, 21h de
+		// Brasília. Medido contra o Redis. O cron fixa 9h, começo do expediente.
+		expect(alarme?.every).toBeUndefined();
+		expect(alarme?.pattern).toBe(CRON_DA_CAMPAINHA);
 	});
 
 	it("o job do funil NÃO dispara o alarme", async () => {
