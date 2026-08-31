@@ -82,6 +82,7 @@ const FUNIL_COMPLETO: FunnelState = {
 	experienceDispatched: true,
 	nameCardAdiado: true,
 	nameCardExibido: true,
+	turnosDoCliente: 7,
 	nomeDispensado: true,
 	topicPickerDispatched: true,
 	recoConsentDispatched: true,

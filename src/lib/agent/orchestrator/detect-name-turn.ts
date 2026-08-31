@@ -46,8 +46,23 @@ export function perguntouONome(texto: string | undefined | null): boolean {
 		/como\s+(te\s+|posso\s+(te\s+)?|prefere\s+ser\s+|gosta\s+de\s+ser\s+)?(chamar|chamad[oa]|chama)\b/.test(
 			prev,
 		) ||
-		/qual.{0,20}seu\s+nome/.test(prev) ||
-		/(seu|teu)\s+nome\??/.test(prev) ||
+		// FOLGA entre o possessivo e "nome" — até duas palavras.
+		//
+		// Antes os dois padrões exigiam `seu nome` ADJACENTE, e a variação mais
+		// natural que o modelo escreve escapava: em 31/08/2026, ao vivo, ele
+		// perguntou "Qual é o seu PRIMEIRO nome, pra eu poder te chamar?", o
+		// cliente respondeu "Marina", o agente disse "Prazer, Marina!" — e o
+		// servidor emitiu embaixo o card "Como posso te chamar?", pedindo de novo
+		// o que a pessoa acabara de dizer.
+		//
+		// A folga é a FORMA da pergunta, não mais uma instância dela: cobre
+		// "seu primeiro nome", "seu nome completo", "teu nome de batismo". Somar
+		// `/seu primeiro nome/` à lista consertaria só este caso e falharia no
+		// próximo — é o "porta a porta" que o CLAUDE.md nomeia.
+		//
+		// O teto de duas palavras é o que impede a folga de atravessar a frase:
+		// sem ele, um "seu" no começo e um "nome" seis palavras depois casariam.
+		/(seu|teu)(\s+\S+){0,2}\s+nome\b/.test(prev) ||
 		/como\s+(voce\s+)?se\s+chama/.test(prev)
 	);
 }

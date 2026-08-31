@@ -98,10 +98,33 @@ export function captureAnswerNode(state: AgentGraphStateType): Partial<AgentGrap
 	// O flag é CONSUMIDO aqui e remarcado por `emitCardNode` quando o card sai
 	// de novo. `capture` roda antes de `emitCard` no grafo, então o ciclo fecha
 	// dentro do mesmo turno.
+	// ── DUAS autorizações, porque são DOIS jeitos de a pergunta ter sido feita ─
+	//
+	// O card não é o único que pergunta o nome. Quando o MODELO já perguntou, o
+	// card cede a vez de propósito (FIX-379, `deveEmitirCardDeNome`) — e aí
+	// `nameCardExibido` é falso justamente no turno em que a pessoa responde.
+	//
+	// Visto ao vivo em 31/08/2026, no browser:
+	//
+	//   🤖  Qual é o seu primeiro nome, pra eu poder te chamar?
+	//   👤  Marina
+	//   🤖  Prazer, Marina!
+	//   📋  [card] Como posso te chamar?          ← pedindo de novo
+	//
+	// O modelo entendeu e o servidor não gravou; sem gravar, `nextGate` continua
+	// devolvendo `name` e o card vai pendurado embaixo da própria confirmação.
+	//
+	// `modelAskedForName` é o mesmo tipo de âncora que `nameCardExibido`: um
+	// FATO do servidor sobre o turno anterior (o texto emitido pediu o nome),
+	// não um palpite sobre a resposta. E não precisa ser consumido — `converse`
+	// o reescreve a cada turno. Se o modelo pede o nome no turno N e no N+1
+	// pergunta a carroceria, o sinal já é falso quando "SUV" chega no N+2: é
+	// exatamente o lead "Suv", e ele continua impossível.
 	const gateRespondido = state.gate ?? state.answeredGate;
-	if (gateRespondido !== "name" || !state.funnel.nameCardExibido) return {};
+	const perguntaFoiFeita = state.funnel.nameCardExibido || state.modelAskedForName;
+	if (gateRespondido !== "name" || !perguntaFoiFeita) return {};
 
-	// Consome: a autorização vale para ESTA resposta e acaba aqui.
+	// Consome: a autorização do CARD vale para ESTA resposta e acaba aqui.
 	const consumido = { funnel: { ...state.funnel, nameCardExibido: false } };
 	if (state.contactName) return consumido;
 

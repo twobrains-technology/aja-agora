@@ -1,0 +1,86 @@
+/**
+ * O detector de "o agente pediu o nome" — e o buraco que ele tinha.
+ *
+ * ── O que este detector é, e o que ele NÃO é ────────────────────────────────
+ *
+ * Isto **não** é um guard sobre a fala do agente. Não suprime nada, não censura
+ * frase, não decide o que o cliente lê. É um sinal de COORDENAÇÃO entre as duas
+ * metades do mesmo turno: o texto que o modelo escreveu e o card que o servidor
+ * vai (ou não vai) pendurar embaixo dele. Os dois consumidores:
+ *
+ *   `deveEmitirCardDeNome` (emit-card.ts) — o agente que pergunta o imóvel não
+ *      pode receber embaixo um campo pedindo o nome;
+ *   `captureAnswerNode` (capture.ts) — a resposta curta do cliente só é lida
+ *      como nome se a pergunta anterior era sobre nome.
+ *
+ * ── O buraco, visto ao vivo em 31/08/2026 ───────────────────────────────────
+ *
+ * O agente perguntou, em produção local:
+ *
+ *   "Perfeito! R$ 80 mil é um bom orçamento para um carro legal.
+ *    Qual é o seu PRIMEIRO nome, pra eu poder te chamar?"
+ *
+ * O cliente respondeu "Marina". O agente respondeu "Prazer, Marina!" — e o
+ * servidor, embaixo, emitiu o card "Como posso te chamar?". Pedindo de novo o
+ * que a pessoa acabava de dizer, no gate mais frágil do funil.
+ *
+ * A causa: os padrões exigiam `seu nome` ADJACENTE (`/(seu|teu)\s+nome/`), e
+ * "seu primeiro nome" tem uma palavra no meio. `"Qual é o seu nome?"` passava;
+ * a variação mais natural que o modelo escreve, não.
+ *
+ * ── Por que a correção é uma FOLGA e não mais um padrão ─────────────────────
+ *
+ * Acrescentar `/seu primeiro nome/` à lista resolveria este caso e falharia no
+ * seguinte ("seu nome completo", "teu nome de batismo"). O CLAUDE.md nomeia
+ * esse anti-padrão: não se fecha porta a porta, fecha-se a parede. A parede
+ * aqui é aceitar até duas palavras entre o possessivo e "nome" — a forma da
+ * pergunta, não uma de suas instâncias.
+ *
+ * O limite conhecido fica registrado nos casos negativos abaixo: o detector
+ * continua sendo texto, e "vou te chamar quando as ofertas saírem" NÃO pode
+ * virar pedido de nome — seria pior que o defeito que ele conserta.
+ */
+
+import { describe, expect, it } from "vitest";
+import { perguntouONome } from "./detect-name-turn";
+
+describe("o agente pediu o nome", () => {
+	it.each([
+		"Qual é o seu primeiro nome, pra eu poder te chamar?",
+		"Perfeito! R$ 80 mil é um bom orçamento. Qual é o seu primeiro nome, pra eu poder te chamar?",
+		"Qual seu nome completo?",
+		"Me diz teu primeiro nome?",
+	])("reconhece a folga entre o possessivo e 'nome': %s", (fala) => {
+		expect(perguntouONome(fala)).toBe(true);
+	});
+
+	it.each([
+		"Qual é o seu nome?",
+		"Como posso te chamar?",
+		"Como prefere ser chamado?",
+		"Como você se chama?",
+	])("o que já funcionava continua funcionando: %s", (fala) => {
+		expect(perguntouONome(fala)).toBe(true);
+	});
+});
+
+describe("o agente NÃO pediu o nome", () => {
+	it.each([
+		"Prefere sedã ou SUV?",
+		"Vou te chamar assim que as ofertas saírem.",
+		"Esse grupo tem nome de fantasia diferente na administradora.",
+		"Qual valor do bem você tem em mente?",
+		"",
+	])("não confunde com: %s", (fala) => {
+		expect(perguntouONome(fala)).toBe(false);
+	});
+
+	it("a folga não atravessa a frase inteira", () => {
+		// Sem limite de palavras, um "seu" no começo e um "nome" seis palavras
+		// depois casariam — e aí qualquer fala com as duas palavras viraria pedido
+		// de nome.
+		expect(
+			perguntouONome("Esse é o seu grupo, com a taxa mais baixa que achei em nome da Bevi"),
+		).toBe(false);
+	});
+});
