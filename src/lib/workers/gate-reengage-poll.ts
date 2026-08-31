@@ -363,6 +363,16 @@ const QUEUE_NAME = "gate-reengage-poll";
  * ordem de grandeza do teto de inatividade, não em minutos como o proposal-poll). */
 const POLL_INTERVAL_MS = Number(process.env.GATE_REENGAGE_POLL_INTERVAL_MS ?? 30_000);
 
+/** A campainha do D3/E1 roda UMA VEZ POR DIA, e não a cada 30 s como o funil.
+ *
+ *  Quem garante isso é o `repeat` do BullMQ, não um `if` de relógio: ele é
+ *  persistido no Redis, então vale entre reinícios e entre instâncias do worker.
+ *  No período do funil, o mesmo alarme mandaria ~2.880 e-mails por dia — e a
+ *  mesa desligaria a campainha na primeira manhã. */
+const SLA_MESA_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const JOB_FUNIL = "poll";
+const JOB_SLA_MESA = "sla-da-mesa";
+
 /**
  * Sobe a fila + worker BullMQ com job recorrente. Exige Redis (REDIS_URL).
  * Degrada com log se REDIS_URL ausente (não derruba o app — mesmo padrão do
@@ -386,14 +396,34 @@ export async function startGateReengageWorker() {
 
 	const queue = new Queue(QUEUE_NAME, { connection });
 	await queue.add(
-		"poll",
+		JOB_FUNIL,
 		{},
 		{ repeat: { every: POLL_INTERVAL_MS }, jobId: "gate-reengage-cron", removeOnComplete: true },
+	);
+	await queue.add(
+		JOB_SLA_MESA,
+		{},
+		{
+			repeat: { every: SLA_MESA_INTERVAL_MS },
+			jobId: "sla-da-mesa-cron",
+			removeOnComplete: true,
+		},
 	);
 
 	const worker = new Worker(
 		QUEUE_NAME,
-		async () => {
+		async (job) => {
+			// A fila tem DOIS jobs repetíveis com períodos muito diferentes (30 s e
+			// 24 h). Sem esta ramificação, um dos dois roda no ritmo do outro: ou o
+			// alarme vira 2.880 e-mails por dia, ou o funil inteiro passa a rodar uma
+			// vez por dia — silenciosamente, matando venda.
+			if (job?.name === JOB_SLA_MESA) {
+				const { runSlaDaMesaCycle } = await import("./sla-da-mesa-cycle");
+				const sla = await runSlaDaMesaCycle();
+				if (sla.parados > 0) console.log(`[sla-da-mesa] ${JSON.stringify(sla)}`);
+				return;
+			}
+
 			const result = await runReengageCycle();
 			// A retomada roda no MESMO ciclo e sabe o que a primeira fonte tratou —
 			// as duas se sobrepõem de propósito, mas cobrar duas vezes seria pior
