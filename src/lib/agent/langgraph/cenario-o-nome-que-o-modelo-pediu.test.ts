@@ -124,6 +124,43 @@ describeIfDb("o nome que o modelo pediu", () => {
 		expect(await nomeNoBanco(r.conversationId)).not.toBe("Suv");
 	});
 
+	it("o GATE sozinho não serve como autorização — medido, não suposto", async () => {
+		// Registro de uma alternativa que foi proposta e DESCARTADA com prova.
+		//
+		// A sugestão era trocar o predicado sobre o texto ("o modelo pediu o
+		// nome?") pelo fato do servidor ("eu MANDEI o modelo pedir o nome?", isto
+		// é, `buildGateContextText` injetou `GATE_INTENT.name` naquele turno). O
+		// argumento é bom: fato de servidor é mais firme que texto.
+		//
+		// Só que ele não distingue os dois casos. Sondei `gateAtivo` dentro do
+		// `converse` no cenário do lead "Suv" e ele vale `"name"` nos DOIS turnos:
+		//
+		//   [dbg-gate] {"gateAtivo":"name","gate":"name","answered":"name"}
+		//   [dbg-gate] {"gateAtivo":"name","gate":"name","answered":"name"}
+		//
+		// O servidor mandou pedir o nome; o modelo perguntou a carroceria. Autorizar
+		// pelo pedido do servidor capturaria "SUV" — seria o defeito original de
+		// volta, com uma âncora de aparência mais sólida.
+		//
+		// O que separa os dois casos é se o modelo OBEDECEU, e a única evidência
+		// de obediência é o texto que ele emitiu. Daí o predicado ser sobre o
+		// texto — e daí ele precisar ser estreito (ver `detect-name-turn.test.ts`).
+		//
+		// Este caso existe para que a troca não seja refeita por parecer melhor.
+		const r = await runScenario({
+			contactName: null,
+			metaInicial: { currentCategory: "auto", qualifyAnswers: { creditMax: 80_000 } },
+			turns: [
+				{ user: "Quero comprar um carro.", beats: [{ text: "Boa escolha. Prefere sedã ou SUV?" }] },
+				{ user: "SUV", beats: [{ text: "SUV é ótima escolha." }] },
+			],
+		});
+		criadas.push(r.conversationId);
+
+		// O gate era `name` nos dois turnos (sondado), e mesmo assim nada foi gravado.
+		expect(await nomeNoBanco(r.conversationId)).toBeNull();
+	});
+
 	it("a autorização não vaza para o turno seguinte", async () => {
 		// O modelo pede o nome no turno 1; no turno 2 pergunta a carroceria. A
 		// resposta do turno 3 responde à SEGUNDA pergunta, e não pode ser lida como

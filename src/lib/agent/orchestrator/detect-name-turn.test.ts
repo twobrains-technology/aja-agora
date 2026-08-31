@@ -75,6 +75,27 @@ describe("o agente NÃO pediu o nome", () => {
 		expect(perguntouONome(fala)).toBe(false);
 	});
 
+	// ── Os cinco que a revisão crítica levantou (31/08/2026) ────────────────
+	//
+	// Levantados quando este predicado deixou de decidir só a APARIÇÃO DE UM CARD
+	// e passou a autorizar a ESCRITA de `contactName`. A observação é justa: com
+	// falso positivo custando zero, a folga larga era aceitável; autorizando
+	// escrita, cada um destes batizaria o lead com a próxima palavra curta.
+	//
+	// São todas frases plausíveis de consórcio, e nenhuma é pergunta de nome —
+	// o que muda o predicado: ele deixou de procurar "seu … nome" em qualquer
+	// posição e passou a exigir a FORMA INTERROGATIVA antes ("qual", "como",
+	// "me diz"). É mais estreito que a versão anterior, não mais largo.
+	it.each([
+		"No seu caso o nome da administradora aparece no contrato.",
+		"Vou deixar o seu plano no nome da Embracon, tudo bem?",
+		"A carta sai no seu próprio nome, não no da administradora.",
+		"Confirmando: o seu novo nome de usuário no portal.",
+		"Esse é o seu grupo, o nome dele é 1042.",
+	])("afirmação com 'seu … nome' não é pedido de nome: %s", (fala) => {
+		expect(perguntouONome(fala)).toBe(false);
+	});
+
 	it("a folga não atravessa a frase inteira", () => {
 		// Sem limite de palavras, um "seu" no começo e um "nome" seis palavras
 		// depois casariam — e aí qualquer fala com as duas palavras viraria pedido
