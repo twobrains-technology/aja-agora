@@ -41,7 +41,7 @@ import { saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta } from "@/lib/conversation/meta";
 import type { fireGate as FireGate } from "@/lib/whatsapp/adapter";
 import { buildRetomadaDirective, podeRetomar } from "./retomada";
-import { INTERVALO_DO_CICLO_HORAS } from "./sla-da-mesa-cycle";
+import { CRON_DA_CAMPAINHA } from "./sla-da-mesa-cycle";
 
 export interface ReengageDeps {
 	now?: Date;
@@ -371,10 +371,10 @@ const POLL_INTERVAL_MS = Number(process.env.GATE_REENGAGE_POLL_INTERVAL_MS ?? 30
  *  No período do funil, o mesmo alarme mandaria ~2.880 e-mails por dia — e a
  *  mesa desligaria a campainha na primeira manhã. */
 //
-// O número vem de `INTERVALO_DO_CICLO_HORAS`, ao lado do ciclo que ele governa —
-// é lá que se decide com que frequência a mesa é cobrada, não aqui no meio do
-// bootstrap do worker do funil.
-const SLA_MESA_INTERVAL_MS = INTERVALO_DO_CICLO_HORAS * 60 * 60 * 1000;
+// `pattern` e não `every`: o `every` do BullMQ alinha à ÉPOCA, e um intervalo de
+// 24 h caía à meia-noite UTC — 21h de Brasília. Medido contra o Redis antes de
+// trocar. O cron vem de `CRON_DA_CAMPAINHA`, ao lado do ciclo que ele governa:
+// a que horas a mesa é cobrada se decide lá, não aqui no bootstrap do worker.
 const JOB_FUNIL = "poll";
 const JOB_SLA_MESA = "sla-da-mesa";
 
@@ -409,7 +409,7 @@ export async function startGateReengageWorker() {
 		JOB_SLA_MESA,
 		{},
 		{
-			repeat: { every: SLA_MESA_INTERVAL_MS },
+			repeat: { pattern: CRON_DA_CAMPAINHA, tz: "UTC" },
 			jobId: "sla-da-mesa-cron",
 			removeOnComplete: true,
 		},
