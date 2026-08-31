@@ -50,6 +50,17 @@ export type TurnEvent =
 	// são user-facing: os adapters (web/whatsapp) os tratam como no-op.
 	| { type: "suppression"; artifactType: string; reason: string }
 	| { type: "usage"; cacheRead: number; cacheWrite: number }
+	// Quantas falas do CLIENTE a conversa tinha ANTES deste turno (0 = primeiro
+	// contato). Telemetria pura, no-op nos adapters.
+	//
+	// Existe para o score `primeira_resposta_com_numero` (item B3/observabilidade,
+	// 30/08/2026) poder saber qual turno é o primeiro. Vem como EVENTO e não como
+	// argumento do `TurnTrace` porque o sink é o único ponto por onde os dois
+	// canais passam — web via `instrumentWriter`, WhatsApp via `traceTurnEvents`.
+	// A primeira versão setava isto direto no `route.ts`, e o comentário do
+	// próprio `turn-trace.ts` já dizia por que aquilo estava errado: deixa o
+	// WhatsApp de fora e caça estado em dois pontos aninhados de 1.600 linhas.
+	| { type: "turno-do-cliente"; indice: number }
 	| { type: "finish"; reason: string }
 	// FIX-268 (rodada 7, veredito Fable r6, residual D4 — "texto picotado"):
 	// força o fechamento do balão de texto aberto SEM depender de um

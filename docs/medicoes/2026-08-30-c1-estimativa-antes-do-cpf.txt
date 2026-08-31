@@ -1,0 +1,92 @@
+=== C1.1 · Artefatos emitidos por tipo (16-30/08, janela limpa) ===
++----------------------+----------+-----------+
+|         type         | emissoes | conversas |
++----------------------+----------+-----------+
+| quick_reply          |       51 |        24 |
+| comparison_table     |       21 |        21 |
+| simulation_result    |       13 |        12 |
+| contract_form        |        7 |         7 |
+| recommendation_card  |        4 |         4 |
+| real_offer           |        2 |         2 |
+| atendimento_handoff  |        1 |         1 |
+| scenarios            |        1 |         1 |
+| signature_handoff    |        1 |         1 |
+| financing_comparison |        1 |         1 |
++----------------------+----------+-----------+
+(10 rows)
+
+=== C1.2 · Gate identify emitido: quantas conversas, e quantas tinham estimativa ANTES ===
++------------------------------+----------------------+---------------------------------+
+| conversas_que_viram_identify | com_estimativa_antes | com_estimativa_qualquer_momento |
++------------------------------+----------------------+---------------------------------+
+|                            0 |                    0 |                               0 |
++------------------------------+----------------------+---------------------------------+
+(1 row)
+
+=== C1.3 · Funil por marco (16-30/08) — conversas web ===
+psql:/tmp/m-c1.sql:37: ERROR:  column l.cpf does not exist
+LINE 5: ...t 1 from leads l where l.conversation_id=c.id and l.cpf is n...
+                                                             ^
+=== F.1 · Chaves do metadata mais frequentes ===
++---------------------------+-------+
+|             k             | count |
++---------------------------+-------+
+| decisionDispatched        |    76 |
+| desireAsked               |    76 |
+| qualifyAnswers            |    76 |
+| searchDispatched          |    76 |
+| identityCollected         |    76 |
+| revealCompleted           |    76 |
+| currentPersona            |    76 |
+| currentCategory           |    71 |
+| webCookie                 |    64 |
+| nameCardAdiado            |    55 |
+| maxStageReached           |    30 |
+| motivationAsked           |    28 |
+| desireAnswered            |    28 |
+| discoveryEmptyStreak      |    20 |
+| recommendedOfferStale     |    20 |
+| identityEnc               |    20 |
+| recommendedAdministradora |    20 |
+| recommendedOffer          |    20 |
+| discoveredCreditTarget    |    19 |
+| pendingRecommendationCard |    15 |
+| navigationStack           |    15 |
+| qualifyAnswersByCategory  |    15 |
+| personasSeen              |    15 |
+| previousPersona           |    15 |
+| simulacaoApresentada      |     9 |
+| escolha                   |     7 |
+| contractFormDispatched    |     7 |
+| gateStuckTurns            |     6 |
+| experienceDispatched      |     6 |
+| reconciliacao             |     4 |
+| discoveredParcelaTarget   |     3 |
+| contractOffer             |     3 |
+| contactPhone              |     2 |
+| expertiseLevel            |     2 |
+| gateDefaultsAssumed       |     2 |
+| contractRetryPending      |     2 |
+| contractClosed            |     1 |
+| motivationMirrored        |     1 |
+| bemAbandonado             |     1 |
+| gateAttempts              |     1 |
++---------------------------+-------+
+(40 rows)
+
+=== F.2 · Funil do bot pelo metadata (16-30/08, web, nao simulada) ===
++-----------+---------+-------------+-----------+----------+---------------+--------------+
+| conversas | falaram | deram_valor | deram_cpf | buscaram | viram_ofertas | com_proposta |
++-----------+---------+-------------+-----------+----------+---------------+--------------+
+|        71 |      70 |          22 |        19 |       19 |            19 |            2 |
++-----------+---------+-------------+-----------+----------+---------------+--------------+
+(1 row)
+
+=== F.3 · Mesmo funil, so quem FALOU (denominador honesto) ===
++--------------------+-------------+-----------+---------------+
+| conversas_com_fala | deram_valor | deram_cpf | viram_ofertas |
++--------------------+-------------+-----------+---------------+
+|                 70 |          22 |        19 |            19 |
++--------------------+-------------+-----------+---------------+
+(1 row)
+

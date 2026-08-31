@@ -4,6 +4,7 @@ import { aplicarFaixaDeCredito } from "@/lib/agent/qualify-answers";
 import { clampCreditToCategory, objetivoForPrazo } from "@/lib/agent/qualify-config";
 import { type Gate, nextGate, registerGateStuckTurn } from "@/lib/agent/qualify-state";
 import { analyzeTurn, type TurnAnalysis } from "@/lib/agent/turn-analyzer";
+import { valorAncoradoNoTexto } from "@/lib/agent/valor-declarado";
 
 // FIX-74 (QA dono-de-produto 2026-07-02): a jornada AUTO web em prod pulou o
 // gate "timeframe" — o usuário disse só "…R$ 70 mil, gastando perto de R$ 900
@@ -79,6 +80,31 @@ export async function analyzeAndMerge(
 	 * Ancora o classificador (ver `analyzeTurn`). Opcional: sem ela o
 	 * comportamento é o de antes. */
 	lastAssistantText?: string | null,
+	/**
+	 * A conversa já sabe o nome do cliente?
+	 *
+	 * Entrou em 30/08/2026, e é a correção de um `true` FIXO que estava aqui
+	 * desde sempre. Enquanto o gate `name` só existia no primeiro contato, o
+	 * atalho era inofensivo: `nextGate` nunca devolveria `name` neste ponto de
+	 * qualquer jeito. Com o gate agora vivendo entre o valor do bem e o pedido
+	 * de documento, o `true` fixo produzia dois defeitos silenciosos ao mesmo
+	 * tempo:
+	 *
+	 *  1. **a âncora do classificador apontava para o gate errado.** O
+	 *     `analyzeTurn` recebe "o funil está aguardando: X" para saber a que
+	 *     pergunta a mensagem responde — e dizia `identify` no turno em que a
+	 *     tela pergunta o NOME. É exatamente a classe de erro que o FIX-236
+	 *     criou esta âncora para evitar;
+	 *  2. **o escape do gate `name` virava código morto.** `registerGateStuckTurn`
+	 *     só é chamado com o gate que este arquivo calcula; com `true` fixo ele
+	 *     nunca via `name`, o contador nunca subia, o teto nunca chegava e
+	 *     `nomeDispensado` nunca era gravado. O escape existia no papel e não no
+	 *     funil — o mesmo desfecho que o comentário do `reco-consent`, em
+	 *     `qualify-state.ts`, já descrevia.
+	 *
+	 * Default `true` preserva o comportamento de quem ainda não passa o valor.
+	 */
+	hasContactName = true,
 ): Promise<AnalyzeResult> {
 	// FIX-236: snapshot do gate REALMENTE ativo pro usuário NESTE turno, antes
 	// de qualquer merge desta função alterar o estado (ver guard de hasLance
@@ -88,7 +114,7 @@ export async function analyzeAndMerge(
 	// classificador a que pergunta a mensagem responde. Sem ela, "não" respondido
 	// ao lance virava resposta do prazo — e cada erro desses virou um guard nesta
 	// função pra desfazer a extração errada.
-	const activeGateAtTurnStart = nextGate(meta, { hasContactName: true });
+	const activeGateAtTurnStart = nextGate(meta, { hasContactName });
 	const analysis = await analyzeTurn(text, currentPersona, meta, {
 		activeGate: activeGateAtTurnStart,
 		lastAssistantText,
@@ -228,9 +254,48 @@ export async function analyzeAndMerge(
 	// menos?" — o snapshot pré-mutação ainda lê `false` nesse turno). Sem
 	// `desireAnsweredThisTurn`, o valor caía só em `creditMentionedAtDesire` e
 	// nunca era promovido — `nextGate()` travava em "credit" pra sempre.
+	// 2026-08-27 — O CLIENTE QUE ABRE DIZENDO O VALOR.
+	//
+	// Os guards acima pressupõem que o valor chega DEPOIS do gate `desire`, e por
+	// isso exigem `desireAnswered`. Com a carta vindo antes do CPF, quem escreve
+	// "Quero um carro ate R$ 80 mil" na primeira mensagem deveria ir direto para a
+	// busca — mas o valor dele morria aqui, e o efeito era circular: sem
+	// `creditMax` não há alvo de busca; sem alvo, `nextGate` devolve `name`; com
+	// `name` ativo o gate `desire` nunca é emitido; sem `desire` respondido o
+	// valor nunca é promovido. Medido no app: `gate=name` em quatro turnos
+	// seguidos, com o analyzer acertando `credit=null-80000` em todos.
+	//
+	// A abertura é o único caso em que o guard não protege nada: a pergunta
+	// dedicada do valor, que ele existe para preservar, não teria o que perguntar
+	// a quem acabou de dizer o número.
+	//
+	// A ancoragem é o que impede isto de virar captura no escuro — o analyzer é um
+	// LLM e às vezes devolve valor que o cliente não disse (FIX-378).
+	//
+	// Aqui a exigência é mais dura que a de `valorAncoradoNoTexto` sozinho: ele
+	// devolve `true` quando o texto não traz número NENHUM (correto no caso geral,
+	// porque o valor pode ter vindo do slider ou de um turno anterior). Na
+	// abertura não existe turno anterior nem slider — se o cliente não escreveu o
+	// número, não há valor declarado a promover.
+	//
+	// `escalaImplicita` fica FORA de propósito: ela existe para o turno em que a
+	// pergunta do valor foi feita, onde "238" pode significar R$ 238 mil
+	// (`valor-declarado.ts:87-89`). Na abertura ninguém perguntou nada — o número
+	// solto pode ser idade, ano ou quantidade de filhos, e multiplicá-lo por mil
+	// mandaria a busca para uma faixa que o cliente nunca pediu.
+	const aberturaComValorDeclarado =
+		q.creditMax === undefined &&
+		!meta.desireAnswered &&
+		!meta.searchDispatched &&
+		!meta.revealCompleted &&
+		sourceCreditMax !== null &&
+		/\d/.test(text ?? "") &&
+		valorAncoradoNoTexto(text ?? "", sourceCreditMax);
+
 	if (
 		sourceCreditMax !== null &&
 		((q.creditMax === undefined && (desireAnsweredBeforeThisTurn || desireAnsweredThisTurn)) ||
+			aberturaComValorDeclarado ||
 			isRevealRefit ||
 			isCorrecaoDoValor)
 	) {
@@ -415,7 +480,7 @@ export async function analyzeAndMerge(
 	// tentativa; no teto, assume um default e o funil avança (nunca trava).
 	// Só STUCK_ESCAPE_GATES agem aqui — os demais devolvem null (nada a fazer).
 	let stuckGateDefaultApplied: Gate | null = null;
-	const gateAfterMerge = nextGate(meta, { hasContactName: true });
+	const gateAfterMerge = nextGate(meta, { hasContactName });
 	if (gateAfterMerge === activeGateAtTurnStart) {
 		const stuckPatch = registerGateStuckTurn(meta, gateAfterMerge);
 		if (stuckPatch) {

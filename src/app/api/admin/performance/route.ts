@@ -1,3 +1,4 @@
+import { computeFunilDeHandoff } from "@/lib/admin/handoff-queries";
 import {
 	computeCobertura,
 	computeFunilMidia,
@@ -28,14 +29,15 @@ export async function GET(request: Request) {
 
 	const { de: fromDate, ate: toDate } = periodo;
 
-	const [funil, porta, origens, serie, cobertura] = await Promise.all([
+	const [funil, porta, origens, serie, cobertura, handoff] = await Promise.all([
 		computeFunilMidia(fromDate, toDate),
 		computePorta(fromDate, toDate),
 		computeOrigens(fromDate, toDate),
 		computeSerie(fromDate, toDate),
 		computeCobertura(fromDate, toDate),
+		computeFunilDeHandoff(fromDate, toDate),
 	]);
 
-	const response: PerformanceResponse = { funil, porta, origens, serie, cobertura };
+	const response: PerformanceResponse = { funil, porta, origens, serie, cobertura, handoff };
 	return Response.json(response);
 }

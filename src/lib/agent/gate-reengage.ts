@@ -8,7 +8,7 @@
 // re-engajar. Espelha `isStreamStuck` (chat/stream-watchdog.ts). O worker
 // (workers/gate-reengage-poll.ts) só arma o ciclo recorrente.
 
-import { gateQuestion } from "./orchestrator/gate-questions";
+import { gateQuestion, PERGUNTA_DO_NOME } from "./orchestrator/gate-questions";
 import type { Category, ConversationMetadata } from "./personas";
 import { COLLECTION_GATES, type Gate, nextGate } from "./qualify-state";
 
@@ -35,7 +35,19 @@ export const NON_REENGAGE_GATES: ReadonlySet<Gate> = new Set<Gate>([
 	"doubts-wait",
 	"search",
 	"decision",
-	"name",
+	// `name` SAIU daqui em 30/08/2026.
+	//
+	// Ele estava nesta lista por um motivo que deixou de valer: enquanto vivia
+	// no 1º contato, o pedido do nome saía no texto do directive de abertura e
+	// não havia card de WhatsApp para reabrir — reengajar não fazia sentido
+	// porque não havia conversa para retomar.
+	//
+	// Desde que o gate desceu para entre o valor do bem e o pedido de documento,
+	// quem some nele é o oposto disso: alguém que escolheu a categoria, arrastou
+	// a agulha até o valor e parou na pergunta seguinte. É o lead mais valioso
+	// que este funil produz — 86% de quem chega ao valor entrega o CPF (medido
+	// em produção, 16–30/08) — e era o único gate do meio do funil que o
+	// watchdog não via.
 ]);
 
 /**
@@ -78,10 +90,22 @@ export const SPECIALIST_EXIT_OFFER =
 
 /**
  * Gate de ENTREGA OBRIGATÓRIA no WhatsApp: COLLECTION_GATES (credit/lance/...) +
- * `identify`. É a classe que o guard re-cobra em vez de deixar o funil parado.
+ * `identify` + `name`. É a classe que o guard re-cobra em vez de deixar o funil
+ * parado.
+ *
+ * `name` entrou em 30/08/2026, junto com a mudança que o pôs entre o valor do
+ * bem e o pedido de documento. No 1º contato ele não pertencia aqui: a pergunta
+ * saía no directive de abertura e não havia o que re-cobrar. Na posição nova ele
+ * é bloqueante como os outros — e no WhatsApp, sem esta entrada, um turno que
+ * fechasse mudo deixava a conversa parada com o cliente esperando uma pergunta
+ * que ninguém repetiria.
+ *
+ * Re-cobrar não vira armadilha: `STUCK_ESCAPE_GATES` inclui `name` desde a mesma
+ * data, então depois do teto o funil desiste da pergunta (`nomeDispensado`) e
+ * segue — sem nunca inventar um nome.
  */
 export function isMandatoryCollectionGate(gate: Gate): boolean {
-	return COLLECTION_GATES.has(gate) || gate === "identify";
+	return COLLECTION_GATES.has(gate) || gate === "identify" || gate === "name";
 }
 
 /**
@@ -128,6 +152,32 @@ export function reengageQuestionForGate(
 	// compromisso" — continua exclusiva dos gates de COLETA: insistir assim num
 	// convite como "posso te mostrar a que eu recomendo?" seria pressão indevida.)
 	if (attempt >= 4 && isMandatoryCollectionGate(gate)) return SPECIALIST_EXIT_OFFER;
+
+	// O `name` PRECISA de texto próprio aqui, e só aqui (30/08/2026).
+	//
+	// `gateQuestion("name", …, "web")` devolve `null` de propósito: no fluxo
+	// normal da web o CARD é a pergunta, e um texto igual acima dele seria a
+	// pergunta duas vezes (é o que o FIX-17 evitou). Mas o reengajamento **não
+	// tem card**: o worker roda num processo separado do app, sem sessão SSE, e
+	// o que ele faz é persistir uma MENSAGEM do assistente.
+	//
+	// Sem esta linha, o caminho era mudo e pior que mudo: `reengageQuestionForGate`
+	// devolvia null, o poll fazia `continue` — **depois** de já ter apagado
+	// `pendingGate`/`pendingGateSince` e **antes** do bump de `gateAttempts`. O
+	// marcador era consumido e descartado, a tentativa ficava presa em 1 para
+	// sempre, e a 4ª (que teria a oferta de especialista) nunca chegava.
+	//
+	// E era o canal que importa: a mudança de 30/08 que pôs o `name` no meio do
+	// funil é web-only (a agulha com estimativa é da web), e as 71 conversas
+	// medidas são web. A rede cobria só o WhatsApp, onde este gate quase não
+	// dispara.
+	if (gate === "name" && category) {
+		const base = PERGUNTA_DO_NOME;
+		if (attempt <= 1) return base;
+		if (attempt === 2) return `${base}\n\nSó falta isso pra eu seguir — é rapidinho.`;
+		return `${base}\n\nÉ seguro e sem compromisso. Só preciso disso pra continuar.`;
+	}
+
 	const base = gateQuestion(gate, category ?? null, creditValue, channel, creditMentionedAtDesire);
 	if (!base) return null;
 	if (!isMandatoryCollectionGate(gate)) return base;

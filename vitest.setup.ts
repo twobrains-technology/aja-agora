@@ -21,6 +21,48 @@ try {
 	// .env opcional (baseline; só preenche o que ainda não foi setado)
 }
 
+// A VITRINE NASCE DESLIGADA NA SUÍTE.
+//
+// `VITRINE_CPF`/`VITRINE_CELULAR` mudam o FUNIL (a busca deixa de exigir o CPF
+// do cliente), e o `.env.local` de quem desenvolve a feature os tem. Herdá-los
+// aqui faz testes que nada têm a ver com a vitrine mudarem de comportamento:
+// `route.closing-persistence` passou a disparar busca REAL na Bevi num cenário
+// pré-reveal e a estourar 20s de timeout — com a suíte "verde" para quem rodava
+// só o filtro de unit, que exclui `route*`.
+//
+// Quem TESTA a vitrine a liga explicitamente no próprio arquivo (e restaura
+// depois). Default desligado mantém a suíte hermética e reproduzível em
+// qualquer máquina, com ou sem `.env.local`.
+process.env.VITRINE_CPF = "";
+process.env.VITRINE_CELULAR = "";
+
+// ── ANALYTICS NÃO SAI PARA A REDE NA SUÍTE ──
+//
+// `navigator.sendBeacon` do `happy-dom` NÃO é um no-op: ele abre uma requisição
+// HTTP de verdade. Como os beacons deste produto apontam para caminhos
+// relativos, o `happy-dom` os resolve contra `http://localhost:3000` — e com o
+// servidor de desenvolvimento de pé, um `pnpm test:unit` passava a gravar
+// `chat_iniciado` e eventos de mapa de calor no banco local, a partir de testes
+// de COMPONENTE que só queriam renderizar uma tela.
+//
+// Pior que a escrita indevida era o efeito na suíte: a requisição é abortada no
+// teardown do ambiente, a rejeição escapa de dentro do `Fetch` do `happy-dom`
+// (fora do alcance do `.catch` de quem chamou) e o vitest a reporta como
+// `Unhandled Rejection`. Resultado em 30/08/2026: **3.718 testes verdes na tela
+// e exit 1**, com dez erros que não pertenciam a teste nenhum.
+//
+// A troca por um no-op é a regra de higiene que faltava, não uma gambiarra:
+// teste unitário não faz rede. Quem precisar afirmar que o beacon foi
+// DISPARADO continua podendo — basta espionar `navigator.sendBeacon` no próprio
+// arquivo, que é o que um teste de analytics deve fazer.
+if (typeof globalThis.navigator === "object" && globalThis.navigator !== null) {
+	Object.defineProperty(globalThis.navigator, "sendBeacon", {
+		configurable: true,
+		writable: true,
+		value: () => true,
+	});
+}
+
 // Sentinel DATABASE_URL pra módulos que importam @/db em testes que não tocam DB.
 // Em testes que de fato consultam DB, override no próprio test ou via .env real.
 if (!process.env.DATABASE_URL) {

@@ -43,7 +43,13 @@ export function GateRenderer({
 	}
 
 	if (payload.kind === "identity") {
-		return <GateIdentityForm prefilledPhone={payload.prefilledPhone} active={active} />;
+		return (
+			<GateIdentityForm
+				prefilledPhone={payload.prefilledPhone}
+				momento={payload.momento}
+				active={active}
+			/>
+		);
 	}
 
 	// FIX-115: gate credit = AGULHA SIMPLES do valor do bem (kind "slider"). O passo

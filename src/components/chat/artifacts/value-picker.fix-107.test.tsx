@@ -8,6 +8,26 @@
  * das ofertas REAIS da Bevi (não é mais estimada/derivada na entrada) e o prazo
  * sai da entrada. Este componente é o apoio visual pro "quanto custa o que você
  * quer".
+ *
+ * ── REVERSÃO PARCIAL E CONSCIENTE, 2026-08-30 (decisão do Kairo) ────────────
+ *
+ * A agulha ÚNICA continua — os três sliders interligados não voltam, e é isso
+ * que a maior parte deste arquivo protege. O que volta é a PARCELA ESTIMADA,
+ * como linha de leitura ao lado da agulha.
+ *
+ * O que mudou entre 28/06 e hoje foi o que se sabe do funil. Medido no banco de
+ * produção em 30/08/2026 (janela limpa de 16–30/08, 71 conversas web reais):
+ * **34 delas, 49%, morrem com uma única fala do cliente**, e 46 (65%) nunca
+ * chegam a informar o valor do bem. Do outro lado, de quem CHEGA a informar o
+ * valor, 86% entrega o CPF. O cliente não desiste por falta de precisão — ele
+ * desiste porque nada aparece na tela.
+ *
+ * A razão original do FIX-107 continua de pé e por isso o selo é obrigatório
+ * (`parcela-estimada-selo`, testado em
+ * `value-picker.estimativa-antes-do-dado.test.tsx`): o número da agulha é
+ * premissa de mercado documentada, e a tela diz isso na cara. O invariante do
+ * projeto — número de administradora sai de tool, nunca da nossa cabeça —
+ * continua intacto, porque nada aqui se apresenta como oferta.
  */
 
 import { readFileSync } from "node:fs";
@@ -65,10 +85,29 @@ describe("FIX-107 — agulha simples de valor do bem (1k em 1k)", () => {
 		expect(msg).toContain("81.000");
 	});
 
-	it("não estima parcela nem mostra selo de estimativa de mercado", () => {
+	it("a parcela estimada NUNCA aparece sem o selo que a desmente como oferta", () => {
+		// O que o FIX-107 proibia era a estimativa CALADA — número na tela com
+		// cara de dado de administradora. Isso continua proibido: se a parcela
+		// aparecer, o selo aparece junto, sempre. É o selo que impede a
+		// estimativa de virar promessa e a oferta real de virar decepção.
 		render(<ValuePicker payload={payload} />);
-		expect(document.body.textContent ?? "").not.toMatch(/[Ee]stimativa/);
-		expect(document.body.textContent ?? "").not.toMatch(/parcela/i);
+
+		const texto = document.body.textContent ?? "";
+		if (/\/mês/.test(texto)) {
+			expect(screen.getByTestId("parcela-estimada-selo").textContent?.toLowerCase()).toContain(
+				"estimativa",
+			);
+			expect(texto).toMatch(/valores reais vêm da busca/i);
+		}
+	});
+
+	it("os três sliders interligados NÃO voltam — a reversão de 30/08 é só da leitura", () => {
+		render(<ValuePicker payload={payload} />);
+		expect(screen.getAllByRole("slider").length).toBe(1);
+		// A parcela é LIDA ao lado da agulha; ela não é um controle que o cliente
+		// mexe. Um campo de parcela editável aqui traria de volta a interligação
+		// que o FIX-107 removeu.
+		expect(screen.queryByLabelText(/parcela/i)).toBeNull();
 	});
 
 	it("ignora campos extras (parcela/prazo) e mantém só a agulha de valor", () => {

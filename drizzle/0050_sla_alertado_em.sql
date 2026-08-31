@@ -1,0 +1,1 @@
+ALTER TABLE "leads" ADD COLUMN "sla_alertado_em" timestamp with time zone;

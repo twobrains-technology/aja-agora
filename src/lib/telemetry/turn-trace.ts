@@ -67,6 +67,20 @@ export type TurnTraceRecord = {
 	finishReason: string | null;
 	/** Epoch ms do início do turno (ordenação na ingestão). */
 	startedAt: number;
+	/**
+	 * Quantas falas do CLIENTE esta conversa já tinha quando o turno começou —
+	 * `0` no primeiro contato.
+	 *
+	 * Existe por causa de um sinal que a campanha de conversão de 30/08/2026
+	 * precisa e não tinha como produzir: "a PRIMEIRA resposta do agente entregou
+	 * um número?". A medição que motivou a mudança mostrou 34 de 70 conversas
+	 * morrendo exatamente ali, e sem saber qual turno é o primeiro não há como
+	 * afirmar, daqui a duas semanas, se o conserto funcionou.
+	 *
+	 * `null` quando o chamador não soube informar — o score simplesmente não é
+	 * emitido, em vez de mentir que era o primeiro turno.
+	 */
+	turnoDoCliente: number | null;
 };
 
 export type TurnTraceContext = {
@@ -122,6 +136,7 @@ export class TurnTrace {
 	private handoff = false;
 	private transitionedTo: string | null = null;
 	private leadStage: string | null = null;
+	private turnoDoCliente: number | null = null;
 	private finishReason: string | null = null;
 	private finalized = false;
 
@@ -158,6 +173,11 @@ export class TurnTrace {
 	}
 	setLeadStage(stage: string): void {
 		this.leadStage = stage;
+	}
+	/** Quantas falas do cliente a conversa tinha ANTES deste turno. Ver o campo
+	 *  homônimo em `TurnTraceRecord`. */
+	setTurnoDoCliente(indice: number): void {
+		this.turnoDoCliente = indice;
 	}
 	setFinish(reason: string): void {
 		this.finishReason = reason;
@@ -201,6 +221,7 @@ export class TurnTrace {
 			durationMs: Math.max(0, this.deps.now() - this.startedAt),
 			finishReason: this.finishReason,
 			startedAt: this.startedAt,
+			turnoDoCliente: this.turnoDoCliente,
 		};
 	}
 
@@ -241,6 +262,9 @@ export function recordTurnEvent(trace: TurnTrace, ev: TurnEvent): void {
 			break;
 		case "lead-stage":
 			trace.setLeadStage(ev.stage);
+			break;
+		case "turno-do-cliente":
+			trace.setTurnoDoCliente(ev.indice);
 			break;
 		case "meta-update":
 			if (ev.meta?.currentPersona) trace.setPersona(ev.meta.currentPersona);
@@ -341,16 +365,38 @@ export async function* traceTurnEvents(
 // stream bruto de TurnEvents (`pipeOrchestratorToWriter`) recupera o MESMO
 // trace pelo writer instrumentado e alimenta suppression/usage direto, sem
 // precisar mudar a assinatura de nenhuma função pipeXxx em route.ts.
-const writerTraces = new WeakMap<object, TurnTrace>();
+//
+// ── Por que SÍMBOLO, e não um WeakMap indexado pelo writer ──────────────────
+//
+// A primeira versão disto foi um `WeakMap<object, TurnTrace>` com o writer
+// instrumentado como chave. Chave por IDENTIDADE quebra assim que alguém põe
+// mais um proxy por cima — e foi exatamente o que `route.ts` passou a fazer:
+// `collectAgentText(instrumentWriter(rawWriter, trace))`. O mapa guardava o
+// proxy de dentro, `pipeOrchestratorToWriter` recebia o de fora, e os três
+// campos que dependem daqui voltaram calados ao estado pré-FIX-250 (medido em
+// 30/08/2026: `suppressed` `[]` e `cacheRead`/`cacheWrite` nulos num turno web
+// real). Nada quebra, nada fica vermelho — o pior modo de falha que existe.
+//
+// O símbolo põe o trace DENTRO do writer. Todo proxy passthrough o propaga
+// sozinho pelo `Reflect.get`, então wrapper novo nasce funcionando sem saber
+// que esta linha existe. É a diferença entre um invariante e uma convenção que
+// alguém precisa lembrar de seguir.
+const TRACE_DO_WRITER = Symbol.for("aja.turnTrace");
 
-/** Recupera o `TurnTrace` registrado por `instrumentWriter` pra este writer
- * (o mesmo objeto instrumentado que circula pelas funções pipeXxx). undefined
- * quando o writer não foi instrumentado — nunca lança. */
+/** Recupera o `TurnTrace` que `instrumentWriter` embutiu neste writer —
+ * inclusive através de camadas de proxy passthrough. undefined quando o writer
+ * não foi instrumentado; nunca lança. */
 export function getTraceForWriter(writer: unknown): TurnTrace | undefined {
 	if (writer === null || (typeof writer !== "object" && typeof writer !== "function")) {
 		return undefined;
 	}
-	return writerTraces.get(writer as object);
+	try {
+		const achado = (writer as Record<symbol, unknown>)[TRACE_DO_WRITER];
+		return achado instanceof TurnTrace ? achado : undefined;
+	} catch {
+		// getter hostil num proxy alheio nunca derruba a telemetria
+		return undefined;
+	}
 }
 
 /** Tap por PROXY do writer (funil de consumo da web SSE). Forwarda TODA chamada
@@ -363,6 +409,7 @@ export function instrumentWriter<M extends UIMessage>(
 ): UIMessageStreamWriter<M> {
 	const proxy = new Proxy(writer, {
 		get(target, prop, receiver) {
+			if (prop === TRACE_DO_WRITER) return trace;
 			if (prop === "write") {
 				return (part: Parameters<UIMessageStreamWriter<M>["write"]>[0]) => {
 					try {
@@ -377,6 +424,5 @@ export function instrumentWriter<M extends UIMessage>(
 			return typeof value === "function" ? value.bind(target) : value;
 		},
 	});
-	writerTraces.set(proxy, trace);
 	return proxy;
 }

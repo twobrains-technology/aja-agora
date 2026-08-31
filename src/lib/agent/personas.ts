@@ -159,6 +159,43 @@ export type ConversationMetadata = {
 	 * fez sobre outro assunto — no próximo turno ele sai de qualquer jeito. Ver
 	 * `deveEmitirCardDeNome` (emit-card.ts). */
 	nameCardAdiado?: boolean;
+	/** O card do gate `name` saiu no TURNO ANTERIOR — e só nele.
+	 *
+	 *  É o fato de servidor que autoriza `captureAnswerNode` a ler uma resposta
+	 *  curta como o nome da pessoa. Sem ele, a captura se apoiava só em "o gate
+	 *  ativo é `name`" — premissa verdadeira enquanto esse gate só existia no
+	 *  primeiro contato, e que quebrou em 30/08/2026, quando ele desceu para
+	 *  depois do valor do bem.
+	 *
+	 *  O que a quebra produzia: o MODELO pergunta "novo ou usado?", o cliente
+	 *  responde "SUV" — ao modelo —, e o servidor grava `contactName = "Suv"`.
+	 *  Mesma família dos leads que nasceram "Uma", "Sujo" e "Voltei", até aqui
+	 *  combatida por lista de palavras.
+	 *
+	 *  **É de UM TURNO, não monotônico** — e essa distinção é o item inteiro.
+	 *  Com "já apareceu alguma vez", a guarda ficava desarmada pelo resto da
+	 *  conversa: bastava o cliente perguntar a taxa de administração (o card é
+	 *  suprimido, `answeredGate` continua `name`, o modelo emenda "prefere prazo
+	 *  curto ou longo?") para "Curto" virar o nome dele no turno seguinte.
+	 *  `captureAnswerNode` consome e apaga; `emitCardNode` remarca quando o card
+	 *  sai de novo. */
+	nameCardExibido?: boolean;
+	/** Espelho de `FunnelState.turnosDoCliente` — ver a doc lá. */
+	turnosDoCliente?: number;
+	/** O funil DESISTIU de perguntar o nome, depois de tentar sem progresso.
+	 *
+	 *  É o escape do gate `name` na posição nova (depois do valor do bem). Sem
+	 *  ele, o cliente que responde algo que `extractName` recusa — "prefiro não
+	 *  dizer", "depois" — trava para sempre: `nextGate` devolve `name` a cada
+	 *  turno e o funil nunca chega ao `identify`. Justamente com quem já
+	 *  informou o valor, que a medição de 30/08/2026 mostra ser o segmento em
+	 *  que 86% entrega o CPF.
+	 *
+	 *  Ele NÃO fabrica nome — ao contrário dos outros defaults de escape, que
+	 *  gravam um valor assumido em `qualifyAnswers`. Nome inventado chega à mesa
+	 *  como se o cliente o tivesse dito, e o agente passa a chamá-lo por ele. O
+	 *  escape aqui é desistir da pergunta, não responder por ele. */
+	nomeDispensado?: boolean;
 	/** Set when user clicks "Entender mais antes"; cleared after their reply lands. */
 	pendingFollowUp?: boolean;
 	/** FIX-207 (watchdog de inatividade) — epoch ms de quando um turno de usuário

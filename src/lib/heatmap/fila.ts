@@ -35,6 +35,27 @@ function viewport() {
 }
 
 /**
+ * O `_fbp` que o pixel gravou NESTE navegador, se ele já rodou.
+ *
+ * Vai de carona no despejo (item B2, 30/08/2026). O proxy tenta ler este mesmo
+ * cookie na chegada, mas na PRIMEIRA visita de um navegador ele ainda não
+ * existe: quem o grava é o pixel, depois que a página carregou. Como quase todo
+ * tráfego pago é primeira visita, o campo ficava nulo justamente onde vale —
+ * 683 de 46.135 visitas em produção (1,5%).
+ *
+ * De carona e não em requisição própria: este beacon já dispara em toda visita
+ * e o servidor já resolveu o cookie da visita ali. Um endpoint só para isto
+ * seria uma requisição a mais por visitante para completar um campo.
+ *
+ * Não é PII e a Meta exige que ele viaje SEM hash — é um id de navegador que o
+ * próprio pixel dela criou.
+ */
+function fbpDoNavegador(): string | null {
+	const achado = document.cookie.match(/(?:^|;\s*)_fbp=([^;]*)/);
+	return achado ? decodeURIComponent(achado[1]) : null;
+}
+
+/**
  * Manda o que estiver na fila. `sendBeacon` primeiro porque é o único que
  * sobrevive ao fechamento da aba; `fetch` com `keepalive` é a reserva pra
  * navegador que recusa o beacon (payload grande, por exemplo).
@@ -46,7 +67,8 @@ export function despejar(): void {
 	fila = [];
 
 	try {
-		const corpo = JSON.stringify({ events: lote });
+		const fbp = fbpDoNavegador();
+		const corpo = JSON.stringify({ events: lote, ...(fbp ? { fbp } : {}) });
 		const enviou = navigator.sendBeacon?.(
 			ENDPOINT,
 			new Blob([corpo], { type: "application/json" }),

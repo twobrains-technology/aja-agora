@@ -1,7 +1,10 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 import { useTheater } from "@/components/chat/theater/theater-context";
 import { WhatsappGlyph } from "@/components/icons/whatsapp-glyph";
+import { carimbarOrigem, lerCodigoDeOrigemDoCookie } from "@/lib/attribution/codigo-de-origem";
 import { WHATSAPP_OFICIAL_DIGITOS } from "@/lib/bevi/closing-presentation";
 
 /** A fala que já vai escrita para o cliente só apertar enviar. Sem ela, quem
@@ -16,7 +19,10 @@ const PRIMEIRA_FALA = "Oi! Quero comparar consórcios.";
  * no WhatsApp Web. Um esquema `whatsapp://` faria o app abrir no celular e dar
  * página morta em qualquer computador.
  */
-const LINK_WHATSAPP = `https://wa.me/${WHATSAPP_OFICIAL_DIGITOS}?text=${encodeURIComponent(PRIMEIRA_FALA)}`;
+function linkDoWhatsapp(codigo: string | null): string {
+	const fala = carimbarOrigem(PRIMEIRA_FALA, codigo);
+	return `https://wa.me/${WHATSAPP_OFICIAL_DIGITOS}?text=${encodeURIComponent(fala)}`;
+}
 
 /**
  * Botão flutuante do WhatsApp — fica parado no canto inferior direito da TELA e
@@ -48,13 +54,30 @@ const LINK_WHATSAPP = `https://wa.me/${WHATSAPP_OFICIAL_DIGITOS}?text=${encodeUR
 export function ChatFlutuante() {
 	const { isOpen } = useTheater();
 
+	// A3 — o carimbo de origem, resolvido só no cliente.
+	//
+	// `useEffect` e não leitura direta no corpo: `document.cookie` não existe no
+	// servidor, e um href diferente entre o HTML e a primeira renderização do
+	// cliente seria erro de hidratação. Assim as duas passagens montam o mesmo
+	// link sem código, e o carimbo entra logo depois — antes de qualquer toque
+	// humano possível.
+	const [codigo, setCodigo] = useState<string | null>(null);
+	useEffect(() => {
+		setCodigo(lerCodigoDeOrigemDoCookie());
+	}, []);
+
 	// Some com o teatro aberto. O `z-40` já o deixa por baixo do overlay (`z-[90]`
 	// em chat-theater.tsx), mas um alvo vivo atrás do scrim é toque fantasma.
 	if (isOpen) return null;
 
 	return (
 		<a
-			href={LINK_WHATSAPP}
+			// O href nasce SEM carimbo e ganha o código depois da hidratação (ver
+			// `codigo` acima). Sempre um link real, em qualquer instante: quem tocar
+			// nos milissegundos antes da hidratação chega ao WhatsApp do mesmo jeito
+			// — perde a atribuição daquele toque, que é exatamente o que acontecia
+			// em 100% dos toques até 30/08/2026.
+			href={linkDoWhatsapp(codigo)}
 			target="_blank"
 			// `noopener`: sem ele a aba do WhatsApp recebe `window.opener` e pode
 			// mexer nesta página.

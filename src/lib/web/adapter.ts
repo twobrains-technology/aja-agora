@@ -15,6 +15,7 @@ import {
 	TIMEFRAME_OPTIONS as TIMEFRAME_CONFIG,
 } from "@/lib/agent/qualify-config";
 import { type Gate, shouldAskMotive } from "@/lib/agent/qualify-state";
+import { vitrineDisponivel } from "@/lib/bevi/identidade-vitrine";
 import { EMPTY_TURN_FALLBACK } from "@/lib/chat/empty-turn-guard";
 import type { ArtifactType } from "@/lib/chat/types";
 import type {
@@ -185,8 +186,15 @@ export function gatePartData(gate: Gate, meta: ConversationMetadata): GatePartDa
 				options: LANCE_EMBUTIDO_OPTIONS.map((o) => ({ value: o.token, label: o.title })),
 			};
 		case "identify":
-			// D1: form CPF + celular + LGPD antes da busca (a Bevi exige pra simular).
-			return { kind: "identity", gate: "identify", prefilledPhone: null };
+			// A Bevi exige CPF+celular para abrir proposta. Com a vitrine, quem
+			// satisfaz essa exigência na busca é a identidade da casa, e este form
+			// desce para o fecho — a copy acompanha (ver `momento`).
+			return {
+				kind: "identity",
+				gate: "identify",
+				prefilledPhone: null,
+				momento: vitrineDisponivel() ? "fecho" : "pre-busca",
+			};
 		case "simulator-offer":
 			// docx passo 4: oferta do simulador na sequência do reveal.
 			return {
@@ -509,6 +517,16 @@ export async function pipeOrchestratorToWriter(
 
 				case "usage":
 					getTraceForWriter(writer)?.setCache(ev.cacheRead, ev.cacheWrite);
+					break;
+
+				// Telemetria pura, mesmo padrão de `suppression`/`usage`: nunca vira
+				// UI part, mas precisa chegar ao trace. Sem este case, o score
+				// `primeira_resposta_com_numero` só existiria no WhatsApp — e a
+				// mudança que ele mede (a agulha com a parcela estimada no primeiro
+				// turno) é WEB-ONLY. O sinal nasceria cego para o canal inteiro que
+				// ele foi feito para medir.
+				case "turno-do-cliente":
+					getTraceForWriter(writer)?.setTurnoDoCliente(ev.indice);
 					break;
 
 				// FIX-269 (rodada 7, veredito Fable r6, nit de observabilidade): o

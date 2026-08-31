@@ -1,0 +1,24 @@
+{
+	// O typecheck de linha de comando — `pnpm typecheck`.
+	//
+	// Difere do `tsconfig.json` num ponto só: NÃO checa `.next/`.
+	//
+	// O `tsconfig.json` é gerado pelo Next e inclui `.next/dev/types/**/*.ts`
+	// de propósito (é o que dá tipo às rotas em `<Link href>`). Só que, com o
+	// dev server de pé, o Turbopack REESCREVE esses arquivos o tempo todo: o
+	// `tsc` lê um arquivo pela metade e reporta erro de sintaxe em código que
+	// ninguém escreveu.
+	//
+	// Não é ruído inofensivo. Em 30/08/2026 foram 82 erros falsos, TODOS em
+	// `.next/dev/types`, e no meio deles estava escondido um erro de verdade —
+	// um campo novo de `FunnelState` que faltava na guarda de exaustividade
+	// `Record<keyof FunnelState, true>`. Só apareceu ao parar o container e
+	// rodar de novo. Um typecheck que só é confiável quando a aplicação está
+	// desligada é um typecheck que ninguém roda.
+	//
+	// O que se perde: nada que funcionasse. A validação de rota que esses tipos
+	// dariam já vinha corrompida em dev; e no build (`next build`) o Next valida
+	// rota por conta própria, com os tipos estáveis de `.next/types`.
+	"extends": "./tsconfig.json",
+	"exclude": ["node_modules", ".next"]
+}

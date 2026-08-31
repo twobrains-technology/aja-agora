@@ -1,0 +1,28 @@
+{
+  "comando": "docker run --rm --network host femtopixel/google-lighthouse https://ajaagora.com.br/ --quiet --chrome-flags='--headless=new --no-sandbox --disable-gpu' --preset=perf --form-factor=mobile --screenEmulation.mobile --output=json --output-path=stdout",
+  "por_que_container": "Chrome headless de verdade. Aba de MCP em segundo plano roda a ~2 fps e inventa toda metrica que depende de frame apresentado (LCP, INP) — regra do CLAUDE.md.",
+  "antes_medicao_1": {
+    "quando": "2026-08-30T21:20:11.952Z",
+    "score": 29,
+    "first-contentful-paint": "7.7 s",
+    "largest-contentful-paint": "7.7 s",
+    "total-blocking-time": "2,890 ms",
+    "interactive": "14.3 s"
+  },
+  "antes_medicao_2": {
+    "quando": "2026-08-30T23:30:15.621Z",
+    "score": 28,
+    "first-contentful-paint": "8.0 s",
+    "largest-contentful-paint": "8.0 s",
+    "total-blocking-time": "2,750 ms",
+    "interactive": "14.6 s"
+  },
+  "variancia": "score 29 vs 28, LCP 7,7 s vs 8,0 s — ~4%. O diagnostico e estavel, nao foi acaso.",
+  "depois": "SO E MEDIVEL APOS O DEPLOY. A mudanca (GTM e GA4 em lazyOnload) vive no bundle de producao; medir o dev server nao compara com nada.",
+  "criterio_de_aceite": {
+    "TBT": "esperado cair — 1.020 ms dos 2.890 ms de bloqueio sao gtag (829) + gtm (191)",
+    "peso_de_script": "esperado cair 285 KB de 1.094 KB",
+    "FCP_e_LCP": "podem NAO cair. Os 7,7 s tem 584 KB de JS proprio por tras, que este trabalho nao tocou. Se cairem pouco, e o esperado — nao e a mudanca falhando."
+  },
+  "efeito_colateral_a_avisar": "lazyOnload dispara no window.load, que quem sai aos 8 s NUNCA alcanca. As sessoes do GA4 vao CAIR, e a agencia pode ler isso como queda de trafego no meio da avaliacao da campanha. E se houver tag de conversao dentro do container do GTM (so a agencia sabe), ela deixa de disparar em bounce — isso e decisao do Gustavo ANTES do deploy, nao depois."
+}

@@ -24,6 +24,7 @@ import type {
 	ProposalObjetivo,
 	SimulationType,
 } from "../adapters/proposal-gateway";
+import { ehIdentidadeDeVitrine } from "./identidade-vitrine";
 import {
 	createBeviProposal,
 	getLatestBeviProposal,
@@ -91,12 +92,40 @@ export interface StartContractResult {
 	previousAdministradora?: string | null;
 }
 
+/**
+ * O fechamento recebeu o CPF da CASA (a identidade de vitrine, que existe só
+ * para montar a prateleira de ofertas antes de o cliente se identificar).
+ *
+ * Nenhum caminho legítimo produz isto: o form de contratação lê a identidade
+ * REAL do cliente (`loadIdentity`), e a vitrine nunca é gravada como identidade
+ * da conversa. Se chegou aqui, alguma coisa costurou errado — e o custo de
+ * deixar passar é um contrato aberto na administradora em nome da pessoa
+ * errada, com o RG e o comprovante do cliente anexados nele.
+ */
+export class ContratacaoComIdentidadeDeVitrineError extends Error {
+	constructor() {
+		super(
+			"Fechamento recusado: o CPF recebido é o da vitrine (identidade da casa, " +
+				"usada só para buscar ofertas). Contrato exige a identidade real do cliente.",
+		);
+		this.name = "ContratacaoComIdentidadeDeVitrineError";
+	}
+}
+
 /** Passo 5.1 — cria a proposta real e já simula, devolvendo a oferta a confirmar. */
 export async function startContract(
 	conversationId: string,
 	input: StartContractInput,
 	gateway: ProposalGateway = getProposalGateway(),
 ): Promise<StartContractResult> {
+	// A vitrine mostra; ela não assina. Barrar ANTES de qualquer chamada à
+	// administradora é o ponto: `createProposal` consome o slot único da loja e
+	// dispara consulta de bureau — um erro lançado depois já teria custado os
+	// dois. Ver `identidade-vitrine.ts` para por que a vitrine existe.
+	if (ehIdentidadeDeVitrine(input.cpf)) {
+		throw new ContratacaoComIdentidadeDeVitrineError();
+	}
+
 	// EC-7 (QA crítico 2026-06-02): idempotência por conversa. Duplo-clique em
 	// "Continuar com segurança" (ou re-submit) criava 2 propostas na administradora.
 	// Se já existe uma proposta PENDENTE (status 'simulacao', ainda não confirmada)

@@ -1,0 +1,37 @@
+=== 1T · As conversas que morreram com 1 fala: o que a pessoa disse e o que o agente respondeu ===
+quando | cliente_disse | respostas_do_agente | ultima_resposta
+16/08 09:48 | Quero um carro ate R$ 80 mil | 1 | Que legal! Carro novo muda tudo mesmo. /  / Antes de buscar as melhores opções pra você, preciso de uns detalhes. Já tem um modelo em mente, ou está aberto? /  
+16/08 16:11 | 80000 | 1 | Ótimo, R$ 80 mil é um bom valor para trabalhar! /  / Mas preciso saber: você quer esse crédito para um **carro, uma moto ou um imóvel**?
+16/08 16:14 | Quero comprar um imóvel. | 1 | Que ótimo! Imóvel é investimento para toda a vida. /  / Me conta aí: você já tem um imóvel de olho, ou ainda está explorando o mercado?
+16/08 21:39 | Quero comprar um imóvel. | 2 | [card: quick_reply]
+18/08 11:57 | Quero comprar um carro. | 2 | [card: quick_reply]
+18/08 11:57 | Quero comprar um imóvel. | 2 | [card: quick_reply]
+18/08 13:19 | Moto | 1 | Que legal! Moto é liberdade, né? /  / 
+18/08 13:20 | Quero comprar um imóvel. | 1 | Que ótimo! Imóvel é um investimento sólido, especialmente agora. /  / Já tem um em vista, ou está explorando o mercado? Me conta qual é a região ou o tipo que v
+19/08 13:26 | Quero comprar um imóvel. | 2 | [card: quick_reply]
+20/08 19:05 | Imóvel | 1 | Que legal, um imóvel novo é sempre um sonho! Antes de eu te ajudar a encontrar o consórcio perfeito, como posso te chamar?
+20/08 19:08 | Quero comprar um imóvel. | 1 | Que ótimo! Imóvel é um investimento que muda a vida. /  / Já tem um olho em algum lugar específico, ou ainda está explorando possibilidades?
+20/08 19:36 | Quero um carro de R$ 300.000. | 1 | Que legal! Um carro de 300 mil abre muito espaço de escolha. /  / Já tem um modelo em mente, ou ainda está explorando opções?
+21/08 17:11 | Quero comprar um imóvel. | 2 | [card: quick_reply]
+23/08 15:36 | Quero comprar um imóvel. | 1 | Que ótimo! Imóvel é um dos melhores investimentos que existem. /  / Já tem algum imóvel em mente?
+24/08 10:19 | Quero comprar uma moto. | 1 | Que legal! Moto é liberdade, né. /  / Já tem um modelo em mente, ou ainda está explorando as opções?
+24/08 16:30 | Quero comprar um imóvel. | 1 | Que legal! Imóvel é investimento que vale a pena.  /  / Já tem um de olho, ou ainda está explorando opções?
+24/08 18:04 | Imóvel | 1 | Que ótimo, imóvel é um dos melhores investimentos! /  / Antes de eu te ajudar a encontrar o consórcio perfeito, como posso te chamar?
+24/08 18:05 | Imóvel | 1 | Que legal, imóvel é um dos melhores investimentos! /  / Antes de eu te ajudar a encontrar o consórcio perfeito, como posso te chamar?
+24/08 22:48 | Quero comprar um imóvel. | 1 | Que ótimo! Imóvel é um dos investimentos mais legais que existe. /  / Já tem um lugar em mente? Pode ser a região, o tipo (casa, apartamento) ou até já sabe o v
+25/08 01:16 | Quero comprar um imóvel. | 1 | Que legal! Imóvel é um investimento que valoriza e dura para a vida toda. /  / Já tem uma ideia de qual imóvel quer. Região, tipo de propriedade, algo já em vis
+25/08 09:33 | Quero comprar uma moto. | 1 | Que legal! Moto é liberdade, né. /  / Já tem uma em mente, ou ainda está explorando?
+25/08 21:30 | Automóvel | 1 | Que bacana, carro novo é sempre emocionante! /  / Como posso te chamar?
+25/08 23:08 | Quero comprar um carro. | 1 | Que legal! Carro novo muda tudo mesmo. /  / Já tem um modelo em mente, ou está ainda explorando opções?
+26/08 09:39 | Quero comprar um imóvel. | 1 | Que ótimo! Imóvel é investimento de longo prazo e consórcio sai bem mais barato que financiamento. /  / Já tem um imóvel em mente ou está ainda na fase de pesqu
+26/08 10:06 | Quero comprar uma moto. | 1 | Que legal! Moto é sempre uma adrenalina diferente. /  / Já tem um modelo em mente, ou está ainda explorando opções?
+26/08 11:54 | Automóvel | 1 | Ótimo, consórcio de automóvel é uma das melhores opções para sair do zero em poucos meses! /  / Como posso te chamar?
+26/08 12:47 | Imóvel | 1 | Que legal, você quer entrar no mercado imobiliário! /  / Antes de a gente começar, como posso te chamar?
+27/08 07:30 | Quero comprar uma moto. | 1 | Que legal! Moto é investimento que vale a pena e consórcio é a forma mais inteligente de se financiar. /  / Já tem uma em mente, ou é mais um modelo geral que v
+28/08 14:57 | Quero comprar um carro. | 1 | Que legal! Qual modelo você tem em mente, ou pelo menos que tipo de carro. Algo mais econômico, um sedã, SUV?
+29/08 02:28 | Quero comprar uma moto. | 1 | Que legal! Moto nova ou usada?
+29/08 09:56 | Quero comprar um imóvel. | 1 | Que legal! Apartamento, casa, ou está ainda pensando no tipo?
+29/08 13:04 | Quero comprar um imóvel. | 1 | Que ótimo! Imóvel é um investimento que muda a vida. /  / Já tem um lugar em mente, ou está ainda pesquisando em qual região?
+29/08 20:00 | Quero comprar um imóvel. | 1 | Que ótimo! Imóvel é um investimento que transforma. /  / Já tem um em mente, ou está na fase de explorar opções?
+30/08 03:57 | Quero comprar uma moto. | 1 | Que legal! Moto é liberdade na rua. /  / Já tem um modelo em mente, ou quer explorar opções?
+(34 rows)

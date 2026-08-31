@@ -46,9 +46,73 @@ export function perguntouONome(texto: string | undefined | null): boolean {
 		/como\s+(te\s+|posso\s+(te\s+)?|prefere\s+ser\s+|gosta\s+de\s+ser\s+)?(chamar|chamad[oa]|chama)\b/.test(
 			prev,
 		) ||
-		/qual.{0,20}seu\s+nome/.test(prev) ||
-		/(seu|teu)\s+nome\??/.test(prev) ||
+		// FOLGA entre o possessivo e "nome" — até duas palavras.
+		//
+		// Os padrões antigos exigiam `seu nome` ADJACENTE, e a variação mais
+		// natural que o modelo escreve escapava: ao vivo, ele perguntou "Qual é o
+		// seu PRIMEIRO nome, pra eu poder te chamar?", o cliente respondeu
+		// "Marina", o agente disse "Prazer, Marina!" — e o servidor emitiu embaixo
+		// o card "Como posso te chamar?", pedindo de novo o que ela acabara de dar.
+		//
+		// A folga é a FORMA da pergunta, não mais uma instância dela: cobre
+		// "seu primeiro nome", "seu nome completo", "teu nome de batismo". Somar
+		// `/seu primeiro nome/` à lista consertaria só aquele caso e falharia no
+		// seguinte — o "porta a porta" que o CLAUDE.md nomeia.
+		//
+		// O teto de duas palavras impede a folga de atravessar a frase: sem ele,
+		// um "seu" no começo e um "nome" seis palavras depois casariam.
+		/(seu|teu)(\s+\S+){0,2}\s+nome\b/.test(prev) ||
 		/como\s+(voce\s+)?se\s+chama/.test(prev)
+	);
+}
+
+/**
+ * O texto pede o nome de forma INEQUÍVOCA — pergunta explícita, não menção.
+ *
+ * ── Por que existe um segundo predicado ─────────────────────────────────────
+ *
+ * `perguntouONome` (acima) tem três consumidores, e o custo do erro é oposto
+ * entre eles:
+ *
+ *   `deveEmitirCardDeNome` e `isLikelyNameResponse` decidem TELA. Falso negativo
+ *   custa a pergunta de nome em dobro no mesmo balão — o caso que o FIX-379
+ *   descreve. Falso positivo custa MENOS, mas não custa zero: quando o modelo
+ *   perguntou OUTRA coisa, ele faz o card sair junto ("…no nome da Embracon,
+ *   tudo bem?" + campo de nome embaixo), roubando a resposta da pergunta que
+ *   foi de fato feita — é o caso do Erik. Só no ramo em que o modelo não
+ *   perguntou nada o custo é realmente nulo. A direção do erro é a benigna (um
+ *   card um turno antes, contra um nome que não é capturado), e é isso que
+ *   justifica o largo aqui — não a ausência de custo.
+ *
+ *   `captureAnswerNode` decide ESCRITA. Falso positivo custa um lead com nome
+ *   errado chegando à mesa — o lead "Suv".
+ *
+ * Em 31/08/2026 os dois foram colapsados num predicado só, com a âncora
+ * interrogativa aplicada a todos. O efeito, medido na revisão: cinco falsos
+ * positivos viraram cinco falsos NEGATIVOS ("Seu nome?", "Me passa seu nome?",
+ * "Preciso do seu nome pra seguir"), e essa cobertura a base tinha. Trocar a
+ * pergunta duplicada por outra pergunta duplicada não é conserto.
+ *
+ * Então são dois. Este é o estreito, e ele é subconjunto do largo por
+ * construção — nunca autoriza escrita sobre um turno que a tela nem reconheceu
+ * como pedido (há teste travando isso).
+ *
+ * A âncora é a FORMA interrogativa antes do possessivo. É ela que separa
+ * "Qual é o seu primeiro nome?" de "Vou deixar o seu plano no nome da
+ * Embracon" — o vocabulário é o mesmo, a forma não. O corte em `[^?.!]` prende
+ * a âncora à mesma oração: sem ele, um "qual" numa frase e um "seu nome" na
+ * seguinte casariam.
+ */
+export function pediuONomeExplicitamente(texto: string | undefined | null): boolean {
+	const prev = stripAccents((texto ?? "").toLowerCase());
+	return (
+		/como\s+(te\s+|posso\s+(te\s+)?|prefere\s+ser\s+|gosta\s+de\s+ser\s+)?(chamar|chamad[oa]|chama)\b/.test(
+			prev,
+		) ||
+		/como\s+(voce\s+)?se\s+chama/.test(prev) ||
+		/\b(qual|como|me\s+diz|me\s+diga|diga|dizer|informe|informa)\b[^?.!]{0,40}(seu|teu)(\s+\S+){0,2}\s+nome\b/.test(
+			prev,
+		)
 	);
 }
 

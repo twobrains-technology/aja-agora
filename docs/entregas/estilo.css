@@ -385,11 +385,23 @@ td code {
 figure {
 	margin: 14px 0 0;
 }
+/* Toda imagem se contem, esteja ou nao dentro de <figure>. So `figure img`
+   deixava captura solta estourar a tela: medido em 28/08/2026, um dossie com
+   4 capturas dava scrollWidth 1467 numa viewport de 606. */
+img {
+	max-width: 100%;
+	height: auto;
+	display: block;
+}
 figure img {
 	width: 100%;
 	border: 1px solid var(--areia);
 	border-radius: 10px;
-	display: block;
+}
+.card img {
+	border: 1px solid var(--areia);
+	border-radius: 10px;
+	margin-top: 12px;
 }
 figcaption {
 	font-size: 12.5px;

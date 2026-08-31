@@ -7,6 +7,7 @@ import {
 	loadConversationHistory,
 	saveMessage as saveMessageWithChannel,
 } from "@/lib/conversation/messages";
+import { registrarInicioDeConversa } from "@/lib/conversions/inicio-de-conversa";
 import { isSimulatedWaId } from "./simulator-bus";
 
 export { loadConversationHistory };
@@ -22,6 +23,19 @@ function waIdToPhone(waId: string): string | null {
 
 export async function getOrCreateConversation(
 	waId: string,
+	/**
+	 * A visita que o webhook JÁ resolveu para este número, quando resolveu.
+	 *
+	 * Existe por causa de uma ordem que não fechava (30/08/2026): o carimbo de
+	 * origem do site (`vincularVisitaDoSite`) chama esta função para garantir que
+	 * a conversa exista, e só DEPOIS grava o `visit_id`. Como o evento de início
+	 * de conversa nasce aqui dentro — e é idempotente pela chave —, ele saía sem
+	 * `fbc`, sem `fbp` e sem visita justamente para o tráfego que o item A3
+	 * existe para recuperar: as 58 pessoas que saem pelo botão flutuante.
+	 *
+	 * `%Conv Chat` consertava; o sinal que ensina a campanha, não.
+	 */
+	visitaJaResolvida?: string | null,
 ): Promise<{ id: string; isNew: boolean }> {
 	const existing = await db.query.conversations.findFirst({
 		where: eq(conversations.waId, waId),
@@ -38,7 +52,12 @@ export async function getOrCreateConversation(
 	// primeira mensagem trouxe `referral`. Aqui a conversa a reivindica. Conversa
 	// simulada nunca reivindica — atribuição de teste sujaria o relatório da
 	// campanha, que é o que decide onde a verba vai.
-	const visitId = isSimulated ? null : await findUnclaimedWhatsAppVisit(waId);
+	// A visita do SITE (carimbo de origem) tem precedência sobre a busca por
+	// clique de anúncio: quando ela chega por parâmetro, o webhook já a resolveu
+	// pelo código carimbado na fala — é fato, não heurística de janela.
+	const visitId = isSimulated
+		? null
+		: (visitaJaResolvida ?? (await findUnclaimedWhatsAppVisit(waId)));
 
 	const [conv] = await db
 		.insert(conversations)
@@ -75,6 +94,36 @@ export async function getOrCreateConversation(
 		// Não bloqueia a criação da conversation se o insert do lead falhar
 		// (ex: race condition raro). Lead pode ser criado depois via handoff.
 		console.error(`[whatsapp-session] failed to seed lead for conversation ${conv.id}:`, err);
+	}
+
+	// B3 — o "início de conversa" também no WhatsApp (30/08/2026).
+	//
+	// Na web este evento nasce no navegador (abertura do teatro) e é confirmado
+	// pelo beacon; aqui não existe navegador nenhum, então o servidor é o ÚNICO
+	// lugar onde ele pode nascer — e é justamente o caso em que o caminho
+	// client-side sozinho deixaria a campanha cega.
+	//
+	// E é o evento de melhor correspondência que esta operação produz: o `waId`
+	// É o telefone da pessoa, conhecido desde o primeiro segundo. Na medição de
+	// EMQ (item B2) nenhum evento saía com e-mail; o telefone é o que temos, e
+	// aqui ele vem de graça.
+	//
+	// `conv.id` como `eventId` porque a conversa de WhatsApp é criada uma vez só
+	// (idempotente pelo `wa_id`) — então a chave é naturalmente única e o
+	// reprocessamento de webhook não vira segundo sinal.
+	//
+	// `await` e não `void`: a função nunca lança (tem try/catch próprio) e faz
+	// duas consultas locais — menos do que a criação da conversa logo acima já
+	// fez. O que o `void` custava era determinismo: o evento podia não existir
+	// quando o turno seguinte o procurasse, e um teste de integração não tinha
+	// como afirmar que ele nasceu com a origem certa. Sinal de mídia que talvez
+	// exista não é sinal.
+	if (!isSimulated) {
+		await registrarInicioDeConversa({
+			eventId: conv.id,
+			visitId,
+			conversationId: conv.id,
+		});
 	}
 
 	console.log(

@@ -1,12 +1,14 @@
 import { createHmac } from "node:crypto";
 import { type NextRequest, NextResponse } from "next/server";
 import { updateLastInboundAt } from "@/app/actions/whatsapp";
+import { extrairCodigoDeOrigem, removerCarimbo } from "@/lib/attribution/codigo-de-origem";
 import { parseCtwaReferral } from "@/lib/attribution/referral";
 import { recordWhatsAppVisit } from "@/lib/attribution/visit-store";
 import { markAsRead } from "@/lib/whatsapp/api";
 import { receberMidiaDoCliente } from "@/lib/whatsapp/midia-do-cliente";
 import { claimInboundMessage } from "@/lib/whatsapp/once";
 import { processInteractiveReply, processTextMessage } from "@/lib/whatsapp/processor";
+import { vincularVisitaDoSite } from "@/lib/whatsapp/vinculo-com-o-site";
 
 const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN ?? "aja-agora-webhook-2026";
 
@@ -149,10 +151,32 @@ export async function POST(req: NextRequest) {
 
 			switch (msgType) {
 				case "text": {
-					const text = message.text?.body;
-					if (text) {
+					const bruto = message.text?.body;
+					if (bruto) {
+						// A3 — o carimbo de origem que o botão flutuante do site pôs na
+						// primeira fala. Só existe na PRIMEIRA mensagem depois do toque, e
+						// por isso é lido aqui, no ponto único por onde toda mensagem de
+						// entrada passa — mesmo lugar e mesmo `await` do `referral` de
+						// Click-to-WhatsApp logo acima, pelo mesmo motivo: o processador
+						// cria a conversa em seguida e precisa achá-la já com origem.
+						const codigo = extrairCodigoDeOrigem(bruto);
+						if (codigo) {
+							console.log(`[whatsapp] Veio do site | código: ${codigo}`);
+							await vincularVisitaDoSite(from, codigo);
+						}
+
+						// O CÓDIGO NÃO ENTRA NA CONVERSA. O texto inbound é persistido como
+						// fala do cliente e relido pelo modelo nos turnos seguintes; com o
+						// `(ref a1b2c3d4)` dentro, o agente aprenderia a tratá-lo como parte
+						// do pedido — a mesma classe de defeito de "botão do card vira
+						// mentira do servidor", só que vinda do nosso próprio link.
+						//
+						// Uma mensagem que era SÓ o carimbo vira string vazia e é tratada
+						// como a saudação que ela é: o cliente apertou enviar sem escrever
+						// nada além do que já estava pronto.
+						const text = codigo ? removerCarimbo(bruto) : bruto;
 						console.log(`[whatsapp] Text: "${text}"`);
-						processTextMessage(from, text, contactName, message.id).catch((err) =>
+						processTextMessage(from, text || "Oi", contactName, message.id).catch((err) =>
 							console.error("[whatsapp] Processor error:", err),
 						);
 					}

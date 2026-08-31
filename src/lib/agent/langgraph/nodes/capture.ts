@@ -48,10 +48,86 @@ export function captureAnswerNode(state: AgentGraphStateType): Partial<AgentGrap
 	const text = (state.userText ?? "").trim();
 	if (!text) return {};
 
+	// SÓ NO GATE `name`. FORA DELE, QUEM EXTRAI É O MODELO.
+	//
+	// A apresentação espontânea ("me chamo Ana e quero um carro de 80 mil") também
+	// precisa ser capturada — a vitrine tirou o gate `name` do caminho de quem já
+	// traz o valor, então ninguém mais PERGUNTA o nome. Mas ela NÃO é capturada
+	// aqui, e a tentativa de fazê-lo foi revertida em 27/08/2026 com a sonda na
+	// mão: um predicado de FORMA ("sou o X", "meu nome é X") batiza o lead com o
+	// que vier depois do artigo, e em consórcio o que vem depois é do domínio:
+	//
+	//   "meu nome é sujo no serasa, tem problema?"        → "Sujo"
+	//   "não sou o único que decide, vou falar com a esposa" → "Único"
+	//   "sou o comprador, mas quem vai usar é minha esposa"  → "Comprador"
+	//
+	// Nenhuma guarda fecha isso: é a lista de palavras contra a língua, e o
+	// `CLAUDE.md` já nomeia o desfecho ("não se fecha porta a porta"). Aqui dentro
+	// do gate a heurística é segura porque a pergunta ACABOU de ser feita e a
+	// resposta é curta; fora dele, o turno fala de bem, valor, prazo e objeção.
+	//
+	// Quem lê a frase inteira e sabe distinguir apresentação de "meu nome está
+	// sujo" é o modelo — e ele já tem `save_contact_name` no toolset base. O que
+	// faltava era pedir: a regra estava em `SPECIALIST_BASE_PROMPT`, que o grafo
+	// NÃO lê (medido: 2 conversas no app, o modelo saudou pelo nome e não chamou a
+	// tool nenhuma vez). A regra passou para o `SYSTEM_PROMPT`, e o servidor
+	// continua ancorando o que a tool tenta gravar (`nomeAncoradoNaFala`).
+	// E SÓ SE O CARD SAIU NO TURNO ANTERIOR (30/08/2026).
+	//
+	// O parágrafo acima diz que "aqui dentro do gate a heurística é segura porque
+	// a pergunta ACABOU de ser feita". Essa premissa valia enquanto o gate `name`
+	// só existia no primeiro contato. Desde 30/08 ele desce para depois do valor
+	// do bem — e ali o cliente está respondendo ao MODELO, não ao funil:
+	//
+	//   🤖 (modelo)  Boa escolha. Prefere sedã ou SUV?
+	//   👤           SUV
+	//   → contactName = "Suv"
+	//
+	// Reproduzido em cenário no mesmo dia. É a mesma família de "Uma", "Sujo" e
+	// "Voltei", e ela não se fecha acrescentando palavra à lista: fecha-se
+	// perguntando ao servidor se ELE fez a pergunta.
+	//
+	// ⚠️ E a pergunta é "saiu no turno ANTERIOR?", não "já saiu alguma vez?".
+	// A primeira versão deste guard era monotônica, e isso deixava a guarda
+	// desarmada pelo resto da conversa: bastava o cliente perguntar a taxa de
+	// administração — `asking_question` suprime o card, mas `routeNode` grava
+	// `answeredGate: "name"` mesmo assim — e o modelo emendar "prefere prazo
+	// curto ou longo?" para "Curto" virar o nome dele no turno seguinte. A
+	// mesma armadilha, um turno adiante.
+	//
+	// O flag é CONSUMIDO aqui e remarcado por `emitCardNode` quando o card sai
+	// de novo. `capture` roda antes de `emitCard` no grafo, então o ciclo fecha
+	// dentro do mesmo turno.
+	// ── DUAS autorizações, porque são DOIS jeitos de a pergunta ter sido feita ─
+	//
+	// O card não é o único que pergunta o nome. Quando o MODELO já perguntou, o
+	// card cede a vez de propósito (FIX-379, `deveEmitirCardDeNome`) — e aí
+	// `nameCardExibido` é falso justamente no turno em que a pessoa responde.
+	//
+	// Visto ao vivo em 31/08/2026, no browser:
+	//
+	//   🤖  Qual é o seu primeiro nome, pra eu poder te chamar?
+	//   👤  Marina
+	//   🤖  Prazer, Marina!
+	//   📋  [card] Como posso te chamar?          ← pedindo de novo
+	//
+	// O modelo entendeu e o servidor não gravou; sem gravar, `nextGate` continua
+	// devolvendo `name` e o card vai pendurado embaixo da própria confirmação.
+	//
+	// `pedidoDeNomeExplicito` é o mesmo tipo de âncora que `nameCardExibido`: um
+	// FATO do servidor sobre o turno anterior (o texto emitido pediu o nome),
+	// não um palpite sobre a resposta. E não precisa ser consumido — `converse`
+	// o reescreve a cada turno. Se o modelo pede o nome no turno N e no N+1
+	// pergunta a carroceria, o sinal já é falso quando "SUV" chega no N+2: é
+	// exatamente o lead "Suv", e ele continua impossível.
 	const gateRespondido = state.gate ?? state.answeredGate;
-	if (gateRespondido === "name" && !state.contactName) {
-		const name = extractName(text);
-		if (name) return { contactName: name };
-	}
-	return {};
+	const perguntaFoiFeita = state.funnel.nameCardExibido || state.pedidoDeNomeExplicito;
+	if (gateRespondido !== "name" || !perguntaFoiFeita) return {};
+
+	// Consome: a autorização do CARD vale para ESTA resposta e acaba aqui.
+	const consumido = { funnel: { ...state.funnel, nameCardExibido: false } };
+	if (state.contactName) return consumido;
+
+	const name = extractName(text);
+	return name ? { ...consumido, contactName: name } : consumido;
 }

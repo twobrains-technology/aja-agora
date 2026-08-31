@@ -58,6 +58,32 @@ export class DuplicatedProposalError extends BeviApiError {
 	}
 }
 
+/**
+ * A proposta corrente da loja NÃO é do CPF que está fechando.
+ *
+ * O self-contract resolve "a proposta corrente" só pelo `storeHash`, e o
+ * gateway trata `Duplicated Hash` como retomada. Enquanto todas as propostas
+ * nasciam do próprio cliente isso era seguro; com a vitrine (identidade da casa
+ * abrindo a proposta para montar a prateleira), a proposta corrente quase nunca
+ * é dele — e adotá-la significa anexar RG e comprovante do cliente a uma
+ * proposta de outro titular e enviá-la assim à administradora.
+ *
+ * Fatal de propósito: não há degradação segura aqui. Melhor a contratação falhar
+ * e ser refeita do que nascer no nome errado.
+ */
+export class PropostaDeOutroTitularError extends BeviApiError {
+	constructor(proposalId: string) {
+		super(
+			409,
+			`A proposta corrente da loja (${proposalId}) não pertence ao CPF desta contratação. ` +
+				"Contratar sobre ela criaria um contrato em nome de outro titular.",
+			[],
+			null,
+		);
+		this.name = "PropostaDeOutroTitularError";
+	}
+}
+
 /** 400 "Proposta não pertence ao Bevi Consórcio." — a proposta foi criada sob um
  * `productId`/conta que o token não reconhece como "Bevi Consórcio" no `simulate`
  * (FIX-79). NÃO é transitório: nasce de `BEVI_PRODUCT_ID` errado na criação e NUNCA

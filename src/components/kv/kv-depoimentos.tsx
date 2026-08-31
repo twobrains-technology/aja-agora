@@ -118,7 +118,13 @@ export function KvDepoimentos({ onOpenChat }: KvDepoimentosProps) {
 					<p className="text-[24px] font-normal text-[#021628] md:text-[32px]">
 						Quer ser o próximo a realizar o <Em w="black">seu sonho?</Em>
 					</p>
-					<KvCtaButton onClick={(e) => onOpenChat("", e.currentTarget)}>Fale com a AJA</KvCtaButton>
+					{/* "Comparar agora" e não mais "Fale com a AJA" (A5, 30/08/2026).
+					    Era o último rótulo solitário da landing: um verbo diferente,
+					    numa seção que o visitante alcança depois de já ter passado por
+					    cinco botões idênticos. "Comparar" é a promessa da marca —
+					    comparador independente —, e "falar" descrevia o meio, não o
+					    ganho. */}
+					<KvCtaButton onClick={(e) => onOpenChat("", e.currentTarget)}>Comparar agora</KvCtaButton>
 				</div>
 			</KvContainer>
 		</KvSection>

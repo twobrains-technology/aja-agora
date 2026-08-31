@@ -84,31 +84,63 @@ export async function despacharConversoesPendentes(limite = 500): Promise<Result
 	}));
 
 	const naJanela = paraEnvio.filter((evento) => !expirouParaMeta(evento));
-	const resultado = await enviarParaMeta(naJanela, cfg);
+
+	// DOIS LOTES: marco de venda de um lado, sinal de interesse do outro.
+	//
+	// `enviarParaMeta` manda tudo numa chamada e o resultado é do LOTE — uma
+	// recusa marca `failed` em todas as linhas juntas. Isso era aceitável
+	// enquanto a fila tinha três eventos do vocabulário padrão da Meta, raros e
+	// homogêneos.
+	//
+	// O `chat_iniciado` (item B3, 30/08/2026) mudou as duas coisas de uma vez: é
+	// evento PERSONALIZADO — o de maior chance de ser recusado por validação nova
+	// da Graph API — e é MUITO mais frequente (produção, 16–30/08: 75 aberturas
+	// de teatro contra 22 eventos de conversão). A fila passa a ser dominada por
+	// ele.
+	//
+	// Juntos, os dois fatos produzem o desfecho que esta separação impede: uma
+	// recusa causada pelo sinal levaria junto, para `failed`, o `Purchase` de uma
+	// venda de seis dígitos que estava no mesmo lote. E o erro gravado apontaria
+	// o campo do evento errado — a venda não sumiria, ficaria `failed` com uma
+	// mensagem plausível, e ninguém iria procurá-la.
+	//
+	// A divisão é por NATUREZA e não por nome: o que é marco de negócio de um
+	// lado, o que é sinal do outro. Fila só de venda continua sendo uma chamada
+	// só — nada de round-trip a mais quando não há sinal na fila.
+	const marcos = naJanela.filter((evento) => evento.eventName !== "chat_iniciado");
+	const sinais = naJanela.filter((evento) => evento.eventName === "chat_iniciado");
+
 	const agora = new Date();
+	let enviados = 0;
+	let falhas = 0;
 
-	for (const evento of naJanela) {
-		await db
-			.update(conversionEvents)
-			.set(
-				resultado.ok
-					? { status: "sent", sentAt: agora, lastError: null }
-					: { status: "failed", lastError: resultado.erro ?? "erro desconhecido" },
-			)
-			.where(eq(conversionEvents.id, evento.id));
+	for (const lote of [marcos, sinais]) {
+		if (lote.length === 0) continue;
+
+		const resultado = await enviarParaMeta(lote, cfg);
+
+		for (const evento of lote) {
+			await db
+				.update(conversionEvents)
+				.set(
+					resultado.ok
+						? { status: "sent", sentAt: agora, lastError: null }
+						: { status: "failed", lastError: resultado.erro ?? "erro desconhecido" },
+				)
+				.where(eq(conversionEvents.id, evento.id));
+		}
+
+		if (resultado.ok) {
+			enviados += lote.length;
+		} else {
+			falhas += lote.length;
+			console.error(
+				`[conversions] envio falhou para ${lote.length} evento(s) de ${lote[0].eventName === "chat_iniciado" ? "sinal" : "venda"}: ${resultado.erro}`,
+			);
+		}
 	}
 
-	if (!resultado.ok) {
-		console.error(
-			`[conversions] envio falhou para ${naJanela.length} evento(s): ${resultado.erro}`,
-		);
-	}
-
-	return {
-		enviados: resultado.ok ? naJanela.length : 0,
-		falhas: resultado.ok ? 0 : naJanela.length,
-		expirados,
-	};
+	return { enviados, falhas, expirados };
 }
 
 async function marcarExpirados(limiteDeIdade: Date): Promise<number> {

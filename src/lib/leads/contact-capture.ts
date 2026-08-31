@@ -4,7 +4,7 @@ import { conversations, leads } from "@/db/schema";
 import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
 import { transitionLeadStage } from "@/lib/admin/lead-transitions";
 import { attachContact } from "@/lib/contacts";
-import { ehNomeProprioPlausivel } from "./nome-plausivel";
+import { ehNomeProprioPlausivel, nomeAncoradoNaFala } from "./nome-plausivel";
 import { normalizePhoneBR } from "./phone";
 
 /** Reexportado: o predicado mudou de casa (ver `nome-plausivel.ts`), e os
@@ -105,6 +105,18 @@ function capitalizeWord(word: string, isFirst: boolean): string {
 export async function saveContactName(
 	conversationId: string,
 	rawName: string,
+	opts?: {
+		/**
+		 * A fala do cliente neste turno. Quando presente, o nome só é gravado se
+		 * ESTIVER nela.
+		 *
+		 * Usado pelo caminho do MODELO (`save_contact_name`), que foi visto
+		 * inventando "Cliente" no fecho de uma conversa sem apresentação. O caminho
+		 * do CARD não passa isto — ali o cliente digitou o nome no campo, e a fala
+		 * é o próprio dado.
+		 */
+		ancorarEm?: string | null;
+	},
 ): Promise<ContactCaptureResult> {
 	const trimmed = rawName.trim();
 	if (!trimmed) return { ok: false, error: "name_invalid" };
@@ -120,6 +132,12 @@ export async function saveContactName(
 	// "Voltei" passava em tudo acima (só letras, 6 chars, fora das stopwords) e
 	// virava o nome do lead. Ver `NAO_SAO_NOMES`.
 	if (!ehNomeProprioPlausivel(firstToken)) {
+		return { ok: false, error: "name_invalid" };
+	}
+	// Lei 3 — entidade não-ancorada não vira dado. "Cliente", "Comprador" e
+	// "Interessado" passam em qualquer heurística de "parece nome"; o que os
+	// separa de um nome real é ter sido DITO. Ver `nome-ancorado-na-fala.test.ts`.
+	if (opts && "ancorarEm" in opts && !nomeAncoradoNaFala(firstToken, opts.ancorarEm)) {
 		return { ok: false, error: "name_invalid" };
 	}
 	// FIX-299: capitalização determinística — independe de como o usuário digitou.

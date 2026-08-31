@@ -124,6 +124,53 @@ export type FunnelState = {
 	 * refém: no turno seguinte o card sai de qualquer jeito. Ver
 	 * `deveEmitirCardDeNome` (emit-card.ts) e o FIX-379. */
 	nameCardAdiado?: boolean;
+	/** O card do gate `name` saiu no TURNO ANTERIOR — e só nele.
+	 *
+	 *  É o fato de servidor que autoriza `captureAnswerNode` a ler uma resposta
+	 *  curta como o nome da pessoa. Sem ele, a captura se apoiava só em "o gate
+	 *  ativo é `name`" — premissa verdadeira enquanto esse gate só existia no
+	 *  primeiro contato, e que quebrou em 30/08/2026, quando ele desceu para
+	 *  depois do valor do bem.
+	 *
+	 *  O que a quebra produzia: o MODELO pergunta "novo ou usado?", o cliente
+	 *  responde "SUV" — ao modelo —, e o servidor grava `contactName = "Suv"`.
+	 *  Mesma família dos leads que nasceram "Uma", "Sujo" e "Voltei", até aqui
+	 *  combatida por lista de palavras.
+	 *
+	 *  **É de UM TURNO, não monotônico** — e essa distinção é o item inteiro.
+	 *  Com "já apareceu alguma vez", a guarda ficava desarmada pelo resto da
+	 *  conversa: bastava o cliente perguntar a taxa de administração (o card é
+	 *  suprimido, `answeredGate` continua `name`, o modelo emenda "prefere prazo
+	 *  curto ou longo?") para "Curto" virar o nome dele no turno seguinte.
+	 *  `captureAnswerNode` consome e apaga; `emitCardNode` remarca quando o card
+	 *  sai de novo. */
+	nameCardExibido?: boolean;
+	/** Quantas falas do CLIENTE esta conversa já teve, contadas pelo `persist`.
+	 *
+	 *  Existe porque `state.messages.length` NÃO serve para isso: `run-turn.ts`
+	 *  monta a lista por dois caminhos (banco no primeiro turno, checkpointer +
+	 *  `resume` nos seguintes), e a fala corrente entra em momentos diferentes em
+	 *  cada um. Medido ao vivo em 30/08/2026, a contagem por mensagem deu
+	 *  0 → 1 → 3 numa conversa de três falas.
+	 *
+	 *  Turno de SERVIDOR (directive, retomada) não incrementa — não é fala do
+	 *  cliente, e contá-la gastaria o índice 0, que é o que o score
+	 *  `primeira_resposta_com_numero` observa. */
+	turnosDoCliente?: number;
+	/** O funil DESISTIU de perguntar o nome, depois de tentar sem progresso.
+	 *
+	 *  É o escape do gate `name` na posição nova (depois do valor do bem). Sem
+	 *  ele, o cliente que responde algo que `extractName` recusa — "prefiro não
+	 *  dizer", "depois" — trava para sempre: `nextGate` devolve `name` a cada
+	 *  turno e o funil nunca chega ao `identify`. Justamente com quem já
+	 *  informou o valor, que a medição de 30/08/2026 mostra ser o segmento em
+	 *  que 86% entrega o CPF.
+	 *
+	 *  Ele NÃO fabrica nome — ao contrário dos outros defaults de escape, que
+	 *  gravam um valor assumido em `qualifyAnswers`. Nome inventado chega à mesa
+	 *  como se o cliente o tivesse dito, e o agente passa a chamá-lo por ele. O
+	 *  escape aqui é desistir da pergunta, não responder por ele. */
+	nomeDispensado?: boolean;
 	// FIX-360 — card único (`topic_picker`) pro usuário novato logo após
 	// `experience` resolver, antes do convite de recomendação.
 	topicPickerDispatched?: boolean;
@@ -225,6 +272,9 @@ export const FUNNEL_KEYS = {
 	explicouComoFunciona: true,
 	experienceDispatched: true,
 	nameCardAdiado: true,
+	nameCardExibido: true,
+	turnosDoCliente: true,
+	nomeDispensado: true,
 	topicPickerDispatched: true,
 	recoConsentDispatched: true,
 	recoConsentAnswered: true,
@@ -289,6 +339,9 @@ export function funnelFromMeta(meta: ConversationMetadata): FunnelState {
 		explicouComoFunciona: meta.explicouComoFunciona,
 		experienceDispatched: meta.experienceDispatched,
 		nameCardAdiado: meta.nameCardAdiado,
+		nameCardExibido: meta.nameCardExibido,
+		turnosDoCliente: meta.turnosDoCliente,
+		nomeDispensado: meta.nomeDispensado,
 		topicPickerDispatched: meta.topicPickerDispatched,
 		recoConsentDispatched: meta.recoConsentDispatched,
 		recoConsentAnswered: meta.recoConsentAnswered,
@@ -378,6 +431,24 @@ export const AgentGraphState = Annotation.Root({
 	 * embaixo, o cliente respondia ao campo e a pergunta do texto morria sem
 	 * resposta. Ver `deveEmitirCardDeNome` (emit-card.ts). */
 	modelAskedForName: Annotation<boolean>({
+		reducer: (a, b) => b ?? a,
+		default: () => false,
+	}),
+
+	/** O modelo pediu o nome de forma INEQUÍVOCA neste turno — pergunta
+	 *  explícita, não menção.
+	 *
+	 *  Irmão estreito de `modelAskedForName`, e a diferença entre os dois é o
+	 *  custo do erro de cada consumidor: aquele decide se o CARD sai junto com a
+	 *  fala (errar custa um card a mais ou a menos); este AUTORIZA a escrita de
+	 *  `contactName` em `captureAnswerNode` (errar custa um lead com nome errado
+	 *  chegando à mesa — o lead "Suv").
+	 *
+	 *  Foram um só por algumas horas em 31/08/2026, e o colapso trocou cinco
+	 *  falsos positivos por cinco falsos negativos: "Seu nome?" e "Me passa seu
+	 *  nome?" deixaram de ser reconhecidos, e o card voltava a perguntar em
+	 *  dobro. Ver `detect-name-turn.test.ts`, tabela dos dois predicados. */
+	pedidoDeNomeExplicito: Annotation<boolean>({
 		reducer: (a, b) => b ?? a,
 		default: () => false,
 	}),

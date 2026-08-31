@@ -1,0 +1,35 @@
+=== REFEITA (era C1.2/C1.3) · Onde o funil para, por marco do metadata ===
+  A consulta original procurava um artefato `gate`+`identity` que NAO EXISTE:
+  card de gate nao e persistido como artifact (so os de DADO sao). Ela
+  devolvia 0 sobre denominador 0. O estado do funil vive em conversations.metadata.
++-----------+---------+-------------+-----------+-------------+-----------+
+| conversas | falaram | deram_valor | deram_cpf | viram_carta | propostas |
++-----------+---------+-------------+-----------+-------------+-----------+
+|        72 |      71 |          22 |        19 |          19 |         2 |
++-----------+---------+-------------+-----------+-------------+-----------+
+(1 row)
+
+=== REFEITA (era A8.4) · Funil do chat — o enum precisa de cast pra text ===
++-----------------+---------+---------+
+|      tipo       | eventos | visitas |
++-----------------+---------+---------+
+| chat_card_click |     356 |      36 |
+| chat_send       |     145 |      39 |
+| chat_receive    |     127 |      31 |
+| chat_open       |      75 |      56 |
+| chat_close      |      28 |      18 |
+| chat_typing     |      14 |      13 |
++-----------------+---------+---------+
+(6 rows)
+
+=== REFEITA (era D3.1/D3.4) · A campainha do handoff, com a tabela certa ===
+  handoff_notifications esta VAZIA (0 linhas em toda a base) — o caminho de
+  notificacao mudou: o atendente atende pelo painel, nao pelo WhatsApp.
+  O tempo real de handoff se mede por lead_events, que e o que o painel novo usa.
++----------------------+----------+-----------+-----------+
+| notificacoes_na_base | handoffs | horas_p50 | horas_p90 |
++----------------------+----------+-----------+-----------+
+|                    0 |        6 |     401.5 |     485.2 |
++----------------------+----------+-----------+-----------+
+(1 row)
+
