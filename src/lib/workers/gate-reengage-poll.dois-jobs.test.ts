@@ -19,6 +19,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { INTERVALO_DO_CICLO_HORAS } from "./sla-da-mesa-cycle";
 
 type OpcoesDeJob = { repeat?: { every?: number } };
 const add = vi.hoisted(() =>
@@ -44,7 +45,12 @@ vi.mock("bullmq", () => ({
 	},
 }));
 vi.mock("ioredis", () => ({ default: class {} }));
-vi.mock("./sla-da-mesa-cycle", () => ({ runSlaDaMesaCycle }));
+// Só o CICLO é dublado; a constante vem da real, senão o teste compararia o
+// período do job contra um número que ele mesmo inventou.
+vi.mock("./sla-da-mesa-cycle", async (original) => ({
+	...(await original<Record<string, unknown>>()),
+	runSlaDaMesaCycle,
+}));
 vi.mock("./acolhida-n1-cycle", () => ({ runAcolhidaN1Cycle }));
 vi.mock("./reconciliacao-cycle", () => ({ runReconciliacaoCycle }));
 
@@ -71,7 +77,11 @@ describe("os dois jobs repetíveis", () => {
 		const alarme = registros.find((r) => r.nome === "sla-da-mesa");
 
 		expect(funil?.every).toBe(30_000);
-		expect(alarme?.every).toBe(24 * 60 * 60 * 1000);
+		// Amarrado à MESMA constante que o ciclo usa como largura da janela de
+		// cruzamento. Um `24` escrito à mão aqui e outro lá divergem em silêncio,
+		// e o efeito é lead que atravessa a janela sem alerta (ou alertado duas
+		// vezes) — sem nada ficar vermelho.
+		expect(alarme?.every).toBe(INTERVALO_DO_CICLO_HORAS * 60 * 60 * 1000);
 	});
 
 	it("o job do funil NÃO dispara o alarme", async () => {

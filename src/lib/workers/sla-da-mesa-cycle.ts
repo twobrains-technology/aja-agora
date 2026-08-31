@@ -37,8 +37,16 @@ import { sendEmail } from "@/lib/email/sendgrid";
  *  o mínimo defensável — e ainda assim é 16× mais rápido que a mediana atual. */
 const LIMITE_PADRAO_HORAS = 24;
 
+/** Quanto tempo separa dois ciclos. É a LARGURA DA JANELA de cruzamento, e
+ *  precisa bater com o `repeat` do job em `gate-reengage-poll.ts` — janela menor
+ *  que o intervalo deixa lead passar sem alerta; maior, alerta duas vezes. */
+export const INTERVALO_DO_CICLO_HORAS = 24;
+
 export type ResultadoSlaDaMesa = {
-	parados: number;
+	/** Quem CRUZOU o limite desde o ciclo anterior — os nomes que vão no e-mail. */
+	cruzaram: number;
+	/** Quem já estava parado antes disso — vai como contagem, não como lista. */
+	continuamParados: number;
 	enviado: boolean;
 };
 
@@ -97,44 +105,72 @@ export async function runSlaDaMesaCycle(): Promise<ResultadoSlaDaMesa> {
 	const limite = limiteHoras();
 	const parados = await computeLeadsParados(limite);
 
-	// Ninguém parado: nenhum e-mail. Alarme que toca à toa é desligado na
-	// primeira semana, e aí volta a não haver campainha nenhuma.
-	if (parados.length === 0) return { parados: 0, enviado: false };
+	// ── Só quem CRUZOU o limite desde o ciclo anterior ───────────────────────
+	//
+	// A primeira versão mandava a lista inteira a cada ciclo. Com o estado real
+	// medido (~24 leads na allowlist, p50 de 16,7 dias), a mesa receberia os
+	// mesmos ~24 nomes todo dia — e desligaria a campainha na primeira semana,
+	// que é exatamente o modo de falha que este ciclo existe para evitar.
+	//
+	// A janela tem a largura do intervalo do ciclo, então cada lead cai nela uma
+	// vez só. Não precisa de estado novo — e é bom que não precise: o lugar
+	// óbvio para marcar "já alertei" seria `lead_events`, mas aquela tabela É o
+	// relógio do SLA (`max(created_at)` em `computeLeadsParados`), e escrever nela
+	// faria o lead parecer tocado e sair da lista. O alarme apagaria a si mesmo.
+	const cruzaram = parados.filter((p) => p.horasParado < limite + INTERVALO_DO_CICLO_HORAS);
+	const antigos = parados.filter((p) => p.horasParado >= limite + INTERVALO_DO_CICLO_HORAS);
+
+	// Ninguém novo: silêncio. Os antigos já foram avisados quando cruzaram, e
+	// repeti-los é o que faz a mesa criar filtro de caixa de entrada.
+	if (cruzaram.length === 0) {
+		return { cruzaram: 0, continuamParados: antigos.length, enviado: false };
+	}
 
 	const para = destinatarios();
 	if (para.length === 0) {
 		console.error(
-			`[sla-da-mesa] ${parados.length} lead(s) parados além de ${limite}h, mas ALERTA_SLA_MESA_TO está vazio — nenhum e-mail enviado`,
+			`[sla-da-mesa] ${cruzaram.length} lead(s) cruzaram ${limite}h, mas ALERTA_SLA_MESA_TO está vazio — nenhum e-mail enviado`,
 		);
-		return { parados: parados.length, enviado: false };
+		return { cruzaram: cruzaram.length, continuamParados: antigos.length, enviado: false };
 	}
 
-	// Mais antigo primeiro — é ele que a mesa tem que ligar agora. A consulta já
-	// devolve nessa ordem; reordenar aqui deixa o e-mail correto mesmo se alguém
-	// mudar o `ORDER BY` da tela por outro motivo.
-	const lista = [...parados].sort((a, b) => b.horasParado - a.horasParado);
+	// Mais antigo primeiro — é ele que a mesa tem que ligar agora.
+	const lista = [...cruzaram].sort((a, b) => b.horasParado - a.horasParado);
 	const pior = lista[0];
 
 	const plural = lista.length === 1 ? "1 lead parado" : `${lista.length} leads parados`;
 	const subject = `[AJA] ${plural} — o mais antigo há ${emDias(pior.horasParado)}`;
 
+	// A pilha antiga entra como NÚMERO, nunca como lista de nomes: silenciar o
+	// antigo é o objetivo, apagá-lo faria a mesa perder a noção do tamanho da
+	// pilha — e é ela que diz se a situação melhora ou piora.
+	const maisAntigo = antigos.reduce((a, p) => (p.horasParado > a ? p.horasParado : a), 0);
+	const rodape =
+		antigos.length === 0
+			? []
+			: [
+					`Além destes, ${antigos.length} lead(s) continuam parados de ciclos anteriores — o mais antigo há ${emDias(maisAntigo)}. Não são repetidos aqui todo dia de propósito; a lista completa está em /admin/performance.`,
+				];
+
 	const text = [
-		`${plural} há mais de ${limite}h sem nenhuma movimentação de estágio.`,
+		`${plural} — cruzaram ${limite}h sem nenhuma movimentação de estágio desde o último aviso.`,
 		"",
 		...lista.map(linhaDeTexto),
 		"",
+		...rodape,
 		"O relógio é a última transição de estágio (lead_events), não a última escrita na linha.",
 		"Lista completa e p50/p90 por sub-etapa: /admin/performance",
 	].join("\n");
 
 	const html = [
-		`<p><b>${plural}</b> há mais de ${limite}h sem nenhuma movimentação de estágio.</p>`,
+		`<p><b>${plural}</b> — cruzaram ${limite}h sem nenhuma movimentação de estágio desde o último aviso.</p>`,
 		"<ul>",
 		...lista.map(
 			(p) =>
 				`<li><b>${p.nome ?? "(sem nome)"}</b> — ${p.telefone ?? "(sem telefone)"} — ${p.estagio} — parado há <b>${emDias(p.horasParado)}</b></li>`,
 		),
 		"</ul>",
+		...rodape.map((linha) => `<p>${linha}</p>`),
 		'<p style="color:#666;font-size:13px">O relógio é a última transição de estágio (<code>lead_events</code>), não a última escrita na linha. Lista completa e p50/p90 por sub-etapa em <code>/admin/performance</code>.</p>',
 	].join("\n");
 
@@ -142,9 +178,11 @@ export async function runSlaDaMesaCycle(): Promise<ResultadoSlaDaMesa> {
 		await sendEmail({ to: para.join(","), subject, html, text });
 	} catch (erro) {
 		console.error("[sla-da-mesa] envio falhou:", erro);
-		return { parados: lista.length, enviado: false };
+		return { cruzaram: lista.length, continuamParados: antigos.length, enviado: false };
 	}
 
-	console.log(`[sla-da-mesa] alerta enviado: ${lista.length} parado(s) além de ${limite}h`);
-	return { parados: lista.length, enviado: true };
+	console.log(
+		`[sla-da-mesa] alerta enviado: ${lista.length} cruzaram ${limite}h · ${antigos.length} de ciclos anteriores`,
+	);
+	return { cruzaram: lista.length, continuamParados: antigos.length, enviado: true };
 }

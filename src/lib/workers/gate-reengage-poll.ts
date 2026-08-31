@@ -41,6 +41,7 @@ import { saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta } from "@/lib/conversation/meta";
 import type { fireGate as FireGate } from "@/lib/whatsapp/adapter";
 import { buildRetomadaDirective, podeRetomar } from "./retomada";
+import { INTERVALO_DO_CICLO_HORAS } from "./sla-da-mesa-cycle";
 
 export interface ReengageDeps {
 	now?: Date;
@@ -369,7 +370,13 @@ const POLL_INTERVAL_MS = Number(process.env.GATE_REENGAGE_POLL_INTERVAL_MS ?? 30
  *  persistido no Redis, então vale entre reinícios e entre instâncias do worker.
  *  No período do funil, o mesmo alarme mandaria ~2.880 e-mails por dia — e a
  *  mesa desligaria a campainha na primeira manhã. */
-const SLA_MESA_INTERVAL_MS = 24 * 60 * 60 * 1000;
+//
+// O número vem de `INTERVALO_DO_CICLO_HORAS`, e não de um `24` escrito aqui,
+// porque o ciclo usa o MESMO valor como largura da janela de cruzamento: ele
+// alerta quem está parado entre `limite` e `limite + intervalo`. Se os dois
+// números divergirem, ou algum lead atravessa a janela sem nunca ser alertado
+// (período > janela), ou é alertado duas vezes (período < janela). Um lugar só.
+const SLA_MESA_INTERVAL_MS = INTERVALO_DO_CICLO_HORAS * 60 * 60 * 1000;
 const JOB_FUNIL = "poll";
 const JOB_SLA_MESA = "sla-da-mesa";
 
@@ -420,7 +427,8 @@ export async function startGateReengageWorker() {
 			if (job?.name === JOB_SLA_MESA) {
 				const { runSlaDaMesaCycle } = await import("./sla-da-mesa-cycle");
 				const sla = await runSlaDaMesaCycle();
-				if (sla.parados > 0) console.log(`[sla-da-mesa] ${JSON.stringify(sla)}`);
+				if (sla.cruzaram > 0 || sla.continuamParados > 0)
+					console.log(`[sla-da-mesa] ${JSON.stringify(sla)}`);
 				return;
 			}
 

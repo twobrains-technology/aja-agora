@@ -64,17 +64,17 @@ beforeEach(() => {
 
 describe("o alarme toca quando tem gente parada", () => {
 	it("manda o digest com quem está parado", async () => {
-		computeLeadsParados.mockResolvedValue([parado()]);
+		computeLeadsParados.mockResolvedValue([parado({ horasParado: 26 })]);
 
 		const r = await runSlaDaMesaCycle();
 
-		expect(r.parados).toBe(1);
+		expect(r.cruzaram).toBe(1);
 		expect(r.enviado).toBe(true);
 		expect(sendEmail).toHaveBeenCalledTimes(1);
 	});
 
 	it("o e-mail traz nome, telefone e HÁ QUANTO TEMPO — é o que a mesa precisa para ligar", async () => {
-		computeLeadsParados.mockResolvedValue([parado()]);
+		computeLeadsParados.mockResolvedValue([parado({ horasParado: 26 })]);
 
 		await runSlaDaMesaCycle();
 		const { html, text, subject } = sendEmail.mock.calls[0][0];
@@ -82,8 +82,8 @@ describe("o alarme toca quando tem gente parada", () => {
 		for (const campo of [html, text]) {
 			expect(campo).toContain("Marina Alves");
 			expect(campo).toContain("5562999998888");
-			// 401,5 h dito em dias: quem lê decide pelo tempo, não pela unidade crua.
-			expect(campo).toMatch(/16,7 dias/);
+			// Horas ditas em dias: quem lê decide pelo tempo, não pela unidade crua.
+			expect(campo).toMatch(/1,1 dias/);
 		}
 		// O assunto tem que dizer o tamanho do problema sem abrir o e-mail.
 		expect(subject).toMatch(/1 lead/);
@@ -91,17 +91,17 @@ describe("o alarme toca quando tem gente parada", () => {
 
 	it("o mais antigo vem primeiro — é ele que a mesa tem que ligar agora", async () => {
 		computeLeadsParados.mockResolvedValue([
-			parado({ nome: "Recente", horasParado: 30 }),
-			parado({ nome: "Esquecido", horasParado: 400 }),
+			parado({ nome: "Recente", horasParado: 25 }),
+			parado({ nome: "Menos recente", horasParado: 47 }),
 		]);
 
 		await runSlaDaMesaCycle();
 		const { text } = sendEmail.mock.calls[0][0];
-		expect(text.indexOf("Esquecido")).toBeLessThan(text.indexOf("Recente"));
+		expect(text.indexOf("Menos recente")).toBeLessThan(text.indexOf("Recente"));
 	});
 
 	it("lead sem nome não vira linha anônima — o telefone é o que permite agir", async () => {
-		computeLeadsParados.mockResolvedValue([parado({ nome: null })]);
+		computeLeadsParados.mockResolvedValue([parado({ nome: null, horasParado: 26 })]);
 
 		await runSlaDaMesaCycle();
 		const { text } = sendEmail.mock.calls[0][0];
@@ -110,18 +110,93 @@ describe("o alarme toca quando tem gente parada", () => {
 	});
 });
 
+describe("o alarme não repete os mesmos nomes todo dia", () => {
+	// ── O defeito que este bloco fecha ──────────────────────────────────────
+	//
+	// A primeira versão mandava a lista INTEIRA de parados a cada ciclo. Com o
+	// estado real medido — ~24 leads na allowlist e p50 de 16,7 dias — a mesa
+	// receberia os mesmos ~24 nomes todos os dias, indefinidamente, porque a
+	// lista só encolhe quando alguém toca em cada linha.
+	//
+	// É literalmente o modo de falha que este arquivo nomeia: alarme que toca à
+	// toa é desligado na primeira semana. Trocar "tela que ninguém abre" por
+	// "e-mail que a mesa filtra" chega no mesmo lugar por outra estrada.
+	// Apontado na revisão crítica desta branch.
+	//
+	// ── A regra, e por que ela não precisa de estado novo ───────────────────
+	//
+	// Alerta quem CRUZOU o limite desde o ciclo anterior — isto é, quem está
+	// parado entre `limite` e `limite + intervalo do ciclo`. Como o ciclo roda
+	// de 24 em 24 h e a janela tem 24 h, cada lead cai nela exatamente uma vez.
+	//
+	// A alternativa seria marcar "já alertado" no banco. Não em `lead_events`:
+	// aquela tabela É o relógio do SLA (`max(created_at)`), e escrever nela faria
+	// o lead parecer tocado e SAIR da lista — o alarme apagaria a si mesmo.
+
+	it("manda quem acabou de cruzar o limite", async () => {
+		computeLeadsParados.mockResolvedValue([parado({ nome: "Recém-parado", horasParado: 26 })]);
+
+		const r = await runSlaDaMesaCycle();
+
+		expect(r.enviado).toBe(true);
+		expect(sendEmail.mock.calls[0][0].text).toContain("Recém-parado");
+	});
+
+	it("NÃO repete quem já foi alertado em ciclos anteriores", async () => {
+		// 401 h = 16,7 dias. Já cruzou o limite há duas semanas; já foi avisado.
+		computeLeadsParados.mockResolvedValue([parado({ nome: "Esquecido", horasParado: 401 })]);
+
+		const r = await runSlaDaMesaCycle();
+
+		expect(r.enviado).toBe(false);
+		expect(sendEmail).not.toHaveBeenCalled();
+	});
+
+	it("mas não os esconde: diz quantos continuam parados e há quanto tempo", async () => {
+		// Silenciar o antigo é o objetivo; APAGAR o antigo seria trocar um defeito
+		// por outro — a mesa perderia a noção do tamanho da pilha.
+		computeLeadsParados.mockResolvedValue([
+			parado({ nome: "Recém-parado", horasParado: 26 }),
+			parado({ nome: "Esquecido", horasParado: 401 }),
+			parado({ nome: "Outro antigo", horasParado: 300 }),
+		]);
+
+		await runSlaDaMesaCycle();
+		const { text, html } = sendEmail.mock.calls[0][0];
+
+		for (const campo of [text, html]) {
+			expect(campo).toContain("Recém-parado");
+			// Os antigos entram como CONTAGEM, não como lista de nomes.
+			expect(campo).not.toContain("Esquecido");
+			expect(campo).toMatch(/2 lead/);
+			expect(campo).toMatch(/16,7 dias/);
+		}
+	});
+
+	it("o resultado declara os dois números — quem cruzou e quem continua", async () => {
+		computeLeadsParados.mockResolvedValue([
+			parado({ horasParado: 26 }),
+			parado({ horasParado: 401 }),
+		]);
+
+		const r = await runSlaDaMesaCycle();
+
+		expect(r).toMatchObject({ cruzaram: 1, continuamParados: 1, enviado: true });
+	});
+});
+
 describe("o alarme fica calado quando deve", () => {
 	it("ninguém parado, nenhum e-mail", async () => {
 		const r = await runSlaDaMesaCycle();
 
-		expect(r.parados).toBe(0);
+		expect(r.cruzaram).toBe(0);
 		expect(r.enviado).toBe(false);
 		expect(sendEmail).not.toHaveBeenCalled();
 	});
 
 	it("sem destinatário configurado NÃO envia — e diz por quê", async () => {
 		process.env.ALERTA_SLA_MESA_TO = "";
-		computeLeadsParados.mockResolvedValue([parado()]);
+		computeLeadsParados.mockResolvedValue([parado({ horasParado: 26 })]);
 		const erro = vi.spyOn(console, "error").mockImplementation(() => {});
 
 		const r = await runSlaDaMesaCycle();
@@ -133,13 +208,13 @@ describe("o alarme fica calado quando deve", () => {
 	});
 
 	it("falha no envio não derruba o ciclo — o worker roda outros quatro", async () => {
-		computeLeadsParados.mockResolvedValue([parado()]);
+		computeLeadsParados.mockResolvedValue([parado({ horasParado: 26 })]);
 		sendEmail.mockRejectedValueOnce(new Error("SendGrid fora"));
 
 		const r = await runSlaDaMesaCycle();
 
 		expect(r.enviado).toBe(false);
-		expect(r.parados).toBe(1);
+		expect(r.cruzaram).toBe(1);
 	});
 });
 
