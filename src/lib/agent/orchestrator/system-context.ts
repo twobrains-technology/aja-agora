@@ -55,13 +55,15 @@ export function gateIntent(gate: string | undefined): string | undefined {
 		// explicitamente enunciar campo — é o que faz a fala parar de brigar com
 		// o card.
 		return (
-			"a identidade dele pra seguir com a cota que ele JÁ escolheu — o formulário " +
-			"logo abaixo é que coleta os dados, na ordem certa, então NÃO enuncie campo " +
-			'nenhum (nada de "qual é seu CPF?" ou "me passa seu celular"): diga, numa ' +
-			"frase calorosa, que é pra seguir com a cota que ele escolheu e que os dados " +
-			"ficam protegidos pela LGPD. NÃO pergunte mais nada neste turno: nada de " +
-			"entrada, valor de lance ou prazo — uma segunda pergunta aqui atropela o " +
-			"formulário que está entrando na tela"
+			"a identidade dele pra seguir com a cota que ele JÁ escolheu. O formulário " +
+			"logo abaixo é que coleta, e ele pede o CELULAR PRIMEIRO — o CPF só vem " +
+			"num segundo passo, depois. Por isso NÃO cite campo nenhum, e em especial " +
+			'NÃO anuncie o CPF (nem "qual é seu CPF?", nem "vamos coletar seu CPF"): ' +
+			"a tela mostra outro campo naquele instante e a sua fala vira contradição. " +
+			"Diga, numa frase calorosa e curta, que é pra seguir com a cota que ele " +
+			"escolheu e que os dados ficam protegidos. NÃO pergunte mais nada neste " +
+			"turno: nada de entrada, valor de lance ou prazo — uma segunda pergunta " +
+			"aqui atropela o formulário que está entrando na tela"
 		);
 	}
 	return GATE_INTENT[gate];

@@ -29,7 +29,9 @@ const CPF_CLIENTE = "52998224725";
 
 const ENV_ORIGINAL = { ...process.env };
 
-const identidadeGravada = vi.fn(async () => null as { cpf: string; celular: string } | null);
+const identidadeGravada = vi.fn(
+	async (_id: string) => null as { cpf: string; celular: string } | null,
+);
 // `importOriginal`: identidade-vitrine.ts importa `isValidCpf` deste módulo —
 // substituí-lo inteiro derruba o próprio guard que o teste mede.
 vi.mock("../conversation/identity", async (importOriginal) => ({
