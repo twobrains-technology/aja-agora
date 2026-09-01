@@ -267,8 +267,20 @@ export function gateQuestion(
 					? "Pra eu trazer as ofertas reais das administradoras, preciso do seu CPF e celular."
 					: "Me manda seu CPF, só os números. Seu celular eu já pego aqui do WhatsApp.";
 			}
+			// 31/08/2026 — A COPY SEGUE O PASSO, NÃO O GATE INTEIRO.
+			//
+			// O card virou DOIS passos visuais em 30/08 (C7, gate-identity-form.tsx):
+			// celular primeiro, CPF depois, justamente para não pôr a parede inteira
+			// na frente de quem está no ponto mais sensível do funil. Esta frase
+			// continuava anunciando "CPF e celular" e desfazia o efeito — a pessoa lia
+			// CPF antes de o campo existir, e via na tela um campo que a frase não
+			// mencionava. No smoke em prod o resultado eram duas falas concorrentes:
+			// o agente pedindo o celular e o card pedindo os dois.
+			//
+			// No WhatsApp a ordem é outra e a frase não muda: o celular JÁ é o waId,
+			// então lá o documento é mesmo o primeiro (e único) passo.
 			return channel === "web"
-				? "Pra seguir com essa cota, preciso do seu CPF e celular."
+				? "Pra seguir com essa cota, começa pelo seu celular."
 				: "Pra seguir com essa cota, me manda seu CPF, só os números. O celular eu já pego aqui do WhatsApp.";
 		case "simulator-offer":
 			// docx passo 4 (linha 34): oferta literal do simulador.

@@ -61,7 +61,7 @@ export function gateIntent(gate: string | undefined): string | undefined {
 			'NÃO anuncie o CPF (nem "qual é seu CPF?", nem "vamos coletar seu CPF"): ' +
 			"a tela mostra outro campo naquele instante e a sua fala vira contradição. " +
 			"Diga, numa frase calorosa e curta, que é pra seguir com a cota que ele " +
-			"escolheu e que os dados ficam protegidos. NÃO pergunte mais nada neste " +
+			"escolheu e que os dados ficam protegidos pela LGPD. NÃO pergunte mais nada neste " +
 			"turno: nada de entrada, valor de lance ou prazo — uma segunda pergunta " +
 			"aqui atropela o formulário que está entrando na tela"
 		);
