@@ -43,12 +43,25 @@ export function looksLikeIdentityResendComplaint(text: string): boolean {
 export function gateIntent(gate: string | undefined): string | undefined {
 	if (!gate) return undefined;
 	if (gate === "identify" && vitrineDisponivel()) {
+		// 31/08/2026 (Kairo, conversa 590a6cf5 em prod) — a instrução mandava
+		// "descobrir o CPF e o celular dele" e o modelo obedeceu ao pé da letra:
+		// "Oi, Kairo! Agora é com você, os dados ficam protegidos pela LGPD. Qual
+		// é seu CPF?" — perguntando UM campo, solto, enquanto o formulário entrava
+		// na tela pedindo celular PRIMEIRO e CPF depois. A fala contradizia a
+		// ordem do próprio card e ficava seca.
+		//
+		// Quem coleta é o FORMULÁRIO; a fala é a moldura (por que precisa, o que
+		// protege). Por isso a intent descreve o ASSUNTO, e o texto abaixo proíbe
+		// explicitamente enunciar campo — é o que faz a fala parar de brigar com
+		// o card.
 		return (
-			"o CPF e o celular dele — ele já escolheu a cota, então diga que é pra seguir " +
-			"com ela e que os dados ficam protegidos pela LGPD, numa frase só, sem soar " +
-			"burocrático. NÃO pergunte mais nada neste turno: nada de entrada, valor de " +
-			"lance ou prazo — uma segunda pergunta aqui atropela o formulário que está " +
-			"entrando na tela"
+			"a identidade dele pra seguir com a cota que ele JÁ escolheu — o formulário " +
+			"logo abaixo é que coleta os dados, na ordem certa, então NÃO enuncie campo " +
+			'nenhum (nada de "qual é seu CPF?" ou "me passa seu celular"): diga, numa ' +
+			"frase calorosa, que é pra seguir com a cota que ele escolheu e que os dados " +
+			"ficam protegidos pela LGPD. NÃO pergunte mais nada neste turno: nada de " +
+			"entrada, valor de lance ou prazo — uma segunda pergunta aqui atropela o " +
+			"formulário que está entrando na tela"
 		);
 	}
 	return GATE_INTENT[gate];
@@ -126,7 +139,7 @@ export const GATE_INTENT: Record<string, string> = {
 	// era a do canal errado. A mecânica de cada canal mora no bloco de canal
 	// (`langgraph/nodes/converse.ts`); aqui fica só o que vale nos dois.
 	contract:
-		"nada — a decisão JÁ foi tomada e o plano JÁ está escolhido. É PROIBIDO perguntar de novo qual opção ele quer ou pedir que ele confirme a escolha: isso já aconteceu. Sua fala aqui é curta e conduz ao pré-cadastro: diga que vai preparar o cadastro dele e que ele não paga nada agora (o pagamento só começa quando o boleto chegar). O sistema cuida de coletar e confirmar os dados logo depois da sua fala — você não pede nada disso por conta própria, e nunca diz que a cota está reservada",
+		"nada — a decisão JÁ foi tomada e o plano JÁ está escolhido. É PROIBIDO perguntar de novo qual opção ele quer ou pedir que ele confirme a escolha: isso já aconteceu. Sua fala aqui é curta e conduz ao pré-cadastro: diga que vai preparar o cadastro dele e que ele não paga nada agora (o pagamento só começa depois, quando nossa equipe enviar as instruções por e-mail). O sistema cuida de coletar e confirmar os dados logo depois da sua fala — você não pede nada disso por conta própria, e nunca diz que a cota está reservada",
 };
 
 export function buildSystemContext(args: {
