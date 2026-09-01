@@ -5,6 +5,7 @@ import { useChatContext } from "@/lib/chat/provider";
 import type { ComparisonTablePayload, GroupCardPayload } from "@/lib/chat/types";
 import { cn } from "@/lib/utils";
 import { type RevealCota, useRevealSelection } from "../reveal-selection";
+import { AdministradoraLogo } from "./administradora-logo";
 
 // FIX-287 (veredito r9pos2 §3 P1-2): mesmo critério do recommendation-card.tsx
 // (FIX-197/261) — aviso SÓ quando o valor-alvo (rawCreditValue) realmente
@@ -88,11 +89,27 @@ export function ComparisonTable({ payload }: { payload: ComparisonTablePayload }
 								: "border-border hover:border-border/60 hover:bg-muted/40",
 						)}
 					>
-						{/* Header: administradora + optional crown */}
+						{/* Header: administradora + optional crown.
+
+						    FIX-222, fecho (31/08/2026): com asset, a MARCA entra no lugar do
+						    nome — o lockup já diz "Itaú", e escrever "ITAÚ" embaixo dele
+						    gastaria duas vezes os ~124px úteis do chip com a mesma
+						    informação. Sem asset (administradora fora das 7 da Bevi), o nome
+						    em texto continua: chip sem identificação seria pior que os dois.
+						    O nome nunca some do leitor de tela — está no aria-label do botão. */}
 						<div className="flex items-center justify-between gap-1.5 min-w-0">
-							<span className="text-xs font-medium text-muted-foreground truncate">
-								{group.administradora}
-							</span>
+							{group.logoUrl ? (
+								<AdministradoraLogo
+									administradora={group.administradora}
+									logoUrl={group.logoUrl}
+									formato="lockup"
+									className="h-7 max-w-[104px] shrink"
+								/>
+							) : (
+								<span className="text-xs font-medium text-muted-foreground truncate">
+									{group.administradora}
+								</span>
+							)}
 							{isBest && (
 								<span
 									className="inline-flex items-center gap-[3px] shrink-0 h-5 px-[7px] rounded-full text-[10px] font-semibold"
