@@ -29,6 +29,14 @@ const CPF_CLIENTE = "52998224725";
 
 const ENV_ORIGINAL = { ...process.env };
 
+const identidadeGravada = vi.fn(async () => null as { cpf: string; celular: string } | null);
+// `importOriginal`: identidade-vitrine.ts importa `isValidCpf` deste módulo —
+// substituí-lo inteiro derruba o próprio guard que o teste mede.
+vi.mock("../conversation/identity", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../conversation/identity")>()),
+	loadIdentity: (id: string) => identidadeGravada(id),
+}));
+
 vi.mock("./proposal-repo", () => ({
 	getLatestBeviProposal: vi.fn(async () => null),
 	createBeviProposal: vi.fn(async () => undefined),
@@ -68,6 +76,7 @@ beforeEach(() => {
 afterEach(() => {
 	process.env = { ...ENV_ORIGINAL };
 	vi.clearAllMocks();
+	identidadeGravada.mockResolvedValue(null);
 });
 
 describe("startContract — a vitrine não assina contrato", () => {
@@ -114,5 +123,50 @@ describe("startContract — a vitrine não assina contrato", () => {
 		await startContract("conv-1", { ...entradaBase, cpf: CPF_VITRINE }, gateway);
 
 		expect(gateway.criouCom).toEqual([CPF_VITRINE]);
+	});
+});
+
+/**
+ * 31/08/2026 — o guard barrava CLIENTE, não só vitrine.
+ *
+ * O par da vitrine é uma conta REAL homologada na administradora. Quando o dono
+ * daquele CPF é a própria pessoa que está fechando (aconteceu em prod, conversa
+ * 590a6cf5: o Kairo testando com o próprio documento), comparar dígitos acusava
+ * vitrine onde havia cliente — e o fecho morria em "tive um problema ao falar
+ * com a administradora", que sequer tinha sido chamada.
+ *
+ * O invariante nunca foi "este CPF é diferente do da casa". Era "a vitrine não
+ * vaza para o fechamento". Quem separa os dois é a ORIGEM: existe identidade
+ * gravada na conversa (digitada no gate `identify`, validada, com LGPD aceita)
+ * batendo com o CPF que chegou aqui?
+ */
+describe("startContract — coincidir com o CPF da casa não é vazamento de vitrine", () => {
+	it("DEIXA passar quando o cliente DIGITOU esse CPF (identidade gravada bate)", async () => {
+		identidadeGravada.mockResolvedValue({ cpf: CPF_VITRINE, celular: CELULAR_VITRINE });
+		const gateway = gatewayEspiao();
+
+		await startContract("conv-1", { ...entradaBase, cpf: CPF_VITRINE }, gateway);
+
+		expect(gateway.criouCom).toEqual([CPF_VITRINE]);
+	});
+
+	it("continua RECUSANDO quando não há identidade gravada — aí é a vitrine vazando", async () => {
+		identidadeGravada.mockResolvedValue(null);
+		const gateway = gatewayEspiao();
+
+		await expect(
+			startContract("conv-1", { ...entradaBase, cpf: CPF_VITRINE }, gateway),
+		).rejects.toBeInstanceOf(ContratacaoComIdentidadeDeVitrineError);
+		expect(gateway.createProposal).not.toHaveBeenCalled();
+	});
+
+	it("RECUSA quando a identidade gravada é de OUTRA pessoa — o CPF não veio do cliente", async () => {
+		identidadeGravada.mockResolvedValue({ cpf: CPF_CLIENTE, celular: CELULAR_VITRINE });
+		const gateway = gatewayEspiao();
+
+		await expect(
+			startContract("conv-1", { ...entradaBase, cpf: CPF_VITRINE }, gateway),
+		).rejects.toBeInstanceOf(ContratacaoComIdentidadeDeVitrineError);
+		expect(gateway.createProposal).not.toHaveBeenCalled();
 	});
 });
