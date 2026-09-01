@@ -24,6 +24,7 @@ import type {
 	ProposalObjetivo,
 	SimulationType,
 } from "../adapters/proposal-gateway";
+import { loadIdentity as carregarIdentidade } from "../conversation/identity";
 import { ehIdentidadeDeVitrine } from "./identidade-vitrine";
 import {
 	createBeviProposal,
@@ -93,14 +94,23 @@ export interface StartContractResult {
 }
 
 /**
- * O fechamento recebeu o CPF da CASA (a identidade de vitrine, que existe só
- * para montar a prateleira de ofertas antes de o cliente se identificar).
+ * O fechamento recebeu o CPF da CASA **sem que o cliente o tivesse digitado** —
+ * a vitrine (que existe só para montar a prateleira) vazou para a contratação.
  *
- * Nenhum caminho legítimo produz isto: o form de contratação lê a identidade
- * REAL do cliente (`loadIdentity`), e a vitrine nunca é gravada como identidade
- * da conversa. Se chegou aqui, alguma coisa costurou errado — e o custo de
- * deixar passar é um contrato aberto na administradora em nome da pessoa
- * errada, com o RG e o comprovante do cliente anexados nele.
+ * O custo de deixar passar é um contrato aberto na administradora em nome da
+ * pessoa errada, com o RG e o comprovante do cliente anexados nele.
+ *
+ * ⚠️ A doc anterior afirmava que "nenhum caminho legítimo produz isto". Era
+ * falso, e custou uma venda em 31/08/2026 (conversa 590a6cf5, prod): o par da
+ * vitrine é uma conta REAL homologada na administradora, e quando o dono desse
+ * CPF é o próprio cliente que está fechando, comparar dígitos acusa vitrine
+ * onde há cliente. O cliente digitou o CPF no gate `identify`, com LGPD aceita,
+ * e ouviu "tive um problema ao falar com a administradora" — que nem sequer
+ * tinha sido chamada.
+ *
+ * Por isso o guard deixou de perguntar "este CPF é o da casa?" e passou a
+ * perguntar **"este CPF veio do cliente?"** — que é o invariante que sempre
+ * importou.
  */
 export class ContratacaoComIdentidadeDeVitrineError extends Error {
 	constructor() {
@@ -122,8 +132,19 @@ export async function startContract(
 	// administradora é o ponto: `createProposal` consome o slot único da loja e
 	// dispara consulta de bureau — um erro lançado depois já teria custado os
 	// dois. Ver `identidade-vitrine.ts` para por que a vitrine existe.
+	//
+	// Coincidir com o CPF da casa NÃO é o defeito — vazar a vitrine é. Quando a
+	// identidade gravada da conversa (a que o cliente digitou no gate `identify`,
+	// validada e com LGPD aceita) é a mesma que chegou aqui, quem está fechando é
+	// o cliente, ainda que ele seja o dono do par de homologação.
 	if (ehIdentidadeDeVitrine(input.cpf)) {
-		throw new ContratacaoComIdentidadeDeVitrineError();
+		const digitos = (v: string | null | undefined) => (v ?? "").replace(/\D/g, "");
+		const identidadeDoCliente = await carregarIdentidade(conversationId).catch(() => null);
+		const clienteDigitouEsteCpf =
+			identidadeDoCliente != null && digitos(identidadeDoCliente.cpf) === digitos(input.cpf);
+		if (!clienteDigitouEsteCpf) {
+			throw new ContratacaoComIdentidadeDeVitrineError();
+		}
 	}
 
 	// EC-7 (QA crítico 2026-06-02): idempotência por conversa. Duplo-clique em

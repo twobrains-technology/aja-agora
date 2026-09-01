@@ -26,15 +26,20 @@ function instrucaoDoFormularioDeContrato(identidadeJaColetada = false): string {
  * enquanto as travas dizem o que não fazer. A saída não é a quarta trava, é
  * tirar a contradição.
  */
+/* "BOLETO NA SUA CASA" NÃO EXISTE (Kairo, 31/08/2026 — visto em prod na conversa
+ * 590a6cf5). Nada é enviado pelo correio: a cobrança vai por E-MAIL e quem manda
+ * é a nossa equipe. A frase estava nos DOIS exemplos abaixo e o modelo a
+ * repetiu verbatim — exemplo em directive é copiado à risca, então informação
+ * errada aqui vira promessa errada na tela do cliente, não "estilo sugerido". */
 function exemploDeFechamento(args: {
 	identidadeJaColetada?: boolean;
 	adminFrase?: string;
 }): string {
 	const { identidadeJaColetada, adminFrase = "" } = args;
 	if (identidadeJaColetada) {
-		return `"Boa! Vamos seguir${adminFrase} então. Seus dados já estão comigo aqui, então é só você me confirmar que eu já crio seu pré-cadastro — e já adianto: você não paga nada agora, o pagamento só começa quando chegar o boleto na sua casa."`;
+		return `"Boa! Vamos seguir${adminFrase} então. Seus dados já estão comigo aqui, então é só você me confirmar que eu já crio seu pré-cadastro — e já adianto: você não paga nada agora, o pagamento só começa depois, quando nossa equipe te enviar as instruções por e-mail."`;
 	}
-	return `"Boa! Vamos seguir${adminFrase} então. Pra garantir seu lugar nesse grupo, só preciso de uns dados rápidos — e já adianto: você não paga nada agora, é só um pré-cadastro, o pagamento só começa quando chegar o boleto na sua casa."`;
+	return `"Boa! Vamos seguir${adminFrase} então. Pra garantir seu lugar nesse grupo, só preciso de uns dados rápidos — e já adianto: você não paga nada agora, é só um pré-cadastro, o pagamento só começa depois, quando nossa equipe te enviar as instruções por e-mail."`;
 }
 
 // ---- Transition ----

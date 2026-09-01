@@ -432,7 +432,25 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	// FIX-382 — parcela declarada satisfaz o gate: a busca por parcela e um
 	// caminho real (Bevi `valor_parcela`), nao um fallback. Sem isto o cliente
 	// que so diz "1500 por mes" nunca sai daqui.
-	if (q.creditMax === undefined && (q.parcelaAlvo ?? 0) <= 0) return "credit";
+	// A CARTA ESCOLHIDA É O VALOR DO BEM (31/08/2026, conversa 590a6cf5 em prod).
+	//
+	// O cliente disse "consigo pagar R$ 1.200/mês", viu a prateleira, clicou em
+	// "Simular RODOBENS — R$ 89.000" e disse "Tenho interesse". O funil respondeu
+	// pedindo o valor do bem — porque `creditMax` nunca foi preenchido (ele deu
+	// PARCELA, não valor) e `creditoBuscavel(undefined)` é falso.
+	//
+	// O estrago não parou na pergunta boba. Ele respondeu "R$ 80.000", a busca
+	// refez a prateleira nessa faixa e o `contractOffer` virou o top-1 do novo
+	// valor (ITAÚ R$ 80.000) — enquanto `meta.escolha` seguia sendo RODOBENS
+	// R$ 89.000. O contrato ia para a administradora que o cliente NÃO escolheu.
+	//
+	// Uma cota ancorada em `meta.escolha` já responde "qual o valor do bem": é a
+	// carta que ele escolheu, com número que veio da tool. Perguntar de novo é
+	// ignorar o que ele acabou de fazer.
+	const cotaEscolhidaAncora = Boolean(meta.escolha?.creditValue && meta.escolha.creditValue > 0);
+	if (!cotaEscolhidaAncora && q.creditMax === undefined && (q.parcelaAlvo ?? 0) <= 0) {
+		return "credit";
+	}
 	// O NOME NÃO SUMIU — DESCEU (2026-08-30).
 	//
 	// Quem entrou pela categoria pulou o gate lá em cima para não gastar a
@@ -470,13 +488,17 @@ export function nextGate(meta: ConversationMetadata, opts?: { hasContactName?: b
 	// seguinte"). Sem limite nem sinal, o retry virava loop: o modelo prometia
 	// "vou pesquisar agora" para sempre. Voltar pro gate `credit` é o oposto de
 	// fabricar dado — é pedir o número de novo, com o mínimo real na mão.
-	if (!creditoBuscavel(q.creditMax, q.creditoMinimoInformado)) return "credit";
+	if (!cotaEscolhidaAncora && !creditoBuscavel(q.creditMax, q.creditoMinimoInformado)) {
+		return "credit";
+	}
 	// FIX-380 — a busca JÁ tentou e voltou vazia nesta faixa. O retry seguia
 	// liberado em silêncio e o modelo prometia buscar a cada turno; com a
 	// tentativa registrada, o funil volta a pedir o valor (o agente explica que
 	// não achou e pede outro) em vez de prometer de novo. Um vazio é acidente
 	// (Bevi instável); dois é a faixa.
-	if ((meta.discoveryEmptyStreak ?? 0) >= 2 && !meta.searchDispatched) return "credit";
+	if (!cotaEscolhidaAncora && (meta.discoveryEmptyStreak ?? 0) >= 2 && !meta.searchDispatched) {
+		return "credit";
+	}
 	// A IDENTIDADE DESCE PARA O FECHO (2026-08-27).
 	//
 	// O invariante da administradora nunca foi "o cliente entrega o CPF antes de
