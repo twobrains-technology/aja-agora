@@ -1,0 +1,127 @@
+<div class="wrap dobra">
+  <div class="pagehead">
+    <div>
+      <div class="eyebrow">Aja Agora · acompanhamento</div>
+      <h1>A operação em uma tela</h1>
+      <p class="sub">28/08 a 03/09 contra a semana anterior · sem registros de teste</p>
+    </div>
+    <div class="filtros" role="group" aria-label="Período">
+      <button class="chip" aria-pressed="false">Hoje</button>
+      <button class="chip" aria-pressed="true">7 dias</button>
+      <button class="chip" aria-pressed="false">30 dias</button>
+      <button class="chip" style="border-color:var(--aja-ink);font-weight:600">PDF</button>
+    </div>
+  </div>
+
+  <div class="linha-estado" id="frase"></div>
+  <div class="faixa-curta" id="alertas"></div>
+
+  <section class="bloco"><div class="grid g4" id="kpis"></div></section>
+
+  <section class="bloco">
+    <div class="grid g23">
+      <div class="card">
+        <div class="card-h"><h3>Onde o funil vaza</h3></div>
+        <div class="card-b"><div class="funil-linha" id="funil-linha"></div></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>Público × dinheiro, por origem</h3></div>
+        <div class="card-b">
+          <div class="cab-oc"><span>Origem</span><span>Fatia do público</span><span>Fatia do pipeline</span></div>
+          <div id="origem-curta"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="bloco">
+    <div class="card critico">
+      <div class="card-h" style="display:flex;align-items:flex-start;gap:12px">
+        <div style="flex:1"><h3>Esperando você agir</h3></div>
+        <span class="tag bad" id="tag-acao"></span>
+      </div>
+      <div class="card-b">
+        <table><tbody id="fila-curta"></tbody></table>
+      </div>
+    </div>
+  </section>
+
+  <div class="abaixo-da-dobra">
+  <div class="aviso"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>
+  <span>Daqui para baixo é aprofundamento — a decisão do dia já está acima.</span></div>
+  <!-- BLOCO 2 — FUNIL -->
+  <section class="bloco">
+    <div class="card">
+      <div class="card-h"><h3>O funil em detalhe</h3>
+        <p class="desc">O mesmo funil de cima, com quanta gente se perde em cada degrau. Cada degrau tem um dono: o topo é da mídia, o meio é do agente, o fim é da mesa.</p></div>
+      <div class="card-b">
+        <div class="funil" id="funil"></div>
+        <div class="prova" id="prova"></div>
+        <div class="fonte"><span>Regra</span><span>Visita contável = gente declarada, sem eco de prefetch — <b>com a âncora de que visita que gerou conversa nunca é descartada</b>. <code>src/lib/admin/sinais-do-funil.ts</code></span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BLOCO 3 — PLACAR DE RESPONSABILIDADE -->
+  <section class="bloco">
+    <div class="card">
+      <div class="card-h"><h3>Quem entregou o quê</h3>
+        <p class="desc">O mesmo período, separado por quem tinha a bola. Sem isso, “zero vendas” vira uma conclusão só.</p></div>
+      <div class="card-b"><div class="grid g2" id="placar"></div></div>
+    </div>
+  </section>
+
+  <!-- ORIGEM DO LEAD: o gráfico que decide verba -->
+  <section class="bloco">
+    <div class="card">
+      <div class="card-h"><h3>Para onde o público vai × de onde o dinheiro vem</h3>
+        <p class="desc">A mesma base, lida de duas formas. Se as duas barras de uma origem não se parecem, há verba indo para o lugar errado.</p></div>
+      <div class="card-b">
+        <div id="graf-origem"></div>
+        <div class="prd-nota perigo" style="margin-top:16px">
+          <b>A leitura em uma frase</b>
+          <b>54% do público veio de anúncio pago e produziu 0% do pipeline.</b> Os R$ 1,47 milhão em cartas na rua saíram inteiramente de tráfego que não custou nada — direto (51,6%) e link orgânico com UTM (48,4%). Valores já limpos do teste interno do operador.
+        </div>
+        <div class="fonte"><span>Como é calculado</span><span>Pipeline = soma de <code>bevi_proposals.credit_value</code> das conversas nascidas de cada origem, excluídos os contatos com a identidade da casa. Origem pela precedência do produto: Click-to-WhatsApp &gt; UTM &gt; referrer &gt; direto.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CRIATIVO A CRIATIVO -->
+  <section class="bloco">
+    <div class="card">
+      <div class="card-h"><h3>Anúncio a anúncio: qual criativo funciona</h3>
+        <p class="desc">Ordenado por taxa de conversa. “Seções vistas” é quanto da página a pessoa chegou a ver — é o que separa quem vai converter de quem já saiu.</p></div>
+      <div class="card-b">
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr><th>Veredito</th><th>Criativo</th><th class="rt">Pessoas</th><th class="rt">Seções vistas</th><th class="rt">Conversas</th><th class="rt">Conv/100</th><th class="rt">Leads</th></tr></thead>
+            <tbody id="tbl-criativos"></tbody>
+          </table>
+        </div>
+        <div class="fonte"><span>O corte que se enxerga sozinho</span><span>Todo criativo com <b>menos de 0,5 seção vista</b> converteu <b>zero</b>. Todo criativo acima de <b>1,3</b> converteu. Não é regra de negócio inventada — é o que os dados desta base mostram, e dá para reprovar um anúncio em 24 h sem esperar o funil inteiro.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BULLETS DO ESPECIALISTA -->
+  <section class="bloco">
+    <div class="card">
+      <div class="card-h"><h3>Leitura de negócio: o que fazer com isso</h3>
+        <p class="desc">Quatro grupos, do que dá dinheiro amanhã ao que precisa ser medido antes de decidir.</p></div>
+      <div class="card-b"><div class="grid g2" style="gap:14px" id="bullets"></div></div>
+    </div>
+  </section>
+
+  <!-- RODAPÉ — SAÚDE EM UMA LINHA -->
+  <section class="bloco">
+    <details class="card" style="box-shadow:0 0 0 1px var(--border)">
+      <summary class="linha-saude" id="resumo-saude"></summary>
+      <div class="card-b" style="padding-top:4px"><div class="grid g3" id="saude"></div></div>
+    </details>
+  </section>
+
+  
+
+  </div>
+</div>

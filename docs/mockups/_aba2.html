@@ -1,0 +1,180 @@
+<div class="wrap">
+  <div class="pagehead">
+    <div>
+      <div class="eyebrow">Documento de produto</div>
+      <h1>Racional do algoritmo &amp; como isto vai ser construído</h1>
+      <p class="sub">O que cada número significa, de onde ele sai, o que ainda não existe e em que ordem construir.</p>
+    </div>
+  </div>
+
+  <!-- 1. O PROBLEMA -->
+  <section class="bloco">
+    <div class="card">
+      <div class="card-h"><h3>1. O problema que esta tela resolve</h3>
+        <p class="desc">Não é falta de dado. É falta de um lugar onde o dado se encontre.</p></div>
+      <div class="card-b">
+        <p style="margin-bottom:14px">Hoje a operação tem <b>cinco fontes agregadas</b> e <b>nenhuma consolidação</b>. Para responder “como foi a semana?”, alguém abre quatro telas, soma de cabeça e ainda perde o que só existe no Langfuse.</p>
+        <div class="grid g5" style="margin-bottom:14px">
+          <div class="card" style="box-shadow:0 0 0 1px var(--border)"><div class="kpi"><div class="rot">/admin — “Agora”</div><p class="mini">6 KPIs de tempo real, refresh 15 s. Só o instante, sem história.</p></div></div>
+          <div class="card" style="box-shadow:0 0 0 1px var(--border)"><div class="kpi"><div class="rot">/admin/performance</div><p class="mini">Funil de mídia, origens, série. É o mais próximo do alvo — e ninguém abre de manhã.</p></div></div>
+          <div class="card" style="box-shadow:0 0 0 1px var(--border)"><div class="kpi"><div class="rot">/admin/percurso</div><p class="mini">Escada de 8 degraus, pessoa a pessoa. Profundidade sem síntese.</p></div></div>
+          <div class="card" style="box-shadow:0 0 0 1px var(--border)"><div class="kpi"><div class="rot">/admin/mapa-de-calor</div><p class="mini">Cliques e rolagem. Diz onde clicaram, não se venderam.</p></div></div>
+          <div class="card" style="box-shadow:0 0 0 1px var(--border)"><div class="kpi"><div class="rot">Langfuse</div><p class="mini">~41 scores por turno/sessão. <b>25 deles não têm nenhum widget.</b></p></div></div>
+        </div>
+        <div class="prd-nota">
+          <b>O ativo escondido</b>
+          <code class="mono">GET /api/admin/dashboard</code> já existe, já calcula <code class="mono">conversionRate</code> com <code class="mono">trends</code> contra o período anterior — e <b>nenhuma tela o consome</b>. O componente <code class="mono">LeadVolumeChart</code> também está órfão. Parte do que esta one-page precisa já foi construída e está desligada.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. ARQUITETURA -->
+  <section class="bloco">
+    <div class="card">
+      <div class="card-h"><h3>2. De onde sai cada número</h3>
+        <p class="desc">Três fontes, um endpoint, uma tela. A regra: o número nasce onde o fato acontece.</p></div>
+      <div class="card-b">
+        <div class="fluxo">
+          <div class="f-col">
+            <div class="f-tit">Fonte</div>
+            <div class="f-box"><b>Postgres</b><span>visits · conversations · messages · artifacts · leads · lead_events · bevi_proposals · mesa_handoffs · conversion_events · page_events</span></div>
+            <div class="f-box"><b>Langfuse</b><span>~41 scores por turno e por sessão · custo e latência de LLM</span></div>
+            <div class="f-box tracejado"><b>Meta Marketing API</b><span>investimento por campanha — <i>não existe hoje</i></span></div>
+          </div>
+          <div class="f-seta" aria-hidden="true">→</div>
+          <div class="f-col">
+            <div class="f-tit">Camada de regra</div>
+            <div class="f-box destaque"><b>sinais-do-funil.ts</b><span>VISITA_CONTAVEL · chaveDaPessoa() · ARTIFACTS_DE_OFERTA<br><i>já existe — é a fonte única das definições</i></span></div>
+            <div class="f-box destaque"><b>performance-queries.ts</b><span>computeFunilMidia · computeOrigens · computeSerie · computePorta · computeCobertura<br><i>já existe</i></span></div>
+            <div class="f-box novo"><b>one-page-queries.ts</b><span>agrega os acima + tendência + pipeline em R$ + saúde do sinal<br><i>a construir</i></span></div>
+          </div>
+          <div class="f-seta" aria-hidden="true">→</div>
+          <div class="f-col">
+            <div class="f-tit">Entrega</div>
+            <div class="f-box novo"><b>GET /api/admin/one-page</b><span>um payload, um request<br><i>a construir</i></span></div>
+            <div class="f-box novo"><b>/admin/one-page</b><span>a tela da aba anterior<br><i>a construir</i></span></div>
+            <div class="f-box novo"><b>Resumo diário</b><span>o mesmo payload em e-mail às 8h<br><i>a construir — o worker de SLA já prova o caminho</i></span></div>
+          </div>
+        </div>
+        <div class="prd-nota alerta">
+          <b>A regra que não pode ser quebrada</b>
+          As definições canônicas <b>já existem em código</b> e três telas as compartilham. A one-page <b>importa</b> <code class="mono">VISITA_CONTAVEL</code> e <code class="mono">chaveDaPessoa()</code> — não reescreve. Duas definições de “pessoa” no mesmo painel é como se perde a confiança na tela inteira, e isso já custou trabalho de correção em 24/08.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. O ALGORITMO -->
+  <section class="bloco">
+    <div class="card">
+      <div class="card-h"><h3>3. O algoritmo do funil, passo a passo</h3>
+        <p class="desc">Por que 47.294 visitas viram 6.179. Cada corte tem uma medição por trás — e um deles está errado hoje.</p></div>
+      <div class="card-b">
+        <ol class="passos">
+          <li><b>Corta o robô que se declara</b>
+            O user-agent bate em <code class="mono">(ELB-HealthChecker|facebookexternalhit|python-requests|HeadlessChrome|crawler|spider|curl|wget|bot)</code> com fronteira à direita. Sem user-agent também é robô. <span class="mini">Em produção agora: 33.584 visitas são o health check do nosso próprio ALB batendo em <code class="mono">/</code> a cada 30 s, e 4.435 são o crawler do Facebook.</span></li>
+          <li><b>…mas o fato vence a heurística</b>
+            Visita que <b>produziu conversa</b> nunca é robô, qualquer que seja o user-agent. <span class="mini">É o que protege o cliente atrás de proxy corporativo com header estranho — e é a diferença entre um filtro e uma censura.</span></li>
+          <li><b>Corta o eco de prefetch</b>
+            Mesma pessoa gravada de novo em menos de <b>2 segundos</b> não é chegada nova. <span class="mini">O App Router dispara prefetch para a própria rota com a query string do anúncio; em 24/08 isso fez 390 das 756 chegadas do dia (51,6%) serem eco — e só no tráfego pago, que é 100% do investimento.</span></li>
+          <li><b>⚠️ …mas aqui falta a âncora, e isso está custando caro hoje</b>
+            O corte de robô tem a âncora “visita que gerou conversa nunca é descartada”. <b>O corte de eco não tem.</b> Resultado medido agora: <b>19 visitas que produziram conversa são jogadas fora</b>, e com elas somem <b>22 conversas e 8 leads</b> da atribuição por campanha. <span class="mini">O pior caso: a campanha <code class="mono">…713980104</code> no Instagram aparece na tela atual com <b>0 conversas</b>; ela tem <b>8 conversas e 4 leads em 33 pessoas — 24,2%, a melhor da conta</b>, contra 3,18% do orgânico. Um gestor olhando o painel de hoje pausaria justamente o anúncio que funciona. <b>Correção: estender a mesma âncora ao anti-eco.</b> Conversa é fato do servidor; prefetch não conversa.</span></li>
+          <li><b>Conta pessoa, não aparelho</b>
+            <code class="mono">COALESCE(contact_id resolvido na janela, visitor_id)</code> — quem chegou por dois aparelhos e virou o mesmo contato conta uma vez. <span class="mini">A diferença medida foi de 5 pessoas em 3.016. Pequena o bastante para passar semanas despercebida, grande o bastante para duas telas se contradizerem.</span></li>
+          <li><b>Toda etapa depois de “visitas” exige origem</b>
+            <code class="mono">conversations.visit_id IS NOT NULL</code>. <span class="mini">Sem isso, conversa sem origem (WhatsApp orgânico) entrava no meio do funil e o resultado passava do topo — o funil chegou a mostrar 328%.</span></li>
+          <li><b>“Viu oferta” é prova, não intenção</b>
+            Existe um <code class="mono">artifact</code> do tipo <code class="mono">real_offer</code> ou <code class="mono">simulation_result</code> naquela conversa: o cliente viu número na tela. <span class="mini">⚠️ Defeito a corrigir na implementação: o Langfuse usa outro conjunto para o mesmo nome — <code class="mono">comparison_table, recommendation_card, real_offer</code>. Painel e score contam coisas diferentes hoje.</span></li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. FÓRMULAS -->
+  <section class="bloco">
+    <div class="card">
+      <div class="card-h"><h3>4. As contas, explícitas</h3>
+        <p class="desc">O que o código vai fazer, em SQL legível. Nada aqui é novo — é composição do que já existe.</p></div>
+      <div class="card-b">
+        <div class="grid g2">
+          <div>
+            <p class="eyebrow" style="margin-bottom:8px">Taxa de entrada</p>
+            <pre class="codigo"><span class="c">-- de cada 100 pessoas que chegam,
+-- quantas puxam conversa</span>
+conversas_atribuidas / pessoas_contaveis
+
+<span class="c">-- real hoje: 117 / 4.657 = 2,5%</span></pre>
+          </div>
+          <div>
+            <p class="eyebrow" style="margin-bottom:8px">Pipeline em R$</p>
+            <pre class="codigo"><span class="k">SELECT</span> sum(credit_value)
+<span class="k">FROM</span> bevi_proposals
+<span class="k">WHERE</span> proposal_status <span class="k">NOT IN</span> (<span class="s">'reprovado'</span>)
+
+<span class="c">-- real hoje: R$ 1.841.314,59 em 8 propostas
+-- ⚠️ só existe DEPOIS da proposta:
+-- leads.credit_value é NULL em 49 de 49</span></pre>
+          </div>
+          <div>
+            <p class="eyebrow" style="margin-bottom:8px">Tendência (vs. período anterior)</p>
+            <pre class="codigo"><span class="c">-- mesma janela, deslocada para trás</span>
+(atual - anterior) / anterior
+
+<span class="c">-- real: pessoas -26,7% · conversas +8,3%
+-- leads -46,7% · propostas -100%</span></pre>
+          </div>
+          <div>
+            <p class="eyebrow" style="margin-bottom:8px">Saúde do sinal de mídia</p>
+            <pre class="codigo"><span class="k">SELECT</span> event_name, status, count(*)
+<span class="k">FROM</span> conversion_events
+<span class="k">GROUP BY</span> 1, 2
+
+<span class="c">-- real: chat_iniciado 28 failed / 3 sent
+-- nenhuma tela lê esta tabela hoje</span></pre>
+          </div>
+        </div>
+        <div class="prd-nota alerta">
+          <b>Custo medido, para decidir cedo</b>
+          A query canônica do funil roda em <b>603 ms</b> sobre as 47.294 visitas de hoje, com <i>sequential scan</i> em <code class="mono">visits</code> duas vezes (o anti-eco é um self-join). Cresce linear: em 1 milhão de visitas passa de 12 s. <b>Decisão sugerida:</b> começar direto e simples; assim que o painel virar rotina, materializar o dia fechado numa tabela de resumo e deixar a query cara só para o dia corrente.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. O QUE FALTA -->
+  <section class="bloco">
+    <div class="card">
+      <div class="card-h"><h3>5. O que ainda não existe — e o que cada lacuna custa</h3>
+        <p class="desc">Ordenado por quanto muda a decisão de quem lê a tela.</p></div>
+      <div class="card-b">
+        <table>
+          <thead><tr><th>Lacuna</th><th>Por que dói</th><th>O que fazer</th><th class="rt">Esforço</th></tr></thead>
+          <tbody id="tbl-lacunas"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6. FASES -->
+  <section class="bloco">
+    <div class="card">
+      <div class="card-h"><h3>6. Em que ordem construir</h3>
+        <p class="desc">Cada fase entrega algo que já dá para abrir e usar. Nenhuma depende da seguinte.</p></div>
+      <div class="card-b">
+        <div class="grid g4" id="fases"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7. ARMADILHAS -->
+  <section class="bloco">
+    <div class="card">
+      <div class="card-h"><h3>7. Armadilhas já medidas nesta operação</h3>
+        <p class="desc">Cada uma destas já produziu um número errado numa tela. Estão aqui para não voltarem.</p></div>
+      <div class="card-b">
+        <div class="grid g2" id="armadilhas"></div>
+      </div>
+    </div>
+  </section>
+</div>

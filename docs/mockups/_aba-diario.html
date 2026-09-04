@@ -1,0 +1,62 @@
+<div class="wrap estreito">
+  <div class="pagehead">
+    <div>
+      <div class="eyebrow">Relatório diário · chega às 8h</div>
+      <h1>Ontem, quarta-feira 03/09</h1>
+      <p class="sub">Comparado com a média dos 7 dias anteriores. Dados de teste da equipe já removidos.</p>
+    </div>
+  </div>
+
+  <div class="linha-estado" id="frase-dia"></div>
+  <div class="faixa-alertas" id="alertas-dia"></div>
+
+  <section class="bloco"><div class="grid g4" id="kpis-dia"></div></section>
+
+  <section class="bloco">
+    <div class="card">
+      <div class="card-h"><h3>As conversas de ontem, uma a uma</h3>
+        <p class="desc">Com 2 conversas no dia, a lista inteira cabe na tela — e diz mais que qualquer média.</p></div>
+      <div class="card-b">
+        <div style="overflow-x:auto"><table>
+          <thead><tr><th>Hora</th><th>Canal</th><th>Veio de</th><th class="rt">Mensagens do cliente</th><th>Onde parou</th></tr></thead>
+          <tbody id="tbl-ontem"></tbody>
+        </table></div>
+        <div class="prd-nota perigo" style="margin-top:14px">
+          <b>As duas morreram na primeira mensagem</b>
+          Nenhuma das duas passou de uma frase, nenhuma virou lead, nenhuma viu oferta. Não é volume baixo com qualidade boa — é volume baixo e nada aconteceu. Vale abrir as duas conversas e ler o que o agente respondeu.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="bloco">
+    <div class="card critico">
+      <div class="card-h"><h3>O que exige ação hoje</h3>
+        <p class="desc">Isto não é de ontem — é o acumulado que continua parado enquanto ninguém age. É a parte do relatório que vale dinheiro.</p></div>
+      <div class="card-b">
+        <div style="overflow-x:auto"><table>
+          <thead><tr><th>Estado</th><th>Quem</th><th>Onde parou</th><th class="rt">Valor em jogo</th><th class="rt">Parado há</th></tr></thead>
+          <tbody id="tbl-acao-dia"></tbody>
+        </table></div>
+        <div class="grid g2" style="margin-top:15px;gap:15px">
+          <div>
+            <p class="eyebrow" style="margin-bottom:9px">Leads quentes esquecidos, por raia</p>
+            <div class="barlist" id="quentes-dia"></div>
+          </div>
+          <div class="prd-nota alerta" style="margin:0;align-self:start">
+            <b>Nenhum destes é novidade</b>
+            Todos já receberam alerta de SLA por e-mail. O aviso automático funciona há semanas e os leads continuam parados — o que falta é alguém abrir a lista e distribuir por nome.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="bloco">
+    <div class="card">
+      <div class="card-h"><h3>Os últimos 17 dias</h3>
+        <p class="desc">Para saber se ontem foi um dia ruim ou uma tendência.</p></div>
+      <div class="card-b"><div class="gr" id="grafico-dia"></div></div>
+    </div>
+  </section>
+</div>
