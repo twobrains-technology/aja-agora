@@ -2,11 +2,12 @@
 
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale/pt-BR";
-import { Globe, Smartphone } from "lucide-react";
+import { FlaskConical, Globe, Smartphone } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ConversationTimeline } from "@/components/admin/pipeline/conversation-timeline";
 import { InsightCards } from "@/components/admin/pipeline/insight-cards";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
 	Sheet,
 	SheetContent,
@@ -29,6 +30,7 @@ type Detail = {
 		handedOffUser: { id: string; name: string | null; phone: string | null } | null;
 		createdAt: string;
 		updatedAt: string;
+		isSimulated: boolean;
 	};
 	messages: Array<{
 		id: string;
@@ -70,10 +72,12 @@ export function ConversationDetailPanel({
 	conversationId,
 	open,
 	onClose,
+	onMarcada,
 }: {
 	conversationId: string | null;
 	open: boolean;
 	onClose: () => void;
+	onMarcada?: () => void;
 }) {
 	const [data, setData] = useState<Detail | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -119,8 +123,37 @@ export function ConversationDetailPanel({
 		};
 	}, [conversationId, open]);
 
+	const [marcando, setMarcando] = useState(false);
 	const conv = data?.conversation;
 	const display = conv?.contactName ?? conv?.waId ?? "Conversa";
+
+	// Marcar como teste é curadoria de MÉTRICA, não de conversa: leva os leads
+	// junto (a rota faz isso) porque o funil filtra conversa e lead em degraus
+	// separados. Ver o comentário do PATCH em api/admin/conversations/[id].
+	async function alternarTeste() {
+		if (!conv || marcando) return;
+		const alvo = !conv.isSimulated;
+		setMarcando(true);
+		try {
+			const res = await fetch(`/api/admin/conversations/${conv.id}`, {
+				method: "PATCH",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ isSimulated: alvo }),
+			});
+			if (!res.ok) {
+				const body = (await res.json().catch(() => ({}))) as { error?: string };
+				throw new Error(body.error ?? `HTTP ${res.status}`);
+			}
+			setData((atual) =>
+				atual ? { ...atual, conversation: { ...atual.conversation, isSimulated: alvo } } : atual,
+			);
+			onMarcada?.();
+		} catch (err) {
+			setError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setMarcando(false);
+		}
+	}
 
 	return (
 		<Sheet
@@ -134,32 +167,58 @@ export function ConversationDetailPanel({
 					<SheetTitle>{display}</SheetTitle>
 					<SheetDescription>Histórico completo da conversa</SheetDescription>
 					{conv && (
-						<div className="flex flex-wrap items-center gap-2 mt-1">
-							<Badge variant={STATUS_VARIANTS[conv.status]} className="text-xs">
-								{STATUS_LABELS[conv.status]}
-							</Badge>
-							{conv.channel === "whatsapp" ? (
-								<Smartphone className="size-3.5 text-green-600" />
-							) : (
-								<Globe className="size-3.5 text-blue-600" />
-							)}
-							{conv.currentCategory && (
+						<>
+							<div className="flex flex-wrap items-center gap-2 mt-1">
+								<Badge variant={STATUS_VARIANTS[conv.status]} className="text-xs">
+									{STATUS_LABELS[conv.status]}
+								</Badge>
+								{conv.channel === "whatsapp" ? (
+									<Smartphone className="size-3.5 text-green-600" />
+								) : (
+									<Globe className="size-3.5 text-blue-600" />
+								)}
+								{conv.currentCategory && (
+									<span className="text-xs text-muted-foreground">
+										{CATEGORY_LABELS[conv.currentCategory] ?? conv.currentCategory}
+									</span>
+								)}
+								{conv.handedOffUser?.name && (
+									<span className="text-xs text-muted-foreground">
+										• Atendente: {conv.handedOffUser.name}
+									</span>
+								)}
 								<span className="text-xs text-muted-foreground">
-									{CATEGORY_LABELS[conv.currentCategory] ?? conv.currentCategory}
+									•{" "}
+									{format(new Date(conv.updatedAt), "dd/MM/yyyy HH:mm", {
+										locale: ptBR,
+									})}
 								</span>
-							)}
-							{conv.handedOffUser?.name && (
-								<span className="text-xs text-muted-foreground">
-									• Atendente: {conv.handedOffUser.name}
-								</span>
-							)}
-							<span className="text-xs text-muted-foreground">
-								•{" "}
-								{format(new Date(conv.updatedAt), "dd/MM/yyyy HH:mm", {
-									locale: ptBR,
-								})}
-							</span>
-						</div>
+								{conv.isSimulated && (
+									<Badge variant="outline" className="gap-1 text-xs">
+										<FlaskConical className="size-3" />
+										Teste — fora das métricas
+									</Badge>
+								)}
+							</div>
+							<div className="mt-1">
+								<Button
+									type="button"
+									variant="outline"
+									size="sm"
+									className="h-7 gap-1.5 text-xs"
+									disabled={marcando}
+									onClick={alternarTeste}
+									aria-pressed={conv.isSimulated}
+								>
+									<FlaskConical className="size-3.5" />
+									{marcando
+										? "Salvando…"
+										: conv.isSimulated
+											? "Voltar a contar nas métricas"
+											: "Marcar como teste"}
+								</Button>
+							</div>
+						</>
 					)}
 				</SheetHeader>
 
