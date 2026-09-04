@@ -136,9 +136,15 @@ export function ConversationsTable() {
 		[setChannel, setStatus, setQ, setFrom, setTo, setOffset, setOrigem, setCampanha],
 	);
 
+	// Recarrega a lista quando a marcação "é teste" muda no painel de detalhe:
+	// a conversa marcada sai do resultado (a busca esconde simuladas por padrão),
+	// então a tela precisa refletir isso sem o operador ter que apertar F5.
+	const [recarga, setRecarga] = useState(0);
+
 	useEffect(() => {
 		let cancelled = false;
 		const params = new URLSearchParams();
+		params.set("_r", String(recarga));
 		params.set("limit", String(PAGE_SIZE));
 		params.set("offset", String(offset));
 		if (channel !== "all") params.set("channel", channel);
@@ -169,7 +175,7 @@ export function ConversationsTable() {
 		return () => {
 			cancelled = true;
 		};
-	}, [channel, status, q, from, to, offset, origem, campanha]);
+	}, [channel, status, q, from, to, offset, origem, campanha, recarga]);
 
 	const total = data?.total ?? 0;
 	const items = data?.items ?? [];
@@ -297,6 +303,7 @@ export function ConversationsTable() {
 				conversationId={selectedId}
 				open={selectedId !== null}
 				onClose={() => setSelectedId(null)}
+				onMarcada={() => setRecarga((n) => n + 1)}
 			/>
 		</div>
 	);

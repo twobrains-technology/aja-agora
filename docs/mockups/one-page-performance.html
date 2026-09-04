@@ -1,0 +1,3471 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aja Agora — Relatório de performance (mockup com dados reais)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>/* ==========================================================================
+   Mockup — One-page de Performance · Aja Agora
+   Tokens copiados de src/app/globals.css (não inventar hex).
+   Paleta de gráfico validada por scripts/validate_palette.js (6/6 PASS).
+   ========================================================================== */
+:root {
+	--aja-blue: #036eff;
+	--aja-navy: #052440;
+	--aja-cyan: #03b2d9;
+	--aja-coral: #f2404f;
+	--aja-ink: #021628;
+	--aja-ink-soft: #0c3357;
+	--aja-stone: #6b6b66;
+	--aja-sand: #e4e2d6;
+	--aja-paper: #fafaf3;
+	--aja-paper-2: #f4f4e2;
+	--aja-cream: #f2f2db;
+	--blue-950: #041a30;
+	--blue-900: #052440;
+	--blue-800: #0a3a6b;
+	--blue-700: #0a4f9e;
+	--blue-600: #0a5fd6;
+	--blue-500: #036eff;
+	--blue-400: #3b8bff;
+	--blue-300: #6aa8ff;
+	--blue-200: #a8ccff;
+	--blue-100: #d6e7ff;
+	--blue-50: #eef5ff;
+	--cyan-600: #0481a0;
+	--cyan-500: #03b2d9;
+	--cyan-100: #d6f4fb;
+	--coral-600: #d62b3a;
+	--coral-500: #f2404f;
+	--coral-100: #fde0e2;
+
+	--background: var(--aja-paper);
+	--foreground: var(--aja-ink);
+	--card: #ffffff;
+	--muted: var(--aja-paper-2);
+	--muted-foreground: var(--aja-stone);
+	--border: var(--aja-sand);
+	--border-strong: rgb(5 36 64 / 0.22);
+	--primary: var(--aja-coral);
+	--link: var(--aja-blue);
+	--ring: var(--aja-blue);
+	--figure: var(--aja-ink);
+	--success: #1f9d63;
+	--warning: #d98a0b;
+	--destructive: #b3121f;
+
+	/* Paleta de gráfico VALIDADA — 6/6 PASS, superfície #ffffff */
+	--chart-1: #036eff;
+	--chart-2: #0481a0;
+	--chart-3: #d62b3a;
+
+	--radius: 0.625rem;
+	--radius-2xl: 1.25rem;
+	--radius-pill: 9999px;
+	--shadow-sm: 0 1px 3px 0 rgb(5 36 64 / 0.08), 0 1px 2px -1px rgb(5 36 64 / 0.08);
+	--shadow-md: 0 4px 10px -2px rgb(5 36 64 / 0.1), 0 2px 5px -2px rgb(5 36 64 / 0.07);
+	--font-sans: "Poppins", ui-sans-serif, system-ui, sans-serif;
+	--font-mono: "DM Mono", ui-monospace, Menlo, monospace;
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+html {
+	-webkit-text-size-adjust: 100%;
+}
+body {
+	margin: 0;
+	background: var(--background);
+	color: var(--foreground);
+	font-family: var(--font-sans);
+	font-size: 14px;
+	line-height: 1.5;
+	-webkit-font-smoothing: antialiased;
+}
+h1,
+h2,
+h3,
+h4 {
+	margin: 0;
+	font-weight: 700;
+	letter-spacing: -0.02em;
+	text-wrap: balance;
+}
+p {
+	margin: 0;
+	text-wrap: pretty;
+}
+a {
+	color: var(--link);
+}
+
+.wrap {
+	max-width: 1180px;
+	margin: 0 auto;
+	padding: 0 20px;
+}
+.num {
+	font-variant-numeric: tabular-nums;
+}
+.figure {
+	font-variant-numeric: tabular-nums;
+	font-weight: 700;
+	letter-spacing: -0.02em;
+	line-height: 1;
+	color: var(--figure);
+}
+.eyebrow {
+	font-size: 12px;
+	font-weight: 600;
+	letter-spacing: 0.18em;
+	text-transform: uppercase;
+	color: var(--coral-600);
+}
+.mono {
+	font-family: var(--font-mono);
+}
+
+/* ---------- Cabeçalho ---------- */
+.topbar {
+	background: var(--aja-ink);
+	color: #fff;
+	padding: 14px 0;
+}
+.topbar .wrap {
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	flex-wrap: wrap;
+}
+.brand {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	font-weight: 800;
+	letter-spacing: -0.03em;
+	font-size: 18px;
+}
+.brand .dot {
+	width: 10px;
+	height: 10px;
+	border-radius: 99px;
+	background: var(--aja-coral);
+}
+.topbar .sep {
+	flex: 1;
+}
+.selo {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	font-size: 12px;
+	background: rgb(255 255 255 / 0.1);
+	border: 1px solid rgb(255 255 255 / 0.18);
+	padding: 5px 11px;
+	border-radius: var(--radius-pill);
+}
+.selo .pulse {
+	width: 7px;
+	height: 7px;
+	border-radius: 99px;
+	background: #4ade80;
+	flex: none;
+}
+
+/* ---------- Abas ---------- */
+.tabs {
+	background: var(--card);
+	border-bottom: 1px solid var(--border);
+	position: sticky;
+	top: 0;
+	z-index: 20;
+}
+.tabs .wrap {
+	display: flex;
+	gap: 4px;
+}
+.tab {
+	appearance: none;
+	background: none;
+	border: 0;
+	border-bottom: 3px solid transparent;
+	padding: 14px 18px;
+	font: inherit;
+	font-weight: 600;
+	color: var(--muted-foreground);
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.tab:hover {
+	color: var(--foreground);
+}
+.tab[aria-selected="true"] {
+	color: var(--foreground);
+	border-bottom-color: var(--primary);
+}
+.tab:focus-visible {
+	outline: 2px solid var(--ring);
+	outline-offset: -2px;
+}
+.painel[hidden] {
+	display: none;
+}
+
+/* ---------- Estrutura de página ---------- */
+.pagehead {
+	padding: 26px 0 18px;
+	display: flex;
+	align-items: flex-end;
+	gap: 18px;
+	flex-wrap: wrap;
+}
+.pagehead h1 {
+	font-size: 24px;
+}
+.pagehead .sub {
+	color: var(--muted-foreground);
+	font-size: 13px;
+	margin-top: 4px;
+}
+.filtros {
+	margin-left: auto;
+	display: flex;
+	gap: 6px;
+	align-items: center;
+}
+.chip {
+	border: 1px solid var(--border-strong);
+	background: var(--card);
+	border-radius: var(--radius-pill);
+	padding: 6px 14px;
+	font: inherit;
+	font-size: 13px;
+	cursor: pointer;
+	color: var(--foreground);
+}
+.chip[aria-pressed="true"] {
+	background: var(--aja-ink);
+	color: #fff;
+	border-color: var(--aja-ink);
+}
+
+.grid {
+	display: grid;
+	gap: 14px;
+}
+.g5 {
+	grid-template-columns: repeat(5, 1fr);
+}
+.g4 {
+	grid-template-columns: repeat(4, 1fr);
+}
+.g3 {
+	grid-template-columns: repeat(3, 1fr);
+}
+.g2 {
+	grid-template-columns: repeat(2, 1fr);
+}
+.g23 {
+	grid-template-columns: 2fr 1fr;
+}
+.g32 {
+	grid-template-columns: 1fr 1fr;
+}
+section.bloco {
+	margin-bottom: 22px;
+}
+
+/* ---------- Cartões ---------- */
+.card {
+	background: var(--card);
+	border-radius: var(--radius-2xl);
+	box-shadow:
+		0 0 0 1px rgb(2 22 40 / 0.1),
+		var(--shadow-sm);
+	overflow: hidden;
+}
+.card-h {
+	padding: 16px 18px 0;
+}
+.card-h h3 {
+	font-size: 15px;
+}
+.card-h .desc {
+	color: var(--muted-foreground);
+	font-size: 12.5px;
+	margin-top: 3px;
+}
+.card-b {
+	padding: 14px 18px 18px;
+}
+
+/* KPI */
+.kpi {
+	padding: 16px 18px;
+}
+.kpi .rot {
+	font-size: 12.5px;
+	font-weight: 600;
+	color: var(--muted-foreground);
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	min-height: 34px;
+}
+.kpi .val {
+	font-size: 32px;
+	margin: 8px 0 2px;
+}
+.kpi .val small {
+	font-size: 15px;
+	font-weight: 600;
+	color: var(--muted-foreground);
+	letter-spacing: 0;
+}
+.kpi .pe {
+	font-size: 12px;
+	color: var(--muted-foreground);
+	margin-top: 6px;
+	line-height: 1.45;
+}
+.kpi .ico {
+	width: 17px;
+	height: 17px;
+	flex: none;
+	color: var(--aja-blue);
+}
+
+/* Estado — NUNCA só cor: sempre ícone + rótulo */
+.tag {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	font-size: 11.5px;
+	font-weight: 600;
+	padding: 3px 9px;
+	border-radius: var(--radius-pill);
+	border: 1px solid;
+	line-height: 1.35;
+	max-width: 100%;
+}
+.kpi .tag {
+	white-space: normal;
+}
+td .tag,
+.bl .tag {
+	white-space: nowrap;
+}
+.tag svg {
+	width: 12px;
+	height: 12px;
+	flex: none;
+}
+.tag.ok {
+	color: #14603d;
+	background: #e8f6ee;
+	border-color: #a6dcc0;
+}
+.tag.warn {
+	color: #8a5602;
+	background: #fdf3e0;
+	border-color: #eecf94;
+}
+.tag.bad {
+	color: #8a0d17;
+	background: var(--coral-100);
+	border-color: #f3b3b9;
+}
+.tag.neutro {
+	color: var(--muted-foreground);
+	background: var(--muted);
+	border-color: var(--border);
+}
+
+.card.alerta {
+	box-shadow:
+		0 0 0 2px var(--warning),
+		var(--shadow-md);
+}
+.card.critico {
+	box-shadow:
+		0 0 0 2px var(--destructive),
+		var(--shadow-md);
+}
+
+/* ---------- Funil ---------- */
+.funil {
+	display: flex;
+	flex-direction: column;
+	gap: 9px;
+}
+.f-linha {
+	display: grid;
+	grid-template-columns: 150px 1fr 128px;
+	align-items: center;
+	gap: 12px;
+}
+.f-rot {
+	font-size: 12.5px;
+	font-weight: 600;
+}
+.f-rot span {
+	display: block;
+	font-weight: 400;
+	color: var(--muted-foreground);
+	font-size: 11px;
+}
+.f-trilho {
+	height: 30px;
+	background: var(--muted);
+	border-radius: 6px;
+	overflow: hidden;
+	position: relative;
+}
+.f-barra {
+	height: 100%;
+	background: var(--chart-1);
+	border-radius: 6px;
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	padding: 0 10px;
+	color: #fff;
+	font-size: 12.5px;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+	min-width: 58px;
+	box-sizing: border-box;
+}
+.f-num {
+	font-size: 12.5px;
+	color: var(--muted-foreground);
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+}
+.f-num b {
+	color: var(--foreground);
+}
+.f-queda {
+	color: var(--destructive);
+	font-weight: 600;
+}
+
+/* ---------- Tabela ---------- */
+table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 13px;
+}
+th {
+	text-align: left;
+	font-weight: 600;
+	color: var(--muted-foreground);
+	font-size: 11.5px;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	padding: 0 10px 9px;
+	border-bottom: 1px solid var(--border);
+}
+td {
+	padding: 10px;
+	border-bottom: 1px solid var(--border);
+	vertical-align: middle;
+}
+tr:last-child td {
+	border-bottom: 0;
+}
+.rt {
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+}
+tbody tr:hover {
+	background: var(--muted);
+}
+.mini {
+	font-size: 11.5px;
+	color: var(--muted-foreground);
+}
+
+/* ---------- Legenda de gráfico ---------- */
+.legenda {
+	display: flex;
+	gap: 16px;
+	flex-wrap: wrap;
+	font-size: 12px;
+	color: var(--muted-foreground);
+	margin-bottom: 10px;
+}
+.legenda i {
+	width: 11px;
+	height: 11px;
+	border-radius: 3px;
+	display: inline-block;
+	margin-right: 6px;
+	vertical-align: -1px;
+}
+
+/* ---------- Barras horizontais (bar list) ---------- */
+.barlist {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+.bl {
+	display: grid;
+	grid-template-columns: 1fr auto;
+	gap: 10px;
+	align-items: center;
+	position: relative;
+	padding: 7px 10px;
+	border-radius: 7px;
+	background: var(--muted);
+	overflow: hidden;
+}
+.bl .fill {
+	position: absolute;
+	inset: 0;
+	background: var(--blue-100);
+	border-radius: 7px;
+	z-index: 0;
+}
+.bl .fill.alerta {
+	background: var(--coral-100);
+}
+.bl .rot,
+.bl .v {
+	position: relative;
+	z-index: 1;
+	font-size: 12.5px;
+}
+.bl .rot {
+	font-weight: 500;
+	display: flex;
+	align-items: center;
+	gap: 7px;
+}
+.bl .v {
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Rodapé de fonte ---------- */
+.fonte {
+	font-size: 11.5px;
+	color: var(--muted-foreground);
+	border-top: 1px dashed var(--border);
+	padding-top: 9px;
+	margin-top: 12px;
+	display: flex;
+	gap: 7px;
+	align-items: flex-start;
+}
+.fonte code {
+	font-family: var(--font-mono);
+	font-size: 11px;
+	background: var(--muted);
+	padding: 1px 5px;
+	border-radius: 4px;
+	color: var(--aja-ink-soft);
+}
+
+/* ---------- Blocos do PRD ---------- */
+.prd-nota {
+	background: var(--blue-50);
+	border-left: 3px solid var(--aja-blue);
+	padding: 13px 16px;
+	border-radius: 0 10px 10px 0;
+	font-size: 13px;
+	margin: 14px 0;
+}
+.prd-nota.alerta {
+	background: #fdf3e0;
+	border-left-color: var(--warning);
+}
+.prd-nota.perigo {
+	background: var(--coral-100);
+	border-left-color: var(--destructive);
+}
+.prd-nota > b:first-child {
+	display: block;
+	margin-bottom: 4px;
+}
+pre.codigo {
+	background: var(--aja-ink);
+	color: #dbe7f5;
+	padding: 14px 16px;
+	border-radius: 10px;
+	overflow-x: auto;
+	font-family: var(--font-mono);
+	font-size: 12px;
+	line-height: 1.6;
+	margin: 0;
+}
+pre.codigo .c {
+	color: #7f9bbb;
+}
+pre.codigo .k {
+	color: #7adcef;
+}
+pre.codigo .s {
+	color: #a8e6a3;
+}
+.passos {
+	counter-reset: p;
+	list-style: none;
+	padding: 0;
+	margin: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 11px;
+}
+.passos li {
+	counter-increment: p;
+	position: relative;
+	padding-left: 40px;
+	font-size: 13.5px;
+}
+.passos li::before {
+	content: counter(p);
+	position: absolute;
+	left: 0;
+	top: -1px;
+	width: 26px;
+	height: 26px;
+	border-radius: 99px;
+	background: var(--aja-ink);
+	color: #fff;
+	display: grid;
+	place-items: center;
+	font-size: 12px;
+	font-weight: 700;
+}
+.passos li b {
+	display: block;
+}
+ul.lista {
+	margin: 0;
+	padding-left: 19px;
+	font-size: 13.5px;
+}
+ul.lista li {
+	margin-bottom: 6px;
+}
+
+@media (max-width: 1000px) {
+	.g5,
+	.g4,
+	.g3,
+	.g23,
+	.g32 {
+		grid-template-columns: 1fr 1fr;
+	}
+	.f-linha {
+		grid-template-columns: 120px 1fr 96px;
+	}
+}
+@media (max-width: 640px) {
+	.g5,
+	.g4,
+	.g3,
+	.g2,
+	.g23,
+	.g32 {
+		grid-template-columns: 1fr;
+	}
+	.f-linha {
+		grid-template-columns: 1fr;
+		gap: 4px;
+	}
+	.f-num {
+		text-align: left;
+	}
+}
+
+/* ---------- Diagrama de fluxo (aba PRD) ---------- */
+.fluxo {
+	display: grid;
+	grid-template-columns: 1fr auto 1fr auto 1fr;
+	gap: 12px;
+	align-items: start;
+	margin-bottom: 6px;
+}
+.f-col {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+.f-tit {
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+	color: var(--muted-foreground);
+	padding-bottom: 2px;
+}
+.f-box {
+	background: var(--muted);
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	padding: 11px 13px;
+	font-size: 12.5px;
+}
+.f-box b {
+	display: block;
+	margin-bottom: 3px;
+	font-size: 13px;
+}
+.f-box span {
+	color: var(--muted-foreground);
+	font-size: 11.5px;
+	line-height: 1.45;
+	display: block;
+}
+.f-box.destaque {
+	background: var(--blue-50);
+	border-color: var(--blue-200);
+}
+.f-box.novo {
+	background: #fff;
+	border: 1px dashed var(--coral-500);
+}
+.f-box.tracejado {
+	border-style: dashed;
+	opacity: 0.72;
+}
+.f-seta {
+	align-self: center;
+	color: var(--muted-foreground);
+	font-size: 20px;
+	padding-top: 26px;
+}
+@media (max-width: 1000px) {
+	.fluxo {
+		grid-template-columns: 1fr;
+	}
+	.f-seta {
+		display: none;
+	}
+}
+
+/* ---------- Gráfico ---------- */
+.gr {
+	position: relative;
+}
+.gr .tip {
+	position: absolute;
+	top: 36px;
+	transform: translateX(-50%);
+	background: var(--aja-ink);
+	color: #fff;
+	padding: 9px 12px;
+	border-radius: 9px;
+	font-size: 12px;
+	pointer-events: none;
+	box-shadow: var(--shadow-md);
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	white-space: nowrap;
+	z-index: 5;
+}
+.gr .tip b {
+	font-size: 12.5px;
+	margin-bottom: 2px;
+}
+.gr .tip i {
+	width: 9px;
+	height: 9px;
+	border-radius: 2px;
+	display: inline-block;
+	margin-right: 6px;
+}
+.gr .hit {
+	cursor: crosshair;
+}
+.gr .hit:focus {
+	outline: none;
+}
+.gr .hit:focus-visible {
+	outline: 2px solid var(--ring);
+}
+.spark {
+	display: block;
+}
+
+/* ---------- Ícones ---------- */
+.tag svg {
+	width: 12px;
+	height: 12px;
+	flex: none;
+	stroke-width: 2.4;
+}
+.kpi .rot svg {
+	width: 16px;
+	height: 16px;
+	flex: none;
+	color: var(--aja-blue);
+	stroke-width: 2;
+}
+.faixa-alertas {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin: 0 0 20px;
+}
+.al {
+	display: flex;
+	align-items: flex-start;
+	gap: 11px;
+	padding: 12px 15px;
+	border-radius: 11px;
+	background: var(--card);
+	box-shadow: 0 0 0 1px rgb(2 22 40 / 0.1);
+}
+.al svg {
+	width: 19px;
+	height: 19px;
+	flex: none;
+	margin-top: 1px;
+}
+.al.critico {
+	box-shadow: 0 0 0 2px var(--destructive);
+}
+.al.critico svg {
+	color: var(--destructive);
+}
+.al.atencao {
+	box-shadow: 0 0 0 2px var(--warning);
+}
+.al.atencao svg {
+	color: var(--warning);
+}
+.al .txt {
+	font-size: 13.5px;
+	line-height: 1.45;
+}
+.al .txt > b:first-child {
+	display: inline-block;
+	font-weight: 800;
+	letter-spacing: 0.05em;
+	margin-right: 7px;
+	font-size: 11.5px;
+	text-transform: uppercase;
+}
+.al .txt b:not(:first-child) {
+	font-weight: 700;
+	text-transform: none;
+	letter-spacing: 0;
+	font-size: inherit;
+}
+.al .acao {
+	margin-left: auto;
+	flex: none;
+	font-size: 12.5px;
+	font-weight: 600;
+	color: var(--link);
+	align-self: center;
+	white-space: nowrap;
+}
+.linha-estado {
+	background: var(--aja-ink);
+	color: #fff;
+	border-radius: 14px;
+	padding: 17px 21px;
+	margin-bottom: 18px;
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	flex-wrap: wrap;
+}
+.linha-estado .fr {
+	font-size: 16.5px;
+	font-weight: 600;
+	line-height: 1.4;
+	letter-spacing: -0.01em;
+}
+.linha-estado .fr b {
+	color: #8fc0ff;
+}
+
+/* ---------- Prova / placar / saúde ---------- */
+.prova-box {
+	display: flex;
+	gap: 11px;
+	align-items: flex-start;
+	background: var(--blue-50);
+	border: 1px solid var(--blue-200);
+	border-radius: 11px;
+	padding: 13px 16px;
+	margin-top: 16px;
+	font-size: 13.5px;
+	line-height: 1.5;
+}
+.prova-box svg {
+	width: 19px;
+	height: 19px;
+	flex: none;
+	color: var(--success);
+	margin-top: 1px;
+	stroke-width: 2.6;
+}
+.pl {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 12px;
+	padding: 6px 0;
+	border-bottom: 1px solid var(--border);
+	font-size: 13px;
+}
+.pl:last-of-type {
+	border-bottom: 0;
+}
+.pl span {
+	color: var(--muted-foreground);
+}
+.pl b {
+	font-variant-numeric: tabular-nums;
+	font-size: 14px;
+}
+.linha-saude {
+	list-style: none;
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 14px 18px;
+	font-size: 13.5px;
+}
+.linha-saude::-webkit-details-marker {
+	display: none;
+}
+.linha-saude svg {
+	width: 18px;
+	height: 18px;
+	flex: none;
+	color: var(--warning);
+}
+details[open] .linha-saude {
+	border-bottom: 1px solid var(--border);
+}
+
+/* ---------- Mobile: 87% do tráfego desta operação é celular ---------- */
+@media (max-width: 640px) {
+	.al {
+		flex-wrap: wrap;
+	}
+	.al .txt {
+		flex: 1 1 100%;
+		min-width: 0;
+	}
+	.al svg {
+		order: -1;
+	}
+	.al .acao {
+		margin-left: 29px;
+		align-self: flex-start;
+		padding-top: 2px;
+	}
+	.tabs .wrap {
+		overflow-x: auto;
+	}
+	.tab {
+		white-space: nowrap;
+		padding: 13px 14px;
+	}
+	.linha-estado .fr {
+		font-size: 15px;
+	}
+	.pagehead {
+		flex-direction: column;
+		align-items: stretch;
+	}
+	.filtros {
+		margin-left: 0;
+		flex-wrap: wrap;
+	}
+	.kpi .val {
+		font-size: 28px;
+	}
+}
+
+/* ---------- Gráfico de origem: público × pipeline ---------- */
+.og {
+	display: grid;
+	grid-template-columns: 210px 1fr 150px;
+	gap: 14px;
+	align-items: center;
+	padding: 11px 0;
+	border-bottom: 1px solid var(--border);
+}
+.og:last-child {
+	border-bottom: 0;
+}
+.og-rot {
+	font-size: 13px;
+	font-weight: 600;
+}
+.og-rot span {
+	display: block;
+	font-weight: 400;
+	color: var(--muted-foreground);
+	font-size: 11px;
+	margin-top: 2px;
+}
+.og-barras {
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+}
+.og-par {
+	display: grid;
+	grid-template-columns: 58px 1fr 48px;
+	align-items: center;
+	gap: 9px;
+}
+.og-leg {
+	font-size: 10.5px;
+	color: var(--muted-foreground);
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+}
+.og-trilho {
+	height: 15px;
+	background: var(--muted);
+	border-radius: 4px;
+	overflow: hidden;
+}
+.og-fill {
+	height: 100%;
+	border-radius: 4px;
+}
+.og-fill.pub {
+	background: var(--chart-1);
+}
+.og-fill.pip {
+	background: var(--chart-2);
+}
+.og-fill.pip.zero {
+	background: repeating-linear-gradient(
+		45deg,
+		var(--aja-sand),
+		var(--aja-sand) 4px,
+		transparent 4px,
+		transparent 8px
+	);
+	border: 1px dashed var(--muted-foreground);
+	box-sizing: border-box;
+}
+.og-par b {
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+	text-align: right;
+}
+.og-vered {
+	text-align: right;
+}
+
+/* ---------- Bullets do especialista ---------- */
+.bl-grupo {
+	background: var(--card);
+	border-radius: 14px;
+	padding: 15px 17px;
+	box-shadow: 0 0 0 1px rgb(2 22 40 / 0.09);
+}
+.bl-tit {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	font-size: 14px;
+	font-weight: 700;
+	margin-bottom: 10px;
+	padding-bottom: 9px;
+	border-bottom: 1px solid var(--border);
+}
+.bl-tit svg {
+	width: 17px;
+	height: 17px;
+	flex: none;
+}
+.bl-lista {
+	margin: 0;
+	padding-left: 17px;
+	font-size: 13px;
+	line-height: 1.55;
+}
+.bl-lista li {
+	margin-bottom: 9px;
+}
+.bl-lista li:last-child {
+	margin-bottom: 0;
+}
+.bl-lista li b {
+	font-weight: 700;
+}
+@media (max-width: 760px) {
+	.og {
+		grid-template-columns: 1fr;
+		gap: 8px;
+	}
+	.og-vered {
+		text-align: left;
+	}
+}
+.wrap.estreito {
+	max-width: 980px;
+}
+
+/* `hidden` tem que vencer o display do componente, senão o tooltip nasce visível */
+[hidden] {
+	display: none !important;
+}
+
+/* ================= A DOBRA — uma tela ================= */
+.dobra {
+	padding-top: 14px;
+}
+.dobra .pagehead {
+	padding: 0 0 12px;
+}
+.dobra .pagehead h1 {
+	font-size: 21px;
+}
+.dobra .linha-estado {
+	padding: 13px 18px;
+	margin-bottom: 11px;
+	border-radius: 12px;
+}
+.dobra .linha-estado .fr {
+	font-size: 15px;
+}
+.faixa-curta {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 9px;
+	margin-bottom: 12px;
+}
+.al-curto {
+	padding: 9px 12px;
+	gap: 9px;
+	align-items: flex-start;
+}
+.al-curto svg {
+	width: 16px;
+	height: 16px;
+	margin-top: 2px;
+}
+.al-curto .txt {
+	font-size: 12px;
+	line-height: 1.4;
+}
+.al-curto .txt b:first-child {
+	display: block;
+	font-size: 10.5px;
+	letter-spacing: 0.05em;
+	margin-bottom: 2px;
+}
+.kpi-curto {
+	padding: 12px 14px;
+}
+.kpi-curto .rot {
+	font-size: 11.5px;
+	min-height: 0;
+	margin-bottom: 3px;
+}
+.kpi-curto .rot svg {
+	width: 14px;
+	height: 14px;
+}
+.kpi-curto .val {
+	font-size: 27px;
+	margin: 2px 0 0;
+}
+.kpi-curto .pe {
+	font-size: 11px;
+	margin-top: 4px;
+	line-height: 1.4;
+}
+.dobra .grid {
+	gap: 10px;
+}
+.dobra section.bloco {
+	margin-bottom: 11px;
+}
+.dobra .card-h {
+	padding: 12px 15px 0;
+}
+.dobra .card-h h3 {
+	font-size: 13.5px;
+}
+.dobra .card-b {
+	padding: 9px 15px 14px;
+}
+
+/* Funil em linha */
+.funil-linha {
+	display: flex;
+	align-items: stretch;
+	gap: 0;
+}
+.fl-item {
+	flex: 1;
+	text-align: center;
+	padding: 8px 2px;
+	background: var(--muted);
+	border-radius: 8px;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	min-width: 0;
+}
+.fl-item b {
+	font-size: 19px;
+	display: block;
+	line-height: 1.05;
+}
+.fl-item span {
+	font-size: 9.5px;
+	color: var(--muted-foreground);
+	display: block;
+	margin-top: 3px;
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+}
+.fl-item.zero {
+	background: var(--coral-100);
+}
+.fl-item.zero b {
+	color: var(--destructive);
+}
+.fl-seta {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 0 3px;
+	color: var(--muted-foreground);
+	font-size: 14px;
+	flex: none;
+}
+.fl-seta span {
+	font-size: 9.5px;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+}
+.fl-seta span.pior {
+	color: var(--destructive);
+}
+
+/* Origem compacta */
+.oc {
+	display: grid;
+	grid-template-columns: 118px 1fr 1fr;
+	gap: 9px;
+	align-items: center;
+	padding: 5px 0;
+}
+.oc-rot {
+	font-size: 11.5px;
+	font-weight: 600;
+}
+.oc-b {
+	display: grid;
+	grid-template-columns: 1fr 38px;
+	gap: 6px;
+	align-items: center;
+}
+.oc-t {
+	height: 11px;
+	background: var(--muted);
+	border-radius: 3px;
+	overflow: hidden;
+}
+.oc-f {
+	height: 100%;
+	border-radius: 3px;
+}
+.oc-f.pub {
+	background: var(--chart-1);
+}
+.oc-f.pip {
+	background: var(--chart-2);
+}
+.oc-f.pip.zero {
+	background: repeating-linear-gradient(
+		45deg,
+		var(--aja-sand),
+		var(--aja-sand) 3px,
+		transparent 3px,
+		transparent 6px
+	);
+}
+.oc-b b {
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
+	text-align: right;
+}
+.oc-b b.nulo {
+	color: var(--destructive);
+}
+.cab-oc {
+	display: grid;
+	grid-template-columns: 118px 1fr 1fr;
+	gap: 9px;
+	font-size: 10px;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--muted-foreground);
+	padding-bottom: 5px;
+	border-bottom: 1px solid var(--border);
+	margin-bottom: 4px;
+}
+
+.dobra table td {
+	padding: 6px 8px;
+	font-size: 12.5px;
+}
+.dobra table th {
+	padding: 0 8px 6px;
+	font-size: 10.5px;
+}
+
+/* Marca a fronteira: daqui para baixo é aprofundamento, não a decisão */
+.abaixo-da-dobra {
+	border-top: 2px dashed var(--border);
+	margin-top: 26px;
+	padding-top: 22px;
+}
+.abaixo-da-dobra .aviso {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	font-size: 12.5px;
+	color: var(--muted-foreground);
+	margin-bottom: 18px;
+}
+.abaixo-da-dobra .aviso svg {
+	width: 16px;
+	height: 16px;
+	flex: none;
+}
+@media (max-width: 900px) {
+	.faixa-curta {
+		grid-template-columns: 1fr;
+	}
+	.funil-linha {
+		flex-wrap: wrap;
+		gap: 5px;
+	}
+	.fl-item {
+		min-width: calc(33% - 8px);
+	}
+	.fl-seta {
+		display: none;
+	}
+	.oc,
+	.cab-oc {
+		grid-template-columns: 1fr;
+	}
+}
+/* Cards da dobra com a mesma altura, sem espaço morto */
+.dobra .g23 {
+	align-items: stretch;
+}
+.dobra .g23 > .card {
+	display: flex;
+	flex-direction: column;
+}
+.dobra .g23 > .card > .card-b {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap">
+    <div class="brand"><span class="dot"></span> Aja Agora</div>
+    <span style="opacity:.55;font-size:13px">Mockup de produto</span>
+    <div class="sep"></div>
+    <span class="selo"><span class="pulse"></span> Dados reais de produção · sem registros de teste · 04/09/2026</span>
+  </div>
+</header>
+
+<nav class="tabs" role="tablist" aria-label="Seções do documento">
+  <div class="wrap">
+    <button class="tab" role="tab" id="tab-1" aria-controls="p1" aria-selected="true">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+      One page
+    </button>
+    <button class="tab" role="tab" id="tab-0" aria-controls="p0" aria-selected="false">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+      Diário
+    </button>
+    <button class="tab" role="tab" id="tab-2" aria-controls="p2" aria-selected="false">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6"/><path d="M9 11h2"/></svg>
+      Racional &amp; PRD visual
+    </button>
+  </div>
+</nav>
+
+<main>
+  <div class="painel" id="p1" role="tabpanel" aria-labelledby="tab-1"><div class="wrap dobra">
+  <div class="pagehead">
+    <div>
+      <div class="eyebrow">Aja Agora · acompanhamento</div>
+      <h1>A operação em uma tela</h1>
+      <p class="sub">28/08 a 03/09 contra a semana anterior · sem registros de teste</p>
+    </div>
+    <div class="filtros" role="group" aria-label="Período">
+      <button class="chip" aria-pressed="false">Hoje</button>
+      <button class="chip" aria-pressed="true">7 dias</button>
+      <button class="chip" aria-pressed="false">30 dias</button>
+      <button class="chip" style="border-color:var(--aja-ink);font-weight:600">PDF</button>
+    </div>
+  </div>
+
+  <div class="linha-estado" id="frase"></div>
+  <div class="faixa-curta" id="alertas"></div>
+
+  <section class="bloco"><div class="grid g4" id="kpis"></div></section>
+
+  <section class="bloco">
+    <div class="grid g23">
+      <div class="card">
+        <div class="card-h"><h3>Onde o funil vaza</h3></div>
+        <div class="card-b"><div class="funil-linha" id="funil-linha"></div></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>Público × dinheiro, por origem</h3></div>
+        <div class="card-b">
+          <div class="cab-oc"><span>Origem</span><span>Fatia do público</span><span>Fatia do pipeline</span></div>
+          <div id="origem-curta"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="bloco">
+    <div class="card critico">
+      <div class="card-h" style="display:flex;align-items:flex-start;gap:12px">
+        <div style="flex:1"><h3>Esperando você agir</h3></div>
+        <span class="tag bad" id="tag-acao"></span>
+      </div>
+      <div class="card-b">
+        <table><tbody id="fila-curta"></tbody></table>
+      </div>
+    </div>
+  </section>
+
+  <div class="abaixo-da-dobra">
+  <div class="aviso"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>
+  <span>Daqui para baixo é aprofundamento — a decisão do dia já está acima.</span></div>
+  <!-- BLOCO 2 — FUNIL -->
+  <section class="bloco">
+    <div class="card">
+      <div class="card-h"><h3>O funil em detalhe</h3>
+        <p class="desc">O mesmo funil de cima, com quanta gente se perde em cada degrau. Cada degrau tem um dono: o topo é da mídia, o meio é do agente, o fim é da mesa.</p></div>
+      <div class="card-b">
+        <div class="funil" id="funil"></div>
+        <div class="prova" id="prova"></div>
+        <div class="fonte"><span>Regra</span><span>Visita contável = gente declarada, sem eco de prefetch — <b>com a âncora de que visita que gerou conversa nunca é descartada</b>. <code>src/lib/admin/sinais-do-funil.ts</code></span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BLOCO 3 — PLACAR DE RESPONSABILIDADE -->
+  <section class="bloco">
+    <div class="card">
+      <div class="card-h"><h3>Quem entregou o quê</h3>
+        <p class="desc">O mesmo período, separado por quem tinha a bola. Sem isso, “zero vendas” vira uma conclusão só.</p></div>
+      <div class="card-b"><div class="grid g2" id="placar"></div></div>
+    </div>
+  </section>
+
+  <!-- ORIGEM DO LEAD: o gráfico que decide verba -->
+  <section class="bloco">
+    <div class="card">
+      <div class="card-h"><h3>Para onde o público vai × de onde o dinheiro vem</h3>
+        <p class="desc">A mesma base, lida de duas formas. Se as duas barras de uma origem não se parecem, há verba indo para o lugar errado.</p></div>
+      <div class="card-b">
+        <div id="graf-origem"></div>
+        <div class="prd-nota perigo" style="margin-top:16px">
+          <b>A leitura em uma frase</b>
+          <b>54% do público veio de anúncio pago e produziu 0% do pipeline.</b> Os R$ 1,47 milhão em cartas na rua saíram inteiramente de tráfego que não custou nada — direto (51,6%) e link orgânico com UTM (48,4%). Valores já limpos do teste interno do operador.
+        </div>
+        <div class="fonte"><span>Como é calculado</span><span>Pipeline = soma de <code>bevi_proposals.credit_value</code> das conversas nascidas de cada origem, excluídos os contatos com a identidade da casa. Origem pela precedência do produto: Click-to-WhatsApp &gt; UTM &gt; referrer &gt; direto.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CRIATIVO A CRIATIVO -->
+  <section class="bloco">
+    <div class="card">
+      <div class="card-h"><h3>Anúncio a anúncio: qual criativo funciona</h3>
+        <p class="desc">Ordenado por taxa de conversa. “Seções vistas” é quanto da página a pessoa chegou a ver — é o que separa quem vai converter de quem já saiu.</p></div>
+      <div class="card-b">
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr><th>Veredito</th><th>Criativo</th><th class="rt">Pessoas</th><th class="rt">Seções vistas</th><th class="rt">Conversas</th><th class="rt">Conv/100</th><th class="rt">Leads</th></tr></thead>
+            <tbody id="tbl-criativos"></tbody>
+          </table>
+        </div>
+        <div class="fonte"><span>O corte que se enxerga sozinho</span><span>Todo criativo com <b>menos de 0,5 seção vista</b> converteu <b>zero</b>. Todo criativo acima de <b>1,3</b> converteu. Não é regra de negócio inventada — é o que os dados desta base mostram, e dá para reprovar um anúncio em 24 h sem esperar o funil inteiro.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BULLETS DO ESPECIALISTA -->
+  <section class="bloco">
+    <div class="card">
+      <div class="card-h"><h3>Leitura de negócio: o que fazer com isso</h3>
+        <p class="desc">Quatro grupos, do que dá dinheiro amanhã ao que precisa ser medido antes de decidir.</p></div>
+      <div class="card-b"><div class="grid g2" style="gap:14px" id="bullets"></div></div>
+    </div>
+  </section>
+
+  <!-- RODAPÉ — SAÚDE EM UMA LINHA -->
+  <section class="bloco">
+    <details class="card" style="box-shadow:0 0 0 1px var(--border)">
+      <summary class="linha-saude" id="resumo-saude"></summary>
+      <div class="card-b" style="padding-top:4px"><div class="grid g3" id="saude"></div></div>
+    </details>
+  </section>
+
+  
+
+  </div>
+</div></div>
+  <div class="painel" id="p0" role="tabpanel" aria-labelledby="tab-0" hidden><div class="wrap estreito">
+  <div class="pagehead">
+    <div>
+      <div class="eyebrow">Relatório diário · chega às 8h</div>
+      <h1>Ontem, quarta-feira 03/09</h1>
+      <p class="sub">Comparado com a média dos 7 dias anteriores. Dados de teste da equipe já removidos.</p>
+    </div>
+  </div>
+
+  <div class="linha-estado" id="frase-dia"></div>
+  <div class="faixa-alertas" id="alertas-dia"></div>
+
+  <section class="bloco"><div class="grid g4" id="kpis-dia"></div></section>
+
+  <section class="bloco">
+    <div class="card">
+      <div class="card-h"><h3>As conversas de ontem, uma a uma</h3>
+        <p class="desc">Com 2 conversas no dia, a lista inteira cabe na tela — e diz mais que qualquer média.</p></div>
+      <div class="card-b">
+        <div style="overflow-x:auto"><table>
+          <thead><tr><th>Hora</th><th>Canal</th><th>Veio de</th><th class="rt">Mensagens do cliente</th><th>Onde parou</th></tr></thead>
+          <tbody id="tbl-ontem"></tbody>
+        </table></div>
+        <div class="prd-nota perigo" style="margin-top:14px">
+          <b>As duas morreram na primeira mensagem</b>
+          Nenhuma das duas passou de uma frase, nenhuma virou lead, nenhuma viu oferta. Não é volume baixo com qualidade boa — é volume baixo e nada aconteceu. Vale abrir as duas conversas e ler o que o agente respondeu.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="bloco">
+    <div class="card critico">
+      <div class="card-h"><h3>O que exige ação hoje</h3>
+        <p class="desc">Isto não é de ontem — é o acumulado que continua parado enquanto ninguém age. É a parte do relatório que vale dinheiro.</p></div>
+      <div class="card-b">
+        <div style="overflow-x:auto"><table>
+          <thead><tr><th>Estado</th><th>Quem</th><th>Onde parou</th><th class="rt">Valor em jogo</th><th class="rt">Parado há</th></tr></thead>
+          <tbody id="tbl-acao-dia"></tbody>
+        </table></div>
+        <div class="grid g2" style="margin-top:15px;gap:15px">
+          <div>
+            <p class="eyebrow" style="margin-bottom:9px">Leads quentes esquecidos, por raia</p>
+            <div class="barlist" id="quentes-dia"></div>
+          </div>
+          <div class="prd-nota alerta" style="margin:0;align-self:start">
+            <b>Nenhum destes é novidade</b>
+            Todos já receberam alerta de SLA por e-mail. O aviso automático funciona há semanas e os leads continuam parados — o que falta é alguém abrir a lista e distribuir por nome.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="bloco">
+    <div class="card">
+      <div class="card-h"><h3>Os últimos 17 dias</h3>
+        <p class="desc">Para saber se ontem foi um dia ruim ou uma tendência.</p></div>
+      <div class="card-b"><div class="gr" id="grafico-dia"></div></div>
+    </div>
+  </section>
+</div>
+</div>
+  <div class="painel" id="p2" role="tabpanel" aria-labelledby="tab-2" hidden><div class="wrap">
+  <div class="pagehead">
+    <div>
+      <div class="eyebrow">Documento de produto</div>
+      <h1>Racional do algoritmo &amp; como isto vai ser construído</h1>
+      <p class="sub">O que cada número significa, de onde ele sai, o que ainda não existe e em que ordem construir.</p>
+    </div>
+  </div>
+
+  <!-- 1. O PROBLEMA -->
+  <section class="bloco">
+    <div class="card">
+      <div class="card-h"><h3>1. O problema que esta tela resolve</h3>
+        <p class="desc">Não é falta de dado. É falta de um lugar onde o dado se encontre.</p></div>
+      <div class="card-b">
+        <p style="margin-bottom:14px">Hoje a operação tem <b>cinco fontes agregadas</b> e <b>nenhuma consolidação</b>. Para responder “como foi a semana?”, alguém abre quatro telas, soma de cabeça e ainda perde o que só existe no Langfuse.</p>
+        <div class="grid g5" style="margin-bottom:14px">
+          <div class="card" style="box-shadow:0 0 0 1px var(--border)"><div class="kpi"><div class="rot">/admin — “Agora”</div><p class="mini">6 KPIs de tempo real, refresh 15 s. Só o instante, sem história.</p></div></div>
+          <div class="card" style="box-shadow:0 0 0 1px var(--border)"><div class="kpi"><div class="rot">/admin/performance</div><p class="mini">Funil de mídia, origens, série. É o mais próximo do alvo — e ninguém abre de manhã.</p></div></div>
+          <div class="card" style="box-shadow:0 0 0 1px var(--border)"><div class="kpi"><div class="rot">/admin/percurso</div><p class="mini">Escada de 8 degraus, pessoa a pessoa. Profundidade sem síntese.</p></div></div>
+          <div class="card" style="box-shadow:0 0 0 1px var(--border)"><div class="kpi"><div class="rot">/admin/mapa-de-calor</div><p class="mini">Cliques e rolagem. Diz onde clicaram, não se venderam.</p></div></div>
+          <div class="card" style="box-shadow:0 0 0 1px var(--border)"><div class="kpi"><div class="rot">Langfuse</div><p class="mini">~41 scores por turno/sessão. <b>25 deles não têm nenhum widget.</b></p></div></div>
+        </div>
+        <div class="prd-nota">
+          <b>O ativo escondido</b>
+          <code class="mono">GET /api/admin/dashboard</code> já existe, já calcula <code class="mono">conversionRate</code> com <code class="mono">trends</code> contra o período anterior — e <b>nenhuma tela o consome</b>. O componente <code class="mono">LeadVolumeChart</code> também está órfão. Parte do que esta one-page precisa já foi construída e está desligada.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. ARQUITETURA -->
+  <section class="bloco">
+    <div class="card">
+      <div class="card-h"><h3>2. De onde sai cada número</h3>
+        <p class="desc">Três fontes, um endpoint, uma tela. A regra: o número nasce onde o fato acontece.</p></div>
+      <div class="card-b">
+        <div class="fluxo">
+          <div class="f-col">
+            <div class="f-tit">Fonte</div>
+            <div class="f-box"><b>Postgres</b><span>visits · conversations · messages · artifacts · leads · lead_events · bevi_proposals · mesa_handoffs · conversion_events · page_events</span></div>
+            <div class="f-box"><b>Langfuse</b><span>~41 scores por turno e por sessão · custo e latência de LLM</span></div>
+            <div class="f-box tracejado"><b>Meta Marketing API</b><span>investimento por campanha — <i>não existe hoje</i></span></div>
+          </div>
+          <div class="f-seta" aria-hidden="true">→</div>
+          <div class="f-col">
+            <div class="f-tit">Camada de regra</div>
+            <div class="f-box destaque"><b>sinais-do-funil.ts</b><span>VISITA_CONTAVEL · chaveDaPessoa() · ARTIFACTS_DE_OFERTA<br><i>já existe — é a fonte única das definições</i></span></div>
+            <div class="f-box destaque"><b>performance-queries.ts</b><span>computeFunilMidia · computeOrigens · computeSerie · computePorta · computeCobertura<br><i>já existe</i></span></div>
+            <div class="f-box novo"><b>one-page-queries.ts</b><span>agrega os acima + tendência + pipeline em R$ + saúde do sinal<br><i>a construir</i></span></div>
+          </div>
+          <div class="f-seta" aria-hidden="true">→</div>
+          <div class="f-col">
+            <div class="f-tit">Entrega</div>
+            <div class="f-box novo"><b>GET /api/admin/one-page</b><span>um payload, um request<br><i>a construir</i></span></div>
+            <div class="f-box novo"><b>/admin/one-page</b><span>a tela da aba anterior<br><i>a construir</i></span></div>
+            <div class="f-box novo"><b>Resumo diário</b><span>o mesmo payload em e-mail às 8h<br><i>a construir — o worker de SLA já prova o caminho</i></span></div>
+          </div>
+        </div>
+        <div class="prd-nota alerta">
+          <b>A regra que não pode ser quebrada</b>
+          As definições canônicas <b>já existem em código</b> e três telas as compartilham. A one-page <b>importa</b> <code class="mono">VISITA_CONTAVEL</code> e <code class="mono">chaveDaPessoa()</code> — não reescreve. Duas definições de “pessoa” no mesmo painel é como se perde a confiança na tela inteira, e isso já custou trabalho de correção em 24/08.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. O ALGORITMO -->
+  <section class="bloco">
+    <div class="card">
+      <div class="card-h"><h3>3. O algoritmo do funil, passo a passo</h3>
+        <p class="desc">Por que 47.294 visitas viram 6.179. Cada corte tem uma medição por trás — e um deles está errado hoje.</p></div>
+      <div class="card-b">
+        <ol class="passos">
+          <li><b>Corta o robô que se declara</b>
+            O user-agent bate em <code class="mono">(ELB-HealthChecker|facebookexternalhit|python-requests|HeadlessChrome|crawler|spider|curl|wget|bot)</code> com fronteira à direita. Sem user-agent também é robô. <span class="mini">Em produção agora: 33.584 visitas são o health check do nosso próprio ALB batendo em <code class="mono">/</code> a cada 30 s, e 4.435 são o crawler do Facebook.</span></li>
+          <li><b>…mas o fato vence a heurística</b>
+            Visita que <b>produziu conversa</b> nunca é robô, qualquer que seja o user-agent. <span class="mini">É o que protege o cliente atrás de proxy corporativo com header estranho — e é a diferença entre um filtro e uma censura.</span></li>
+          <li><b>Corta o eco de prefetch</b>
+            Mesma pessoa gravada de novo em menos de <b>2 segundos</b> não é chegada nova. <span class="mini">O App Router dispara prefetch para a própria rota com a query string do anúncio; em 24/08 isso fez 390 das 756 chegadas do dia (51,6%) serem eco — e só no tráfego pago, que é 100% do investimento.</span></li>
+          <li><b>⚠️ …mas aqui falta a âncora, e isso está custando caro hoje</b>
+            O corte de robô tem a âncora “visita que gerou conversa nunca é descartada”. <b>O corte de eco não tem.</b> Resultado medido agora: <b>19 visitas que produziram conversa são jogadas fora</b>, e com elas somem <b>22 conversas e 8 leads</b> da atribuição por campanha. <span class="mini">O pior caso: a campanha <code class="mono">…713980104</code> no Instagram aparece na tela atual com <b>0 conversas</b>; ela tem <b>8 conversas e 4 leads em 33 pessoas — 24,2%, a melhor da conta</b>, contra 3,18% do orgânico. Um gestor olhando o painel de hoje pausaria justamente o anúncio que funciona. <b>Correção: estender a mesma âncora ao anti-eco.</b> Conversa é fato do servidor; prefetch não conversa.</span></li>
+          <li><b>Conta pessoa, não aparelho</b>
+            <code class="mono">COALESCE(contact_id resolvido na janela, visitor_id)</code> — quem chegou por dois aparelhos e virou o mesmo contato conta uma vez. <span class="mini">A diferença medida foi de 5 pessoas em 3.016. Pequena o bastante para passar semanas despercebida, grande o bastante para duas telas se contradizerem.</span></li>
+          <li><b>Toda etapa depois de “visitas” exige origem</b>
+            <code class="mono">conversations.visit_id IS NOT NULL</code>. <span class="mini">Sem isso, conversa sem origem (WhatsApp orgânico) entrava no meio do funil e o resultado passava do topo — o funil chegou a mostrar 328%.</span></li>
+          <li><b>“Viu oferta” é prova, não intenção</b>
+            Existe um <code class="mono">artifact</code> do tipo <code class="mono">real_offer</code> ou <code class="mono">simulation_result</code> naquela conversa: o cliente viu número na tela. <span class="mini">⚠️ Defeito a corrigir na implementação: o Langfuse usa outro conjunto para o mesmo nome — <code class="mono">comparison_table, recommendation_card, real_offer</code>. Painel e score contam coisas diferentes hoje.</span></li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. FÓRMULAS -->
+  <section class="bloco">
+    <div class="card">
+      <div class="card-h"><h3>4. As contas, explícitas</h3>
+        <p class="desc">O que o código vai fazer, em SQL legível. Nada aqui é novo — é composição do que já existe.</p></div>
+      <div class="card-b">
+        <div class="grid g2">
+          <div>
+            <p class="eyebrow" style="margin-bottom:8px">Taxa de entrada</p>
+            <pre class="codigo"><span class="c">-- de cada 100 pessoas que chegam,
+-- quantas puxam conversa</span>
+conversas_atribuidas / pessoas_contaveis
+
+<span class="c">-- real hoje: 117 / 4.657 = 2,5%</span></pre>
+          </div>
+          <div>
+            <p class="eyebrow" style="margin-bottom:8px">Pipeline em R$</p>
+            <pre class="codigo"><span class="k">SELECT</span> sum(credit_value)
+<span class="k">FROM</span> bevi_proposals
+<span class="k">WHERE</span> proposal_status <span class="k">NOT IN</span> (<span class="s">'reprovado'</span>)
+
+<span class="c">-- real hoje: R$ 1.841.314,59 em 8 propostas
+-- ⚠️ só existe DEPOIS da proposta:
+-- leads.credit_value é NULL em 49 de 49</span></pre>
+          </div>
+          <div>
+            <p class="eyebrow" style="margin-bottom:8px">Tendência (vs. período anterior)</p>
+            <pre class="codigo"><span class="c">-- mesma janela, deslocada para trás</span>
+(atual - anterior) / anterior
+
+<span class="c">-- real: pessoas -26,7% · conversas +8,3%
+-- leads -46,7% · propostas -100%</span></pre>
+          </div>
+          <div>
+            <p class="eyebrow" style="margin-bottom:8px">Saúde do sinal de mídia</p>
+            <pre class="codigo"><span class="k">SELECT</span> event_name, status, count(*)
+<span class="k">FROM</span> conversion_events
+<span class="k">GROUP BY</span> 1, 2
+
+<span class="c">-- real: chat_iniciado 28 failed / 3 sent
+-- nenhuma tela lê esta tabela hoje</span></pre>
+          </div>
+        </div>
+        <div class="prd-nota alerta">
+          <b>Custo medido, para decidir cedo</b>
+          A query canônica do funil roda em <b>603 ms</b> sobre as 47.294 visitas de hoje, com <i>sequential scan</i> em <code class="mono">visits</code> duas vezes (o anti-eco é um self-join). Cresce linear: em 1 milhão de visitas passa de 12 s. <b>Decisão sugerida:</b> começar direto e simples; assim que o painel virar rotina, materializar o dia fechado numa tabela de resumo e deixar a query cara só para o dia corrente.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. O QUE FALTA -->
+  <section class="bloco">
+    <div class="card">
+      <div class="card-h"><h3>5. O que ainda não existe — e o que cada lacuna custa</h3>
+        <p class="desc">Ordenado por quanto muda a decisão de quem lê a tela.</p></div>
+      <div class="card-b">
+        <table>
+          <thead><tr><th>Lacuna</th><th>Por que dói</th><th>O que fazer</th><th class="rt">Esforço</th></tr></thead>
+          <tbody id="tbl-lacunas"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6. FASES -->
+  <section class="bloco">
+    <div class="card">
+      <div class="card-h"><h3>6. Em que ordem construir</h3>
+        <p class="desc">Cada fase entrega algo que já dá para abrir e usar. Nenhuma depende da seguinte.</p></div>
+      <div class="card-b">
+        <div class="grid g4" id="fases"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7. ARMADILHAS -->
+  <section class="bloco">
+    <div class="card">
+      <div class="card-h"><h3>7. Armadilhas já medidas nesta operação</h3>
+        <p class="desc">Cada uma destas já produziu um número errado numa tela. Estão aqui para não voltarem.</p></div>
+      <div class="card-b">
+        <div class="grid g2" id="armadilhas"></div>
+      </div>
+    </div>
+  </section>
+</div>
+</div>
+</main>
+
+<footer style="background:var(--aja-ink);color:#93a9c2;padding:22px 0;margin-top:34px;font-size:12.5px">
+  <div class="wrap">
+    Mockup de validação — todos os números vêm do banco de produção <span class="mono">aja-agora</span>, janela de 10/08 a 04/09/2026.
+    Nenhum valor foi inventado; onde o dado não existe, a tela diz que não existe.
+  </div>
+</footer>
+
+<script>
+const DADOS = {"extraido_em": "2026-09-04T05:50:07.519199+00:00", "ontem_data": "2026-09-03", "ontem": {"pessoas": 182, "conversas": 2, "leads": 0, "propostas": 0, "viram_oferta": 0, "detalhe": [{"canal": "web", "hora": "08:09", "msgs": 1, "estagio": "sem lead", "origem": "Outro site"}, {"canal": "web", "hora": "12:32", "msgs": 1, "estagio": "sem lead", "origem": "Anúncio pago"}]}, "media7": {"pessoas": 161.1, "conversas": 5.4, "leads": 0.9}, "serie": [{"dia": "2026-08-18", "pessoas": 91, "conversas": 9, "leads": 2, "propostas": 0}, {"dia": "2026-08-19", "pessoas": 133, "conversas": 6, "leads": 2, "propostas": 0}, {"dia": "2026-08-20", "pessoas": 215, "conversas": 6, "leads": 3, "propostas": 0}, {"dia": "2026-08-21", "pessoas": 159, "conversas": 1, "leads": 0, "propostas": 0}, {"dia": "2026-08-22", "pessoas": 123, "conversas": 1, "leads": 0, "propostas": 0}, {"dia": "2026-08-23", "pessoas": 219, "conversas": 4, "leads": 3, "propostas": 0}, {"dia": "2026-08-24", "pessoas": 304, "conversas": 8, "leads": 2, "propostas": 0}, {"dia": "2026-08-25", "pessoas": 258, "conversas": 4, "leads": 1, "propostas": 0}, {"dia": "2026-08-26", "pessoas": 255, "conversas": 12, "leads": 6, "propostas": 1}, {"dia": "2026-08-27", "pessoas": 215, "conversas": 5, "leads": 2, "propostas": 0}, {"dia": "2026-08-28", "pessoas": 204, "conversas": 3, "leads": 1, "propostas": 0}, {"dia": "2026-08-29", "pessoas": 111, "conversas": 4, "leads": 0, "propostas": 0}, {"dia": "2026-08-30", "pessoas": 139, "conversas": 4, "leads": 2, "propostas": 0}, {"dia": "2026-08-31", "pessoas": 111, "conversas": 8, "leads": 0, "propostas": 0}, {"dia": "2026-09-01", "pessoas": 163, "conversas": 8, "leads": 0, "propostas": 0}, {"dia": "2026-09-02", "pessoas": 185, "conversas": 6, "leads": 1, "propostas": 0}, {"dia": "2026-09-03", "pessoas": 182, "conversas": 2, "leads": 0, "propostas": 0}], "semana": {"pessoas": 1052, "conversas": 35, "leads": 4, "propostas": 0, "ant_pessoas": 1435, "ant_conversas": 35, "ant_leads": 14, "ant_propostas": 1}, "total": {"pessoas": 4661, "conversas": 122, "identificados": 32, "viu_oferta": 20, "propostas": 6, "pipeline": 1470056.59, "ticket": 245009, "handoffs": 4, "fechados": 0}, "quentes": [{"raia": "qualificado", "n": 10, "dias_media": 15}, {"raia": "em_negociacao", "n": 9, "dias_media": 14}, {"raia": "aguardando_pagamento", "n": 1, "dias_media": 10}, {"raia": "proposta_enviada", "n": 1, "dias_media": 9}], "mesa": [{"nome": "Cliente F", "raia": "perdido", "valor": 51000.0, "adm": "RODOBENS", "dias": 25}, {"nome": "Cliente G", "raia": "perdido", "valor": 383791.07, "adm": "BANCO DO BRASIL", "dias": 24}, {"nome": "Cliente E", "raia": "perdido", "valor": 499633.76, "adm": "BANCO DO BRASIL", "dias": 22}, {"nome": "Cliente A", "raia": "aguardando_pagamento", "valor": 211258.0, "adm": "ITAÚ", "dias": 20}], "acao": [{"nome": "Cliente G", "raia": "sem lead", "dias": 3, "msgs": 11}, {"nome": "Cliente B", "raia": "em_negociacao", "dias": 6, "msgs": 33}, {"nome": "Cliente G", "raia": "qualificado", "dias": 9, "msgs": 13}, {"nome": "Cliente C", "raia": "em_negociacao", "dias": 9, "msgs": 26}, {"nome": "Cliente D", "raia": "em_negociacao", "dias": 9, "msgs": 22}], "por_origem": [{"origem": "Anúncio pago", "pessoas": 2516, "conversas": 33, "leads": 6, "propostas": 0, "valor": 0, "pct_publico": 53.6, "pct_pipeline": 0.0, "conv100": 1.31}, {"origem": "Direto", "pessoas": 1388, "conversas": 33, "leads": 10, "propostas": 4, "valor": 759164.83, "pct_publico": 29.6, "pct_pipeline": 51.6, "conv100": 2.38}, {"origem": "Vindo de outro site", "pessoas": 739, "conversas": 26, "leads": 9, "propostas": 0, "valor": 0, "pct_publico": 15.7, "pct_pipeline": 0.0, "conv100": 3.52}, {"origem": "Orgânico com UTM", "pessoas": 50, "conversas": 16, "leads": 9, "propostas": 2, "valor": 710891.76, "pct_publico": 1.1, "pct_pipeline": 48.4, "conv100": 32.0}], "criativos": [{"criativo": "120250998207800104", "rede": "ig", "pessoas": 794, "secoes": 0.4, "conversas": 0, "leads": 0}, {"criativo": "120251242916450104", "rede": "an", "pessoas": 377, "secoes": 1.9, "conversas": 14, "leads": 0}, {"criativo": "120250998207770104", "rede": "ig", "pessoas": 346, "secoes": 0.3, "conversas": 0, "leads": 0}, {"criativo": "120250989573330104", "rede": "ig", "pessoas": 325, "secoes": 0.0, "conversas": 0, "leads": 0}, {"criativo": "120250998207740104", "rede": "ig", "pessoas": 125, "secoes": 0.2, "conversas": 0, "leads": 0}, {"criativo": "120250997008800104", "rede": "ig", "pessoas": 72, "secoes": 0.0, "conversas": 0, "leads": 0}, {"criativo": "120250997482200104", "rede": "ig", "pessoas": 58, "secoes": 0.0, "conversas": 0, "leads": 0}, {"criativo": "120251242916470104", "rede": "an", "pessoas": 52, "secoes": 2.0, "conversas": 2, "leads": 1}, {"criativo": "120251066867220104", "rede": "an", "pessoas": 49, "secoes": 2.1, "conversas": 1, "leads": 0}, {"criativo": "120250998207730104", "rede": "ig", "pessoas": 47, "secoes": 0.1, "conversas": 0, "leads": 0}, {"criativo": "120250989573350104", "rede": "ig", "pessoas": 44, "secoes": 0.0, "conversas": 0, "leads": 0}, {"criativo": "120251066904070104", "rede": "ig", "pessoas": 36, "secoes": 0.0, "conversas": 0, "leads": 0}, {"criativo": "120251242842810104", "rede": "an", "pessoas": 34, "secoes": 0.6, "conversas": 0, "leads": 0}, {"criativo": "link_in_bio", "rede": "ig", "pessoas": 33, "secoes": 1.3, "conversas": 13, "leads": 7}], "engajamento": {"por_faixa_msgs": [{"faixa": "1 msg", "n": 53}, {"faixa": "4-8", "n": 30}, {"faixa": "2-3", "n": 25}, {"faixa": "9+", "n": 21}], "msgs_media": 11.4, "device": [{"device": "mobile", "n": 7740}, {"device": "desktop", "n": 1159}, {"device": "tablet", "n": 39}], "rage_clicks": 72, "por_hora": [{"hora": 0, "n": 2}, {"hora": 1, "n": 2}, {"hora": 2, "n": 1}, {"hora": 3, "n": 2}, {"hora": 5, "n": 2}, {"hora": 6, "n": 2}, {"hora": 7, "n": 4}, {"hora": 8, "n": 3}, {"hora": 9, "n": 7}, {"hora": 10, "n": 10}, {"hora": 11, "n": 13}, {"hora": 12, "n": 8}, {"hora": 13, "n": 10}, {"hora": 14, "n": 8}, {"hora": 15, "n": 8}, {"hora": 16, "n": 10}, {"hora": 17, "n": 6}, {"hora": 18, "n": 5}, {"hora": 19, "n": 13}, {"hora": 20, "n": 6}, {"hora": 21, "n": 2}, {"hora": 22, "n": 3}, {"hora": 23, "n": 4}]}, "tempo_ate_carta": {"turnos_media": 6.6, "turnos_min": 2, "turnos_max": 14, "mediana_minutos": 2.5, "conversas_com_carta": 27, "viraram_proposta": 8}};
+// --- abas ---
+document.querySelectorAll('.tab').forEach(function(btn){
+  btn.addEventListener('click', function(){
+    document.querySelectorAll('.tab').forEach(function(b){ b.setAttribute('aria-selected','false'); });
+    document.querySelectorAll('.painel').forEach(function(p){ p.hidden = true; });
+    btn.setAttribute('aria-selected','true');
+    document.getElementById(btn.getAttribute('aria-controls')).hidden = false;
+    window.scrollTo({top:0, behavior:'instant'});
+  });
+});
+// Ícones lucide inline — estado NUNCA só por cor: todo rótulo de estado carrega forma própria.
+const ICO = {
+	alerta:
+		'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
+	relogio:
+		'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+	parar:
+		'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="m5.5 5.5 13 13"/></svg>',
+	ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg>',
+	sobe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>',
+	desce:
+		'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>',
+	igual:
+		'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 9h14"/><path d="M5 15h14"/></svg>',
+	dinheiro:
+		'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v20"/><path d="M17 7H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
+	chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+	pessoa:
+		'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+	aperto:
+		'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m11 17 2 2a1 1 0 1 0 3-3"/><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.9-3.9a2 2 0 0 1 0-2.8L17 5"/><path d="m21 3-2.7 2.7a2 2 0 0 1-2.8 0l-1-1a2 2 0 0 0-2.8 0L9 7.6"/><path d="m3 21 2.7-2.7"/></svg>',
+	olho: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7"/><circle cx="12" cy="12" r="3"/></svg>',
+	antena:
+		'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4.9 19.1A7 7 0 0 1 4.9 9"/><path d="M7.8 16.2a3 3 0 0 1 0-4.3"/><circle cx="12" cy="14" r="2"/><path d="M16.2 16.2a3 3 0 0 0 0-4.3"/><path d="M19.1 19.1a7 7 0 0 0 0-10.1"/></svg>',
+};
+const fmt = new Intl.NumberFormat("pt-BR");
+const brl = (v) =>
+	"R$ " +
+	new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
+function tag(estado, texto) {
+	const map = {
+		ok: ["ok", "ok"],
+		warn: ["warn", "alerta"],
+		bad: ["bad", "alerta"],
+		neutro: ["neutro", "igual"],
+	};
+	const m = map[estado] || map.neutro;
+	return '<span class="tag ' + m[0] + '">' + ICO[m[1]] + texto + "</span>";
+}
+function delta(pct, maiorEhMelhor) {
+	if (pct === null || pct === undefined)
+		return '<span class="tag neutro">' + ICO.igual + "sem base</span>";
+	const bom = maiorEhMelhor ? pct > 0 : pct < 0;
+	const ico = pct > 0 ? ICO.sobe : pct < 0 ? ICO.desce : ICO.igual;
+	const palavra =
+		pct === 0
+			? "igual à semana anterior"
+			: bom
+				? "melhor que a semana anterior"
+				: "pior que a semana anterior";
+	const cls = pct === 0 ? "neutro" : bom ? "ok" : "bad";
+	return (
+		'<span class="tag ' +
+		cls +
+		'">' +
+		ico +
+		(pct > 0 ? "+" : "") +
+		pct.toString().replace(".", ",") +
+		"% · " +
+		palavra +
+		"</span>"
+	);
+}
+
+const RAIA = {
+	novo: "Novo",
+	engajado: "Engajado",
+	qualificado: "Qualificado",
+	em_negociacao: "Em negociação",
+	proposta_enviada: "Proposta enviada",
+	na_administradora: "Na administradora",
+	em_atendimento: "Em atendimento",
+	aguardando_pagamento: "Aguardando pagamento",
+	fechado_ganho: "Fechado ganho",
+	perdido: "Perdido",
+	"sem lead": "Não deixou contato",
+};
+function raia(k) {
+	return RAIA[k] || k.replace(/_/g, " ");
+}
+
+// ---------- Série diária: linha, eixo ÚNICO ----------
+// Conversas e leads compartilham escala de verdade (mesma unidade, mesma ordem
+// de grandeza). Pessoas/dia ficaria em outra escala e viraria eixo duplo — o
+// erro nº 1 de gráfico —, então não entra aqui.
+function desenharSerie(el, serie) {
+	const W = 760,
+		H = 210,
+		m = { t: 14, r: 16, b: 30, l: 32 };
+	const iw = W - m.l - m.r,
+		ih = H - m.t - m.b;
+	const max = Math.max(4, ...serie.map((d) => Math.max(d.conversas, d.leads)));
+	const x = (i) => m.l + (i * iw) / (serie.length - 1);
+	const y = (v) => m.t + ih - (v / max) * ih;
+	const linha = (k) =>
+		serie.map((d, i) => (i ? "L" : "M") + x(i).toFixed(1) + " " + y(d[k]).toFixed(1)).join(" ");
+
+	const ticks = [0, Math.round(max / 2), max];
+	const grid = ticks
+		.map(
+			(t) =>
+				'<line x1="' +
+				m.l +
+				'" x2="' +
+				(W - m.r) +
+				'" y1="' +
+				y(t) +
+				'" y2="' +
+				y(t) +
+				'" stroke="#e4e2d6"/>' +
+				'<text x="' +
+				(m.l - 7) +
+				'" y="' +
+				(y(t) + 4) +
+				'" text-anchor="end" font-size="10.5" fill="#6b6b66">' +
+				t +
+				"</text>",
+		)
+		.join("");
+
+	const rotulos = serie
+		.map((d, i) => {
+			if (i % 3 !== 0 && i !== serie.length - 1) return "";
+			return (
+				'<text x="' +
+				x(i) +
+				'" y="' +
+				(H - 9) +
+				'" text-anchor="middle" font-size="10.5" fill="#6b6b66">' +
+				d.dia.slice(8, 10) +
+				"/" +
+				d.dia.slice(5, 7) +
+				"</text>"
+			);
+		})
+		.join("");
+
+	// Dia com proposta é evento raro nesta operação — merece marca explícita e rótulo.
+	const props = serie
+		.map((d, i) => {
+			if (!d.propostas) return "";
+			return (
+				'<line x1="' +
+				x(i) +
+				'" x2="' +
+				x(i) +
+				'" y1="' +
+				m.t +
+				'" y2="' +
+				(m.t + ih) +
+				'" stroke="#d62b3a" stroke-width="1.5" stroke-dasharray="3 3"/>' +
+				'<circle cx="' +
+				x(i) +
+				'" cy="' +
+				m.t +
+				'" r="4" fill="#d62b3a"/>'
+			);
+		})
+		.join("");
+
+	// Ontem, destacado — é o assunto deste relatório.
+	const iu = serie.length - 1;
+	const ontem =
+		'<rect x="' +
+		(x(iu) - 13) +
+		'" y="' +
+		m.t +
+		'" width="26" height="' +
+		ih +
+		'" fill="#021628" opacity=".06"/>' +
+		'<text x="' +
+		x(iu) +
+		'" y="' +
+		(m.t - 3) +
+		'" text-anchor="middle" font-size="10" font-weight="700" fill="#021628">ontem</text>';
+
+	const pts = (k, cor) =>
+		serie
+			.map(
+				(d, i) =>
+					'<circle cx="' +
+					x(i) +
+					'" cy="' +
+					y(d[k]) +
+					'" r="3.2" fill="' +
+					cor +
+					'" stroke="#fff" stroke-width="2"/>',
+			)
+			.join("");
+
+	const alvos = serie
+		.map(
+			(d, i) =>
+				'<rect class="hit" x="' +
+				(x(i) - 11) +
+				'" y="' +
+				m.t +
+				'" width="22" height="' +
+				ih +
+				'" fill="transparent" ' +
+				'data-i="' +
+				i +
+				'" tabindex="0" role="img" aria-label="' +
+				d.dia +
+				": " +
+				d.conversas +
+				" conversas, " +
+				d.leads +
+				' leads"/>',
+		)
+		.join("");
+
+	el.innerHTML =
+		'<div class="legenda">' +
+		'<span><i style="background:#036eff"></i>Conversas</span>' +
+		'<span><i style="background:#0481a0"></i>Leads</span>' +
+		'<span><i style="background:#d62b3a;border-radius:99px"></i>Dia com proposta na Bevi</span></div>' +
+		'<svg viewBox="0 0 ' +
+		W +
+		" " +
+		H +
+		'" width="100%" height="' +
+		H +
+		'" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Conversas e leads por dia, 18/08 a 03/09">' +
+		grid +
+		ontem +
+		props +
+		'<path d="' +
+		linha("conversas") +
+		'" fill="none" stroke="#036eff" stroke-width="2" stroke-linejoin="round"/>' +
+		'<path d="' +
+		linha("leads") +
+		'" fill="none" stroke="#0481a0" stroke-width="2" stroke-linejoin="round"/>' +
+		pts("conversas", "#036eff") +
+		pts("leads", "#0481a0") +
+		rotulos +
+		alvos +
+		'</svg><div class="tip" hidden></div>';
+
+	const tip = el.querySelector(".tip");
+	el.querySelectorAll(".hit").forEach((r) => {
+		function entrar() {
+			const d = serie[+r.dataset.i];
+			tip.hidden = false;
+			tip.innerHTML =
+				"<b>" +
+				d.dia.split("-").reverse().join("/") +
+				"</b>" +
+				'<span><i style="background:#036eff"></i>' +
+				d.conversas +
+				" conversas</span>" +
+				'<span><i style="background:#0481a0"></i>' +
+				d.leads +
+				" leads</span>" +
+				(d.propostas
+					? '<span><i style="background:#d62b3a;border-radius:99px"></i>' +
+						d.propostas +
+						" proposta</span>"
+					: "");
+			tip.style.left = (+r.dataset.i / (serie.length - 1)) * 100 + "%";
+		}
+		r.addEventListener("mouseenter", entrar);
+		r.addEventListener("focus", entrar);
+	});
+	el.addEventListener("mouseleave", () => {
+		tip.hidden = true;
+	});
+}
+
+// ================= A DOBRA: tudo que decide, em UMA tela =================
+
+// Funil compacto: 7 degraus em linha, com a queda entre cada par
+function montarFunilLinha(el) {
+	const f = D.total;
+	const et = [
+		{ r: "Pessoas", n: f.pessoas },
+		{ r: "Conversas", n: f.conversas },
+		{ r: "Identificados", n: f.identificados },
+		{ r: "Viram oferta", n: f.viu_oferta },
+		{ r: "Propostas", n: f.propostas },
+		{ r: "Na mesa", n: f.handoffs },
+		{ r: "Fechados", n: f.fechados },
+	];
+	el.innerHTML = et
+		.map((e, i) => {
+			const ant = i ? et[i - 1].n : null;
+			const pass = ant ? (100 * e.n) / ant : null;
+			const pior = pass !== null && pass < 35;
+			return (
+				(i
+					? '<div class="fl-seta" aria-hidden="true">' +
+						'<span class="' +
+						(pior ? "pior" : "") +
+						'">' +
+						pass.toFixed(0) +
+						"%</span>›</div>"
+					: "") +
+				'<div class="fl-item' +
+				(e.n === 0 ? " zero" : "") +
+				'">' +
+				'<b class="figure">' +
+				fmt.format(e.n) +
+				"</b><span>" +
+				e.r +
+				"</span></div>"
+			);
+		})
+		.join("");
+}
+
+// Origem compacta: só a barra de pipeline contra a de público
+function montarOrigemCompacta(el) {
+	const dados = D.por_origem.slice().sort((a, b) => b.pct_publico - a.pct_publico);
+	el.innerHTML = dados
+		.map((o) => {
+			const morto = o.pct_pipeline === 0;
+			return (
+				'<div class="oc">' +
+				'<div class="oc-rot">' +
+				o.origem +
+				"</div>" +
+				'<div class="oc-b"><div class="oc-t"><div class="oc-f pub" style="width:' +
+				Math.max(0.8, o.pct_publico) +
+				'%"></div></div>' +
+				"<b>" +
+				o.pct_publico.toString().replace(".", ",") +
+				"%</b></div>" +
+				'<div class="oc-b"><div class="oc-t"><div class="oc-f pip' +
+				(morto ? " zero" : "") +
+				'" style="width:' +
+				Math.max(0.8, o.pct_pipeline) +
+				'%"></div></div>' +
+				"<b" +
+				(morto ? ' class="nulo"' : "") +
+				">" +
+				o.pct_pipeline.toString().replace(".", ",") +
+				"%</b></div>" +
+				"</div>"
+			);
+		})
+		.join("");
+}
+
+// Fila de ação enxuta: só o que está vivo
+function montarFilaCurta(el) {
+	const vivos = D.mesa
+		.filter((m) => m.raia !== "perdido")
+		.map((m) => ({
+			est: "bad",
+			rot: "Esperando",
+			nome: m.nome,
+			onde: "Aguardando pagamento · " + (m.adm || ""),
+			valor: m.valor,
+			dias: m.dias,
+		}))
+		.concat(
+			D.acao
+				.filter((a) => a.raia !== "sem lead")
+				.map((a) => ({
+					est: "warn",
+					rot: "Sem toque",
+					nome: a.nome,
+					onde: "Viu oferta · " + raia(a.raia) + " · " + a.msgs + " msgs",
+					valor: null,
+					dias: a.dias,
+				})),
+		);
+	vivos.sort((x, y) => y.dias - x.dias);
+	const mortos = D.mesa.filter((m) => m.raia === "perdido").length;
+	el.innerHTML =
+		vivos
+			.slice(0, 4)
+			.map(
+				(l) =>
+					"<tr><td>" +
+					tag(l.est, l.rot) +
+					"</td><td><b>" +
+					l.nome +
+					"</b></td>" +
+					'<td class="mini">' +
+					l.onde +
+					"</td>" +
+					'<td class="rt">' +
+					(l.valor ? "<b>" + brl(l.valor) + "</b>" : '<span class="mini">—</span>') +
+					"</td>" +
+					'<td class="rt"><b>' +
+					l.dias +
+					"d</b></td></tr>",
+			)
+			.join("") +
+		'<tr><td colspan="5" class="mini" style="padding-top:9px">' +
+		"<b>+" +
+		(D.quentes.reduce((a, q) => a + q.n, 0) - vivos.length) +
+		" leads qualificados</b> parados de 9 a 15 dias · " +
+		mortos +
+		" handoffs com o lead já encerrado e o registro aberto (falso alarme, não fila).</td></tr>";
+}
+
+// Os 4 KPIs, versão curta
+function montarKPIsCurto(el) {
+	const sm = D.semana;
+	const taxa = (100 * sm.leads) / sm.conversas,
+		taxaAnt = (100 * sm.ant_leads) / sm.ant_conversas;
+	const kpis = [
+		{
+			ico: "dinheiro",
+			rot: "Propostas na semana",
+			val: sm.propostas,
+			tag: tag("bad", "era " + sm.ant_propostas + " · última em 26/08"),
+			pe: "Acumulado <b>" + D.total.propostas + "</b> · " + brl(D.total.pipeline) + " em cartas",
+		},
+		{
+			ico: "relogio",
+			rot: "Parado na mesa",
+			val: D.mesa.filter((m) => m.raia !== "perdido").length,
+			tag: tag("bad", D.mesa[0].dias + " dias o mais antigo"),
+			pe: "<b>" + brl(211258) + "</b> aguardando pagamento há 20 dias",
+		},
+		{
+			ico: "pessoa",
+			rot: "Conversa vira lead",
+			val: taxa.toFixed(0).replace(".", ",") + "<small>%</small>",
+			tag: delta(Math.round((100 * (taxa - taxaAnt)) / taxaAnt), true),
+			pe: "era <b>" + taxaAnt.toFixed(0) + "%</b> na semana anterior",
+		},
+		{
+			ico: "antena",
+			rot: "Retorno do anúncio pago",
+			val: "R$&nbsp;0",
+			tag: tag("bad", "53,6% do público"),
+			pe: "<b>" + fmt.format(D.por_origem[0].pessoas) + " pessoas</b>, nenhuma proposta",
+		},
+	];
+	el.innerHTML = kpis
+		.map(
+			(k) =>
+				'<div class="card"><div class="kpi kpi-curto">' +
+				'<div class="rot">' +
+				ICO[k.ico] +
+				k.rot +
+				"</div>" +
+				'<div class="val figure">' +
+				k.val +
+				"</div>" +
+				'<div style="margin:4px 0 3px">' +
+				k.tag +
+				"</div>" +
+				'<p class="pe">' +
+				k.pe +
+				"</p></div></div>",
+		)
+		.join("");
+}
+
+function montarAlertasCurto(el) {
+	const as = [
+		{
+			cls: "critico",
+			ico: "parar",
+			rot: "Pare esta campanha",
+			txt: "<b>1.273 pessoas, 0 conversas.</b> Veem 0,8 seção contra 5,1 do orgânico.",
+		},
+		{
+			cls: "critico",
+			ico: "relogio",
+			rot: "Dinheiro parado",
+			txt: "<b>" + brl(211258) + " há 20 dias</b> aguardando pagamento, sem ninguém atuando.",
+		},
+		{
+			cls: "atencao",
+			ico: "antena",
+			rot: "A Meta otimiza no escuro",
+			txt: "<b>28 de 45 avisos falharam.</b> Nenhum e-mail capturado em 40 leads.",
+		},
+	];
+	el.innerHTML = as
+		.map(
+			(a) =>
+				'<div class="al al-curto ' +
+				a.cls +
+				'">' +
+				ICO[a.ico] +
+				'<div class="txt"><b>' +
+				a.rot +
+				"</b>" +
+				a.txt +
+				"</div></div>",
+		)
+		.join("");
+}
+
+// ================= ABA 1 — a tela =================
+const D = DADOS;
+
+// ---------- Funil ----------
+function montarFunil(el, etapas) {
+	const topo = etapas[0].n;
+	el.innerHTML = etapas
+		.map((e, i) => {
+			const ant = i ? etapas[i - 1].n : null;
+			const pass = ant ? (100 * e.n) / ant : 100;
+			const perdeu = ant ? ant - e.n : 0;
+			// O número mora SEMPRE dentro da barra. A barra tem largura mínima justamente
+			// para caber o rótulo — posicionar o número por porcentagem o fazia colidir
+			// com a barra nos degraus pequenos, que são a maioria deste funil.
+			const larg = Math.max(0, (100 * e.n) / topo);
+			return (
+				'<div class="f-linha">' +
+				'<div class="f-rot">' +
+				e.rot +
+				(e.sub ? "<span>" + e.sub + "</span>" : "") +
+				"</div>" +
+				'<div class="f-trilho"><div class="f-barra" style="width:' +
+				larg +
+				'%">' +
+				"<span>" +
+				fmt.format(e.n) +
+				"</span></div></div>" +
+				'<div class="f-num">' +
+				(ant
+					? "<b>" +
+						pass.toFixed(1).replace(".", ",") +
+						'%</b> passou<br><span class="f-queda">−' +
+						fmt.format(perdeu) +
+						"</span> aqui"
+					: "topo do funil") +
+				"</div></div>"
+			);
+		})
+		.join("");
+}
+
+// ---------- Leads quentes parados ----------
+function montarQuentes(el) {
+	const max = Math.max.apply(
+		null,
+		D.quentes.map((d) => d.n),
+	);
+	const rot = {
+		em_negociacao: "Em negociação",
+		qualificado: "Qualificado",
+		aguardando_pagamento: "Aguardando pagamento",
+		proposta_enviada: "Proposta enviada",
+	};
+	el.innerHTML = D.quentes
+		.map(
+			(d) =>
+				'<div class="bl">' +
+				'<div class="fill' +
+				(d.dias_media >= 14 ? " alerta" : "") +
+				'" style="width:' +
+				(100 * d.n) / max +
+				'%"></div>' +
+				'<div class="rot">' +
+				(rot[d.raia] || d.raia) +
+				'<span class="tag ' +
+				(d.dias_media >= 14 ? "bad" : "warn") +
+				'">' +
+				ICO.relogio +
+				d.dias_media +
+				" dias parados</span></div>" +
+				'<div class="v">' +
+				d.n +
+				"</div></div>",
+		)
+		.join("");
+}
+
+// ---------- Onde a conversa morre ----------
+function montarMortes(el) {
+	const f = D.engajamento.por_faixa_msgs.slice().sort((a, b) => {
+		const o = { "1 msg": 0, "2-3": 1, "4-8": 2, "9+": 3 };
+		return o[a.faixa] - o[b.faixa];
+	});
+	const total = f.reduce((s, x) => s + x.n, 0);
+	const rot = {
+		"1 msg": "Escreveu 1 mensagem e sumiu",
+		"2-3": "2 a 3 mensagens",
+		"4-8": "4 a 8 mensagens",
+		"9+": "9 ou mais mensagens",
+	};
+	el.innerHTML = f
+		.map(
+			(x, i) =>
+				'<div class="bl">' +
+				'<div class="fill' +
+				(i === 0 ? " alerta" : "") +
+				'" style="width:' +
+				((100 * x.n) / total) * 2.4 +
+				'%"></div>' +
+				'<div class="rot">' +
+				rot[x.faixa] +
+				"</div>" +
+				'<div class="v">' +
+				x.n +
+				' <span class="mini">(' +
+				Math.round((100 * x.n) / total) +
+				"%)</span></div></div>",
+		)
+		.join("");
+}
+
+// ---------- Saúde dos sinais ----------
+function montarSaude(el) {
+	const itens = [
+		{
+			ico: "antena",
+			t: "Envio de conversão para a Meta",
+			estado: "bad",
+			rot: "QUEBRADO",
+			txt: "28 de 45 envios de <b>chat_iniciado</b> falharam: “dados de parâmetros do cliente insuficientes”. 14 continuam pendentes. O algoritmo da Meta está otimizando às cegas.",
+		},
+		{
+			ico: "olho",
+			t: "Avaliação de qualidade da conversa",
+			estado: "warn",
+			rot: "QUASE SEM COBERTURA",
+			txt: "2 de 131 conversas avaliadas (1,5%). O eval automático só dispara no handoff do WhatsApp — a web, que é a maioria, nunca é avaliada.",
+		},
+		{
+			ico: "chat",
+			t: "Turnos sem resposta do agente",
+			estado: "warn",
+			rot: "11 CASOS",
+			txt: "11 mensagens de cliente ficaram sem resposta (1,8% de 606 turnos). Baixo em percentual, fatal em unidade.",
+		},
+		{
+			ico: "aperto",
+			t: "Atrito na página",
+			estado: "warn",
+			rot: "AÇÃO PENDENTE",
+			txt: "72 cliques de raiva no período; o alvo nº 1 é o botão <b>“Fale no WhatsApp”</b> (10). O botão de maior intenção é o que mais irrita — e o WhatsApp gerou só 7 das 131 conversas.",
+		},
+		{
+			ico: "alerta",
+			t: "Teste da equipe entra como cliente",
+			estado: "warn",
+			rot: "FILTRADO À MÃO",
+			txt: "Os números desta tela já excluem o teste interno, mas isso foi feito <b>por fora</b>: a flag <b>is_simulated</b> não marca teste feito em produção. Precisa virar um campo no cadastro do contato.",
+		},
+		{
+			ico: "relogio",
+			t: "Observabilidade do agente",
+			estado: "bad",
+			rot: "INACESSÍVEL",
+			txt: "As credenciais do Langfuse no secret de produção retornam HTTP 403 em toda a API pública — custo, latência e os ~41 scores por turno não são consultáveis hoje.",
+		},
+	];
+	el.innerHTML = itens
+		.map(
+			(i) =>
+				'<div class="card" style="box-shadow:0 0 0 1px var(--border)"><div class="kpi">' +
+				'<div class="rot">' +
+				ICO[i.ico] +
+				i.t +
+				"</div>" +
+				'<div style="margin:7px 0 8px">' +
+				tag(i.estado, i.rot) +
+				"</div>" +
+				'<p class="mini" style="line-height:1.5">' +
+				i.txt +
+				"</p></div></div>",
+		)
+		.join("");
+}
+
+// ---------- Ação: os mais quentes ----------
+function montarAcao(el) {
+	el.innerHTML = D.acao_agora.itens
+		.map((i) => {
+			const grave = i.dias_sem_toque >= 9;
+			return (
+				"<tr><td><b>" +
+				i.nome +
+				'</b><div class="mini">' +
+				i.msgs +
+				" mensagens trocadas</div></td>" +
+				'<td class="mini">' +
+				i.raia.replace("_", " ") +
+				"</td>" +
+				'<td class="rt">' +
+				tag(grave ? "bad" : "warn", i.dias_sem_toque + " dias sem toque") +
+				"</td></tr>"
+			);
+		})
+		.join("");
+}
+
+// ---------- A frase do topo (template com variáveis, nunca texto fixo) ----------
+function montarFrase(el) {
+	const p = D.total.propostas,
+		v = brl(D.total.pipeline),
+		f = D.total.fechados;
+	const parados = D.mesa.length;
+	const dias = D.mesa[0].dias;
+	el.innerHTML =
+		'<div class="fr">' +
+		"<b>" +
+		p +
+		" propostas</b> e <b>" +
+		v +
+		"</b> em cartas na rua; " +
+		(f ? f + " venda(s) fechada(s)" : "<b>nenhuma venda</b>") +
+		" — <b>" +
+		parados +
+		" leads</b> esperam a mesa há <b>" +
+		dias +
+		" dias</b>." +
+		"</div>";
+}
+
+// ---------- Alertas: 3 visíveis ----------
+function montarAlertas(el) {
+	const as = [
+		{
+			cls: "critico",
+			ico: "relogio",
+			rot: "Mesa parada",
+			txt: "<b>4 casos entregues à mesa continuam sem desfecho — o mais antigo há 25 dias.</b> Em 3 deles o lead já virou perdido e o handoff nunca foi encerrado.",
+			acao: "Distribuir por nome hoje",
+		},
+		{
+			cls: "critico",
+			ico: "parar",
+			rot: "Parar campanha",
+			txt: "<b>A campanha …207680104 (Instagram) trouxe 1.273 pessoas e nenhuma conversa.</b> Cada visita vê 0,8 seção da página, contra 5,1 do orgânico — a pessoa chega, olha o topo e sai.",
+			acao: "Pausar e realocar",
+		},
+		{
+			cls: "atencao",
+			ico: "alerta",
+			rot: "A Meta otimiza no escuro",
+			txt: "<b>28 dos 45 avisos de “chat iniciado” não chegaram ao Facebook</b>, e nenhum e-mail foi capturado em 49 leads. O algoritmo aprende com dado incompleto — é a causa provável do público errado acima.",
+			acao: "Abrir chamado",
+		},
+	];
+	el.innerHTML =
+		as
+			.map(
+				(a) =>
+					'<div class="al ' +
+					a.cls +
+					'">' +
+					ICO[a.ico] +
+					'<div class="txt"><b>' +
+					a.rot +
+					"</b>" +
+					a.txt +
+					"</div>" +
+					'<span class="acao">' +
+					a.acao +
+					" →</span></div>",
+			)
+			.join("") +
+		'<div class="mini" style="padding-left:4px">Outros 6 sinais foram rebaixados a e-mail ou ao rodapé — alerta que nunca desliga vira papel de parede.</div>';
+}
+
+// ---------- Sparkline (contexto temporal sem ocupar um bloco) ----------
+function spark(vals, cor) {
+	const W = 110,
+		H = 26,
+		max = Math.max.apply(null, vals) || 1;
+	const pts = vals
+		.map(
+			(v, i) =>
+				((i * W) / (vals.length - 1)).toFixed(1) + "," + (H - 2 - (v / max) * (H - 5)).toFixed(1),
+		)
+		.join(" ");
+	return (
+		'<svg class="spark" viewBox="0 0 ' +
+		W +
+		" " +
+		H +
+		'" width="' +
+		W +
+		'" height="' +
+		H +
+		'" aria-hidden="true">' +
+		'<polyline points="' +
+		pts +
+		'" fill="none" stroke="' +
+		cor +
+		'" stroke-width="1.6" stroke-linejoin="round"/></svg>'
+	);
+}
+
+// ---------- Os 4 KPIs ----------
+function montarKPIs(el) {
+	const sm = D.semana;
+	const dPessoas = Math.round((100 * (sm.pessoas - sm.ant_pessoas)) / sm.ant_pessoas);
+	const dConv = Math.round((100 * (sm.conversas - sm.ant_conversas)) / sm.ant_conversas);
+	const taxa = (100 * sm.leads) / sm.conversas,
+		taxaAnt = (100 * sm.ant_leads) / sm.ant_conversas;
+	const dTaxa = Math.round((100 * (taxa - taxaAnt)) / taxaAnt);
+	const serie = D.serie.slice(-14);
+	const kpis = [
+		{
+			ico: "dinheiro",
+			rot: "Propostas novas na Bevi",
+			val: sm.propostas,
+			sufixo: "<small> na semana</small>",
+			tag: delta(-100, true),
+			pe:
+				"Na semana anterior foi " +
+				sm.ant_propostas +
+				". Acumulado: <b>" +
+				D.total.propostas +
+				" propostas</b> · " +
+				brl(D.total.pipeline) +
+				" · ticket " +
+				brl(D.total.ticket) +
+				". A última foi em <b>26/08</b>.",
+		},
+		{
+			ico: "relogio",
+			rot: "Casos parados na mesa",
+			val: D.mesa.length,
+			sufixo: "",
+			tag: tag("bad", D.mesa[0].dias + " dias o mais antigo"),
+			pe:
+				"Só <b>1 dos " +
+				D.mesa.length +
+				"</b> tem lead em raia viva (" +
+				brl(211258) +
+				" aguardando pagamento). " +
+				"Nos outros 3 o lead já foi encerrado e o handoff nunca foi fechado.",
+		},
+		{
+			ico: "pessoa",
+			rot: "Conversa que vira lead",
+			val: taxa.toFixed(1).replace(".", ","),
+			sufixo: "<small>%</small>",
+			tag: delta(dTaxa, true),
+			pe:
+				sm.leads +
+				" de " +
+				sm.conversas +
+				" conversas. Na semana anterior: <b>" +
+				taxaAnt.toFixed(1).replace(".", ",") +
+				"%</b> (" +
+				sm.ant_leads +
+				" de " +
+				sm.ant_conversas +
+				").<br>" +
+				spark(
+					serie.map((x) => x.conversas),
+					"#036eff",
+				) +
+				' <span class="mini">conversas por dia</span>',
+		},
+		{
+			ico: "antena",
+			rot: "Público pago que virou R$",
+			val: "0",
+			sufixo: "<small>%</small>",
+			tag: tag("bad", "53,6% do público · R$ 0"),
+			pe:
+				"Anúncio pago trouxe <b>" +
+				fmt.format(D.por_origem[0].pessoas) +
+				" pessoas</b> e nenhuma proposta. " +
+				"Todo o pipeline saiu de tráfego que não custou nada.",
+		},
+	];
+	el.innerHTML = kpis
+		.map(
+			(k) =>
+				'<div class="card"><div class="kpi">' +
+				'<div class="rot">' +
+				ICO[k.ico] +
+				k.rot +
+				"</div>" +
+				'<div class="val figure">' +
+				k.val +
+				k.sufixo +
+				"</div>" +
+				'<div style="margin:6px 0 2px">' +
+				k.tag +
+				"</div>" +
+				'<p class="pe">' +
+				k.pe +
+				"</p></div></div>",
+		)
+		.join("");
+}
+
+// ---------- A linha da reunião ----------
+function montarProva(el) {
+	const t = D.tempo_ate_carta;
+	el.innerHTML =
+		'<div class="prova-box">' +
+		ICO.ok +
+		"<div><b>O que a máquina faz bem, e vale dizer em voz alta:</b> " +
+		D.total.viu_oferta +
+		" pessoas viram uma <b>oferta real de consórcio na tela</b>, com mediana de <b>2 min 30 s</b> e " +
+		t.turnos_media.toString().replace(".", ",") +
+		" turnos desde o “oi” — inclusive de madrugada " +
+		"(11 conversas entre 0h e 6h). Nenhum vendedor humano faz isso às 3 da manhã.</div></div>";
+}
+
+// ---------- Placar de responsabilidade ----------
+function montarPlacar(el) {
+	const maq = [
+		["Pessoas que chegaram", fmt.format(D.total.pessoas)],
+		["Conversas conduzidas", D.total.conversas],
+		["Leads identificados", D.total.identificados],
+		["Ofertas reais mostradas", D.total.viu_oferta],
+		["Propostas criadas na Bevi", D.total.propostas],
+		["Crédito colocado em jogo", brl(D.total.pipeline)],
+		["Casos entregues à mesa", D.total.handoffs],
+	];
+	const mesa = [
+		["Casos recebidos", D.total.handoffs],
+		["Ainda sem desfecho", D.mesa.length],
+		["Mais antigo parado há", D.mesa[0].dias + " dias"],
+		["Leads que viraram perdido", "3 dos 4"],
+		["Motivo de perda registrado", "nenhum"],
+		["Vendas fechadas", D.total.fechados],
+	];
+	function col(tit, itens, cls, nota) {
+		return (
+			'<div class="card" style="box-shadow:0 0 0 1px var(--border)"><div class="card-h">' +
+			'<h3 style="font-size:14px">' +
+			tit +
+			'</h3></div><div class="card-b" style="padding-top:8px">' +
+			itens
+				.map(
+					(i) => '<div class="pl"><span>' + i[0] + '</span><b class="num">' + i[1] + "</b></div>",
+				)
+				.join("") +
+			'<p class="mini" style="margin-top:10px;font-style:italic">' +
+			nota +
+			"</p></div></div>"
+		);
+	}
+	el.innerHTML =
+		col(
+			"O que o agente entregou",
+			maq,
+			"ok",
+			"Do primeiro “oi” à proposta assinável na administradora, sem ninguém no meio.",
+		) +
+		col(
+			"O que aconteceu depois da entrega",
+			mesa,
+			"bad",
+			"“Concluído” encerra o transbordo — não é venda. Velocidade sozinha ainda não produziu contrato nenhum.",
+		);
+}
+
+// ---------- Linha de saúde (rodapé colapsado) ----------
+function montarResumoSaude(el) {
+	el.innerHTML =
+		ICO.alerta +
+		"<span><b>3 sinais cegos e 3 defeitos abertos</b> — o painel sabe onde ele mesmo não enxerga.</span>" +
+		'<span class="mini" style="margin-left:auto">abrir</span>';
+}
+
+// ---------- Tabela de ação (a fila real, com o estado do lead junto) ----------
+function montarTabelaAcao(el) {
+	const linhas = D.mesa
+		.map((m) => {
+			const vivo = m.raia !== "perdido";
+			return {
+				est: vivo ? "bad" : "neutro",
+				rot: vivo ? "Esperando" : "Encerrado",
+				nome: m.nome,
+				onde: vivo
+					? "Aguardando pagamento · " + (m.adm || "")
+					: "Perdido · handoff nunca foi fechado",
+				valor: m.valor,
+				dias: m.dias,
+				dono: "atribuído",
+				vivo: vivo,
+			};
+		})
+		.concat(
+			D.acao
+				.filter((a) => a.raia !== "sem lead")
+				.map((a) => ({
+					est: "warn",
+					rot: "Sem toque",
+					nome: a.nome,
+					onde: "Viu oferta · " + raia(a.raia) + " · " + a.msgs + " mensagens",
+					valor: null,
+					dias: a.dias,
+					dono: "sem dono",
+					vivo: true,
+				})),
+		);
+	linhas.sort((x, y) => (y.vivo ? 1 : 0) - (x.vivo ? 1 : 0) || y.dias - x.dias);
+	el.innerHTML =
+		linhas
+			.map(
+				(l) =>
+					"<tr" +
+					(l.vivo ? "" : ' style="opacity:.62"') +
+					">" +
+					"<td>" +
+					tag(l.est, l.rot) +
+					"</td>" +
+					"<td><b>" +
+					l.nome +
+					"</b></td>" +
+					'<td class="mini">' +
+					l.onde +
+					"</td>" +
+					'<td class="rt">' +
+					(l.valor
+						? "<b>" + brl(l.valor) + "</b>"
+						: '<span class="mini">sem proposta — valor não é gravado antes dela</span>') +
+					"</td>" +
+					'<td class="rt"><b>' +
+					l.dias +
+					" dias</b></td>" +
+					'<td class="mini">' +
+					l.dono +
+					"</td></tr>",
+			)
+			.join("") +
+		'<tr><td colspan="6" class="mini" style="padding-top:12px">' +
+		"<b>Leitura obrigatória:</b> 3 das 4 linhas de mesa têm o lead já encerrado e o handoff aberto para sempre — " +
+		"sem a coluna de estado, o painel gritaria “4 clientes esperando” todo dia e a equipe aprenderia a ignorá-lo. " +
+		"Só a primeira é dinheiro parado de verdade.</td></tr>";
+}
+
+// ---------- Inicialização ----------
+montarFrase(document.getElementById("frase"));
+montarAlertasCurto(document.getElementById("alertas"));
+montarKPIsCurto(document.getElementById("kpis"));
+montarFilaCurta(document.getElementById("fila-curta"));
+montarFunilLinha(document.getElementById("funil-linha"));
+montarOrigemCompacta(document.getElementById("origem-curta"));
+
+document.getElementById("tag-acao").innerHTML =
+	ICO.alerta + D.quentes.reduce((a, q) => a + q.n, 0) + " leads quentes parados";
+montarFunil(document.getElementById("funil"), [
+	{ rot: "Pessoas", sub: "visitas contáveis", n: D.total.pessoas },
+	{ rot: "Conversas", sub: "puxaram assunto", n: D.total.conversas },
+	{ rot: "Identificados", sub: "deram telefone", n: D.total.identificados },
+	{ rot: "Viram oferta", sub: "preço real na tela", n: D.total.viu_oferta },
+	{ rot: "Propostas", sub: "na administradora", n: D.total.propostas },
+	{ rot: "Na mesa", sub: "com um humano", n: D.total.handoffs },
+	{ rot: "Fechados", sub: "contrato assinado", n: D.total.fechados },
+]);
+montarProva(document.getElementById("prova"));
+montarPlacar(document.getElementById("placar"));
+montarResumoSaude(document.getElementById("resumo-saude"));
+montarSaude(document.getElementById("saude"));
+
+// ================= Blocos de leitura de negócio =================
+
+// ---------- Gráfico: para onde vai o público × de onde vem o dinheiro ----------
+// Barras pareadas, UM eixo só (ambas as séries são percentual do total, então
+// compartilham escala de verdade — não é eixo duplo disfarçado).
+function montarGraficoOrigem(el) {
+	const dados = D.por_origem.slice().sort((a, b) => b.pct_publico - a.pct_publico);
+	const max = 100;
+	const linhas = dados
+		.map((o) => {
+			const larguraPub = Math.max(0.6, o.pct_publico);
+			const larguraPip = Math.max(0.6, o.pct_pipeline);
+			const morto = o.pct_pipeline === 0;
+			return (
+				'<div class="og">' +
+				'<div class="og-rot">' +
+				o.origem +
+				"<span>" +
+				fmt.format(o.pessoas) +
+				" pessoas · " +
+				o.conversas +
+				" conversas · " +
+				(o.propostas
+					? o.propostas + " proposta" + (o.propostas > 1 ? "s" : "")
+					: "nenhuma proposta") +
+				"</span></div>" +
+				'<div class="og-barras">' +
+				'<div class="og-par"><span class="og-leg">Público</span>' +
+				'<div class="og-trilho"><div class="og-fill pub" style="width:' +
+				larguraPub +
+				'%"></div></div>' +
+				"<b>" +
+				o.pct_publico.toString().replace(".", ",") +
+				"%</b></div>" +
+				'<div class="og-par"><span class="og-leg">Pipeline</span>' +
+				'<div class="og-trilho"><div class="og-fill pip' +
+				(morto ? " zero" : "") +
+				'" style="width:' +
+				larguraPip +
+				'%"></div></div>' +
+				"<b>" +
+				o.pct_pipeline.toString().replace(".", ",") +
+				"%</b></div>" +
+				"</div>" +
+				'<div class="og-vered">' +
+				(morto ? tag("bad", "não gerou R$") : tag("ok", brl(o.valor))) +
+				"</div>" +
+				"</div>"
+			);
+		})
+		.join("");
+	el.innerHTML =
+		'<div class="legenda">' +
+		'<span><i style="background:#036eff"></i>Fatia do público que chegou</span>' +
+		'<span><i style="background:#0481a0"></i>Fatia do pipeline em R$ que saiu dali</span>' +
+		"</div>" +
+		linhas;
+}
+
+// ---------- Criativos: qual anúncio funciona ----------
+function montarCriativos(el) {
+	const cs = D.criativos.slice().sort((a, b) => {
+		const ta = a.conversas / a.pessoas,
+			tb = b.conversas / b.pessoas;
+		if (tb !== ta) return tb - ta;
+		return b.pessoas - a.pessoas;
+	});
+	const rede = { ig: "Instagram", an: "Audience Network", fb: "Facebook" };
+	el.innerHTML = cs
+		.map((c) => {
+			const taxa = (100 * c.conversas) / c.pessoas;
+			const sec = c.secoes === null ? 0 : c.secoes;
+			let est, rot;
+			if (taxa >= 10) {
+				est = "ok";
+				rot = "O que funciona";
+			} else if (taxa >= 2) {
+				est = "neutro";
+				rot = "Aceitável";
+			} else if (sec < 0.5) {
+				est = "bad";
+				rot = "Não chega a ler a página";
+			} else {
+				est = "warn";
+				rot = "Fraco";
+			}
+			const orgânico = c.criativo.indexOf("_") > 0;
+			return (
+				"<tr>" +
+				"<td>" +
+				tag(est, rot) +
+				"</td>" +
+				"<td>" +
+				(orgânico
+					? "<b>" + c.criativo + '</b><div class="mini">orgânico, não pago</div>'
+					: '<span class="mono" style="font-size:12px">…' +
+						c.criativo.slice(-9) +
+						'</span><div class="mini">' +
+						(rede[c.rede] || c.rede) +
+						"</div>") +
+				"</td>" +
+				'<td class="rt">' +
+				fmt.format(c.pessoas) +
+				"</td>" +
+				'<td class="rt"><b>' +
+				sec.toString().replace(".", ",") +
+				"</b></td>" +
+				'<td class="rt">' +
+				c.conversas +
+				"</td>" +
+				'<td class="rt"><b>' +
+				taxa.toFixed(2).replace(".", ",") +
+				"</b></td>" +
+				'<td class="rt">' +
+				c.leads +
+				"</td></tr>"
+			);
+		})
+		.join("");
+}
+
+// ---------- Bullets do especialista ----------
+function montarBullets(el) {
+	const grupos = [
+		{
+			tit: "Pare de pagar por isto",
+			ico: "parar",
+			cls: "bad",
+			itens: [
+				"<b>Nenhum criativo do Instagram pago gerou uma única conversa.</b> São 9 anúncios e 1.847 pessoas, todos com 0,0 a 0,4 seção vista por visita — a pessoa nem rola a página. Não é um criativo fraco: é o conjunto inteiro.",
+				"<b>54% do público veio de anúncio e produziu 0% do pipeline.</b> Os R$ 1,47 milhão em cartas na rua saíram de tráfego que não custou nada.",
+				"<b>O Audience Network é o único posicionamento pago que respira</b> — 3,7% de conversa e 2,1 seções vistas. Se a verba tem que ir para algum lugar hoje, é para lá, não para o feed do Instagram.",
+			],
+		},
+		{
+			tit: "Dobre a aposta aqui",
+			ico: "sobe",
+			cls: "ok",
+			itens: [
+				"<b>O link na bio do Instagram converte 39,4%</b> — 33 pessoas viraram 13 conversas e 7 leads. É a maior taxa de toda a operação, 12× a média, e ninguém está alimentando esse canal.",
+				"<b>O mesmo Instagram funciona sem pagar e não funciona pagando.</b> Isso desmonta a hipótese de “o público do Instagram não compra consórcio” — o problema é o anúncio e a segmentação, não a rede.",
+				"<b>“Orgânico com UTM” é 1,1% do público e 48% do pipeline.</b> Antes de comprar mais tráfego, vale perguntar por que o que já funciona recebe tão pouco volume.",
+			],
+		},
+		{
+			tit: "Pontos de atenção antes de decidir",
+			ico: "alerta",
+			cls: "warn",
+			itens: [
+				"<b>Não sabemos o tamanho do prejuízo, só que ele existe.</b> Sem custo de mídia no banco, dá para dizer que 2.516 pessoas não geraram receita, mas não se isso custou R$ 500 ou R$ 50 mil. É a primeira lacuna a fechar.",
+				"<b>“Direto” não quer dizer orgânico.</b> São 30% do público e metade do pipeline, mas parte disso é anúncio que perdeu o UTM no caminho. Enquanto o rastro não fechar, o crédito está sendo dado ao lugar errado.",
+				"<b>“Vindo de outro site” traz 739 pessoas, converte 3,5% e não gerou uma proposta.</b> Volume decente, resultado zero — vale entender que sites são esses antes de tratá-los como ganho.",
+				"<b>O sinal que a Meta recebe está quebrado</b> (28 de 45 eventos falham). Enquanto o algoritmo aprender com dado incompleto, trocar de criativo tende a repetir o mesmo público ruim.",
+			],
+		},
+		{
+			tit: "O que eu mediria a partir de amanhã",
+			ico: "olho",
+			cls: "neutro",
+			itens: [
+				"<b>Seções vistas por visita é o alarme antecipado.</b> Abaixo de 0,5 nenhum criativo desta base converteu; acima de 1,3, todos converteram. Dá para reprovar um anúncio em 24 h, sem esperar o funil inteiro.",
+				"<b>Custo por conversa, não por clique.</b> Clique aqui é barato e inútil; a unidade que importa é quanto custa alguém que escreve a primeira mensagem.",
+				"<b>Pipeline por origem, em R$ e não em contagem.</b> É o único corte que mostrou diferença real entre canais — leads por origem são parecidos, o dinheiro não.",
+			],
+		},
+	];
+	el.innerHTML = grupos
+		.map(
+			(g) =>
+				'<div class="bl-grupo"><div class="bl-tit">' +
+				ICO[g.ico] +
+				"<span>" +
+				g.tit +
+				"</span></div>" +
+				'<ul class="bl-lista">' +
+				g.itens.map((i) => "<li>" + i + "</li>").join("") +
+				"</ul></div>",
+		)
+		.join("");
+}
+
+// ================= ABA DIÁRIA =================
+const O = D.ontem,
+	M7 = D.media7;
+
+function vsMedia(valor, media, maiorEhMelhor) {
+	if (!media) return tag("neutro", "sem base de comparação");
+	const pct = Math.round((100 * (valor - media)) / media);
+	if (Math.abs(pct) < 12) return tag("neutro", ICO ? "na média dos 7 dias" : "na média");
+	const bom = maiorEhMelhor ? pct > 0 : pct < 0;
+	return tag(bom ? "ok" : "bad", (pct > 0 ? "+" : "") + pct + "% vs. a média de 7 dias");
+}
+
+function montarFraseDia(el) {
+	el.innerHTML =
+		'<div class="fr">Ontem entraram <b>' +
+		O.conversas +
+		" conversas</b> — a média dos 7 dias anteriores é " +
+		M7.conversas.toString().replace(".", ",") +
+		". <b>Nenhuma virou lead</b>, e <b>" +
+		D.quentes.reduce((s, q) => s + q.n, 0) +
+		" clientes qualificados</b> seguem parados esperando alguém.</div>";
+}
+
+function montarAlertasDia(el) {
+	const as = [
+		{
+			cls: "critico",
+			ico: "relogio",
+			rot: "Dia sem lead",
+			txt: "<b>As 2 conversas de ontem morreram na primeira mensagem.</b> Nenhuma virou lead e nenhuma chegou a ver uma oferta. Foi o pior dia da série de 17 dias.",
+			acao: "Ler as 2 conversas",
+		},
+		{
+			cls: "critico",
+			ico: "dinheiro",
+			rot: "Dinheiro parado",
+			txt:
+				"<b>Uma proposta de " +
+				brl(211258) +
+				" no Itaú está aguardando pagamento há 20 dias</b>, com o handoff aberto e ninguém atuando.",
+			acao: "Cobrar hoje",
+		},
+		{
+			cls: "atencao",
+			ico: "antena",
+			rot: "Anúncio sem retorno",
+			txt: "<b>Uma das 2 conversas veio de anúncio pago</b> — e o pago já acumula 53,6% do público com <b>zero</b> em pipeline.",
+			acao: "Ver aba semanal",
+		},
+	];
+	el.innerHTML = as
+		.map(
+			(a) =>
+				'<div class="al ' +
+				a.cls +
+				'">' +
+				ICO[a.ico] +
+				'<div class="txt"><b>' +
+				a.rot +
+				"</b>" +
+				a.txt +
+				"</div>" +
+				'<span class="acao">' +
+				a.acao +
+				" →</span></div>",
+		)
+		.join("");
+}
+
+function montarKPIsDia(el) {
+	const kpis = [
+		{
+			ico: "pessoa",
+			rot: "Pessoas na página",
+			val: fmt.format(O.pessoas),
+			sufixo: "",
+			tag: vsMedia(O.pessoas, M7.pessoas, true),
+			pe:
+				"Média dos 7 dias anteriores: " +
+				M7.pessoas.toString().replace(".", ",") +
+				" por dia. O tráfego não foi o problema de ontem.",
+		},
+		{
+			ico: "chat",
+			rot: "Conversas iniciadas",
+			val: O.conversas,
+			sufixo: "",
+			tag: vsMedia(O.conversas, M7.conversas, true),
+			pe:
+				"Média: " +
+				M7.conversas.toString().replace(".", ",") +
+				" por dia. De 182 pessoas na página, 2 puxaram assunto — <b>1,1%</b>.",
+		},
+		{
+			ico: "olho",
+			rot: "Viram uma oferta",
+			val: O.viram_oferta,
+			sufixo: "",
+			tag: tag("bad", "nenhuma chegou ao preço"),
+			pe: "Ninguém chegou a ver carta de crédito na tela. É o degrau onde a venda começa a existir.",
+		},
+		{
+			ico: "dinheiro",
+			rot: "Leads e propostas",
+			val: O.leads + " / " + O.propostas,
+			sufixo: "",
+			tag: vsMedia(O.leads, M7.leads, true),
+			pe: "Nenhum lead identificado e nenhuma proposta nova. A última proposta na Bevi foi em <b>26/08</b>, há 9 dias.",
+		},
+	];
+	el.innerHTML = kpis
+		.map(
+			(k) =>
+				'<div class="card"><div class="kpi">' +
+				'<div class="rot">' +
+				ICO[k.ico] +
+				k.rot +
+				"</div>" +
+				'<div class="val figure">' +
+				k.val +
+				k.sufixo +
+				"</div>" +
+				'<div style="margin:6px 0 2px">' +
+				k.tag +
+				"</div>" +
+				'<p class="pe">' +
+				k.pe +
+				"</p></div></div>",
+		)
+		.join("");
+}
+
+function montarTabelaOntem(el) {
+	el.innerHTML = O.detalhe
+		.map(
+			(c) =>
+				"<tr><td><b>" +
+				c.hora +
+				"</b></td><td>" +
+				(c.canal === "web" ? "Site" : "WhatsApp") +
+				"</td>" +
+				"<td>" +
+				c.origem +
+				"</td>" +
+				'<td class="rt">' +
+				tag("bad", c.msgs + " mensagem") +
+				"</td>" +
+				'<td class="mini">' +
+				raia(c.estagio) +
+				"</td></tr>",
+		)
+		.join("");
+}
+
+function montarAcaoDia(el) {
+	const linhas = D.mesa
+		.map((m) => {
+			const vivo = m.raia !== "perdido";
+			return {
+				est: vivo ? "bad" : "neutro",
+				rot: vivo ? "Esperando" : "Encerrado",
+				nome: m.nome,
+				onde: vivo
+					? "Aguardando pagamento · " + (m.adm || "")
+					: "Perdido · handoff nunca foi fechado",
+				valor: m.valor,
+				dias: m.dias,
+				vivo: vivo,
+			};
+		})
+		.concat(
+			D.acao
+				.filter((a) => a.raia !== "sem lead")
+				.slice(0, 3)
+				.map((a) => ({
+					est: "warn",
+					rot: "Sem toque",
+					nome: a.nome,
+					onde: "Viu oferta · " + raia(a.raia) + " · " + a.msgs + " mensagens",
+					valor: null,
+					dias: a.dias,
+					vivo: true,
+				})),
+		);
+	linhas.sort((x, y) => (y.vivo ? 1 : 0) - (x.vivo ? 1 : 0) || y.dias - x.dias);
+	el.innerHTML = linhas
+		.map(
+			(l) =>
+				"<tr" +
+				(l.vivo ? "" : ' style="opacity:.6"') +
+				">" +
+				"<td>" +
+				tag(l.est, l.rot) +
+				"</td>" +
+				"<td><b>" +
+				l.nome +
+				"</b></td>" +
+				'<td class="mini">' +
+				l.onde +
+				"</td>" +
+				'<td class="rt">' +
+				(l.valor ? "<b>" + brl(l.valor) + "</b>" : '<span class="mini">sem proposta</span>') +
+				"</td>" +
+				'<td class="rt"><b>' +
+				l.dias +
+				" dias</b></td></tr>",
+		)
+		.join("");
+}
+
+function montarQuentesDia(el) {
+	const max = Math.max.apply(
+		null,
+		D.quentes.map((d) => d.n),
+	);
+	const rot = {
+		em_negociacao: "Em negociação",
+		qualificado: "Qualificado",
+		aguardando_pagamento: "Aguardando pagamento",
+		proposta_enviada: "Proposta enviada",
+	};
+	el.innerHTML = D.quentes
+		.map(
+			(d) =>
+				'<div class="bl">' +
+				'<div class="fill' +
+				(d.dias_media >= 14 ? " alerta" : "") +
+				'" style="width:' +
+				(100 * d.n) / max +
+				'%"></div>' +
+				'<div class="rot">' +
+				(rot[d.raia] || d.raia) +
+				'<span class="tag ' +
+				(d.dias_media >= 14 ? "bad" : "warn") +
+				'">' +
+				ICO.relogio +
+				d.dias_media +
+				" dias parados</span></div>" +
+				'<div class="v">' +
+				d.n +
+				"</div></div>",
+		)
+		.join("");
+}
+
+// ---------- Aba 2: tabelas geradas ----------
+const LACUNAS = [
+	[
+		"<b>A âncora que falta no anti-eco</b> <span class='tag bad'>defeito ativo</span>",
+		"19 visitas que geraram conversa são descartadas como eco de prefetch, escondendo 22 conversas e 8 leads da atribuição. A melhor campanha da conta aparece com zero.",
+		"Estender ao <code class='mono'>VISITA_NAO_E_ECO</code> a mesma âncora que <code class='mono'>VISITA_DE_GENTE</code> já tem: visita que produziu conversa nunca é descartada.",
+		"Baixo",
+	],
+	[
+		"Pipeline em R$ antes da proposta",
+		"<code class='mono'>leads.credit_value</code> é NULL em 49 de 49. Só sabemos quanto vale um negócio depois que ele virou proposta — 8 de 49.",
+		"Gravar o valor do bem no lead assim que o cliente o declara. O dado já existe em <code class='mono'>conversations.metadata.qualifyAnswers.creditMax</code> e no insight <code class='mono'>budget</code>.",
+		"Baixo",
+	],
+	[
+		"Investimento de mídia",
+		"Sem custo não há CPL, CAC nem ROAS. Medimos só o numerador: sabemos que uma campanha trouxe 1.273 pessoas e zero conversas, mas não quanto isso custou.",
+		"Integrar a Marketing API da Meta (insights por <code class='mono'>campaign_id</code>, que já é a chave que gravamos) numa tabela de spend diário.",
+		"Médio",
+	],
+	[
+		"Motivo de perda",
+		"12 leads foram para <code class='mono'>perdido</code> e <code class='mono'>notes</code> está NULL nos 12. Perda por sumiço e reprovação da administradora viram a mesma linha.",
+		"Enum <code class='mono'>lost_reason</code> obrigatório na transição, com opção para o worker (inatividade) e para a mesa (manual).",
+		"Baixo",
+	],
+	[
+		"Saúde do sinal de mídia",
+		"28 de 45 <code class='mono'>chat_iniciado</code> falharam na Meta e nenhuma tela lê <code class='mono'>conversion_events</code>. A otimização da campanha está cega e ninguém foi avisado.",
+		"Um cartão na one-page lendo status da tabela + corrigir o disparo (hoje sai sem telefone e a Meta recusa por dado insuficiente).",
+		"Baixo",
+	],
+	[
+		"Meta do mês",
+		"Não existe tabela de objetivo. “Estamos bem?” hoje não tem resposta possível — só “estamos assim”.",
+		"Tabela simples de meta por mês (contratos e R$), editável no admin. Sem isso o painel informa, mas não cobra.",
+		"Baixo",
+	],
+	[
+		"Avaliação de conversa ligada",
+		"A rubrica de 6 dimensões existe e funciona, mas só dispara no handoff do WhatsApp: 2 de 131 conversas avaliadas. A web, que é a maioria, nunca é avaliada.",
+		"Chamar <code class='mono'>triggerEvalScoring</code> também no encerramento da conversa web. A capacidade já está construída — está desligada.",
+		"Baixo",
+	],
+];
+
+const FASES = [
+	[
+		"Fase 1",
+		"A tela que já dá para usar",
+		[
+			"<b>Corrigir a âncora do anti-eco</b> — sem isso a tabela de campanha nasce mentindo",
+			"Endpoint <code class='mono'>/api/admin/one-page</code> compondo o que já existe",
+			"Os 5 KPIs com tendência vs. período anterior",
+			"Funil único de 7 etapas",
+			"Tabela de campanhas com alerta de campanha sem conversa",
+		],
+		"Nada de novo no banco. É composição.",
+	],
+	[
+		"Fase 2",
+		"Fechar as lacunas baratas",
+		[
+			"<code class='mono'>lost_reason</code> na transição para perdido",
+			"Valor do bem gravado no lead",
+			"Cartão de saúde do sinal Meta",
+			"Tabela de meta do mês",
+		],
+		"Quatro mudanças pequenas de schema; cada uma acende um bloco da tela.",
+	],
+	[
+		"Fase 3",
+		"Ligar o que está desligado",
+		[
+			"Avaliação automática da conversa web",
+			"Widgets para os 25 scores órfãos do Langfuse",
+			"Custo por conversa cruzando <code class='mono'>sessionId</code> com <code class='mono'>conversationId</code>",
+		],
+		"Zero dado novo — só passar a olhar o que já é produzido.",
+	],
+	[
+		"Fase 4",
+		"Sair da tela",
+		[
+			"Resumo diário por e-mail às 8h",
+			"Export CSV do funil e das campanhas",
+			"Investimento da Meta via Marketing API → CPL e ROAS reais",
+		],
+		"O painel passa a procurar o gestor, em vez de esperar.",
+	],
+];
+
+const ARMADILHAS = [
+	[
+		"O denominador que mente",
+		"Somar robô e gente no mesmo total fazia a tela mostrar 0,056% de visita→conversa quando a taxa sobre gente é 1,15%. Hoje 87% das linhas de <code class='mono'>visits</code> são máquina.",
+		"perigo",
+	],
+	[
+		"O funil que cresce",
+		"Sem exigir <code class='mono'>visit_id</code>, conversa sem origem entrava no meio do funil e o resultado passava do topo — 328%.",
+		"perigo",
+	],
+	[
+		"O eco do prefetch",
+		"Uma navegação virava quatro chegadas. 390 de 756 num único dia, e só no tráfego pago.",
+		"alerta",
+	],
+	[
+		"A nota que elogia a derrota",
+		"O juiz LLM deu 0,923 de “a venda andou” no turno que anunciou “pré-cadastrado no Itaú” — com zero propostas no banco. Juiz é hipótese; sinal determinístico é prova.",
+		"perigo",
+	],
+	[
+		"Média de tempo",
+		"Média de dias no funil é o número mais enganoso da operação; a mesa tem p50 de 401 h e um caso de 11 h. Sempre mediana e p90, nunca média.",
+		"alerta",
+	],
+	[
+		"A tela que a mesa não abre",
+		"Toda a instrumentação de mesa (fila sem dono, SLA, p50/p90) vive em telas que o papel <code class='mono'>mesa_externa</code> não tem permissão de abrir.",
+		"alerta",
+	],
+];
+
+const tb = document.getElementById("tbl-lacunas");
+if (tb)
+	tb.innerHTML = LACUNAS.map(
+		(l) =>
+			"<tr><td><b>" +
+			l[0] +
+			'</b></td><td class="mini">' +
+			l[1] +
+			'</td><td class="mini">' +
+			l[2] +
+			"</td>" +
+			'<td class="rt"><span class="tag ' +
+			(l[3] === "Baixo" ? "ok" : "warn") +
+			'">' +
+			l[3] +
+			"</span></td></tr>",
+	).join("");
+
+const fs = document.getElementById("fases");
+if (fs)
+	fs.innerHTML = FASES.map(
+		(f) =>
+			'<div class="card" style="box-shadow:0 0 0 1px var(--border)"><div class="card-h">' +
+			'<div class="eyebrow">' +
+			f[0] +
+			'</div><h3 style="font-size:14px;margin-top:4px">' +
+			f[1] +
+			"</h3></div>" +
+			'<div class="card-b"><ul class="lista" style="font-size:12.5px">' +
+			f[2].map((i) => "<li>" + i + "</li>").join("") +
+			'</ul><p class="mini" style="margin-top:9px;font-style:italic">' +
+			f[3] +
+			"</p></div></div>",
+	).join("");
+
+const ar = document.getElementById("armadilhas");
+if (ar)
+	ar.innerHTML = ARMADILHAS.map(
+		(a) =>
+			'<div class="prd-nota ' + a[2] + '" style="margin:0"><b>' + a[0] + "</b>" + a[1] + "</div>",
+	).join("");
+
+// ---------- Inicialização dos blocos de negócio e do diário ----------
+montarGraficoOrigem(document.getElementById("graf-origem"));
+montarCriativos(document.getElementById("tbl-criativos"));
+montarBullets(document.getElementById("bullets"));
+montarFraseDia(document.getElementById("frase-dia"));
+montarAlertasDia(document.getElementById("alertas-dia"));
+montarKPIsDia(document.getElementById("kpis-dia"));
+montarTabelaOntem(document.querySelector("#tbl-ontem"));
+montarAcaoDia(document.querySelector("#tbl-acao-dia"));
+montarQuentesDia(document.getElementById("quentes-dia"));
+desenharSerie(document.getElementById("grafico-dia"), D.serie);
+
+</script>
+</body>
+</html>
