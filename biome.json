@@ -18,7 +18,8 @@
 			"!.claude",
 			"!.impeccable",
 			"!docs/**/*.json",
-			"!docs/**/*-referencia.ts"
+			"!docs/**/*-referencia.ts",
+			"!docs/mockups"
 		]
 	},
 	"formatter": {
