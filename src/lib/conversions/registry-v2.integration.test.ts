@@ -53,6 +53,9 @@ describe.skipIf(!RUN)("registry V2 — contrato comercial", () => {
 		await registry.registrarLeadIdentificado(conv.id);
 		await registry.registrarConversaoDoEstagio(lead.id, "qualificado");
 		await registry.registrarConversaoDoEstagio(lead.id, "qualificado"); // retry
+		await registry.registrarOfertaExibida(lead.id, "offer-1");
+		await registry.registrarPropostaEnviada(lead.id, "proposal-1");
+		await registry.registrarCompraConfirmada(lead.id, "proposal-1", "sale-1");
 		const rows = await db
 			.select()
 			.from(conversionEvents)
@@ -60,11 +63,19 @@ describe.skipIf(!RUN)("registry V2 — contrato comercial", () => {
 		expect(rows.map((r) => r.eventName).sort()).toEqual([
 			"conversation_started",
 			"lead",
+			"offer_viewed",
+			"proposal_sent",
+			"purchase",
 			"qualified_lead",
 		]);
 		const qualified = rows.find((r) => r.eventName === "qualified_lead");
 		expect(qualified).toMatchObject({ campaignId: "campaign-1", adsetId: "adset-1", adId: "ad-1" });
 		expect(qualified?.eventKey).toBe(`lead:${lead.id}:qualified_lead`);
 		expect(qualified?.hashedEmail).not.toContain("cliente@example.com");
+		expect(rows.find((r) => r.eventName === "purchase")).toMatchObject({
+			eventKey: `lead:${lead.id}:purchase:proposal-1`,
+			saleId: "sale-1",
+			currency: "BRL",
+		});
 	});
 });

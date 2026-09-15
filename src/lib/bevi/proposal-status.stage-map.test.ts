@@ -4,7 +4,11 @@
 
 import { describe, expect, it } from "vitest";
 import type { ProposalStatus } from "@/lib/adapters/proposal-gateway";
-import { PROPOSAL_STATUS_TO_STAGE, stageForProposalStatus } from "./proposal-status";
+import {
+	PROPOSAL_STATUS_TO_STAGE,
+	purchaseConfirmedByBevi,
+	stageForProposalStatus,
+} from "./proposal-status";
 
 function status(partial: Partial<ProposalStatus> & { systemicValue?: string }): ProposalStatus {
 	const { systemicValue, ...rest } = partial;
@@ -52,6 +56,11 @@ describe("FIX-44 — stageForProposalStatus", () => {
 		expect(stageForProposalStatus(status({ systemicValue: "prop_efetivada" }))).toBe(
 			"fechado_ganho",
 		);
+	});
+
+	it("Purchase exige efetivação; approval não é confirmação financeira", () => {
+		expect(purchaseConfirmedByBevi(status({ systemicValue: "prop_efetivada" }))).toBe(true);
+		expect(purchaseConfirmedByBevi(status({ systemicValue: "approved" }))).toBe(false);
 	});
 
 	it("approvedAt preenchido → fechado_ganho (precedência sobre history)", () => {

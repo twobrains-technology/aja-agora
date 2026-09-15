@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
 import { getDiscoveryAdapter } from "@/lib/adapters";
+import { getLeadIdForConversation } from "@/lib/admin/lead-stage-tracker";
 import type { Category, ConversationMetadata, ExperiencePrev, Persona } from "@/lib/agent/personas";
 import { ROUTABLE_CATEGORIES } from "@/lib/agent/personas";
 import { LANCE_EMBUTIDO_DEFAULT_PERCENT, objetivoForPrazo } from "@/lib/agent/qualify-config";
@@ -290,6 +291,13 @@ export async function finalizarOfertaReal(from: string, conversationId: string):
 		// fechada. O transbordo pra mesa acontece nos dois casos.
 		const { sendFechoPedirOi } = await import("@/lib/bevi/fecho-pedir-oi");
 		await sendFechoPedirOi(conversationId, { janelaJaAberta: true }).catch(() => {});
+		if (proposta) {
+			const leadId = await getLeadIdForConversation(conversationId);
+			if (leadId) {
+				const { registrarPropostaEnviada } = await import("@/lib/conversions/registry");
+				await registrarPropostaEnviada(leadId, res.proposalId);
+			}
+		}
 	} catch {
 		await sendTextMessage(
 			from,
