@@ -15,6 +15,9 @@ export interface CampaignParams {
 	utmTerm: string | null;
 	gclid: string | null;
 	fbclid: string | null;
+	campaignId?: string | null;
+	adsetId?: string | null;
+	adId?: string | null;
 }
 
 /** O que o server component do Next entrega em `searchParams`. */
@@ -48,6 +51,11 @@ export function parseCampaignParams(input: CampaignParamsInput): CampaignParams 
 		utmTerm: clean(input, "utm_term"),
 		gclid: clean(input, "gclid"),
 		fbclid: clean(input, "fbclid"),
+		// Aceitamos os nomes usados pelos links do Meta e aliases explícitos;
+		// todos chegam ao mesmo contrato persistido, sem inferência por UTM.
+		campaignId: clean(input, "campaign_id") ?? clean(input, "meta_campaign_id"),
+		adsetId: clean(input, "adset_id") ?? clean(input, "meta_adset_id"),
+		adId: clean(input, "ad_id") ?? clean(input, "meta_ad_id"),
 	};
 }
 
@@ -91,6 +99,9 @@ export function assinaturaDaCampanha(params: CampaignParams): string | null {
 		params.utmTerm,
 		params.gclid,
 		params.fbclid,
+		params.campaignId,
+		params.adsetId,
+		params.adId,
 	]
 		.map((valor) => valor ?? "")
 		.join(SEPARADOR);

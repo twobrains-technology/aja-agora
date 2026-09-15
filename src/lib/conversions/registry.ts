@@ -1,138 +1,233 @@
-// src/lib/conversions/registry.ts
-//
-// Registra o FATO de negócio: um marco do funil foi atingido por um lead.
-//
-// Separado do envio de propósito. O fato é gravado sempre — com a flag ligada
-// ou desligada — porque é ele que permite ligar a chave depois e reenviar o
-// histórico. O envio é responsabilidade de `dispatch.ts`.
-//
-// Como em todo o caminho de atribuição: registrar conversão NUNCA derruba a
-// venda. Falhou, loga e segue.
-
-import { eq } from "drizzle-orm";
+// Fonte única dos fatos de conversão V2. Endpoints e workers registram fatos;
+// só este módulo conhece a fila/atribuição da Meta.
+import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { beviProposals, conversations, conversionEvents, leads, visits } from "@/db/schema";
 import type { LeadStage } from "@/lib/admin/lead-stages";
 import { contentIdDoEvento, numeroOuNulo } from "./conteudo-do-evento";
-import { hashEmail, hashPhone, montarFbc } from "./hash";
+import { hashEmail, hashExternalId, hashPhone, montarFbc } from "./hash";
 
-export type ConversionEventName = "lead_qualificado" | "proposta_criada" | "contrato_fechado";
+export type ConversionEventName =
+	| "conversation_started"
+	| "lead"
+	| "qualified_lead"
+	| "offer_viewed"
+	| "proposal_sent"
+	| "purchase";
 
-/**
- * Quais estágios do funil viram sinal pra mídia.
- *
- * Deliberadamente poucos. Mandar todo estágio ensinaria o algoritmo a buscar
- * quem CONVERSA, não quem COMPRA — e é justamente o contrário do que a operação
- * quer otimizar. `qualificado` entra por volume (o algoritmo precisa de sinal
- * frequente pra aprender), `fechado_ganho` por ser a verdade do negócio.
- */
 const ESTAGIO_PARA_EVENTO: Partial<Record<LeadStage, ConversionEventName>> = {
-	qualificado: "lead_qualificado",
-	proposta_enviada: "proposta_criada",
-	fechado_ganho: "contrato_fechado",
+	qualificado: "qualified_lead",
 };
+
+export function contratoV2Ativo(): boolean {
+	return process.env.META_CONVERSION_CONTRACT_V2_ENABLED === "true";
+}
 
 export function eventoDoEstagio(stage: LeadStage): ConversionEventName | null {
 	return ESTAGIO_PARA_EVENTO[stage] ?? null;
 }
 
-/**
- * Registra o marco. Idempotente pela chave `<leadId>:<evento>`: a mesma
- * transição disparada duas vezes (retry, reentrega de webhook, admin clicando
- * de novo) não vira dois sinais — o índice único no banco é quem garante,
- * não a boa vontade do chamador.
- */
-export async function registrarConversao(input: {
-	leadId: string;
+function chave(input: {
 	eventName: ConversionEventName;
+	leadId?: string | null;
+	conversationId?: string | null;
+	entityId?: string | null;
+}): string | null {
+	if (input.eventName === "conversation_started")
+		return input.conversationId
+			? `conversation:${input.conversationId}:conversation_started`
+			: null;
+	if (input.eventName === "lead" || input.eventName === "qualified_lead")
+		return input.leadId ? `lead:${input.leadId}:${input.eventName}` : null;
+	if (input.eventName === "offer_viewed")
+		return input.leadId && input.entityId
+			? `lead:${input.leadId}:offer_viewed:${input.entityId}`
+			: null;
+	if (input.eventName === "proposal_sent")
+		return input.leadId && input.entityId
+			? `lead:${input.leadId}:proposal_sent:${input.entityId}`
+			: null;
+	if (input.eventName === "purchase")
+		return input.leadId && input.entityId
+			? `lead:${input.leadId}:purchase:${input.entityId}`
+			: null;
+	return null;
+}
+
+export async function registrarEventoDeConversao(input: {
+	eventName: ConversionEventName;
+	leadId?: string | null;
+	conversationId?: string | null;
+	entityId?: string | null;
+	saleId?: string | null;
 	occurredAt?: Date;
+	previousStage?: string | null;
+	currentStage?: string | null;
 }): Promise<void> {
+	if (!contratoV2Ativo()) return;
 	try {
-		const lead = await db.query.leads.findFirst({
-			where: eq(leads.id, input.leadId),
-		});
-		if (!lead) return;
+		const lead = input.leadId
+			? await db.query.leads.findFirst({ where: eq(leads.id, input.leadId) })
+			: null;
+		if (lead?.isSimulated) return;
+		const conversationId = input.conversationId ?? lead?.conversationId ?? null;
+		const conversa = conversationId
+			? await db.query.conversations.findFirst({ where: eq(conversations.id, conversationId) })
+			: null;
+		if (conversa?.isSimulated) return;
+		const eventKey = chave({ ...input, leadId: lead?.id ?? input.leadId, conversationId });
+		if (!eventKey) return;
 
-		// Lead de teste nunca vira sinal de mídia — ensinar o algoritmo com
-		// conversa de simulador é pior do que não ensinar nada.
-		if (lead.isSimulated) return;
-
-		const conversa = await db.query.conversations.findFirst({
-			where: eq(conversations.id, lead.conversationId),
-		});
-
+		// Lead exige conversa e contato válido; nome, CPF ou intenção não bastam.
+		if (
+			input.eventName === "lead" &&
+			(!conversa || (!hashEmail(lead?.email) && !hashPhone(lead?.phone)))
+		)
+			return;
 		const visita = conversa?.visitId
 			? await db.query.visits.findFirst({ where: eq(visits.id, conversa.visitId) })
 			: null;
-
-		// Click-to-WhatsApp exige `action_source` próprio; o resto é web.
-		const ehCtwa = Boolean(visita?.ctwaClid);
-
-		// A carta a que este marco se refere. A proposta manda quando existe (é
-		// escolha real do cliente na administradora); sem ela, a landing/campanha
-		// dá a vertical e o valor declarado dá a faixa. Sem categoria nenhuma o
-		// evento sai sem `content_id`, como saía antes — chutar seria pior.
-		const proposta = await db.query.beviProposals.findFirst({
-			where: eq(beviProposals.leadId, lead.id),
-			orderBy: (t, { desc }) => [desc(t.createdAt)],
-		});
-
-		const creditoDaProposta = numeroOuNulo(proposta?.creditValue);
-		const creditoDoLead = numeroOuNulo(lead.creditValue);
-
+		const primeiraVisita = visita
+			? await db.query.visits.findFirst({
+					where: eq(visits.visitorId, visita.visitorId),
+					orderBy: [asc(visits.createdAt)],
+				})
+			: null;
+		const proposta = input.entityId
+			? await db.query.beviProposals.findFirst({
+					where: eq(beviProposals.proposalId, input.entityId),
+				})
+			: lead
+				? await db.query.beviProposals.findFirst({
+						where: eq(beviProposals.leadId, lead.id),
+						orderBy: (t, { desc }) => [desc(t.createdAt)],
+					})
+				: null;
+		const valor = numeroOuNulo(proposta?.creditValue) ?? numeroOuNulo(lead?.creditValue);
 		const contentId = contentIdDoEvento({
 			segmentoBevi: proposta?.segmento,
-			creditoDaProposta,
-			creditoDoLead,
+			creditoDaProposta: numeroOuNulo(proposta?.creditValue),
+			creditoDoLead: numeroOuNulo(lead?.creditValue),
 			landingPath: visita?.landingPath,
 			utmCampaign: visita?.utmCampaign,
 		});
 
-		// O VALOR do marco. A proposta manda sobre o lead, e não é preferência de
-		// estilo: medido em produção em 20/08/2026, `leads.credit_value` estava
-		// NULO em 27 de 27 leads — inclusive nos dois `contrato_fechado`, cujas
-		// propostas Bevi tinham R$ 150.000 e R$ 499.633,76 gravados. Com o valor
-		// vindo só do lead, TODO Purchase saía sem `value`, e a Meta responde a
-		// isso do pior jeito possível: aceita o evento e o exclui da otimização de
-		// receita, sem falhar em lugar nenhum. Foi o que o Gerenciador acusou
-		// ("Chave: value, currency — value: missing").
-		const valorDoEvento = creditoDaProposta ?? creditoDoLead;
-
 		await db
 			.insert(conversionEvents)
 			.values({
-				leadId: lead.id,
-				conversationId: lead.conversationId,
-				visitId: conversa?.visitId ?? null,
+				leadId: lead?.id ?? null,
+				conversationId,
+				visitId: visita?.id ?? null,
 				eventName: input.eventName,
 				destination: "meta",
-				eventKey: `${lead.id}:${input.eventName}`,
+				eventKey,
 				occurredAt: input.occurredAt ?? new Date(),
-				value: valorDoEvento === null ? null : valorDoEvento.toFixed(2),
+				value: valor === null ? null : valor.toFixed(2),
 				currency: "BRL",
-				// PII só entra hasheada — esta tabela não é cópia do cadastro.
-				hashedEmail: hashEmail(lead.email),
-				hashedPhone: hashPhone(lead.phone),
-				fbc: montarFbc(visita?.fbclid, visita?.createdAt?.getTime() ?? Date.now()),
-				// O `_fbp` que o pixel gravou no navegador, capturado na visita.
+				hashedEmail: hashEmail(lead?.email),
+				hashedPhone: hashPhone(lead?.phone ?? conversa?.waId),
+				externalId: hashExternalId(lead?.id),
+				fbc: montarFbc(visita?.fbclid, visita?.createdAt.getTime() ?? Date.now()),
 				fbp: visita?.fbp ?? null,
-				contentId,
 				ctwaClid: visita?.ctwaClid ?? null,
-				actionSource: ehCtwa ? "business_messaging" : "website",
+				firstVisitId: primeiraVisita?.id ?? null,
+				lastVisitId: visita?.id ?? null,
+				campaignId: visita?.campaignId ?? null,
+				adsetId: visita?.adsetId ?? null,
+				adId: visita?.adId ?? visita?.ctwaSourceId ?? null,
+				previousStage: input.previousStage ?? null,
+				currentStage: input.currentStage ?? lead?.stage ?? null,
+				proposalId:
+					proposta?.proposalId ??
+					(input.eventName === "proposal_sent" ? (input.entityId ?? null) : null),
+				saleId: input.saleId ?? null,
+				contentId,
+				actionSource:
+					conversa?.channel === "whatsapp" || visita?.ctwaClid ? "business_messaging" : "website",
 			})
 			.onConflictDoNothing();
-	} catch (err) {
-		console.error("[conversions] falha ao registrar conversão:", err);
+	} catch (error) {
+		console.error("[conversions] falha ao registrar fato V2:", error);
 	}
 }
 
-/** Atalho pro caminho que dispara de verdade: uma transição de estágio. */
+export async function registrarInicioDeConversaReal(
+	conversationId: string,
+	occurredAt?: Date,
+): Promise<void> {
+	await registrarEventoDeConversao({
+		eventName: "conversation_started",
+		conversationId,
+		occurredAt,
+	});
+}
+
+export async function registrarLeadIdentificado(
+	conversationId: string,
+	occurredAt?: Date,
+): Promise<void> {
+	const lead = await db.query.leads.findFirst({ where: eq(leads.conversationId, conversationId) });
+	if (lead)
+		await registrarEventoDeConversao({
+			eventName: "lead",
+			leadId: lead.id,
+			conversationId,
+			occurredAt,
+		});
+}
+
+/** Oferta/proposta só vira sinal depois de a camada de canal confirmar entrega. */
+export async function registrarOfertaExibida(
+	leadId: string,
+	offerOrProposalId: string,
+): Promise<void> {
+	await registrarEventoDeConversao({
+		eventName: "offer_viewed",
+		leadId,
+		entityId: offerOrProposalId,
+	});
+}
+
+export async function registrarPropostaEnviada(leadId: string, proposalId: string): Promise<void> {
+	await registrarEventoDeConversao({ eventName: "proposal_sent", leadId, entityId: proposalId });
+}
+
+/** Só o reconciliador financeiro deve chamar este marco terminal. */
+export async function registrarCompraConfirmada(
+	leadId: string,
+	saleOrProposalId: string,
+	saleId?: string | null,
+): Promise<void> {
+	await registrarEventoDeConversao({
+		eventName: "purchase",
+		leadId,
+		entityId: saleOrProposalId,
+		saleId,
+	});
+}
+
 export async function registrarConversaoDoEstagio(
 	leadId: string,
 	stage: LeadStage,
 	occurredAt?: Date,
+	previousStage?: LeadStage,
 ): Promise<void> {
 	const eventName = eventoDoEstagio(stage);
-	if (!eventName) return;
-	await registrarConversao({ leadId, eventName, occurredAt });
+	if (eventName)
+		await registrarEventoDeConversao({
+			eventName,
+			leadId,
+			occurredAt,
+			previousStage,
+			currentStage: stage,
+		});
+}
+
+/** Compatibilidade de leitura/testes do contrato antigo; produção V2 não chama. */
+export async function registrarConversao(_input: {
+	leadId: string;
+	eventName: "lead_qualificado" | "proposta_criada" | "contrato_fechado";
+	occurredAt?: Date;
+}): Promise<void> {
+	// Eventos legados não são reinterpretados nem reenviados pelo contrato V2.
 }

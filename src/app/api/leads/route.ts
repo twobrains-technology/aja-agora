@@ -117,6 +117,10 @@ export async function POST(req: NextRequest) {
 			await persistMeta(conversationId as string, { ...metaOf(conv), contactPhone: maskedPhone });
 		}
 
+		void import("@/lib/conversions/registry").then(({ registrarLeadIdentificado }) =>
+			registrarLeadIdentificado(conversationId as string),
+		);
+
 		// Trigger handoff to vendor(s) via WhatsApp (non-blocking)
 		if (conv.channel === "web" && conv.status === "active") {
 			const recentMsgs = await db.query.messages.findMany({

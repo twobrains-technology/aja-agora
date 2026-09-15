@@ -13,20 +13,22 @@
 //   - Click-to-WhatsApp usa `action_source: "business_messaging"` +
 //     `messaging_channel: "whatsapp"` + `user_data.ctwa_clid`.
 
-import { NOME_CHAT_INICIADO } from "./chave-do-inicio-de-conversa";
 import type { ConversionsConfig } from "./config";
 
 /** Nomes internos → nomes que a Meta entende. */
 const NOME_META: Record<string, string> = {
+	// Só para ler filas antigas durante a transição. O dispatcher V2 não as
+	// seleciona novamente; preservar o mapeamento evita que ferramentas de
+	// diagnóstico transformem um histórico em nome inválido.
 	lead_qualificado: "Lead",
 	proposta_criada: "InitiateCheckout",
 	contrato_fechado: "Purchase",
-	// Evento PERSONALIZADO — não existe no vocabulário padrão da Meta, e é assim
-	// que tem que ser: mandá-lo como `Lead` o misturaria com o marco de venda que
-	// já usa esse nome, e a campanha passaria a otimizar por quem abre o chat
-	// achando que otimiza por quem qualifica. O nome é o MESMO do `trackCustom`
-	// do pixel — deduplicação exige nome e id iguais nos dois caminhos.
-	chat_iniciado: NOME_CHAT_INICIADO,
+	conversation_started: "ConversationStarted",
+	lead: "Lead",
+	qualified_lead: "QualifiedLead",
+	offer_viewed: "OfferViewed",
+	proposal_sent: "ProposalSent",
+	purchase: "Purchase",
 };
 
 /** A Meta recusa evento com mais de 7 dias. */
@@ -41,12 +43,20 @@ export interface EventoParaEnvio {
 	currency: string;
 	hashedEmail: string | null;
 	hashedPhone: string | null;
+	externalId?: string | null;
 	fbc: string | null;
 	fbp: string | null;
 	/** Item do catálogo (`auto-50000`). Nulo quando não deu para determinar. */
 	contentId?: string | null;
 	ctwaClid: string | null;
 	actionSource: string;
+	campaignId?: string | null;
+	adsetId?: string | null;
+	adId?: string | null;
+	previousStage?: string | null;
+	currentStage?: string | null;
+	proposalId?: string | null;
+	saleId?: string | null;
 }
 
 export interface ResultadoEnvio {
@@ -70,6 +80,7 @@ export function montarPayload(eventos: EventoParaEnvio[], cfg: ConversionsConfig
 			const userData: Record<string, unknown> = {};
 			if (evento.hashedEmail) userData.em = [evento.hashedEmail];
 			if (evento.hashedPhone) userData.ph = [evento.hashedPhone];
+			if (evento.externalId) userData.external_id = [evento.externalId];
 			if (evento.fbc) userData.fbc = evento.fbc;
 			if (evento.fbp) userData.fbp = evento.fbp;
 			if (evento.ctwaClid) userData.ctwa_clid = evento.ctwaClid;
@@ -86,6 +97,13 @@ export function montarPayload(eventos: EventoParaEnvio[], cfg: ConversionsConfig
 				customData.content_ids = [evento.contentId];
 				customData.content_type = "product";
 			}
+			if (evento.campaignId) customData.campaign_id = evento.campaignId;
+			if (evento.adsetId) customData.adset_id = evento.adsetId;
+			if (evento.adId) customData.ad_id = evento.adId;
+			if (evento.previousStage) customData.previous_stage = evento.previousStage;
+			if (evento.currentStage) customData.current_stage = evento.currentStage;
+			if (evento.proposalId) customData.proposal_id = evento.proposalId;
+			if (evento.saleId) customData.sale_id = evento.saleId;
 
 			return {
 				event_name: NOME_META[evento.eventName] ?? evento.eventName,

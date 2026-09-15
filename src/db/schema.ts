@@ -82,6 +82,14 @@ export const conversionEventNameEnum = pgEnum("conversion_event_name", [
 	 * evento nunca carrega `value`.
 	 */
 	"chat_iniciado",
+	// Contrato V2. Os valores legados acima continuam exclusivamente para a
+	// leitura histórica; novos fatos nunca são gravados com semântica antiga.
+	"conversation_started",
+	"lead",
+	"qualified_lead",
+	"offer_viewed",
+	"proposal_sent",
+	"purchase",
 ]);
 
 export const conversionDestinationEnum = pgEnum("conversion_destination", ["meta"]);
@@ -334,6 +342,11 @@ export const visits = pgTable(
 		// o que Meta/Google exigem de volta pra casar conversão (CAPI/Enhanced).
 		gclid: text(),
 		fbclid: text(),
+		// IDs explícitos do Meta Ads. UTM é fallback legível, não substituto
+		// destes identificadores determinísticos de campanha/conjunto/anúncio.
+		campaignId: text("campaign_id"),
+		adsetId: text("adset_id"),
+		adId: text("ad_id"),
 		// Click-to-WhatsApp (Meta): chega em `message.referral` na PRIMEIRA
 		// mensagem depois do clique no anúncio — captura única, sem segunda chance.
 		ctwaClid: text("ctwa_clid"),
@@ -1173,6 +1186,17 @@ export const conversionEvents = pgTable(
 		fbc: text(),
 		fbp: text(),
 		ctwaClid: text("ctwa_clid"),
+		// Snapshot de atribuição e contexto comercial do fato, sem PII crua.
+		firstVisitId: uuid("first_visit_id").references(() => visits.id, { onDelete: "set null" }),
+		lastVisitId: uuid("last_visit_id").references(() => visits.id, { onDelete: "set null" }),
+		externalId: text("external_id"),
+		campaignId: text("campaign_id"),
+		adsetId: text("adset_id"),
+		adId: text("ad_id"),
+		previousStage: text("previous_stage"),
+		currentStage: text("current_stage"),
+		proposalId: text("proposal_id"),
+		saleId: text("sale_id"),
 		/** O item do catálogo (`auto-50000`) a que este marco se refere.
 		 * Sem ele a Meta sabe QUE houve venda, mas não DE QUÊ — e anúncio de
 		 * catálogo não consegue remostrar a carta certa a quem já olhou. */

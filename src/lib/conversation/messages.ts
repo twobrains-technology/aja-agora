@@ -94,6 +94,15 @@ export async function saveMessage(
 		})
 		.returning({ id: messagesTable.id });
 
+	// O primeiro insert humano é a fonte canônica de ConversationStarted. A
+	// chave por conversa torna retries/reentregas inofensivos; o seed técnico de
+	// retomada jamais é uma conversa comercial.
+	if (role === "user" && content.trim() && content.trim().toLowerCase() !== "voltei") {
+		void import("@/lib/conversions/registry")
+			.then(({ registrarInicioDeConversaReal }) => registrarInicioDeConversaReal(conversationId))
+			.catch((error) => console.error("[messages] falha ao registrar ConversationStarted:", error));
+	}
+
 	return msg.id;
 }
 

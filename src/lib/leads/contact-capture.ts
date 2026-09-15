@@ -157,6 +157,9 @@ export async function saveContactName(
 			.update(leads)
 			.set({ name: displayName, updatedAt: new Date() })
 			.where(eq(leads.id, existing.id));
+		void import("@/lib/conversions/registry").then(({ registrarLeadIdentificado }) =>
+			registrarLeadIdentificado(conversationId),
+		);
 		return { ok: true, leadId: existing.id, created: false };
 	}
 
@@ -166,6 +169,9 @@ export async function saveContactName(
 		phone: null,
 		email: null,
 	});
+	void import("@/lib/conversions/registry").then(({ registrarLeadIdentificado }) =>
+		registrarLeadIdentificado(conversationId),
+	);
 	return { ok: true, leadId, created: true };
 }
 
@@ -203,6 +209,9 @@ export async function saveContactWhatsapp(
 		await transitionLeadStage(existing.id, "engajado", { type: "system" }, { onlyAdvance: true });
 		// FIX-42: religa cliente unificado pelo telefone.
 		await attachContact({ conversationId, leadId: existing.id, input: { phone } });
+		void import("@/lib/conversions/registry").then(({ registrarLeadIdentificado }) =>
+			registrarLeadIdentificado(conversationId),
+		);
 		return { ok: true, leadId: existing.id, created: false };
 	}
 
@@ -213,5 +222,8 @@ export async function saveContactWhatsapp(
 		email: null,
 	});
 	await transitionLeadStage(leadId, "engajado", { type: "system" }, { onlyAdvance: true });
+	void import("@/lib/conversions/registry").then(({ registrarLeadIdentificado }) =>
+		registrarLeadIdentificado(conversationId),
+	);
 	return { ok: true, leadId, created: true };
 }

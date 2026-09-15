@@ -17,6 +17,9 @@ describe("parseCampaignParams", () => {
 			utmTerm: "consorcio barato",
 			gclid: null,
 			fbclid: null,
+			campaignId: null,
+			adsetId: null,
+			adId: null,
 		});
 	});
 

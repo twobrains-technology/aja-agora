@@ -76,11 +76,19 @@ export async function despacharConversoesPendentes(limite = 500): Promise<Result
 		currency: linha.currency,
 		hashedEmail: linha.hashedEmail,
 		hashedPhone: linha.hashedPhone,
+		externalId: linha.externalId,
 		fbc: linha.fbc,
 		fbp: linha.fbp,
 		ctwaClid: linha.ctwaClid,
 		actionSource: linha.actionSource,
 		contentId: linha.contentId,
+		campaignId: linha.campaignId,
+		adsetId: linha.adsetId,
+		adId: linha.adId,
+		previousStage: linha.previousStage,
+		currentStage: linha.currentStage,
+		proposalId: linha.proposalId,
+		saleId: linha.saleId,
 	}));
 
 	const naJanela = paraEnvio.filter((evento) => !expirouParaMeta(evento));
@@ -107,6 +115,8 @@ export async function despacharConversoesPendentes(limite = 500): Promise<Result
 	// A divisão é por NATUREZA e não por nome: o que é marco de negócio de um
 	// lado, o que é sinal do outro. Fila só de venda continua sendo uma chamada
 	// só — nada de round-trip a mais quando não há sinal na fila.
+	// O legado ChatOpened não é conversão CAPI V2. Se existir na fila por uma
+	// versão anterior, isolamos para que uma rejeição jamais afete fatos V2.
 	const marcos = naJanela.filter((evento) => evento.eventName !== "chat_iniciado");
 	const sinais = naJanela.filter((evento) => evento.eventName === "chat_iniciado");
 
