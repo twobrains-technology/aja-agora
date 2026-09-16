@@ -62,7 +62,7 @@ export async function transitionLeadStage(
 	// não pode desfazer uma transição de funil que já aconteceu.
 	try {
 		const { registrarConversaoDoEstagio } = await import("@/lib/conversions/registry");
-		await registrarConversaoDoEstagio(leadId, toStage, now);
+		await registrarConversaoDoEstagio(leadId, toStage, now, lead.stage);
 
 		// Escoa a fila DEPOIS de gravar, sem esperar: quem move o card não pode
 		// ficar preso numa chamada à Meta, e a transição já está no banco.

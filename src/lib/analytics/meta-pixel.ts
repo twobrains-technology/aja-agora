@@ -16,11 +16,6 @@
 // carrega se `NEXT_PUBLIC_META_PIXEL_ID` foi assado no build) e erro de rede
 // não podem, em nenhuma hipótese, atrapalhar a abertura do chat.
 
-import {
-	chaveDoInicioDeConversa,
-	NOME_CHAT_INICIADO,
-} from "@/lib/conversions/chave-do-inicio-de-conversa";
-
 type Fbq = (...args: unknown[]) => void;
 
 /** Vertical pela rota — o mesmo mapa do catálogo, do lado do cliente. */
@@ -59,7 +54,7 @@ export function rastrearChatIniciado(params: ChatIniciadoParams = {}): void {
 	try {
 		fbq(
 			"trackCustom",
-			NOME_CHAT_INICIADO,
+			"ChatOpened",
 			{
 				content_category: VERTICAL_POR_ROTA[rota] ?? "outra",
 				origem: params.origem ?? "desconhecida",
@@ -71,7 +66,7 @@ export function rastrearChatIniciado(params: ChatIniciadoParams = {}): void {
 			// Conversions API. Sem ele, ligar o caminho server-side faria a mesma
 			// abertura contar DUAS vezes — e o sintoma seria uma métrica que subiu,
 			// que é o tipo de defeito que ninguém investiga.
-			params.eventId ? { eventID: chaveDoInicioDeConversa(params.eventId) } : undefined,
+			undefined,
 		);
 	} catch {
 		// Medir nunca derruba o produto.
@@ -103,15 +98,6 @@ export function rastrearChatIniciado(params: ChatIniciadoParams = {}): void {
  * mídia, jamais a abertura do chat.
  */
 export function avisarServidorDoChatIniciado(eventId: string): void {
-	if (typeof window === "undefined") return;
-	if (typeof navigator.sendBeacon !== "function") return;
-
-	try {
-		navigator.sendBeacon(
-			"/api/track/chat-iniciado",
-			new Blob([JSON.stringify({ eventId })], { type: "application/json" }),
-		);
-	} catch {
-		// Medir nunca derruba o produto.
-	}
+	// Compatibilidade temporária: abrir o chat é somente diagnóstico Pixel.
+	void eventId;
 }

@@ -60,6 +60,9 @@ export async function recordWebVisit(input: WebVisitInput): Promise<void> {
 				utmTerm: input.params.utmTerm,
 				gclid: input.params.gclid,
 				fbclid: input.params.fbclid,
+				campaignId: input.params.campaignId,
+				adsetId: input.params.adsetId,
+				adId: input.params.adId,
 				fbp: input.fbp ?? null,
 				userAgent: input.userAgent,
 			})

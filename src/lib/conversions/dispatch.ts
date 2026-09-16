@@ -7,7 +7,7 @@
 // chave e mandar o histórico dos últimos 7 dias de uma vez, em vez de começar
 // a ensinar o algoritmo do zero.
 
-import { and, asc, eq, gte, lt } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lt } from "drizzle-orm";
 import { db } from "@/db";
 import { conversionEvents } from "@/db/schema";
 import { getConversionsConfig, motivoParaNaoEnviar } from "./config";
@@ -16,6 +16,7 @@ import {
 	enviarParaMeta,
 	expirouParaMeta,
 	JANELA_MAXIMA_MS,
+	temNomeMeta,
 } from "./meta-capi";
 
 export interface ResultadoDespacho {
@@ -24,6 +25,20 @@ export interface ResultadoDespacho {
 	expirados: number;
 	/** Preenchido quando nada foi tentado, dizendo POR QUÊ. */
 	desligado?: string;
+}
+
+/**
+ * O que sai da fila comercial.
+ *
+ * A régua é ter nome que a Meta entende, não pertencer ao contrato novo. Os
+ * marcos legados (`lead_qualificado`, `contrato_fechado`) continuam mapeados e
+ * continuam sendo enviados enquanto a flag do V2 não vira — travá-los aqui
+ * apagaria a medição durante todo o rollout, que é justamente o período em que
+ * ela precisa existir para comparar contrato velho e novo. Quem fica de fora é
+ * `chat_iniciado`, o diagnóstico de abertura de UI que gerava os HTTP 400.
+ */
+function enviavel(eventName: string): boolean {
+	return temNomeMeta(eventName);
 }
 
 /**
@@ -67,54 +82,53 @@ export async function despacharConversoesPendentes(limite = 500): Promise<Result
 		return { enviados: 0, falhas: 0, expirados };
 	}
 
-	const paraEnvio: EventoParaEnvio[] = pendentes.map((linha) => ({
-		id: linha.id,
-		eventName: linha.eventName,
-		eventKey: linha.eventKey,
-		occurredAt: linha.occurredAt,
-		value: linha.value,
-		currency: linha.currency,
-		hashedEmail: linha.hashedEmail,
-		hashedPhone: linha.hashedPhone,
-		fbc: linha.fbc,
-		fbp: linha.fbp,
-		ctwaClid: linha.ctwaClid,
-		actionSource: linha.actionSource,
-		contentId: linha.contentId,
-	}));
+	const foraDaFila = pendentes.filter((linha) => !enviavel(linha.eventName));
+	if (foraDaFila.length) {
+		await db
+			.update(conversionEvents)
+			.set({ status: "skipped", lastError: "evento sem nome Meta — fora da fila comercial" })
+			.where(
+				inArray(
+					conversionEvents.id,
+					foraDaFila.map((linha) => linha.id),
+				),
+			);
+	}
+	const paraEnvio: EventoParaEnvio[] = pendentes
+		.filter((linha) => enviavel(linha.eventName))
+		.map((linha) => ({
+			id: linha.id,
+			eventName: linha.eventName,
+			eventKey: linha.eventKey,
+			occurredAt: linha.occurredAt,
+			value: linha.value,
+			currency: linha.currency,
+			hashedEmail: linha.hashedEmail,
+			hashedPhone: linha.hashedPhone,
+			externalId: linha.externalId,
+			fbc: linha.fbc,
+			fbp: linha.fbp,
+			ctwaClid: linha.ctwaClid,
+			actionSource: linha.actionSource,
+			contentId: linha.contentId,
+			campaignId: linha.campaignId,
+			adsetId: linha.adsetId,
+			adId: linha.adId,
+			previousStage: linha.previousStage,
+			currentStage: linha.currentStage,
+			proposalId: linha.proposalId,
+			saleId: linha.saleId,
+		}));
 
 	const naJanela = paraEnvio.filter((evento) => !expirouParaMeta(evento));
 
-	// DOIS LOTES: marco de venda de um lado, sinal de interesse do outro.
-	//
-	// `enviarParaMeta` manda tudo numa chamada e o resultado é do LOTE — uma
-	// recusa marca `failed` em todas as linhas juntas. Isso era aceitável
-	// enquanto a fila tinha três eventos do vocabulário padrão da Meta, raros e
-	// homogêneos.
-	//
-	// O `chat_iniciado` (item B3, 30/08/2026) mudou as duas coisas de uma vez: é
-	// evento PERSONALIZADO — o de maior chance de ser recusado por validação nova
-	// da Graph API — e é MUITO mais frequente (produção, 16–30/08: 75 aberturas
-	// de teatro contra 22 eventos de conversão). A fila passa a ser dominada por
-	// ele.
-	//
-	// Juntos, os dois fatos produzem o desfecho que esta separação impede: uma
-	// recusa causada pelo sinal levaria junto, para `failed`, o `Purchase` de uma
-	// venda de seis dígitos que estava no mesmo lote. E o erro gravado apontaria
-	// o campo do evento errado — a venda não sumiria, ficaria `failed` com uma
-	// mensagem plausível, e ninguém iria procurá-la.
-	//
-	// A divisão é por NATUREZA e não por nome: o que é marco de negócio de um
-	// lado, o que é sinal do outro. Fila só de venda continua sendo uma chamada
-	// só — nada de round-trip a mais quando não há sinal na fila.
-	const marcos = naJanela.filter((evento) => evento.eventName !== "chat_iniciado");
-	const sinais = naJanela.filter((evento) => evento.eventName === "chat_iniciado");
+	const marcos = naJanela;
 
 	const agora = new Date();
 	let enviados = 0;
 	let falhas = 0;
 
-	for (const lote of [marcos, sinais]) {
+	for (const lote of [marcos]) {
 		if (lote.length === 0) continue;
 
 		const resultado = await enviarParaMeta(lote, cfg);
@@ -135,7 +149,7 @@ export async function despacharConversoesPendentes(limite = 500): Promise<Result
 		} else {
 			falhas += lote.length;
 			console.error(
-				`[conversions] envio falhou para ${lote.length} evento(s) de ${lote[0].eventName === "chat_iniciado" ? "sinal" : "venda"}: ${resultado.erro}`,
+				`[conversions] envio falhou para ${lote.length} evento(s) comercial(is): ${resultado.erro}`,
 			);
 		}
 	}
