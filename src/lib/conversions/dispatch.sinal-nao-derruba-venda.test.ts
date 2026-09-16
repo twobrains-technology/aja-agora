@@ -84,6 +84,28 @@ describe("dispatch do contrato Meta CAPI V2", () => {
 		expect(result.enviados).toBe(1);
 	});
 
+	// Medido em 15/09/2026 ao validar o TEST87230: um único evento sem nenhum
+	// parâmetro de correspondência fez a Meta recusar o lote INTEIRO com
+	// `error_subcode 2804050` ("não adicionou dados de parâmetros do cliente
+	// suficientes"). Os seis marcos bons caíram junto — inclusive o Purchase.
+	// A Meta valida o lote como um todo: um evento impossível de casar não é um
+	// evento a menos, é o lote a menos.
+	it("evento sem nenhum identificador não embarca — senão leva o Purchase junto", async () => {
+		const orfao = { ...evento("orfao", "lead"), hashedPhone: null, fbc: null, fbp: null };
+		linhas.pendentes = [evento("v1", "purchase"), orfao];
+		atualizacoes.length = 0;
+		enviarParaMeta.mockReset().mockResolvedValue({ ok: true });
+		const { despacharConversoesPendentes } = await import("./dispatch");
+
+		const resultado = await despacharConversoesPendentes();
+
+		expect(enviarParaMeta.mock.calls[0][0]).toEqual([
+			expect.objectContaining({ eventName: "purchase" }),
+		]);
+		expect(atualizacoes).toContainEqual({ id: "v1", status: "sent" });
+		expect(resultado.enviados).toBe(1);
+	});
+
 	// O marco legado sai na mesma leva enquanto a flag do V2 não vira. A régua
 	// do despacho é ter nome que a Meta entende, e `proposta_criada` tem
 	// (`InitiateCheckout`) — travá-lo aqui deixaria a conta sem sinal nenhum

@@ -16,6 +16,7 @@ import {
 	enviarParaMeta,
 	expirouParaMeta,
 	JANELA_MAXIMA_MS,
+	type RespostaDaMeta,
 	temNomeMeta,
 } from "./meta-capi";
 
@@ -25,6 +26,8 @@ export interface ResultadoDespacho {
 	expirados: number;
 	/** Preenchido quando nada foi tentado, dizendo POR QUÊ. */
 	desligado?: string;
+	/** O que a Meta respondeu, por `event_id` do lote. */
+	respostas?: Array<{ eventIds: string[]; resposta?: RespostaDaMeta; erro?: string }>;
 }
 
 /**
@@ -39,6 +42,35 @@ export interface ResultadoDespacho {
  */
 function enviavel(eventName: string): boolean {
 	return temNomeMeta(eventName);
+}
+
+/**
+ * A Meta valida o lote como um todo. Um evento sem NENHUM identificador de
+ * cliente não é um evento a menos: é o lote a menos — ela responde
+ * `error_subcode 2804050` e recusa tudo que veio junto, Purchase inclusive.
+ * Medido em 15/09/2026 na validação do TEST87230: um órfão derrubou os seis
+ * marcos bons da mesma leva.
+ *
+ * Basta UM identificador. `conversation_started` legitimamente não tem contato
+ * (o lead ainda não existe quando a conversa começa), mas carrega `fbc`/`fbp`
+ * da visita — e é isso que a Meta usa para casar.
+ */
+function temComoCasar(linha: {
+	hashedEmail: string | null;
+	hashedPhone: string | null;
+	externalId: string | null;
+	fbc: string | null;
+	fbp: string | null;
+	ctwaClid: string | null;
+}): boolean {
+	return Boolean(
+		linha.hashedEmail ||
+			linha.hashedPhone ||
+			linha.externalId ||
+			linha.fbc ||
+			linha.fbp ||
+			linha.ctwaClid,
+	);
 }
 
 /**
@@ -94,8 +126,26 @@ export async function despacharConversoesPendentes(limite = 500): Promise<Result
 				),
 			);
 	}
+	const semComoCasar = pendentes.filter(
+		(linha) => enviavel(linha.eventName) && !temComoCasar(linha),
+	);
+	if (semComoCasar.length) {
+		await db
+			.update(conversionEvents)
+			.set({
+				status: "skipped",
+				lastError: "sem identificador de cliente — a Meta recusaria o lote inteiro",
+			})
+			.where(
+				inArray(
+					conversionEvents.id,
+					semComoCasar.map((linha) => linha.id),
+				),
+			);
+	}
+
 	const paraEnvio: EventoParaEnvio[] = pendentes
-		.filter((linha) => enviavel(linha.eventName))
+		.filter((linha) => enviavel(linha.eventName) && temComoCasar(linha))
 		.map((linha) => ({
 			id: linha.id,
 			eventName: linha.eventName,
@@ -126,6 +176,7 @@ export async function despacharConversoesPendentes(limite = 500): Promise<Result
 	const marcos = naJanela;
 
 	const agora = new Date();
+	const respostas: NonNullable<ResultadoDespacho["respostas"]> = [];
 	let enviados = 0;
 	let falhas = 0;
 
@@ -144,6 +195,11 @@ export async function despacharConversoesPendentes(limite = 500): Promise<Result
 			);
 
 		const resultado = await enviarParaMeta(lote, cfg);
+		respostas.push({
+			eventIds: lote.map((evento) => evento.eventKey),
+			resposta: resultado.resposta,
+			erro: resultado.erro,
+		});
 
 		for (const evento of lote) {
 			await db
@@ -166,7 +222,7 @@ export async function despacharConversoesPendentes(limite = 500): Promise<Result
 		}
 	}
 
-	return { enviados, falhas, expirados };
+	return { enviados, falhas, expirados, respostas };
 }
 
 async function marcarExpirados(limiteDeIdade: Date): Promise<number> {

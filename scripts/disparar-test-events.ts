@@ -34,6 +34,14 @@ process.env.CONVERSIONS_API_ENABLED = "true";
 
 const marca = `test-events-${Date.now()}`;
 
+/**
+ * `fbclid` no formato que a Meta emite: prefixo `IwAR`, base64url, caixa
+ * misturada. Sintético, mas com a MESMA forma do real — é o que permite provar
+ * no painel que o valor chega inteiro, sem truncar e sem mudar maiúsculas.
+ */
+const FBCLID =
+	"IwAR2zXqB7vKdN4pLmEy9TgHsRfWcJ6aQnU3XoZbVtYiMkPrLdCeAgSwNhFuJxOqKvBnTmRlDpYcZaEiGhWsQoNjXkFvBuMdTpLcRaSgYnHwJeKxVoQbZmTiPlDcNaFgWuRhJyKvXoSbQmZiTpLdNcFaGwRuHjKyVxObQnZmSiTlPdLcNbFgWvRuHkJyXo";
+
 type Db = Awaited<ReturnType<typeof carregar>>;
 
 async function carregar() {
@@ -60,7 +68,7 @@ async function semear(db: Db["db"], schema: Db["schema"]) {
 			campaignId: "1200000000000000",
 			adsetId: "1300000000000000",
 			adId: "1400000000000000",
-			fbclid: `IwAR-${marca}`,
+			fbclid: FBCLID,
 			fbp: `fb.1.${Date.now()}.1234567890`,
 		})
 		.returning();
@@ -196,6 +204,21 @@ async function main() {
 	for (const e of depois.sort((a, b) => +a.occurredAt - +b.occurredAt)) {
 		console.log(`  ${e.eventName.padEnd(20)} ${e.status}${e.lastError ? ` — ${e.lastError}` : ""}`);
 	}
+
+	console.log("\n▸ Resposta da Meta, vinculada aos eventos do lote:");
+	for (const r of resultado.respostas ?? []) {
+		console.log(`  events_received: ${r.resposta?.eventsReceived ?? "—"}`);
+		console.log(`  fbtrace_id:      ${r.resposta?.fbtraceId ?? "—"}`);
+		const msgs = r.resposta?.messages ?? [];
+		console.log(`  messages:        ${msgs.length ? JSON.stringify(msgs) : "[] (nenhum aviso)"}`);
+		if (r.erro) console.log(`  erro:            ${r.erro}`);
+		console.log("  event_id do lote:");
+		for (const id of r.eventIds) console.log(`    · ${id}`);
+	}
+	console.log(`\n▸ fbclid enviado (confira no painel, sem truncar e sem mudar a caixa):`);
+	console.log(`  comprimento: ${FBCLID.length} caracteres`);
+	console.log(`  início: ${FBCLID.slice(0, 32)}`);
+	console.log(`  fim:    ${FBCLID.slice(-32)}`);
 
 	const falhou = depois.filter((e) => e.status !== "sent");
 	if (falhou.length) {
