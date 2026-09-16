@@ -15,15 +15,35 @@ export type ConversionEventName =
 	| "proposal_sent"
 	| "purchase";
 
+/** Nomes do contrato anterior. Continuam sendo gravados enquanto a flag do V2
+ * estiver desligada — não são reinterpretados nem traduzidos para os novos. */
+export type LegacyConversionEventName = "lead_qualificado" | "proposta_criada" | "contrato_fechado";
+
+type QualquerEvento = ConversionEventName | LegacyConversionEventName;
+
 const ESTAGIO_PARA_EVENTO: Partial<Record<LeadStage, ConversionEventName>> = {
 	qualificado: "qualified_lead",
+};
+
+const ESTAGIO_PARA_EVENTO_LEGADO: Partial<Record<LeadStage, LegacyConversionEventName>> = {
+	qualificado: "lead_qualificado",
+	proposta_enviada: "proposta_criada",
+	fechado_ganho: "contrato_fechado",
 };
 
 export function contratoV2Ativo(): boolean {
 	return process.env.META_CONVERSION_CONTRACT_V2_ENABLED === "true";
 }
 
-export function eventoDoEstagio(stage: LeadStage): ConversionEventName | null {
+/**
+ * Qual evento este estágio gera — no contrato que estiver vigente.
+ *
+ * A flag governa QUAL contrato responde, nunca SE alguém responde. Desligada,
+ * o funil continua medindo como media antes; ligada, passa a medir pelo V2.
+ * Um rollout em que a posição "desligada" apaga a medição atual não é rollout.
+ */
+export function eventoDoEstagio(stage: LeadStage): QualquerEvento | null {
+	if (!contratoV2Ativo()) return ESTAGIO_PARA_EVENTO_LEGADO[stage] ?? null;
 	return ESTAGIO_PARA_EVENTO[stage] ?? null;
 }
 
@@ -54,8 +74,14 @@ function chave(input: {
 	return null;
 }
 
-export async function registrarEventoDeConversao(input: {
-	eventName: ConversionEventName;
+/**
+ * Monta e grava o fato. O contrato decide só duas coisas — o nome do evento e
+ * a chave de idempotência. Origem, valor, hashes e atribuição são idênticos
+ * nos dois: o que muda é a semântica do marco, não o dado por trás dele.
+ */
+async function gravarFato(input: {
+	eventName: QualquerEvento;
+	montarChave: (ctx: { leadId: string | null; conversationId: string | null }) => string | null;
 	leadId?: string | null;
 	conversationId?: string | null;
 	entityId?: string | null;
@@ -64,7 +90,6 @@ export async function registrarEventoDeConversao(input: {
 	previousStage?: string | null;
 	currentStage?: string | null;
 }): Promise<void> {
-	if (!contratoV2Ativo()) return;
 	try {
 		const lead = input.leadId
 			? await db.query.leads.findFirst({ where: eq(leads.id, input.leadId) })
@@ -75,7 +100,10 @@ export async function registrarEventoDeConversao(input: {
 			? await db.query.conversations.findFirst({ where: eq(conversations.id, conversationId) })
 			: null;
 		if (conversa?.isSimulated) return;
-		const eventKey = chave({ ...input, leadId: lead?.id ?? input.leadId, conversationId });
+		const eventKey = input.montarChave({
+			leadId: lead?.id ?? input.leadId ?? null,
+			conversationId,
+		});
 		if (!eventKey) return;
 
 		// Lead exige conversa e contato válido; nome, CPF ou intenção não bastam.
@@ -147,8 +175,25 @@ export async function registrarEventoDeConversao(input: {
 			})
 			.onConflictDoNothing();
 	} catch (error) {
-		console.error("[conversions] falha ao registrar fato V2:", error);
+		console.error("[conversions] falha ao registrar fato de conversão:", error);
 	}
+}
+
+export async function registrarEventoDeConversao(input: {
+	eventName: ConversionEventName;
+	leadId?: string | null;
+	conversationId?: string | null;
+	entityId?: string | null;
+	saleId?: string | null;
+	occurredAt?: Date;
+	previousStage?: string | null;
+	currentStage?: string | null;
+}): Promise<void> {
+	if (!contratoV2Ativo()) return;
+	await gravarFato({
+		...input,
+		montarChave: (ctx) => chave({ ...input, ...ctx }),
+	});
 }
 
 export async function registrarInicioDeConversaReal(
@@ -212,7 +257,12 @@ export async function registrarConversaoDoEstagio(
 	occurredAt?: Date,
 	previousStage?: LeadStage,
 ): Promise<void> {
-	const eventName = eventoDoEstagio(stage);
+	if (!contratoV2Ativo()) {
+		const legado = ESTAGIO_PARA_EVENTO_LEGADO[stage];
+		if (legado) await registrarConversao({ leadId, eventName: legado, occurredAt });
+		return;
+	}
+	const eventName = ESTAGIO_PARA_EVENTO[stage];
 	if (eventName)
 		await registrarEventoDeConversao({
 			eventName,
@@ -223,11 +273,20 @@ export async function registrarConversaoDoEstagio(
 		});
 }
 
-/** Compatibilidade de leitura/testes do contrato antigo; produção V2 não chama. */
-export async function registrarConversao(_input: {
+/**
+ * Marco do contrato anterior, com a chave de idempotência que produção já usa
+ * (`<leadId>:<evento>`). Preservar a chave é o que impede o mesmo fechamento
+ * de virar dois Purchase quando a flag do V2 for ligada e desligada.
+ */
+export async function registrarConversao(input: {
 	leadId: string;
-	eventName: "lead_qualificado" | "proposta_criada" | "contrato_fechado";
+	eventName: LegacyConversionEventName;
 	occurredAt?: Date;
 }): Promise<void> {
-	// Eventos legados não são reinterpretados nem reenviados pelo contrato V2.
+	await gravarFato({
+		eventName: input.eventName,
+		leadId: input.leadId,
+		occurredAt: input.occurredAt,
+		montarChave: (ctx) => (ctx.leadId ? `${ctx.leadId}:${input.eventName}` : null),
+	});
 }

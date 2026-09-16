@@ -368,6 +368,7 @@ export const visits = pgTable(
 		index("visits_created_at_idx").on(table.createdAt),
 		// A pergunta que a dashboard faz o tempo todo: "quanto a campanha X trouxe".
 		index("visits_utm_campaign_idx").on(table.utmCampaign),
+		index("visits_meta_ids_idx").on(table.campaignId, table.adsetId, table.adId),
 	],
 );
 
@@ -1220,6 +1221,7 @@ export const conversionEvents = pgTable(
 		// pro mesmo destino, nem quando a transição de estágio dispara duas vezes.
 		uniqueIndex("conversion_events_key_idx").on(table.eventKey, table.destination),
 		index("conversion_events_status_idx").on(table.status, table.createdAt),
+		index("conversion_events_lead_event_idx").on(table.leadId, table.eventName, table.occurredAt),
 	],
 );
 
