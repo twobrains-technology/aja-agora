@@ -1,4 +1,5 @@
 import { aliasedTable, and, asc, eq, inArray } from "drizzle-orm";
+import * as XLSX from "xlsx";
 import { db } from "@/db";
 import { conversionEvents, leads, visits } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
@@ -89,6 +90,18 @@ export async function GET(request: Request) {
 			headers: {
 				"Content-Type": "text/csv; charset=utf-8",
 				"Content-Disposition": 'attachment; filename="aja-meta-capi-leads.csv"',
+			},
+		});
+	}
+	if (format === "xlsx") {
+		const workbook = XLSX.utils.book_new();
+		const worksheet = XLSX.utils.json_to_sheet(rows);
+		XLSX.utils.book_append_sheet(workbook, worksheet, "Meta CAPI");
+		const bytes = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+		return new Response(bytes, {
+			headers: {
+				"Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+				"Content-Disposition": 'attachment; filename="aja-meta-capi-leads.xlsx"',
 			},
 		});
 	}
