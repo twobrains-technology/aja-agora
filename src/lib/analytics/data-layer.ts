@@ -47,6 +47,25 @@ function guardar(ids: Set<string>): void {
 }
 
 /**
+ * Empurra no `dataLayer` o que o navegador sabe sozinho.
+ *
+ * Usado pela abertura do teatro: `chat_opened` é diagnóstico puro de browser —
+ * não existe do lado do servidor e, por decisão do PRD (§6.2), está fora da
+ * fila comercial da CAPI. O `event_id` aqui é o mesmo que vai no `eventID` do
+ * pixel, para o GTM e o Pixel não contarem a mesma abertura duas vezes.
+ */
+export function empurrarNoDataLayer(marco: MarcoDataLayer & Record<string, unknown>): void {
+	if (typeof window === "undefined") return;
+	try {
+		const janela = window as unknown as { dataLayer?: unknown[] };
+		janela.dataLayer = janela.dataLayer || [];
+		janela.dataLayer.push({ ...marco });
+	} catch {
+		// Medir nunca derruba o produto.
+	}
+}
+
+/**
  * Empurra os marcos que ainda não foram empurrados nesta aba.
  *
  * Devolve quantos foram — útil para teste e para log, nunca para decisão de
