@@ -1096,6 +1096,12 @@ export async function POST(req: NextRequest) {
 											conversationId,
 											meta.currentPersona ?? null,
 										);
+										// Só agora a oferta foi de fato persistida/emitida ao cliente;
+										// simulação interna não vira OfferViewed.
+										if (offer && leadId) {
+											const { registrarOfertaExibida } = await import("@/lib/conversions/registry");
+											await registrarOfertaExibida(leadId, proposalId);
+										}
 										// FIX-27: proposta criada → telefone capturado (mascarado) p/ o
 										// opt-in virar confirmação; limpa retry pendente de tentativa anterior.
 										const okMeta = await reloadMeta(conversationId);
@@ -1191,6 +1197,17 @@ export async function POST(req: NextRequest) {
 											conversationId,
 											meta.currentPersona ?? null,
 										);
+										// PDF/card + handoff foram emitidos no canal web. Só este ponto
+										// satisfaz ProposalSent; createBeviProposal sozinho não satisfaz.
+										if (proposta) {
+											const leadId = await getLeadIdForConversation(conversationId);
+											if (leadId) {
+												const { registrarPropostaEnviada } = await import(
+													"@/lib/conversions/registry"
+												);
+												await registrarPropostaEnviada(leadId, res.proposalId);
+											}
+										}
 										// A proposta em PDF entra como CARD (signature_handoff, acima) —
 										// não mais como uma URL assinada crua no meio do texto, com 400
 										// caracteres de assinatura AWS aparecendo pro cliente.

@@ -19,7 +19,7 @@ import type { ProposalGateway } from "@/lib/adapters/proposal-gateway";
 import type { LeadStage } from "@/lib/admin/lead-stages";
 import { transitionLeadStage } from "@/lib/admin/lead-transitions";
 import { updateBeviProposal } from "@/lib/bevi/proposal-repo";
-import { stageForProposalStatus } from "@/lib/bevi/proposal-status";
+import { purchaseConfirmedByBevi, stageForProposalStatus } from "@/lib/bevi/proposal-status";
 import { dispatchAutoTransbordo } from "@/lib/mesa/dispatch";
 
 /** N de dias sem avanço que marca a proposta abandonada como `perdido` (a API não
@@ -60,6 +60,13 @@ export async function reconcileProposalStage(
 	const before = await db.query.leads.findFirst({ where: eq(leads.id, row.leadId) });
 	const result = await transitionLeadStage(row.leadId, stage, { type: "system" });
 	const applied = Boolean(result && before && result.stage !== before.stage);
+
+	// Purchase nunca é sinônimo de cartão em `fechado_ganho`: só a efetivação
+	// financeira que veio da Bevi pode produzir esse sinal de mídia.
+	if (purchaseConfirmedByBevi(status) && row.leadId) {
+		const { registrarCompraConfirmada } = await import("@/lib/conversions/registry");
+		await registrarCompraConfirmada(row.leadId, row.proposalId, row.proposalId);
+	}
 
 	// FIX-123 (D14): ao o lead ENTRAR em na_administradora (raia-gatilho — Decisão 1 do
 	// bloco), transborda automaticamente pra mesa (cria handoff sem dono + broadcast

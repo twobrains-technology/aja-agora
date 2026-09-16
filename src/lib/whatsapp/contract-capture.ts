@@ -292,8 +292,14 @@ export async function fireContract(from: string, conversationId: string): Promis
 		// FIX-259 (P1, veredito Fable r4): mesma classe de bug pro aviso de troca
 		// de administradora — administradoraChanged/previousAdministradora não
 		// podem sair do destructuring, senão a troca sai em silêncio no WhatsApp.
-		const { offer, noOffer, requestedCreditValue, administradoraChanged, previousAdministradora } =
-			await startContract(conversationId, input);
+		const {
+			proposalId,
+			offer,
+			noOffer,
+			requestedCreditValue,
+			administradoraChanged,
+			previousAdministradora,
+		} = await startContract(conversationId, input);
 
 		if (noOffer || !offer) {
 			await sendTextMessage(
@@ -359,6 +365,10 @@ export async function fireContract(from: string, conversationId: string): Promis
 				corpo ?? `Carta real confirmada: ${offer.administradora} · ${brl(offer.creditValue)}`,
 				"whatsapp",
 			);
+			if (leadId) {
+				const { registrarOfertaExibida } = await import("@/lib/conversions/registry");
+				await registrarOfertaExibida(leadId, proposalId);
+			}
 		}
 	} catch (err) {
 		// Bug dev 2026-06-11 (espelho do contract-submit web): erro engolido sem

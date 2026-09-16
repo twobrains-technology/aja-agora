@@ -62,6 +62,12 @@ export function hashPhone(valor: string | null | undefined): string | null {
 	return normalizado ? sha256(normalizado) : null;
 }
 
+/** Identidade estável do CRM, pseudonimizada antes de deixar a Aja. */
+export function hashExternalId(leadId: string | null | undefined): string | null {
+	const id = leadId?.trim();
+	return id ? sha256(`aja-agora:${id}`) : null;
+}
+
 /**
  * Monta o `fbc` (cookie de clique do Facebook) a partir do `fbclid` que veio na
  * URL. Formato exigido: `fb.<subdomain_index>.<timestamp_ms>.<fbclid>`.

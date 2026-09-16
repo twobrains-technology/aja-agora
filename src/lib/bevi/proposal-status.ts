@@ -178,6 +178,16 @@ export function stageForProposalStatus(status: ProposalStatus): LeadStage | null
 	return null;
 }
 
+/**
+ * Compra é mais estrita que a raia `fechado_ganho`: aprovação cadastral não é
+ * pagamento/efetivação. A fonte Bevi que a operação definiu como financeira é
+ * `prop_efetivada`; qualquer outro terminal continua visível no CRM, mas não
+ * retorna Purchase para a Meta.
+ */
+export function purchaseConfirmedByBevi(status: ProposalStatus): boolean {
+	return extractLastTransition(status)?.state === "prop_efetivada";
+}
+
 // ============================================================================
 // Orquestração — proposalId da CONVERSA (nunca do modelo) → consulta REAL
 // ============================================================================
