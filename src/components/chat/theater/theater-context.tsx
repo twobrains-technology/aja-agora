@@ -11,6 +11,7 @@ import {
 	useState,
 } from "react";
 
+import { empurrarNoDataLayer } from "@/lib/analytics/data-layer";
 import { avisarServidorDoChatIniciado, rastrearChatIniciado } from "@/lib/analytics/meta-pixel";
 
 /** De onde a semente veio. `"digitada"` é fala REAL do cliente (o que ele
@@ -77,6 +78,17 @@ export function TheaterProvider({ children }: { children: ReactNode }) {
 		const eventId = crypto.randomUUID();
 		rastrearChatIniciado({ origem: origin, eventId });
 		avisarServidorDoChatIniciado(eventId);
+		// O GTM só enxerga o que passa pelo dataLayer. O pixel acima dispara
+		// direto no `fbq`, então sem este push o contêiner fica sem nenhum
+		// gatilho de abertura — que era o que o Tag Assistant mostrava: container
+		// carregado, nenhuma tag disparada. Mesmo `event_id` do pixel, para a
+		// abertura não contar duas vezes.
+		empurrarNoDataLayer({
+			event: "chat_opened",
+			event_id: eventId,
+			journey_stage: "chat_opened",
+			origem: origin,
+		});
 	}, []);
 
 	const closeTheater = useCallback(() => {
