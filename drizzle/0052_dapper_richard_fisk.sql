@@ -1,0 +1,1 @@
+ALTER TABLE "conversion_events" ADD COLUMN "client_user_agent" text;

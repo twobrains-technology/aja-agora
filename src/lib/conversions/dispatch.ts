@@ -7,7 +7,7 @@
 // chave e mandar o histórico dos últimos 7 dias de uma vez, em vez de começar
 // a ensinar o algoritmo do zero.
 
-import { and, asc, eq, gte, inArray, lt } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { conversionEvents } from "@/db/schema";
 import { getConversionsConfig, motivoParaNaoEnviar } from "./config";
@@ -109,6 +109,7 @@ export async function despacharConversoesPendentes(limite = 500): Promise<Result
 			fbc: linha.fbc,
 			fbp: linha.fbp,
 			ctwaClid: linha.ctwaClid,
+			clientUserAgent: linha.clientUserAgent,
 			actionSource: linha.actionSource,
 			contentId: linha.contentId,
 			campaignId: linha.campaignId,
@@ -130,6 +131,17 @@ export async function despacharConversoesPendentes(limite = 500): Promise<Result
 
 	for (const lote of [marcos]) {
 		if (lote.length === 0) continue;
+		// Conta cada tentativa real, inclusive as que a Meta recusa, para o
+		// diagnóstico do worker e para não confundir retry com duplicação.
+		await db
+			.update(conversionEvents)
+			.set({ attempts: sql`${conversionEvents.attempts} + 1` })
+			.where(
+				inArray(
+					conversionEvents.id,
+					lote.map((evento) => evento.id),
+				),
+			);
 
 		const resultado = await enviarParaMeta(lote, cfg);
 
