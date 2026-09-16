@@ -158,6 +158,7 @@ async function gravarFato(input: {
 				fbc: montarFbc(visita?.fbclid, visita?.createdAt.getTime() ?? Date.now()),
 				fbp: visita?.fbp ?? null,
 				ctwaClid: visita?.ctwaClid ?? null,
+				clientUserAgent: visita?.userAgent ?? null,
 				firstVisitId: primeiraVisita?.id ?? null,
 				lastVisitId: visita?.id ?? null,
 				campaignId: visita?.campaignId ?? null,

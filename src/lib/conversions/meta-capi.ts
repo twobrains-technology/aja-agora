@@ -61,6 +61,7 @@ export interface EventoParaEnvio {
 	/** Item do catálogo (`auto-50000`). Nulo quando não deu para determinar. */
 	contentId?: string | null;
 	ctwaClid: string | null;
+	clientUserAgent?: string | null;
 	actionSource: string;
 	campaignId?: string | null;
 	adsetId?: string | null;
@@ -96,6 +97,7 @@ export function montarPayload(eventos: EventoParaEnvio[], cfg: ConversionsConfig
 			if (evento.fbc) userData.fbc = evento.fbc;
 			if (evento.fbp) userData.fbp = evento.fbp;
 			if (evento.ctwaClid) userData.ctwa_clid = evento.ctwaClid;
+			if (evento.clientUserAgent) userData.client_user_agent = evento.clientUserAgent;
 
 			const customData: Record<string, unknown> = { currency: evento.currency };
 			const valor = evento.value === null ? null : Number(evento.value);

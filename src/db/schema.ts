@@ -1187,6 +1187,8 @@ export const conversionEvents = pgTable(
 		fbc: text(),
 		fbp: text(),
 		ctwaClid: text("ctwa_clid"),
+		/** User-Agent do navegador no momento da visita, quando disponível. */
+		clientUserAgent: text("client_user_agent"),
 		// Snapshot de atribuição e contexto comercial do fato, sem PII crua.
 		firstVisitId: uuid("first_visit_id").references(() => visits.id, { onDelete: "set null" }),
 		lastVisitId: uuid("last_visit_id").references(() => visits.id, { onDelete: "set null" }),
