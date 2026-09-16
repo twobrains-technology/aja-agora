@@ -72,10 +72,22 @@ export interface EventoParaEnvio {
 	saleId?: string | null;
 }
 
+/**
+ * O que a Meta respondeu ao lote. `fbtrace_id` é o que ela pede quando se abre
+ * chamado, e `messages` traz o aviso que NÃO vira erro — evento aceito com
+ * ressalva responde 200 e some, se ninguém olhar aqui.
+ */
+export interface RespostaDaMeta {
+	eventsReceived?: number;
+	messages?: unknown[];
+	fbtraceId?: string;
+}
+
 export interface ResultadoEnvio {
 	ok: boolean;
 	/** Mensagem de erro pra gravar em `last_error` — nunca vazia quando `ok` é falso. */
 	erro?: string;
+	resposta?: RespostaDaMeta;
 }
 
 /** Um evento velho demais nunca vai ser aceito: melhor marcar do que insistir. */
@@ -135,6 +147,23 @@ export function montarPayload(eventos: EventoParaEnvio[], cfg: ConversionsConfig
 	};
 }
 
+/**
+ * Lê o corpo de sucesso da Meta. Nunca lança: resposta ilegível não pode
+ * transformar envio aceito em falha.
+ */
+function lerResposta(corpo: string): RespostaDaMeta {
+	try {
+		const json = JSON.parse(corpo) as Record<string, unknown>;
+		return {
+			eventsReceived: typeof json.events_received === "number" ? json.events_received : undefined,
+			messages: Array.isArray(json.messages) ? json.messages : undefined,
+			fbtraceId: typeof json.fbtrace_id === "string" ? json.fbtrace_id : undefined,
+		};
+	} catch {
+		return {};
+	}
+}
+
 export async function enviarParaMeta(
 	eventos: EventoParaEnvio[],
 	cfg: ConversionsConfig,
@@ -156,14 +185,15 @@ export async function enviarParaMeta(
 			}),
 		});
 
+		const corpo = await resposta.text().catch(() => "");
+
 		if (!resposta.ok) {
 			// O corpo do erro da Meta diz QUAL campo recusou — sem ele, diagnosticar
 			// vira adivinhação.
-			const corpo = await resposta.text().catch(() => "");
 			return { ok: false, erro: `HTTP ${resposta.status}: ${corpo.slice(0, 500)}` };
 		}
 
-		return { ok: true };
+		return { ok: true, resposta: lerResposta(corpo) };
 	} catch (err) {
 		return { ok: false, erro: `falha de rede: ${(err as Error).message}` };
 	}
