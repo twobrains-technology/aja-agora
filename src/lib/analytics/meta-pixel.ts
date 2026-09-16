@@ -1,22 +1,16 @@
-// Eventos do pixel no navegador.
+// Parâmetros da abertura do chat, para o GTM.
 //
-// O pixel (`analytics-scripts.tsx`) só dispara `PageView`. Isso basta para
-// remarketing de página, mas não responde à pergunta que a mídia faz o tempo
-// todo: "quantos dos que chegaram COMEÇARAM a conversar?". O chat aqui é um
-// overlay — abrir o Modo Teatro não muda a URL —, então nem a regra "URL
-// contém" nem "referring domain" do Gerenciador conseguem marcar isso. Só um
-// evento consegue.
+// O chat é um overlay — abrir o Modo Teatro não muda a URL —, então nem "URL
+// contém" nem "referring domain" do Gerenciador conseguem marcar a abertura.
+// Só um evento consegue, e por isso ele existe.
 //
-// `trackCustom` e não `track`: `ChatIniciado` não é evento do vocabulário da
-// Meta, e mandá-lo como padrão faria a Meta descartar o nome. Sobre um evento
-// personalizado a mídia monta a conversão personalizada, com ou sem filtro de
-// parâmetro.
+// Até 16/09/2026 este módulo disparava `fbq('trackCustom', 'ChatOpened')`
+// direto. Não dispara mais: a tag `AJA | META | 00 | ChatOpened` do GTM assumiu,
+// acionada pelo `chat_opened` do `dataLayer`. O que sobrou aqui é a montagem
+// dos parâmetros — os mesmos que iam no pixel, agora entregues ao GTM.
 //
-// Best-effort por natureza: bloqueador de anúncio, `fbq` ausente (o pixel só
-// carrega se `NEXT_PUBLIC_META_PIXEL_ID` foi assado no build) e erro de rede
-// não podem, em nenhuma hipótese, atrapalhar a abertura do chat.
-
-type Fbq = (...args: unknown[]) => void;
+// A BASE do pixel (`fbq('init')` + `PageView`) segue em `analytics-scripts.tsx`
+// e não se mexe: é ela que decide a verba.
 
 /** Vertical pela rota — o mesmo mapa do catálogo, do lado do cliente. */
 const VERTICAL_POR_ROTA: Record<string, string> = {
@@ -42,35 +36,36 @@ export interface ChatIniciadoParams {
 	eventId?: string | null;
 }
 
-/** "Esta pessoa começou a conversar." Um por abertura do teatro. */
-export function rastrearChatIniciado(params: ChatIniciadoParams = {}): void {
-	if (typeof window === "undefined") return;
+/**
+ * Os parâmetros da abertura do chat, para o `dataLayer`.
+ *
+ * **Desde 16/09/2026 a abertura não chama mais o `fbq` direto.** Quem manda o
+ * `ChatOpened` para a Meta agora é a tag `AJA | META | 00 | ChatOpened` do
+ * GTM, acionada pelo `chat_opened` que a abertura empurra no `dataLayer`.
+ * Manter os dois vivos faria a MESMA abertura contar duas vezes — e sem
+ * `eventID` cruzado não haveria dedup: o quarto argumento do `fbq` aqui
+ * sempre foi `undefined`, apesar do que o comentário antigo prometia.
+ *
+ * Os parâmetros que iam no `fbq` passam a viajar no push, para o GTM receber
+ * exatamente o que a Meta recebia — vertical da rota, origem e item do
+ * catálogo. Nada de medição se perde na troca.
+ *
+ * O que NÃO saiu: a base do pixel (`fbq('init')` + `PageView` em
+ * `analytics-scripts.tsx`) e o `config` do GA4 continuam onde estavam. O GTM
+ * não tem tag equivalente, e derrubá-las apagaria medição que decide verba.
+ */
+export function parametrosDaAberturaDoChat(
+	params: ChatIniciadoParams = {},
+): Record<string, unknown> {
+	const rota =
+		typeof window === "undefined" ? "/" : window.location.pathname.replace(/\/$/, "") || "/";
 
-	const fbq = (window as unknown as { fbq?: Fbq }).fbq;
-	if (typeof fbq !== "function") return;
-
-	const rota = window.location.pathname.replace(/\/$/, "") || "/";
-
-	try {
-		fbq(
-			"trackCustom",
-			"ChatOpened",
-			{
-				content_category: VERTICAL_POR_ROTA[rota] ?? "outra",
-				origem: params.origem ?? "desconhecida",
-				pagina: rota,
-				...(params.contentId ? { content_ids: [params.contentId], content_type: "product" } : {}),
-			},
-			// DEDUPLICAÇÃO (B3). O quarto argumento do `fbq` é o objeto de opções, e
-			// `eventID` é o campo que a Meta cruza com o `event_id` que chega pela
-			// Conversions API. Sem ele, ligar o caminho server-side faria a mesma
-			// abertura contar DUAS vezes — e o sintoma seria uma métrica que subiu,
-			// que é o tipo de defeito que ninguém investiga.
-			undefined,
-		);
-	} catch {
-		// Medir nunca derruba o produto.
-	}
+	return {
+		content_category: VERTICAL_POR_ROTA[rota] ?? "outra",
+		origem: params.origem ?? "desconhecida",
+		pagina: rota,
+		...(params.contentId ? { content_ids: [params.contentId], content_type: "product" } : {}),
+	};
 }
 
 /**
