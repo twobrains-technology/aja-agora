@@ -78,3 +78,7 @@ test-results/
 # Estado do hook de design (impeccable). O cache é por sessão e guarda caminho
 # absoluto da máquina — não serve pra ninguém além de quem o gerou.
 .impeccable/hook.cache.json
+
+# artefatos gerados (exports de dados, dossiês de validação) — não versionar nem lintar
+exports/
+.orientacao/

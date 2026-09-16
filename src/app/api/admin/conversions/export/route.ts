@@ -1,4 +1,4 @@
-import { aliasedTable, and, asc, eq, inArray } from "drizzle-orm";
+import { aliasedTable, and, asc, eq, inArray, or } from "drizzle-orm";
 import * as XLSX from "xlsx";
 import { db } from "@/db";
 import { conversionEvents, leads, visits } from "@/db/schema";
@@ -13,9 +13,11 @@ function csvCell(value: unknown): string {
 	return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
-export async function GET(request: Request) {
-	const { error } = await requireRole("admin", "viewer");
-	if (error) return error;
+/**
+ * As linhas da reconciliação. Fora do handler para que o invariante da jornada
+ * completa possa ser provado sem passar pela autenticação da rota.
+ */
+export async function linhasDeReconciliacao() {
 	const firstVisit = aliasedTable(visits, "first_export_visit");
 	const lastVisit = aliasedTable(visits, "last_export_visit");
 	const rows = await db
@@ -63,7 +65,14 @@ export async function GET(request: Request) {
 		.leftJoin(
 			conversionEvents,
 			and(
-				eq(conversionEvents.leadId, leads.id),
+				// ConversationStarted nasce só com a conversa: no instante da primeira
+				// fala o lead ainda não existe. Casar apenas por `leadId` deixaria o
+				// primeiro marco da jornada fora da reconciliação — e é justamente ele
+				// o denominador das taxas Conversation→Qualified.
+				or(
+					eq(conversionEvents.leadId, leads.id),
+					eq(conversionEvents.conversationId, leads.conversationId),
+				),
 				inArray(conversionEvents.eventName, [
 					"conversation_started",
 					"lead",
@@ -77,6 +86,13 @@ export async function GET(request: Request) {
 		.leftJoin(firstVisit, eq(firstVisit.id, conversionEvents.firstVisitId))
 		.leftJoin(lastVisit, eq(lastVisit.id, conversionEvents.lastVisitId))
 		.orderBy(asc(leads.id), asc(conversionEvents.occurredAt));
+	return rows;
+}
+
+export async function GET(request: Request) {
+	const { error } = await requireRole("admin", "viewer");
+	if (error) return error;
+	const rows = await linhasDeReconciliacao();
 	const format = new URL(request.url).searchParams.get("format");
 	if (format === "csv") {
 		const headers = Object.keys(rows[0] ?? { leadId: null, eventName: null });
