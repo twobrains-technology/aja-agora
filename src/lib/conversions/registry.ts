@@ -3,7 +3,7 @@
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { beviProposals, conversations, conversionEvents, leads, visits } from "@/db/schema";
-import type { LeadStage } from "@/lib/admin/lead-stages";
+import { type LeadStage, STAGE_ORDER } from "@/lib/admin/lead-stages";
 import { contentIdDoEvento, numeroOuNulo } from "./conteudo-do-evento";
 import { hashEmail, hashExternalId, hashPhone, montarFbc } from "./hash";
 
@@ -252,26 +252,54 @@ export async function registrarCompraConfirmada(
 	});
 }
 
+/**
+ * Os estágios que esta transição ATRAVESSOU, incluindo o destino.
+ *
+ * Um lead salta: `applyTrackedStageToLead` aplica de uma vez o estágio máximo
+ * alcançado na conversa, então quem informou CPF (qualificou) e seguiu até ver
+ * os grupos reais entra direto em `em_negociacao`, sem nunca pisar em
+ * `qualificado`. Marcar só o destino perderia justamente o `QualifiedLead` —
+ * o sinal que a mídia usa para otimizar, de um lead que qualificou de verdade.
+ *
+ * Sem estágio anterior conhecido só o destino conta: inventar caminho para trás
+ * criaria marco que ninguém percorreu.
+ */
+function estagiosAtravessados(stage: LeadStage, previousStage?: LeadStage): LeadStage[] {
+	if (!previousStage) return [stage];
+	const de = STAGE_ORDER.indexOf(previousStage);
+	const ate = STAGE_ORDER.indexOf(stage);
+	if (de < 0 || ate < 0 || ate <= de) return [stage];
+	return [...STAGE_ORDER.slice(de + 1, ate + 1)];
+}
+
 export async function registrarConversaoDoEstagio(
 	leadId: string,
 	stage: LeadStage,
 	occurredAt?: Date,
 	previousStage?: LeadStage,
 ): Promise<void> {
+	// O legado marca SÓ o destino, de propósito. Ele mapeia `proposta_enviada` e
+	// `fechado_ganho`, e varrer o caminho ali inventaria uma proposta entregue e
+	// uma venda que ninguém verificou — o PRD §10 exige entrega e confirmação
+	// financeira para esses dois. No V2 o único estágio mapeado é `qualificado`,
+	// que deriva de um fato que ocorreu de verdade: o cliente deu CPF e celular.
 	if (!contratoV2Ativo()) {
 		const legado = ESTAGIO_PARA_EVENTO_LEGADO[stage];
 		if (legado) await registrarConversao({ leadId, eventName: legado, occurredAt });
 		return;
 	}
-	const eventName = ESTAGIO_PARA_EVENTO[stage];
-	if (eventName)
-		await registrarEventoDeConversao({
-			eventName,
-			leadId,
-			occurredAt,
-			previousStage,
-			currentStage: stage,
-		});
+
+	for (const percorrido of estagiosAtravessados(stage, previousStage)) {
+		const eventName = ESTAGIO_PARA_EVENTO[percorrido];
+		if (eventName)
+			await registrarEventoDeConversao({
+				eventName,
+				leadId,
+				occurredAt,
+				previousStage,
+				currentStage: percorrido,
+			});
+	}
 }
 
 /**
