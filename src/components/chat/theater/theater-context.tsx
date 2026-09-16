@@ -12,7 +12,10 @@ import {
 } from "react";
 
 import { empurrarNoDataLayer } from "@/lib/analytics/data-layer";
-import { avisarServidorDoChatIniciado, rastrearChatIniciado } from "@/lib/analytics/meta-pixel";
+import {
+	avisarServidorDoChatIniciado,
+	parametrosDaAberturaDoChat,
+} from "@/lib/analytics/meta-pixel";
 
 /** De onde a semente veio. `"digitada"` é fala REAL do cliente (o que ele
  * escreveu no composer); `"chip"` é uma frase de ENTRADA que o próprio produto
@@ -76,7 +79,6 @@ export function TheaterProvider({ children }: { children: ReactNode }) {
 		// e ao ITP do iOS, que é onde o sinal se perdia justamente no público
 		// que mais importa.
 		const eventId = crypto.randomUUID();
-		rastrearChatIniciado({ origem: origin, eventId });
 		avisarServidorDoChatIniciado(eventId);
 		// O GTM só enxerga o que passa pelo dataLayer. O pixel acima dispara
 		// direto no `fbq`, então sem este push o contêiner fica sem nenhum
@@ -87,7 +89,7 @@ export function TheaterProvider({ children }: { children: ReactNode }) {
 			event: "chat_opened",
 			event_id: eventId,
 			journey_stage: "chat_opened",
-			origem: origin,
+			...parametrosDaAberturaDoChat({ origem: origin, eventId }),
 		});
 	}, []);
 
