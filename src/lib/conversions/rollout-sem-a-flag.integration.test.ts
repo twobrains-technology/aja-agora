@@ -13,7 +13,7 @@
 // Skip se DATABASE_URL ausente.
 
 import { inArray } from "drizzle-orm";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 const HAS_DB = Boolean(process.env.DATABASE_URL) && !process.env.DATABASE_URL?.includes("sentinel");
 const describeIfDb = HAS_DB ? describe : describe.skip;
@@ -24,7 +24,12 @@ describeIfDb("rollout do contrato V2 — com a flag desligada", () => {
 	let registry: typeof import("./registry");
 
 	const convIds: string[] = [];
-	const flagOriginal = process.env.META_CONVERSION_CONTRACT_V2_ENABLED;
+	const envOriginal = {
+		META_CONVERSION_CONTRACT_V2_ENABLED: process.env.META_CONVERSION_CONTRACT_V2_ENABLED,
+		CONVERSIONS_API_ENABLED: process.env.CONVERSIONS_API_ENABLED,
+		META_PIXEL_ID: process.env.META_PIXEL_ID,
+		META_CAPI_ACCESS_TOKEN: process.env.META_CAPI_ACCESS_TOKEN,
+	};
 
 	beforeAll(async () => {
 		({ db } = await import("@/db"));
@@ -33,8 +38,10 @@ describeIfDb("rollout do contrato V2 — com a flag desligada", () => {
 	});
 
 	afterEach(() => {
-		if (flagOriginal === undefined) delete process.env.META_CONVERSION_CONTRACT_V2_ENABLED;
-		else process.env.META_CONVERSION_CONTRACT_V2_ENABLED = flagOriginal;
+		for (const [chave, valor] of Object.entries(envOriginal)) {
+			if (valor === undefined) delete process.env[chave];
+			else process.env[chave] = valor;
+		}
 	});
 
 	afterAll(async () => {
@@ -71,6 +78,28 @@ describeIfDb("rollout do contrato V2 — com a flag desligada", () => {
 			.select()
 			.from(schema.conversionEvents)
 			.where(inArray(schema.conversionEvents.leadId, [leadId]));
+	}
+
+	/** Roda o despacho com a Meta stubada e devolve os eventos que saíram no corpo. */
+	async function despacharCapturando(): Promise<Array<{ event_name: string }>> {
+		process.env.CONVERSIONS_API_ENABLED = "true";
+		process.env.META_PIXEL_ID = "1360432072874656";
+		process.env.META_CAPI_ACCESS_TOKEN = "token-de-teste";
+		const enviados: Array<{ event_name: string }> = [];
+		vi.stubGlobal("fetch", async (_url: string, init?: { body?: string }) => {
+			const corpo = JSON.parse(String(init?.body ?? "{}"));
+			enviados.push(...(corpo.data ?? []));
+			return new Response(JSON.stringify({ events_received: corpo.data?.length ?? 0 }), {
+				status: 200,
+			});
+		});
+		try {
+			const dispatch = await import("./dispatch");
+			await dispatch.despacharConversoesPendentes();
+		} finally {
+			vi.unstubAllGlobals();
+		}
+		return enviados;
 	}
 
 	it("a qualificação continua virando sinal — a flag governa o contrato, não o registro", async () => {
@@ -114,6 +143,41 @@ describeIfDb("rollout do contrato V2 — com a flag desligada", () => {
 		const eventos = await eventosDo(lead.id);
 		expect(eventos).toHaveLength(1);
 		expect(eventos[0].eventName).toBe("qualified_lead");
+	});
+
+	it("o marco legado pendente ainda é ENVIADO à Meta — gravar sem enviar é o mesmo apagão um passo à frente", async () => {
+		delete process.env.META_CONVERSION_CONTRACT_V2_ENABLED;
+		const lead = await leadReal();
+		await registry.registrarConversao({ leadId: lead.id, eventName: "contrato_fechado" });
+
+		const enviados = await despacharCapturando();
+
+		expect(enviados.map((e) => e.event_name)).toContain("Purchase");
+		const [evento] = await eventosDo(lead.id);
+		expect(evento.status).toBe("sent");
+	});
+
+	it("o ChatOpened continua fora da fila comercial — é ele que gera os HTTP 400", async () => {
+		delete process.env.META_CONVERSION_CONTRACT_V2_ENABLED;
+		const lead = await leadReal();
+		await db.insert(schema.conversionEvents).values({
+			leadId: lead.id,
+			conversationId: lead.conversationId,
+			eventName: "chat_iniciado",
+			destination: "meta",
+			eventKey: `${lead.id}:chat_iniciado`,
+			occurredAt: new Date(),
+			currency: "BRL",
+			actionSource: "website",
+		});
+
+		const enviados = await despacharCapturando();
+
+		const nomes = enviados.map((e) => e.event_name);
+		expect(nomes).not.toContain("ChatIniciado");
+		expect(nomes).not.toContain("chat_iniciado");
+		const [evento] = await eventosDo(lead.id);
+		expect(evento.status).toBe("skipped");
 	});
 
 	it("o lead simulado continua de fora nos dois contratos", async () => {

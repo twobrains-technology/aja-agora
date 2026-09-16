@@ -31,6 +31,18 @@ const NOME_META: Record<string, string> = {
 	purchase: "Purchase",
 };
 
+/**
+ * Este evento tem nome que a Meta entende?
+ *
+ * É a allowlist do despacho: sem mapeamento, o evento sairia com o nome
+ * interno e a Meta recusaria o lote inteiro. `chat_iniciado` fica
+ * deliberadamente de fora — era abertura de UI e gerava os HTTP 400 que
+ * contaminavam a fila comercial (PRD §6.2).
+ */
+export function temNomeMeta(eventName: string): boolean {
+	return eventName in NOME_META;
+}
+
 /** A Meta recusa evento com mais de 7 dias. */
 export const JANELA_MAXIMA_MS = 7 * 24 * 60 * 60 * 1000;
 

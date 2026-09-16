@@ -84,7 +84,13 @@ describe("dispatch do contrato Meta CAPI V2", () => {
 		expect(result.enviados).toBe(1);
 	});
 
-	it("uma falha comercial não revive nem envia evento legado", async () => {
+	// O marco legado sai na mesma leva enquanto a flag do V2 não vira. A régua
+	// do despacho é ter nome que a Meta entende, e `proposta_criada` tem
+	// (`InitiateCheckout`) — travá-lo aqui deixaria a conta sem sinal nenhum
+	// entre o deploy e o aceite do Growth, que é justamente quando a campanha
+	// ativa mais precisa ser alimentada. Quem fica de fora é `chat_iniciado`,
+	// coberto no teste acima, porque é ele que produz os HTTP 400.
+	it("uma falha comercial marca o lote inteiro como failed, sem reviver nada", async () => {
 		linhas.pendentes = [evento("v1", "qualified_lead"), evento("legacy", "proposta_criada")];
 		atualizacoes.length = 0;
 		enviarParaMeta
@@ -94,6 +100,7 @@ describe("dispatch do contrato Meta CAPI V2", () => {
 		await despacharConversoesPendentes();
 		expect(enviarParaMeta).toHaveBeenCalledTimes(1);
 		expect(atualizacoes).toContainEqual({ id: "v1", status: "failed" });
-		expect(atualizacoes).toContainEqual({ id: "legados", status: "skipped" });
+		expect(atualizacoes).toContainEqual({ id: "legacy", status: "failed" });
+		expect(atualizacoes).not.toContainEqual({ id: "legados", status: "skipped" });
 	});
 });

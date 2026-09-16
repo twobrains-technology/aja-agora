@@ -16,6 +16,7 @@ import {
 	enviarParaMeta,
 	expirouParaMeta,
 	JANELA_MAXIMA_MS,
+	temNomeMeta,
 } from "./meta-capi";
 
 export interface ResultadoDespacho {
@@ -26,14 +27,19 @@ export interface ResultadoDespacho {
 	desligado?: string;
 }
 
-const EVENTOS_V2 = new Set([
-	"conversation_started",
-	"lead",
-	"qualified_lead",
-	"offer_viewed",
-	"proposal_sent",
-	"purchase",
-]);
+/**
+ * O que sai da fila comercial.
+ *
+ * A régua é ter nome que a Meta entende, não pertencer ao contrato novo. Os
+ * marcos legados (`lead_qualificado`, `contrato_fechado`) continuam mapeados e
+ * continuam sendo enviados enquanto a flag do V2 não vira — travá-los aqui
+ * apagaria a medição durante todo o rollout, que é justamente o período em que
+ * ela precisa existir para comparar contrato velho e novo. Quem fica de fora é
+ * `chat_iniciado`, o diagnóstico de abertura de UI que gerava os HTTP 400.
+ */
+function enviavel(eventName: string): boolean {
+	return temNomeMeta(eventName);
+}
 
 /**
  * Envia os pendentes em um lote.
@@ -76,22 +82,20 @@ export async function despacharConversoesPendentes(limite = 500): Promise<Result
 		return { enviados: 0, falhas: 0, expirados };
 	}
 
-	// Nunca reaproveita o contrato antigo. Em particular, chat_iniciado era
-	// abertura de UI e gerava os HTTP 400 que contaminavam a fila comercial.
-	const legados = pendentes.filter((linha) => !EVENTOS_V2.has(linha.eventName));
-	if (legados.length) {
+	const foraDaFila = pendentes.filter((linha) => !enviavel(linha.eventName));
+	if (foraDaFila.length) {
 		await db
 			.update(conversionEvents)
-			.set({ status: "skipped", lastError: "evento legado fora do contrato Meta CAPI V2" })
+			.set({ status: "skipped", lastError: "evento sem nome Meta — fora da fila comercial" })
 			.where(
 				inArray(
 					conversionEvents.id,
-					legados.map((linha) => linha.id),
+					foraDaFila.map((linha) => linha.id),
 				),
 			);
 	}
 	const paraEnvio: EventoParaEnvio[] = pendentes
-		.filter((linha) => EVENTOS_V2.has(linha.eventName))
+		.filter((linha) => enviavel(linha.eventName))
 		.map((linha) => ({
 			id: linha.id,
 			eventName: linha.eventName,
