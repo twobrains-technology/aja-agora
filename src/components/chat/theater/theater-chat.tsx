@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { empurrarMarcosNoDataLayer } from "@/lib/analytics/data-layer";
 import { ChatProvider, useChatContext } from "@/lib/chat/provider";
 import type { AjaUIMessage } from "@/lib/chat/ui-message";
 import { cn } from "@/lib/utils";
@@ -221,8 +222,17 @@ function TheaterChatBody({
 	settled,
 	isResumeGreeting,
 }: TheaterChatProps & { isResumeGreeting: boolean }) {
-	const { messages, status, regenerate, error, sendUserMessage } = useChatContext();
+	const { messages, status, regenerate, error, sendUserMessage, conversationId } = useChatContext();
 	const isStreaming = status === "submitted" || status === "streaming";
+
+	// Marcos do funil no dataLayer, para o GTM. Roda ao FIM de cada turno porque
+	// é aí que o servidor acabou de registrar o que houve — `lead` nasce quando o
+	// contato é capturado, no meio da conversa. O `event_id` vem de lá, nunca
+	// daqui: id sorteado no browser faria a Meta contar o mesmo fato duas vezes.
+	useEffect(() => {
+		if (isStreaming || !conversationId) return;
+		void empurrarMarcosNoDataLayer(conversationId);
+	}, [isStreaming, conversationId]);
 	// `sendUserMessage` muda de identidade a cada render (depende do objeto do
 	// useChat). Guardamos a referência mais recente num ref pra NÃO colocá-la nas
 	// deps do effect — senão o cleanup/re-run mata o timer de 480ms antes dele
