@@ -24,9 +24,9 @@ import {
 import {
 	ARTIFACTS_DE_OFERTA_SQL,
 	chaveDaPessoa,
+	contagensDoFunil,
 	VISITA_CONTAVEL,
 	VISITA_DE_GENTE,
-	VISITA_NAO_E_ECO,
 } from "./sinais-do-funil";
 
 /** Quantos dias sem o cliente escrever até a conversa deixar de contar como viva. */
@@ -301,26 +301,28 @@ export async function computeOrigens(fromDate: Date, toDate: Date): Promise<Linh
         WHEN v.utm_source IS NULL AND v.ctwa_source_id IS NULL AND v.referrer IS NOT NULL
         THEN split_part(regexp_replace(v.referrer, '^https?://', ''), '/', 1)
       END AS referrer_host,
+      -- O id de campanha da Meta. É a chave de MAIOR FORÇA para resolver o nome
+      -- real (chaveDeOrigem): a UTM é texto que o anunciante digitou e quase
+      -- nunca casa com o espelho local. Sem ele esta tabela seguiria mostrando o
+      -- id abreviado — e o sufixo de seis dígitos casa com duas campanhas
+      -- diferentes (medido em 17/09/2026).
+      v.campaign_id AS campaign_id,
       -- Só a CONTAGEM despreza o eco. O eco não pode sair do WHERE porque a
       -- conversa fica ligada à ÚLTIMA visita da rajada (o cookie da sessão
       -- termina apontando para ela): filtrar as linhas aqui apagaria da tabela
       -- por origem 18 das 47 conversas com visita, medido em produção.
-      count(DISTINCT v.id) FILTER (WHERE ${VISITA_NAO_E_ECO}) AS visitas,
-      count(DISTINCT c.id) AS conversas,
-      -- CONVERSAS identificadas, não leads — a mesma definição que o funil usa
-      -- em computeFunilMidia. Contando leads, uma conversa com dedup imperfeito
-      -- entrava duas vezes: a coluna "Identificados" da tabela podia divergir da
-      -- etapa "Se identificaram" do funil, na mesma tela, com o mesmo rótulo.
-      count(DISTINCT c.id) FILTER (WHERE l.phone IS NOT NULL OR l.email IS NOT NULL) AS identificados,
-      count(DISTINCT bp.id) AS propostas,
-      count(DISTINCT l.id) FILTER (WHERE l.stage = 'fechado_ganho') AS fechados
+      --
+      -- As cinco contagens vêm de contagensDoFunil, o MESMO fragmento que a
+      -- tela de Campanhas usa. Era aqui o único lugar que sabia medir o degrau;
+      -- agrupar por campanha não é motivo para ter uma segunda contagem.
+      ${contagensDoFunil()}
     FROM visits v
     LEFT JOIN conversations c ON c.visit_id = v.id AND c.is_simulated = false
     LEFT JOIN leads l ON l.conversation_id = c.id AND l.is_simulated = false
     LEFT JOIN bevi_proposals bp ON bp.conversation_id = c.id
     WHERE v.created_at BETWEEN ${fromDate} AND ${toDate}
       AND ${VISITA_DE_GENTE}
-    GROUP BY 1,2,3,4,5,6,7
+    GROUP BY 1,2,3,4,5,6,7,8
   `);
 
 	// Consolidação por RÓTULO: duas linhas do banco podem virar o mesmo nome na
@@ -337,6 +339,7 @@ export async function computeOrigens(fromDate: Date, toDate: Date): Promise<Linh
 			ctwaSourceId: (linha.ctwa_source_id as string) ?? null,
 			ctwaHeadline: (linha.ctwa_headline as string) ?? null,
 			referrerHost: (linha.referrer_host as string) ?? null,
+			campaignId: (linha.campaign_id as string) ?? null,
 		});
 
 		const atual = porLabel.get(origem.label) ?? {

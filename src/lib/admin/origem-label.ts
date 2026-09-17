@@ -7,6 +7,14 @@
 // referral de Click-to-WhatsApp porque UTM é declaração explícita de quem
 // montou a campanha, enquanto o referral é o que a Meta inferiu. Quando os dois
 // vêm juntos e discordam, a declaração vale mais.
+//
+// O NOME da campanha ("META | EXP | LEAD | BR | PLACEMENTS") não é digitado
+// aqui: vem do resolvedor, que lê o espelho local do gerenciador de anúncios
+// (`src/lib/meta-ads/resolver.ts`). O id da Meta é a única chave que identifica
+// de verdade — o sufixo de seis dígitos que a tela mostrava casa com duas
+// campanhas diferentes.
+
+import { chaveDeOrigem, nomeCurto } from "@/lib/meta-ads/resolver";
 
 export interface OrigemBruta {
 	utmSource: string | null;
@@ -16,6 +24,14 @@ export interface OrigemBruta {
 	ctwaSourceId: string | null;
 	ctwaHeadline: string | null;
 	referrerHost: string | null;
+	/**
+	 * O id de campanha da Meta (`visits.campaign_id`).
+	 *
+	 * Opcional de propósito: quem só tem UTM continua funcionando igual. Quando
+	 * ele existe, é a chave mais forte — é o id da própria Meta, não texto que
+	 * alguém digitou.
+	 */
+	campaignId?: string | null;
 }
 
 export type TipoOrigem = "campanha" | "click-to-whatsapp" | "referencia" | "direto";
@@ -27,6 +43,17 @@ export interface Origem {
 	criativo: string | null;
 	/** Como aparece na tela. */
 	label: string;
+	/**
+	 * O nome REAL da campanha, quando o resolvedor conhece (`meta_entities`).
+	 *
+	 * Sem ele, quem renderiza usa `campanha` (o valor cru da UTM) — o
+	 * comportamento de antes. É a mesma escolha do `predicadoDeOrigemNaVisita`,
+	 * que devolve `null` em vez de lista vazia: **não saber não é erro**, e
+	 * apagar o que já aparecia seria pior que o problema original.
+	 */
+	nomeDaCampanha?: string | null;
+	/** O id de 18 dígitos, inteiro, para o atributo `title` de quem renderiza. */
+	entityId?: string | null;
 }
 
 function limpo(valor: string | null | undefined): string | null {
@@ -43,6 +70,8 @@ export interface ColunasDaVisita {
 	ctwaSourceId: string | null;
 	ctwaHeadline: string | null;
 	referrer: string | null;
+	/** `visits.campaign_id` — o id da Meta, mais forte que a UTM. */
+	campaignId?: string | null;
 }
 
 /**
@@ -64,6 +93,7 @@ export function origemDaVisita(visita: ColunasDaVisita): Origem {
 		ctwaSourceId: visita.ctwaSourceId,
 		ctwaHeadline: visita.ctwaHeadline,
 		referrerHost: semEsquema ? (semEsquema.split("/")[0] ?? null) : null,
+		campaignId: visita.campaignId ?? null,
 	});
 }
 
@@ -76,11 +106,24 @@ export function rotularOrigem(bruta: OrigemBruta | null): Origem {
 	const referrerHost = limpo(bruta?.referrerHost);
 
 	if (utmSource) {
+		// O nome real vem do resolvedor (`meta_entities`), quando ele conhece
+		// esta campanha. A chave de maior força é o `campaign_id` da Meta; a UTM
+		// é o plano B, porque é texto que o anunciante digitou.
+		const chave = chaveDeOrigem({
+			campaignId: bruta?.campaignId ?? null,
+			utmCampaign,
+			ctwaSourceId,
+		});
+		const resolvida = chave ? nomeCurto(chave) : null;
 		return {
 			tipo: "campanha",
 			fonte: utmSource,
 			campanha: utmCampaign,
 			criativo: utmContent,
+			nomeDaCampanha: resolvida?.nome ?? null,
+			entityId: resolvida?.entityId ?? null,
+			// `label` continua sendo o valor CRU: é o que a busca e o filtro usam,
+			// e trocá-lo por texto bonito quebraria comparações que hoje casam.
 			label: [utmSource, utmCampaign, utmContent].filter(Boolean).join(" · "),
 		};
 	}

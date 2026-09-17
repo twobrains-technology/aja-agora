@@ -60,6 +60,10 @@ export interface Lead {
 		campanha: string | null;
 		criativo: string | null;
 		label: string;
+		/** Nome oficial da campanha (`meta_entities`), quando o resolvedor conhece. */
+		nomeDaCampanha?: string | null;
+		/** O id de 18 dígitos, inteiro, para o `title` — o sufixo de 6 não identifica. */
+		entityId?: string | null;
 	} | null;
 }
 

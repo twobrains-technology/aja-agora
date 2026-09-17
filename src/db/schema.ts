@@ -1232,6 +1232,121 @@ export const remarketingTouches = pgTable(
 	],
 );
 
+// ─── Meta Ads: o espelho local do gerenciador de anúncios ────────────────────
+//
+// Por que espelhar, e não chamar a Marketing API na renderização: a tela mostra
+// `…370104` e duas campanhas DIFERENTES cabem no mesmo sufixo de seis dígitos
+// (medido em 17/09/2026 na conta `act_1594922312055163`: `…200104` e `…450104`
+// casam com DOIS anúncios cada). O id cru não identifica. O nome oficial passa a
+// ser lido do gerenciador uma vez pelo ciclo de sync e consultado do banco em
+// toda renderização — a página do admin NUNCA fala com a Marketing API (mesmo
+// desenho do cache do resolvedor, `src/lib/meta-ads/resolver.ts`).
+//
+// Dimensão e fato separados: a entidade é a dimensão (nome, situação), o insight
+// diário é o fato.
+
+export const metaEntityNivelEnum = pgEnum("meta_entity_nivel", ["campaign", "adset", "ad"]);
+
+// A dimensão: uma linha por campanha, conjunto ou anúncio já visto.
+export const metaEntities = pgTable(
+	"meta_entities",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		// O id da Meta (18 dígitos). Nunca exibido cru — é o que se cola no
+		// gerenciador, e o `title` de quem renderiza devolve ele inteiro.
+		entityId: text("entity_id").notNull(),
+		nivel: metaEntityNivelEnum("nivel").notNull(),
+		// `META | EXP | LEAD | BR | PLACEMENTS` — o nome que o time reconhece.
+		nome: text("nome").notNull(),
+		// ACTIVE / PAUSED / ARCHIVED, como a Meta devolve. Texto e não enum: a
+		// Meta já mudou esse vocabulário e não queremos migration por isso.
+		status: text(),
+		accountId: text("account_id"),
+		// Para conjunto e anúncio: a entidade acima na hierarquia. Sem FK — a
+		// ordem de chegada do sync não é garantida, e órfão temporário é normal.
+		parentEntityId: text("parent_entity_id"),
+		// Quando o sync viu isto pela última vez. Diferente de `updated_at`: serve
+		// para a tela marcar "visto há X" e para a limpeza de entidades mortas.
+		vistoEm: timestamp("visto_em", { withTimezone: true }).defaultNow().notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull(),
+	},
+	(table) => [
+		uniqueIndex("meta_entities_entity_id_idx").on(table.entityId),
+		index("meta_entities_nivel_idx").on(table.nivel),
+	],
+);
+
+// O fato: gasto e entrega de UM dia para UMA entidade.
+//
+// Chaveado por (dia, entidade) — e não por um total acumulado — porque a Meta
+// REPROCESSA os últimos dias para trás: o número de ontem muda depois. Um total
+// seria reescrito silenciosamente e a série histórica perderia a memória do que
+// foi mostrado antes. Com o fato diário, a correção é um UPSERT na chave
+// (dia, entidade) e o histórico continua auditável (estudo §4).
+export const metaInsightsDiarios = pgTable(
+	"meta_insights_diarios",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		// "YYYY-MM-DD" no fuso do negócio (`TZ_NEGOCIO`). `varchar` e não `date`
+		// porque o agrupamento é por dia civil do negócio, não por instante — e
+		// isso mantém a coluna comparável direto com o filtro de período do admin.
+		data: varchar("data", { length: 10 }).notNull(),
+		entityId: text("entity_id").notNull(),
+		nivel: metaEntityNivelEnum("nivel").notNull(),
+		// Em centavos, como o resto do dinheiro neste schema — evita float em
+		// soma de verba.
+		spendCents: integer("spend_cents"),
+		impressions: integer(),
+		clicks: integer(),
+		// O que a Meta atribuiu como lead. Fica ao LADO do que o CRM conta: os
+		// dois números nunca concordam (estudo §5) e esconder a diferença gera
+		// briga entre Growth e financeiro.
+		leads: integer(),
+		coletadoEm: timestamp("coletado_em", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [
+		uniqueIndex("meta_insights_dia_entity_idx").on(table.data, table.entityId),
+		index("meta_insights_entity_data_idx").on(table.entityId, table.data),
+	],
+);
+
+// ─── Cadastro da dinâmica do remarketing ─────────────────────────────────────
+//
+// Antes disto, os parâmetros da régua eram CONSTANTES em código
+// (`src/lib/remarketing/regua.ts:51-73`): mudar o intervalo do toque 02 exigia
+// deploy e review. Aqui eles passam a ser dado — cada chave é um parâmetro
+// nomeado, com quem mudou e quando.
+//
+// Chave-valor em vez de coluna por parâmetro: a régua é uma dinâmica viva (o
+// dono ajusta o intervalo, o teto, o horário) e cada ajuste novo viraria uma
+// migration. O valor continua TIPADO na leitura — quem lê converte e valida, e
+// chave desconhecida é ignorada, não explode.
+//
+// O código segue sendo o padrão de fábrica: ausência de linha = constante do
+// `regua.ts`. É o que faz a tabela nascer vazia sem quebrar nada.
+export const remarketingConfig = pgTable(
+	"remarketing_config",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		// Ex `dias_ate_segundo_toque`, `teto_toques_30_dias`, `hora_abertura`.
+		chave: text().notNull(),
+		// Sempre texto: o tipo está na constante que esta chave substitui.
+		valor: text().notNull(),
+		// O que a chave significa, para a tela de cadastro não depender do código.
+		descricao: text(),
+		atualizadoPor: text("atualizado_por"),
+		atualizadoEm: timestamp("atualizado_em", { withTimezone: true })
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull(),
+	},
+	(table) => [uniqueIndex("remarketing_config_chave_idx").on(table.chave)],
+);
+
 // ─── WhatsApp: idempotência + serialização por conversa ──────────────────────
 
 // Chave de "isso só pode acontecer UMA vez" no canal WhatsApp. Insert-if-absent

@@ -3,7 +3,8 @@
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale/pt-BR";
 import { CalendarIcon, Search, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { FiltrosDaTela } from "@/components/admin/dashboard/filtros";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -17,6 +18,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { abreviarId, nomeDaFonte } from "@/lib/admin/agrupar-origens";
+import { chaveDeOrigem, nomeCurto } from "@/lib/meta-ads/resolver";
 
 const CHANNEL_OPTIONS = [
 	{ value: "all", label: "Todos os canais" },
@@ -39,7 +41,13 @@ export type ConversationsFiltersValue = {
 	to: Date | null;
 	/** Chave do canal, como a tabela por origem a monta (`campanha:ig`, `direto`). */
 	origem?: string | null;
-	campanha?: string | null;
+	/**
+	 * As campanhas do recorte — `?campanha=a,b,c`.
+	 *
+	 * Lista (`string[]`) e não valor único: o filtro passou a aceitar mais de uma
+	 * campanha. Lista vazia é "sem filtro" — nunca um recorte que não casa nada.
+	 */
+	campanhas?: readonly string[];
 };
 
 /**
@@ -59,7 +67,12 @@ function rotuloDaOrigem(origem: string, campanha: string | null): string {
 				: origem === "direto"
 					? "Direto"
 					: origem;
-	return campanha ? `${nome} · campanha ${abreviarId(campanha)}` : nome;
+	if (!campanha) return nome;
+	// O nome real vem do resolvedor quando ele conhece a campanha (o rótulo
+	// guarda a UTM, que é a chave fraca). Sem ele, cai no id abreviado de antes.
+	const chave = chaveDeOrigem({ utmCampaign: campanha });
+	const resolvida = chave ? nomeCurto(chave) : null;
+	return `${nome} · ${resolvida?.nome ?? `campanha ${abreviarId(campanha)}`}`;
 }
 
 export function ConversationsFilters({
@@ -71,6 +84,21 @@ export function ConversationsFilters({
 }) {
 	const [localQ, setLocalQ] = useState(value.q);
 	const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+	// As campanhas escolhidas viram as OPÇÕES do filtro. A lista completa vive na
+	// tela de Performance (muda com o período); aqui o que a barra precisa é
+	// mostrar o recorte que veio no link e deixar tirar cada campanha dele. Quando
+	// o bloco das campanhas passar a oferecer a lista inteira, é este array que
+	// cresce — o componente não muda.
+	const opcoesDeCampanha = useMemo(() => {
+		const lista = value.campanhas ?? [];
+		return lista.map((campanha) => ({
+			valor: campanha,
+			rotulo: value.origem ? rotuloDaOrigem(value.origem, campanha) : campanha,
+		}));
+	}, [value.campanhas, value.origem]);
+
+	const campanhasAtivas = value.campanhas?.length ?? 0;
 
 	useEffect(() => {
 		setLocalQ(value.q);
@@ -90,7 +118,8 @@ export function ConversationsFilters({
 		value.q !== "" ||
 		value.from !== null ||
 		value.to !== null ||
-		Boolean(value.origem);
+		Boolean(value.origem) ||
+		campanhasAtivas > 0;
 
 	const clear = () => {
 		onChange({
@@ -100,13 +129,51 @@ export function ConversationsFilters({
 			from: null,
 			to: null,
 			origem: null,
-			campanha: null,
+			campanhas: [],
 		});
 		setLocalQ("");
 	};
 
 	return (
-		<div className="flex flex-wrap items-center gap-2">
+		<FiltrosDaTela
+			// O período desta tela são dois dias soltos (opcionais), não o período do
+			// painel: aqui "sem data" é um recorte legítimo, e o padrão não pode ser
+			// "hoje". O `DateRangeFilter` continua sendo o período de quem abre em hoje.
+			periodo={
+				<>
+					<Popover>
+						<PopoverTrigger render={<Button variant="outline" size="sm" className="gap-1.5" />}>
+							<CalendarIcon className="size-3.5" />
+							{value.from ? format(value.from, "dd/MM/yy", { locale: ptBR }) : "De"}
+						</PopoverTrigger>
+						<PopoverContent className="w-auto p-0" align="start">
+							<Calendar
+								mode="single"
+								selected={value.from ?? undefined}
+								onSelect={(d) => onChange({ from: d ?? null })}
+								locale={ptBR}
+							/>
+						</PopoverContent>
+					</Popover>
+
+					<Popover>
+						<PopoverTrigger render={<Button variant="outline" size="sm" className="gap-1.5" />}>
+							<CalendarIcon className="size-3.5" />
+							{value.to ? format(value.to, "dd/MM/yy", { locale: ptBR }) : "Até"}
+						</PopoverTrigger>
+						<PopoverContent className="w-auto p-0" align="start">
+							<Calendar
+								mode="single"
+								selected={value.to ?? undefined}
+								onSelect={(d) => onChange({ to: d ?? null })}
+								locale={ptBR}
+							/>
+						</PopoverContent>
+					</Popover>
+				</>
+			}
+			campanhas={opcoesDeCampanha}
+		>
 			<div className="relative">
 				<Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
 				<Input
@@ -147,47 +214,18 @@ export function ConversationsFilters({
 				</SelectContent>
 			</Select>
 
-			<Popover>
-				<PopoverTrigger render={<Button variant="outline" size="sm" className="gap-1.5" />}>
-					<CalendarIcon className="size-3.5" />
-					{value.from ? format(value.from, "dd/MM/yy", { locale: ptBR }) : "De"}
-				</PopoverTrigger>
-				<PopoverContent className="w-auto p-0" align="start">
-					<Calendar
-						mode="single"
-						selected={value.from ?? undefined}
-						onSelect={(d) => onChange({ from: d ?? null })}
-						locale={ptBR}
-					/>
-				</PopoverContent>
-			</Popover>
-
-			<Popover>
-				<PopoverTrigger render={<Button variant="outline" size="sm" className="gap-1.5" />}>
-					<CalendarIcon className="size-3.5" />
-					{value.to ? format(value.to, "dd/MM/yy", { locale: ptBR }) : "Até"}
-				</PopoverTrigger>
-				<PopoverContent className="w-auto p-0" align="start">
-					<Calendar
-						mode="single"
-						selected={value.to ?? undefined}
-						onSelect={(d) => onChange({ to: d ?? null })}
-						locale={ptBR}
-					/>
-				</PopoverContent>
-			</Popover>
-
 			{value.origem && (
 				// Chip, e não Select: a lista de origens vive na tela de Performance
 				// e muda com o período. Repetir aquele seletor aqui seria manter dois
 				// lugares em dia; o que esta tela precisa é dizer QUAL recorte está
-				// valendo e deixar sair dele.
+				// valendo e deixar sair dele. As campanhas do recorte aparecem uma a
+				// uma no filtro de campanha, acima.
 				<Badge variant="secondary" className="h-8 gap-1.5 px-2.5 font-normal">
 					<span className="text-muted-foreground">Origem:</span>
-					{rotuloDaOrigem(value.origem, value.campanha ?? null)}
+					{rotuloDaOrigem(value.origem, null)}
 					<button
 						type="button"
-						onClick={() => onChange({ origem: null, campanha: null })}
+						onClick={() => onChange({ origem: null, campanhas: [] })}
 						aria-label="Remover o filtro de origem"
 						className="text-muted-foreground hover:text-foreground"
 					>
@@ -202,6 +240,6 @@ export function ConversationsFilters({
 					Limpar
 				</Button>
 			)}
-		</div>
+		</FiltrosDaTela>
 	);
 }

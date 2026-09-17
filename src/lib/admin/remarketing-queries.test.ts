@@ -40,6 +40,7 @@ function linha(parcial: Partial<LinhaBruta> = {}): LinhaBruta {
 		criadoEm: new Date("2026-09-09T13:00:00Z"),
 		ultimoInboundEm: new Date("2026-09-10T11:00:00Z"),
 		optoutDaPessoaEm: null,
+		converteuEm: null,
 		rastro: null,
 		...parcial,
 	};

@@ -157,6 +157,30 @@ describe("a lista do percurso", () => {
 	});
 });
 
+describe("o title da origem", () => {
+	it("leva o nome oficial e o id inteiro quando o resolvedor conhece a campanha", () => {
+		render(
+			<TabelaPercurso
+				pessoas={[pessoa({ nomeDaCampanha: "META | EXP | LEAD", entityId: "120250956902860104" })]}
+				carregando={false}
+				onAbrir={() => {}}
+			/>,
+		);
+
+		expect(screen.getByText("Instagram · META | EXP | LEAD")).toBeTruthy();
+		// O sufixo de seis dígitos casa com duas campanhas diferentes; quem cola
+		// o id no gerenciador precisa dele inteiro.
+		expect(screen.getByTitle(/id completo: 120250956902860104/)).toBeTruthy();
+	});
+
+	it("sem resolução, continua sendo o rótulo cru de antes", () => {
+		// O espelho local pode ainda não ter sincronizado: nada some da tela.
+		render(<TabelaPercurso pessoas={[pessoa()]} carregando={false} onAbrir={() => {}} />);
+
+		expect(screen.getByTitle("instagram · imovel-agosto · 12345")).toBeTruthy();
+	});
+});
+
 describe("a escada do percurso", () => {
 	const RESUMO: ResumoDoPasso[] = PASSOS_DO_PERCURSO.map((p, i) => ({
 		chave: p.chave,

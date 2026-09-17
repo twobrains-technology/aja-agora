@@ -72,7 +72,7 @@ function profundidadeDoPasso(passo: PassoDoPercurso): number {
  */
 function baseDoPercurso(filtro: FiltroPercurso): SQL {
 	const origem = filtro.origem?.trim()
-		? predicadoDeOrigemNaVisita(filtro.origem.trim(), filtro.campanha?.trim() || null)
+		? predicadoDeOrigemNaVisita(filtro.origem.trim(), filtro.campanha ?? null)
 		: null;
 	// Chave desconhecida devolve `null` de propósito (ver `filtro-origem`): link
 	// velho mostra a lista inteira, nunca uma lista vazia que pareceria "ninguém
@@ -92,7 +92,7 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
     WITH visita AS (
       SELECT v.id, v.visitor_id, v.created_at, v.landing_path, v.channel,
              v.utm_source, v.utm_medium, v.utm_campaign, v.utm_content,
-             v.ctwa_source_id, v.ctwa_headline, v.referrer,
+             v.ctwa_source_id, v.ctwa_headline, v.referrer, v.campaign_id,
              -- A marca do eco vem como COLUNA, e não como filtro do CTE, e essa
              -- distinção é a diferença entre corrigir e estragar. O eco tem que
              -- sair da CONTAGEM de chegadas; ele não pode sair da leitura dos
@@ -181,7 +181,7 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
       SELECT DISTINCT ON (pv.chave)
              pv.chave, pv.landing_path, pv.channel, pv.utm_source, pv.utm_medium,
              pv.utm_campaign, pv.utm_content, pv.ctwa_source_id, pv.ctwa_headline,
-             pv.referrer
+             pv.referrer, pv.campaign_id
       FROM por_visita pv
       ORDER BY pv.chave,
                (pv.utm_source IS NULL AND pv.ctwa_source_id IS NULL
@@ -253,7 +253,7 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
              GREATEST(p.ultima_chegada,
                       COALESCE(cp.ultimo_inbound, p.ultima_chegada)) AS ultima_atividade,
              cr.landing_path, cr.channel, cr.utm_source, cr.utm_medium, cr.utm_campaign,
-             cr.utm_content, cr.ctwa_source_id, cr.ctwa_headline, cr.referrer,
+             cr.utm_content, cr.ctwa_source_id, cr.ctwa_headline, cr.referrer, cr.campaign_id,
              COALESCE(cp.conversas, 0) AS conversas,
              COALESCE(cp.msgs, 0) AS msgs,
              conv_r.conversation_id,
@@ -354,6 +354,7 @@ export async function listarPercurso(filtro: FiltroPercurso): Promise<PercursoRe
 			ctwaSourceId: texto(linha.ctwa_source_id),
 			ctwaHeadline: texto(linha.ctwa_headline),
 			referrer: texto(linha.referrer),
+			campaignId: texto(linha.campaign_id),
 		});
 		const stage = texto(linha.stage);
 
@@ -370,6 +371,10 @@ export async function listarPercurso(filtro: FiltroPercurso): Promise<PercursoRe
 			origemFonte: origem.fonte,
 			campanha: origem.campanha,
 			criativo: origem.criativo,
+			// O nome REAL da campanha, quando o resolvedor conhece, e o id inteiro
+			// para o `title`. Não resolvido = `null`, e a tela cai no rótulo de antes.
+			nomeDaCampanha: origem.nomeDaCampanha ?? null,
+			entityId: origem.entityId ?? null,
 			landingPath: texto(linha.landing_path),
 			primeiraChegada: iso(linha.primeira_chegada),
 			ultimaAtividade: iso(linha.ultima_atividade),

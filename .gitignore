@@ -82,3 +82,6 @@ test-results/
 # artefatos gerados (exports de dados, dossiês de validação) — não versionar nem lintar
 exports/
 .orientacao/
+
+# Coordenação dos agentes (goal, pendências, encerramento) — não é código.
+.orientacao/

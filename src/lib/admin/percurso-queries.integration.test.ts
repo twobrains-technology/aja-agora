@@ -13,6 +13,7 @@
 
 import { eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { semearCache, serializarChave } from "@/lib/meta-ads/resolver";
 import type { PassoDoPercurso } from "./percurso-types";
 
 const HAS_DB = Boolean(process.env.DATABASE_URL) && !process.env.DATABASE_URL?.includes("sentinel");
@@ -35,6 +36,11 @@ const JANELA_DE = new Date(`${ANO}-${MES}-01T00:00:00Z`);
 const JANELA_ATE = new Date(`${ANO}-${MES}-28T23:59:59Z`);
 const DENTRO = new Date(`${ANO}-${MES}-15T12:00:00Z`);
 const DEPOIS = new Date(`${ANO}-${MES}-16T12:00:00Z`);
+
+// O id de campanha que o espelho local CONHECE. Sorteado por execução para não
+// colidir com o que outra execução semeou no mesmo banco compartilhado.
+const ID_CAMPANHA_RESOLVIDA = `12025095${String(Math.floor(Math.random() * 1e10)).padStart(10, "0")}`;
+const NOME_DA_CAMPANHA = "META | EXP | LEAD | BR | PLACEMENTS";
 
 describeIfDb("percurso — até onde cada pessoa foi (integration)", () => {
 	let db: typeof import("@/db").db;
@@ -65,6 +71,8 @@ describeIfDb("percurso — até onde cada pessoa foi (integration)", () => {
 		visitorId?: string;
 		utmSource?: string;
 		utmCampaign?: string;
+		/** `visits.campaign_id` — o id da Meta, a chave que resolve o nome real. */
+		campaignId?: string;
 		referrer?: string;
 		userAgent?: string | null;
 		landingPath?: string;
@@ -88,6 +96,7 @@ describeIfDb("percurso — até onde cada pessoa foi (integration)", () => {
 				userAgent: semente.userAgent === undefined ? UA_GENTE : semente.userAgent,
 				utmSource: semente.utmSource ?? null,
 				utmCampaign: semente.utmCampaign ?? null,
+				campaignId: semente.campaignId ?? null,
 				referrer: semente.referrer ?? null,
 			})
 			.returning({ id: schema.visits.id });
@@ -212,6 +221,9 @@ describeIfDb("percurso — até onde cada pessoa foi (integration)", () => {
 	});
 
 	afterAll(async () => {
+		// O cache do resolvedor é módulo-global: sem limpar, o nome semeado aqui
+		// vazaria para o resto do arquivo e o caminho "não resolvido" mentiria.
+		semearCache([]);
 		if (convIds.length > 0) {
 			await db.delete(schema.conversations).where(inArray(schema.conversations.id, convIds));
 		}
@@ -227,6 +239,19 @@ describeIfDb("percurso — até onde cada pessoa foi (integration)", () => {
 		const VISITANTE_QUE_VOLTOU = `v-voltou-${crypto.randomUUID()}`;
 
 		beforeAll(async () => {
+			// O espelho local SINCRONIZADO, como se o ciclo da Meta já tivesse rodado:
+			// só o id desta campanha é conhecido, e é isso que o teste isola.
+			semearCache([
+				[
+					serializarChave({ tipo: "campaign_id", valor: ID_CAMPANHA_RESOLVIDA }),
+					{
+						nome: NOME_DA_CAMPANHA,
+						entityId: ID_CAMPANHA_RESOLVIDA,
+						origemDaResolucao: "id",
+						status: "ACTIVE",
+					},
+				],
+			]);
 			// Uma pessoa por degrau — cada uma tem que cair no seu, e em nenhum outro.
 			const soChegou = await semear({
 				utmSource: "facebook",
@@ -239,7 +264,14 @@ describeIfDb("percurso — até onde cada pessoa foi (integration)", () => {
 			await semear({ utmSource: "google", utmCampaign: "camp-b", ate: "se_identificou" });
 			await semear({ utmSource: "google", utmCampaign: "camp-b", ate: "viu_oferta" });
 			await semear({ utmSource: "google", utmCampaign: "camp-b", ate: "proposta" });
-			await semear({ utmSource: "google", utmCampaign: "camp-b", ate: "fechado" });
+			// O degrau mais fundo carrega o `campaign_id` da Meta — é ele que resolve
+			// o NOME da campanha no espelho local, em vez do sufixo de seis dígitos.
+			await semear({
+				utmSource: "google",
+				utmCampaign: "camp-b",
+				campaignId: ID_CAMPANHA_RESOLVIDA,
+				ate: "fechado",
+			});
 
 			// Quem voltou: duas chegadas, uma pessoa. A segunda foi mais fundo.
 			await semear({
@@ -353,6 +385,30 @@ describeIfDb("percurso — até onde cada pessoa foi (integration)", () => {
 			// Sem o id da conversa a linha não abre o que a pessoa falou — que é
 			// metade do pedido.
 			expect(fechado?.conversationId).toBeTruthy();
+		});
+
+		it("leva o campaign_id da visita até o nome real da campanha", async () => {
+			// O que este teste guarda é a LIGAÇÃO: a coluna tem que atravessar o CTE
+			// (`visita` → `credito` → `final`) até `origemDaVisita`. Se qualquer um
+			// desses passos largar o campo, a tela volta ao sufixo de seis dígitos —
+			// que casa com duas campanhas — e nenhum teste unitário percebe, porque
+			// o bug estaria no SQL.
+			const { pessoas } = await queries.listarPercurso({ from: JANELA_DE, to: JANELA_ATE });
+			const fechado = pessoas.find((p) => p.passo === "fechado");
+
+			expect(fechado?.nomeDaCampanha).toBe(NOME_DA_CAMPANHA);
+			expect(fechado?.entityId).toBe(ID_CAMPANHA_RESOLVIDA);
+		});
+
+		it("sem resolução, a linha cai no rótulo de antes em vez de sumir", async () => {
+			// O espelho local pode ainda não ter sincronizado. Não saber não é erro:
+			// apagar o que já aparecia seria pior que o problema original.
+			const { pessoas } = await queries.listarPercurso({ from: JANELA_DE, to: JANELA_ATE });
+			const soChegou = pessoas.find((p) => p.passo === "so_chegou");
+
+			expect(soChegou?.campanha).toBe("camp-a");
+			expect(soChegou?.nomeDaCampanha ?? null).toBeNull();
+			expect(soChegou?.entityId ?? null).toBeNull();
 		});
 
 		it("filtra por degrau, em 'parou aqui' e em 'chegou ao menos aqui'", async () => {

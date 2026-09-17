@@ -75,6 +75,12 @@ export async function getContactDetail(id: string) {
 					// sempre que o lead tem contato unificado, que é o caso comum — sem
 					// a visita aqui, "de qual campanha veio?" ficava sem resposta na
 					// tela onde a pergunta é feita.
+					//
+					// `true` (e não uma lista de colunas) de propósito: é o
+					// `campaign_id` da visita que resolve o NOME real da campanha no
+					// espelho local. Enxugar o select para "só as colunas que a tela
+					// mostra" derrubaria a resolução em silêncio, e o painel voltaria
+					// ao sufixo de seis dígitos — que casa com dois anúncios.
 					visit: true,
 				},
 			},
