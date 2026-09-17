@@ -52,6 +52,12 @@ export const TABELAS_LIMPAS: readonly string[] = [
 	// Conversões devolvidas à mídia — sinal do funil velho não pode ser reenviado
 	// pro algoritmo depois do marco zero.
 	"conversion_events",
+	// Espelho do gerenciador de anúncios: a dimensão (nome, situação) e o fato
+	// (gasto/entrega por dia). É medição da operação antiga — preservá-la faria o
+	// relatório novo nascer misturado com o período velho, e o ciclo de sync
+	// (`meta-ads-sync-cycle`) repõe as duas sozinho em minutos.
+	"meta_entities",
+	"meta_insights_diarios",
 	// Mapa de calor da landing. Vai junto com `visits`, e não só por simetria: a
 	// FK é `ON DELETE SET NULL`, então preservar aqui deixaria uma multidão de
 	// cliques órfãos, sem campanha e sem desfecho, inflando o denominador do mapa
@@ -76,6 +82,10 @@ export const TABELAS_PRESERVADAS: readonly string[] = [
 	"administradora_docs",
 	// Time da mesa
 	"mesa_attendants",
+	// Cadastro da dinâmica do remarketing (intervalo, teto, horário). É
+	// configuração ajustada pelo dono, como template aprovado: zerar não é marco
+	// zero, é parada de operação.
+	"remarketing_config",
 	// Canal WhatsApp
 	"whatsapp_templates",
 ];
