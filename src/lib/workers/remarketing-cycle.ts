@@ -133,6 +133,29 @@ export interface ResultadoCiclo {
 const LIMITE_POR_CICLO = Number(process.env.REMARKETING_POR_CICLO ?? 50);
 const ENTRADAS_POR_CICLO = Number(process.env.REMARKETING_ENTRADAS_POR_CICLO ?? 20);
 
+/**
+ * Chave operacional da régua: sem ela, o ciclo **não inscreve ninguém e não
+ * dispara toque nenhum**. Default DESLIGADO, de propósito.
+ *
+ * O motivo é medido, não teórico: a entrada só exige conversa parada há mais de
+ * 90 min (teto de 7 dias), então o **primeiro ciclo depois de um deploy** num
+ * ambiente novo inscreve 20 conversas e, minutos depois, manda WhatsApp de
+ * verdade para elas. Ninguém deveria descobrir isso pelo cliente recebendo
+ * mensagem — quem liga a régua é o dono, por variável de ambiente, depois de
+ * templates aprovados e do "sim" sobre LGPD.
+ *
+ * Ligue com `REMARKETING_ATIVO=1` (aceita `true`/`sim`).
+ *
+ * O que **continua** rodando com a chave desligada é o despacho de conversões
+ * do CAPI no fim do ciclo (`despacharConversoesPendentes`): ele não é da régua
+ * e, sem este tick, os eventos ficavam `pending` para sempre
+ * (`lead-transitions.ts:78` era o único chamador). Ver `runRemarketingCycle`.
+ */
+export function reguaLigada(env: Record<string, string | undefined> = process.env): boolean {
+	const valor = (env.REMARKETING_ATIVO ?? "").trim().toLowerCase();
+	return valor === "1" || valor === "true" || valor === "sim";
+}
+
 /** Janela de entrada: conversa parada há mais de 90 min, mas não antiga demais.
  * Sem o teto de 7 dias, o primeiro ciclo depois do deploy varreria o histórico
  * e dispararia em todo mundo de uma vez. */
@@ -477,6 +500,26 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 	let disparados = 0;
 	let entradas = 0;
 
+	// ── Chave operacional (default desligado) ─────────────────────────────────
+	// Desligada, o ciclo NÃO inscreve nem dispara — mas segue despachando o CAPI,
+	// que não é da régua e ficaria preso sem este tick.
+	if (!reguaLigada()) {
+		let conversoesDesligada: unknown;
+		try {
+			conversoesDesligada = await despachar();
+		} catch (err) {
+			console.error(
+				JSON.stringify({
+					level: "error",
+					source: "remarketing-cycle",
+					etapa: "conversoes",
+					error: err instanceof Error ? err.message : String(err),
+				}),
+			);
+		}
+		return { entradas: 0, disparados: 0, nada, conversoes: conversoesDesligada };
+	}
+
 	try {
 		entradas = await entrar(agora);
 	} catch (err) {
@@ -681,6 +724,8 @@ export async function startRemarketingWorker() {
 		{ connection },
 	);
 
-	console.log(`[remarketing-cycle] worker ativo (intervalo ${POLL_INTERVAL_MS}ms)`);
+	console.log(
+		`[remarketing-cycle] worker ativo (intervalo ${POLL_INTERVAL_MS}ms)${reguaLigada() ? "" : " — régua DESLIGADA (REMARKETING_ATIVO ausente); só o despacho de conversões roda"}`,
+	);
 	return { queue, worker };
 }
