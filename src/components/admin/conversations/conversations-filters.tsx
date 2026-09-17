@@ -17,6 +17,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { abreviarId, nomeDaFonte } from "@/lib/admin/agrupar-origens";
+import { chaveDeOrigem, nomeCurto } from "@/lib/meta-ads/resolver";
 
 const CHANNEL_OPTIONS = [
 	{ value: "all", label: "Todos os canais" },
@@ -59,7 +60,12 @@ function rotuloDaOrigem(origem: string, campanha: string | null): string {
 				: origem === "direto"
 					? "Direto"
 					: origem;
-	return campanha ? `${nome} · campanha ${abreviarId(campanha)}` : nome;
+	if (!campanha) return nome;
+	// O nome real vem do resolvedor quando ele conhece a campanha (o rótulo
+	// guarda a UTM, que é a chave fraca). Sem ele, cai no id abreviado de antes.
+	const chave = chaveDeOrigem({ utmCampaign: campanha });
+	const resolvida = chave ? nomeCurto(chave) : null;
+	return `${nome} · ${resolvida?.nome ?? `campanha ${abreviarId(campanha)}`}`;
 }
 
 export function ConversationsFilters({
