@@ -23,6 +23,19 @@ export const STAGE_ORDER = [
 export type LeadStage = (typeof STAGE_ORDER)[number];
 
 /**
+ * Os estágios que contam como "lead qualificado", de `qualificado` em diante.
+ *
+ * Mora junto da ordem canônica porque é uma consequência dela: um estágio novo
+ * no meio do funil entra aqui sozinho. `perdido` fica de fora — é raia terminal,
+ * e um lead perdido vindo de `novo` não passou pela qualificação. O CAPI emite
+ * `qualified_lead` nesta mesma borda (`registry.ts`), então a tela de Campanhas
+ * e o evento que a Meta recebe concordam sobre quem é "qualificado".
+ */
+export const ESTAGIOS_QUALIFICADOS = STAGE_ORDER.slice(STAGE_ORDER.indexOf("qualificado")).filter(
+	(estagio) => estagio !== "perdido",
+);
+
+/**
  * Nome de cada estágio na tela. Mora aqui — junto da ordem canônica — porque
  * antes vivia copiado dentro de um componente: qualquer estágio novo entrava no
  * enum e aparecia cru (`aguardando_pagamento`) em toda tela que não tinha a

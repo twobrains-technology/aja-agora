@@ -9,6 +9,7 @@
 
 import { type SQL, sql } from "drizzle-orm";
 import { PADRAO_ROBO_SQL } from "@/lib/attribution/user-agent-robo";
+import { ESTAGIOS_QUALIFICADOS } from "./lead-stages";
 
 /**
  * A visita é de GENTE — o denominador de toda taxa de aquisição.
@@ -108,6 +109,41 @@ export const VISITA_NAO_E_ECO = sql`NOT EXISTS (
  * como saber qual das duas acreditar.
  */
 export const VISITA_CONTAVEL = sql`(${VISITA_DE_GENTE} AND ${VISITA_NAO_E_ECO})`;
+
+/**
+ * As CONTAGENS do funil por origem/campanha — a definição de cada degrau num
+ * lugar só.
+ *
+ * `computeOrigens` (funil por canal) e `computeCampanhas` (funil por campanha)
+ * medem a MESMA jornada, só que agrupada por dimensões diferentes. Enquanto as
+ * duas listas de `count` moravam cada uma no seu arquivo, uma correção em
+ * `identificados` valia para uma tela e não para a outra — e as duas divergiam no
+ * primeiro dia, com o mesmo rótulo. Aqui a contagem existe uma vez, e quem
+ * agrupa só escolhe o `GROUP BY`.
+ *
+ * Espera as tabelas com os MESMOS aliases que `computeOrigens` já usava:
+ * `visits v`, `conversations c`, `leads l`, `bevi_proposals bp`. Quem não usa
+ * `qualificados` simplesmente ignora a coluna.
+ *
+ * `identificados` conta CONVERSAS, não leads: a mesma definição do funil de
+ * mídia (`computeFunilMidia`). Contando leads, uma conversa com dedup imperfeito
+ * entrava duas vezes e a coluna "Identificados" divergia da etapa "Se
+ * identificaram" do funil, na mesma tela, com o mesmo rótulo.
+ */
+export function contagensDoFunil(): SQL {
+	const qualificados = sql.join(
+		ESTAGIOS_QUALIFICADOS.map((estagio) => sql`${estagio}`),
+		sql`, `,
+	);
+	return sql`
+    count(DISTINCT v.id) FILTER (WHERE ${VISITA_NAO_E_ECO}) AS visitas,
+    count(DISTINCT c.id) AS conversas,
+    count(DISTINCT c.id) FILTER (WHERE l.phone IS NOT NULL OR l.email IS NOT NULL) AS identificados,
+    count(DISTINCT l.id) FILTER (WHERE l.stage IN (${qualificados})) AS qualificados,
+    count(DISTINCT bp.id) AS propostas,
+    count(DISTINCT l.id) FILTER (WHERE l.stage = 'fechado_ganho') AS fechados
+  `;
+}
 
 /** Artifacts que provam que o cliente VIU número de oferta na tela. */
 export const ARTIFACTS_DE_OFERTA = ["real_offer", "simulation_result"];
