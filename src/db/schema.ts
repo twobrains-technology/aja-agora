@@ -304,6 +304,15 @@ export const contacts = pgTable(
 		cpf: text(),
 		email: text(),
 		name: text(), // melhor nome conhecido
+		// Opt-out da régua de remarketing — POR PESSOA, não por conversa.
+		//
+		// A régua é uma linha por conversa, e a mesma pessoa pode ter várias
+		// campanhas; o "pare de me mandar mensagem" vale para todas, para sempre,
+		// e sobrevive a uma nova simulação. Guardado no CONTATO (o telefone/CPF é
+		// quem pediu), vale em qualquer conversa futura. O motor de remarketing lê
+		// esta coluna e trata o valor como terminal: com ela preenchida, nenhum
+		// toque sai, nem para uma conversa criada depois.
+		remarketingOptoutAt: timestamp("remarketing_optout_at", { withTimezone: true }),
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true })
 			.defaultNow()

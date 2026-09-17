@@ -379,6 +379,13 @@
 			"when": 1789622041023,
 			"tag": "0053_curly_blue_shield",
 			"breakpoints": true
+		},
+		{
+			"idx": 54,
+			"version": "7",
+			"when": 1789622521931,
+			"tag": "0054_odd_amphibian",
+			"breakpoints": true
 		}
 	]
 }

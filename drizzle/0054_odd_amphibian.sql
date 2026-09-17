@@ -1,0 +1,1 @@
+ALTER TABLE "contacts" ADD COLUMN "remarketing_optout_at" timestamp with time zone;
