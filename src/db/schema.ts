@@ -10,6 +10,7 @@ import {
 	pgEnum,
 	pgTable,
 	real,
+	smallint,
 	text,
 	timestamp,
 	uniqueIndex,
@@ -190,6 +191,16 @@ export const whatsappOutboundStatusEnum = pgEnum("whatsapp_outbound_status", [
 	"pending",
 	"sent",
 	"failed",
+]);
+
+// Estado de um cliente na régua de remarketing do WhatsApp
+// (Remarketing_WhatsApp_V3.pdf, 13/09). `OPTOUT` e `CONVERTEU` são terminais.
+export const remarketingTouchStatusEnum = pgEnum("remarketing_touch_status", [
+	"ATIVO",
+	"RESPONDEU",
+	"ESGOTADO",
+	"OPTOUT",
+	"CONVERTEU",
 ]);
 
 // ─── Better Auth Tables ──────────────────────────────────────────────────────
@@ -1136,6 +1147,68 @@ export const whatsappOutboundQueue = pgTable(
 	],
 );
 
+// ─── Régua de remarketing (WhatsApp) ────────────────────────────────────────
+//
+// Onde mora o estado de quem conversou e não fechou: até 3 toques em 7 dias, no
+// máximo 3 por PESSOA a cada 30 dias (entre campanhas), opt-out definitivo e
+// reentrada por nova simulação. Fonte: Remarketing_WhatsApp_V3.pdf (13/09).
+//
+// A decisão de SE o toque sai é o predicado PURO de `src/lib/remarketing/
+// regua.ts` — o motor do bloco 2 chama `podeDisparar`/`registrarToque` e grava
+// aqui o resultado. Nenhuma regra da régua vira texto de prompt: contagem de
+// toque, teto de 30 dias e janela de horário são fato do servidor.
+//
+// Uma linha por CONVERSA (UNIQUE): o ciclo acompanha a conversa que morreu. O
+// teto deslizante, porém, é do CLIENTE — é `contact_id` que permite ao motor
+// somar a cota gasta do mesmo telefone/CPF entre campanhas.
+export const remarketingTouches = pgTable(
+	"remarketing_touches",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		conversationId: uuid("conversation_id")
+			.notNull()
+			.references(() => conversations.id, { onDelete: "cascade" }),
+		// notNull ⇒ `cascade`, e não o `set null` de `conversations.contact_id`:
+		// a linha da régua sem dono não teria como contar o teto de 30 dias.
+		contactId: uuid("contact_id")
+			.notNull()
+			.references(() => contacts.id, { onDelete: "cascade" }),
+		/** `carro` · `moto` · `imovel` — o eixo comercial do disparo. */
+		objetivo: text().notNull(),
+		/** 0 = nada disparado; 1, 2, 3 = o toque que já saiu. */
+		step: smallint("step").default(0).notNull(),
+		status: remarketingTouchStatusEnum("status").default("ATIVO").notNull(),
+		/** Quando o próximo toque pode sair; null quando não há mais toque. */
+		nextTouchAt: timestamp("next_touch_at", { withTimezone: true }),
+		/**
+		 * Contador do teto deslizante, derivado de `contarToquesNaJanela` no
+		 * momento da escrita — guardado para leitura rápida do painel. A fonte dos
+		 * instantes é o histórico de toques, não esta coluna.
+		 */
+		touches30d: smallint("touches_30d").default(0).notNull(),
+		/** Por que saiu da régua (`cliente_respondeu`, `optout_do_cliente`...). */
+		motivoSaida: text("motivo_saida"),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull(),
+	},
+	(table) => [
+		// Uma régua por conversa — reabrir a mesma conversa não cria segundo ciclo.
+		uniqueIndex("remarketing_touches_conversation_id_idx").on(table.conversationId),
+		// Índice PARCIAL: é a ÚNICA consulta que o motor faz a cada 30s ("quem está
+		// ativo e já venceu"). Sem o `WHERE`, o ciclo varreria a tabela inteira,
+		// incluindo todo o histórico já encerrado (opt-out, esgotado, convertido),
+		// que é a maior parte dela.
+		index("remarketing_touches_ativos_idx")
+			.on(table.status, table.nextTouchAt)
+			.where(sql`${table.status} = 'ATIVO'`),
+		// Mesmo teto do predicado puro: 0 a 3. O motor nunca grava 4.
+		check("remarketing_touches_step_check", sql`${table.step} BETWEEN 0 AND 3`),
+	],
+);
+
 // ─── WhatsApp: idempotência + serialização por conversa ──────────────────────
 
 // Chave de "isso só pode acontecer UMA vez" no canal WhatsApp. Insert-if-absent
@@ -1569,5 +1642,17 @@ export const clientDocumentDownloadsRelations = relations(clientDocumentDownload
 	downloadedByUser: one(user, {
 		fields: [clientDocumentDownloads.downloadedBy],
 		references: [user.id],
+	}),
+}));
+
+export const remarketingTouchesRelations = relations(remarketingTouches, ({ one }) => ({
+	conversation: one(conversations, {
+		fields: [remarketingTouches.conversationId],
+		references: [conversations.id],
+	}),
+	// O dono do teto de 30 dias: a cota é somada por cliente, entre campanhas.
+	contact: one(contacts, {
+		fields: [remarketingTouches.contactId],
+		references: [contacts.id],
 	}),
 }));

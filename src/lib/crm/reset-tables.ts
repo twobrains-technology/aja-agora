@@ -16,6 +16,8 @@ export const TABELAS_LIMPAS: readonly string[] = [
 	"conversations",
 	"messages",
 	"artifacts",
+	// Estado da régua de remarketing (cota de 30 dias vive aqui)
+	"remarketing_touches",
 	// Funil
 	"leads",
 	"lead_events",
