@@ -5,7 +5,7 @@ import {
 	ORDEM_DOS_PASSOS,
 	type PassoDoPercurso,
 } from "@/lib/admin/percurso-types";
-import { resolverPeriodo } from "@/lib/admin/periodo";
+import { periodoDaRequisicao } from "@/lib/admin/periodo-da-requisicao";
 import { requireRole } from "@/lib/admin/require-role";
 
 const LIMITE_PADRAO = 50;
@@ -42,18 +42,9 @@ export async function GET(req: NextRequest) {
 
 	const sp = req.nextUrl.searchParams;
 
-	// Dia inteiro, no fuso do negócio, e HOJE quando não vem nada — a mesma regra
-	// que o filtro da tela usa (`periodo.ts`).
-	const periodo = resolverPeriodo(sp.get("from"), sp.get("to"));
-
-	if (!periodo) {
-		return Response.json(
-			{ error: "Formato de data inválido. Use ISO 8601 (ex.: 2026-08-01)." },
-			{ status: 400 },
-		);
-	}
-
-	const { de: from, ate: to } = periodo;
+	// Dia inteiro, no fuso do negócio, com a precedência URL > cookie > hoje — a
+	// mesma regra que o filtro da tela usa, resolvida num lugar só.
+	const { de: from, ate: to } = periodoDaRequisicao(req);
 
 	const modo: ModoDoPasso = sp.get("modo") === "alcancou" ? "alcancou" : "parou";
 
