@@ -137,6 +137,16 @@ export interface PessoaDoPercurso {
 	origemFonte: string | null;
 	campanha: string | null;
 	criativo: string | null;
+	/**
+	 * O nome REAL da campanha, quando o resolvedor conhece (`meta_entities`).
+	 *
+	 * `null` quando o espelho local ainda não sincronizou — e aí a tela mostra o
+	 * rótulo de antes, nunca menos. O resolvedor vive no servidor; por isso o
+	 * nome vem resolvido na linha, em vez de o componente consultar o cache.
+	 */
+	nomeDaCampanha?: string | null;
+	/** O id de 18 dígitos, inteiro, para o atributo `title` — o sufixo não identifica. */
+	entityId?: string | null;
 	landingPath: string | null;
 	primeiraChegada: string;
 	/** Último sinal de vida: a chegada mais recente ou a última mensagem dele. */

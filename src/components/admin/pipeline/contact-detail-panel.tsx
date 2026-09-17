@@ -21,6 +21,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { descreverOrigem } from "@/lib/admin/agrupar-origens";
 import { rotuloDoEstagio } from "@/lib/admin/lead-stages";
+import { tituloDaOrigem } from "@/lib/admin/titulo-da-origem";
 import { notificarMensagem, tocarAviso } from "../conversa/alerta-de-mensagem";
 import { BotaoNotificacoes } from "../conversa/botao-notificacoes";
 import { useConversaAoVivo } from "../conversa/use-conversa-ao-vivo";
@@ -271,7 +272,7 @@ export function ContactDetailPanel({
 					{detail?.origem && (
 						<p className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
 							<MegaphoneIcon className="size-3.5 shrink-0" aria-hidden="true" />
-							<span className="truncate" title={detail.origem.label}>
+							<span className="truncate" title={tituloDaOrigem(detail.origem)}>
 								{descreverOrigem(detail.origem)}
 							</span>
 						</p>
