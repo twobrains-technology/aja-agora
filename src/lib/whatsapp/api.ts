@@ -47,6 +47,58 @@ function getWabaConfig() {
 	return { accessToken, wabaId };
 }
 
+/**
+ * Config do upload pela Resumable Upload API. A sessão abre em `/{APP_ID}/uploads`,
+ * NÃO no phone number id — por isso exige uma env a mais que o resto do canal.
+ */
+function getAppConfig() {
+	const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+	const appId = process.env.WHATSAPP_APP_ID;
+	if (!accessToken || !appId) {
+		throw new Error(
+			"WHATSAPP_ACCESS_TOKEN e WHATSAPP_APP_ID precisam estar definidos — a sessão de upload da Meta abre no ID do app, não no número.",
+		);
+	}
+	return { accessToken, appId };
+}
+
+/** Upload de arquivo é mais lento que uma chamada JSON — 15s derruba arte grande. */
+export const UPLOAD_TIMEOUT_MS = 60_000;
+
+/**
+ * Erro vindo da Meta já com a mensagem dela preservada e o status HTTP.
+ *
+ * A mensagem da Graph sobe INTEIRA até a tela/`rejectionReason` porque ela é a
+ * única autoridade sobre o que o template aceita — traduzir por conta própria
+ * seria inventar uma regra que a Meta pode desmentir na semana seguinte.
+ */
+export class ErroDaMeta extends Error {
+	readonly status: number;
+	constructor(message: string, status: number) {
+		super(message);
+		this.name = "ErroDaMeta";
+		this.status = status;
+	}
+}
+
+/**
+ * Extrai a mensagem de erro da Graph de um corpo que pode nem ser JSON.
+ * `error_user_msg` é a versão que a Meta escreveu PARA o usuário final — quando
+ * existe, é mais legível que a `message` técnica.
+ */
+export function mensagemDeErroDaMeta(corpo: string): string {
+	try {
+		const json = JSON.parse(corpo) as {
+			error?: { message?: string; error_user_msg?: string; error_user_title?: string };
+		};
+		const msg = json.error?.error_user_msg ?? json.error?.message;
+		if (msg) return msg;
+	} catch {
+		// Corpo não-JSON (HTML de gateway, texto solto): cai no bruto abaixo.
+	}
+	return corpo.slice(0, 500) || "A Meta recusou a chamada sem detalhar o motivo.";
+}
+
 async function callApi(
 	phoneNumberId: string,
 	accessToken: string,
@@ -138,20 +190,33 @@ export async function sendDocumentMessage(
 	});
 }
 
-/** Envia uma IMAGEM por link, mesmo contrato do documento: a Meta busca o
- * arquivo na URL, então ela tem que ser pública ou pré-assinada. */
-export async function sendImageMessage(to: string, link: string, caption?: string) {
+/** Envia uma IMAGEM por link OU por media id. O link é o caminho antigo (a Meta
+ * busca o arquivo numa URL pública/pré-assinada); o `media id` é o retorno de
+ * `uploadMedia` e o caminho de quando o arquivo é NOSSO, sem URL pública. */
+export type ImagemParaEnvio = string | { id: string };
+
+export async function sendImageMessage(to: string, imagem: ImagemParaEnvio, caption?: string) {
+	const porId = typeof imagem !== "string";
+	const referencia = porId ? imagem.id : imagem;
 	const maskedTo = to.length > 6 ? `${to.slice(0, 4)}…${to.slice(-2)}` : to;
-	console.log(`[whatsapp-out:image] to=${maskedTo} caption=${JSON.stringify(caption ?? "")}`);
+	console.log(
+		`[whatsapp-out:image] to=${maskedTo} via=${porId ? "id" : "link"} caption=${JSON.stringify(caption ?? "")}`,
+	);
 	if (isSimulatedWaId(to)) {
-		publishToClient(to, { type: "text", text: `${caption ? `${caption}\n` : ""}${link}` });
+		publishToClient(to, {
+			type: "text",
+			text: `${caption ? `${caption}\n` : ""}${porId ? `[imagem] ${referencia}` : referencia}`,
+		});
 		return simulatedAck();
 	}
 	const { accessToken, phoneNumberId } = getConfig();
 	return callApi(phoneNumberId, accessToken, {
 		to,
 		type: "image",
-		image: { link, ...(caption ? { caption } : {}) },
+		image: {
+			...(porId ? { id: referencia } : { link: referencia }),
+			...(caption ? { caption } : {}),
+		},
 	});
 }
 
@@ -315,6 +380,151 @@ export async function downloadMedia(
 	return { bytes, mimeType: meta.mime_type ?? "application/octet-stream" };
 }
 
+// ─── Upload de mídia ─────────────────────────────────────────────────────────
+// São DOIS caminhos diferentes, e confundi-los queima tempo com erro que não
+// diz o que errou:
+//   - ENVIAR mensagem com arquivo nosso → POST /{PHONE_NUMBER_ID}/media (multipart)
+//     devolve `{ id }`; vai no envio como `image: { id }` (ver `uploadMedia`).
+//   - CRIAR template com header de imagem → Resumable Upload API, que abre no
+//     APP ID e devolve `{ h: "<handle>" }` (ver `uploadTemplateHeaderMedia`).
+
+/** Lança o timeout já traduzido, preservando o resto. */
+function relancarTimeout(err: unknown, contexto: string): never {
+	if (isTimeoutError(err)) {
+		console.error(`[whatsapp-api] ${contexto} timeout (>${UPLOAD_TIMEOUT_MS / 1000}s)`);
+		throw new ErroDaMeta(`A Meta não respondeu a tempo ${contexto}.`, 504);
+	}
+	throw err;
+}
+
+/**
+ * Sobe um arquivo para o phone number id (`POST /{PHONE_NUMBER_ID}/media`,
+ * multipart `messaging_product` + `file`) e devolve o media id. É o caminho do
+ * ENVIO de mensagem com arquivo próprio, sem precisar de URL pública.
+ */
+export async function uploadMedia(arquivo: {
+	bytes: ArrayBuffer;
+	mimeType: string;
+	nomeArquivo: string;
+}): Promise<string> {
+	const { accessToken, phoneNumberId } = getConfig();
+
+	const form = new FormData();
+	form.append("messaging_product", "whatsapp");
+	form.append("type", arquivo.mimeType);
+	form.append("file", new Blob([arquivo.bytes], { type: arquivo.mimeType }), arquivo.nomeArquivo);
+
+	let res: Response;
+	try {
+		res = await fetch(`${GRAPH_API}/${phoneNumberId}/media`, {
+			method: "POST",
+			// Sem `Content-Type`: o fetch preenche o boundary do multipart sozinho.
+			headers: { Authorization: `Bearer ${accessToken}` },
+			body: form,
+			signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+		});
+	} catch (err) {
+		relancarTimeout(err, "ao enviar o arquivo");
+	}
+
+	if (!res.ok) {
+		const corpo = await res.text();
+		console.error(`[whatsapp-api] uploadMedia failed (${res.status}):`, corpo);
+		throw new ErroDaMeta(mensagemDeErroDaMeta(corpo), res.status);
+	}
+
+	const data = (await res.json()) as { id?: string };
+	if (!data.id) {
+		throw new ErroDaMeta("A Meta aceitou o arquivo mas não devolveu o media id.", 502);
+	}
+	return data.id;
+}
+
+/**
+ * Sobe a arte do header de TEMPLATE pela Resumable Upload API e devolve o
+ * `handle`. São dois passos, e o primeiro é onde quase todo tutorial erra: a
+ * sessão abre em `/{APP_ID}/uploads`, NÃO em `/{PHONE_NUMBER_ID}/uploads`. Com o
+ * phone number id a Graph responde nó inválido, e a mensagem não diz que o
+ * problema é o nó — parece permissão do token.
+ *
+ *   1) POST /{APP_ID}/uploads?file_name&file_length&file_type → { id: "upload:..." }
+ *   2) POST /{id da sessão}  com  `Authorization: OAuth <token>`  e  `file_offset: 0`
+ *      e o binário no corpo                                    → { h: "<handle>" }
+ *
+ * O `OAuth` do passo 2 é literal da doc — não é `Bearer`. O handle vai no
+ * componente como `example: { header_handle: [handle] }`.
+ */
+export async function uploadTemplateHeaderMedia(arquivo: {
+	bytes: ArrayBuffer;
+	mimeType: string;
+	nomeArquivo: string;
+}): Promise<string> {
+	const { accessToken, appId } = getAppConfig();
+
+	const params = new URLSearchParams({
+		file_name: arquivo.nomeArquivo,
+		file_length: String(arquivo.bytes.byteLength),
+		file_type: arquivo.mimeType,
+	});
+
+	let sessao: Response;
+	try {
+		sessao = await fetch(`${GRAPH_API}/${appId}/uploads?${params}`, {
+			method: "POST",
+			headers: { Authorization: `Bearer ${accessToken}` },
+			signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS),
+		});
+	} catch (err) {
+		relancarTimeout(err, "ao abrir o envio da arte");
+	}
+
+	if (!sessao.ok) {
+		const corpo = await sessao.text();
+		console.error(
+			`[whatsapp-api] uploadTemplateHeaderMedia sessão falhou (${sessao.status}):`,
+			corpo,
+		);
+		throw new ErroDaMeta(mensagemDeErroDaMeta(corpo), sessao.status);
+	}
+
+	const { id: idDaSessao } = (await sessao.json()) as { id?: string };
+	if (!idDaSessao) {
+		throw new ErroDaMeta("A Meta não devolveu o identificador da sessão de upload.", 502);
+	}
+
+	let envio: Response;
+	try {
+		envio = await fetch(`${GRAPH_API}/${idDaSessao}`, {
+			method: "POST",
+			headers: {
+				// Literal da doc do Resumable Upload: aqui é `OAuth`, não `Bearer`.
+				Authorization: `OAuth ${accessToken}`,
+				file_offset: "0",
+				"Content-Type": arquivo.mimeType,
+			},
+			body: arquivo.bytes,
+			signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+		});
+	} catch (err) {
+		relancarTimeout(err, "ao receber a arte");
+	}
+
+	if (!envio.ok) {
+		const corpo = await envio.text();
+		console.error(
+			`[whatsapp-api] uploadTemplateHeaderMedia envio falhou (${envio.status}):`,
+			corpo,
+		);
+		throw new ErroDaMeta(mensagemDeErroDaMeta(corpo), envio.status);
+	}
+
+	const { h: handle } = (await envio.json()) as { h?: string };
+	if (!handle) {
+		throw new ErroDaMeta("A Meta aceitou a arte mas não devolveu o handle.", 502);
+	}
+	return handle;
+}
+
 export async function markAsRead(messageId: string) {
 	// `messageId` é do Meta — pra conversa simulada não temos esse id (no-op).
 	if (messageId.startsWith("sim-")) return simulatedAck();
@@ -456,7 +666,9 @@ export async function createTemplate(input: CreateTemplateInput): Promise<Create
 	if (!res.ok) {
 		const error = await res.text();
 		console.error(`[whatsapp-api] createTemplate failed (${res.status}):`, error);
-		throw new Error(`createTemplate failed (${res.status}): ${error}`);
+		// A mensagem da Meta sobe legível (error_user_msg/message) — o submit a grava
+		// em `rejectionReason`, e é o que o admin lê para corrigir e reenviar.
+		throw new ErroDaMeta(mensagemDeErroDaMeta(error), res.status);
 	}
 	const data = (await res.json()) as CreateTemplateResult;
 	return { id: data.id, status: data.status, category: data.category };
