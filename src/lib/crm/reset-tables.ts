@@ -49,6 +49,13 @@ export const TABELAS_LIMPAS: readonly string[] = [
 	"whatsapp_conversation_locks",
 	// Origem de mídia: visita de teste contaminaria o relatório da campanha nova
 	"visits",
+	// O espelho local do gerenciador de anúncios: campanha/conjunto/anúncio
+	// (`meta_entities`) e o gasto/entrega de cada dia (`meta_insights_diarios`).
+	// Mesma família de `visits`, e pela mesma razão — é medição de mídia do funil
+	// velho, repovoada pelo ciclo de sync. Preservar deixaria o painel novo
+	// comparando campanha nova contra gasto de uma operação que não existe mais.
+	"meta_entities",
+	"meta_insights_diarios",
 	// Conversões devolvidas à mídia — sinal do funil velho não pode ser reenviado
 	// pro algoritmo depois do marco zero.
 	"conversion_events",
@@ -80,6 +87,11 @@ export const TABELAS_PRESERVADAS: readonly string[] = [
 	"personas",
 	"administradoras",
 	"administradora_docs",
+	// A RÉGUA de remarketing: intervalo do segundo toque, teto de toques em 30
+	// dias, hora de abertura. É configuração, não estado — a fila de toques
+	// (`remarketing_touches`, em TABELAS_LIMPAS) é que pertence à conversa
+	// antiga. Zerar isto não é marco zero: é desligar a régua.
+	"remarketing_config",
 	// Time da mesa
 	"mesa_attendants",
 	// Cadastro da dinâmica do remarketing (intervalo, teto, horário). É

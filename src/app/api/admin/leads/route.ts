@@ -48,6 +48,11 @@ export async function GET() {
 							ctwaSourceId: true,
 							ctwaHeadline: true,
 							referrer: true,
+							// O id da CAMPANHA da Meta: é a chave que resolve o nome real
+							// (`meta_entities`). Sem ele, o card só tem a UTM — texto que o
+							// anunciante digitou — e o painel volta a rotular pelo sufixo de
+							// seis dígitos, que casa com dois anúncios diferentes.
+							campaignId: true,
 						},
 					},
 				},

@@ -11,6 +11,7 @@
 
 import { inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { semearCache, serializarChave } from "@/lib/meta-ads/resolver";
 
 const HAS_DB = Boolean(process.env.DATABASE_URL) && !process.env.DATABASE_URL?.includes("sentinel");
 const describeIfDb = HAS_DB ? describe : describe.skip;
@@ -25,7 +26,7 @@ describeIfDb("getContactDetail — origem do cliente", () => {
 	const visitIds: string[] = [];
 
 	async function semearContato(
-		visitas: Array<{ utmSource?: string; utmCampaign?: string; quando: Date }>,
+		visitas: Array<{ utmSource?: string; utmCampaign?: string; campaignId?: string; quando: Date }>,
 	): Promise<string> {
 		const [contato] = await db
 			.insert(schema.contacts)
@@ -42,6 +43,7 @@ describeIfDb("getContactDetail — origem do cliente", () => {
 					createdAt: v.quando,
 					utmSource: v.utmSource ?? null,
 					utmCampaign: v.utmCampaign ?? null,
+					campaignId: v.campaignId ?? null,
 				})
 				.returning({ id: schema.visits.id });
 			visitIds.push(visita.id);
@@ -66,6 +68,7 @@ describeIfDb("getContactDetail — origem do cliente", () => {
 	let idComCampanha: string;
 	let idSoDireto: string;
 	let idSemVisita: string;
+	let idComNomeResolvido: string;
 
 	beforeAll(async () => {
 		({ db } = await import("@/db"));
@@ -80,6 +83,24 @@ describeIfDb("getContactDetail — origem do cliente", () => {
 
 		// Só chegadas diretas.
 		idSoDireto = await semearContato([{ quando: new Date("2019-07-05T10:00:00Z") }]);
+
+		// Chegou com o `campaign_id` da Meta e o espelho local sincronizado: é o
+		// id da própria Meta, não texto que alguém digitou na UTM.
+		const ID_RESOLVIDO = "120250956902860104";
+		semearCache([
+			[
+				serializarChave({ tipo: "campaign_id", valor: ID_RESOLVIDO }),
+				{
+					nome: "META | EXP | LEAD | BR",
+					entityId: ID_RESOLVIDO,
+					origemDaResolucao: "id",
+					status: "ACTIVE",
+				},
+			],
+		]);
+		idComNomeResolvido = await semearContato([
+			{ quando: new Date("2019-07-08T10:00:00Z"), utmSource: "ig", campaignId: ID_RESOLVIDO },
+		]);
 
 		// Conversa sem visita (WhatsApp orgânico).
 		const [contato] = await db
@@ -96,6 +117,8 @@ describeIfDb("getContactDetail — origem do cliente", () => {
 	});
 
 	afterAll(async () => {
+		// Cache do resolvedor é global: sem limpar, vazaria para o resto do worker.
+		semearCache([]);
 		if (convIds.length > 0)
 			await db.delete(schema.conversations).where(inArray(schema.conversations.id, convIds));
 		if (visitIds.length > 0)
@@ -116,6 +139,17 @@ describeIfDb("getContactDetail — origem do cliente", () => {
 	it("diz 'direto' quando houve visita mas nunca campanha", async () => {
 		const detalhe = await getContactDetail(idSoDireto);
 		expect(detalhe?.origem).toMatchObject({ tipo: "direto" });
+	});
+
+	it("resolve o NOME real da campanha pelo campaign_id da visita", async () => {
+		// O `visit: true` do `getContactDetail` precisa incluir o `campaign_id`: é
+		// ele que resolve o nome no espelho local. Enxugar o select derrubaria a
+		// resolução em silêncio e o painel voltaria ao sufixo de seis dígitos — que
+		// casa com duas campanhas diferentes.
+		const detalhe = await getContactDetail(idComNomeResolvido);
+
+		expect(detalhe?.origem?.nomeDaCampanha).toBe("META | EXP | LEAD | BR");
+		expect(detalhe?.origem?.entityId).toBe("120250956902860104");
 	});
 
 	it("devolve null quando nenhuma conversa nasceu de visita", async () => {
