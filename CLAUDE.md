@@ -110,6 +110,73 @@ enquanto o código, desde 14/08 (`3deb8207`), já trazia os exemplos que separam
 (parcela) de "200 mil" (valor do bem) — o fix do incidente que matou uma venda. Ninguém foi
 avisado, porque nenhum teste, log ou alerta olhava para isso.
 
+## ⚠️ Variável de ambiente nova NÃO chega por deploy — são dois lugares
+
+O `aws-ecr-deploy.yml` **nunca registra task definition**. Ele constrói e empurra a imagem, e
+depois só faz:
+
+```bash
+aws ecs update-service --cluster tb-cluster --service aja-agora-prod --force-new-deployment
+```
+
+`--force-new-deployment` **não** cria revisão nova: ele manda o serviço puxar a imagem `:latest`
+com a **mesma** task definition. Prova, no próprio arquivo: não existe uma única ocorrência de
+`register-task-definition` nem de `describe-task-definition`.
+
+Então uma variável de ambiente vive em **dois lugares independentes**, e mexer em um só não faz
+nada chegar ao container:
+
+| Onde | O quê | Quem lê |
+|---|---|---|
+| Secrets Manager — `tb/<env>/aja-agora/env` | o JSON com o valor | o **workflow** (só para os `NEXT_PUBLIC_*`, ver abaixo) e quem lê o secret direto |
+| **Task definition** do serviço (`aja-agora-prod` / `aja-agora-dev` e o `-worker`) | a lista de quais chaves entram no container, cada uma com seu `valueFrom` | o **container** em runtime |
+
+**O sintoma engana.** Você adiciona a chave no secret, o deploy passa verde, e a feature fica
+muda — porque o container nunca recebeu a variável. Não há erro no build, não há erro no ECS: o
+código simplesmente lê `undefined` e cai no default. Aparece longe da causa (uma integração que
+devolve 401, um recurso que não liga, uma URL montada errada).
+
+**O único pedaço que o workflow pega do secret:** ele varre os `ARG`s declarados no `Dockerfile` e
+preenche **só esses** como build-args (é a linha `grep -E '^[[:space:]]*ARG'`). Na prática, os
+`NEXT_PUBLIC_*`, que precisam ser assados na imagem porque rodam no browser. Todo o resto —
+`DATABASE_URL`, chaves de API, `REDIS_URL` — chega **pela task definition**, não pelo build.
+
+**A regra, então:** criou/renomeou uma variável → (1) grave no secret do ambiente, (2) **adicione
+na task definition** com o `valueFrom` daquela chave, (3) registre a revisão nova e aponte o
+serviço para ela, (4) só então deploye. Fazer 1 sem 2 é o erro que já custou diagnóstico neste
+projeto; fazer 2 sem 1 deixa o container sem valor.
+
+**Como conferir, com o SSO `tb-mgmt` de pé** (`aws sso login --profile tb-mgmt`) — o que o
+container recebe tem que bater com o que está no secret:
+
+```bash
+export AWS_PROFILE=tb-mgmt AWS_REGION=sa-east-1
+
+# o que o CONTAINER recebe (env direta + nomes dos secrets)
+aws ecs describe-task-definition --task-definition aja-agora-prod \
+  --query 'taskDefinition.containerDefinitions[].{env:environment[].name,sec:secrets[].name}' --output json
+
+# o que está GRAVADO no secret
+aws secretsmanager get-secret-value --secret-id tb/prod/aja-agora/env \
+  --query SecretString --output text | jq -r 'keys[]'
+```
+
+Chave que aparece no segundo comando e não no primeiro **não chega ao app** — por mais que o
+deploy esteja verde.
+
+**A rede de proteção é do código, e não é opcional:** variável ausente tem que significar
+**desligado / no-op**, nunca "ligado por acidente". Exemplo desta casa: `REMARKETING_ATIVO` nasce
+desligada — subir a régua de remarketing sem a chave no ambiente **não dispara nada**, em vez de
+começar a mandar WhatsApp para os leads porque alguém fez deploy. Foi por isso que o default dela
+é ausente-desligado e não `=true`.
+
+**Onde isso já apareceu (17/09/2026):** o `base-remarketing` rodou dias com o `.env.local` do
+repo principal apontando para o banco do *develop* — os testes de integração falhavam com
+`IDENTITY_ENC_KEY ausente` e a conclusão fácil era "código quebrado". Não era: era ambiente
+desatualizado. **Antes de acusar o código, confira de onde o processo lê o ambiente** — vale para
+o `.env.local` do worktree, para a task definition do ECS e para o secret, que são três fontes
+diferentes.
+
 ## Figma → código
 
 O MCP do Figma (Dev Mode local, `figma-dev-mode`) traz o frame selecionado no app desktop. O que ele
