@@ -5,6 +5,7 @@ import { ptBR } from "date-fns/locale/pt-BR";
 import { ChevronLeft, ChevronRight, Globe, Smartphone } from "lucide-react";
 import { parseAsInteger, parseAsIsoDate, parseAsString, useQueryState } from "nuqs";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { parserDeCampanha } from "@/components/admin/dashboard/campanha-filter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -60,6 +61,9 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 const PAGE_SIZE = 10;
 
+/** Lista vazia com identidade estável: "sem filtro de campanha". */
+const SEM_CAMPANHAS: readonly string[] = [];
+
 function ConversationsTableSkeleton() {
 	return (
 		<div className="rounded-md border">
@@ -107,14 +111,18 @@ export function ConversationsTable() {
 	// e ver aquelas 4"). Não têm controle próprio na barra: são um recorte que
 	// veio de outra tela, e o que a barra oferece é desfazê-lo.
 	const [origem, setOrigem] = useQueryState("origem", parseAsString);
-	const [campanha, setCampanha] = useQueryState("campanha", parseAsString);
+	// Campanha agora é LISTA (`?campanha=a,b,c`): o mesmo recorte serve para uma
+	// campanha ou para várias. `?? SEM_CAMPANHAS` mantém a identidade do array
+	// estável quando não há filtro e evita disparar o fetch a cada render.
+	const [campanhasUrl, setCampanhas] = useQueryState("campanha", parserDeCampanha);
+	const campanhas = campanhasUrl ?? SEM_CAMPANHAS;
 
 	const [data, setData] = useState<ListResponse | null>(null);
 	const [loadError, setLoadError] = useState<string | null>(null);
 
 	const filtersValue = useMemo<ConversationsFiltersValue>(
-		() => ({ channel, status, q, from, to, origem, campanha }),
-		[channel, status, q, from, to, origem, campanha],
+		() => ({ channel, status, q, from, to, origem, campanhas }),
+		[channel, status, q, from, to, origem, campanhas],
 	);
 
 	const handleFiltersChange = useCallback(
@@ -124,16 +132,20 @@ export function ConversationsTable() {
 			if (next.q !== undefined) setQ(next.q === "" ? null : next.q);
 			if (next.from !== undefined) setFrom(next.from);
 			if (next.to !== undefined) setTo(next.to);
-			// Limpar a origem limpa a campanha junto: campanha sem canal é um
+			// Limpar a origem limpa as campanhas junto: campanha sem canal é um
 			// recorte que a tela não sabe nomear.
 			if (next.origem !== undefined) {
 				setOrigem(next.origem);
-				if (!next.origem) setCampanha(null);
+				if (!next.origem) setCampanhas(null);
 			}
-			if (next.campanha !== undefined) setCampanha(next.campanha);
+			// Lista vazia REMOVE o parâmetro (não vira `?campanha=`): sem filtro
+			// continua significando "mostre tudo".
+			if (next.campanhas !== undefined) {
+				setCampanhas(next.campanhas.length > 0 ? [...next.campanhas] : null);
+			}
 			setOffset(0);
 		},
-		[setChannel, setStatus, setQ, setFrom, setTo, setOffset, setOrigem, setCampanha],
+		[setChannel, setStatus, setQ, setFrom, setTo, setOffset, setOrigem, setCampanhas],
 	);
 
 	// Recarrega a lista quando a marcação "é teste" muda no painel de detalhe:
@@ -153,7 +165,9 @@ export function ConversationsTable() {
 		if (from) params.set("from", from.toISOString());
 		if (to) params.set("to", to.toISOString());
 		if (origem) params.set("origem", origem);
-		if (campanha) params.set("campanha", campanha);
+		// A rota separa a vírgula de volta numa lista (ver `campanhas.ts`); a URL
+		// fica com um parâmetro só, que é o que cabe num link.
+		if (campanhas.length > 0) params.set("campanha", campanhas.join(","));
 
 		setLoadError(null);
 		(async () => {
@@ -175,7 +189,7 @@ export function ConversationsTable() {
 		return () => {
 			cancelled = true;
 		};
-	}, [channel, status, q, from, to, offset, origem, campanha, recarga]);
+	}, [channel, status, q, from, to, offset, origem, campanhas, recarga]);
 
 	const total = data?.total ?? 0;
 	const items = data?.items ?? [];
