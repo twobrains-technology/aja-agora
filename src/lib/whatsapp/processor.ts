@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { conversations } from "@/db/schema";
+import { contacts, conversations, remarketingTouches } from "@/db/schema";
 import { detectBackIntent, popNavState } from "@/lib/agent/orchestrator/navigation";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { nextGate } from "@/lib/agent/qualify-state";
@@ -12,6 +12,7 @@ import { withConversationLock } from "./conversation-lock";
 import { dispatchInteractiveReply } from "./interactive-handlers";
 import { isMesaClaimReply } from "./mesa/claim";
 import { handleMesaClaim, handleMesaCopilot, isMesaAttendantPhone } from "./mesa/routing";
+import { chaveTelefoneBR } from "./mesmo-numero";
 import { claimButtonClick } from "./once";
 import {
 	getHandoffState,
@@ -39,6 +40,64 @@ async function handleBackIntent(from: string): Promise<void> {
 		});
 	}
 	await sendTextMessage(from, popped ? "Voltando ao passo anterior." : "Você já está no início.");
+}
+
+/**
+ * O cliente pediu para sair do REMARKETING? Se sim, marca e responde; se não,
+ * não faz nada (o fluxo normal segue).
+ *
+ * O `ehPedidoDeOptout` é conservador de propósito (ver `remarketing/motor.ts`):
+ * só formulações explícitas de "pare de me mandar" marcam. O que grava é o
+ * FATO em `contacts.remarketing_optout_at` — a régua inteira se apoia nele.
+ *
+ * Marca TODOS os contatos que resolvem para o mesmo telefone (o número é
+ * gravado em formatos diferentes entre canais — ver `mesmo-numero.ts`) e todas
+ * as linhas da régua desses contatos, para o worker não ter que descobrir
+ * depois.
+ */
+async function tratarOptoutDeRemarketing(from: string, text: string): Promise<boolean> {
+	const { ehPedidoDeOptout } = await import("@/lib/remarketing/motor");
+	if (!ehPedidoDeOptout(text)) return false;
+
+	try {
+		const agora = new Date();
+		const chave = chaveTelefoneBR(from);
+
+		const todos = await db.select({ id: contacts.id, phone: contacts.phone }).from(contacts);
+		const alvos = todos
+			.filter((c) => (chave ? chaveTelefoneBR(c.phone) === chave : false))
+			.map((c) => c.id);
+
+		// Fallback: a conversa daquele wa_id já sabe o contato (quando a tabela de
+		// contatos ainda não tem o telefone no formato comparável).
+		if (alvos.length === 0) {
+			const conv = await db.query.conversations.findFirst({
+				where: eq(conversations.waId, from),
+			});
+			if (conv?.contactId) alvos.push(conv.contactId);
+		}
+
+		if (alvos.length > 0) {
+			await db
+				.update(contacts)
+				.set({ remarketingOptoutAt: agora })
+				.where(inArray(contacts.id, alvos));
+			await db
+				.update(remarketingTouches)
+				.set({ status: "OPTOUT", motivoSaida: "optout_do_cliente", nextTouchAt: null })
+				.where(inArray(remarketingTouches.contactId, alvos));
+		}
+
+		console.log(`[whatsapp-processor] Opt-out de remarketing registrado (phone: ${from})`);
+	} catch (err) {
+		console.error("[whatsapp-processor] Falha ao registrar opt-out:", err);
+	}
+
+	await sendTextMessage(
+		from,
+		"Entendido! Não vou mais te enviar mensagens de acompanhamento. Se quiser falar com a gente, é só chamar por aqui.",
+	);
+	return true;
 }
 
 /**
@@ -99,6 +158,13 @@ async function processTextMessageSerialized(
 			}
 			return;
 		}
+
+		// OPT-OUT DO REMARKETING — o cliente pediu para sair, e o pedido é por
+		// PESSOA (telefone), não por conversa: vale para a régua inteira, para
+		// sempre, e sobrevive a uma nova simulação. Marcado aqui, no ponto único
+		// por onde toda mensagem de entrada passa, porque a régua roda no worker e
+		// não vê o que o cliente escreve.
+		if (await tratarOptoutDeRemarketing(from, text)) return;
 
 		const handoff = await getHandoffState(from);
 		if (handoff?.isHandedOff) {

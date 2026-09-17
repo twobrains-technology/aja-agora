@@ -304,6 +304,15 @@ export const contacts = pgTable(
 		cpf: text(),
 		email: text(),
 		name: text(), // melhor nome conhecido
+		// Opt-out da régua de remarketing — POR PESSOA, não por conversa.
+		//
+		// A régua é uma linha por conversa, e a mesma pessoa pode ter várias
+		// campanhas; o "pare de me mandar mensagem" vale para todas, para sempre,
+		// e sobrevive a uma nova simulação. Guardado no CONTATO (o telefone/CPF é
+		// quem pediu), vale em qualquer conversa futura. O motor de remarketing lê
+		// esta coluna e trata o valor como terminal: com ela preenchida, nenhum
+		// toque sai, nem para uma conversa criada depois.
+		remarketingOptoutAt: timestamp("remarketing_optout_at", { withTimezone: true }),
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true })
 			.defaultNow()
@@ -1181,9 +1190,20 @@ export const remarketingTouches = pgTable(
 		/** Quando o próximo toque pode sair; null quando não há mais toque. */
 		nextTouchAt: timestamp("next_touch_at", { withTimezone: true }),
 		/**
+		 * O INSTANTE do último toque que saiu — a data da cota de 30 dias. Gravado
+		 * no MESMO `UPDATE` do toque e ANTES do envio.
+		 *
+		 * Nasceu da rodada 2: sem ele, o teto deslizante só podia ser derivado de
+		 * `next_touch_at − intervalo(step)`, e essa conta quebra assim que o ciclo
+		 * reajusta a cadência (reentrada, linha terminal). Contador de cota sem a
+		 * data do último consumo é dívida. A reconstrução fica só como FALLBACK de
+		 * linha antiga (ver `motor.ts`), não como mecanismo.
+		 */
+		ultimoToqueEm: timestamp("ultimo_toque_em", { withTimezone: true }),
+		/**
 		 * Contador do teto deslizante, derivado de `contarToquesNaJanela` no
 		 * momento da escrita — guardado para leitura rápida do painel. A fonte dos
-		 * instantes é o histórico de toques, não esta coluna.
+		 * instantes é `ultimo_toque_em` + as datas do histórico.
 		 */
 		touches30d: smallint("touches_30d").default(0).notNull(),
 		/** Por que saiu da régua (`cliente_respondeu`, `optout_do_cliente`...). */

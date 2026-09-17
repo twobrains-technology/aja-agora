@@ -1,0 +1,1 @@
+ALTER TABLE "remarketing_touches" ADD COLUMN "ultimo_toque_em" timestamp with time zone;
