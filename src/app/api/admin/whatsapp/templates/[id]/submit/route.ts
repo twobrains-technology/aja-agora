@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { whatsappTemplates } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
+import { recusaDeSubmissao } from "@/lib/validations/whatsapp-template";
 import { createTemplate } from "@/lib/whatsapp/api";
 
 /**
@@ -43,6 +44,14 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 			{ error: "Defina a categoria antes de submeter à Meta." },
 			{ status: 400 },
 		);
+	}
+
+	// Barreira determinística ANCORADA no que está persistido: não gasta uma
+	// submissão (que queima o nome do template e espera aprovação humana) com um
+	// payload que a Meta recusa por categoria ou por promessa de contemplação.
+	const recusa = recusaDeSubmissao({ category: tmpl.category, components: tmpl.components });
+	if (recusa) {
+		return Response.json({ error: recusa }, { status: 400 });
 	}
 
 	try {

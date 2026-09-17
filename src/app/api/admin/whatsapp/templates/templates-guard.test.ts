@@ -11,6 +11,8 @@ const ROUTES = [
 	`${BASE}/[id]/route.ts`,
 	`${BASE}/[id]/submit/route.ts`,
 	`${BASE}/sync/route.ts`,
+	// Bloco 3: upload da arte do header de template (também backoffice).
+	`${BASE}/media/route.ts`,
 ];
 
 function read(rel: string) {

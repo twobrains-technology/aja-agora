@@ -11,6 +11,7 @@ import {
 	FootprintsIcon,
 	HeadsetIcon,
 	KanbanIcon,
+	MegaphoneIcon,
 	MessageSquareTextIcon,
 	MessagesSquareIcon,
 	UserIcon,
@@ -60,6 +61,11 @@ export function AppSidebar({ role = "viewer" }: { role?: Role }) {
 	const applicationItems = permitido([
 		{ title: "Pipeline", href: "/admin/pipeline", icon: KanbanIcon },
 		{ title: "Conversas", href: "/admin/conversations", icon: MessageSquareTextIcon },
+		// A tela da régua de remarketing (bloco 4): o dono do produto precisa de
+		// onde olhar quem está na régua, sem depender do banco. `admin`, `viewer` e
+		// `attendant` têm `*` em `role-scope`, e a mesa externa não vê — a régua não
+		// é do escopo dela.
+		{ title: "Régua de remarketing", href: "/admin/remarketing", icon: MegaphoneIcon },
 		{ title: "Atendentes", href: "/admin/attendants", icon: UsersIcon },
 		{ title: "Administradoras", href: "/admin/administradoras", icon: BuildingIcon },
 		{ title: "Atendentes de mesa", href: "/admin/atendentes-mesa", icon: HeadsetIcon },
