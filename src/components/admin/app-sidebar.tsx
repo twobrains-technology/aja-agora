@@ -14,6 +14,7 @@ import {
 	MegaphoneIcon,
 	MessageSquareTextIcon,
 	MessagesSquareIcon,
+	TargetIcon,
 	UserIcon,
 	UsersIcon,
 } from "lucide-react";
@@ -55,6 +56,9 @@ export function AppSidebar({ role = "viewer" }: { role?: Role }) {
 	const menuItems = permitido([
 		{ title: "Agora", href: "/admin", icon: ActivityIcon },
 		{ title: "Performance", href: "/admin/performance", icon: ChartPieIcon },
+		// A leitura por CAMPANHA, com o gasto da Meta ao lado do funil do CRM. Fica
+		// no mesmo grupo da Performance — é análise de aquisição, não operação.
+		{ title: "Campanhas", href: "/admin/campanhas", icon: TargetIcon },
 		{ title: "Mapa de calor", href: "/admin/mapa-de-calor", icon: FlameIcon },
 		{ title: "Percurso do lead", href: "/admin/percurso", icon: FootprintsIcon },
 	]);

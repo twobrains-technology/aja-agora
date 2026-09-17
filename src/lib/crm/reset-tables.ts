@@ -78,4 +78,15 @@ export const TABELAS_PRESERVADAS: readonly string[] = [
 	"mesa_attendants",
 	// Canal WhatsApp
 	"whatsapp_templates",
+	// Espelho local do gerenciador de anúncios (`meta_entities`,
+	// `meta_insights_diarios`). NÃO é dado de cliente: é a verdade da Meta, lida
+	// por sync — apagar aqui só faria o ciclo reler tudo e, no intervalo, a tela
+	// de Campanhas ficaria sem nome nem gasto. O marco zero limpa a VISITA (que é
+	// nossa), não o que o gerenciador reportou.
+	"meta_entities",
+	"meta_insights_diarios",
+	// Cadastro da dinâmica da régua: é configuração da operação, como a persona.
+	// Zerar isto derrubaria a régua para as constantes de fábrica sem ninguém ter
+	// pedido — o oposto de um marco zero.
+	"remarketing_config",
 ];
