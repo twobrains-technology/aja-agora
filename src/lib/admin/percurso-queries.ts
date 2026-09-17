@@ -72,7 +72,7 @@ function profundidadeDoPasso(passo: PassoDoPercurso): number {
  */
 function baseDoPercurso(filtro: FiltroPercurso): SQL {
 	const origem = filtro.origem?.trim()
-		? predicadoDeOrigemNaVisita(filtro.origem.trim(), filtro.campanha?.trim() || null)
+		? predicadoDeOrigemNaVisita(filtro.origem.trim(), filtro.campanha ?? null)
 		: null;
 	// Chave desconhecida devolve `null` de propósito (ver `filtro-origem`): link
 	// velho mostra a lista inteira, nunca uma lista vazia que pareceria "ninguém
