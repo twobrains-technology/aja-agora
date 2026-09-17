@@ -248,17 +248,18 @@ describe("Bloco 3 — carrossel de 3 cards", () => {
 		const carousel = components.find((c) => c.type === "CAROUSEL");
 		if (carousel?.type !== "CAROUSEL") throw new Error("CAROUSEL ausente");
 
-		expect(carousel.cards).toHaveLength(3);
-		expect(carousel.cards[0].components[0]).toEqual({
+		const cards = carousel.cards ?? [];
+		expect(cards).toHaveLength(3);
+		expect(cards[0]?.components[0]).toEqual({
 			type: "HEADER",
 			format: "IMAGE",
 			example: { header_handle: [`${HANDLE}-1`] },
 		});
-		expect(carousel.cards[0].components[1]).toEqual({
+		expect(cards[0]?.components[1]).toEqual({
 			type: "BODY",
 			text: "Mais de 30 mil famílias atendidas.",
 		});
-		expect(carousel.cards[0].components[2]).toEqual({
+		expect(cards[0]?.components[2]).toEqual({
 			type: "BUTTONS",
 			buttons: [{ type: "QUICK_REPLY", text: QUICK_REPLY_PADRAO }],
 		});

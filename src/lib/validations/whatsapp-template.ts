@@ -511,7 +511,9 @@ export function recusaDeSubmissao(input: {
 			if (componente.text) textos.push(componente.text);
 		} else if (componente.type === "CAROUSEL") {
 			temCarrossel = true;
-			for (const card of componente.cards) {
+			// A Meta exige de 2 a 10 cards; carrossel sem card é erro de entrada, não
+			// motivo para o validador explodir (o tipo diz que `cards` é opcional).
+			for (const card of componente.cards ?? []) {
 				for (const dentro of card.components) {
 					if (dentro.type === "BODY" && dentro.text) textos.push(dentro.text);
 				}

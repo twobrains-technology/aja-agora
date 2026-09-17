@@ -1081,11 +1081,14 @@ export const clientDocumentDownloads = pgTable(
 // exemplos de placeholder, botões) e a Meta evolui o shape — travar cada
 // variante aqui seria fricção sem ganho (não há consumer SQL que valide).
 export type WhatsappTemplateComponent = {
-	type: "HEADER" | "BODY" | "FOOTER" | "BUTTONS";
+	type: "HEADER" | "BODY" | "FOOTER" | "BUTTONS" | "CAROUSEL";
 	format?: "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT";
 	text?: string;
 	example?: Record<string, unknown>;
 	buttons?: Array<Record<string, unknown>>;
+	// Carrossel: o componente CAROUSEL carrega os cards, e cada card é um conjunto
+	// de componentes (header de imagem + body + botões). A Meta exige de 2 a 10.
+	cards?: Array<{ components: WhatsappTemplateComponent[] }>;
 };
 
 // Template registrado na Meta, com status acompanhável até APPROVED e vínculo
