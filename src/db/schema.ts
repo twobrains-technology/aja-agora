@@ -10,6 +10,7 @@ import {
 	pgEnum,
 	pgTable,
 	real,
+	smallint,
 	text,
 	timestamp,
 	uniqueIndex,
@@ -192,6 +193,16 @@ export const whatsappOutboundStatusEnum = pgEnum("whatsapp_outbound_status", [
 	"failed",
 ]);
 
+// Estado de um cliente na régua de remarketing do WhatsApp
+// (Remarketing_WhatsApp_V3.pdf, 13/09). `OPTOUT` e `CONVERTEU` são terminais.
+export const remarketingTouchStatusEnum = pgEnum("remarketing_touch_status", [
+	"ATIVO",
+	"RESPONDEU",
+	"ESGOTADO",
+	"OPTOUT",
+	"CONVERTEU",
+]);
+
 // ─── Better Auth Tables ──────────────────────────────────────────────────────
 
 export const user = pgTable("user", {
@@ -293,6 +304,15 @@ export const contacts = pgTable(
 		cpf: text(),
 		email: text(),
 		name: text(), // melhor nome conhecido
+		// Opt-out da régua de remarketing — POR PESSOA, não por conversa.
+		//
+		// A régua é uma linha por conversa, e a mesma pessoa pode ter várias
+		// campanhas; o "pare de me mandar mensagem" vale para todas, para sempre,
+		// e sobrevive a uma nova simulação. Guardado no CONTATO (o telefone/CPF é
+		// quem pediu), vale em qualquer conversa futura. O motor de remarketing lê
+		// esta coluna e trata o valor como terminal: com ela preenchida, nenhum
+		// toque sai, nem para uma conversa criada depois.
+		remarketingOptoutAt: timestamp("remarketing_optout_at", { withTimezone: true }),
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true })
 			.defaultNow()
@@ -1061,11 +1081,14 @@ export const clientDocumentDownloads = pgTable(
 // exemplos de placeholder, botões) e a Meta evolui o shape — travar cada
 // variante aqui seria fricção sem ganho (não há consumer SQL que valide).
 export type WhatsappTemplateComponent = {
-	type: "HEADER" | "BODY" | "FOOTER" | "BUTTONS";
+	type: "HEADER" | "BODY" | "FOOTER" | "BUTTONS" | "CAROUSEL";
 	format?: "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT";
 	text?: string;
 	example?: Record<string, unknown>;
 	buttons?: Array<Record<string, unknown>>;
+	// Carrossel: o componente CAROUSEL carrega os cards, e cada card é um conjunto
+	// de componentes (header de imagem + body + botões). A Meta exige de 2 a 10.
+	cards?: Array<{ components: WhatsappTemplateComponent[] }>;
 };
 
 // Template registrado na Meta, com status acompanhável até APPROVED e vínculo
@@ -1133,6 +1156,79 @@ export const whatsappOutboundQueue = pgTable(
 	(table) => [
 		index("whatsapp_outbound_queue_usage_key_idx").on(table.usageKey),
 		index("whatsapp_outbound_queue_status_idx").on(table.status),
+	],
+);
+
+// ─── Régua de remarketing (WhatsApp) ────────────────────────────────────────
+//
+// Onde mora o estado de quem conversou e não fechou: até 3 toques em 7 dias, no
+// máximo 3 por PESSOA a cada 30 dias (entre campanhas), opt-out definitivo e
+// reentrada por nova simulação. Fonte: Remarketing_WhatsApp_V3.pdf (13/09).
+//
+// A decisão de SE o toque sai é o predicado PURO de `src/lib/remarketing/
+// regua.ts` — o motor do bloco 2 chama `podeDisparar`/`registrarToque` e grava
+// aqui o resultado. Nenhuma regra da régua vira texto de prompt: contagem de
+// toque, teto de 30 dias e janela de horário são fato do servidor.
+//
+// Uma linha por CONVERSA (UNIQUE): o ciclo acompanha a conversa que morreu. O
+// teto deslizante, porém, é do CLIENTE — é `contact_id` que permite ao motor
+// somar a cota gasta do mesmo telefone/CPF entre campanhas.
+export const remarketingTouches = pgTable(
+	"remarketing_touches",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		conversationId: uuid("conversation_id")
+			.notNull()
+			.references(() => conversations.id, { onDelete: "cascade" }),
+		// notNull ⇒ `cascade`, e não o `set null` de `conversations.contact_id`:
+		// a linha da régua sem dono não teria como contar o teto de 30 dias.
+		contactId: uuid("contact_id")
+			.notNull()
+			.references(() => contacts.id, { onDelete: "cascade" }),
+		/** `carro` · `moto` · `imovel` — o eixo comercial do disparo. */
+		objetivo: text().notNull(),
+		/** 0 = nada disparado; 1, 2, 3 = o toque que já saiu. */
+		step: smallint("step").default(0).notNull(),
+		status: remarketingTouchStatusEnum("status").default("ATIVO").notNull(),
+		/** Quando o próximo toque pode sair; null quando não há mais toque. */
+		nextTouchAt: timestamp("next_touch_at", { withTimezone: true }),
+		/**
+		 * O INSTANTE do último toque que saiu — a data da cota de 30 dias. Gravado
+		 * no MESMO `UPDATE` do toque e ANTES do envio.
+		 *
+		 * Nasceu da rodada 2: sem ele, o teto deslizante só podia ser derivado de
+		 * `next_touch_at − intervalo(step)`, e essa conta quebra assim que o ciclo
+		 * reajusta a cadência (reentrada, linha terminal). Contador de cota sem a
+		 * data do último consumo é dívida. A reconstrução fica só como FALLBACK de
+		 * linha antiga (ver `motor.ts`), não como mecanismo.
+		 */
+		ultimoToqueEm: timestamp("ultimo_toque_em", { withTimezone: true }),
+		/**
+		 * Contador do teto deslizante, derivado de `contarToquesNaJanela` no
+		 * momento da escrita — guardado para leitura rápida do painel. A fonte dos
+		 * instantes é `ultimo_toque_em` + as datas do histórico.
+		 */
+		touches30d: smallint("touches_30d").default(0).notNull(),
+		/** Por que saiu da régua (`cliente_respondeu`, `optout_do_cliente`...). */
+		motivoSaida: text("motivo_saida"),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull(),
+	},
+	(table) => [
+		// Uma régua por conversa — reabrir a mesma conversa não cria segundo ciclo.
+		uniqueIndex("remarketing_touches_conversation_id_idx").on(table.conversationId),
+		// Índice PARCIAL: é a ÚNICA consulta que o motor faz a cada 30s ("quem está
+		// ativo e já venceu"). Sem o `WHERE`, o ciclo varreria a tabela inteira,
+		// incluindo todo o histórico já encerrado (opt-out, esgotado, convertido),
+		// que é a maior parte dela.
+		index("remarketing_touches_ativos_idx")
+			.on(table.status, table.nextTouchAt)
+			.where(sql`${table.status} = 'ATIVO'`),
+		// Mesmo teto do predicado puro: 0 a 3. O motor nunca grava 4.
+		check("remarketing_touches_step_check", sql`${table.step} BETWEEN 0 AND 3`),
 	],
 );
 
@@ -1569,5 +1665,17 @@ export const clientDocumentDownloadsRelations = relations(clientDocumentDownload
 	downloadedByUser: one(user, {
 		fields: [clientDocumentDownloads.downloadedBy],
 		references: [user.id],
+	}),
+}));
+
+export const remarketingTouchesRelations = relations(remarketingTouches, ({ one }) => ({
+	conversation: one(conversations, {
+		fields: [remarketingTouches.conversationId],
+		references: [conversations.id],
+	}),
+	// O dono do teto de 30 dias: a cota é somada por cliente, entre campanhas.
+	contact: one(contacts, {
+		fields: [remarketingTouches.contactId],
+		references: [contacts.id],
 	}),
 }));

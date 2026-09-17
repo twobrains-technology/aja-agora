@@ -1,6 +1,6 @@
 import { desc } from "drizzle-orm";
 import { db } from "@/db";
-import { whatsappTemplates } from "@/db/schema";
+import { type WhatsappTemplateComponent, whatsappTemplates } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
 import { isUniqueViolation } from "@/lib/mesa/pg-error";
 import { buildTemplateComponents, createTemplateSchema } from "@/lib/validations/whatsapp-template";
@@ -49,8 +49,28 @@ export async function POST(req: Request) {
 		);
 	}
 
-	const { usageKey, metaName, category, language, header, body: bodyText, footer } = parsed.data;
-	const { components, bodyPreview } = buildTemplateComponents({ header, body: bodyText, footer });
+	const {
+		usageKey,
+		metaName,
+		category,
+		language,
+		header,
+		headerFormat,
+		headerHandle,
+		body: bodyText,
+		footer,
+		quickReplyText,
+		carousel,
+	} = parsed.data;
+	const { components, bodyPreview } = buildTemplateComponents({
+		header,
+		headerFormat,
+		headerHandle,
+		body: bodyText,
+		footer,
+		quickReplyText,
+		carousel,
+	});
 
 	try {
 		const [row] = await db
@@ -60,7 +80,9 @@ export async function POST(req: Request) {
 				metaName,
 				category,
 				language,
-				components,
+				// Cast porque `CAROUSEL` não existe no tipo de `src/db/schema.ts` — arquivo
+				// de outro bloco, fora do escopo deste. O shape gravado é o da Meta.
+				components: components as WhatsappTemplateComponent[],
 				bodyPreview,
 				status: "DRAFT",
 			})

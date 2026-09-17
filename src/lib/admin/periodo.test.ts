@@ -7,13 +7,19 @@
 
 import { describe, expect, it } from "vitest";
 import {
+	diaComoData,
 	diaDeHoje,
 	diaDoNegocio,
+	diaDoParametro,
+	diasDoCookie,
+	diasDoPeriodo,
 	fimDoDia,
 	inicioDoDia,
 	instanteDoParametro,
+	type Periodo,
 	periodoPadrao,
 	resolverPeriodo,
+	serializarPeriodoDoCookie,
 	TZ_NEGOCIO,
 } from "./periodo";
 
@@ -109,6 +115,76 @@ describe("resolver o que veio na URL", () => {
 	it("recusa data inválida em vez de silenciosamente mostrar outro período", () => {
 		expect(resolverPeriodo("qualquer coisa", null, TARDE)).toBeNull();
 		expect(resolverPeriodo(null, "31/02/2026", TARDE)).toBeNull();
+	});
+});
+
+describe("o padrão deixou de ser sempre hoje e virou ARGUMENTO", () => {
+	// É por aqui que o cookie entra na resolução sem quebrar a pureza da função:
+	// ele chega como VALOR pronto, nunca como `await` lá dentro.
+	const doCookie: Periodo = {
+		de: inicioDoDia(diaComoData("2026-08-01")),
+		ate: fimDoDia(diaComoData("2026-08-10")),
+	};
+
+	it("usa o padrão passado quando a URL não traz nada", () => {
+		expect(resolverPeriodo(null, null, TARDE, doCookie)).toEqual(doCookie);
+	});
+
+	it("a URL presente vence o padrão do cookie", () => {
+		const periodo = resolverPeriodo("2026-07-01", "2026-07-02", TARDE, doCookie);
+
+		expect(diaDoNegocio(periodo?.de as Date)).toBe("2026-07-01");
+		expect(diaDoNegocio(periodo?.ate as Date)).toBe("2026-07-02");
+	});
+
+	it("sem o argumento, continua em hoje — nenhum chamador antigo muda", () => {
+		expect(resolverPeriodo(null, null, TARDE)).toEqual(periodoPadrao(TARDE));
+	});
+});
+
+describe("o cookie do período", () => {
+	it("guarda e devolve o mesmo par de DIAS", () => {
+		const valor = serializarPeriodoDoCookie(diaComoData("2026-08-01"), diaComoData("2026-08-10"));
+
+		expect(valor).toBe("2026-08-01_2026-08-10");
+		expect(diasDoCookie(valor)).toEqual({ de: "2026-08-01", ate: "2026-08-10" });
+	});
+
+	it("não deixa o dia escorregar, porque guarda o DIA e não o instante", () => {
+		const periodo = periodoPadrao(TARDE);
+		const valor = serializarPeriodoDoCookie(periodo.de, periodo.ate);
+
+		// O `ate` é 2026-08-20T02:59Z — se o cookie guardasse o instante, a ida e
+		// volta o traria como 20/08. O dia do negócio é que importa.
+		expect(diasDoCookie(valor)).toEqual({ de: "2026-08-19", ate: "2026-08-19" });
+	});
+
+	it("devolve null para o que não é par de dias válido", () => {
+		expect(diasDoCookie(null)).toBeNull();
+		expect(diasDoCookie("")).toBeNull();
+		expect(diasDoCookie("2026-08-01")).toBeNull();
+		expect(diasDoCookie("2026-02-31_2026-08-10")).toBeNull();
+	});
+});
+
+describe("o dia que um parâmetro representa", () => {
+	it("aceita o dia puro e o ISO completo, e devolve o dia do negócio", () => {
+		expect(diaDoParametro("2026-08-19")).toBe("2026-08-19");
+		expect(diaDoParametro("2026-08-19T23:00:00.000Z")).toBe("2026-08-19");
+	});
+
+	it("devolve null para vazio e para o que não é data", () => {
+		expect(diaDoParametro(null)).toBeNull();
+		expect(diaDoParametro(undefined)).toBeNull();
+		expect(diaDoParametro("ontem")).toBeNull();
+		expect(diaDoParametro("2026-02-31")).toBeNull();
+	});
+
+	it("`diasDoPeriodo` é o par de dias de um período de instantes", () => {
+		expect(diasDoPeriodo(diaComoData("2026-08-01"), diaComoData("2026-08-10"))).toEqual({
+			de: "2026-08-01",
+			ate: "2026-08-10",
+		});
 	});
 });
 

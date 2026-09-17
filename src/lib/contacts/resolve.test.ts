@@ -48,6 +48,7 @@ describe("consolidateIdentifiers", () => {
 		cpf: null,
 		email: null,
 		name: null,
+		remarketingOptoutAt: null,
 		createdAt: new Date(),
 		updatedAt: new Date(),
 	};

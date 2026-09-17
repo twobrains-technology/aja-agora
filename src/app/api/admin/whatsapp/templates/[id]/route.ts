@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { whatsappTemplates } from "@/db/schema";
+import { type WhatsappTemplateComponent, whatsappTemplates } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
 import { isUniqueViolation } from "@/lib/mesa/pg-error";
 import { buildTemplateComponents, updateTemplateSchema } from "@/lib/validations/whatsapp-template";
@@ -46,7 +46,19 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 		return Response.json({ error: "Template não encontrado" }, { status: 404 });
 	}
 
-	const { usageKey, metaName, category, language, header, body, footer } = parsed.data;
+	const {
+		usageKey,
+		metaName,
+		category,
+		language,
+		header,
+		headerFormat,
+		headerHandle,
+		body,
+		footer,
+		quickReplyText,
+		carousel,
+	} = parsed.data;
 
 	const updates: Partial<typeof whatsappTemplates.$inferInsert> = {};
 
@@ -59,7 +71,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 		language !== undefined ||
 		body !== undefined ||
 		header !== undefined ||
-		footer !== undefined;
+		headerFormat !== undefined ||
+		headerHandle !== undefined ||
+		footer !== undefined ||
+		quickReplyText !== undefined ||
+		carousel !== undefined;
 
 	if (wantsContentEdit) {
 		if (current.status !== "DRAFT") {
@@ -76,12 +92,28 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 		if (language !== undefined) updates.language = language;
 
 		if (body !== undefined) {
-			const { components, bodyPreview } = buildTemplateComponents({ header, body, footer });
-			updates.components = components;
+			const { components, bodyPreview } = buildTemplateComponents({
+				header,
+				headerFormat,
+				headerHandle,
+				body,
+				footer,
+				quickReplyText,
+				carousel,
+			});
+			// Cast porque `CAROUSEL` não existe no tipo do schema (arquivo de outro bloco).
+			updates.components = components as WhatsappTemplateComponent[];
 			updates.bodyPreview = bodyPreview;
-		} else if (header !== undefined || footer !== undefined) {
+		} else if (
+			header !== undefined ||
+			headerFormat !== undefined ||
+			headerHandle !== undefined ||
+			footer !== undefined ||
+			quickReplyText !== undefined ||
+			carousel !== undefined
+		) {
 			return Response.json(
-				{ error: "Para editar header/footer, envie também o corpo (body)." },
+				{ error: "Para editar header/footer/botão/carrossel, envie também o corpo (body)." },
 				{ status: 400 },
 			);
 		}
