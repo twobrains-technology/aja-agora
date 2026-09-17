@@ -17,13 +17,24 @@ import { TemplateFormDialog } from "./template-form-dialog";
 import { TemplateRowActions } from "./template-row-actions";
 import { templateStatusMeta } from "./template-status-meta";
 
+/** Componente como ele chega do banco (JSONB) — frouxo de propósito: HEADER/BODY/
+ * FOOTER/BUTTONS/CAROUSEL têm formas distintas e o form precisa ler todos. */
+export interface TemplateComponentLoose {
+	type: string;
+	format?: string;
+	text?: string;
+	example?: Record<string, unknown>;
+	buttons?: Array<Record<string, unknown>>;
+	cards?: Array<{ components: TemplateComponentLoose[] }>;
+}
+
 export interface WhatsappTemplate {
 	id: string;
 	usageKey: string | null;
 	metaName: string;
 	language: string;
 	category: "UTILITY" | "MARKETING" | "AUTHENTICATION" | null;
-	components: Array<{ type: string; text?: string }> | null;
+	components: TemplateComponentLoose[] | null;
 	bodyPreview: string | null;
 	status: string;
 	metaTemplateId: string | null;
