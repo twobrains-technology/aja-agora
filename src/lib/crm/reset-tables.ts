@@ -78,4 +78,14 @@ export const TABELAS_PRESERVADAS: readonly string[] = [
 	"mesa_attendants",
 	// Canal WhatsApp
 	"whatsapp_templates",
+	// Parâmetros da régua de remarketing (bloco 6, migration 0056). É
+	// CONFIGURAÇÃO, não rastro de cliente: apagar a linha faz o motor voltar ao
+	// padrão de fábrica em silêncio, e o dono acharia que o ajuste dele sumiu.
+	"remarketing_config",
+	// Espelho da Meta Ads (migration 0056): catálogo de entidades e spend diário
+	// por entidade. É dado de referência re-sincronizável, não dado de cliente —
+	// preservar não destrói nada; quem decidir que o marco zero deve começar com
+	// o relatório de mídia limpo move estas duas para `TABELAS_LIMPAS`.
+	"meta_entities",
+	"meta_insights_diarios",
 ];
