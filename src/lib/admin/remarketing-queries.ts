@@ -43,8 +43,8 @@ import { db } from "@/db";
 import { remarketingTouches } from "@/db/schema";
 import { maskPhoneForDisplay } from "@/lib/conversation/identity";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
-import { objetivoCanonico } from "@/lib/remarketing/motor";
-import type { StatusRegua } from "@/lib/remarketing/regua";
+import { ehTelefoneInterno, objetivoCanonico } from "@/lib/remarketing/motor";
+import { ESPERA_SILENCIO_MS, type StatusRegua } from "@/lib/remarketing/regua";
 import { chaveTelefoneBR } from "@/lib/whatsapp/mesmo-numero";
 import type { LinhaBruta, RastroDoAtendente } from "./remarketing-tela";
 
@@ -115,6 +115,8 @@ function montarLinha(linha: Record<string, unknown>): LinhaBruta {
 		criadoEm: new Date(linha.criadoEm as string),
 		ultimoInboundEm: dataOuNulo(linha.ultimoInboundEm),
 		optoutDaPessoaEm: dataOuNulo(linha.optoutDaPessoaEm),
+		// Só `listarReguas` traz esta coluna; nas outras consultas é `undefined`.
+		converteuEm: dataOuNulo(linha.converteuEm),
 		rastro: rastroDoMetadata(linha.metadata),
 	};
 }
@@ -165,10 +167,17 @@ function recorte(filtro: FiltroDaRegua) {
 /** Todas as linhas da régua no recorte. Sem limite: contador tem que fechar. */
 export async function listarReguas(filtro: FiltroDaRegua): Promise<LinhaBruta[]> {
 	const resultado = await db.execute<Record<string, unknown>>(sql`
-		SELECT ${COLUNAS}
+		SELECT ${COLUNAS}, venda.em AS "converteuEm"
 		FROM remarketing_touches t
 		JOIN conversations c ON c.id = t.conversation_id
 		JOIN contacts ct ON ct.id = t.contact_id
+		LEFT JOIN LATERAL (
+			SELECT MIN(ev.created_at) AS em
+			FROM leads le
+			JOIN lead_events ev ON ev.lead_id = le.id AND ev.to_stage = 'fechado_ganho'
+			WHERE le.conversation_id = t.conversation_id
+			  AND le.is_simulated = false
+		) venda ON true
 		${recorte(filtro)}
 		${ORDEM}
 	`);
@@ -210,4 +219,84 @@ export async function gravarAcaoDaRegua(args: {
 	// `Object.assign` (e não literal com spread) para o campo novo não esbarrar no
 	// excess property check de `ConversationMetadata`.
 	await persistMeta(args.conversationId, Object.assign({}, meta, { remarketingAcao: args.rastro }));
+}
+
+// ─── Os insights: leitura própria, sem período ──────────────────────────────
+
+/**
+ * Quantas linhas a régua tem NO BANCO INTEIRO, sem recorte de período.
+ *
+ * Existe para a tela distinguir "a régua nunca foi ligada" de "não houve toque
+ * neste período" — zero no recorte não pode responder isso sozinho, porque um
+ * recorte de hoje também é zero numa régua que já rodou.
+ */
+export async function contarLinhasDaRegua(): Promise<number> {
+	const resultado = await db.execute<{ total: number }>(sql`
+		SELECT COUNT(*)::int AS total
+		FROM remarketing_touches t
+		JOIN conversations c ON c.id = t.conversation_id
+		WHERE c.is_simulated = false
+	`);
+	return Number(resultado.rows[0]?.total ?? 0);
+}
+
+/**
+ * A janela de entrada da régua: 7 dias. O ciclo só olha o silêncio recente —
+ * sem o teto, o primeiro ciclo depois do deploy varreria o histórico inteiro.
+ * É a MESMA constante de `remarketing-cycle.ts` (`JANELA_DE_ENTRADA_MS`); fica
+ * duplicada aqui porque a alternativa seria importar um módulo de worker (com
+ * BullMQ e Redis) para dentro da rota do admin.
+ */
+const JANELA_DE_ENTRADA_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * O telefone é da equipe? Espelha `ehDaEquipe` do ciclo: lista em código mais os
+ * atendentes ativos do banco. Falha do banco NÃO libera — na dúvida, trata como
+ * equipe, porque o erro que não se pode cometer é contar (ou tocar) quem é de
+ * dentro.
+ */
+async function ehDaEquipe(telefone: string | null): Promise<boolean> {
+	if (!telefone) return false;
+	if (ehTelefoneInterno(telefone)) return true;
+	try {
+		const [{ isAttendantPhone }, { isMesaAttendantPhone }] = await Promise.all([
+			import("@/lib/whatsapp/proxy"),
+			import("@/lib/whatsapp/mesa/routing"),
+		]);
+		return (await isAttendantPhone(telefone)) || (await isMesaAttendantPhone(telefone));
+	} catch {
+		return true;
+	}
+}
+
+/**
+ * Quantas conversas entrariam na régua no próximo ciclo.
+ *
+ * É o número que o estado honesto mostra enquanto a régua está desligada (hoje
+ * 218). A consulta espelha a de `entrarNaRegua` — canal WhatsApp, conversa
+ * ativa, não simulada, contato resolvido, silêncio entre 90 min e 7 dias, sem
+ * linha na régua — e aplica o mesmo guarda de telefone da equipe. O `LIMIT`
+ * daquele ciclo (`ENTRADAS_POR_CICLO`) NÃO conta aqui: a pergunta é o tamanho da
+ * fila, não de onde a fila é cortada.
+ */
+export async function contarElegiveisParaRegua(agora: Date): Promise<number> {
+	const candidatos = await db.execute<{ waId: string | null }>(sql`
+		SELECT c.wa_id AS "waId"
+		FROM conversations c
+		WHERE c.channel = 'whatsapp'
+		  AND c.status = 'active'
+		  AND c.is_simulated = false
+		  AND c.contact_id IS NOT NULL
+		  AND c.last_inbound_at IS NOT NULL
+		  AND c.last_inbound_at <= ${new Date(agora.getTime() - ESPERA_SILENCIO_MS).toISOString()}::timestamptz
+		  AND c.last_inbound_at > ${new Date(agora.getTime() - JANELA_DE_ENTRADA_MS).toISOString()}::timestamptz
+		  AND NOT EXISTS (SELECT 1 FROM remarketing_touches t WHERE t.conversation_id = c.id)
+	`);
+
+	let total = 0;
+	for (const linha of candidatos.rows) {
+		if (await ehDaEquipe(linha.waId ?? null)) continue;
+		total += 1;
+	}
+	return total;
 }

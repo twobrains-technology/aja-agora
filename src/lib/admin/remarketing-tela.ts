@@ -133,6 +133,18 @@ export interface LinhaBruta {
 	ultimoInboundEm: Date | null;
 	/** `contacts.remarketing_optout_at` — o terminal por PESSOA. */
 	optoutDaPessoaEm: Date | null;
+	/**
+	 * O instante em que o lead desta conversa virou `fechado_ganho`
+	 * (`lead_events.created_at`), ou `null` quando ainda não fechou.
+	 *
+	 * É o FATO da conversão, não o reflexo dela na régua: nada grava
+	 * `status = 'CONVERTEU'` hoje (a coluna existe no enum, mas nenhum caminho a
+	 * escreve). Contar conversão pelo status daria zero para sempre e a tela
+	 * nunca responderia "qual toque paga o próprio custo". O evento do lead é a
+	 * mesma verdade que o funil do painel já usa (`fechado_ganho`), e é ele que
+	 * entra na atribuição por toque.
+	 */
+	converteuEm: Date | null;
 	rastro: RastroDoAtendente | null;
 }
 
@@ -185,6 +197,10 @@ export interface RespostaDaRegua {
 	total: number;
 	totalDoRecorte: number;
 	periodo: { de: string; ate: string };
+	/** O funil por passo, a atribuição da conversão e os tempos (módulo insights). */
+	insights: InsightsDaRegua;
+	/** Se a régua está ligada, desligada ou só sem toque neste período. */
+	estado: EstadoDaRegua;
 }
 
 export type ResultadoDaAcao = { pode: true } | { pode: false; motivo: string; mensagem: string };
@@ -467,4 +483,336 @@ export function decidirAcao(linha: LinhaAvaliavel, acao: AcaoDaRegua, agora: Dat
 export function situacaoDoParametro(valor: string | null | undefined): Situacao | null {
 	if (!valor) return null;
 	return (SITUACOES as readonly string[]).includes(valor) ? (valor as Situacao) : null;
+}
+
+// ─── Os insights: o funil por passo, quem paga o toque e quanto tempo leva ───
+//
+// Tudo aqui é derivado das mesmas linhas que a lista já lê — nenhuma consulta
+// nova, nenhuma estimativa. Com a tabela vazia (o estado de hoje: a chave
+// `REMARKETING_ATIVO` não está na task definition e nada foi disparado) os
+// números são zero honesto e o estado (`estadoHonestoDaRegua`) diz que a régua
+// não está ligada, em vez de desenhar um gráfico de zero que se leria como
+// "ninguém respondeu".
+
+/** Os passos da régua: 0 = entrou e nenhum toque saiu; 1..3 = o toque que saiu. */
+export const PASSOS = [0, 1, 2, 3] as const;
+export type Passo = (typeof PASSOS)[number];
+
+const MAX_PASSO: Passo = 3;
+
+/**
+ * O rótulo do passo. O passo N significa "N toques já saíram", então o passo 1
+ * é o mundo DEPOIS do toque 01 — é essa leitura que a atribuição de conversão
+ * usa (a conversão que veio depois do toque 01 cai no passo 1).
+ */
+export const ROTULO_DO_PASSO: Record<Passo, string> = {
+	0: "Antes de qualquer toque",
+	1: "Depois do toque 01",
+	2: "Depois do toque 02",
+	3: "Depois do toque 03",
+};
+
+/**
+ * O passo da linha, preso a 0..3.
+ *
+ * `step` vem do banco com `check` de 0 a 3, mas a leitura não confia no que
+ * chega: valor fora da faixa (linha antiga, migration futura) não pode explodir
+ * o índice do funil.
+ */
+export function passoDa(linha: { step: number }): Passo {
+	const n = Math.trunc(linha.step);
+	if (!Number.isFinite(n) || n <= 0) return 0;
+	return Math.min(n, MAX_PASSO) as Passo;
+}
+
+/**
+ * A conversão da linha, pelo FATO.
+ *
+ * O evento `fechado_ganho` é a fonte; o status `CONVERTEU` da régua entra como
+ * reforço para o dia em que alguém o escrever — os dois juntos nunca contam a
+ * mesma linha duas vezes porque o resultado é booleano.
+ */
+function converteu(linha: LinhaBruta): boolean {
+	return linha.converteuEm !== null || situacaoDe(linha) === "converteu";
+}
+
+/**
+ * A qual toque a conversão se deve.
+ *
+ * Só o ÚLTIMO toque tem instante exato no banco (`ultimo_toque_em`) — os
+ * anteriores só existiriam por reconstrução de cadência, e o bloco 6 MOVE os
+ * intervalos para o cadastro, o que tornaria a conta silenciosamente errada. A
+ * regra então usa o que é fato:
+ *
+ *   - converteu antes de qualquer toque → o passo 0 ("sem toque");
+ *   - converteu DEPOIS do último toque → o toque que precedeu, que é o passo;
+ *   - converteu ANTES do último toque → não há como dizer qual toque veio antes
+ *     (`null`): a régua seguiu tocando depois da venda, e atribuir ao último
+ *     toque seria creditar a quem chegou tarde.
+ */
+export function passoDaConversao(linha: LinhaBruta): Passo | null {
+	if (!converteu(linha)) return null;
+	const passo = passoDa(linha);
+	if (passo === 0) return 0;
+	if (linha.ultimoToqueEm === null || linha.converteuEm === null) return null;
+	return linha.converteuEm.getTime() >= linha.ultimoToqueEm.getTime() ? passo : null;
+}
+
+/** Resumo de uma lista de durações, em milissegundos. Vazio ⇒ tudo `null`, nunca NaN. */
+export interface ResumoDeTempos {
+	contagem: number;
+	medianaMs: number | null;
+	menorMs: number | null;
+	maiorMs: number | null;
+}
+
+/**
+ * Mediana, e não média: a régua tem cauda longa (quem responde dias depois) e a
+ * média sozinha deixaria um caso extremo decidir o intervalo desenhado. Com a
+ * lista vazia devolve `null` em tudo — a tela mostra "—", não uma divisão por
+ * zero disfarçada de número.
+ */
+export function resumoDeTempos(valores: readonly number[]): ResumoDeTempos {
+	const limpos = valores.filter((v) => Number.isFinite(v) && v >= 0).sort((a, b) => a - b);
+	if (limpos.length === 0) {
+		return { contagem: 0, medianaMs: null, menorMs: null, maiorMs: null };
+	}
+
+	const meio = Math.floor(limpos.length / 2);
+	const mediana =
+		limpos.length % 2 === 1 ? limpos[meio] : Math.round((limpos[meio - 1] + limpos[meio]) / 2);
+
+	return {
+		contagem: limpos.length,
+		medianaMs: mediana,
+		menorMs: limpos[0],
+		maiorMs: limpos[limpos.length - 1],
+	};
+}
+
+/** Uma linha do funil — um passo da régua com tudo o que se deriva dele. */
+export interface LinhaDoFunil {
+	passo: Passo;
+	rotulo: string;
+	/** Quantas linhas chegaram a este passo (cumulativo: último toque >= passo). */
+	chegaram: number;
+	/** Destas, quantas seguiram para o próximo passo. */
+	avancaram: number;
+	/** Saíram da régua neste passo (resposta, opt-out, esgotamento, conversão ou segurar). */
+	sairam: number;
+	/** Continuam na régua neste passo, à espera do próximo toque. */
+	aguardando: number;
+	responderam: number;
+	segurados: number;
+	converteram: number;
+	optout: number;
+	esgotaram: number;
+	/**
+	 * Queda para o próximo passo em %: `sairam + aguardando` sobre `chegaram`.
+	 * `null` no passo 3 (não há próximo) e quando ninguém chegou.
+	 *
+	 * Ela mistura os dois motivos de não-avanço de propósito: quem já saiu e quem
+	 * ainda espera o próximo toque. O número sozinho mentiria, e é por isso que a
+	 * coluna "aguardando" aparece ao lado — a régua é viva, nem todo mundo parou.
+	 */
+	quedaPercentual: number | null;
+	/** Conversões atribuídas a ESTE toque (a venda veio depois dele). */
+	conversoesAtribuidas: number;
+	/** Tempo entre o último toque e a resposta, para quem respondeu neste passo. */
+	tempoAteResposta: ResumoDeTempos;
+	/** Tempo entre o último toque e o fechamento, para quem fechou neste passo. */
+	tempoAteConversao: ResumoDeTempos;
+}
+
+/** A atribuição da conversão aos toques — a pergunta que quase nenhuma régua responde. */
+export interface AtribuicaoDaConversao {
+	/** Total de conversões no recorte, por qualquer definição (fato ou status). */
+	total: number;
+	/** Conversões que não dão para atribuir a um toque (vieram antes do último). */
+	semAtribuicao: number;
+	/**
+	 * O toque (1..3) que mais converteu, ou `null` quando nenhum converteu.
+	 *
+	 * É a resposta possível HOJE: não há custo por toque no banco, então a tela
+	 * mostra quem converte, não quem "paga o próprio custo" com número de custo
+	 * inventado. Empate devolve o toque mais adiantado (menos mensagem para o
+	 * mesmo resultado).
+	 */
+	paga: Passo | null;
+}
+
+/** O que a tela de insights mostra, derivado do mesmo recorte da lista. */
+export interface InsightsDaRegua {
+	funil: LinhaDoFunil[];
+	conversoes: AtribuicaoDaConversao;
+}
+
+/** Uma linha só, para os testes e para a leitura não depender do índice. */
+function resumoDoPasso(
+	linhas: readonly LinhaBruta[],
+	passo: Passo,
+	conversoesAtribuidas: number,
+): LinhaDoFunil {
+	const nestePasso = linhas.filter((l) => passoDa(l) === passo);
+	const chegaram = linhas.filter((l) => passoDa(l) >= passo).length;
+	const avancaram = passo < MAX_PASSO ? linhas.filter((l) => passoDa(l) > passo).length : 0;
+
+	const count = (pred: (l: LinhaBruta) => boolean) => nestePasso.filter(pred).length;
+
+	// Desfechos em PRECEDÊNCIA, para cada linha cair em UM só: quem fechou contrato
+	// conta como "fecharam" mesmo tendo respondido antes — senão a pessoa que
+	// respondeu e depois comprou apareceria duas vezes e as colunas não fechariam
+	// com o total do passo.
+	const converteram = count(converteu);
+	const responderam = count((l) => !converteu(l) && situacaoDe(l) === "respondeu");
+	const segurados = count((l) => !converteu(l) && situacaoDe(l) === "segurado");
+	const esgotaram = count((l) => !converteu(l) && situacaoDe(l) === "esgotado");
+	const optout = count((l) => !converteu(l) && situacaoDe(l) === "optout");
+	// O resto é quem continua na régua à espera do próximo toque.
+	const aguardando = nestePasso.length - converteram - responderam - segurados - esgotaram - optout;
+	const sairam = nestePasso.length - aguardando;
+
+	const temposResposta: number[] = [];
+	const temposConversao: number[] = [];
+	for (const linha of nestePasso) {
+		const resposta = respostaDepoisDoToque(linha);
+		if (resposta !== null) temposResposta.push(resposta);
+		const conversao = conversaoDepoisDoToque(linha);
+		if (conversao !== null) temposConversao.push(conversao);
+	}
+
+	return {
+		passo,
+		rotulo: ROTULO_DO_PASSO[passo],
+		chegaram,
+		avancaram,
+		sairam,
+		aguardando,
+		responderam,
+		segurados,
+		converteram,
+		optout,
+		esgotaram,
+		quedaPercentual:
+			passo < MAX_PASSO && chegaram > 0 ? ((sairam + aguardando) / chegaram) * 100 : null,
+		conversoesAtribuidas,
+		tempoAteResposta: resumoDeTempos(temposResposta),
+		tempoAteConversao: resumoDeTempos(temposConversao),
+	};
+}
+
+/**
+ * Milissegundos entre o último toque e a resposta de quem respondeu.
+ * `null` quando não há os dois instantes ou quando a resposta veio antes do
+ * toque (o que não é resposta À régua).
+ */
+function respostaDepoisDoToque(linha: LinhaBruta): number | null {
+	if (situacaoDe(linha) !== "respondeu") return null;
+	if (!linha.ultimoToqueEm || !linha.ultimoInboundEm) return null;
+	const delta = linha.ultimoInboundEm.getTime() - linha.ultimoToqueEm.getTime();
+	return delta >= 0 ? delta : null;
+}
+
+/** Milissegundos entre o último toque e o fechamento, quando a régua precedeu a venda. */
+function conversaoDepoisDoToque(linha: LinhaBruta): number | null {
+	if (passoDaConversao(linha) === null || passoDa(linha) === 0) return null;
+	if (!linha.ultimoToqueEm || !linha.converteuEm) return null;
+	const delta = linha.converteuEm.getTime() - linha.ultimoToqueEm.getTime();
+	return delta >= 0 ? delta : null;
+}
+
+/**
+ * O funil e a atribuição, derivados das linhas do recorte. PURO.
+ *
+ * A lista pode vir vazia: todas as contagens são zero e os resumos de tempo são
+ * `null`. Nada aqui divide por zero nem produz NaN.
+ */
+export function insightsDaRegua(linhas: readonly LinhaBruta[]): InsightsDaRegua {
+	const porPasso = new Map<Passo, number>();
+	let conversoes = 0;
+	let semAtribuicao = 0;
+
+	for (const linha of linhas) {
+		if (!converteu(linha)) continue;
+		conversoes += 1;
+		const passo = passoDaConversao(linha);
+		if (passo === null) {
+			semAtribuicao += 1;
+			continue;
+		}
+		porPasso.set(passo, (porPasso.get(passo) ?? 0) + 1);
+	}
+
+	const funil = PASSOS.map((passo) => resumoDoPasso(linhas, passo, porPasso.get(passo) ?? 0));
+
+	let paga: Passo | null = null;
+	for (const passo of [1, 2, 3] as const) {
+		const quantas = porPasso.get(passo) ?? 0;
+		if (quantas === 0) continue;
+		if (paga === null || quantas > (porPasso.get(paga) ?? 0)) paga = passo;
+	}
+
+	return { funil, conversoes: { total: conversoes, semAtribuicao, paga } };
+}
+
+/**
+ * O estado honesto da régua — o que a tela diz ANTES de mostrar gráfico.
+ *
+ * Três situações, e a diferença entre elas é o ponto:
+ *
+ *   1. **nunca ligada** (`remarketing_touches` vazia no banco inteiro): nada foi
+ *      enviado. `elegiveisAgora` é quantas conversas entrariam no próximo ciclo
+ *      — hoje 218 —, a resposta que o dono do produto quer nesse estado;
+ *   2. **sem toques no período**: a régua já rodou, mas não neste recorte;
+ *   3. **com dados**: há o que mostrar.
+ *
+ * A distinção existe porque "zero linhas no período" e "régua desligada" são
+ * fatos diferentes, e tratá-los iguais faria o painel dizer "ninguém respondeu"
+ * quando a verdade é "nada foi enviado".
+ */
+export type EstadoDaRegua =
+	| { tipo: "nunca_ligada"; elegiveisAgora: number }
+	| { tipo: "sem_toques_no_periodo"; totalNoHistorico: number; elegiveisAgora: number }
+	| { tipo: "com_dados"; totalNoPeriodo: number };
+
+export function estadoHonestoDaRegua(args: {
+	/** Linhas em `remarketing_touches` no banco inteiro, sem recorte de período. */
+	totalNoHistorico: number;
+	/** Linhas dentro do período escolhido. */
+	linhasNoPeriodo: number;
+	/** Conversas elegíveis para entrar na régua agora. */
+	elegiveisAgora: number;
+}): EstadoDaRegua {
+	const elegiveisAgora = Math.max(0, Math.trunc(args.elegiveisAgora));
+	const totalNoHistorico = Math.max(0, Math.trunc(args.totalNoHistorico));
+	const linhasNoPeriodo = Math.max(0, Math.trunc(args.linhasNoPeriodo));
+
+	if (totalNoHistorico === 0) return { tipo: "nunca_ligada", elegiveisAgora };
+	if (linhasNoPeriodo === 0) {
+		return { tipo: "sem_toques_no_periodo", totalNoHistorico, elegiveisAgora };
+	}
+	return { tipo: "com_dados", totalNoPeriodo: linhasNoPeriodo };
+}
+
+/**
+ * Uma duração em milissegundos para leitura humana.
+ *
+ * `null` para entrada ausente ou negativa — a tela mostra "—" e não "0 min",
+ * que se leria como "respondeu na hora".
+ */
+export function duracaoLegivel(ms: number | null): string | null {
+	if (ms === null || !Number.isFinite(ms) || ms < 0) return null;
+
+	const minutos = Math.round(ms / 60_000);
+	if (minutos < 60) return `${minutos} min`;
+
+	const horas = Math.floor(minutos / 60);
+	const restoMin = minutos % 60;
+	if (horas < 24) return restoMin > 0 ? `${horas} h ${restoMin} min` : `${horas} h`;
+
+	const dias = ms / 86_400_000;
+	const arredondado = Math.round(dias * 10) / 10;
+	return arredondado < 2
+		? `${arredondado.toLocaleString("pt-BR")} dia`
+		: `${arredondado.toLocaleString("pt-BR")} dias`;
 }

@@ -1,9 +1,15 @@
 import type { NextRequest } from "next/server";
 import { periodoDaRequisicao } from "@/lib/admin/periodo-da-requisicao";
-import { listarReguas } from "@/lib/admin/remarketing-queries";
+import {
+	contarElegiveisParaRegua,
+	contarLinhasDaRegua,
+	listarReguas,
+} from "@/lib/admin/remarketing-queries";
 import {
 	contadoresDe,
+	estadoHonestoDaRegua,
 	filtrarPorSituacao,
+	insightsDaRegua,
 	linhasDaTela,
 	type RespostaDaRegua,
 	situacaoDoParametro,
@@ -62,7 +68,16 @@ export async function GET(req: NextRequest) {
 		// Uma leitura para os dois: os contadores do topo são do RECORTE inteiro
 		// (contar depois do filtro de situação zeraria os outros cartões) e a
 		// página é o filtro aplicado sobre a mesma lista.
-		const doRecorte = await listarReguas({ de, ate, objetivo });
+		//
+		// Os insights vêm das MESMAS linhas — nenhuma consulta nova de funil. As
+		// duas leituras que não dependem do recorte são o histórico total (para
+		// separar "régua desligada" de "sem toque no período") e a fila de
+		// elegíveis de agora (o número que a tela mostra enquanto não há dado).
+		const [doRecorte, totalNoHistorico, elegiveisAgora] = await Promise.all([
+			listarReguas({ de, ate, objetivo }),
+			contarLinhasDaRegua(),
+			contarElegiveisParaRegua(agora),
+		]);
 		const visiveis = filtrarPorSituacao(doRecorte, situacao);
 
 		const resposta: RespostaDaRegua = {
@@ -71,6 +86,12 @@ export async function GET(req: NextRequest) {
 			total: visiveis.length,
 			totalDoRecorte: doRecorte.length,
 			periodo: { de: de.toISOString(), ate: ate.toISOString() },
+			insights: insightsDaRegua(doRecorte),
+			estado: estadoHonestoDaRegua({
+				totalNoHistorico,
+				linhasNoPeriodo: doRecorte.length,
+				elegiveisAgora,
+			}),
 		};
 		return Response.json(resposta);
 	} catch (err) {
