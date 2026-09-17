@@ -31,6 +31,7 @@ vi.mock("ioredis", () => ({ default: class {} }));
 
 import {
 	type LinhaDaRegua,
+	reguaLigada,
 	runRemarketingCycle,
 	startRemarketingWorker,
 } from "./remarketing-cycle";
@@ -94,6 +95,51 @@ function deps(over: Record<string, unknown> = {}) {
 beforeEach(() => {
 	bullmq.adds.length = 0;
 	bullmq.workers.length = 0;
+	// A régua nasce DESLIGADA em produção (chave operacional). Os testes abaixo
+	// provam o comportamento LIGADO — quem prova a chave é o describe do fim.
+	process.env.REMARKETING_ATIVO = "1";
+});
+
+describe("a chave operacional da régua", () => {
+	it("nasce desligada — só o que o dono liga explicitamente conta", () => {
+		expect(reguaLigada({})).toBe(false);
+		expect(reguaLigada({ REMARKETING_ATIVO: "" })).toBe(false);
+		expect(reguaLigada({ REMARKETING_ATIVO: "0" })).toBe(false);
+		expect(reguaLigada({ REMARKETING_ATIVO: "nao" })).toBe(false);
+		expect(reguaLigada({ REMARKETING_ATIVO: "1" })).toBe(true);
+		expect(reguaLigada({ REMARKETING_ATIVO: " SIM " })).toBe(true);
+		expect(reguaLigada({ REMARKETING_ATIVO: "true" })).toBe(true);
+	});
+
+	it("desligada: não inscreve, não dispara — e AINDA despacha o CAPI", async () => {
+		delete process.env.REMARKETING_ATIVO;
+		const { deps: d } = deps({
+			listarVencidas: vi.fn(async () => [linha()]),
+			entrarNaRegua: vi.fn(async () => 7),
+		});
+
+		const r = await runRemarketingCycle(d);
+
+		expect(r.entradas).toBe(0);
+		expect(r.disparados).toBe(0);
+		// A régua nem olhou o banco…
+		expect(d.entrarNaRegua).not.toHaveBeenCalled();
+		expect(d.listarVencidas).not.toHaveBeenCalled();
+		expect(d.enviarTemplate).not.toHaveBeenCalled();
+		expect(d.dispararTurno).not.toHaveBeenCalled();
+		// …mas o despacho de conversões (que não é da régua) continua, senão o
+		// evento ficaria `pending` para sempre.
+		expect(d.despacharConversoes).toHaveBeenCalledTimes(1);
+	});
+
+	it("o worker avisa no log que a régua está desligada", async () => {
+		delete process.env.REMARKETING_ATIVO;
+		process.env.REDIS_URL = "redis://localhost:6379";
+		const log = vi.spyOn(console, "log").mockImplementation(() => {});
+		await startRemarketingWorker();
+		expect(log.mock.calls.flat().join(" ")).toMatch(/régua DESLIGADA/);
+		log.mockRestore();
+	});
 });
 
 describe("o ciclo grava o contador ANTES de enviar", () => {
