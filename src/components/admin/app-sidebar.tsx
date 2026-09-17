@@ -14,6 +14,7 @@ import {
 	MegaphoneIcon,
 	MessageSquareTextIcon,
 	MessagesSquareIcon,
+	SettingsIcon,
 	TargetIcon,
 	UserIcon,
 	UsersIcon,
@@ -70,6 +71,9 @@ export function AppSidebar({ role = "viewer" }: { role?: Role }) {
 		// `attendant` têm `*` em `role-scope`, e a mesa externa não vê — a régua não
 		// é do escopo dela.
 		{ title: "Régua de remarketing", href: "/admin/remarketing", icon: MegaphoneIcon },
+		// Página própria: aqui é a lista de quem está na régua, lá é o ajuste dos
+		// parâmetros dela (intervalo do toque, teto, horário de abertura).
+		{ title: "Cadastro da régua", href: "/admin/remarketing/config", icon: SettingsIcon },
 		{ title: "Atendentes", href: "/admin/attendants", icon: UsersIcon },
 		{ title: "Administradoras", href: "/admin/administradoras", icon: BuildingIcon },
 		{ title: "Atendentes de mesa", href: "/admin/atendentes-mesa", icon: HeadsetIcon },

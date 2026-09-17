@@ -23,7 +23,8 @@
  *      escrito. Silenciar o botão esconderia a regra de quem opera.
  */
 
-import { XIcon } from "lucide-react";
+import { SettingsIcon, XIcon } from "lucide-react";
+import Link from "next/link";
 import { parseAsInteger, parseAsString, useQueryState } from "nuqs";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { ConversationDetailPanel } from "@/components/admin/conversations/conversation-detail-panel";
@@ -193,7 +194,15 @@ function ReguaContent() {
 						e por que saiu. O período conta quando a conversa <strong>entrou</strong> na régua.
 					</p>
 				</div>
-				<DateRangeFilter />
+				<div className="flex items-center gap-2">
+					{/* O cadastro da dinâmica vive em página própria: aqui é a lista de
+					    quem está na régua, lá é o ajuste dos parâmetros dela. */}
+					<Button variant="outline" render={<Link href="/admin/remarketing/config" />}>
+						<SettingsIcon className="size-3.5" />
+						Cadastro da régua
+					</Button>
+					<DateRangeFilter />
+				</div>
 			</div>
 
 			{erro && (

@@ -301,6 +301,12 @@ export async function computeOrigens(fromDate: Date, toDate: Date): Promise<Linh
         WHEN v.utm_source IS NULL AND v.ctwa_source_id IS NULL AND v.referrer IS NOT NULL
         THEN split_part(regexp_replace(v.referrer, '^https?://', ''), '/', 1)
       END AS referrer_host,
+      -- O id de campanha da Meta. É a chave de MAIOR FORÇA para resolver o nome
+      -- real (chaveDeOrigem): a UTM é texto que o anunciante digitou e quase
+      -- nunca casa com o espelho local. Sem ele esta tabela seguiria mostrando o
+      -- id abreviado — e o sufixo de seis dígitos casa com duas campanhas
+      -- diferentes (medido em 17/09/2026).
+      v.campaign_id AS campaign_id,
       -- Só a CONTAGEM despreza o eco. O eco não pode sair do WHERE porque a
       -- conversa fica ligada à ÚLTIMA visita da rajada (o cookie da sessão
       -- termina apontando para ela): filtrar as linhas aqui apagaria da tabela
@@ -316,7 +322,7 @@ export async function computeOrigens(fromDate: Date, toDate: Date): Promise<Linh
     LEFT JOIN bevi_proposals bp ON bp.conversation_id = c.id
     WHERE v.created_at BETWEEN ${fromDate} AND ${toDate}
       AND ${VISITA_DE_GENTE}
-    GROUP BY 1,2,3,4,5,6,7
+    GROUP BY 1,2,3,4,5,6,7,8
   `);
 
 	// Consolidação por RÓTULO: duas linhas do banco podem virar o mesmo nome na
@@ -333,6 +339,7 @@ export async function computeOrigens(fromDate: Date, toDate: Date): Promise<Linh
 			ctwaSourceId: (linha.ctwa_source_id as string) ?? null,
 			ctwaHeadline: (linha.ctwa_headline as string) ?? null,
 			referrerHost: (linha.referrer_host as string) ?? null,
+			campaignId: (linha.campaign_id as string) ?? null,
 		});
 
 		const atual = porLabel.get(origem.label) ?? {
