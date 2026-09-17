@@ -10,11 +10,14 @@ import {
 	type CampanhaResolvida,
 	chaveDeOrigem,
 	nomeCurto,
-	resolverCampanhas,
 	rotuloDeCampanha,
 	semearCache,
 	serializarChave,
 } from "./resolver";
+// A metade que fala com o banco vive em arquivo separado: `resolver.ts` é puro
+// porque componente de cliente o importa, e o `@/db` no bundle do navegador
+// quebra o `next build`.
+import { resolverCampanhas } from "./resolver-do-banco";
 
 const ID_GRANDE = "120210000000370104";
 const CAMPO_GRANDE: CampanhaResolvida = {

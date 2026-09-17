@@ -17,13 +17,16 @@ const describeIfDb = HAS_DB ? describe : describe.skip;
 /** Carrega os módulos que falam com o banco SÓ quando há banco. Importar
  * `@/db` sem `DATABASE_URL` lança no topo do módulo — e aí nem o skip salva. */
 async function carregar() {
-	const [dbMod, schema, resolver, ciclo] = await Promise.all([
+	const [dbMod, schema, resolver, resolverDoBanco, ciclo] = await Promise.all([
 		import("@/db"),
 		import("@/db/schema"),
 		import("./resolver"),
+		// A metade que fala com o banco fica em arquivo separado (o `resolver.ts`
+		// precisa ser puro: componente de cliente o importa).
+		import("./resolver-do-banco"),
 		import("@/lib/workers/meta-ads-sync-cycle"),
 	]);
-	return { db: dbMod.db, schema, resolver, ciclo };
+	return { db: dbMod.db, schema, resolver: { ...resolver, ...resolverDoBanco }, ciclo };
 }
 
 /** Não-nulo: os corpos só rodam com banco, quando `carregar()` já foi chamado. */
