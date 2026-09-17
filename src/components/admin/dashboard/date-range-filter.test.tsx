@@ -134,6 +134,25 @@ describe("o filtro de período grava cookie e URL", () => {
 		});
 	});
 
+	it("adota o cookie mesmo quando o layout entregou o padrão de OUTRA tela", async () => {
+		// O caso real da navegação suave, que o teste acima NÃO cobre: lá o provider
+		// já vinha do cookie. Aqui ele chega com HOJE, que é o que acontece de fato —
+		// o layout é server component e o App Router não o re-renderiza ao trocar de
+		// tela, então os props `de`/`ate` ficam congelados no primeiro carregamento.
+		// Sem reler o cookie aqui no cliente, a escolha morre na navegação — que é
+		// exatamente o defeito que este arquivo existe para impedir.
+		// biome-ignore lint/suspicious/noDocumentCookie: o teste planta o cookie que o componente deve achar.
+		document.cookie = `${COOKIE_DO_PERIODO}=${TRINTA_DIAS_DE}_${HOJE}; path=/`;
+
+		montar({ veioDoCookie: false, resetFila: false });
+
+		await waitFor(() => expect(screen.getByText("21/07/2026")).toBeTruthy());
+		expect(screen.getByText("19/08/2026")).toBeTruthy();
+		expect(screen.getByRole("button", { name: "30 dias" }).getAttribute("aria-pressed")).toBe(
+			"true",
+		);
+	});
+
 	it("a comparação começa DESLIGADA e só o gesto a liga", () => {
 		montar();
 

@@ -239,6 +239,31 @@ export function serializarPeriodoDoCookie(de: Date, ate: Date): string {
 }
 
 /**
+ * O valor de um cookie dentro de uma string no formato de `document.cookie`
+ * (`a=1; b=2`). `null` quando não está lá.
+ *
+ * Recebe a STRING em vez de ler `document`: assim o mesmo helper serve ao
+ * navegador e ao teste, e `periodo.ts` continua importável no servidor.
+ */
+export function valorDoCookie(cookies: string, nome: string): string | null {
+	for (const parte of cookies.split(";")) {
+		const separador = parte.indexOf("=");
+		if (separador < 0) continue;
+		if (parte.slice(0, separador).trim() !== nome) continue;
+		const valor = parte.slice(separador + 1).trim();
+		if (!valor) return null;
+		// Um `%` solto no cookie faria `decodeURIComponent` explodir e derrubar o
+		// render; o valor cru já serve para `diasDoCookie`, que valida a forma.
+		try {
+			return decodeURIComponent(valor);
+		} catch {
+			return valor;
+		}
+	}
+	return null;
+}
+
+/**
  * Lê o cookie de volta. `null` para ausente, malformado ou dia inexistente —
  * quem chama cai no próximo nível da precedência (hoje) em vez de explodir.
  */
