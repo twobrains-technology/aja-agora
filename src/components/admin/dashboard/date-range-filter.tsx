@@ -33,7 +33,9 @@ import {
 	diaComoData,
 	diaDeHoje,
 	diaDoNegocio,
+	diasDoCookie,
 	serializarPeriodoDoCookie,
+	valorDoCookie,
 } from "@/lib/admin/periodo";
 import { parseAsDiaDoNegocio } from "@/lib/admin/periodo-querystring";
 import { usePeriodoPadrao } from "./periodo-provider";
@@ -138,19 +140,38 @@ export function DateRangeFilter() {
 		document.cookie = `${COOKIE_DO_PERIODO}=${valor}; path=/; max-age=${VALIDADE_DO_COOKIE_SEGUNDOS}; samesite=lax`;
 	};
 
-	// Hidratação na montagem: quando a URL chega vazia mas a pessoa JÁ tinha um
-	// período no cookie, este filtro o coloca na URL. Sem isto, as telas que
-	// leem `from`/`to` da querystring (as três que usam este filtro) disparariam
-	// a consulta com o padrão do cliente enquanto o servidor responderia pelo
-	// cookie — duas janelas diferentes na mesma tela.
+	// Hidratação na montagem: a URL vence; sem ela, o COOKIE — lido AQUI, agora.
+	//
+	// Por que não basta o `padrao` que o layout entregou: o layout é server
+	// component e o App Router NÃO o re-renderiza na navegação suave do menu
+	// (`href` puro, mesmo segmento). Os props `de`/`ate` que chegaram na primeira
+	// tela ficam congelados ali — escolher 30 dias e clicar em outra tela devolvia
+	// a janela do primeiro carregamento. O cookie é a fonte viva, e ele é legível
+	// aqui DE PROPÓSITO (`httpOnly: false`): é o mesmo lugar de onde foi escrito.
+	//
+	// Sem isto, as telas que leem `from`/`to` da querystring (as três que usam
+	// este filtro) disparariam a consulta com o padrão do cliente enquanto o
+	// servidor responderia pelo cookie — duas janelas diferentes na mesma tela.
 	const hidratado = useRef(false);
 	useEffect(() => {
 		if (hidratado.current) return;
 		hidratado.current = true;
 
-		if (!padrao.veioDoCookie) return;
-		if (!fromUrl) setFrom(padrao.de);
-		if (!toUrl) setTo(padrao.ate);
+		// Quem chegou com `?from=&to=` já disse o que quer.
+		if (fromUrl && toUrl) return;
+
+		// O cookie do documento manda; o padrão do provider é o plano B de quem
+		// não tem cookie (o layout já respondeu "hoje" e nada precisa ser escrito).
+		const doCookie = diasDoCookie(valorDoCookie(document.cookie, COOKIE_DO_PERIODO));
+		const vivo: IntervaloDias | null = doCookie
+			? { de: diaComoData(doCookie.de), ate: diaComoData(doCookie.ate) }
+			: padrao.veioDoCookie
+				? { de: padrao.de, ate: padrao.ate }
+				: null;
+		if (!vivo) return;
+
+		if (!fromUrl) setFrom(vivo.de);
+		if (!toUrl) setTo(vivo.ate);
 	}, [padrao, fromUrl, toUrl, setFrom, setTo]);
 
 	const presetAtivo = presetDoIntervalo(from, to, hoje);
