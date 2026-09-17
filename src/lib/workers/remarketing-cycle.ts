@@ -25,14 +25,14 @@
  * 4. executa o efeito (turno de retomada com arte, ou template aprovado);
  * 5. no MESMO tick, `despacharConversoesPendentes()` — ver o comentário no fim.
  *
- * ── As lacunas da tabela do bloco 1 (registradas na válvula) ────────────────
+ * ── A cota de 30 dias ──────────────────────────────────────────────────────
  *
- * `remarketing_touches` não guarda `ultimo_toque_em` nem histórico de toques, e
- * não há coluna de simulação. O ciclo reconstrói o que dá para reconstruir
- * (cadência determinística sobre `next_touch_at`; `updated_at` nas linhas
- * terminais; a simulação mais recente em `bevi_proposals`) e NUNCA reescreve
- * `next_touch_at` num ciclo bloqueado, para a derivação continuar exata. A
- * correção estrutural está em `.orientacao/pendencia-integracao.md`.
+ * `remarketing_touches` guarda o INSTANTE do último toque em `ultimo_toque_em`
+ * (coluna da rodada 2), gravado no MESMO `UPDATE` do toque. Antes disso o ciclo
+ * derivava esse instante de `next_touch_at − intervalo(step)`, o que quebrava
+ * quando a cadência era reajustada; a derivação ficou só como fallback de linha
+ * antiga (ver `motor.ts`). A simulação mais recente continua vindo de
+ * `bevi_proposals` — a proposta É o fato, de propósito.
  */
 
 import type { ConnectionOptions } from "bullmq";
@@ -49,7 +49,7 @@ import {
 	montarEstado,
 	type ObjetivoDoToque,
 	toquesReconstruidos,
-	ultimoToqueDaColuna,
+	ultimoToqueDerivado,
 } from "@/lib/remarketing/motor";
 import { ESPERA_SILENCIO_MS, type EstadoRegua } from "@/lib/remarketing/regua";
 import { buildRetomadaDirective, podeRetomar } from "./retomada";
@@ -64,6 +64,8 @@ export interface LinhaDaRegua {
 	step: number;
 	status: EstadoRegua["status"];
 	nextTouchAt: Date | null;
+	/** `ultimo_toque_em` — o instante real do último toque (fonte da cota). */
+	ultimoToqueEm: Date | null;
 	touches30d: number;
 	motivoSaida: string | null;
 	channel: "web" | "whatsapp";
@@ -160,6 +162,7 @@ export async function listarVencidas(agora: Date): Promise<LinhaDaRegua[]> {
 		await db.execute(sql`
 			SELECT t.conversation_id AS "conversationId", t.contact_id AS "contactId",
 			       t.objetivo, t.step, t.status, t.next_touch_at AS "nextTouchAt",
+			       t.ultimo_toque_em AS "ultimoToqueEm",
 			       t.touches_30d AS "touches30d", t.motivo_saida AS "motivoSaida",
 			       c.channel, c.wa_id AS "waId", c.metadata,
 			       c.last_inbound_at AS "lastInboundAt",
@@ -182,6 +185,7 @@ export async function listarVencidas(agora: Date): Promise<LinhaDaRegua[]> {
 		step: Number(l.step),
 		status: String(l.status) as EstadoRegua["status"],
 		nextTouchAt: l.nextTouchAt ? new Date(l.nextTouchAt as string) : null,
+		ultimoToqueEm: l.ultimoToqueEm ? new Date(l.ultimoToqueEm as string) : null,
 		touches30d: Number(l.touches30d ?? 0),
 		motivoSaida: (l.motivoSaida as string | null) ?? null,
 		channel: (l.channel as "web" | "whatsapp") ?? "whatsapp",
@@ -196,14 +200,20 @@ export async function listarVencidas(agora: Date): Promise<LinhaDaRegua[]> {
 
 /**
  * Os instantes dos toques da PESSOA — somando todas as conversas/campanhas. É a
- * base do teto de 30 dias (global). Ver `toquesReconstruidos` para a
- * reconstrução e para o porquê de ela ser conservadora.
+ * base do teto de 30 dias (global).
+ *
+ * A fonte é `ultimo_toque_em` (o instante real do último toque de cada linha).
+ * O histórico em si continua sendo reconstruído por `toquesReconstruidos` — a
+ * tabela guarda só o último instante —, mas a partir de um dado REAL. Linha
+ * antiga sem a coluna cai no `ultimoToqueDerivado` (fallback) e, se terminal,
+ * no `updated_at` (o instante em que ela foi escrita).
  */
 export async function toquesDoContato(contactId: string, _agora: Date): Promise<Date[]> {
 	const linhas = linhasDeExecucao(
 		await db.execute(sql`
 			SELECT step, touches_30d AS "touches30d", status,
-			       next_touch_at AS "nextTouchAt", updated_at AS "updatedAt"
+			       next_touch_at AS "nextTouchAt", ultimo_toque_em AS "ultimoToqueEm",
+			       updated_at AS "updatedAt"
 			FROM remarketing_touches
 			WHERE contact_id = ${contactId}::uuid
 		`),
@@ -212,7 +222,9 @@ export async function toquesDoContato(contactId: string, _agora: Date): Promise<
 	const instantes: Date[] = [];
 	for (const l of linhas) {
 		const nextTouchAt = l.nextTouchAt ? new Date(l.nextTouchAt as string) : null;
-		const daColuna = ultimoToqueDaColuna({ step: Number(l.step), nextTouchAt });
+		const daColuna = l.ultimoToqueEm
+			? new Date(l.ultimoToqueEm as string)
+			: ultimoToqueDerivado({ step: Number(l.step), nextTouchAt });
 		// Linha terminal (esgotada) perdeu o `next_touch_at`; o último toque dela
 		// foi o instante em que ela foi escrita.
 		const ultimo =
@@ -229,8 +241,16 @@ export async function toquesDoContato(contactId: string, _agora: Date): Promise<
 	return instantes;
 }
 
-/** A simulação mais recente do contato — o que reabre a régua depois de morta
- * (`houveNovaSimulacao`). Não há coluna própria: `bevi_proposals` é a fonte. */
+/**
+ * A simulação mais recente do contato — o que reabre a régua depois de morta
+ * (`houveNovaSimulacao`).
+ *
+ * NÃO há coluna própria, e é DE PROPÓSITO (decisão do líder, rodada 2): a
+ * simulação É um fato da Bevi, e `bevi_proposals` é a fonte dela. Guardar uma
+ * segunda cópia numa coluna criaria dois lugares para a mesma verdade
+ * divergirem — a coluna ficaria velha na primeira vez que a Bevi mudasse sem
+ * nós. A proposta é a verdade; aqui só a lemos.
+ */
 export async function simulacaoDoContato(contactId: string): Promise<Date | null> {
 	const [linha] = await db
 		.select({ em: beviProposals.createdAt })
@@ -329,6 +349,10 @@ async function ehDaEquipe(telefone: string | null): Promise<boolean> {
 
 // ─── Efeitos (default) ──────────────────────────────────────────────────────
 
+/**
+ * GRAVA o próximo estado da linha — e é aqui que `ultimo_toque_em` sobe junto
+ * com o toque, num ÚNICO `UPDATE`, ANTES do envio (ver o passo 3 no topo).
+ */
 async function gravarEstado({
 	conversationId,
 	estado,
@@ -345,6 +369,9 @@ async function gravarEstado({
 			status: estado.status,
 			step: estado.step,
 			nextTouchAt: estado.nextTouchAt,
+			// O instante do toque que acabou de sair (ou o que já estava, nas
+			// escritas terminais) — o mesmo `estado` que o motor registrou.
+			ultimoToqueEm: estado.ultimoToqueEm,
 			touches30d,
 			motivoSaida: estado.motivoSaida,
 		})
@@ -410,6 +437,11 @@ const enviarArteReal: NonNullable<RemarketingDeps["enviarArte"]> = async ({ to, 
  * Entrega por template: delega ao `template-dispatch` (FIX-201), fonte única da
  * resolução janela/template/fila. O `freeTextFallback` NÃO é texto enlatado: se
  * a janela estiver aberta, quem fala é o agente, pelo mesmo turno de retomada.
+ *
+ * SEM `params` (decisão do líder, rodada 2): o shape dos templates de
+ * remarketing ainda não está definido, e mandar `components` para um template
+ * sem `{{1}}` faz a Meta recusar o envio. Quando o template tiver placeholder, é
+ * uma linha aqui — o `resolveAndSend` já aceita `params`.
  */
 const enviarTemplateReal: NonNullable<RemarketingDeps["enviarTemplate"]> = async ({
 	to,
@@ -484,6 +516,7 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 				fatos: {
 					step: linha.step,
 					nextTouchAt: linha.nextTouchAt,
+					ultimoToqueEm: linha.ultimoToqueEm,
 					ultimoInboundEm: linha.lastInboundAt,
 				},
 				toquesNaJanela: await lerToques(linha.contactId, agora),

@@ -46,6 +46,7 @@ function linha(over: Partial<LinhaDaRegua> = {}): LinhaDaRegua {
 		step: 0,
 		status: "ATIVO",
 		nextTouchAt: new Date(AGORA.getTime() - 60_000),
+		ultimoToqueEm: null,
 		touches30d: 0,
 		motivoSaida: null,
 		channel: "whatsapp",

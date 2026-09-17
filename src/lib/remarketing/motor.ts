@@ -116,15 +116,18 @@ export function templateDoObjetivo(objetivo: string): string {
  * A arte que acompanha o toque 01 (o único que sai como conversa).
  *
  * É um CAMINHO público: o ciclo monta a URL absoluta com a origem do site antes
- * de enviar (`sendImageMessage` aceita link). As três artes são as colagens de
- * cada vertical, que já existem em `public/kv` e são servidas pelo próprio app —
- * trocar pela arte 1080×1080 da campanha é mexer nesta única tabela.
+ * de enviar (`sendImageMessage` aceita link). As artes são as da campanha do
+ * Lucas (1080×1080), versionadas em `public/kv/remarketing/` e servidas pelo
+ * próprio app. Trocar a arte é mexer nesta única tabela.
  */
+export const ARTE_POR_OBJETIVO: Record<ObjetivoDoToque, string> = {
+	carro: "/kv/remarketing/oportunidade-carro.png",
+	moto: "/kv/remarketing/oportunidade-moto.png",
+	imovel: "/kv/remarketing/oportunidade-imovel.png",
+};
+
 export function arteDoObjetivo(objetivo: string): string {
-	const canonico = objetivoCanonico(objetivo);
-	if (canonico === "moto") return "/kv/moto-hero-colagem.png";
-	if (canonico === "imovel") return "/kv/imovel-hero-colagem.png";
-	return "/kv/auto-hero-colagem.png";
+	return ARTE_POR_OBJETIVO[objetivoCanonico(objetivo)];
 }
 
 // ─── O estado mountado pelo ciclo ───────────────────────────────────────────
@@ -133,23 +136,27 @@ export function arteDoObjetivo(objetivo: string): string {
  * `EstadoRegua`. Sem banco: o ciclo já leu. */
 export interface FatosDaLinha {
 	step: number;
-	/** `next_touch_at` gravado; é dele que sai o instante do último toque. */
+	/** `next_touch_at` gravado. */
 	nextTouchAt: Date | null;
+	/**
+	 * `ultimo_toque_em` — o INSTANTE do último toque que saiu (coluna da rodada
+	 * 2). É a fonte preferida; `next_touch_at` só entra como fallback.
+	 */
+	ultimoToqueEm: Date | null;
 	/** Último inbound do cliente (`conversations.last_inbound_at`). */
 	ultimoInboundEm: Date | null;
 }
 
 /**
- * O instante do ÚLTIMO toque, derivado da coluna `next_touch_at`.
+ * O instante do último toque, derivado de `next_touch_at − intervalo(step)`.
  *
- * A tabela do bloco 1 não guarda `ultimo_toque_em` nem histórico de toques —
- * lacuna registrada na válvula. Como a cadência é determinística (01→02 = 3
- * dias, 02→03 = 5), o instante do último toque volta de
- * `next_touch_at − intervalo(step)`: é o mesmo cálculo que `registrarToque` fez
- * ao gravar. O ciclo NUNCA reescreve `next_touch_at` num ciclo bloqueado, para
- * essa volta continuar exata.
+ * É **FALLBACK**, não o mecanismo: a coluna `ultimo_toque_em` (rodada 2) é a
+ * fonte. A derivação só serve para linha antiga, gravada antes de a coluna
+ * existir. Ela depende de a cadência não ter sido reajustada — invariante que o
+ * próprio ciclo pode quebrar (reentrada, linha terminal). O ciclo NUNCA reescreve
+ * `next_touch_at` num ciclo bloqueado, para o fallback continuar exato.
  */
-export function ultimoToqueDaColuna(fatos: {
+export function ultimoToqueDerivado(fatos: {
 	step: number;
 	nextTouchAt: Date | null;
 }): Date | null {
@@ -160,9 +167,20 @@ export function ultimoToqueDaColuna(fatos: {
 	return null;
 }
 
+/** O último toque da linha: a COLUNA `ultimo_toque_em`, com o fallback derivado
+ * quando ela ainda é `null` (linha antiga). */
+export function ultimoToqueDoFato(fatos: FatosDaLinha): Date | null {
+	return fatos.ultimoToqueEm ?? ultimoToqueDerivado(fatos);
+}
+
 /**
  * Reconstrói os instantes dos toques da pessoa dentro da janela, de trás para
  * frente a partir do último — a base do teto de 30 dias quando não há histórico.
+ *
+ * FALLBACK da rodada 2: com a coluna `ultimo_toque_em` gravada a cada toque, o
+ * histórico continua sendo reconstruído (a tabela guarda só o último instante),
+ * mas a partir de um dado REAL em vez de uma derivação. Linha antiga sem a
+ * coluna ainda cai no `ultimoToqueDerivado` antes de chegar aqui.
  *
  * `touches30d` é a contagem da janela; `step` é o passo do ciclo. Usamos o maior
  * dos dois para não subcontar (reentrada reseta o `step`, mas a cota gasta
@@ -207,7 +225,8 @@ export function montarEstado(args: {
 	optoutDaPessoaEm: Date | null;
 }): EstadoRegua {
 	const { objetivo, status, motivoSaida, fatos, toquesNaJanela, simulacaoEm } = args;
-	const ultimoToqueEm = ultimoToqueDaColuna(fatos);
+	// A coluna `ultimo_toque_em` é a fonte; a derivação é fallback de linha antiga.
+	const ultimoToqueEm = ultimoToqueDoFato(fatos);
 
 	// Resposta posterior ao último toque mata a sequência; a reentrada por
 	// simulação posterior é decisão da régua (`podeDisparar`), não daqui.

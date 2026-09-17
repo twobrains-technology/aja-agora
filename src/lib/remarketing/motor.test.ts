@@ -19,7 +19,8 @@ import {
 	TELEFONES_INTERNOS,
 	templateDoObjetivo,
 	toquesReconstruidos,
-	ultimoToqueDaColuna,
+	ultimoToqueDerivado,
+	ultimoToqueDoFato,
 } from "./motor";
 import { type EstadoRegua, estadoInicial, JANELA_DO_TETO_MS, MAX_TOQUES } from "./regua";
 
@@ -44,7 +45,7 @@ function linha(over: Record<string, unknown> = {}) {
 		objetivo: "carro",
 		status: "ATIVO" as const,
 		motivoSaida: null,
-		fatos: { step: 0, nextTouchAt: null, ultimoInboundEm: INBOUND },
+		fatos: { step: 0, nextTouchAt: null, ultimoToqueEm: null, ultimoInboundEm: INBOUND },
 		toquesNaJanela: [] as Date[],
 		simulacaoEm: null as Date | null,
 		optoutDaPessoaEm: null as Date | null,
@@ -60,7 +61,7 @@ describe("o toque 01 dentro da janela de 24h vira TURNO de retomada", () => {
 		expect(decisao.acao).toEqual({
 			tipo: "turno_de_retomada",
 			passo: 1,
-			arte: "/kv/auto-hero-colagem.png",
+			arte: "/kv/remarketing/oportunidade-carro.png",
 		});
 		// O estado a gravar já contabiliza o toque (grava ANTES de enviar).
 		expect(decisao.proximoEstado?.step).toBe(1);
@@ -69,9 +70,9 @@ describe("o toque 01 dentro da janela de 24h vira TURNO de retomada", () => {
 	});
 
 	it("a arte acompanha o eixo comercial (moto e imóvel)", () => {
-		expect(arteDoObjetivo("moto")).toBe("/kv/moto-hero-colagem.png");
-		expect(arteDoObjetivo("imovel")).toBe("/kv/imovel-hero-colagem.png");
-		expect(arteDoObjetivo("auto")).toBe("/kv/auto-hero-colagem.png");
+		expect(arteDoObjetivo("moto")).toBe("/kv/remarketing/oportunidade-moto.png");
+		expect(arteDoObjetivo("imovel")).toBe("/kv/remarketing/oportunidade-imovel.png");
+		expect(arteDoObjetivo("auto")).toBe("/kv/remarketing/oportunidade-carro.png");
 	});
 });
 
@@ -250,19 +251,44 @@ describe("teto de retomadas (MAX_RETOMADAS) barra o turno", () => {
 	});
 });
 
-describe("a reconstrução dos toques (lacuna da tabela do bloco 1)", () => {
-	it("o último toque volta de next_touch_at − intervalo(step)", () => {
+describe("o teto de 30 dias conta a partir de um instante REAL (`ultimo_toque_em`)", () => {
+	it("a COLUNA manda; a derivação é só fallback de linha antiga", () => {
+		const coluna = new Date(TOQUE_1.getTime() - 2 * DIA);
+		// A linha diz `step 1` (o que derivaria um último toque em TOQUE_1), mas a
+		// coluna — a fonte — registra outro instante. A coluna ganha.
+		const fatos = {
+			step: 1,
+			nextTouchAt: new Date(TOQUE_1.getTime() + 3 * DIA),
+			ultimoToqueEm: coluna,
+			ultimoInboundEm: INBOUND,
+		};
+		expect(ultimoToqueDoFato(fatos)?.toISOString()).toBe(coluna.toISOString());
+
+		// Linha antiga (coluna nula) cai no fallback derivado.
+		expect(ultimoToqueDoFato({ ...fatos, ultimoToqueEm: null })?.toISOString()).toBe(
+			TOQUE_1.toISOString(),
+		);
+	});
+
+	it("o motor grava o instante do toque novo em `ultimo_toque_em`", () => {
+		const decisao = decidir({ agora: TOQUE_1, estado: ativo({}), telefone: "5562999998888" });
+		expect(decisao.proximoEstado?.ultimoToqueEm?.toISOString()).toBe(TOQUE_1.toISOString());
+	});
+});
+
+describe("a reconstrução dos toques (fallback quando não há histórico)", () => {
+	it("o último toque derivado volta de next_touch_at − intervalo(step)", () => {
 		// No começo do ciclo não há toque anterior (step 0).
-		expect(ultimoToqueDaColuna({ step: 0, nextTouchAt: TOQUE_1 })).toBeNull();
+		expect(ultimoToqueDerivado({ step: 0, nextTouchAt: TOQUE_1 })).toBeNull();
 		const t1 = TOQUE_1;
 		const next1 = new Date(t1.getTime() + 3 * DIA);
-		expect(ultimoToqueDaColuna({ step: 1, nextTouchAt: next1 })?.toISOString()).toBe(
+		expect(ultimoToqueDerivado({ step: 1, nextTouchAt: next1 })?.toISOString()).toBe(
 			t1.toISOString(),
 		);
 
 		const t2 = next1;
 		const next2 = new Date(t2.getTime() + 5 * DIA);
-		expect(ultimoToqueDaColuna({ step: 2, nextTouchAt: next2 })?.toISOString()).toBe(
+		expect(ultimoToqueDerivado({ step: 2, nextTouchAt: next2 })?.toISOString()).toBe(
 			t2.toISOString(),
 		);
 	});
