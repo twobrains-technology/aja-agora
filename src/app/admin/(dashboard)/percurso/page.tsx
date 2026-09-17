@@ -2,7 +2,7 @@
 
 import { SearchIcon, XIcon } from "lucide-react";
 import { parseAsInteger, parseAsString, useQueryState } from "nuqs";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ConversationDetailPanel } from "@/components/admin/conversations/conversation-detail-panel";
 import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter";
 import { EscadaDoPercurso } from "@/components/admin/percurso/escada-do-percurso";
@@ -363,9 +363,5 @@ function PercursoContent() {
 }
 
 export default function PercursoPage() {
-	return (
-		<Suspense fallback={<BlocoSkeleton altura={400} />}>
-			<PercursoContent />
-		</Suspense>
-	);
+	return <PercursoContent />;
 }

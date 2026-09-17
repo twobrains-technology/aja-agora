@@ -15,7 +15,7 @@
 
 import { MousePointerClickIcon, ScrollTextIcon } from "lucide-react";
 import { parseAsString, useQueryState } from "nuqs";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter";
 import { ListaDeAlvos } from "@/components/admin/heatmap/lista-de-alvos";
 import { type ModoDoMapa, VisorDoMapa } from "@/components/admin/heatmap/visor-do-mapa";
@@ -79,11 +79,7 @@ function rotuloDe(opcoes: { valor: string; rotulo: string }[], valor: unknown): 
 }
 
 export default function MapaDeCalorPage() {
-	return (
-		<Suspense fallback={<Skeleton className="h-[80vh] w-full" />}>
-			<MapaDeCalorContent />
-		</Suspense>
-	);
+	return <MapaDeCalorContent />;
 }
 
 function MapaDeCalorContent() {
