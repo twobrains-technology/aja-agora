@@ -5,6 +5,7 @@
 //   npm run worker:proposal
 
 import { startGateReengageWorker } from "@/lib/workers/gate-reengage-poll";
+import { startMetaAdsSyncWorker } from "@/lib/workers/meta-ads-sync-cycle";
 import { startProposalStatusWorker } from "@/lib/workers/proposal-status-poll";
 import { startRemarketingWorker } from "@/lib/workers/remarketing-cycle";
 
@@ -22,6 +23,12 @@ async function main() {
 	// réplicas do ECS; `setInterval` no app dispararia duas vezes). É também o
 	// tick que despacha as conversões pendentes do CAPI.
 	await startRemarketingWorker();
+	// Espelho local do gerenciador de anúncios da Meta: lê campanha/conjunto/anúncio
+	// e o gasto diário, para a tela de Campanhas ter o nome real da campanha e o
+	// investimento ao lado do funil. Sem esta linha o ciclo NUNCA roda — o código
+	// existe, o teste passa e o espelho fica vazio. Degrada com log se REDIS_URL
+	// faltar, igual aos irmãos acima.
+	await startMetaAdsSyncWorker();
 	// mantém o processo vivo
 }
 

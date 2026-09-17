@@ -16,7 +16,9 @@ import {
 } from "@/components/ui/table";
 import { abreviarId, descreverOrigem } from "@/lib/admin/agrupar-origens";
 import { STAGE_LABELS } from "@/lib/admin/lead-stages";
+import type { Origem } from "@/lib/admin/origem-label";
 import { type PessoaDoPercurso, rotuloDoPasso } from "@/lib/admin/percurso-types";
+import { tituloDaOrigem } from "@/lib/admin/titulo-da-origem";
 
 const nf = new Intl.NumberFormat("pt-BR");
 
@@ -49,6 +51,25 @@ function subtituloDaPessoa(pessoa: PessoaDoPercurso): string | null {
 
 function quandoFoi(iso: string): string {
 	return formatDistanceToNow(new Date(iso), { addSuffix: true, locale: ptBR });
+}
+
+/**
+ * A origem da linha no formato que `descreverOrigem` e `tituloDaOrigem` leem.
+ *
+ * A pessoa carrega os campos soltos porque a linha vem do SQL; o nome real da
+ * campanha e o id inteiro chegam resolvidos do servidor (`percurso-queries`),
+ * já que o cache do resolvedor vive lá e o componente é cliente.
+ */
+function origemDaPessoa(pessoa: PessoaDoPercurso): Origem {
+	return {
+		tipo: pessoa.origemTipo,
+		fonte: pessoa.origemFonte,
+		campanha: pessoa.campanha,
+		criativo: pessoa.criativo,
+		label: pessoa.origemLabel,
+		nomeDaCampanha: pessoa.nomeDaCampanha ?? null,
+		entityId: pessoa.entityId ?? null,
+	};
 }
 
 /**
@@ -118,6 +139,7 @@ export function TabelaPercurso({
 							pessoa.stageDoLead && pessoa.stageDoLead in STAGE_LABELS
 								? STAGE_LABELS[pessoa.stageDoLead as keyof typeof STAGE_LABELS]
 								: null;
+						const origem = origemDaPessoa(pessoa);
 
 						return (
 							<TableRow key={pessoa.chave}>
@@ -160,21 +182,19 @@ export function TabelaPercurso({
 								</TableCell>
 
 								<TableCell>
-									{/* O rótulo cru fica no `title` e o legível na tela — a mesma
-									    escolha da pipeline. `descreverOrigem` já diz canal e
-									    campanha, então o criativo embaixo não repete nada. */}
-									<div className="flex flex-col gap-0.5" title={pessoa.origemLabel}>
-										<span className="text-sm">
-											{descreverOrigem({
-												tipo: pessoa.origemTipo,
-												fonte: pessoa.origemFonte,
-												campanha: pessoa.campanha,
-												criativo: pessoa.criativo,
-												label: pessoa.origemLabel,
-											})}
-										</span>
+									{/* O rótulo legível fica na tela e o `title` leva o que
+									    IDENTIFICA: o nome oficial e o id inteiro de 18
+									    dígitos. O sufixo de seis dígitos casa com dois
+									    anúncios diferentes, então ele nunca é a resposta —
+									    quando o resolvedor não conhece a campanha, o
+									    `title` cai no rótulo cru de antes. */}
+									<div className="flex flex-col gap-0.5" title={tituloDaOrigem(origem)}>
+										<span className="text-sm">{descreverOrigem(origem)}</span>
 										{pessoa.criativo && (
-											<span className="text-xs text-muted-foreground truncate max-w-[220px]">
+											<span
+												className="text-xs text-muted-foreground truncate max-w-[220px]"
+												title={pessoa.criativo}
+											>
 												criativo {abreviarId(pessoa.criativo)}
 											</span>
 										)}

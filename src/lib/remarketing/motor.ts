@@ -40,11 +40,10 @@
 import { chaveTelefoneBR } from "@/lib/whatsapp/mesmo-numero";
 import {
 	contarToquesNaJanela,
-	DIAS_ATE_SEGUNDO_TOQUE,
-	DIAS_ATE_TERCEIRO_TOQUE,
 	type EstadoRegua,
-	MAX_TOQUES,
 	type MotivoBloqueio,
+	PARAMETROS_DE_FABRICA,
+	type ParametrosRegua,
 	type PassoDisparo,
 	podeDisparar,
 	registrarOptout,
@@ -156,21 +155,27 @@ export interface FatosDaLinha {
  * próprio ciclo pode quebrar (reentrada, linha terminal). O ciclo NUNCA reescreve
  * `next_touch_at` num ciclo bloqueado, para o fallback continuar exato.
  */
-export function ultimoToqueDerivado(fatos: {
-	step: number;
-	nextTouchAt: Date | null;
-}): Date | null {
+export function ultimoToqueDerivado(
+	fatos: {
+		step: number;
+		nextTouchAt: Date | null;
+	},
+	parametros: ParametrosRegua = PARAMETROS_DE_FABRICA,
+): Date | null {
 	const { step, nextTouchAt } = fatos;
 	if (!nextTouchAt) return null;
-	if (step === 1) return new Date(nextTouchAt.getTime() - DIAS_ATE_SEGUNDO_TOQUE * DIA_MS);
-	if (step === 2) return new Date(nextTouchAt.getTime() - DIAS_ATE_TERCEIRO_TOQUE * DIA_MS);
+	if (step === 1) return new Date(nextTouchAt.getTime() - parametros.diasAteSegundoToque * DIA_MS);
+	if (step === 2) return new Date(nextTouchAt.getTime() - parametros.diasAteTerceiroToque * DIA_MS);
 	return null;
 }
 
 /** O último toque da linha: a COLUNA `ultimo_toque_em`, com o fallback derivado
  * quando ela ainda é `null` (linha antiga). */
-export function ultimoToqueDoFato(fatos: FatosDaLinha): Date | null {
-	return fatos.ultimoToqueEm ?? ultimoToqueDerivado(fatos);
+export function ultimoToqueDoFato(
+	fatos: FatosDaLinha,
+	parametros: ParametrosRegua = PARAMETROS_DE_FABRICA,
+): Date | null {
+	return fatos.ultimoToqueEm ?? ultimoToqueDerivado(fatos, parametros);
 }
 
 /**
@@ -187,20 +192,24 @@ export function ultimoToqueDoFato(fatos: FatosDaLinha): Date | null {
  * continua valendo — subcontar liberaria mensagem a mais, e é esse o lado que
  * não se pode errar).
  */
-export function toquesReconstruidos(args: {
-	step: number;
-	touches30d: number;
-	ultimoToqueEm: Date | null;
-}): Date[] {
+export function toquesReconstruidos(
+	args: {
+		step: number;
+		touches30d: number;
+		ultimoToqueEm: Date | null;
+	},
+	parametros: ParametrosRegua = PARAMETROS_DE_FABRICA,
+): Date[] {
 	const { ultimoToqueEm } = args;
 	if (!ultimoToqueEm) return [];
 
-	const quantos = Math.min(MAX_TOQUES, Math.max(args.step, args.touches30d));
+	const quantos = Math.min(parametros.maxToques, Math.max(args.step, args.touches30d));
 	if (quantos <= 0) return [];
 
 	const instantes: Date[] = [ultimoToqueEm];
 	for (let i = quantos - 1; i >= 1; i--) {
-		const intervalo = (i === 1 ? DIAS_ATE_SEGUNDO_TOQUE : DIAS_ATE_TERCEIRO_TOQUE) * DIA_MS;
+		const intervalo =
+			(i === 1 ? parametros.diasAteSegundoToque : parametros.diasAteTerceiroToque) * DIA_MS;
 		instantes.unshift(new Date(instantes[0].getTime() - intervalo));
 	}
 	return instantes;
@@ -214,19 +223,23 @@ export function toquesReconstruidos(args: {
  * encerra a sequência". A régua trata isso como estado terminal; o fato, aqui,
  * vem do `last_inbound_at` da conversa.
  */
-export function montarEstado(args: {
-	objetivo: string;
-	status: StatusRegua;
-	motivoSaida: string | null;
-	fatos: FatosDaLinha;
-	toquesNaJanela: readonly Date[];
-	simulacaoEm: Date | null;
-	/** Opt-out por pessoa (`contacts.remarketing_optout_at`) — terminal. */
-	optoutDaPessoaEm: Date | null;
-}): EstadoRegua {
+export function montarEstado(
+	args: {
+		objetivo: string;
+		status: StatusRegua;
+		motivoSaida: string | null;
+		fatos: FatosDaLinha;
+		toquesNaJanela: readonly Date[];
+		simulacaoEm: Date | null;
+		/** Opt-out por pessoa (`contacts.remarketing_optout_at`) — terminal. */
+		optoutDaPessoaEm: Date | null;
+	},
+	parametros: ParametrosRegua = PARAMETROS_DE_FABRICA,
+): EstadoRegua {
 	const { objetivo, status, motivoSaida, fatos, toquesNaJanela, simulacaoEm } = args;
-	// A coluna `ultimo_toque_em` é a fonte; a derivação é fallback de linha antiga.
-	const ultimoToqueEm = ultimoToqueDoFato(fatos);
+	// A coluna `ultimo_toque_em` é a fonte; a derivação é fallback de linha antiga
+	// (e usa a cadência vigente, para o fallback não mentir depois de um ajuste).
+	const ultimoToqueEm = ultimoToqueDoFato(fatos, parametros);
 
 	// Resposta posterior ao último toque mata a sequência; a reentrada por
 	// simulação posterior é decisão da régua (`podeDisparar`), não daqui.
@@ -288,6 +301,13 @@ export interface EntradaDoMotor {
 	 * o motor só decide. Soma-se à lista de telefones internos em código.
 	 */
 	telefoneDaEquipe?: boolean;
+	/**
+	 * Os parâmetros vigentes da régua — o ajuste do cadastro, já validado por
+	 * `normalizarParametros`. Ausente = padrão de fábrica (comportamento de
+	 * sempre). É por aqui que `remarketing_config` chega ao motor: a régua
+	 * continua pura, quem lê o banco é o ciclo.
+	 */
+	parametros?: ParametrosRegua;
 }
 
 export interface DecisaoDoMotor {
@@ -327,6 +347,7 @@ export function ehTelefoneInterno(
 export function decidir(entrada: EntradaDoMotor): DecisaoDoMotor {
 	const { agora, estado, telefone } = entrada;
 	const optout = entrada.optoutDaPessoaEm ?? null;
+	const parametros = entrada.parametros ?? PARAMETROS_DE_FABRICA;
 
 	const semDisparo = (
 		motivo: MotivoSemDisparo,
@@ -334,7 +355,7 @@ export function decidir(entrada: EntradaDoMotor): DecisaoDoMotor {
 	): DecisaoDoMotor => ({
 		acao: { tipo: "nada", motivo },
 		proximoEstado,
-		touches30d: contarToquesNaJanela(proximoEstado ?? estado, agora),
+		touches30d: contarToquesNaJanela(proximoEstado ?? estado, agora, parametros),
 	});
 
 	// 1. Opt-out por PESSOA: terminal e gravado na régua para sair do índice.
@@ -353,15 +374,15 @@ export function decidir(entrada: EntradaDoMotor): DecisaoDoMotor {
 	}
 
 	// 3. A régua decide SE pode sair.
-	const pode = podeDisparar(estado, agora);
+	const pode = podeDisparar(estado, agora, parametros);
 	if (!pode.pode) {
 		return semDisparo(pode.motivo, normalizarSequenciaMorta(estado));
 	}
 
 	// 4. COMO entregar.
 	// O toque SAIU: registra uma vez e usa o mesmo estado para contagem e gravação.
-	const proximoEstado = registrarToque(estado, agora);
-	const touches30d = contarToquesNaJanela(proximoEstado, agora);
+	const proximoEstado = registrarToque(estado, agora, parametros);
+	const touches30d = contarToquesNaJanela(proximoEstado, agora, parametros);
 
 	if (pode.entrega === "texto_livre") {
 		if (entrada.retomadaPermitida === false) {

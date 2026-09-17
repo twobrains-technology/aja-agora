@@ -14,6 +14,8 @@ import {
 	MegaphoneIcon,
 	MessageSquareTextIcon,
 	MessagesSquareIcon,
+	SettingsIcon,
+	TargetIcon,
 	UserIcon,
 	UsersIcon,
 } from "lucide-react";
@@ -55,6 +57,9 @@ export function AppSidebar({ role = "viewer" }: { role?: Role }) {
 	const menuItems = permitido([
 		{ title: "Agora", href: "/admin", icon: ActivityIcon },
 		{ title: "Performance", href: "/admin/performance", icon: ChartPieIcon },
+		// A leitura por CAMPANHA, com o gasto da Meta ao lado do funil do CRM. Fica
+		// no mesmo grupo da Performance — é análise de aquisição, não operação.
+		{ title: "Campanhas", href: "/admin/campanhas", icon: TargetIcon },
 		{ title: "Mapa de calor", href: "/admin/mapa-de-calor", icon: FlameIcon },
 		{ title: "Percurso do lead", href: "/admin/percurso", icon: FootprintsIcon },
 	]);
@@ -66,6 +71,9 @@ export function AppSidebar({ role = "viewer" }: { role?: Role }) {
 		// `attendant` têm `*` em `role-scope`, e a mesa externa não vê — a régua não
 		// é do escopo dela.
 		{ title: "Régua de remarketing", href: "/admin/remarketing", icon: MegaphoneIcon },
+		// Página própria: aqui é a lista de quem está na régua, lá é o ajuste dos
+		// parâmetros dela (intervalo do toque, teto, horário de abertura).
+		{ title: "Cadastro da régua", href: "/admin/remarketing/config", icon: SettingsIcon },
 		{ title: "Atendentes", href: "/admin/attendants", icon: UsersIcon },
 		{ title: "Administradoras", href: "/admin/administradoras", icon: BuildingIcon },
 		{ title: "Atendentes de mesa", href: "/admin/atendentes-mesa", icon: HeadsetIcon },

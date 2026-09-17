@@ -4,7 +4,9 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale/pt-BR";
 import { CalendarIcon, Search, X } from "lucide-react";
 import { parseAsIsoDate, parseAsString, useQueryState } from "nuqs";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { parserDeCampanha } from "@/components/admin/dashboard/campanha-filter";
+import { FiltrosDaTela } from "@/components/admin/dashboard/filtros";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
@@ -26,6 +28,9 @@ const CHANNEL_OPTIONS = [
 
 type ChannelFilter = "all" | "web" | "whatsapp";
 
+/** Lista vazia com identidade estável: "sem filtro de campanha". */
+const SEM_CAMPANHAS: readonly string[] = [];
+
 function getChannelLabel(value: string): string {
 	const option = CHANNEL_OPTIONS.find((opt) => opt.value === value);
 	return option?.label ?? value;
@@ -36,6 +41,10 @@ export function useLeadFilters() {
 	const [search, setSearch] = useQueryState("q", parseAsString.withDefault(""));
 	const [dateFrom, setDateFrom] = useQueryState("from", parseAsIsoDate);
 	const [dateTo, setDateTo] = useQueryState("to", parseAsIsoDate);
+	// Campanha é LISTA e vive na URL (`?campanha=a,b,c`), como no resto do painel:
+	// o recorte acompanha o link e não some ao navegar. Lista vazia = sem filtro.
+	const [campanhasUrl, setCampanhas] = useQueryState("campanha", parserDeCampanha);
+	const campanhas = campanhasUrl ?? SEM_CAMPANHAS;
 
 	const filterFn = useCallback(
 		(lead: Lead): boolean => {
@@ -54,6 +63,13 @@ export function useLeadFilters() {
 				}
 			}
 
+			// Campaign filter: só quando há recorte. Lead sem origem (WhatsApp
+			// orgânico, importação) não tem campanha e fica de fora do recorte —
+			// diferente de "direto", que é uma chegada medida sem anúncio.
+			if (campanhas.length > 0 && !campanhas.includes(lead.origem?.campanha ?? "")) {
+				return false;
+			}
+
 			// Date range filter on lead.createdAt
 			if (dateFrom) {
 				const createdAt = new Date(lead.createdAt);
@@ -69,7 +85,7 @@ export function useLeadFilters() {
 
 			return true;
 		},
-		[channel, search, dateFrom, dateTo],
+		[channel, search, dateFrom, dateTo, campanhas],
 	);
 
 	return {
@@ -81,13 +97,25 @@ export function useLeadFilters() {
 		setDateFrom,
 		dateTo,
 		setDateTo,
+		campanhas,
+		setCampanhas,
 		filterFn,
 	};
 }
 
 export function PipelineFilters({ filters }: { filters: ReturnType<typeof useLeadFilters> }) {
-	const { channel, setChannel, search, setSearch, dateFrom, setDateFrom, dateTo, setDateTo } =
-		filters;
+	const {
+		channel,
+		setChannel,
+		search,
+		setSearch,
+		dateFrom,
+		setDateFrom,
+		dateTo,
+		setDateTo,
+		campanhas,
+		setCampanhas,
+	} = filters;
 
 	// Debounced search input
 	const [localSearch, setLocalSearch] = useState(search);
@@ -106,18 +134,74 @@ export function PipelineFilters({ filters }: { filters: ReturnType<typeof useLea
 	};
 
 	const hasActiveFilters =
-		channel !== "all" || search !== "" || dateFrom !== null || dateTo !== null;
+		channel !== "all" ||
+		search !== "" ||
+		dateFrom !== null ||
+		dateTo !== null ||
+		campanhas.length > 0;
 
 	const clearFilters = () => {
 		setChannel(null);
 		setSearch(null);
 		setDateFrom(null);
 		setDateTo(null);
+		setCampanhas(null);
 		setLocalSearch("");
 	};
 
+	// A lista completa de campanhas do pipeline só existe nas conversas carregadas;
+	// a barra oferece o recorte que veio no link (removível). Quando a fonte de
+	// campanhas for ligada aqui, é este array que cresce — o componente não muda.
+	const opcoesDeCampanha = useMemo(
+		() => campanhas.map((campanha) => ({ valor: campanha, rotulo: campanha })),
+		[campanhas],
+	);
+
 	return (
-		<div className="flex flex-wrap items-center gap-2">
+		<FiltrosDaTela
+			// Período próprio do pipeline: dois dias soltos (opcionais), não o
+			// período do painel — aqui "sem data" é um recorte legítimo.
+			periodo={
+				<>
+					{/* Date from */}
+					<Popover>
+						<PopoverTrigger
+							render={<Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" />}
+						>
+							<CalendarIcon className="size-3.5" />
+							{dateFrom ? format(dateFrom, "dd/MM/yy", { locale: ptBR }) : "De"}
+						</PopoverTrigger>
+						<PopoverContent className="w-auto p-0" align="start">
+							<Calendar
+								mode="single"
+								selected={dateFrom ?? undefined}
+								onSelect={(date) => setDateFrom(date ?? null)}
+								locale={ptBR}
+							/>
+						</PopoverContent>
+					</Popover>
+
+					{/* Date to */}
+					<Popover>
+						<PopoverTrigger
+							render={<Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" />}
+						>
+							<CalendarIcon className="size-3.5" />
+							{dateTo ? format(dateTo, "dd/MM/yy", { locale: ptBR }) : "Até"}
+						</PopoverTrigger>
+						<PopoverContent className="w-auto p-0" align="start">
+							<Calendar
+								mode="single"
+								selected={dateTo ?? undefined}
+								onSelect={(date) => setDateTo(date ?? null)}
+								locale={ptBR}
+							/>
+						</PopoverContent>
+					</Popover>
+				</>
+			}
+			campanhas={opcoesDeCampanha}
+		>
 			{/* Channel filter */}
 			<Select value={channel} onValueChange={(val) => setChannel(val === "all" ? null : val)}>
 				<SelectTrigger size="sm">
@@ -143,42 +227,6 @@ export function PipelineFilters({ filters }: { filters: ReturnType<typeof useLea
 				/>
 			</div>
 
-			{/* Date from */}
-			<Popover>
-				<PopoverTrigger
-					render={<Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" />}
-				>
-					<CalendarIcon className="size-3.5" />
-					{dateFrom ? format(dateFrom, "dd/MM/yy", { locale: ptBR }) : "De"}
-				</PopoverTrigger>
-				<PopoverContent className="w-auto p-0" align="start">
-					<Calendar
-						mode="single"
-						selected={dateFrom ?? undefined}
-						onSelect={(date) => setDateFrom(date ?? null)}
-						locale={ptBR}
-					/>
-				</PopoverContent>
-			</Popover>
-
-			{/* Date to */}
-			<Popover>
-				<PopoverTrigger
-					render={<Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" />}
-				>
-					<CalendarIcon className="size-3.5" />
-					{dateTo ? format(dateTo, "dd/MM/yy", { locale: ptBR }) : "Até"}
-				</PopoverTrigger>
-				<PopoverContent className="w-auto p-0" align="start">
-					<Calendar
-						mode="single"
-						selected={dateTo ?? undefined}
-						onSelect={(date) => setDateTo(date ?? null)}
-						locale={ptBR}
-					/>
-				</PopoverContent>
-			</Popover>
-
 			{/* Clear filters */}
 			{hasActiveFilters && (
 				<Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={clearFilters}>
@@ -186,6 +234,6 @@ export function PipelineFilters({ filters }: { filters: ReturnType<typeof useLea
 					Limpar
 				</Button>
 			)}
-		</div>
+		</FiltrosDaTela>
 	);
 }

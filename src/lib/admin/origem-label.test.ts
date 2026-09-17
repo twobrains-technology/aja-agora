@@ -26,6 +26,11 @@ describe("rotularOrigem", () => {
 			fonte: "facebook",
 			campanha: "consorcio-carro",
 			criativo: "criativo-7",
+			// Sem `campaignId`, o resolvedor não conhece esta campanha — os dois
+			// campos nascem nulos e quem renderiza cai no rótulo cru. É o caminho
+			// de quem só tem UTM (comportamento de antes, preservado).
+			nomeDaCampanha: null,
+			entityId: null,
 			label: "facebook · consorcio-carro · criativo-7",
 		});
 	});

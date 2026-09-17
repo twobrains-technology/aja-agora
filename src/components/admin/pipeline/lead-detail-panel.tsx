@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { descreverOrigem } from "@/lib/admin/agrupar-origens";
+import { tituloDaOrigem } from "@/lib/admin/titulo-da-origem";
 import { ClientDocumentsTab } from "./client-documents-tab";
 import { ConversationTimeline } from "./conversation-timeline";
 import { InsightCards } from "./insight-cards";
@@ -100,7 +101,7 @@ export function LeadDetailPanel({
 							{lead.origem && (
 								<p className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
 									<MegaphoneIcon className="size-3.5 shrink-0" aria-hidden="true" />
-									<span className="truncate" title={lead.origem.label}>
+									<span className="truncate" title={tituloDaOrigem(lead.origem)}>
 										{descreverOrigem(lead.origem)}
 									</span>
 								</p>

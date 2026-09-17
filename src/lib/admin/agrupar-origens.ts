@@ -94,10 +94,15 @@ export function abreviarId(valor: string, digitos = 6): string {
  */
 export function descreverOrigem(origem: Origem): string {
 	switch (origem.tipo) {
-		case "campanha":
-			return origem.campanha
-				? `${nomeDaFonte(origem.fonte)} · campanha ${abreviarId(origem.campanha)}`
-				: nomeDaFonte(origem.fonte);
+		case "campanha": {
+			// O nome real ganha do id abreviado quando o resolvedor conhece a
+			// campanha: "campanha …370104" não diz nada a quem decide verba, e o
+			// sufixo ainda casa com duas campanhas diferentes.
+			const rotulo =
+				origem.nomeDaCampanha ??
+				(origem.campanha ? `campanha ${abreviarId(origem.campanha)}` : null);
+			return rotulo ? `${nomeDaFonte(origem.fonte)} · ${rotulo}` : nomeDaFonte(origem.fonte);
+		}
 		case "click-to-whatsapp":
 			return origem.criativo
 				? `Click-to-WhatsApp · ${origem.criativo}`
@@ -115,7 +120,9 @@ export function descreverOrigem(origem: Origem): string {
 /** O nome curto de uma campanha dentro do canal dela: sem repetir a fonte. */
 export function rotuloDaCampanha(origem: LinhaOrigem["origem"]): string {
 	const partes: string[] = [];
-	if (origem.campanha) partes.push(`campanha ${abreviarId(origem.campanha)}`);
+	// O nome real, quando existe. O id abreviado é o plano B de antes.
+	if (origem.nomeDaCampanha) partes.push(origem.nomeDaCampanha);
+	else if (origem.campanha) partes.push(`campanha ${abreviarId(origem.campanha)}`);
 	if (origem.criativo) partes.push(`criativo ${abreviarId(origem.criativo)}`);
 	if (partes.length > 0) return partes.join(" · ");
 	// Sem campanha nem criativo, o que resta é o próprio rótulo (referência,

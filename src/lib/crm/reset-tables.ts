@@ -4,8 +4,9 @@
 //
 // A classificação vive aqui, e não dentro do script, porque um teste
 // (`reset-tables.test.ts`) confere que TODA tabela do schema está num dos dois
-// grupos. Tabela nova sem decisão vira build vermelho — não vira surpresa na
-// hora de zerar a base de produção.
+// grupos, que nenhuma está nos dois, e que nenhuma lista tabela morta. Tabela
+// nova sem decisão vira build vermelho — não vira surpresa na hora de zerar a
+// base de produção.
 
 /**
  * Dado de operação: tudo que nasce de um cliente conversando. É o que precisa
@@ -49,6 +50,11 @@ export const TABELAS_LIMPAS: readonly string[] = [
 	"whatsapp_conversation_locks",
 	// Origem de mídia: visita de teste contaminaria o relatório da campanha nova
 	"visits",
+	// O FATO da mídia: gasto e entrega de cada dia, por entidade. Fica aqui pelo
+	// mesmo motivo do `visits` — é medição do funil velho, e preservá-la faria o
+	// relatório novo comparar a campanha nova contra o gasto de uma operação que
+	// não existe mais. O ciclo de sync (`meta-ads-sync-cycle`) repõe a janela.
+	"meta_insights_diarios",
 	// Conversões devolvidas à mídia — sinal do funil velho não pode ser reenviado
 	// pro algoritmo depois do marco zero.
 	"conversion_events",
@@ -74,8 +80,24 @@ export const TABELAS_PRESERVADAS: readonly string[] = [
 	"personas",
 	"administradoras",
 	"administradora_docs",
+	// A RÉGUA de remarketing: intervalo do segundo toque, teto de toques em 30
+	// dias, hora de abertura. É configuração, não estado — a fila de toques
+	// (`remarketing_touches`, em TABELAS_LIMPAS) é que pertence à conversa
+	// antiga. Zerar isto não é marco zero: é desligar a régua, e o dono acharia
+	// que o ajuste dele sumiu sem ninguém ter pedido.
+	"remarketing_config",
 	// Time da mesa
 	"mesa_attendants",
+	// A DIMENSÃO da mídia: o id, o nome e a situação de cada campanha, conjunto e
+	// anúncio.
+	//
+	// Fica aqui, e não em `TABELAS_LIMPAS`, porque **não é medição** — é o
+	// catálogo que dá NOME à campanha nas telas. O fato (gasto por dia) está
+	// lá; a dimensão é o de-para que a Meta responde e o sync regrava. Apagá-la
+	// deixaria toda campanha sem nome até o próximo ciclo rodar, e o marco zero
+	// trocaria a faxina por uma tela cega — sem ganhar nada, já que nome de
+	// campanha não é dado de cliente nem contamina número nenhum.
+	"meta_entities",
 	// Canal WhatsApp
 	"whatsapp_templates",
 ];

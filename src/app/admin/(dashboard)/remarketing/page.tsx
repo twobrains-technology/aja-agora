@@ -23,13 +23,15 @@
  *      escrito. Silenciar o botão esconderia a regra de quem opera.
  */
 
-import { XIcon } from "lucide-react";
+import { SettingsIcon, XIcon } from "lucide-react";
+import Link from "next/link";
 import { parseAsInteger, parseAsString, useQueryState } from "nuqs";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { ConversationDetailPanel } from "@/components/admin/conversations/conversation-detail-panel";
 import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter";
 import { usePeriodoPadrao } from "@/components/admin/dashboard/periodo-provider";
 import { CartoesDaRegua } from "@/components/admin/remarketing/cartoes-da-regua";
+import { SecaoDeInsights } from "@/components/admin/remarketing/insights-da-regua";
 import { TabelaRemarketing } from "@/components/admin/remarketing/tabela-remarketing";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -192,7 +194,15 @@ function ReguaContent() {
 						e por que saiu. O período conta quando a conversa <strong>entrou</strong> na régua.
 					</p>
 				</div>
-				<DateRangeFilter />
+				<div className="flex items-center gap-2">
+					{/* O cadastro da dinâmica vive em página própria: aqui é a lista de
+					    quem está na régua, lá é o ajuste dos parâmetros dela. */}
+					<Button variant="outline" render={<Link href="/admin/remarketing/config" />}>
+						<SettingsIcon className="size-3.5" />
+						Cadastro da régua
+					</Button>
+					<DateRangeFilter />
+				</div>
 			</div>
 
 			{erro && (
@@ -222,140 +232,155 @@ function ReguaContent() {
 
 			{!semDados && (
 				<>
-					{carregando && !data ? (
-						<Skeleton className="h-24 w-full" />
+					{/* Os insights vêm primeiro: com a régua desligada, é esta seção que diz
+					    que NADA foi enviado — antes de qualquer contador que se leria como
+					    "ninguém respondeu". */}
+					{data ? (
+						<SecaoDeInsights insights={data.insights} estado={data.estado} />
 					) : (
-						<CartoesDaRegua
-							contadores={data?.contadores ?? CONTADORES_VAZIOS}
-							situacaoAtiva={situacaoAtiva}
-							onSelecionar={trocarSituacao}
-						/>
+						<Skeleton className="h-40 w-full" />
 					)}
 
-					<div className="flex flex-wrap items-center gap-2">
-						{/* Situação: o mesmo vocabulário dos cartões, para o filtro não inventar
+					{/* Régua nunca ligada: não há lista nem contador para mostrar. O estado
+					    honesto acima já disse tudo, e um funil de zeros mentiria. */}
+					{data?.estado.tipo !== "nunca_ligada" && (
+						<>
+							{carregando && !data ? (
+								<Skeleton className="h-24 w-full" />
+							) : (
+								<CartoesDaRegua
+									contadores={data?.contadores ?? CONTADORES_VAZIOS}
+									situacaoAtiva={situacaoAtiva}
+									onSelecionar={trocarSituacao}
+								/>
+							)}
+
+							<div className="flex flex-wrap items-center gap-2">
+								{/* Situação: o mesmo vocabulário dos cartões, para o filtro não inventar
 						    um segundo nome para o que o operador acabou de ler acima. */}
-						<Select
-							value={situacaoAtiva ?? "todas"}
-							onValueChange={(valor) =>
-								trocarSituacao(valor === "todas" ? null : (valor as Situacao))
-							}
-						>
-							<SelectTrigger size="sm" title="Filtrar por situação">
-								<SelectValue placeholder="Situação" />
-							</SelectTrigger>
-							<SelectContent>
-								<SelectItem value="todas">Todas as situações</SelectItem>
-								{SITUACOES.map((s) => (
-									<SelectItem key={s} value={s}>
-										{ROTULO_DA_SITUACAO[s]}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
+								<Select
+									value={situacaoAtiva ?? "todas"}
+									onValueChange={(valor) =>
+										trocarSituacao(valor === "todas" ? null : (valor as Situacao))
+									}
+								>
+									<SelectTrigger size="sm" title="Filtrar por situação">
+										<SelectValue placeholder="Situação" />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="todas">Todas as situações</SelectItem>
+										{SITUACOES.map((s) => (
+											<SelectItem key={s} value={s}>
+												{ROTULO_DA_SITUACAO[s]}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
 
-						<Select
-							value={objetivo ?? "todos"}
-							onValueChange={(valor) => {
-								setObjetivo(valor === "todos" ? null : valor);
-								setOffset(0);
-							}}
-						>
-							<SelectTrigger size="sm" title="Filtrar por objetivo">
-								<SelectValue placeholder="Objetivo" />
-							</SelectTrigger>
-							<SelectContent>
-								<SelectItem value="todos">Todos os objetivos</SelectItem>
-								{OBJETIVOS.map((o) => (
-									<SelectItem key={o.valor} value={o.valor}>
-										{o.rotulo}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-
-						{objetivo && (
-							<Badge variant="secondary" className="gap-1.5">
-								Objetivo: {OBJETIVOS.find((o) => o.valor === objetivo)?.rotulo ?? objetivo}
-								<button
-									type="button"
-									aria-label="Remover o filtro de objetivo"
-									className="hover:text-foreground"
-									onClick={() => {
-										setObjetivo(null);
+								<Select
+									value={objetivo ?? "todos"}
+									onValueChange={(valor) => {
+										setObjetivo(valor === "todos" ? null : valor);
 										setOffset(0);
 									}}
 								>
-									<XIcon className="size-3" aria-hidden="true" />
-								</button>
-							</Badge>
-						)}
+									<SelectTrigger size="sm" title="Filtrar por objetivo">
+										<SelectValue placeholder="Objetivo" />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="todos">Todos os objetivos</SelectItem>
+										{OBJETIVOS.map((o) => (
+											<SelectItem key={o.valor} value={o.valor}>
+												{o.rotulo}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
 
-						{data && (
-							<span className="ml-auto text-sm text-muted-foreground tabular-nums">
-								{situacaoAtiva ? (
-									<>
-										{nf.format(data.total)} de {nf.format(data.totalDoRecorte)}{" "}
-										{data.totalDoRecorte === 1 ? "conversa" : "conversas"} do período
-									</>
-								) : (
-									<>
-										{nf.format(data.totalDoRecorte)}{" "}
-										{data.totalDoRecorte === 1 ? "conversa" : "conversas"} na régua no período
-									</>
+								{objetivo && (
+									<Badge variant="secondary" className="gap-1.5">
+										Objetivo: {OBJETIVOS.find((o) => o.valor === objetivo)?.rotulo ?? objetivo}
+										<button
+											type="button"
+											aria-label="Remover o filtro de objetivo"
+											className="hover:text-foreground"
+											onClick={() => {
+												setObjetivo(null);
+												setOffset(0);
+											}}
+										>
+											<XIcon className="size-3" aria-hidden="true" />
+										</button>
+									</Badge>
 								)}
-							</span>
-						)}
-					</div>
 
-					{carregando && !data ? (
-						<Skeleton className="h-64 w-full" />
-					) : (
-						<TabelaRemarketing
-							linhas={data?.linhas ?? []}
-							carregando={carregando}
-							onAbrir={setAberta}
-							onAcao={(linha, acao) => void agir(linha, acao)}
-							emAndamento={emAndamento}
-							vazio={
-								<>
-									<strong className="block text-foreground">
-										Ninguém na régua neste período com esses filtros.
-									</strong>
-									<span className="mt-1 block">
-										A régua recebe a conversa de WhatsApp que ficou 90 minutos em silêncio. Com o
-										período em <strong>Hoje</strong>, só aparece quem entrou na régua hoje — os
-										outros períodos estão no filtro acima.
+								{data && (
+									<span className="ml-auto text-sm text-muted-foreground tabular-nums">
+										{situacaoAtiva ? (
+											<>
+												{nf.format(data.total)} de {nf.format(data.totalDoRecorte)}{" "}
+												{data.totalDoRecorte === 1 ? "conversa" : "conversas"} do período
+											</>
+										) : (
+											<>
+												{nf.format(data.totalDoRecorte)}{" "}
+												{data.totalDoRecorte === 1 ? "conversa" : "conversas"} na régua no período
+											</>
+										)}
 									</span>
-								</>
-							}
-						/>
-					)}
-
-					{data && data.total > POR_PAGINA && (
-						<div className="flex items-center justify-between">
-							<span className="text-sm text-muted-foreground">
-								Página {pagina} de {totalPaginas}
-							</span>
-							<div className="flex gap-2">
-								<Button
-									variant="outline"
-									size="sm"
-									disabled={offset === 0}
-									onClick={() => setOffset(Math.max(0, offset - POR_PAGINA))}
-								>
-									Anterior
-								</Button>
-								<Button
-									variant="outline"
-									size="sm"
-									disabled={offset + POR_PAGINA >= data.total}
-									onClick={() => setOffset(offset + POR_PAGINA)}
-								>
-									Próxima
-								</Button>
+								)}
 							</div>
-						</div>
+
+							{carregando && !data ? (
+								<Skeleton className="h-64 w-full" />
+							) : (
+								<TabelaRemarketing
+									linhas={data?.linhas ?? []}
+									carregando={carregando}
+									onAbrir={setAberta}
+									onAcao={(linha, acao) => void agir(linha, acao)}
+									emAndamento={emAndamento}
+									vazio={
+										<>
+											<strong className="block text-foreground">
+												Ninguém na régua neste período com esses filtros.
+											</strong>
+											<span className="mt-1 block">
+												A régua recebe a conversa de WhatsApp que ficou 90 minutos em silêncio. Com
+												o período em <strong>Hoje</strong>, só aparece quem entrou na régua hoje —
+												os outros períodos estão no filtro acima.
+											</span>
+										</>
+									}
+								/>
+							)}
+
+							{data && data.total > POR_PAGINA && (
+								<div className="flex items-center justify-between">
+									<span className="text-sm text-muted-foreground">
+										Página {pagina} de {totalPaginas}
+									</span>
+									<div className="flex gap-2">
+										<Button
+											variant="outline"
+											size="sm"
+											disabled={offset === 0}
+											onClick={() => setOffset(Math.max(0, offset - POR_PAGINA))}
+										>
+											Anterior
+										</Button>
+										<Button
+											variant="outline"
+											size="sm"
+											disabled={offset + POR_PAGINA >= data.total}
+											onClick={() => setOffset(offset + POR_PAGINA)}
+										>
+											Próxima
+										</Button>
+									</div>
+								</div>
+							)}
+						</>
 					)}
 				</>
 			)}
