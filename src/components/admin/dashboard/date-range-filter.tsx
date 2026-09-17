@@ -135,7 +135,7 @@ export function DateRangeFilter() {
 
 		const valor = serializarPeriodoDoCookie(de, ate);
 		// biome-ignore lint/suspicious/noDocumentCookie: o desenho é cookie `httpOnly: false` justamente para o cliente gravar; a Cookie Store API é assíncrona e não é o mecanismo decidido.
-		document.cookie = `${COOKIE_DO_PERIODO}=${valor}; path=/admin; max-age=${VALIDADE_DO_COOKIE_SEGUNDOS}; samesite=lax`;
+		document.cookie = `${COOKIE_DO_PERIODO}=${valor}; path=/; max-age=${VALIDADE_DO_COOKIE_SEGUNDOS}; samesite=lax`;
 	};
 
 	// Hidratação na montagem: quando a URL chega vazia mas a pessoa JÁ tinha um

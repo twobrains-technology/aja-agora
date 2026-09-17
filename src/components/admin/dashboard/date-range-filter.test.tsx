@@ -62,7 +62,7 @@ describe("o filtro de período grava cookie e URL", () => {
 		vi.setSystemTime(new Date("2026-08-19T18:00:00Z"));
 		// Limpa o cookie entre casos: o happy-dom o mantém no documento.
 		// biome-ignore lint/suspicious/noDocumentCookie: limpeza do cookie de teste, não é o código de produção.
-		document.cookie = `${COOKIE_DO_PERIODO}=; path=/admin; max-age=0`;
+		document.cookie = `${COOKIE_DO_PERIODO}=; path=/; max-age=0`;
 	});
 
 	afterEach(() => {
