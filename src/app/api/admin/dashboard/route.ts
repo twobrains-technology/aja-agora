@@ -5,27 +5,16 @@ import {
 	computeKpis,
 } from "@/lib/admin/dashboard-queries";
 import type { DashboardResponse } from "@/lib/admin/dashboard-types";
-import { resolverPeriodo } from "@/lib/admin/periodo";
+import { periodoDaRequisicao } from "@/lib/admin/periodo-da-requisicao";
 import { requireRole } from "@/lib/admin/require-role";
 
 export async function GET(request: Request) {
 	const { error } = await requireRole("admin", "viewer", "attendant");
 	if (error) return error;
 
-	const { searchParams } = new URL(request.url);
-
-	// Dia inteiro, no fuso do negócio, e HOJE quando não vem nada — a mesma regra
-	// que o filtro da tela usa (`periodo.ts`).
-	const periodo = resolverPeriodo(searchParams.get("from"), searchParams.get("to"));
-
-	if (!periodo) {
-		return Response.json(
-			{ error: "Formato de data inválido. Use ISO 8601 (ex.: 2026-08-01)." },
-			{ status: 400 },
-		);
-	}
-
-	const { de: fromDate, ate: toDate } = periodo;
+	// Dia inteiro, no fuso do negócio, com a precedência URL > cookie > hoje — a
+	// mesma regra que o filtro da tela usa, resolvida num lugar só.
+	const { de: fromDate, ate: toDate } = periodoDaRequisicao(request);
 
 	// Run all aggregations in parallel
 	const [kpis, funnelStages, dailyVolume, channelBreakdown] = await Promise.all([

@@ -147,22 +147,48 @@ export function diaDeHoje(agora: Date = new Date()): Date {
 }
 
 /**
+ * O DIA DO NEGÓCIO que um parâmetro solto representa — ou `null` se não é data.
+ *
+ * Aceita as duas formas que circulam no painel (`2026-08-24` e o ISO completo)
+ * e devolve SEMPRE o dia ancorado, que é o formato do filtro e do cookie. Quem
+ * lê entrada de usuário usa isto antes de decidir a precedência: é o que faz
+ * data inválida cair no próximo nível em vez de explodir.
+ */
+export function diaDoParametro(valor: string | null | undefined): string | null {
+	if (!valor) return null;
+	const instante = instanteDoParametro(valor);
+	if (!instante) return null;
+
+	const dia = diaDoNegocio(instante);
+	// Dia puro exige volta idêntica: o V8 aceita `2026-02-31` e ROLA para 03/03,
+	// então sem esta conferência uma data que não existe passaria como se fosse
+	// o mês seguinte.
+	if (SO_DATA.test(valor) && valor !== dia) return null;
+	return dia;
+}
+
+/**
  * Resolve o período pedido na querystring em instantes de verdade.
  *
  * Sempre em DIAS INTEIROS: `de` cola no começo do seu dia e `ate` no fim do
  * dele. É o que faz "hoje" ser um dia e não um ponto, e o que devolve o último
  * dia que a versão anterior comia.
  *
+ * O `padrao` deixou de ser sempre HOJE e passou a ser ARGUMENTO (24/08/2026):
+ * é por ele que o período guardado no cookie entra na conta sem que a função
+ * deixe de ser pura — o cookie chega como VALOR, nunca como `await` aqui
+ * dentro. Sem argumento, cai em `periodoPadrao(agora)` = hoje, como antes.
+ *
  * Devolve `null` quando alguma das duas datas não é data — quem chama decide se
- * isso vira 400 ou se cai no padrão.
+ * isso vira 400 ou se cai no padrão. A precedência URL > cookie > hoje mora em
+ * `periodo-da-requisicao.ts`, que é o único lugar que lê as duas fontes.
  */
 export function resolverPeriodo(
 	fromParam: string | null,
 	toParam: string | null,
 	agora: Date = new Date(),
+	padrao: Periodo = periodoPadrao(agora),
 ): Periodo | null {
-	const padrao = periodoPadrao(agora);
-
 	const inicio = fromParam ? instanteDoParametro(fromParam) : null;
 	if (fromParam && !inicio) return null;
 
@@ -173,4 +199,56 @@ export function resolverPeriodo(
 		de: inicio ? inicioDoDia(inicio) : padrao.de,
 		ate: fim ? fimDoDia(fim) : padrao.ate,
 	};
+}
+
+/**
+ * O NOME do cookie que guarda o período escolhido.
+ *
+ * É o primeiro cookie deste repositório, e existe porque o SERVIDOR também
+ * resolve o período (as quatro rotas e o SSR): em `localStorage` as duas pontas
+ * precisariam concordar sobre um dado que só uma delas teria.
+ */
+export const COOKIE_DO_PERIODO = "aja_periodo";
+
+/**
+ * O par de DIAS do negócio que identifica um período — o que cabe num cookie.
+ *
+ * Guardar o dia (e não o instante) é deliberado: o instante de fim de dia é
+ * 02:59 UTC do dia seguinte e não sobrevive inteiro a uma ida e volta por
+ * texto. O dia, ancorado ao meio-dia UTC, entra e sai igual.
+ */
+export interface DiasDoPeriodo {
+	de: string;
+	ate: string;
+}
+
+/** Os dias do negócio que representam um período de instantes. */
+export function diasDoPeriodo(de: Date, ate: Date): DiasDoPeriodo {
+	return { de: diaDoNegocio(de), ate: diaDoNegocio(ate) };
+}
+
+/**
+ * O valor do cookie: dois dias separados por `_` (`2026-08-01_2026-08-19`).
+ *
+ * Formato próprio e curto de propósito — não é JSON, não precisa de escape, e
+ * continua legível num `curl -H 'Cookie:'`.
+ */
+export function serializarPeriodoDoCookie(de: Date, ate: Date): string {
+	const dias = diasDoPeriodo(de, ate);
+	return `${dias.de}_${dias.ate}`;
+}
+
+/**
+ * Lê o cookie de volta. `null` para ausente, malformado ou dia inexistente —
+ * quem chama cai no próximo nível da precedência (hoje) em vez de explodir.
+ */
+export function diasDoCookie(valor: string | null | undefined): DiasDoPeriodo | null {
+	if (!valor) return null;
+	const [de, ate, ...resto] = valor.split("_");
+	if (resto.length > 0 || !de || !ate) return null;
+	if (!SO_DATA.test(de) || !SO_DATA.test(ate)) return null;
+	// A regex só confere a FORMA: `2026-02-31` casa nela e não é dia (o V8 o
+	// rolaria para 03/03). Exige volta idêntica.
+	if (diaDoParametro(de) !== de || diaDoParametro(ate) !== ate) return null;
+	return { de, ate };
 }
