@@ -4,8 +4,9 @@
 //
 // A classificação vive aqui, e não dentro do script, porque um teste
 // (`reset-tables.test.ts`) confere que TODA tabela do schema está num dos dois
-// grupos. Tabela nova sem decisão vira build vermelho — não vira surpresa na
-// hora de zerar a base de produção.
+// grupos, que nenhuma está nos dois, e que nenhuma lista tabela morta. Tabela
+// nova sem decisão vira build vermelho — não vira surpresa na hora de zerar a
+// base de produção.
 
 /**
  * Dado de operação: tudo que nasce de um cliente conversando. É o que precisa
@@ -49,22 +50,14 @@ export const TABELAS_LIMPAS: readonly string[] = [
 	"whatsapp_conversation_locks",
 	// Origem de mídia: visita de teste contaminaria o relatório da campanha nova
 	"visits",
-	// O espelho local do gerenciador de anúncios: campanha/conjunto/anúncio
-	// (`meta_entities`) e o gasto/entrega de cada dia (`meta_insights_diarios`).
-	// Mesma família de `visits`, e pela mesma razão — é medição de mídia do funil
-	// velho, repovoada pelo ciclo de sync. Preservar deixaria o painel novo
-	// comparando campanha nova contra gasto de uma operação que não existe mais.
-	"meta_entities",
+	// O FATO da mídia: gasto e entrega de cada dia, por entidade. Fica aqui pelo
+	// mesmo motivo do `visits` — é medição do funil velho, e preservá-la faria o
+	// relatório novo comparar a campanha nova contra o gasto de uma operação que
+	// não existe mais. O ciclo de sync (`meta-ads-sync-cycle`) repõe a janela.
 	"meta_insights_diarios",
 	// Conversões devolvidas à mídia — sinal do funil velho não pode ser reenviado
 	// pro algoritmo depois do marco zero.
 	"conversion_events",
-	// Espelho do gerenciador de anúncios: a dimensão (nome, situação) e o fato
-	// (gasto/entrega por dia). É medição da operação antiga — preservá-la faria o
-	// relatório novo nascer misturado com o período velho, e o ciclo de sync
-	// (`meta-ads-sync-cycle`) repõe as duas sozinho em minutos.
-	"meta_entities",
-	"meta_insights_diarios",
 	// Mapa de calor da landing. Vai junto com `visits`, e não só por simetria: a
 	// FK é `ON DELETE SET NULL`, então preservar aqui deixaria uma multidão de
 	// cliques órfãos, sem campanha e sem desfecho, inflando o denominador do mapa
@@ -90,25 +83,21 @@ export const TABELAS_PRESERVADAS: readonly string[] = [
 	// A RÉGUA de remarketing: intervalo do segundo toque, teto de toques em 30
 	// dias, hora de abertura. É configuração, não estado — a fila de toques
 	// (`remarketing_touches`, em TABELAS_LIMPAS) é que pertence à conversa
-	// antiga. Zerar isto não é marco zero: é desligar a régua.
+	// antiga. Zerar isto não é marco zero: é desligar a régua, e o dono acharia
+	// que o ajuste dele sumiu sem ninguém ter pedido.
 	"remarketing_config",
 	// Time da mesa
 	"mesa_attendants",
-	// Cadastro da dinâmica do remarketing (intervalo, teto, horário). É
-	// configuração ajustada pelo dono, como template aprovado: zerar não é marco
-	// zero, é parada de operação.
-	"remarketing_config",
+	// A DIMENSÃO da mídia: o id, o nome e a situação de cada campanha, conjunto e
+	// anúncio.
+	//
+	// Fica aqui, e não em `TABELAS_LIMPAS`, porque **não é medição** — é o
+	// catálogo que dá NOME à campanha nas telas. O fato (gasto por dia) está
+	// lá; a dimensão é o de-para que a Meta responde e o sync regrava. Apagá-la
+	// deixaria toda campanha sem nome até o próximo ciclo rodar, e o marco zero
+	// trocaria a faxina por uma tela cega — sem ganhar nada, já que nome de
+	// campanha não é dado de cliente nem contamina número nenhum.
+	"meta_entities",
 	// Canal WhatsApp
 	"whatsapp_templates",
-	// Espelho local do gerenciador de anúncios (`meta_entities`,
-	// `meta_insights_diarios`). NÃO é dado de cliente: é a verdade da Meta, lida
-	// por sync — apagar aqui só faria o ciclo reler tudo e, no intervalo, a tela
-	// de Campanhas ficaria sem nome nem gasto. O marco zero limpa a VISITA (que é
-	// nossa), não o que o gerenciador reportou.
-	"meta_entities",
-	"meta_insights_diarios",
-	// Cadastro da dinâmica da régua: é configuração da operação, como a persona.
-	// Zerar isto derrubaria a régua para as constantes de fábrica sem ninguém ter
-	// pedido — o oposto de um marco zero.
-	"remarketing_config",
 ];

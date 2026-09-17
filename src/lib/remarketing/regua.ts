@@ -21,8 +21,11 @@
  * ── As decisões de desenho que o PDF não fixa ───────────────────────────────
  *
  * 1. **Toque 03 = +5 dias do 02.** O PDF diz "4 a 7 dias"; 5 é a decisão do
- *    dono. Fica em UMA constante nomeada (`DIAS_ATE_TERCEIRO_TOQUE`) para mudar
- *    sem caçar número solto.
+ *    dono. Fica em UM parâmetro nomeado (`diasAteTerceiroToque`, fábrica 5) para
+ *    mudar sem caçar número solto — e é o cadastro (`remarketing_config`) que o
+ *    ajusta, sem deploy. Os oito parâmetros da régua estão em
+ *    `ParametrosRegua`/`PARAMETROS_DE_FABRICA`: o código é o padrão, o banco é o
+ *    ajuste, linha ausente é fábrica.
  * 2. **A janela de 24h da Meta virou MODO DE ENTREGA, não motivo de bloqueio.**
  *    Ela não pode barrar o toque 01: o primeiro toque sai 90 min depois do
  *    silêncio, ou seja, SEMPRE dentro das 24h — barrar ali mataria a régua
@@ -74,6 +77,139 @@ export const HORA_FECHAMENTO = 20;
 
 const HORA_MS = 60 * 60 * 1000;
 const DIA_MS = 24 * HORA_MS;
+
+// ─── Os parâmetros: o padrão de fábrica e o ajuste do cadastro ──────────────
+
+/**
+ * Os oito números que dizem COMO a régua funciona, na unidade em que o motor os
+ * usa (milissegundos, dias, horas).
+ *
+ * Nasceram constantes deste arquivo e continuam sendo o PADRÃO DE FÁBRICA
+ * (`PARAMETROS_DE_FABRICA`, logo abaixo). O que mudou é que agora podem ser
+ * ajustados pelo cadastro (`remarketing_config`, lido por
+ * `@/lib/admin/remarketing-config`): **o código é o padrão, o banco é o ajuste**,
+ * e linha ausente significa fábrica. É essa ordem que faz a tabela nascer vazia
+ * sem mudar comportamento nenhum.
+ *
+ * Isto NÃO faz a régua tocar banco — ela continua pura. Quem lê o cadastro
+ * (o ciclo, no servidor) passa o objeto pronto por parâmetro; quando ninguém
+ * passa, vale a fábrica, que é exatamente o comportamento de antes.
+ */
+export interface ParametrosRegua {
+	/** O "não respondeu em 1h30" — silêncio que abre o toque 01. */
+	esperaSilencioMs: number;
+	/** Toque 02 = +N dias do 01. */
+	diasAteSegundoToque: number;
+	/** Toque 03 = +N dias do 02. */
+	diasAteTerceiroToque: number;
+	/** N toques e a sequência se esgota. */
+	maxToques: number;
+	/** Teto de toques por pessoa na janela deslizante — global, entre campanhas. */
+	tetoToques30Dias: number;
+	/** A janela do teto, em milissegundos. */
+	janelaDoTetoMs: number;
+	/** A régua acorda a esta hora, no fuso do negócio. */
+	horaAbertura: number;
+	/** E para a esta hora (fim exclusivo). */
+	horaFechamento: number;
+}
+
+/** O comportamento de sempre: as constantes deste arquivo, nomeadas. */
+export const PARAMETROS_DE_FABRICA: ParametrosRegua = {
+	esperaSilencioMs: ESPERA_SILENCIO_MS,
+	diasAteSegundoToque: DIAS_ATE_SEGUNDO_TOQUE,
+	diasAteTerceiroToque: DIAS_ATE_TERCEIRO_TOQUE,
+	maxToques: MAX_TOQUES,
+	tetoToques30Dias: TETO_TOQUES_30_DIAS,
+	janelaDoTetoMs: JANELA_DO_TETO_MS,
+	horaAbertura: HORA_ABERTURA,
+	horaFechamento: HORA_FECHAMENTO,
+};
+
+/** A ordem canônica dos campos — a mesma que a tela de cadastro percorre. */
+export const CAMPOS_DOS_PARAMETROS: readonly (keyof ParametrosRegua)[] = [
+	"esperaSilencioMs",
+	"diasAteSegundoToque",
+	"diasAteTerceiroToque",
+	"maxToques",
+	"tetoToques30Dias",
+	"janelaDoTetoMs",
+	"horaAbertura",
+	"horaFechamento",
+];
+
+/**
+ * A faixa aceita de cada parâmetro, na unidade do motor. Fora dela — ou valor
+ * não-inteiro — a régua RECUSA o ajuste e vale a fábrica.
+ *
+ * O viés é deliberado e é o mesmo de sempre: na dúvida, menos toque, não mais.
+ * Um teto cadastrado como 100 no lugar de 3 mandaria mensagem para quem já
+ * disse que não quer; um `diasAteSegundoToque` gigante só atrasa. O limite
+ * existe para que o cadastro não consiga transformar a régua em spam.
+ */
+export const LIMITES_DOS_PARAMETROS: Record<
+	keyof ParametrosRegua,
+	{ minimo: number; maximo: number }
+> = {
+	esperaSilencioMs: { minimo: 60_000, maximo: 24 * HORA_MS }, // 1 min a 24 h
+	diasAteSegundoToque: { minimo: 1, maximo: 30 },
+	diasAteTerceiroToque: { minimo: 1, maximo: 60 },
+	maxToques: { minimo: 1, maximo: 5 },
+	tetoToques30Dias: { minimo: 1, maximo: 10 },
+	janelaDoTetoMs: { minimo: 24 * HORA_MS, maximo: 366 * DIA_MS },
+	horaAbertura: { minimo: 0, maximo: 23 },
+	horaFechamento: { minimo: 1, maximo: 24 },
+};
+
+/**
+ * O valor é aceito neste campo? Inteiro, dentro da faixa e — no caso do par de
+ * horário — numa janela que acorda antes de parar.
+ *
+ * `demais` existe para julgar o par: validar `horaAbertura` sozinho aceitaria
+ * 22h com fechamento às 6h, e a régua passaria a falar de madrugada.
+ */
+export function parametroValido(
+	campo: keyof ParametrosRegua,
+	valor: number,
+	demais: Partial<ParametrosRegua> = {},
+): boolean {
+	if (!Number.isInteger(valor)) return false;
+	const faixa = LIMITES_DOS_PARAMETROS[campo];
+	if (valor < faixa.minimo || valor > faixa.maximo) return false;
+
+	const abertura =
+		campo === "horaAbertura" ? valor : (demais.horaAbertura ?? PARAMETROS_DE_FABRICA.horaAbertura);
+	const fechamento =
+		campo === "horaFechamento"
+			? valor
+			: (demais.horaFechamento ?? PARAMETROS_DE_FABRICA.horaFechamento);
+	return abertura < fechamento;
+}
+
+/**
+ * O objeto SEMPRE válido: só os campos válidos do parcial entram; o resto vem
+ * da fábrica. É a rede de proteção do cadastro — valor corrompido no banco não
+ * derruba a régua nem a faz disparar mais, ela simplesmente ignora o ajuste.
+ */
+export function normalizarParametros(parcial: Partial<ParametrosRegua>): ParametrosRegua {
+	const resultado: ParametrosRegua = { ...PARAMETROS_DE_FABRICA };
+
+	for (const campo of CAMPOS_DOS_PARAMETROS) {
+		const valor = parcial[campo];
+		if (valor === undefined) continue;
+		if (!parametroValido(campo, valor, parcial)) continue;
+		resultado[campo] = valor;
+	}
+
+	// O par de horário vale junto ou não vale: uma janela invertida não é "quase
+	// certa", é a régua calada de manhã e falando de madrugada.
+	if (resultado.horaAbertura >= resultado.horaFechamento) {
+		resultado.horaAbertura = PARAMETROS_DE_FABRICA.horaAbertura;
+		resultado.horaFechamento = PARAMETROS_DE_FABRICA.horaFechamento;
+	}
+
+	return resultado;
+}
 
 // ─── Estado ─────────────────────────────────────────────────────────────────
 
@@ -162,7 +298,11 @@ export function estadoInicial(
  * O toque pode sair agora? Quando não pode, o `motivo` diz exatamente por quê —
  * é ele que o motor grava em log, e um motivo genérico não serve.
  */
-export function podeDisparar(estado: EstadoRegua, agora: Date): ResultadoDisparo {
+export function podeDisparar(
+	estado: EstadoRegua,
+	agora: Date,
+	parametros: ParametrosRegua = PARAMETROS_DE_FABRICA,
+): ResultadoDisparo {
 	// Terminais: opt-out vence tudo, conversão também.
 	if (estado.status === "OPTOUT") return { pode: false, motivo: "optout" };
 	if (estado.status === "CONVERTEU") return { pode: false, motivo: "converteu" };
@@ -175,20 +315,20 @@ export function podeDisparar(estado: EstadoRegua, agora: Date): ResultadoDisparo
 	}
 
 	// Teto deslizante e global — antes da data, porque é ele que empurra a data.
-	if (contarToquesNaJanela(estado, agora) >= TETO_TOQUES_30_DIAS) {
+	if (contarToquesNaJanela(estado, agora, parametros) >= parametros.tetoToques30Dias) {
 		return { pode: false, motivo: "teto_30_dias" };
 	}
 
 	const passo = (reentrada ? 0 : estado.step) + 1;
-	if (passo > MAX_TOQUES) return { pode: false, motivo: "esgotado" };
+	if (passo > parametros.maxToques) return { pode: false, motivo: "esgotado" };
 
 	// Sem agendamento não há toque: a régua nunca dispara sem data de referência.
-	const quando = agendamento(estado, reentrada);
+	const quando = agendamento(estado, reentrada, parametros);
 	if (!quando || agora.getTime() < quando.getTime()) {
 		return { pode: false, motivo: "aguardando_data" };
 	}
 
-	if (!dentroDaJanelaDeHorario(agora)) {
+	if (!dentroDaJanelaDeHorario(agora, parametros)) {
 		return { pode: false, motivo: "fora_da_janela_de_horario" };
 	}
 
@@ -203,22 +343,26 @@ export function podeDisparar(estado: EstadoRegua, agora: Date): ResultadoDisparo
  * motor dispara no próximo ciclo". Quando o teto de 30 dias está cheio, a data
  * é a QUEDA do toque mais antigo da janela — é ali que a cota reabre.
  */
-export function proximoToque(estado: EstadoRegua, agora: Date): Date | null {
+export function proximoToque(
+	estado: EstadoRegua,
+	agora: Date,
+	parametros: ParametrosRegua = PARAMETROS_DE_FABRICA,
+): Date | null {
 	if (estado.status === "OPTOUT" || estado.status === "CONVERTEU") return null;
 
 	const morta = estado.status === "RESPONDEU" || estado.status === "ESGOTADO";
 	const reentrada = morta && houveNovaSimulacao(estado);
 	if (morta && !reentrada) return null;
 
-	if (contarToquesNaJanela(estado, agora) >= TETO_TOQUES_30_DIAS) {
-		const queda = quedaDoToqueMaisAntigo(estado, agora);
-		return queda ? empurrarParaJanela(queda, agora) : null;
+	if (contarToquesNaJanela(estado, agora, parametros) >= parametros.tetoToques30Dias) {
+		const queda = quedaDoToqueMaisAntigo(estado, agora, parametros);
+		return queda ? empurrarParaJanela(queda, agora, parametros) : null;
 	}
 
-	const quando = agendamento(estado, reentrada);
+	const quando = agendamento(estado, reentrada, parametros);
 	if (!quando) return null;
 
-	return empurrarParaJanela(quando, agora);
+	return empurrarParaJanela(quando, agora, parametros);
 }
 
 // ─── As transições (puras: devolvem o próximo estado) ───────────────────────
@@ -229,7 +373,11 @@ export function proximoToque(estado: EstadoRegua, agora: Date): Date | null {
  * Na reentrada o ciclo recomeça do zero — o `step` gravado é 1 (o primeiro
  * toque do ciclo novo), nunca 4.
  */
-export function registrarToque(estado: EstadoRegua, agora: Date): EstadoRegua {
+export function registrarToque(
+	estado: EstadoRegua,
+	agora: Date,
+	parametros: ParametrosRegua = PARAMETROS_DE_FABRICA,
+): EstadoRegua {
 	if (estado.status === "OPTOUT" || estado.status === "CONVERTEU") return estado;
 
 	const morta = estado.status === "RESPONDEU" || estado.status === "ESGOTADO";
@@ -237,9 +385,9 @@ export function registrarToque(estado: EstadoRegua, agora: Date): EstadoRegua {
 	if (morta && !reentrada) return estado;
 
 	const passo = (reentrada ? 0 : estado.step) + 1;
-	if (passo > MAX_TOQUES) return estado;
+	if (passo > parametros.maxToques) return estado;
 
-	const esgotou = passo >= MAX_TOQUES;
+	const esgotou = passo >= parametros.maxToques;
 
 	return {
 		...estado,
@@ -247,8 +395,10 @@ export function registrarToque(estado: EstadoRegua, agora: Date): EstadoRegua {
 		step: passo as PassoRegua,
 		motivoSaida: esgotou ? "tres_toques_sem_resposta" : null,
 		ultimoToqueEm: agora,
-		toquesNaJanela: [...podarForaDaJanela(estado.toquesNaJanela, agora), agora],
-		nextTouchAt: esgotou ? null : new Date(agora.getTime() + intervaloAteProximo(passo)),
+		toquesNaJanela: [...podarForaDaJanela(estado.toquesNaJanela, agora, parametros), agora],
+		nextTouchAt: esgotou
+			? null
+			: new Date(agora.getTime() + intervaloAteProximo(passo, parametros)),
 	};
 }
 
@@ -289,15 +439,22 @@ export function registrarOptout(estado: EstadoRegua, agora: Date): EstadoRegua {
  * que o motor grava em `touches_30d`. A janela é ABERTA em 30 dias: o toque
  * deixa de contar no instante exato em que completa 30 dias.
  */
-export function contarToquesNaJanela(estado: EstadoRegua, agora: Date): number {
-	const limite = agora.getTime() - JANELA_DO_TETO_MS;
+export function contarToquesNaJanela(
+	estado: EstadoRegua,
+	agora: Date,
+	parametros: ParametrosRegua = PARAMETROS_DE_FABRICA,
+): number {
+	const limite = agora.getTime() - parametros.janelaDoTetoMs;
 	return estado.toquesNaJanela.filter((toque) => toque.getTime() > limite).length;
 }
 
-/** A régua está no horário em que pode falar (9h–20h no fuso do negócio)? */
-export function dentroDaJanelaDeHorario(instante: Date): boolean {
+/** A régua está no horário em que pode falar (fábrica: 9h–20h no fuso do negócio)? */
+export function dentroDaJanelaDeHorario(
+	instante: Date,
+	parametros: ParametrosRegua = PARAMETROS_DE_FABRICA,
+): boolean {
 	const hora = horaLocal(instante);
-	return hora >= HORA_ABERTURA && hora < HORA_FECHAMENTO;
+	return hora >= parametros.horaAbertura && hora < parametros.horaFechamento;
 }
 
 // ─── Miolo ──────────────────────────────────────────────────────────────────
@@ -317,13 +474,19 @@ function houveNovaSimulacao(estado: EstadoRegua): boolean {
  * no começo do ciclo (step 0) a data sai do silêncio do cliente — é o mesmo
  * cálculo, só que sem depender de o motor ter materializado a coluna.
  */
-function agendamento(estado: EstadoRegua, reentrada: boolean): Date | null {
+function agendamento(
+	estado: EstadoRegua,
+	reentrada: boolean,
+	parametros: ParametrosRegua,
+): Date | null {
 	if (reentrada) {
-		return estado.simulacaoEm ? new Date(estado.simulacaoEm.getTime() + ESPERA_SILENCIO_MS) : null;
+		return estado.simulacaoEm
+			? new Date(estado.simulacaoEm.getTime() + parametros.esperaSilencioMs)
+			: null;
 	}
 	if (estado.nextTouchAt) return estado.nextTouchAt;
 	if (estado.step === 0 && estado.ultimoInboundEm) {
-		return new Date(estado.ultimoInboundEm.getTime() + ESPERA_SILENCIO_MS);
+		return new Date(estado.ultimoInboundEm.getTime() + parametros.esperaSilencioMs);
 	}
 	return null;
 }
@@ -335,26 +498,34 @@ function entregaDe(estado: EstadoRegua, agora: Date): Entrega {
 	return "template";
 }
 
-/** +3 dias do 01 para o 02; +5 dias do 02 para o 03. */
-function intervaloAteProximo(passo: number): number {
-	return (passo === 1 ? DIAS_ATE_SEGUNDO_TOQUE : DIAS_ATE_TERCEIRO_TOQUE) * DIA_MS;
+/** +N dias do 01 para o 02; +N dias do 02 para o 03 (fábrica: 3 e 5). */
+function intervaloAteProximo(passo: number, parametros: ParametrosRegua): number {
+	return (passo === 1 ? parametros.diasAteSegundoToque : parametros.diasAteTerceiroToque) * DIA_MS;
 }
 
 /** A queda do toque mais antigo ainda na janela: quando o teto reabre. */
-function quedaDoToqueMaisAntigo(estado: EstadoRegua, agora: Date): Date | null {
-	const limite = agora.getTime() - JANELA_DO_TETO_MS;
+function quedaDoToqueMaisAntigo(
+	estado: EstadoRegua,
+	agora: Date,
+	parametros: ParametrosRegua,
+): Date | null {
+	const limite = agora.getTime() - parametros.janelaDoTetoMs;
 	const naJanela = estado.toquesNaJanela.filter((toque) => toque.getTime() > limite);
 	if (naJanela.length === 0) return null;
 
 	const maisAntigo = naJanela.reduce((menor, toque) =>
 		toque.getTime() < menor.getTime() ? toque : menor,
 	);
-	return new Date(maisAntigo.getTime() + JANELA_DO_TETO_MS);
+	return new Date(maisAntigo.getTime() + parametros.janelaDoTetoMs);
 }
 
 /** Faxina: toque que já saiu da janela não serve para nada daqui pra frente. */
-function podarForaDaJanela(toques: readonly Date[], agora: Date): Date[] {
-	const limite = agora.getTime() - JANELA_DO_TETO_MS;
+function podarForaDaJanela(
+	toques: readonly Date[],
+	agora: Date,
+	parametros: ParametrosRegua,
+): Date[] {
+	const limite = agora.getTime() - parametros.janelaDoTetoMs;
 	return toques.filter((toque) => toque.getTime() > limite);
 }
 
@@ -362,10 +533,10 @@ function podarForaDaJanela(toques: readonly Date[], agora: Date): Date[] {
  * O próximo instante possível: se o agendamento cai em hora morta, espera até
  * a abertura seguinte; se já venceu, vale o agora.
  */
-function empurrarParaJanela(quando: Date, agora: Date): Date {
+function empurrarParaJanela(quando: Date, agora: Date, parametros: ParametrosRegua): Date {
 	const referencia = quando.getTime() > agora.getTime() ? quando : agora;
-	if (dentroDaJanelaDeHorario(referencia)) return quando;
-	return proximaAbertura(referencia);
+	if (dentroDaJanelaDeHorario(referencia, parametros)) return quando;
+	return proximaAbertura(referencia, parametros);
 }
 
 // ─── Fuso do negócio ────────────────────────────────────────────────────────
@@ -417,12 +588,14 @@ function instanteLocal(dia: string, hora: number): Date {
 	return new Date(Date.parse(`${dia}T00:00:00Z`) + hora * HORA_MS - deslocamento * 60_000);
 }
 
-/** A próxima abertura da janela de horário: hoje às 9h, ou amanhã às 9h. */
-function proximaAbertura(instante: Date): Date {
+/** A próxima abertura da janela de horário: hoje na hora cadastrada, ou amanhã. */
+function proximaAbertura(instante: Date, parametros: ParametrosRegua): Date {
 	const dia = diaDoNegocio(instante);
-	if (horaLocal(instante) < HORA_ABERTURA) return instanteLocal(dia, HORA_ABERTURA);
+	if (horaLocal(instante) < parametros.horaAbertura) {
+		return instanteLocal(dia, parametros.horaAbertura);
+	}
 
 	// Meio-dia UTC âncora o dia seguinte sem escorregar de fuso (periodo.ts).
 	const amanha = diaDoNegocio(new Date(Date.parse(`${dia}T12:00:00Z`) + DIA_MS));
-	return instanteLocal(amanha, HORA_ABERTURA);
+	return instanteLocal(amanha, parametros.horaAbertura);
 }
