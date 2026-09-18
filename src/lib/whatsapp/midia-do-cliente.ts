@@ -19,13 +19,14 @@
 // segue para quem está no comando — o atendente, se há atendimento humano; o
 // KYC do agente, se não há.
 
-import { eq } from "drizzle-orm";
+import { and, eq, gte } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations, messages } from "@/db/schema";
 import { quemRespondePara } from "@/lib/agent/quem-responde";
 import { publishMessage } from "@/lib/chat/message-bus";
 import { getClientDocsStorageConfig, getSignedDownloadUrl, putObject } from "@/lib/storage";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
+import { runDirectiveWithOrchestrator } from "./adapter";
 import { downloadMedia, sendTextMessage } from "./api";
 import { withConversationLock } from "./conversation-lock";
 import { conversaDoNumero } from "./destino";
@@ -36,12 +37,18 @@ import {
 } from "./document-inbound";
 import { type TipoDeMidia, tipoDeMidia } from "./media-kind";
 import { isMesaAttendantPhone } from "./mesa/routing";
+import { processTextMessage } from "./processor";
 import {
 	type AnexoDoCliente,
 	isAttendantPhone,
 	relayAvisoAoAtendente,
 	relayUserMediaToAgent,
 } from "./proxy";
+import {
+	type TranscricaoResultado,
+	transcrever as transcreverNoGateway,
+	transcricaoAtiva,
+} from "./transcricao";
 
 /**
  * A Meta BUSCA o arquivo na URL que a gente manda — ela não recebe os bytes.
@@ -69,6 +76,36 @@ const DESCRICAO: Record<TipoDeMidia, string> = {
 	audio: "Áudio recebido",
 	video: "Vídeo recebido",
 };
+
+/**
+ * Áudio com transcrição ligada que NÃO pôde ser transcrito.
+ *
+ * O texto diz o FATO (falhou), não a fala do agente — quem decide o que dizer é
+ * o modelo, num turno de servidor logo abaixo. Sem este texto o cliente leria
+ * "Áudio recebido", que é a mesma mentira silenciosa de antes.
+ */
+const AUDIO_NAO_TRANSCRITO = "Áudio recebido (não foi possível transcrever)";
+
+/**
+ * Nota de SISTEMA para o turno de falha (AJA-15).
+ *
+ * É fato do servidor — a transcrição não veio —, e por isso entra como
+ * directiva (`isUserTurn: false`): nunca é gravada como fala do cliente, nunca
+ * volta em `loadConversationHistory`. O que o agente diz a partir dela é dele.
+ */
+const NOTA_AUDIO_NAO_TRANSCRITO =
+	"o cliente enviou um áudio que não pôde ser transcrito; você não sabe o que ele falou";
+
+/** Tolerância de skew entre o relógio do app e o do banco ao casar a linha do
+ * turno (ver `anexarAudioAFalaDoTurno`). */
+const DESVIO_DE_RELOGIO_MS = 5_000;
+
+/** O que a mensagem guarda sobre a transcrição — em `metadata`, nunca no texto. */
+type TranscricaoDoAudio = TranscricaoResultado & { bytes: number; mimeType: string };
+
+function metadadosDaTranscricao(t: TranscricaoDoAudio): Record<string, unknown> {
+	return { modelo: t.modelo, duracaoMs: t.duracaoMs, bytes: t.bytes, mimeType: t.mimeType };
+}
 
 /**
  * O `type` que a Meta manda no webhook — mais largo que `TipoDeMidia` por causa
@@ -102,6 +139,16 @@ export interface MidiaDoClienteDeps {
 		input: DocumentInboundInput,
 		jaBaixada?: { bytes: Uint8Array; mimeType: string },
 	) => Promise<void>;
+	/** ASR do áudio inbound. Só é chamado com `TRANSCRICAO_AUDIO_ATIVA=true`. */
+	transcrever: (bytes: Uint8Array, mimeType: string) => Promise<TranscricaoResultado>;
+	/** Turno do cliente — a MESMA rota da mensagem digitada. */
+	responderTexto: (from: string, texto: string) => Promise<void>;
+	/** Turno de servidor (nota factual), sem virar fala do cliente. */
+	responderDiretiva: (args: {
+		from: string;
+		conversationId: string;
+		directive: string;
+	}) => Promise<void>;
 }
 
 export const defaultMidiaDoClienteDeps: MidiaDoClienteDeps = {
@@ -112,6 +159,9 @@ export const defaultMidiaDoClienteDeps: MidiaDoClienteDeps = {
 	assinarLink: (key) =>
 		getSignedDownloadUrl(key, getClientDocsStorageConfig(), EXPIRACAO_PARA_A_META_SEGUNDOS),
 	avisar: sendTextMessage,
+	transcrever: (bytes, mimeType) => transcreverNoGateway(bytes, mimeType),
+	responderTexto: (from, texto) => processTextMessage(from, texto),
+	responderDiretiva: (args) => runDirectiveWithOrchestrator(args),
 	kyc: async (input, jaBaixada) => {
 		// Serializado como os demais inbounds: RG frente + verso chegam em sequência
 		// e os dois escrevem `documentSlotsSent` no mesmo metadata (lost update se
@@ -215,6 +265,27 @@ export async function receberMidiaDoCliente(
 	);
 
 	const tipo = tipoDeMidia(media.mimeType) ?? (input.tipo === "sticker" ? "document" : input.tipo);
+
+	// A feature nasce DESLIGADA: sem a env, nada abaixo muda e o comportamento é
+	// byte a byte o de antes.
+	const tentarTranscrever = tipo === "audio" && transcricaoAtiva();
+	let transcricao: TranscricaoDoAudio | null = null;
+	if (tentarTranscrever) {
+		try {
+			const r = await deps.transcrever(media.bytes, media.mimeType);
+			transcricao = { ...r, bytes: media.bytes.length, mimeType: media.mimeType };
+			console.log(
+				`[midia-do-cliente] áudio transcrito em ${conv.id} (${r.modelo}, ${r.duracaoMs}ms, ${media.bytes.length} bytes)`,
+			);
+		} catch (err) {
+			// Falha de ASR não derruba o turno: vira o fato "não deu para transcrever".
+			console.error("[midia-do-cliente] não consegui transcrever o áudio:", err);
+		}
+	}
+	const conteudoDeAudio = tentarTranscrever
+		? (transcricao?.texto ?? AUDIO_NAO_TRANSCRITO)
+		: undefined;
+
 	const extensao = EXTENSAO_POR_MIME[media.mimeType] ?? "bin";
 	const key = `conversas/${conv.id}/recebidos/${crypto.randomUUID()}.${extensao}`;
 
@@ -231,8 +302,24 @@ export async function receberMidiaDoCliente(
 		guardado = false;
 	}
 
-	if (guardado) {
-		await registrarNoHistorico({ conv, key, media, caption, filename, tipo });
+	// Áudio transcrito com o AGENTE no comando: quem grava a fala é o turno
+	// (`processTextMessage` → persist), não este módulo. Gravar aqui também
+	// duplicaria: o modelo leria a mesma frase duas vezes no MESMO turno (no
+	// histórico e no `userText`) e a tela mostraria dois balões. Todo o resto
+	// (sem env, áudio não transcrito, atendimento humano, imagem/documento/vídeo)
+	// continua gravando aqui, como sempre.
+	const audioVaiParaOTurno = tentarTranscrever && !humanoAtende && transcricao !== null;
+	if (guardado && !audioVaiParaOTurno) {
+		await registrarNoHistorico({
+			conv,
+			key,
+			media,
+			caption,
+			filename,
+			tipo,
+			conteudo: conteudoDeAudio,
+			metadata: transcricao ? { transcricao: metadadosDaTranscricao(transcricao) } : undefined,
+		});
 	}
 
 	if (humanoAtende) {
@@ -258,9 +345,149 @@ export async function receberMidiaDoCliente(
 		return;
 	}
 
+	// Áudio: o texto transcrito é fala do cliente e roda um turno normal, pelo
+	// MESMO caminho da mensagem digitada (`processTextMessage`).
+	if (tentarTranscrever) {
+		await dispararTurnoDeAudio({
+			from,
+			convId: conv.id,
+			transcricao,
+			mediaKey: guardado ? key : null,
+			mimeType: media.mimeType,
+			filename,
+			responderTexto: deps.responderTexto,
+			responderDiretiva: deps.responderDiretiva,
+		});
+		return;
+	}
+
 	// Agente no comando: a foto do RG continua virando slot da proposta.
 	if (podeSerDocumentoDeIdentidade) {
 		await deps.kyc({ from, mediaId, filename }, media);
+	}
+}
+
+/**
+ * Roda o turno do agente a partir do áudio (AJA-15).
+ *
+ * Com transcrição, o texto entra pelo caminho normal do texto — o funil avança
+ * com ele como avançaria com uma resposta digitada. Sem transcrição, o agente
+ * recebe só o FATO por directiva de servidor e decide como responder: nenhuma
+ * fala é escrita aqui.
+ */
+async function dispararTurnoDeAudio(args: {
+	from: string;
+	convId: string;
+	transcricao: TranscricaoDoAudio | null;
+	mediaKey: string | null;
+	mimeType: string;
+	filename?: string;
+	responderTexto: (from: string, texto: string) => Promise<void>;
+	responderDiretiva: (args: {
+		from: string;
+		conversationId: string;
+		directive: string;
+	}) => Promise<void>;
+}): Promise<void> {
+	const { from, convId, transcricao, mediaKey, mimeType, filename } = args;
+
+	if (!transcricao) {
+		try {
+			await args.responderDiretiva({
+				from,
+				conversationId: convId,
+				directive: NOTA_AUDIO_NAO_TRANSCRITO,
+			});
+		} catch (err) {
+			console.error("[midia-do-cliente] turno de áudio não transcrito falhou:", err);
+		}
+		return;
+	}
+
+	// `simulatorNow()` ANTES do turno: é a marca temporal que identifica a linha
+	// que o próprio turno vai gravar, para anexar o arquivo nela.
+	const desde = simulatorNow();
+	await args.responderTexto(from, transcricao.texto);
+	await anexarAudioAFalaDoTurno({
+		convId,
+		texto: transcricao.texto,
+		desde,
+		mediaKey,
+		mimeType,
+		filename,
+		transcricao,
+	});
+}
+
+/**
+ * Anexa o ponteiro do áudio à fala que o TURNO gravou.
+ *
+ * O `content` já é a transcrição — o anexo entra como `mediaKey` (a chave no S3,
+ * nunca a URL) e `metadata.transcricao`. Se o turno curto-circuitou antes de
+ * gravar (opt-out, "voltar", gate determinístico), a fala não está no histórico
+ * e ela é gravada aqui como anexo — o áudio do cliente nunca some.
+ */
+async function anexarAudioAFalaDoTurno(args: {
+	convId: string;
+	texto: string;
+	desde: Date;
+	mediaKey: string | null;
+	mimeType: string;
+	filename?: string;
+	transcricao: TranscricaoDoAudio;
+}): Promise<void> {
+	const { convId, texto, desde, mediaKey, mimeType, filename, transcricao } = args;
+	const metadata = { transcricao: metadadosDaTranscricao(transcricao) };
+	// Margem para trás porque a marca vem do relógio do APP e o `created_at` do
+	// relógio do BANCO — alguns ms de skew não podem fazer o áudio virar uma
+	// segunda linha. Para frente não há margem: a linha do turno é sempre mais
+	// nova que o `desde`.
+	const aPartirDe = new Date(desde.getTime() - DESVIO_DE_RELOGIO_MS);
+	try {
+		const linha = await db.query.messages.findFirst({
+			where: and(
+				eq(messages.conversationId, convId),
+				eq(messages.role, "user"),
+				gte(messages.createdAt, aPartirDe),
+			),
+			orderBy: (m, { desc }) => [desc(m.createdAt)],
+		});
+
+		if (!linha || linha.content !== texto) {
+			await registrarNoHistorico({
+				conv: { id: convId },
+				key: mediaKey,
+				media: { mimeType },
+				tipo: "audio",
+				filename,
+				conteudo: texto,
+				metadata,
+			});
+			return;
+		}
+
+		await db
+			.update(messages)
+			.set({
+				mediaKey,
+				mediaType: "audio",
+				mediaMimeType: mimeType.slice(0, 128),
+				mediaFilename: filename?.slice(0, 255) ?? null,
+				metadata: { ...(linha.metadata ?? {}), ...metadata },
+			})
+			.where(eq(messages.id, linha.id));
+
+		// O painel precisa saber que o áudio chegou — o caminho de texto não publica
+		// nada, mas o de mídia sempre publicou, e a tela de quem atende não pode
+		// perder isso só porque o áudio passou a ser transcrito.
+		publishMessage(convId, {
+			id: linha.id,
+			role: "user",
+			content: texto,
+			createdAt: linha.createdAt.toISOString(),
+		});
+	} catch (err) {
+		console.error("[midia-do-cliente] não consegui anexar o áudio à fala do turno:", err);
 	}
 }
 
@@ -275,27 +502,32 @@ export async function receberMidiaDoCliente(
  */
 async function registrarNoHistorico(args: {
 	conv: { id: string };
-	key: string;
+	key: string | null;
 	media: { mimeType: string };
 	tipo: TipoDeMidia;
 	caption?: string;
 	filename?: string;
+	/** Fala que substitui a legenda/descrição — a transcrição, quando há. */
+	conteudo?: string;
+	/** Enriquecimento do inbound (ex.: `{ transcricao }`), nunca fala. */
+	metadata?: Record<string, unknown>;
 }): Promise<void> {
-	const { conv, key, media, tipo, caption, filename } = args;
-	const conteudo = caption?.trim() || DESCRICAO[tipo];
+	const { conv, key, media, tipo, caption, filename, conteudo, metadata } = args;
+	const texto = caption?.trim() || conteudo?.trim() || DESCRICAO[tipo];
 	try {
 		const [gravada] = await db
 			.insert(messages)
 			.values({
 				conversationId: conv.id,
 				role: "user",
-				content: conteudo,
+				content: texto,
 				channel: "whatsapp",
 				createdAt: simulatorNow(),
 				mediaKey: key,
 				mediaType: tipo,
 				mediaMimeType: media.mimeType.slice(0, 128),
 				mediaFilename: filename?.slice(0, 255) ?? null,
+				metadata: metadata ?? null,
 			})
 			.returning();
 
@@ -304,7 +536,7 @@ async function registrarNoHistorico(args: {
 		publishMessage(conv.id, {
 			id: gravada?.id ?? crypto.randomUUID(),
 			role: "user",
-			content: conteudo,
+			content: texto,
 			createdAt: simulatorNow().toISOString(),
 		});
 
