@@ -1,0 +1,57 @@
+# Goal concluído · F7 audio — AJA-15 transcrição de áudio do WhatsApp
+
+## Resumo
+
+1. O agente nunca recebia o áudio: `case "audio"` caía no bloco de mídia genérica, gravava a string fixa "Áudio recebido" e não disparava turno nenhum. Não havia ASR no repositório.
+2. Medição primeiro: todo inbound de mídia agora loga `bytes` e `mimeType` logo depois do download — a hipótese "áudio vazio/corrompido" de 14/09 passa a ser testável.
+3. `messages` ganhou coluna `metadata` (jsonb): o goal dizia que ela já existia, mas ela só existe em `conversations`.
+4. `src/lib/whatsapp/transcricao.ts`: `transcrever(bytes, mime)` chama `POST {LITELLM_BASE_URL}/audio/transcriptions` (multipart, `TRANSCRICAO_MODELO` default `whisper-1`, `language: pt`), timeout 20s, `TranscricaoFalhouError` tipado.
+5. Nasce DESLIGADA: só `TRANSCRICAO_AUDIO_ATIVA=true` liga; qualquer outro valor mantém o comportamento antigo, byte a byte.
+6. Com a flag: `content` = transcrição, `mediaKey` anexado e `metadata.transcricao = {modelo, duracaoMs, bytes, mimeType}`; o turno roda pelo MESMO caminho do texto (`processTextMessage`), então o funil avança com a fala.
+7. A linha da fala é ÚNICA: quem grava é o turno (como em produção) e a mídia anexa o arquivo nela; se o turno curto-circuitar, a linha do anexo é gravada pelo módulo — o áudio nunca some.
+8. Transcrição vazia/falha vira `"Áudio recebido (não foi possível transcrever)"` e o agente recebe o FATO por directiva de servidor (`isUserTurn: false`) — a resposta é do modelo, e a nota nunca vira fala do cliente.
+9. Atendimento humano: transcreve (o atendente lê o que foi falado) mas NÃO roda turno do agente.
+10. Testes: unit do transcritor com fetch fake (8) + integração com transcritor/turnos injetados por `deps` (5), sem rede e sem gateway.
+
+## Commits (branch `kairogyn/f7-audio`, sem push)
+
+- `fd2353ca` feat(db): guarda metadata por mensagem para enriquecer o inbound
+- `ab513c38` feat(whatsapp): adiciona transcrição de áudio pelo gateway LiteLLM
+- `bbd816e1` Merge branch 'kairogyn/implementacoes-funil-e-template' into kairogyn/f7-audio (orientação do líder)
+- `d0ea048d` feat(whatsapp): mede bytes e mime de toda mídia inbound
+- `a02c57e0` feat(whatsapp): áudio transcrito vira turno normal do cliente
+
+## Comandos rodados e resultado
+
+```
+$ pnpm db:migrate
+[✓] migrations applied successfully!          # aplicou 0057_hesitant_unus (messages.metadata)
+
+$ pnpm typecheck      → exit 0
+$ pnpm lint           → exit 0 (1441 arquivos)
+
+$ pnpm vitest run --reporter=verbose --no-file-parallelism \
+    src/lib/whatsapp/transcricao src/lib/whatsapp/transcricao.test.ts \
+    src/lib/whatsapp/midia-do-cliente.ts src/lib/whatsapp/midia-do-cliente.integration.test.ts \
+    src/lib/whatsapp/midia-do-cliente.audio.integration.test.ts src/app/api/webhook/whatsapp
+ Test Files  4 passed (4)
+      Tests  29 passed (29)
+
+$ grep -n "bytes" src/lib/whatsapp/midia-do-cliente.ts
+132/133/140/275.. : `console.log(`[midia-do-cliente] ${input.tipo} de ${conv.id} — ${media.bytes.length} bytes, ${media.mimeType}`)`
+
+# gate completo do pre-commit em cada commit (pnpm test:pre-commit = lint + test:unit + test:caminho-do-dinheiro):
+$ pnpm test:unit                          → 523 files / 4165 passed, 1 skipped
+$ RUN_DB_TESTS=1 vitest run ... route. integration.test → 97 files / 508 passed
+
+$ curl -m 5 http://127.0.0.1:4100/health                      → 401 (túnel vivo)
+$ curl -m 12 -X POST http://127.0.0.1:4100/audio/transcriptions ... → 401 (rota EXISTE; não é 404)
+```
+
+## Pendências da válvula
+
+- `messages.metadata` é coluna nova (o goal supunha que já existia) — migration `0057_hesitant_unus`.
+- Span `transcricao` no Langfuse NÃO instrumentado: o ponto de transcrição está fora do `TurnTrace` (arquivos de outros agentes). Ficam o log estruturado e `metadata.transcricao`.
+- Gateway: rota de ASR existe, mas a chave do `.env.local` não é aceita nesta instância do LiteLLM → token/modelo são do líder.
+- Merge trouxe `system-prompt.ts` alterado (frente f9-fala): vale em produção só depois de `pnpm sync-prompts`.
+- Em produção a variável nova precisa de secret E task definition (o deploy não registra task definition) — ver CLAUDE.md.
