@@ -58,7 +58,7 @@ describe("a lista do percurso", () => {
 	it("dá um nome a quem é anônimo, para a linha poder ser citada", () => {
 		render(<TabelaPercurso pessoas={[pessoa()]} carregando={false} onAbrir={() => {}} />);
 
-		expect(screen.getByText("Anônimo a3f1")).toBeTruthy();
+		expect(screen.getByText("Sem nome a3f1")).toBeTruthy();
 	});
 
 	it("conta as mensagens de quem falou", () => {
@@ -147,7 +147,7 @@ describe("a lista do percurso", () => {
 		expect(screen.getByText("visitante bbbb")).toBeTruthy();
 	});
 
-	it("prefere o telefone à marca do visitante quando ele existe", () => {
+	it("prefere o telefone à marca do visitante, e o mostra mascarado", () => {
 		render(
 			<TabelaPercurso
 				pessoas={[pessoa({ nome: "Beatriz", telefone: "62992496793" })]}
@@ -156,7 +156,9 @@ describe("a lista do percurso", () => {
 			/>,
 		);
 
-		expect(screen.getByText("62992496793")).toBeTruthy();
+		// O telefone completo só na ficha: a lista mostra o mascarado, como a Régua.
+		expect(screen.getByText("(62) 9…-6793")).toBeTruthy();
+		expect(screen.queryByText("62992496793")).toBeNull();
 		expect(screen.queryByText(/visitante /)).toBeNull();
 	});
 

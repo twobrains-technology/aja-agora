@@ -1,9 +1,22 @@
-import { and, count, desc, eq, gte, ilike, lte, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, ilike, isNull, lte, or, sql } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { db } from "@/db";
-import { conversationEvaluations, conversations, messages, user as userTable } from "@/db/schema";
+import {
+	contacts,
+	conversationEvaluations,
+	conversations,
+	messages,
+	remarketingTouches,
+	user as userTable,
+} from "@/db/schema";
 import { condicaoDeOrigem } from "@/lib/admin/filtro-origem";
+import {
+	avaliarRegua,
+	type FatosDaConversa,
+	telefonesDaEquipe,
+} from "@/lib/admin/regua-por-conversa";
 import { requireRole } from "@/lib/admin/require-role";
+import type { StatusRegua } from "@/lib/remarketing/regua";
 
 const CHANNELS = ["web", "whatsapp"] as const;
 const STATUSES = ["active", "handed_off", "closed"] as const;
@@ -40,6 +53,7 @@ export async function GET(req: NextRequest) {
 	const q = sp.get("q")?.trim() ?? "";
 	const from = parseDate(sp.get("from"));
 	const to = parseDate(sp.get("to"));
+	const origemParam = sp.get("origem");
 	// Default: oculta conversas simuladas (criadas via /admin/simulator). Debug pode opt-in
 	// passando ?include_simulated=true. Aceita só literal "true" — qualquer outra string é false.
 	const includeSimulated = sp.get("include_simulated") === "true";
@@ -71,11 +85,17 @@ export async function GET(req: NextRequest) {
 	}
 
 	// De onde a conversa veio — é o que faz o número clicado na tela de
-	// Performance abrir exatamente aquelas conversas. A precedência é a mesma da
-	// tabela por origem, e há teste de integração comparando os dois lados: se
-	// divergirem, clicar em "4" abre 3, e o painel perde a confiança.
-	const daOrigem = condicaoDeOrigem(sp.get("origem"), sp.get("campanha"));
-	if (daOrigem) conditions.push(daOrigem);
+	// Performance abrir exatamente aquelas conversas. `desconhecida` é a porta do
+	// AJA-17: as conversas sem `visit_id` (WhatsApp orgânico, ou anteriores ao
+	// coletor) ficam fora do funil de mídia, e este filtro é o que o link "Ver as
+	// 9" da Performance abre. Os demais valores seguem a precedência da tabela
+	// por origem — há teste de integração comparando os dois lados.
+	if (origemParam === "desconhecida") {
+		conditions.push(isNull(conversations.visitId));
+	} else {
+		const daOrigem = condicaoDeOrigem(origemParam, sp.get("campanha"));
+		if (daOrigem) conditions.push(daOrigem);
+	}
 
 	const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -109,11 +129,22 @@ export async function GET(req: NextRequest) {
 			id: conversations.id,
 			contactName: conversations.contactName,
 			waId: conversations.waId,
+			phone: contacts.phone,
 			channel: conversations.channel,
 			status: conversations.status,
+			isSimulated: conversations.isSimulated,
+			contactId: conversations.contactId,
+			lastInboundAt: conversations.lastInboundAt,
 			metadata: conversations.metadata,
 			handedOffUserId: conversations.handedOffUserId,
 			handedOffUserName: userTable.name,
+			// A coluna Remarketing (AJA-03): o índice é único por conversa, então o
+			// LEFT JOIN é 1:1 — uma consulta só, sem N+1.
+			reguaStatus: remarketingTouches.status,
+			reguaStep: remarketingTouches.step,
+			reguaNextTouchAt: remarketingTouches.nextTouchAt,
+			reguaUltimoToqueEm: remarketingTouches.ultimoToqueEm,
+			reguaMotivoSaida: remarketingTouches.motivoSaida,
 			messageCount: sql<number>`COALESCE(${messageCountSubquery.count}, 0)`.as("msg_count"),
 			latestEvalScore: latestEvalSubquery.overallScore,
 			createdAt: conversations.createdAt,
@@ -121,6 +152,8 @@ export async function GET(req: NextRequest) {
 		})
 		.from(conversations)
 		.leftJoin(userTable, eq(conversations.handedOffUserId, userTable.id))
+		.leftJoin(contacts, eq(contacts.id, conversations.contactId))
+		.leftJoin(remarketingTouches, eq(remarketingTouches.conversationId, conversations.id))
 		.leftJoin(messageCountSubquery, eq(messageCountSubquery.conversationId, conversations.id))
 		.leftJoin(
 			latestEvalSubquery,
@@ -139,22 +172,59 @@ export async function GET(req: NextRequest) {
 	const [rows, totalRows] = await Promise.all([rowsPromise, totalPromise]);
 	const total = totalRows[0]?.value ?? 0;
 
+	// O motivo e o estado de régua saem da MESMA função que a coluna "Régua" do
+	// Percurso usa — duas consultas discordariam na primeira guarda nova.
+	const fatos: FatosDaConversa[] = rows.map((r) => ({
+		conversationId: r.id,
+		channel: r.channel as "web" | "whatsapp",
+		status: r.status as "active" | "handed_off" | "closed",
+		isSimulated: r.isSimulated,
+		contactId: r.contactId ?? null,
+		lastInboundAt: r.lastInboundAt ?? null,
+		waId: r.waId ?? null,
+		telefone: r.phone ?? null,
+		regua: r.reguaStatus
+			? {
+					status: r.reguaStatus as StatusRegua,
+					step: Number(r.reguaStep ?? 0),
+					nextTouchAt: r.reguaNextTouchAt ?? null,
+					ultimoToqueEm: r.reguaUltimoToqueEm ?? null,
+				}
+			: null,
+	}));
+	const ehEquipe = await telefonesDaEquipe();
+	const avaliacoes = avaliarRegua(fatos, new Date(), ehEquipe);
+
 	const items = rows.map((r) => {
 		const meta = (r.metadata ?? {}) as Record<string, unknown>;
 		const currentCategory =
 			typeof meta.currentCategory === "string" ? (meta.currentCategory as string) : null;
+		const avaliacao = avaliacoes.get(r.id);
 		return {
 			id: r.id,
 			contactName: r.contactName,
 			waId: r.waId,
+			telefoneMascarado: avaliacao?.telefoneMascarado ?? null,
 			channel: r.channel,
 			status: r.status,
+			isSimulated: r.isSimulated,
+			ehDaEquipe: avaliacao?.ehDaEquipe ?? false,
 			currentCategory,
 			handedOffUser: r.handedOffUserId
 				? { id: r.handedOffUserId, name: r.handedOffUserName }
 				: null,
 			messageCount: Number(r.messageCount ?? 0),
 			latestEvalScore: r.latestEvalScore !== null ? Number(r.latestEvalScore) : null,
+			remarketing: r.reguaStatus
+				? {
+						status: r.reguaStatus,
+						step: Number(r.reguaStep ?? 0),
+						nextTouchAt: r.reguaNextTouchAt ?? null,
+						ultimoToqueEm: r.reguaUltimoToqueEm ?? null,
+						motivoSaida: r.reguaMotivoSaida ?? null,
+					}
+				: null,
+			motivoForaDaRegua: avaliacao?.motivo ?? null,
 			createdAt: r.createdAt,
 			updatedAt: r.updatedAt,
 		};

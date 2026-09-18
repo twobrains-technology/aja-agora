@@ -1,3 +1,6 @@
+import { Power, PowerOff } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { opcoesDoAmbiente } from "@/lib/admin/motivo-fora-da-regua";
 import { ConfigDaRegua } from "./config-da-regua";
 
 /**
@@ -10,13 +13,29 @@ import { ConfigDaRegua } from "./config-da-regua";
  * padrão de fábrica.
  */
 export default function RemarketingConfigPage() {
+	// A chave operacional é lida no SERVIDOR: é ela que decide se o motor dispara.
+	// A tela que governa a régua não pode deixar de dizer se ela está rodando.
+	const { reguaLigada } = opcoesDoAmbiente();
+
 	return (
 		<div className="space-y-4">
 			<div>
-				<h1 className="text-2xl font-bold tracking-tight">Cadastro da régua</h1>
+				<div className="flex flex-wrap items-center gap-2">
+					<h1 className="text-2xl font-bold tracking-tight">Cadastro da régua</h1>
+					<Badge variant={reguaLigada ? "success" : "outline"} className="gap-1.5">
+						{reguaLigada ? (
+							<Power className="size-3" aria-hidden="true" />
+						) : (
+							<PowerOff className="size-3" aria-hidden="true" />
+						)}
+						{reguaLigada ? "Ligada" : "Desligada"}
+					</Badge>
+				</div>
 				<p className="text-muted-foreground text-sm mt-1">
 					Os números que governam os toques do remarketing. O padrão de fábrica vem do código; o que
 					você salvar aqui passa a valer em até um ciclo do motor, sem deploy.
+					{!reguaLigada &&
+						" A régua está desligada: estes valores só passam a disparar quando a chave for ligada no ambiente."}
 				</p>
 			</div>
 			<ConfigDaRegua />

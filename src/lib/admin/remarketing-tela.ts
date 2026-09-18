@@ -54,6 +54,13 @@ import {
 	podeDisparar,
 	type StatusRegua,
 } from "@/lib/remarketing/regua";
+import {
+	MOTIVO_SAIDA_EQUIPE,
+	MOTIVO_SAIDA_SEGURADO,
+	MOTIVO_SAIDA_TESTE,
+	motivoDeSaidaLegivel,
+} from "./motivo-fora-da-regua";
+import { BENS } from "./rotulo-do-bem";
 
 /**
  * O motivo que marca uma linha segurada à mão.
@@ -63,7 +70,19 @@ import {
  * obrigaria a tela a adivinhar por regex, que é o anti-padrão que o CLAUDE.md
  * descreve. O texto que o operador lê é o rótulo de `ROTULO_DO_MOTIVO`.
  */
-export const MOTIVO_SEGURADO = "segurado_pelo_atendente";
+export const MOTIVO_SEGURADO = MOTIVO_SAIDA_SEGURADO;
+
+/**
+ * Os motivos de saída que significam "a sequência parou, mas pode voltar": a
+ * ação manual do atendente e as duas higienes do F6 (teste e equipe), que usam
+ * `status=RESPONDEU` + `motivo_saida` próprio. Sem isto, uma conversa marcada
+ * como teste apareceria como "o cliente respondeu" — mentira.
+ */
+const MOTIVOS_DE_PARADA: readonly string[] = [
+	MOTIVO_SAIDA_SEGURADO,
+	MOTIVO_SAIDA_TESTE,
+	MOTIVO_SAIDA_EQUIPE,
+];
 
 /** As duas ações da tela. */
 export type AcaoDaRegua = "segurar" | "soltar";
@@ -92,11 +111,13 @@ export const ROTULO_DA_SITUACAO: Record<Situacao, string> = {
 	converteu: "Fechou contrato",
 };
 
-/** Os objetivos da régua (`motor.objetivoCanonico`), com o rótulo do painel. */
+/** Os objetivos da régua (`motor.objetivoCanonico`), com o rótulo do painel.
+ * Derivado do dicionário único do bem — a Régua não mantém uma segunda tabela.
+ * `desconhecido` é o valor que o F6 grava quando o bem não foi informado: ele
+ * NÃO pode virar "Carro" na tela (seria inventar perfil que ninguém disse). */
 export const ROTULO_DO_OBJETIVO: Record<string, string> = {
-	carro: "Carro",
-	moto: "Moto",
-	imovel: "Imóvel",
+	...Object.fromEntries(BENS.map((b) => [b.chave, b.rotulo])),
+	desconhecido: "Bem não informado",
 };
 
 /** O rastro da última ação do atendente, guardado no metadata da conversa. */
@@ -199,6 +220,10 @@ export interface RespostaDaRegua {
 	periodo: { de: string; ate: string };
 	/** O funil por passo, a atribuição da conversão e os tempos (módulo insights). */
 	insights: InsightsDaRegua;
+	/** O resumo agregado do topo (toques enviados, respondidos, aguardando…). */
+	resumo: ResumoDaRegua;
+	/** `REMARKETING_ATIVO` — o interruptor operacional, lido na borda. */
+	ligada: boolean;
 	/** Se a régua está ligada, desligada ou só sem toque neste período. */
 	estado: EstadoDaRegua;
 }
@@ -258,20 +283,17 @@ export function situacaoDe(linha: {
 	if (linha.optoutDaPessoaEm !== null || linha.status === "OPTOUT") return "optout";
 	if (linha.status === "CONVERTEU") return "converteu";
 	if (linha.status === "RESPONDEU") {
-		return linha.motivoSaida === MOTIVO_SEGURADO ? "segurado" : "respondeu";
+		return linha.motivoSaida !== null && MOTIVOS_DE_PARADA.includes(linha.motivoSaida)
+			? "segurado"
+			: "respondeu";
 	}
 	if (linha.status === "ESGOTADO") return "esgotado";
 	return "ativo";
 }
 
-/** O motivo de saída em português. Motivo desconhecido sai cru — inventar rótulo seria pior. */
+/** O motivo de saída em português. Desconhecido sai cru — inventar rótulo seria pior. */
 export function rotuloDoMotivo(motivo: string | null): string | null {
-	if (!motivo) return null;
-	if (motivo === MOTIVO_SEGURADO) return "Segurou à mão, pelo painel";
-	if (motivo === "cliente_respondeu") return "O cliente respondeu";
-	if (motivo === "tres_toques_sem_resposta") return "Três toques sem resposta";
-	if (motivo === "optout_do_cliente") return "O cliente pediu para sair";
-	return motivo;
+	return motivoDeSaidaLegivel(motivo);
 }
 
 export function passoLegivel(step: number): string {
@@ -284,6 +306,7 @@ export function cotaLegivel(touches30d: number): string {
 }
 
 export function rotuloDoObjetivo(objetivo: string): string {
+	if (!objetivo) return ROTULO_DO_OBJETIVO.desconhecido;
 	return ROTULO_DO_OBJETIVO[objetivo] ?? objetivo;
 }
 
@@ -753,6 +776,81 @@ export function insightsDaRegua(linhas: readonly LinhaBruta[]): InsightsDaRegua 
 	}
 
 	return { funil, conversoes: { total: conversoes, semAtribuicao, paga } };
+}
+
+/**
+ * O resumo agregado do topo — a resposta à pergunta "quantas foram disparadas?"
+ * (AJA-04).
+ *
+ * O que cada número É, para não mentir:
+ *
+ *   - **toques enviados**: a SOMA de `step` das linhas do recorte. `step` é
+ *     quantos toques já saíram para aquela conversa, então somá-lo dá o total
+ *     de mensagens disparadas — não o número de conversas. `touches30d` NÃO
+ *     serve: ele é a cota deslizante por pessoa, não o histórico;
+ *   - **responderam**: as linhas em que o cliente respondeu (situação
+ *     `respondeu`); a linha segurada à mão não conta, porque parar à mão não é
+ *     o cliente ter respondido;
+ *   - **aguardando**: as que ainda vão receber toque (ATIVO com `next_touch_at`),
+ *     com a data mais próxima para o resumo dizer QUANDO;
+ *   - **elegíveis fora**: quantas conversas entrariam no próximo ciclo
+ *     (`contarElegiveisParaRegua`, passado pela borda) — a fila que a régua
+ *     ainda não alcançou, seja porque está desligada ou porque o ciclo não
+ *     rodou.
+ *
+ * Função PURA sobre as linhas que a lista já leu: nenhuma consulta nova, e o
+ * teste prova que os contadores fecham com a soma das linhas.
+ */
+export interface ResumoDaRegua {
+	toquesEnviados: number;
+	responderam: number;
+	/** % de quem respondeu sobre os toques enviados; `null` quando não houve toque. */
+	responderamPercentual: number | null;
+	pediramSair: number;
+	esgotaram: number;
+	aguardando: { n: number; proximoEm: string | null };
+	elegiveisFora: number;
+}
+
+export function resumoDaRegua(
+	linhas: readonly LinhaBruta[],
+	contexto: { elegiveisAgora?: number } = {},
+): ResumoDaRegua {
+	let toquesEnviados = 0;
+	let responderam = 0;
+	let pediramSair = 0;
+	let esgotaram = 0;
+	let aguardando = 0;
+	let proximoEm: number | null = null;
+
+	for (const linha of linhas) {
+		toquesEnviados += Math.max(0, Math.trunc(linha.step));
+		const situacao = situacaoDe(linha);
+		if (situacao === "respondeu") responderam += 1;
+		if (situacao === "optout") pediramSair += 1;
+		if (situacao === "esgotado") esgotaram += 1;
+
+		const proximo = proximoToqueDe(linha);
+		if (proximo) {
+			aguardando += 1;
+			const ms = proximo.getTime();
+			if (proximoEm === null || ms < proximoEm) proximoEm = ms;
+		}
+	}
+
+	return {
+		toquesEnviados,
+		responderam,
+		responderamPercentual:
+			toquesEnviados > 0 ? Math.round((responderam / toquesEnviados) * 1000) / 10 : null,
+		pediramSair,
+		esgotaram,
+		aguardando: {
+			n: aguardando,
+			proximoEm: proximoEm === null ? null : new Date(proximoEm).toISOString(),
+		},
+		elegiveisFora: Math.max(0, Math.trunc(contexto.elegiveisAgora ?? 0)),
+	};
 }
 
 /**

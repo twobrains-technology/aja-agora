@@ -6,6 +6,7 @@ import {
 	type PassoDoPercurso,
 } from "@/lib/admin/percurso-types";
 import { periodoDaRequisicao } from "@/lib/admin/periodo-da-requisicao";
+import { type AvaliacaoDaRegua, avaliarReguaPorIds } from "@/lib/admin/regua-por-conversa";
 import { requireRole } from "@/lib/admin/require-role";
 
 const LIMITE_PADRAO = 50;
@@ -36,6 +37,33 @@ function parsePasso(raw: string | null): PassoDoPercurso | null {
 	return (ORDEM_DOS_PASSOS as readonly string[]).includes(raw) ? (raw as PassoDoPercurso) : null;
 }
 
+/** O estado da régua que a tabela mostra por linha (AJA-09). */
+function reguaDaPessoa(
+	avaliacao: AvaliacaoDaRegua | undefined,
+	conversationId: string | null,
+): {
+	naRegua: boolean;
+	motivo: string | null;
+	status: string | null;
+	step: number | null;
+	nextTouchAt: string | null;
+} {
+	if (!conversationId) {
+		// Sem conversa não há como entrar na régua: o fato é "sem contato".
+		return { naRegua: false, motivo: "sem_contato", status: null, step: null, nextTouchAt: null };
+	}
+	if (!avaliacao) {
+		return { naRegua: false, motivo: null, status: null, step: null, nextTouchAt: null };
+	}
+	return {
+		naRegua: avaliacao.regua !== null,
+		motivo: avaliacao.motivo,
+		status: avaliacao.regua?.status ?? null,
+		step: avaliacao.regua?.step ?? null,
+		nextTouchAt: avaliacao.regua?.nextTouchAt?.toISOString() ?? null,
+	};
+}
+
 export async function GET(req: NextRequest) {
 	const { error } = await requireRole("admin", "viewer", "attendant");
 	if (error) return error;
@@ -60,5 +88,24 @@ export async function GET(req: NextRequest) {
 		offset: parseOffset(sp.get("offset")),
 	});
 
-	return Response.json(resposta);
+	// A coluna "Régua" (AJA-09) é resolvida por ids, numa consulta só — a query
+	// de `percurso-queries` é de outro bloco e não pode ganhar a coluna. O
+	// motivo sai do MESMO dicionário da lista de Conversas.
+	const ids = resposta.pessoas
+		.map((p) => p.conversationId)
+		.filter((id): id is string => Boolean(id));
+	const avaliacoes = await avaliarReguaPorIds(ids, new Date());
+
+	const pessoas = resposta.pessoas.map((p) => ({
+		...p,
+		telefoneMascarado: p.conversationId
+			? (avaliacoes.get(p.conversationId)?.telefoneMascarado ?? null)
+			: null,
+		regua: reguaDaPessoa(
+			p.conversationId ? avaliacoes.get(p.conversationId) : undefined,
+			p.conversationId,
+		),
+	}));
+
+	return Response.json({ ...resposta, pessoas });
 }
