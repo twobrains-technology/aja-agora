@@ -1,7 +1,9 @@
 import { cookies, headers } from "next/headers";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
+import { Suspense } from "react";
 import { AdminHeader } from "@/components/admin/admin-header";
 import { AppSidebar } from "@/components/admin/app-sidebar";
+import { ChipDePeriodo } from "@/components/admin/dashboard/chip-de-periodo";
 import { PeriodoProvider } from "@/components/admin/dashboard/periodo-provider";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { COOKIE_DO_PERIODO, diasDoPeriodo } from "@/lib/admin/periodo";
@@ -32,6 +34,17 @@ export default async function AdminDashboardLayout({ children }: { children: Rea
 				<div className="mx-auto w-full max-w-7xl flex-1 overflow-x-auto px-4 py-6 sm:px-6">
 					<NuqsAdapter>
 						<PeriodoProvider de={dias.de} ate={dias.ate} veioDoCookie={Boolean(valorDoCookie)}>
+							{/* O período em vigor, em uma linha. `Suspense` porque o chip lê a
+							    querystring, e no render do servidor isso suspende. */}
+							<div className="mb-4 flex justify-end">
+								<Suspense
+									fallback={
+										<span className="inline-block h-7 w-40 rounded-md border bg-muted/40" />
+									}
+								>
+									<ChipDePeriodo />
+								</Suspense>
+							</div>
 							{children}
 						</PeriodoProvider>
 					</NuqsAdapter>

@@ -12,7 +12,7 @@ import { type SQL, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { chaveDaPessoa, VISITA_DE_GENTE } from "@/lib/admin/sinais-do-funil";
 import { type AlvoDoMapa, type DegrauDoFunil, montarAlvos, montarFunilDeSecoes } from "./aggregate";
-import type { Device } from "./events";
+import { type Device, normalizarRotulo } from "./events";
 
 export type Desfecho = "todos" | "lead" | "ganho";
 export type FiltroDevice = Device | "todos";
@@ -310,7 +310,10 @@ export async function computeMapaDeCalor(filtro: FiltroMapa): Promise<MapaDeCalo
 		alvos: montarAlvos(
 			alvos.rows.map((r) => ({
 				selector: r.selector ? String(r.selector) : null,
-				label: r.label ? String(r.label) : "",
+				// O rótulo passa pela recomposição de LEITURA: o histórico foi gravado
+				// antes de a coleta separar os nós de texto, e sem isto ele continua
+				// colado no painel. Ver `normalizarRotulo`.
+				label: normalizarRotulo(r.label ? String(r.label) : ""),
 				section: r.section ? String(r.section) : null,
 				cliques: num(r.cliques),
 				rageCliques: num(r.rage_cliques),

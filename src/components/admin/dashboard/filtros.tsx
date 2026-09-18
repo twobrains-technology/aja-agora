@@ -11,9 +11,10 @@
 // mesma ordem em qualquer tela. As partes são:
 //
 //   1. **período** — o controle da tela, injetado. No painel é
-//      `<DateRangeFilter />` (que continua sendo quem escreve URL e cookie do
-//      período, com o comportamento de sempre); no pipeline e em conversas é o
-//      par de datas próprio de cada uma, que não tem a semântica de cookie.
+//      `<DateRangeFilter />`, que é quem escreve URL e cookie do período, com o
+//      comportamento de sempre. Todas as telas que recortam por data usam o
+//      MESMO componente — é o que faz a janela escolhida numa acompanhar a
+//      navegação para outra.
 //   2. **campanha** — `<CampanhaFilter />`, múltiplo e com o estado na URL. Só
 //      aparece quando a tela oferece campanhas; sem elas, some em vez de mostrar
 //      um controle vazio.

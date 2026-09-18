@@ -14,6 +14,8 @@ import { parseAsDiaDoNegocio } from "./periodo-querystring";
 describe("o dia na querystring", () => {
 	it("sobrevive à ida e volta — link compartilhado abre no mesmo dia", () => {
 		expect(testParseThenSerialize(parseAsDiaDoNegocio, "2026-08-19")).toBe(true);
+		// 18/08/2026 é o primeiro dia do coletor — o chão do preset "Desde o início".
+		expect(testParseThenSerialize(parseAsDiaDoNegocio, "2026-08-18")).toBe(true);
 		expect(testParseThenSerialize(parseAsDiaDoNegocio, "2026-01-01")).toBe(true);
 		expect(testParseThenSerialize(parseAsDiaDoNegocio, "2026-12-31")).toBe(true);
 	});

@@ -182,4 +182,32 @@ describe("rotuloDe", () => {
 	it("devolve vazio pra elemento ausente", () => {
 		expect(rotuloDe(null)).toBe("");
 	});
+
+	it("junta os nós de texto com espaço — irmãos não podem colar", () => {
+		// O defeito visível no painel: o eyebrow e o título eram dois irmãos, e o
+		// `textContent` concatenava os dois sem separador — "QUAL O SEU PROPÓSITOO
+		// setor de consórcio não para".
+		montar(
+			`<button><span>QUAL O SEU PROPÓSITO</span><span>O setor de consórcio não para</span></button>`,
+		);
+
+		expect(rotuloDe(document.querySelector("button"))).toBe(
+			"QUAL O SEU PROPÓSITO O setor de consórcio não para",
+		);
+	});
+
+	it("junta texto inline sem comer o espaço que já existia", () => {
+		montar(`<button>O <strong>setor</strong> não para</button>`);
+
+		expect(rotuloDe(document.querySelector("button"))).toBe("O setor não para");
+	});
+
+	it("corta o rótulo longo com `…` — o operador vê que continua", () => {
+		montar(`<button>${"a".repeat(200)}</button>`);
+
+		const rotulo = rotuloDe(document.querySelector("button"));
+
+		expect(rotulo.length).toBeLessThanOrEqual(80);
+		expect(rotulo.endsWith("…")).toBe(true);
+	});
 });

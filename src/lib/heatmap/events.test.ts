@@ -3,6 +3,7 @@ import {
 	classifyDevice,
 	MAX_EVENTS_POR_LOTE,
 	marcarRageClicks,
+	normalizarRotulo,
 	normalizeEvent,
 	normalizeLote,
 	sanitizeLabel,
@@ -66,6 +67,36 @@ describe("sanitizeLabel", () => {
 		expect(sanitizeLabel(null)).toBe("");
 		expect(sanitizeLabel(undefined)).toBe("");
 		expect(sanitizeLabel("   ")).toBe("");
+	});
+});
+
+describe("normalizarRotulo", () => {
+	it("descola os rótulos que foram gravados sem separador", () => {
+		// Os três exemplos do print do mapa de calor. São textos da própria
+		// landing que ficaram colados na coleta antiga — o conserto na coleta
+		// (`rotuloDe`) vale para o que vem, e isto vale para o histórico.
+		expect(normalizarRotulo("QUAL O SEU PROPÓSITOO setor d…")).toBe(
+			"QUAL O SEU PROPÓSITO O setor d…",
+		);
+		expect(normalizarRotulo("Compare consórciosentre divers…")).toBe(
+			"Compare consórcios entre divers…",
+		);
+		expect(normalizarRotulo("Fale com a AjaSelecione o tipo d…")).toBe(
+			"Fale com a Aja Selecione o tipo d…",
+		);
+	});
+
+	it("não mexe em rótulo que já está legível", () => {
+		// O risco de uma normalização agressiva é justamente este: quebrar o que
+		// estava certo. `WhatsApp` em maiúscula no meio é do próprio produto.
+		expect(normalizarRotulo("Fale no WhatsApp")).toBe("Fale no WhatsApp");
+		expect(normalizarRotulo("QUERO MINHA SIMULAÇÃO")).toBe("QUERO MINHA SIMULAÇÃO");
+	});
+
+	it("colapsa espaço e devolve vazio para entrada vazia", () => {
+		expect(normalizarRotulo("  Fale   no   WhatsApp  ")).toBe("Fale no WhatsApp");
+		expect(normalizarRotulo(null)).toBe("");
+		expect(normalizarRotulo("   ")).toBe("");
 	});
 });
 

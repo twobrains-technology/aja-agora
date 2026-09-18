@@ -46,6 +46,20 @@ const SO_DATA = /^\d{4}-\d{2}-\d{2}$/;
 
 const UM_DIA_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * O primeiro dia do COLETOR de eventos — o começo da série, e o chão de quem
+ * quer "tudo".
+ *
+ * Antes desta data não existe histórico: o coletor de `page_events` passou a
+ * existir em 18/08/2026 (ver `src/lib/heatmap/chat.ts` e os comentários de
+ * `percurso-types.ts`). Um preset "tudo" que apontasse para antes disso abriria
+ * uma janela vazia e sugeriria dado que nunca foi medido — por isso o atalho
+ * começa aqui, e não em "o começo dos tempos".
+ *
+ * É uma DIA do negócio (`YYYY-MM-DD`), no mesmo formato do filtro e do cookie.
+ */
+export const INICIO_DO_COLETOR = "2026-08-18";
+
 /** O dia do negócio (`YYYY-MM-DD`) em que um instante cai. */
 export function diaDoNegocio(instante: Date): string {
 	return FORMATO_DO_DIA.format(instante);
