@@ -43,6 +43,7 @@ import { metaEntities, metaInsightsDiarios } from "@/db/schema";
 import {
 	criarClienteMetaAds,
 	type EntidadeDaMeta,
+	ehErroDeCampoNaoPermitido,
 	getMetaAdsConfig,
 	type InsightDiario,
 	janelaPadrao,
@@ -121,6 +122,9 @@ export async function gravarEntidades(entidades: EntidadeDaMeta[], agora: Date):
 				status: e.status,
 				accountId: e.accountId,
 				parentEntityId: e.parentEntityId,
+				creativeId: e.creativeId ?? null,
+				creativeName: e.creativeName ?? null,
+				thumbnailUrl: e.thumbnailUrl ?? null,
 				vistoEm: agora,
 			})),
 		)
@@ -132,6 +136,9 @@ export async function gravarEntidades(entidades: EntidadeDaMeta[], agora: Date):
 				status: sql`excluded.status`,
 				accountId: sql`excluded.account_id`,
 				parentEntityId: sql`excluded.parent_entity_id`,
+				creativeId: sql`excluded.creative_id`,
+				creativeName: sql`excluded.creative_name`,
+				thumbnailUrl: sql`excluded.thumbnail_url`,
 				vistoEm: sql`excluded.visto_em`,
 				updatedAt: sql`now()`,
 			},
@@ -179,11 +186,37 @@ export async function gravarInsights(insights: InsightDiario[]): Promise<number>
 
 // ─── Leitura (default, com rede) ────────────────────────────────────────────
 
+/**
+ * Os anúncios, degradando quando o token não tem permissão no campo `creative`.
+ *
+ * A Graph API responde #100/#200 se `creative` não for permitido — e aí a
+ * requisição INTEIRA falha, não só o campo. Sem esta degradação o espelho
+ * perderia TODOS os anúncios por causa de um campo acessório. O log é UMA vez
+ * por ciclo, não por anúncio: um aviso por ciclo já diz o que precisa.
+ */
+async function lerAnunciosTolerante(cliente: MetaAdsClient): Promise<EntidadeDaMeta[]> {
+	try {
+		return await cliente.lerAnuncios();
+	} catch (err) {
+		if (!ehErroDeCampoNaoPermitido(err)) throw err;
+		console.warn(
+			JSON.stringify({
+				level: "warn",
+				source: "meta-ads-sync",
+				etapa: "criativo",
+				aviso: "campo creative não permitido pelo token — seguindo sem criativo",
+				error: err instanceof Error ? err.message : String(err),
+			}),
+		);
+		return cliente.lerAnuncios({ semCriativo: true });
+	}
+}
+
 async function lerEntidadesPadrao(cliente: MetaAdsClient): Promise<EntidadeDaMeta[]> {
 	const [campanhas, conjuntos, anuncios] = await Promise.all([
 		cliente.lerCampanhas(),
 		cliente.lerConjuntos(),
-		cliente.lerAnuncios(),
+		lerAnunciosTolerante(cliente),
 	]);
 	return [...campanhas, ...conjuntos, ...anuncios];
 }

@@ -15,6 +15,7 @@ import {
 	combinarCampanhas,
 	type GastoDeCampanha,
 	type LinhaCampanha,
+	type LinhaCriativo,
 	type LinhaFunilCampanha,
 	totalizarCampanhas,
 } from "./campanhas-queries";
@@ -225,6 +226,33 @@ describe("combinarCampanhas", () => {
 	it("sem conversa sem origem, nenhuma linha extra é criada", () => {
 		const linhas = combinarCampanhas([funil({ chave: "c1", visitas: 1 })], []);
 		expect(linhas.some((l) => l.semOrigemConhecida)).toBe(false);
+	});
+
+	it("anexa os criativos à campanha pelo mapa, e deixa vazio quando não há", () => {
+		const criativos = new Map<string, LinhaCriativo[]>([
+			[
+				"c1",
+				[
+					{
+						chave: "ad-1",
+						nome: "IMG | GERAL | V1",
+						nomeResolvido: true,
+						thumbnailUrl: "https://scontent.example/t.jpg",
+						visitas: 5,
+						conversas: 2,
+						identificados: 1,
+					},
+				],
+			],
+		]);
+		const linhas = combinarCampanhas(
+			[funil({ chave: "c1", visitas: 5 }), funil({ chave: "c2", visitas: 1 })],
+			[],
+			undefined,
+			criativos,
+		);
+		expect(linhas.find((l) => l.chave === "c1")?.criativos[0]?.nome).toBe("IMG | GERAL | V1");
+		expect(linhas.find((l) => l.chave === "c2")?.criativos).toEqual([]);
 	});
 });
 

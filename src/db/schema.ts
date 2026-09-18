@@ -1265,6 +1265,19 @@ export const metaEntities = pgTable(
 		// Para conjunto e anúncio: a entidade acima na hierarquia. Sem FK — a
 		// ordem de chegada do sync não é garantida, e órfão temporário é normal.
 		parentEntityId: text("parent_entity_id"),
+		// ── Criativo (só no nível "ad") ───────────────────────────────────────
+		//
+		// O nome da CAMPANHA não bastava para a Bruna: ela perguntou em 18/09
+		// "essa sequência eu consigo visualizar em algum lugar, para saber qual é o
+		// criativo?". O id do anúncio chega na visita como `utm_content`; aqui o
+		// espelho guarda o nome e a miniatura da peça para a tela poder mostrá-la.
+		//
+		// Nulos são estado legítimo e frequente: anúncio sem peça, ou token sem
+		// permissão no campo `creative` (a Graph API responde #100/#200 e o ciclo
+		// relê sem ele — ver `meta-ads-sync-cycle.ts`).
+		creativeId: text("creative_id"),
+		creativeName: text("creative_name"),
+		thumbnailUrl: text("thumbnail_url"),
 		// Quando o sync viu isto pela última vez. Diferente de `updated_at`: serve
 		// para a tela marcar "visto há X" e para a limpeza de entidades mortas.
 		vistoEm: timestamp("visto_em", { withTimezone: true }).defaultNow().notNull(),

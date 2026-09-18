@@ -71,6 +71,7 @@ describeIfDb("campanhas — funil por campanha + gasto da Meta (integration)", (
 		campaignId?: string | null;
 		utmSource?: string | null;
 		utmCampaign?: string | null;
+		utmContent?: string | null;
 		/** Até onde a jornada chegou. */
 		ate?: "visita" | "identificou" | "proposta";
 	}): Promise<void> {
@@ -83,6 +84,7 @@ describeIfDb("campanhas — funil por campanha + gasto da Meta (integration)", (
 				userAgent: UA_GENTE,
 				utmSource: parcial.utmSource ?? null,
 				utmCampaign: parcial.utmCampaign ?? null,
+				utmContent: parcial.utmContent ?? null,
 				campaignId: parcial.campaignId ?? null,
 			})
 			.returning({ id: schema.visits.id });
@@ -120,10 +122,25 @@ describeIfDb("campanhas — funil por campanha + gasto da Meta (integration)", (
 
 	beforeAll(async () => {
 		// Campanha A: chave forte pelo `campaign_id` da Meta, com jornada completa.
-		await semearVisita({ campaignId: "120250956902860104", utmSource: "ig", ate: "proposta" });
-		await semearVisita({ campaignId: "120250956902860104", utmSource: "ig", ate: "identificou" });
+		await semearVisita({
+			campaignId: "120250956902860104",
+			utmSource: "ig",
+			utmContent: "ad-1",
+			ate: "proposta",
+		});
+		await semearVisita({
+			campaignId: "120250956902860104",
+			utmSource: "ig",
+			utmContent: "ad-1",
+			ate: "identificou",
+		});
 		// Campanha B: só UTM — o resolvedor ainda não a conhece.
-		await semearVisita({ utmSource: "fb", utmCampaign: "consorcio-agosto", ate: "identificou" });
+		await semearVisita({
+			utmSource: "fb",
+			utmCampaign: "consorcio-agosto",
+			utmContent: "ad-desconhecido",
+			ate: "identificou",
+		});
 		// Campanha D: tem vínculo (visita) e gasto, mas ninguém qualificou.
 		await semearVisita({ campaignId: "120250111111110104", utmSource: "ig", ate: "visita" });
 
@@ -179,6 +196,18 @@ describeIfDb("campanhas — funil por campanha + gasto da Meta (integration)", (
 			status: "ACTIVE",
 		});
 		metaEntityIds.push("120250111111110104");
+
+		// O ANÚNCIO com o criativo — é o que a sub-tabela mostra por `utm_content`.
+		await db.insert(schema.metaEntities).values({
+			entityId: "ad-1",
+			nivel: "ad",
+			nome: "ANUNCIO | CARRO | V1",
+			parentEntityId: "77",
+			creativeId: "cri-1",
+			creativeName: "IMG | GERAL | RMKT | V1",
+			thumbnailUrl: "https://scontent.example/t.jpg",
+		});
+		metaEntityIds.push("ad-1");
 
 		await db.insert(schema.metaInsightsDiarios).values([
 			{
@@ -259,6 +288,26 @@ describeIfDb("campanhas — funil por campanha + gasto da Meta (integration)", (
 		expect(semOrigem?.conversas).toBe(1);
 		expect(semOrigem?.identificados).toBe(1);
 		expect(linhas[linhas.length - 1]?.semOrigemConhecida).toBe(true);
+	});
+
+	it("abre o funil por criativo, casando utm_content com o anúncio do espelho", async () => {
+		const { linhas } = await campanhas.computeCampanhas(JANELA_DE, JANELA_ATE);
+
+		const a = linhas.find((l) => l.chave === "120250956902860104");
+		const criativo = a?.criativos.find((c) => c.chave === "ad-1");
+		expect(criativo).toBeDefined();
+		expect(criativo?.nomeResolvido).toBe(true);
+		expect(criativo?.nome).toBe("IMG | GERAL | RMKT | V1");
+		expect(criativo?.thumbnailUrl).toBe("https://scontent.example/t.jpg");
+		expect(criativo?.visitas).toBe(2);
+		expect(criativo?.conversas).toBe(2);
+
+		// O criativo que o espelho não conhece aparece com o id cru, não resolvido.
+		const b = linhas.find((l) => l.chave === "consorcio-agosto");
+		const desconhecido = b?.criativos.find((c) => c.chave === "ad-desconhecido");
+		expect(desconhecido).toBeDefined();
+		expect(desconhecido?.nomeResolvido).toBe(false);
+		expect(desconhecido?.nome).toBeNull();
 	});
 
 	it("a soma por campanha NÃO diverge do computeOrigens", async () => {

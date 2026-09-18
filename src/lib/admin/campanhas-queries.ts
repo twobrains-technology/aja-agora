@@ -68,6 +68,25 @@ export interface LinhaFunilCampanha {
 	fechados: number;
 }
 
+/**
+ * O funil de UM criativo dentro de uma campanha.
+ *
+ * A chave é o `utm_content` que chegou na visita — na prática, o id do anúncio
+ * (`{{ad.id}}`). O espelho (`meta_entities`, nível "ad") dá o nome da peça
+ * quando o sync conseguiu lê-lo; sem ele, o que existe é o id, e a tela diz isso.
+ */
+export interface LinhaCriativo {
+	chave: string;
+	/** Nome da peça no gerenciador; `null` quando o espelho não o trouxe. */
+	nome: string | null;
+	/** `false` = mostramos o id cru porque o gerenciador não espelhou o nome. */
+	nomeResolvido: boolean;
+	thumbnailUrl: string | null;
+	visitas: number;
+	conversas: number;
+	identificados: number;
+}
+
 /** O que o gerenciador devolve por campanha, no período. */
 export interface GastoDeCampanha {
 	entityId: string;
@@ -137,6 +156,11 @@ export interface LinhaCampanha {
 	 * Conversas.
 	 */
 	semOrigemConhecida: boolean;
+	/**
+	 * O funil aberto por criativo, quando o `utm_content` da visita traz um id de
+	 * anúncio. Vazio = nenhuma visita desta campanha carregou criativo.
+	 */
+	criativos: LinhaCriativo[];
 }
 
 export interface TotaisDeCampanhas {
@@ -201,6 +225,7 @@ export function combinarCampanhas(
 	funil: LinhaFunilCampanha[],
 	gastos: GastoDeCampanha[],
 	semOrigem?: { conversas: number; identificados: number },
+	criativosPorCampanha?: Map<string, LinhaCriativo[]>,
 ): LinhaCampanha[] {
 	const gastoPorChave = new Map<string, GastoDeCampanha>();
 	for (const gasto of gastos) gastoPorChave.set(gasto.entityId, gasto);
@@ -243,6 +268,7 @@ export function combinarCampanhas(
 					linha.qualificados > 0,
 			}),
 			semOrigemConhecida: false,
+			criativos: criativosPorCampanha?.get(linha.chave) ?? [],
 		});
 	}
 
@@ -275,6 +301,7 @@ export function combinarCampanhas(
 				temVinculo: false,
 			}),
 			semOrigemConhecida: false,
+			criativos: [],
 		});
 	}
 
@@ -319,6 +346,7 @@ export function combinarCampanhas(
 				temVinculo: false,
 			}),
 			semOrigemConhecida: true,
+			criativos: [],
 		});
 	}
 
@@ -469,17 +497,74 @@ async function conversasSemOrigemConhecida(
 }
 
 /**
+ * O funil aberto por criativo, dentro de cada campanha.
+ *
+ * A chave de ligação é o `utm_content` da visita contra o `entity_id` do
+ * ANÚNCIO no espelho (nível "ad") — é o que o `{{ad.id}}` do anúncio grava na
+ * URL. Não usamos a hierarquia anúncio→conjunto→campanha de propósito: a visita
+ * já carrega o `campaign_id`, então o agrupamento por campanha sai direto.
+ *
+ * `max()` no criativo: pode haver mais de uma linha de anúncio por id se a Meta
+ * tiver mudado o nome, e o mais recente interessa.
+ */
+async function criativosPorCampanha(de: Date, ate: Date): Promise<Map<string, LinhaCriativo[]>> {
+	const resultado = await db.execute<Record<string, unknown>>(sql`
+    SELECT
+      COALESCE(NULLIF(v.campaign_id, ''), NULLIF(v.utm_campaign, ''), NULLIF(v.ctwa_source_id, '')) AS campanha,
+      v.utm_content AS criativo,
+      max(a.creative_name) AS creative_name,
+      max(a.thumbnail_url) AS thumbnail_url,
+      ${contagensDoFunil()}
+    FROM visits v
+    LEFT JOIN conversations c ON c.visit_id = v.id AND c.is_simulated = false
+    LEFT JOIN leads l ON l.conversation_id = c.id AND l.is_simulated = false
+    LEFT JOIN bevi_proposals bp ON bp.conversation_id = c.id
+    LEFT JOIN meta_entities a ON a.entity_id = v.utm_content AND a.nivel = 'ad'
+    WHERE v.created_at BETWEEN ${de} AND ${ate}
+      AND ${VISITA_DE_GENTE}
+      AND v.utm_content IS NOT NULL AND v.utm_content <> ''
+      AND COALESCE(NULLIF(v.campaign_id, ''), NULLIF(v.utm_campaign, ''), NULLIF(v.ctwa_source_id, '')) IS NOT NULL
+    GROUP BY 1, 2
+  `);
+
+	const mapa = new Map<string, LinhaCriativo[]>();
+	for (const linha of resultado.rows) {
+		const campanha = String(linha.campanha);
+		const nome = ((linha.creative_name as string | undefined) ?? "").trim() || null;
+		const item: LinhaCriativo = {
+			chave: String(linha.criativo),
+			nome,
+			nomeResolvido: nome !== null,
+			thumbnailUrl: (linha.thumbnail_url as string) ?? null,
+			visitas: num(linha.visitas),
+			conversas: num(linha.conversas),
+			identificados: num(linha.identificados),
+		};
+		const lista = mapa.get(campanha) ?? [];
+		lista.push(item);
+		mapa.set(campanha, lista);
+	}
+
+	// Mais visitas primeiro: é o criativo que mais trouxe gente que o operador
+	// quer pausar ou escalar.
+	for (const lista of mapa.values()) lista.sort((a, b) => b.visitas - a.visitas);
+
+	return mapa;
+}
+
+/**
  * O que a rota e a tela consomem. Uma ida por consulta, em paralelo.
  */
 export async function computeCampanhas(de: Date, ate: Date): Promise<RespostaDeCampanhas> {
-	const [funil, gastos, temEntidades, semOrigem] = await Promise.all([
+	const [funil, gastos, temEntidades, semOrigem, criativos] = await Promise.all([
 		funilPorCampanha(de, ate),
 		gastosPorCampanha(de, ate),
 		temEntidadesDeCampanha(),
 		conversasSemOrigemConhecida(de, ate),
+		criativosPorCampanha(de, ate),
 	]);
 
-	const linhas = combinarCampanhas(funil, gastos, semOrigem);
+	const linhas = combinarCampanhas(funil, gastos, semOrigem, criativos);
 
 	return {
 		linhas,

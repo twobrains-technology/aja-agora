@@ -44,6 +44,17 @@ export interface EntidadeDaMeta {
 	accountId: string | null;
 	/** A entidade acima na hierarquia (conjunto → campanha, anúncio → conjunto). */
 	parentEntityId: string | null;
+	/**
+	 * O CRIATIVO — só existe no nível "ad".
+	 *
+	 * `creativeName` é o nome que o gerenciador dá à peça (`IMG | GERAL | RMKT |
+	 * V1`); `thumbnailUrl` é a miniatura; `creativeId` é o id da peça, que pode
+	 * diferir do id do anúncio. Ausentes quando a Meta não devolveu `creative`
+	 * (anúncio sem peça) ou quando o token não tem permissão nesse campo.
+	 */
+	creativeId?: string | null;
+	creativeName?: string | null;
+	thumbnailUrl?: string | null;
 }
 
 /** O fato de UM dia para UMA entidade — o que `meta_insights_diarios` espelha. */
@@ -111,6 +122,33 @@ export type FetchDaMeta = (url: string) => Promise<{
 	json: () => Promise<unknown>;
 }>;
 
+/**
+ * Erro tipado da Marketing API. Existe para o ciclo poder distinguir
+ * "o token não tem permissão NESTE campo" (#100/#200) de "a Meta caiu" — o
+ * primeiro degrada sem criativo; o segundo é falha de verdade.
+ */
+export class MetaAdsError extends Error {
+	constructor(
+		readonly status: number,
+		readonly codigo: number | null,
+		mensagem: string,
+	) {
+		super(`Marketing API ${status}: ${mensagem}`);
+		this.name = "MetaAdsError";
+	}
+}
+
+/**
+ * O erro é de CAMPO não permitido/inexistente na Graph API.
+ *
+ * `#100` é "campo inválido" e `#200` é "permissão" — os dois aparecem quando o
+ * token de System User não tem `ads_read` sobre `creative`, por exemplo. É
+ * exatamente o caso que o ciclo contorna relendo os anúncios sem o criativo.
+ */
+export function ehErroDeCampoNaoPermitido(err: unknown): boolean {
+	return err instanceof MetaAdsError && (err.codigo === 100 || err.codigo === 200);
+}
+
 function formatarDia(data: Date): string {
 	return data.toLocaleDateString("en-CA", { timeZone: TZ_NEGOCIO });
 }
@@ -167,7 +205,14 @@ export function leadsDeActions(actions: unknown): number | null {
 export interface MetaAdsClient {
 	lerCampanhas(): Promise<EntidadeDaMeta[]>;
 	lerConjuntos(): Promise<EntidadeDaMeta[]>;
-	lerAnuncios(): Promise<EntidadeDaMeta[]>;
+	/**
+	 * Os anúncios — com o criativo por padrão.
+	 *
+	 * `semCriativo` existe para o ciclo degradar quando o token não tem permissão
+	 * no campo `creative` (#100/#200): relê sem ele, em vez de perder os anúncios
+	 * inteiros. Ver `ehErroDeCampoNaoPermitido`.
+	 */
+	lerAnuncios(opcoes?: { semCriativo?: boolean }): Promise<EntidadeDaMeta[]>;
 	/** Insights diários de um nível, dentro da janela. */
 	lerInsightsDiarios(args: {
 		desde: string;
@@ -194,8 +239,8 @@ export function criarClienteMetaAds(
 		const resposta = await fetchImpl(url);
 		const corpo = await resposta.json();
 		if (!resposta.ok) {
-			const erro = (corpo as { error?: { message?: string } } | null)?.error?.message;
-			throw new Error(`Marketing API ${resposta.status}: ${erro ?? "sem detalhe"}`);
+			const erro = (corpo as { error?: { message?: string; code?: number } } | null)?.error;
+			throw new MetaAdsError(resposta.status, erro?.code ?? null, erro?.message ?? "sem detalhe");
 		}
 		return corpo;
 	}
@@ -229,7 +274,7 @@ export function criarClienteMetaAds(
 				: nivel === "ad"
 					? (linha.adset_id as string | undefined)
 					: undefined;
-		return {
+		const entidade: EntidadeDaMeta = {
 			entityId: String(linha.id),
 			nivel,
 			nome: String(linha.name ?? "").trim() || String(linha.id),
@@ -237,6 +282,15 @@ export function criarClienteMetaAds(
 			accountId: (linha.account_id as string | undefined) ?? null,
 			parentEntityId: pai ?? null,
 		};
+		if (nivel === "ad") {
+			const criativo = linha.creative as
+				| { id?: string; name?: string; thumbnail_url?: string }
+				| undefined;
+			entidade.creativeId = criativo?.id ?? null;
+			entidade.creativeName = criativo?.name ?? null;
+			entidade.thumbnailUrl = criativo?.thumbnail_url ?? null;
+		}
+		return entidade;
 	}
 
 	return {
@@ -260,10 +314,14 @@ export function criarClienteMetaAds(
 			return linhas.map((l) => entidadeDe(l, "adset"));
 		},
 
-		async lerAnuncios() {
+		async lerAnuncios(opcoes) {
+			const camposBase = "id,name,status,effective_status,account_id,adset_id,campaign_id";
+			const fields = opcoes?.semCriativo
+				? camposBase
+				: `${camposBase},creative{id,name,thumbnail_url,effective_object_story_id}`;
 			const linhas = await paginar<Record<string, unknown>>(
 				urlDe(`${cfg.accountId}/ads`, {
-					fields: "id,name,status,effective_status,account_id,adset_id,campaign_id",
+					fields,
 					limit: "100",
 				}),
 			);
