@@ -14,13 +14,11 @@
 // nunca do stream ao vivo — garantia por TOPOLOGIA, não por timing.
 
 import type { LangGraphRunnableConfig } from "@langchain/langgraph";
-import { and, eq, isNull } from "drizzle-orm";
-import { db } from "@/db";
-import { conversations as conversationsTable } from "@/db/schema";
 import { turnoEntregouConducao } from "@/lib/agent/conducao";
 import { pendingGateAfterTurn } from "@/lib/agent/gate-reengage";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { shouldMarkDoubtsAddressed } from "@/lib/agent/qualify-state";
+import { sincronizarNomeDoContato } from "@/lib/contacts/sincronizar-nome";
 import { registrarCardEnviado } from "@/lib/conversation/cards";
 import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta } from "@/lib/conversation/meta";
@@ -304,16 +302,16 @@ export async function persistNode(
 	//
 	// Isto também é o que permite parar de depender da regra-no-prompt: capturar o
 	// nome é invariante verificável, e invariante verificável é código.
-	// `isNull` na cláusula: grava só quando a coluna ainda está vazia. Uma
-	// instrução, idempotente, sem reescrever a cada turno e sem atropelar um nome
-	// que a tool (ou o usuário, pelo card) já tenha confirmado.
+	//
+	// F2 / AJA-02: a escrita passa pelo MESMO helper dos outros dois caminhos
+	// (`sincronizarNomeDoContato`). Antes daqui o nome morria em
+	// `conversations.contactName`: o pushName do WhatsApp e a extração do gate
+	// `name` não chegavam a `contacts.name`, que é a coluna que a régua lê —
+	// "Sem nome ainda" na tela com o nome já conhecido pelo servidor. O helper
+	// mantém a guarda de não sobrescrever (só grava coluna vazia) e leva o nome
+	// também para `leads.name` e `contacts.name` quando há contato resolvido.
 	if (state.contactName) {
-		await db
-			.update(conversationsTable)
-			.set({ contactName: state.contactName, updatedAt: simulatorNow() })
-			.where(
-				and(eq(conversationsTable.id, conversationId), isNull(conversationsTable.contactName)),
-			);
+		await sincronizarNomeDoContato({ conversationId, nome: state.contactName });
 	}
 
 	const events: TurnEvent[] = [];

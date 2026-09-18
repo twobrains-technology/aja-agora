@@ -10,3 +10,4 @@ export {
 	normalizeContactInput,
 	resolveContact,
 } from "./resolve";
+export { sincronizarNomeDoContato } from "./sincronizar-nome";
