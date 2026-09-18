@@ -1,16 +1,13 @@
 "use client";
 
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale/pt-BR";
-import { CalendarIcon, Search, X } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { parseAsIsoDate, parseAsString, useQueryState } from "nuqs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { parserDeCampanha } from "@/components/admin/dashboard/campanha-filter";
+import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter";
 import { FiltrosDaTela } from "@/components/admin/dashboard/filtros";
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
 	Select,
 	SelectContent,
@@ -104,18 +101,7 @@ export function useLeadFilters() {
 }
 
 export function PipelineFilters({ filters }: { filters: ReturnType<typeof useLeadFilters> }) {
-	const {
-		channel,
-		setChannel,
-		search,
-		setSearch,
-		dateFrom,
-		setDateFrom,
-		dateTo,
-		setDateTo,
-		campanhas,
-		setCampanhas,
-	} = filters;
+	const { channel, setChannel, search, setSearch, campanhas, setCampanhas } = filters;
 
 	// Debounced search input
 	const [localSearch, setLocalSearch] = useState(search);
@@ -133,18 +119,14 @@ export function PipelineFilters({ filters }: { filters: ReturnType<typeof useLea
 		}, 300);
 	};
 
-	const hasActiveFilters =
-		channel !== "all" ||
-		search !== "" ||
-		dateFrom !== null ||
-		dateTo !== null ||
-		campanhas.length > 0;
+	// O período NÃO entra: ele é estado do painel, escrito pelo `<DateRangeFilter/>`
+	// na URL e no cookie. Limpar os filtros da tela não pode apagar a janela
+	// escolhida.
+	const hasActiveFilters = channel !== "all" || search !== "" || campanhas.length > 0;
 
 	const clearFilters = () => {
 		setChannel(null);
 		setSearch(null);
-		setDateFrom(null);
-		setDateTo(null);
 		setCampanhas(null);
 		setLocalSearch("");
 	};
@@ -159,47 +141,10 @@ export function PipelineFilters({ filters }: { filters: ReturnType<typeof useLea
 
 	return (
 		<FiltrosDaTela
-			// Período próprio do pipeline: dois dias soltos (opcionais), não o
-			// período do painel — aqui "sem data" é um recorte legítimo.
-			periodo={
-				<>
-					{/* Date from */}
-					<Popover>
-						<PopoverTrigger
-							render={<Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" />}
-						>
-							<CalendarIcon className="size-3.5" />
-							{dateFrom ? format(dateFrom, "dd/MM/yy", { locale: ptBR }) : "De"}
-						</PopoverTrigger>
-						<PopoverContent className="w-auto p-0" align="start">
-							<Calendar
-								mode="single"
-								selected={dateFrom ?? undefined}
-								onSelect={(date) => setDateFrom(date ?? null)}
-								locale={ptBR}
-							/>
-						</PopoverContent>
-					</Popover>
-
-					{/* Date to */}
-					<Popover>
-						<PopoverTrigger
-							render={<Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" />}
-						>
-							<CalendarIcon className="size-3.5" />
-							{dateTo ? format(dateTo, "dd/MM/yy", { locale: ptBR }) : "Até"}
-						</PopoverTrigger>
-						<PopoverContent className="w-auto p-0" align="start">
-							<Calendar
-								mode="single"
-								selected={dateTo ?? undefined}
-								onSelect={(date) => setDateTo(date ?? null)}
-								locale={ptBR}
-							/>
-						</PopoverContent>
-					</Popover>
-				</>
-			}
+			// O período é o MESMO do resto do painel — URL + cookie, via
+			// `<DateRangeFilter/>`. Antes era um par De/Até próprio, sem cookie, e a
+			// janela escolhida em outra tela não chegava aqui.
+			periodo={<DateRangeFilter />}
 			campanhas={opcoesDeCampanha}
 		>
 			{/* Channel filter */}
