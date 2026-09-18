@@ -60,7 +60,9 @@ function marca(pessoa: PessoaDoPercurso): string {
 /** Quem não deixou nome ainda é alguém — e precisa de um jeito de ser citado. */
 function nomeNaTela(pessoa: PessoaComRegua): string {
 	if (pessoa.nome) return pessoa.nome;
-	return `Sem nome ${marca(pessoa) || "—"}`;
+	const m = marca(pessoa);
+	// Sem marca não se inventa travessão: o rótulo fica só "Sem nome".
+	return m ? `Sem nome ${m}` : "Sem nome";
 }
 
 /**
