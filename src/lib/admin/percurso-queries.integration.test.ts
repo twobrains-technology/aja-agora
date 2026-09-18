@@ -13,6 +13,12 @@
 
 import { eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+	CHIP_DE_BEM,
+	PRIMEIRA_FALA_WHATSAPP,
+	SEMENTE_VALOR_PREFIXO,
+	TITULO_CATEGORIA_WHATSAPP,
+} from "@/lib/funil/textos-do-cta";
 import { semearCache, serializarChave } from "@/lib/meta-ads/resolver";
 import type { PassoDoPercurso } from "./percurso-types";
 
@@ -55,12 +61,18 @@ describeIfDb("percurso — até onde cada pessoa foi (integration)", () => {
 		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36";
 	const UA_ROBO = "ELB-HealthChecker/2.0";
 
-	/** Até onde a pessoa semeada chegou. Espelha os degraus de `PASSOS_DO_PERCURSO`. */
+	/**
+	 * Até onde a pessoa semeada chegou. Espelha os degraus de `PASSOS_DO_PERCURSO`.
+	 *
+	 * `so_pre_preenchida` e `iniciou_conversa` são o par que o AJA-01 separou:
+	 * o primeiro manda o texto que o CTA escreve, o segundo escreve algo próprio.
+	 */
 	type Ate =
 		| "so_chegou"
 		| "olhou_a_pagina"
 		| "abriu_o_chat"
-		| "escreveu"
+		| "so_pre_preenchida"
+		| "iniciou_conversa"
 		| "se_identificou"
 		| "viu_oferta"
 		| "proposta"
@@ -82,6 +94,14 @@ describeIfDb("percurso — até onde cada pessoa foi (integration)", () => {
 		perdido?: boolean;
 		nome?: string;
 		telefone?: string;
+		/**
+		 * O texto da PRIMEIRA mensagem do cliente. Sem ele, o padrão é fala própria
+		 * ("quero uma moto"); com `ate: "so_pre_preenchida"` o padrão vira o texto do
+		 * CTA, que é o caso que o funil antes contava como engajamento.
+		 */
+		primeiraMensagem?: string;
+		/** Canal da conversa semeada. O padrão é web. */
+		canal?: "web" | "whatsapp";
 	}
 
 	async function semear(semente: Semente): Promise<string> {
@@ -90,7 +110,7 @@ describeIfDb("percurso — até onde cada pessoa foi (integration)", () => {
 			.insert(schema.visits)
 			.values({
 				visitorId: semente.visitorId ?? `v-${crypto.randomUUID()}`,
-				channel: "web",
+				channel: semente.canal ?? "web",
 				landingPath: semente.landingPath ?? "/motos",
 				createdAt: quando,
 				userAgent: semente.userAgent === undefined ? UA_GENTE : semente.userAgent,
@@ -119,7 +139,7 @@ describeIfDb("percurso — até onde cada pessoa foi (integration)", () => {
 		const [conversa] = await db
 			.insert(schema.conversations)
 			.values({
-				channel: "web",
+				channel: semente.canal ?? "web",
 				visitId: visita.id,
 				isSimulated: simulada,
 				createdAt: quando,
@@ -129,16 +149,24 @@ describeIfDb("percurso — até onde cada pessoa foi (integration)", () => {
 		convIds.push(conversa.id);
 		if (semente.ate === "abriu_o_chat") return visita.id;
 
+		// O texto da primeira mensagem é o fato que o degrau lê: o CTA escreve
+		// "Quero comprar um carro." (ou o chip de categoria) no lugar da pessoa.
+		const textoDaPrimeira =
+			semente.primeiraMensagem ??
+			(semente.ate === "so_pre_preenchida" ? CHIP_DE_BEM.auto : "quero uma moto");
 		const [mensagem] = await db
 			.insert(schema.messages)
 			.values({
 				conversationId: conversa.id,
 				role: "user",
-				content: "quero uma moto",
+				content: textoDaPrimeira,
+				channel: semente.canal ?? "web",
 				createdAt: quando,
 			})
 			.returning({ id: schema.messages.id });
-		if (semente.ate === "escreveu") return visita.id;
+		if (semente.ate === "so_pre_preenchida" || semente.ate === "iniciou_conversa") {
+			return visita.id;
+		}
 
 		// Identificação vem ANTES da oferta: a Bevi exige CPF pra simular. A mesma
 		// ordem do seed do funil de mídia — inverter produziria um funil crescente.
@@ -260,7 +288,8 @@ describeIfDb("percurso — até onde cada pessoa foi (integration)", () => {
 			});
 			await semear({ utmSource: "facebook", utmCampaign: "camp-a", ate: "olhou_a_pagina" });
 			await semear({ utmSource: "facebook", utmCampaign: "camp-a", ate: "abriu_o_chat" });
-			await semear({ utmSource: "facebook", utmCampaign: "camp-a", ate: "escreveu" });
+			await semear({ utmSource: "facebook", utmCampaign: "camp-a", ate: "so_pre_preenchida" });
+			await semear({ utmSource: "facebook", utmCampaign: "camp-a", ate: "iniciou_conversa" });
 			await semear({ utmSource: "google", utmCampaign: "camp-b", ate: "se_identificou" });
 			await semear({ utmSource: "google", utmCampaign: "camp-b", ate: "viu_oferta" });
 			await semear({ utmSource: "google", utmCampaign: "camp-b", ate: "proposta" });
@@ -285,7 +314,7 @@ describeIfDb("percurso — até onde cada pessoa foi (integration)", () => {
 				visitorId: VISITANTE_QUE_VOLTOU,
 				utmSource: "facebook",
 				utmCampaign: "camp-a",
-				ate: "escreveu",
+				ate: "iniciou_conversa",
 				quando: DEPOIS,
 			});
 
@@ -301,11 +330,12 @@ describeIfDb("percurso — até onde cada pessoa foi (integration)", () => {
 			const porPasso = new Map<PassoDoPercurso, number>();
 			for (const p of pessoas) porPasso.set(p.passo, (porPasso.get(p.passo) ?? 0) + 1);
 
-			// A pessoa que voltou soma em `escreveu` (o degrau mais fundo dela).
+			// A pessoa que voltou soma em `iniciou_conversa` (o degrau mais fundo dela).
 			expect(porPasso.get("so_chegou")).toBe(1);
 			expect(porPasso.get("olhou_a_pagina")).toBe(1);
 			expect(porPasso.get("abriu_o_chat")).toBe(1);
-			expect(porPasso.get("escreveu")).toBe(2);
+			expect(porPasso.get("so_pre_preenchida")).toBe(1);
+			expect(porPasso.get("iniciou_conversa")).toBe(2);
 			expect(porPasso.get("se_identificou")).toBe(1);
 			expect(porPasso.get("viu_oferta")).toBe(1);
 			expect(porPasso.get("proposta")).toBe(1);
@@ -329,7 +359,7 @@ describeIfDb("percurso — até onde cada pessoa foi (integration)", () => {
 
 			expect(voltou).toHaveLength(1);
 			expect(voltou[0].chegadas).toBe(2);
-			expect(voltou[0].passo).toBe("escreveu");
+			expect(voltou[0].passo).toBe("iniciou_conversa");
 			// A primeira chegada é a que credita a campanha; a última é o sinal de vida.
 			expect(new Date(voltou[0].primeiraChegada).toISOString()).toBe(DENTRO.toISOString());
 			expect(new Date(voltou[0].ultimaAtividade).getTime()).toBeGreaterThanOrEqual(
@@ -343,8 +373,8 @@ describeIfDb("percurso — até onde cada pessoa foi (integration)", () => {
 				to: JANELA_ATE,
 			});
 
-			// 8 degraus + 1 que voltou = 9. O health check do ALB não entra.
-			expect(totalDePessoas).toBe(9);
+			// 9 degraus + 1 que voltou = 10. O health check do ALB não entra.
+			expect(totalDePessoas).toBe(10);
 
 			// E o teste interno pendurado na primeira chegada não a promoveu: ela
 			// continua em "Só chegou", sem conversa e sem nome. Um `is_simulated`
@@ -364,11 +394,12 @@ describeIfDb("percurso — até onde cada pessoa foi (integration)", () => {
 			const por = Object.fromEntries(resumo.map((r) => [r.chave, r.pessoas]));
 
 			expect(por.so_chegou).toBe(1);
-			expect(por.escreveu).toBe(2);
+			expect(por.so_pre_preenchida).toBe(1);
+			expect(por.iniciou_conversa).toBe(2);
 			expect(por.fechado).toBe(1);
 			expect(resumo.reduce((soma, r) => soma + r.pessoas, 0)).toBe(totalDePessoas);
-			// 9 pessoas, 10 chegadas — uma delas veio duas vezes.
-			expect(totalDeChegadas).toBe(10);
+			// 10 pessoas, 11 chegadas — uma delas veio duas vezes.
+			expect(totalDeChegadas).toBe(11);
 		});
 
 		it("carrega o nome, a origem e a conversa de quem se identificou", async () => {
@@ -415,23 +446,25 @@ describeIfDb("percurso — até onde cada pessoa foi (integration)", () => {
 			const parou = await queries.listarPercurso({
 				from: JANELA_DE,
 				to: JANELA_ATE,
-				passo: "escreveu",
+				passo: "iniciou_conversa",
 				modo: "parou",
 			});
 			expect(parou.total).toBe(2);
-			expect(parou.pessoas.every((p) => p.passo === "escreveu")).toBe(true);
+			expect(parou.pessoas.every((p) => p.passo === "iniciou_conversa")).toBe(true);
 
 			const alcancou = await queries.listarPercurso({
 				from: JANELA_DE,
 				to: JANELA_ATE,
-				passo: "escreveu",
+				passo: "iniciou_conversa",
 				modo: "alcancou",
 			});
-			// Quem escreveu ou passou disso: 2 + identificou + oferta + proposta + fechado.
+			// Quem iniciou a conversa ou passou disso: 2 + identificou + oferta +
+			// proposta + fechado. Quem só mandou a mensagem do anúncio NÃO entra: é
+			// exatamente a diferença que o degrau passou a fazer.
 			expect(alcancou.total).toBe(6);
 
 			// O resumo NÃO acompanha o filtro — é o denominador da leitura.
-			expect(parou.resumo.reduce((soma, r) => soma + r.pessoas, 0)).toBe(9);
+			expect(parou.resumo.reduce((soma, r) => soma + r.pessoas, 0)).toBe(10);
 		});
 
 		it("filtra por origem com a mesma precedência da tabela por origem", async () => {
@@ -460,12 +493,129 @@ describeIfDb("percurso — até onde cada pessoa foi (integration)", () => {
 			});
 
 			expect(primeira.pessoas).toHaveLength(3);
-			expect(primeira.total).toBe(9);
-			expect(segunda.total).toBe(9);
+			expect(primeira.total).toBe(10);
+			expect(segunda.total).toBe(10);
 			const repetidas = primeira.pessoas.filter((p) =>
 				segunda.pessoas.some((q) => q.chave === p.chave),
 			);
 			expect(repetidas).toHaveLength(0);
+		});
+	});
+
+	// ── AJA-01: O QUE CONTA COMO "INICIOU A CONVERSA" ──────────────────────
+	//
+	// O funil dizia "Engajaram 99%" enquanto 47% das conversas web tinham uma
+	// única mensagem, e ela era o texto do anúncio. Estes quatro casos são a
+	// regra inteira: o texto do CTA sozinho NÃO inicia a conversa; a segunda
+	// mensagem — digitada — inicia; e vale igual no WhatsApp, onde a fala do
+	// `wa.me` chega já escrita.
+	describe("a mensagem pré-preenchida do anúncio", () => {
+		async function conversaDaVisita(visitId: string): Promise<string> {
+			const conversa = await db.query.conversations.findFirst({
+				where: (c, { eq: igual }) => igual(c.visitId, visitId),
+				columns: { id: true },
+			});
+			if (!conversa) throw new Error("visita semeada sem conversa");
+			return conversa.id;
+		}
+
+		async function pessoaDaVisita(visitId: string) {
+			// A linha do percurso é indexada pelo VISITANTE (a visita é a chegada, o
+			// visitante é a pessoa) — por isso o id da visita é traduzido aqui.
+			const visita = await db.query.visits.findFirst({
+				where: (v, { eq: igual }) => igual(v.id, visitId),
+				columns: { visitorId: true },
+			});
+			const { pessoas } = await queries.listarPercurso({
+				from: JANELA_DE,
+				to: JANELA_ATE,
+				limit: 200,
+			});
+			return pessoas.find((p) => p.visitorId === visita?.visitorId);
+		}
+
+		it("conversa só com o texto do chip NÃO inicia a conversa", async () => {
+			const visitId = await semear({
+				utmSource: "facebook",
+				utmCampaign: "camp-cta",
+				ate: "so_pre_preenchida",
+			});
+
+			const pessoa = await pessoaDaVisita(visitId);
+			expect(pessoa?.passo).toBe("so_pre_preenchida");
+			// A mensagem existe (o cliente apertou enviar) — o que não existe é
+			// conversa dele. É esta distinção que o degrau nomeia.
+			expect(pessoa?.mensagensDoCliente).toBe(1);
+		});
+
+		it("a segunda mensagem, digitada, inicia a conversa", async () => {
+			const visitId = await semear({
+				utmSource: "facebook",
+				utmCampaign: "camp-cta",
+				ate: "so_pre_preenchida",
+			});
+			await db.insert(schema.messages).values({
+				conversationId: await conversaDaVisita(visitId),
+				role: "user",
+				content: "quero um carro de 80 mil no maximo",
+				channel: "web",
+				createdAt: DEPOIS,
+			});
+
+			const pessoa = await pessoaDaVisita(visitId);
+			expect(pessoa?.passo).toBe("iniciou_conversa");
+			expect(pessoa?.mensagensDoCliente).toBe(2);
+		});
+
+		it("no WhatsApp, 'Oi! Quero comparar consórcios.' sozinho também não conta", async () => {
+			const visitId = await semear({
+				utmSource: "facebook",
+				utmCampaign: "camp-cta-wa",
+				canal: "whatsapp",
+				ate: "so_pre_preenchida",
+				primeiraMensagem: PRIMEIRA_FALA_WHATSAPP,
+			});
+
+			const pessoa = await pessoaDaVisita(visitId);
+			expect(pessoa?.passo).toBe("so_pre_preenchida");
+			expect(pessoa?.canal).toBe("whatsapp");
+		});
+
+		it("a semente dinâmica do catálogo (com valor) também é texto do produto", async () => {
+			const visitId = await semear({
+				utmSource: "facebook",
+				utmCampaign: "camp-cta-valor",
+				ate: "so_pre_preenchida",
+				primeiraMensagem: `${SEMENTE_VALOR_PREFIXO.auto}R$ 50.000.`,
+			});
+
+			const pessoa = await pessoaDaVisita(visitId);
+			expect(pessoa?.passo).toBe("so_pre_preenchida");
+		});
+
+		it("o chip de categoria do chat web ('Automóvel') também é texto do produto", async () => {
+			const visitId = await semear({
+				utmSource: "facebook",
+				utmCampaign: "camp-cta-chip",
+				ate: "so_pre_preenchida",
+				primeiraMensagem: "Automóvel",
+			});
+
+			const pessoa = await pessoaDaVisita(visitId);
+			expect(pessoa?.passo).toBe("so_pre_preenchida");
+		});
+
+		it("o painel de categoria do WhatsApp ('Carro') também é texto do produto", async () => {
+			const visitId = await semear({
+				utmSource: "facebook",
+				utmCampaign: "camp-cta-botao",
+				canal: "whatsapp",
+				ate: "so_pre_preenchida",
+				primeiraMensagem: TITULO_CATEGORIA_WHATSAPP.auto,
+			});
+
+			const pessoa = await pessoaDaVisita(visitId);
+			expect(pessoa?.passo).toBe("so_pre_preenchida");
 		});
 	});
 

@@ -1,20 +1,26 @@
 "use client";
 
-import { ChevronRightIcon, ClockIcon, TrendingDownIcon } from "lucide-react";
+import { ChevronRightIcon, ClockIcon, InfoIcon, TargetIcon, TrendingDownIcon } from "lucide-react";
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { PASSO_DA_ETAPA_DO_FUNIL } from "@/lib/admin/percurso-types";
 import type { EtapaFunilMidia } from "@/lib/admin/performance-types";
+import { ETAPAS_RAMIFICADAS } from "@/lib/admin/performance-types";
+import { META_INICIO_DE_CONVERSA, rotuloDaMeta, TEXTO_DA_META } from "@/lib/funil/meta-de-funil";
 
 const nf = new Intl.NumberFormat("pt-BR");
+
+/** A etapa que carrega a meta acordada: "Iniciaram a conversa". */
+const ETAPA_DA_META = "engajadas" as const;
 
 /**
  * A CONVERSA: das que abriram o chat, onde cada uma parou.
  *
  * O topo é `conversas`, não `visitas`. Medir tudo contra as visitas espremia as
- * seis etapas de baixo numa lasca de 0,06% — 19 contra 30.147 são três ordens
- * de grandeza — e elas ficavam visualmente idênticas, justamente as seis que
- * carregam a informação de produto. Visita → conversa virou componente próprio
+ * etapas de baixo numa lasca de 0,06% — 19 contra 30.147 são três ordens de
+ * grandeza — e elas ficavam visualmente idênticas, justamente as que carregam a
+ * informação de produto. Visita → conversa virou componente próprio
  * (`PortaDoFunilCard`): outro denominador, outra decisão.
  *
  * Escala rejeitada: log (faz 19 parecer 60% de 30.147, troca uma mentira por
@@ -23,14 +29,18 @@ const nf = new Intl.NumberFormat("pt-BR");
  *
  * A queda é dita em ABSOLUTO e dividida em morto × vivo: "8 pararam aqui · 2
  * ainda vivas" separa duas decisões opostas — consertar o agente ou puxar de
- * volta. "44,4% saíram aqui" sobre 18 conversas era precisão falsa e não
- * apontava nenhuma das duas.
+ * volta. Cada etapa leva ao PERCURSO, filtrado por ela.
  *
- * Cada etapa leva ao PERCURSO, filtrado por ela. É o passo que faltava: o funil
- * dizia "8 pararam aqui" e não havia como perguntar QUEM são esses 8 — o painel
- * mostrava o buraco e escondia quem caiu nele. Lá a unidade é a pessoa e aqui é
- * a conversa, então os dois números não coincidem de propósito; a escada da
- * outra tela explica a diferença em voz alta.
+ * **A ramificação (AJA-01).** "Só mandaram a mensagem do anúncio" não é o degrau
+ * anterior de "Iniciaram a conversa": é o outro destino de "Conversas". Quem
+ * parou ali apertou enviar no texto que o CTA já escreve (47% das conversas web
+ * medidas em produção), e era isso que fazia a tela dizer "Engajaram 99%". A
+ * barra dela não acumula queda — ver `ETAPAS_RAMIFICADAS`.
+ *
+ * **A meta (15/09/2026).** O primeiro degrau tem alvo: ao menos 4% de quem clica
+ * no WhatsApp inicia a conversa. O percentual contra a meta é o número MAIOR do
+ * cabeçalho, e o marcador na barra é linha tracejada + ícone + palavra — cor
+ * sozinha não decide nesta casa.
  */
 export function FunilMidiaChart({
 	etapas,
@@ -72,6 +82,10 @@ export function FunilMidiaChart({
 	const topo = daConversa[0]?.count ?? 0;
 	const vazio = daConversa.every((e) => e.count === 0);
 
+	const meta = META_INICIO_DE_CONVERSA * 100;
+	const etapaDaMeta = daConversa.find((e) => e.chave === ETAPA_DA_META);
+	const posicaoDaMeta = rotuloDaMeta(etapaDaMeta?.percentDasConversas ?? 0);
+
 	// A maior perda é o gargalo — em absoluto, que é como se decide o conserto.
 	const maiorPerda = Math.max(...daConversa.map((e) => e.pararamAqui), 0);
 
@@ -83,6 +97,30 @@ export function FunilMidiaChart({
 					Das {nf.format(topo)} que abriram o chat, onde cada uma parou — só conversas com origem
 					conhecida
 				</CardDescription>
+				{/* O número que decide vem primeiro e maior, e vem com régua: o
+				    percentual que iniciou a conversa contra a meta acordada. Número
+				    solto não pede ação. */}
+				<div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 pt-2">
+					<span className="text-3xl font-bold tabular-nums text-foreground">
+						{(etapaDaMeta?.percentDasConversas ?? 0).toFixed(0)}%
+					</span>
+					<span className="text-sm text-muted-foreground">iniciaram a conversa</span>
+					<span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+						<TargetIcon className="size-3.5" aria-hidden="true" />
+						meta {meta.toFixed(0)}% · {posicaoDaMeta}
+					</span>
+					<TooltipProvider>
+						<Tooltip>
+							<TooltipTrigger
+								className="text-muted-foreground hover:text-foreground"
+								aria-label="Sobre a meta do primeiro degrau"
+							>
+								<InfoIcon className="size-3.5" aria-hidden="true" />
+							</TooltipTrigger>
+							<TooltipContent className="max-w-xs">{TEXTO_DA_META}</TooltipContent>
+						</Tooltip>
+					</TooltipProvider>
+				</div>
 			</CardHeader>
 			<CardContent>
 				{vazio ? (
@@ -99,6 +137,8 @@ export function FunilMidiaChart({
 							// Gargalo por VOLUME perdido, e sempre com rótulo escrito: cor
 							// sozinha não carrega estado nesta casa.
 							const gargalo = etapa.pararamAqui === maiorPerda && maiorPerda > 0;
+							const ramificacao = ETAPAS_RAMIFICADAS.has(etapa.chave);
+							const comMeta = etapa.chave === ETAPA_DA_META;
 
 							return (
 								<Link
@@ -124,16 +164,36 @@ export function FunilMidiaChart({
 										</div>
 									</div>
 
-									<div className="h-7 w-full rounded bg-muted overflow-hidden">
-										<div className="h-full bg-chart-1 rounded" style={{ width: `${largura}%` }} />
+									{/* A ramificação reparte o topo; o degrau desce. A cor é
+									    reforço — a diferença está dita na ajuda e no rodapé. */}
+									<div
+										className={`relative h-7 w-full rounded bg-muted overflow-hidden ${
+											ramificacao ? "ring-1 ring-inset ring-border" : ""
+										}`}
+									>
+										<div
+											className={`h-full rounded ${ramificacao ? "bg-chart-3" : "bg-chart-1"}`}
+											style={{ width: `${largura}%` }}
+										/>
+										{comMeta && (
+											<>
+												{/* A meta como linha: tracejada e no token de texto, para
+												    não virar mais uma cor de série. */}
+												<span
+													className="absolute inset-y-0 border-l border-dashed border-foreground/70"
+													style={{ left: `${meta}%` }}
+													aria-hidden="true"
+												/>
+											</>
+										)}
 									</div>
 
-									{(etapa.pararamAqui > 0 || (i > 0 && etapa.quedaDaAnterior > 0)) && (
+									{(etapa.pararamAqui > 0 || (i > 0 && etapa.quedaDaAnterior > 0) || comMeta) && (
 										<div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
 											{etapa.pararamAqui > 0 && (
 												<p
 													className={`text-xs inline-flex items-center gap-1 ${
-														gargalo ? "text-amber-700 font-medium" : "text-muted-foreground"
+														gargalo ? "text-warning font-medium" : "text-muted-foreground"
 													}`}
 												>
 													<TrendingDownIcon className="size-3" aria-hidden="true" />
@@ -149,6 +209,18 @@ export function FunilMidiaChart({
 													{etapa.aindaVivas === 1 ? "ainda viva" : "ainda vivas"}
 												</p>
 											)}
+											{comMeta && (
+												<p className="text-xs inline-flex items-center gap-1 text-muted-foreground">
+													<TargetIcon className="size-3" aria-hidden="true" />
+													{etapa.percentDasConversas.toFixed(1).replace(".", ",")}% vs meta{" "}
+													{meta.toFixed(0)}% · {posicaoDaMeta}
+												</p>
+											)}
+											{!ramificacao && i > 0 && etapa.quedaDaAnterior > 0 && (
+												<p className="text-xs text-muted-foreground tabular-nums">
+													−{etapa.quedaDaAnterior.toFixed(0)}% da etapa anterior
+												</p>
+											)}
 										</div>
 									)}
 								</Link>
@@ -157,11 +229,29 @@ export function FunilMidiaChart({
 					</div>
 				)}
 
-				<p className="mt-4 text-xs text-muted-foreground">
-					“Ainda viva” = o cliente escreveu nos últimos 7 dias e a conversa não foi encerrada —
-					essas dá para puxar de volta. Contagem de conversas, nunca de leads. Clique numa etapa
-					para ver, nome a nome, quem chegou até ela.
-				</p>
+				<div className="mt-4 flex items-start gap-2 text-xs text-muted-foreground">
+					<p className="inline-flex items-center gap-1.5">
+						<TrendingDownIcon className="size-3 shrink-0" aria-hidden="true" />
+						Onde o funil perde gente.
+					</p>
+					<TooltipProvider>
+						<Tooltip>
+							<TooltipTrigger
+								className="text-muted-foreground hover:text-foreground"
+								aria-label="Como ler este funil"
+							>
+								<InfoIcon className="size-3.5 mt-0.5 shrink-0" aria-hidden="true" />
+							</TooltipTrigger>
+							<TooltipContent className="max-w-sm">
+								“Ainda viva” = o cliente escreveu nos últimos 7 dias e a conversa não foi encerrada
+								— essas dá para puxar de volta. Contagem de conversas, nunca de leads. Clique numa
+								etapa para ver, nome a nome, quem chegou até ela. “Só mandaram a mensagem do
+								anúncio” não é um degrau abaixo de “Conversas”: é o outro destino dela — quem só
+								apertou enviar no texto que o anúncio já escreve.
+							</TooltipContent>
+						</Tooltip>
+					</TooltipProvider>
+				</div>
 			</CardContent>
 		</Card>
 	);

@@ -15,6 +15,18 @@ import { type Campanhas, normalizarCampanhas } from "./campanhas";
 /** O prefixo que carrega a fonte da campanha na chave do canal. */
 const PREFIXO_CAMPANHA = "campanha:";
 
+/**
+ * A chave da conversa SEM origem conhecida — a que o funil de mídia exclui por
+ * construção (`conversations.visit_id IS NULL`).
+ *
+ * A tela de Performance conta quantas são (a cobertura de atribuição) e agora
+ * LINKA para elas: `ⓘ 9 conversas sem origem conhecida ficam fora deste funil ·
+ * Ver as 9` → `/admin/conversations?origem=desconhecida` (AJA-17). Sem este
+ * valor, o link cairia no caso de chave desconhecida — que devolve `null` — e
+ * abriria a lista INTEIRA fingindo ser um recorte.
+ */
+export const ORIGEM_SEM_ORIGEM = "desconhecida";
+
 /** A visita não tem NENHUM sinal de campanha — nem UTM, nem Click-to-WhatsApp. */
 const SEM_CAMPANHA = sql`v.utm_source IS NULL AND v.ctwa_source_id IS NULL AND v.ctwa_headline IS NULL`;
 
@@ -32,6 +44,13 @@ const SEM_CAMPANHA = sql`v.utm_source IS NULL AND v.ctwa_source_id IS NULL AND v
 export function condicaoDeOrigem(origem: string | null, campanhas?: Campanhas): SQL | null {
 	const chave = origem?.trim();
 	if (!chave) return null;
+
+	// "Desconhecida" não é uma origem: é a AUSÊNCIA dela. Não dá para perguntar
+	// isso a `visits` (a visita sempre existe, é justamente ela que falta) — a
+	// pergunta é sobre a coluna que liga a conversa à visita.
+	if (chave === ORIGEM_SEM_ORIGEM) {
+		return sql`conversations.visit_id IS NULL`;
+	}
 
 	const predicado = predicadoDeOrigemNaVisita(chave, campanhas);
 	if (!predicado) return null;
@@ -51,6 +70,10 @@ export function condicaoDeOrigem(origem: string | null, campanhas?: Campanhas): 
  * (nem pode) correlacionar de novo por `conversations.visit_id` — quem só
  * chegou e nunca abriu conversa sumiria do filtro justamente na tela feita para
  * mostrá-lo.
+ *
+ * `ORIGEM_SEM_ORIGEM` devolve `null` aqui de propósito: esta função recebe uma
+ * linha de `visits`, e visita sem origem não existe (a própria visita É a
+ * origem). Quem trata a ausência é `condicaoDeOrigem`, sobre `conversations`.
  */
 export function predicadoDeOrigemNaVisita(chave: string, campanhas: Campanhas): SQL | null {
 	if (chave.startsWith(PREFIXO_CAMPANHA)) {

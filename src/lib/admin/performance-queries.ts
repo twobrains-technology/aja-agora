@@ -12,14 +12,24 @@
 
 import { type SQL, sql } from "drizzle-orm";
 import { db } from "@/db";
+import { sqlEscreveuAlgoProprio, sqlSoPrePreenchida } from "@/lib/funil/mensagem-pre-preenchida";
+import {
+	bemDaChave,
+	faixaDeValor,
+	ROTULO_DO_BEM,
+	ROTULO_SEM_VALOR,
+	rotuloDaFaixa,
+} from "@/lib/funil/quem-chegou";
 import { rotularOrigem } from "./origem-label";
 import {
 	type CoberturaAtribuicao,
 	ETAPAS_FUNIL_MIDIA,
+	ETAPAS_RAMIFICADAS,
 	type EtapaFunilMidia,
 	type LinhaOrigem,
 	type PontoSerie,
 	type PortaDoFunil,
+	type QuemChegou,
 } from "./performance-types";
 import {
 	ARTIFACTS_DE_OFERTA_SQL,
@@ -92,6 +102,12 @@ export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<E
     AND c.visit_id IS NOT NULL
     AND c.created_at BETWEEN ${fromDate} AND ${toDate}`;
 
+	// AJA-01 — as duas metades do que era só "tem mensagem do usuário".
+	// `engajou` é o que o negócio chama de "iniciou a conversa";
+	// `so_pre_preenchida` é quem só apertou enviar no texto que o CTA escreveu.
+	const engajou = sqlEscreveuAlgoProprio(sql`c.id`);
+	const soPrePreenchida = sqlSoPrePreenchida(sql`c.id`);
+
 	const resultado = await db.execute<Record<string, unknown>>(sql`
     SELECT
       (SELECT count(*) FROM visits v
@@ -101,9 +117,18 @@ export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<E
       (SELECT count(*) FROM conversations c
         WHERE ${atribuida}) AS conversas,
 
+      -- 'engajadas' EXIGE mensagem que o produto NÃO escreveu (AJA-01).
+      -- Era 'EXISTS messages.role='user'', e o CTA entrega a primeira fala já
+      -- pronta: 47% das conversas web medidas em produção tinham uma única
+      -- mensagem, e ela era o texto do anúncio. O predicado mora em
+      -- 'src/lib/funil/mensagem-pre-preenchida', o mesmo da tela de Percurso.
       (SELECT count(DISTINCT c.id) FROM conversations c
-        JOIN messages m ON m.conversation_id = c.id AND m.role = 'user'
-        WHERE ${atribuida}) AS engajadas,
+        WHERE ${atribuida} AND ${engajou}) AS engajadas,
+
+      -- O degrau que faltava: existe mensagem do cliente, e TODAS são texto do
+      -- produto. Era o vazamento somado dentro de "Engajaram".
+      (SELECT count(DISTINCT c.id) FROM conversations c
+        WHERE ${atribuida} AND ${soPrePreenchida}) AS so_pre_preenchida,
 
       -- Conta CONVERSAS com lead identificado, não leads: uma conversa com dois
       -- leads (dedup imperfeito) contaria duas vezes e passaria do total.
@@ -147,8 +172,13 @@ export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<E
         c.status,
         (SELECT max(m.created_at) FROM messages m
           WHERE m.conversation_id = c.id AND m.role = 'user') AS ultimo_inbound,
-        EXISTS (SELECT 1 FROM messages m
-          WHERE m.conversation_id = c.id AND m.role = 'user') AS engajou,
+      -- O ONDE CADA CONVERSA PAROU agora tem um degrau a mais: quem só mandou
+      -- a mensagem pré-preenchida era contado como engajado. As duas colunas
+      -- ("engajou" e "so_pre_preenchida") saem do MESMO predicado que as
+      -- contagens acima — duas definições de "escreveu" divergiriam no primeiro
+      -- dia, com o mesmo rótulo na mesma tela.
+        ${engajou} AS engajou,
+        ${soPrePreenchida} AS so_pre_preenchida,
         EXISTS (SELECT 1 FROM leads l
           WHERE l.conversation_id = c.id AND l.is_simulated = false
             AND (l.phone IS NOT NULL OR l.email IS NOT NULL)) AS identificou,
@@ -168,11 +198,12 @@ export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<E
       SELECT
         id,
         CASE
-          WHEN fechou THEN 6
-          WHEN teve_proposta THEN 5
-          WHEN viu_oferta THEN 4
-          WHEN identificou THEN 3
-          WHEN engajou THEN 2
+          WHEN fechou THEN 7
+          WHEN teve_proposta THEN 6
+          WHEN viu_oferta THEN 5
+          WHEN identificou THEN 4
+          WHEN engajou THEN 3
+          WHEN so_pre_preenchida THEN 2
           ELSE 1
         END AS etapa,
         -- Viva = o cliente escreveu na janela recente e ninguém encerrou a
@@ -198,8 +229,14 @@ export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<E
 	let anterior = 0;
 	return ETAPAS_FUNIL_MIDIA.map((etapa, i) => {
 		const count = num(linha[etapa.chave]);
-		const quedaDaAnterior =
-			i === 0 || anterior === 0 ? 0 : Math.max(0, pct(anterior - count, anterior));
+		// Ramificação não tem "etapa anterior": ela reparte a etapa de cima, e
+		// medir queda contra a etapa anterior inventaria um encolhimento que
+		// ninguém viveu. Ver `ETAPAS_RAMIFICADAS`.
+		const quedaDaAnterior = ETAPAS_RAMIFICADAS.has(etapa.chave)
+			? 0
+			: i === 0 || anterior === 0
+				? 0
+				: Math.max(0, pct(anterior - count, anterior));
 		// `visitas` é o índice 0 do array e não é etapa de conversa — a
 		// profundidade 1 ("abriu e não escreveu") casa com `conversas`, no índice 1.
 		const parada = pararamPorEtapa.get(i);
@@ -214,7 +251,9 @@ export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<E
 			pararamAqui: parada?.pararam ?? 0,
 			aindaVivas: parada?.vivas ?? 0,
 		};
-		anterior = count;
+		// A cadeia avança mesmo quando a etapa é ramificação: o "anterior" de quem
+		// vem depois dela continua sendo a etapa de cima, e não a ramificação.
+		if (!ETAPAS_RAMIFICADAS.has(etapa.chave)) anterior = count;
 		return resultadoEtapa;
 	});
 }
@@ -278,6 +317,71 @@ export async function computePorta(fromDate: Date, toDate: Date): Promise<PortaD
 		taxaDeEntrada: pct(pessoasQueConversaram, pessoas),
 		web: num(linha.web),
 		whatsapp: num(linha.whatsapp),
+	};
+}
+
+// ─── "Quem chegou" — o cheiro de perfil ────────────────────────────────
+
+/**
+ * A distribuição de QUEM INICIOU A CONVERSA, por bem e por faixa de valor.
+ *
+ * Por que "iniciou a conversa" e não "abriu o chat": é o degrau que o AJA-01
+ * separou do texto do anúncio. Misturar quem só apertou enviar no CTA com quem
+ * escreveu algo mudaria o perfil — e o perfil é justamente o que se quer ler.
+ */
+export async function computeQuemChegou(fromDate: Date, toDate: Date): Promise<QuemChegou> {
+	// O valor vem de `metadata.qualifyAnswers.creditMax` — o que a pessoa informou
+	// no gate de crédito. A conversão é guardada por regex: o `jsonb` é livre, e
+	// um `::numeric` direto derrubaria a tela inteira no dia em que alguém gravar
+	// "80 mil" ali.
+	const resultado = await db.execute<Record<string, unknown>>(sql`
+    SELECT
+      c.metadata->>'currentCategory' AS bem,
+      CASE
+        WHEN c.metadata->'qualifyAnswers'->>'creditMax' ~ '^[0-9]+(\.[0-9]+)?$'
+        THEN (c.metadata->'qualifyAnswers'->>'creditMax')::numeric
+      END AS valor,
+      count(*) AS total
+    FROM conversations c
+    WHERE c.is_simulated = false
+      AND c.visit_id IS NOT NULL
+      AND c.created_at BETWEEN ${fromDate} AND ${toDate}
+      AND ${sqlEscreveuAlgoProprio(sql`c.id`)}
+    GROUP BY 1, 2
+  `);
+
+	let total = 0;
+	let comValorInformado = 0;
+	const porBem = new Map<string, number>();
+	const porFaixa = new Map<string, number>();
+
+	for (const linha of resultado.rows) {
+		const quantidade = num(linha.total);
+		total += quantidade;
+
+		const bem = bemDaChave(linha.bem);
+		const rotuloDoBem = bem ? ROTULO_DO_BEM[bem] : ROTULO_SEM_VALOR;
+		porBem.set(rotuloDoBem, (porBem.get(rotuloDoBem) ?? 0) + quantidade);
+
+		const faixa = faixaDeValor(linha.valor === null ? null : num(linha.valor));
+		if (faixa) comValorInformado += quantidade;
+		const rotulo = faixa ? rotuloDaFaixa(faixa) : ROTULO_SEM_VALOR;
+		porFaixa.set(rotulo, (porFaixa.get(rotulo) ?? 0) + quantidade);
+	}
+
+	return {
+		total,
+		// A ordem é a do dicionário, e não a do volume: barra que troca de lugar
+		// entre dois períodos não deixa comparar um com o outro.
+		porBem: [...porBem.entries()].map(([rotulo, quantidade]) => ({
+			rotulo,
+			total: quantidade,
+		})),
+		porFaixa: [...porFaixa.entries()].map(([rotulo, quantidade]) => ({
+			rotulo,
+			total: quantidade,
+		})),
+		comValorInformado,
 	};
 }
 
