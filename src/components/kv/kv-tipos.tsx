@@ -8,6 +8,10 @@ import { CARD_SHADOW, KvContainer } from "@/components/kv/ui/kv-container";
 import { KvCtaButton } from "@/components/kv/ui/kv-cta-button";
 import { KvEyebrow } from "@/components/kv/ui/kv-eyebrow";
 import { KV_RITMO, KvSection } from "@/components/kv/ui/kv-section";
+// A frase da semente do card mora no dicionário do funil
+// (`src/lib/funil/textos-do-cta`): é ela que a medição usa para separar "o
+// produto escreveu" de "a pessoa digitou".
+import { CHIP_DE_BEM } from "@/lib/funil/textos-do-cta";
 
 const KV = "/kv";
 
@@ -88,7 +92,7 @@ const CARDS: TipoCard[] = [
 		descriptionLead: "Para gerar renda",
 		descriptionRestLines: [", ganhar mobilidade ou conquistar o carro que faz sentido para você."],
 		button: BOTAO_CARD,
-		seed: "Quero comprar um carro.",
+		seed: CHIP_DE_BEM.auto,
 		tags: ["Autonomia", "Primeiro carro", "Viagens"],
 		image: {
 			src: "image-3.png",
@@ -119,7 +123,7 @@ const CARDS: TipoCard[] = [
 			"patrimônio e saia do Aluguel.",
 		],
 		button: BOTAO_CARD,
-		seed: "Quero comprar um imóvel.",
+		seed: CHIP_DE_BEM.imovel,
 		tags: ["Patrimônio", "Casa própria", "Sair do aluguel"],
 		image: {
 			src: "image-1.png",
@@ -143,7 +147,7 @@ const CARDS: TipoCard[] = [
 		descriptionBreakAfterLead: true,
 		descriptionRestLines: ["escape do trânsito ou realize", "o sonho da moto própria."],
 		button: BOTAO_CARD,
-		seed: "Quero comprar uma moto.",
+		seed: CHIP_DE_BEM.moto,
 		tags: ["Mobilidade", "Economia", "Trânsito"],
 		image: {
 			src: "image-2.png",

@@ -4,6 +4,12 @@ import type { BlocoFormasConteudo } from "@/components/vertical/bloco-formas";
 import type { FaixaNumerosConteudo } from "@/components/vertical/faixa-numeros";
 import type { GuiaArtigosConteudo } from "@/components/vertical/guia-artigos";
 import type { HeroVerticalConteudo } from "@/components/vertical/hero-vertical";
+import {
+	CHIP_DE_BEM,
+	SEMENTE_BLOCO_FGTS,
+	SEMENTE_PARCELA_PREFIXO,
+	SEMENTE_VALOR_PREFIXO,
+} from "@/lib/funil/textos-do-cta";
 
 // Texto da landing de consórcio de imóvel (Figma 'Consórcios - imóvel' 625:4133).
 // É este arquivo que muda quando a próxima vertical (auto, moto, serviços) chegar
@@ -43,9 +49,9 @@ export const HERO_IMOVEL: HeroVerticalConteudo = {
 	},
 	// `selo` de propósito ausente: o "💸 Sem custo extra" já está achatado dentro
 	// da colagem. Declarar aqui desenharia a pill uma segunda vez por cima.
-	sementeVazia: "Quero comprar um imóvel.",
-	semente: (parcela) => `Quero um imóvel. Consigo pagar ${parcela}.`,
-	sementeDeValor: (valor) => `Quero um imóvel de ${valor}.`,
+	sementeVazia: CHIP_DE_BEM.imovel,
+	semente: (parcela) => `${SEMENTE_PARCELA_PREFIXO.imovel}${parcela}.`,
+	sementeDeValor: (valor) => `${SEMENTE_VALOR_PREFIXO.imovel}${valor}.`,
 };
 
 export const NUMEROS_IMOVEL: FaixaNumerosConteudo = {
@@ -144,7 +150,7 @@ export const FGTS_IMOVEL: BlocoFormasConteudo = {
 		},
 	],
 	cta: "Quero comparar as melhores alternativas",
-	semente: "Quero usar meu FGTS no consórcio de imóvel.",
+	semente: SEMENTE_BLOCO_FGTS,
 };
 
 // O comp repete "Autorizada pelo Banco Central…" no resumo da segunda pergunta,
