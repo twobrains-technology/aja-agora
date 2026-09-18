@@ -34,7 +34,9 @@ describeIfDb("exportação — conversas mensagem a mensagem (integration)", () 
 		comVisita: boolean;
 		comLead: boolean;
 		utmCampaign?: string;
+		quando?: Date;
 	}): Promise<string> {
+		const quando = args.quando ?? DENTRO;
 		let visitId: string | null = null;
 		if (args.comVisita) {
 			const [visita] = await db
@@ -46,7 +48,7 @@ describeIfDb("exportação — conversas mensagem a mensagem (integration)", () 
 					utmMedium: "cpc",
 					utmCampaign: args.utmCampaign ?? "exp-a",
 					utmContent: "criativo-1",
-					createdAt: DENTRO,
+					createdAt: quando,
 				})
 				.returning({ id: schema.visits.id });
 			visitId = visita.id;
@@ -59,8 +61,8 @@ describeIfDb("exportação — conversas mensagem a mensagem (integration)", () 
 				channel: "web",
 				visitId,
 				isSimulated: false,
-				createdAt: DENTRO,
-				updatedAt: DENTRO,
+				createdAt: quando,
+				updatedAt: quando,
 			})
 			.returning({ id: schema.conversations.id });
 		convIds.push(conversa.id);
@@ -87,7 +89,7 @@ describeIfDb("exportação — conversas mensagem a mensagem (integration)", () 
 					role: fala.role,
 					content: fala.content,
 					personaId: fala.personaId ?? null,
-					createdAt: new Date(DENTRO.getTime() + indice * 60_000),
+					createdAt: new Date(quando.getTime() + indice * 60_000),
 				})
 				.returning({ id: schema.messages.id });
 			// Um card na segunda mensagem, para o `tipo` ser exercitado.
@@ -108,8 +110,8 @@ describeIfDb("exportação — conversas mensagem a mensagem (integration)", () 
 					email: "maria@dominio.com",
 					stage: "qualificado",
 					isSimulated: false,
-					createdAt: DENTRO,
-					updatedAt: DENTRO,
+					createdAt: quando,
+					updatedAt: quando,
 				})
 				.returning({ id: schema.leads.id });
 
@@ -119,14 +121,14 @@ describeIfDb("exportação — conversas mensagem a mensagem (integration)", () 
 					fromStage: "novo",
 					toStage: "engajado",
 					actorType: "system",
-					createdAt: new Date(DENTRO.getTime() + 30_000),
+					createdAt: new Date(quando.getTime() + 30_000),
 				},
 				{
 					leadId: lead.id,
 					fromStage: "engajado",
 					toStage: "qualificado",
 					actorType: "system",
-					createdAt: new Date(DENTRO.getTime() + 4 * 60_000),
+					createdAt: new Date(quando.getTime() + 4 * 60_000),
 				},
 			]);
 		}
@@ -246,12 +248,22 @@ describeIfDb("exportação — conversas mensagem a mensagem (integration)", () 
 	});
 
 	it("o limite trava nas N conversas mais recentes", async () => {
-		const a = await semearConversa({ comVisita: true, comLead: false });
-		const b = await semearConversa({ comVisita: true, comLead: false });
+		await semearConversa({
+			comVisita: true,
+			comLead: false,
+			quando: new Date(DENTRO.getTime() + 1 * 3_600_000),
+		});
+		const maisRecente = await semearConversa({
+			comVisita: true,
+			comLead: false,
+			quando: new Date(DENTRO.getTime() + 2 * 3_600_000),
+		});
 		const linhas = await conversas.exportarConversas({ de: DE, ate: ATE, limiteConversas: 1 });
 		const ids = new Set(linhas.map((l) => l.conversaId));
 		expect(ids.size).toBe(1);
-		expect([a, b]).toContain([...ids][0]);
+		// As duas conversas semeadas aqui são as mais recentes da janela — e a
+		// escolhida é a de mensagem mais nova.
+		expect([...ids][0]).toBe(maisRecente);
 	});
 
 	it("cada linha traz exatamente as colunas do pedido", async () => {
