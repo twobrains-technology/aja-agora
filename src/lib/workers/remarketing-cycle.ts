@@ -33,25 +33,63 @@
  * quando a cadência era reajustada; a derivação ficou só como fallback de linha
  * antiga (ver `motor.ts`). A simulação mais recente continua vindo de
  * `bevi_proposals` — a proposta É o fato, de propósito.
+ *
+ * ── A chave nasceu DESLIGADA, e isto aqui é o registro ──────────────────────
+ *
+ * 18/09/2026, 11:47 (Brasília): a `REMARKETING_ATIVO` entrou no secret de
+ * produção, o serviço foi reiniciado e o primeiro ciclo — 33 segundos depois —
+ * inscreveu 6 conversas e disparou toque real para as 6. **A régua nunca havia
+ * rodado em produção antes disso**: as 6 linhas nasceram no mesmo minuto, e a
+ * versão anterior do secret não tinha a chave (diagnóstico §d). Leia isto antes
+ * de interpretar qualquer número antigo do painel: o que não aconteceu até 18/09
+ * não é falha de elegibilidade, é interruptor desligado.
+ *
+ * **E quem saiu da janela de 7 dias durante esse período NÃO é reaberto** —
+ * decisão de produto registrada no PRD §5.4. Essas conversas aparecem na lista
+ * como "fora da régua · parada há mais de 7 dias" e quem decide falar com a
+ * pessoa é a mesa, não o robô.
+ *
+ * ── A entrada passou a dizer POR QUE não entrou ─────────────────────────────
+ *
+ * Antes, quem falhava qualquer uma das nove guardas simplesmente não aparecia na
+ * consulta. Hoje a consulta apenas PRÉ-FILTRA (a janela tem índice) e a decisão
+ * passa por `avaliarElegibilidade` — a mesma função que o admin usa para
+ * responder, na tela, por que uma conversa está fora (`lib/remarketing/
+ * motivo-de-exclusao.ts`). O log do ciclo sai agregado (`[remarketing-cycle]
+ * excluídos {motivo: n}`), nunca uma linha por conversa.
  */
 
 import type { ConnectionOptions } from "bullmq";
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, type SQL, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { beviProposals, remarketingTouches } from "@/db/schema";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { metaOf, persistMeta } from "@/lib/conversation/meta";
 import { despacharConversoesPendentes } from "@/lib/conversions/dispatch";
 import {
+	agregarMotivos,
+	avaliarElegibilidade,
+	type ConversaAvaliada,
+	destinoDoToque,
+	MOTIVO_SAIDA_EQUIPE,
+	motivoDeSaidaLegivel,
+	type ResultadoDeElegibilidade,
+} from "@/lib/remarketing/motivo-de-exclusao";
+import {
 	type DecisaoDoMotor,
 	decidir,
+	ehObjetivoConhecido,
 	ehTelefoneInterno,
 	montarEstado,
+	OBJETIVO_DESCONHECIDO,
 	type ObjetivoDoToque,
+	objetivoCanonico,
+	telefonesDaEquipe,
 	toquesReconstruidos,
 	ultimoToqueDerivado,
 } from "@/lib/remarketing/motor";
 import { ESPERA_SILENCIO_MS, type EstadoRegua } from "@/lib/remarketing/regua";
+import { chaveTelefoneBR } from "@/lib/whatsapp/mesmo-numero";
 import { buildRetomadaDirective, podeRetomar } from "./retomada";
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
@@ -114,6 +152,8 @@ export interface RemarketingDeps {
 	}) => Promise<void>;
 	/** O telefone é de atendente ATIVO no banco? (além da lista em código) */
 	telefoneDaEquipe?: (telefone: string) => Promise<boolean>;
+	/** Segura os toques ATIVOS cujo destino é telefone da equipe (idempotente). */
+	segurarToquesDaEquipe?: (agora: Date) => Promise<number>;
 	despacharConversoes?: () => Promise<unknown>;
 }
 
@@ -124,30 +164,54 @@ export interface ResultadoCiclo {
 	disparados: number;
 	/** Linhas lidas e não disparadas, por motivo. */
 	nada: Record<string, number>;
+	/** Toques ATIVOS segurados por o destino ser telefone da equipe. */
+	seguradosDaEquipe: number;
 	/** O que o CAPI devolveu (ou o motivo de não ter tentado). */
 	conversoes?: unknown;
 }
+
+// ─── Limites ────────────────────────────────────────────────────────────────
 
 /**
  * Env numérica, com default. **Vazio NÃO é zero.**
  *
  * O `.env.example` publica as chaves vazias (é assim que se liga uma capacidade:
  * ausente-desligado), e `Number("")` é `0` — que em `LIMIT` não é "sem limite",
- * é **nenhuma linha**, e no BullMQ é `repeat.every: 0`, um job em laço. Enquanto
- * isto era `?? padrao`, um ambiente com a variável publicada e vazia tinha
- * `LIMITE_POR_CICLO = 0`: a régua não disparava nada e não havia erro em lugar
- * nenhum. Exportada para o teste provar o caso "vazio", que é o default do
- * `.env.example` e o que o `.env.local` do worktree traz.
+ * é **nenhuma linha**. Enquanto isto era `?? padrao`, um ambiente com a variável
+ * publicada e vazia tinha `LIMITE_POR_CICLO = 0`: a régua não disparava nada e
+ * não havia erro em lugar nenhum (mesma classe do `every: 0` do BullMQ).
  */
 export function inteiroDaEnv(valor: string | undefined, padrao: number): number {
 	const n = Number(valor);
 	return Number.isFinite(n) && n > 0 ? Math.trunc(n) : padrao;
 }
 
-// ─── Limites ────────────────────────────────────────────────────────────────
-
 const LIMITE_POR_CICLO = inteiroDaEnv(process.env.REMARKETING_POR_CICLO, 50);
 const ENTRADAS_POR_CICLO = inteiroDaEnv(process.env.REMARKETING_ENTRADAS_POR_CICLO, 20);
+
+/**
+ * O teto de conversas AVALIADAS por ciclo (a decisão é da função pura, então
+ * avaliar é barato; o que não pode é varrer o banco inteiro).
+ *
+ * O teto precisa ser MAIOR que `ENTRADAS_POR_CICLO`: se o recorte for menor que
+ * a cota de entrada, conversa elegível fica de fora e não entra nunca enquanto
+ * houver conversa mais recente ocupando o recorte.
+ */
+const CANDIDATOS_POR_CICLO = inteiroDaEnv(process.env.REMARKETING_CANDIDATOS_POR_CICLO, 500);
+
+/**
+ * O recorte da ENTRADA (30 dias), maior de propósito que a janela de 7 dias.
+ *
+ * A régua só aceita quem está entre 90 min e 7 dias de silêncio — mas o log tem
+ * que nomear também quem PASSOU da janela (`parada_ha_mais_de_7_dias`): foi
+ * exatamente esse o efeito de a régua ter ficado desligada até 18/09, e a
+ * resposta para "quantas conversas eu perdi?" precisa sair do próprio ciclo, não
+ * de uma consulta à mão.
+ */
+const JANELA_DE_CANDIDATOS_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** A lista de telefones da casa muda em cadastro, não em deploy: 60 s basta. */
+const CACHE_DA_EQUIPE_MS = 60_000;
 
 /**
  * Chave operacional da régua: sem ela, o ciclo **não inscreve ninguém e não
@@ -172,10 +236,25 @@ export function reguaLigada(env: Record<string, string | undefined> = process.en
 	return valor === "1" || valor === "true" || valor === "sim";
 }
 
-/** Janela de entrada: conversa parada há mais de 90 min, mas não antiga demais.
- * Sem o teto de 7 dias, o primeiro ciclo depois do deploy varreria o histórico
- * e dispararia em todo mundo de uma vez. */
-const JANELA_DE_ENTRADA_MS = 7 * 24 * 60 * 60 * 1000;
+/**
+ * Entrada de conversa da WEB na régua — nasce DESLIGADA.
+ *
+ * Mesma doutrina da chave operacional: capacidade nova nasce ausente-desligada.
+ * Medido em produção (diagnóstico §c): 4 dos 12 identificados-parados eram da
+ * web, e a coluna `last_inbound_at` **nunca é escrita** para esse canal — lado a
+ * lado com o teto de 7 dias, é o motivo estrutural de a régua ignorar quem veio
+ * pelo site. Kairo, 15/09 11:51: "só se identificou pela web e aí eu não tenho
+ * janela para conversar com ele → tem que mandar template".
+ *
+ * Ligada, a régua aceita `channel = 'web'` quando o CONTATO tem telefone válido
+ * (E.164 BR) — o envio já é por template, porque a janela de 24 h não existe sem
+ * `wa_id`. O template sai para `wa_id ?? contacts.phone`, então o caminho não
+ * depende do `wa_id` da conversa. Ligue com `REMARKETING_ENTRADA_WEB=1`.
+ */
+export function entradaWebLigada(env: Record<string, string | undefined> = process.env): boolean {
+	const valor = (env.REMARKETING_ENTRADA_WEB ?? "").trim().toLowerCase();
+	return valor === "1" || valor === "true" || valor === "sim";
+}
 
 /** Minutos de silêncio que o directive da retomada cita. */
 const SILENCIO_MINUTOS = Math.round(ESPERA_SILENCIO_MS / 60_000);
@@ -187,6 +266,39 @@ function linhasDeExecucao(resultado: unknown): Array<Record<string, unknown>> {
 		? resultado
 		: ((resultado as { rows?: unknown[] })?.rows ?? []);
 	return rows as Array<Record<string, unknown>>;
+}
+
+/**
+ * O telefone é de alguém da CASA? Predicado SQL, usado em dois lugares: para
+ * tirar a equipe da consulta de disparo e para achá-la na hora de segurar.
+ *
+ * Compara pelos OITO ÚLTIMOS DÍGITOS, que é o que a Meta não muda: o nono
+ * dígito e o `+55` variam entre a fonte do cadastro e o `wa_id` (ver
+ * `mesmo-numero.ts`). Comparar string exata era o furo medido — `mesa_attendants`
+ * guarda "62992496793" e a Meta entrega "556292496793", então o número da Bruna
+ * passou batido, e 2 dos 6 toques de 18/09 foram para gente nossa (diagnóstico §d).
+ *
+ * `is_active` NÃO entra de propósito: o telefone de quem saiu da equipe continua
+ * sendo um telefone da casa. Filtrar por ativo foi metade do mesmo furo — Bruna e
+ * Romulo estavam com `is_active = false` e receberam toque.
+ *
+ * Erra para o lado de BLOQUEAR: dois números distintos com os mesmos 8 dígitos
+ * finais e o mesmo DDD são, na prática, o mesmo telefone (`chaveTelefoneBR` usa
+ * DDD + 8 por isso). Sem DDD aqui a guarda fica mais ampla — e ampliar a guarda
+ * só custa um lead que a mesa pode puxar à mão.
+ */
+function ehTelefoneDaEquipeSql(telefone: SQL): SQL {
+	const digitos = sql`regexp_replace(coalesce(${telefone}, ''), '[^0-9]', '', 'g')`;
+	return sql`(
+		length(${digitos}) >= 10
+		AND (
+			EXISTS (SELECT 1 FROM mesa_attendants m
+			         WHERE right(regexp_replace(m.whatsapp, '[^0-9]', '', 'g'), 8) = right(${digitos}, 8))
+			OR EXISTS (SELECT 1 FROM "user" u
+			         WHERE u.phone IS NOT NULL
+			           AND right(regexp_replace(u.phone, '[^0-9]', '', 'g'), 8) = right(${digitos}, 8))
+		)
+	)`;
 }
 
 /**
@@ -213,6 +325,12 @@ export async function listarVencidas(agora: Date): Promise<LinhaDaRegua[]> {
 			WHERE t.status = 'ATIVO'
 			  AND t.next_touch_at IS NOT NULL
 			  AND t.next_touch_at <= ${agora.toISOString()}::timestamptz
+			  -- Conversa marcada como TESTE depois de já ter entrado continuava
+			  -- recebendo toque: a entrada filtrava is_simulated, esta consulta — a
+			  -- que decide QUEM dispara — não. Em prod, 2 dos 6 toques de 18/09 foram
+			  -- para telefones da equipe, e é este o furo que os dois AND fecham.
+			  AND c.is_simulated = false
+			  AND NOT ${ehTelefoneDaEquipeSql(sql`coalesce(c.wa_id, ct.phone)`)}
 			ORDER BY t.next_touch_at ASC
 			LIMIT ${LIMITE_POR_CICLO}
 		`),
@@ -305,44 +423,69 @@ export async function simulacaoDoContato(contactId: string): Promise<Date | null
  *
  * O ciclo só LÊ linhas ATIVAS; sem este passo ninguém nunca entra e o motor é
  * código morto. A entrada é criada 90 min depois do último inbound (o mesmo
- * silêncio do toque 01). Guardas: canal WhatsApp, não simulada, conversa ativa
- * (não `handed_off`/`closed`), com contato resolvido (a linha exige `contact_id`
- * — sem contato não há como contar o teto de 30 dias), dentro dos 7 dias e
- * telefone não-interno. O teto real (3/30 dias) continua valendo no disparo.
+ * silêncio do toque 01).
+ *
+ * ── O que mudou aqui (18/09) ───────────────────────────────────────────────
+ *
+ * 1. A consulta virou RECORTE, não filtro: ela traz as conversas do período e a
+ *    DECISÃO é de `avaliarElegibilidade` — a mesma função que o admin usa na
+ *    tela. Antes, quem falhava qualquer guarda simplesmente não aparecia, e
+ *    responder "por que estes 11 não entraram?" era rodar as nove condições à
+ *    mão (diagnóstico §c).
+ * 2. Por isso o recorte é de 30 dias e maior que a janela de 7: o log precisa
+ *    conseguir dizer `parada_ha_mais_de_7_dias` — que é o que aconteceu com
+ *    quem caiu fora enquanto a régua esteve desligada até 18/09 11:47.
+ * 3. `channel = 'web'` entra quando `REMARKETING_ENTRADA_WEB` está ligada e o
+ *    contato tem telefone válido: o envio é por template (não há janela de 24 h
+ *    sem `wa_id`), e é o único caminho para 4 dos 12 identificados de produção.
+ * 4. `is_simulated` continua guardando a ENTRADA (agora dentro de
+ *    `avaliarElegibilidade`) e passou a guardar também a SAÍDA — `listarVencidas`
+ *    é quem decide QUEM dispara e não tinha essa guarda: conversa marcada como
+ *    teste DEPOIS de entrar continuava recebendo toque.
+ *
+ * O teto real (3 toques/30 dias) continua valendo no disparo — a entrada não é
+ * o lugar de contá-lo.
  */
 export async function entrarNaRegua(agora: Date): Promise<number> {
-	const linhas = linhasDeExecucao(
-		await db.execute(sql`
-			SELECT c.id AS "conversationId", c.contact_id AS "contactId",
-			       c.wa_id AS "waId", c.metadata, c.last_inbound_at AS "lastInboundAt"
-			FROM conversations c
-			WHERE c.channel = 'whatsapp'
-			  AND c.status = 'active'
-			  AND c.is_simulated = false
-			  AND c.contact_id IS NOT NULL
-			  AND c.last_inbound_at IS NOT NULL
-			  AND c.last_inbound_at <= ${new Date(agora.getTime() - ESPERA_SILENCIO_MS).toISOString()}::timestamptz
-			  AND c.last_inbound_at > ${new Date(agora.getTime() - JANELA_DE_ENTRADA_MS).toISOString()}::timestamptz
-			  AND NOT EXISTS (
-			        SELECT 1 FROM remarketing_touches t WHERE t.conversation_id = c.id
-			      )
-			ORDER BY c.last_inbound_at DESC
-			LIMIT ${ENTRADAS_POR_CICLO}
-		`),
-	);
+	const candidatos = await candidatosDaEntrada(agora);
+	const entradaWeb = entradaWebLigada();
+	const ligada = reguaLigada();
 
+	const vereditos: ResultadoDeElegibilidade[] = [];
+	const elegiveis: CandidatoDaEntrada[] = [];
+
+	for (const candidato of candidatos) {
+		const destino = destinoDoToque(candidato);
+		const veredito = avaliarElegibilidade(candidato, agora, {
+			reguaLigada: ligada,
+			entradaWeb,
+			telefoneDaEquipe: destino !== null && (await ehDaEquipe(destino)),
+		});
+		vereditos.push(veredito);
+		if (veredito.elegivel) elegiveis.push(candidato);
+	}
+
+	const agregado = agregarMotivos(vereditos);
+	if (agregado.avaliadas > 0) {
+		// AGREGADO, de propósito: o ciclo roda a cada 30 s, e uma linha por
+		// conversa viraria ruído que ninguém lê.
+		console.log("[remarketing-cycle] excluídos", JSON.stringify(agregado));
+	}
+
+	// A ordem da consulta (inbound mais recente primeiro) é a prioridade da
+	// cota: quem falou por último é quem tem mais chance de responder.
 	let entradas = 0;
-	for (const l of linhas) {
-		const waId = (l.waId as string | null) ?? null;
+	for (const candidato of elegiveis) {
+		if (entradas >= ENTRADAS_POR_CICLO) break;
+		const ultimoInbound = candidato.lastInboundAt;
+		if (!ultimoInbound) continue;
 		try {
-			if (await ehDaEquipe(waId)) continue;
-			const ultimoInbound = new Date(l.lastInboundAt as string);
 			await db
 				.insert(remarketingTouches)
 				.values({
-					conversationId: String(l.conversationId),
-					contactId: String(l.contactId),
-					objetivo: objetivoDoMetadata(l.metadata),
+					conversationId: candidato.conversationId,
+					contactId: candidato.contactId as string,
+					objetivo: objetivoDoMetadata(candidato.metadata) ?? OBJETIVO_DESCONHECIDO,
 					step: 0,
 					status: "ATIVO",
 					nextTouchAt: new Date(ultimoInbound.getTime() + ESPERA_SILENCIO_MS),
@@ -356,7 +499,7 @@ export async function entrarNaRegua(agora: Date): Promise<number> {
 					level: "error",
 					source: "remarketing-cycle",
 					etapa: "entrada-na-regua",
-					conversation_id: l.conversationId,
+					conversation_id: candidato.conversationId,
 					error: err instanceof Error ? err.message : String(err),
 				}),
 			);
@@ -365,25 +508,172 @@ export async function entrarNaRegua(agora: Date): Promise<number> {
 	return entradas;
 }
 
-function objetivoDoMetadata(metadata: unknown): ObjetivoDoToque {
-	const categoria = (metadata as { currentCategory?: string } | null)?.currentCategory;
-	return categoria === "imovel" || categoria === "moto" ? categoria : "carro";
+/** A conversa avaliada, com o que o INSERT precisa. */
+interface CandidatoDaEntrada extends ConversaAvaliada {
+	conversationId: string;
+	metadata: unknown;
 }
 
-/** O telefone é da equipe? Lista em código + atendentes ativos do banco. Falha
- * do banco NÃO libera: na dúvida, trata como equipe (não manda). */
-async function ehDaEquipe(telefone: string | null): Promise<boolean> {
+/**
+ * O recorte da entrada: 30 dias de conversas, com contato e o "já tem linha"
+ * resolvidos no banco.
+ *
+ * O `LIMIT` é teto de trabalho, não filtro de elegibilidade — por isso ele é
+ * generoso (500) e a ordem é a mesma prioridade do insert. O índice
+ * `conversations_last_inbound_at_idx` cobre a janela.
+ */
+async function candidatosDaEntrada(agora: Date): Promise<CandidatoDaEntrada[]> {
+	const desde = new Date(agora.getTime() - JANELA_DE_CANDIDATOS_MS).toISOString();
+	const linhas = linhasDeExecucao(
+		await db.execute(sql`
+			SELECT c.id AS "conversationId", c.channel, c.status,
+			       c.is_simulated AS "isSimulated", c.contact_id AS "contactId",
+			       c.wa_id AS "waId", c.metadata,
+			       c.last_inbound_at AS "lastInboundAt", ct.phone,
+			       EXISTS (SELECT 1 FROM remarketing_touches t
+			                WHERE t.conversation_id = c.id) AS "jaNaRegua"
+			FROM conversations c
+			LEFT JOIN contacts ct ON ct.id = c.contact_id
+			WHERE c.last_inbound_at >= ${desde}::timestamptz
+			   OR (c.last_inbound_at IS NULL AND c.created_at >= ${desde}::timestamptz)
+			ORDER BY c.last_inbound_at DESC NULLS LAST
+			LIMIT ${CANDIDATOS_POR_CICLO}
+		`),
+	);
+
+	return linhas.map((l) => ({
+		conversationId: String(l.conversationId),
+		channel: (l.channel as "web" | "whatsapp") ?? "whatsapp",
+		status: l.status as ConversaAvaliada["status"],
+		isSimulated: l.isSimulated === true,
+		contactId: (l.contactId as string | null) ?? null,
+		lastInboundAt: l.lastInboundAt ? new Date(l.lastInboundAt as string) : null,
+		waId: (l.waId as string | null) ?? null,
+		phone: (l.phone as string | null) ?? null,
+		jaNaRegua: l.jaNaRegua === true,
+		metadata: l.metadata,
+	}));
+}
+
+/**
+ * O bem que a conversa revelou, se revelou — **`null` quando não se sabe**.
+ *
+ * `null` é a informação, não a falta dela: é a diferença entre "quero um carro"
+ * e "ainda não disse o bem", e é ela que decide se o toque leva arte (AJA-14 — a
+ * Bruna recebeu a pergunta "carro, apartamento ou moto?" com a foto do CARRO
+ * embaixo, porque o default caía em `carro`).
+ *
+ * A fonte é `conversations.metadata.currentCategory` — o único lugar onde o
+ * agente registra o eixo (`Category = "imovel" | "auto" | "moto"`).
+ */
+function objetivoDoMetadata(metadata: unknown): ObjetivoDoToque | null {
+	const categoria = (metadata as { currentCategory?: string } | null)?.currentCategory;
+	if (!categoria) return null;
+	return ehObjetivoConhecido(categoria) ? objetivoCanonico(categoria) : null;
+}
+
+/**
+ * O telefone é da EQUIPE? Lista em código + env + banco (`mesa_attendants` e
+ * `user`), comparando pela chave canônica do BR.
+ *
+ * Deixou de ser o hardcode mais os "atendentes ativos":
+ *
+ *   - o banco entra pelos dois cadastros que existem (mesa e usuário), **sem**
+ *     `is_active` — o telefone de quem saiu da equipe continua sendo da casa, e
+ *     foi justamente filtrando por ativo que Bruna e Romulo receberam toque
+ *     (diagnóstico §d: 2 dos 6 toques de 18/09);
+ *   - a comparação é por `chaveTelefoneBR` (DDD + 8 finais), porque o nono
+ *     dígito varia entre o cadastro e o `wa_id` da Meta — antes era `===` de
+ *     string e o número da casa passava batido;
+ *   - as tabelas não mudam a cada 30 s: a lista fica em cache de 1 min.
+ *
+ * Falha do banco NÃO libera: na dúvida, trata como equipe (não manda).
+ */
+let cacheDaEquipe: { chaves: Set<string>; expiraEm: number } | null = null;
+
+/** Esvazia o cache — o teste de integração precisa ver o que acabou de semear. */
+export function invalidarCacheDaEquipe(): void {
+	cacheDaEquipe = null;
+}
+
+async function chavesDaEquipe(): Promise<Set<string>> {
+	if (cacheDaEquipe && cacheDaEquipe.expiraEm > Date.now()) return cacheDaEquipe.chaves;
+
+	const chaves = new Set<string>();
+	for (const telefone of telefonesDaEquipe()) {
+		const chave = chaveTelefoneBR(telefone);
+		if (chave) chaves.add(chave);
+	}
+
+	const linhas = linhasDeExecucao(
+		await db.execute(sql`
+			SELECT whatsapp AS telefone FROM mesa_attendants
+			UNION ALL
+			SELECT phone AS telefone FROM "user" WHERE phone IS NOT NULL
+		`),
+	);
+	for (const linha of linhas) {
+		const chave = chaveTelefoneBR(linha.telefone as string | null);
+		if (chave) chaves.add(chave);
+	}
+
+	cacheDaEquipe = { chaves, expiraEm: Date.now() + CACHE_DA_EQUIPE_MS };
+	return chaves;
+}
+
+export async function ehDaEquipe(telefone: string | null): Promise<boolean> {
 	if (!telefone) return false;
+	const chave = chaveTelefoneBR(telefone);
+	if (!chave) return false;
 	if (ehTelefoneInterno(telefone)) return true;
 	try {
-		const [{ isAttendantPhone }, { isMesaAttendantPhone }] = await Promise.all([
-			import("@/lib/whatsapp/proxy"),
-			import("@/lib/whatsapp/mesa/routing"),
-		]);
-		return (await isAttendantPhone(telefone)) || (await isMesaAttendantPhone(telefone));
+		return (await chavesDaEquipe()).has(chave);
 	} catch {
 		return true;
 	}
+}
+
+/**
+ * SEGURA os toques ATIVOS cujo destino é telefone da casa — idempotente.
+ *
+ * A régua não dispara para a equipe (o motor barra e a consulta de disparo já
+ * exclui), mas a linha ficava ATIVA para sempre: lida a cada 30 s, contada na
+ * tela como "ativa" e sem dizer a ninguém por que não saía. Aqui ela sai do
+ * índice com o motivo nomeado, e o `WHERE status = 'ATIVO'` faz o segundo ciclo
+ * não mexer em nada.
+ *
+ * O status é `RESPONDEU` — o único bloqueio REVERSÍVEL do enum (ver
+ * `admin/remarketing-tela.ts`): "a sequência parou, mas pode voltar". Não existe
+ * `SEGURADO` no enum, e criar um novo valor mudaria a régua inteira por causa de
+ * um rótulo.
+ */
+export async function segurarToquesDaEquipe(agora: Date): Promise<number> {
+	const linhas = linhasDeExecucao(
+		await db.execute(sql`
+			SELECT t.conversation_id AS "conversationId"
+			FROM remarketing_touches t
+			JOIN conversations c ON c.id = t.conversation_id
+			JOIN contacts ct ON ct.id = t.contact_id
+			WHERE t.status = 'ATIVO'
+			  AND ${ehTelefoneDaEquipeSql(sql`coalesce(c.wa_id, ct.phone)`)}
+		`),
+	);
+
+	let segurados = 0;
+	for (const linha of linhas) {
+		const atualizadas = await db
+			.update(remarketingTouches)
+			.set({ status: "RESPONDEU", motivoSaida: MOTIVO_SAIDA_EQUIPE, updatedAt: agora })
+			.where(
+				and(
+					eq(remarketingTouches.conversationId, String(linha.conversationId)),
+					eq(remarketingTouches.status, "ATIVO"),
+				),
+			)
+			.returning({ id: remarketingTouches.id });
+		segurados += atualizadas.length;
+	}
+	return segurados;
 }
 
 // ─── Efeitos (default) ──────────────────────────────────────────────────────
@@ -510,11 +800,13 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 	const enviarArte = deps.enviarArte ?? enviarArteReal;
 	const enviarTemplate = deps.enviarTemplate ?? enviarTemplateReal;
 	const telefoneDaEquipe = deps.telefoneDaEquipe ?? ehDaEquipe;
+	const segurarEquipe = deps.segurarToquesDaEquipe ?? segurarToquesDaEquipe;
 	const despachar = deps.despacharConversoes ?? despacharConversoesPendentes;
 
 	const nada: Record<string, number> = {};
 	let disparados = 0;
 	let entradas = 0;
+	let seguradosDaEquipe = 0;
 
 	// ── Chave operacional (default desligado) ─────────────────────────────────
 	// Desligada, o ciclo NÃO inscreve nem dispara — mas segue despachando o CAPI,
@@ -533,7 +825,13 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 				}),
 			);
 		}
-		return { entradas: 0, disparados: 0, nada, conversoes: conversoesDesligada };
+		return {
+			entradas: 0,
+			disparados: 0,
+			nada,
+			seguradosDaEquipe: 0,
+			conversoes: conversoesDesligada,
+		};
 	}
 
 	try {
@@ -544,6 +842,32 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 				level: "error",
 				source: "remarketing-cycle",
 				etapa: "entrada",
+				error: err instanceof Error ? err.message : String(err),
+			}),
+		);
+	}
+
+	// ── Higiene: a equipe sai da régua COM MOTIVO ─────────────────────────────
+	// Separado da entrada de propósito: a linha pode ter entrado antes de o
+	// telefone virar cadastro da casa (ou o número é da lista da env, que o SQL
+	// não vê). Idempotente pelo `WHERE status = 'ATIVO'`.
+	try {
+		seguradosDaEquipe = await segurarEquipe(agora);
+		if (seguradosDaEquipe > 0) {
+			console.log(
+				"[remarketing-cycle] equipe segurada",
+				JSON.stringify({
+					segurados: seguradosDaEquipe,
+					motivo: motivoDeSaidaLegivel(MOTIVO_SAIDA_EQUIPE),
+				}),
+			);
+		}
+	} catch (err) {
+		console.error(
+			JSON.stringify({
+				level: "error",
+				source: "remarketing-cycle",
+				etapa: "segurar-equipe",
 				error: err instanceof Error ? err.message : String(err),
 			}),
 		);
@@ -569,7 +893,11 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 			const daEquipe = await telefoneDaEquipe(telefone as string);
 
 			const estado = montarEstado({
-				objetivo: linha.objetivo,
+				// O bem vem da METADATA ao vivo, com o valor gravado na entrada como
+				// reserva: se o lead revelou o bem depois de entrar, a arte e o template
+				// já seguem o eixo certo; se nunca revelou, o objetivo é o desconhecido e
+				// o toque sai sem imagem (AJA-14).
+				objetivo: objetivoDoMetadata(linha.metadata) ?? linha.objetivo,
 				status: linha.status,
 				motivoSaida: linha.motivoSaida,
 				fatos: {
@@ -606,6 +934,21 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 
 			if (decisao.acao.tipo === "nada") {
 				nada[decisao.acao.motivo] = (nada[decisao.acao.motivo] ?? 0) + 1;
+				// Telefone da casa: além de não disparar, a linha SAI do índice com o
+				// motivo nomeado — senão ela é relida a cada 30 s para sempre e a tela a
+				// mostra como "ativa" sem explicar por que nunca sai toque.
+				if (decisao.acao.motivo === "telefone_interno" && estado.status !== "OPTOUT") {
+					await gravar({
+						conversationId: linha.conversationId,
+						estado: {
+							...estado,
+							status: estado.status === "ATIVO" ? "RESPONDEU" : estado.status,
+							motivoSaida: estado.motivoSaida ?? MOTIVO_SAIDA_EQUIPE,
+						},
+						touches30d: decisao.touches30d,
+						agora,
+					});
+				}
 				continue;
 			}
 
@@ -619,7 +962,12 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 					waId: linha.waId,
 					directive: directiveDaRetomada(meta, linha, agora),
 				});
-				await enviarArte({ to: telefone, link: urlDaArte(decisao.acao.arte) });
+				// Sem bem conhecido, a arte NÃO sai: o turno de retomada fala o texto e
+				// para (`arteDoObjetivo` devolve `null`). Melhor um toque só de texto do
+				// que a imagem de um carro para quem nunca falou de carro (AJA-14).
+				if (decisao.acao.arte) {
+					await enviarArte({ to: telefone, link: urlDaArte(decisao.acao.arte) });
+				}
 				disparados += 1;
 				continue;
 			}
@@ -671,7 +1019,7 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 		);
 	}
 
-	return { entradas, disparados, nada, conversoes };
+	return { entradas, disparados, nada, seguradosDaEquipe, conversoes };
 }
 
 function directiveDaRetomada(meta: ConversationMetadata, linha: LinhaDaRegua, agora: Date): string {
@@ -733,7 +1081,7 @@ export async function startRemarketingWorker() {
 		QUEUE_NAME,
 		async () => {
 			const resultado = await runRemarketingCycle();
-			if (resultado.disparados > 0 || resultado.entradas > 0) {
+			if (resultado.disparados > 0 || resultado.entradas > 0 || resultado.seguradosDaEquipe > 0) {
 				console.log(`[remarketing-cycle] ciclo: ${JSON.stringify(resultado)}`);
 			}
 		},

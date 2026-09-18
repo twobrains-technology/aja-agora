@@ -1,8 +1,9 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { conversations, leads } from "@/db/schema";
+import { conversations, leads, remarketingTouches } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
+import { MOTIVO_SAIDA_TESTE } from "@/lib/remarketing/motivo-de-exclusao";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -89,6 +90,20 @@ const marcacaoSchema = z.object({
  * **O que isto NÃO desfaz:** eventos de conversão já enviados à Meta. O envio é
  * externo e definitivo; a marcação corrige o relatório daqui para frente, não o
  * que o algoritmo da campanha já aprendeu.
+ *
+ * **E o meio-termo que faltava: a RÉGUA.** A marcação tirava a conversa do funil
+ * e das métricas, mas NÃO soltava quem já tinha entrado no remarketing: a
+ * entrada filtrava `is_simulated`, e a consulta que decide QUEM dispara
+ * (`listarVencidas`) não. Em produção isso apareceu como "desses seis toques,
+ * três já somos nós" (Bruna, 18/09 11:56) — e dois deles eram telefone de
+ * atendente. Agora marcar como teste também SEGURA a linha da régua, com
+ * `motivo_saida = 'teste'` e o status `RESPONDEU` (o único bloqueio REVERSÍVEL
+ * do enum — ver `admin/remarketing-tela.ts`; não existe `SEGURADO` e criar um
+ * valor novo mudaria a régua inteira por causa de um rótulo).
+ *
+ * Desmarcar NÃO devolve a linha à régua: quem foi segurado, ficou. Reabrir no
+ * unmark seria religar toque automático para uma conversa classificada ao acaso
+ * — mesma decisão de produto do "quem saiu da janela de 7 dias não volta".
  */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
 	const { error } = await requireRole("admin");
@@ -133,9 +148,25 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 		.where(eq(leads.conversationId, id))
 		.returning({ id: leads.id });
 
+	// A régua sai junto. Só a linha ATIVA (é a única que o ciclo dispara); linha
+	// já terminal não é reescrita — a marcação não pode apagar "o cliente
+	// respondeu" nem "pediu para sair" com um motivo de teste.
+	const segurados = isSimulated
+		? await db
+				.update(remarketingTouches)
+				.set({ status: "RESPONDEU", motivoSaida: MOTIVO_SAIDA_TESTE })
+				.where(
+					and(eq(remarketingTouches.conversationId, id), eq(remarketingTouches.status, "ATIVO")),
+				)
+				.returning({ id: remarketingTouches.id })
+		: [];
+
 	return Response.json({
 		id: atualizada.id,
 		isSimulated: atualizada.isSimulated,
 		leadsMarcados: marcados.length,
+		// Quantas linhas da régua foram seguradas por esta marcação (0 quando a
+		// conversa nunca entrou, ou quando ela foi desmarcada).
+		toquesSegurados: segurados.length,
 	});
 }

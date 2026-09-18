@@ -30,6 +30,7 @@ vi.mock("bullmq", () => ({
 vi.mock("ioredis", () => ({ default: class {} }));
 
 import {
+	entradaWebLigada,
 	inteiroDaEnv,
 	type LinhaDaRegua,
 	reguaLigada,
@@ -72,12 +73,15 @@ function deps(over: Record<string, unknown> = {}) {
 		toquesDoContato: vi.fn(async () => [] as Date[]),
 		simulacaoDoContato: vi.fn(async () => null as Date | null),
 		telefoneDaEquipe: vi.fn(async () => false),
-		gravarEstado: vi.fn(async (_args: { estado: { step: number; status: string } }) => {
-			ordem.push("grava");
-		}),
+		gravarEstado: vi.fn(
+			async (_args: { estado: { step: number; status: string; motivoSaida?: string | null } }) => {
+				ordem.push("grava");
+			},
+		),
 		gravarRetomada: vi.fn(async () => {
 			ordem.push("retomada");
 		}),
+		segurarToquesDaEquipe: vi.fn(async () => 0),
 		dispararTurno: vi.fn(async () => {
 			ordem.push("turno");
 		}),
@@ -128,6 +132,8 @@ describe("a chave operacional da régua", () => {
 		expect(d.listarVencidas).not.toHaveBeenCalled();
 		expect(d.enviarTemplate).not.toHaveBeenCalled();
 		expect(d.dispararTurno).not.toHaveBeenCalled();
+		// …nem segurou ninguém (a higiene da equipe é da régua ligada).
+		expect(d.segurarToquesDaEquipe).not.toHaveBeenCalled();
 		// …mas o despacho de conversões (que não é da régua) continua, senão o
 		// evento ficaria `pending` para sempre.
 		expect(d.despacharConversoes).toHaveBeenCalledTimes(1);
@@ -160,6 +166,17 @@ describe("env numérica com a chave publicada e VAZIA", () => {
 		expect(inteiroDaEnv("7", 50)).toBe(7);
 		expect(inteiroDaEnv("120", 50)).toBe(120);
 		expect(inteiroDaEnv("120.9", 50)).toBe(120);
+	});
+});
+
+describe("a entrada da WEB na régua", () => {
+	it("nasce desligada — só o que o dono liga explicitamente conta", () => {
+		expect(entradaWebLigada({})).toBe(false);
+		expect(entradaWebLigada({ REMARKETING_ENTRADA_WEB: "" })).toBe(false);
+		expect(entradaWebLigada({ REMARKETING_ENTRADA_WEB: "nao" })).toBe(false);
+		expect(entradaWebLigada({ REMARKETING_ENTRADA_WEB: "1" })).toBe(true);
+		expect(entradaWebLigada({ REMARKETING_ENTRADA_WEB: "true" })).toBe(true);
+		expect(entradaWebLigada({ REMARKETING_ENTRADA_WEB: " SIM " })).toBe(true);
 	});
 });
 
@@ -198,7 +215,7 @@ describe("o ciclo grava o contador ANTES de enviar", () => {
 });
 
 describe("os bloqueios do motor chegam ao ciclo", () => {
-	it("telefone interno: nada é gravado nem enviado", async () => {
+	it("telefone interno: nada é enviado, e a linha sai do índice COM MOTIVO", async () => {
 		const { deps: d } = deps({
 			listarVencidas: vi.fn(async () => [linha({ waId: "556292496793" })]),
 		});
@@ -206,8 +223,38 @@ describe("os bloqueios do motor chegam ao ciclo", () => {
 
 		expect(r.disparados).toBe(0);
 		expect(r.nada.telefone_interno).toBe(1);
-		expect(d.gravarEstado).not.toHaveBeenCalled();
 		expect(d.dispararTurno).not.toHaveBeenCalled();
+		expect(d.enviarTemplate).not.toHaveBeenCalled();
+		// A LINHA PRECISA SAIR DA RÉGUA: sem isto ela é relida a cada 30 s para
+		// sempre, aparece como "ativa" na tela e ninguém sabe por que não dispara.
+		const gravado = d.gravarEstado.mock.calls[0][0] as {
+			estado: { status: string; motivoSaida?: string | null };
+		};
+		expect(gravado.estado.status).toBe("RESPONDEU");
+		expect(gravado.estado.motivoSaida).toBe("telefone_da_equipe");
+	});
+
+	it("a equipe é segurada pelo ciclo, não pela tela — e o motivo é nomeado", async () => {
+		const { deps: d } = deps({
+			segurarToquesDaEquipe: vi.fn(async () => 2),
+		});
+		const r = await runRemarketingCycle(d);
+
+		expect(d.segurarToquesDaEquipe).toHaveBeenCalledTimes(1);
+		expect(r.seguradosDaEquipe).toBe(2);
+	});
+
+	it("o toque sai SEM arte quando o bem não é conhecido", async () => {
+		const { deps: d, ordem } = deps({
+			listarVencidas: vi.fn(async () => [linha({ objetivo: "desconhecido" })]),
+		});
+		const r = await runRemarketingCycle(d);
+
+		expect(r.disparados).toBe(1);
+		// Nasceu o turno, mas a imagem não saiu: é o defeito de 18/09 (a foto do
+		// carro embaixo de "carro, apartamento ou moto?").
+		expect(ordem).toEqual(["grava", "retomada", "turno"]);
+		expect(d.enviarArte).not.toHaveBeenCalled();
 	});
 
 	it("teto de 30 dias montado pelo ciclo bloqueia o toque", async () => {
