@@ -8,6 +8,7 @@ import {
 	saveMessage as saveMessageWithChannel,
 } from "@/lib/conversation/messages";
 import { registrarInicioDeConversa } from "@/lib/conversions/inicio-de-conversa";
+import { ehMensagemPrePreenchida } from "@/lib/funil/mensagem-pre-preenchida";
 import { isSimulatedWaId } from "./simulator-bus";
 
 export { loadConversationHistory };
@@ -36,6 +37,17 @@ export async function getOrCreateConversation(
 	 * `%Conv Chat` consertava; o sinal que ensina a campanha, não.
 	 */
 	visitaJaResolvida?: string | null,
+	/**
+	 * A fala que ABRIU a conversa, quando quem chama a conhece.
+	 *
+	 * D6 do PRD — o `ChatIniciado` do WhatsApp mede a PESSOA, não o produto.
+	 * Quando a primeira mensagem é o texto que o anúncio ou o botão pré-preencheu,
+	 * quem apertou "enviar" não escreveu nada: o evento sairia medindo o CTA. Quem
+	 * tem a fala em mãos passa aqui e o predicado decide. Sem ela (caminhos que não
+	 * a têm), `undefined` mantém o comportamento de sempre — ausência de dado não
+	 * vira silêncio.
+	 */
+	primeiraMensagem?: string | null,
 ): Promise<{ id: string; isNew: boolean }> {
 	const existing = await db.query.conversations.findFirst({
 		where: eq(conversations.waId, waId),
@@ -140,7 +152,9 @@ export async function getOrCreateConversation(
 	// quando o turno seguinte o procurasse, e um teste de integração não tinha
 	// como afirmar que ele nasceu com a origem certa. Sinal de mídia que talvez
 	// exista não é sinal.
-	if (!isSimulated) {
+	const abriuConversaDeFato = !primeiraMensagem || !ehMensagemPrePreenchida(primeiraMensagem, "whatsapp");
+
+	if (!isSimulated && abriuConversaDeFato) {
 		await registrarInicioDeConversa({
 			eventId: conv.id,
 			visitId,

@@ -18,19 +18,9 @@
  */
 
 import type { Bem } from "./textos-do-cta";
+import { ROTULO_DO_BEM } from "@/lib/admin/rotulo-do-bem";
 
-/**
- * O rótulo do bem, na boca do operador: **Carro · Moto · Imóvel**.
- *
- * ⚠️ A casa definitiva deste dicionário é `src/lib/admin/rotulo-do-bem.ts`
- * (frente F3, que ainda não está na minha branch). Quando ela chegar, esta
- * constante deve ser importada de lá e não mantida aqui — o merge é do líder.
- */
-export const ROTULO_DO_BEM: Record<Bem, string> = {
-	auto: "Carro",
-	moto: "Moto",
-	imovel: "Imóvel",
-};
+export { ROTULO_DO_BEM };
 
 /** A ordem em que o dicionário aparece na tela — por volume esperado, não alfabética. */
 export const BENS_NA_ORDEM: readonly Bem[] = ["auto", "imovel", "moto"];

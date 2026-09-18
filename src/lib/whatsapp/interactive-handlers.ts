@@ -90,7 +90,13 @@ async function recordUserClick(ctx: Ctx, override?: string): Promise<void> {
  * sem chamar `getOrCreateConversation` cada um.
  */
 export async function dispatchInteractiveReply(input: DispatchInput): Promise<boolean> {
-	const { id: conversationId } = await getOrCreateConversation(input.from);
+	const { id: conversationId } = await getOrCreateConversation(
+		input.from,
+		undefined,
+		// O título do botão é texto do PRODUTO ("Carro"/"Imóvel"/"Moto"): se a
+		// conversa nascer num clique, o `ChatIniciado` não sai (D6).
+		input.replyTitle,
+	);
 	const ctx: Ctx = {
 		...input,
 		conversationId,

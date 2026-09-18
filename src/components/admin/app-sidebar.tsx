@@ -6,6 +6,7 @@ import {
 	BotIcon,
 	BuildingIcon,
 	ChartPieIcon,
+	DownloadIcon,
 	FlameIcon,
 	FlaskConicalIcon,
 	FootprintsIcon,
@@ -77,6 +78,9 @@ export function AppSidebar({ role = "viewer" }: { role?: Role }) {
 		{ title: "Campanhas", href: "/admin/campanhas", icon: TargetIcon },
 		{ title: "Percurso do lead", href: "/admin/percurso", icon: FootprintsIcon },
 		{ title: "Mapa de calor", href: "/admin/mapa-de-calor", icon: FlameIcon },
+		// A área de LGPD do painel: o recorte de conversas/percurso/toques com
+		// mascaramento ligado por padrão e a auditoria de quem levou o quê.
+		{ title: "Exportação e dados", href: "/admin/exportacao", icon: DownloadIcon },
 	]);
 	const operacaoItems = permitido([
 		{ title: "Conversas", href: "/admin/conversations", icon: MessageSquareTextIcon },

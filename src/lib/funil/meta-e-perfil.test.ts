@@ -44,7 +44,11 @@ describe("a meta de 4% do primeiro degrau", () => {
 
 describe("o dicionário do bem", () => {
 	it("usa Carro · Moto · Imóvel, com a chave técnica do funil", () => {
-		expect(ROTULO_DO_BEM).toEqual({ auto: "Carro", moto: "Moto", imovel: "Imóvel" });
+		expect(ROTULO_DO_BEM).toMatchObject({ auto: "Carro", moto: "Moto", imovel: "Imóvel" });
+		// A casa única do dicionário é `src/lib/admin/rotulo-do-bem.ts` (merge do
+		// F1 com o F3): as duas grafias do banco apontam para o mesmo rótulo.
+		expect(ROTULO_DO_BEM.carro).toBe("Carro");
+		expect(ROTULO_DO_BEM.automovel).toBe("Carro");
 		expect(BENS_NA_ORDEM).toEqual(["auto", "imovel", "moto"]);
 	});
 

@@ -68,7 +68,9 @@ function rotuloDaOrigem(origem: string, campanha: string | null): string {
 				? "Referência"
 				: origem === "direto"
 					? "Direto"
-					: origem;
+					: origem === "desconhecida"
+						? "Sem origem conhecida"
+						: origem;
 	if (!campanha) return nome;
 	// O nome real vem do resolvedor quando ele conhece a campanha (o rótulo
 	// guarda a UTM, que é a chave fraca). Sem ele, cai no id abreviado de antes.
