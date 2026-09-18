@@ -12,11 +12,14 @@ import { describe, expect, it } from "vitest";
 import {
 	arteDoObjetivo,
 	decidir,
+	ehObjetivoConhecido,
 	ehPedidoDeOptout,
 	ehTelefoneInterno,
 	montarEstado,
+	OBJETIVO_DESCONHECIDO,
 	objetivoCanonico,
 	TELEFONES_INTERNOS,
+	telefonesDaEquipe,
 	templateDoObjetivo,
 	toquesReconstruidos,
 	ultimoToqueDerivado,
@@ -76,6 +79,51 @@ describe("o toque 01 dentro da janela de 24h vira TURNO de retomada", () => {
 	});
 });
 
+describe("AJA-14 — arte só quando o bem é CONHECIDO", () => {
+	// O defeito medido (Bruna, 12:06 de 18/09): quem nunca disse o bem recebia a
+	// pergunta "carro, apartamento ou moto?" com a IMAGEM DO CARRO embaixo. A arte
+	// do carro era o default de `objetivoCanonico` — o mesmo default que escolhe o
+	// template, e que aqui não pode valer.
+	it("sem objetivo conhecido não há arte — nunca a do carro por omissão", () => {
+		expect(arteDoObjetivo(null)).toBeNull();
+		expect(arteDoObjetivo(undefined)).toBeNull();
+		expect(arteDoObjetivo("")).toBeNull();
+		expect(arteDoObjetivo("   ")).toBeNull();
+		expect(arteDoObjetivo(OBJETIVO_DESCONHECIDO)).toBeNull();
+		// Categoria que a régua não conhece não ganha a arte de outra vertical.
+		expect(arteDoObjetivo("caminhao")).toBeNull();
+	});
+
+	it("objetivo conhecido continua com a arte do eixo", () => {
+		for (const conhecido of [
+			"carro",
+			"auto",
+			"AUTOS",
+			"Automóvel",
+			"moto",
+			"motos",
+			"imovel",
+			"imóvel",
+		]) {
+			expect(ehObjetivoConhecido(conhecido)).toBe(true);
+			expect(arteDoObjetivo(conhecido)).not.toBeNull();
+		}
+	});
+
+	it("o turno de retomada sai SEM arte quando o objetivo é desconhecido", () => {
+		const estado = ativo({ objetivo: OBJETIVO_DESCONHECIDO });
+		const decisao = decidir({ agora: TOQUE_1, estado, telefone: "5562999998888" });
+
+		expect(decisao.acao).toEqual({ tipo: "turno_de_retomada", passo: 1, arte: null });
+	});
+
+	it("o template do objetivo desconhecido segue caindo em carro — decisão registrada", () => {
+		// Não há template neutro: sem o bem, o eixo mais frequente é a única opção.
+		// Trocar isto é trocar o texto aprovado na Meta, que não é desta frente.
+		expect(templateDoObjetivo(OBJETIVO_DESCONHECIDO)).toBe("remarketing_oportunidade_carro");
+	});
+});
+
 describe("fora da janela de 24h vira TEMPLATE, escolhido pelo objetivo", () => {
 	it("entrega template → usageKey do objetivo", () => {
 		const estado = ativo({ ultimoInboundEm: new Date(TOQUE_1.getTime() - 3 * DIA) });
@@ -123,6 +171,53 @@ describe("quem respondeu não recebe — qualquer resposta encerra a sequência"
 		// O estado terminal é gravado para a linha SAIR do índice parcial.
 		expect(decisao.proximoEstado?.status).toBe("RESPONDEU");
 		expect(decisao.proximoEstado?.motivoSaida).toBe("cliente_respondeu");
+	});
+
+	it("os três toques saíram: fecha a linha em ESGOTADO com o motivo nomeado", () => {
+		// Caso real e silencioso: a linha fica `ATIVO` com `step = 3` e a cota de 30
+		// dias reabre quando os toques completam 30 dias. Sem fechar a sequência, a
+		// linha é relida a cada 30 s para sempre, o contador de `nada.esgotado` sobe
+		// infinitamente e o motivo de saída nunca é gravado — a tela não tem como
+		// dizer "esgotou os 3 toques".
+		const estado = estadoInicial({
+			objetivo: "carro",
+			status: "ATIVO",
+			step: 3,
+			nextTouchAt: new Date(TOQUE_1.getTime() - 1),
+			ultimoToqueEm: new Date(TOQUE_1.getTime() - 40 * DIA),
+			ultimoInboundEm: new Date(TOQUE_1.getTime() - 45 * DIA),
+			toquesNaJanela: [],
+		});
+
+		const decisao = decidir({ agora: TOQUE_1, estado, telefone: "5562999998888" });
+
+		expect(decisao.acao).toEqual({ tipo: "nada", motivo: "esgotado" });
+		expect(decisao.proximoEstado?.status).toBe("ESGOTADO");
+		expect(decisao.proximoEstado?.motivoSaida).toBe("tres_toques_sem_resposta");
+		expect(decisao.proximoEstado?.nextTouchAt).toBeNull();
+	});
+
+	it("bloqueio TRANSITÓRIO em linha ATIVO não grava nada (volta no próximo ciclo)", () => {
+		// O teto de 30 dias é o caso real: a linha espera a cota reabrir. Gravar aqui
+		// reescreveria `next_touch_at` e quebraria a derivação do último toque.
+		const recentes = [
+			new Date(TOQUE_1.getTime() - 3 * DIA),
+			new Date(TOQUE_1.getTime() - 2 * DIA),
+			new Date(TOQUE_1.getTime() - 1 * DIA),
+		];
+		const estado = estadoInicial({
+			objetivo: "carro",
+			status: "ATIVO",
+			step: 3,
+			nextTouchAt: new Date(TOQUE_1.getTime() - 1),
+			ultimoInboundEm: INBOUND,
+			toquesNaJanela: recentes,
+		});
+
+		const decisao = decidir({ agora: TOQUE_1, estado, telefone: "5562999998888" });
+
+		expect(decisao.acao).toEqual({ tipo: "nada", motivo: "teto_30_dias" });
+		expect(decisao.proximoEstado).toBeNull();
 	});
 
 	it("inbound ANTES do último toque não encerra nada", () => {
@@ -181,6 +276,28 @@ describe("telefone da equipe nunca recebe toque", () => {
 		expect(ehTelefoneInterno("+55 (62) 99249-6793")).toBe(true);
 		expect(ehTelefoneInterno("5562999998888")).toBe(false);
 		expect(ehTelefoneInterno(null)).toBe(false);
+	});
+
+	it("a lista é a de código + `TELEFONES_DA_EQUIPE` + a env antiga", () => {
+		// O número de `motor.ts` é o DEFAULT DOCUMENTADO da env: ele continua em
+		// código, senão um ambiente sem a variável voltaria a mandar toque para a
+		// casa (foi o que aconteceu em prod: 1 dos 6 toques de 18/09).
+		expect(telefonesDaEquipe({})).toEqual(["556292496793"]);
+		expect(telefonesDaEquipe({ TELEFONES_DA_EQUIPE: "5511999998888, 5562933334444" })).toEqual([
+			"556292496793",
+			"5511999998888",
+			"5562933334444",
+		]);
+		// A variável antiga continua valendo: renomear sem janela trocaria o número
+		// da casa por ninguém no primeiro deploy.
+		expect(telefonesDaEquipe({ REMARKETING_TELEFONES_INTERNOS: "5562911112222" })).toContain(
+			"5562911112222",
+		);
+	});
+
+	it("vírgula solta e espaço não criam telefone fantasma", () => {
+		expect(telefonesDaEquipe({ TELEFONES_DA_EQUIPE: " , ," })).toEqual(["556292496793"]);
+		expect(telefonesDaEquipe({ TELEFONES_DA_EQUIPE: "  " })).toEqual(["556292496793"]);
 	});
 
 	it("o motor não dispara para telefone interno, mesmo com tudo vencido", () => {
