@@ -2,12 +2,24 @@
 
 import { format, formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale/pt-BR";
-import { ChevronLeft, ChevronRight, Globe, Smartphone } from "lucide-react";
+import {
+	ChevronLeft,
+	ChevronRight,
+	CircleCheck,
+	CircleSlash,
+	FlaskConical,
+	Globe,
+	Headset,
+	Smartphone,
+	Users,
+} from "lucide-react";
 import { parseAsInteger, parseAsIsoDate, parseAsString, useQueryState } from "nuqs";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { parserDeCampanha } from "@/components/admin/dashboard/campanha-filter";
+import { estadoNaLista } from "@/components/admin/remarketing/estado-na-lista";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
 	Table,
@@ -17,20 +29,34 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import type { MotivoForaDaRegua } from "@/lib/admin/motivo-fora-da-regua";
+import { rotuloDoBem } from "@/lib/admin/rotulo-do-bem";
 import { ConversationDetailPanel } from "./conversation-detail-panel";
 import { ConversationsFilters, type ConversationsFiltersValue } from "./conversations-filters";
-import { EvaluationBadge } from "./evaluation-badge";
+
+type RemarketingDaLinha = {
+	status: string;
+	step: number;
+	nextTouchAt: string | null;
+	ultimoToqueEm: string | null;
+	motivoSaida: string | null;
+};
 
 type ConversationItem = {
 	id: string;
 	contactName: string | null;
 	waId: string | null;
+	telefoneMascarado: string | null;
 	channel: "web" | "whatsapp";
 	status: "active" | "handed_off" | "closed";
+	isSimulated: boolean;
+	ehDaEquipe: boolean;
 	currentCategory: string | null;
 	handedOffUser: { id: string; name: string | null } | null;
 	messageCount: number;
 	latestEvalScore: number | null;
+	remarketing: RemarketingDaLinha | null;
+	motivoForaDaRegua: MotivoForaDaRegua | null;
 	createdAt: string;
 	updatedAt: string;
 };
@@ -48,21 +74,32 @@ const STATUS_LABELS: Record<ConversationItem["status"], string> = {
 	closed: "Encerrada",
 };
 
-const STATUS_VARIANTS: Record<ConversationItem["status"], "default" | "secondary" | "outline"> = {
-	active: "default",
-	handed_off: "secondary",
-	closed: "outline",
+/** Estado = ícone + rótulo; cor é reforço. Nenhum estado usa `default` (coral). */
+const STATUS_APARENCIA: Record<
+	ConversationItem["status"],
+	{ variante: "success" | "secondary" | "outline"; icone: typeof CircleCheck }
+> = {
+	active: { variante: "success", icone: CircleCheck },
+	handed_off: { variante: "secondary", icone: Headset },
+	closed: { variante: "outline", icone: CircleSlash },
 };
 
-const CATEGORY_LABELS: Record<string, string> = {
-	imovel: "Imóvel",
-	auto: "Automóvel",
+const CANAIS: Record<ConversationItem["channel"], string> = {
+	whatsapp: "WhatsApp",
+	web: "Web",
 };
 
 const PAGE_SIZE = 10;
 
 /** Lista vazia com identidade estável: "sem filtro de campanha". */
 const SEM_CAMPANHAS: readonly string[] = [];
+
+/** Marca curta para quando não há telefone nem nome — a linha tem que ser citável. */
+function marcaCurta(waId: string | null): string | null {
+	if (!waId) return null;
+	const limpo = waId.replace(/\D/g, "");
+	return limpo.length >= 4 ? limpo.slice(-4) : null;
+}
 
 function ConversationsTableSkeleton() {
 	return (
@@ -73,10 +110,10 @@ function ConversationsTableSkeleton() {
 						<TableHead>Contato</TableHead>
 						<TableHead>Canal</TableHead>
 						<TableHead>Status</TableHead>
-						<TableHead>Categoria</TableHead>
+						<TableHead>Bem</TableHead>
 						<TableHead>Atendente</TableHead>
 						<TableHead className="text-right">Mensagens</TableHead>
-						<TableHead>Qualidade</TableHead>
+						<TableHead>Remarketing</TableHead>
 						<TableHead>Atualizada</TableHead>
 					</TableRow>
 				</TableHeader>
@@ -95,6 +132,43 @@ function ConversationsTableSkeleton() {
 				</TableBody>
 			</Table>
 		</div>
+	);
+}
+
+/** Contato: nome (ou "Sem nome") com o telefone mascarado/marca embaixo. */
+function CelulaDeContato({ conversa }: { conversa: ConversationItem }) {
+	const principal = conversa.contactName?.trim() ? conversa.contactName : "Sem nome";
+	const secundario =
+		conversa.telefoneMascarado ??
+		(marcaCurta(conversa.waId) ? `d${marcaCurta(conversa.waId)}` : null);
+
+	return (
+		<TableCell className="font-medium">
+			<div className="flex flex-col gap-0.5">
+				<div className="flex flex-wrap items-center gap-1.5">
+					<span>{principal}</span>
+					{conversa.isSimulated && (
+						<Badge variant="outline" className="gap-1 text-xs" title="Fora das métricas e da régua">
+							<FlaskConical className="size-3" aria-hidden="true" />
+							Teste
+						</Badge>
+					)}
+					{conversa.ehDaEquipe && (
+						<Badge
+							variant="outline"
+							className="gap-1 text-xs"
+							title="Telefone da casa — nunca recebe toque"
+						>
+							<Users className="size-3" aria-hidden="true" />
+							Equipe
+						</Badge>
+					)}
+				</div>
+				{secundario && (
+					<span className="text-xs text-muted-foreground tabular-nums">{secundario}</span>
+				)}
+			</div>
+		</TableCell>
 	);
 }
 
@@ -119,6 +193,10 @@ export function ConversationsTable() {
 
 	const [data, setData] = useState<ListResponse | null>(null);
 	const [loadError, setLoadError] = useState<string | null>(null);
+	// "Mostrar testes e equipe" — desligado por padrão (AJA-10). Vai para a API
+	// como `include_simulated`: testes somem da lista por default, e aqui eles
+	// voltam COM o selo que diz o que são.
+	const [mostrarTestes, setMostrarTestes] = useState(false);
 
 	const filtersValue = useMemo<ConversationsFiltersValue>(
 		() => ({ channel, status, q, from, to, origem, campanhas }),
@@ -165,6 +243,7 @@ export function ConversationsTable() {
 		if (from) params.set("from", from.toISOString());
 		if (to) params.set("to", to.toISOString());
 		if (origem) params.set("origem", origem);
+		if (mostrarTestes) params.set("include_simulated", "true");
 		// A rota separa a vírgula de volta numa lista (ver `campanhas.ts`); a URL
 		// fica com um parâmetro só, que é o que cabe num link.
 		if (campanhas.length > 0) params.set("campanha", campanhas.join(","));
@@ -189,7 +268,7 @@ export function ConversationsTable() {
 		return () => {
 			cancelled = true;
 		};
-	}, [channel, status, q, from, to, offset, origem, campanhas, recarga]);
+	}, [channel, status, q, from, to, offset, origem, campanhas, recarga, mostrarTestes]);
 
 	const total = data?.total ?? 0;
 	const items = data?.items ?? [];
@@ -197,10 +276,16 @@ export function ConversationsTable() {
 	const showingTo = offset + items.length;
 	const hasPrev = offset > 0;
 	const hasNext = offset + items.length < total;
+	const agora = new Date();
 
 	return (
 		<div className="space-y-4">
 			<ConversationsFilters value={filtersValue} onChange={handleFiltersChange} />
+
+			<div className="flex w-fit items-center gap-2 text-sm text-muted-foreground">
+				<Checkbox checked={mostrarTestes} onCheckedChange={(c) => setMostrarTestes(c === true)} />
+				Mostrar testes e equipe
+			</div>
 
 			{loadError && (
 				<div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
@@ -218,10 +303,10 @@ export function ConversationsTable() {
 								<TableHead>Contato</TableHead>
 								<TableHead>Canal</TableHead>
 								<TableHead>Status</TableHead>
-								<TableHead>Categoria</TableHead>
+								<TableHead>Bem</TableHead>
 								<TableHead>Atendente</TableHead>
 								<TableHead className="text-right">Mensagens</TableHead>
-								<TableHead>Qualidade</TableHead>
+								<TableHead>Remarketing</TableHead>
 								<TableHead>Atualizada</TableHead>
 							</TableRow>
 						</TableHeader>
@@ -234,39 +319,75 @@ export function ConversationsTable() {
 								</TableRow>
 							)}
 							{items.map((c) => {
-								const display = c.contactName ?? c.waId ?? "—";
+								const aparencia = STATUS_APARENCIA[c.status];
+								const IconeStatus = aparencia.icone;
+								const bem = rotuloDoBem(c.currentCategory);
+								const estado = estadoNaLista({
+									regua: c.remarketing
+										? {
+												status: c.remarketing.status,
+												step: c.remarketing.step,
+												nextTouchAt: c.remarketing.nextTouchAt
+													? new Date(c.remarketing.nextTouchAt)
+													: null,
+												ultimoToqueEm: c.remarketing.ultimoToqueEm
+													? new Date(c.remarketing.ultimoToqueEm)
+													: null,
+												motivoSaida: c.remarketing.motivoSaida,
+											}
+										: null,
+									motivo: c.motivoForaDaRegua,
+									agora,
+								});
+								const IconeRegua = estado.icone;
+
 								return (
 									<TableRow
 										key={c.id}
 										className="cursor-pointer"
 										onClick={() => setSelectedId(c.id)}
 									>
-										<TableCell className="font-medium">{display}</TableCell>
+										<CelulaDeContato conversa={c} />
+
 										<TableCell>
 											<div className="flex items-center gap-1.5 text-sm">
 												{c.channel === "whatsapp" ? (
-													<Smartphone className="size-3.5 text-green-600" />
+													<Smartphone className="size-3.5 text-success" aria-hidden="true" />
 												) : (
-													<Globe className="size-3.5 text-blue-600" />
+													<Globe className="size-3.5 text-muted-foreground" aria-hidden="true" />
 												)}
-												<span className="capitalize">{c.channel}</span>
+												<span>{CANAIS[c.channel]}</span>
 											</div>
 										</TableCell>
+
 										<TableCell>
-											<Badge variant={STATUS_VARIANTS[c.status]}>{STATUS_LABELS[c.status]}</Badge>
+											<Badge variant={aparencia.variante} className="gap-1">
+												<IconeStatus className="size-3" aria-hidden="true" />
+												{STATUS_LABELS[c.status]}
+											</Badge>
 										</TableCell>
-										<TableCell className="text-sm capitalize">
-											{c.currentCategory
-												? (CATEGORY_LABELS[c.currentCategory] ?? c.currentCategory)
-												: "—"}
+
+										<TableCell className="text-sm">
+											{bem ?? <span className="text-muted-foreground">Não informado</span>}
 										</TableCell>
-										<TableCell className="text-sm">{c.handedOffUser?.name ?? "—"}</TableCell>
+
+										<TableCell className="text-sm">
+											{c.handedOffUser?.name ?? (
+												<span className="text-muted-foreground">Sem atendente</span>
+											)}
+										</TableCell>
+
 										<TableCell className="text-right text-sm tabular-nums">
 											{c.messageCount}
 										</TableCell>
+
 										<TableCell>
-											<EvaluationBadge score={c.latestEvalScore} />
+											<Badge variant={estado.variante} className="gap-1.5" title={estado.tooltip}>
+												<IconeRegua className="size-3" aria-hidden="true" />
+												{estado.rotulo}
+											</Badge>
 										</TableCell>
+
 										<TableCell className="text-sm text-muted-foreground">
 											<span
 												title={format(new Date(c.updatedAt), "dd/MM/yyyy HH:mm", { locale: ptBR })}

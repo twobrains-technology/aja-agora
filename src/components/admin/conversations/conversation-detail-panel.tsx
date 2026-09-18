@@ -17,6 +17,8 @@ import {
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { rotuloDoBem } from "@/lib/admin/rotulo-do-bem";
+import { BlocoDaRegua } from "./bloco-da-regua";
 import { EvaluationPanel } from "./evaluation-panel";
 
 type Detail = {
@@ -59,11 +61,17 @@ const CATEGORY_LABELS: Record<string, string> = {
 	auto: "Automóvel",
 };
 
+/** Rótulo do bem pelo dicionário único ("auto" e "carro" → "Carro"). */
+function rotuloDaCategoria(chave: string): string {
+	return rotuloDoBem(chave) ?? CATEGORY_LABELS[chave] ?? chave;
+}
+
+/** Estado sempre com ícone + rótulo; nenhum usa o `default` coral. */
 const STATUS_VARIANTS: Record<
 	Detail["conversation"]["status"],
-	"default" | "secondary" | "outline"
+	"success" | "secondary" | "outline"
 > = {
-	active: "default",
+	active: "success",
 	handed_off: "secondary",
 	closed: "outline",
 };
@@ -124,6 +132,7 @@ export function ConversationDetailPanel({
 	}, [conversationId, open]);
 
 	const [marcando, setMarcando] = useState(false);
+	const [confirmandoTeste, setConfirmandoTeste] = useState(false);
 	const conv = data?.conversation;
 	const display = conv?.contactName ?? conv?.waId ?? "Conversa";
 
@@ -173,13 +182,13 @@ export function ConversationDetailPanel({
 									{STATUS_LABELS[conv.status]}
 								</Badge>
 								{conv.channel === "whatsapp" ? (
-									<Smartphone className="size-3.5 text-green-600" />
+									<Smartphone className="size-3.5 text-success" aria-hidden="true" />
 								) : (
-									<Globe className="size-3.5 text-blue-600" />
+									<Globe className="size-3.5 text-muted-foreground" aria-hidden="true" />
 								)}
 								{conv.currentCategory && (
 									<span className="text-xs text-muted-foreground">
-										{CATEGORY_LABELS[conv.currentCategory] ?? conv.currentCategory}
+										{rotuloDaCategoria(conv.currentCategory)}
 									</span>
 								)}
 								{conv.handedOffUser?.name && (
@@ -201,22 +210,51 @@ export function ConversationDetailPanel({
 								)}
 							</div>
 							<div className="mt-1">
-								<Button
-									type="button"
-									variant="outline"
-									size="sm"
-									className="h-7 gap-1.5 text-xs"
-									disabled={marcando}
-									onClick={alternarTeste}
-									aria-pressed={conv.isSimulated}
-								>
-									<FlaskConical className="size-3.5" />
-									{marcando
-										? "Salvando…"
-										: conv.isSimulated
-											? "Voltar a contar nas métricas"
-											: "Marcar como teste"}
-								</Button>
+								{!confirmandoTeste ? (
+									<Button
+										type="button"
+										variant="outline"
+										size="sm"
+										className="h-7 gap-1.5 text-xs"
+										disabled={marcando}
+										onClick={() => setConfirmandoTeste(true)}
+										aria-pressed={conv.isSimulated}
+									>
+										<FlaskConical className="size-3.5" />
+										{conv.isSimulated ? "Voltar a contar nas métricas" : "Marcar como teste"}
+									</Button>
+								) : (
+									<div className="rounded-md border bg-muted/40 p-2 text-xs">
+										<p className="text-muted-foreground">
+											{conv.isSimulated
+												? "Esta conversa e o lead voltam a contar nas métricas. A régua não religa sozinha."
+												: "Esta conversa e o lead saem das métricas e da régua. Dá para desfazer."}
+										</p>
+										<div className="mt-2 flex gap-2">
+											<Button
+												type="button"
+												size="sm"
+												className="h-7 text-xs"
+												disabled={marcando}
+												onClick={() => {
+													setConfirmandoTeste(false);
+													void alternarTeste();
+												}}
+											>
+												{marcando ? "Salvando…" : "Confirmar"}
+											</Button>
+											<Button
+												type="button"
+												variant="ghost"
+												size="sm"
+												className="h-7 text-xs"
+												onClick={() => setConfirmandoTeste(false)}
+											>
+												Cancelar
+											</Button>
+										</div>
+									</div>
+								)}
 							</div>
 						</>
 					)}
@@ -233,6 +271,11 @@ export function ConversationDetailPanel({
 							<Skeleton className="h-16 w-3/4" />
 							<Skeleton className="h-12 w-2/3 self-end" />
 							<Skeleton className="h-20 w-3/4" />
+						</div>
+					)}
+					{data && (
+						<div className="px-4 pt-3">
+							<BlocoDaRegua conversationId={data.conversation.id} />
 						</div>
 					)}
 					{data && (

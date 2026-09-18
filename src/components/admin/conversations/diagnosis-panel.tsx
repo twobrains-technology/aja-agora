@@ -125,7 +125,7 @@ export function DiagnosisPanel({ conversationId, canDiagnose }: Props) {
 			<EmptyStateCard
 				icon={AlertOctagon}
 				iconBg="bg-red-100 dark:bg-red-900/30"
-				iconColor="text-red-600 dark:text-red-400"
+				iconColor="text-destructive"
 				title="Falha no diagnóstico"
 				description={error}
 				action={{ label: "Tentar novamente", onClick: runDiagnosis }}
@@ -167,7 +167,7 @@ export function DiagnosisPanel({ conversationId, canDiagnose }: Props) {
 					<SuggestionCard
 						key={key}
 						icon={BookOpen}
-						iconColor="text-blue-600 dark:text-blue-400"
+						iconColor="text-link"
 						iconBg="bg-blue-100 dark:bg-blue-900/30"
 						label="Exemplo"
 						state={applyStates[key] ?? "idle"}
@@ -197,7 +197,7 @@ export function DiagnosisPanel({ conversationId, canDiagnose }: Props) {
 					<SuggestionCard
 						key={key}
 						icon={ShieldAlert}
-						iconColor="text-amber-600 dark:text-amber-400"
+						iconColor="text-warning"
 						iconBg="bg-amber-100 dark:bg-amber-900/30"
 						label="Tópico proibido"
 						state={applyStates[key] ?? "idle"}
@@ -279,7 +279,7 @@ function SuggestionCard({
 							</span>
 							<div className="flex items-center gap-1">
 								{applied ? (
-									<span className="text-xs text-emerald-600 dark:text-emerald-400">✓ Aplicado</span>
+									<span className="text-success text-xs">✓ Aplicado</span>
 								) : (
 									<>
 										<Button size="sm" disabled={applying} onClick={onApply}>

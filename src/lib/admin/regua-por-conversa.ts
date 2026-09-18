@@ -21,13 +21,13 @@
 import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { contacts, conversations, remarketingTouches } from "@/db/schema";
-import { ESPERA_SILENCIO_MS, type StatusRegua } from "@/lib/remarketing/regua";
+import type { StatusRegua } from "@/lib/remarketing/regua";
 import { chaveTelefoneBR } from "@/lib/whatsapp/mesmo-numero";
 import {
-	type ConversaAvaliavel,
-	JANELA_DE_ENTRADA_MS,
+	type ConversaAvaliada,
 	type MotivoForaDaRegua,
 	motivoForaDaRegua,
+	opcoesDoAmbiente,
 } from "./motivo-fora-da-regua";
 
 export interface LinhaDaReguaResumida {
@@ -40,13 +40,13 @@ export interface LinhaDaReguaResumida {
 /** Os fatos de uma conversa que o motivo e a coluna precisam. */
 export interface FatosDaConversa {
 	conversationId: string;
-	channel: string;
-	status: string;
+	channel: "web" | "whatsapp";
+	status: "active" | "handed_off" | "closed";
 	isSimulated: boolean;
 	contactId: string | null;
 	lastInboundAt: Date | null;
 	waId: string | null;
-	/** `contacts.phone` — para mascarar e completar o telefone alcançável. */
+	/** `contacts.phone` — fonte do lead da web e do telefone alcançável. */
 	telefone: string | null;
 	/** A linha da régua, quando existe. */
 	regua: LinhaDaReguaResumida | null;
@@ -92,6 +92,12 @@ export async function telefonesDaEquipe(): Promise<(telefone: string) => boolean
 	}
 
 	const { ehTelefoneInterno } = await import("@/lib/remarketing/motor");
+	// A lista da env que o motor do F6 acrescentou (`TELEFONES_DA_EQUIPE`),
+	// separada por vírgula — mesma fonte de verdade do disparo.
+	for (const bruto of (process.env.TELEFONES_DA_EQUIPE ?? "").split(/[,;\s]+/)) {
+		const chave = chaveTelefoneBR(bruto.trim());
+		if (chave) internos.add(chave);
+	}
 	return (telefone: string) => {
 		if (ehTelefoneInterno(telefone)) return true;
 		const chave = chaveTelefoneBR(telefone);
@@ -112,29 +118,38 @@ export function avaliarRegua(
 	ehEquipe: (telefone: string) => boolean,
 	env: Record<string, string | undefined> = process.env,
 ): Map<string, AvaliacaoDaRegua> {
+	const opcoes = opcoesDoAmbiente(env);
 	const avaliações = new Map<string, AvaliacaoDaRegua>();
 	for (const f of fatos) {
 		const telefone = f.waId ?? f.telefone;
 		const ehDaEquipe = telefone ? ehEquipe(telefone) : false;
-		const entrada: ConversaAvaliavel = {
+		const entrada: ConversaAvaliada = {
 			channel: f.channel,
 			status: f.status,
 			isSimulated: f.isSimulated,
 			contactId: f.contactId,
 			lastInboundAt: f.lastInboundAt,
-			temTelefone: Boolean(f.waId || f.telefone),
-			ehDaEquipe,
-			temLinhaNaRegua: f.regua !== null,
+			waId: f.waId,
+			phone: f.telefone,
+			jaNaRegua: f.regua !== null,
 		};
 		avaliações.set(f.conversationId, {
-			motivo: motivoForaDaRegua(entrada, agora, env),
+			motivo: motivoForaDaRegua(entrada, agora, { ...opcoes, telefoneDaEquipe: ehDaEquipe }),
 			regua: f.regua,
 			ehDaEquipe,
 			telefoneMascarado: mascararTelefone(f.waId ?? f.telefone),
-			temTelefone: Boolean(f.waId || f.telefone),
+			temTelefone: destinoExiste(f.waId, f.telefone),
 		});
 	}
 	return avaliações;
+}
+
+/** Há telefone alcançável (wa_id ou contacts.phone em formato BR)? */
+function destinoExiste(waId: string | null, telefone: string | null): boolean {
+	for (const candidato of [waId, telefone]) {
+		if (candidato && chaveTelefoneBR(candidato)) return true;
+	}
+	return false;
 }
 
 /**
@@ -180,8 +195,8 @@ export async function fatosDeConversas(
 
 	return linhas.map((l) => ({
 		conversationId: l.conversationId,
-		channel: l.channel,
-		status: l.status,
+		channel: l.channel as "web" | "whatsapp",
+		status: l.status as "active" | "handed_off" | "closed",
 		isSimulated: l.isSimulated,
 		contactId: l.contactId ?? null,
 		lastInboundAt: l.lastInboundAt ?? null,
@@ -208,5 +223,5 @@ export async function avaliarReguaPorIds(
 	return avaliarRegua(fatos, agora, ehEquipe);
 }
 
-// Reexportado para quem precisa da janela sem importar o dicionário inteiro.
-export { JANELA_DE_ENTRADA_MS, ESPERA_SILENCIO_MS };
+// A janela de entrada é reexportada do dicionário de motivos (fonte única aqui).
+export { JANELA_DE_ENTRADA_MS } from "./motivo-fora-da-regua";

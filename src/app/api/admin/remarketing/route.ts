@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { opcoesDoAmbiente } from "@/lib/admin/motivo-fora-da-regua";
 import { periodoDaRequisicao } from "@/lib/admin/periodo-da-requisicao";
 import {
 	contarElegiveisParaRegua,
@@ -91,6 +92,7 @@ export async function GET(req: NextRequest) {
 			// O resumo agregado (AJA-04) sobre o RECORTE inteiro, não a página: é a
 			// resposta a "quantos toques saíram no período" que a Bruna pediu.
 			resumo: resumoDaRegua(doRecorte, { elegiveisAgora }),
+			ligada: opcoesDoAmbiente().reguaLigada,
 			estado: estadoHonestoDaRegua({
 				totalNoHistorico,
 				linhasNoPeriodo: doRecorte.length,

@@ -54,6 +54,12 @@ import {
 	podeDisparar,
 	type StatusRegua,
 } from "@/lib/remarketing/regua";
+import {
+	MOTIVO_SAIDA_EQUIPE,
+	MOTIVO_SAIDA_SEGURADO,
+	MOTIVO_SAIDA_TESTE,
+	motivoDeSaidaLegivel,
+} from "./motivo-fora-da-regua";
 import { BENS } from "./rotulo-do-bem";
 
 /**
@@ -64,7 +70,19 @@ import { BENS } from "./rotulo-do-bem";
  * obrigaria a tela a adivinhar por regex, que é o anti-padrão que o CLAUDE.md
  * descreve. O texto que o operador lê é o rótulo de `ROTULO_DO_MOTIVO`.
  */
-export const MOTIVO_SEGURADO = "segurado_pelo_atendente";
+export const MOTIVO_SEGURADO = MOTIVO_SAIDA_SEGURADO;
+
+/**
+ * Os motivos de saída que significam "a sequência parou, mas pode voltar": a
+ * ação manual do atendente e as duas higienes do F6 (teste e equipe), que usam
+ * `status=RESPONDEU` + `motivo_saida` próprio. Sem isto, uma conversa marcada
+ * como teste apareceria como "o cliente respondeu" — mentira.
+ */
+const MOTIVOS_DE_PARADA: readonly string[] = [
+	MOTIVO_SAIDA_SEGURADO,
+	MOTIVO_SAIDA_TESTE,
+	MOTIVO_SAIDA_EQUIPE,
+];
 
 /** As duas ações da tela. */
 export type AcaoDaRegua = "segurar" | "soltar";
@@ -94,10 +112,13 @@ export const ROTULO_DA_SITUACAO: Record<Situacao, string> = {
 };
 
 /** Os objetivos da régua (`motor.objetivoCanonico`), com o rótulo do painel.
- * Derivado do dicionário único do bem — a Régua não mantém uma segunda tabela. */
-export const ROTULO_DO_OBJETIVO: Record<string, string> = Object.fromEntries(
-	BENS.map((b) => [b.chave, b.rotulo]),
-);
+ * Derivado do dicionário único do bem — a Régua não mantém uma segunda tabela.
+ * `desconhecido` é o valor que o F6 grava quando o bem não foi informado: ele
+ * NÃO pode virar "Carro" na tela (seria inventar perfil que ninguém disse). */
+export const ROTULO_DO_OBJETIVO: Record<string, string> = {
+	...Object.fromEntries(BENS.map((b) => [b.chave, b.rotulo])),
+	desconhecido: "Bem não informado",
+};
 
 /** O rastro da última ação do atendente, guardado no metadata da conversa. */
 export interface RastroDoAtendente {
@@ -201,6 +222,8 @@ export interface RespostaDaRegua {
 	insights: InsightsDaRegua;
 	/** O resumo agregado do topo (toques enviados, respondidos, aguardando…). */
 	resumo: ResumoDaRegua;
+	/** `REMARKETING_ATIVO` — o interruptor operacional, lido na borda. */
+	ligada: boolean;
 	/** Se a régua está ligada, desligada ou só sem toque neste período. */
 	estado: EstadoDaRegua;
 }
@@ -260,20 +283,17 @@ export function situacaoDe(linha: {
 	if (linha.optoutDaPessoaEm !== null || linha.status === "OPTOUT") return "optout";
 	if (linha.status === "CONVERTEU") return "converteu";
 	if (linha.status === "RESPONDEU") {
-		return linha.motivoSaida === MOTIVO_SEGURADO ? "segurado" : "respondeu";
+		return linha.motivoSaida !== null && MOTIVOS_DE_PARADA.includes(linha.motivoSaida)
+			? "segurado"
+			: "respondeu";
 	}
 	if (linha.status === "ESGOTADO") return "esgotado";
 	return "ativo";
 }
 
-/** O motivo de saída em português. Motivo desconhecido sai cru — inventar rótulo seria pior. */
+/** O motivo de saída em português. Desconhecido sai cru — inventar rótulo seria pior. */
 export function rotuloDoMotivo(motivo: string | null): string | null {
-	if (!motivo) return null;
-	if (motivo === MOTIVO_SEGURADO) return "Segurou à mão, pelo painel";
-	if (motivo === "cliente_respondeu") return "O cliente respondeu";
-	if (motivo === "tres_toques_sem_resposta") return "Três toques sem resposta";
-	if (motivo === "optout_do_cliente") return "O cliente pediu para sair";
-	return motivo;
+	return motivoDeSaidaLegivel(motivo);
 }
 
 export function passoLegivel(step: number): string {
@@ -286,6 +306,7 @@ export function cotaLegivel(touches30d: number): string {
 }
 
 export function rotuloDoObjetivo(objetivo: string): string {
+	if (!objetivo) return ROTULO_DO_OBJETIVO.desconhecido;
 	return ROTULO_DO_OBJETIVO[objetivo] ?? objetivo;
 }
 
