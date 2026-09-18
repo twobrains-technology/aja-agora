@@ -207,6 +207,13 @@ export async function receberMidiaDoCliente(
 		return;
 	}
 
+	// MEDIÇÃO (AJA-15) — até aqui ninguém sabia o tamanho nem o mime do áudio que
+	// chegava, e a hipótese "áudio vazio ou corrompido" não tinha como ser testada.
+	// Sem esta linha, o próximo incidente de áudio volta a ser adivinhação.
+	console.log(
+		`[midia-do-cliente] ${input.tipo} de ${conv.id} — ${media.bytes.length} bytes, ${media.mimeType}`,
+	);
+
 	const tipo = tipoDeMidia(media.mimeType) ?? (input.tipo === "sticker" ? "document" : input.tipo);
 	const extensao = EXTENSAO_POR_MIME[media.mimeType] ?? "bin";
 	const key = `conversas/${conv.id}/recebidos/${crypto.randomUUID()}.${extensao}`;
