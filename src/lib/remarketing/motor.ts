@@ -430,7 +430,7 @@ export function decidir(entrada: EntradaDoMotor): DecisaoDoMotor {
 	// 3. A régua decide SE pode sair.
 	const pode = podeDisparar(estado, agora, parametros);
 	if (!pode.pode) {
-		return semDisparo(pode.motivo, normalizarSequenciaMorta(estado));
+		return semDisparo(pode.motivo, normalizarSequenciaMorta(estado, pode.motivo));
 	}
 
 	// 4. COMO entregar.
@@ -457,18 +457,43 @@ export function decidir(entrada: EntradaDoMotor): DecisaoDoMotor {
 }
 
 /**
- * Sequência morta sem reentrada: grava o status terminal para a linha sair do
- * índice parcial (`WHERE status = 'ATIVO'`). Sem isto ela seria relida a cada
- * 30 s para sempre. Já normalizada (ou terminal), não há o que gravar.
+ * Sequência morta: grava o status terminal para a linha sair do índice parcial
+ * (`WHERE status = 'ATIVO'`). Sem isto ela seria relida a cada 30 s para sempre.
+ *
+ * Dois casos, e o segundo é o que faltava:
+ *
+ *   1. a linha JÁ está terminal (`RESPONDEU`/`ESGOTADO`) e um bloqueio qualquer a
+ *      alcançou — grava o motivo que faltava e deixa o estado como está;
+ *   2. a linha ainda é `ATIVO` e o bloqueio é `esgotado` — os três toques saíram
+ *      e a cota está livre de novo (é o que acontece quando os toques completam
+ *      30 dias). Aqui a sequência acabou: sem fechar a linha, ela é lida a cada
+ *      30 s indefinidamente, o contador de `nada.esgotado` sobe para sempre e o
+ *      motivo de saída nunca é gravado — o oposto do que a tela precisa para
+ *      dizer "esgotou os 3 toques".
+ *
+ * Bloqueio transitório (teto, data, horário) em linha `ATIVO` devolve `null` de
+ * propósito: nada muda e a linha volta no próximo ciclo, como sempre foi.
  */
-function normalizarSequenciaMorta(estado: EstadoRegua): EstadoRegua | null {
-	if (estado.status !== "RESPONDEU" && estado.status !== "ESGOTADO") return null;
-	return {
-		...estado,
-		motivoSaida:
-			estado.motivoSaida ??
-			(estado.status === "RESPONDEU" ? "cliente_respondeu" : "tres_toques_sem_resposta"),
-	};
+function normalizarSequenciaMorta(estado: EstadoRegua, motivo: MotivoBloqueio): EstadoRegua | null {
+	if (estado.status === "RESPONDEU" || estado.status === "ESGOTADO") {
+		return {
+			...estado,
+			motivoSaida:
+				estado.motivoSaida ??
+				(estado.status === "RESPONDEU" ? "cliente_respondeu" : "tres_toques_sem_resposta"),
+		};
+	}
+
+	if (motivo === "esgotado") {
+		return {
+			...estado,
+			status: "ESGOTADO",
+			nextTouchAt: null,
+			motivoSaida: estado.motivoSaida ?? "tres_toques_sem_resposta",
+		};
+	}
+
+	return null;
 }
 
 // ─── Opt-out: a manifestação do cliente ─────────────────────────────────────

@@ -173,6 +173,53 @@ describe("quem respondeu não recebe — qualquer resposta encerra a sequência"
 		expect(decisao.proximoEstado?.motivoSaida).toBe("cliente_respondeu");
 	});
 
+	it("os três toques saíram: fecha a linha em ESGOTADO com o motivo nomeado", () => {
+		// Caso real e silencioso: a linha fica `ATIVO` com `step = 3` e a cota de 30
+		// dias reabre quando os toques completam 30 dias. Sem fechar a sequência, a
+		// linha é relida a cada 30 s para sempre, o contador de `nada.esgotado` sobe
+		// infinitamente e o motivo de saída nunca é gravado — a tela não tem como
+		// dizer "esgotou os 3 toques".
+		const estado = estadoInicial({
+			objetivo: "carro",
+			status: "ATIVO",
+			step: 3,
+			nextTouchAt: new Date(TOQUE_1.getTime() - 1),
+			ultimoToqueEm: new Date(TOQUE_1.getTime() - 40 * DIA),
+			ultimoInboundEm: new Date(TOQUE_1.getTime() - 45 * DIA),
+			toquesNaJanela: [],
+		});
+
+		const decisao = decidir({ agora: TOQUE_1, estado, telefone: "5562999998888" });
+
+		expect(decisao.acao).toEqual({ tipo: "nada", motivo: "esgotado" });
+		expect(decisao.proximoEstado?.status).toBe("ESGOTADO");
+		expect(decisao.proximoEstado?.motivoSaida).toBe("tres_toques_sem_resposta");
+		expect(decisao.proximoEstado?.nextTouchAt).toBeNull();
+	});
+
+	it("bloqueio TRANSITÓRIO em linha ATIVO não grava nada (volta no próximo ciclo)", () => {
+		// O teto de 30 dias é o caso real: a linha espera a cota reabrir. Gravar aqui
+		// reescreveria `next_touch_at` e quebraria a derivação do último toque.
+		const recentes = [
+			new Date(TOQUE_1.getTime() - 3 * DIA),
+			new Date(TOQUE_1.getTime() - 2 * DIA),
+			new Date(TOQUE_1.getTime() - 1 * DIA),
+		];
+		const estado = estadoInicial({
+			objetivo: "carro",
+			status: "ATIVO",
+			step: 3,
+			nextTouchAt: new Date(TOQUE_1.getTime() - 1),
+			ultimoInboundEm: INBOUND,
+			toquesNaJanela: recentes,
+		});
+
+		const decisao = decidir({ agora: TOQUE_1, estado, telefone: "5562999998888" });
+
+		expect(decisao.acao).toEqual({ tipo: "nada", motivo: "teto_30_dias" });
+		expect(decisao.proximoEstado).toBeNull();
+	});
+
 	it("inbound ANTES do último toque não encerra nada", () => {
 		const estado = montarEstado({
 			...linha({

@@ -378,4 +378,79 @@ describeIfDb("régua — entrada, higiene e motivo (integration)", () => {
 			}
 		});
 	});
+
+	describe("toda saída da régua grava o motivo, com o ciclo de verdade", () => {
+		// O ciclo roda com as dependências de ENVIO dubladas (nenhuma mensagem sai
+		// deste teste) e as de LEITURA/GRAVAÇÃO reais: é o caminho completo
+		// banco → motor → banco, que nenhum teste unitário cobre.
+		async function rodarCiclo(agora: Date) {
+			return ciclo.runRemarketingCycle({
+				agora,
+				entrarNaRegua: async () => 0,
+				segurarToquesDaEquipe: async () => 0,
+				dispararTurno: async () => {},
+				enviarArte: async () => {},
+				enviarTemplate: async () => {},
+				despacharConversoes: async () => ({}),
+			});
+		}
+
+		it("toque esgotado sai do índice como ESGOTADO + `tres_toques_sem_resposta`", async () => {
+			const { conversationId, contactId } = await semear({
+				inboundHa: 45 * DIA,
+				jaNaRegua: true,
+			});
+			// O terceiro toque já saiu e a cota de 30 dias reabriu (os toques são mais
+			// velhos que a janela): o próximo toque estouraria a cota de 3, e é assim
+			// que uma linha chega a ESGOTADO de verdade.
+			await db
+				.update(schema.remarketingTouches)
+				.set({
+					step: 3,
+					touches30d: 0,
+					nextTouchAt: new Date(AGORA.getTime() - MIN),
+					ultimoToqueEm: new Date(AGORA.getTime() - 40 * DIA),
+				})
+				.where(eq(schema.remarketingTouches.conversationId, conversationId));
+
+			const resultado = await rodarCiclo(AGORA);
+			// Outras linhas ATIVO do banco (fixtures desta suíte) também são lidas pelo
+			// ciclo; o que importa aqui é que ESTA saiu por esgotamento.
+			expect(resultado.nada.esgotado ?? 0).toBeGreaterThanOrEqual(1);
+
+			const linha = await db.query.remarketingTouches.findFirst({
+				where: eq(schema.remarketingTouches.conversationId, conversationId),
+			});
+			expect(linha?.status).toBe("ESGOTADO");
+			expect(linha?.motivoSaida).toBe("tres_toques_sem_resposta");
+			expect(contactId).toBeTruthy();
+
+			// E o motivo gravado tem rótulo PT-BR no dicionário único.
+			expect(motivo.motivoDeSaidaLegivel(linha?.motivoSaida ?? null)).toBe(
+				"Três toques sem resposta",
+			);
+		});
+
+		it("o opt-out da pessoa grava OPTOUT + `optout_do_cliente` e sai do índice", async () => {
+			const { conversationId, contactId } = await semear({ jaNaRegua: true });
+			await db
+				.update(schema.contacts)
+				.set({ remarketingOptoutAt: new Date(AGORA.getTime() - MIN) })
+				.where(eq(schema.contacts.id, contactId as string));
+
+			await rodarCiclo(AGORA);
+
+			const linha = await db.query.remarketingTouches.findFirst({
+				where: eq(schema.remarketingTouches.conversationId, conversationId),
+			});
+			expect(linha?.status).toBe("OPTOUT");
+			expect(linha?.motivoSaida).toBe("optout_do_cliente");
+			expect(motivo.motivoDeSaidaLegivel(linha?.motivoSaida ?? null)).toBe(
+				"O cliente pediu para sair",
+			);
+
+			const vencidas = await ciclo.listarVencidas(new Date(AGORA.getTime() + MIN));
+			expect(vencidas.map((l) => l.conversationId)).not.toContain(conversationId);
+		});
+	});
 });
