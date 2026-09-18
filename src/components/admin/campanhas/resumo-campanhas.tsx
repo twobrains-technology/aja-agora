@@ -3,52 +3,97 @@
 /**
  * O rodapé da tela de campanhas: o que foi investido e o que o CRM produziu.
  *
- * Os dois lados ficam lado a lado de propósito — é a mesma decisão da tabela.
- * Um cartão que mostrasse só "leads" juntaria o número da Meta e o do CRM sob um
- * rótulo que não é nenhum dos dois.
+ * O cartão de leads foi reescrito a pedido do dono (18/09): *"o lead nosso é
+ * esse da direita"*. Antes o par "Meta × CRM" lia-se como multiplicação, e o
+ * número do CRM — o único que decide — era o menor e o mais à direita. Agora o
+ * **CRM é o número grande**, e a Meta aparece ao lado com a diferença nomeada:
+ * ela conta clique que não virou conversa, e é por isso que os dois nunca
+ * fecham.
  */
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { TotaisDeCampanhas } from "@/lib/admin/campanhas-queries";
-import { custo, inteiro, reais } from "./formato";
+import { descreverCusto, inteiro, reais } from "./formato";
 
-function Cartao({ titulo, valor, nota }: { titulo: string; valor: string; nota?: string }) {
+function Cartao({
+	titulo,
+	valor,
+	nota,
+	tooltip,
+}: {
+	titulo: string;
+	valor: string;
+	nota?: string;
+	tooltip?: string;
+}) {
 	return (
 		<Card className="shadow-sm">
 			<CardHeader className="pb-2">
 				<CardTitle className="text-sm font-medium text-muted-foreground">{titulo}</CardTitle>
 			</CardHeader>
 			<CardContent>
-				<p className="text-2xl font-semibold tabular-nums">{valor}</p>
+				<p className="text-2xl font-semibold tabular-nums" title={tooltip}>
+					{valor}
+				</p>
 				{nota && <p className="mt-1 text-xs text-muted-foreground">{nota}</p>}
 			</CardContent>
 		</Card>
 	);
 }
 
+/** A frase que explica de que lado caiu a divergência Meta × CRM. */
+function explicarDiferenca(diferenca: number): string {
+	if (diferenca === 0)
+		return "Os dois números bateram no período — raro, e não significa que medem o mesmo";
+	if (diferenca > 0) {
+		return `A Meta contou +${inteiro(diferenca)} — cliques que não viraram conversa`;
+	}
+	return `O CRM contou +${inteiro(Math.abs(diferenca))} — lead que a Meta não atribuiu`;
+}
+
 export function ResumoCampanhas({ totais }: { totais: TotaisDeCampanhas }) {
+	const custo = descreverCusto(totais.custoPorQualificado);
+	const diferenca = totais.leadsMeta - totais.leadsCrm;
+
 	return (
-		<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-			<Cartao
-				titulo="Investimento no período"
-				valor={reais(totais.investimentoCents)}
-				nota="Soma do que o gerenciador reportou para as campanhas"
-			/>
-			<Cartao
-				titulo="Custo por lead qualificado"
-				valor={custo(totais.custoPorQualificadoCents)}
-				nota="Investimento ÷ leads que chegaram a qualificado"
-			/>
-			<Cartao
-				titulo="Leads — Meta × CRM"
-				valor={`${inteiro(totais.leadsMeta)} × ${inteiro(totais.leadsCrm)}`}
-				nota="A Meta atribui o que ela viu; o CRM conta o que entrou. Nunca concordam."
-			/>
-			<Cartao
-				titulo="Qualificados no CRM"
-				valor={inteiro(totais.qualificados)}
-				nota={`${inteiro(totais.propostas)} propostas · ${inteiro(totais.fechados)} fechados`}
-			/>
+		<div className="space-y-4">
+			<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+				<Cartao
+					titulo="Investimento no período"
+					valor={reais(totais.investimentoCents)}
+					nota="Soma do que o gerenciador reportou para as campanhas"
+				/>
+				<Cartao
+					titulo="Custo por lead qualificado"
+					valor={custo.texto}
+					nota="Investimento ÷ leads que chegaram a qualificado"
+					tooltip={custo.tooltip}
+				/>
+				<Cartao
+					titulo="Qualificados no CRM"
+					valor={inteiro(totais.qualificados)}
+					nota={`${inteiro(totais.propostas)} propostas · ${inteiro(totais.fechados)} fechados`}
+				/>
+			</div>
+
+			<Card className="shadow-sm">
+				<CardContent className="flex flex-col gap-4 pt-6 sm:flex-row sm:items-end sm:justify-between">
+					<div>
+						<p className="text-sm font-medium text-muted-foreground">Leads no CRM</p>
+						<p className="text-4xl font-semibold tabular-nums">{inteiro(totais.leadsCrm)}</p>
+						<p className="mt-1 text-xs text-muted-foreground">
+							Conversas com contato deixado — o número que o Aja Agora produziu.
+						</p>
+					</div>
+					<div className="sm:text-right">
+						<p className="text-sm text-muted-foreground">
+							Leads que a Meta atribuiu:{" "}
+							<span className="tabular-nums text-foreground">{inteiro(totais.leadsMeta)}</span>
+						</p>
+						<p className="mt-1 text-xs text-muted-foreground">{explicarDiferenca(diferenca)}</p>
+					</div>
+				</CardContent>
+			</Card>
 		</div>
 	);
 }
