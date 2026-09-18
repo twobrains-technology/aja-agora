@@ -17,18 +17,24 @@ import type { Campanhas } from "./campanhas";
 import type { ChaveEtapaFunil } from "./performance-types";
 
 /**
- * Os oito degraus, do clique no anúncio ao contrato.
+ * Os nove degraus, do clique no anúncio ao contrato.
  *
- * Do terceiro em diante são exatamente as etapas de `ETAPAS_FUNIL_MIDIA`, com
+ * Do quarto em diante são exatamente as etapas de `ETAPAS_FUNIL_MIDIA`, com
  * os mesmos critérios de `performance-queries` — duas telas do painel que
  * respondessem "se identificou" com regras diferentes seriam duas verdades para
  * a mesma pergunta.
  *
- * Os dois primeiros são novos, e são o pedido que originou esta tela: separar
- * quem só bateu na porta de quem chegou a ler a página. Somados eles formam a
- * etapa `visitas` do funil de mídia; aqui aparecem partidos porque a decisão é
- * diferente — anúncio errado atrai quem sai na hora, landing fraca perde quem
- * leu e não falou.
+ * Os três primeiros degraus separam quem só bateu na porta de quem chegou a ler
+ * a página; somados eles formam a etapa `visitas` do funil de mídia. Aqui
+ * aparecem partidos porque a decisão é diferente — anúncio errado atrai quem sai
+ * na hora, landing fraca perde quem leu e não falou.
+ *
+ * **`so_pre_preenchida` é o degrau que faltava (AJA-01).** A tela dizia
+ * "Engajaram 99%" porque `escreveu` era `EXISTS messages.role='user'` — e a
+ * primeira mensagem da maioria das conversas web é o texto que o PRÓPRIO CTA
+ * escreve ("Quero comprar um carro.", o chip de categoria). Medido em produção:
+ * 47% das conversas web tinham uma única mensagem, e ela era o CTA. O vazamento
+ * real do funil estava somado dentro de "escreveu" e por isso não aparecia.
  */
 export const PASSOS_DO_PERCURSO = [
 	{
@@ -56,7 +62,16 @@ export const PASSOS_DO_PERCURSO = [
 		// para mostrar é quem abriu o teatro e desistiu diante do palco vazio.
 		ajuda: "Abriu o chat e desistiu antes de escrever",
 	},
-	{ chave: "escreveu", label: "Escreveu", ajuda: "Mandou ao menos uma mensagem" },
+	{
+		chave: "so_pre_preenchida",
+		label: "Só mandou a mensagem do anúncio",
+		ajuda: "Mensagem pré-preenchida e nada mais",
+	},
+	{
+		chave: "iniciou_conversa",
+		label: "Iniciou a conversa",
+		ajuda: "Escreveu algo além da mensagem pré-preenchida",
+	},
 	{ chave: "se_identificou", label: "Se identificou", ajuda: "Deixou telefone ou e-mail" },
 	{ chave: "viu_oferta", label: "Viu oferta", ajuda: "Recebeu simulação ou oferta real" },
 	{ chave: "proposta", label: "Proposta", ajuda: "Proposta criada na administradora" },
@@ -85,7 +100,8 @@ export function rotuloDoPasso(passo: PassoDoPercurso): string {
 export const PASSO_DA_ETAPA_DO_FUNIL: Record<ChaveEtapaFunil, PassoDoPercurso | null> = {
 	visitas: null,
 	conversas: "abriu_o_chat",
-	engajadas: "escreveu",
+	so_pre_preenchida: "so_pre_preenchida",
+	engajadas: "iniciou_conversa",
 	identificados: "se_identificou",
 	viram_oferta: "viu_oferta",
 	propostas: "proposta",
@@ -189,7 +205,7 @@ export interface PercursoResponse {
 	/**
 	 * A escada inteira do período, sempre SEM o filtro de passo aplicado — é o
 	 * denominador que dá sentido à lista filtrada. Com o filtro dentro, clicar em
-	 * "Escreveu" mostraria uma escada com um degrau só.
+	 * "Iniciou a conversa" mostraria uma escada com um degrau só.
 	 */
 	resumo: ResumoDoPasso[];
 	/** Pessoas no período, ignorando o filtro de passo. */

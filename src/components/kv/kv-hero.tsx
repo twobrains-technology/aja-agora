@@ -11,6 +11,10 @@ import { CARD_SHADOW, KvContainer } from "@/components/kv/ui/kv-container";
 import { KvCtaButton } from "@/components/kv/ui/kv-cta-button";
 import { KV_RITMO, KvSection } from "@/components/kv/ui/kv-section";
 import { usePlaceholderDigitando } from "@/components/kv/ui/use-placeholder-digitando";
+// A frase do chip mora no dicionário do funil (`src/lib/funil/textos-do-cta`),
+// porque a medição precisa saber que ela foi o PRODUTO quem escreveu. Uma
+// segunda cópia aqui voltaria a separar as duas.
+import { CHIP_DE_BEM } from "@/lib/funil/textos-do-cta";
 
 const KV = "/kv";
 
@@ -21,9 +25,9 @@ const SEARCH_CHIPS = [
 		// Uma lista só, e um lugar só na tela desde 20/08: o trio que ficava fora
 		// do card oferecia esta mesma escolha uma segunda vez.
 		apoio: "Casa, apê ou terreno",
-		fill: "Quero comprar um imóvel.",
+		fill: CHIP_DE_BEM.imovel,
 	},
-	{ icon: Car, label: "Carro", apoio: "Zero km ou seminovo", fill: "Quero comprar um carro." },
+	{ icon: Car, label: "Carro", apoio: "Zero km ou seminovo", fill: CHIP_DE_BEM.auto },
 	// `Motorbike` e não `Bike`: o lucide `Bike` é bicicleta, com pedal e quadro —
 	// desenho errado para quem vende consórcio de moto, e diferente do que o
 	// submenu de verticais mostra. Os dois falam da mesma coisa, mostram a mesma.
@@ -31,7 +35,7 @@ const SEARCH_CHIPS = [
 		icon: Motorbike,
 		label: "Moto",
 		apoio: "Trabalho ou passeio",
-		fill: "Quero comprar uma moto.",
+		fill: CHIP_DE_BEM.moto,
 	},
 ];
 

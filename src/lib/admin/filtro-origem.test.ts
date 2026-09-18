@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
 import type { Campanhas } from "./campanhas";
-import { condicaoDeOrigem, predicadoDeOrigemNaVisita } from "./filtro-origem";
+import { condicaoDeOrigem, ORIGEM_SEM_ORIGEM, predicadoDeOrigemNaVisita } from "./filtro-origem";
 
 /** A consulta que o predicado produz — texto e parâmetros, sem tocar o banco. */
 function sqlDoPredicado(chave: string, campanhas: Campanhas) {
@@ -87,5 +87,18 @@ describe("condicaoDeOrigem — o `null` que significa 'não filtrar'", () => {
 		const { sql, params } = db.select().from(conversations).where(comVazio).toSQL();
 		expect(sql).toContain("EXISTS");
 		expect(params).toEqual(["ig"]);
+	});
+
+	it("'desconhecida' não vira EXISTS em visits — é a coluna nula (AJA-17)", () => {
+		// O erro fácil aqui é deixar a chave cair no `default` (que devolve null) e o
+		// link abrir a lista inteira fingindo ser um recorte.
+		const condicao = condicaoDeOrigem(ORIGEM_SEM_ORIGEM);
+		if (!condicao) throw new Error("condição devia existir");
+		const { sql } = db.select().from(conversations).where(condicao).toSQL();
+
+		// O Drizzle imprime `"conversations"."visit_id" IS NULL` em maiúscula.
+		expect(sql.toLowerCase()).toContain("visit_id");
+		expect(sql.toLowerCase()).toContain("is null");
+		expect(sql).not.toContain("EXISTS");
 	});
 });

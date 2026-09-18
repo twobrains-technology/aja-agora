@@ -153,4 +153,30 @@ describeIfDb("filtro por origem — o clique abre o que o número prometeu", () 
 		expect(filtro.condicaoDeOrigem("")).toBeNull();
 		expect(filtro.condicaoDeOrigem(null)).toBeNull();
 	});
+
+	it("'desconhecida' é a AUSÊNCIA de origem — o link do AJA-17 abre essas conversas", async () => {
+		// A conversa que o funil de mídia exclui: nasceu fora da landing e não tem
+		// visita para creditar. É o que a nota de cobertura conta em número; o link
+		// `?origem=desconhecida` precisa abrir exatamente ela.
+		const condicao = filtro.condicaoDeOrigem(filtro.ORIGEM_SEM_ORIGEM);
+		if (!condicao) throw new Error("'desconhecida' devia produzir condição");
+
+		const [orfa] = await db
+			.insert(schema.conversations)
+			.values({
+				channel: "whatsapp",
+				visitId: null,
+				isSimulated: false,
+				createdAt: DENTRO,
+				updatedAt: DENTRO,
+			})
+			.returning({ id: schema.conversations.id });
+		convIds.push(orfa.id);
+
+		expect(await contarComFiltro(filtro.ORIGEM_SEM_ORIGEM)).toBe(1);
+
+		// E a condição é exatamente a negação da que o funil usa: uma conversa a
+		// mais sem origem não muda nenhum canal conhecido.
+		expect(await contarComFiltro("campanha:ig")).toBe(4);
+	});
 });

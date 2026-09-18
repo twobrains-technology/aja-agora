@@ -11,7 +11,7 @@ import type { Origem } from "./origem-label";
 // ─── Funil de mídia ─────────────────────────────────────────────────────────
 
 /**
- * As sete etapas, do anúncio ao contrato. Todas derivadas de tabela real —
+ * As oito etapas, do anúncio ao contrato. Todas derivadas de tabela real —
  * não existe tabela de eventos paralela, de propósito (ver a spec de
  * 2026-08-03): engajamento é `messages`, oferta é `artifacts`, proposta é
  * `bevi_proposals`, fechamento é `leads.stage`.
@@ -32,7 +32,20 @@ import type { Origem } from "./origem-label";
 export const ETAPAS_FUNIL_MIDIA = [
 	{ chave: "visitas", label: "Visitas", ajuda: "Chegadas ao site e cliques em anúncio" },
 	{ chave: "conversas", label: "Conversas", ajuda: "Abriram o chat" },
-	{ chave: "engajadas", label: "Engajaram", ajuda: "Escreveram ao menos uma mensagem" },
+	// AJA-01 — o vazamento que estava somado dentro de "Engajaram". A primeira
+	// mensagem da maioria das conversas web é o texto do CTA, então
+	// `engajadas` como `EXISTS messages.role='user'` dava 99% de engajamento
+	// enquanto 47% das conversas tinham uma única mensagem.
+	{
+		chave: "so_pre_preenchida",
+		label: "Só mandaram a mensagem do anúncio",
+		ajuda: "Mensagem pré-preenchida e nada mais",
+	},
+	{
+		chave: "engajadas",
+		label: "Iniciaram a conversa",
+		ajuda: "Escreveram algo além da mensagem pré-preenchida",
+	},
 	{ chave: "identificados", label: "Se identificaram", ajuda: "Deixaram telefone ou e-mail" },
 	{ chave: "viram_oferta", label: "Viram oferta", ajuda: "Receberam simulação ou oferta real" },
 	{ chave: "propostas", label: "Propostas", ajuda: "Proposta criada na administradora" },
@@ -40,6 +53,18 @@ export const ETAPAS_FUNIL_MIDIA = [
 ] as const;
 
 export type ChaveEtapaFunil = (typeof ETAPAS_FUNIL_MIDIA)[number]["chave"];
+
+/**
+ * As etapas que RAMIFICAM o funil — não são degraus da mesma cadeia.
+ *
+ * `so_pre_preenchida` (AJA-01) reparte "Conversas" em dois destinos: quem só
+ * mandou o texto do anúncio e quem iniciou a conversa. Ela NÃO é o passo
+ * anterior de "Iniciaram a conversa": quem parou ali não "virou" quem começou
+ * a conversar. Tratar as duas como degraus vizinhos diria que 7 conversas
+ * encolheram para 5 por causa da ramificação, e a queda real (as 2 que nunca
+ * escreveram nada próprio) sumiria da leitura.
+ */
+export const ETAPAS_RAMIFICADAS: ReadonlySet<ChaveEtapaFunil> = new Set(["so_pre_preenchida"]);
 
 export interface EtapaFunilMidia {
 	chave: ChaveEtapaFunil;
@@ -162,9 +187,37 @@ export interface CoberturaAtribuicao {
 	percent: number;
 }
 
+// ─── "Quem chegou" (cheiro de perfil) ───────────────────────────────────
+
+/** Uma barra da lista de distribuição: um rótulo e quantas conversas caíram nele. */
+export interface BarraDeQuemChegou {
+	rotulo: string;
+	total: number;
+}
+
+/**
+ * A distribuição de quem INICIOU a conversa, por bem e por faixa de valor.
+ *
+ * "Iniciou a conversa" é o degrau do AJA-01: conversa cuja única mensagem do
+ * cliente é o texto do anúncio fica FORA daqui — senão o perfil medido seria o
+ * do CTA, não o de quem falou.
+ *
+ * `comValorInformado` existe porque a faixa de valor só é conhecida por quem
+ * passou do gate de crédito; sem ele a lista de faixas pareceria somar o total
+ * quando na verdade reparte um pedaço dele.
+ */
+export interface QuemChegou {
+	total: number;
+	porBem: BarraDeQuemChegou[];
+	porFaixa: BarraDeQuemChegou[];
+	comValorInformado: number;
+}
+
 export interface PerformanceResponse {
 	funil: EtapaFunilMidia[];
 	porta: PortaDoFunil;
+	/** Distribuição por bem e faixa de valor entre quem iniciou a conversa. */
+	quemChegou: QuemChegou;
 	origens: LinhaOrigem[];
 	serie: PontoSerie[];
 	cobertura: CoberturaAtribuicao;

@@ -4,6 +4,7 @@ import {
 	computeFunilMidia,
 	computeOrigens,
 	computePorta,
+	computeQuemChegou,
 	computeSerie,
 } from "@/lib/admin/performance-queries";
 import type { PerformanceResponse } from "@/lib/admin/performance-types";
@@ -18,15 +19,24 @@ export async function GET(request: Request) {
 	// mesma regra que o filtro da tela usa, resolvida num lugar só.
 	const { de: fromDate, ate: toDate } = periodoDaRequisicao(request);
 
-	const [funil, porta, origens, serie, cobertura, handoff] = await Promise.all([
+	const [funil, porta, quemChegou, origens, serie, cobertura, handoff] = await Promise.all([
 		computeFunilMidia(fromDate, toDate),
 		computePorta(fromDate, toDate),
+		computeQuemChegou(fromDate, toDate),
 		computeOrigens(fromDate, toDate),
 		computeSerie(fromDate, toDate),
 		computeCobertura(fromDate, toDate),
 		computeFunilDeHandoff(fromDate, toDate),
 	]);
 
-	const response: PerformanceResponse = { funil, porta, origens, serie, cobertura, handoff };
+	const response: PerformanceResponse = {
+		funil,
+		porta,
+		quemChegou,
+		origens,
+		serie,
+		cobertura,
+		handoff,
+	};
 	return Response.json(response);
 }

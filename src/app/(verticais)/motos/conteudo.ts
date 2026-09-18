@@ -5,6 +5,12 @@ import type { BlocoPassosConteudo } from "@/components/vertical/bloco-passos";
 import type { FaixaNumerosConteudo } from "@/components/vertical/faixa-numeros";
 import type { GuiaArtigosConteudo } from "@/components/vertical/guia-artigos";
 import type { HeroVerticalConteudo } from "@/components/vertical/hero-vertical";
+import {
+	CHIP_DE_BEM,
+	SEMENTE_BLOCO_MOTO_TRABALHO,
+	SEMENTE_PARCELA_PREFIXO,
+	SEMENTE_VALOR_PREFIXO,
+} from "@/lib/funil/textos-do-cta";
 
 // Texto da landing de consórcio de moto (Figma 'Consórcios - moto' 625:3679).
 // Terceira vertical; as seções são as mesmas das outras duas, menos a terceira,
@@ -60,9 +66,9 @@ export const HERO_MOTO: HeroVerticalConteudo = {
 	},
 	// `selo` de propósito ausente: o "Sem custo extra" já vem achatado dentro da
 	// colagem. Declarar aqui desenharia a pill uma segunda vez por cima.
-	sementeVazia: "Quero comprar uma moto.",
-	semente: (parcela) => `Quero uma moto. Consigo pagar ${parcela}.`,
-	sementeDeValor: (valor) => `Quero uma moto de ${valor}.`,
+	sementeVazia: CHIP_DE_BEM.moto,
+	semente: (parcela) => `${SEMENTE_PARCELA_PREFIXO.moto}${parcela}.`,
+	sementeDeValor: (valor) => `${SEMENTE_VALOR_PREFIXO.moto}${valor}.`,
 };
 
 export const NUMEROS_MOTO: FaixaNumerosConteudo = {
@@ -167,7 +173,7 @@ export const PASSOS_MOTO: BlocoPassosConteudo = {
 		},
 	],
 	cta: "Quero comparar as melhores alternativas",
-	semente: "Quero usar consórcio para ter minha moto de trabalho.",
+	semente: SEMENTE_BLOCO_MOTO_TRABALHO,
 };
 
 // O conjunto de moto mora no catálogo, junto com os das outras páginas: são as

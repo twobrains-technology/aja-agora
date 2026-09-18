@@ -1,7 +1,8 @@
 "use client";
 
-import { UsersIcon } from "lucide-react";
+import { InfoIcon, UsersIcon } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { PassoDoPercurso, ResumoDoPasso } from "@/lib/admin/percurso-types";
 
 const nf = new Intl.NumberFormat("pt-BR");
@@ -15,6 +16,11 @@ const nf = new Intl.NumberFormat("pt-BR");
  * Por isso esta escada soma o total — ela reparte o período inteiro, não o
  * afunila — e por isso as duas telas mostram números diferentes para nomes
  * parecidos, o que o rodapé diz em voz alta.
+ *
+ * **Percentual ao lado do absoluto (AJA-01).** Só o absoluto esconde a
+ * proporção: 11, 18 e 2 lado a lado não dizem se o degrau do meio segurou a
+ * passagem ou se os três são o mesmo vazamento. O "% do degrau anterior" é a
+ * mesma informação que a barra dá em largura, agora legível em número.
  *
  * Clicar num degrau filtra a lista abaixo. O degrau escolhido ganha rótulo
  * escrito, nunca só realce de cor.
@@ -47,9 +53,14 @@ export function EscadaDoPercurso({
 			</CardHeader>
 			<CardContent>
 				<div className="space-y-0.5">
-					{resumo.map((degrau) => {
+					{resumo.map((degrau, indice) => {
 						const ativo = selecionado === degrau.chave;
 						const largura = maior > 0 ? Math.max((degrau.pessoas / maior) * 100, 0) : 0;
+						// O degrau anterior na ORDEM da escada, não na lista ordenada por
+						// volume: a pergunta é "quantos dos que chegaram aqui seguiram".
+						const anterior = indice > 0 ? (resumo[indice - 1]?.pessoas ?? 0) : 0;
+						const doAnterior =
+							indice > 0 && anterior > 0 ? (degrau.pessoas / anterior) * 100 : null;
 
 						return (
 							<button
@@ -71,11 +82,16 @@ export function EscadaDoPercurso({
 											</span>
 										)}
 									</div>
-									<span className="font-bold tabular-nums shrink-0">
-										{nf.format(degrau.pessoas)}
+									<span className="shrink-0 text-right">
+										<span className="font-bold tabular-nums">{nf.format(degrau.pessoas)}</span>
+										{doAnterior !== null && (
+											<span className="ml-2 text-xs text-muted-foreground tabular-nums">
+												{doAnterior.toFixed(0)}% do anterior
+											</span>
+										)}
 									</span>
 								</div>
-								{/* Barra baixa de propósito: com `h-5` os oito degraus somavam 646px e
+								{/* Barra baixa de propósito: com `h-5` os nove degraus somavam 646px e
 								    empurravam a LISTA — o objeto da tela — para fora da primeira dobra
 								    (a tabela começava em y=873 numa viewport de 807). A escada orienta;
 								    quem responde "quem é" é a lista, e ela precisa estar à vista. */}
@@ -90,23 +106,34 @@ export function EscadaDoPercurso({
 					})}
 				</div>
 
-				<p className="mt-4 text-xs text-muted-foreground inline-flex items-start gap-1.5">
+				<div className="mt-4 flex items-start gap-1.5 text-xs text-muted-foreground">
 					<UsersIcon className="size-3 mt-0.5 shrink-0" aria-hidden="true" />
-					<span>
-						Uma linha por <strong>pessoa</strong>, não por conversa nem por clique no anúncio: quem
-						voltou três vezes conta uma vez, no degrau mais fundo que alcançou.
-						{totalDeConversas > 0 && (
-							<>
-								{" "}
-								Estas pessoas abriram <strong>{totalDeConversas}</strong>{" "}
-								{totalDeConversas === 1 ? "conversa" : "conversas"} — é por isso que a tela de
-								Performance, que conta conversa, mostra um número maior. A diferença é sempre alguém
-								que abriu o chat mais de uma vez, ou conversa que começou no dia seguinte à chegada;
-								nunca gente que sumiu.
-							</>
-						)}
-					</span>
-				</p>
+					<p>Uma linha por pessoa, no degrau mais fundo que ela alcançou.</p>
+					<TooltipProvider>
+						<Tooltip>
+							<TooltipTrigger
+								className="text-muted-foreground hover:text-foreground"
+								aria-label="Como ler esta escada"
+							>
+								<InfoIcon className="size-3.5 mt-0.5 shrink-0" aria-hidden="true" />
+							</TooltipTrigger>
+							<TooltipContent className="max-w-sm">
+								Uma linha por pessoa, não por conversa nem por clique no anúncio: quem voltou três
+								vezes conta uma vez, no degrau mais fundo que alcançou.
+								{totalDeConversas > 0 && (
+									<>
+										{" "}
+										Estas pessoas abriram {totalDeConversas}{" "}
+										{totalDeConversas === 1 ? "conversa" : "conversas"} — é por isso que a tela de
+										Performance, que conta conversa, mostra um número maior. A diferença é sempre
+										alguém que abriu o chat mais de uma vez, ou conversa que começou no dia seguinte
+										à chegada; nunca gente que sumiu.
+									</>
+								)}
+							</TooltipContent>
+						</Tooltip>
+					</TooltipProvider>
+				</div>
 			</CardContent>
 		</Card>
 	);
