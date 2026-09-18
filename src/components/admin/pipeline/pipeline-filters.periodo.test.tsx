@@ -47,6 +47,11 @@ describe("Pipeline usa o filtro de período compartilhado", () => {
 
 	afterEach(() => {
 		cleanup();
+		// A URL que o Pipeline hidrata fica num throttle GLOBAL do nuqs; sem
+		// esvaziar a fila, o update de um teste é replayado no mount do seguinte e
+		// 18/08 vaza por cima do cookie. `runOnlyPendingTimers` emite o pendente
+		// antes de descartar o relógio falso.
+		vi.runOnlyPendingTimers();
 		vi.useRealTimers();
 	});
 
@@ -74,5 +79,19 @@ describe("Pipeline usa o filtro de período compartilhado", () => {
 		expect(screen.getByRole("button", { name: "30 dias" }).getAttribute("aria-pressed")).toBe(
 			"true",
 		);
+	});
+
+	it('sem URL nem cookie abre "Desde o início" e leva o dia para a URL', async () => {
+		montar();
+
+		// 18/08 é o primeiro dia do coletor, não "hoje": o Kanban abrir vazio se lê
+		// como tela quebrada. O preset ativo prova que a janela também chegou à URL
+		// (é de lá que o chip do cabeçalho a lê).
+		await waitFor(() => expect(screen.getByText("18/08/2026")).toBeTruthy());
+		// A outra ponta é hoje: 19/08/2026 (o relógio está fixado no `beforeEach`).
+		expect(screen.getByText("19/08/2026")).toBeTruthy();
+		expect(
+			screen.getByRole("button", { name: "Desde o início" }).getAttribute("aria-pressed"),
+		).toBe("true");
 	});
 });
