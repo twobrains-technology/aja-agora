@@ -46,6 +46,10 @@ import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { ehTelefoneInterno, objetivoCanonico } from "@/lib/remarketing/motor";
 import { ESPERA_SILENCIO_MS, type StatusRegua } from "@/lib/remarketing/regua";
 import { chaveTelefoneBR } from "@/lib/whatsapp/mesmo-numero";
+// A janela de 7 dias mora no dicionário de motivos (puro, sem worker) para não
+// haver uma terceira cópia do número: `entrarNaRegua` tem a original e este
+// módulo a espelhava. Ver o comentário em `motivo-fora-da-regua.ts`.
+import { JANELA_DE_ENTRADA_MS } from "./motivo-fora-da-regua";
 import type { LinhaBruta, RastroDoAtendente } from "./remarketing-tela";
 
 export interface FiltroDaRegua {
@@ -243,19 +247,20 @@ export async function contarLinhasDaRegua(): Promise<number> {
 /**
  * A janela de entrada da régua: 7 dias. O ciclo só olha o silêncio recente —
  * sem o teto, o primeiro ciclo depois do deploy varreria o histórico inteiro.
- * É a MESMA constante de `remarketing-cycle.ts` (`JANELA_DE_ENTRADA_MS`); fica
- * duplicada aqui porque a alternativa seria importar um módulo de worker (com
- * BullMQ e Redis) para dentro da rota do admin.
+ * O valor vem de `motivo-fora-da-regua.ts` (fonte única daqui até o F6).
  */
-const JANELA_DE_ENTRADA_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * O telefone é da equipe? Espelha `ehDaEquipe` do ciclo: lista em código mais os
  * atendentes ativos do banco. Falha do banco NÃO libera — na dúvida, trata como
  * equipe, porque o erro que não se pode cometer é contar (ou tocar) quem é de
  * dentro.
+ *
+ * Exportada porque a coluna "Régua" do Percurso e o motivo "equipe" da lista
+ * de Conversas usam a MESMA pergunta — uma segunda cópia divergiria na primeira
+ * vez que um atendente fosse desativado.
  */
-async function ehDaEquipe(telefone: string | null): Promise<boolean> {
+export async function ehDaEquipe(telefone: string | null): Promise<boolean> {
 	if (!telefone) return false;
 	if (ehTelefoneInterno(telefone)) return true;
 	try {

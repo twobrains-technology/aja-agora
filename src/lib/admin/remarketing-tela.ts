@@ -54,6 +54,7 @@ import {
 	podeDisparar,
 	type StatusRegua,
 } from "@/lib/remarketing/regua";
+import { BENS } from "./rotulo-do-bem";
 
 /**
  * O motivo que marca uma linha segurada à mão.
@@ -92,12 +93,11 @@ export const ROTULO_DA_SITUACAO: Record<Situacao, string> = {
 	converteu: "Fechou contrato",
 };
 
-/** Os objetivos da régua (`motor.objetivoCanonico`), com o rótulo do painel. */
-export const ROTULO_DO_OBJETIVO: Record<string, string> = {
-	carro: "Carro",
-	moto: "Moto",
-	imovel: "Imóvel",
-};
+/** Os objetivos da régua (`motor.objetivoCanonico`), com o rótulo do painel.
+ * Derivado do dicionário único do bem — a Régua não mantém uma segunda tabela. */
+export const ROTULO_DO_OBJETIVO: Record<string, string> = Object.fromEntries(
+	BENS.map((b) => [b.chave, b.rotulo]),
+);
 
 /** O rastro da última ação do atendente, guardado no metadata da conversa. */
 export interface RastroDoAtendente {
@@ -199,6 +199,8 @@ export interface RespostaDaRegua {
 	periodo: { de: string; ate: string };
 	/** O funil por passo, a atribuição da conversão e os tempos (módulo insights). */
 	insights: InsightsDaRegua;
+	/** O resumo agregado do topo (toques enviados, respondidos, aguardando…). */
+	resumo: ResumoDaRegua;
 	/** Se a régua está ligada, desligada ou só sem toque neste período. */
 	estado: EstadoDaRegua;
 }
@@ -753,6 +755,81 @@ export function insightsDaRegua(linhas: readonly LinhaBruta[]): InsightsDaRegua 
 	}
 
 	return { funil, conversoes: { total: conversoes, semAtribuicao, paga } };
+}
+
+/**
+ * O resumo agregado do topo — a resposta à pergunta "quantas foram disparadas?"
+ * (AJA-04).
+ *
+ * O que cada número É, para não mentir:
+ *
+ *   - **toques enviados**: a SOMA de `step` das linhas do recorte. `step` é
+ *     quantos toques já saíram para aquela conversa, então somá-lo dá o total
+ *     de mensagens disparadas — não o número de conversas. `touches30d` NÃO
+ *     serve: ele é a cota deslizante por pessoa, não o histórico;
+ *   - **responderam**: as linhas em que o cliente respondeu (situação
+ *     `respondeu`); a linha segurada à mão não conta, porque parar à mão não é
+ *     o cliente ter respondido;
+ *   - **aguardando**: as que ainda vão receber toque (ATIVO com `next_touch_at`),
+ *     com a data mais próxima para o resumo dizer QUANDO;
+ *   - **elegíveis fora**: quantas conversas entrariam no próximo ciclo
+ *     (`contarElegiveisParaRegua`, passado pela borda) — a fila que a régua
+ *     ainda não alcançou, seja porque está desligada ou porque o ciclo não
+ *     rodou.
+ *
+ * Função PURA sobre as linhas que a lista já leu: nenhuma consulta nova, e o
+ * teste prova que os contadores fecham com a soma das linhas.
+ */
+export interface ResumoDaRegua {
+	toquesEnviados: number;
+	responderam: number;
+	/** % de quem respondeu sobre os toques enviados; `null` quando não houve toque. */
+	responderamPercentual: number | null;
+	pediramSair: number;
+	esgotaram: number;
+	aguardando: { n: number; proximoEm: string | null };
+	elegiveisFora: number;
+}
+
+export function resumoDaRegua(
+	linhas: readonly LinhaBruta[],
+	contexto: { elegiveisAgora?: number } = {},
+): ResumoDaRegua {
+	let toquesEnviados = 0;
+	let responderam = 0;
+	let pediramSair = 0;
+	let esgotaram = 0;
+	let aguardando = 0;
+	let proximoEm: number | null = null;
+
+	for (const linha of linhas) {
+		toquesEnviados += Math.max(0, Math.trunc(linha.step));
+		const situacao = situacaoDe(linha);
+		if (situacao === "respondeu") responderam += 1;
+		if (situacao === "optout") pediramSair += 1;
+		if (situacao === "esgotado") esgotaram += 1;
+
+		const proximo = proximoToqueDe(linha);
+		if (proximo) {
+			aguardando += 1;
+			const ms = proximo.getTime();
+			if (proximoEm === null || ms < proximoEm) proximoEm = ms;
+		}
+	}
+
+	return {
+		toquesEnviados,
+		responderam,
+		responderamPercentual:
+			toquesEnviados > 0 ? Math.round((responderam / toquesEnviados) * 1000) / 10 : null,
+		pediramSair,
+		esgotaram,
+		aguardando: {
+			n: aguardando,
+			proximoEm: proximoEm === null ? null : new Date(proximoEm).toISOString(),
+		},
+		elegiveisFora: Math.max(0, Math.trunc(contexto.elegiveisAgora ?? 0)),
+	};
 }
 
 /**
