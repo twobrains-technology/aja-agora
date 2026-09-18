@@ -10,6 +10,7 @@
 // (é o que a tela desabilita por linha, com o tooltip "Só para conversas de
 // WhatsApp").
 import { eq } from "drizzle-orm";
+import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/admin/require-role", () => ({
@@ -24,7 +25,7 @@ const HAS_DB = Boolean(process.env.DATABASE_URL) && !process.env.DATABASE_URL?.i
 const describeIfDb = HAS_DB ? describe : describe.skip;
 
 function post(body: unknown) {
-	return new Request("http://test/api/admin/percurso/enviar-para-mesa", {
+	return new NextRequest("http://test/api/admin/percurso/enviar-para-mesa", {
 		method: "POST",
 		headers: { "content-type": "application/json" },
 		body: JSON.stringify(body),
