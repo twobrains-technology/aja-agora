@@ -117,12 +117,46 @@ export function caminhoEstavel(elemento: Element | null): string | null {
 }
 
 /**
+ * Teto do rótulo gravado. Casa com o do servidor (`sanitizeLabel`): o mesmo
+ * alvo não pode virar duas chaves por uma das pontas cortar antes da outra.
+ */
+export const MAX_ROTULO = 80;
+
+/**
+ * Junta o texto visível do elemento SEPARANDO os nós com espaço.
+ *
+ * `textContent` concatena os nós descendentes sem separador nenhum, e o
+ * resultado era rótulo colado no painel: o eyebrow "QUAL O SEU PROPÓSITO" e o
+ * título "O setor de consórcio não para" — dois elementos irmãos — viravam
+ * "QUAL O SEU PROPÓSITOO setor de consórcio não para". O mesmo acontecia com o
+ * h1 quebrado em segmentos ("Compare consórciosentre divers…") e com o card do
+ * chat ("Fale com a AjaSelecione o tipo…").
+ */
+function textoVisivel(no: Node): string {
+	// 3 = TEXT_NODE. Escrever o número em vez de `Node.TEXT_NODE` mantém a função
+	// importável fora do navegador (o `Node` global não existe no servidor).
+	if (no.nodeType === 3) return no.textContent ?? "";
+	if (no.nodeType !== 1) return "";
+
+	const partes: string[] = [];
+	for (const filho of Array.from(no.childNodes)) {
+		const texto = textoVisivel(filho).trim();
+		if (texto) partes.push(texto);
+	}
+	return partes.join(" ");
+}
+
+/**
  * Texto visível do alvo, para o painel ficar legível.
  *
  * `aria-label` e `title` vêm antes do texto porque botão de ícone não tem texto
  * nenhum — e é justamente ele que apareceria como linha em branco na tabela.
  * A higienização de dado pessoal acontece no servidor (`sanitizeLabel`), que é
  * onde ela não depende de o navegador ter rodado a versão certa do script.
+ *
+ * O que fica aqui é FORMA: nós de texto separados por espaço (senão palavras de
+ * elementos diferentes se colam) e corte com `…` no teto, para o operador ver
+ * que o rótulo continua em vez de achar que acabou ali.
  */
 export function rotuloDe(elemento: Element | null): string {
 	if (!elemento) return "";
@@ -138,5 +172,6 @@ export function rotuloDe(elemento: Element | null): string {
 		return elemento.placeholder || elemento.type || "input";
 	}
 
-	return (elemento.textContent ?? "").trim();
+	const texto = textoVisivel(elemento).replace(/\s+/g, " ").trim();
+	return texto.length > MAX_ROTULO ? `${texto.slice(0, MAX_ROTULO - 1).trimEnd()}…` : texto;
 }

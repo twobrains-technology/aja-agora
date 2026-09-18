@@ -212,6 +212,41 @@ export function sanitizeLabel(bruto: string | null | undefined): string {
 	return bruto.replace(/\s+/g, " ").trim().slice(0, MAX_LABEL);
 }
 
+/**
+ * Os pontos em que nós de texto do próprio produto ficaram colados no histórico.
+ *
+ * Antes de `rotuloDe` passar a juntar os nós com espaço, o `textContent` colava
+ * elementos irmãos sem separador. O dado já gravado não tem como voltar ao DOM
+ * para ser reextraído, então a leitura recompõe os pontos conhecidos.
+ *
+ * É lista do TEXTO DA LANDING — não é fala de cliente nem de agente, e por isso
+ * não cai na proibição do `CLAUDE.md` (é comparar com o próprio código). Rótulo
+ * novo já entra correto pela coleta; esta lista só existe para o passado.
+ */
+const COLAGENS_DO_HISTORICO: readonly (readonly [string, string])[] = [
+	["consórciosentre", "consórcios entre"],
+	["PROPÓSITOO", "PROPÓSITO O"],
+	["PROPÓSITOEscolha", "PROPÓSITO Escolha"],
+	["AjaSelecione", "Aja Selecione"],
+];
+
+/**
+ * Recomposição de leitura para o rótulo GRAVADO.
+ *
+ * O conserto de verdade é na coleta (`rotuloDe`, que agora separa os nós de
+ * texto); isto aqui é para as linhas que já estão na tabela. Não inventa texto:
+ * só descola os fragmentos conhecidos e colapsa o espaço.
+ */
+export function normalizarRotulo(bruto: string | null | undefined): string {
+	if (!bruto) return "";
+
+	let texto = bruto.replace(/\s+/g, " ").trim();
+	for (const [colado, separado] of COLAGENS_DO_HISTORICO) {
+		texto = texto.replaceAll(colado, separado);
+	}
+	return texto;
+}
+
 function numeroRelativo(valor: unknown): number | null {
 	if (typeof valor !== "number" || !Number.isFinite(valor)) return null;
 	return valor >= 0 && valor <= 1 ? valor : null;

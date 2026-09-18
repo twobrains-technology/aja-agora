@@ -13,7 +13,7 @@
 // entre os dois é o que diz o que mudar na página. Ferramenta de terceiro não
 // tem essa coluna, porque não conhece `leads`.
 
-import { MousePointerClickIcon, ScrollTextIcon } from "lucide-react";
+import { InfoIcon, MousePointerClickIcon, ScrollTextIcon } from "lucide-react";
 import { parseAsString, useQueryState } from "nuqs";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter";
@@ -27,6 +27,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { diaDeHoje } from "@/lib/admin/periodo";
 import { parseAsDiaDoNegocio } from "@/lib/admin/periodo-querystring";
 import { LANDINGS_COM_MAPA } from "@/lib/heatmap/events";
@@ -170,31 +171,50 @@ function MapaDeCalorContent() {
 					</SelectContent>
 				</Select>
 
-				<Select value={device} onValueChange={(valor) => setDevice(valor ?? "todos")}>
-					<SelectTrigger className="w-[185px]" aria-label="Aparelho">
-						<SelectValue>{(v) => rotuloDe(DEVICES, v)}</SelectValue>
-					</SelectTrigger>
-					<SelectContent>
-						{DEVICES.map((d) => (
-							<SelectItem key={d.valor} value={d.valor}>
-								{d.rotulo}
-							</SelectItem>
-						))}
-					</SelectContent>
-				</Select>
+				<span className="flex items-center gap-1">
+					<Select value={device} onValueChange={(valor) => setDevice(valor ?? "todos")}>
+						<SelectTrigger className="w-[185px]" aria-label="Aparelho">
+							<SelectValue>{(v) => rotuloDe(DEVICES, v)}</SelectValue>
+						</SelectTrigger>
+						<SelectContent>
+							{DEVICES.map((d) => (
+								<SelectItem key={d.valor} value={d.valor}>
+									{d.rotulo}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+					{/* A decisão de engenharia ("o aparelho vale para o mapa, não para o
+					    denominador") morava num parágrafo antes do mapa. Virou o que ela é:
+					    explicação ao lado do controle que a governa. */}
+					<InfoTooltip
+						rotulo="Por que o aparelho não vale para o denominador"
+						texto={
+							device === "todos"
+								? "A nuvem mistura aparelhos neste recorte. O clique é gravado na altura do documento que a pessoa viu, e a página do celular é bem mais alta que a do computador — os números do cabeçalho continuam certos, mas a posição da mancha só é confiável com um aparelho escolhido."
+								: `Os cliques, a rolagem e a nuvem são só de ${device === "mobile" ? "celular" : device}; o total de pessoas conta todo mundo que esteve na página, em qualquer aparelho. Quem sai sem deixar evento — a parte silenciosa que o número existe para mostrar — não tem aparelho conhecido.`
+						}
+					/>
+				</span>
 
-				<Select value={desfecho} onValueChange={(valor) => setDesfecho(valor ?? "todos")}>
-					<SelectTrigger className="w-[215px]" aria-label="Desfecho">
-						<SelectValue>{(v) => rotuloDe(DESFECHOS, v)}</SelectValue>
-					</SelectTrigger>
-					<SelectContent>
-						{DESFECHOS.map((d) => (
-							<SelectItem key={d.valor} value={d.valor}>
-								{d.rotulo}
-							</SelectItem>
-						))}
-					</SelectContent>
-				</Select>
+				<span className="flex items-center gap-1">
+					<Select value={desfecho} onValueChange={(valor) => setDesfecho(valor ?? "todos")}>
+						<SelectTrigger className="w-[215px]" aria-label="Desfecho">
+							<SelectValue>{(v) => rotuloDe(DESFECHOS, v)}</SelectValue>
+						</SelectTrigger>
+						<SelectContent>
+							{DESFECHOS.map((d) => (
+								<SelectItem key={d.valor} value={d.valor}>
+									{d.rotulo}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+					<InfoTooltip
+						rotulo="Como o desfecho recorta o mapa"
+						texto="Visitante sem cookie de visita fica de fora do recorte por desfecho, porque não há como saber no que ele deu. Compare com “todos os visitantes” para ler a diferença, não o número absoluto."
+					/>
+				</span>
 
 				<div className="ms-auto flex gap-1 rounded-md bg-muted p-1">
 					{MODOS.map(({ valor, rotulo, icone: Icone }) => (
@@ -248,7 +268,11 @@ function MapaDeCalorContent() {
 							}
 						/>
 						<Numero valor={mapa.cliques} rotulo="cliques" />
-						<Numero valor={mapa.rageCliques} rotulo="de raiva" />
+						<Numero
+							valor={mapa.rageCliques}
+							rotulo="cliques de raiva"
+							info="“Raiva” é três batidas em menos de um segundo no mesmo alvo — costuma apontar algo que parece clicável e não responde."
+						/>
 						{/* "entre quem rolou" não é rodapé, é parte do número. O coletor só
 						    grava marco de rolagem para quem rola; quem sai sem rolar não entra
 						    no denominador. Sem essa palavra, uma landing em que metade sai no
@@ -271,26 +295,27 @@ function MapaDeCalorContent() {
 			    "291 pessoas chegaram" lá, e a pergunta foi imediata. Os dois estavam
 			    certos — faltava a tela mostrar a divisão. */}
 			{pronto && mapa.pessoasPorPagina.length > 0 && (
-				<p className="text-muted-foreground text-sm">
-					No período, <strong>{totalDePessoasNoSite.toLocaleString("pt-BR")}</strong>{" "}
-					{totalDePessoasNoSite === 1 ? "pessoa chegou" : "pessoas chegaram"} ao site. Por onde{" "}
-					{totalDePessoasNoSite === 1 ? "entrou" : "entraram"}:{" "}
-					{mapa.pessoasPorPagina
-						.map(
-							(p) => `${p.pessoas.toLocaleString("pt-BR")} na ${NOME_DA_PAGINA[p.path] ?? p.path}`,
-						)
-						.join(" · ")}
-					. É este total que as telas de Performance e Percurso mostram; aqui você vê uma página por
-					vez.{" "}
-					{/* Entrada e presença são coisas diferentes, e a diferença aparece na tela:
-					    o denominador acima conta quem ESTEVE na página, inclusive quem entrou
-					    por outra e navegou até ela — sem isso o numerador podia ser maior que o
-					    denominador e a fração passar de 100%. Dizer "por onde entraram" aqui é o
-					    que impede a soma de parecer errada quando os dois números divergem. */}
-					<span className="italic">
-						Quem entra por uma página e navega para outra conta na entrada de uma e na presença da
-						outra.
+				<p className="flex items-center gap-1.5 text-muted-foreground text-sm">
+					<span>
+						No período, <strong>{totalDePessoasNoSite.toLocaleString("pt-BR")}</strong>{" "}
+						{totalDePessoasNoSite === 1 ? "pessoa chegou" : "pessoas chegaram"} ao site. Por onde{" "}
+						{totalDePessoasNoSite === 1 ? "entrou" : "entraram"}:{" "}
+						{mapa.pessoasPorPagina
+							.map(
+								(p) =>
+									`${p.pessoas.toLocaleString("pt-BR")} na ${NOME_DA_PAGINA[p.path] ?? p.path}`,
+							)
+							.join(" · ")}
+						.
 					</span>
+					{/* Entrada e presença são coisas diferentes, e a diferença aparece na
+					    tela: o denominador acima conta quem ESTEVE na página, inclusive quem
+					    entrou por outra e navegou até ela — sem isso o numerador podia ser
+					    maior que o denominador e a fração passar de 100%. */}
+					<InfoTooltip
+						rotulo="Sobre o total de pessoas no site"
+						texto="É este total que as telas de Performance e Percurso mostram; aqui você vê uma página por vez. Quem entra por uma página e navega para outra conta na entrada de uma e na presença da outra."
+					/>
 				</p>
 			)}
 
@@ -316,33 +341,6 @@ function MapaDeCalorContent() {
 						)}
 					</span>
 				</div>
-			)}
-
-			{device !== "todos" && (
-				<p className="rounded-lg border bg-muted/40 p-3 text-muted-foreground text-sm">
-					<strong>O aparelho vale para o mapa, não para o denominador.</strong> Os cliques, a
-					rolagem e a nuvem abaixo são só de {device === "mobile" ? "celular" : device}; o total de
-					pessoas ao lado conta todo mundo que esteve na página, em qualquer aparelho. É de
-					propósito: aparelho é atributo do evento, e quem sai sem deixar evento — a parte
-					silenciosa que este número existe para mostrar — não tem aparelho conhecido.
-				</p>
-			)}
-
-			{device === "todos" && (
-				<p className="rounded-lg border bg-muted/40 p-3 text-muted-foreground text-sm">
-					<strong>A nuvem mistura aparelhos neste recorte.</strong> O clique é gravado na altura do
-					documento que a pessoa viu, e a página do celular é bem mais alta que a do computador — os
-					números do cabeçalho continuam certos, mas a posição da mancha só é confiável com um
-					aparelho escolhido.
-				</p>
-			)}
-
-			{desfecho !== "todos" && (
-				<p className="rounded-lg border bg-muted/40 p-3 text-muted-foreground text-sm">
-					Recorte por desfecho: visitante sem cookie de visita fica de fora, porque não há como
-					saber no que ele deu. Compare com “todos os visitantes” para ler a diferença, não o número
-					absoluto.
-				</p>
 			)}
 
 			<div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_330px]">
@@ -375,14 +373,55 @@ function MapaDeCalorContent() {
 	);
 }
 
-function Numero({ valor, rotulo, sufixo }: { valor: number; rotulo: string; sufixo?: string }) {
+function Numero({
+	valor,
+	rotulo,
+	sufixo,
+	info,
+}: {
+	valor: number;
+	rotulo: string;
+	sufixo?: string;
+	/** Explicação do número, quando ele não fala por si — vai num ícone de info. */
+	info?: string;
+}) {
 	return (
 		<span className="flex items-baseline gap-1.5">
 			<span className="font-semibold text-lg tabular-nums">
 				{valor.toLocaleString("pt-BR")}
 				{sufixo}
 			</span>
-			<span className="text-muted-foreground">{rotulo}</span>
+			<span className="flex items-center gap-1 text-muted-foreground">
+				{rotulo}
+				{info ? <InfoTooltip rotulo={`Sobre ${rotulo}`} texto={info} /> : null}
+			</span>
 		</span>
+	);
+}
+
+/**
+ * O ícone de info com a explicação no tooltip.
+ *
+ * Esta tela tinha três parágrafos antes do mapa explicando o que cada número
+ * NÃO é. Honestidade que virou "bando de texto" para quem opera — a explicação
+ * mora agora ao lado do controle ou do número que ela governa, e aparece para
+ * quem procura por ela.
+ */
+function InfoTooltip({ rotulo, texto }: { rotulo: string; texto: string }) {
+	return (
+		<Tooltip>
+			<TooltipTrigger
+				render={
+					<button
+						type="button"
+						aria-label={rotulo}
+						className="inline-flex size-4 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-1"
+					/>
+				}
+			>
+				<InfoIcon aria-hidden className="size-3.5" />
+			</TooltipTrigger>
+			<TooltipContent className="text-pretty">{texto}</TooltipContent>
+		</Tooltip>
 	);
 }
