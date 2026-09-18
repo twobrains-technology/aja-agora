@@ -61,7 +61,29 @@ export async function getOrCreateConversation(
 
 	const [conv] = await db
 		.insert(conversations)
-		.values({ waId, channel: "whatsapp", isSimulated, visitId })
+		.values({
+			waId,
+			channel: "whatsapp",
+			isSimulated,
+			visitId,
+			// F2 / AJA-02 (corrida do `last_inbound_at`): a mensagem que CRIA a
+			// conversa é um inbound — então ela já nasce com o carimbo.
+			//
+			// Antes disto a coluna só era escrita pelo `updateLastInboundAt` do
+			// webhook, que roda fire-and-forget ANTES desta criação (e antes do
+			// `switch` do tipo de mensagem). Na primeira mensagem de um número
+			// novo ele não achava conversa alguma, logava "No conversation
+			// found" e desistia: `last_inbound_at` ficava NULL para sempre em
+			// 100% das conversas com exatamente 1 mensagem (4/4 medidas em
+			// produção), e a régua de remarketing — que exige a coluna não
+			// nula — nunca via esses leads.
+			//
+			// O conserto mora aqui, e não em reordenar o webhook (que é da
+			// frente do áudio): gravar no insert torna a corrida irrelevante em
+			// vez de apenas improvável, e vale para todo caminho que cria
+			// conversa de WhatsApp — webhook, carimbo de origem do site, etc.
+			lastInboundAt: new Date(),
+		})
 		.returning();
 
 	if (visitId) {
