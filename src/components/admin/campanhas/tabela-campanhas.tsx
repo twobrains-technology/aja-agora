@@ -4,22 +4,36 @@
  * A tabela de campanhas: uma linha por campanha, com o funil do CRM e o gasto
  * do gerenciador na mesma leitura.
  *
- * As três decisões que a tela carrega:
+ * As decisões que a tela carrega:
  *
- *   1. **Os dois números de lead ficam na mesma linha.** "Leads (Meta)" é o que a
- *      Meta atribuiu; "Leads (CRM)" é o que o CRM contou. A coluna "Diferença"
- *      nomeia o desencontro em vez de escondê-lo — os dois nunca vão concordar, e
- *      quem lê precisa saber disso antes de cobrar Growth ou financeiro.
- *   2. **Custo por lead qualificado é a primeira coluna de número** e a ordenação
- *      padrão (vem decidida do servidor). Custo por lead sozinho não decide nada.
- *   3. **Campanha sem nome resolvido continua aparecendo.** O resolvedor não
- *      conhecer a campanha não é erro dela: o rótulo cai na UTM ou no id
- *      abreviado, com a marca de "não resolvida" ao lado.
+ *   1. **Os dois números de lead ficam nomeados.** "Leads no CRM" é o do Aja
+ *      Agora, em destaque; "Leads que a Meta atribuiu" e a diferença vão para
+ *      "Mais colunas" — os dois nunca vão concordar, e quem lê precisa saber
+ *      disso antes de cobrar Growth ou financeiro.
+ *   2. **Custo por lead qualificado nunca é 'sem base'.** Quando não há número,
+ *      a célula diz POR QUÊ (sem vínculo, sem gasto ou sem qualificado) — são
+ *      três problemas diferentes que pedem três ações diferentes.
+ *   3. **Campanha sem nome resolvido continua aparecendo**, com o rótulo do
+ *      anúncio decodificado (a chave chegou URL-encoded) e o aviso de que o
+ *      gerenciador ainda não espelhou. O valor CRU continua no `title` e na
+ *      busca.
+ *   4. **A última linha é a reconciliação** "Sem origem conhecida": as conversas
+ *      que nasceram fora da landing e não pertencem a campanha nenhuma. Sem ela,
+ *      o total do CRM nesta tela não fecha com a tela de Conversas.
  */
 
-import { TriangleAlertIcon } from "lucide-react";
+import {
+	ChevronRightIcon,
+	MinusIcon,
+	TriangleAlertIcon,
+	UnlinkIcon,
+	WalletCardsIcon,
+} from "lucide-react";
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Collapsible, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
 	Table,
 	TableBody,
@@ -28,8 +42,9 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
-import type { LinhaCampanha } from "@/lib/admin/campanhas-queries";
-import { custo, inteiro, reais } from "./formato";
+import type { CustoPorQualificado, LinhaCampanha } from "@/lib/admin/campanhas-queries";
+import { decodificarChaveDeCampanha, ehIdNumerico } from "@/lib/meta-ads/rotulo-legivel";
+import { descreverCusto, inteiro, reais } from "./formato";
 
 /** "ACTIVE"/"PAUSED"/"ARCHIVED" como a Meta devolve, em português. */
 const ROTULO_STATUS: Record<string, string> = {
@@ -44,16 +59,52 @@ function diferenca(valor: number): string {
 	return valor > 0 ? `+${inteiro(valor)}` : `−${inteiro(Math.abs(valor))}`;
 }
 
+/**
+ * O texto principal da campanha.
+ *
+ * Quando o gerenciador não espelhou, o que existe é a chave crua do link do
+ * anúncio — que chega URL-encoded (`BOFU+-+AJA+%7C+...`). Decodificamos para
+ * leitura; a chave crua continua no `title` e na busca. Quando nem isso existe
+ * (só o id numérico), não há o que mostrar: é campanha nova, nome pendente.
+ */
+function rotuloDaLinha(linha: LinhaCampanha): string {
+	if (linha.semOrigemConhecida) return "Sem origem conhecida";
+	if (linha.nomeResolvido) return linha.nome;
+	const utm = linha.utmCampaign?.trim();
+	if (utm) return decodificarChaveDeCampanha(utm);
+	if (ehIdNumerico(linha.chave)) return "Campanha nova · nome pendente";
+	return decodificarChaveDeCampanha(linha.nome);
+}
+
+const ICONE_DO_MOTIVO = {
+	sem_qualificado: MinusIcon,
+	sem_gasto: WalletCardsIcon,
+	sem_vinculo: UnlinkIcon,
+} as const;
+
+/**
+ * A célula de custo. O motivo vira ÍCONE + RÓTULO (nunca só cor): para quem não
+ * distingue cor, o rótulo é a informação; a cor é reforço.
+ */
+function CelulaCusto({ custo }: { custo: CustoPorQualificado }) {
+	const descrito = descreverCusto(custo);
+	const Icone = descrito.motivo ? ICONE_DO_MOTIVO[descrito.motivo] : null;
+	return (
+		<TableCell className="text-right tabular-nums" title={descrito.tooltip}>
+			<span className="inline-flex items-center justify-end gap-1.5">
+				{Icone && <Icone className="size-3.5 text-muted-foreground" aria-hidden="true" />}
+				<span className={descrito.motivo ? "text-muted-foreground" : "font-medium"}>
+					{descrito.texto}
+				</span>
+			</span>
+		</TableCell>
+	);
+}
+
 function CelulaDiferenca({ valor }: { valor: number }) {
-	const cor =
-		valor > 0
-			? "text-[var(--blue-700)]"
-			: valor < 0
-				? "text-muted-foreground"
-				: "text-muted-foreground";
 	return (
 		<TableCell
-			className={`text-right tabular-nums ${cor}`}
+			className="text-right tabular-nums text-muted-foreground"
 			title={
 				valor > 0
 					? "A Meta atribuiu mais leads do que o CRM contou no período"
@@ -68,6 +119,8 @@ function CelulaDiferenca({ valor }: { valor: number }) {
 }
 
 export function TabelaCampanhas({ linhas }: { linhas: LinhaCampanha[] }) {
+	const [maisColunas, setMaisColunas] = useState(false);
+
 	if (linhas.length === 0) {
 		return null;
 	}
@@ -78,99 +131,130 @@ export function TabelaCampanhas({ linhas }: { linhas: LinhaCampanha[] }) {
 				<CardTitle>Desempenho por campanha</CardTitle>
 				<CardDescription>
 					Ordenado por custo por lead qualificado — as com custo mais alto no topo. Campanha sem
-					qualificado no período aparece no fim, mas não some.
+					custo calculável aparece no fim, dizendo por quê.
 				</CardDescription>
 			</CardHeader>
 			<CardContent>
-				<div className="overflow-x-auto">
-					<Table>
-						<TableHeader>
-							<TableRow>
-								<TableHead>Campanha</TableHead>
-								<TableHead className="text-right">Investimento</TableHead>
-								<TableHead
-									className="text-right"
-									title="Investimento dividido pelos leads que chegaram ao estágio qualificado"
-								>
-									Custo / qualificado
-								</TableHead>
-								<TableHead className="text-right" title="Leads que a Meta atribuiu no período">
-									Leads (Meta)
-								</TableHead>
-								<TableHead className="text-right" title="Conversas com contato deixado no CRM">
-									Leads (CRM)
-								</TableHead>
-								<TableHead className="text-right" title="Leads (Meta) menos Leads (CRM)">
-									Diferença
-								</TableHead>
-								<TableHead className="text-right">Qualificados</TableHead>
-								<TableHead className="text-right">Conversas</TableHead>
-								<TableHead className="text-right">Propostas</TableHead>
-								<TableHead className="text-right">Fechados</TableHead>
-							</TableRow>
-						</TableHeader>
-						<TableBody>
-							{linhas.map((linha) => (
-								<TableRow key={linha.chave}>
-									<TableCell>
-										<div className="flex flex-col gap-1 min-w-0">
-											<span className="font-medium" title={linha.entityId ?? linha.chave}>
-												{linha.nome}
-											</span>
-											<div className="flex items-center gap-2">
-												{!linha.nomeResolvido && (
-													<Badge
-														variant="outline"
-														className="w-fit gap-1 font-normal text-xs"
-														title="O gerenciador ainda não espelhou esta campanha — o rótulo é o valor cru da origem"
-													>
-														<TriangleAlertIcon className="size-3" aria-hidden="true" />
-														Nome não resolvido
-													</Badge>
-												)}
-												{linha.status && (
-													<Badge variant="secondary" className="w-fit font-normal text-xs">
-														{ROTULO_STATUS[linha.status] ?? linha.status}
-													</Badge>
-												)}
-												{linha.visitas > 0 && (
-													<span className="text-xs text-muted-foreground tabular-nums">
-														{inteiro(linha.visitas)} visitas
-													</span>
-												)}
-											</div>
-										</div>
-									</TableCell>
-									<TableCell className="text-right tabular-nums">
-										{linha.spendCents === 0 ? "—" : reais(linha.spendCents)}
-									</TableCell>
-									<TableCell className="text-right tabular-nums font-medium">
-										{custo(linha.custoPorQualificadoCents)}
-									</TableCell>
-									<TableCell className="text-right tabular-nums">
-										{inteiro(linha.leadsMeta)}
-									</TableCell>
-									<TableCell className="text-right tabular-nums">
-										{inteiro(linha.identificados)}
-									</TableCell>
-									<CelulaDiferenca valor={linha.diferencaDeLeads} />
-									<TableCell className="text-right tabular-nums">
-										{inteiro(linha.qualificados)}
-									</TableCell>
-									<TableCell className="text-right tabular-nums">
-										{inteiro(linha.conversas)}
-									</TableCell>
-									<TableCell className="text-right tabular-nums">
-										{inteiro(linha.propostas)}
-									</TableCell>
-									<TableCell className="text-right tabular-nums font-medium">
-										{inteiro(linha.fechados)}
-									</TableCell>
+				<Collapsible open={maisColunas} onOpenChange={setMaisColunas}>
+					<div className="mb-3 flex justify-end">
+						<CollapsibleTrigger
+							render={
+								<Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground" />
+							}
+						>
+							<ChevronRightIcon
+								className={`size-4 transition-transform ${maisColunas ? "rotate-90" : ""}`}
+								aria-hidden="true"
+							/>
+							{maisColunas ? "Menos colunas" : "Mais colunas"}
+						</CollapsibleTrigger>
+					</div>
+
+					<div className="overflow-x-auto">
+						<Table>
+							<TableHeader>
+								<TableRow>
+									<TableHead>Campanha</TableHead>
+									<TableHead className="text-right">Investimento</TableHead>
+									<TableHead className="text-right">Custo / qualificado</TableHead>
+									<TableHead className="text-right" title="Conversas com contato deixado no CRM">
+										Leads no CRM
+									</TableHead>
+									<TableHead className="text-right">Qualificados</TableHead>
+									{maisColunas && (
+										<>
+											<TableHead
+												className="text-right"
+												title="Leads que a Meta atribuiu no período"
+											>
+												Leads (Meta)
+											</TableHead>
+											<TableHead className="text-right" title="Leads (Meta) menos Leads no CRM">
+												Diferença
+											</TableHead>
+											<TableHead className="text-right">Conversas</TableHead>
+											<TableHead className="text-right">Propostas</TableHead>
+											<TableHead className="text-right">Fechados</TableHead>
+										</>
+									)}
 								</TableRow>
-							))}
-						</TableBody>
-					</Table>
-				</div>
+							</TableHeader>
+							<TableBody>
+								{linhas.map((linha) => (
+									<TableRow
+										key={linha.chave}
+										className={linha.semOrigemConhecida ? "bg-muted/40" : undefined}
+									>
+										<TableCell>
+											<div className="flex flex-col gap-1 min-w-0">
+												<span className="font-medium" title={linha.entityId ?? linha.chave}>
+													{rotuloDaLinha(linha)}
+												</span>
+												<div className="flex items-center gap-2">
+													{linha.semOrigemConhecida ? (
+														<span className="text-xs text-muted-foreground">
+															Chegaram sem UTM ou referência — não dá para atribuir a campanha
+														</span>
+													) : (
+														<>
+															{!linha.nomeResolvido && (
+																<Badge
+																	variant="outline"
+																	className="w-fit gap-1 font-normal text-xs"
+																	title="A Meta ainda não espelhou esta campanha. O rótulo é o que veio no link do anúncio, decodificado. A busca continua encontrando pela chave original."
+																>
+																	<TriangleAlertIcon className="size-3" aria-hidden="true" />
+																	Nome pendente do gerenciador
+																</Badge>
+															)}
+															{linha.status && (
+																<Badge variant="secondary" className="w-fit font-normal text-xs">
+																	{ROTULO_STATUS[linha.status] ?? linha.status}
+																</Badge>
+															)}
+															{linha.visitas > 0 && (
+																<span className="text-xs text-muted-foreground tabular-nums">
+																	{inteiro(linha.visitas)} visitas
+																</span>
+															)}
+														</>
+													)}
+												</div>
+											</div>
+										</TableCell>
+										<TableCell className="text-right tabular-nums">
+											{linha.spendCents === 0 ? "—" : reais(linha.spendCents)}
+										</TableCell>
+										<CelulaCusto custo={linha.custoPorQualificado} />
+										<TableCell className="text-right tabular-nums font-medium">
+											{inteiro(linha.identificados)}
+										</TableCell>
+										<TableCell className="text-right tabular-nums">
+											{inteiro(linha.qualificados)}
+										</TableCell>
+										{maisColunas && (
+											<>
+												<TableCell className="text-right tabular-nums">
+													{inteiro(linha.leadsMeta)}
+												</TableCell>
+												<CelulaDiferenca valor={linha.diferencaDeLeads} />
+												<TableCell className="text-right tabular-nums">
+													{inteiro(linha.conversas)}
+												</TableCell>
+												<TableCell className="text-right tabular-nums">
+													{inteiro(linha.propostas)}
+												</TableCell>
+												<TableCell className="text-right tabular-nums font-medium">
+													{inteiro(linha.fechados)}
+												</TableCell>
+											</>
+										)}
+									</TableRow>
+								))}
+							</TableBody>
+						</Table>
+					</div>
+				</Collapsible>
 			</CardContent>
 		</Card>
 	);
