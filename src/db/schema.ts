@@ -465,6 +465,13 @@ export const messages = pgTable(
 		// ninguém sabe depois se o cliente recebeu uma mensagem escrita à mão ou
 		// um disparo automático de retomada.
 		templateName: varchar("template_name", { length: 128 }),
+		// Enriquecimento do inbound que não cabe numa coluna própria (AJA-15).
+		// Nasceu com a transcrição de áudio: `{ transcricao: { modelo, duracaoMs,
+		// bytes, mimeType } }`. Fica em JSON porque o conjunto de chaves cresce com
+		// a conversa — cada nova leitura do anexo entra aqui sem migration nova.
+		// NUNCA guarda fala: o texto transcrito é `content`, porque é fala do
+		// cliente como qualquer outra.
+		metadata: jsonb().$type<Record<string, unknown>>(),
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	},
 	(table) => [index("messages_conversation_persona_idx").on(table.conversationId, table.personaId)],
