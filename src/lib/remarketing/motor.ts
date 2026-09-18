@@ -66,22 +66,31 @@ const DIA_MS = 24 * 60 * 60 * 1000;
  * usa `chaveTelefoneBR`, então "556292496793", "62992496793" e "+55 (62)
  * 99249-6793" caem todos no mesmo lugar.
  *
- * Quem quiser ampliar sem deploy usa `REMARKETING_TELEFONES_INTERNOS`
- * (separado por vírgula). O ciclo ainda cruza com os atendentes ATIVOS do banco
- * (`mesa_attendants` / `user role=attendant`) antes de disparar.
+ * Quem quiser ampliar sem deploy usa `TELEFONES_DA_EQUIPE` (separado por
+ * vírgula) — ou a `REMARKETING_TELEFONES_INTERNOS`, que nasceu antes desta
+ * frente e continua valendo para não trocar o número da casa por ninguém num
+ * deploy. O ciclo ainda cruza com os atendentes do banco (`mesa_attendants` e
+ * `user`), ATIVOS OU NÃO: o número de quem saiu da equipe continua sendo um
+ * telefone da casa, e foi exatamente por filtrar `is_active = true` que 2 dos 6
+ * toques de 18/09 chegaram em gente nossa (diagnóstico §d).
  */
-const TELEFONES_INTERNOS_EM_CODIGO = ["556292496793"];
+const TELEFONES_DA_EQUIPE_PADRAO = ["556292496793"];
 
-function telefonesInternos(): string[] {
-	const daEnv = (process.env.REMARKETING_TELEFONES_INTERNOS ?? "")
-		.split(",")
+/**
+ * A lista de telefones da equipe: os padrões em código mais o que vier das
+ * envs. Exportada com o `env` por parâmetro para o teste poder provar a env sem
+ * mexer no processo — a lista do módulo é montada uma vez, no import.
+ */
+export function telefonesDaEquipe(env: Record<string, string | undefined> = process.env): string[] {
+	const daEnv = [env.TELEFONES_DA_EQUIPE, env.REMARKETING_TELEFONES_INTERNOS]
+		.flatMap((valor) => (valor ?? "").split(","))
 		.map((t) => t.trim())
 		.filter(Boolean);
-	return [...TELEFONES_INTERNOS_EM_CODIGO, ...daEnv];
+	return [...TELEFONES_DA_EQUIPE_PADRAO, ...daEnv];
 }
 
 /** Exportada para o teste travar que o telefone da equipe está na lista. */
-export const TELEFONES_INTERNOS: readonly string[] = telefonesInternos();
+export const TELEFONES_INTERNOS: readonly string[] = telefonesDaEquipe();
 
 // ─── Objetivo → arte e template ─────────────────────────────────────────────
 
@@ -89,13 +98,54 @@ export const TELEFONES_INTERNOS: readonly string[] = telefonesInternos();
  * mesmo eixo; canonicamente é `carro`. */
 export type ObjetivoDoToque = "carro" | "moto" | "imovel";
 
+/**
+ * O objetivo quando a conversa NÃO revelou o bem.
+ *
+ * Existe como valor de propósito: sem ele, "não sei" e "carro" seriam a mesma
+ * string e a arte do carro sairia para quem nunca falou de carro — o defeito
+ * medido em 18/09 (AJA-14). Quem consome decide o que fazer com a ausência: a
+ * ARTE não sai (ver `arteDoObjetivo`), o template cai no eixo mais frequente
+ * (ver `templateDoObjetivo`).
+ */
+export const OBJETIVO_DESCONHECIDO = "desconhecido";
+
+/** Os apelidos conhecidos de cada eixo — a persona diz `auto`, a régua `carro`. */
+const APELIDOS_DO_OBJETIVO: Record<string, ObjetivoDoToque> = {
+	carro: "carro",
+	auto: "carro",
+	automovel: "carro",
+	autos: "carro",
+	moto: "moto",
+	motos: "moto",
+	imovel: "imovel",
+};
+
+function normalizarObjetivo(valor: string | null | undefined): string {
+	// Sem acento de propósito: "Automóvel", "IMÓVEL" e "imovel" caem no mesmo
+	// apelido — a caixa e o acento são digitação, não outro bem.
+	return (valor ?? "")
+		.normalize("NFD")
+		.replace(/[\u0300-\u036f]/g, "")
+		.trim()
+		.toLowerCase();
+}
+
+/**
+ * O valor é um bem que a régua CONHECE?
+ *
+ * É a pergunta que separa "carro" de "não disse" — e que `objetivoCanonico`
+ * sozinho não responde, porque ele é deliberadamente tolerante (desconhecido →
+ * carro, para o template nunca ficar sem chave).
+ */
+export function ehObjetivoConhecido(valor: string | null | undefined): boolean {
+	const v = normalizarObjetivo(valor);
+	return v !== "" && v in APELIDOS_DO_OBJETIVO;
+}
+
 /** Normaliza o objetivo que veio do metadata/da régua. Desconhecido cai em
  * `carro` — o eixo mais frequente — e o desvio fica registrado aqui. */
 export function objetivoCanonico(valor: string | null | undefined): ObjetivoDoToque {
-	const v = (valor ?? "").trim().toLowerCase();
-	if (v === "imovel" || v === "imóvel") return "imovel";
-	if (v === "moto" || v === "motos") return "moto";
-	return "carro";
+	return APELIDOS_DO_OBJETIVO[normalizarObjetivo(valor)] ?? "carro";
 }
 
 /**
@@ -125,7 +175,10 @@ export const ARTE_POR_OBJETIVO: Record<ObjetivoDoToque, string> = {
 	imovel: "/kv/remarketing/oportunidade-imovel.png",
 };
 
-export function arteDoObjetivo(objetivo: string): string {
+export function arteDoObjetivo(objetivo: string | null | undefined): string | null {
+	// Sem bem conhecido NÃO sai arte: melhor um toque só de texto do que a imagem
+	// de um carro para quem nunca falou de carro (AJA-14, 18/09).
+	if (!ehObjetivoConhecido(objetivo)) return null;
 	return ARTE_POR_OBJETIVO[objetivoCanonico(objetivo)];
 }
 
@@ -281,8 +334,9 @@ export type AcaoRemarketing =
 	| {
 			tipo: "turno_de_retomada";
 			passo: PassoDisparo;
-			/** Caminho público da arte que acompanha a fala do agente. */
-			arte: string;
+			/** Caminho público da arte que acompanha a fala do agente; `null`
+			 * quando o bem não é conhecido — o toque sai só com o texto. */
+			arte: string | null;
 	  }
 	| { tipo: "template"; passo: PassoDisparo; usageKey: string };
 
