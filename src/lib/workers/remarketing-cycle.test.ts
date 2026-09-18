@@ -30,6 +30,7 @@ vi.mock("bullmq", () => ({
 vi.mock("ioredis", () => ({ default: class {} }));
 
 import {
+	inteiroDaEnv,
 	type LinhaDaRegua,
 	reguaLigada,
 	runRemarketingCycle,
@@ -139,6 +140,26 @@ describe("a chave operacional da régua", () => {
 		await startRemarketingWorker();
 		expect(log.mock.calls.flat().join(" ")).toMatch(/régua DESLIGADA/);
 		log.mockRestore();
+	});
+});
+
+describe("env numérica com a chave publicada e VAZIA", () => {
+	// O `.env.example` publica as chaves vazias de propósito (ausente-desligado),
+	// e `Number("")` é `0`. Em `LIMIT` isso é "nenhuma linha"; no BullMQ é
+	// `repeat.every: 0`, um job em laço. O default tem que vencer o vazio.
+	it("vazio, ausente, inválido ou ≤ 0 cai no padrão", () => {
+		expect(inteiroDaEnv(undefined, 50)).toBe(50);
+		expect(inteiroDaEnv("", 50)).toBe(50);
+		expect(inteiroDaEnv("   ", 50)).toBe(50);
+		expect(inteiroDaEnv("0", 50)).toBe(50);
+		expect(inteiroDaEnv("-3", 50)).toBe(50);
+		expect(inteiroDaEnv("nao", 50)).toBe(50);
+	});
+
+	it("valor positivo de verdade é respeitado", () => {
+		expect(inteiroDaEnv("7", 50)).toBe(7);
+		expect(inteiroDaEnv("120", 50)).toBe(120);
+		expect(inteiroDaEnv("120.9", 50)).toBe(120);
 	});
 });
 

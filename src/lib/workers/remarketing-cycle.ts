@@ -128,10 +128,26 @@ export interface ResultadoCiclo {
 	conversoes?: unknown;
 }
 
+/**
+ * Env numérica, com default. **Vazio NÃO é zero.**
+ *
+ * O `.env.example` publica as chaves vazias (é assim que se liga uma capacidade:
+ * ausente-desligado), e `Number("")` é `0` — que em `LIMIT` não é "sem limite",
+ * é **nenhuma linha**, e no BullMQ é `repeat.every: 0`, um job em laço. Enquanto
+ * isto era `?? padrao`, um ambiente com a variável publicada e vazia tinha
+ * `LIMITE_POR_CICLO = 0`: a régua não disparava nada e não havia erro em lugar
+ * nenhum. Exportada para o teste provar o caso "vazio", que é o default do
+ * `.env.example` e o que o `.env.local` do worktree traz.
+ */
+export function inteiroDaEnv(valor: string | undefined, padrao: number): number {
+	const n = Number(valor);
+	return Number.isFinite(n) && n > 0 ? Math.trunc(n) : padrao;
+}
+
 // ─── Limites ────────────────────────────────────────────────────────────────
 
-const LIMITE_POR_CICLO = Number(process.env.REMARKETING_POR_CICLO ?? 50);
-const ENTRADAS_POR_CICLO = Number(process.env.REMARKETING_ENTRADAS_POR_CICLO ?? 20);
+const LIMITE_POR_CICLO = inteiroDaEnv(process.env.REMARKETING_POR_CICLO, 50);
+const ENTRADAS_POR_CICLO = inteiroDaEnv(process.env.REMARKETING_ENTRADAS_POR_CICLO, 20);
 
 /**
  * Chave operacional da régua: sem ela, o ciclo **não inscreve ninguém e não
@@ -676,7 +692,7 @@ const QUEUE_NAME = "remarketing-cycle";
 
 /** O intervalo do polling. 30 s é a ordem de grandeza do silêncio (90 min) e da
  * janela de horário — reagir mais rápido que isso não muda nada. */
-const POLL_INTERVAL_MS = Number(process.env.REMARKETING_POLL_INTERVAL_MS ?? 30_000);
+const POLL_INTERVAL_MS = inteiroDaEnv(process.env.REMARKETING_POLL_INTERVAL_MS, 30_000);
 
 /**
  * Sobe a fila + worker BullMQ com job repetível. Exige Redis (REDIS_URL) —
