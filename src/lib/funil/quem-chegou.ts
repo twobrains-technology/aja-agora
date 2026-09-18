@@ -17,8 +17,8 @@
  *   isso só existe depois da contratação. A válvula registra a lacuna.
  */
 
-import type { Bem } from "./textos-do-cta";
 import { ROTULO_DO_BEM } from "@/lib/admin/rotulo-do-bem";
+import type { Bem } from "./textos-do-cta";
 
 export { ROTULO_DO_BEM };
 

@@ -152,7 +152,8 @@ export async function getOrCreateConversation(
 	// quando o turno seguinte o procurasse, e um teste de integração não tinha
 	// como afirmar que ele nasceu com a origem certa. Sinal de mídia que talvez
 	// exista não é sinal.
-	const abriuConversaDeFato = !primeiraMensagem || !ehMensagemPrePreenchida(primeiraMensagem, "whatsapp");
+	const abriuConversaDeFato =
+		!primeiraMensagem || !ehMensagemPrePreenchida(primeiraMensagem, "whatsapp");
 
 	if (!isSimulated && abriuConversaDeFato) {
 		await registrarInicioDeConversa({
