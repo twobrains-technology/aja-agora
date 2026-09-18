@@ -34,6 +34,7 @@ import {
 	diaDeHoje,
 	diaDoNegocio,
 	diasDoCookie,
+	INICIO_DO_COLETOR,
 	serializarPeriodoDoCookie,
 	valorDoCookie,
 } from "@/lib/admin/periodo";
@@ -45,7 +46,13 @@ const UM_DIA_MS = 24 * 60 * 60 * 1000;
 /** Um ano: o período é preferência de trabalho, não sessão. */
 const VALIDADE_DO_COOKIE_SEGUNDOS = 60 * 60 * 24 * 365;
 
-type IdentificadorDePreset = "hoje" | "7d" | "30d" | "mes-passado" | "personalizado";
+type IdentificadorDePreset =
+	| "hoje"
+	| "7d"
+	| "30d"
+	| "mes-passado"
+	| "desde-o-inicio"
+	| "personalizado";
 
 interface IntervaloDias {
 	de: Date;
@@ -57,6 +64,9 @@ export const PRESETS: { id: IdentificadorDePreset; rotulo: string }[] = [
 	{ id: "7d", rotulo: "7 dias" },
 	{ id: "30d", rotulo: "30 dias" },
 	{ id: "mes-passado", rotulo: "Mês passado" },
+	// "Desde o início", e não "Tudo": a série começa no coletor (18/08/2026),
+	// então "tudo" prometeria um histórico anterior que não existe.
+	{ id: "desde-o-inicio", rotulo: "Desde o início" },
 	{ id: "personalizado", rotulo: "Personalizado" },
 ];
 
@@ -90,6 +100,8 @@ export function intervaloDoPreset(
 			return { de: comecando(hoje, 30), ate: hoje };
 		case "mes-passado":
 			return mesPassado(hoje);
+		case "desde-o-inicio":
+			return { de: diaComoData(INICIO_DO_COLETOR), ate: hoje };
 	}
 }
 
@@ -103,7 +115,7 @@ function mesmoIntervalo(a: IntervaloDias, b: IntervaloDias): boolean {
 
 /** Qual preset descreve o intervalo atual — ou `null` se é um intervalo próprio. */
 export function presetDoIntervalo(de: Date, ate: Date, hoje: Date): IdentificadorDePreset {
-	for (const preset of ["hoje", "7d", "30d", "mes-passado"] as const) {
+	for (const preset of ["hoje", "7d", "30d", "mes-passado", "desde-o-inicio"] as const) {
 		if (mesmoIntervalo(intervaloDoPreset(preset, hoje), { de, ate })) return preset;
 	}
 	return "personalizado";
