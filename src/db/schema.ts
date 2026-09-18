@@ -1814,3 +1814,36 @@ export const remarketingTouchesRelations = relations(remarketingTouches, ({ one 
 		references: [contacts.id],
 	}),
 }));
+
+// ─── Exportações (auditoria de LGPD da área "Exportação e dados") ────────────
+//
+// Cada arquivo baixado da tela `/admin/exportacao` vira uma linha aqui: quem
+// exportou, quando, que recorte (de/até), que formato e — o campo que importa
+// para LGPD — se o dado pessoal saiu MASCARADO ou completo. O pedido do Gustavo
+// diz "minimizar dados pessoais"; a resposta a "quem levou o quê" tem que
+// existir ANTES de alguém levar o completo.
+//
+// `usuario_email` é um SNAPSHOT de propósito: se o usuário for removido, a
+// auditoria não pode ficar órfã nem mentir o autor (`usuario_id` com
+// `set null` sobrevive, o e-mail fica gravado como estava no dia).
+export const exportacoes = pgTable(
+	"exportacoes",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		/** `conversas` | `percurso` | `toques` — o dicionário é `src/lib/exportacao`. */
+		tipo: text().notNull(),
+		formato: text().notNull(),
+		de: timestamp("de", { withTimezone: true }).notNull(),
+		ate: timestamp("ate", { withTimezone: true }).notNull(),
+		mascarado: boolean().default(true).notNull(),
+		linhas: integer().notNull(),
+		usuarioId: text("usuario_id").references(() => user.id, { onDelete: "set null" }),
+		usuarioEmail: text("usuario_email"),
+		criadoEm: timestamp("criado_em", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [index("exportacoes_criado_em_idx").on(table.criadoEm)],
+);
+
+export const exportacoesRelations = relations(exportacoes, ({ one }) => ({
+	usuario: one(user, { fields: [exportacoes.usuarioId], references: [user.id] }),
+}));
