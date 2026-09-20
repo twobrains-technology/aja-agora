@@ -26,7 +26,7 @@
 import { SettingsIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { parseAsInteger, parseAsString, useQueryState } from "nuqs";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ConversationDetailPanel } from "@/components/admin/conversations/conversation-detail-panel";
 import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter";
 import { usePeriodoPadrao } from "@/components/admin/dashboard/periodo-provider";
@@ -36,7 +36,6 @@ import { BlocoResumoDaRegua } from "@/components/admin/remarketing/resumo-da-reg
 import { TabelaRemarketing } from "@/components/admin/remarketing/tabela-remarketing";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
 	Select,
 	SelectContent,
@@ -71,19 +70,6 @@ const CONTADORES_VAZIOS: Contadores = {
 	optout: 0,
 	converteu: 0,
 };
-
-function BlocoSkeleton({ altura = 320 }: { altura?: number }) {
-	return (
-		<Card>
-			<CardHeader>
-				<Skeleton className="h-5 w-48" />
-			</CardHeader>
-			<CardContent>
-				<Skeleton className="w-full" style={{ height: altura }} />
-			</CardContent>
-		</Card>
-	);
-}
 
 function ReguaContent() {
 	// O período da PESSOA: a URL manda, o cookie é o segundo degrau (o provider
@@ -402,9 +388,5 @@ function ReguaContent() {
 }
 
 export default function RemarketingPage() {
-	return (
-		<Suspense fallback={<BlocoSkeleton />}>
-			<ReguaContent />
-		</Suspense>
-	);
+	return <ReguaContent />;
 }

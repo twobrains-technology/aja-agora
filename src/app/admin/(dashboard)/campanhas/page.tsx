@@ -21,7 +21,7 @@
 
 import { InfoIcon } from "lucide-react";
 import { useQueryState } from "nuqs";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ResumoCampanhas } from "@/components/admin/campanhas/resumo-campanhas";
 import { TabelaCampanhas } from "@/components/admin/campanhas/tabela-campanhas";
 import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter";
@@ -194,9 +194,5 @@ function CampanhasContent() {
 }
 
 export default function CampanhasPage() {
-	return (
-		<Suspense fallback={<BlocoSkeleton />}>
-			<CampanhasContent />
-		</Suspense>
-	);
+	return <CampanhasContent />;
 }

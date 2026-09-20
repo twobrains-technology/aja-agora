@@ -1,7 +1,7 @@
 "use client";
 
 import { useQueryState } from "nuqs";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter";
 import { FunilDeHandoffCard } from "@/components/admin/performance/funil-de-handoff";
 import { FunilMidiaChart } from "@/components/admin/performance/funil-midia-chart";
@@ -132,16 +132,5 @@ function PerformanceContent() {
 }
 
 export default function PerformancePage() {
-	return (
-		<Suspense
-			fallback={
-				<div className="space-y-6">
-					<Skeleton className="h-8 w-48" />
-					<BlocoSkeleton altura={320} />
-				</div>
-			}
-		>
-			<PerformanceContent />
-		</Suspense>
-	);
+	return <PerformanceContent />;
 }
