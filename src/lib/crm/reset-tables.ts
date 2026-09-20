@@ -100,4 +100,10 @@ export const TABELAS_PRESERVADAS: readonly string[] = [
 	"meta_entities",
 	// Canal WhatsApp
 	"whatsapp_templates",
+	// A AUDITORIA de quem exportou dado do CRM (tipo, recorte, formato, se saiu
+	// mascarado). Não é métrica da operação antiga: é o registro de quem levou
+	// dado pessoal, e o marco zero que apagasse esse rastro faria justamente o
+	// contrário do que uma auditoria de LGPD existe para fazer. Preservar não
+	// contamina número nenhum — a tela de Exportação é histórico de acesso.
+	"exportacoes",
 ];

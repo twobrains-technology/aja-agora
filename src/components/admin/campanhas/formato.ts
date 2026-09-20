@@ -4,6 +4,8 @@
  * cartão e na tabela.
  */
 
+import type { CustoPorQualificado, MotivoSemCusto } from "@/lib/admin/campanhas-queries";
+
 const BR = new Intl.NumberFormat("pt-BR");
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -18,12 +20,54 @@ export function inteiro(valor: number): string {
 }
 
 /**
- * Custo por lead qualificado, com o "sem base" explícito.
+ * O que a célula de custo mostra — texto, ícone e a explicação de "o que fazer".
  *
- * `null` NÃO é zero: é "não houve qualificado no período". Mostrar "R$ 0,00"
- * afirmaria que o lead qualificado saiu de graça, quando o que aconteceu é que
- * não houve nenhum para dividir o gasto.
+ * `motivo` é o que decide o ícone (o componente mapeia para lucide); `null`
+ * significa que há valor. A separação existe para o teste provar a COPY sem
+ * precisar renderizar React.
  */
-export function custo(centavos: number | null): string {
-	return centavos === null ? "sem base" : reais(centavos);
+export interface CustoDescrito {
+	texto: string;
+	motivo: MotivoSemCusto | null;
+	tooltip: string;
+}
+
+const MOTIVOS: Record<MotivoSemCusto, CustoDescrito> = {
+	sem_qualificado: {
+		texto: "Sem qualificado no período",
+		motivo: "sem_qualificado",
+		tooltip:
+			"Houve investimento e a campanha tem vínculo com o CRM, mas nenhum lead chegou a qualificado no período. Não é custo zero: é custo que ainda não dá para calcular — vale olhar o funil, não a verba.",
+	},
+	sem_gasto: {
+		texto: "Sem gasto informado",
+		motivo: "sem_gasto",
+		tooltip:
+			"O gerenciador não reportou investimento para esta campanha no período. Confira se a campanha está ativa e se o ciclo de sincronização com a Meta está rodando.",
+	},
+	sem_vinculo: {
+		texto: "Sem vínculo com o CRM",
+		motivo: "sem_vinculo",
+		tooltip:
+			"A campanha gastou, mas nenhuma visita ou conversa do CRM aponta para ela. O problema é de atribuição: confira a UTM/template do anúncio e se a campanha já está espelhada pelo sync.",
+	},
+};
+
+/**
+ * Custo por lead qualificado, com o MOTIVO explícito quando não há número.
+ *
+ * `null` nunca é zero: mostrar "R$ 0,00" afirmaria que o lead qualificado saiu de
+ * graça. E 'sem base' — a resposta antiga — juntava três problemas diferentes
+ * (sem vínculo, sem gasto, sem qualificado) sob um rótulo que não mandava
+ * ninguém a lugar nenhum.
+ */
+export function descreverCusto(custo: CustoPorQualificado): CustoDescrito {
+	if (custo.tipo === "valor") {
+		return {
+			texto: reais(custo.centavos),
+			motivo: null,
+			tooltip: "Investimento dividido pelos leads que chegaram ao estágio qualificado",
+		};
+	}
+	return MOTIVOS[custo.motivo];
 }

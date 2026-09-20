@@ -19,6 +19,7 @@
  * tela — a janela acompanha a pessoa, não a página.
  */
 
+import { InfoIcon } from "lucide-react";
 import { useQueryState } from "nuqs";
 import { useCallback, useEffect, useState } from "react";
 import { ResumoCampanhas } from "@/components/admin/campanhas/resumo-campanhas";
@@ -28,6 +29,7 @@ import { usePeriodoPadrao } from "@/components/admin/dashboard/periodo-provider"
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { RespostaDeCampanhas } from "@/lib/admin/campanhas-queries";
 import { parseAsDiaDoNegocio } from "@/lib/admin/periodo-querystring";
 
@@ -95,15 +97,29 @@ function CampanhasContent() {
 			<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 				<div>
 					<h1 className="text-2xl font-bold tracking-tight">Campanhas</h1>
-					<p className="mt-1 text-sm text-muted-foreground">
-						O que cada campanha gastou e o que ela trouxe de verdade no funil — da visita ao
-						contrato, com os números da Meta e do CRM lado a lado.
-					</p>
-					{dados && (
-						<p className="mt-1 text-xs text-muted-foreground">
-							Janela de atribuição dos números da Meta: {dados.janelaDeAtribuicao}.
+					<div className="mt-1 flex items-center gap-1.5">
+						<p className="text-sm text-muted-foreground">
+							O que cada campanha gastou e o que ela trouxe no funil.
 						</p>
-					)}
+						<Tooltip>
+							<TooltipTrigger
+								render={
+									<button
+										type="button"
+										className="text-muted-foreground hover:text-foreground"
+										aria-label="Sobre os números da Meta"
+									/>
+								}
+							>
+								<InfoIcon className="size-3.5" aria-hidden="true" />
+							</TooltipTrigger>
+							<TooltipContent>
+								Janela de atribuição dos números da Meta:{" "}
+								{dados?.janelaDeAtribuicao ??
+									"padrão da Meta — 7 dias após o clique e 1 dia após a visualização"}
+							</TooltipContent>
+						</Tooltip>
+					</div>
 				</div>
 				<DateRangeFilter />
 			</div>
@@ -153,7 +169,8 @@ function CampanhasContent() {
 									qualificados: 0,
 									propostas: 0,
 									fechados: 0,
-									custoPorQualificadoCents: null,
+									custoPorQualificado: { tipo: "motivo", motivo: "sem_gasto" },
+									conversas: 0,
 								}
 							}
 						/>

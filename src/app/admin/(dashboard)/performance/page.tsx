@@ -6,6 +6,7 @@ import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter"
 import { FunilDeHandoffCard } from "@/components/admin/performance/funil-de-handoff";
 import { FunilMidiaChart } from "@/components/admin/performance/funil-midia-chart";
 import { PortaDoFunilCard } from "@/components/admin/performance/porta-do-funil";
+import { QuemChegouCard } from "@/components/admin/performance/quem-chegou";
 import { SerieAquisicaoChart } from "@/components/admin/performance/serie-aquisicao-chart";
 import { TabelaOrigens } from "@/components/admin/performance/tabela-origens";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -99,6 +100,11 @@ function PerformanceContent() {
 			) : (
 				<BlocoSkeleton altura={140} />
 			)}
+
+			{/* "Quem chegou" (pedido d da Bruna) fica logo abaixo da porta: a porta diz
+			    QUANTOS viraram conversa, este bloco diz QUEM são — e é o dado que falta
+			    para decidir criativo (que bem, que faixa de carta anunciar). */}
+			{pronto ? <QuemChegouCard dados={midia.quemChegou} /> : <BlocoSkeleton altura={180} />}
 
 			{pronto ? (
 				<FunilMidiaChart etapas={midia.funil} de={from} ate={to} />

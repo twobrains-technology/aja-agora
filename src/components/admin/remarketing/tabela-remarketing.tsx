@@ -2,7 +2,16 @@
 
 import { format, formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale/pt-BR";
-import { HandIcon, MessageSquareIcon, PlayIcon } from "lucide-react";
+import {
+	Ban,
+	Check,
+	Flag,
+	HandIcon,
+	Megaphone,
+	MessageSquareIcon,
+	PauseCircle,
+	PlayIcon,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,16 +25,18 @@ import {
 } from "@/components/ui/table";
 import type { AcaoDaRegua, LinhaDaTela, Situacao } from "@/lib/admin/remarketing-tela";
 
-/** A cor por situação usa os tokens semânticos do painel — nada de hex. */
-const VARIANTE_DA_SITUACAO: Record<Situacao, "default" | "secondary" | "outline" | "destructive"> =
-	{
-		ativo: "default",
-		segurado: "secondary",
-		respondeu: "secondary",
-		esgotado: "outline",
-		optout: "destructive",
-		converteu: "outline",
-	};
+/** Estado = ícone + rótulo; cor é reforço. Nenhuma situação usa `default` (coral). */
+const APARENCIA_DA_SITUACAO: Record<
+	Situacao,
+	{ variante: "success" | "warning" | "secondary" | "outline" | "destructive"; icone: typeof Check }
+> = {
+	ativo: { variante: "secondary", icone: Megaphone },
+	segurado: { variante: "warning", icone: PauseCircle },
+	respondeu: { variante: "success", icone: Check },
+	esgotado: { variante: "warning", icone: Flag },
+	optout: { variante: "destructive", icone: Ban },
+	converteu: { variante: "success", icone: Check },
+};
 
 function instanteLegivel(iso: string): string {
 	return format(new Date(iso), "dd/MM 'às' HH:mm", { locale: ptBR });
@@ -83,6 +94,8 @@ export function TabelaRemarketing({
 				<TableBody>
 					{linhas.map((linha) => {
 						const pendente = emAndamento === linha.conversationId;
+						const aparencia = APARENCIA_DA_SITUACAO[linha.situacao];
+						const IconeDaSituacao = aparencia.icone;
 						return (
 							<TableRow key={linha.conversationId}>
 								<TableCell>
@@ -92,7 +105,7 @@ export function TabelaRemarketing({
 										className="text-left font-medium hover:underline"
 										title="Abrir a conversa"
 									>
-										{linha.nome ?? "Sem nome ainda"}
+										{linha.nome ?? "Sem nome"}
 									</button>
 									<span className="block text-xs text-muted-foreground">
 										{linha.telefoneMascarado ?? "Sem telefone"}
@@ -109,7 +122,8 @@ export function TabelaRemarketing({
 								</TableCell>
 
 								<TableCell>
-									<Badge variant={VARIANTE_DA_SITUACAO[linha.situacao]}>
+									<Badge variant={aparencia.variante} className="gap-1">
+										<IconeDaSituacao className="size-3" aria-hidden="true" />
 										{linha.rotuloDaSituacao}
 									</Badge>
 								</TableCell>
@@ -125,7 +139,7 @@ export function TabelaRemarketing({
 											</span>
 										</>
 									) : (
-										<span className="text-muted-foreground">—</span>
+										<span className="text-muted-foreground">Nenhum a caminho</span>
 									)}
 								</TableCell>
 
@@ -140,7 +154,7 @@ export function TabelaRemarketing({
 											)}
 										</>
 									) : (
-										<span className="text-muted-foreground">—</span>
+										<span className="text-muted-foreground">Sem motivo de saída</span>
 									)}
 								</TableCell>
 

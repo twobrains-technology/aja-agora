@@ -71,6 +71,7 @@ describeIfDb("campanhas — funil por campanha + gasto da Meta (integration)", (
 		campaignId?: string | null;
 		utmSource?: string | null;
 		utmCampaign?: string | null;
+		utmContent?: string | null;
 		/** Até onde a jornada chegou. */
 		ate?: "visita" | "identificou" | "proposta";
 	}): Promise<void> {
@@ -83,6 +84,7 @@ describeIfDb("campanhas — funil por campanha + gasto da Meta (integration)", (
 				userAgent: UA_GENTE,
 				utmSource: parcial.utmSource ?? null,
 				utmCampaign: parcial.utmCampaign ?? null,
+				utmContent: parcial.utmContent ?? null,
 				campaignId: parcial.campaignId ?? null,
 			})
 			.returning({ id: schema.visits.id });
@@ -120,10 +122,53 @@ describeIfDb("campanhas — funil por campanha + gasto da Meta (integration)", (
 
 	beforeAll(async () => {
 		// Campanha A: chave forte pelo `campaign_id` da Meta, com jornada completa.
-		await semearVisita({ campaignId: "120250956902860104", utmSource: "ig", ate: "proposta" });
-		await semearVisita({ campaignId: "120250956902860104", utmSource: "ig", ate: "identificou" });
+		await semearVisita({
+			campaignId: "120250956902860104",
+			utmSource: "ig",
+			utmContent: "ad-1",
+			ate: "proposta",
+		});
+		await semearVisita({
+			campaignId: "120250956902860104",
+			utmSource: "ig",
+			utmContent: "ad-1",
+			ate: "identificou",
+		});
 		// Campanha B: só UTM — o resolvedor ainda não a conhece.
-		await semearVisita({ utmSource: "fb", utmCampaign: "consorcio-agosto", ate: "identificou" });
+		await semearVisita({
+			utmSource: "fb",
+			utmCampaign: "consorcio-agosto",
+			utmContent: "ad-desconhecido",
+			ate: "identificou",
+		});
+		// Campanha D: tem vínculo (visita) e gasto, mas ninguém qualificou.
+		await semearVisita({ campaignId: "120250111111110104", utmSource: "ig", ate: "visita" });
+
+		// Uma conversa de WhatsApp SEM visita: chegou fora da landing. É a linha de
+		// reconciliação — sem ela, o total do CRM nesta tela não fecharia com
+		// Conversas.
+		const [semOrigem] = await db
+			.insert(schema.conversations)
+			.values({
+				channel: "whatsapp",
+				visitId: null,
+				createdAt: DENTRO,
+				updatedAt: DENTRO,
+			})
+			.returning({ id: schema.conversations.id });
+		convIds.push(semOrigem.id);
+		const [leadSemOrigem] = await db
+			.insert(schema.leads)
+			.values({
+				conversationId: semOrigem.id,
+				name: "Chegou Sem Origem",
+				phone: "+5511900000001",
+				stage: "qualificado",
+				createdAt: DENTRO,
+				updatedAt: DENTRO,
+			})
+			.returning({ id: schema.leads.id });
+		leadIds.push(leadSemOrigem.id);
 
 		// O gerenciador conhece a campanha A e atribuiu mais leads do que o CRM.
 		await db.insert(schema.metaEntities).values({
@@ -142,6 +187,27 @@ describeIfDb("campanhas — funil por campanha + gasto da Meta (integration)", (
 			status: "ACTIVE",
 		});
 		metaEntityIds.push("120250999999990104");
+
+		// Campanha D: o gerenciador conhece, gastou, mas o lead não qualificou.
+		await db.insert(schema.metaEntities).values({
+			entityId: "120250111111110104",
+			nivel: "campaign",
+			nome: "MOFU - AJA | SEM QUALIFICAR",
+			status: "ACTIVE",
+		});
+		metaEntityIds.push("120250111111110104");
+
+		// O ANÚNCIO com o criativo — é o que a sub-tabela mostra por `utm_content`.
+		await db.insert(schema.metaEntities).values({
+			entityId: "ad-1",
+			nivel: "ad",
+			nome: "ANUNCIO | CARRO | V1",
+			parentEntityId: "77",
+			creativeId: "cri-1",
+			creativeName: "IMG | GERAL | RMKT | V1",
+			thumbnailUrl: "https://scontent.example/t.jpg",
+		});
+		metaEntityIds.push("ad-1");
 
 		await db.insert(schema.metaInsightsDiarios).values([
 			{
@@ -162,6 +228,15 @@ describeIfDb("campanhas — funil por campanha + gasto da Meta (integration)", (
 				impressions: 800,
 				clicks: 40,
 			},
+			{
+				data: "2018-05-15",
+				entityId: "120250111111110104",
+				nivel: "campaign",
+				spendCents: 50_000,
+				leads: 2,
+				impressions: 500,
+				clicks: 20,
+			},
 		]);
 	});
 
@@ -180,7 +255,7 @@ describeIfDb("campanhas — funil por campanha + gasto da Meta (integration)", (
 		expect(a?.propostas).toBe(1);
 		expect(a?.diferencaDeLeads).toBe(7);
 		// 120000 centavos ÷ 2 qualificados = 60000.
-		expect(a?.custoPorQualificadoCents).toBe(60_000);
+		expect(a?.custoPorQualificado).toEqual({ tipo: "valor", centavos: 60_000 });
 
 		// A campanha que só tem UTM aparece, sem nome resolvido e sem gasto.
 		const b = linhas.find((l) => l.chave === "consorcio-agosto");
@@ -189,12 +264,50 @@ describeIfDb("campanhas — funil por campanha + gasto da Meta (integration)", (
 		expect(b?.nome).toBe("consorcio-agosto");
 		expect(b?.conversas).toBe(1);
 		expect(b?.spendCents).toBe(0);
+		// Tem vínculo (a visita), mas o gerenciador não reportou gasto.
+		expect(b?.custoPorQualificado).toEqual({ tipo: "motivo", motivo: "sem_gasto" });
 
 		// A campanha que gastou e não trouxe ninguém também aparece.
 		const c = linhas.find((l) => l.chave === "120250999999990104");
 		expect(c).toBeDefined();
 		expect(c?.spendCents).toBe(80_000);
 		expect(c?.conversas).toBe(0);
+		// Gastou sem nenhuma visita do CRM apontando para ela.
+		expect(c?.custoPorQualificado).toEqual({ tipo: "motivo", motivo: "sem_vinculo" });
+
+		// A campanha com vínculo e gasto, mas sem qualificado.
+		const d = linhas.find((l) => l.chave === "120250111111110104");
+		expect(d).toBeDefined();
+		expect(d?.visitas).toBe(1);
+		expect(d?.qualificados).toBe(0);
+		expect(d?.custoPorQualificado).toEqual({ tipo: "motivo", motivo: "sem_qualificado" });
+
+		// A linha de reconciliação existe, é a última e carrega a conversa sem visita.
+		const semOrigem = linhas.find((l) => l.semOrigemConhecida);
+		expect(semOrigem).toBeDefined();
+		expect(semOrigem?.conversas).toBe(1);
+		expect(semOrigem?.identificados).toBe(1);
+		expect(linhas[linhas.length - 1]?.semOrigemConhecida).toBe(true);
+	});
+
+	it("abre o funil por criativo, casando utm_content com o anúncio do espelho", async () => {
+		const { linhas } = await campanhas.computeCampanhas(JANELA_DE, JANELA_ATE);
+
+		const a = linhas.find((l) => l.chave === "120250956902860104");
+		const criativo = a?.criativos.find((c) => c.chave === "ad-1");
+		expect(criativo).toBeDefined();
+		expect(criativo?.nomeResolvido).toBe(true);
+		expect(criativo?.nome).toBe("IMG | GERAL | RMKT | V1");
+		expect(criativo?.thumbnailUrl).toBe("https://scontent.example/t.jpg");
+		expect(criativo?.visitas).toBe(2);
+		expect(criativo?.conversas).toBe(2);
+
+		// O criativo que o espelho não conhece aparece com o id cru, não resolvido.
+		const b = linhas.find((l) => l.chave === "consorcio-agosto");
+		const desconhecido = b?.criativos.find((c) => c.chave === "ad-desconhecido");
+		expect(desconhecido).toBeDefined();
+		expect(desconhecido?.nomeResolvido).toBe(false);
+		expect(desconhecido?.nome).toBeNull();
 	});
 
 	it("a soma por campanha NÃO diverge do computeOrigens", async () => {
@@ -202,14 +315,24 @@ describeIfDb("campanhas — funil por campanha + gasto da Meta (integration)", (
 		const origens = await performance.computeOrigens(JANELA_DE, JANELA_ATE);
 
 		const soma = (campo: "visitas" | "conversas" | "identificados" | "propostas" | "fechados") =>
-			linhas.reduce((acc, l) => acc + l[campo], 0);
+			linhas.filter((l) => !l.semOrigemConhecida).reduce((acc, l) => acc + l[campo], 0);
 
-		// Semeadura 100% atribuída a campanha: as duas contagens têm que fechar.
+		// Semeadura atribuída a campanha: as duas contagens têm que fechar (a linha
+		// de reconciliação fica de fora — ela não é campanha).
 		expect(soma("visitas")).toBe(origens.reduce((acc, o) => acc + o.visitas, 0));
 		expect(soma("conversas")).toBe(origens.reduce((acc, o) => acc + o.conversas, 0));
 		expect(soma("identificados")).toBe(origens.reduce((acc, o) => acc + o.identificados, 0));
 		expect(soma("propostas")).toBe(origens.reduce((acc, o) => acc + o.propostas, 0));
 		expect(soma("fechados")).toBe(origens.reduce((acc, o) => acc + o.fechados, 0));
+	});
+
+	it("o total de conversas soma as campanhas E as sem origem", async () => {
+		const { linhas, totais } = await campanhas.computeCampanhas(JANELA_DE, JANELA_ATE);
+		const semOrigem = linhas.find((l) => l.semOrigemConhecida);
+		const somaCampanhas = linhas
+			.filter((l) => !l.semOrigemConhecida)
+			.reduce((acc, l) => acc + l.conversas, 0);
+		expect(totais.conversas).toBe(somaCampanhas + (semOrigem?.conversas ?? 0));
 	});
 });
 

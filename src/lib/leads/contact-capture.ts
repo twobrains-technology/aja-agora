@@ -4,6 +4,7 @@ import { conversations, leads } from "@/db/schema";
 import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
 import { transitionLeadStage } from "@/lib/admin/lead-transitions";
 import { attachContact } from "@/lib/contacts";
+import { sincronizarNomeDoContato } from "@/lib/contacts/sincronizar-nome";
 import { ehNomeProprioPlausivel, nomeAncoradoNaFala } from "./nome-plausivel";
 import { normalizePhoneBR } from "./phone";
 
@@ -148,6 +149,13 @@ export async function saveContactName(
 		.set({ contactName: displayName, updatedAt: new Date() })
 		.where(eq(conversations.id, conversationId));
 
+	// F2 / AJA-02 — o nome não pode morrer em `conversations`/`leads`: quem já tem
+	// contato resolvido (telefone capturado antes) precisa do nome em
+	// `contacts.name`, que é a coluna que a régua lê. Ponto único de sincronização
+	// (`sincronizarNomeDoContato`), o mesmo usado pelo gate `name` e pelo pushName
+	// do WhatsApp — ver `src/lib/contacts/sincronizar-nome.ts`.
+	await sincronizarNomeDoContato({ conversationId, nome: displayName });
+
 	const existing = await db.query.leads.findFirst({
 		where: eq(leads.conversationId, conversationId),
 	});
@@ -203,12 +211,27 @@ export async function saveContactWhatsapp(
 		where: eq(leads.conversationId, conversationId),
 	});
 
+	// O nome que o agente JÁ sabe (gravado na conversa, pelo gate `name`, pela
+	// tool ou pelo pushName) precisa entrar no `input` do casamento por telefone:
+	// `resolveContact` consolida `primary.name ?? input.name`, então sem isto o
+	// contato nasce/atualiza com nome nulo e o nome já capturado se perde —
+	// exatamente o caso "nome antes do telefone".
+	const conversa = await db.query.conversations.findFirst({
+		where: eq(conversations.id, conversationId),
+		columns: { contactName: true },
+	});
+	const nomeConhecido = conversa?.contactName ?? null;
+
 	if (existing) {
 		await db.update(leads).set({ phone, updatedAt: new Date() }).where(eq(leads.id, existing.id));
 
 		await transitionLeadStage(existing.id, "engajado", { type: "system" }, { onlyAdvance: true });
-		// FIX-42: religa cliente unificado pelo telefone.
-		await attachContact({ conversationId, leadId: existing.id, input: { phone } });
+		// FIX-42: religa cliente unificado pelo telefone. F2: leva o nome sabido.
+		await attachContact({
+			conversationId,
+			leadId: existing.id,
+			input: { phone, name: nomeConhecido ?? existing.name },
+		});
 		void import("@/lib/conversions/registry").then(({ registrarLeadIdentificado }) =>
 			registrarLeadIdentificado(conversationId),
 		);
@@ -217,7 +240,7 @@ export async function saveContactWhatsapp(
 
 	const { leadId } = await createLeadFromConversation({
 		conversationId,
-		name: null,
+		name: nomeConhecido,
 		phone,
 		email: null,
 	});

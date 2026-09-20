@@ -11,11 +11,30 @@
 
 import { describe, expect, it } from "vitest";
 import {
+	type CustoPorQualificado,
 	combinarCampanhas,
 	type GastoDeCampanha,
+	type LinhaCampanha,
+	type LinhaCriativo,
 	type LinhaFunilCampanha,
 	totalizarCampanhas,
 } from "./campanhas-queries";
+
+/** O valor, quando há; `null` quando o custo não pode ser calculado. */
+function centavos(c: CustoPorQualificado): number | null {
+	return c.tipo === "valor" ? c.centavos : null;
+}
+
+function motivo(c: CustoPorQualificado): string | null {
+	return c.tipo === "motivo" ? c.motivo : null;
+}
+
+/** O custo da linha `chave` — falha alto se ela não existir, em vez de `!`. */
+function custoDe(linhas: LinhaCampanha[], chave: string): CustoPorQualificado {
+	const linha = linhas.find((l) => l.chave === chave);
+	if (!linha) throw new Error(`linha ${chave} ausente`);
+	return linha.custoPorQualificado;
+}
 
 function funil(parcial: Partial<LinhaFunilCampanha> & { chave: string }): LinhaFunilCampanha {
 	return {
@@ -84,7 +103,7 @@ describe("combinarCampanhas", () => {
 		expect(primeira.leadsMeta).toBe(15);
 		expect(primeira.identificados).toBe(8);
 		// 120000 centavos ÷ 4 qualificados = 30000 centavos por qualificado.
-		expect(primeira.custoPorQualificadoCents).toBe(30_000);
+		expect(primeira.custoPorQualificado).toEqual({ tipo: "valor", centavos: 30_000 });
 	});
 
 	it("campanha sem nome resolvido ainda aparece — com a UTM como rótulo", () => {
@@ -104,8 +123,8 @@ describe("combinarCampanhas", () => {
 		expect(linhas[0].nome).toBe("consorcio-agosto");
 		expect(linhas[0].nomeResolvido).toBe(false);
 		expect(linhas[0].entityId).toBeNull();
-		// Sem gasto conhecido, o custo é "sem base" — nunca zero.
-		expect(linhas[0].custoPorQualificadoCents).toBeNull();
+		// Sem gasto conhecido, o custo não é zero: é "sem gasto informado".
+		expect(linhas[0].custoPorQualificado).toEqual({ tipo: "motivo", motivo: "sem_gasto" });
 	});
 
 	it("campanha sem UTM conhecida cai no id abreviado, e não some", () => {
@@ -124,7 +143,8 @@ describe("combinarCampanhas", () => {
 		expect(linhas[0].spendCents).toBe(50_000);
 		expect(linhas[0].conversas).toBe(0);
 		expect(linhas[0].qualificados).toBe(0);
-		expect(linhas[0].custoPorQualificadoCents).toBeNull();
+		// Gastou, mas nenhuma visita/conversa do CRM aponta para ela.
+		expect(linhas[0].custoPorQualificado).toEqual({ tipo: "motivo", motivo: "sem_vinculo" });
 		expect(linhas[0].diferencaDeLeads).toBe(9);
 	});
 
@@ -146,7 +166,7 @@ describe("combinarCampanhas", () => {
 		);
 		// A cara custa 100000/1 = 100000; a barata, 10000.
 		expect(linhas.map((l) => l.nome)).toEqual(["Barata", "Cara"]);
-		expect(linhas[0].custoPorQualificadoCents).toBe(10_000);
+		expect(centavos(linhas[0].custoPorQualificado)).toBe(10_000);
 	});
 
 	it("sem qualificado vai para o fim, mas o maior gasto vem antes entre eles", () => {
@@ -166,6 +186,73 @@ describe("combinarCampanhas", () => {
 		expect(linhas[linhas.length - 2].nome).toBe("Queimou tudo");
 		expect(linhas[linhas.length - 1].nome).toBe("Sem qualificado");
 		expect(linhas[0].nome).toBe("Com qualificado");
+	});
+
+	it("distingue os três motivos de 'sem base'", () => {
+		const linhas = combinarCampanhas(
+			[
+				// Tem vínculo (visitas) e gasto, mas nenhum qualificado.
+				funil({ chave: "c1", visitas: 30, qualificados: 0 }),
+				// Tem vínculo, mas o gerenciador não reportou gasto.
+				funil({ chave: "c2", visitas: 10, qualificados: 0 }),
+			],
+			[
+				gasto({ entityId: "c1", nome: "Gastou sem qualificar", spendCents: 50_000 }),
+				gasto({ entityId: "c3", nome: "Sem vínculo", spendCents: 70_000 }),
+			],
+		);
+
+		expect(motivo(custoDe(linhas, "c1"))).toBe("sem_qualificado");
+		expect(motivo(custoDe(linhas, "c2"))).toBe("sem_gasto");
+		expect(motivo(custoDe(linhas, "c3"))).toBe("sem_vinculo");
+	});
+
+	it("anexa a linha 'Sem origem conhecida' no fim, sem investimento", () => {
+		const linhas = combinarCampanhas(
+			[funil({ chave: "c1", visitas: 10, conversas: 3, identificados: 2, qualificados: 1 })],
+			[gasto({ entityId: "c1", nome: "Campanha 1", spendCents: 10_000 })],
+			{ conversas: 4, identificados: 2 },
+		);
+
+		const ultima = linhas[linhas.length - 1];
+		expect(ultima.semOrigemConhecida).toBe(true);
+		expect(ultima.nome).toBe("Sem origem conhecida");
+		expect(ultima.conversas).toBe(4);
+		expect(ultima.identificados).toBe(2);
+		expect(ultima.spendCents).toBe(0);
+		expect(ultima.custoPorQualificado).toEqual({ tipo: "motivo", motivo: "sem_vinculo" });
+	});
+
+	it("sem conversa sem origem, nenhuma linha extra é criada", () => {
+		const linhas = combinarCampanhas([funil({ chave: "c1", visitas: 1 })], []);
+		expect(linhas.some((l) => l.semOrigemConhecida)).toBe(false);
+	});
+
+	it("anexa os criativos à campanha pelo mapa, e deixa vazio quando não há", () => {
+		const criativos = new Map<string, LinhaCriativo[]>([
+			[
+				"c1",
+				[
+					{
+						chave: "ad-1",
+						nome: "IMG | GERAL | V1",
+						nomeResolvido: true,
+						thumbnailUrl: "https://scontent.example/t.jpg",
+						visitas: 5,
+						conversas: 2,
+						identificados: 1,
+					},
+				],
+			],
+		]);
+		const linhas = combinarCampanhas(
+			[funil({ chave: "c1", visitas: 5 }), funil({ chave: "c2", visitas: 1 })],
+			[],
+			undefined,
+			criativos,
+		);
+		expect(linhas.find((l) => l.chave === "c1")?.criativos[0]?.nome).toBe("IMG | GERAL | V1");
+		expect(linhas.find((l) => l.chave === "c2")?.criativos).toEqual([]);
 	});
 });
 
@@ -190,12 +277,24 @@ describe("totalizarCampanhas", () => {
 		expect(totais.propostas).toBe(1);
 		expect(totais.fechados).toBe(1);
 		// 100000 centavos ÷ 5 qualificados = 20000.
-		expect(totais.custoPorQualificadoCents).toBe(20_000);
+		expect(centavos(totais.custoPorQualificado)).toBe(20_000);
+		expect(totais.conversas).toBe(0);
 	});
 
 	it("lista vazia não divide por zero", () => {
 		const totais = totalizarCampanhas([]);
-		expect(totais.custoPorQualificadoCents).toBeNull();
+		expect(motivo(totais.custoPorQualificado)).toBe("sem_gasto");
 		expect(totais.investimentoCents).toBe(0);
+	});
+
+	it("o total de conversas inclui a linha sem origem (reconcilia com Conversas)", () => {
+		const linhas = combinarCampanhas(
+			[funil({ chave: "a", conversas: 3 }), funil({ chave: "b", conversas: 1 })],
+			[],
+			{ conversas: 5, identificados: 2 },
+		);
+		const totais = totalizarCampanhas(linhas);
+		expect(totais.conversas).toBe(9);
+		expect(totais.leadsCrm).toBe(2);
 	});
 });

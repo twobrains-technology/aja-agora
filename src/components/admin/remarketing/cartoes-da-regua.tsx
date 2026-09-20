@@ -1,11 +1,22 @@
 "use client";
 
+import { Ban, Check, Flag, Megaphone, PauseCircle } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import type { Contadores, Situacao } from "@/lib/admin/remarketing-tela";
 import { ROTULO_DA_SITUACAO, SITUACOES } from "@/lib/admin/remarketing-tela";
 import { cn } from "@/lib/utils";
 
 const nf = new Intl.NumberFormat("pt-BR");
+
+/** Ícone por situação — estado nunca só por cor (o dono é daltônico). */
+const ICONE_DA_SITUACAO: Record<Situacao, typeof Check> = {
+	ativo: Megaphone,
+	segurado: PauseCircle,
+	respondeu: Check,
+	esgotado: Flag,
+	optout: Ban,
+	converteu: Check,
+};
 
 /**
  * Os contadores do topo — e o filtro, no mesmo lugar.
@@ -31,6 +42,7 @@ export function CartoesDaRegua({
 		<div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
 			{SITUACOES.map((situacao) => {
 				const ativo = situacaoAtiva === situacao;
+				const Icone = ICONE_DA_SITUACAO[situacao];
 				return (
 					<Card key={situacao} size="sm" className={cn("gap-0", ativo && "ring-2 ring-primary")}>
 						<button
@@ -44,7 +56,8 @@ export function CartoesDaRegua({
 							}
 							className="w-full px-4 text-left transition-colors hover:bg-muted/50"
 						>
-							<span className="block text-xs text-muted-foreground">
+							<span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+								<Icone className="size-3" aria-hidden="true" />
 								{ROTULO_DA_SITUACAO[situacao]}
 							</span>
 							<span className="mt-0.5 block font-heading text-2xl font-semibold tabular-nums">

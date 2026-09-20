@@ -85,3 +85,8 @@ exports/
 
 # Coordenação dos agentes (goal, pendências, encerramento) — não é código.
 .orientacao/
+
+# Estado do harness Pi (goal ativo/snapshot) — artefato de sessão, não versionar
+# nem lintar. Sem isto o `pnpm lint` do pre-commit reprova em qualquer worktree
+# onde um goal esteja rodando (o snapshot JSON é reescrito pelo harness).
+.pi/

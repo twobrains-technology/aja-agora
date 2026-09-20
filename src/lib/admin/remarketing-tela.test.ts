@@ -16,6 +16,7 @@ import {
 	type LinhaBruta,
 	passoDa,
 	passoDaConversao,
+	resumoDaRegua,
 	resumoDeTempos,
 } from "./remarketing-tela";
 
@@ -282,5 +283,73 @@ describe("duracaoLegivel", () => {
 describe("passoDaConversao", () => {
 	it("sem conversão não há passo", () => {
 		expect(passoDaConversao(linha())).toBeNull();
+	});
+});
+
+describe("resumoDaRegua — os contadores fecham com a soma das linhas", () => {
+	it("lista vazia é zero honesto, sem NaN", () => {
+		const r = resumoDaRegua([]);
+		expect(r.toquesEnviados).toBe(0);
+		expect(r.responderam).toBe(0);
+		expect(r.responderamPercentual).toBeNull();
+		expect(r.pediramSair).toBe(0);
+		expect(r.esgotaram).toBe(0);
+		expect(r.aguardando).toEqual({ n: 0, proximoEm: null });
+		expect(r.elegiveisFora).toBe(0);
+	});
+
+	it("soma os passos (toques enviados) e agrupa por situação", () => {
+		const linhas = [
+			// ativo, 1 toque, próximo em 3 dias
+			linha({ step: 1, nextTouchAt: new Date("2026-09-13T13:00:00Z") }),
+			// ativo, 2 toques, próximo mais cedo (21/09)
+			linha({ step: 2, nextTouchAt: new Date("2026-09-12T10:00:00Z") }),
+			// respondeu (status RESPONDEU sem motivo de segurado)
+			linha({ status: "RESPONDEU", motivoSaida: "cliente_respondeu", step: 1, nextTouchAt: null }),
+			// esgotou
+			linha({
+				status: "ESGOTADO",
+				motivoSaida: "tres_toques_sem_resposta",
+				step: 3,
+				nextTouchAt: null,
+			}),
+			// opt-out
+			linha({ status: "OPTOUT", step: 1, nextTouchAt: null }),
+			// segurado à mão NÃO conta como resposta
+			linha({
+				status: "RESPONDEU",
+				motivoSaida: "segurado_pelo_atendente",
+				step: 1,
+				nextTouchAt: null,
+			}),
+		];
+
+		const r = resumoDaRegua(linhas, { elegiveisAgora: 7 });
+
+		expect(r.toquesEnviados).toBe(1 + 2 + 1 + 3 + 1 + 1);
+		expect(r.responderam).toBe(1);
+		expect(r.esgotaram).toBe(1);
+		expect(r.pediramSair).toBe(1);
+		expect(r.aguardando.n).toBe(2);
+		expect(r.aguardando.proximoEm).toBe(new Date("2026-09-12T10:00:00Z").toISOString());
+		expect(r.elegiveisFora).toBe(7);
+	});
+
+	it("o percentual de resposta é sobre os toques enviados", () => {
+		const linhas = [
+			linha({ step: 1, status: "RESPONDEU", motivoSaida: "cliente_respondeu", nextTouchAt: null }),
+			linha({ step: 1 }),
+			linha({ step: 1 }),
+			linha({ step: 1 }),
+		];
+		expect(resumoDaRegua(linhas).responderamPercentual).toBe(25);
+	});
+
+	it("linha segurada à mão não infla 'responderam'", () => {
+		const r = resumoDaRegua([
+			linha({ status: "RESPONDEU", motivoSaida: "segurado_pelo_atendente", step: 0 }),
+		]);
+		expect(r.responderam).toBe(0);
+		expect(r.aguardando.n).toBe(0);
 	});
 });

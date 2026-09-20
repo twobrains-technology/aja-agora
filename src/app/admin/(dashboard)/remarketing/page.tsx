@@ -32,6 +32,7 @@ import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter"
 import { usePeriodoPadrao } from "@/components/admin/dashboard/periodo-provider";
 import { CartoesDaRegua } from "@/components/admin/remarketing/cartoes-da-regua";
 import { SecaoDeInsights } from "@/components/admin/remarketing/insights-da-regua";
+import { BlocoResumoDaRegua } from "@/components/admin/remarketing/resumo-da-regua";
 import { TabelaRemarketing } from "@/components/admin/remarketing/tabela-remarketing";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -52,15 +53,14 @@ import type {
 	Situacao,
 } from "@/lib/admin/remarketing-tela";
 import { ROTULO_DA_SITUACAO, SITUACOES, situacaoDoParametro } from "@/lib/admin/remarketing-tela";
+import { BENS } from "@/lib/admin/rotulo-do-bem";
 
 const POR_PAGINA = 50;
 const nf = new Intl.NumberFormat("pt-BR");
 
-const OBJETIVOS = [
-	{ valor: "carro", rotulo: "Carro" },
-	{ valor: "moto", rotulo: "Moto" },
-	{ valor: "imovel", rotulo: "Imóvel" },
-] as const;
+// O "bem" vem do dicionário único do painel (`rotulo-do-bem`): a Régua não
+// mantém uma segunda tabela de rótulos que divergiria de Conversas/Percurso.
+const OBJETIVOS = BENS.map((b) => ({ valor: b.chave, rotulo: b.rotulo }));
 
 const CONTADORES_VAZIOS: Contadores = {
 	ativo: 0,
@@ -218,17 +218,17 @@ function ReguaContent() {
 
 			{!semDados && (
 				<>
-					{/* Os insights vêm primeiro: com a régua desligada, é esta seção que diz
-					    que NADA foi enviado — antes de qualquer contador que se leria como
-					    "ninguém respondeu". */}
+					{/* O RESUMO vem primeiro (AJA-04): é a pergunta que a Bruna faz ao abrir
+					    a tela — "quantas foram disparadas?". A lista operacional é o
+					    segundo bloco, e o funil/atribuição fecha a página. */}
 					{data ? (
-						<SecaoDeInsights insights={data.insights} estado={data.estado} />
+						<BlocoResumoDaRegua resumo={data.resumo} ligada={data.ligada} />
 					) : (
-						<Skeleton className="h-40 w-full" />
+						<Skeleton className="h-24 w-full" />
 					)}
 
 					{/* Régua nunca ligada: não há lista nem contador para mostrar. O estado
-					    honesto acima já disse tudo, e um funil de zeros mentiria. */}
+					    honesto vem com os insights, no fim — e um funil de zeros mentiria. */}
 					{data?.estado.tipo !== "nunca_ligada" && (
 						<>
 							{carregando && !data ? (
@@ -244,6 +244,7 @@ function ReguaContent() {
 							<div className="flex flex-wrap items-center gap-2">
 								{/* Situação: o mesmo vocabulário dos cartões, para o filtro não inventar
 						    um segundo nome para o que o operador acabou de ler acima. */}
+								<span className="text-xs text-muted-foreground">Situação</span>
 								<Select
 									value={situacaoAtiva ?? "todas"}
 									onValueChange={(valor) =>
@@ -263,6 +264,7 @@ function ReguaContent() {
 									</SelectContent>
 								</Select>
 
+								<span className="text-xs text-muted-foreground">Bem</span>
 								<Select
 									value={objetivo ?? "todos"}
 									onValueChange={(valor) => {
@@ -270,11 +272,11 @@ function ReguaContent() {
 										setOffset(0);
 									}}
 								>
-									<SelectTrigger size="sm" title="Filtrar por objetivo">
-										<SelectValue placeholder="Objetivo" />
+									<SelectTrigger size="sm" title="Filtrar por bem">
+										<SelectValue placeholder="Bem" />
 									</SelectTrigger>
 									<SelectContent>
-										<SelectItem value="todos">Todos os objetivos</SelectItem>
+										<SelectItem value="todos">Todos os bens</SelectItem>
 										{OBJETIVOS.map((o) => (
 											<SelectItem key={o.valor} value={o.valor}>
 												{o.rotulo}
@@ -285,7 +287,7 @@ function ReguaContent() {
 
 								{objetivo && (
 									<Badge variant="secondary" className="gap-1.5">
-										Objetivo: {OBJETIVOS.find((o) => o.valor === objetivo)?.rotulo ?? objetivo}
+										Bem: {OBJETIVOS.find((o) => o.valor === objetivo)?.rotulo ?? objetivo}
 										<button
 											type="button"
 											aria-label="Remover o filtro de objetivo"
@@ -368,6 +370,10 @@ function ReguaContent() {
 							)}
 						</>
 					)}
+
+					{/* Funil por passo e atribuição da conversão fecham a página: são análise,
+					    não operação — quem abre a Régua quer a lista e o resumo antes. */}
+					{data && <SecaoDeInsights insights={data.insights} estado={data.estado} />}
 				</>
 			)}
 
