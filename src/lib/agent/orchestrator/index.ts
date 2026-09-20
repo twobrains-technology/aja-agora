@@ -27,7 +27,7 @@ export async function runTurnFromText(args: {
 		return { ...rest, conversationId, channel };
 	}
 	if (channel === "whatsapp" && from) {
-		const { id } = await getOrCreateConversation(from);
+		const { id } = await getOrCreateConversation(from, undefined, args.userText);
 		return { ...rest, conversationId: id, channel };
 	}
 	throw new Error("[orchestrator] either conversationId or (channel=whatsapp + from) required");

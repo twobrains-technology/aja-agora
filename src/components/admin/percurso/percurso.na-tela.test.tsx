@@ -58,14 +58,14 @@ describe("a lista do percurso", () => {
 	it("dá um nome a quem é anônimo, para a linha poder ser citada", () => {
 		render(<TabelaPercurso pessoas={[pessoa()]} carregando={false} onAbrir={() => {}} />);
 
-		expect(screen.getByText("Anônimo a3f1")).toBeTruthy();
+		expect(screen.getByText("Sem nome a3f1")).toBeTruthy();
 	});
 
 	it("conta as mensagens de quem falou", () => {
 		render(
 			<TabelaPercurso
 				pessoas={[
-					pessoa({ nome: "Joana", conversas: 1, mensagensDoCliente: 4, passo: "escreveu" }),
+					pessoa({ nome: "Joana", conversas: 1, mensagensDoCliente: 4, passo: "iniciou_conversa" }),
 				]}
 				carregando={false}
 				onAbrir={() => {}}
@@ -73,7 +73,7 @@ describe("a lista do percurso", () => {
 		);
 
 		expect(screen.getByText(/4 mensagens/)).toBeTruthy();
-		expect(screen.getByText("Escreveu")).toBeTruthy();
+		expect(screen.getByText("Iniciou a conversa")).toBeTruthy();
 	});
 
 	it("mostra o perdido como selo, sem apagar o degrau que ele alcançou", () => {
@@ -120,13 +120,23 @@ describe("a lista do percurso", () => {
 	});
 
 	it("distingue duas pessoas de mesmo nome que não deixaram telefone", () => {
-		// Aconteceu na tela em 18/08/2026: o filtro "Escreveu" trouxe cinco linhas
+		// Aconteceu na tela em 18/08/2026: o filtro "Iniciou a conversa" trouxe cinco linhas
 		// "Joana", de campanhas e dias diferentes, e nada dizia qual era qual.
 		render(
 			<TabelaPercurso
 				pessoas={[
-					pessoa({ chave: "a", nome: "Joana", visitorId: "visitante-aaaa", passo: "escreveu" }),
-					pessoa({ chave: "b", nome: "Joana", visitorId: "visitante-bbbb", passo: "escreveu" }),
+					pessoa({
+						chave: "a",
+						nome: "Joana",
+						visitorId: "visitante-aaaa",
+						passo: "iniciou_conversa",
+					}),
+					pessoa({
+						chave: "b",
+						nome: "Joana",
+						visitorId: "visitante-bbbb",
+						passo: "iniciou_conversa",
+					}),
 				]}
 				carregando={false}
 				onAbrir={() => {}}
@@ -137,7 +147,7 @@ describe("a lista do percurso", () => {
 		expect(screen.getByText("visitante bbbb")).toBeTruthy();
 	});
 
-	it("prefere o telefone à marca do visitante quando ele existe", () => {
+	it("prefere o telefone à marca do visitante, e o mostra mascarado", () => {
 		render(
 			<TabelaPercurso
 				pessoas={[pessoa({ nome: "Beatriz", telefone: "62992496793" })]}
@@ -146,7 +156,9 @@ describe("a lista do percurso", () => {
 			/>,
 		);
 
-		expect(screen.getByText("62992496793")).toBeTruthy();
+		// O telefone completo só na ficha: a lista mostra o mascarado, como a Régua.
+		expect(screen.getByText("(62) 9…-6793")).toBeTruthy();
+		expect(screen.queryByText("62992496793")).toBeNull();
 		expect(screen.queryByText(/visitante /)).toBeNull();
 	});
 
@@ -205,14 +217,14 @@ describe("a escada do percurso", () => {
 			<EscadaDoPercurso
 				resumo={RESUMO}
 				total={75}
-				selecionado="escreveu"
+				selecionado="iniciou_conversa"
 				onSelecionar={() => {}}
 			/>,
 		);
 
 		// Quem não distingue as duas cores da barra precisa ler o estado. O
 		// `aria-pressed` cobre o leitor de tela; o "filtrando" cobre o olho.
-		const degrau = screen.getByText("Escreveu").closest("button");
+		const degrau = screen.getByText("Iniciou a conversa").closest("button");
 		expect(degrau?.getAttribute("aria-pressed")).toBe("true");
 		expect(within(degrau as HTMLElement).getByText(/filtrando/)).toBeTruthy();
 	});
@@ -223,12 +235,12 @@ describe("a escada do percurso", () => {
 			<EscadaDoPercurso
 				resumo={RESUMO}
 				total={75}
-				selecionado="escreveu"
+				selecionado="iniciou_conversa"
 				onSelecionar={selecionar}
 			/>,
 		);
 
-		fireEvent.click(screen.getByText("Escreveu").closest("button") as HTMLElement);
+		fireEvent.click(screen.getByText("Iniciou a conversa").closest("button") as HTMLElement);
 		expect(selecionar).toHaveBeenCalledWith(null);
 	});
 
@@ -237,16 +249,11 @@ describe("a escada do percurso", () => {
 			<EscadaDoPercurso resumo={RESUMO} total={75} selecionado={null} onSelecionar={() => {}} />,
 		);
 
-		// O rodapé passou a nomear as três unidades (pessoa, conversa, clique) e a dar
-		// a OPERAÇÃO que fecha a conta com a tela de Performance — antes ele dava só
-		// a direção ("são menores"), e quem via 8 lá e 7 aqui não sabia se sumiu
-		// alguém. O texto é quebrado em vários elementos, daí o matcher por função.
-		// `getAllByText` porque o texto atravessa vários elementos e cada ancestral
-		// casa junto; o que importa é ele estar na tela.
-		expect(
-			screen.getAllByText((_, no) =>
-				/não por conversa nem por clique no anúncio/.test(no?.textContent ?? ""),
-			).length,
-		).toBeGreaterThan(0);
+		// A frase que FICA na tela diz a unidade em uma linha; a explicação longa
+		// (por que a tela de Performance mostra mais) mudou para o tooltip — nota de
+		// rodapé em `text-xs` não é lida, e empurra a lista para fora da primeira
+		// dobra. O que a tela promete continua verificável: a frase e o gatilho.
+		expect(screen.getByText(/Uma linha por pessoa, no degrau mais fundo/)).toBeTruthy();
+		expect(screen.getByLabelText("Como ler esta escada")).toBeTruthy();
 	});
 });

@@ -736,7 +736,7 @@ export async function processWithOrchestrator(
 	text: string,
 	contactName?: string,
 ): Promise<void> {
-	const { id: conversationId } = await getOrCreateConversation(from);
+	const { id: conversationId } = await getOrCreateConversation(from, undefined, text);
 
 	const events = runTurn({
 		channel: "whatsapp",

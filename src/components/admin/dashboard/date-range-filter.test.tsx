@@ -11,13 +11,15 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { NuqsTestingAdapter, type UrlUpdateEvent } from "nuqs/adapters/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { COOKIE_DO_PERIODO } from "@/lib/admin/periodo";
-import { DateRangeFilter } from "./date-range-filter";
+import { COOKIE_DO_PERIODO, diaComoData } from "@/lib/admin/periodo";
+import { DateRangeFilter, intervaloDoPreset } from "./date-range-filter";
 import { PeriodoProvider } from "./periodo-provider";
 
 /** Os dias que o preset "30 dias" fecha em 19/08/2026. */
 const TRINTA_DIAS_DE = "2026-07-21";
 const HOJE = "2026-08-19";
+/** O primeiro dia do coletor — o chão do preset "Desde o início". */
+const INICIO_DO_COLETOR = "2026-08-18";
 
 function montar({
 	searchParams = "",
@@ -94,6 +96,27 @@ describe("o filtro de período grava cookie e URL", () => {
 
 		await waitFor(() => expect(cookieGravado()).toBe(`${HOJE}_${HOJE}`));
 		expect(atualizacoes.at(-1)?.searchParams.get("from")).toBe(HOJE);
+		expect(atualizacoes.at(-1)?.searchParams.get("to")).toBe(HOJE);
+	});
+
+	it("'Desde o início' começa no primeiro dia do coletor e vai até hoje", () => {
+		// Não existe data anterior a esta: o coletor de eventos só passou a
+		// existir em 18/08/2026, e "tudo" que apontasse para antes disso sugeriria
+		// um histórico que não existe.
+		expect(intervaloDoPreset("desde-o-inicio", diaComoData(HOJE))).toEqual({
+			de: diaComoData(INICIO_DO_COLETOR),
+			ate: diaComoData(HOJE),
+		});
+	});
+
+	it("'Desde o início' grava o começo do coletor nos dois lugares", async () => {
+		const atualizacoes: UrlUpdateEvent[] = [];
+		montar({ onUrlUpdate: (evento) => atualizacoes.push(evento) });
+
+		fireEvent.click(screen.getByRole("button", { name: "Desde o início" }));
+
+		await waitFor(() => expect(cookieGravado()).toBe(`${INICIO_DO_COLETOR}_${HOJE}`));
+		expect(atualizacoes.at(-1)?.searchParams.get("from")).toBe(INICIO_DO_COLETOR);
 		expect(atualizacoes.at(-1)?.searchParams.get("to")).toBe(HOJE);
 	});
 

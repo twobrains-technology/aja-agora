@@ -38,14 +38,16 @@
  * duplicado. Trocar isto por uma coluna nova seria migration fora do escopo.
  */
 
-import { eq, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { remarketingTouches } from "@/db/schema";
+import { contacts, conversations, remarketingTouches } from "@/db/schema";
 import { maskPhoneForDisplay } from "@/lib/conversation/identity";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
-import { ehTelefoneInterno, objetivoCanonico } from "@/lib/remarketing/motor";
-import { ESPERA_SILENCIO_MS, type StatusRegua } from "@/lib/remarketing/regua";
+import { objetivoCanonico } from "@/lib/remarketing/motor";
+import type { StatusRegua } from "@/lib/remarketing/regua";
 import { chaveTelefoneBR } from "@/lib/whatsapp/mesmo-numero";
+import { JANELA_DE_ENTRADA_MS, motivoForaDaRegua, opcoesDoAmbiente } from "./motivo-fora-da-regua";
+import { telefonesDaEquipe } from "./regua-por-conversa";
 import type { LinhaBruta, RastroDoAtendente } from "./remarketing-tela";
 
 export interface FiltroDaRegua {
@@ -243,60 +245,72 @@ export async function contarLinhasDaRegua(): Promise<number> {
 /**
  * A janela de entrada da régua: 7 dias. O ciclo só olha o silêncio recente —
  * sem o teto, o primeiro ciclo depois do deploy varreria o histórico inteiro.
- * É a MESMA constante de `remarketing-cycle.ts` (`JANELA_DE_ENTRADA_MS`); fica
- * duplicada aqui porque a alternativa seria importar um módulo de worker (com
- * BullMQ e Redis) para dentro da rota do admin.
+ * O valor vem de `motivo-fora-da-regua.ts` (fonte única daqui até o F6).
  */
-const JANELA_DE_ENTRADA_MS = 7 * 24 * 60 * 60 * 1000;
-
-/**
- * O telefone é da equipe? Espelha `ehDaEquipe` do ciclo: lista em código mais os
- * atendentes ativos do banco. Falha do banco NÃO libera — na dúvida, trata como
- * equipe, porque o erro que não se pode cometer é contar (ou tocar) quem é de
- * dentro.
- */
-async function ehDaEquipe(telefone: string | null): Promise<boolean> {
-	if (!telefone) return false;
-	if (ehTelefoneInterno(telefone)) return true;
-	try {
-		const [{ isAttendantPhone }, { isMesaAttendantPhone }] = await Promise.all([
-			import("@/lib/whatsapp/proxy"),
-			import("@/lib/whatsapp/mesa/routing"),
-		]);
-		return (await isAttendantPhone(telefone)) || (await isMesaAttendantPhone(telefone));
-	} catch {
-		return true;
-	}
-}
 
 /**
  * Quantas conversas entrariam na régua no próximo ciclo.
  *
- * É o número que o estado honesto mostra enquanto a régua está desligada (hoje
- * 218). A consulta espelha a de `entrarNaRegua` — canal WhatsApp, conversa
- * ativa, não simulada, contato resolvido, silêncio entre 90 min e 7 dias, sem
- * linha na régua — e aplica o mesmo guarda de telefone da equipe. O `LIMIT`
- * daquele ciclo (`ENTRADAS_POR_CICLO`) NÃO conta aqui: a pergunta é o tamanho da
- * fila, não de onde a fila é cortada.
+ * É o número que o estado honesto mostra enquanto a régua está desligada. A
+ * decisão NÃO é reescrita em SQL: a consulta pré-filtra a janela de 30 dias
+ * (mais larga que a de entrada, para o motivo `parada_ha_mais_de_7_dias`
+ * aparecer) e cada conversa passa por `motivoForaDaRegua` — a MESMA função que
+ * a coluna "Régua" das telas usa. Assim o cartão "Elegíveis que ainda não
+ * entraram" não pode divergir da decisão real do ciclo.
+ *
+ * O `LIMIT` do ciclo (`ENTRADAS_POR_CICLO`) NÃO conta aqui: a pergunta é o
+ * tamanho da fila, não de onde a fila é cortada.
  */
 export async function contarElegiveisParaRegua(agora: Date): Promise<number> {
-	const candidatos = await db.execute<{ waId: string | null }>(sql`
-		SELECT c.wa_id AS "waId"
-		FROM conversations c
-		WHERE c.channel = 'whatsapp'
-		  AND c.status = 'active'
-		  AND c.is_simulated = false
-		  AND c.contact_id IS NOT NULL
-		  AND c.last_inbound_at IS NOT NULL
-		  AND c.last_inbound_at <= ${new Date(agora.getTime() - ESPERA_SILENCIO_MS).toISOString()}::timestamptz
-		  AND c.last_inbound_at > ${new Date(agora.getTime() - JANELA_DE_ENTRADA_MS).toISOString()}::timestamptz
-		  AND NOT EXISTS (SELECT 1 FROM remarketing_touches t WHERE t.conversation_id = c.id)
-	`);
+	const opcoes = opcoesDoAmbiente();
+	const janelaDeAvaliacao = new Date(agora.getTime() - JANELA_DE_ENTRADA_MS);
 
+	const candidatos = await db
+		.select({
+			conversationId: conversations.id,
+			channel: conversations.channel,
+			status: conversations.status,
+			isSimulated: conversations.isSimulated,
+			contactId: conversations.contactId,
+			lastInboundAt: conversations.lastInboundAt,
+			waId: conversations.waId,
+			telefone: contacts.phone,
+			jaNaRegua: remarketingTouches.conversationId,
+		})
+		.from(conversations)
+		.leftJoin(contacts, eq(contacts.id, conversations.contactId))
+		.leftJoin(remarketingTouches, eq(remarketingTouches.conversationId, conversations.id))
+		.where(
+			and(
+				eq(conversations.isSimulated, false),
+				or(
+					gte(conversations.lastInboundAt, janelaDeAvaliacao),
+					// Sem `last_inbound_at` a conversa cai no motivo `ainda_em_silencio`,
+					// mas continua sendo candidata a avaliação (não some da conta).
+					isNull(conversations.lastInboundAt),
+				),
+			),
+		);
+
+	const ehEquipe = await telefonesDaEquipe();
 	let total = 0;
-	for (const linha of candidatos.rows) {
-		if (await ehDaEquipe(linha.waId ?? null)) continue;
-		total += 1;
+	for (const c of candidatos) {
+		const telefone = c.waId ?? c.telefone;
+		const veredito = motivoForaDaRegua(
+			{
+				channel: c.channel as "web" | "whatsapp",
+				status: c.status as "active" | "handed_off" | "closed",
+				isSimulated: c.isSimulated,
+				contactId: c.contactId ?? null,
+				lastInboundAt: c.lastInboundAt ?? null,
+				waId: c.waId ?? null,
+				phone: c.telefone ?? null,
+				jaNaRegua: c.jaNaRegua !== null,
+			},
+			agora,
+			{ ...opcoes, telefoneDaEquipe: telefone ? ehEquipe(telefone) : false },
+		);
+		if (veredito === null) total += 1;
 	}
 	return total;
 }

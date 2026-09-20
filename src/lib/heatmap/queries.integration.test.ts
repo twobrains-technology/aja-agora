@@ -35,6 +35,7 @@ const DENTRO = new Date(`${ANO}-${MES}-15T12:00:00Z`);
 const PATH_ROLAGEM = "/motos";
 const PATH_POPULACAO = "/autos";
 const PATH_ALVOS = "/imoveis";
+const PATH_COLADO = "/";
 
 const UA_GENTE =
 	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36";
@@ -147,6 +148,39 @@ describeIfDb("mapa de calor — os números do cabeçalho (integration)", () => 
 			expect(mapa.visitantes).toBe(1);
 			expect(mapa.cliques).toBe(1);
 			expect(mapa.alvos.map((a) => a.label)).toEqual(["Simular"]);
+		});
+	});
+
+	describe("rótulo histórico colado", () => {
+		it("descola os nós de texto na LEITURA, para o dado gravado antes da correção da coleta", async () => {
+			// A coleta antiga usava `textContent`, que cola elementos irmãos sem
+			// separador. O conserto de verdade é na coleta (`rotuloDe`), mas a linha
+			// já gravada continua na tabela — e é esta recomposição de leitura que a
+			// devolve legível. Ver `normalizarRotulo`.
+			const visita = await semearVisita(PATH_COLADO);
+
+			await db.insert(schema.pageEvents).values([
+				evento(visita, PATH_COLADO, {
+					selector: "div#colado",
+					label: "QUAL O SEU PROPÓSITOO setor d…",
+				}),
+				evento(visita, PATH_COLADO, {
+					selector: "h1#quebrado",
+					label: "Compare consórciosentre divers…",
+				}),
+			]);
+
+			const mapa = await queries.computeMapaDeCalor({
+				path: PATH_COLADO,
+				from: JANELA_DE,
+				to: JANELA_ATE,
+			});
+
+			const rotulos = mapa.alvos.map((a) => a.label).sort();
+			expect(rotulos).toEqual([
+				"Compare consórcios entre divers…",
+				"QUAL O SEU PROPÓSITO O setor d…",
+			]);
 		});
 	});
 

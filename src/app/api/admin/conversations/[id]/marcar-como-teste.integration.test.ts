@@ -143,4 +143,106 @@ describeIfDb("marcar conversa como teste (integration)", () => {
 		});
 		expect(res.status).toBe(404);
 	});
+
+	// ── A RÉGUA, que era o furo silencioso ───────────────────────────────────
+	//
+	// A marcação já tirava a conversa do funil; a régua continuava disparando
+	// para ela (a entrada filtrava `is_simulated`, `listarVencidas` não). A
+	// fixture entra na régua, tem um toque ATIVO vencido e só então é marcada
+	// como teste — que é a ordem real do incidente de 18/09 (Bruna: "desses seis,
+	// três já somos nós").
+	describe("marcar como teste solta a conversa da RÉGUA", () => {
+		let convRegua: string;
+		let contactRegua: string;
+
+		beforeAll(async () => {
+			const [contato] = await db
+				.insert(schema.contacts)
+				.values({ phone: `55629${Date.now() % 100000000}` })
+				.returning({ id: schema.contacts.id });
+			contactRegua = contato.id;
+
+			const [conv] = await db
+				.insert(schema.conversations)
+				.values({
+					channel: "whatsapp",
+					contactId: contactRegua,
+					waId: "5562999997777",
+					contactName: "Fixture régua × teste",
+					lastInboundAt: new Date(Date.now() - 100 * 60_000),
+				})
+				.returning({ id: schema.conversations.id });
+			convRegua = conv.id;
+
+			await db.insert(schema.remarketingTouches).values({
+				conversationId: convRegua,
+				contactId: contactRegua,
+				objetivo: "carro",
+				step: 1,
+				status: "ATIVO",
+				nextTouchAt: new Date(Date.now() - 60_000),
+				touches30d: 1,
+			});
+		});
+
+		afterAll(async () => {
+			if (convRegua) {
+				await db
+					.delete(schema.remarketingTouches)
+					.where(eq(schema.remarketingTouches.conversationId, convRegua));
+				await db.delete(schema.conversations).where(eq(schema.conversations.id, convRegua));
+			}
+			if (contactRegua) {
+				await db.delete(schema.contacts).where(eq(schema.contacts.id, contactRegua));
+			}
+		});
+
+		it("a linha vencida estaria na régua antes da marcação", async () => {
+			const { listarVencidas } = await import("@/lib/workers/remarketing-cycle");
+			const vencidas = await listarVencidas(new Date());
+			expect(vencidas.map((l) => l.conversationId)).toContain(convRegua);
+		});
+
+		it("marcar segura o toque com motivo 'teste' e ele sai do índice", async () => {
+			const { listarVencidas } = await import("@/lib/workers/remarketing-cycle");
+
+			const res = await PATCH(patch(convRegua, { isSimulated: true }), {
+				params: Promise.resolve({ id: convRegua }),
+			});
+			expect(res.status).toBe(200);
+			expect((await res.json()) as { toquesSegurados: number }).toMatchObject({
+				toquesSegurados: 1,
+			});
+
+			const linha = await db.query.remarketingTouches.findFirst({
+				where: eq(schema.remarketingTouches.conversationId, convRegua),
+			});
+			expect(linha?.status).toBe("RESPONDEU");
+			expect(linha?.motivoSaida).toBe("teste");
+
+			// NENHUM toque novo: a linha saiu do índice parcial que o ciclo lê.
+			const vencidas = await listarVencidas(new Date());
+			expect(vencidas.map((l) => l.conversationId)).not.toContain(convRegua);
+		});
+
+		it("marcar de novo é idempotente (nenhuma linha ATIVA para segurar)", async () => {
+			const res = await PATCH(patch(convRegua, { isSimulated: true }), {
+				params: Promise.resolve({ id: convRegua }),
+			});
+			expect((await res.json()) as { toquesSegurados: number }).toMatchObject({
+				toquesSegurados: 0,
+			});
+		});
+
+		it("desmarcar NÃO devolve a conversa à régua (decisão de produto)", async () => {
+			const res = await PATCH(patch(convRegua, { isSimulated: false }), {
+				params: Promise.resolve({ id: convRegua }),
+			});
+			expect(res.status).toBe(200);
+
+			const { listarVencidas } = await import("@/lib/workers/remarketing-cycle");
+			const vencidas = await listarVencidas(new Date());
+			expect(vencidas.map((l) => l.conversationId)).not.toContain(convRegua);
+		});
+	});
 });

@@ -106,6 +106,55 @@ describeIfDb("resolvedor lê o espelho e o ciclo faz upsert", () => {
 		expect(linhas[0]?.status).toBe("PAUSED");
 	});
 
+	it("grava o criativo do anúncio e o reescreve no upsert", async () => {
+		const anuncio = (creativeName: string, thumbnailUrl: string | null) => ({
+			entityId: ID_ANUNCIO,
+			nivel: "ad" as const,
+			nome: "ANUNCIO | CARRO | V1",
+			status: "ACTIVE",
+			accountId: null,
+			parentEntityId: null,
+			creativeId: "cri-1",
+			creativeName,
+			thumbnailUrl,
+		});
+		await ctx.ciclo.gravarEntidades([anuncio("IMG | V1", "https://x/t1.jpg")], new Date());
+		await ctx.ciclo.gravarEntidades([anuncio("IMG | V2", "https://x/t2.jpg")], new Date());
+
+		const { eq } = await import("drizzle-orm");
+		const linhas = await ctx.db
+			.select()
+			.from(ctx.schema.metaEntities)
+			.where(eq(ctx.schema.metaEntities.entityId, ID_ANUNCIO));
+		expect(linhas).toHaveLength(1);
+		expect(linhas[0]?.creativeId).toBe("cri-1");
+		expect(linhas[0]?.creativeName).toBe("IMG | V2");
+		expect(linhas[0]?.thumbnailUrl).toBe("https://x/t2.jpg");
+	});
+
+	it("sem criativo (permissão negada), o anúncio é gravado com campos nulos", async () => {
+		await ctx.ciclo.gravarEntidades(
+			[
+				{
+					entityId: ID_ANUNCIO,
+					nivel: "ad" as const,
+					nome: "ANUNCIO | SEM CRIATIVO",
+					status: "ACTIVE",
+					accountId: null,
+					parentEntityId: null,
+				},
+			],
+			new Date(),
+		);
+		const { eq } = await import("drizzle-orm");
+		const linhas = await ctx.db
+			.select()
+			.from(ctx.schema.metaEntities)
+			.where(eq(ctx.schema.metaEntities.entityId, ID_ANUNCIO));
+		expect(linhas[0]?.creativeName).toBeNull();
+		expect(linhas[0]?.thumbnailUrl).toBeNull();
+	});
+
 	it("a mesma chave (data, entity_id) vira UPDATE, não duplicata", async () => {
 		let spend = 4210;
 		let leads = 3;

@@ -1,15 +1,12 @@
 "use client";
 
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale/pt-BR";
-import { CalendarIcon, Search, X } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter";
 import { FiltrosDaTela } from "@/components/admin/dashboard/filtros";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
 	Select,
 	SelectContent,
@@ -37,6 +34,11 @@ export type ConversationsFiltersValue = {
 	channel: string;
 	status: string;
 	q: string;
+	/**
+	 * O período herdado da tabela (`ConversationsTable`), que ainda lê `from`/`to`
+	 * da URL para montar a consulta à API. Este componente NÃO o edita — o período
+	 * é escrito pelo `<DateRangeFilter/>`.
+	 */
 	from: Date | null;
 	to: Date | null;
 	/** Chave do canal, como a tabela por origem a monta (`campanha:ig`, `direto`). */
@@ -66,7 +68,9 @@ function rotuloDaOrigem(origem: string, campanha: string | null): string {
 				? "Referência"
 				: origem === "direto"
 					? "Direto"
-					: origem;
+					: origem === "desconhecida"
+						? "Sem origem conhecida"
+						: origem;
 	if (!campanha) return nome;
 	// O nome real vem do resolvedor quando ele conhece a campanha (o rótulo
 	// guarda a UTM, que é a chave fraca). Sem ele, cai no id abreviado de antes.
@@ -116,18 +120,17 @@ export function ConversationsFilters({
 		value.channel !== "all" ||
 		value.status !== "all" ||
 		value.q !== "" ||
-		value.from !== null ||
-		value.to !== null ||
 		Boolean(value.origem) ||
 		campanhasAtivas > 0;
 
+	// O período NÃO entra aqui: ele é estado do painel, escrito pelo
+	// `<DateRangeFilter/>` na URL e no cookie. Limpar os filtros da tela não pode
+	// apagar a janela que a pessoa escolheu — são controles diferentes.
 	const clear = () => {
 		onChange({
 			channel: "all",
 			status: "all",
 			q: "",
-			from: null,
-			to: null,
 			origem: null,
 			campanhas: [],
 		});
@@ -136,42 +139,10 @@ export function ConversationsFilters({
 
 	return (
 		<FiltrosDaTela
-			// O período desta tela são dois dias soltos (opcionais), não o período do
-			// painel: aqui "sem data" é um recorte legítimo, e o padrão não pode ser
-			// "hoje". O `DateRangeFilter` continua sendo o período de quem abre em hoje.
-			periodo={
-				<>
-					<Popover>
-						<PopoverTrigger render={<Button variant="outline" size="sm" className="gap-1.5" />}>
-							<CalendarIcon className="size-3.5" />
-							{value.from ? format(value.from, "dd/MM/yy", { locale: ptBR }) : "De"}
-						</PopoverTrigger>
-						<PopoverContent className="w-auto p-0" align="start">
-							<Calendar
-								mode="single"
-								selected={value.from ?? undefined}
-								onSelect={(d) => onChange({ from: d ?? null })}
-								locale={ptBR}
-							/>
-						</PopoverContent>
-					</Popover>
-
-					<Popover>
-						<PopoverTrigger render={<Button variant="outline" size="sm" className="gap-1.5" />}>
-							<CalendarIcon className="size-3.5" />
-							{value.to ? format(value.to, "dd/MM/yy", { locale: ptBR }) : "Até"}
-						</PopoverTrigger>
-						<PopoverContent className="w-auto p-0" align="start">
-							<Calendar
-								mode="single"
-								selected={value.to ?? undefined}
-								onSelect={(d) => onChange({ to: d ?? null })}
-								locale={ptBR}
-							/>
-						</PopoverContent>
-					</Popover>
-				</>
-			}
+			// O período é o MESMO do resto do painel — URL + cookie, via
+			// `<DateRangeFilter/>`. Antes esta tela tinha o par De/Até próprio, sem
+			// cookie, então a escolha feita em Performance morria ao navegar para cá.
+			periodo={<DateRangeFilter />}
 			campanhas={opcoesDeCampanha}
 		>
 			<div className="relative">

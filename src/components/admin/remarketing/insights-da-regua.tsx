@@ -18,9 +18,10 @@
  * enviado" e "ninguém respondeu", e ela é o ponto do bloco.
  */
 
-import { PowerOffIcon, TrendingDownIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import { ChevronDown, PowerOffIcon, TrendingDownIcon } from "lucide-react";
+import { type ReactNode, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
 	Table,
 	TableBody,
@@ -39,11 +40,6 @@ import {
 import { cn } from "@/lib/utils";
 
 const nf = new Intl.NumberFormat("pt-BR");
-const nfDecimal = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
-
-function percentual(valor: number | null): string {
-	return valor === null ? "—" : `${nfDecimal.format(valor)}%`;
-}
 
 /** Mediana legível, com a contagem ao lado quando há dado. */
 function celulaDeTempo(resumo: ResumoDeTempos) {
@@ -117,21 +113,26 @@ function FunilDaRegua({ linhas }: { linhas: LinhaDoFunil[] }) {
 	return (
 		<Card>
 			<CardHeader>
-				<CardTitle className="text-base">Funil da régua por passo</CardTitle>
+				<CardTitle
+					className="text-base"
+					title="“Chegaram” é cumulativo: quantas conversas passaram por aquele passo. “Seguiram” avançou de passo; “saíram” não seguiu (resposta, opt-out, esgotamento, fechamento ou segurar à mão); “ainda esperando” é quem aguarda o próximo toque — a régua é viva, nem todo mundo que não avançou parou."
+				>
+					Funil da régua por passo
+				</CardTitle>
 			</CardHeader>
 			<CardContent className="overflow-x-auto">
 				<Table>
 					<TableHeader>
 						<TableRow>
 							<TableHead>Passo</TableHead>
-							<TableHead className="text-right">Chegaram</TableHead>
-							<TableHead className="text-right">Saíram aqui</TableHead>
-							<TableHead className="text-right">Queda p/ o próximo</TableHead>
+							<TableHead className="text-right">Chegaram ao passo</TableHead>
+							<TableHead className="text-right">Seguiram para o próximo</TableHead>
+							<TableHead className="text-right">Saíram neste passo</TableHead>
+							<TableHead className="text-right">Ainda esperando aqui</TableHead>
 							<TableHead className="text-right">Responderam</TableHead>
 							<TableHead className="text-right">Fecharam</TableHead>
 							<TableHead className="text-right">Opt-out</TableHead>
 							<TableHead className="text-right">Esgotaram</TableHead>
-							<TableHead className="text-right">Ainda na régua</TableHead>
 						</TableRow>
 					</TableHeader>
 					<TableBody>
@@ -141,9 +142,12 @@ function FunilDaRegua({ linhas }: { linhas: LinhaDoFunil[] }) {
 								<TableCell className="text-right tabular-nums">
 									{nf.format(linha.chegaram)}
 								</TableCell>
+								<TableCell className="text-right tabular-nums">
+									{nf.format(linha.avancaram)}
+								</TableCell>
 								<TableCell className="text-right tabular-nums">{nf.format(linha.sairam)}</TableCell>
 								<TableCell className="text-right tabular-nums">
-									{percentual(linha.quedaPercentual)}
+									{nf.format(linha.aguardando)}
 								</TableCell>
 								<TableCell className="text-right tabular-nums">
 									{nf.format(linha.responderam)}
@@ -155,19 +159,10 @@ function FunilDaRegua({ linhas }: { linhas: LinhaDoFunil[] }) {
 								<TableCell className="text-right tabular-nums">
 									{nf.format(linha.esgotaram)}
 								</TableCell>
-								<TableCell className="text-right tabular-nums">
-									{nf.format(linha.aguardando)}
-								</TableCell>
 							</TableRow>
 						))}
 					</TableBody>
 				</Table>
-				<p className="mt-3 text-xs text-muted-foreground">
-					“Chegaram” é cumulativo: quantas conversas passaram por aquele passo. “Saíram aqui” são as
-					que não seguiram (resposta, opt-out, esgotamento, fechamento ou segurada à mão); “ainda na
-					régua” são as que aguardam o próximo toque. A queda soma as duas — a régua é viva, nem
-					todo mundo que não avançou parou.
-				</p>
 			</CardContent>
 		</Card>
 	);
@@ -175,78 +170,99 @@ function FunilDaRegua({ linhas }: { linhas: LinhaDoFunil[] }) {
 
 function AtribuicaoDaConversao({ insights }: { insights: InsightsDaRegua }) {
 	const { paga, total, semAtribuicao } = insights.conversoes;
+	// Enquanto não houver a PRIMEIRA conversão atribuída, a tabela nasce fechada
+	// (era "uma tabela inteira de zeros" no print). Com a primeira, abre sozinha.
+	const [aberto, setAberto] = useState(total > 0);
 
 	return (
-		<Card>
-			<CardHeader>
-				<CardTitle className="flex items-center gap-2 text-base">
-					<TrendingDownIcon className="size-4 text-muted-foreground" aria-hidden="true" />
-					Qual toque converte — e quanto tempo leva
-				</CardTitle>
-			</CardHeader>
-			<CardContent className="overflow-x-auto">
-				<Table>
-					<TableHeader>
-						<TableRow>
-							<TableHead>Passo</TableHead>
-							<TableHead className="text-right">Conversões atribuídas</TableHead>
-							<TableHead className="text-right">Tempo até a resposta (mediana)</TableHead>
-							<TableHead className="text-right">Tempo até o fechamento (mediana)</TableHead>
-						</TableRow>
-					</TableHeader>
-					<TableBody>
-						{insights.funil.map((linha) => {
-							const pago = paga !== null && paga === linha.passo;
-							return (
-								<TableRow key={linha.passo} className={cn(pago && "bg-muted/50")}>
-									<TableCell className="font-medium">
-										{linha.rotulo}
-										{pago && (
-											<span className="ml-2 text-xs font-normal text-muted-foreground">
-												mais converteu
-											</span>
-										)}
-									</TableCell>
-									<TableCell className="text-right tabular-nums">
-										{nf.format(linha.conversoesAtribuidas)}
-									</TableCell>
-									<TableCell className="text-right">
-										{celulaDeTempo(linha.tempoAteResposta)}
-									</TableCell>
-									<TableCell className="text-right">
-										{celulaDeTempo(linha.tempoAteConversao)}
-									</TableCell>
+		<Collapsible open={aberto} onOpenChange={setAberto}>
+			<Card>
+				<CardHeader>
+					<CollapsibleTrigger className="flex w-full items-center justify-between gap-2 text-left">
+						<CardTitle className="flex items-center gap-2 text-base">
+							<TrendingDownIcon className="size-4 text-muted-foreground" aria-hidden="true" />
+							Qual toque converte — e quanto tempo leva
+						</CardTitle>
+						<ChevronDown
+							className={cn(
+								"size-4 text-muted-foreground transition-transform",
+								aberto && "rotate-180",
+							)}
+							aria-hidden="true"
+						/>
+					</CollapsibleTrigger>
+					{!aberto && (
+						<p className="text-sm text-muted-foreground">
+							Nenhuma conversão atribuída ainda — a tabela abre quando houver a primeira.
+						</p>
+					)}
+				</CardHeader>
+				<CollapsibleContent>
+					<CardContent className="overflow-x-auto">
+						<Table>
+							<TableHeader>
+								<TableRow>
+									<TableHead>Passo</TableHead>
+									<TableHead className="text-right">Conversões atribuídas</TableHead>
+									<TableHead className="text-right">Tempo até a resposta (mediana)</TableHead>
+									<TableHead className="text-right">Tempo até o fechamento (mediana)</TableHead>
 								</TableRow>
-							);
-						})}
-					</TableBody>
-				</Table>
-				<p className="mt-3 text-xs text-muted-foreground">
-					{total === 0 ? (
-						"Nenhuma conversa desta régua fechou contrato no período. Sem conversão não há como dizer qual toque se paga."
-					) : paga === null ? (
-						<>
-							{nf.format(total)} {total === 1 ? "conversão" : "conversões"} no período, nenhuma
-							delas atribuível a um toque.
-						</>
-					) : (
-						<>
-							O toque {String(paga).padStart(2, "0")} é o que mais converteu. A conversão é
-							atribuída ao toque que a precedeu; ao lado, o tempo real até a resposta de cada passo,
-							para confrontar com o intervalo que a régua desenha.
-						</>
-					)}
-					{semAtribuicao > 0 && (
-						<>
-							{" "}
-							{nf.format(semAtribuicao)}{" "}
-							{semAtribuicao === 1 ? "conversa fechou" : "conversas fecharam"} antes do último
-							toque, sem toque que a precedesse para creditar.
-						</>
-					)}
-				</p>
-			</CardContent>
-		</Card>
+							</TableHeader>
+							<TableBody>
+								{insights.funil.map((linha) => {
+									const pago = paga !== null && paga === linha.passo;
+									return (
+										<TableRow key={linha.passo} className={cn(pago && "bg-muted/50")}>
+											<TableCell className="font-medium">
+												{linha.rotulo}
+												{pago && (
+													<span className="ml-2 text-xs font-normal text-muted-foreground">
+														mais converteu
+													</span>
+												)}
+											</TableCell>
+											<TableCell className="text-right tabular-nums">
+												{nf.format(linha.conversoesAtribuidas)}
+											</TableCell>
+											<TableCell className="text-right">
+												{celulaDeTempo(linha.tempoAteResposta)}
+											</TableCell>
+											<TableCell className="text-right">
+												{celulaDeTempo(linha.tempoAteConversao)}
+											</TableCell>
+										</TableRow>
+									);
+								})}
+							</TableBody>
+						</Table>
+						<p className="mt-3 text-xs text-muted-foreground">
+							{total === 0 ? (
+								"Nenhuma conversa desta régua fechou contrato no período. Sem conversão não há como dizer qual toque se paga."
+							) : paga === null ? (
+								<>
+									{nf.format(total)} {total === 1 ? "conversão" : "conversões"} no período, nenhuma
+									delas atribuível a um toque.
+								</>
+							) : (
+								<>
+									O toque {String(paga).padStart(2, "0")} é o que mais converteu. A conversão é
+									atribuída ao toque que a precedeu; ao lado, o tempo real até a resposta de cada
+									passo, para confrontar com o intervalo que a régua desenha.
+								</>
+							)}
+							{semAtribuicao > 0 && (
+								<>
+									{" "}
+									{nf.format(semAtribuicao)}{" "}
+									{semAtribuicao === 1 ? "conversa fechou" : "conversas fecharam"} antes do último
+									toque, sem toque que a precedesse para creditar.
+								</>
+							)}
+						</p>
+					</CardContent>
+				</CollapsibleContent>
+			</Card>
+		</Collapsible>
 	);
 }
 

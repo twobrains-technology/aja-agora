@@ -8,6 +8,7 @@ import {
 	saveMessage as saveMessageWithChannel,
 } from "@/lib/conversation/messages";
 import { registrarInicioDeConversa } from "@/lib/conversions/inicio-de-conversa";
+import { ehMensagemPrePreenchida } from "@/lib/funil/mensagem-pre-preenchida";
 import { isSimulatedWaId } from "./simulator-bus";
 
 export { loadConversationHistory };
@@ -36,6 +37,17 @@ export async function getOrCreateConversation(
 	 * `%Conv Chat` consertava; o sinal que ensina a campanha, não.
 	 */
 	visitaJaResolvida?: string | null,
+	/**
+	 * A fala que ABRIU a conversa, quando quem chama a conhece.
+	 *
+	 * D6 do PRD — o `ChatIniciado` do WhatsApp mede a PESSOA, não o produto.
+	 * Quando a primeira mensagem é o texto que o anúncio ou o botão pré-preencheu,
+	 * quem apertou "enviar" não escreveu nada: o evento sairia medindo o CTA. Quem
+	 * tem a fala em mãos passa aqui e o predicado decide. Sem ela (caminhos que não
+	 * a têm), `undefined` mantém o comportamento de sempre — ausência de dado não
+	 * vira silêncio.
+	 */
+	primeiraMensagem?: string | null,
 ): Promise<{ id: string; isNew: boolean }> {
 	const existing = await db.query.conversations.findFirst({
 		where: eq(conversations.waId, waId),
@@ -61,7 +73,29 @@ export async function getOrCreateConversation(
 
 	const [conv] = await db
 		.insert(conversations)
-		.values({ waId, channel: "whatsapp", isSimulated, visitId })
+		.values({
+			waId,
+			channel: "whatsapp",
+			isSimulated,
+			visitId,
+			// F2 / AJA-02 (corrida do `last_inbound_at`): a mensagem que CRIA a
+			// conversa é um inbound — então ela já nasce com o carimbo.
+			//
+			// Antes disto a coluna só era escrita pelo `updateLastInboundAt` do
+			// webhook, que roda fire-and-forget ANTES desta criação (e antes do
+			// `switch` do tipo de mensagem). Na primeira mensagem de um número
+			// novo ele não achava conversa alguma, logava "No conversation
+			// found" e desistia: `last_inbound_at` ficava NULL para sempre em
+			// 100% das conversas com exatamente 1 mensagem (4/4 medidas em
+			// produção), e a régua de remarketing — que exige a coluna não
+			// nula — nunca via esses leads.
+			//
+			// O conserto mora aqui, e não em reordenar o webhook (que é da
+			// frente do áudio): gravar no insert torna a corrida irrelevante em
+			// vez de apenas improvável, e vale para todo caminho que cria
+			// conversa de WhatsApp — webhook, carimbo de origem do site, etc.
+			lastInboundAt: new Date(),
+		})
 		.returning();
 
 	if (visitId) {
@@ -118,7 +152,10 @@ export async function getOrCreateConversation(
 	// quando o turno seguinte o procurasse, e um teste de integração não tinha
 	// como afirmar que ele nasceu com a origem certa. Sinal de mídia que talvez
 	// exista não é sinal.
-	if (!isSimulated) {
+	const abriuConversaDeFato =
+		!primeiraMensagem || !ehMensagemPrePreenchida(primeiraMensagem, "whatsapp");
+
+	if (!isSimulated && abriuConversaDeFato) {
 		await registrarInicioDeConversa({
 			eventId: conv.id,
 			visitId,

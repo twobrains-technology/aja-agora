@@ -465,6 +465,13 @@ export const messages = pgTable(
 		// ninguém sabe depois se o cliente recebeu uma mensagem escrita à mão ou
 		// um disparo automático de retomada.
 		templateName: varchar("template_name", { length: 128 }),
+		// Enriquecimento do inbound que não cabe numa coluna própria (AJA-15).
+		// Nasceu com a transcrição de áudio: `{ transcricao: { modelo, duracaoMs,
+		// bytes, mimeType } }`. Fica em JSON porque o conjunto de chaves cresce com
+		// a conversa — cada nova leitura do anexo entra aqui sem migration nova.
+		// NUNCA guarda fala: o texto transcrito é `content`, porque é fala do
+		// cliente como qualquer outra.
+		metadata: jsonb().$type<Record<string, unknown>>(),
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	},
 	(table) => [index("messages_conversation_persona_idx").on(table.conversationId, table.personaId)],
@@ -1265,6 +1272,19 @@ export const metaEntities = pgTable(
 		// Para conjunto e anúncio: a entidade acima na hierarquia. Sem FK — a
 		// ordem de chegada do sync não é garantida, e órfão temporário é normal.
 		parentEntityId: text("parent_entity_id"),
+		// ── Criativo (só no nível "ad") ───────────────────────────────────────
+		//
+		// O nome da CAMPANHA não bastava para a Bruna: ela perguntou em 18/09
+		// "essa sequência eu consigo visualizar em algum lugar, para saber qual é o
+		// criativo?". O id do anúncio chega na visita como `utm_content`; aqui o
+		// espelho guarda o nome e a miniatura da peça para a tela poder mostrá-la.
+		//
+		// Nulos são estado legítimo e frequente: anúncio sem peça, ou token sem
+		// permissão no campo `creative` (a Graph API responde #100/#200 e o ciclo
+		// relê sem ele — ver `meta-ads-sync-cycle.ts`).
+		creativeId: text("creative_id"),
+		creativeName: text("creative_name"),
+		thumbnailUrl: text("thumbnail_url"),
 		// Quando o sync viu isto pela última vez. Diferente de `updated_at`: serve
 		// para a tela marcar "visto há X" e para a limpeza de entidades mortas.
 		vistoEm: timestamp("visto_em", { withTimezone: true }).defaultNow().notNull(),
@@ -1793,4 +1813,37 @@ export const remarketingTouchesRelations = relations(remarketingTouches, ({ one 
 		fields: [remarketingTouches.contactId],
 		references: [contacts.id],
 	}),
+}));
+
+// ─── Exportações (auditoria de LGPD da área "Exportação e dados") ────────────
+//
+// Cada arquivo baixado da tela `/admin/exportacao` vira uma linha aqui: quem
+// exportou, quando, que recorte (de/até), que formato e — o campo que importa
+// para LGPD — se o dado pessoal saiu MASCARADO ou completo. O pedido do Gustavo
+// diz "minimizar dados pessoais"; a resposta a "quem levou o quê" tem que
+// existir ANTES de alguém levar o completo.
+//
+// `usuario_email` é um SNAPSHOT de propósito: se o usuário for removido, a
+// auditoria não pode ficar órfã nem mentir o autor (`usuario_id` com
+// `set null` sobrevive, o e-mail fica gravado como estava no dia).
+export const exportacoes = pgTable(
+	"exportacoes",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		/** `conversas` | `percurso` | `toques` — o dicionário é `src/lib/exportacao`. */
+		tipo: text().notNull(),
+		formato: text().notNull(),
+		de: timestamp("de", { withTimezone: true }).notNull(),
+		ate: timestamp("ate", { withTimezone: true }).notNull(),
+		mascarado: boolean().default(true).notNull(),
+		linhas: integer().notNull(),
+		usuarioId: text("usuario_id").references(() => user.id, { onDelete: "set null" }),
+		usuarioEmail: text("usuario_email"),
+		criadoEm: timestamp("criado_em", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [index("exportacoes_criado_em_idx").on(table.criadoEm)],
+);
+
+export const exportacoesRelations = relations(exportacoes, ({ one }) => ({
+	usuario: one(user, { fields: [exportacoes.usuarioId], references: [user.id] }),
 }));

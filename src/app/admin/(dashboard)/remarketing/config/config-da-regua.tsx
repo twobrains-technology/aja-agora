@@ -19,7 +19,7 @@
  * fábrica. É o caminho de desfazer, e está escrito na tela.
  */
 
-import { RotateCcw } from "lucide-react";
+import { Factory, PencilLine, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -137,8 +137,23 @@ export function ConfigDaRegua() {
 							<CardHeader>
 								<div className="flex flex-wrap items-center justify-between gap-2">
 									<CardTitle className="text-sm">{parametro.rotulo}</CardTitle>
-									<Badge variant={parametro.origem === "cadastro" ? "default" : "outline"}>
-										{parametro.origem === "cadastro" ? "Cadastro" : "Padrão de fábrica"}
+									{/* "Padrão de fábrica" só quando NÃO há ajuste salvo; com ajuste, é
+									    "Editado". O rótulo de estado nunca usa `default` (coral). */}
+									<Badge
+										variant={parametro.origem === "cadastro" ? "warning" : "outline"}
+										className="gap-1"
+										title={
+											parametro.origem === "cadastro"
+												? "Este valor foi ajustado neste cadastro; o padrão do código foi substituído."
+												: "O valor vigente é o padrão do código — nenhum ajuste foi salvo para este parâmetro."
+										}
+									>
+										{parametro.origem === "cadastro" ? (
+											<PencilLine className="size-3" aria-hidden="true" />
+										) : (
+											<Factory className="size-3" aria-hidden="true" />
+										)}
+										{parametro.origem === "cadastro" ? "Editado" : "Padrão de fábrica"}
 									</Badge>
 								</div>
 							</CardHeader>

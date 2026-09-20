@@ -76,9 +76,9 @@ const TONE_BG: Record<Tone, string> = {
 };
 
 const TONE_TEXT: Record<Tone, string> = {
-	danger: "text-red-600 dark:text-red-400",
-	warning: "text-amber-600 dark:text-amber-400",
-	success: "text-emerald-600 dark:text-emerald-400",
+	danger: "text-destructive",
+	warning: "text-warning",
+	success: "text-success",
 };
 
 const TONE_BAR: Record<Tone, string> = {
@@ -162,7 +162,7 @@ export function EvaluationPanel({ conversationId, userTurnCount }: EvaluationPan
 			<EmptyStateCard
 				icon={Hourglass}
 				iconBg="bg-blue-100 dark:bg-blue-900/30"
-				iconColor="text-blue-600 dark:text-blue-400"
+				iconColor="text-link"
 				title="Aguardando mais contexto"
 				description={`A avaliação fica disponível quando a conversa tiver pelo menos ${MIN_USER_TURNS} turnos do usuário.`}
 			/>
@@ -185,7 +185,7 @@ export function EvaluationPanel({ conversationId, userTurnCount }: EvaluationPan
 			<EmptyStateCard
 				icon={AlertTriangle}
 				iconBg="bg-red-100 dark:bg-red-900/30"
-				iconColor="text-red-600 dark:text-red-400"
+				iconColor="text-destructive"
 				title="Não foi possível carregar"
 				description="Tente novamente em instantes."
 				action={{
@@ -219,7 +219,7 @@ export function EvaluationPanel({ conversationId, userTurnCount }: EvaluationPan
 			<EmptyStateCard
 				icon={AlertTriangle}
 				iconBg="bg-red-100 dark:bg-red-900/30"
-				iconColor="text-red-600 dark:text-red-400"
+				iconColor="text-destructive"
 				title="Falha ao avaliar"
 				description="Tivemos um problema ao gerar a avaliação. Você pode tentar novamente."
 				action={{
@@ -254,7 +254,7 @@ export function EvaluationPanel({ conversationId, userTurnCount }: EvaluationPan
 				<ListCard
 					icon={CheckCircle2}
 					iconBg="bg-emerald-100 dark:bg-emerald-900/30"
-					iconColor="text-emerald-600 dark:text-emerald-400"
+					iconColor="text-success"
 					title="Pontos fortes"
 					items={data.topStrengths}
 				/>
@@ -264,7 +264,7 @@ export function EvaluationPanel({ conversationId, userTurnCount }: EvaluationPan
 				<ListCard
 					icon={XCircle}
 					iconBg="bg-amber-100 dark:bg-amber-900/30"
-					iconColor="text-amber-600 dark:text-amber-400"
+					iconColor="text-warning"
 					title="Problemas"
 					items={data.topIssues}
 				/>
@@ -320,7 +320,7 @@ function FlagsCard({ flags }: { flags: string[] }) {
 		<Card>
 			<CardContent className="flex items-start gap-3 py-3">
 				<div className="p-2 rounded-full bg-red-100 dark:bg-red-900/30">
-					<AlertTriangle className="size-5 text-red-600 dark:text-red-400" />
+					<AlertTriangle className="size-5 text-destructive" />
 				</div>
 				<div className="min-w-0 flex-1">
 					<p className="text-sm font-semibold">Alertas</p>
@@ -328,7 +328,7 @@ function FlagsCard({ flags }: { flags: string[] }) {
 						{flags.map((key) => (
 							<span
 								key={key}
-								className="inline-flex items-center rounded-md border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
+								className="inline-flex items-center rounded-md border border-destructive/40 bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive"
 							>
 								{FLAG_LABELS[key] ?? key}
 							</span>
@@ -345,7 +345,7 @@ function DimensionsCard({ dimensions }: { dimensions: EvalDimensionsPayload }) {
 		<Card>
 			<CardContent className="flex items-start gap-3 py-3">
 				<div className="p-2 rounded-full bg-blue-100 dark:bg-blue-900/30">
-					<BarChart3 className="size-5 text-blue-600 dark:text-blue-400" />
+					<BarChart3 className="size-5 text-link" />
 				</div>
 				<div className="min-w-0 flex-1">
 					<p className="text-sm font-semibold">Dimensões</p>

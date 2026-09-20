@@ -16,6 +16,7 @@
 
 import { type SQL, sql } from "drizzle-orm";
 import { db } from "@/db";
+import { sqlEscreveuAlgoProprio, sqlSoPrePreenchida } from "@/lib/funil/mensagem-pre-preenchida";
 import { predicadoDeOrigemNaVisita } from "./filtro-origem";
 import { origemDaVisita } from "./origem-label";
 import {
@@ -120,7 +121,14 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
         (SELECT max(m.created_at) FROM messages m
           WHERE m.conversation_id = c.id AND m.role = 'user') AS ultimo_inbound,
         EXISTS (SELECT 1 FROM messages m
-          WHERE m.conversation_id = c.id AND m.role = 'user') AS escreveu,
+          WHERE m.conversation_id = c.id AND m.role = 'user') AS mandou_algo,
+        -- AJA-01: "escreveu" era o EXISTS acima, e o CTA entrega a primeira fala
+        -- pronta. Aqui a pergunta se parte em duas: quem só mandou o texto do
+        -- produto ('so_pre_preenchida') e quem ESCREVEU algo próprio
+        -- ('iniciou_conversa'). O predicado é o mesmo de 'performance-queries',
+        -- importado de 'src/lib/funil/mensagem-pre-preenchida'.
+        ${sqlEscreveuAlgoProprio(sql`c.id`)} AS iniciou_conversa,
+        ${sqlSoPrePreenchida(sql`c.id`)} AS so_pre_preenchida,
         EXISTS (SELECT 1 FROM leads l
           WHERE l.conversation_id = c.id AND l.is_simulated = false
             AND (l.phone IS NOT NULL OR l.email IS NOT NULL)) AS identificou,
@@ -207,7 +215,9 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
              count(DISTINCT c.id) AS conversas,
              COALESCE(sum(c.msgs), 0) AS msgs,
              max(c.ultimo_inbound) AS ultimo_inbound,
-             bool_or(c.escreveu) AS escreveu,
+             bool_or(c.mandou_algo) AS mandou_algo,
+             bool_or(c.iniciou_conversa) AS iniciou_conversa,
+             bool_or(c.so_pre_preenchida) AS so_pre_preenchida,
              bool_or(c.identificou) AS identificou,
              bool_or(c.viu_oferta) AS viu_oferta,
              bool_or(c.teve_proposta) AS teve_proposta,
@@ -262,11 +272,16 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
              COALESCE(ct.email, lp.email) AS email,
              lp.stage,
              CASE
-               WHEN COALESCE(cp.fechou, false) THEN 8
-               WHEN COALESCE(cp.teve_proposta, false) THEN 7
-               WHEN COALESCE(cp.viu_oferta, false) THEN 6
-               WHEN COALESCE(cp.identificou, false) THEN 5
-               WHEN COALESCE(cp.escreveu, false) THEN 4
+               WHEN COALESCE(cp.fechou, false) THEN 9
+               WHEN COALESCE(cp.teve_proposta, false) THEN 8
+               WHEN COALESCE(cp.viu_oferta, false) THEN 7
+               WHEN COALESCE(cp.identificou, false) THEN 6
+               -- A ordem entre estes dois é a regra inteira: quem escreveu algo
+               -- próprio passou por cima do degrau do anúncio, e quem só mandou
+               -- o texto do CTA parou nele. Invertida, "Iniciou a conversa"
+               -- contaria quem nunca escreveu.
+               WHEN COALESCE(cp.iniciou_conversa, false) THEN 5
+               WHEN COALESCE(cp.so_pre_preenchida, false) THEN 4
                WHEN COALESCE(cp.conversas, 0) > 0 OR p.abriu_teatro THEN 3
                WHEN p.olhou THEN 2
                ELSE 1

@@ -12,10 +12,12 @@ import {
 	type ConfigMetaAds,
 	centavosDeSpend,
 	criarClienteMetaAds,
+	ehErroDeCampoNaoPermitido,
 	type FetchDaMeta,
 	getMetaAdsConfig,
 	janelaPadrao,
 	leadsDeActions,
+	MetaAdsError,
 	motivoParaNaoSincronizar,
 } from "./cliente";
 
@@ -243,6 +245,73 @@ describe("entidades e paginação", () => {
 		})) as unknown as FetchDaMeta;
 		const cliente = criarClienteMetaAds(CFG, fetch);
 		await expect(cliente.lerCampanhas()).rejects.toThrow(/Invalid OAuth access token/);
+	});
+
+	it("o anúncio traz o criativo (id, nome e miniatura) da Graph API", async () => {
+		const { fetch, urls } = fetchQue([
+			{
+				casa: "/ads",
+				corpo: {
+					data: [
+						{
+							id: "99",
+							name: "ANUNCIO | CARRO | V1",
+							creative: {
+								id: "cri-1",
+								name: "IMG | GERAL | RMKT | V1",
+								thumbnail_url: "https://scontent.example/t.jpg",
+								effective_object_story_id: "pagina_1",
+							},
+						},
+					],
+				},
+			},
+		]);
+		const cliente = criarClienteMetaAds(CFG, fetch);
+		const [ad] = await cliente.lerAnuncios();
+		expect(ad?.creativeId).toBe("cri-1");
+		expect(ad?.creativeName).toBe("IMG | GERAL | RMKT | V1");
+		expect(ad?.thumbnailUrl).toBe("https://scontent.example/t.jpg");
+		// O campo precisa estar na query; sem ele a Meta não devolve o criativo.
+		expect(decodeURIComponent(urls[0] ?? "")).toContain("creative{id,name,thumbnail_url");
+	});
+
+	it("anúncio SEM criativo não inventa valor: campos nulos", async () => {
+		const { fetch } = fetchQue([
+			{ casa: "/ads", corpo: { data: [{ id: "99", name: "ANUNCIO" }] } },
+		]);
+		const cliente = criarClienteMetaAds(CFG, fetch);
+		const [ad] = await cliente.lerAnuncios();
+		expect(ad?.creativeId).toBeNull();
+		expect(ad?.creativeName).toBeNull();
+		expect(ad?.thumbnailUrl).toBeNull();
+	});
+
+	it("com semCriativo, a query não pede creative (degradação por permissão)", async () => {
+		const { fetch, urls } = fetchQue([{ casa: "/ads", corpo: { data: [{ id: "99" }] } }]);
+		const cliente = criarClienteMetaAds(CFG, fetch);
+		await cliente.lerAnuncios({ semCriativo: true });
+		expect(decodeURIComponent(urls[0] ?? "")).not.toContain("creative");
+	});
+
+	it("código #100/#200 é reconhecido como campo não permitido; o resto não", async () => {
+		const fetch = vi.fn(async () => ({
+			ok: false,
+			status: 400,
+			json: async () => ({ error: { message: "(#100) nonexisting field", code: 100 } }),
+		})) as unknown as FetchDaMeta;
+		const cliente = criarClienteMetaAds(CFG, fetch);
+		let capturado: unknown;
+		try {
+			await cliente.lerAnuncios();
+		} catch (e) {
+			capturado = e;
+		}
+		expect(capturado).toBeInstanceOf(MetaAdsError);
+		expect((capturado as MetaAdsError).codigo).toBe(100);
+		expect(ehErroDeCampoNaoPermitido(capturado)).toBe(true);
+		expect(ehErroDeCampoNaoPermitido(new MetaAdsError(500, 2, "caiu"))).toBe(false);
+		expect(ehErroDeCampoNaoPermitido(new Error("qualquer"))).toBe(false);
 	});
 
 	it("janela padrão é fechada nas duas pontas, no fuso do negócio", () => {

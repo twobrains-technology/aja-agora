@@ -20,15 +20,37 @@
  */
 
 import { eq } from "drizzle-orm";
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
+import { __setDiscoveryAdapterFactoryForTests } from "@/lib/adapters";
+import { fixtureDiscoveryAdapter } from "../../../../tests/helpers/fixture-discovery-adapter";
 import { limparCenario, runScenario } from "./testing/scenario";
 
 const HAS_DB = Boolean(process.env.DATABASE_URL) && !process.env.DATABASE_URL?.includes("sentinel");
 const describeIfDb = HAS_DB ? describe : describe.skip;
 
 const ENV_ORIGINAL = { ...process.env };
+
+// A DESCOBERTA É DE FIXTURE, NÃO DA REDE.
+//
+// Com a vitrine ligada (`VITRINE_CPF`), este cenário rodava a busca REAL na Bevi:
+// cada `create-proposal` levava de 5 a 7 s e o self-contract é compartilhado entre
+// os worktrees (`BEVI_SELFCONTRACT_HASH`), então responder "Duplicated Hash" era
+// rotina. Sob a suíte inteira o turno do reveal estourava os 20 s de timeout do
+// `vitest.config.ts` — e o sintoma que aparecia era a asserção do NOME
+// (`expected null to be 'Paulo'`), longe da causa.
+//
+// O adapter de fixture usa o MESMO `BeviSelfContractAdapter` de produção, com
+// capturas reais da loja-piloto; o que sai não é a rede, é determinismo. É o
+// padrão que `src/lib/bevi/other-options.test.ts` já usa.
+beforeAll(() => {
+	__setDiscoveryAdapterFactoryForTests(() => fixtureDiscoveryAdapter());
+});
+
+afterAll(() => {
+	__setDiscoveryAdapterFactoryForTests(null);
+});
 
 beforeEach(() => {
 	process.env.VITRINE_CPF = "11144477735";

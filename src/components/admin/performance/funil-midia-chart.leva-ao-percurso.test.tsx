@@ -8,7 +8,7 @@
  * Perder o período no caminho é o defeito silencioso do tipo mais caro — a
  * lista abre, parece certa, e responde por outro intervalo.
  */
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { EtapaFunilMidia } from "@/lib/admin/performance-types";
 import { FunilMidiaChart } from "./funil-midia-chart";
@@ -30,7 +30,13 @@ function etapa(chave: EtapaFunilMidia["chave"], label: string, count: number): E
 const ETAPAS: EtapaFunilMidia[] = [
 	etapa("visitas", "Visitas", 500),
 	etapa("conversas", "Conversas", 20),
-	etapa("engajadas", "Engajaram", 12),
+	etapa("so_pre_preenchida", "Só mandaram a mensagem do anúncio", 8),
+	{
+		...etapa("engajadas", "Iniciaram a conversa", 12),
+		// 60% das conversas iniciaram; 40% de queda em relação a "Conversas".
+		percentDasConversas: 60,
+		quedaDaAnterior: 40,
+	},
 	etapa("identificados", "Se identificaram", 7),
 	etapa("viram_oferta", "Viram oferta", 5),
 	etapa("propostas", "Propostas", 2),
@@ -55,7 +61,8 @@ describe("funil de mídia — cada etapa leva ao percurso", () => {
 		// O vocabulário das duas telas é um só: o mapa vive em
 		// `PASSO_DA_ETAPA_DO_FUNIL` e é ele que este teste percorre de ponta a ponta.
 		expect(hrefDe("Conversas")).toContain("passo=abriu_o_chat");
-		expect(hrefDe("Engajaram")).toContain("passo=escreveu");
+		expect(hrefDe("Só mandaram a mensagem do anúncio")).toContain("passo=so_pre_preenchida");
+		expect(hrefDe("Iniciaram a conversa")).toContain("passo=iniciou_conversa");
 		expect(hrefDe("Se identificaram")).toContain("passo=se_identificou");
 		expect(hrefDe("Viram oferta")).toContain("passo=viu_oferta");
 		expect(hrefDe("Propostas")).toContain("passo=proposta");
@@ -64,7 +71,7 @@ describe("funil de mídia — cada etapa leva ao percurso", () => {
 
 	it("carrega o período junto, para a lista responder pelo mesmo intervalo", () => {
 		render(<FunilMidiaChart etapas={ETAPAS} de={DE} ate={ATE} />);
-		const href = hrefDe("Engajaram");
+		const href = hrefDe("Iniciaram a conversa");
 
 		expect(href).toContain(`from=${encodeURIComponent(DE.toISOString())}`);
 		expect(href).toContain(`to=${encodeURIComponent(ATE.toISOString())}`);
@@ -89,7 +96,13 @@ describe("funil de mídia — cada etapa leva ao percurso", () => {
 		// período, e nunca o modo.
 		render(<FunilMidiaChart etapas={ETAPAS} de={DE} ate={ATE} />);
 
-		for (const rotulo of ["Conversas", "Engajaram", "Se identificaram", "Viram oferta"]) {
+		for (const rotulo of [
+			"Conversas",
+			"Só mandaram a mensagem do anúncio",
+			"Iniciaram a conversa",
+			"Se identificaram",
+			"Viram oferta",
+		]) {
 			expect(hrefDe(rotulo), `${rotulo} tem que abrir em alcancou`).toContain("modo=alcancou");
 			expect(hrefDe(rotulo)).not.toContain("modo=parou");
 		}
@@ -99,5 +112,39 @@ describe("funil de mídia — cada etapa leva ao percurso", () => {
 		render(<FunilMidiaChart etapas={ETAPAS} de={DE} ate={ATE} />);
 
 		expect(screen.queryByText("Visitas")).toBeNull();
+	});
+
+	it("diz a meta do primeiro degrau com palavra, e não só com cor", () => {
+		// 12 de 20 = 60% iniciaram a conversa, contra a meta de 4%: ACIMA, dito.
+		render(<FunilMidiaChart etapas={ETAPAS} de={DE} ate={ATE} />);
+
+		expect(screen.getAllByText(/acima da meta/).length).toBeGreaterThan(0);
+		expect(screen.getAllByText(/meta 4%/).length).toBeGreaterThan(0);
+		// Aparece duas vezes: o número grande do cabeçalho e a linha do degrau.
+		expect(screen.getAllByText("60%").length).toBeGreaterThan(0);
+	});
+
+	it("diz ABAIXO quando o degrau não chega na meta", () => {
+		const abaixo = ETAPAS.map((e) =>
+			e.chave === "engajadas" ? { ...e, percentDasConversas: 2.5 } : e,
+		);
+		render(<FunilMidiaChart etapas={abaixo} de={DE} ate={ATE} />);
+
+		expect(screen.getAllByText(/abaixo da meta/).length).toBeGreaterThan(0);
+	});
+
+	it("a ramificação não acumula queda em relação à etapa de cima", () => {
+		// "Só mandaram a mensagem do anúncio" é o OUTRO destino de "Conversas",
+		// não o degrau anterior de "Iniciaram a conversa". Mostrar "−X% da etapa
+		// anterior" ali diria que o funil encolheu por causa da ramificação.
+		render(<FunilMidiaChart etapas={ETAPAS} de={DE} ate={ATE} />);
+
+		const ramificacao = screen.getByText("Só mandaram a mensagem do anúncio").closest("a");
+		if (!ramificacao) throw new Error("a ramificação devia ser um link");
+		expect(within(ramificacao).queryByText(/da etapa anterior/)).toBeNull();
+
+		const degrau = screen.getByText("Iniciaram a conversa").closest("a");
+		if (!degrau) throw new Error("o degrau devia ser um link");
+		expect(within(degrau).getByText(/da etapa anterior/)).toBeTruthy();
 	});
 });

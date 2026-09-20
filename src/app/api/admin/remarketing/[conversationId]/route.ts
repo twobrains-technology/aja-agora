@@ -1,7 +1,42 @@
 import type { NextRequest } from "next/server";
 import { gravarAcaoDaRegua, lerLinhaDaRegua } from "@/lib/admin/remarketing-queries";
-import { type AcaoDaRegua, decidirAcao, linhaDaTela } from "@/lib/admin/remarketing-tela";
+import {
+	type AcaoDaRegua,
+	decidirAcao,
+	linhaDaTela,
+	proximoToqueDe,
+	situacaoDe,
+} from "@/lib/admin/remarketing-tela";
 import { requireRole } from "@/lib/admin/require-role";
+
+/**
+ * A RÉGUA DE UMA CONVERSA — leitura para o bloco da ficha.
+ *
+ * A ficha (`conversation-detail-panel`) mostra em que pé está a régua daquela
+ * conversa sem obrigar o operador a abrir a tela da Régua. Devolve a linha já
+ * derivada (`LinhaDaTela`), com situação, passo, próximo toque e motivo — o
+ * mesmo vocabulário da lista. Sem linha → `{ linha: null }` (a conversa nunca
+ * entrou na régua, e a ficha diz isso; não é erro).
+ */
+export async function GET(
+	_req: NextRequest,
+	{ params }: { params: Promise<{ conversationId: string }> },
+) {
+	const { error } = await requireRole("admin", "viewer", "attendant");
+	if (error) return error;
+
+	const { conversationId } = await params;
+	const agora = new Date();
+	const linha = await lerLinhaDaRegua(conversationId);
+
+	return Response.json({
+		linha: linha ? linhaDaTela(linha, agora) : null,
+		// O próximo toque só existe em linha ATIVO; a situação separa segurada de
+		// respondeu para o bloco não inferir pelos status crus.
+		proximoToqueISO: linha ? (proximoToqueDe(linha)?.toISOString() ?? null) : null,
+		situacao: linha ? situacaoDe(linha) : null,
+	});
+}
 
 /**
  * SEGURAR / SOLTAR uma conversa da régua.

@@ -6,11 +6,16 @@ import { useTheater } from "@/components/chat/theater/theater-context";
 import { WhatsappGlyph } from "@/components/icons/whatsapp-glyph";
 import { carimbarOrigem, lerCodigoDeOrigemDoCookie } from "@/lib/attribution/codigo-de-origem";
 import { WHATSAPP_OFICIAL_DIGITOS } from "@/lib/bevi/closing-presentation";
+import { PRIMEIRA_FALA_WHATSAPP } from "@/lib/funil/textos-do-cta";
 
 /** A fala que já vai escrita para o cliente só apertar enviar. Sem ela, quem
  *  chega no WhatsApp encara uma conversa vazia e trava; e do outro lado é o
- *  MESMO agente, que começa a conversa sabendo de onde a pessoa veio. */
-const PRIMEIRA_FALA = "Oi! Quero comparar consórcios.";
+ *  MESMO agente, que começa a conversa sabendo de onde a pessoa veio.
+ *
+ *  A constante mora em `src/lib/funil/textos-do-cta` porque o funil precisa
+ *  reconhecê-la como texto do PRODUTO — é ela a primeira mensagem de todas as
+ *  11 conversas de WhatsApp medidas em produção (§h do diagnóstico). */
+const PRIMEIRA_FALA = PRIMEIRA_FALA_WHATSAPP;
 
 /**
  * `wa.me` é o link universal da Meta e é o que resolve o pedido do celular:

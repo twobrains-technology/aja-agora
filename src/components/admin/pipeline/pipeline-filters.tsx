@@ -1,16 +1,13 @@
 "use client";
 
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale/pt-BR";
-import { CalendarIcon, Search, X } from "lucide-react";
-import { parseAsIsoDate, parseAsString, useQueryState } from "nuqs";
+import { Search, X } from "lucide-react";
+import { parseAsString, useQueryState } from "nuqs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { parserDeCampanha } from "@/components/admin/dashboard/campanha-filter";
+import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter";
 import { FiltrosDaTela } from "@/components/admin/dashboard/filtros";
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
 	Select,
 	SelectContent,
@@ -18,7 +15,10 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { diaDeHoje, fimDoDia, inicioDoDia } from "@/lib/admin/periodo";
+import { parseAsDiaDoNegocio } from "@/lib/admin/periodo-querystring";
 import type { Lead } from "./lead-card";
+import { periodoEfetivoDoPipeline } from "./periodo-do-pipeline";
 
 const CHANNEL_OPTIONS = [
 	{ value: "all", label: "Todos" },
@@ -39,8 +39,33 @@ function getChannelLabel(value: string): string {
 export function useLeadFilters() {
 	const [channel, setChannel] = useQueryState("channel", parseAsString.withDefault("all"));
 	const [search, setSearch] = useQueryState("q", parseAsString.withDefault(""));
-	const [dateFrom, setDateFrom] = useQueryState("from", parseAsIsoDate);
-	const [dateTo, setDateTo] = useQueryState("to", parseAsIsoDate);
+	// DIA do negócio, não instante: é o mesmo parser que o `<DateRangeFilter/>` e
+	// o chip usam, ancorado ao meio-dia UTC (ver `periodo-querystring.ts`).
+	const [dateFrom, setDateFrom] = useQueryState("from", parseAsDiaDoNegocio);
+	const [dateTo, setDateTo] = useQueryState("to", parseAsDiaDoNegocio);
+	const hoje = useMemo(() => diaDeHoje(), []);
+
+	// O período em vigor precisa estar na URL: é o que o chip do cabeçalho lê e o
+	// que o `<DateRangeFilter/>` mostra. Sem escolha salva, o Pipeline não abre em
+	// HOJE como o resto do painel — abre "Desde o início", senão o Kanban vazio se
+	// lê como tela quebrada (ver `periodo-do-pipeline.ts`). O cookie é lido no
+	// efeito porque `document.cookie` durante o render faria o servidor e o
+	// navegador discordarem no primeiro quadro.
+	const hidratado = useRef(false);
+	useEffect(() => {
+		if (hidratado.current) return;
+		hidratado.current = true;
+		if (dateFrom && dateTo) return;
+
+		const efetivo = periodoEfetivoDoPipeline(
+			dateFrom,
+			dateTo,
+			typeof document === "undefined" ? null : document.cookie,
+			hoje,
+		);
+		if (!dateFrom) setDateFrom(efetivo.de);
+		if (!dateTo) setDateTo(efetivo.ate);
+	}, [dateFrom, dateTo, setDateFrom, setDateTo, hoje]);
 	// Campanha é LISTA e vive na URL (`?campanha=a,b,c`), como no resto do painel:
 	// o recorte acompanha o link e não some ao navegar. Lista vazia = sem filtro.
 	const [campanhasUrl, setCampanhas] = useQueryState("campanha", parserDeCampanha);
@@ -70,17 +95,18 @@ export function useLeadFilters() {
 				return false;
 			}
 
-			// Date range filter on lead.createdAt
+			// Recorte por dia do NEGÓCIO. `from`/`to` são DIAS ancorados ao meio-dia
+			// UTC: comparar `createdAt` direto com eles cortaria metade do dia, e o
+			// velho `setHours(23,59,59)` local fechava a janela no dia anterior no
+			// fuso do negócio. Quem vira janela é `inicioDoDia`/`fimDoDia`, o mesmo
+			// par que as rotas usam.
 			if (dateFrom) {
 				const createdAt = new Date(lead.createdAt);
-				if (createdAt < dateFrom) return false;
+				if (createdAt < inicioDoDia(dateFrom)) return false;
 			}
 			if (dateTo) {
 				const createdAt = new Date(lead.createdAt);
-				// Include the entire "to" day
-				const endOfDay = new Date(dateTo);
-				endOfDay.setHours(23, 59, 59, 999);
-				if (createdAt > endOfDay) return false;
+				if (createdAt > fimDoDia(dateTo)) return false;
 			}
 
 			return true;
@@ -104,18 +130,7 @@ export function useLeadFilters() {
 }
 
 export function PipelineFilters({ filters }: { filters: ReturnType<typeof useLeadFilters> }) {
-	const {
-		channel,
-		setChannel,
-		search,
-		setSearch,
-		dateFrom,
-		setDateFrom,
-		dateTo,
-		setDateTo,
-		campanhas,
-		setCampanhas,
-	} = filters;
+	const { channel, setChannel, search, setSearch, campanhas, setCampanhas } = filters;
 
 	// Debounced search input
 	const [localSearch, setLocalSearch] = useState(search);
@@ -133,18 +148,14 @@ export function PipelineFilters({ filters }: { filters: ReturnType<typeof useLea
 		}, 300);
 	};
 
-	const hasActiveFilters =
-		channel !== "all" ||
-		search !== "" ||
-		dateFrom !== null ||
-		dateTo !== null ||
-		campanhas.length > 0;
+	// O período NÃO entra: ele é estado do painel, escrito pelo `<DateRangeFilter/>`
+	// na URL e no cookie. Limpar os filtros da tela não pode apagar a janela
+	// escolhida.
+	const hasActiveFilters = channel !== "all" || search !== "" || campanhas.length > 0;
 
 	const clearFilters = () => {
 		setChannel(null);
 		setSearch(null);
-		setDateFrom(null);
-		setDateTo(null);
 		setCampanhas(null);
 		setLocalSearch("");
 	};
@@ -159,47 +170,10 @@ export function PipelineFilters({ filters }: { filters: ReturnType<typeof useLea
 
 	return (
 		<FiltrosDaTela
-			// Período próprio do pipeline: dois dias soltos (opcionais), não o
-			// período do painel — aqui "sem data" é um recorte legítimo.
-			periodo={
-				<>
-					{/* Date from */}
-					<Popover>
-						<PopoverTrigger
-							render={<Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" />}
-						>
-							<CalendarIcon className="size-3.5" />
-							{dateFrom ? format(dateFrom, "dd/MM/yy", { locale: ptBR }) : "De"}
-						</PopoverTrigger>
-						<PopoverContent className="w-auto p-0" align="start">
-							<Calendar
-								mode="single"
-								selected={dateFrom ?? undefined}
-								onSelect={(date) => setDateFrom(date ?? null)}
-								locale={ptBR}
-							/>
-						</PopoverContent>
-					</Popover>
-
-					{/* Date to */}
-					<Popover>
-						<PopoverTrigger
-							render={<Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" />}
-						>
-							<CalendarIcon className="size-3.5" />
-							{dateTo ? format(dateTo, "dd/MM/yy", { locale: ptBR }) : "Até"}
-						</PopoverTrigger>
-						<PopoverContent className="w-auto p-0" align="start">
-							<Calendar
-								mode="single"
-								selected={dateTo ?? undefined}
-								onSelect={(date) => setDateTo(date ?? null)}
-								locale={ptBR}
-							/>
-						</PopoverContent>
-					</Popover>
-				</>
-			}
+			// O período é o MESMO do resto do painel — URL + cookie, via
+			// `<DateRangeFilter/>`. Antes era um par De/Até próprio, sem cookie, e a
+			// janela escolhida em outra tela não chegava aqui.
+			periodo={<DateRangeFilter />}
 			campanhas={opcoesDeCampanha}
 		>
 			{/* Channel filter */}

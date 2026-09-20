@@ -6,6 +6,12 @@ import type { BlocoUpgradeConteudo } from "@/components/vertical/bloco-upgrade";
 import type { FaixaNumerosConteudo } from "@/components/vertical/faixa-numeros";
 import type { GuiaArtigosConteudo } from "@/components/vertical/guia-artigos";
 import type { HeroVerticalConteudo } from "@/components/vertical/hero-vertical";
+import {
+	CHIP_DE_BEM,
+	SEMENTE_BLOCO_UPGRADE,
+	SEMENTE_PARCELA_PREFIXO,
+	SEMENTE_VALOR_PREFIXO,
+} from "@/lib/funil/textos-do-cta";
 
 // Texto da landing de consórcio de carro (Figma 'Consórcios - auto' 625:3331).
 // Segunda vertical da família; as seções são as mesmas de imóvel, menos a terceira,
@@ -58,9 +64,9 @@ export const HERO_AUTO: HeroVerticalConteudo = {
 	},
 	// `selo` de propósito ausente: o "💸 Sem custo extra" já vem achatado dentro
 	// da colagem. Declarar aqui desenharia a pill uma segunda vez por cima.
-	sementeVazia: "Quero comprar um carro.",
-	semente: (parcela) => `Quero um carro. Consigo pagar ${parcela}.`,
-	sementeDeValor: (valor) => `Quero um carro de ${valor}.`,
+	sementeVazia: CHIP_DE_BEM.auto,
+	semente: (parcela) => `${SEMENTE_PARCELA_PREFIXO.auto}${parcela}.`,
+	sementeDeValor: (valor) => `${SEMENTE_VALOR_PREFIXO.auto}${valor}.`,
 };
 
 export const NUMEROS_AUTO: FaixaNumerosConteudo = {
@@ -161,7 +167,7 @@ export const UPGRADE_AUTO: BlocoUpgradeConteudo = {
 		},
 	],
 	cta: "Quero comparar as melhores alternativas",
-	semente: "Quero trocar de carro usando consórcio.",
+	semente: SEMENTE_BLOCO_UPGRADE,
 };
 
 // O conjunto de carro mora no catálogo, junto com os das outras páginas: são as
