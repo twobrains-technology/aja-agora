@@ -167,6 +167,11 @@ export interface QuickReplyOption {
 	 * exibidas e anexa o id (`coerceEscolhaNosAtalhos`). Presente = o clique vira
 	 * `choose_offer` estruturado, o mesmo caminho do botão do card. */
 	groupId?: string;
+	/** Identidade PERSISTIDA do atalho (L4). Gerada pelo SERVIDOR na emissão e
+	 * gravada junto com o artifact, então é a mesma antes e depois do reload — é
+	 * por ela que o consumo é reivindicado (`click:<conversationId>:<replyId>`) e
+	 * que o render esconde um atalho já usado. Nunca vem do modelo. */
+	replyId?: string;
 }
 
 export interface QuickReplyPayload {
