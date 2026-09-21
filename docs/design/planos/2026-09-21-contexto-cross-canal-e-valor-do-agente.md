@@ -10,10 +10,13 @@ Drizzle/Postgres, Vitest, Langfuse.
 ## Contexto
 
 Crítica de conversas reais de 21/09/2026 (web `fb913503` + WhatsApp `494d40b0`), traces do Langfuse e
-tabelas `bevi_proposals`/`leads`. **A mesma pessoa** (telefone `556292496793` no WhatsApp e
-`62992496793` no web) viveu uma contradição entre canais: a web disse "proposta registrada", o
-WhatsApp respondeu "não aparece nenhuma proposta aqui". O fecho trocou o valor do contrato (pediu
-R$ 80.000, fechou carta de R$ 120.000).
+tabelas `bevi_proposals`/`leads`. **A mesma pessoa** (o mesmo celular visto em dois formatos — com e
+sem o 9º dígito, como o waId bruto chega) viveu uma contradição entre canais: a web disse "proposta
+registrada", o WhatsApp respondeu "não aparece nenhuma proposta aqui". O fecho trocou o valor do
+contrato (pediu R$ 80.000, fechou carta de R$ 120.000).
+
+> Telefone, CPF e ids de cliente **não** entram em arquivo versionado — a âncora do caso é o par de
+> formatos, não o número.
 
 ### O que o código confirma (validado nesta worktree @ `d3c7f36b`)
 
@@ -27,7 +30,8 @@ R$ 80.000, fechou carta de R$ 120.000).
 | 6 | Card usado não tem estado persistido | CONFIRMA (parcial) | `quick_reply` some por estado local `submitted` (`src/components/chat/artifacts/quick-reply.tsx:88`) e cards antigos são selados por `isLast` (`artifact-renderer.tsx:44-56`); **não há** consumo persistido — recarregar a página devolve o botão |
 | 7 | Card pode ser emitido sem texto | CONFIRMA | `converse.ts:1343` empurra só `{type:"artifact"}`; `pedeFalaDepoisDasTools` devolve `false` para presentation |
 | 8 | `human` é gravado `level=ERROR` na pausa normal | CONFIRMA (origem) | `interrupt("aguardando-resposta-do-usuario")` em `src/lib/agent/langgraph/graph.ts:38`; o `level` nasce no `CallbackHandler` do LangChain (`src/lib/observability/langfuse/langchain.ts:13`), não no app |
-| 9 | Geração sem `model` | CONFIRMA | o app nunca seta `model:`; o campo vem do handler do LangChain |
+| 9 | Geração sem `model` | **CORRIGIDO pela medição (L5)** | as gerações **já** saem com `model` (vem do `invocation_params` do LangChain); o que falta é `model` na **observação raiz `turn`**. A correção do L5 resolve o nome na fábrica do handler |
+| 10 | Langfuse 5,6 s × app 8,8 s "no mesmo turno" | **DIVERGE (L5)** | são **turnos diferentes**: 5,571 s e 8,850 s são dois traces distintos. No mesmo trace (`0208e0e6`) as duas fronteiras fecham juntas |
 
 ### Onde o texto enviado **diverge** do código (o código manda)
 
