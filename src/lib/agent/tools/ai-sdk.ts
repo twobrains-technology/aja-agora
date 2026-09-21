@@ -1938,7 +1938,7 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 			if (!conversationId) return STATUS_NO_CONTEXT;
 			const { checkProposalStatus } = await import("@/lib/bevi/proposal-status");
 			// A PESSOA, não a conversa: a proposta real pode estar em OUTRA conversa
-			// do mesmo telefone (web `fb913503` × WhatsApp `494d40b0`, 21/09/2026 — a
+			// do mesmo telefone (web `a1b2c3d4` × WhatsApp `e5f6a7b8`, 21/09/2026 — a
 			// proposta ITAÚ vivia numa terceira). Com a identidade resolvida, a
 			// consulta é por contato; sem ela, cai no caminho antigo (por conversa,
 			// que é o certo para quem ainda não tem contato).

@@ -2,7 +2,7 @@
 // `contact_id` em `bevi_proposals`).
 //
 // É o "falha antes / passa depois" da correção: pela CONVERSA o
-// `getLatestBeviProposal` não vê nada (é o que o agente via na `494d40b0`), e
+// `getLatestBeviProposal` não vê nada (é o que o agente via na `e5f6a7b8`), e
 // pela PESSOA a proposta de outra conversa aparece.
 //
 // Roda SÓ com RUN_DB_TESTS=1 (no host o `.env.local` aponta para

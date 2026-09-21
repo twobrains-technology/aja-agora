@@ -647,7 +647,7 @@ export function createConverseNode(model: BaseChatModel) {
 		// Sem este bloco, o único caminho vivo era a tool `check_proposal_status`
 		// (só quando o modelo pergunta) — e o defeito medido foi o agente AFIRMAR
 		// por conta própria que a proposta já estava registrada quando ela existia
-		// em OUTRA conversa (web `fb913503` / WhatsApp `494d40b0`, a mesma pessoa).
+		// em OUTRA conversa (web `a1b2c3d4` / WhatsApp `e5f6a7b8`, a mesma pessoa).
 		//
 		// `dossieDaConversa` LANÇA em erro de leitura de propósito; `.catch(() => null)`
 		// aqui é a decisão certa: o turno segue sem o bloco em vez de receber um

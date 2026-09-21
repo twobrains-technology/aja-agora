@@ -364,7 +364,7 @@ export function isProposalCompletionClaim(segment: string): boolean {
 	return PROPOSAL_COMPLETION_CLAIM_PATTERNS.some((rx) => rx.test(s));
 }
 
-// Produção, WEB, 2026-09-21 01:41 — conversa do lead `2cb05c56`:
+// Produção, WEB, 2026-09-21 01:41 — conversa do lead `9f8e7d6c`:
 //
 //     "Sua proposta já está registrada e seguindo com a Âncora."
 //

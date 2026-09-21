@@ -338,9 +338,9 @@ export function blocoDeOpcoesNaTela(ofertas: OfertaNaTela[]): string | null {
 
 // ─── A PESSOA, não a conversa ─────────────────────────────────────────────────
 //
-// O cliente é UM e conversa em vários canais. Em 21/09/2026 a web `fb913503`
-// (telefone `62992496793`) disse "sua proposta já está registrada" e, dois
-// minutos depois, o WhatsApp `494d40b0` do MESMO telefone respondeu "ainda não
+// O cliente é UM e conversa em vários canais. Em 21/09/2026 a web `a1b2c3d4`
+// (telefone `62991234567`) disse "sua proposta já está registrada" e, dois
+// minutos depois, o WhatsApp `e5f6a7b8` do MESMO telefone respondeu "ainda não
 // aparece nenhuma proposta registrada aqui pra mim" — a proposta real (ITAÚ,
 // 18/08) estava numa terceira conversa. Cada canal, olhando só a sua conversa,
 // falava a verdade do que via e mentia para o cliente.

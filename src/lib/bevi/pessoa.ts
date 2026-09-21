@@ -1,10 +1,10 @@
 // A PESSOA, não a conversa — o dossiê cross-canal (L1, 21/09/2026).
 //
-// Produção: a web `fb913503` (telefone `62992496793`) disse "sua proposta já
-// está registrada"; dois minutos depois o WhatsApp `494d40b0` (telefone
-// `556292496793`) respondeu "ainda não aparece nenhuma proposta registrada aqui
+// Produção: a web `a1b2c3d4` (telefone `62991234567`) disse "sua proposta já
+// está registrada"; dois minutos depois o WhatsApp `e5f6a7b8` (telefone
+// `5562991234567`) respondeu "ainda não aparece nenhuma proposta registrada aqui
 // pra mim". É a MESMA pessoa (8 conversas, 6 leads) — e a única proposta real
-// (ITAÚ, 18/08) está numa TERCEIRA conversa (`01b4b3bd`).
+// (ITAÚ, 18/08) está numa TERCEIRA conversa (`c9d0e1f2`).
 //
 // Nenhum dos dois lados mentiu pelo que via: `getLatestBeviProposal` filtra por
 // `conversationId`, e `contacts`/`conversations` separam o telefone da conversa.
@@ -18,6 +18,7 @@
 import { desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { contacts, conversations, leads } from "@/db/schema";
+import { hashPhone } from "@/lib/conversions/hash";
 import { getProposalsByContactId } from "./proposal-repo";
 
 // ============================================================================
@@ -26,13 +27,13 @@ import { getProposalsByContactId } from "./proposal-repo";
 
 /**
  * O telefone é a identidade da pessoa, mas aparece escrito de três formas no
- * sistema: `556292496793` (waId do WhatsApp), `62992496793` (o que
+ * sistema: `5562991234567` (waId do WhatsApp), `62991234567` (o que
  * `normalizePhoneBR` de `@/lib/leads/phone` grava em `contacts.phone`) e
- * `+556292496793` (`normalizePhoneBR` de `@/lib/memory/identity`, E.164). Sem
+ * `+5562991234567` (`normalizePhoneBR` de `@/lib/memory/identity`, E.164). Sem
  * uma chave comum, cada canal vê um cliente diferente.
  *
  * A chave é: só dígitos, sem código de país, sem o 9º dígito do celular
- * (`62992496793` → `6292496793`). As duas normalizações existentes ficam
+ * (`62991234567` → `6291234567`). As duas normalizações existentes ficam
  * INTACTAS — quem grava continua gravando o mesmo; isto aqui é só de consulta.
  */
 export function chaveDeTelefone(raw: string | null | undefined): string | null {
@@ -243,17 +244,74 @@ export interface FontesDaPessoa {
 	estagiosPorContato(contactId: string): Promise<string[]>;
 }
 
+// ============================================================================
+// Contato por telefone — desempate determinístico
+// ============================================================================
+
+/** `contacts_phone_idx` NÃO é único (`schema.ts`): dois contatos podem dividir o
+ * telefone. A leitura precisa de critério PRÓPRIO — sem ele, "o primeiro" é o
+ * que o plano devolver, e o dossiê passa a agregar conversas e propostas de
+ * OUTRA pessoa. */
+export type ContatoPorTelefone = ContatoRow & { createdAt: Date };
+
+export interface ContatoEscolhido {
+	contato: ContatoRow;
+	/** Quantos contatos casaram o telefone (1 = sem ambiguidade). */
+	quantos: number;
+}
+
+/**
+ * O contato mais RECENTE entre os que casaram o telefone, com o `id` como
+ * desempate estável — dois contatos com o mesmo `createdAt` ainda resolvem para
+ * o MESMO, rodada após rodada. Pura e independente da ordem de entrada: é o que
+ * o teste prova sem banco.
+ */
+export function escolherContato(rows: ContatoPorTelefone[]): ContatoEscolhido | null {
+	let escolhido: ContatoPorTelefone | null = null;
+	for (const row of rows) {
+		if (escolhido === null) {
+			escolhido = row;
+			continue;
+		}
+		const maisRecente = row.createdAt.getTime() > escolhido.createdAt.getTime();
+		const mesmoInstante = row.createdAt.getTime() === escolhido.createdAt.getTime();
+		if (maisRecente || (mesmoInstante && row.id > escolhido.id)) escolhido = row;
+	}
+	return escolhido ? { contato: escolhido, quantos: rows.length } : null;
+}
+
+/** Aviso ESTRUTURADO e SEM PII: contagem + prefixo hasheado do telefone, nunca
+ * o número (LGPD). É o sinal de que mais de um contato casou as variantes e a
+ * leitura seguiu pelo mais recente. */
+export function avisarTelefoneCompartilhado(quantos: number, telefone: string): void {
+	const hash = hashPhone(telefone)?.slice(0, 12) ?? "sem-hash";
+	console.warn(
+		`[bevi-pessoa] telefone compartilhado por ${quantos} contatos — dossiê segue o mais recente (telefoneHash=${hash})`,
+	);
+}
+
 /** Fontes REAIS. Só SELECT — nada aqui insere. */
 export const fontesDoBanco: FontesDaPessoa = {
 	async contatoPorTelefone(telefone) {
 		const variantes = variantesDeTelefone(telefone);
 		if (variantes.length === 0) return null;
-		const [row] = await db
-			.select({ id: contacts.id, name: contacts.name, phone: contacts.phone })
+		// Sem `orderBy`, "o primeiro" era o que o plano devolvesse — com dois
+		// contatos no mesmo telefone, o dossiê podia agregar conversas e propostas
+		// de outra pessoa. A ordem aqui é a mesma de `escolherContato`.
+		const rows = await db
+			.select({
+				id: contacts.id,
+				name: contacts.name,
+				phone: contacts.phone,
+				createdAt: contacts.createdAt,
+			})
 			.from(contacts)
 			.where(inArray(contacts.phone, variantes))
-			.limit(1);
-		return row ?? null;
+			.orderBy(desc(contacts.createdAt), desc(contacts.id));
+		const escolhido = escolherContato(rows);
+		if (!escolhido) return null;
+		if (escolhido.quantos > 1) avisarTelefoneCompartilhado(escolhido.quantos, telefone);
+		return escolhido.contato;
 	},
 	async propostasPorContato(contactId) {
 		return getProposalsByContactId(contactId);
