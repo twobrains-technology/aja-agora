@@ -364,6 +364,63 @@ export function isProposalCompletionClaim(segment: string): boolean {
 	return PROPOSAL_COMPLETION_CLAIM_PATTERNS.some((rx) => rx.test(s));
 }
 
+// Produção, WEB, 2026-09-21 01:41 — conversa do lead `2cb05c56`:
+//
+//     "Sua proposta já está registrada e seguindo com a Âncora."
+//
+// E o banco: ZERO linhas em `bevi_proposals` pra aquela conversa. O FIX-336 já
+// cobria "saiu / está pronta / foi criada"; "registrada" passava por fora — a
+// quarta paráfrase da mesma mentira. É a família do `isPrematureReservationClaim`
+// (citada no CLAUDE.md como o guard LEGÍTIMO): a fala contradiz um FATO do
+// servidor (existe proposta?), e a MESMA frase é verdade quando a proposta existe.
+//
+// Não é lista de frases: o padrão é a MORFOLOGIA DO ATO — verbo de registro
+// (registrar/enviar) em estado CONSUMADO junto do objeto `proposta`. Ficam de
+// fora, por construção, a suposição e o futuro ("se sua proposta for registrada",
+// "vou enviar sua proposta": o auxiliar não é de estado) e a fala HONESTA que o
+// turno precisa dizer no lugar ("sua proposta ainda não está registrada").
+const PREMATURE_REGISTRATION_PATTERNS: RegExp[] = [
+	// Particípio em predicado, com auxiliar de ESTADO (está/foi/ficou). "for",
+	// "seja", "será" e "vai ser" não entram de propósito: hipótese e futuro não
+	// afirmam registro nenhum.
+	/\bproposta\b[\s\S]{0,30}\b(est[áa]|est[ãa]o|foi|foram|ficou|ficaram)\s+(registrad|enviad)[ao]s?\b/i,
+	// O ato consumado vem ANTES do objeto, então o padrão acima não o alcança:
+	// "Já registramos sua proposta" / "registrei a proposta dele". Só 1ª pessoa
+	// (singular/plural): na 3ª, "se a Âncora registrou sua proposta…" é hipótese.
+	/\b(j[áa]\s+)?(registrei|registramos|enviei|enviamos)\b[\s\S]{0,30}\bproposta\b/i,
+];
+
+/** A frase NEGA o registro ("sua proposta ainda não está registrada", "não
+ * registramos nada ainda"). Essa é exatamente a fala HONESTA que o guard tem de
+ * deixar passar — é o próximo passo que o turno precisa dizer quando não há
+ * proposta. Sem esta saída, o guard apagaria o remédio junto com a doença. */
+const NEGA_REGISTRO =
+	/\b(n[ãa]o|nunca|ainda\s+n[ãa]o)\b[^.!?]{0,25}\b(registrad|registr[aeiom]|enviad|envi[aeiom])/i;
+
+/** Afirmação do NOSSO ato disfarçada de pergunta ("Sua proposta já está
+ * registrada, ok?"): mesma estrutura do `AFFIRMS_OUR_RESERVATION` — exige o
+ * possessivo + `proposta` + auxiliar de estado + particípio, para que a pergunta
+ * de verdade ("já foi registrada?", sem sujeito nosso) continue passando. */
+const AFIRMA_NOSSO_REGISTRO =
+	/\b(sua|a\s+sua|essa|esta)\s+proposta\b[\s\S]{0,20}\b(est[áa]|foi|ficou)\s+(registrad|enviad)[ao]\b/i;
+
+/** Um segmento afirma que a PROPOSTA já está registrada/enviada — proibido só
+ * ENQUANTO nada foi registrado. O requisito central é a ÂNCORA DE ESTADO: com
+ * proposta real (`hasProposal`) ou contrato fechado (`contractClosed`), a MESMA
+ * frase é verdade e passa. Sem o estado, seria lista de frases disfarçada —
+ * exatamente o que o CLAUDE.md proíbe. Produção 2026-09-21. */
+export function isUnfoundedRegistrationClaim(
+	segment: string,
+	ctx?: StateVerificationContext,
+): boolean {
+	const s = segment.trim();
+	if (!s) return false;
+	if (ctx?.hasProposal === true || ctx?.contractClosed === true) return false;
+	if (NEGA_REGISTRO.test(s)) return false;
+	if (isInterrogativeSentence(s) && !AFIRMA_NOSSO_REGISTRO.test(s)) return false;
+	return PREMATURE_REGISTRATION_PATTERNS.some((rx) => rx.test(s));
+}
+
 // FIX-283 (P2, veredito Sonnet r9pos, G-D — viola D23, jornada-canonica.md):
 // o modelo parafraseou a instrução server-side do WhatsApp optin ("por conta
 // própria", "o SISTEMA [...] automaticamente, com card próprio",
@@ -960,6 +1017,9 @@ export type EphemeralDropReason =
 	| "technical-fallback"
 	| "prazo-reduction"
 	| "premature-reservation"
+	/** Afirmou que a PROPOSTA já está registrada/enviada sem existir proposta
+	 * (`bevi_proposals` vazio) — produção web, 2026-09-21. */
+	| "unfounded-registration"
 	| "banned-lexicon"
 	| "proactive-callback"
 	| "mechanism-narration"
@@ -1001,6 +1061,7 @@ function factualDropReason(
 	if (isTechnicalFallback(segment)) return "technical-fallback";
 	if (isPrazoReductionClaim(segment)) return "prazo-reduction";
 	if (isPrematureReservationClaim(segment, ctx)) return "premature-reservation";
+	if (isUnfoundedRegistrationClaim(segment, ctx)) return "unfounded-registration";
 	if (isMechanismNarrationClaim(segment)) return "mechanism-narration";
 	if (isInternalToolLeak(segment)) return "internal-tool-leak";
 	if (isJsonFragmentLeak(segment)) return "json-fragment-leak";
@@ -1053,8 +1114,8 @@ function ephemeralSegmentReason(
  * estado fabricado sem lastro real (FIX-270), narração do próprio mecanismo
  * interno (FIX-283), oferta top-1 revelada antes do reco-consent (FIX-333),
  * score/aderência em percentual numérico (FIX-334), administradora do
- * mercado fora das ofertas reais (FIX-342). Todos são dropados antes de
- * virar mensagem. */
+ * mercado fora das ofertas reais (FIX-342), proposta "registrada" sem
+ * proposta (2026-09-21). Todos são dropados antes de virar mensagem. */
 function isEphemeralSegment(segment: string, ctx?: StateVerificationContext): boolean {
 	return ephemeralSegmentReason(segment, ctx) !== null;
 }
