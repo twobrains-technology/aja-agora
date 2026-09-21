@@ -11,24 +11,58 @@
 // fazer com o texto é de `midia-do-cliente.ts`; a conversa (como responder ao
 // que foi dito) continua sendo do modelo.
 //
+// ── Por que NÃO é o `/audio/transcriptions` do OpenAI ───────────────────────
+//
+// A primeira versão desta chamada era multipart para `${gateway}/audio/transcriptions`
+// com `model` + `language=pt`, o formato OpenAI. Isso tinha dois defeitos:
+//
+// 1. **Quebrava em produção antes de sair do lugar.** O container de prod tem
+//    `LITELLM_SRV_NAME` (Cloud Map) e NÃO tem `LITELLM_BASE_URL`, e o código
+//    antigo exigia `LITELLM_BASE_URL` — toda transcrição morria em
+//    "LITELLM_BASE_URL ausente", independente de modelo ou crédito. Medido em
+//    20/09/2026. Aqui a base é resolvida por `resolveGatewayHost()`, o MESMO
+//    caminho que o resto do app usa (SRV dinâmico), com `LITELLM_BASE_URL` como
+//    atalho quando ela existe (host/dev).
+//
+// 2. **O provedor escolhido não tem esse endpoint.** O gateway não tem crédito
+//    na OpenAI (`429 You have no credits remaining`, medido em 20/09/2026) e o
+//    ASR do DashScope/Alibaba NÃO tem `/audio/transcriptions` — responde 404.
+//    O caminho que funciona é `POST {gateway}/asr/qwen`, um **passthrough** do
+//    LiteLLM (ver `general_settings.pass_through_endpoints` no config.yaml do
+//    `litellm-shared`): corpo de `/chat/completions` com `input_audio` em
+//    data-URI base64 e o texto em `choices[0].message.content`.
+//
+// Por que passthrough e não `model_list`: servido como modelo de chat, o
+// DashScope devolve `message.annotations[].type = "audio_info"` e o pydantic do
+// LiteLLM só aceita `url_citation` ali — `Invalid response object` (500). O
+// passthrough repassa a resposta verbatim.
+//
+// `asr_options.language = "pt"` é obrigatório na prática, não enfeite: medido em
+// 20/09/2026 com o mesmo áudio, SEM ele o modelo devolve espanhol ("Quiero
+// comprar um carro...") e anota `language: en`; com ele, português correto.
+//
 // Desligada por padrão: sem `TRANSCRICAO_AUDIO_ATIVA=true` nada disto roda e o
 // comportamento é byte a byte o de antes. A trava é de propósito — a variável
 // nova nasce ausente-desligada, nunca "ligada por acidente" (ver CLAUDE.md).
 
+import { resolveGatewayHost } from "@/lib/llm/gateway-anthropic";
+
 /** Teto da chamada ao gateway. Áudio de WhatsApp é curto; 20s é folga larga. */
 export const TRANSCRICAO_TIMEOUT_MS = 20_000;
 
-/** Nome do campo `file` no multipart — a extensão ajuda o gateway a adivinhar o
- * codec, então ela vem do mime quando dá. */
-const EXTENSAO_POR_MIME: Record<string, string> = {
-	"audio/ogg": "ogg",
-	"audio/opus": "opus",
-	"audio/mpeg": "mp3",
-	"audio/mp4": "m4a",
-	"audio/amr": "amr",
-	"audio/wav": "wav",
-	"audio/webm": "webm",
-};
+/** Rota do passthrough no gateway — casa com `pass_through_endpoints` do
+ * config do `litellm-shared`. Mudar aqui exige mudar lá. */
+export const CAMINHO_DO_ASR = "/asr/qwen";
+
+/** Modelo default do ASR no DashScope (endpoint internacional). O alias
+ * `aja-prod-transcribe` do gateway aponta para este mesmo modelo, mas o
+ * passthrough manda o nome do provedor no corpo — e a virtual key do aja
+ * precisa permitir `qwen3-asr-flash` (ver `metadata.allowed_passthrough_routes`
+ * e a lista `models` da chave). */
+export const MODELO_ASR_PADRAO = "qwen3-asr-flash";
+
+/** Idioma declarado ao provedor. Ver a nota do topo: sem isto vem espanhol. */
+const IDIOMA = "pt";
 
 export interface TranscricaoResultado {
 	texto: string;
@@ -50,10 +84,13 @@ export class TranscricaoFalhouError extends Error {
 
 export interface TranscricaoDeps {
 	fetch: typeof fetch;
+	/** Base já resolvida (`http://host:porta`). Vazio ⇒ resolve pelo SRV na hora. */
 	baseUrl: string;
 	apiKey: string;
 	modelo: string;
 	timeoutMs: number;
+	/** Injetável no teste: sem ela, a resolução é a de produção (Cloud Map). */
+	resolverGateway?: () => Promise<string | null>;
 }
 
 /**
@@ -65,6 +102,12 @@ export function transcricaoAtiva(env: Record<string, string | undefined> = proce
 	return env.TRANSCRICAO_AUDIO_ATIVA?.trim().toLowerCase() === "true";
 }
 
+/** `host:porta` do SRV → base HTTP. O gateway fala HTTP dentro da VPC (o
+ * `gatewayFetch` do provider Anthropic faz a mesma troca de host/protocolo). */
+function baseDoHost(host: string | null): string {
+	return host ? `http://${host}` : "";
+}
+
 export function defaultTranscricaoDeps(
 	env: Record<string, string | undefined> = process.env,
 ): TranscricaoDeps {
@@ -72,15 +115,17 @@ export function defaultTranscricaoDeps(
 		fetch: (input, init) => fetch(input, init),
 		baseUrl: (env.LITELLM_BASE_URL ?? "").trim().replace(/\/+$/, ""),
 		apiKey: (env.LITELLM_API_KEY ?? "").trim(),
-		modelo: env.TRANSCRICAO_MODELO?.trim() || "whisper-1",
+		modelo: env.TRANSCRICAO_MODELO?.trim() || MODELO_ASR_PADRAO,
 		timeoutMs: TRANSCRICAO_TIMEOUT_MS,
 	};
 }
 
 /**
- * `POST {gateway}/audio/transcriptions` no formato OpenAI (multipart), que é o
- * que o LiteLLM expõe para os provedores de ASR. `language: "pt"` porque o
- * público é brasileiro — sem ele o Whisper às vezes "traduz" em vez de transcrever.
+ * Transcreve o áudio pelo gateway.
+ *
+ * `POST {base}/asr/qwen` com o corpo do `input_audio` (data-URI base64) — o
+ * passthrough do LiteLLM repassa verbatim ao DashScope e devolve o JSON do
+ * provedor; o texto está em `choices[0].message.content`.
  */
 export async function transcrever(
 	bytes: Uint8Array,
@@ -88,27 +133,37 @@ export async function transcrever(
 	over: Partial<TranscricaoDeps> = {},
 ): Promise<TranscricaoResultado> {
 	const deps = { ...defaultTranscricaoDeps(), ...over };
-	if (!deps.baseUrl) throw new TranscricaoFalhouError("LITELLM_BASE_URL ausente");
-
 	const inicio = Date.now();
+
+	const base = deps.baseUrl || baseDoHost(await (deps.resolverGateway ?? resolveGatewayHost)());
+	if (!base) {
+		throw new TranscricaoFalhouError(
+			"gateway não resolvido (sem LITELLM_BASE_URL e sem LITELLM_SRV_NAME)",
+		);
+	}
+
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), deps.timeoutMs);
 
 	try {
-		const form = new FormData();
-		const extensao = EXTENSAO_POR_MIME[mimeType] ?? "ogg";
-		// Cópia para um `Uint8Array<ArrayBuffer>` — o `Uint8Array<ArrayBufferLike>`
-		// que vem do download não é aceito como `BlobPart` pelo TypeScript.
-		const arquivo = new Uint8Array(bytes.length);
-		arquivo.set(bytes);
-		form.append("file", new Blob([arquivo], { type: mimeType }), `audio.${extensao}`);
-		form.append("model", deps.modelo);
-		form.append("language", "pt");
+		const dataUri = `data:${mimeType};base64,${Buffer.from(bytes).toString("base64")}`;
 
-		const resposta = await deps.fetch(`${deps.baseUrl}/audio/transcriptions`, {
+		const resposta = await deps.fetch(`${base}${CAMINHO_DO_ASR}`, {
 			method: "POST",
-			headers: { Authorization: `Bearer ${deps.apiKey}` },
-			body: form,
+			headers: {
+				Authorization: `Bearer ${deps.apiKey}`,
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({
+				model: deps.modelo,
+				messages: [
+					{
+						role: "user",
+						content: [{ type: "input_audio", input_audio: { data: dataUri } }],
+					},
+				],
+				asr_options: { language: IDIOMA },
+			}),
 			signal: controller.signal,
 		});
 
@@ -116,8 +171,11 @@ export async function transcrever(
 			throw new TranscricaoFalhouError(`gateway respondeu ${resposta.status}`);
 		}
 
-		const json = (await resposta.json()) as { text?: unknown };
-		const texto = typeof json.text === "string" ? json.text.trim() : "";
+		const json = (await resposta.json()) as {
+			choices?: Array<{ message?: { content?: unknown } }>;
+		};
+		const bruto = json.choices?.[0]?.message?.content;
+		const texto = typeof bruto === "string" ? bruto.trim() : "";
 		if (!texto) throw new TranscricaoFalhouError("texto vazio");
 
 		return { texto, modelo: deps.modelo, duracaoMs: Date.now() - inicio };
