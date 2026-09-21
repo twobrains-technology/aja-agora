@@ -17,6 +17,8 @@
 //
 // Esta é a fronteira do CLAUDE.md deste projeto: fala feia não vira regex, mas
 // o FATO que a contradiz é do servidor e tem que estar no contexto.
+
+import type { DossieDaPessoa, EscolhaRegistrada, SimulacaoDaPessoa } from "@/lib/bevi/pessoa";
 export type OfertaNaTela = {
 	groupId?: string | null;
 	administradora?: string | null;
@@ -331,5 +333,159 @@ export function blocoDeOpcoesNaTela(ofertas: OfertaNaTela[]): string | null {
 		`mais curto", "a do Itaú"), RESOLVA você mesmo pela lista e siga — é PROIBIDO devolver ` +
 		`a identificação pra ele.` +
 		sobreContemplacao
+	);
+}
+
+// ─── A PESSOA, não a conversa ─────────────────────────────────────────────────
+//
+// O cliente é UM e conversa em vários canais. Em 21/09/2026 a web `fb913503`
+// (telefone `62992496793`) disse "sua proposta já está registrada" e, dois
+// minutos depois, o WhatsApp `494d40b0` do MESMO telefone respondeu "ainda não
+// aparece nenhuma proposta registrada aqui pra mim" — a proposta real (ITAÚ,
+// 18/08) estava numa terceira conversa. Cada canal, olhando só a sua conversa,
+// falava a verdade do que via e mentia para o cliente.
+//
+// O dado é do servidor (`pessoa.ts` lê tudo do telefone) e é ele que vai ao
+// contexto: com o dossiê na mão, o agente sabe onde a proposta está, o que já
+// foi escolhido e o que falta — sem inverter isso em proibição de frase.
+
+const dataCurta = (d: Date | null | undefined): string | null =>
+	d
+		? d.toLocaleDateString("pt-BR", {
+				day: "2-digit",
+				month: "2-digit",
+				year: "numeric",
+				timeZone: "America/Sao_Paulo",
+			})
+		: null;
+
+const conversaCurta = (id: string): string => id.slice(0, 8);
+
+function descreverEscolha(escolhaDoCliente: EscolhaRegistrada): string {
+	const partes: string[] = [];
+	if (escolhaDoCliente.administradora) partes.push(escolhaDoCliente.administradora);
+	if (escolhaDoCliente.creditValue) partes.push(`carta de ${brl(escolhaDoCliente.creditValue)}`);
+	if (escolhaDoCliente.monthlyPayment)
+		partes.push(`parcela de ${brl(escolhaDoCliente.monthlyPayment)}`);
+	if (escolhaDoCliente.termMonths) partes.push(`${escolhaDoCliente.termMonths} meses`);
+	return partes.length > 0 ? partes.join(", ") : "uma cota (só os ids no registro)";
+}
+
+function descreverSimulacao(simulacao: SimulacaoDaPessoa): string {
+	const partes: string[] = [simulacao.administradora ?? "administradora não registrada"];
+	if (simulacao.grupo) partes.push(`grupo ${simulacao.grupo}`);
+	if (simulacao.creditValue) partes.push(`carta de ${brl(simulacao.creditValue)}`);
+	if (simulacao.monthlyPayment) partes.push(`parcela de ${brl(simulacao.monthlyPayment)}`);
+	if (simulacao.termMonths) partes.push(`${simulacao.termMonths} meses`);
+	if (simulacao.status) partes.push(`status "${simulacao.status}"`);
+	const quando = dataCurta(simulacao.criadaEm);
+	return (
+		`${partes.join(", ")} — registrada na conversa ${simulacao.canal ?? "de canal não registrado"} ` +
+		`${conversaCurta(simulacao.conversaId)}${quando ? ` em ${quando}` : ""}`
+	);
+}
+
+/**
+ * O que FALTA na vida desta pessoa — o ponto exato de retomada.
+ *
+ * Existe porque a alternativa medida é pior: sem saber onde parou, o agente
+ * oferece recomeçar tudo ("quer fazer uma nova simulação?") para quem já
+ * escolheu cota e só não concluiu o cadastro. `null` quando o status registrado
+ * não é traduzível — aí o fato bruto (o status) já está no dossiê e o agente
+ * confirma em vez de supor.
+ */
+function oQueFalta(dossie: DossieDaPessoa): string | null {
+	const ultima = dossie.simulacoes[0];
+	if (!ultima) {
+		const escolhaDoCliente =
+			dossie.conversas.find((c) => c.escolhaDoCliente)?.escolhaDoCliente ?? null;
+		if (escolhaDoCliente) {
+			return (
+				`ele JÁ ESCOLHEU ${descreverEscolha(escolhaDoCliente)} e faltou CONCLUIR O CADASTRO — não há ` +
+				`proposta criada na administradora ainda. Retome daí (concluir o cadastro), nunca do começo.`
+			);
+		}
+		return (
+			"não há simulação nem proposta registrada por este telefone — o próximo passo é a escolha " +
+			"da cota e o cadastro."
+		);
+	}
+	const status = ultima.status?.toLowerCase() ?? "";
+	if (status === "simulacao" || status === "simulação") {
+		return "a proposta existe e faltou CONCLUIR A DOCUMENTAÇÃO dela.";
+	}
+	if (status === "documentos") {
+		return (
+			"a proposta está na etapa de DOCUMENTOS — falta enviar o documento pessoal e o comprovante " +
+			"de endereço."
+		);
+	}
+	return null;
+}
+
+/**
+ * QUEM É ESTA PESSOA — o dossiê cross-canal, como FATO do turno.
+ *
+ * Cobre TODAS as conversas do telefone: o que já foi escolhido nos cards do
+ * site, as simulações/propostas (com a conversa onde cada uma nasceu), a raia
+ * do funil e o que falta. É o que permite ao agente do WhatsApp responder à
+ * pergunta sobre uma proposta que vive em outra conversa — em vez de negá-la
+ * porque não está na conversa atual.
+ *
+ * Sem histórico nenhum o bloco NÃO some: ele diz que não há nada registrado
+ * por este telefone (fato do registro) e manda começar do zero — a ausência do
+ * bloco é justamente o vácuo onde nasceu "sua proposta já está registrada".
+ */
+export function blocoDaPessoa(dossie: DossieDaPessoa): string | null {
+	const cabecalho =
+		"QUEM É ESTA PESSOA — o cliente é UM só; o telefone é a identidade dele e ele pode estar " +
+		"falando com você de outro canal agora.";
+
+	if (dossie.semHistorico) {
+		return (
+			`${cabecalho}\n` +
+			"Não há NADA registrado por este telefone: nenhuma conversa, nenhuma simulação, nenhuma " +
+			"proposta, nenhum card escolhido em nenhum canal.\n" +
+			"O QUE FALTA: tudo — ele ainda não começou. Não afirme que existe proposta em andamento e " +
+			'não ofereça "retomar" nada, porque não há o que retomar.'
+		);
+	}
+
+	const conversas =
+		dossie.conversas.length > 0
+			? dossie.conversas
+					.map((c) => {
+						const quando = dataCurta(c.criadaEm);
+						const escolhaDoCliente = c.escolhaDoCliente
+							? `\n    • já escolheu nos cards: ${descreverEscolha(c.escolhaDoCliente)}`
+							: "";
+						return `  • ${c.canal ?? "canal não registrado"} ${conversaCurta(c.id)}${quando ? ` em ${quando}` : ""}${escolhaDoCliente}`;
+					})
+					.join("\n")
+			: "  • nenhuma conversa religada a este telefone";
+
+	const simulacoes =
+		dossie.simulacoes.length > 0
+			? dossie.simulacoes.map((s) => `  • ${descreverSimulacao(s)}`).join("\n")
+			: "  • NENHUMA proposta registrada até agora.";
+
+	const funil =
+		dossie.estagiosDoFunil.length > 0
+			? `\nRAIA DO FUNIL (leads): ${dossie.estagiosDoFunil.join(", ")}.`
+			: "";
+
+	const falta = oQueFalta(dossie);
+	const blocoFalta = falta ? `\nO QUE FALTA: ${falta}` : "";
+
+	return (
+		`${cabecalho}\n` +
+		`CONVERSAS DESTE TELEFONE (${dossie.conversas.length}):\n${conversas}\n` +
+		`SIMULAÇÕES E PROPOSTAS REGISTRADAS (todas as conversas):\n${simulacoes}` +
+		`${funil}${blocoFalta}\n` +
+		"Este dossiê cobre TODAS as conversas dele, inclusive outras que não esta. É PROIBIDO dizer " +
+		"que não existe proposta, simulação ou escolha quando alguma delas aparece acima: se a " +
+		"proposta está em OUTRA conversa, diga onde ela está em vez de negá-la. Nunca peça pra ele " +
+		"repetir o que já está aqui e nunca ofereça recomeçar do zero o que já foi feito — retome do " +
+		"ponto registrado."
 	);
 }
