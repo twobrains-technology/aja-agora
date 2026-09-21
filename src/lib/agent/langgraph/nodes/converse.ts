@@ -45,6 +45,7 @@ import { querAntecipar, shouldAskMotive } from "@/lib/agent/qualify-state";
 import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import { vitrineDisponivel } from "@/lib/bevi/identidade-vitrine";
+import { dossieDaConversa } from "@/lib/bevi/pessoa";
 import type { ArtifactType } from "@/lib/chat/types";
 import { registrarFalaContraCatalogo } from "@/lib/observability/langfuse/busca-scores";
 import { registrarToolsRecusadas } from "@/lib/observability/langfuse/conducao-scores";
@@ -61,6 +62,7 @@ import type { AgentGraphStateType, FunnelState } from "../state";
 import { buildLangGraphTools } from "../tool-adapter";
 import { WHAT_IF_TOOL_NAMES } from "../toolset";
 import {
+	blocoDaPessoa,
 	blocoDeBemAbandonado,
 	blocoDeBuscaVazia,
 	blocoDeOpcoesNaTela,
@@ -639,6 +641,19 @@ export function createConverseNode(model: BaseChatModel) {
 		);
 		const vistos = new Set(doBanco.map((o) => o.groupId).filter(Boolean));
 		const ofertasExibidas = [...doBanco, ...doTurno.filter((o) => !vistos.has(o.groupId))];
+		// ── A PESSOA, NÃO A CONVERSA (fio cruzado L1 → turno) ──
+		//
+		// O dossiê cross-canal vem do telefone → contato → TODAS as conversas dele.
+		// Sem este bloco, o único caminho vivo era a tool `check_proposal_status`
+		// (só quando o modelo pergunta) — e o defeito medido foi o agente AFIRMAR
+		// por conta própria que a proposta já estava registrada quando ela existia
+		// em OUTRA conversa (web `fb913503` / WhatsApp `494d40b0`, a mesma pessoa).
+		//
+		// `dossieDaConversa` LANÇA em erro de leitura de propósito; `.catch(() => null)`
+		// aqui é a decisão certa: o turno segue sem o bloco em vez de receber um
+		// dossiê vazio como "nada registrado".
+		const dossie = await dossieDaConversa(state.conversationId).catch(() => null);
+		const blocoPessoa = dossie ? blocoDaPessoa(dossie) : null;
 		// Os NÚMEROS que o cliente está vendo, e o que a última busca respondeu.
 		// Sem estes dois o modelo preenchia o vácuo com otimismo: anunciou faixa de
 		// parcela que não existia no card, e afirmou que "as opções apareceram" no
@@ -991,6 +1006,7 @@ export function createConverseNode(model: BaseChatModel) {
 						: []),
 					...(blocoCanal ? [{ type: "text" as const, text: blocoCanal }] : []),
 					...(blocoOfertas ? [{ type: "text" as const, text: blocoOfertas }] : []),
+					...(blocoPessoa ? [{ type: "text" as const, text: blocoPessoa }] : []),
 					...(blocoTela ? [{ type: "text" as const, text: blocoTela }] : []),
 					...(blocoJaRespondido ? [{ type: "text" as const, text: blocoJaRespondido }] : []),
 					...(blocoAbandono ? [{ type: "text" as const, text: blocoAbandono }] : []),
@@ -1119,11 +1135,13 @@ export function createConverseNode(model: BaseChatModel) {
 				// O `converse` NÃO chama busca (a descoberta é nó determinístico, fora
 				// do toolset dele) — então nenhum turno deste nó é "o turno do reveal".
 				hasSearchToolCall: false,
-				// No runtime Vercel `hasProposal` vem de uma query em `bevi_proposals`;
-				// aqui não há esse fato no estado, então usamos o proxy CONSERVADOR
-				// (contrato fechado ⇒ existe proposta). Erra pro lado seguro: no
-				// máximo bloqueia um "reservado" legítimo, nunca libera um indevido.
-				hasProposal: state.baseMeta.contractClosed === true,
+				// O FATO real (fio cruzado L3 → L1): existe proposta REGISTRADA para a
+				// PESSOA (`dossie.simulacoes`), de qualquer conversa. Antes era o proxy
+				// `contractClosed` — que lê "sem proposta" enquanto a proposta existe sem
+				// contrato fechado, e aí o guard da L3 dropava uma fala VERDADEIRA.
+				// Quando o dossiê não resolve (sem identidade, ou leitura falhou) cai no
+				// proxy conservador: no máximo bloqueia um "reservado" legítimo.
+				hasProposal: dossie ? dossie.simulacoes.length > 0 : state.baseMeta.contractClosed === true,
 				contractClosed: state.baseMeta.contractClosed === true,
 				channel: state.channel,
 				recoConsentPending: state.funnel.recoConsentAnswered !== true,
