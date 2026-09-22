@@ -61,7 +61,13 @@ export type TurnTraceRecord = {
 	transitionedTo: string | null;
 	/** Estágio de lead alcançado no turno (engajado/qualificado). */
 	leadStage: string | null;
-	/** Latência wall-clock do turno em ms (start → finalize). */
+	/** Latência wall-clock do turno em ms (start → finalize).
+	 *
+	 *  A fronteira é a MESMA da observação `turn` do Langfuse (ver
+	 *  `observability/langfuse/turn.ts`): começa quando o canal entrega o turno e
+	 *  fecha com o stream consumido — inclui a fase pré-LLM (`analyze` e a
+	 *  pré-produção do grafo), não só a geração. Medir só a geração dava um
+	 *  número menor que o turno de verdade. */
 	durationMs: number;
 	/** Razão de término reportada pelo orquestrador (ok, handoff, search-…). */
 	finishReason: string | null;

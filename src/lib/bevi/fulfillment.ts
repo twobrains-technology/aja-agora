@@ -32,6 +32,7 @@ import {
 	isOfferFresh,
 	updateBeviProposal,
 } from "./proposal-repo";
+import { valorDoFechoDivergiu } from "./valor-do-fecho";
 
 export interface StartContractInput {
 	cpf: string;
@@ -41,6 +42,15 @@ export interface StartContractInput {
 	objetivo: ProposalObjetivo;
 	/** Crédito (ou parcela) desejado — o que o usuário viu na Descoberta. */
 	valor: number;
+	/** O valor que o cliente VIU e aprovou — cota ancorada por ação estruturada
+	 * (clique de card / `escolher_cota`), senão a carta exibida. Preenchido por
+	 * `buildStartContractInput`.
+	 *
+	 * FIX-73/FIX-419: `valor` acima é só a DICA DE MATCHING e pode cair na
+	 * heurística (teto declarado / default) quando não houve reveal. Este campo é a
+	 * âncora do portão `valorDoFechoDivergiu` — e `undefined` significa
+	 * exatamente "não houve valor visto", nunca "o teto foi o que ele viu". */
+	valorVisto?: number;
 	/** FIX-281 (r9 onda 2, gap G-A): o pedido ORIGINAL do cliente (mesma âncora do
 	 * hero, `creditClampedFrom ?? creditMax` — FIX-261), independente de `valor`
 	 * acima (que é o creditValue da ÚLTIMA oferta vista, só pro matching — FIX-73).
@@ -88,6 +98,14 @@ export interface StartContractResult {
 	 * fechamento trocou pra mais próxima (clamp/fallback de `pickClosestOffer`) —
 	 * aciona o aviso explícito de troca (nunca em silêncio). */
 	administradoraChanged?: boolean;
+	/** O portão do valor disparou: a carta REAL que a administradora devolveu
+	 * diverge do valor que o cliente VIU (`valorDoFechoDivergiu`). Devolvido para
+	 * que o canal apresente a divergência como ESCOLHA EXPLÍCITA (o card de
+	 * confirmação) antes do `confirmOffer` — nunca como surpresa no resumo. */
+	valorDivergiu?: boolean;
+	/** O valor que o cliente VIU — presente SÓ quando `valorDivergiu` (é o que o
+	 * resumo do fecho cita como "o que mudou"). */
+	valorVisto?: number;
 	/** Administradora que o usuário havia confirmado — só presente quando
 	 * `administradoraChanged` é true. */
 	previousAdministradora?: string | null;
@@ -188,6 +206,14 @@ export async function startContract(
 	);
 	const offer = chosen ? partnerOfferToRealOffer(chosen, input.segmento) : null;
 
+	// ── PORTÃO DO VALOR, no último ponto antes de a proposta virar REAL ──
+	// Daqui pra baixo a proposta é registrada (`createBeviProposal`/
+	// `updateBeviProposal`) e o cliente pode confirmá-la no `confirmOffer`. Se a
+	// carta real divergir do valor que ele VIU, isso não pode seguir em silêncio:
+	// vai marcado no resultado para o canal abrir a confirmação explícita (o card
+	// da oferta real), antes do contrato — nunca no resumo, depois do fato.
+	const divergiu = valorDoFechoDivergiu(input.valorVisto, offer?.creditValue);
+
 	// FIX-259: a administradora fechada pode divergir da confirmada (catálogo do
 	// fechamento sem ela na faixa → pickClosestOffer cai pro global best). Detecta
 	// pela comparação final (normalizada) — cobre QUALQUER caminho que produziu a
@@ -229,6 +255,10 @@ export async function startContract(
 		noOffer: !chosen,
 		requestedCreditValue: input.originalRequestedCreditValue ?? input.valor,
 		administradoraChanged,
+		// Só o que houve de fato: sem `valorVisto` (heurística) não há divergência a
+		// afirmar, e sem divergência não há o que o resumo tenha que explicar.
+		valorDivergiu: divergiu,
+		valorVisto: divergiu ? input.valorVisto : undefined,
 		// FIX-418 — a marca ANTERIOR é a que estava na TELA, não a preferência.
 		//
 		// O FIX-417 trocou a fonte de `administradoraChanged` pra `marcaNaTela` e

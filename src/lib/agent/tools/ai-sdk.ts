@@ -1937,7 +1937,17 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		execute: async () => {
 			if (!conversationId) return STATUS_NO_CONTEXT;
 			const { checkProposalStatus } = await import("@/lib/bevi/proposal-status");
-			return checkProposalStatus(conversationId);
+			// A PESSOA, não a conversa: a proposta real pode estar em OUTRA conversa
+			// do mesmo telefone (web `a1b2c3d4` × WhatsApp `e5f6a7b8`, 21/09/2026 — a
+			// proposta ITAÚ vivia numa terceira). Com a identidade resolvida, a
+			// consulta é por contato; sem ela, cai no caminho antigo (por conversa,
+			// que é o certo para quem ainda não tem contato).
+			const { pessoaDaConversa, ultimaPropostaDaPessoa } = await import("@/lib/bevi/pessoa");
+			const pessoa = await pessoaDaConversa(conversationId).catch(() => null);
+			const getProposalImpl = pessoa?.contactId
+				? async () => ultimaPropostaDaPessoa(pessoa.contactId)
+				: undefined;
+			return checkProposalStatus(conversationId, getProposalImpl ? { getProposalImpl } : {});
 		},
 	});
 

@@ -45,6 +45,7 @@ import { querAntecipar, shouldAskMotive } from "@/lib/agent/qualify-state";
 import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import { vitrineDisponivel } from "@/lib/bevi/identidade-vitrine";
+import { dossieDaConversa } from "@/lib/bevi/pessoa";
 import type { ArtifactType } from "@/lib/chat/types";
 import { registrarFalaContraCatalogo } from "@/lib/observability/langfuse/busca-scores";
 import { registrarToolsRecusadas } from "@/lib/observability/langfuse/conducao-scores";
@@ -61,6 +62,7 @@ import type { AgentGraphStateType, FunnelState } from "../state";
 import { buildLangGraphTools } from "../tool-adapter";
 import { WHAT_IF_TOOL_NAMES } from "../toolset";
 import {
+	blocoDaPessoa,
 	blocoDeBemAbandonado,
 	blocoDeBuscaVazia,
 	blocoDeOpcoesNaTela,
@@ -141,6 +143,76 @@ const CARDS_QUE_PERGUNTAM: ReadonlySet<string> = new Set([
 	"contract_form",
 	"document_upload",
 ]);
+
+/**
+ * Cards que entregam um DADO na tela e por isso precisam de uma frase junto.
+ *
+ * São o oposto dos `CARDS_QUE_PERGUNTAM`: não pedem interação nenhuma, então
+ * sozinhos eles não deixam o cliente com o que responder — deixam o cliente
+ * olhando um card sem uma palavra que o explique. Medido em produção
+ * (21/09/2026): `[card: simulation_result]` e `[card: comparison_table]`
+ * chegando sozinhos, porque o modelo chamou a tool de apresentação sem escrever
+ * nada antes e a tool de apresentação encerra o loop (`pedeFalaDepoisDasTools`).
+ *
+ * Esta lista autoriza o beat de apoio — as PALAVRAS continuam do modelo.
+ */
+const CARDS_DE_DADO: ReadonlySet<string> = new Set([
+	"simulation_result",
+	"comparison_table",
+	"group_card",
+	"recommendation_card",
+]);
+
+/**
+ * O QUE ELE JÁ RESPONDEU — o contexto do turno precisa devolver estes fatos.
+ *
+ * Medido em produção (21/09/2026): o cliente já tinha dito o carro e, ao mandar
+ * um "Oi", o agente reabriu a qualificação ("que carro você tem em mente?").
+ * As respostas vivem no FUNIL (`state.funnel`: `desireAnswered`,
+ * `currentCategory`, `qualifyAnswers`) e nunca chegavam ao modelo como FATO —
+ * ele via só o histórico cru e a intenção do próximo gate.
+ *
+ * São fatos de servidor. A fala continua sendo do modelo; o que ele ganha aqui é
+ * o dado que já está respondido, para não reabrir uma pergunta fechada.
+ *
+ * Mora aqui (e não em `contexto-da-tela.ts`) porque é contexto DESTE nó — a
+ * mesma origem dos outros blocos de fato (`blocoEmbutido`). Ver
+ * `.orientacao/pendencia-L4.md`: o ideal é subir para `contexto-da-tela.ts` (L1),
+ * que já hospeda os blocos do que está na tela.
+ */
+export function blocoDoJaRespondido(args: {
+	categoria?: string | null;
+	desiredItem?: string;
+	valorDoBem?: number;
+	prazoMeses?: number;
+	lance?: "yes" | "maybe" | "no" | "so_parcela";
+	lanceValue?: number;
+	lanceEmbutido?: boolean;
+}): string | null {
+	const brl = (n: number) => `R$ ${n.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}`;
+	const linhas: string[] = [];
+	if (args.desiredItem) linhas.push(`- o bem que ele quer: ${args.desiredItem}`);
+	if (args.categoria) linhas.push(`- a categoria: ${args.categoria}`);
+	if (args.valorDoBem) linhas.push(`- o valor do bem que ele informou: ${brl(args.valorDoBem)}`);
+	if (args.prazoMeses) linhas.push(`- o prazo que ele escolheu: ${args.prazoMeses} meses`);
+	if (args.lance === "yes" || args.lance === "maybe") {
+		linhas.push(
+			`- ele ${args.lance === "yes" ? "vai dar" : "talvez dê"} lance` +
+				(args.lanceValue ? ` de ${brl(args.lanceValue)}` : "") +
+				", já respondido no gate do lance",
+		);
+	}
+	if (args.lance === "no" || args.lance === "so_parcela") {
+		linhas.push("- ele NÃO quer comprometer nada além da parcela (já respondido)");
+	}
+	if (args.lanceEmbutido === true) linhas.push("- ele aceitou usar lance embutido");
+	if (linhas.length === 0) return null;
+	return (
+		"FATO: estas perguntas do funil JÁ FORAM RESPONDIDAS por ele. NÃO as faça de novo — nem " +
+		'quando a conversa parecer recomeçar (um cumprimento, um "oi"): retome o que ele já disse.\n' +
+		linhas.join("\n")
+	);
+}
 
 export function leanSystemPrompt(base: string = SYSTEM_PROMPT): string {
 	const flowHeading = "## Fluxo de Vendas";
@@ -569,12 +641,38 @@ export function createConverseNode(model: BaseChatModel) {
 		);
 		const vistos = new Set(doBanco.map((o) => o.groupId).filter(Boolean));
 		const ofertasExibidas = [...doBanco, ...doTurno.filter((o) => !vistos.has(o.groupId))];
+		// ── A PESSOA, NÃO A CONVERSA (fio cruzado L1 → turno) ──
+		//
+		// O dossiê cross-canal vem do telefone → contato → TODAS as conversas dele.
+		// Sem este bloco, o único caminho vivo era a tool `check_proposal_status`
+		// (só quando o modelo pergunta) — e o defeito medido foi o agente AFIRMAR
+		// por conta própria que a proposta já estava registrada quando ela existia
+		// em OUTRA conversa (web `a1b2c3d4` / WhatsApp `e5f6a7b8`, a mesma pessoa).
+		//
+		// `dossieDaConversa` LANÇA em erro de leitura de propósito; `.catch(() => null)`
+		// aqui é a decisão certa: o turno segue sem o bloco em vez de receber um
+		// dossiê vazio como "nada registrado".
+		const dossie = await dossieDaConversa(state.conversationId).catch(() => null);
+		const blocoPessoa = dossie ? blocoDaPessoa(dossie) : null;
 		// Os NÚMEROS que o cliente está vendo, e o que a última busca respondeu.
 		// Sem estes dois o modelo preenchia o vácuo com otimismo: anunciou faixa de
 		// parcela que não existia no card, e afirmou que "as opções apareceram" no
 		// mesmo turno em que a busca voltou vazia. Proibir a frase não devolvia o
 		// dado a ele — estes blocos devolvem.
 		const blocoTela = blocoDoQueEstaNaTela(ofertasExibidas);
+		// O que ele JÁ respondeu — para o modelo não reabrir pergunta fechada
+		// (medido em produção, 21/09/2026: um "Oi" depois de o cliente já ter dito o
+		// carro reabria "que carro você tem em mente?").
+		const blocoJaRespondido = blocoDoJaRespondido({
+			categoria: state.funnel.currentCategory,
+			desiredItem: state.funnel.qualifyAnswers.desiredItem,
+			valorDoBem:
+				state.funnel.qualifyAnswers.valorDoBemAlvo ?? state.funnel.qualifyAnswers.creditMax,
+			prazoMeses: state.funnel.qualifyAnswers.prazoMeses,
+			lance: state.funnel.qualifyAnswers.hasLance,
+			lanceValue: state.funnel.qualifyAnswers.lanceValue,
+			lanceEmbutido: state.funnel.qualifyAnswers.lanceEmbutido,
+		});
 		// O bem que ele largou no meio do caminho. Sem este fato, a ironia sobre o
 		// valor antigo ("ta maluco 1,5 milhão numa moto?") foi lida como intenção
 		// de compra em 2 de 7 conversas — uma delas propondo, no último turno,
@@ -908,7 +1006,9 @@ export function createConverseNode(model: BaseChatModel) {
 						: []),
 					...(blocoCanal ? [{ type: "text" as const, text: blocoCanal }] : []),
 					...(blocoOfertas ? [{ type: "text" as const, text: blocoOfertas }] : []),
+					...(blocoPessoa ? [{ type: "text" as const, text: blocoPessoa }] : []),
 					...(blocoTela ? [{ type: "text" as const, text: blocoTela }] : []),
+					...(blocoJaRespondido ? [{ type: "text" as const, text: blocoJaRespondido }] : []),
 					...(blocoAbandono ? [{ type: "text" as const, text: blocoAbandono }] : []),
 					...(blocoVazia ? [{ type: "text" as const, text: blocoVazia }] : []),
 					...(blocoOpcoesNaTela ? [{ type: "text" as const, text: blocoOpcoesNaTela }] : []),
@@ -1035,11 +1135,13 @@ export function createConverseNode(model: BaseChatModel) {
 				// O `converse` NÃO chama busca (a descoberta é nó determinístico, fora
 				// do toolset dele) — então nenhum turno deste nó é "o turno do reveal".
 				hasSearchToolCall: false,
-				// No runtime Vercel `hasProposal` vem de uma query em `bevi_proposals`;
-				// aqui não há esse fato no estado, então usamos o proxy CONSERVADOR
-				// (contrato fechado ⇒ existe proposta). Erra pro lado seguro: no
-				// máximo bloqueia um "reservado" legítimo, nunca libera um indevido.
-				hasProposal: state.baseMeta.contractClosed === true,
+				// O FATO real (fio cruzado L3 → L1): existe proposta REGISTRADA para a
+				// PESSOA (`dossie.simulacoes`), de qualquer conversa. Antes era o proxy
+				// `contractClosed` — que lê "sem proposta" enquanto a proposta existe sem
+				// contrato fechado, e aí o guard da L3 dropava uma fala VERDADEIRA.
+				// Quando o dossiê não resolve (sem identidade, ou leitura falhou) cai no
+				// proxy conservador: no máximo bloqueia um "reservado" legítimo.
+				hasProposal: dossie ? dossie.simulacoes.length > 0 : state.baseMeta.contractClosed === true,
 				contractClosed: state.baseMeta.contractClosed === true,
 				channel: state.channel,
 				recoConsentPending: state.funnel.recoConsentAnswered !== true,
@@ -1417,6 +1519,22 @@ export function createConverseNode(model: BaseChatModel) {
 										}),
 									};
 								}
+								// IDENTIDADE PERSISTIDA DO ATALHO (L4).
+								//
+								// Cada opção ganha um `replyId` único gerado AQUI e gravado junto com o
+								// artifact. É o que o clique reivindica (`claimQuickReplyConsumption`,
+								// chave `click:<conversationId>:<replyId>`) e o que o render consulta
+								// depois do reload. Sem ele o botão voltava ao recarregar a página e o
+								// cliente clicava o mesmo atalho duas vezes — o segundo clique era
+								// reprocessado como resposta nova (medido em produção, 21/09/2026).
+								// Gerado a cada emissão de propósito: um card repetido em outro turno
+								// recebe id novo e não nasce "já consumido".
+								const opcoesAtalho =
+									(payloadFinal as { options?: Array<Record<string, unknown>> }).options ?? [];
+								payloadFinal = {
+									...(payloadFinal as Record<string, unknown>),
+									options: opcoesAtalho.map((o) => ({ ...o, replyId: crypto.randomUUID() })),
+								};
 							}
 							// O CARD SAI AGORA, COLADO NA FALA QUE O ANUNCIOU.
 							//
@@ -1660,6 +1778,54 @@ export function createConverseNode(model: BaseChatModel) {
 				ancoraCharsRef.antes = events
 					.map((ev) => (ev.type === "text-delta" ? ev.text : ""))
 					.join("").length;
+				await executarBeat(false);
+			}
+		} else {
+			// CARD DE DADO NÃO DEIXA O TURNO MUDO (L4).
+			//
+			// O modelo chamou uma tool de apresentação sem escrever nada antes. Como
+			// tool de apresentação encerra o loop (`pedeFalaDepoisDasTools`), o turno
+			// acabava no card — o cliente via um número na tela sem uma palavra que o
+			// explicasse. O dado PEDE comentário; ele simplesmente não veio.
+			//
+			// Mesma máquina da âncora do reveal logo acima: um beat extra, SEM tools,
+			// com o fato no system. As PALAVRAS continuam do modelo — aqui só se garante
+			// que ele fale sobre o que já está na tela, sem inventar número novo.
+			const caudaDoCard = filter.flushPending();
+			if (caudaDoCard) {
+				const ev: TurnEvent = { type: "text-delta", text: caudaDoCard };
+				config.writer?.(ev);
+				events.push(ev);
+			}
+			const textoJaEntregue = events
+				.map((ev) => (ev.type === "text-delta" ? ev.text : ""))
+				.join("");
+			const cardsDeDado = events
+				.filter((ev): ev is Extract<TurnEvent, { type: "artifact" }> => ev.type === "artifact")
+				.map((ev) => ev.artifactType)
+				.filter((tipo) => CARDS_DE_DADO.has(tipo));
+			if (cardsDeDado.length > 0 && textoJaEntregue.trim().length === 0) {
+				await pausaDeConversa(RITMO.cardParaFala);
+				const deixaDoCard = new HumanMessage(
+					"[instrução do sistema — o cliente NÃO vê este texto, não o repita] O card que você " +
+						"acabou de entregar está na tela e o turno está sem uma palavra sua sobre ele. " +
+						"Escreva agora a frase que acompanha esse card.",
+				);
+				filter.liberarPerguntas();
+				newMessages.push(deixaDoCard);
+				loopMessages = [
+					montarSystem(
+						`Você acabou de entregar um card ao cliente (${cardsDeDado.join(", ")}) e não escreveu ` +
+							`nada junto. Escreva UMA frase curta, na sua voz, dizendo o que esse dado significa ` +
+							`pra ele. Use SOMENTE os números que você mesmo colocou no card: é PROIBIDO inventar ` +
+							`valor, prazo, parcela ou administradora. Não faça pergunta nova, não puxe assunto que ` +
+							`não seja o card e não repita o card.`,
+						// Este beat roda sem tools: a janela não pode mandar chamar nenhuma.
+						false,
+					),
+					...loopMessages.slice(1),
+					deixaDoCard,
+				];
 				await executarBeat(false);
 			}
 		}

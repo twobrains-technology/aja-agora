@@ -165,7 +165,18 @@ export function buildStartContractInput(
 		cartaExibida !== undefined && (tetoComFolga === undefined || cartaExibida <= tetoComFolga)
 			? cartaExibida
 			: undefined;
-	const valor = meta.contractOffer?.creditValue ?? dicaDentroDoTeto ?? tetoDeclarado ?? 50000;
+	// FONTE ÚNICA DO VALOR DO FECHO — `valorVisto` é o número que o cliente de fato
+	// VIU e aprovou: a cota ancorada por AÇÃO ESTRUTURADA (clique de card nos dois
+	// canais, ou tool `escolher_cota`) ou, sem ela, a carta exibida.
+	//
+	// A heurística (`tetoDeclarado`, `50000`) fica FORA daqui de propósito: ela é
+	// só dica de matching para quando não houve reveal, NUNCA "o que ele viu". Ter
+	// as duas coisas separadas é o que impede o fecho de apresentar o teto (ou um
+	// default) como "a simulação fechou nesse valor" — o defeito medido em produção
+	// em 21/09/2026: o cliente viu R$ 80.000 e ouviu que a simulação tinha fechado
+	// em R$ 120.000, do grupo que a administradora liberou no fechamento.
+	const valorVisto = meta.contractOffer?.creditValue ?? dicaDentroDoTeto;
+	const valor = valorVisto ?? tetoDeclarado ?? 50000;
 	// FIX-281 (r9 onda 2, gap G-A): âncora do aviso de divergência CDC no
 	// `real_offer` — o pedido ORIGINAL do cliente, MESMA precedência do hero
 	// (runner.ts:656-665, FIX-261). Campo NOVO e independente de `valor` acima
@@ -187,6 +198,9 @@ export function buildStartContractInput(
 		lgpd: identity.lgpd,
 		segmento,
 		valor,
+		// Âncora do portão `valorDoFechoDivergiu` (fulfillment.ts): ausente quando o
+		// input caiu na heurística, e aí não há valor VISTO a comparar.
+		valorVisto,
 		originalRequestedCreditValue,
 		objetivo,
 		lanceEmbutido,

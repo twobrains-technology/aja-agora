@@ -4,6 +4,7 @@
 // teste e produção falam exatamente a mesma coisa (DRY de copy).
 
 import type { ConfirmOfferResult, StartContractResult } from "./fulfillment";
+import { valorDoFechoDivergiu } from "./valor-do-fecho";
 
 export type ClosingItem =
 	| { kind: "text"; text: string }
@@ -59,6 +60,33 @@ export function realOfferPresentation(
 		];
 	}
 	const offer = result.offer;
+	// ── PORTÃO DO VALOR ──
+	//
+	// A carta real pode voltar com OUTRO valor: o grupo que a administradora libera
+	// no fechamento nem sempre é o que foi simulado. O resumo deriva do OBJETO da
+	// oferta (creditValue/grupo/administradora) — nunca de um número recomputado
+	// pela fala — e, quando diverge do valor que o cliente VIU, isso vira pedido
+	// EXPLÍCITO de confirmação antes do card, nunca surpresa no fim.
+	//
+	// `valorVisto` (do resultado do fechamento) é a âncora exata; sem ele — o
+	// caminho que hoje chega por aqui só carrega `requestedCreditValue` — cai no
+	// valor PEDIDO, a mesma âncora do aviso CDC que já existe (FIX-240).
+	const ancoradoNoVisto =
+		typeof result.valorVisto === "number" && Number.isFinite(result.valorVisto);
+	const valorVisto = ancoradoNoVisto ? (result.valorVisto as number) : result.requestedCreditValue;
+	const valorDivergiu = result.valorDivergiu ?? valorDoFechoDivergiu(valorVisto, offer.creditValue);
+	const itensDeValor: ClosingItem[] = valorDivergiu
+		? [
+				{
+					kind: "text",
+					text:
+						`${ancoradoNoVisto ? "O valor que você aprovou" : "O valor que você pediu"} era ` +
+						`${fmtBRL(valorVisto as number)}, e a carta que a ${offer.administradora} liberou agora é de ` +
+						`${fmtBRL(offer.creditValue)}${offer.grupo ? `, no grupo ${offer.grupo}` : ""}. ` +
+						"O grupo disponível nem sempre bate com o que foi simulado — é essa a carta real, e é com ela que eu sigo se você confirmar:",
+				},
+			]
+		: [];
 	// FIX-259 (P1, veredito Fable r4): quando o fechamento trocou a
 	// administradora confirmada (catálogo sem ela na faixa), NUNCA silencia —
 	// avisa explicitamente as duas marcas ANTES do card, em vez do "Confirmei
@@ -72,6 +100,7 @@ export function realOfferPresentation(
 				}. Essa é a carta real — confere e decide se quer seguir:`
 			: `Confirmei com a ${offer.administradora}. Essa é a sua carta real — confere e confirma pra eu seguir:`;
 	const items: ClosingItem[] = [
+		...itensDeValor,
 		{
 			kind: "text",
 			text: introText,
