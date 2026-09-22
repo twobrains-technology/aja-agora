@@ -51,7 +51,7 @@ function Cartao({ titulo, valor, rodape, icone: Icone, acionavel }: CartaoProps)
 
 export function PulsoCards({ pulso }: { pulso: PulsoAgora }) {
 	return (
-		<div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+		<>
 			<Cartao
 				titulo="Visitas na última hora"
 				valor={pulso.visitasUltimaHora}
@@ -90,6 +90,6 @@ export function PulsoCards({ pulso }: { pulso: PulsoAgora }) {
 				rodape="Contratos do dia"
 				icone={CheckCircle2Icon}
 			/>
-		</div>
+		</>
 	);
 }

@@ -29,7 +29,6 @@
 
 import {
 	ChevronRightIcon,
-	ImageOffIcon,
 	MinusIcon,
 	TriangleAlertIcon,
 	UnlinkIcon,
@@ -48,12 +47,9 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
-import type {
-	CustoPorQualificado,
-	LinhaCampanha,
-	LinhaCriativo,
-} from "@/lib/admin/campanhas-queries";
+import type { CustoPorQualificado, LinhaCampanha } from "@/lib/admin/campanhas-queries";
 import { decodificarChaveDeCampanha, ehIdNumerico } from "@/lib/meta-ads/rotulo-legivel";
+import { ListaDeCriativos } from "./cartao-de-criativo";
 import { descreverCusto, inteiro, reais } from "./formato";
 
 /** "ACTIVE"/"PAUSED"/"ARCHIVED" como a Meta devolve, em português. */
@@ -122,80 +118,6 @@ function CelulaDiferenca({ valor }: { valor: number }) {
 		>
 			{diferenca(valor)}
 		</TableCell>
-	);
-}
-
-/**
- * A sub-tabela de criativos de UMA campanha.
- *
- * O nome da peça vem do espelho quando o sync conseguiu lê-lo; sem ele, mostramos
- * o `utm_content` cru (o id do anúncio) com o aviso de que o gerenciador ainda
- * não espelhou. Miniatura de 40×40 quando existe; quando não, um quadrado neutro
- * com `ImageOff` — estado explícito, nunca vazio.
- */
-function SubTabelaCriativos({ criativos }: { criativos: LinhaCriativo[] }) {
-	if (criativos.length === 0) {
-		return (
-			<p className="py-2 text-xs text-muted-foreground">Criativo não informado pelo anúncio.</p>
-		);
-	}
-
-	return (
-		<div className="py-2">
-			<p className="mb-2 text-xs font-medium text-muted-foreground">Criativos</p>
-			<Table>
-				<TableHeader>
-					<TableRow>
-						<TableHead>Criativo</TableHead>
-						<TableHead className="text-right">Visitas</TableHead>
-						<TableHead className="text-right">Iniciaram conversa</TableHead>
-						<TableHead className="text-right">Identificados</TableHead>
-					</TableRow>
-				</TableHeader>
-				<TableBody>
-					{criativos.map((c) => (
-						<TableRow key={c.chave}>
-							<TableCell>
-								<div className="flex min-w-0 items-center gap-2">
-									{c.thumbnailUrl ? (
-										// biome-ignore lint/performance/noImgElement: miniatura vem do CDN da Meta; next/image exigiria configurar o domínio da Graph API
-										<img
-											src={c.thumbnailUrl}
-											alt=""
-											width={40}
-											height={40}
-											className="size-10 shrink-0 rounded object-cover"
-										/>
-									) : (
-										<span className="flex size-10 shrink-0 items-center justify-center rounded bg-muted text-muted-foreground">
-											<ImageOffIcon className="size-4" aria-hidden="true" />
-										</span>
-									)}
-									<div className="flex min-w-0 flex-col gap-0.5">
-										<span className="truncate" title={c.chave}>
-											{c.nomeResolvido && c.nome ? c.nome : decodificarChaveDeCampanha(c.chave)}
-										</span>
-										{!c.nomeResolvido && (
-											<Badge
-												variant="outline"
-												className="w-fit gap-1 font-normal text-xs"
-												title="A Meta ainda não espelhou o nome da peça. O rótulo é o id do anúncio que veio na visita."
-											>
-												<ImageOffIcon className="size-3" aria-hidden="true" />
-												Nome pendente
-											</Badge>
-										)}
-									</div>
-								</div>
-							</TableCell>
-							<TableCell className="text-right tabular-nums">{inteiro(c.visitas)}</TableCell>
-							<TableCell className="text-right tabular-nums">{inteiro(c.conversas)}</TableCell>
-							<TableCell className="text-right tabular-nums">{inteiro(c.identificados)}</TableCell>
-						</TableRow>
-					))}
-				</TableBody>
-			</Table>
-		</div>
 	);
 }
 
@@ -359,7 +281,7 @@ export function TabelaCampanhas({ linhas }: { linhas: LinhaCampanha[] }) {
 										{expandida === linha.chave && (
 											<TableRow className="bg-muted/30 hover:bg-muted/30">
 												<TableCell colSpan={maisColunas ? 10 : 5} className="px-6">
-													<SubTabelaCriativos criativos={linha.criativos} />
+													<ListaDeCriativos criativos={linha.criativos} />
 												</TableCell>
 											</TableRow>
 										)}

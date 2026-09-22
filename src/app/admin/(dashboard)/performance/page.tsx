@@ -6,7 +6,10 @@ import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter"
 import { FunilDeHandoffCard } from "@/components/admin/performance/funil-de-handoff";
 import { FunilMidiaChart } from "@/components/admin/performance/funil-midia-chart";
 import { PortaDoFunilCard } from "@/components/admin/performance/porta-do-funil";
-import { QuemChegouCard } from "@/components/admin/performance/quem-chegou";
+// Ocultação declarada (22/09): o bloco "Quem chegou" (o perfil de quem iniciou a
+// conversa) sai da tela de Performance por decisão do dono. O componente fica
+// pronto e desligado — religá-lo é devolver a linha abaixo, não reescrever a tela.
+// import { QuemChegouCard } from "@/components/admin/performance/quem-chegou";
 import { SerieAquisicaoChart } from "@/components/admin/performance/serie-aquisicao-chart";
 import { TabelaOrigens } from "@/components/admin/performance/tabela-origens";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -101,11 +104,10 @@ function PerformanceContent() {
 				<BlocoSkeleton altura={140} />
 			)}
 
-			{/* "Quem chegou" (pedido d da Bruna) fica logo abaixo da porta: a porta diz
-			    QUANTOS viraram conversa, este bloco diz QUEM são — e é o dado que falta
-			    para decidir criativo (que bem, que faixa de carta anunciar). */}
-			{pronto ? <QuemChegouCard dados={midia.quemChegou} /> : <BlocoSkeleton altura={180} />}
-
+			{/* "Quem chegou" fica OCULTO nesta tela (decisão do dono, 22/09) — o perfil
+			    de quem iniciou a conversa passa a viver no painel "Agora". A remoção é de
+			    grade, não de dado: o componente continua pronto e o espaço não fica vazio,
+			    porque a página é uma pilha vertical e os blocos abaixo sobem. */}
 			{pronto ? (
 				<FunilMidiaChart etapas={midia.funil} de={from} ate={to} />
 			) : (

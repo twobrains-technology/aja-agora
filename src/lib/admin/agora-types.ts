@@ -7,6 +7,7 @@
 
 import type { LeadStage } from "./lead-stages";
 import type { Origem } from "./origem-label";
+import type { PerfilDosVisitantes } from "./perfil-dos-visitantes";
 
 /** Minutos de silêncio depois dos quais a conversa deixa de ser "ao vivo". */
 export const JANELA_AO_VIVO_MIN = 60;
@@ -44,6 +45,8 @@ export interface ConversaAoVivo {
 
 export interface AgoraResponse {
 	pulso: PulsoAgora;
+	/** Quem chegou hoje — o perfil que o pulso conta como número solto. */
+	perfil: PerfilDosVisitantes;
 	conversas: ConversaAoVivo[];
 	/** Instante da apuração — a tela mostra pra ninguém olhar dado velho achando que é ao vivo. */
 	geradoEm: string;

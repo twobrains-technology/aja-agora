@@ -3,6 +3,7 @@
 import { RefreshCwIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { ConversasAoVivo } from "@/components/admin/agora/conversas-ao-vivo";
+import { PerfilDosVisitantesCard } from "@/components/admin/agora/perfil-dos-visitantes";
 import { PulsoCards } from "@/components/admin/agora/pulso-cards";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -13,7 +14,7 @@ const INTERVALO_MS = 15_000;
 
 function PulsoSkeleton() {
 	return (
-		<div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+		<>
 			{["visitas", "conversas", "espera", "mesa", "leads", "fechados"].map((slot) => (
 				<Card key={slot}>
 					<CardHeader className="pb-2">
@@ -25,7 +26,7 @@ function PulsoSkeleton() {
 					</CardContent>
 				</Card>
 			))}
-		</div>
+		</>
 	);
 }
 
@@ -84,7 +85,29 @@ export default function AgoraPage() {
 				</div>
 			)}
 
-			{data ? <PulsoCards pulso={data.pulso} /> : <PulsoSkeleton />}
+			{/* O perfil dos visitantes entra na MESMA grade do pulso e ocupa os dois
+			    slots que a segunda linha deixava vazios: quatro cartões em cima,
+			    três embaixo (leads + fechados + perfil span 2). A área morta deixa de
+			    reservar espaço para o que não existe e passa a responder "que tipo de
+			    gente está vindo". */}
+			<div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+				{data ? <PulsoCards pulso={data.pulso} /> : <PulsoSkeleton />}
+				{data ? (
+					<PerfilDosVisitantesCard perfil={data.perfil} className="col-span-2 shadow-sm" />
+				) : (
+					<Card className="col-span-2">
+						<CardHeader className="pb-2">
+							<Skeleton className="h-4 w-40" />
+							<Skeleton className="h-3 w-56" />
+						</CardHeader>
+						<CardContent className="flex flex-col gap-3">
+							<Skeleton className="h-10 w-full" />
+							<Skeleton className="h-10 w-full" />
+							<Skeleton className="h-10 w-full" />
+						</CardContent>
+					</Card>
+				)}
+			</div>
 
 			{data ? (
 				<ConversasAoVivo conversas={data.conversas} />
