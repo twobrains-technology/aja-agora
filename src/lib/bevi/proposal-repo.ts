@@ -159,6 +159,27 @@ export async function getLatestBeviProposal(conversationId: string): Promise<Row
 	return row ?? null;
 }
 
+/**
+ * Propostas da PESSOA — todas as conversas dela, mais recente primeiro.
+ *
+ * `getLatestBeviProposal` filtra por `conversationId` e por isso mente por
+ * omissão quando o cliente tem mais de uma conversa: em 21/09/2026 a web
+ * `a1b2c3d4` disse "sua proposta já está registrada" e, dois minutos depois, o
+ * WhatsApp `e5f6a7b8` do MESMO telefone respondeu "ainda não aparece nenhuma
+ * proposta registrada aqui pra mim" — a única proposta real (ITAÚ, 18/08) estava
+ * numa terceira conversa (`c9d0e1f2`).
+ *
+ * O `contactId` é denormalizado em `bevi_proposals` desde o FIX-41 exatamente
+ * pra esta leitura; faltava a função.
+ */
+export async function getProposalsByContactId(contactId: string): Promise<Row[]> {
+	return db
+		.select()
+		.from(beviProposals)
+		.where(eq(beviProposals.contactId, contactId))
+		.orderBy(desc(beviProposals.createdAt));
+}
+
 /** TTL: o ofertaId da proposta ainda é válido? (30min). */
 export function isOfferFresh(row: Pick<Row, "offerExpiresAt">, now = new Date()): boolean {
 	return !!row.offerExpiresAt && row.offerExpiresAt.getTime() > now.getTime();

@@ -556,6 +556,8 @@ const EMPTY_TURN_RETRY_REASON_LABELS: Record<EphemeralDropReason, string> = {
 	"prazo-reduction":
 		"prometeu reduzir o PRAZO do consórcio (o lance só reduz a parcela, nunca o prazo)",
 	"premature-reservation": "afirmou que a cota já está reservada ou garantida antes da contratação",
+	"unfounded-registration":
+		"afirmou que a proposta já está registrada antes de existir proposta de verdade",
 	"banned-lexicon": "usou uma gíria fora do tom da conversa",
 	"proactive-callback":
 		"prometeu retornar ou entrar em contato depois (este canal não tem esse recurso)",

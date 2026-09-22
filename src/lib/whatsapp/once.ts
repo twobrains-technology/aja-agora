@@ -10,7 +10,7 @@
 // cliente real ficar sem resposta — o pior caso vira o comportamento de hoje
 // (possível duplicata), nunca silêncio.
 
-import { lt, sql } from "drizzle-orm";
+import { inArray, lt, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { whatsappOnceKeys } from "@/db/schema";
 
@@ -79,4 +79,49 @@ export const DOUBLE_CLICK_WINDOW_MS = 12_000;
  * do canal, antes de a conversa ser resolvida. */
 export function claimButtonClick(waId: string, replyId: string): Promise<boolean> {
 	return claimOnce(`click:${waId}:${replyId}`, "click", DOUBLE_CLICK_WINDOW_MS);
+}
+
+/** Consumo PERSISTIDO do atalho de resposta rápida do WEB.
+ *
+ * O `quick_reply` só sumia por estado LOCAL do componente (`submitted`) —
+ * recarregar a página devolvia o botão, e o cliente clica de novo (medido em
+ * produção, 21/09/2026: no segundo clique o agente respondeu seco que o
+ * formulário já estava na tela). Aqui a chave é PERMANENTE (sem janela: não é
+ * dedo ansioso, é o mesmo atalho já usado) e chaveada por
+ * `conversationId + replyId`. O `replyId` é gerado pelo SERVIDOR na emissão do
+ * card e viaja dentro do payload do artifact, então é idêntico antes e depois
+ * do reload.
+ *
+ * Mesma primitiva/tabela do WhatsApp (`claimOnce`) — nenhuma tabela nova. */
+export function claimQuickReplyConsumption(
+	conversationId: string,
+	replyId: string,
+): Promise<boolean> {
+	return claimOnce(`click:${conversationId}:${replyId}`, "click");
+}
+
+/** Quais destes atalhos JÁ foram consumidos nesta conversa. Leitura para o
+ * render não devolver o botão depois do reload. Fail-open de leitura (erro de
+ * banco devolve lista vazia = comportamento de hoje, o botão aparece). */
+export async function consumedQuickReplies(
+	conversationId: string,
+	replyIds: readonly string[],
+): Promise<string[]> {
+	if (replyIds.length === 0) return [];
+	const chaves = replyIds.map((id) => `click:${conversationId}:${id}`);
+	try {
+		const linhas = await db
+			.select({ key: whatsappOnceKeys.key })
+			.from(whatsappOnceKeys)
+			.where(inArray(whatsappOnceKeys.key, chaves));
+		const presentes = new Set(linhas.map((l) => l.key));
+		const consumidos: string[] = [];
+		replyIds.forEach((id, i) => {
+			if (presentes.has(chaves[i])) consumidos.push(id);
+		});
+		return consumidos;
+	} catch (err) {
+		console.warn("[whatsapp-once] falha ao ler consumo de atalhos (fail-open):", err);
+		return [];
+	}
 }

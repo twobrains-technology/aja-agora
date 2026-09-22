@@ -3,6 +3,16 @@
 // withSimulatorClockIfNeeded: o chamador PRECISA consumir o stream inteiro
 // dentro do callback, senão os spans filhos saem órfãos do contexto OTel.
 //
+// FRONTEIRA DA MEDIÇÃO DO TURNO (uma só, e é esta): o turno começa quando o
+// canal entrega a fala do cliente — `route.ts` (web) e `adapter.ts`
+// (WhatsApp) abrem este wrapper logo no início do turno — e termina quando o
+// stream inteiro foi consumido. Logo a latência desta observação `turn` cobre
+// o turno INTEIRO, inclusive a fase pré-LLM (`analyze` e a pré-produção do
+// grafo que roda antes de o modelo falar); a geração, sozinha, é só um pedaço.
+// É a medida da qual o `durationMs` do `turn-trace` (telemetry/turn-trace.ts)
+// é o espelho do lado do app — os dois fecham no mesmo ponto do canal web, e
+// no WhatsApp o registro fecha DENTRO desta janela.
+//
 // Leis (mesmas do TurnTrace): erro de observabilidade NUNCA derruba o turno;
 // erro do TURNO propaga intacto (engolir mascararia bug real do agente).
 import {

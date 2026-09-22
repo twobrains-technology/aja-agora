@@ -1050,6 +1050,13 @@ export async function POST(req: NextRequest) {
 											requestedCreditValue,
 											administradoraChanged,
 											previousAdministradora,
+											// FIO CRUZADO L2 → fecho: o valor que o cliente VIU e a marca de
+											// divergência vêm do `startContract` (é lá que o portão do valor
+											// roda). Sem repassá-los, `realOfferPresentation` cai no fallback
+											// `requestedCreditValue` e o resumo fala "o valor que você pediu" em
+											// vez de "o valor que você aprovou".
+											valorVisto,
+											valorDivergiu,
 										} = await startContract(
 											conversationId,
 											buildStartContractInput(
@@ -1077,6 +1084,8 @@ export async function POST(req: NextRequest) {
 													requestedCreditValue,
 													administradoraChanged,
 													previousAdministradora,
+													valorVisto,
+													valorDivergiu,
 												},
 												{
 													declaredLanceValue: meta.qualifyAnswers?.lanceValue,
