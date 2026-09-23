@@ -44,4 +44,20 @@ describe("cabeçalho da coluna do kanban", () => {
 
 		expect(screen.getByText("raia_que_ainda_nao_existe")).toBeDefined();
 	});
+
+	// A coluna conta LEADS no estágio; as telas de mídia contam conversas com
+	// proposta criada. Os dois números já apareceram com o mesmo nome ("Propostas")
+	// e a cliente perguntou por WhatsApp por que não fechavam. A nota é o rótulo
+	// que faltava — e ela fica só nesta raia, onde a confusão nasce.
+	it("a raia de proposta enviada avisa que a unidade é lead, não proposta", () => {
+		renderColumn("proposta_enviada");
+
+		expect(screen.getByText(/não é a mesma conta das telas de mídia/)).toBeDefined();
+	});
+
+	it("a nota não vaza para as outras raias", () => {
+		renderColumn("qualificado");
+
+		expect(screen.queryByText(/não é a mesma conta das telas de mídia/)).toBeNull();
+	});
 });

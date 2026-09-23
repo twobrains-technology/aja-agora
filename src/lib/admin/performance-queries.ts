@@ -36,6 +36,8 @@ import {
 	chaveDaPessoa,
 	contagensDoFunil,
 	conversaAtribuida,
+	conversaIdentificada,
+	leadIdentificado,
 	VISITA_CONTAVEL,
 	VISITA_DE_GENTE,
 } from "./sinais-do-funil";
@@ -130,11 +132,13 @@ export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<E
         WHERE ${atribuida} AND ${soPrePreenchida}) AS so_pre_preenchida,
 
       -- Conta CONVERSAS com lead identificado, não leads: uma conversa com dois
-      -- leads (dedup imperfeito) contaria duas vezes e passaria do total.
+      -- leads (dedup imperfeito) contaria duas vezes e passaria do total. O
+      -- predicado (nome E contato) mora em sinais-do-funil — o telefone que o
+      -- WhatsApp entrega sozinho não identifica ninguém.
       (SELECT count(DISTINCT c.id) FROM conversations c
         JOIN leads l ON l.conversation_id = c.id
           AND l.is_simulated = false
-          AND (l.phone IS NOT NULL OR l.email IS NOT NULL)
+          AND ${leadIdentificado(sql`l`)}
         WHERE ${atribuida}) AS identificados,
 
       (SELECT count(DISTINCT c.id) FROM conversations c
@@ -178,9 +182,7 @@ export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<E
       -- dia, com o mesmo rótulo na mesma tela.
         ${engajou} AS engajou,
         ${soPrePreenchida} AS so_pre_preenchida,
-        EXISTS (SELECT 1 FROM leads l
-          WHERE l.conversation_id = c.id AND l.is_simulated = false
-            AND (l.phone IS NOT NULL OR l.email IS NOT NULL)) AS identificou,
+        ${conversaIdentificada(sql`c`)} AS identificou,
         EXISTS (SELECT 1 FROM messages m
           JOIN artifacts a ON a.message_id = m.id
           WHERE m.conversation_id = c.id
@@ -450,6 +452,7 @@ export async function computeOrigens(fromDate: Date, toDate: Date): Promise<Linh
 			visitas: 0,
 			conversas: 0,
 			identificados: 0,
+			comTelefone: 0,
 			propostas: 0,
 			fechados: 0,
 			taxaFechamento: 0,
@@ -458,6 +461,7 @@ export async function computeOrigens(fromDate: Date, toDate: Date): Promise<Linh
 		atual.visitas += num(linha.visitas);
 		atual.conversas += num(linha.conversas);
 		atual.identificados += num(linha.identificados);
+		atual.comTelefone += num(linha.com_contato);
 		atual.propostas += num(linha.propostas);
 		atual.fechados += num(linha.fechados);
 
@@ -493,7 +497,7 @@ export async function computeSerie(fromDate: Date, toDate: Date): Promise<PontoS
       FROM conversations c
       JOIN leads l ON l.conversation_id = c.id
         AND l.is_simulated = false
-        AND (l.phone IS NOT NULL OR l.email IS NOT NULL)
+        AND ${leadIdentificado(sql`l`)}
       WHERE c.is_simulated = false AND c.visit_id IS NOT NULL
         AND c.created_at BETWEEN ${fromDate} AND ${toDate} GROUP BY 1
     )

@@ -262,7 +262,12 @@ export function TabelaCampanhas({ linhas }: { linhas: LinhaCampanha[] }) {
 												Diferença
 											</TableHead>
 											<TableHead className="text-right">Conversas</TableHead>
-											<TableHead className="text-right">Propostas</TableHead>
+											<TableHead
+												className="text-right"
+												title="Propostas criadas na administradora — conta linhas de proposta, não pessoas"
+											>
+												Propostas criadas
+											</TableHead>
 											<TableHead className="text-right">Fechados</TableHead>
 										</>
 									)}

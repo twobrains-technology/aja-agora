@@ -15,7 +15,14 @@
 import { sql } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
-import { conversaAtribuida, conversaSemOrigem } from "./sinais-do-funil";
+import {
+	contagensDoFunil,
+	conversaAtribuida,
+	conversaIdentificada,
+	conversaSemOrigem,
+	leadComContato,
+	leadIdentificado,
+} from "./sinais-do-funil";
 
 const dialect = new PgDialect();
 const de = new Date("2026-09-01T00:00:00-03:00");
@@ -54,5 +61,66 @@ describe("conversaSemOrigem", () => {
 		expect(texto(conversaAtribuida(de, ate))).not.toBe(texto(conversaSemOrigem(de, ate)));
 		expect(texto(conversaAtribuida(de, ate))).toContain("IS NOT NULL");
 		expect(texto(conversaSemOrigem(de, ate))).toContain("IS NULL");
+	});
+});
+
+/**
+ * O degrau "Se identificaram": nome E contato, nunca só o contato.
+ *
+ * A prova contra o banco é de integração; aqui o que se prova é que ESTE
+ * fragmento carrega as duas condições — se alguém apagar o `name IS NOT NULL`
+ * para "simplificar", o teste cai antes de o número inflar em produção.
+ */
+describe("leadIdentificado", () => {
+	const t = texto(leadIdentificado());
+
+	it("exige nome", () => {
+		expect(t).toContain("l.name IS NOT NULL");
+	});
+
+	it("e exige contato — telefone ou e-mail", () => {
+		expect(t).toContain("l.phone IS NOT NULL");
+		expect(t).toContain("l.email IS NOT NULL");
+	});
+
+	it("aceita o alias do lead por parâmetro", () => {
+		expect(texto(leadIdentificado(sql`li`))).toContain("li.name IS NOT NULL");
+	});
+
+	it("NÃO é o mesmo que leadComContato, que dispensa o nome", () => {
+		const comContato = texto(leadComContato());
+		expect(comContato).not.toContain("name");
+		expect(comContato).toContain("l.phone IS NOT NULL");
+	});
+});
+
+describe("conversaIdentificada", () => {
+	it("filtra simulado e usa o predicado inteiro", () => {
+		const t = texto(conversaIdentificada());
+		expect(t).toContain("li.is_simulated = false");
+		expect(t).toContain("li.name IS NOT NULL");
+		expect(t).toContain("c.id");
+	});
+});
+
+/**
+ * As contagens do funil carregam os DOIS números de contato: o identificado pelo
+ * cliente e o contato conhecido. Se `com_contato` sumir, a tela de Campanhas
+ * perde a linha que explica por que o número do WhatsApp é maior.
+ */
+describe("contagensDoFunil", () => {
+	const t = texto(contagensDoFunil());
+
+	it("tem a coluna de identificados e a de contato conhecido", () => {
+		expect(t).toContain("AS identificados");
+		expect(t).toContain("AS com_contato");
+	});
+
+	it("identificados usa o predicado com nome; com_contato usa o antigo", () => {
+		const identificados = t.slice(
+			t.indexOf("count(DISTINCT c.id) FILTER"),
+			t.indexOf("AS identificados"),
+		);
+		expect(identificados).toContain("name IS NOT NULL");
 	});
 });

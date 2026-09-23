@@ -87,8 +87,18 @@ export function TabelaOrigens({
 									<TableHead>Canal</TableHead>
 									<TableHead className="text-right">Visitas</TableHead>
 									<TableHead className="text-right">Conversas</TableHead>
-									<TableHead className="text-right">Identificados</TableHead>
-									<TableHead className="text-right">Propostas</TableHead>
+									<TableHead
+										className="text-right"
+										title="Conversas em que o cliente informou nome e telefone ou e-mail — o telefone do WhatsApp não conta"
+									>
+										Identificados
+									</TableHead>
+									<TableHead
+										className="text-right"
+										title="Propostas criadas na administradora — conta linhas de proposta, não pessoas"
+									>
+										Propostas criadas
+									</TableHead>
 									<TableHead className="text-right">Fechados</TableHead>
 									<TableHead className="text-right">Visita → contrato</TableHead>
 								</TableRow>
