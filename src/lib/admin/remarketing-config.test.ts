@@ -21,10 +21,13 @@ import {
 	PARAMETROS_DO_CADASTRO,
 	validarEntradas,
 } from "@/lib/admin/remarketing-config";
+import { decidir } from "@/lib/remarketing/motor";
 import {
 	CAMPOS_DOS_PARAMETROS,
+	estadoInicial,
 	normalizarParametros,
 	PARAMETROS_DE_FABRICA,
+	type ParametrosRegua,
 } from "@/lib/remarketing/regua";
 
 const DIA_MS = 24 * 60 * 60 * 1000;
@@ -247,5 +250,69 @@ describe("a validação da gravação recusa o que o motor não pode ler", () =>
 		expect(normalizarParametros({ maxToques: 999, tetoToques30Dias: -1 })).toEqual(
 			PARAMETROS_DE_FABRICA,
 		);
+	});
+});
+
+// ─── A costura: o cadastro vira DECISÃO ───────────────────────────────────
+//
+// O que se prova aqui é a ligação inteira, não a leitura: cadastro (banco) →
+// `parametros` → `decidir`. Antes disto o motor caía sempre em
+// `PARAMETROS_DE_FABRICA` e a tela de config prometia "passa a valer em até um
+// ciclo, sem deploy" sem que nada do banco chegasse ao envio.
+
+describe("o cadastro move a decisão do motor — não só o número lido", () => {
+	const INBOUND = new Date("2026-09-14T14:00:00Z");
+	/** 12h30 em Brasília — o instante do toque 01 (90 min de silêncio). */
+	const TOQUE_1 = new Date("2026-09-14T15:30:00Z");
+
+	/**
+	 * O estado ANTES do toque 01: o cliente falou e ficou em silêncio mais que os
+	 * 90 min, então o toque 01 está elegível agora. O intervalo que o motor vai
+	 * AGENDAR para o toque seguinte é `diasAteSegundoToque` — o parâmetro sob
+	 * teste. `retomadaPermitida` entra verdadeiro porque o portão de retomadas
+	 * (`MAX_RETOMADAS`/backoff, em `workers/retomada.ts`) é OUTRO item: aqui se
+	 * prova só que o cadastro move a data do toque.
+	 */
+	function estadoAguardandoToque1() {
+		return estadoInicial({
+			objetivo: "carro",
+			status: "ATIVO",
+			step: 0,
+			ultimoInboundEm: INBOUND,
+			nextTouchAt: new Date(INBOUND.getTime() + 90 * 60_000),
+			toquesNaJanela: [],
+		});
+	}
+
+	/** O intervalo até o toque 02 que o motor DECIDIU, em ms. */
+	function intervaloDecidido(parametros: ParametrosRegua): number | null {
+		const decisao = decidir({
+			agora: TOQUE_1,
+			estado: estadoAguardandoToque1(),
+			telefone: "5562999998888",
+			retomadaPermitida: true,
+			parametros,
+		});
+
+		expect(decisao.acao.tipo).toBe("turno_de_retomada");
+		expect(decisao.acao.tipo === "turno_de_retomada" ? decisao.acao.passo : null).toBe(1);
+		const quando = decisao.proximoEstado?.nextTouchAt ?? null;
+		return quando ? quando.getTime() - TOQUE_1.getTime() : null;
+	}
+
+	it("sem linha: o motor usa o intervalo de fábrica (3 dias)", () => {
+		expect(intervaloDecidido(montarLeitura([]).parametros)).toBe(3 * DIA_MS);
+	});
+
+	it("com a linha no cadastro: o motor usa 1 dia — sem deploy", () => {
+		const parametros = montarLeitura([{ chave: "dias_ate_segundo_toque", valor: "1" }]).parametros;
+		expect(intervaloDecidido(parametros)).toBe(1 * DIA_MS);
+	});
+
+	it("linha corrompida não move a régua: a decisão volta à fábrica", () => {
+		const parametros = montarLeitura([
+			{ chave: "dias_ate_segundo_toque", valor: "amanhã" },
+		]).parametros;
+		expect(intervaloDecidido(parametros)).toBe(3 * DIA_MS);
 	});
 });
