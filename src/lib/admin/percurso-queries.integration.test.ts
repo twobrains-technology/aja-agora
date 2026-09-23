@@ -402,6 +402,103 @@ describeIfDb("percurso — até onde cada pessoa foi (integration)", () => {
 			expect(totalDeChegadas).toBe(11);
 		});
 
+		it("o degrau 'Se identificou' conta quem ALCANÇOU o fato — e fecha com o funil", async () => {
+			// JANELA PRÓPRIA, fora da faixa que o resto do arquivo usa. Sem ela, as
+			// sementes daqui entrariam nas contagens exatas dos outros testes (e as
+			// deles aqui), e este caso ficaria verde por soma de terceiros — verde que
+			// não prova nada.
+			const ANO_ISOLADO = 2030 + Math.floor(Math.random() * 20);
+			const MES_ISOLADO = String(1 + Math.floor(Math.random() * 12)).padStart(2, "0");
+			const DE_ISOLADO = new Date(`${ANO_ISOLADO}-${MES_ISOLADO}-01T00:00:00Z`);
+			const ATE_ISOLADO = new Date(`${ANO_ISOLADO}-${MES_ISOLADO}-28T23:59:59Z`);
+			const QUANDO_ISOLADO = new Date(`${ANO_ISOLADO}-${MES_ISOLADO}-15T12:00:00Z`);
+
+			// (a) web COM visita que se identificou e SEGUIU até a oferta: parou em
+			// "Viu oferta", mas alcançou "Se identificou". É ESTE o caso que fazia o
+			// degrau mostrar menos gente do que de fato se identificou.
+			await semear({
+				visitorId: `v-${crypto.randomUUID()}`,
+				ate: "viu_oferta",
+				quando: QUANDO_ISOLADO,
+				nome: "Seguiu Adiante",
+			});
+
+			// (b) web COM visita que se identificou e PAROU no degrau.
+			const visitanteQueParou = `v-${crypto.randomUUID()}`;
+			await semear({
+				visitorId: visitanteQueParou,
+				ate: "se_identificou",
+				quando: QUANDO_ISOLADO,
+				nome: "Parou Aqui",
+			});
+
+			// (c) a MESMA pessoa com uma SEGUNDA conversa: uma pessoa, duas
+			// conversas — é a diferença que a tela precisa explicar, e não um erro.
+			await semear({
+				visitorId: visitanteQueParou,
+				ate: "se_identificou",
+				quando: QUANDO_ISOLADO,
+				nome: "Parou Aqui",
+			});
+
+			// (d) web COM visita que NÃO se identificou (nunca deixou contato): fica
+			// em "Iniciou a conversa" e não pode aparecer no degrau.
+			await semear({
+				visitorId: `v-${crypto.randomUUID()}`,
+				ate: "iniciou_conversa",
+				quando: QUANDO_ISOLADO,
+			});
+
+			// (e) conversa de WhatsApp SEM visita — o caso que o `JOIN visita`
+			// descarta. O recorte tem de ser IGUAL dos dois lados: quem não chegou
+			// não entra nem aqui nem lá, senão a divergência volta pela borda.
+			const [conversaSemVisita] = await db
+				.insert(schema.conversations)
+				.values({
+					channel: "whatsapp",
+					waId: `55119${String(Math.floor(Math.random() * 1e8)).padStart(8, "0")}`,
+					isSimulated: false,
+					createdAt: QUANDO_ISOLADO,
+					updatedAt: QUANDO_ISOLADO,
+				})
+				.returning({ id: schema.conversations.id });
+			convIds.push(conversaSemVisita.id);
+			await db.insert(schema.messages).values({
+				conversationId: conversaSemVisita.id,
+				role: "user",
+				content: "oi",
+				channel: "whatsapp",
+				createdAt: QUANDO_ISOLADO,
+			});
+
+			const { resumo, totalDeConversas } = await queries.listarPercurso({
+				from: DE_ISOLADO,
+				to: ATE_ISOLADO,
+			});
+			const por = Object.fromEntries(resumo.map((r) => [r.chave, r]));
+
+			// O FATO: duas pessoas se identificaram (a que seguiu e a que parou). A
+			// leitura antiga, que só via a posição, responderia 1.
+			expect(por.se_identificou?.alcancaram).toBe(2);
+			expect(por.se_identificou?.pessoas).toBe(1);
+
+			// As conversas abertas por essas pessoas: 1 da que seguiu + 2 da que parou
+			// + 1 da que só iniciou conversa = 4. É o número que fecha com a etapa
+			// "Conversas" do funil — e NÃO com a de identificados, porque ele soma
+			// todas as conversas das pessoas, identificadas ou não.
+			expect(totalDeConversas).toBe(4);
+
+			// E o funil de mídia, lido na MESMA janela, conta a mesma gente: 4
+			// conversas no total, 3 delas identificadas, para 2 PESSOAS. A diferença
+			// entre conversa e pessoa é exatamente quem abriu duas.
+			const { computeFunilMidia } = await import("./performance-queries");
+			const funil = await computeFunilMidia(DE_ISOLADO, ATE_ISOLADO);
+			expect(funil.find((e) => e.chave === "conversas")?.count).toBe(totalDeConversas);
+			const etapa = funil.find((e) => e.chave === "identificados");
+			expect(etapa?.count).toBe(3);
+			expect(por.se_identificou?.alcancaram).toBeLessThanOrEqual(etapa?.count ?? 0);
+		});
+
 		it("carrega o nome, a origem e a conversa de quem se identificou", async () => {
 			const { pessoas } = await queries.listarPercurso({ from: JANELA_DE, to: JANELA_ATE });
 			const fechado = pessoas.find((p) => p.passo === "fechado");

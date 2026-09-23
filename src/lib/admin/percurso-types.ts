@@ -205,6 +205,18 @@ export interface ResumoDoPasso {
 	ajuda: string;
 	/** Quantas pessoas PARARAM neste degrau. */
 	pessoas: number;
+	/**
+	 * Quantas pessoas ALCANÇARAM este degrau — o mesmo fato por trás dele, sem
+	 * exigir que a pessoa tenha parado ali.
+	 *
+	 * `pessoas` é a posição na escada (quem parou); `alcancaram` é o fato (quem
+	 * chegou a fazer aquilo e seguiu em frente). Os dois números respondem
+	 * perguntas diferentes, e é por isso que os dois existem: sem `alcancaram`,
+	 * o degrau "Se identificou" mostrava 8 quando **10** pessoas tinham se
+	 * identificado — as outras 2 avançaram para "Viu oferta" e sumiam do
+	 * degrau, fazendo a tela discordar do funil de mídia (e do CAC).
+	 */
+	alcancaram: number;
 }
 
 export interface PercursoResponse {
