@@ -18,10 +18,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 const HAS_DB = Boolean(process.env.DATABASE_URL) && !process.env.DATABASE_URL?.includes("sentinel");
 const describeIfDb = HAS_DB ? describe : describe.skip;
 
-// Janela isolada (2019) para que o que já existe no banco não entre na conta.
-const JANELA_DE = new Date("2019-03-01T00:00:00Z");
-const JANELA_ATE = new Date("2019-03-31T23:59:59Z");
-const DENTRO = new Date("2019-03-15T12:00:00Z");
+// Janela isolada (2016) para que o que já existe no banco não entre na conta —
+// e livre: `performance-queries.integration.test.ts` mede 2019-03 com asserções
+// exatas contra o MESMO Postgres, então dividir a janela com ele fazia os
+// quatro leads daqui entrarem na conta de lá.
+const JANELA_DE = new Date("2016-05-01T00:00:00Z");
+const JANELA_ATE = new Date("2016-05-31T23:59:59Z");
+const DENTRO = new Date("2016-05-15T12:00:00Z");
 
 const UA_GENTE =
 	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36";
@@ -131,15 +134,16 @@ describeIfDb("identificado pelo cliente × contato conhecido (integration)", () 
 	it("conversa de WhatsApp sem nome não conta como identificada", async () => {
 		const funil = await performance.computeFunilMidia(JANELA_DE, JANELA_ATE);
 		const identificados = funil.find((e) => e.chave === "identificados");
-		// B e C identificados; A não. Sem a correção seriam 3 (o telefone do waId).
-		expect(identificados?.count).toBe(2);
+		// B, C e D têm nome e contato; A (WhatsApp sem nome) não conta. Sem a
+		// correção seriam 4 — o telefone do waId contava o canal como cliente.
+		expect(identificados?.count).toBe(3);
 	});
 
 	it("o contato conhecido é maior que o identificado — as duas medidas convivem", async () => {
 		const origens = await performance.computeOrigens(JANELA_DE, JANELA_ATE);
 		const identificados = origens.reduce((soma, l) => soma + l.identificados, 0);
 		const comTelefone = origens.reduce((soma, l) => soma + l.comTelefone, 0);
-		expect(identificados).toBe(2);
+		expect(identificados).toBe(3);
 		// Os quatro leads têm telefone; os quatro são alcançáveis pela régua.
 		expect(comTelefone).toBe(4);
 	});

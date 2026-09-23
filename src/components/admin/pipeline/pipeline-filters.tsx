@@ -1,12 +1,13 @@
 "use client";
 
 import { Search, X } from "lucide-react";
-import { parseAsString, useQueryState } from "nuqs";
+import { parseAsBoolean, parseAsString, useQueryState } from "nuqs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { parserDeCampanha } from "@/components/admin/dashboard/campanha-filter";
 import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter";
 import { FiltrosDaTela } from "@/components/admin/dashboard/filtros";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
 	Select,
@@ -43,6 +44,14 @@ export function useLeadFilters() {
 	// o chip usam, ancorado ao meio-dia UTC (ver `periodo-querystring.ts`).
 	const [dateFrom, setDateFrom] = useQueryState("from", parseAsDiaDoNegocio);
 	const [dateTo, setDateTo] = useQueryState("to", parseAsDiaDoNegocio);
+	// "Mostrar testes" — o lead simulado saiu do quadro por padrão (AJA-23 T4):
+	// ele é o card de demonstração do stakeholder e inflava a raia que a Bruna lê.
+	// O opt-in é explícito, como em /admin/conversations, e vive na URL para
+	// sobreviver ao link compartilhado.
+	const [mostrarTestes, setMostrarTestes] = useQueryState(
+		"testes",
+		parseAsBoolean.withDefault(false),
+	);
 	const hoje = useMemo(() => diaDeHoje(), []);
 
 	// O período em vigor precisa estar na URL: é o que o chip do cabeçalho lê e o
@@ -116,12 +125,23 @@ export function useLeadFilters() {
 		setDateTo,
 		campanhas,
 		setCampanhas,
+		mostrarTestes,
+		setMostrarTestes,
 		filterFn,
 	};
 }
 
 export function PipelineFilters({ filters }: { filters: ReturnType<typeof useLeadFilters> }) {
-	const { channel, setChannel, search, setSearch, campanhas, setCampanhas } = filters;
+	const {
+		channel,
+		setChannel,
+		search,
+		setSearch,
+		campanhas,
+		setCampanhas,
+		mostrarTestes,
+		setMostrarTestes,
+	} = filters;
 
 	// Debounced search input
 	const [localSearch, setLocalSearch] = useState(search);
@@ -142,12 +162,14 @@ export function PipelineFilters({ filters }: { filters: ReturnType<typeof useLea
 	// O período NÃO entra: ele é estado do painel, escrito pelo `<DateRangeFilter/>`
 	// na URL e no cookie. Limpar os filtros da tela não pode apagar a janela
 	// escolhida.
-	const hasActiveFilters = channel !== "all" || search !== "" || campanhas.length > 0;
+	const hasActiveFilters =
+		channel !== "all" || search !== "" || campanhas.length > 0 || mostrarTestes;
 
 	const clearFilters = () => {
 		setChannel(null);
 		setSearch(null);
 		setCampanhas(null);
+		setMostrarTestes(false);
 		setLocalSearch("");
 	};
 
@@ -191,6 +213,19 @@ export function PipelineFilters({ filters }: { filters: ReturnType<typeof useLea
 					className="h-7 w-[200px] pl-8 text-sm"
 				/>
 			</div>
+
+			{/* Opt-in dos simulados — desligados por padrão na rota (AJA-23 T4). */}
+			<label
+				htmlFor="mostrar-testes"
+				className="flex items-center gap-1.5 text-xs text-muted-foreground"
+			>
+				<Checkbox
+					id="mostrar-testes"
+					checked={mostrarTestes}
+					onCheckedChange={(valor) => setMostrarTestes(valor === true)}
+				/>
+				Mostrar testes
+			</label>
 
 			{/* Clear filters */}
 			{hasActiveFilters && (

@@ -274,10 +274,10 @@ describe("totalizarCampanhas", () => {
 		expect(totais.investimentoCents).toBe(100_000);
 		expect(totais.leadsMeta).toBe(15);
 		expect(totais.leadsCrm).toBe(10);
-		// Contato conhecido é MAIOR que identificado por construção: todo
-		// identificado tem contato, e quem só chegou pelo WhatsApp tem contato sem
-		// ter se identificado. As duas colunas existem para essa diferença ficar
-		// visível em vez de virar um número só.
+		// `comTelefone` é somado por `computeOrigens` e o helper desta fixture não o
+		// preenche, por isso 0 aqui. Em produção ele é MAIOR ou igual a
+		// `identificados`: todo identificado tem contato, e quem só chegou pelo
+		// WhatsApp tem contato sem ter se identificado.
 		expect(totais.comTelefone).toBe(0);
 		expect(totais.qualificados).toBe(5);
 		expect(totais.propostas).toBe(1);

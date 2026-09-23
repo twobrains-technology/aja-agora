@@ -439,7 +439,7 @@ chaves; o texto entra por cadastro, nunca por commit.
 - O percurso já filtra por degrau e modo (`?passo=se_identificou&modo=parou`, `percurso-queries.ts:303-308`;
   `percurso-types.ts:112`).
 - O motivo de **não entrar** na régua é nomeado: `src/lib/admin/motivo-fora-da-regua.ts` (o
-  `motivoForaDaRegua`, `:187`; `sem_contato` no `:205`) e `src/lib/remarketing/motivo-de-exclusao.ts`
+  `motivoForaDaRegua`, `:187`; `sem_contato` no `:206`) e `src/lib/remarketing/motivo-de-exclusao.ts`
   (as 11 guardas, `:195-250`, com rótulo humano em `ROTULO_DO_MOTIVO_DE_EXCLUSAO`, `:78`).
   **Achado colateral:** `motivo-fora-da-regua.ts:187` é um **espelho manual** das mesmas 11 guardas —
   duas verdades para a mesma pergunta, contra a restrição #9 — **e a duplicação não são só as guardas:**
@@ -515,7 +515,7 @@ motivos de exclusão idênticos entre ciclo e tela.
   `isSimulated = true`**. Ou seja: **não existe delete de conversa REAL** — é assim que a premissa
   deve ser escrita.
 - **"Cliente oculto" não existe como conceito no código** (grep: só `/reset` oculto e UI escondida).
-  O que existe é lead sem `contactId`, o motivo `sem_contato` da régua (`motivo-fora-da-regua.ts:205`)
+  O que existe é lead sem `contactId`, o motivo `sem_contato` da régua (`motivo-fora-da-regua.ts:206`)
   e o rótulo de exportação `sem vínculo: conversa sem contato` (`exportacao/textos.ts:20`).
 - **Não existe filtro "identificável"** em tela nenhuma. O que existe: o degrau `se_identificou` do
   Percurso (`phone IS NOT NULL OR email IS NOT NULL`, `percurso-queries.ts:134`) — **que o AJA-29 vai
@@ -983,8 +983,8 @@ correções pontuais de âncora — não de desenho. O que ainda estava errado e
   "renderizar do metadata".
 - **Linhas que apontavam para outro objeto:** `OpcoesDeExportacao` é `src/lib/exportacao/index.ts:23-28`
   (não `:35-39`, que é o `switch`); o predicado de identificados em `exportacao/percurso.ts` é `:134`
-  (a `:136` é `teve_proposta`); `sem_contato` em `motivo-fora-da-regua.ts` é `:205` (o revisor da 2ª rodada
-  disse `:206`; conferido no arquivo).
+  (a `:136` é `teve_proposta`); `sem_contato` em `motivo-fora-da-regua.ts` é `:206` — o `:205` é o
+  comentário imediatamente acima do `return`, e a conferência da 1ª rodada parou no comentário.
 - **Timestamps fundidos:** a fala do Kairo sobre "cruzar as informações" é de **12:13:02** (não
   12:12:12) e "Dependendo, deveria guardar…" é da Bruna em **12:20:00** (não 12:19:50).
 - **`schema.ts` sem caminho** → `src/db/schema.ts` em todas as citações; caminhos abreviados

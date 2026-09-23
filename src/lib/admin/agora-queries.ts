@@ -19,7 +19,7 @@ import {
 import { INICIO_DE_HOJE } from "./dia-do-negocio-sql";
 import type { LeadStage } from "./lead-stages";
 import { rotularOrigem } from "./origem-label";
-import { VISITA_CONTAVEL } from "./sinais-do-funil";
+import { leadIdentificado, VISITA_CONTAVEL } from "./sinais-do-funil";
 
 function num(valor: unknown): number {
 	return Number(valor ?? 0) || 0;
@@ -64,13 +64,14 @@ export async function computePulso(): Promise<PulsoAgora> {
       -- "Hoje" começa à meia-noite em Brasília. A forma anterior, com um cast
       -- para date, voltava a virar instante no fuso da SESSÃO, que em produção é
       -- UTC: o card contava a partir das 21h de ontem. Ver dia-do-negocio-sql.ts.
-      -- Telefone OU e-mail, o MESMO critério que Performance e Percurso usam para
-      -- "Se identificou". Sem ele este card contava também o lead que nasce só
-      -- com o nome (saveContactName grava os dois campos nulos), e duas telas
-      -- diziam números diferentes para a mesma palavra no mesmo dia.
+      -- NOME + contato: o MESMO predicado que Performance e Percurso usam para
+      -- "Se identificou" (leadIdentificado, fonte única em sinais-do-funil.ts).
+      -- Só telefone não bastava: toda conversa de WhatsApp nasce com o telefone do
+      -- waId, então este card contava o canal como se o cliente tivesse se
+      -- identificado — e dizia número diferente da tela de Performance.
       (SELECT count(*) FROM leads
         WHERE is_simulated = false
-          AND (phone IS NOT NULL OR email IS NOT NULL)
+          AND ${leadIdentificado(sql`leads`)}
           AND created_at >= ${INICIO_DE_HOJE}) AS leads_hoje,
 
       -- count(DISTINCT lead_id), não count(*): a transição aceita regressão, então

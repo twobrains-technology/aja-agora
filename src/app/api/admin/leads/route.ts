@@ -7,7 +7,6 @@ import type { LeadStage } from "@/lib/admin/lead-transitions";
 import { cardsDaMesaExterna } from "@/lib/admin/mesa-externa-cards";
 import { origemDaVisita } from "@/lib/admin/origem-label";
 import { fimDoDia, inicioDoDia, instanteDoParametro } from "@/lib/admin/periodo";
-import { cookieDoCabecalho } from "@/lib/admin/periodo-da-requisicao";
 import { requireRole } from "@/lib/admin/require-role";
 import { isMesaExterna, raiasVisiveisPara } from "@/lib/admin/role-scope";
 import {
@@ -49,7 +48,11 @@ export async function GET(request?: Request) {
 	const periodo = periodoEfetivoDoPipeline(
 		instanteDoParametro(busca?.get("from") ?? ""),
 		instanteDoParametro(busca?.get("to") ?? ""),
-		request ? cookieDoCabecalho(request.headers.get("cookie")) : null,
+		// O cabeçalho CRU (`aja_periodo=...`), não o valor: `periodoEfetivoDoPipeline`
+		// procura `nome=valor` e devolve `null` para um valor solto — passar o valor
+		// já extraído faria o cookie ser ignorado em silêncio e a tela mostrar uma
+		// janela enquanto a rota recortava outra.
+		request?.headers.get("cookie") ?? null,
 	);
 
 	const allLeads = await db.query.leads.findMany({

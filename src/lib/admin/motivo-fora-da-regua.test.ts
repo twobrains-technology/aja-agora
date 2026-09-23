@@ -15,9 +15,9 @@ import { avaliarElegibilidade, MOTIVOS_DE_EXCLUSAO } from "@/lib/remarketing/mot
 import {
 	type ConversaAvaliada,
 	MOTIVOS_FORA_DA_REGUA,
+	type MotivoForaDaRegua,
 	motivoDeSaidaLegivel,
 	motivoForaDaRegua,
-	type MotivoForaDaRegua,
 	type OpcoesDaElegibilidade,
 	rotuloForaDaRegua,
 } from "./motivo-fora-da-regua";
@@ -140,12 +140,15 @@ describe("tela e ciclo concordam nos onze motivos", () => {
 		expect(casos.map((c) => c.motivo).sort()).toEqual([...MOTIVOS_FORA_DA_REGUA].sort());
 	});
 
-	it.each(casos)("$motivo: a tela devolve o mesmo que o ciclo", ({ motivo, conversa: c, opcoes }) => {
-		const veredito = avaliarElegibilidade(c, AGORA, opcoes);
-		expect(veredito.elegivel).toBe(false);
-		expect(veredito.elegivel ? null : veredito.motivo).toBe(motivo);
-		expect(motivoForaDaRegua(c, AGORA, opcoes)).toBe(motivo);
-	});
+	it.each(casos)(
+		"$motivo: a tela devolve o mesmo que o ciclo",
+		({ motivo, conversa: c, opcoes }) => {
+			const veredito = avaliarElegibilidade(c, AGORA, opcoes);
+			expect(veredito.elegivel).toBe(false);
+			expect(veredito.elegivel ? null : veredito.motivo).toBe(motivo);
+			expect(motivoForaDaRegua(c, AGORA, opcoes)).toBe(motivo);
+		},
+	);
 
 	it("a lista de motivos da tela é a mesma tabela do ciclo", () => {
 		expect([...MOTIVOS_FORA_DA_REGUA]).toEqual([...MOTIVOS_DE_EXCLUSAO]);
