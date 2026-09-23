@@ -199,6 +199,10 @@ describe("a escada do percurso", () => {
 		label: p.label,
 		ajuda: p.ajuda,
 		pessoas: [31, 30, 5, 8, 0, 0, 1, 0][i],
+		// `alcancaram` é o fato do degrau, e `pessoas` é quem parou nele. Aqui dá
+		// para semear a diferença: no degrau "Se identificou" duas pessoas fizeram
+		// aquilo e seguiram adiante — é o caso que a tela passou a mostrar.
+		alcancaram: [105, 74, 44, 17, 9, 2, 3, 1][i],
 	}));
 
 	it("mostra os oito degraus, inclusive os dois que antecedem a conversa", () => {

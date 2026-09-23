@@ -89,6 +89,19 @@ export function EscadaDoPercurso({
 												{doAnterior.toFixed(0)}% do anterior
 											</span>
 										)}
+										{/*
+										    A segunda leitura do degrau: quantos ALCANÇARAM o fato, e não
+										    quantos pararam ali. Só aparece quando difere — quando os dois
+										    coincidem, repetir o mesmo número ao lado do número seria ruído.
+										    É este o número que fecha com o funil de mídia na mesma etapa
+										    (e o que vale para CAC), porque lá cada etapa também conta quem
+										    TEM o fato.
+										*/}
+										{degrau.alcancaram > degrau.pessoas && (
+											<span className="block text-xs text-muted-foreground tabular-nums">
+												{nf.format(degrau.alcancaram)} alcançaram o degrau
+											</span>
+										)}
 									</span>
 								</div>
 								{/* Barra baixa de propósito: com `h-5` os nove degraus somavam 646px e
@@ -119,7 +132,10 @@ export function EscadaDoPercurso({
 							</TooltipTrigger>
 							<TooltipContent className="max-w-sm">
 								Uma linha por pessoa, não por conversa nem por clique no anúncio: quem voltou três
-								vezes conta uma vez, no degrau mais fundo que alcançou.
+								vezes conta uma vez, no degrau mais fundo que alcançou. O número grande é quem
+								PAROU ali; quando aparece "alcançaram o degrau" embaixo dele, é o outro número —
+								quem fez aquilo e seguiu adiante. É esse segundo que compara com o funil de mídia,
+								porque lá cada etapa conta quem tem o fato, não quem parou nele.
 								{totalDeConversas > 0 && (
 									<>
 										{" "}
