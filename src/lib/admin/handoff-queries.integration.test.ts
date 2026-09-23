@@ -250,7 +250,13 @@ describeIfDb("D3/E1 — a campainha do SLA (integration)", () => {
 		}
 	});
 
-	async function leadParadoHa(horas: number, stage: string, nome: string) {
+	async function leadParadoHa(
+		horas: number,
+		stage: string,
+		nome: string,
+		telefone = "11988887777",
+		simulado = false,
+	) {
 		const [conv] = await db
 			.insert(schema.conversations)
 			.values({ channel: "web" })
@@ -263,7 +269,8 @@ describeIfDb("D3/E1 — a campainha do SLA (integration)", () => {
 			.values({
 				conversationId: conv.id,
 				name: nome,
-				phone: "11988887777",
+				phone: telefone,
+				isSimulated: simulado,
 				stage: stage as never,
 				createdAt: quando,
 				updatedAt: quando,
@@ -348,5 +355,36 @@ describeIfDb("D3/E1 — a campainha do SLA (integration)", () => {
 		const id = await leadParadoHa(10, "proposta_enviada", "Parado 10h");
 		expect((await computeLeadsParados(24)).find((p) => p.leadId === id)).toBeUndefined();
 		expect((await computeLeadsParados(5)).find((p) => p.leadId === id)).toBeTruthy();
+	});
+
+	it("o TESTE DE CASA não vira 'lead parado' no e-mail da mesa", async () => {
+		// Medido em 23/09/2026: o dono testou o fluxo com o próprio celular. Como o
+		// teste rodou em WhatsApp real, o lead nasceu `is_simulated = false`, passou
+		// pelo filtro da consulta e a campainha acusou "lead parado" que era teste
+		// de casa — a atendente recebeu, a cliente viu e perguntou por quê.
+		const id = await leadParadoHa(50, "proposta_enviada", "Teste do dono", "556292496793");
+		expect((await computeLeadsParados(24)).find((p) => p.leadId === id)).toBeUndefined();
+	});
+
+	it("o mesmo aparelho no formato SEM o nono dígito também sai", async () => {
+		// A Meta devolve wa_id brasileiro no formato legado (sem o nono dígito) e o
+		// web grava com ele: comparar string deixaria o mesmo celular entrar por
+		// uma das portas.
+		const id = await leadParadoHa(50, "proposta_enviada", "Teste sem nono", "62992496793");
+		expect((await computeLeadsParados(24)).find((p) => p.leadId === id)).toBeUndefined();
+	});
+
+	it("e o CLIENTE real, na MESMA chamada, continua entrando — o alarme não zera", async () => {
+		const teste = await leadParadoHa(50, "proposta_enviada", "Teste do dono", "556292496793");
+		const cliente = await leadParadoHa(60, "proposta_enviada", "Cliente real", "11988887777");
+		const parados = await computeLeadsParados(24);
+
+		expect(parados.find((p) => p.leadId === teste)).toBeUndefined();
+		expect(parados.find((p) => p.leadId === cliente)).toBeTruthy();
+	});
+
+	it("lead SIMULADO continua fora — a guarda antiga segue valendo", async () => {
+		const id = await leadParadoHa(50, "proposta_enviada", "Simulado", "11988887777", true);
+		expect((await computeLeadsParados(24)).find((p) => p.leadId === id)).toBeUndefined();
 	});
 });

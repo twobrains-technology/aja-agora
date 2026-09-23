@@ -82,8 +82,8 @@ export function ResumoCampanhas({ totais }: { totais: TotaisDeCampanhas }) {
 						<p className="text-sm font-medium text-muted-foreground">Leads no CRM</p>
 						<p className="text-4xl font-semibold tabular-nums">{inteiro(totais.leadsCrm)}</p>
 						<p className="mt-1 text-xs text-muted-foreground">
-							Conversas em que o cliente informou nome e telefone ou e-mail — o número que o Aja
-							Agora produziu. O telefone que o WhatsApp entrega sozinho não conta aqui.
+							Conversas em que o cliente se identificou: no WhatsApp, quem entrou (o canal já traz o
+							número e o perfil); na web, quem deixou contato. É o número que o Aja Agora produziu.
 						</p>
 						<p className="mt-1 text-xs text-muted-foreground" title="Inclui o telefone do WhatsApp">
 							Com telefone ou e-mail conhecido (a régua consegue falar):{" "}

@@ -37,7 +37,6 @@ import {
 	contagensDoFunil,
 	conversaAtribuida,
 	conversaIdentificada,
-	leadIdentificado,
 	VISITA_CONTAVEL,
 	VISITA_DE_GENTE,
 } from "./sinais-do-funil";
@@ -131,15 +130,13 @@ export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<E
       (SELECT count(DISTINCT c.id) FROM conversations c
         WHERE ${atribuida} AND ${soPrePreenchida}) AS so_pre_preenchida,
 
-      -- Conta CONVERSAS com lead identificado, não leads: uma conversa com dois
-      -- leads (dedup imperfeito) contaria duas vezes e passaria do total. O
-      -- predicado (nome E contato) mora em sinais-do-funil — o telefone que o
-      -- WhatsApp entrega sozinho não identifica ninguém.
+      -- Conta CONVERSAS identificadas, não leads: uma conversa com dois leads
+      -- (dedup imperfeito) contaria duas vezes e passaria do total. O predicado
+      -- (nome E contato) mora em sinais-do-funil e lê as DUAS casas do nome —
+      -- leads.name e conversations.contactName —, então o EXISTS substitui o JOIN
+      -- que descartava a conversa sem linha em leads.
       (SELECT count(DISTINCT c.id) FROM conversations c
-        JOIN leads l ON l.conversation_id = c.id
-          AND l.is_simulated = false
-          AND ${leadIdentificado(sql`l`)}
-        WHERE ${atribuida}) AS identificados,
+        WHERE ${atribuida} AND ${conversaIdentificada(sql`c`)}) AS identificados,
 
       (SELECT count(DISTINCT c.id) FROM conversations c
         JOIN messages m ON m.conversation_id = c.id
@@ -495,10 +492,8 @@ export async function computeSerie(fromDate: Date, toDate: Date): Promise<PontoS
     l AS (
       SELECT ${diaLocal(sql`c.created_at`)} AS dia, count(DISTINCT c.id) AS total
       FROM conversations c
-      JOIN leads l ON l.conversation_id = c.id
-        AND l.is_simulated = false
-        AND ${leadIdentificado(sql`l`)}
       WHERE c.is_simulated = false AND c.visit_id IS NOT NULL
+        AND ${conversaIdentificada(sql`c`)}
         AND c.created_at BETWEEN ${fromDate} AND ${toDate} GROUP BY 1
     )
     SELECT

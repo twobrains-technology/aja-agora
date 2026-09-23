@@ -170,7 +170,7 @@ export function TabelaCampanhas({ linhas }: { linhas: LinhaCampanha[] }) {
 									<TableHead className="text-right">Custo / qualificado</TableHead>
 									<TableHead
 										className="text-right"
-										title="Conversas em que o cliente informou nome e telefone ou e-mail — o telefone que o WhatsApp entrega sozinho não conta"
+										title="Conversas em que o cliente se identificou: no WhatsApp, quem entrou (o canal entrega o número e o perfil); na web, quem deixou contato"
 									>
 										Leads no CRM
 									</TableHead>

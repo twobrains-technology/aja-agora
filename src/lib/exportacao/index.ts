@@ -8,12 +8,14 @@
 
 import { contarConversas, exportarConversas } from "./conversas";
 import type { LinhaExportada } from "./formato";
+import { contarCandidatosDeLimpeza, exportarCandidatosDeLimpeza } from "./limpeza";
 import { contarPercurso, exportarPercurso } from "./percurso";
 import type { TipoExportacao } from "./tipos";
 import { contarToques, exportarToquesDaRegua } from "./toques";
 
 export { contarConversas, exportarConversas } from "./conversas";
 export * from "./formato";
+export { contarCandidatosDeLimpeza, exportarCandidatosDeLimpeza } from "./limpeza";
 export * from "./mascarar";
 export { contarPercurso, exportarPercurso } from "./percurso";
 export * from "./textos";
@@ -39,6 +41,8 @@ export async function exportar(
 			return exportarPercurso(opcoes);
 		case "toques":
 			return exportarToquesDaRegua(opcoes);
+		case "limpeza":
+			return exportarCandidatosDeLimpeza(opcoes);
 	}
 }
 
@@ -51,5 +55,7 @@ export async function contar(tipo: TipoExportacao, opcoes: OpcoesDeExportacao): 
 			return (await contarPercurso(opcoes)).pessoas;
 		case "toques":
 			return (await contarToques(opcoes)).toques;
+		case "limpeza":
+			return (await contarCandidatosDeLimpeza(opcoes)).candidatos;
 	}
 }

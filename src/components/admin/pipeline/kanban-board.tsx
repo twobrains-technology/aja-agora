@@ -20,6 +20,7 @@ export function KanbanBoard({
 	filterFn,
 	periodo,
 	testes,
+	identificavel,
 }: {
 	filterFn?: (lead: Lead) => boolean;
 	/** O período em vigor, como DIAS do negócio (`YYYY-MM-DD`). Vai na chamada da
@@ -30,6 +31,10 @@ export function KanbanBoard({
 	/** Traz o lead SIMULADO de volta ao quadro. Desligado por padrão na rota
 	 *  (AJA-23 T4); o opt-in é o checkbox "Mostrar testes" do filtro. */
 	testes?: boolean;
+	/** O filtro "identificável" (AJA-23 T2), resolvido no SERVIDOR com o mesmo
+	 *  predicado do funil (`conversaIdentificada`) — o cliente só carrega o estado
+	 *  na URL. */
+	identificavel?: boolean;
 }) {
 	const [columns, setColumns] = useState<Columns>(() => {
 		const init: Columns = {};
@@ -66,6 +71,7 @@ export function KanbanBoard({
 			if (periodo?.de) params.set("from", periodo.de);
 			if (periodo?.ate) params.set("to", periodo.ate);
 			if (testes) params.set("include_simulated", "true");
+			if (identificavel) params.set("identificavel", "true");
 			const busca = params.toString();
 			const res = await fetch(`/api/admin/leads${busca ? `?${busca}` : ""}`);
 			if (!res.ok) return;
@@ -75,7 +81,7 @@ export function KanbanBoard({
 		} catch {
 			// Silently fail on poll errors
 		}
-	}, [periodo?.de, periodo?.ate, testes]);
+	}, [periodo?.de, periodo?.ate, testes, identificavel]);
 
 	// Initial fetch — e re-fetch quando o período muda: sem isso, trocar a janela
 	// no filtro só apareceria no próximo poll (30 s), e o quadro ficaria dizendo

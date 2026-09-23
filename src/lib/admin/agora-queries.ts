@@ -68,11 +68,14 @@ export async function computePulso(): Promise<PulsoAgora> {
       -- "Se identificou" (leadIdentificado, fonte única em sinais-do-funil.ts).
       -- Só telefone não bastava: toda conversa de WhatsApp nasce com o telefone do
       -- waId, então este card contava o canal como se o cliente tivesse se
-      -- identificado — e dizia número diferente da tela de Performance.
-      (SELECT count(*) FROM leads
-        WHERE is_simulated = false
-          AND ${leadIdentificado(sql`leads`)}
-          AND created_at >= ${INICIO_DE_HOJE}) AS leads_hoje,
+      -- identificado — e dizia número diferente da tela de Performance. O nome
+      -- pode estar na CONVERSA (conversations.contactName), então a conversa
+      -- entra no FROM: sem ela, quem deixou o nome pelo WhatsApp ficava fora.
+      (SELECT count(*) FROM leads l
+        JOIN conversations c ON c.id = l.conversation_id
+        WHERE l.is_simulated = false
+          AND ${leadIdentificado(sql`l`, sql`c`)}
+          AND l.created_at >= ${INICIO_DE_HOJE}) AS leads_hoje,
 
       -- count(DISTINCT lead_id), não count(*): a transição aceita regressão, então
       -- um contrato que voltou e foi readiantado no mesmo dia contava duas vezes
