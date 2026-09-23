@@ -246,8 +246,12 @@ export async function GET(req: NextRequest) {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * O LOTE — o teto de 200 é o mesmo da paginação (`LIMITE_MAXIMO`): uma seleção
- * maior que a página visível é engano de interface, não intenção de operação.
+ * O LOTE — o teto de 200 é arbitrado AQUI, não herdado da paginação.
+ *
+ * A leitura desta rota corta em `MAX_LIMIT = 100` e a tela pagina de 10 em 10,
+ * então nenhuma página visível chega perto de 200: o teto é folga para o corpo,
+ * e existe para que um array gigante seja RECUSADO (não aplicado pela metade).
+ * (`LIMITE_MAXIMO = 200` é de percurso/remarketing, não desta rota.)
  */
 const loteSchema = z.object({
 	ids: z.array(z.string().regex(UUID_RE)).min(1).max(200),

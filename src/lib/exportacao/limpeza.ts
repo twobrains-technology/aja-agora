@@ -34,14 +34,19 @@ export interface OpcoesDeLimpeza {
  * devia vir mascarado, ou um telefone cortado como se fosse primeiro nome.
  */
 function mascararContato(contato: string, mascarar: boolean): string {
-	if (!mascarar) return contato;
-	const digitos = contato.replace(/\D/g, "");
+	// Célula vazia é erro na saída (`conferirSemVazio`), não linha em branco: se o
+	// contato vier em branco de qualquer fonte, ele sai NOMEADO como "sem contato"
+	// — o mesmo texto que `listarCandidatosDeLimpeza` usa — em vez de derrubar o
+	// download inteiro.
+	const limpo = contato.trim() || "sem contato";
+	if (!mascarar) return limpo;
+	const digitos = limpo.replace(/\D/g, "");
 	const pareceTelefone =
-		digitos.length >= 10 && digitos.length === contato.replace(/[\s()+-]/g, "").length;
+		digitos.length >= 10 && digitos.length === limpo.replace(/[\s()+-]/g, "").length;
 	if (pareceTelefone) {
-		return mascararTelefone(contato) ?? contato;
+		return mascararTelefone(limpo) ?? limpo;
 	}
-	return mascararNome(contato) ?? contato;
+	return mascararNome(limpo) ?? limpo;
 }
 
 export async function exportarCandidatosDeLimpeza(

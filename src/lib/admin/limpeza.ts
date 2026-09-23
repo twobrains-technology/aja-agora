@@ -27,15 +27,18 @@
  * A ordem de precedência importa: uma conversa pode ter mais de um sinal, e o
  * relatório precisa de UM motivo por linha para ser acionável. `teste` vem
  * primeiro porque é o mais forte (já é decisão tomada); `telefone_da_equipe`
- * depois, que é quase-certeza (é o número de quem atende); `sem_contato` por
- * último, que é o mais fraco (não alcançável ≠ não cliente).
+ * depois, que é quase-certeza (é o número de quem atende); `sem_contato` em
+ * seguida, que é "chegou à mesa e não dá para recontactar"; e `mesa_sem_origem`
+ * por último, porque "sem campanha" é indício, não prova — cliente que chegou
+ * por indicação ou busca também não tem campanha.
  */
-export type MotivoDeLimpeza = "teste" | "telefone_da_equipe" | "sem_contato";
+export type MotivoDeLimpeza = "teste" | "telefone_da_equipe" | "sem_contato" | "mesa_sem_origem";
 
 export const ROTULO_DO_MOTIVO_DE_LIMPEZA: Record<MotivoDeLimpeza, string> = {
 	teste: "já marcada como teste",
 	telefone_da_equipe: "telefone da equipe",
 	sem_contato: "na mesa e sem contato",
+	mesa_sem_origem: "na mesa sem origem de campanha",
 };
 
 /** Em que ordem os sinais são avaliados — o primeiro que casa é o motivo. */
@@ -43,31 +46,8 @@ export const ORDEM_DOS_MOTIVOS_DE_LIMPEZA: readonly MotivoDeLimpeza[] = [
 	"teste",
 	"telefone_da_equipe",
 	"sem_contato",
+	"mesa_sem_origem",
 ];
-
-/**
- * A pessoa se identificou? — a MESMA regra do predicado SQL `leadIdentificado`
- * (`src/lib/admin/sinais-do-funil.ts`), em JavaScript.
- *
- * **Por que existe uma segunda versão.** O filtro "identificável" nasceu na
- * lista de Conversas (onde o recorte é SQL, e a fonte é o predicado de lá) e o
- * Pipeline filtra no CLIENTE — o card já chegou montado, e um `filterFn` não
- * pode chamar SQL. As duas leem os MESMOS três campos com o MESMO `IS NOT NULL`
- * do banco (não `!== ""`: o SQL não distingue string vazia, e divergir aqui
- * faria a mesma conversa aparecer numa tela e sumir na outra).
- *
- * Se o predicado do funil mudar (a outra frente está avaliando incluir
- * `conversations.contactName` quando não há linha em `leads`), esta função tem
- * que mudar junto — é o preço de o cliente não poder ler SQL, e está registrado
- * como pendência na válvula.
- */
-export function estaIdentificado(pessoa: {
-	name: string | null;
-	phone: string | null;
-	email: string | null;
-}): boolean {
-	return pessoa.name !== null && (pessoa.phone !== null || pessoa.email !== null);
-}
 
 /** Os fatos que decidem o sinal — todos já lidos da conversa/lead. */
 export interface FatosParaLimpeza {
@@ -77,6 +57,8 @@ export interface FatosParaLimpeza {
 	telefoneDaEquipe: boolean;
 	/** Chegou à mesa (handoff) e não há contato para recontactar. */
 	naMesaSemContato: boolean;
+	/** Chegou à mesa (handoff) e a conversa NÃO tem campanha que a explique. */
+	naMesaSemOrigemDeCampanha: boolean;
 }
 
 /**
@@ -89,5 +71,6 @@ export function motivoDeLimpeza(fatos: FatosParaLimpeza): MotivoDeLimpeza | null
 	if (fatos.jaMarcadaComoTeste) return "teste";
 	if (fatos.telefoneDaEquipe) return "telefone_da_equipe";
 	if (fatos.naMesaSemContato) return "sem_contato";
+	if (fatos.naMesaSemOrigemDeCampanha) return "mesa_sem_origem";
 	return null;
 }

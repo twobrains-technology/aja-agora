@@ -8,7 +8,7 @@
 
 import { and, eq, gte, inArray, lte } from "drizzle-orm";
 import { db } from "@/db";
-import { conversations, leads, remarketingTouches } from "@/db/schema";
+import { conversations, leads, remarketingTouches, visits } from "@/db/schema";
 import { MOTIVO_SAIDA_TESTE } from "@/lib/remarketing/motivo-de-exclusao";
 import { motivoDeLimpeza } from "./limpeza";
 import { telefonesDaEquipe } from "./regua-por-conversa";
@@ -106,8 +106,9 @@ export interface CandidatoDeLimpeza {
  * OS CANDIDATOS — quem tem sinal objetivo de não ser cliente real.
  *
  * Não tenta achar "cliente oculto" (conhecido da Bruna que caiu na mesa): isso
- * não vive em coluna nenhuma. Traz os três sinais que EXISTEM — já marcada como
- * teste, telefone da equipe e "na mesa sem contato" — e deixa a decisão aberta.
+ * não vive em coluna nenhuma. Traz os QUATRO sinais que EXISTEM — já marcada
+ * como teste, telefone da equipe, "na mesa sem contato" e "na mesa sem origem de
+ * campanha" — e deixa a decisão aberta.
  *
  * **Por que "na mesa sem contato" exige a mesa.** Web sem contato é ruído em
  * massa (a maioria dos abandonos da landing não deixa telefone). O que o dono
@@ -115,6 +116,18 @@ export interface CandidatoDeLimpeza {
  * eles já não entram nessa seara nossa aqui de recontactar"* — é o caso que
  * CHEGOU a alguém e não tem como ser retomado. Por isso o sinal exige
  * `handed_off_user_id`, e nasce do cruzamento com a mesa.
+ *
+ * **Por que "na mesa sem origem de campanha" também existe.** É o recorte que o
+ * PRD (AJA-23 T1(c)) pede para achar o caso que nenhum outro sinal pega: gente
+ * REAL (não simulada), COM contato, que caiu na mesa e nenhuma campanha
+ * explica. Sem ele, um lead assim não casa em motivo nenhum e some do relatório.
+ *
+ * **Uma linha por conversa, garantida em memória e não no SQL.** `leads` não tem
+ * índice único em `conversation_id` (o próprio código trata N leads por
+ * conversa), então o `LEFT JOIN` devolve N linhas para a mesma conversa. O
+ * agrupamento aqui dobra os fatos ("algum lead tem telefone?") antes de calcular
+ * o motivo — contar LINHA faria o cartão da tela e o CSV contarem a mesma
+ * conversa duas vezes, contra o contrato do recorte ("uma linha por conversa").
  */
 export async function listarCandidatosDeLimpeza(opcoes: {
 	de: Date;
@@ -133,35 +146,103 @@ export async function listarCandidatosDeLimpeza(opcoes: {
 			leadName: leads.name,
 			leadPhone: leads.phone,
 			leadEmail: leads.email,
+			// A origem da campanha vive na VISITA da conversa: o id da campanha da
+			// Meta, a UTM ou o id do anúncio CTWA. Qualquer um dos três explica a
+			// chegada — e nenhum deles é "sem origem".
+			campaignId: visits.campaignId,
+			utmCampaign: visits.utmCampaign,
+			ctwaSourceId: visits.ctwaSourceId,
 		})
 		.from(conversations)
 		.leftJoin(leads, eq(leads.conversationId, conversations.id))
+		.leftJoin(visits, eq(visits.id, conversations.visitId))
 		.where(and(gte(conversations.createdAt, opcoes.de), lte(conversations.createdAt, opcoes.ate)));
+
+	/**
+	 * O `""` do banco é AUSÊNCIA, não valor — e o SQL desta casa não distingue os
+	 * dois. Sem normalizar aqui, um `contact_name` em branco venceria o `??` da
+	 * cadeia de contato e a linha sairia com célula vazia; a exportação lança em
+	 * célula vazia (`conferirSemVazio`), então o CSV inteiro deixaria de baixar
+	 * enquanto o cartão da tela continuava contando as linhas.
+	 */
+	function texto(valor: string | null): string | null {
+		if (valor === null) return null;
+		const t = valor.trim();
+		return t ? t : null;
+	}
 
 	const ehEquipe = await telefonesDaEquipe();
 
-	const candidatos: CandidatoDeLimpeza[] = [];
+	// O dobramento por conversa: uma linha por `id`, com os fatos somados.
+	interface Acumulado {
+		contactName: string | null;
+		waId: string | null;
+		channel: string;
+		isSimulated: boolean;
+		contactId: string | null;
+		handedOffUserId: string | null;
+		updatedAt: Date;
+		nomeDoLead: string | null;
+		telefoneDoLead: string | null;
+		temContatoNoLead: boolean;
+		temOrigemDeCampanha: boolean;
+	}
+
+	const porConversa = new Map<string, Acumulado>();
 	for (const linha of linhas) {
-		const telefone = linha.leadPhone ?? linha.waId ?? null;
+		const temOrigem =
+			linha.campaignId !== null || linha.utmCampaign !== null || linha.ctwaSourceId !== null;
+		const atual = porConversa.get(linha.id);
+		// `""` vira `null` antes de qualquer decisão — ver `texto`.
+		const contactName = texto(linha.contactName);
+		const waId = texto(linha.waId);
+		const nomeDoLead = texto(linha.leadName);
+		const telefoneDoLead = texto(linha.leadPhone);
+		const temContatoNoLead = telefoneDoLead !== null || texto(linha.leadEmail) !== null;
+		if (!atual) {
+			porConversa.set(linha.id, {
+				contactName,
+				waId,
+				channel: linha.channel,
+				isSimulated: linha.isSimulated,
+				contactId: linha.contactId,
+				handedOffUserId: linha.handedOffUserId,
+				updatedAt: linha.updatedAt,
+				nomeDoLead,
+				telefoneDoLead,
+				temContatoNoLead,
+				temOrigemDeCampanha: temOrigem,
+			});
+			continue;
+		}
+		// N leads por conversa: qualquer lead serve, e qualquer origem explica.
+		atual.nomeDoLead ??= nomeDoLead;
+		atual.telefoneDoLead ??= telefoneDoLead;
+		atual.temContatoNoLead = atual.temContatoNoLead || temContatoNoLead;
+		atual.temOrigemDeCampanha = atual.temOrigemDeCampanha || temOrigem;
+	}
+
+	const candidatos: CandidatoDeLimpeza[] = [];
+	for (const [id, linha] of porConversa) {
+		const telefone = linha.telefoneDoLead ?? linha.waId ?? null;
 		const semContato =
-			linha.handedOffUserId !== null &&
-			linha.contactId === null &&
-			linha.leadPhone === null &&
-			linha.leadEmail === null;
+			linha.handedOffUserId !== null && linha.contactId === null && !linha.temContatoNoLead;
+		const semOrigemDeCampanha = linha.handedOffUserId !== null && !linha.temOrigemDeCampanha;
 
 		const motivo = motivoDeLimpeza({
 			jaMarcadaComoTeste: linha.isSimulated,
 			telefoneDaEquipe: telefone !== null && ehEquipe(telefone),
 			naMesaSemContato: semContato,
+			naMesaSemOrigemDeCampanha: semOrigemDeCampanha,
 		});
 
 		if (motivo === null) continue;
 
 		const contato =
-			linha.contactName ?? linha.leadName ?? linha.leadPhone ?? linha.waId ?? "sem contato";
+			linha.contactName ?? linha.nomeDoLead ?? linha.telefoneDoLead ?? linha.waId ?? "sem contato";
 
 		candidatos.push({
-			conversationId: linha.id,
+			conversationId: id,
 			contato,
 			motivo,
 			canal: linha.channel,

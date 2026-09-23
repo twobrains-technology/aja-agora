@@ -24,7 +24,12 @@ export function PipelineContent() {
 	return (
 		<>
 			<PipelineFilters filters={filters} />
-			<KanbanBoard filterFn={filters.filterFn} periodo={periodo} testes={filters.mostrarTestes} />
+			<KanbanBoard
+				filterFn={filters.filterFn}
+				periodo={periodo}
+				testes={filters.mostrarTestes}
+				identificavel={filters.identificavel}
+			/>
 		</>
 	);
 }

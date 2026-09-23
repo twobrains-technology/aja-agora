@@ -6,8 +6,9 @@
 //   1. **A lista vazia.** Um `IN ()` mal guardado casaria tudo e marcaria a base
 //      inteira como teste num clique — a operação é destrutiva de métrica, e
 //      "selecionei nada e apertei o botão" não pode significar "marque tudo".
-//   2. **O teto.** A seleção vem da página (50), mas o corpo aceita até 200; um
-//      array gigante tem que ser recusado, não parcialmente aplicado.
+//   2. **O teto.** A tela pagina de 10 em 10 e a leitura corta em 100, mas o
+//      corpo aceita até 200; um array gigante tem que ser recusado, não
+//      parcialmente aplicado.
 //   3. **A reversibilidade em lote.** Desmarcar N de uma vez tem que voltar com
 //      os leads junto — o mesmo contrato do individual, agora com N > 1.
 //   4. **O motivo certo em cada linha do relatório.** É a parte que o dono lê

@@ -16,7 +16,6 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { estaIdentificado } from "@/lib/admin/limpeza";
 import { diaDeHoje } from "@/lib/admin/periodo";
 import { parseAsDiaDoNegocio } from "@/lib/admin/periodo-querystring";
 import type { Lead } from "./lead-card";
@@ -53,11 +52,11 @@ export function useLeadFilters() {
 		"testes",
 		parseAsBoolean.withDefault(false),
 	);
-	// O filtro "identificável" (AJA-23 T2) — o mesmo das Conversas. Aqui ele roda
-	// no CLIENTE sobre os cards já carregados (o card traz nome/telefone/e-mail do
-	// lead), com a MESMA regra do predicado SQL: `estaIdentificado`, em
-	// `src/lib/admin/limpeza.ts`. É o único dos filtros desta barra que não pode
-	// ser do servidor sem mexer na rota de leads — ver a válvula.
+	// O filtro "identificável" (AJA-23 T2) — o mesmo das Conversas, e agora também
+	// do SERVIDOR: a rota de leads recebe `?identificavel=true` e aplica o predicado
+	// único do funil (`conversaIdentificada`). Antes ele rodava no cliente com uma
+	// reimplementação em JS que nem checava `is_simulated` — o mesmo lead aparecia
+	// numa tela e sumia na outra. Só o ESTADO da URL mora aqui.
 	const [identificavel, setIdentificavel] = useQueryState(
 		"identificavel",
 		parseAsBoolean.withDefault(false),
@@ -114,11 +113,10 @@ export function useLeadFilters() {
 				return false;
 			}
 
-			// Identificável: só quem tem contato INFORMADO pelo cliente. O card é do
-			// LEAD (não da conversa), e é ele que tem os três campos.
-			if (identificavel && !estaIdentificado(lead)) {
-				return false;
-			}
+			// O filtro "identificável" NÃO fica mais aqui: é do servidor
+			// (`?identificavel=true` na rota de leads), com o predicado único do
+			// funil. Manter a cópia no cliente fazia o quadro e a lista de Conversas
+			// medirem populações diferentes com o mesmo rótulo.
 
 			// O recorte por DATA não fica mais aqui: ele é do servidor (a rota de
 			// leads recebe `from`/`to` e aplica `inicioDoDia`/`fimDoDia` sobre
@@ -127,7 +125,7 @@ export function useLeadFilters() {
 			// recorte de um lado podia divergir do outro em silêncio.
 			return true;
 		},
-		[channel, search, campanhas, identificavel],
+		[channel, search, campanhas],
 	);
 	return {
 		channel: channel as ChannelFilter,

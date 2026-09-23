@@ -69,9 +69,9 @@ export interface LinhaFunilCampanha {
 	visitas: number;
 	conversas: number;
 	/**
-	 * Conversas em que o CLIENTE se identificou — nome E telefone ou e-mail
-	 * (`conversaIdentificada`, em `sinais-do-funil.ts`). Não conta o telefone que
-	 * o WhatsApp entrega sozinho.
+	 * Conversas em que o cliente se identificou — a regra é do CANAL
+	 * (`conversaIdentificada`, em `sinais-do-funil.ts`): no WhatsApp, quem entrou
+	 * (o canal entrega número e perfil); na web, quem deixou contato.
 	 */
 	identificados: number;
 	/**

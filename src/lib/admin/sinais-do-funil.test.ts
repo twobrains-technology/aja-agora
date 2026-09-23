@@ -20,7 +20,6 @@ import {
 	conversaAtribuida,
 	conversaIdentificada,
 	conversaSemOrigem,
-	leadComContato,
 	leadIdentificado,
 } from "./sinais-do-funil";
 
@@ -65,58 +64,65 @@ describe("conversaSemOrigem", () => {
 });
 
 /**
- * O degrau "Se identificaram": nome E contato, nunca só o contato.
+ * O degrau "Se identificaram": a regra é do CANAL, não do preenchimento.
  *
- * A prova contra o banco é de integração; aqui o que se prova é que ESTE
- * fragmento carrega as duas condições — se alguém apagar o `name IS NOT NULL`
- * para "simplificar", o teste cai antes de o número inflar em produção.
+ * Decisão do dono (23/09/2026): *"whatsapp entrou já pode considerar que se
+ * identificou, já na web, você tem que considerar quando conseguirmos coletar"*.
+ * Aqui o que se prova é que ESTE fragmento carrega a regra — se alguém voltar a
+ * exigir nome, ou tirar o `wa_id`, o teste cai antes de o número mentir em
+ * produção. A prova contra dado real é de integração.
  */
 describe("leadIdentificado", () => {
 	const t = texto(leadIdentificado());
 
-	it("exige nome — do lead ou da própria conversa", () => {
-		expect(t).toContain("l.name IS NOT NULL");
-		expect(t).toContain("c.contact_name IS NOT NULL");
+	it("identifica pela CONVERSA de WhatsApp", () => {
+		expect(t).toContain("c.wa_id IS NOT NULL");
 	});
 
-	it("e exige contato — telefone/e-mail do lead ou o waId da conversa", () => {
+	it("na web, identifica pelo contato que o cliente informou", () => {
 		expect(t).toContain("l.phone IS NOT NULL");
 		expect(t).toContain("l.email IS NOT NULL");
-		expect(t).toContain("c.wa_id IS NOT NULL");
+	});
+
+	it("NÃO exige nome — no WhatsApp ele é o pushName do canal, não do cliente", () => {
+		expect(t).not.toContain("l.name");
+		expect(t).not.toContain("contact_name");
 	});
 
 	it("aceita os dois aliases por parâmetro", () => {
 		const outro = texto(leadIdentificado(sql`li`, sql`conv`));
-		expect(outro).toContain("li.name IS NOT NULL");
-		expect(outro).toContain("conv.contact_name IS NOT NULL");
+		expect(outro).toContain("conv.wa_id IS NOT NULL");
+		expect(outro).toContain("li.phone IS NOT NULL");
 	});
 
-	it("NÃO é o mesmo que leadComContato, que dispensa o nome", () => {
-		const comContato = texto(leadComContato());
-		expect(comContato).not.toContain("name");
-		expect(comContato).toContain("l.phone IS NOT NULL");
+	it("usa OR entre canal e contato — as duas portas valem", () => {
+		expect(t).toMatch(/c\.wa_id IS NOT NULL OR \(l\.phone IS NOT NULL OR l\.email IS NOT NULL\)/);
 	});
 });
 
 describe("conversaIdentificada", () => {
 	const t = texto(conversaIdentificada());
 
-	it("filtra simulado e usa o predicado inteiro", () => {
+	it("identifica pela conversa de WhatsApp", () => {
+		expect(t).toContain("c.wa_id IS NOT NULL");
+	});
+
+	it("e, na web, pelo lead com contato coletado (não simulado)", () => {
 		expect(t).toContain("li.is_simulated = false");
-		expect(t).toContain("li.name IS NOT NULL");
+		expect(t).toContain("li.phone IS NOT NULL");
+		expect(t).toContain("li.email IS NOT NULL");
 		expect(t).toContain("c.id");
 	});
 
 	/**
-	 * O caso que o predicado antigo perdia: a conversa cujo nome chegou pelo
-	 * CANAL e ficou só em `conversations.contactName`, sem `leads.name`. Medido no
-	 * banco de produção em 23/09/2026 — as dez conversas de WhatsApp da janela
-	 * 01–21/09 que deixaram nome caíam exatamente aqui. Se o `EXISTS` voltar a ser
-	 * a única porta do nome, este teste cai.
+	 * O que o predicado NÃO faz mais: exigir nome. Era o que fazia "Se
+	 * identificaram" empatar com "Conversas" e ao mesmo tempo subcontar quem só
+	 * tinha o nome na conversa — oito conversas da janela 01–21/09 medidas em
+	 * produção.
 	 */
-	it("aceita nome e contato da PRÓPRIA conversa, sem depender de `leads`", () => {
-		expect(t).toContain("c.contact_name IS NOT NULL");
-		expect(t).toContain("c.wa_id IS NOT NULL");
+	it("não exige nome em nenhuma das casas", () => {
+		expect(t).not.toContain("contact_name");
+		expect(t).not.toContain("li.name");
 	});
 });
 
@@ -133,11 +139,12 @@ describe("contagensDoFunil", () => {
 		expect(t).toContain("AS com_contato");
 	});
 
-	it("identificados usa o predicado com nome; com_contato usa o antigo", () => {
+	it("identificados usa o predicado do canal; com_contato usa o do lead", () => {
 		const identificados = t.slice(
 			t.indexOf("count(DISTINCT c.id) FILTER"),
 			t.indexOf("AS identificados"),
 		);
-		expect(identificados).toContain("name IS NOT NULL");
+		expect(identificados).toContain("wa_id IS NOT NULL");
+		expect(t).toContain("com_contato");
 	});
 });

@@ -148,56 +148,52 @@ export function conversaSemOrigem(de: Date, ate: Date, conversa: SQL = sql`c`): 
 }
 
 /**
- * O NOME DO CLIENTE — onde ele estiver: no lead OU na própria conversa.
+ * A CONVERSA VEIO PELO WHATSAPP.
  *
- * São DUAS as casas do nome, e as duas recebem do mesmo ponto de escrita
- * (`src/lib/contacts/sincronizar-nome.ts`): `leads.name` e
- * `conversations.contactName`. Ler só a primeira parecia bastar, e não bastava —
- * medido no banco de produção em 23/09/2026, as conversas de WhatsApp que
- * deixaram nome tinham o nome em `conversations.contactName` e o `leads.name`
- * nulo (a mesa grava o nome do handoff só na conversa,
- * `src/lib/whatsapp/proxy.ts`), então o degrau "Se identificaram" deixava de
- * contar justamente quem o cliente havia nomeado.
+ * `conversations.waId` é preenchido no nascimento de toda conversa de WhatsApp
+ * (`src/lib/whatsapp/session.ts`): o canal entrega o número — e o nome de perfil
+ * (pushName) — sem o cliente digitar nada.
  *
- * Os dois aliases entram por parâmetro: o funil mede com `c`/`l`, o cartão
- * "Leads hoje" mede com `c`/`l` também, mas a cláusula FROM é outra.
+ * **É a definição de "identificado" no canal, por decisão do dono (23/09/2026):**
+ * *"whatsapp entrou já pode considerar que se identificou, já na web, você tem
+ * que considerar quando conseguirmos coletar"*.
  */
-export function nomeDoCliente(lead: SQL = sql`l`, conversa: SQL = sql`c`): SQL {
-	return sql`(${lead}.name IS NOT NULL OR ${conversa}.contact_name IS NOT NULL)`;
+export function conversaDeWhatsapp(conversa: SQL = sql`c`): SQL {
+	return sql`${conversa}.wa_id IS NOT NULL`;
 }
 
 /**
- * O CONTATO QUE TEMOS — telefone ou e-mail do lead, ou o `waId` da conversa.
+ * O CONTATO QUE O CLIENTE INFORMOU — telefone ou e-mail gravado no LEAD.
  *
- * O `waId` conta porque É o telefone que o canal entregou (normalizado por
- * `waIdToPhone`, `src/lib/whatsapp/session.ts`): a conversa de WhatsApp que
- * ficou sem linha em `leads` continua alcançável pelo número do canal, e sem
- * ele a definição dependeria de um insert (`B-03`) que já falhou alguma vez.
+ * É o que existe na web, onde o canal não entrega nada: o telefone/e-mail do
+ * lead veio do formulário. Na conversa de WhatsApp este contato também existe
+ * (o lead nasce com o telefone do canal), mas lá quem decide é
+ * `conversaDeWhatsapp` — o `wa_id` fala pelo canal, não pelo preenchimento.
  */
-export function contatoDoCliente(lead: SQL = sql`l`, conversa: SQL = sql`c`): SQL {
-	return sql`(${lead}.phone IS NOT NULL OR ${lead}.email IS NOT NULL OR ${conversa}.wa_id IS NOT NULL)`;
+export function contatoInformadoPeloCliente(lead: SQL = sql`l`): SQL {
+	return sql`(${lead}.phone IS NOT NULL OR ${lead}.email IS NOT NULL)`;
 }
 
 /**
- * O LEAD IDENTIFICADO PELO CLIENTE — tem NOME **e** tem contato.
+ * O LEAD IDENTIFICADO — a regra é do CANAL, não do preenchimento.
  *
- * **Por que o telefone sozinho não basta.** Toda conversa de WhatsApp nasce com
- * o telefone do `waId` já no lead (`src/lib/whatsapp/session.ts`), porque o
- * canal entrega o número sem o cliente ter informado nada. Contando "telefone
- * OU e-mail", o degrau "Se identificaram" media o CANAL, não o cliente: quem
- * chegou pelo WhatsApp entrava como identificado tendo escrito só "oi".
+ * Decisão do dono (23/09/2026): conversa de WhatsApp → identificado (o canal já
+ * entregou número e perfil); conversa de web → identificado quando conseguimos
+ * COLETAR o contato (telefone ou e-mail no lead).
  *
- * Foi a pergunta literal da cliente em 22/09/2026 — *"se vieram do WhatsApp, eu
- * já tenho o telefone… aqui ele vai entender que já se identificou"* — e a
- * decisão do dono foi exigir o NOME junto: identificado = nome E (telefone ou
- * e-mail). O nome chega pelo pushName do WhatsApp e pela extração do gate de
- * crédito; este fragmento é para quem conta LINHA de lead (o cartão "Leads
- * hoje"), e o degrau do funil conta CONVERSA — ver `conversaIdentificada`.
+ * **O que esta regra NÃO faz: deduzir identificação pelo nome.** No WhatsApp o
+ * nome da conversa é o pushName do canal, que chega na PRIMEIRA mensagem —
+ * exigi-lo não mediria nada do cliente, mediria o canal. Foi por isso que a
+ * versão anterior (nome E contato) fazia "Se identificaram" empatar com
+ * "Conversas" e ainda assim subcontava quem só tinha o nome na conversa.
  *
- * Espera as tabelas `leads` e `conversations` com os aliases por parâmetro.
+ * Quem conta LINHA de lead (o cartão "Leads hoje") usa este fragmento; o degrau
+ * do funil conta CONVERSA — ver `conversaIdentificada`.
+ *
+ * Espera as tabelas `leads` e `conversations`, com os aliases por parâmetro.
  */
 export function leadIdentificado(lead: SQL = sql`l`, conversa: SQL = sql`c`): SQL {
-	return sql`(${nomeDoCliente(lead, conversa)} AND ${contatoDoCliente(lead, conversa)})`;
+	return sql`(${conversaDeWhatsapp(conversa)} OR ${contatoInformadoPeloCliente(lead)})`;
 }
 
 /**
@@ -215,35 +211,27 @@ export function leadComContato(lead: SQL = sql`l`): SQL {
 }
 
 /**
- * A CONVERSA cujo cliente se identificou — o `EXISTS` que o funil de mídia, o
- * Percurso, a Exportação e a tela de Campanhas usam no degrau "Se
- * identificaram".
+ * A CONVERSA CUJO CLIENTE SE IDENTIFICOU — o degrau "Se identificaram" do funil
+ * de mídia, do Percurso, da Exportação e da tela de Campanhas.
  *
- * Existe para que os quatro não repitam a lista de condições: um deles
- * esquecendo o `is_simulated = false`, ou o nome, já faria o mesmo degrau medir
- * duas populações em telas diferentes.
+ * **Fonte única dos quatro**, para que o mesmo degrau não meça duas populações
+ * em telas diferentes.
  *
- * NOME e CONTATO são procurados nas DUAS casas (conversa e lead), e cada um
- * pode ser satisfeito por uma delas — é o cliente que se identifica, não a
- * linha. O nome vem de `conversations.contactName` ou de `leads.name`; o
- * contato, do `waId` da conversa ou do telefone/e-mail do lead.
+ * A regra é a do dono (23/09/2026), por CANAL: conversa de WhatsApp (`waId`
+ * presente) conta sempre; conversa de web conta quando conseguimos coletar o
+ * contato (telefone ou e-mail no lead, com `is_simulated = false`).
  *
- * O `EXISTS` (e não um `JOIN`) é o que mantém a conversa da lista mesmo quando
- * ela não tem linha em `leads`.
+ * O `EXISTS` (e não um `JOIN`) é o que mantém a conversa na lista quando ela não
+ * tem linha em `leads` — que é o caso de quase metade das conversas de WhatsApp
+ * medidas em produção.
  */
 export function conversaIdentificada(conversa: SQL = sql`c`): SQL {
 	return sql`(
-    (${conversa}.contact_name IS NOT NULL
-      OR EXISTS (SELECT 1 FROM leads li
-        WHERE li.conversation_id = ${conversa}.id
-          AND li.is_simulated = false
-          AND li.name IS NOT NULL))
-    AND
-    (${conversa}.wa_id IS NOT NULL
-      OR EXISTS (SELECT 1 FROM leads li
-        WHERE li.conversation_id = ${conversa}.id
-          AND li.is_simulated = false
-          AND (li.phone IS NOT NULL OR li.email IS NOT NULL)))
+    ${conversaDeWhatsapp(conversa)}
+    OR EXISTS (SELECT 1 FROM leads li
+      WHERE li.conversation_id = ${conversa}.id
+        AND li.is_simulated = false
+        AND (li.phone IS NOT NULL OR li.email IS NOT NULL))
   )`;
 }
 
@@ -262,13 +250,15 @@ export function conversaIdentificada(conversa: SQL = sql`c`): SQL {
  * `visits v`, `conversations c`, `leads l`, `bevi_proposals bp`. Quem não usa
  * `qualificados` simplesmente ignora a coluna.
  *
- * `identificados` conta CONVERSAS cujo CLIENTE tem nome E contato
- * (`conversaIdentificada`), não leads: a mesma definição do funil de mídia
+ * `identificados` conta CONVERSAS cujo cliente se identificou
+ * (`conversaIdentificada`) — no WhatsApp, quem entrou (o canal entregou número e
+ * perfil); na web, quem deixou contato. É a MESMA definição do funil de mídia
  * (`computeFunilMidia`). Contando leads, uma conversa com dedup imperfeito
  * entrava duas vezes e a coluna "Identificados" divergia da etapa "Se
  * identificaram" do funil, na mesma tela, com o mesmo rótulo. `com_contato` é a
- * coluna vizinha — o número antigo, que mede quem a régua consegue alcançar, não
- * quem se identificou.
+ * coluna vizinha — outro fato, não a mesma coisa: mede quem a régua consegue
+ * ALCANÇAR (telefone/e-mail no lead), e não são ordem um do outro (a conversa de
+ * WhatsApp sem linha em `leads` é identificada e não tem contato no lead).
  */
 export function contagensDoFunil(): SQL {
 	const qualificados = sql.join(
