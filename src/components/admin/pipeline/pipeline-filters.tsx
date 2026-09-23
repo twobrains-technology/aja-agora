@@ -15,7 +15,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { diaDeHoje, fimDoDia, inicioDoDia } from "@/lib/admin/periodo";
+import { diaDeHoje } from "@/lib/admin/periodo";
 import { parseAsDiaDoNegocio } from "@/lib/admin/periodo-querystring";
 import type { Lead } from "./lead-card";
 import { periodoEfetivoDoPipeline } from "./periodo-do-pipeline";
@@ -95,23 +95,14 @@ export function useLeadFilters() {
 				return false;
 			}
 
-			// Recorte por dia do NEGÓCIO. `from`/`to` são DIAS ancorados ao meio-dia
-			// UTC: comparar `createdAt` direto com eles cortaria metade do dia, e o
-			// velho `setHours(23,59,59)` local fechava a janela no dia anterior no
-			// fuso do negócio. Quem vira janela é `inicioDoDia`/`fimDoDia`, o mesmo
-			// par que as rotas usam.
-			if (dateFrom) {
-				const createdAt = new Date(lead.createdAt);
-				if (createdAt < inicioDoDia(dateFrom)) return false;
-			}
-			if (dateTo) {
-				const createdAt = new Date(lead.createdAt);
-				if (createdAt > fimDoDia(dateTo)) return false;
-			}
-
+			// O recorte por DATA não fica mais aqui: ele é do servidor (a rota de
+			// leads recebe `from`/`to` e aplica `inicioDoDia`/`fimDoDia` sobre
+			// `created_at`). Manter a cópia no cliente fazia o quadro afirmar duas
+			// coisas — o chip dizia "30 dias" e a resposta carregava tudo — e o
+			// recorte de um lado podia divergir do outro em silêncio.
 			return true;
 		},
-		[channel, search, dateFrom, dateTo, campanhas],
+		[channel, search, campanhas],
 	);
 
 	return {

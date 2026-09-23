@@ -16,7 +16,17 @@ type Columns = Record<string, Lead[]>;
 
 const POLL_INTERVAL = 30_000;
 
-export function KanbanBoard({ filterFn }: { filterFn?: (lead: Lead) => boolean }) {
+export function KanbanBoard({
+	filterFn,
+	periodo,
+}: {
+	filterFn?: (lead: Lead) => boolean;
+	/** O período em vigor, como DIAS do negócio (`YYYY-MM-DD`). Vai na chamada da
+	 *  rota, que é quem recorta — o cliente não filtra mais por data. `null` em
+	 *  uma ponta deixa o servidor resolver aquela ponta pelo cookie/"desde o
+	 *  início", exatamente como o chip do cabeçalho mostra. */
+	periodo?: { de: string | null; ate: string | null };
+}) {
 	const [columns, setColumns] = useState<Columns>(() => {
 		const init: Columns = {};
 		for (const stage of STAGE_ORDER) {
@@ -48,7 +58,11 @@ export function KanbanBoard({ filterFn }: { filterFn?: (lead: Lead) => boolean }
 
 	const fetchLeads = useCallback(async () => {
 		try {
-			const res = await fetch("/api/admin/leads");
+			const params = new URLSearchParams();
+			if (periodo?.de) params.set("from", periodo.de);
+			if (periodo?.ate) params.set("to", periodo.ate);
+			const busca = params.toString();
+			const res = await fetch(`/api/admin/leads${busca ? `?${busca}` : ""}`);
 			if (!res.ok) return;
 			const data = await res.json();
 			setColumns(data.leads);
@@ -56,9 +70,11 @@ export function KanbanBoard({ filterFn }: { filterFn?: (lead: Lead) => boolean }
 		} catch {
 			// Silently fail on poll errors
 		}
-	}, []);
+	}, [periodo?.de, periodo?.ate]);
 
-	// Initial fetch
+	// Initial fetch — e re-fetch quando o período muda: sem isso, trocar a janela
+	// no filtro só apareceria no próximo poll (30 s), e o quadro ficaria dizendo
+	// uma data com os leads de outra.
 	useEffect(() => {
 		fetchLeads().finally(() => setLoading(false));
 	}, [fetchLeads]);
