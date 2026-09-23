@@ -6,7 +6,7 @@
  * Aqui só há constante e tipo puro.
  */
 
-export const TIPOS_DE_EXPORTACAO = ["conversas", "percurso", "toques"] as const;
+export const TIPOS_DE_EXPORTACAO = ["conversas", "percurso", "toques", "limpeza"] as const;
 export type TipoExportacao = (typeof TIPOS_DE_EXPORTACAO)[number];
 
 export function ehTipoExportacao(valor: string): valor is TipoExportacao {
@@ -40,6 +40,12 @@ export const META_DO_TIPO: Record<TipoExportacao, MetaDoTipo> = {
 		descricao:
 			"Uma linha por entrada na régua de remarketing: passo, status, próximo toque e motivo de saída.",
 		unidade: "entradas",
+	},
+	limpeza: {
+		titulo: "Candidatos à limpeza",
+		descricao:
+			"Uma linha por conversa com sinal de não ser cliente real — já marcada como teste, telefone da equipe ou na mesa sem contato — com o motivo e o `[ ] aplicar` para você aprovar o que sai.",
+		unidade: "candidatos",
 	},
 };
 

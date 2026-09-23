@@ -16,6 +16,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { estaIdentificado } from "@/lib/admin/limpeza";
 import { diaDeHoje } from "@/lib/admin/periodo";
 import { parseAsDiaDoNegocio } from "@/lib/admin/periodo-querystring";
 import type { Lead } from "./lead-card";
@@ -50,6 +51,15 @@ export function useLeadFilters() {
 	// sobreviver ao link compartilhado.
 	const [mostrarTestes, setMostrarTestes] = useQueryState(
 		"testes",
+		parseAsBoolean.withDefault(false),
+	);
+	// O filtro "identificável" (AJA-23 T2) — o mesmo das Conversas. Aqui ele roda
+	// no CLIENTE sobre os cards já carregados (o card traz nome/telefone/e-mail do
+	// lead), com a MESMA regra do predicado SQL: `estaIdentificado`, em
+	// `src/lib/admin/limpeza.ts`. É o único dos filtros desta barra que não pode
+	// ser do servidor sem mexer na rota de leads — ver a válvula.
+	const [identificavel, setIdentificavel] = useQueryState(
+		"identificavel",
 		parseAsBoolean.withDefault(false),
 	);
 	const hoje = useMemo(() => diaDeHoje(), []);
@@ -104,6 +114,12 @@ export function useLeadFilters() {
 				return false;
 			}
 
+			// Identificável: só quem tem contato INFORMADO pelo cliente. O card é do
+			// LEAD (não da conversa), e é ele que tem os três campos.
+			if (identificavel && !estaIdentificado(lead)) {
+				return false;
+			}
+
 			// O recorte por DATA não fica mais aqui: ele é do servidor (a rota de
 			// leads recebe `from`/`to` e aplica `inicioDoDia`/`fimDoDia` sobre
 			// `created_at`). Manter a cópia no cliente fazia o quadro afirmar duas
@@ -111,9 +127,8 @@ export function useLeadFilters() {
 			// recorte de um lado podia divergir do outro em silêncio.
 			return true;
 		},
-		[channel, search, campanhas],
+		[channel, search, campanhas, identificavel],
 	);
-
 	return {
 		channel: channel as ChannelFilter,
 		setChannel,
@@ -127,6 +142,8 @@ export function useLeadFilters() {
 		setCampanhas,
 		mostrarTestes,
 		setMostrarTestes,
+		identificavel,
+		setIdentificavel,
 		filterFn,
 	};
 }
@@ -141,6 +158,8 @@ export function PipelineFilters({ filters }: { filters: ReturnType<typeof useLea
 		setCampanhas,
 		mostrarTestes,
 		setMostrarTestes,
+		identificavel,
+		setIdentificavel,
 	} = filters;
 
 	// Debounced search input
@@ -163,13 +182,14 @@ export function PipelineFilters({ filters }: { filters: ReturnType<typeof useLea
 	// na URL e no cookie. Limpar os filtros da tela não pode apagar a janela
 	// escolhida.
 	const hasActiveFilters =
-		channel !== "all" || search !== "" || campanhas.length > 0 || mostrarTestes;
+		channel !== "all" || search !== "" || campanhas.length > 0 || mostrarTestes || identificavel;
 
 	const clearFilters = () => {
 		setChannel(null);
 		setSearch(null);
 		setCampanhas(null);
 		setMostrarTestes(false);
+		setIdentificavel(false);
 		setLocalSearch("");
 	};
 
@@ -213,6 +233,21 @@ export function PipelineFilters({ filters }: { filters: ReturnType<typeof useLea
 					className="h-7 w-[200px] pl-8 text-sm"
 				/>
 			</div>
+
+			{/* O filtro "identificável" (AJA-23 T2) — irmão do das Conversas, mesma
+			    regra. Diferente do "Mostrar testes", ele NÃO abre exceção: ligado,
+			    mostra só quem informou contato. */}
+			<label
+				htmlFor="pipeline-identificavel"
+				className="flex items-center gap-1.5 text-xs text-muted-foreground"
+			>
+				<Checkbox
+					id="pipeline-identificavel"
+					checked={identificavel}
+					onCheckedChange={(valor) => setIdentificavel(valor === true)}
+				/>
+				Identificável
+			</label>
 
 			{/* Opt-in dos simulados — desligados por padrão na rota (AJA-23 T4). */}
 			<label

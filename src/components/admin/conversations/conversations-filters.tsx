@@ -6,6 +6,7 @@ import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter"
 import { FiltrosDaTela } from "@/components/admin/dashboard/filtros";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
 	Select,
@@ -50,6 +51,14 @@ export type ConversationsFiltersValue = {
 	 * campanha. Lista vazia é "sem filtro" — nunca um recorte que não casa nada.
 	 */
 	campanhas?: readonly string[];
+	/**
+	 * Só quem tem contato INFORMADO pelo cliente (AJA-23 T2).
+	 *
+	 * `false`/ausente é "sem recorte" — nunca "esconda os identificados". O nome
+	 * do filtro é afirmativo de propósito: o que ele liga é a exigência, não a
+	 * exceção.
+	 */
+	identificavel?: boolean;
 };
 
 /**
@@ -121,7 +130,8 @@ export function ConversationsFilters({
 		value.status !== "all" ||
 		value.q !== "" ||
 		Boolean(value.origem) ||
-		campanhasAtivas > 0;
+		campanhasAtivas > 0 ||
+		Boolean(value.identificavel);
 
 	// O período NÃO entra aqui: ele é estado do painel, escrito pelo
 	// `<DateRangeFilter/>` na URL e no cookie. Limpar os filtros da tela não pode
@@ -133,6 +143,7 @@ export function ConversationsFilters({
 			q: "",
 			origem: null,
 			campanhas: [],
+			identificavel: false,
 		});
 		setLocalQ("");
 	};
@@ -184,6 +195,22 @@ export function ConversationsFilters({
 					))}
 				</SelectContent>
 			</Select>
+
+			{/* O filtro "identificável" — o pedido literal do dono (22/09): "lá em cima
+			    onde a gente tem o filtro da data, talvez eu coloque um filtro de
+			    identificável". Fica junto dos outros controles da barra, e o rótulo diz
+			    o que ele EXIGE (contato informado pelo cliente), não o que ele esconde. */}
+			<label
+				htmlFor="filtro-identificavel"
+				className="flex h-8 items-center gap-1.5 text-xs text-muted-foreground"
+			>
+				<Checkbox
+					id="filtro-identificavel"
+					checked={Boolean(value.identificavel)}
+					onCheckedChange={(marcado) => onChange({ identificavel: marcado === true })}
+				/>
+				Identificável
+			</label>
 
 			{value.origem && (
 				// Chip, e não Select: a lista de origens vive na tela de Performance
