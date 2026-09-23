@@ -111,6 +111,43 @@ export const VISITA_NAO_E_ECO = sql`NOT EXISTS (
 export const VISITA_CONTAVEL = sql`(${VISITA_DE_GENTE} AND ${VISITA_NAO_E_ECO})`;
 
 /**
+ * A CONVERSA ATRIBUÍDA — o corte que o funil de mídia aplica em toda etapa
+ * depois de `visitas`: só conta conversa que nasceu de uma visita, no período.
+ *
+ * Sem ele, conversa sem origem (WhatsApp orgânico, conversa anterior à
+ * instrumentação de atribuição) entrava no funil e o resultado ficava MAIOR que
+ * o topo — um funil que cresce, mostrando 328%.
+ *
+ * Nasceu local a `performance-queries.ts` e saiu quando a tela de Campanhas
+ * passou a precisar do MESMO recorte para declarar as conversas que ficam fora
+ * (o complemento, logo abaixo). Duas telas com duas definições de "conversa do
+ * funil" divergem no primeiro dia, com o mesmo rótulo.
+ *
+ * O alias da conversa entra por parâmetro — `c` nas duas telas de hoje — porque
+ * amarrar ao alias faria o fragmento compilar num lugar e explodir no outro.
+ */
+export function conversaAtribuida(de: Date, ate: Date, conversa: SQL = sql`c`): SQL {
+	return sql`${conversa}.is_simulated = false
+    AND ${conversa}.visit_id IS NOT NULL
+    AND ${conversa}.created_at BETWEEN ${de} AND ${ate}`;
+}
+
+/**
+ * O COMPLEMENTO exato de `conversaAtribuida`: a conversa do período que **não**
+ * nasceu de uma visita — WhatsApp orgânico e conversa anterior à instrumentação.
+ *
+ * Existe para que a tela de Campanhas possa dizer quantas conversas ficaram
+ * fora do funil sem inventar um segundo critério: sem esta linha, o total de
+ * conversas de Campanhas fica MENOR que o da tela de Conversas e ninguém sabe
+ * por quê.
+ */
+export function conversaSemOrigem(de: Date, ate: Date, conversa: SQL = sql`c`): SQL {
+	return sql`${conversa}.is_simulated = false
+    AND ${conversa}.visit_id IS NULL
+    AND ${conversa}.created_at BETWEEN ${de} AND ${ate}`;
+}
+
+/**
  * As CONTAGENS do funil por origem/campanha — a definição de cada degrau num
  * lugar só.
  *

@@ -35,7 +35,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { abreviarId } from "./agrupar-origens";
 import { diaDoNegocio } from "./periodo";
-import { contagensDoFunil, VISITA_DE_GENTE } from "./sinais-do-funil";
+import { contagensDoFunil, conversaSemOrigem, VISITA_DE_GENTE } from "./sinais-do-funil";
 
 /**
  * A janela de atribuição da Meta, escrita para a tela.
@@ -463,20 +463,21 @@ async function temEntidadesDeCampanha(): Promise<boolean> {
 /**
  * As conversas que chegaram SEM origem conhecida.
  *
- * É o complemento exato do corte que o funil de mídia usa (`atribuida`, em
- * `performance-queries.ts`): lá toda etapa exige `c.visit_id IS NOT NULL`;
- * aqui contamos as conversas do período em que ele É nulo — WhatsApp orgânico,
- * conversa anterior à instrumentação. Sem esta linha, o total de conversas da
- * tela de Campanhas fica MENOR que o da tela de Conversas e ninguém sabe por quê.
+ * É o complemento exato do corte que o funil de mídia usa (`conversaAtribuida`,
+ * na fonte única `sinais-do-funil.ts`): lá toda etapa exige `c.visit_id IS NOT
+ * NULL`; aqui contamos as conversas do período em que ele É nulo — WhatsApp
+ * orgânico, conversa anterior à instrumentação. Sem esta linha, o total de
+ * conversas da tela de Campanhas fica MENOR que o da tela de Conversas e
+ * ninguém sabe por quê.
  *
- * `atribuida` é local ao `performance-queries.ts` (não exportado) e aquele
- * arquivo é de outra frente — a duplicação está registrada na válvula, com o
- * pedido de exportar o fragmento para as duas telas importarem a mesma coisa.
+ * As duas metades moram na MESMA função de origem (`conversaSemOrigem`), para
+ * que o complemento não possa divergir do corte principal.
  */
 async function conversasSemOrigemConhecida(
 	de: Date,
 	ate: Date,
 ): Promise<{ conversas: number; identificados: number }> {
+	const semOrigem = conversaSemOrigem(de, ate);
 	const resultado = await db.execute<Record<string, unknown>>(sql`
     SELECT
       count(DISTINCT c.id) AS conversas,
@@ -485,9 +486,7 @@ async function conversasSemOrigemConhecida(
       ) AS identificados
     FROM conversations c
     LEFT JOIN leads l ON l.conversation_id = c.id AND l.is_simulated = false
-    WHERE c.is_simulated = false
-      AND c.visit_id IS NULL
-      AND c.created_at BETWEEN ${de} AND ${ate}
+    WHERE ${semOrigem}
   `);
 	const linha = resultado.rows[0];
 	return {

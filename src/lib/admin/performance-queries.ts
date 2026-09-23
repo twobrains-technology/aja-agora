@@ -35,6 +35,7 @@ import {
 	ARTIFACTS_DE_OFERTA_SQL,
 	chaveDaPessoa,
 	contagensDoFunil,
+	conversaAtribuida,
 	VISITA_CONTAVEL,
 	VISITA_DE_GENTE,
 } from "./sinais-do-funil";
@@ -95,12 +96,10 @@ function num(valor: unknown): number {
 
 export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<EtapaFunilMidia[]> {
 	// `atribuida` é o coração da correção: TODA etapa depois de `visitas` conta
-	// só conversa que nasceu de uma visita. Sem isso, conversa sem origem
-	// (WhatsApp orgânico, conversa anterior à instrumentação) entrava no funil e
-	// o resultado ficava maior que o topo — um funil que cresce, mostrando 328%.
-	const atribuida = sql`c.is_simulated = false
-    AND c.visit_id IS NOT NULL
-    AND c.created_at BETWEEN ${fromDate} AND ${toDate}`;
+	// só conversa que nasceu de uma visita (ver `conversaAtribuida`, na fonte
+	// única dos sinais do funil — a mesma que a tela de Campanhas usa para
+	// declarar as conversas que ficam fora).
+	const atribuida = conversaAtribuida(fromDate, toDate);
 
 	// AJA-01 — as duas metades do que era só "tem mensagem do usuário".
 	// `engajou` é o que o negócio chama de "iniciou a conversa";
