@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lte } from "drizzle-orm";
+import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { periodoEfetivoDoPipeline } from "@/components/admin/pipeline/periodo-do-pipeline";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
@@ -9,11 +9,26 @@ import { origemDaVisita } from "@/lib/admin/origem-label";
 import { fimDoDia, inicioDoDia, instanteDoParametro } from "@/lib/admin/periodo";
 import { requireRole } from "@/lib/admin/require-role";
 import { isMesaExterna, raiasVisiveisPara } from "@/lib/admin/role-scope";
+import { conversaIdentificada } from "@/lib/admin/sinais-do-funil";
 import {
 	getActiveHandoffsByLead,
 	getLeadIdsDoAtendente,
 	getMesaAttendantByUserId,
 } from "@/lib/mesa/handoff";
+
+/**
+ * O recorte "identificável" em SQL — o lead cuja CONVERSA o cliente
+ * identificou (`conversaIdentificada`): WhatsApp, ou web com contato coletado.
+ *
+ * `EXISTS` sobre `conversations` porque o predicado do funil mede CONVERSA, e o
+ * card do quadro é do LEAD. É a mesma fonte da lista de Conversas e do degrau do
+ * funil — não há segunda definição para divergir.
+ */
+const recorteIdentificavel = sql`EXISTS (
+  SELECT 1 FROM conversations c
+  WHERE c.id = ${leads.conversationId}
+    AND ${conversaIdentificada(sql`c`)}
+)`;
 
 /**
  * O recorte do quadro mora no SERVIDOR.
@@ -26,7 +41,8 @@ import {
  * O período agora é resolvido aqui pela MESMA regra do resto do painel
  * (`periodoEfetivoDoPipeline`: URL > cookie > "desde o início"), e o simulado só
  * aparece com opt-in explícito (`?include_simulated=true`), como em
- * `/api/admin/conversations`.
+ * `/api/admin/conversations`. O filtro "identificável" (`?identificavel=true`)
+ * também é daqui, com o predicado único do funil (`conversaIdentificada`).
  */
 export async function GET(request?: Request) {
 	const { error, session, role } = await requireRole(
@@ -41,6 +57,13 @@ export async function GET(request?: Request) {
 	// Aceita só o literal "true": qualquer outra string é false, para que
 	// `?include_simulated=1` ou `=sim` não liguem o recorte por acidente.
 	const includeSimulated = busca?.get("include_simulated") === "true";
+	// O filtro "identificável" (AJA-23 T2) é do SERVIDOR, e usa o MESMO predicado
+	// das telas de Conversas, do funil e do Percurso (`conversaIdentificada`).
+	// Antes ele rodava no cliente com uma reimplementação em JS que nem checava
+	// `is_simulated` — com "Mostrar testes" ligado, o mesmo lead simulado aparecia
+	// no Kanban como identificável e sumia da lista de Conversas. Duas verdades
+	// para o mesmo rótulo, e o teste de paridade não executava o SQL para pegar.
+	const identificavel = busca?.get("identificavel") === "true";
 
 	// `from`/`to` chegam como DIA do negócio (`YYYY-MM-DD`) ou ISO completo, e a
 	// janela resultante usa `inicioDoDia`/`fimDoDia` — os mesmos que o recorte do
@@ -60,6 +83,7 @@ export async function GET(request?: Request) {
 			gte(leads.createdAt, inicioDoDia(periodo.de)),
 			lte(leads.createdAt, fimDoDia(periodo.ate)),
 			...(includeSimulated ? [] : [eq(leads.isSimulated, false)]),
+			...(identificavel ? [recorteIdentificavel] : []),
 		),
 		orderBy: [desc(leads.updatedAt)],
 		with: {

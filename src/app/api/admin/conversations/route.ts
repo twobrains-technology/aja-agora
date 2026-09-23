@@ -1,5 +1,6 @@
 import { and, count, desc, eq, gte, ilike, isNull, lte, or, sql } from "drizzle-orm";
 import type { NextRequest } from "next/server";
+import { z } from "zod";
 import { db } from "@/db";
 import {
 	contacts,
@@ -10,12 +11,14 @@ import {
 	user as userTable,
 } from "@/db/schema";
 import { condicaoDeOrigem } from "@/lib/admin/filtro-origem";
+import { marcarConversasComoTeste } from "@/lib/admin/limpeza-queries";
 import {
 	avaliarRegua,
 	type FatosDaConversa,
 	telefonesDaEquipe,
 } from "@/lib/admin/regua-por-conversa";
 import { requireRole } from "@/lib/admin/require-role";
+import { conversaIdentificada } from "@/lib/admin/sinais-do-funil";
 import type { StatusRegua } from "@/lib/remarketing/regua";
 
 const CHANNELS = ["web", "whatsapp"] as const;
@@ -57,6 +60,12 @@ export async function GET(req: NextRequest) {
 	// Default: oculta conversas simuladas (criadas via /admin/simulator). Debug pode opt-in
 	// passando ?include_simulated=true. Aceita só literal "true" — qualquer outra string é false.
 	const includeSimulated = sp.get("include_simulated") === "true";
+	// O filtro "identificável" (AJA-23 T2, pedido literal do dono em 22/09): só quem
+	// tem contato INFORMADO pelo cliente. O predicado vem de `sinais-do-funil`
+	// (`conversaIdentificada`) — a mesma função que o funil de mídia e o Percurso
+	// usam no degrau "Se identificaram", para as telas não divergirem. Literal
+	// "true", como o opt-in de simulado: `=1` não liga por acidente.
+	const identificavel = sp.get("identificavel") === "true";
 
 	const channel =
 		channelParam && (CHANNELS as readonly string[]).includes(channelParam)
@@ -69,6 +78,7 @@ export async function GET(req: NextRequest) {
 
 	const conditions = [];
 	if (!includeSimulated) conditions.push(eq(conversations.isSimulated, false));
+	if (identificavel) conditions.push(conversaIdentificada(sql`conversations`));
 	if (channel) conditions.push(eq(conversations.channel, channel));
 	if (status) conditions.push(eq(conversations.status, status));
 	if (q) {
@@ -231,4 +241,60 @@ export async function GET(req: NextRequest) {
 	});
 
 	return Response.json({ items, total, limit, offset });
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * O LOTE — o teto de 200 é arbitrado AQUI, não herdado da paginação.
+ *
+ * A leitura desta rota corta em `MAX_LIMIT = 100` e a tela pagina de 10 em 10,
+ * então nenhuma página visível chega perto de 200: o teto é folga para o corpo,
+ * e existe para que um array gigante seja RECUSADO (não aplicado pela metade).
+ * (`LIMITE_MAXIMO = 200` é de percurso/remarketing, não desta rota.)
+ */
+const loteSchema = z.object({
+	ids: z.array(z.string().regex(UUID_RE)).min(1).max(200),
+	isSimulated: z.boolean(),
+});
+
+/**
+ * `PATCH /api/admin/conversations` — marcar (ou desmarcar) N conversas como
+ * teste de uma vez.
+ *
+ * Vive na rota da COLEÇÃO, e não numa rota `.../lote`: a operação é sobre o
+ * conjunto que o `GET` ao lado devolve, com o mesmo filtro na mão — o dono
+ * marca na lista o que ele acabou de ver. Uma rota própria criaria o segundo
+ * caminho para a mesma linha, e o `[id]` já é o primeiro.
+ *
+ * Só `admin` (o individual também é): marcar teste tira do funil, das métricas
+ * e da régua, e uma sessão de atendente não tem por que mexer nisso.
+ */
+export async function PATCH(req: Request) {
+	const { error } = await requireRole("admin");
+	if (error) return error;
+
+	let body: unknown;
+	try {
+		body = await req.json();
+	} catch {
+		return Response.json({ error: "Invalid JSON" }, { status: 400 });
+	}
+
+	const parsed = loteSchema.safeParse(body);
+	if (!parsed.success) {
+		return Response.json(
+			{ error: "Corpo inválido", details: parsed.error.flatten() },
+			{ status: 400 },
+		);
+	}
+
+	const resultado = await marcarConversasComoTeste(parsed.data.ids, parsed.data.isSimulated);
+
+	return Response.json({
+		isSimulated: parsed.data.isSimulated,
+		conversas: resultado.conversas,
+		leadsMarcados: resultado.leads,
+		toquesSegurados: resultado.toquesSegurados,
+	});
 }

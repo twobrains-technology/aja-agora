@@ -13,7 +13,7 @@ import {
 	Smartphone,
 	Users,
 } from "lucide-react";
-import { parseAsInteger, parseAsIsoDate, parseAsString, useQueryState } from "nuqs";
+import { parseAsBoolean, parseAsInteger, parseAsIsoDate, parseAsString, useQueryState } from "nuqs";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { parserDeCampanha } from "@/components/admin/dashboard/campanha-filter";
 import { estadoNaLista } from "@/components/admin/remarketing/estado-na-lista";
@@ -33,6 +33,7 @@ import type { MotivoForaDaRegua } from "@/lib/admin/motivo-fora-da-regua";
 import { rotuloDoBem } from "@/lib/admin/rotulo-do-bem";
 import { ConversationDetailPanel } from "./conversation-detail-panel";
 import { ConversationsFilters, type ConversationsFiltersValue } from "./conversations-filters";
+import { MarcarLoteDialog } from "./marcar-lote-dialog";
 
 type RemarketingDaLinha = {
 	status: string;
@@ -191,16 +192,33 @@ export function ConversationsTable() {
 	const [campanhasUrl, setCampanhas] = useQueryState("campanha", parserDeCampanha);
 	const campanhas = campanhasUrl ?? SEM_CAMPANHAS;
 
+	// O filtro "identificável" (AJA-23 T2): só quem tem contato INFORMADO pelo
+	// cliente. O recorte é do SERVIDOR (`?identificavel=true` → o predicado
+	// `conversaIdentificada`), não um filtro de cliente sobre a página carregada:
+	// filtrar aqui só esconderia as linhas daquela página e o total do rodapé
+	// continuaria contando todo mundo.
+	const [identificavel, setIdentificavel] = useQueryState(
+		"identificavel",
+		parseAsBoolean.withDefault(false),
+	);
+
 	const [data, setData] = useState<ListResponse | null>(null);
 	const [loadError, setLoadError] = useState<string | null>(null);
 	// "Mostrar testes e equipe" — desligado por padrão (AJA-10). Vai para a API
 	// como `include_simulated`: testes somem da lista por default, e aqui eles
 	// voltam COM o selo que diz o que são.
 	const [mostrarTestes, setMostrarTestes] = useState(false);
+	// A SELEÇÃO do lote. Vive em `Set` porque a pergunta é "este id está marcado?",
+	// feita uma vez por linha a cada render — e porque marcar/desmarcar um id é
+	// O(1) sem recriar o array inteiro.
+	const [selecionados, setSelecionados] = useState<Set<string>>(() => new Set());
+	const [dialogAberto, setDialogAberto] = useState(false);
+	const [marcarComoTeste, setMarcarComoTeste] = useState(true);
+	const [avisoDoLote, setAvisoDoLote] = useState<string | null>(null);
 
 	const filtersValue = useMemo<ConversationsFiltersValue>(
-		() => ({ channel, status, q, from, to, origem, campanhas }),
-		[channel, status, q, from, to, origem, campanhas],
+		() => ({ channel, status, q, from, to, origem, campanhas, identificavel }),
+		[channel, status, q, from, to, origem, campanhas, identificavel],
 	);
 
 	const handleFiltersChange = useCallback(
@@ -221,9 +239,20 @@ export function ConversationsTable() {
 			if (next.campanhas !== undefined) {
 				setCampanhas(next.campanhas.length > 0 ? [...next.campanhas] : null);
 			}
+			if (next.identificavel !== undefined) setIdentificavel(next.identificavel);
 			setOffset(0);
 		},
-		[setChannel, setStatus, setQ, setFrom, setTo, setOffset, setOrigem, setCampanhas],
+		[
+			setChannel,
+			setStatus,
+			setQ,
+			setFrom,
+			setTo,
+			setOffset,
+			setOrigem,
+			setCampanhas,
+			setIdentificavel,
+		],
 	);
 
 	// Recarrega a lista quando a marcação "é teste" muda no painel de detalhe:
@@ -244,6 +273,7 @@ export function ConversationsTable() {
 		if (to) params.set("to", to.toISOString());
 		if (origem) params.set("origem", origem);
 		if (mostrarTestes) params.set("include_simulated", "true");
+		if (identificavel) params.set("identificavel", "true");
 		// A rota separa a vírgula de volta numa lista (ver `campanhas.ts`); a URL
 		// fica com um parâmetro só, que é o que cabe num link.
 		if (campanhas.length > 0) params.set("campanha", campanhas.join(","));
@@ -268,10 +298,56 @@ export function ConversationsTable() {
 		return () => {
 			cancelled = true;
 		};
-	}, [channel, status, q, from, to, offset, origem, campanhas, recarga, mostrarTestes]);
+	}, [
+		channel,
+		status,
+		q,
+		from,
+		to,
+		offset,
+		origem,
+		campanhas,
+		recarga,
+		mostrarTestes,
+		identificavel,
+	]);
 
 	const total = data?.total ?? 0;
 	const items = data?.items ?? [];
+
+	// A seleção não sobrevive à página: um id marcado que saiu da lista (mudou o
+	// filtro, mudou a página) não pode continuar no lote — a confirmação diria
+	// "12 conversas" e aplicaria em algumas que o operador não está vendo.
+	useEffect(() => {
+		if (data === null) return;
+		const visiveis = new Set(data.items.map((c) => c.id));
+		setSelecionados((anterior) => {
+			const mantidos = [...anterior].filter((id) => visiveis.has(id));
+			return mantidos.length === anterior.size ? anterior : new Set(mantidos);
+		});
+	}, [data]);
+
+	const alternarUm = (id: string) => {
+		setSelecionados((anterior) => {
+			const proximo = new Set(anterior);
+			if (proximo.has(id)) proximo.delete(id);
+			else proximo.add(id);
+			return proximo;
+		});
+	};
+
+	const todosDaPaginaMarcados = items.length > 0 && items.every((c) => selecionados.has(c.id));
+	const alternarPagina = () => {
+		setSelecionados((anterior) => {
+			const proximo = new Set(anterior);
+			if (items.every((c) => proximo.has(c.id))) {
+				for (const c of items) proximo.delete(c.id);
+			} else {
+				for (const c of items) proximo.add(c.id);
+			}
+			return proximo;
+		});
+	};
 	const showingFrom = items.length === 0 ? 0 : offset + 1;
 	const showingTo = offset + items.length;
 	const hasPrev = offset > 0;
@@ -287,6 +363,47 @@ export function ConversationsTable() {
 				Mostrar testes e equipe
 			</div>
 
+			{/* A barra do lote — só aparece com seleção ativa. */}
+			{selecionados.size > 0 && (
+				<div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+					<span className="font-medium tabular-nums">
+						{selecionados.size}{" "}
+						{selecionados.size === 1 ? "conversa selecionada" : "conversas selecionadas"}
+					</span>
+					<Button
+						size="sm"
+						onClick={() => {
+							setMarcarComoTeste(true);
+							setDialogAberto(true);
+						}}
+					>
+						Marcar como teste
+					</Button>
+					<Button
+						variant="outline"
+						size="sm"
+						onClick={() => {
+							setMarcarComoTeste(false);
+							setDialogAberto(true);
+						}}
+					>
+						Voltar a contar
+					</Button>
+					<Button variant="ghost" size="sm" onClick={() => setSelecionados(new Set())}>
+						Limpar seleção
+					</Button>
+				</div>
+			)}
+
+			{avisoDoLote && (
+				<div className="flex items-center justify-between rounded-md border border-success/40 bg-success/10 px-3 py-2 text-sm">
+					<span>{avisoDoLote}</span>
+					<Button variant="ghost" size="sm" onClick={() => setAvisoDoLote(null)}>
+						Fechar
+					</Button>
+				</div>
+			)}
+
 			{loadError && (
 				<div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
 					{loadError}
@@ -300,6 +417,13 @@ export function ConversationsTable() {
 					<Table>
 						<TableHeader>
 							<TableRow>
+								<TableHead className="w-10">
+									<Checkbox
+										checked={todosDaPaginaMarcados}
+										onCheckedChange={alternarPagina}
+										aria-label="Selecionar todas as conversas desta página"
+									/>
+								</TableHead>
 								<TableHead>Contato</TableHead>
 								<TableHead>Canal</TableHead>
 								<TableHead>Status</TableHead>
@@ -313,7 +437,7 @@ export function ConversationsTable() {
 						<TableBody>
 							{items.length === 0 && !loadError && (
 								<TableRow>
-									<TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+									<TableCell colSpan={9} className="text-center text-muted-foreground py-8">
 										Nenhuma conversa encontrada com os filtros atuais.
 									</TableCell>
 								</TableRow>
@@ -347,6 +471,13 @@ export function ConversationsTable() {
 										className="cursor-pointer"
 										onClick={() => setSelectedId(c.id)}
 									>
+										<TableCell onClick={(e) => e.stopPropagation()}>
+											<Checkbox
+												checked={selecionados.has(c.id)}
+												onCheckedChange={() => alternarUm(c.id)}
+												aria-label={`Selecionar a conversa de ${c.contactName ?? c.waId ?? "sem contato"}`}
+											/>
+										</TableCell>
 										<CelulaDeContato conversa={c} />
 
 										<TableCell>
@@ -439,6 +570,25 @@ export function ConversationsTable() {
 				open={selectedId !== null}
 				onClose={() => setSelectedId(null)}
 				onMarcada={() => setRecarga((n) => n + 1)}
+			/>
+
+			<MarcarLoteDialog
+				ids={[...selecionados]}
+				isSimulated={marcarComoTeste}
+				open={dialogAberto}
+				onOpenChange={setDialogAberto}
+				onConcluido={(resultado) => {
+					setAvisoDoLote(
+						`${resultado.conversas} ${resultado.conversas === 1 ? "conversa" : "conversas"} ` +
+							`${marcarComoTeste ? "marcadas como teste" : "voltaram a contar"}` +
+							(resultado.leadsMarcados > 0 ? ` (${resultado.leadsMarcados} leads junto)` : "") +
+							".",
+					);
+					setSelecionados(new Set());
+					// Recarrega: a busca esconde simuladas por padrão, então as marcadas
+					// precisam sumir da lista sem o operador apertar F5.
+					setRecarga((n) => n + 1);
+				}}
 			/>
 		</div>
 	);

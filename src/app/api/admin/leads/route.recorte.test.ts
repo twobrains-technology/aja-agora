@@ -62,10 +62,25 @@ describeIfDb("GET /api/admin/leads — recorte no servidor", () => {
 	let idFora: string;
 	let idSimuladoDentro: string;
 
-	async function semearLead(createdAt: Date, isSimulated: boolean): Promise<string> {
+	async function semearLead(
+		createdAt: Date,
+		isSimulated: boolean,
+		opcoes: {
+			channel?: "web" | "whatsapp";
+			/** `wa_id` da conversa: presença = veio pelo WhatsApp. */
+			waId?: string | null;
+			name?: string | null;
+			phone?: string | null;
+			email?: string | null;
+		} = {},
+	): Promise<string> {
 		const [conversa] = await db
 			.insert(conversations)
-			.values({ channel: "web", isSimulated })
+			.values({
+				channel: opcoes.channel ?? "web",
+				waId: opcoes.waId ?? null,
+				isSimulated,
+			})
 			.returning({ id: conversations.id });
 		convIds.push(conversa.id);
 
@@ -73,8 +88,10 @@ describeIfDb("GET /api/admin/leads — recorte no servidor", () => {
 			.insert(leads)
 			.values({
 				conversationId: conversa.id,
-				name: "Cliente do Recorte",
-				phone: `+5511${Math.floor(Math.random() * 1e8)}`,
+				name: opcoes.name === undefined ? "Cliente do Recorte" : opcoes.name,
+				phone:
+					opcoes.phone === undefined ? `+5511${Math.floor(Math.random() * 1e8)}` : opcoes.phone,
+				email: opcoes.email ?? null,
 				stage: "novo",
 				isSimulated,
 				createdAt,
@@ -135,5 +152,51 @@ describeIfDb("GET /api/admin/leads — recorte no servidor", () => {
 
 		expect(ids.has(idDentro)).toBe(true);
 		expect(ids.has(idFora)).toBe(false);
+	});
+
+	// O filtro "identificável" (AJA-23 T2) é do SERVIDOR e usa o MESMO predicado do
+	// funil e da lista de Conversas (`conversaIdentificada`) — a regra é do CANAL
+	// (decisão do dono, 23/09/2026). Antes ele rodava no cliente com uma cópia em
+	// JS que pedia nome + contato do LEAD, e por isso o mesmo card aparecia numa
+	// tela e sumia na outra.
+	describe("?identificavel=true", () => {
+		let idWebSemContato: string;
+		let idWebComContato: string;
+		let idWhatsappSemContatoNoLead: string;
+
+		beforeAll(async () => {
+			idWebSemContato = await semearLead(DENTRO_DA_JANELA, false, {
+				name: null,
+				phone: null,
+			});
+			idWebComContato = await semearLead(DENTRO_DA_JANELA, false, { phone: "+5511900000001" });
+			// Conversa de WhatsApp: o `wa_id` é o que identifica, mesmo sem contato
+			// nenhum no lead — é o caso que a cópia em JS deixava de fora.
+			idWhatsappSemContatoNoLead = await semearLead(DENTRO_DA_JANELA, false, {
+				channel: "whatsapp",
+				waId: "5511900000002",
+				name: null,
+				phone: null,
+			});
+		});
+
+		it("exclui a web sem contato coletado", async () => {
+			const ids = await idsNaResposta(pedido("?from=2026-08-20&to=2026-08-25&identificavel=true"));
+
+			expect(ids.has(idWebSemContato)).toBe(false);
+		});
+
+		it("inclui a web com contato e a conversa de WhatsApp", async () => {
+			const ids = await idsNaResposta(pedido("?from=2026-08-20&to=2026-08-25&identificavel=true"));
+
+			expect(ids.has(idWebComContato)).toBe(true);
+			expect(ids.has(idWhatsappSemContatoNoLead)).toBe(true);
+		});
+
+		it("o filtro não é do cliente: sem o parâmetro, a web sem contato continua vindo", async () => {
+			const ids = await idsNaResposta(pedido("?from=2026-08-20&to=2026-08-25"));
+
+			expect(ids.has(idWebSemContato)).toBe(true);
+		});
 	});
 });

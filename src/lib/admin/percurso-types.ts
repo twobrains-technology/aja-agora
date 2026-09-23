@@ -75,7 +75,7 @@ export const PASSOS_DO_PERCURSO = [
 	{
 		chave: "se_identificou",
 		label: "Se identificou",
-		ajuda: "Informou nome e telefone ou e-mail — o telefone do WhatsApp não conta",
+		ajuda: "Veio pelo WhatsApp — o canal entrega o número e o perfil — ou deixou contato na web",
 	},
 	{ chave: "viu_oferta", label: "Viu oferta", ajuda: "Recebeu simulação ou oferta real" },
 	{

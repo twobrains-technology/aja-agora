@@ -1,9 +1,9 @@
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { conversations, leads, remarketingTouches } from "@/db/schema";
+import { conversations } from "@/db/schema";
+import { marcarConversasComoTeste } from "@/lib/admin/limpeza-queries";
 import { requireRole } from "@/lib/admin/require-role";
-import { MOTIVO_SAIDA_TESTE } from "@/lib/remarketing/motivo-de-exclusao";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -132,41 +132,21 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
 	const { isSimulated } = parsed.data;
 
-	const [atualizada] = await db
-		.update(conversations)
-		.set({ isSimulated, updatedAt: new Date() })
-		.where(eq(conversations.id, id))
-		.returning({ id: conversations.id, isSimulated: conversations.isSimulated });
+	// A operação vive em `marcarConversasComoTeste` (a MESMA que o lote da rota de
+	// coleção usa): duas implementações da marcação divergiriam na primeira
+	// tabela nova — e a marcação tem três (conversa, leads e régua).
+	const resultado = await marcarConversasComoTeste([id], isSimulated);
 
-	if (!atualizada) {
+	if (resultado.conversas === 0) {
 		return Response.json({ error: "Conversation not found" }, { status: 404 });
 	}
 
-	const marcados = await db
-		.update(leads)
-		.set({ isSimulated })
-		.where(eq(leads.conversationId, id))
-		.returning({ id: leads.id });
-
-	// A régua sai junto. Só a linha ATIVA (é a única que o ciclo dispara); linha
-	// já terminal não é reescrita — a marcação não pode apagar "o cliente
-	// respondeu" nem "pediu para sair" com um motivo de teste.
-	const segurados = isSimulated
-		? await db
-				.update(remarketingTouches)
-				.set({ status: "RESPONDEU", motivoSaida: MOTIVO_SAIDA_TESTE })
-				.where(
-					and(eq(remarketingTouches.conversationId, id), eq(remarketingTouches.status, "ATIVO")),
-				)
-				.returning({ id: remarketingTouches.id })
-		: [];
-
 	return Response.json({
-		id: atualizada.id,
-		isSimulated: atualizada.isSimulated,
-		leadsMarcados: marcados.length,
+		id,
+		isSimulated,
+		leadsMarcados: resultado.leads,
 		// Quantas linhas da régua foram seguradas por esta marcação (0 quando a
 		// conversa nunca entrou, ou quando ela foi desmarcada).
-		toquesSegurados: segurados.length,
+		toquesSegurados: resultado.toquesSegurados,
 	});
 }

@@ -52,6 +52,15 @@ export function useLeadFilters() {
 		"testes",
 		parseAsBoolean.withDefault(false),
 	);
+	// O filtro "identificável" (AJA-23 T2) — o mesmo das Conversas, e agora também
+	// do SERVIDOR: a rota de leads recebe `?identificavel=true` e aplica o predicado
+	// único do funil (`conversaIdentificada`). Antes ele rodava no cliente com uma
+	// reimplementação em JS que nem checava `is_simulated` — o mesmo lead aparecia
+	// numa tela e sumia na outra. Só o ESTADO da URL mora aqui.
+	const [identificavel, setIdentificavel] = useQueryState(
+		"identificavel",
+		parseAsBoolean.withDefault(false),
+	);
 	const hoje = useMemo(() => diaDeHoje(), []);
 
 	// O período em vigor precisa estar na URL: é o que o chip do cabeçalho lê e o
@@ -104,6 +113,11 @@ export function useLeadFilters() {
 				return false;
 			}
 
+			// O filtro "identificável" NÃO fica mais aqui: é do servidor
+			// (`?identificavel=true` na rota de leads), com o predicado único do
+			// funil. Manter a cópia no cliente fazia o quadro e a lista de Conversas
+			// medirem populações diferentes com o mesmo rótulo.
+
 			// O recorte por DATA não fica mais aqui: ele é do servidor (a rota de
 			// leads recebe `from`/`to` e aplica `inicioDoDia`/`fimDoDia` sobre
 			// `created_at`). Manter a cópia no cliente fazia o quadro afirmar duas
@@ -113,7 +127,6 @@ export function useLeadFilters() {
 		},
 		[channel, search, campanhas],
 	);
-
 	return {
 		channel: channel as ChannelFilter,
 		setChannel,
@@ -127,6 +140,8 @@ export function useLeadFilters() {
 		setCampanhas,
 		mostrarTestes,
 		setMostrarTestes,
+		identificavel,
+		setIdentificavel,
 		filterFn,
 	};
 }
@@ -141,6 +156,8 @@ export function PipelineFilters({ filters }: { filters: ReturnType<typeof useLea
 		setCampanhas,
 		mostrarTestes,
 		setMostrarTestes,
+		identificavel,
+		setIdentificavel,
 	} = filters;
 
 	// Debounced search input
@@ -163,13 +180,14 @@ export function PipelineFilters({ filters }: { filters: ReturnType<typeof useLea
 	// na URL e no cookie. Limpar os filtros da tela não pode apagar a janela
 	// escolhida.
 	const hasActiveFilters =
-		channel !== "all" || search !== "" || campanhas.length > 0 || mostrarTestes;
+		channel !== "all" || search !== "" || campanhas.length > 0 || mostrarTestes || identificavel;
 
 	const clearFilters = () => {
 		setChannel(null);
 		setSearch(null);
 		setCampanhas(null);
 		setMostrarTestes(false);
+		setIdentificavel(false);
 		setLocalSearch("");
 	};
 
@@ -213,6 +231,21 @@ export function PipelineFilters({ filters }: { filters: ReturnType<typeof useLea
 					className="h-7 w-[200px] pl-8 text-sm"
 				/>
 			</div>
+
+			{/* O filtro "identificável" (AJA-23 T2) — irmão do das Conversas, mesma
+			    regra. Diferente do "Mostrar testes", ele NÃO abre exceção: ligado,
+			    mostra só quem informou contato. */}
+			<label
+				htmlFor="pipeline-identificavel"
+				className="flex items-center gap-1.5 text-xs text-muted-foreground"
+			>
+				<Checkbox
+					id="pipeline-identificavel"
+					checked={identificavel}
+					onCheckedChange={(valor) => setIdentificavel(valor === true)}
+				/>
+				Identificável
+			</label>
 
 			{/* Opt-in dos simulados — desligados por padrão na rota (AJA-23 T4). */}
 			<label

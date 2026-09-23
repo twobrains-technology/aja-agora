@@ -39,6 +39,7 @@ import { inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
 import type { LeadStage } from "./lead-stages";
+import { telefonesDaEquipe } from "./regua-por-conversa";
 
 /**
  * As sub-etapas do handoff, na ordem em que a operação as percorre.
@@ -285,6 +286,39 @@ export async function computeFunilDeHandoff(
 }
 
 /**
+ * Tira da lista quem é da CASA, não cliente.
+ *
+ * ── O defeito medido (23/09/2026) ───────────────────────────────────────────
+ *
+ * O dono testou o fluxo com o próprio celular. O teste rodou em WhatsApp real,
+ * então o lead nasceu `is_simulated = false` e passou pelo filtro da consulta.
+ * A atendente assumiu a conversa, a campainha tocou e o e-mail do SLA chegou
+ * acusando "lead parado" que era teste de casa. A cliente viu e perguntou por
+ * quê — a resposta foi "era o teste dele, só ignorei".
+ *
+ * A régua de remarketing já tinha esta guarda (`ehTelefoneInterno`, em
+ * `src/lib/remarketing/motor.ts`); este ciclo não tinha. A lista vem do MESMO
+ * predicado que a régua usa — `telefonesDaEquipe()` de `regua-por-conversa.ts`
+ * —, que soma os telefones em CÓDIGO, os da env (`TELEFONES_DA_EQUIPE`,
+ * `REMARKETING_TELEFONES_INTERNOS`) e os dos atendentes no banco
+ * (`mesa_attendants` e `user`, ATIVOS OU NÃO: quem saiu da equipe continua
+ * sendo telefone da casa). Uma segunda lista aqui seria a segunda verdade que
+ * `sinais-do-funil.ts` existe para evitar.
+ *
+ * PURA de propósito: o predicado entra por parâmetro para ser testável sem
+ * banco, e para que o custo de montar o conjunto (uma leitura por lote, não uma
+ * por linha) fique no chamador.
+ */
+export function semTelefoneDaEquipe(
+	parados: readonly LeadParado[],
+	ehDaEquipe: (telefone: string) => boolean,
+): LeadParado[] {
+	// Lead sem telefone NÃO é da equipe: some-lo por falta de número perderia
+	// justamente quem ninguém cadastrou direito.
+	return parados.filter((p) => !ehDaEquipe(p.telefone ?? ""));
+}
+
+/**
  * Quem está parado além do limite — a campainha do D3/E1.
  *
  * Sem janela de período de propósito: um lead esquecido em julho continua
@@ -347,18 +381,30 @@ export async function computeLeadsParados(
      LIMIT 100
   `);
 
-	return resultado.rows.map((linha) => ({
-		leadId: String(linha.id),
-		nome: linha.name === null ? null : String(linha.name),
-		telefone: linha.phone === null ? null : String(linha.phone),
-		estagio: String(linha.estagio) as EstagioHandoff,
-		desdeISO: new Date(linha.desde as string).toISOString(),
-		horasParado: numOuNulo(linha.horas) ?? 0,
-		slaAlertadoEm:
-			linha.sla_alertado_em === null || linha.sla_alertado_em === undefined
-				? null
-				: new Date(linha.sla_alertado_em as string).toISOString(),
-	}));
+	// O filtro de equipe sai do SQL e entra aqui porque o conjunto de telefones
+	// vive em TRÊS lugares (código, env e banco) e normaliza o nono dígito —
+	// refazer isso em SQL seria uma segunda definição de "telefone da casa".
+	// O `LIMIT 100` da consulta é teto de ENVIO, não critério: as linhas de
+	// equipe que ele traz a mais consomem vaga das MENOS antigas, porque a
+	// ordenação é `desde ASC` — nenhum lead urgente sai da lista por causa
+	// disso.
+	const ehDaEquipe = await telefonesDaEquipe();
+
+	return semTelefoneDaEquipe(
+		resultado.rows.map((linha) => ({
+			leadId: String(linha.id),
+			nome: linha.name === null ? null : String(linha.name),
+			telefone: linha.phone === null ? null : String(linha.phone),
+			estagio: String(linha.estagio) as EstagioHandoff,
+			desdeISO: new Date(linha.desde as string).toISOString(),
+			horasParado: numOuNulo(linha.horas) ?? 0,
+			slaAlertadoEm:
+				linha.sla_alertado_em === null || linha.sla_alertado_em === undefined
+					? null
+					: new Date(linha.sla_alertado_em as string).toISOString(),
+		})),
+		ehDaEquipe,
+	);
 }
 
 /**

@@ -148,25 +148,52 @@ export function conversaSemOrigem(de: Date, ate: Date, conversa: SQL = sql`c`): 
 }
 
 /**
- * O LEAD IDENTIFICADO PELO CLIENTE — tem NOME **e** tem contato.
+ * A CONVERSA VEIO PELO WHATSAPP.
  *
- * **Por que o telefone sozinho não basta.** Toda conversa de WhatsApp nasce com
- * o telefone do `waId` já no lead (`src/lib/whatsapp/session.ts`), porque o
- * canal entrega o número sem o cliente ter informado nada. Contando "telefone
- * OU e-mail", o degrau "Se identificaram" media o CANAL, não o cliente: quem
- * chegou pelo WhatsApp entrava como identificado tendo escrito só "oi".
+ * `conversations.waId` é preenchido no nascimento de toda conversa de WhatsApp
+ * (`src/lib/whatsapp/session.ts`): o canal entrega o número — e o nome de perfil
+ * (pushName) — sem o cliente digitar nada.
  *
- * Foi a pergunta literal da cliente em 22/09/2026 — *"se vieram do WhatsApp, eu
- * já tenho o telefone… aqui ele vai entender que já se identificou"* — e a
- * decisão do dono foi exigir o NOME junto: identificado = nome E (telefone ou
- * e-mail). O nome chega pelo pushName do WhatsApp e pela extração do gate de
- * crédito, e `src/lib/contacts/sincronizar-nome.ts` é o ponto único que o leva a
- * `leads.name` e `conversations.contactName`.
- *
- * Espera a tabela `leads` com alias `l`, como `contagensDoFunil`.
+ * **É a definição de "identificado" no canal, por decisão do dono (23/09/2026):**
+ * *"whatsapp entrou já pode considerar que se identificou, já na web, você tem
+ * que considerar quando conseguirmos coletar"*.
  */
-export function leadIdentificado(lead: SQL = sql`l`): SQL {
-	return sql`${lead}.name IS NOT NULL AND (${lead}.phone IS NOT NULL OR ${lead}.email IS NOT NULL)`;
+export function conversaDeWhatsapp(conversa: SQL = sql`c`): SQL {
+	return sql`${conversa}.wa_id IS NOT NULL`;
+}
+
+/**
+ * O CONTATO QUE O CLIENTE INFORMOU — telefone ou e-mail gravado no LEAD.
+ *
+ * É o que existe na web, onde o canal não entrega nada: o telefone/e-mail do
+ * lead veio do formulário. Na conversa de WhatsApp este contato também existe
+ * (o lead nasce com o telefone do canal), mas lá quem decide é
+ * `conversaDeWhatsapp` — o `wa_id` fala pelo canal, não pelo preenchimento.
+ */
+export function contatoInformadoPeloCliente(lead: SQL = sql`l`): SQL {
+	return sql`(${lead}.phone IS NOT NULL OR ${lead}.email IS NOT NULL)`;
+}
+
+/**
+ * O LEAD IDENTIFICADO — a regra é do CANAL, não do preenchimento.
+ *
+ * Decisão do dono (23/09/2026): conversa de WhatsApp → identificado (o canal já
+ * entregou número e perfil); conversa de web → identificado quando conseguimos
+ * COLETAR o contato (telefone ou e-mail no lead).
+ *
+ * **O que esta regra NÃO faz: deduzir identificação pelo nome.** No WhatsApp o
+ * nome da conversa é o pushName do canal, que chega na PRIMEIRA mensagem —
+ * exigi-lo não mediria nada do cliente, mediria o canal. Foi por isso que a
+ * versão anterior (nome E contato) fazia "Se identificaram" empatar com
+ * "Conversas" e ainda assim subcontava quem só tinha o nome na conversa.
+ *
+ * Quem conta LINHA de lead (o cartão "Leads hoje") usa este fragmento; o degrau
+ * do funil conta CONVERSA — ver `conversaIdentificada`.
+ *
+ * Espera as tabelas `leads` e `conversations`, com os aliases por parâmetro.
+ */
+export function leadIdentificado(lead: SQL = sql`l`, conversa: SQL = sql`c`): SQL {
+	return sql`(${conversaDeWhatsapp(conversa)} OR ${contatoInformadoPeloCliente(lead)})`;
 }
 
 /**
@@ -184,18 +211,28 @@ export function leadComContato(lead: SQL = sql`l`): SQL {
 }
 
 /**
- * A CONVERSA cujo lead está identificado pelo cliente — o `EXISTS` que o funil
- * de mídia, o Percurso e a Exportação usam no degrau "Se identificaram".
+ * A CONVERSA CUJO CLIENTE SE IDENTIFICOU — o degrau "Se identificaram" do funil
+ * de mídia, do Percurso, da Exportação e da tela de Campanhas.
  *
- * Existe para que os três não repitam o `EXISTS` com a lista de condições: um
- * deles esquecendo o `is_simulated = false`, ou o nome, já faria o mesmo degrau
- * medir duas populações em telas diferentes.
+ * **Fonte única dos quatro**, para que o mesmo degrau não meça duas populações
+ * em telas diferentes.
+ *
+ * A regra é a do dono (23/09/2026), por CANAL: conversa de WhatsApp (`waId`
+ * presente) conta sempre; conversa de web conta quando conseguimos coletar o
+ * contato (telefone ou e-mail no lead, com `is_simulated = false`).
+ *
+ * O `EXISTS` (e não um `JOIN`) é o que mantém a conversa na lista quando ela não
+ * tem linha em `leads` — que é o caso de quase metade das conversas de WhatsApp
+ * medidas em produção.
  */
 export function conversaIdentificada(conversa: SQL = sql`c`): SQL {
-	return sql`EXISTS (SELECT 1 FROM leads li
-    WHERE li.conversation_id = ${conversa}.id
-      AND li.is_simulated = false
-      AND ${leadIdentificado(sql`li`)})`;
+	return sql`(
+    ${conversaDeWhatsapp(conversa)}
+    OR EXISTS (SELECT 1 FROM leads li
+      WHERE li.conversation_id = ${conversa}.id
+        AND li.is_simulated = false
+        AND (li.phone IS NOT NULL OR li.email IS NOT NULL))
+  )`;
 }
 
 /**
@@ -213,12 +250,15 @@ export function conversaIdentificada(conversa: SQL = sql`c`): SQL {
  * `visits v`, `conversations c`, `leads l`, `bevi_proposals bp`. Quem não usa
  * `qualificados` simplesmente ignora a coluna.
  *
- * `identificados` conta CONVERSAS cujo lead tem nome E contato (`leadIdentificado`),
- * não leads: a mesma definição do funil de mídia (`computeFunilMidia`). Contando
- * leads, uma conversa com dedup imperfeito entrava duas vezes e a coluna
- * "Identificados" divergia da etapa "Se identificaram" do funil, na mesma tela,
- * com o mesmo rótulo. `com_contato` é a coluna vizinha — o número antigo, que
- * mede quem a régua consegue alcançar, não quem se identificou.
+ * `identificados` conta CONVERSAS cujo cliente se identificou
+ * (`conversaIdentificada`) — no WhatsApp, quem entrou (o canal entregou número e
+ * perfil); na web, quem deixou contato. É a MESMA definição do funil de mídia
+ * (`computeFunilMidia`). Contando leads, uma conversa com dedup imperfeito
+ * entrava duas vezes e a coluna "Identificados" divergia da etapa "Se
+ * identificaram" do funil, na mesma tela, com o mesmo rótulo. `com_contato` é a
+ * coluna vizinha — outro fato, não a mesma coisa: mede quem a régua consegue
+ * ALCANÇAR (telefone/e-mail no lead), e não são ordem um do outro (a conversa de
+ * WhatsApp sem linha em `leads` é identificada e não tem contato no lead).
  */
 export function contagensDoFunil(): SQL {
 	const qualificados = sql.join(
@@ -229,7 +269,7 @@ export function contagensDoFunil(): SQL {
     count(DISTINCT v.id) FILTER (WHERE ${VISITA_NAO_E_ECO}) AS visitas,
     count(DISTINCT c.id) AS conversas,
     count(DISTINCT c.id) FILTER (WHERE ${leadComContato()}) AS com_contato,
-    count(DISTINCT c.id) FILTER (WHERE ${leadIdentificado()}) AS identificados,
+    count(DISTINCT c.id) FILTER (WHERE ${conversaIdentificada(sql`c`)}) AS identificados,
     count(DISTINCT l.id) FILTER (WHERE l.stage IN (${qualificados})) AS qualificados,
     count(DISTINCT bp.id) AS propostas,
     count(DISTINCT l.id) FILTER (WHERE l.stage = 'fechado_ganho') AS fechados

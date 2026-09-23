@@ -30,6 +30,18 @@
 // execução por período, mesmo com mais de uma instância do worker de pé. Sem
 // isso, o ciclo de 30s mandaria 2.880 e-mails por dia.
 
+// ── As duas envs que operam o alarme (nenhuma exige deploy) ─────────────────
+//
+//   ALERTA_SLA_MESA_TO      destinatários, separados por vírgula. VAZIO = não
+//                           envia, e REGISTRA o motivo no log em vez de
+//                           falhar calado. É por aqui que o alarme se DESLIGA,
+//                           se um dia a decisão for descontinuar: esvaziar a
+//                           variável na task definition, sem tocar em código.
+//   SLA_MESA_LIMITE_HORAS   horas sem movimentação de estágio para virar
+//                           campainha. Default 24; valor inválido ("vinte e
+//                           quatro") volta ao default em vez de chegar no SQL
+//                           como NaN e emudecer o alarme.
+
 import {
 	computeLeadsParados,
 	type LeadParado,

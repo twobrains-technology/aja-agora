@@ -49,7 +49,8 @@ export const ETAPAS_FUNIL_MIDIA = [
 	{
 		chave: "identificados",
 		label: "Se identificaram",
-		ajuda: "Informaram nome e telefone ou e-mail — o telefone do WhatsApp não conta",
+		ajuda:
+			"Chegou pelo WhatsApp — o canal já entrega o número e o perfil — ou deixou contato na web",
 	},
 	{ chave: "viram_oferta", label: "Viram oferta", ajuda: "Receberam simulação ou oferta real" },
 	{
@@ -166,11 +167,13 @@ export interface LinhaOrigem {
 	visitas: number;
 	conversas: number;
 	/**
-	 * Conversas em que o CLIENTE se identificou — nome E telefone ou e-mail.
+	 * Conversas em que o cliente se identificou — a regra é do CANAL.
 	 *
-	 * O telefone do WhatsApp não conta: o canal o entrega sem o cliente ter
-	 * informado nada, e contá-lo fazia este degrau medir o canal em vez da pessoa
-	 * (decisão do dono, 22/09/2026).
+	 * No WhatsApp, quem entrou: o canal entrega o número e o nome de perfil sem o
+	 * cliente digitar nada. Na web, quem deixou contato (telefone ou e-mail no
+	 * lead). Decisão do dono, 23/09/2026: *"whatsapp entrou já pode considerar que
+	 * se identificou, já na web, você tem que considerar quando conseguirmos
+	 * coletar"*. A definição mora em `conversaIdentificada`.
 	 */
 	identificados: number;
 	/**
