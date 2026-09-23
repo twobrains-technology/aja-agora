@@ -270,6 +270,19 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
              COALESCE(ct.phone, lp.phone) AS phone,
              COALESCE(ct.email, lp.email) AS email,
              lp.stage,
+             -- Os FATOS do degrau, por pessoa, para a leitura "alcancaram". O CASE
+             -- acima diz ONDE a pessoa parou; estas colunas dizem o que ela FEZ —
+             -- e quem avançou continua contando no degrau que já alcançou. Sem
+             -- elas, o degrau "Se identificou" mostrava só quem parou ali, e o
+             -- número não fechava com o funil de mídia nem servia para CAC.
+             COALESCE(cp.identificou, false) AS identificou,
+             COALESCE(cp.viu_oferta, false) AS viu_oferta,
+             COALESCE(cp.teve_proposta, false) AS teve_proposta,
+             COALESCE(cp.fechou, false) AS fechou,
+             COALESCE(cp.iniciou_conversa, false) AS iniciou_conversa,
+             COALESCE(cp.so_pre_preenchida, false) AS so_pre_preenchida,
+             (COALESCE(cp.conversas, 0) > 0 OR p.abriu_teatro) AS abriu_chat,
+             p.olhou AS olhou,
              CASE
                WHEN COALESCE(cp.fechou, false) THEN 9
                WHEN COALESCE(cp.teve_proposta, false) THEN 8
@@ -320,7 +333,7 @@ export async function listarPercurso(filtro: FiltroPercurso): Promise<PercursoRe
 	const offset = Math.max(filtro.offset ?? 0, 0);
 	const base = baseDoPercurso(filtro);
 
-	const [linhas, escada] = await Promise.all([
+	const [linhas, escada, fatos] = await Promise.all([
 		db.execute<Record<string, unknown>>(sql`
       ${base}
       SELECT *, count(*) OVER () AS total_filtrado
@@ -338,6 +351,24 @@ export async function listarPercurso(filtro: FiltroPercurso): Promise<PercursoRe
              COALESCE(sum(conversas), 0) AS conversas
       FROM filtrado GROUP BY profundidade
     `),
+		// Os FATOS do período, um por degrau. É a segunda leitura da escada e a
+		// única comparável ao funil de mídia: lá cada etapa conta quem TEM o fato
+		// (conversa identificada, oferta vista), não quem parou ali. Sem esta
+		// consulta, `pessoas` (posição) era lido como se fosse o fato — e o degrau
+		// "Se identificou" respondia 8 onde o funil dizia 11 conversas / 10 pessoas.
+		db.execute<Record<string, unknown>>(sql`
+      ${base}
+      SELECT count(*) AS total,
+             count(*) FILTER (WHERE olhou) AS olhou,
+             count(*) FILTER (WHERE abriu_chat) AS abriu_chat,
+             count(*) FILTER (WHERE so_pre_preenchida) AS so_pre_preenchida,
+             count(*) FILTER (WHERE iniciou_conversa) AS iniciou_conversa,
+             count(*) FILTER (WHERE identificou) AS identificou,
+             count(*) FILTER (WHERE viu_oferta) AS viu_oferta,
+             count(*) FILTER (WHERE teve_proposta) AS teve_proposta,
+             count(*) FILTER (WHERE fechou) AS fechou
+      FROM filtrado
+    `),
 	]);
 
 	const pessoasPorProfundidade = new Map<number, number>();
@@ -352,11 +383,27 @@ export async function listarPercurso(filtro: FiltroPercurso): Promise<PercursoRe
 		totalDeConversas += num(linha.conversas);
 	}
 
+	// O fato por trás de cada degrau, na ordem da escada. `so_chegou` é o total:
+	// todo mundo que o período alcança chegou até ali por definição.
+	const linhaDosFatos = fatos.rows[0] ?? {};
+	const alcancaramPorPasso: Record<PassoDoPercurso, number> = {
+		so_chegou: num(linhaDosFatos.total),
+		olhou_a_pagina: num(linhaDosFatos.olhou),
+		abriu_o_chat: num(linhaDosFatos.abriu_chat),
+		so_pre_preenchida: num(linhaDosFatos.so_pre_preenchida),
+		iniciou_conversa: num(linhaDosFatos.iniciou_conversa),
+		se_identificou: num(linhaDosFatos.identificou),
+		viu_oferta: num(linhaDosFatos.viu_oferta),
+		proposta: num(linhaDosFatos.teve_proposta),
+		fechado: num(linhaDosFatos.fechou),
+	};
+
 	const resumo: ResumoDoPasso[] = PASSOS_DO_PERCURSO.map((passo, indice) => ({
 		chave: passo.chave,
 		label: passo.label,
 		ajuda: passo.ajuda,
 		pessoas: pessoasPorProfundidade.get(indice + 1) ?? 0,
+		alcancaram: alcancaramPorPasso[passo.chave] ?? 0,
 	}));
 
 	const pessoas: PessoaDoPercurso[] = linhas.rows.map((linha) => {
