@@ -246,7 +246,10 @@ export function TabelaCampanhas({ linhas }: { linhas: LinhaCampanha[] }) {
 									<TableHead>Campanha</TableHead>
 									<TableHead className="text-right">Investimento</TableHead>
 									<TableHead className="text-right">Custo / qualificado</TableHead>
-									<TableHead className="text-right" title="Conversas com contato deixado no CRM">
+									<TableHead
+										className="text-right"
+										title="Conversas em que o cliente informou nome e telefone ou e-mail — o telefone que o WhatsApp entrega sozinho não conta"
+									>
 										Leads no CRM
 									</TableHead>
 									<TableHead className="text-right">Qualificados</TableHead>
@@ -262,7 +265,12 @@ export function TabelaCampanhas({ linhas }: { linhas: LinhaCampanha[] }) {
 												Diferença
 											</TableHead>
 											<TableHead className="text-right">Conversas</TableHead>
-											<TableHead className="text-right">Propostas</TableHead>
+											<TableHead
+												className="text-right"
+												title="Propostas criadas na administradora — conta linhas de proposta, não pessoas"
+											>
+												Propostas criadas
+											</TableHead>
 											<TableHead className="text-right">Fechados</TableHead>
 										</>
 									)}

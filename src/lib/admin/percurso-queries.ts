@@ -31,6 +31,7 @@ import {
 import {
 	ARTIFACTS_DE_OFERTA_SQL,
 	chaveDaPessoa,
+	conversaIdentificada,
 	VISITA_DE_GENTE,
 	VISITA_NAO_E_ECO,
 } from "./sinais-do-funil";
@@ -129,9 +130,7 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
         -- importado de 'src/lib/funil/mensagem-pre-preenchida'.
         ${sqlEscreveuAlgoProprio(sql`c.id`)} AS iniciou_conversa,
         ${sqlSoPrePreenchida(sql`c.id`)} AS so_pre_preenchida,
-        EXISTS (SELECT 1 FROM leads l
-          WHERE l.conversation_id = c.id AND l.is_simulated = false
-            AND (l.phone IS NOT NULL OR l.email IS NOT NULL)) AS identificou,
+        ${conversaIdentificada(sql`c`)} AS identificou,
         EXISTS (SELECT 1 FROM messages m
           JOIN artifacts a ON a.message_id = m.id
           WHERE m.conversation_id = c.id

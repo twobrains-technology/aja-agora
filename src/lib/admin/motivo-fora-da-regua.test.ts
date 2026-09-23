@@ -1,19 +1,21 @@
 /**
- * O DICIONÁRIO DE MOTIVOS — o espelho das guardas de `avaliarElegibilidade`.
+ * O DICIONÁRIO DE MOTIVOS — a tela não pode discordar do ciclo.
  *
- * O teste que importa é o de EQUIVALÊNCIA: com a régua ligada, a conversa é
- * elegível exatamente quando o motivo é `null` (tirando `ja_na_regua`, que
- * significa "já está dentro"). Se as duas listas de guardas divergirem, este
- * teste fica vermelho antes de a tela mostrar um motivo errado.
+ * O teste que importa é o de EQUIVALÊNCIA: para cada um dos onze motivos, o que
+ * `motivoForaDaRegua` (a tela) responde é o que `avaliarElegibilidade` (o ciclo)
+ * responde. Enquanto o espelho existia, estes dois podiam divergir — a lista
+ * logo abaixo do número mostraria um motivo que o motor nunca daria.
  *
  * Teste PURO: sem banco e sem relógio (o `agora` e as opções entram por
  * parâmetro).
  */
 
 import { describe, expect, it } from "vitest";
+import { avaliarElegibilidade, MOTIVOS_DE_EXCLUSAO } from "@/lib/remarketing/motivo-de-exclusao";
 import {
 	type ConversaAvaliada,
 	MOTIVOS_FORA_DA_REGUA,
+	type MotivoForaDaRegua,
 	motivoDeSaidaLegivel,
 	motivoForaDaRegua,
 	type OpcoesDaElegibilidade,
@@ -95,6 +97,66 @@ describe("equivalência com as guardas do motor", () => {
 			}),
 		).toBe("telefone_da_equipe");
 		expect(motivoForaDaRegua(conversa({ jaNaRegua: true }), AGORA, OPCOES)).toBe("ja_na_regua");
+	});
+});
+
+describe("tela e ciclo concordam nos onze motivos", () => {
+	/** Cada caso isola UM motivo: a conversa elegível, com um desvio só. */
+	const casos: Array<{
+		motivo: MotivoForaDaRegua;
+		conversa: ConversaAvaliada;
+		opcoes: OpcoesDaElegibilidade;
+	}> = [
+		{ motivo: "regua_desligada", conversa: conversa(), opcoes: { ...OPCOES, reguaLigada: false } },
+		{ motivo: "teste", conversa: conversa({ isSimulated: true }), opcoes: OPCOES },
+		{ motivo: "encerrada", conversa: conversa({ status: "closed" }), opcoes: OPCOES },
+		{ motivo: "com_atendente", conversa: conversa({ status: "handed_off" }), opcoes: OPCOES },
+		{ motivo: "conversa_web", conversa: conversa({ channel: "web" }), opcoes: OPCOES },
+		{ motivo: "sem_contato", conversa: conversa({ contactId: null }), opcoes: OPCOES },
+		{
+			motivo: "sem_telefone",
+			conversa: conversa({ waId: null, phone: null }),
+			opcoes: OPCOES,
+		},
+		{
+			motivo: "telefone_da_equipe",
+			conversa: conversa({ waId: "556292496793" }),
+			opcoes: { ...OPCOES, telefoneDaEquipe: true },
+		},
+		{ motivo: "ja_na_regua", conversa: conversa({ jaNaRegua: true }), opcoes: OPCOES },
+		{
+			motivo: "ainda_em_silencio",
+			conversa: conversa({ lastInboundAt: null }),
+			opcoes: OPCOES,
+		},
+		{
+			motivo: "parada_ha_mais_de_7_dias",
+			conversa: conversa({ lastInboundAt: new Date(AGORA.getTime() - 8 * DIA) }),
+			opcoes: OPCOES,
+		},
+	];
+
+	it("cobre os onze motivos, sem sobra nem repetição", () => {
+		expect(casos.map((c) => c.motivo).sort()).toEqual([...MOTIVOS_FORA_DA_REGUA].sort());
+	});
+
+	it.each(casos)(
+		"$motivo: a tela devolve o mesmo que o ciclo",
+		({ motivo, conversa: c, opcoes }) => {
+			const veredito = avaliarElegibilidade(c, AGORA, opcoes);
+			expect(veredito.elegivel).toBe(false);
+			expect(veredito.elegivel ? null : veredito.motivo).toBe(motivo);
+			expect(motivoForaDaRegua(c, AGORA, opcoes)).toBe(motivo);
+		},
+	);
+
+	it("a lista de motivos da tela é a mesma tabela do ciclo", () => {
+		expect([...MOTIVOS_FORA_DA_REGUA]).toEqual([...MOTIVOS_DE_EXCLUSAO]);
+	});
+
+	it("a conversa elegível não tem motivo em nenhum dos dois lados", () => {
+		expect(motivoForaDaRegua(conversa(), AGORA, OPCOES)).toBeNull();
+		expect(avaliarElegibilidade(conversa(), AGORA, OPCOES).elegivel).toBe(true);
 	});
 });
 

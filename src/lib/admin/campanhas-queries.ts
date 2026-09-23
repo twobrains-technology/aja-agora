@@ -35,7 +35,13 @@ import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { abreviarId } from "./agrupar-origens";
 import { diaDoNegocio } from "./periodo";
-import { contagensDoFunil, conversaSemOrigem, VISITA_DE_GENTE } from "./sinais-do-funil";
+import {
+	contagensDoFunil,
+	conversaSemOrigem,
+	leadComContato,
+	leadIdentificado,
+	VISITA_DE_GENTE,
+} from "./sinais-do-funil";
 
 /**
  * A janela de atribuição da Meta, escrita para a tela.
@@ -62,7 +68,18 @@ export interface LinhaFunilCampanha {
 	utmCampaign: string | null;
 	visitas: number;
 	conversas: number;
+	/**
+	 * Conversas em que o CLIENTE se identificou — nome E telefone ou e-mail
+	 * (`leadIdentificado`, em `sinais-do-funil.ts`). Não conta o telefone que o
+	 * WhatsApp entrega sozinho.
+	 */
 	identificados: number;
+	/**
+	 * Conversas com contato CONHECIDO, tenha o cliente informado ou não. É o
+	 * número antigo, que mede quem a régua consegue alcançar — não quem se
+	 * identificou. Vai ao lado de `identificados`, com nome próprio.
+	 */
+	comTelefone: number;
 	qualificados: number;
 	propostas: number;
 	fechados: number;
@@ -134,6 +151,8 @@ export interface LinhaCampanha {
 	visitas: number;
 	conversas: number;
 	identificados: number;
+	/** Ver `LinhaFunilCampanha.comTelefone`: contato conhecido ≠ cliente identificado. */
+	comTelefone: number;
 	qualificados: number;
 	propostas: number;
 	fechados: number;
@@ -166,7 +185,13 @@ export interface LinhaCampanha {
 export interface TotaisDeCampanhas {
 	investimentoCents: number;
 	leadsMeta: number;
+	/**
+	 * Conversas em que o cliente se identificou (nome E contato) — o número que a
+	 * tela chama de "Leads no CRM".
+	 */
 	leadsCrm: number;
+	/** Conversas com contato conhecido, mesmo sem o cliente ter informado o nome. */
+	comTelefone: number;
 	/** Soma das conversas, incluindo a linha sem origem — é o que reconcilia. */
 	conversas: number;
 	qualificados: number;
@@ -224,7 +249,7 @@ export function custoPor(args: {
 export function combinarCampanhas(
 	funil: LinhaFunilCampanha[],
 	gastos: GastoDeCampanha[],
-	semOrigem?: { conversas: number; identificados: number },
+	semOrigem?: { conversas: number; identificados: number; comTelefone: number },
 	criativosPorCampanha?: Map<string, LinhaCriativo[]>,
 ): LinhaCampanha[] {
 	const gastoPorChave = new Map<string, GastoDeCampanha>();
@@ -248,6 +273,7 @@ export function combinarCampanhas(
 			visitas: linha.visitas,
 			conversas: linha.conversas,
 			identificados: linha.identificados,
+			comTelefone: linha.comTelefone,
 			qualificados: linha.qualificados,
 			propostas: linha.propostas,
 			fechados: linha.fechados,
@@ -287,6 +313,7 @@ export function combinarCampanhas(
 			visitas: 0,
 			conversas: 0,
 			identificados: 0,
+			comTelefone: 0,
 			qualificados: 0,
 			propostas: 0,
 			fechados: 0,
@@ -332,6 +359,7 @@ export function combinarCampanhas(
 			visitas: 0,
 			conversas: semOrigem.conversas,
 			identificados: semOrigem.identificados,
+			comTelefone: semOrigem.comTelefone,
 			qualificados: 0,
 			propostas: 0,
 			fechados: 0,
@@ -358,6 +386,7 @@ export function totalizarCampanhas(linhas: LinhaCampanha[]): TotaisDeCampanhas {
 	let investimentoCents = 0;
 	let leadsMeta = 0;
 	let leadsCrm = 0;
+	let comTelefone = 0;
 	let conversas = 0;
 	let qualificados = 0;
 	let propostas = 0;
@@ -367,6 +396,7 @@ export function totalizarCampanhas(linhas: LinhaCampanha[]): TotaisDeCampanhas {
 		investimentoCents += linha.spendCents;
 		leadsMeta += linha.leadsMeta;
 		leadsCrm += linha.identificados;
+		comTelefone += linha.comTelefone;
 		conversas += linha.conversas;
 		qualificados += linha.qualificados;
 		propostas += linha.propostas;
@@ -377,6 +407,7 @@ export function totalizarCampanhas(linhas: LinhaCampanha[]): TotaisDeCampanhas {
 		investimentoCents,
 		leadsMeta,
 		leadsCrm,
+		comTelefone,
 		conversas,
 		qualificados,
 		propostas,
@@ -415,6 +446,7 @@ async function funilPorCampanha(de: Date, ate: Date): Promise<LinhaFunilCampanha
 		visitas: num(linha.visitas),
 		conversas: num(linha.conversas),
 		identificados: num(linha.identificados),
+		comTelefone: num(linha.com_contato),
 		qualificados: num(linha.qualificados),
 		propostas: num(linha.propostas),
 		fechados: num(linha.fechados),
@@ -476,14 +508,13 @@ async function temEntidadesDeCampanha(): Promise<boolean> {
 async function conversasSemOrigemConhecida(
 	de: Date,
 	ate: Date,
-): Promise<{ conversas: number; identificados: number }> {
+): Promise<{ conversas: number; identificados: number; comTelefone: number }> {
 	const semOrigem = conversaSemOrigem(de, ate);
 	const resultado = await db.execute<Record<string, unknown>>(sql`
     SELECT
       count(DISTINCT c.id) AS conversas,
-      count(DISTINCT c.id) FILTER (
-        WHERE l.phone IS NOT NULL OR l.email IS NOT NULL
-      ) AS identificados
+      count(DISTINCT c.id) FILTER (WHERE ${leadIdentificado(sql`l`)}) AS identificados,
+      count(DISTINCT c.id) FILTER (WHERE ${leadComContato(sql`l`)}) AS com_contato
     FROM conversations c
     LEFT JOIN leads l ON l.conversation_id = c.id AND l.is_simulated = false
     WHERE ${semOrigem}
@@ -492,6 +523,7 @@ async function conversasSemOrigemConhecida(
 	return {
 		conversas: num(linha?.conversas),
 		identificados: num(linha?.identificados),
+		comTelefone: num(linha?.com_contato),
 	};
 }
 

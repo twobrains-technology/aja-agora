@@ -1,10 +1,12 @@
-import { desc } from "drizzle-orm";
+import { and, desc, eq, gte, lte } from "drizzle-orm";
+import { periodoEfetivoDoPipeline } from "@/components/admin/pipeline/periodo-do-pipeline";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
 import { dedupLeadsByContact } from "@/lib/admin/kanban-dedup";
 import type { LeadStage } from "@/lib/admin/lead-transitions";
 import { cardsDaMesaExterna } from "@/lib/admin/mesa-externa-cards";
 import { origemDaVisita } from "@/lib/admin/origem-label";
+import { fimDoDia, inicioDoDia, instanteDoParametro } from "@/lib/admin/periodo";
 import { requireRole } from "@/lib/admin/require-role";
 import { isMesaExterna, raiasVisiveisPara } from "@/lib/admin/role-scope";
 import {
@@ -13,7 +15,20 @@ import {
 	getMesaAttendantByUserId,
 } from "@/lib/mesa/handoff";
 
-export async function GET() {
+/**
+ * O recorte do quadro mora no SERVIDOR.
+ *
+ * Até aqui a rota devolvia a base INTEIRA e o período era aplicado no cliente
+ * (`pipeline-filters.tsx`): o chip do cabeçalho dizia "30 dias" enquanto a
+ * resposta carregava todo o histórico, e o lead simulado — que é demo — entrava
+ * no mesmo número da operação. Duas afirmações diferentes na mesma tela.
+ *
+ * O período agora é resolvido aqui pela MESMA regra do resto do painel
+ * (`periodoEfetivoDoPipeline`: URL > cookie > "desde o início"), e o simulado só
+ * aparece com opt-in explícito (`?include_simulated=true`), como em
+ * `/api/admin/conversations`.
+ */
+export async function GET(request?: Request) {
 	const { error, session, role } = await requireRole(
 		"admin",
 		"viewer",
@@ -22,11 +37,30 @@ export async function GET() {
 	);
 	if (error) return error;
 
-	// Pipeline mostra TODOS os leads (incl. simulados) — o simulador é
-	// considerado "demo path" pro stakeholder e deve refletir o fluxo real.
-	// Dashboard de métricas comerciais (dashboard-queries.ts) continua
-	// filtrando is_simulated=false — esse é caso separado.
+	const busca = request ? new URL(request.url).searchParams : null;
+	// Aceita só o literal "true": qualquer outra string é false, para que
+	// `?include_simulated=1` ou `=sim` não liguem o recorte por acidente.
+	const includeSimulated = busca?.get("include_simulated") === "true";
+
+	// `from`/`to` chegam como DIA do negócio (`YYYY-MM-DD`) ou ISO completo, e a
+	// janela resultante usa `inicioDoDia`/`fimDoDia` — os mesmos que o recorte do
+	// cliente usava, agora sobre o `created_at` do lead.
+	const periodo = periodoEfetivoDoPipeline(
+		instanteDoParametro(busca?.get("from") ?? ""),
+		instanteDoParametro(busca?.get("to") ?? ""),
+		// O cabeçalho CRU (`aja_periodo=...`), não o valor: `periodoEfetivoDoPipeline`
+		// procura `nome=valor` e devolve `null` para um valor solto — passar o valor
+		// já extraído faria o cookie ser ignorado em silêncio e a tela mostrar uma
+		// janela enquanto a rota recortava outra.
+		request?.headers.get("cookie") ?? null,
+	);
+
 	const allLeads = await db.query.leads.findMany({
+		where: and(
+			gte(leads.createdAt, inicioDoDia(periodo.de)),
+			lte(leads.createdAt, fimDoDia(periodo.ate)),
+			...(includeSimulated ? [] : [eq(leads.isSimulated, false)]),
+		),
 		orderBy: [desc(leads.updatedAt)],
 		with: {
 			conversation: {

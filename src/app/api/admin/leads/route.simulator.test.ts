@@ -15,6 +15,11 @@
  *     saveContactWhatsapp), o lead resultante DEVE constar na resposta de
  *     GET /api/admin/leads, agrupado pelo estágio correto.
  *
+ * ATUALIZAÇÃO (22/09/2026): o lead do simulador voltou a ficar FORA do quadro
+ * por padrão, e o teste passou a pedir `?include_simulated=true`. O recorte por
+ * período também saiu do cliente e ficou no servidor. O contrato acima continua
+ * o mesmo — o que mudou foi a porta de entrada dele.
+ *
  * Integration test: bate no DB real do container (aja-pg-develop, 5434).
  */
 import { eq } from "drizzle-orm";
@@ -107,8 +112,10 @@ describe("GET /api/admin/leads -- lead do simulador na pipeline", () => {
 		expect(persistedLead?.name).toBe("Kairo");
 		const leadId = persistedLead?.id as string;
 
-		// Agora bate na rota da pipeline e exige que o lead esteja lá.
-		const res = await GET();
+		// Agora bate na rota da pipeline e exige que o lead esteja lá. O lead do
+		// simulador é demo e não entra no quadro por padrão (22/09/2026); o
+		// opt-in abaixo é o que mantém a asserção de produto válida.
+		const res = await GET(new Request("http://test/api/admin/leads?include_simulated=true"));
 		expect(res.status).toBe(200);
 		const body = (await res.json()) as LeadsResponse;
 

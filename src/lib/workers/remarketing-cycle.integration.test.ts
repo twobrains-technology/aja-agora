@@ -453,4 +453,81 @@ describeIfDb("régua — entrada, higiene e motivo (integration)", () => {
 			expect(vencidas.map((l) => l.conversationId)).not.toContain(conversationId);
 		});
 	});
+
+	describe("o cadastro da régua vale no ciclo de verdade (AJA-20)", () => {
+		// Este é o teste que FALTAVA. Os unitários provam o motor puro
+		// (`remarketing/motor.test.ts`) e a leitura do cadastro
+		// (`remarketing-config.test.ts`), mas nenhum provava a costura: que o CICLO
+		// lê `remarketing_config` e o motor obedece. Sem ele,
+		// `lerParametrosRegua()` podia continuar sem chamador — foi exatamente o
+		// estado do código até aqui, e a tela de config prometia "passa a valer em
+		// até um ciclo, sem deploy" sem que nada do banco chegasse ao envio.
+		//
+		// A chave operacional (`REMARKETING_ATIVO`) está ligada no `beforeAll`.
+		const CHAVE = "dias_ate_segundo_toque";
+
+		/** Deixa o banco no estado pedido: com a linha (e o valor) ou sem ela. */
+		async function gravarCadastro(valor: string | null) {
+			await db.delete(schema.remarketingConfig).where(eq(schema.remarketingConfig.chave, CHAVE));
+			if (valor !== null) {
+				await db.insert(schema.remarketingConfig).values({ chave: CHAVE, valor });
+			}
+		}
+
+		/**
+		 * O ciclo com as dependências de ENVIO dubladas (nenhuma mensagem sai) e a
+		 * leitura do cadastro REAL: é o caminho banco → cadastro → motor → banco.
+		 */
+		async function rodarCiclo() {
+			return ciclo.runRemarketingCycle({
+				agora: AGORA,
+				entrarNaRegua: async () => 0,
+				segurarToquesDaEquipe: async () => 0,
+				dispararTurno: async () => {},
+				enviarArte: async () => {},
+				enviarTemplate: async () => {},
+				despacharConversoes: async () => ({}),
+			});
+		}
+
+		/** O intervalo que a régua agendou para o próximo toque desta conversa. */
+		async function intervaloAgendado(conversationId: string): Promise<number | null> {
+			const linha = await db.query.remarketingTouches.findFirst({
+				where: eq(schema.remarketingTouches.conversationId, conversationId),
+			});
+			if (!linha?.nextTouchAt) return null;
+			return linha.nextTouchAt.getTime() - AGORA.getTime();
+		}
+
+		afterAll(async () => {
+			await db.delete(schema.remarketingConfig).where(eq(schema.remarketingConfig.chave, CHAVE));
+		});
+
+		it("sem linha no cadastro, o ciclo agenda o intervalo de fábrica (3 dias)", async () => {
+			await gravarCadastro(null);
+			const { conversationId } = await semear({ jaNaRegua: true });
+
+			await rodarCiclo();
+
+			expect(await intervaloAgendado(conversationId)).toBe(3 * DIA);
+		});
+
+		it("com a linha no cadastro, o MESMO ciclo agenda 1 dia — o ajuste vale sem deploy", async () => {
+			await gravarCadastro("1");
+			const { conversationId } = await semear({ jaNaRegua: true });
+
+			await rodarCiclo();
+
+			expect(await intervaloAgendado(conversationId)).toBe(1 * DIA);
+		});
+
+		it("linha corrompida não muda o ciclo: ele segue na fábrica", async () => {
+			await gravarCadastro("amanhã");
+			const { conversationId } = await semear({ jaNaRegua: true });
+
+			await rodarCiclo();
+
+			expect(await intervaloAgendado(conversationId)).toBe(3 * DIA);
+		});
+	});
 });

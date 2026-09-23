@@ -46,7 +46,7 @@ function explicarDiferenca(diferenca: number): string {
 	if (diferenca === 0)
 		return "Os dois números bateram no período — raro, e não significa que medem o mesmo";
 	if (diferenca > 0) {
-		return `A Meta contou +${inteiro(diferenca)} — cliques que não viraram conversa`;
+		return `A Meta contou +${inteiro(diferenca)} — cliques que não viraram conversa com o cliente identificado`;
 	}
 	return `O CRM contou +${inteiro(Math.abs(diferenca))} — lead que a Meta não atribuiu`;
 }
@@ -72,7 +72,7 @@ export function ResumoCampanhas({ totais }: { totais: TotaisDeCampanhas }) {
 				<Cartao
 					titulo="Qualificados no CRM"
 					valor={inteiro(totais.qualificados)}
-					nota={`${inteiro(totais.propostas)} propostas · ${inteiro(totais.fechados)} fechados`}
+					nota={`${inteiro(totais.propostas)} propostas criadas · ${inteiro(totais.fechados)} fechados`}
 				/>
 			</div>
 
@@ -82,7 +82,12 @@ export function ResumoCampanhas({ totais }: { totais: TotaisDeCampanhas }) {
 						<p className="text-sm font-medium text-muted-foreground">Leads no CRM</p>
 						<p className="text-4xl font-semibold tabular-nums">{inteiro(totais.leadsCrm)}</p>
 						<p className="mt-1 text-xs text-muted-foreground">
-							Conversas com contato deixado — o número que o Aja Agora produziu.
+							Conversas em que o cliente informou nome e telefone ou e-mail — o número que o Aja
+							Agora produziu. O telefone que o WhatsApp entrega sozinho não conta aqui.
+						</p>
+						<p className="mt-1 text-xs text-muted-foreground" title="Inclui o telefone do WhatsApp">
+							Com telefone ou e-mail conhecido (a régua consegue falar):{" "}
+							<span className="tabular-nums">{inteiro(totais.comTelefone)}</span>
 						</p>
 					</div>
 					<div className="sm:text-right">

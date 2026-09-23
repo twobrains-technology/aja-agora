@@ -63,6 +63,7 @@ import type { ConnectionOptions } from "bullmq";
 import { and, desc, eq, type SQL, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { beviProposals, remarketingTouches } from "@/db/schema";
+import { lerParametrosRegua } from "@/lib/admin/remarketing-config";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { metaOf, persistMeta } from "@/lib/conversation/meta";
 import { despacharConversoesPendentes } from "@/lib/conversions/dispatch";
@@ -88,7 +89,12 @@ import {
 	toquesReconstruidos,
 	ultimoToqueDerivado,
 } from "@/lib/remarketing/motor";
-import { ESPERA_SILENCIO_MS, type EstadoRegua } from "@/lib/remarketing/regua";
+import {
+	ESPERA_SILENCIO_MS,
+	type EstadoRegua,
+	PARAMETROS_DE_FABRICA,
+	type ParametrosRegua,
+} from "@/lib/remarketing/regua";
 import { chaveTelefoneBR } from "@/lib/whatsapp/mesmo-numero";
 import { buildRetomadaDirective, podeRetomar } from "./retomada";
 
@@ -154,6 +160,12 @@ export interface RemarketingDeps {
 	telefoneDaEquipe?: (telefone: string) => Promise<boolean>;
 	/** Segura os toques ATIVOS cujo destino é telefone da equipe (idempotente). */
 	segurarToquesDaEquipe?: (agora: Date) => Promise<number>;
+	/**
+	 * O CADASTRO da régua (`remarketing_config`), lido UMA vez por ciclo.
+	 * É o que faz a tela de config valer sem deploy: a régua continua pura, quem
+	 * lê o banco é o ciclo e passa o objeto ao motor por `parametros`.
+	 */
+	lerParametros?: () => Promise<ParametrosRegua>;
 	despacharConversoes?: () => Promise<unknown>;
 }
 
@@ -801,6 +813,7 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 	const enviarTemplate = deps.enviarTemplate ?? enviarTemplateReal;
 	const telefoneDaEquipe = deps.telefoneDaEquipe ?? ehDaEquipe;
 	const segurarEquipe = deps.segurarToquesDaEquipe ?? segurarToquesDaEquipe;
+	const lerParametros = deps.lerParametros ?? lerParametrosRegua;
 	const despachar = deps.despacharConversoes ?? despacharConversoesPendentes;
 
 	const nada: Record<string, number> = {};
@@ -873,6 +886,29 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 		);
 	}
 
+	// ── O cadastro da régua, lido UMA vez por ciclo ───────────────────────────
+	// Não é por linha: o ajuste vale para o tick inteiro e uma leitura só evita
+	// N consultas. Ler aqui é o que liga a tela de config ao motor — sem isto o
+	// motor cai em `PARAMETROS_DE_FABRICA` e a promessa de "passa a valer em até
+	// um ciclo, sem deploy" é falsa.
+	//
+	// Falha de leitura NÃO derruba o ciclo: cai na fábrica, que é o lado de
+	// "menos toque" (o viés de `normalizarParametros`), e o erro fica no log —
+	// nunca em silêncio.
+	let parametros: ParametrosRegua = PARAMETROS_DE_FABRICA;
+	try {
+		parametros = await lerParametros();
+	} catch (err) {
+		console.error(
+			JSON.stringify({
+				level: "error",
+				source: "remarketing-cycle",
+				etapa: "cadastro",
+				error: err instanceof Error ? err.message : String(err),
+			}),
+		);
+	}
+
 	let linhas: LinhaDaRegua[] = [];
 	try {
 		linhas = await listar(agora);
@@ -919,6 +955,7 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 				optoutDaPessoaEm: linha.optoutDaPessoaEm,
 				retomadaPermitida: podeRetomar(meta, agora.getTime()),
 				telefoneDaEquipe: daEquipe,
+				parametros,
 			});
 
 			// 3. GRAVA ANTES DE ENVIAR. Se o processo morrer agora, a cota já subiu
