@@ -166,6 +166,7 @@ function CampanhasContent() {
 									investimentoCents: 0,
 									leadsMeta: 0,
 									leadsCrm: 0,
+									comTelefone: 0,
 									qualificados: 0,
 									propostas: 0,
 									fechados: 0,

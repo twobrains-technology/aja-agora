@@ -245,7 +245,8 @@ export async function contarLinhasDaRegua(): Promise<number> {
 /**
  * A janela de entrada da régua: 7 dias. O ciclo só olha o silêncio recente —
  * sem o teto, o primeiro ciclo depois do deploy varreria o histórico inteiro.
- * O valor vem de `motivo-fora-da-regua.ts` (fonte única daqui até o F6).
+ * O valor vem de `motivo-de-exclusao.ts:169` — lá está a única declaração de
+ * `JANELA_DE_ENTRADA_MS`; o caminho de admin reexporta (AJA-22 T0).
  */
 
 /**

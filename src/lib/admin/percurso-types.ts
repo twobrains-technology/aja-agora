@@ -72,9 +72,18 @@ export const PASSOS_DO_PERCURSO = [
 		label: "Iniciou a conversa",
 		ajuda: "Escreveu algo além da mensagem pré-preenchida",
 	},
-	{ chave: "se_identificou", label: "Se identificou", ajuda: "Deixou telefone ou e-mail" },
+	{
+		chave: "se_identificou",
+		label: "Se identificou",
+		ajuda: "Informou nome e telefone ou e-mail — o telefone do WhatsApp não conta",
+	},
 	{ chave: "viu_oferta", label: "Viu oferta", ajuda: "Recebeu simulação ou oferta real" },
-	{ chave: "proposta", label: "Proposta", ajuda: "Proposta criada na administradora" },
+	{
+		chave: "proposta",
+		label: "Proposta criada",
+		ajuda:
+			"Proposta criada na administradora — uma linha por pessoa, por mais propostas que ela tenha",
+	},
 	{ chave: "fechado", label: "Fechado", ajuda: "Contrato fechado" },
 ] as const;
 

@@ -42,6 +42,7 @@ function funil(parcial: Partial<LinhaFunilCampanha> & { chave: string }): LinhaF
 		visitas: 0,
 		conversas: 0,
 		identificados: 0,
+		comTelefone: 0,
 		qualificados: 0,
 		propostas: 0,
 		fechados: 0,
@@ -211,7 +212,7 @@ describe("combinarCampanhas", () => {
 		const linhas = combinarCampanhas(
 			[funil({ chave: "c1", visitas: 10, conversas: 3, identificados: 2, qualificados: 1 })],
 			[gasto({ entityId: "c1", nome: "Campanha 1", spendCents: 10_000 })],
-			{ conversas: 4, identificados: 2 },
+			{ conversas: 4, identificados: 2, comTelefone: 4 },
 		);
 
 		const ultima = linhas[linhas.length - 1];
@@ -273,6 +274,11 @@ describe("totalizarCampanhas", () => {
 		expect(totais.investimentoCents).toBe(100_000);
 		expect(totais.leadsMeta).toBe(15);
 		expect(totais.leadsCrm).toBe(10);
+		// `comTelefone` é somado por `computeOrigens` e o helper desta fixture não o
+		// preenche, por isso 0 aqui. Em produção ele é MAIOR ou igual a
+		// `identificados`: todo identificado tem contato, e quem só chegou pelo
+		// WhatsApp tem contato sem ter se identificado.
+		expect(totais.comTelefone).toBe(0);
 		expect(totais.qualificados).toBe(5);
 		expect(totais.propostas).toBe(1);
 		expect(totais.fechados).toBe(1);
@@ -291,10 +297,24 @@ describe("totalizarCampanhas", () => {
 		const linhas = combinarCampanhas(
 			[funil({ chave: "a", conversas: 3 }), funil({ chave: "b", conversas: 1 })],
 			[],
-			{ conversas: 5, identificados: 2 },
+			{ conversas: 5, identificados: 2, comTelefone: 4 },
 		);
 		const totais = totalizarCampanhas(linhas);
 		expect(totais.conversas).toBe(9);
 		expect(totais.leadsCrm).toBe(2);
+		expect(totais.comTelefone).toBe(4);
+	});
+
+	it("soma o contato conhecido das campanhas, separado do identificado", () => {
+		const linhas = combinarCampanhas(
+			[
+				funil({ chave: "a", identificados: 1, comTelefone: 5 }),
+				funil({ chave: "b", identificados: 2, comTelefone: 7 }),
+			],
+			[],
+		);
+		const totais = totalizarCampanhas(linhas);
+		expect(totais.leadsCrm).toBe(3);
+		expect(totais.comTelefone).toBe(12);
 	});
 });

@@ -60,10 +60,20 @@ export function KanbanColumn({
 						{label}
 					</h3>
 				</div>
-				<Badge variant="secondary" className="text-[11px] px-1.5 h-5 tabular-nums">
+				<Badge
+					variant="secondary"
+					className="text-[11px] px-1.5 h-5 tabular-nums"
+					title={`${leads.length} lead${leads.length === 1 ? "" : "s"} neste estágio`}
+				>
 					{leads.length}
 				</Badge>
 			</div>
+			{stage === "proposta_enviada" && (
+				<p className="px-3 pb-2 text-[11px] leading-tight text-muted-foreground">
+					Leads que estão neste estágio — não é a mesma conta das telas de mídia, que contam
+					conversas com proposta criada.
+				</p>
+			)}
 
 			{/* Droppable area */}
 			<Droppable droppableId={stage}>

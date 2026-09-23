@@ -34,12 +34,14 @@ describe("filtros isSimulated nos painéis comerciais", () => {
 		}
 	});
 
-	it("/api/admin/leads: pipeline NÃO filtra isSimulated (demo path inclui simulados)", () => {
-		// Decisão de produto: pipeline admin mostra todos os leads (incl. simulados)
-		// porque o simulador é "demo path" pro stakeholder. Métricas comerciais
-		// continuam isoladas em dashboard-queries (filtro mantido lá).
+	it("/api/admin/leads: simulado fora por padrão, opt-in via ?include_simulated=true", () => {
+		// Decisão de produto (22/09/2026, AJA-23 T4): o Pipeline deixou de mostrar
+		// lead simulado por padrão — o card de teste do stakeholder não pode inflar
+		// a raia que a Bruna lê. O opt-in é explícito, como em
+		// /api/admin/conversations.
 		const src = source("src/app/api/admin/leads/route.ts");
-		expect(src).not.toMatch(/where:\s*eq\(leads\.isSimulated,\s*false\)/);
+		expect(src).toMatch(/include_simulated/);
+		expect(src).toMatch(/isSimulated,\s*false/);
 	});
 
 	it("/api/admin/conversations: oculta simuladas por default, opt-in via ?include_simulated=true", () => {

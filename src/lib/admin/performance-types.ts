@@ -46,9 +46,17 @@ export const ETAPAS_FUNIL_MIDIA = [
 		label: "Iniciaram a conversa",
 		ajuda: "Escreveram algo além da mensagem pré-preenchida",
 	},
-	{ chave: "identificados", label: "Se identificaram", ajuda: "Deixaram telefone ou e-mail" },
+	{
+		chave: "identificados",
+		label: "Se identificaram",
+		ajuda: "Informaram nome e telefone ou e-mail — o telefone do WhatsApp não conta",
+	},
 	{ chave: "viram_oferta", label: "Viram oferta", ajuda: "Receberam simulação ou oferta real" },
-	{ chave: "propostas", label: "Propostas", ajuda: "Proposta criada na administradora" },
+	{
+		chave: "propostas",
+		label: "Conversas com proposta",
+		ajuda: "Proposta criada na administradora — conta conversas, não linhas de proposta",
+	},
 	{ chave: "fechados", label: "Fechados", ajuda: "Contrato fechado" },
 ] as const;
 
@@ -157,7 +165,21 @@ export interface LinhaOrigem {
 	origem: Origem;
 	visitas: number;
 	conversas: number;
+	/**
+	 * Conversas em que o CLIENTE se identificou — nome E telefone ou e-mail.
+	 *
+	 * O telefone do WhatsApp não conta: o canal o entrega sem o cliente ter
+	 * informado nada, e contá-lo fazia este degrau medir o canal em vez da pessoa
+	 * (decisão do dono, 22/09/2026).
+	 */
 	identificados: number;
+	/**
+	 * Conversas com contato CONHECIDO, tenha o cliente informado ou não — é quem
+	 * a régua consegue alcançar. Vai ao lado de `identificados` porque mede outra
+	 * coisa, e o rótulo de cada um diz qual.
+	 */
+	comTelefone: number;
+	/** Propostas CRIADAS na administradora — conta linhas, não pessoas. */
 	propostas: number;
 	fechados: number;
 	/** Fechados ÷ visitas, em %. A pergunta que decide onde a verba vai. */

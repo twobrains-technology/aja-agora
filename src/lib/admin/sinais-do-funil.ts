@@ -111,6 +111,94 @@ export const VISITA_NAO_E_ECO = sql`NOT EXISTS (
 export const VISITA_CONTAVEL = sql`(${VISITA_DE_GENTE} AND ${VISITA_NAO_E_ECO})`;
 
 /**
+ * A CONVERSA ATRIBUÍDA — o corte que o funil de mídia aplica em toda etapa
+ * depois de `visitas`: só conta conversa que nasceu de uma visita, no período.
+ *
+ * Sem ele, conversa sem origem (WhatsApp orgânico, conversa anterior à
+ * instrumentação de atribuição) entrava no funil e o resultado ficava MAIOR que
+ * o topo — um funil que cresce, mostrando 328%.
+ *
+ * Nasceu local a `performance-queries.ts` e saiu quando a tela de Campanhas
+ * passou a precisar do MESMO recorte para declarar as conversas que ficam fora
+ * (o complemento, logo abaixo). Duas telas com duas definições de "conversa do
+ * funil" divergem no primeiro dia, com o mesmo rótulo.
+ *
+ * O alias da conversa entra por parâmetro — `c` nas duas telas de hoje — porque
+ * amarrar ao alias faria o fragmento compilar num lugar e explodir no outro.
+ */
+export function conversaAtribuida(de: Date, ate: Date, conversa: SQL = sql`c`): SQL {
+	return sql`${conversa}.is_simulated = false
+    AND ${conversa}.visit_id IS NOT NULL
+    AND ${conversa}.created_at BETWEEN ${de} AND ${ate}`;
+}
+
+/**
+ * O COMPLEMENTO exato de `conversaAtribuida`: a conversa do período que **não**
+ * nasceu de uma visita — WhatsApp orgânico e conversa anterior à instrumentação.
+ *
+ * Existe para que a tela de Campanhas possa dizer quantas conversas ficaram
+ * fora do funil sem inventar um segundo critério: sem esta linha, o total de
+ * conversas de Campanhas fica MENOR que o da tela de Conversas e ninguém sabe
+ * por quê.
+ */
+export function conversaSemOrigem(de: Date, ate: Date, conversa: SQL = sql`c`): SQL {
+	return sql`${conversa}.is_simulated = false
+    AND ${conversa}.visit_id IS NULL
+    AND ${conversa}.created_at BETWEEN ${de} AND ${ate}`;
+}
+
+/**
+ * O LEAD IDENTIFICADO PELO CLIENTE — tem NOME **e** tem contato.
+ *
+ * **Por que o telefone sozinho não basta.** Toda conversa de WhatsApp nasce com
+ * o telefone do `waId` já no lead (`src/lib/whatsapp/session.ts`), porque o
+ * canal entrega o número sem o cliente ter informado nada. Contando "telefone
+ * OU e-mail", o degrau "Se identificaram" media o CANAL, não o cliente: quem
+ * chegou pelo WhatsApp entrava como identificado tendo escrito só "oi".
+ *
+ * Foi a pergunta literal da cliente em 22/09/2026 — *"se vieram do WhatsApp, eu
+ * já tenho o telefone… aqui ele vai entender que já se identificou"* — e a
+ * decisão do dono foi exigir o NOME junto: identificado = nome E (telefone ou
+ * e-mail). O nome chega pelo pushName do WhatsApp e pela extração do gate de
+ * crédito, e `src/lib/contacts/sincronizar-nome.ts` é o ponto único que o leva a
+ * `leads.name` e `conversations.contactName`.
+ *
+ * Espera a tabela `leads` com alias `l`, como `contagensDoFunil`.
+ */
+export function leadIdentificado(lead: SQL = sql`l`): SQL {
+	return sql`${lead}.name IS NOT NULL AND (${lead}.phone IS NOT NULL OR ${lead}.email IS NOT NULL)`;
+}
+
+/**
+ * O LEAD COM CONTATO CONHECIDO — telefone ou e-mail, tenha o cliente informado
+ * ou não.
+ *
+ * É o número ANTIGO, e ele não some da tela: é o que a régua usa para saber se
+ * **pode falar** com a pessoa (sem telefone não há toque). Ele e
+ * `leadIdentificado` medem coisas diferentes de propósito — funil e capacidade
+ * de contato — e por isso aparecem lado a lado, com nomes distintos, em vez de
+ * um escolher pelo outro.
+ */
+export function leadComContato(lead: SQL = sql`l`): SQL {
+	return sql`${lead}.phone IS NOT NULL OR ${lead}.email IS NOT NULL`;
+}
+
+/**
+ * A CONVERSA cujo lead está identificado pelo cliente — o `EXISTS` que o funil
+ * de mídia, o Percurso e a Exportação usam no degrau "Se identificaram".
+ *
+ * Existe para que os três não repitam o `EXISTS` com a lista de condições: um
+ * deles esquecendo o `is_simulated = false`, ou o nome, já faria o mesmo degrau
+ * medir duas populações em telas diferentes.
+ */
+export function conversaIdentificada(conversa: SQL = sql`c`): SQL {
+	return sql`EXISTS (SELECT 1 FROM leads li
+    WHERE li.conversation_id = ${conversa}.id
+      AND li.is_simulated = false
+      AND ${leadIdentificado(sql`li`)})`;
+}
+
+/**
  * As CONTAGENS do funil por origem/campanha — a definição de cada degrau num
  * lugar só.
  *
@@ -125,10 +213,12 @@ export const VISITA_CONTAVEL = sql`(${VISITA_DE_GENTE} AND ${VISITA_NAO_E_ECO})`
  * `visits v`, `conversations c`, `leads l`, `bevi_proposals bp`. Quem não usa
  * `qualificados` simplesmente ignora a coluna.
  *
- * `identificados` conta CONVERSAS, não leads: a mesma definição do funil de
- * mídia (`computeFunilMidia`). Contando leads, uma conversa com dedup imperfeito
- * entrava duas vezes e a coluna "Identificados" divergia da etapa "Se
- * identificaram" do funil, na mesma tela, com o mesmo rótulo.
+ * `identificados` conta CONVERSAS cujo lead tem nome E contato (`leadIdentificado`),
+ * não leads: a mesma definição do funil de mídia (`computeFunilMidia`). Contando
+ * leads, uma conversa com dedup imperfeito entrava duas vezes e a coluna
+ * "Identificados" divergia da etapa "Se identificaram" do funil, na mesma tela,
+ * com o mesmo rótulo. `com_contato` é a coluna vizinha — o número antigo, que
+ * mede quem a régua consegue alcançar, não quem se identificou.
  */
 export function contagensDoFunil(): SQL {
 	const qualificados = sql.join(
@@ -138,7 +228,8 @@ export function contagensDoFunil(): SQL {
 	return sql`
     count(DISTINCT v.id) FILTER (WHERE ${VISITA_NAO_E_ECO}) AS visitas,
     count(DISTINCT c.id) AS conversas,
-    count(DISTINCT c.id) FILTER (WHERE l.phone IS NOT NULL OR l.email IS NOT NULL) AS identificados,
+    count(DISTINCT c.id) FILTER (WHERE ${leadComContato()}) AS com_contato,
+    count(DISTINCT c.id) FILTER (WHERE ${leadIdentificado()}) AS identificados,
     count(DISTINCT l.id) FILTER (WHERE l.stage IN (${qualificados})) AS qualificados,
     count(DISTINCT bp.id) AS propostas,
     count(DISTINCT l.id) FILTER (WHERE l.stage = 'fechado_ganho') AS fechados

@@ -22,6 +22,7 @@ import {
 	PASSOS_DO_PERCURSO,
 	type PassoDoPercurso,
 } from "@/lib/admin/percurso-types";
+import { conversaIdentificada } from "@/lib/admin/sinais-do-funil";
 import { isoDeSaoPaulo } from "./conversas";
 import type { LinhaExportada } from "./formato";
 import { mascararEmail, mascararNome, mascararTelefone } from "./mascarar";
@@ -131,7 +132,7 @@ export async function exportarPercurso(opcoes: OpcoesDePercurso): Promise<LinhaE
         (SELECT count(*) FROM messages m WHERE m.conversation_id = c.id AND m.role = 'user') AS msgs,
         (SELECT max(m.created_at) FROM messages m WHERE m.conversation_id = c.id AND m.role = 'user') AS ultimo_inbound,
         EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.role = 'user') AS escreveu,
-        EXISTS (SELECT 1 FROM leads l WHERE l.conversation_id = c.id AND l.is_simulated = false AND (l.phone IS NOT NULL OR l.email IS NOT NULL)) AS identificou,
+        ${conversaIdentificada(sql`c`)} AS identificou,
         EXISTS (SELECT 1 FROM messages m JOIN artifacts a ON a.message_id = m.id WHERE m.conversation_id = c.id AND a.type IN ('real_offer','simulation_result')) AS viu_oferta,
         EXISTS (SELECT 1 FROM bevi_proposals bp WHERE bp.conversation_id = c.id) AS teve_proposta,
         EXISTS (SELECT 1 FROM leads l WHERE l.conversation_id = c.id AND l.is_simulated = false AND l.stage = 'fechado_ganho') AS fechou

@@ -60,7 +60,7 @@ export const SUB_ETAPAS_HANDOFF = [
 	{
 		estagio: "proposta_enviada",
 		label: "Proposta enviada",
-		ajuda: "A proposta foi apresentada ao cliente",
+		ajuda: "A proposta foi apresentada ao cliente — conta leads que chegaram ao estágio",
 	},
 	{
 		estagio: "na_administradora",

@@ -29,6 +29,12 @@
  * pelo mesmo caminho que o webhook real chama, o lead DEVE existir e DEVE
  * aparecer no GET /api/admin/leads.
  *
+ * ATUALIZAÇÃO (22/09/2026): o lead do simulador voltou a ficar FORA do quadro
+ * por padrão — o quadro passou a ser a operação, e a demo entra no mesmo número
+ * dela. Ele continua alcançável com `?include_simulated=true`, e é assim que
+ * este teste o procura. O que segue em pé, e é o defeito que ele guarda, é que o
+ * lead EXISTE e é recuperável.
+ *
  * Integration test: bate no DB real (aja-pg-develop, 5434).
  */
 import { eq } from "drizzle-orm";
@@ -151,7 +157,12 @@ describe("BUG: simulador WhatsApp não cria lead na pipeline", () => {
 
 		// 4) GET /api/admin/leads precisa retornar esse lead. Esta é a asserção
 		//    de produto: o stakeholder abre o kanban e VÊ o lead.
-		const listRes = await listLeads();
+		// `include_simulated=true` porque o lead do simulador é demo e não entra no
+		// quadro por padrão (22/09/2026). O opt-in é o que mantém o lead alcançável,
+		// que é o defeito que este teste guarda.
+		const listRes = await listLeads(
+			new Request("http://test/api/admin/leads?include_simulated=true"),
+		);
 		expect(listRes.status).toBe(200);
 		const body = (await listRes.json()) as LeadsResponse;
 
