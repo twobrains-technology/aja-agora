@@ -37,9 +37,9 @@ import { abreviarId } from "./agrupar-origens";
 import { diaDoNegocio } from "./periodo";
 import {
 	contagensDoFunil,
+	conversaIdentificada,
 	conversaSemOrigem,
 	leadComContato,
-	leadIdentificado,
 	VISITA_DE_GENTE,
 } from "./sinais-do-funil";
 
@@ -70,8 +70,8 @@ export interface LinhaFunilCampanha {
 	conversas: number;
 	/**
 	 * Conversas em que o CLIENTE se identificou — nome E telefone ou e-mail
-	 * (`leadIdentificado`, em `sinais-do-funil.ts`). Não conta o telefone que o
-	 * WhatsApp entrega sozinho.
+	 * (`conversaIdentificada`, em `sinais-do-funil.ts`). Não conta o telefone que
+	 * o WhatsApp entrega sozinho.
 	 */
 	identificados: number;
 	/**
@@ -513,7 +513,7 @@ async function conversasSemOrigemConhecida(
 	const resultado = await db.execute<Record<string, unknown>>(sql`
     SELECT
       count(DISTINCT c.id) AS conversas,
-      count(DISTINCT c.id) FILTER (WHERE ${leadIdentificado(sql`l`)}) AS identificados,
+      count(DISTINCT c.id) FILTER (WHERE ${conversaIdentificada(sql`c`)}) AS identificados,
       count(DISTINCT c.id) FILTER (WHERE ${leadComContato(sql`l`)}) AS com_contato
     FROM conversations c
     LEFT JOIN leads l ON l.conversation_id = c.id AND l.is_simulated = false

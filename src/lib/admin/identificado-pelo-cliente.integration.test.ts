@@ -57,12 +57,18 @@ describeIfDb("identificado pelo cliente × contato conhecido (integration)", () 
 		performance = await import("./performance-queries");
 		percurso = await import("./percurso-queries");
 
-		/** Uma visita (de gente) + uma conversa com um lead, na janela isolada. */
+		/** Uma visita (de gente) + uma conversa, na janela isolada. */
 		async function semearConversa(parcial: {
 			canal: "web" | "whatsapp";
 			nome: string | null;
 			telefone: string | null;
 			propostas?: number;
+			/** O nome que ficou SÓ na conversa (`contactName`), sem ir ao lead. */
+			nomeNaConversa?: string | null;
+			/** O telefone do CANAL (`waId`) — a conversa de WhatsApp sempre tem. */
+			waId?: string | null;
+			/** Conversa sem linha em `leads` (o `B-03` pode não ter criado). */
+			semLead?: boolean;
 		}): Promise<void> {
 			const [visita] = await db
 				.insert(schema.visits)
@@ -81,11 +87,17 @@ describeIfDb("identificado pelo cliente × contato conhecido (integration)", () 
 				.values({
 					channel: parcial.canal,
 					visitId: visita.id,
+					contactName: parcial.nomeNaConversa ?? null,
+					waId: parcial.waId ?? null,
 					createdAt: DENTRO,
 					updatedAt: DENTRO,
 				})
 				.returning({ id: schema.conversations.id });
 			convIds.push(conversa.id);
+
+			// A conversa que não tem linha em `leads` é justamente a que o predicado
+			// antigo perdia — a semeadura precisa conseguir produzi-la.
+			if (parcial.semLead) return;
 
 			const [lead] = await db
 				.insert(schema.leads)
@@ -129,23 +141,63 @@ describeIfDb("identificado pelo cliente × contato conhecido (integration)", () 
 			telefone: "+5519900000004",
 			propostas: 5,
 		});
+		// E: o caso que o predicado antigo PERDIA — o nome chegou pelo canal e
+		// ficou só em `conversations.contactName`, com o `leads.name` nulo. É a
+		// cliente real do WhatsApp medida no banco de produção em 23/09/2026
+		// (dez conversas exatamente assim na janela 01–21/09).
+		await semearConversa({
+			canal: "whatsapp",
+			nome: null,
+			telefone: "+5519900000005",
+			nomeNaConversa: "Cliente So Na Conversa",
+			waId: "5519900000005",
+		});
+		// F: nem linha em `leads` — o nome está na conversa e o contato é o `waId`
+		// do canal. Também identificado: quem se identifica é o cliente, não a linha.
+		await semearConversa({
+			canal: "whatsapp",
+			nome: null,
+			telefone: null,
+			nomeNaConversa: "Cliente Sem Lead",
+			waId: "5519900000006",
+			semLead: true,
+		});
+		// G: sem nome em lugar nenhum e sem lead. Não identificado.
+		await semearConversa({ canal: "web", nome: null, telefone: null, semLead: true });
+		// H: tem NOME, mas nenhum contato (sem lead e sem canal). O nome sozinho
+		// não identifica — a exigência de contato continua de pé.
+		await semearConversa({
+			canal: "web",
+			nome: null,
+			telefone: null,
+			nomeNaConversa: "Cliente Sem Contato",
+			semLead: true,
+		});
 	});
 
 	it("conversa de WhatsApp sem nome não conta como identificada", async () => {
 		const funil = await performance.computeFunilMidia(JANELA_DE, JANELA_ATE);
 		const identificados = funil.find((e) => e.chave === "identificados");
-		// B, C e D têm nome e contato; A (WhatsApp sem nome) não conta. Sem a
-		// correção seriam 4 — o telefone do waId contava o canal como cliente.
-		expect(identificados?.count).toBe(3);
+		// Contam B, C, D, E e F (nome E contato). Não contam A (WhatsApp sem nome,
+		// só com o telefone do canal), G (sem nome) nem H (nome sem contato).
+		expect(identificados?.count).toBe(5);
+	});
+
+	it("o nome que ficou só na conversa conta — o caso que o predicado perdia", async () => {
+		const origens = await performance.computeOrigens(JANELA_DE, JANELA_ATE);
+		// E (lead com telefone e nome nulo, `contactName` na conversa) e F (sem
+		// lead, `contactName` + `waId`) são a razão desta correção: sem elas, 3.
+		expect(origens.reduce((soma, l) => soma + l.identificados, 0)).toBe(5);
 	});
 
 	it("o contato conhecido é maior que o identificado — as duas medidas convivem", async () => {
 		const origens = await performance.computeOrigens(JANELA_DE, JANELA_ATE);
 		const identificados = origens.reduce((soma, l) => soma + l.identificados, 0);
 		const comTelefone = origens.reduce((soma, l) => soma + l.comTelefone, 0);
-		expect(identificados).toBe(3);
-		// Os quatro leads têm telefone; os quatro são alcançáveis pela régua.
-		expect(comTelefone).toBe(4);
+		expect(identificados).toBe(5);
+		// `com_contato` mede o alcance da RÉGUA, que lê o lead: contam A, B, C, D e
+		// E (têm telefone no lead). F e G não têm lead nenhum e H não tem contato.
+		expect(comTelefone).toBe(5);
 	});
 
 	it("cinco propostas da mesma pessoa são cinco linhas de proposta", async () => {

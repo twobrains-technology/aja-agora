@@ -74,17 +74,21 @@ describe("conversaSemOrigem", () => {
 describe("leadIdentificado", () => {
 	const t = texto(leadIdentificado());
 
-	it("exige nome", () => {
+	it("exige nome — do lead ou da própria conversa", () => {
 		expect(t).toContain("l.name IS NOT NULL");
+		expect(t).toContain("c.contact_name IS NOT NULL");
 	});
 
-	it("e exige contato — telefone ou e-mail", () => {
+	it("e exige contato — telefone/e-mail do lead ou o waId da conversa", () => {
 		expect(t).toContain("l.phone IS NOT NULL");
 		expect(t).toContain("l.email IS NOT NULL");
+		expect(t).toContain("c.wa_id IS NOT NULL");
 	});
 
-	it("aceita o alias do lead por parâmetro", () => {
-		expect(texto(leadIdentificado(sql`li`))).toContain("li.name IS NOT NULL");
+	it("aceita os dois aliases por parâmetro", () => {
+		const outro = texto(leadIdentificado(sql`li`, sql`conv`));
+		expect(outro).toContain("li.name IS NOT NULL");
+		expect(outro).toContain("conv.contact_name IS NOT NULL");
 	});
 
 	it("NÃO é o mesmo que leadComContato, que dispensa o nome", () => {
@@ -95,11 +99,24 @@ describe("leadIdentificado", () => {
 });
 
 describe("conversaIdentificada", () => {
+	const t = texto(conversaIdentificada());
+
 	it("filtra simulado e usa o predicado inteiro", () => {
-		const t = texto(conversaIdentificada());
 		expect(t).toContain("li.is_simulated = false");
 		expect(t).toContain("li.name IS NOT NULL");
 		expect(t).toContain("c.id");
+	});
+
+	/**
+	 * O caso que o predicado antigo perdia: a conversa cujo nome chegou pelo
+	 * CANAL e ficou só em `conversations.contactName`, sem `leads.name`. Medido no
+	 * banco de produção em 23/09/2026 — as dez conversas de WhatsApp da janela
+	 * 01–21/09 que deixaram nome caíam exatamente aqui. Se o `EXISTS` voltar a ser
+	 * a única porta do nome, este teste cai.
+	 */
+	it("aceita nome e contato da PRÓPRIA conversa, sem depender de `leads`", () => {
+		expect(t).toContain("c.contact_name IS NOT NULL");
+		expect(t).toContain("c.wa_id IS NOT NULL");
 	});
 });
 
