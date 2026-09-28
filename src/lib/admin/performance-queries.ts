@@ -437,7 +437,7 @@ export async function computeOrigens(fromDate: Date, toDate: Date): Promise<Linh
       -- As cinco contagens vêm de contagensDoFunil, o MESMO fragmento que a
       -- tela de Campanhas usa. Era aqui o único lugar que sabia medir o degrau;
       -- agrupar por campanha não é motivo para ter uma segunda contagem.
-      ${contagensDoFunil()}
+      ${contagensDoFunil(fromDate, toDate)}
     FROM visits v
     LEFT JOIN conversations c ON c.visit_id = v.id AND c.is_simulated = false
     LEFT JOIN leads l ON l.conversation_id = c.id AND l.is_simulated = false

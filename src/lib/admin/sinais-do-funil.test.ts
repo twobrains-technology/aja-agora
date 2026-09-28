@@ -130,9 +130,14 @@ describe("conversaIdentificada", () => {
  * As contagens do funil carregam os DOIS números de contato: o identificado pelo
  * cliente e o contato conhecido. Se `com_contato` sumir, a tela de Campanhas
  * perde a linha que explica por que o número do WhatsApp é maior.
+ *
+ * E carregam a UNIDADE: pessoa, não conversa. É o fragmento compartilhado por
+ * Campanhas e pela tabela por origem da tela de Performance — se ele voltar a
+ * contar `c.id` ou `bp.id`, o funil de mídia (que já conta pessoa) e a tabela
+ * logo abaixo dele passam a discordar, com o mesmo rótulo na mesma tela.
  */
 describe("contagensDoFunil", () => {
-	const t = texto(contagensDoFunil());
+	const t = texto(contagensDoFunil(de, ate));
 
 	it("tem a coluna de identificados e a de contato conhecido", () => {
 		expect(t).toContain("AS identificados");
@@ -140,11 +145,16 @@ describe("contagensDoFunil", () => {
 	});
 
 	it("identificados usa o predicado do canal; com_contato usa o do lead", () => {
-		const identificados = t.slice(
-			t.indexOf("count(DISTINCT c.id) FILTER"),
-			t.indexOf("AS identificados"),
-		);
-		expect(identificados).toContain("wa_id IS NOT NULL");
+		expect(t).toContain("wa_id IS NOT NULL");
 		expect(t).toContain("com_contato");
+	});
+
+	it("conta PESSOA nos degraus, com a chave de chaveDaPessoa", () => {
+		// A chave é o COALESCE(contato, visitante) — a mesma de computePorta e do
+		// Percurso. `count(DISTINCT c.id)` e `count(DISTINCT bp.id)` eram o defeito:
+		// cinco conversas do mesmo telefone contavam cinco.
+		expect(t).toContain("count(DISTINCT COALESCE");
+		expect(t).not.toContain("count(DISTINCT c.id) AS conversas");
+		expect(t).not.toContain("count(DISTINCT bp.id) AS propostas");
 	});
 });

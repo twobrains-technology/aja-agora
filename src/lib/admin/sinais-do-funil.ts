@@ -250,7 +250,13 @@ export function conversaIdentificada(conversa: SQL = sql`c`): SQL {
  * `visits v`, `conversations c`, `leads l`, `bevi_proposals bp`. Quem não usa
  * `qualificados` simplesmente ignora a coluna.
  *
- * `identificados` conta CONVERSAS cujo cliente se identificou
+ * **A unidade é PESSOA** (decisão do dono, 23/09/2026): cinco conversas do mesmo
+ * telefone são UMA pessoa. A chave é a `chaveDaPessoa` — a mesma da Porta e do
+ * Percurso —, e não `c.id`. Contando conversa, a tabela por origem discordava do
+ * funil logo acima dela na mesma tela; contando linha de proposta, discordava da
+ * escada do Percurso (5 × 1) com o mesmo rótulo.
+ *
+ * `identificados` conta PESSOAS cujo cliente se identificou
  * (`conversaIdentificada`) — no WhatsApp, quem entrou (o canal entregou número e
  * perfil); na web, quem deixou contato. É a MESMA definição do funil de mídia
  * (`computeFunilMidia`). Contando leads, uma conversa com dedup imperfeito
@@ -260,20 +266,32 @@ export function conversaIdentificada(conversa: SQL = sql`c`): SQL {
  * ALCANÇAR (telefone/e-mail no lead), e não são ordem um do outro (a conversa de
  * WhatsApp sem linha em `leads` é identificada e não tem contato no lead).
  */
-export function contagensDoFunil(): SQL {
+export function contagensDoFunil(de: Date, ate: Date): SQL {
 	const qualificados = sql.join(
 		ESTAGIOS_QUALIFICADOS.map((estagio) => sql`${estagio}`),
 		sql`, `,
 	);
+	const pessoa = chaveDaPessoa(de, ate);
 	return sql`
     count(DISTINCT v.id) FILTER (WHERE ${VISITA_NAO_E_ECO}) AS visitas,
-    count(DISTINCT c.id) AS conversas,
-    count(DISTINCT c.id) FILTER (WHERE ${leadComContato()}) AS com_contato,
-    count(DISTINCT c.id) FILTER (WHERE ${conversaIdentificada(sql`c`)}) AS identificados,
-    count(DISTINCT l.id) FILTER (WHERE l.stage IN (${qualificados})) AS qualificados,
-    count(DISTINCT bp.id) AS propostas,
-    count(DISTINCT l.id) FILTER (WHERE l.stage = 'fechado_ganho') AS fechados
+    count(DISTINCT ${pessoa}) FILTER (WHERE ${pessoaConversou()}) AS conversas,
+    count(DISTINCT ${pessoa}) FILTER (WHERE ${pessoaConversou()} AND ${leadComContato()}) AS com_contato,
+    count(DISTINCT ${pessoa}) FILTER (WHERE ${pessoaConversou()} AND ${conversaIdentificada(sql`c`)}) AS identificados,
+    count(DISTINCT ${pessoa}) FILTER (WHERE l.stage IN (${qualificados})) AS qualificados,
+    count(DISTINCT ${pessoa}) FILTER (WHERE bp.id IS NOT NULL) AS propostas,
+    count(DISTINCT ${pessoa}) FILTER (WHERE l.stage = 'fechado_ganho') AS fechados
   `;
+}
+
+/**
+ * A pessoa ABRIU uma conversa nestas visitas — a linha do `LEFT JOIN` existe.
+ *
+ * Existe como condição de `FILTER` porque contar pessoa em vez de `c.id`
+ * incluiria, sem ela, o visitante que só passou e nunca abriu o chat: ele tem
+ * chave (o próprio `visitor_id`) e entraria em "Conversas" por acidente.
+ */
+function pessoaConversou(): SQL {
+	return sql`c.id IS NOT NULL`;
 }
 
 /** Artifacts que provam que o cliente VIU número de oferta na tela. */

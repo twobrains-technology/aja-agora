@@ -22,7 +22,7 @@ import {
 	PASSOS_DO_PERCURSO,
 	type PassoDoPercurso,
 } from "@/lib/admin/percurso-types";
-import { conversaIdentificada } from "@/lib/admin/sinais-do-funil";
+import { conversaIdentificada, chaveDaPessoa } from "@/lib/admin/sinais-do-funil";
 import { isoDeSaoPaulo } from "./conversas";
 import type { LinhaExportada } from "./formato";
 import { mascararEmail, mascararNome, mascararTelefone } from "./mascarar";
@@ -105,9 +105,10 @@ export async function exportarPercurso(opcoes: OpcoesDePercurso): Promise<LinhaE
     ),
     por_visita AS (
       SELECT vi.*,
-        COALESCE((SELECT c.contact_id::text FROM conversations c JOIN visits vp ON vp.id = c.visit_id
-          WHERE vp.visitor_id = vi.visitor_id AND c.contact_id IS NOT NULL AND c.is_simulated = false
-          ORDER BY c.updated_at ASC LIMIT 1), vi.visitor_id) AS chave
+        -- A chave da PESSOA vem da fonte única (chaveDaPessoa), como na Porta e
+        -- no Percurso. Era uma cópia local — sem a janela na conversa que resolve
+        -- o contato —, e duas definições de pessoa divergem no primeiro caso raro.
+        ${chaveDaPessoa(opcoes.de, opcoes.ate, sql`vi.visitor_id`)} AS chave
       FROM visita vi
     ),
     credito AS (
@@ -241,11 +242,7 @@ export async function contarPercurso(opcoes: {
 		? sql``
 		: sql` AND EXISTS (SELECT 1 FROM conversations c WHERE c.visit_id = v.id AND c.is_simulated = false)`;
 	const { rows } = await db.execute<{ pessoas: string | number }>(sql`
-    SELECT count(DISTINCT COALESCE(
-      (SELECT c.contact_id::text FROM conversations c JOIN visits vp ON vp.id = c.visit_id
-        WHERE vp.visitor_id = v.visitor_id AND c.contact_id IS NOT NULL AND c.is_simulated = false
-        ORDER BY c.updated_at ASC LIMIT 1),
-      v.visitor_id)) AS pessoas
+    SELECT count(DISTINCT ${chaveDaPessoa(opcoes.de, opcoes.ate)}) AS pessoas
     FROM visits v
     WHERE v.created_at BETWEEN ${opcoes.de} AND ${opcoes.ate}${filtroConversa}
       AND (EXISTS (SELECT 1 FROM conversations cg WHERE cg.visit_id = v.id AND cg.is_simulated = false)

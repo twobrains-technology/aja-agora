@@ -200,7 +200,7 @@ export interface LinhaOrigem {
 	 * coisa, e o rótulo de cada um diz qual.
 	 */
 	comTelefone: number;
-	/** Propostas CRIADAS na administradora — conta linhas, não pessoas. */
+	/** Propostas CRIADAS na administradora — conta PESSOAS, não linhas de proposta. */
 	propostas: number;
 	fechados: number;
 	/** Fechados ÷ visitas, em %. A pergunta que decide onde a verba vai. */
