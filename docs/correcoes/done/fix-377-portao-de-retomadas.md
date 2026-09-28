@@ -1,7 +1,9 @@
 ---
 id: FIX-377
 titulo: "O portão de retomadas para de matar o toque 2 e 3 em silêncio"
-status: todo
+status: done
+commit: 1c277eb2
+executado_em: 2026-09-28
 bloco: bloco-regua
 arquivos:
   - src/lib/remarketing/retomada.ts
