@@ -68,7 +68,12 @@ describe("AJA-17 — a nota de origem vira linha com ação", () => {
 		render(
 			<PortaDoFunilCard
 				porta={PORTA}
-				cobertura={{ conversasComOrigem: 24, conversasTotal: 24, percent: 100, conversasDeTeste: 0 }}
+				cobertura={{
+					conversasComOrigem: 24,
+					conversasTotal: 24,
+					percent: 100,
+					conversasDeTeste: 0,
+				}}
 			/>,
 		);
 
@@ -92,9 +97,7 @@ describe("FIX-374 — o recorte de teste deixa de ser silencioso", () => {
 		// painel mostrava 0 e estava certo — mas a Bruna comparou com o relatório da
 		// administradora, viu 5 × 0 e concluiu que o painel mentia. O número agora
 		// aparece na tela, com a saída para a lista que inclui as simuladas.
-		render(
-			<PortaDoFunilCard porta={PORTA} cobertura={{ ...COBERTURA, conversasDeTeste: 5 }} />,
-		);
+		render(<PortaDoFunilCard porta={PORTA} cobertura={{ ...COBERTURA, conversasDeTeste: 5 }} />);
 
 		expect(screen.getByText(/^5 conversas marcadas como teste ficaram fora/)).toBeTruthy();
 		const link = screen.getByRole("link", { name: /Ver as 5/ });

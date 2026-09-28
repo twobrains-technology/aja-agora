@@ -134,8 +134,11 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
         -- O critério de "parado" é o MESMO do funil de mídia (conversaViva), e
         -- é este bool_or que faz dele um fato da PESSOA: basta uma conversa
         -- viva para ela ser retomável.
-        ${conversaViva(sql`(SELECT max(m.created_at) FROM messages m
-          WHERE m.conversation_id = c.id AND m.role = 'user')`, sql`c.status`)} AS viva,
+        ${conversaViva(
+					sql`(SELECT max(m.created_at) FROM messages m
+          WHERE m.conversation_id = c.id AND m.role = 'user')`,
+					sql`c.status`,
+				)} AS viva,
         ${conversaIdentificada(sql`c`)} AS identificou,
         EXISTS (SELECT 1 FROM messages m
           JOIN artifacts a ON a.message_id = m.id

@@ -22,7 +22,7 @@ import {
 	PASSOS_DO_PERCURSO,
 	type PassoDoPercurso,
 } from "@/lib/admin/percurso-types";
-import { conversaIdentificada, chaveDaPessoa } from "@/lib/admin/sinais-do-funil";
+import { chaveDaPessoa, conversaIdentificada } from "@/lib/admin/sinais-do-funil";
 import { isoDeSaoPaulo } from "./conversas";
 import type { LinhaExportada } from "./formato";
 import { mascararEmail, mascararNome, mascararTelefone } from "./mascarar";

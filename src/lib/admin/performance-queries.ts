@@ -22,8 +22,8 @@ import {
 } from "@/lib/funil/quem-chegou";
 import { rotularOrigem } from "./origem-label";
 import {
-	type CoberturaAtribuicao,
 	type ChaveEtapaFunil,
+	type CoberturaAtribuicao,
 	ETAPAS_FUNIL_MIDIA,
 	ETAPAS_RAMIFICADAS,
 	type EtapaFunilMidia,

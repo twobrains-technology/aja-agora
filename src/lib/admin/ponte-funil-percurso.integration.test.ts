@@ -12,10 +12,10 @@
 // Skip se DATABASE_URL ausente (mesmo padrão dos outros de integração).
 
 import { inArray } from "drizzle-orm";
-import { beforeAll, afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CHIP_DE_BEM } from "@/lib/funil/textos-do-cta";
-import { ETAPAS_FUNIL_MIDIA } from "./performance-types";
 import { PASSO_DA_ETAPA_DO_FUNIL } from "./percurso-types";
+import { ETAPAS_FUNIL_MIDIA } from "./performance-types";
 
 const HAS_DB = Boolean(process.env.DATABASE_URL) && !process.env.DATABASE_URL?.includes("sentinel");
 const describeIfDb = HAS_DB ? describe : describe.skip;
@@ -88,7 +88,10 @@ describeIfDb("a ponte funil → percurso abre a MESMA população (integration)"
 			.values({
 				channel: canal,
 				visitId: visita.id,
-				waId: canal === "whatsapp" ? `55119${String(Math.floor(Math.random() * 1e8)).padStart(8, "0")}` : null,
+				waId:
+					canal === "whatsapp"
+						? `55119${String(Math.floor(Math.random() * 1e8)).padStart(8, "0")}`
+						: null,
 				createdAt: DENTRO,
 				updatedAt: DENTRO,
 			})

@@ -128,7 +128,10 @@ describeIfDb("FIX-375 — 'parado' tem um critério só (integration)", () => {
 			status: "active",
 		});
 		// Encerrada não é retomável, por mais recente que a fala seja.
-		await pessoa(`v-${crypto.randomUUID()}`, "proposta", { inboundRecente: true, status: "closed" });
+		await pessoa(`v-${crypto.randomUUID()}`, "proposta", {
+			inboundRecente: true,
+			status: "closed",
+		});
 		await pessoa(`v-${crypto.randomUUID()}`, "proposta", {
 			inboundRecente: true,
 			status: "active",
