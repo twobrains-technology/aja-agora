@@ -165,7 +165,7 @@ export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<E
         WHERE ${atribuida}) AS fechados
   `);
 
-	// ONDE CADA CONVERSA PAROU — e se ela ainda está de pé.
+	// ONDE CADA PESSOA PAROU — e se ela ainda está de pé.
 	//
 	// O funil dizia "44,4% saíram aqui" e parava por aí. Duas conversas paradas
 	// na mesma etapa pedem decisões opostas: a que morreu manda consertar o
@@ -175,11 +175,18 @@ export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<E
 	//
 	// `lastInboundAt` não serve como sinal de vida: é específico do WhatsApp
 	// (schema.ts). A última mensagem do CLIENTE vale nos dois canais.
+	//
+	// A parada é por PESSOA, no degrau MAIS FUNDO que ela alcançou. Contando
+	// conversa, quem voltou e abriu duas — uma que engajou, outra que virou
+	// proposta — aparecia parada em dois degraus, e a soma das paradas passava do
+	// topo do funil (que já conta pessoa).
 	const paradas = await db.execute<Record<string, unknown>>(sql`
     WITH conv AS (
       SELECT
         c.id,
         c.status,
+        -- A chave da PESSOA — a mesma de computePorta e da escada do Percurso.
+        ${chave} AS chave,
         (SELECT max(m.created_at) FROM messages m
           WHERE m.conversation_id = c.id AND m.role = 'user') AS ultimo_inbound,
       -- O ONDE CADA CONVERSA PAROU agora tem um degrau a mais: quem só mandou
@@ -200,12 +207,13 @@ export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<E
           WHERE l.conversation_id = c.id AND l.is_simulated = false
             AND l.stage = 'fechado_ganho') AS fechou
       FROM conversations c
+      JOIN visits v ON v.id = c.visit_id
       WHERE ${atribuida}
     ),
     profundidade AS (
       SELECT
-        id,
-        CASE
+        chave,
+        max(CASE
           WHEN fechou THEN 7
           WHEN teve_proposta THEN 6
           WHEN viu_oferta THEN 5
@@ -213,12 +221,14 @@ export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<E
           WHEN engajou THEN 3
           WHEN so_pre_preenchida THEN 2
           ELSE 1
-        END AS etapa,
+        END) AS etapa,
         -- Viva = o cliente escreveu na janela recente e ninguém encerrou a
         -- conversa. Conversa encerrada não é retomável, por mais nova que seja.
-        (ultimo_inbound >= now() - ${sql.raw(`interval '${DIAS_PARA_CONSIDERAR_VIVA} days'`)}
+        -- Por PESSOA: basta UMA conversa viva para ela ser retomável.
+        bool_or(ultimo_inbound >= now() - ${sql.raw(`interval '${DIAS_PARA_CONSIDERAR_VIVA} days'`)}
           AND status = 'active') AS viva
       FROM conv
+      GROUP BY chave
     )
     SELECT etapa, count(*) AS pararam, count(*) FILTER (WHERE viva) AS vivas
     FROM profundidade GROUP BY etapa

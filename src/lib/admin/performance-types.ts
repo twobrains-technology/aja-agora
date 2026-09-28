@@ -106,7 +106,12 @@ export interface EtapaFunilMidia {
 	/** % que se perdeu da etapa anterior — onde o dinheiro vaza. */
 	quedaDaAnterior: number;
 	/**
-	 * Quantas conversas PARARAM nesta etapa (chegaram aqui e não passaram).
+	 * Quantas PESSOAS pararam nesta etapa (chegaram aqui e não passaram).
+	 *
+	 * Mesma unidade do `count`: se o degrau conta pessoa e este número conta
+	 * conversa, a soma das paradas deixa de fechar com o topo e o "% que se
+	 * perdeu" mistura duas unidades na mesma linha da tela. A pessoa para no
+	 * degrau MAIS FUNDO que alcançou — uma pessoa, um degrau.
 	 *
 	 * Absoluto, não percentual: "44,4% saíram aqui" sobre 18 conversas é
 	 * precisão falsa — o que se conserta é "8 pararam aqui".
@@ -119,6 +124,8 @@ export interface EtapaFunilMidia {
 	 * É a diferença entre duas decisões opostas: conserte o agente (morreu) ou
 	 * puxe de volta (está viva — o watchdog de retomada existe para isso). Sem
 	 * separar, o painel manda consertar o que só precisava de um empurrão.
+	 *
+	 * Por PESSOA: basta uma conversa dela estar viva para ela ser retomável.
 	 */
 	aindaVivas: number;
 }
