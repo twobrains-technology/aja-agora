@@ -1,13 +1,15 @@
 ---
 id: FIX-384
 titulo: "O relatório de limpeza inclui proposta criada em conversa de teste"
-status: todo
+status: done
 bloco: bloco-percurso9
 arquivos:
   - src/lib/admin/limpeza.ts
   - src/lib/admin/limpeza-queries.ts
   - src/lib/exportacao/limpeza.ts
 rodada: 2026-09-28
+commit: 34681359
+executado_em: 2026-09-28
 ---
 ## Palavras do operador
 Bruna, WhatsApp 23/09 15:09: *"De 01/09 a 21/09 – 5 clientes com proposta criada."* — os 5 são testes

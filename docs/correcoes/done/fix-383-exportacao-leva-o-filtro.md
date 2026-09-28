@@ -1,14 +1,18 @@
 ---
 id: FIX-383
 titulo: "A exportação leva o filtro da tela"
-status: todo
+status: done
 bloco: bloco-percurso9
 arquivos:
   - src/lib/exportacao/index.ts
   - src/lib/exportacao/tipos.ts
+  - src/lib/exportacao/percurso.ts
   - src/app/admin/(dashboard)/exportacao/page.tsx
   - src/app/api/admin/exportacao/[tipo]/route.ts
+  - src/app/api/admin/exportacao/route.ts
 rodada: 2026-09-28
+commit: 0c521525
+executado_em: 2026-09-28
 ---
 ## Palavras do operador
 Bruna, 23/09: *"Só preciso ter um diagnóstico por etapa"* — ela exporta e leva para o Edu e o BC. Se a
