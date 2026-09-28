@@ -65,7 +65,7 @@ import { db } from "@/db";
 import { beviProposals, remarketingTouches } from "@/db/schema";
 import { lerParametrosRegua } from "@/lib/admin/remarketing-config";
 import type { ConversationMetadata } from "@/lib/agent/personas";
-import { metaOf, persistMeta } from "@/lib/conversation/meta";
+import { metaOf } from "@/lib/conversation/meta";
 import { despacharConversoesPendentes } from "@/lib/conversions/dispatch";
 import {
 	agregarMotivos,
@@ -96,7 +96,7 @@ import {
 	type ParametrosRegua,
 } from "@/lib/remarketing/regua";
 import { chaveTelefoneBR } from "@/lib/whatsapp/mesmo-numero";
-import { buildRetomadaDirective, podeRetomar } from "./retomada";
+import { buildRetomadaDirective } from "./retomada";
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 
@@ -137,12 +137,7 @@ export interface RemarketingDeps {
 		touches30d: number;
 		agora: Date;
 	}) => Promise<void>;
-	/** Conta a retomada no metadata (MAX_RETOMADAS). Antes do envio. */
-	gravarRetomada?: (args: {
-		conversationId: string;
-		meta: ConversationMetadata;
-		agora: Date;
-	}) => Promise<void>;
+	/** Executa o turno de retomada (o mesmo directive do watchdog, sem o teto dele). */
 	dispararTurno?: (args: {
 		conversationId: string;
 		channel: "web" | "whatsapp";
@@ -719,23 +714,6 @@ async function gravarEstado({
 		.where(eq(remarketingTouches.conversationId, conversationId));
 }
 
-async function gravarRetomada({
-	conversationId,
-	meta,
-	agora,
-}: {
-	conversationId: string;
-	meta: ConversationMetadata;
-	agora: Date;
-}): Promise<void> {
-	// Conta a tentativa antes de disparar: turno que morre no meio continua
-	// contado, senão o watchdog persegue justamente a conversa que quebra.
-	await persistMeta(conversationId, {
-		...meta,
-		retomada: { attempts: (meta.retomada?.attempts ?? 0) + 1, lastAt: agora.getTime() },
-	});
-}
-
 const dispararTurnoReal: NonNullable<RemarketingDeps["dispararTurno"]> = async ({
 	conversationId,
 	channel,
@@ -807,7 +785,6 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 	const lerToques = deps.toquesDoContato ?? toquesDoContato;
 	const lerSimulacao = deps.simulacaoDoContato ?? simulacaoDoContato;
 	const gravar = deps.gravarEstado ?? gravarEstado;
-	const gravarRet = deps.gravarRetomada ?? gravarRetomada;
 	const dispararTurno = deps.dispararTurno ?? dispararTurnoReal;
 	const enviarArte = deps.enviarArte ?? enviarArteReal;
 	const enviarTemplate = deps.enviarTemplate ?? enviarTemplateReal;
@@ -953,7 +930,6 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 				estado,
 				telefone,
 				optoutDaPessoaEm: linha.optoutDaPessoaEm,
-				retomadaPermitida: podeRetomar(meta, agora.getTime()),
 				telefoneDaEquipe: daEquipe,
 				parametros,
 			});
@@ -992,7 +968,9 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 			if (!telefone) continue;
 
 			if (decisao.acao.tipo === "turno_de_retomada") {
-				await gravarRet({ conversationId: linha.conversationId, meta, agora });
+				// O contador do WATCHDOG não é tocado aqui (FIX-377): quem conta os
+				// toques da régua é a régua (`step` / `toques_30d`). O `meta` entra só
+				// para o directive — o agente sabe onde a conversa parou.
 				await dispararTurno({
 					conversationId: linha.conversationId,
 					channel: linha.channel,
