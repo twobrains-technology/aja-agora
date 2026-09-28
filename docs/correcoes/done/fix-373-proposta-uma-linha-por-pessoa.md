@@ -1,11 +1,13 @@
 ---
 id: FIX-373
 titulo: "Proposta conta uma linha por PESSOA, por mais propostas que ela tenha"
-status: todo
+status: done
 bloco: bloco-pessoa
 arquivos:
   - src/lib/admin/sinais-do-funil.ts
   - src/lib/exportacao/percurso.ts
+commit: 05ced797
+executado_em: 2026-09-28
 rodada: 2026-09-28
 ---
 ## Palavras do operador
@@ -32,3 +34,17 @@ proposta, não pessoas. O mesmo predicado está replicado em `computeFunilMidia`
 ## Regressão exigida
 Integração: pessoa com 5 propostas ⇒ **1**; duas pessoas com 1 proposta cada ⇒ **2**. E o número da tela
 de Performance == o da escada do Percurso, na mesma janela.
+
+## Execução
+
+`contagensDoFunil` ganhou `de`/`ate` e passou a contar
+`count(DISTINCT chaveDaPessoa(de, ate))` em conversas, identificados, com_contato,
+qualificados, propostas e fechados. O `FILTER` de "abriu conversa"
+(`c.id IS NOT NULL`) impede que o visitante sem chat entre em "Conversas" por ter
+chave própria.
+
+A exportação (`exportacao/percurso.ts`) trocou a cópia local da chave por
+`chaveDaPessoa(de, ate, vi.visitor_id)` — em `exportarPercurso` e em
+`contarPercurso`. A definição de pessoa agora existe em UM lugar só.
+
+O funil de mídia (`computeFunilMidia`) já contava pessoa desde o FIX-370.
