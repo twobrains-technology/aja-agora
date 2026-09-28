@@ -7,7 +7,7 @@ arquivos:
   - src/lib/admin/remarketing-queries.ts
   - src/lib/admin/remarketing-tela.ts
 rodada: 2026-09-28
-commit: d281496f
+commit: f790469e
 executado_em: 2026-09-28
 ---
 ## Palavras do operador

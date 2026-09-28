@@ -9,7 +9,7 @@ arquivos:
   - src/app/api/admin/remarketing/route.ts
   - src/components/admin/remarketing/tabela-remarketing.tsx
 rodada: 2026-09-28
-commit: 1beb9c0c
+commit: 2b164605
 executado_em: 2026-09-28
 ---
 ## Palavras do operador
