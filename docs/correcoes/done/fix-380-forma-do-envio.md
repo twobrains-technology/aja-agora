@@ -1,12 +1,14 @@
 ---
 id: FIX-380
 titulo: "A forma do envio: reusar o que já existe antes de pedir coluna nova"
-status: todo
+status: done
 bloco: bloco-toques
 arquivos:
   - src/lib/admin/remarketing-queries.ts
   - src/lib/admin/remarketing-tela.ts
 rodada: 2026-09-28
+commit: d281496f
+executado_em: 2026-09-28
 ---
 ## Palavras do operador
 Reunião de 22/09 (Kairo, 12:12:30): *"E como que foi? Foi o primeiro toque, o segundo ou o terceiro?"*

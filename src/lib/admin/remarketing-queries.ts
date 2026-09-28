@@ -38,17 +38,17 @@
  * duplicado. Trocar isto por uma coluna nova seria migration fora do escopo.
  */
 
-import { and, eq, gte, isNull, or, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, like, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { contacts, conversations, remarketingTouches } from "@/db/schema";
+import { contacts, conversations, remarketingTouches, whatsappTemplates } from "@/db/schema";
 import { maskPhoneForDisplay } from "@/lib/conversation/identity";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
-import { objetivoCanonico } from "@/lib/remarketing/motor";
+import { objetivoCanonico, templateDoObjetivo } from "@/lib/remarketing/motor";
 import type { StatusRegua } from "@/lib/remarketing/regua";
 import { chaveTelefoneBR } from "@/lib/whatsapp/mesmo-numero";
 import { JANELA_DE_ENTRADA_MS, motivoForaDaRegua, opcoesDoAmbiente } from "./motivo-fora-da-regua";
 import { telefonesDaEquipe } from "./regua-por-conversa";
-import type { LinhaBruta, RastroDoAtendente } from "./remarketing-tela";
+import type { EvidenciaDaForma, LinhaBruta, RastroDoAtendente, StatusDaFila } from "./remarketing-tela";
 
 export interface FiltroDaRegua {
 	/** Início da janela (instante, já resolvido pelo período do painel). */
@@ -100,8 +100,64 @@ export function rastroDoMetadata(metadata: unknown): RastroDoAtendente | null {
 	};
 }
 
+/**
+ * O template do bem está aprovado na Meta, pelo nome? `usageKey → metaName`.
+ *
+ * Uma leitura só por consulta (a tabela é minúscula: um punhado de linhas) em
+ * vez de um `CASE` por linha na consulta — a chave lógica do template é do
+ * motor (`templateDoObjetivo`), e reescrevê-la em SQL daria duas verdades.
+ */
+type MapaDeTemplates = Map<string, string>;
+
+async function templatesAprovados(): Promise<MapaDeTemplates> {
+	const linhas = await db
+		.select({ usageKey: whatsappTemplates.usageKey, metaName: whatsappTemplates.metaName })
+		.from(whatsappTemplates)
+		.where(
+			and(
+				eq(whatsappTemplates.status, "APPROVED"),
+				like(whatsappTemplates.usageKey, "remarketing_oportunidade_%"),
+			),
+		);
+
+	const mapa: MapaDeTemplates = new Map();
+	for (const linha of linhas) if (linha.usageKey) mapa.set(linha.usageKey, linha.metaName);
+	return mapa;
+}
+
+/**
+ * O rastro do último toque, das colunas que a consulta trouxe (FIX-380).
+ *
+ * As colunas ausentes viram "sem rastro" — nunca "texto livre": é a mesma
+ * regra da derivação em `remarketing-tela.ts`.
+ */
+function evidenciaDaForma(
+	linha: Record<string, unknown>,
+	templates: MapaDeTemplates,
+): EvidenciaDaForma {
+	const statusDaFila = texto(linha.filaStatus);
+	const nomeDaFila = texto(linha.filaNome);
+	const objetivo = String(linha.objetivo ?? "");
+
+	return {
+		houveFalaDoAgente: Number(linha.falasDoAgente ?? 0) > 0,
+		nomeDoTemplateNaMensagem: texto(linha.templateName),
+		naFila:
+			statusDaFila === "pending" || statusDaFila === "sent" || statusDaFila === "failed"
+				? { status: statusDaFila as StatusDaFila, nomeDoTemplate: nomeDaFila }
+				: null,
+		// O objetivo GRAVADO na linha serve de base — é ele que a lista já mostra; o
+		// motor prefere o da metadata (o bem pode ter sido revelado depois), e usar
+		// os dois aqui daria um nome de template que não bate com a coluna Objetivo.
+		templateAprovado: templates.get(templateDoObjetivo(objetivo)) ?? null,
+	};
+}
+
 /** Uma linha do banco → `LinhaBruta`. O mascaramento acontece aqui, na borda. */
-function montarLinha(linha: Record<string, unknown>): LinhaBruta {
+function montarLinha(
+	linha: Record<string, unknown>,
+	templates: MapaDeTemplates = new Map(),
+): LinhaBruta {
 	return {
 		conversationId: String(linha.conversationId),
 		contactId: String(linha.contactId),
@@ -120,6 +176,8 @@ function montarLinha(linha: Record<string, unknown>): LinhaBruta {
 		// Só `listarReguas` traz esta coluna; nas outras consultas é `undefined`.
 		converteuEm: dataOuNulo(linha.converteuEm),
 		rastro: rastroDoMetadata(linha.metadata),
+		// Só `listarReguas` traz o rastro do toque (fala, fila e template).
+		evidenciaDaForma: evidenciaDaForma(linha, templates),
 	};
 }
 
@@ -166,25 +224,78 @@ function recorte(filtro: FiltroDaRegua) {
 	`;
 }
 
+/**
+ * A forma do toque, em SQL: a fala do agente e a fila de template.
+ *
+ * A janela é ancorada no `ultimo_toque_em` — o rastro que interessa é o do
+ * ÚLTIMO toque, não o de um toque antigo da mesma conversa. E o `NOT EXISTS` da
+ * fala evita o falso positivo que mais enganaria: o cliente responde dentro da
+ * janela e a RESPOSTA do agente contaria como se fosse o toque.
+ *
+ * O envio por template não grava mensagem no histórico — é justamente por isso
+ * que a AUSÊNCIA de fala é o sinal de que o toque saiu por template.
+ */
+const RASTRO_DA_FORMA = sql`
+	msg.nome AS "templateName",
+	msg.falas AS "falasDoAgente",
+	fila.status AS "filaStatus",
+	fila.nome AS "filaNome"
+`;
+
+const JUNCOES_DA_FORMA = sql`
+	LEFT JOIN LATERAL (
+		SELECT MIN(m.template_name) AS nome, COUNT(*) AS falas
+		FROM messages m
+		WHERE m.conversation_id = t.conversation_id
+		  AND t.ultimo_toque_em IS NOT NULL
+		  AND m.role = 'assistant'
+		  AND m.created_at >= t.ultimo_toque_em
+		  AND m.created_at <= t.ultimo_toque_em + interval '10 minutes'
+		  AND NOT EXISTS (
+			SELECT 1 FROM messages u
+			WHERE u.conversation_id = m.conversation_id
+			  AND u.role = 'user'
+			  AND u.created_at > t.ultimo_toque_em
+			  AND u.created_at < m.created_at
+		  )
+	) msg ON true
+	LEFT JOIN LATERAL (
+		SELECT q.status, wt.meta_name AS nome
+		FROM whatsapp_outbound_queue q
+		LEFT JOIN whatsapp_templates wt ON wt.usage_key = q.usage_key
+		WHERE t.ultimo_toque_em IS NOT NULL
+		  AND q.usage_key LIKE 'remarketing_oportunidade_%'
+		  AND q.to = COALESCE(c.wa_id, ct.phone)
+		  AND q.created_at >= t.ultimo_toque_em - interval '1 minute'
+		  AND q.created_at <= t.ultimo_toque_em + interval '10 minutes'
+		ORDER BY q.created_at DESC
+		LIMIT 1
+	) fila ON true
+`;
+
 /** Todas as linhas da régua no recorte. Sem limite: contador tem que fechar. */
 export async function listarReguas(filtro: FiltroDaRegua): Promise<LinhaBruta[]> {
-	const resultado = await db.execute<Record<string, unknown>>(sql`
-		SELECT ${COLUNAS}, venda.em AS "converteuEm"
-		FROM remarketing_touches t
-		JOIN conversations c ON c.id = t.conversation_id
-		JOIN contacts ct ON ct.id = t.contact_id
-		LEFT JOIN LATERAL (
-			SELECT MIN(ev.created_at) AS em
-			FROM leads le
-			JOIN lead_events ev ON ev.lead_id = le.id AND ev.to_stage = 'fechado_ganho'
-			WHERE le.conversation_id = t.conversation_id
-			  AND le.is_simulated = false
-		) venda ON true
-		${recorte(filtro)}
-		${ORDEM}
-	`);
+	const [resultado, templates] = await Promise.all([
+		db.execute<Record<string, unknown>>(sql`
+			SELECT ${COLUNAS}, venda.em AS "converteuEm", ${RASTRO_DA_FORMA}
+			FROM remarketing_touches t
+			JOIN conversations c ON c.id = t.conversation_id
+			JOIN contacts ct ON ct.id = t.contact_id
+			LEFT JOIN LATERAL (
+				SELECT MIN(ev.created_at) AS em
+				FROM leads le
+				JOIN lead_events ev ON ev.lead_id = le.id AND ev.to_stage = 'fechado_ganho'
+				WHERE le.conversation_id = t.conversation_id
+				  AND le.is_simulated = false
+			) venda ON true
+			${JUNCOES_DA_FORMA}
+			${recorte(filtro)}
+			${ORDEM}
+		`),
+		templatesAprovados(),
+	]);
 
-	return resultado.rows.map(montarLinha);
+	return resultado.rows.map((linha) => montarLinha(linha, templates));
 }
 
 /** Uma linha pelo id da conversa — o que a ação precisa ler antes de decidir. */

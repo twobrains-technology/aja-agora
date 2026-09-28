@@ -42,6 +42,7 @@ function linha(parcial: Partial<LinhaBruta> = {}): LinhaBruta {
 		optoutDaPessoaEm: null,
 		converteuEm: null,
 		rastro: null,
+		evidenciaDaForma: null,
 		...parcial,
 	};
 }

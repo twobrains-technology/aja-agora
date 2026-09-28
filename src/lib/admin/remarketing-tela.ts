@@ -167,6 +167,8 @@ export interface LinhaBruta {
 	 */
 	converteuEm: Date | null;
 	rastro: RastroDoAtendente | null;
+	/** O que o banco registra do ÚLTIMO toque — insumo da FORMA (`formaDoEnvio`). */
+	evidenciaDaForma: EvidenciaDaForma | null;
 }
 
 /** A linha como a TELA a mostra: tudo derivado, nada para o cliente decidir. */
@@ -191,6 +193,10 @@ export interface LinhaDaTela {
 	proximoToqueVencido: boolean;
 	/** ISO do último toque que saiu. */
 	ultimoToqueISO: string | null;
+	/** COMO o último toque saiu; `null` quando nenhum toque saiu ainda. */
+	forma: FormaDoEnvio | null;
+	/** O cliente escreveu depois do último toque? (o fato, não o status) */
+	respondeuDepoisDoToque: boolean;
 	criadoEmISO: string;
 	/** Rótulo da cota de 30 dias ("2 de 3"), sempre do dado — nunca estimado. */
 	cotaLegivel: string;
@@ -350,6 +356,8 @@ export function linhaDaTela(linha: LinhaBruta, agora: Date): LinhaDaTela {
 		proximoToqueISO: proximo ? proximo.toISOString() : null,
 		proximoToqueVencido: proximo ? proximo.getTime() <= agora.getTime() : false,
 		ultimoToqueISO: linha.ultimoToqueEm ? linha.ultimoToqueEm.toISOString() : null,
+		forma: formaDoEnvio(linha),
+		respondeuDepoisDoToque: respondeuDepoisDoToque(linha),
 		criadoEmISO: linha.criadoEm.toISOString(),
 		cotaLegivel: cotaLegivel(linha.touches30d),
 		// Uma fonte só para o guarda: `podeSegurar` já recusa opt-out, e a tela não
@@ -913,4 +921,141 @@ export function duracaoLegivel(ms: number | null): string | null {
 	return arredondado < 2
 		? `${arredondado.toLocaleString("pt-BR")} dia`
 		: `${arredondado.toLocaleString("pt-BR")} dias`;
+}
+
+// ─── A FORMA DO ENVIO: como o último toque saiu (FIX-380) ────────────────────
+//
+// A régua sabe SE o toque sai (`regua.ts`) e o motor decide COMO entregar
+// (`motor.ts`): turno de retomada quando a janela de 24 h do cliente está
+// aberta, template aprovado quando está fechada. O que a tela não dizia era
+// como aquilo DE FATO saiu — e é a segunda metade da pergunta do dono ("e como
+// que foi?"): a diferença entre os dois é a explicação de por que o texto muda
+// de um toque para o outro.
+//
+// ── Reuso, e não coluna nova ────────────────────────────────────────────────
+//
+// A forma é DERIVADA do que o banco já grava, sem migration e sem passar pelo
+// ciclo — o que também faz ela valer para o histórico, em vez de nascer NULL:
+//
+//   - `whatsapp_outbound_queue`: linha para o destino = o toque entrou na fila
+//     de template. `pending` = esperando aprovação na Meta (o toque NÃO saiu
+//     como mensagem ainda); `sent` = a fila esvaziou e o template saiu;
+//   - `messages`: a fala do agente logo depois do toque = turno de retomada. É
+//     o marcador que separa "o agente falou" de "saiu template", porque o envio
+//     de template NÃO grava mensagem no histórico;
+//   - `messages.template_name`: nome do template quando a saída foi um template
+//     (hoje quem grava é o painel do atendente; a régua não — mas a coluna é a
+//     evidência declarada do bloco e entra na ordem);
+//   - `whatsapp_templates`: o template do bem, quando já está `APPROVED` — o
+//     caso do envio direto, que não deixa fila nem fala.
+//
+// ── O que não se deriva não se inventa ──────────────────────────────────────
+//
+// Sem rastro nenhum a resposta é `nao_registrado`, NUNCA "texto livre" por
+// omissão: não ter o dado não é o mesmo que ter o dado "não", que é a mesma
+// disciplina do `estadoHonestoDaRegua`. E o passo 0 (nenhum toque saiu) não tem
+// forma — devolve `null`, não um rótulo vazio.
+
+export type StatusDaFila = "pending" | "sent" | "failed";
+
+/** O rastro do último toque, colhido pelo servidor (`remarketing-queries.ts`). */
+export interface EvidenciaDaForma {
+	/** O agente falou logo depois do toque? (turno de retomada) */
+	houveFalaDoAgente: boolean;
+	/** `messages.template_name` da fala, quando ela foi um template. */
+	nomeDoTemplateNaMensagem: string | null;
+	/** A linha da fila de template do destino, quando o toque entrou nela. */
+	naFila: { status: StatusDaFila; nomeDoTemplate: string | null } | null;
+	/** Nome do template aprovado do bem (envio direto, sem passar pela fila). */
+	templateAprovado: string | null;
+}
+
+export const FORMAS_DO_TOQUE = [
+	"texto_livre",
+	"template",
+	"template_aguardando",
+	"nao_registrado",
+] as const;
+
+export type FormaDoToque = (typeof FORMAS_DO_TOQUE)[number];
+
+export interface FormaDoEnvio {
+	tipo: FormaDoToque;
+	/** O rótulo curto da célula. O nome do template vai em `nomeDoTemplate`. */
+	rotulo: string;
+	/** Nome do template na Meta, quando a forma é template. */
+	nomeDoTemplate: string | null;
+	/** A frase do `title`: o que aquela forma significa, em português. */
+	explicacao: string;
+}
+
+const ROTULO_DA_FORMA: Record<FormaDoToque, string> = {
+	texto_livre: "Texto livre",
+	template: "Template",
+	template_aguardando: "Template aguardando",
+	nao_registrado: "Não registrado",
+};
+
+const EXPLICACAO_DA_FORMA: Record<FormaDoToque, string> = {
+	texto_livre:
+		"Turno de retomada: quem falou foi o agente, dentro da janela de 24 h do cliente.",
+	template:
+		"Template aprovado da Meta — fora da janela de 24 h é a única entrega que a Meta aceita.",
+	template_aguardando:
+		"Entrou na fila esperando o template ser aprovado na Meta; sai quando a aprovação chegar.",
+	nao_registrado:
+		"Sem rastro do envio no banco: sem fila de template e sem fala do agente.",
+};
+
+function forma(tipo: FormaDoToque, nomeDoTemplate: string | null): FormaDoEnvio {
+	return {
+		tipo,
+		rotulo: ROTULO_DA_FORMA[tipo],
+		nomeDoTemplate,
+		explicacao: EXPLICACAO_DA_FORMA[tipo],
+	};
+}
+
+/**
+ * COMO o último toque saiu — `null` quando nenhum toque saiu ainda (passo 0).
+ *
+ * A ordem dos testes É a precedência: a FILA primeiro (um toque enfileirado não
+ * saiu como conversa, por mais que haja fala no histórico), depois o nome do
+ * template gravado na mensagem, depois a fala do agente (texto livre) e, por
+ * fim, o template aprovado do bem — o envio direto, que não deixa outro rastro.
+ */
+export function formaDoEnvio(linha: {
+	step: number;
+	evidenciaDaForma: EvidenciaDaForma | null;
+}): FormaDoEnvio | null {
+	if (passoDa(linha) === 0) return null;
+
+	const evidencia = linha.evidenciaDaForma;
+	if (!evidencia) return forma("nao_registrado", null);
+
+	const fila = evidencia.naFila;
+	if (fila?.status === "pending") return forma("template_aguardando", fila.nomeDoTemplate);
+	if (fila?.status === "sent") return forma("template", fila.nomeDoTemplate);
+	if (evidencia.nomeDoTemplateNaMensagem) {
+		return forma("template", evidencia.nomeDoTemplateNaMensagem);
+	}
+	if (evidencia.houveFalaDoAgente) return forma("texto_livre", null);
+	if (evidencia.templateAprovado) return forma("template", evidencia.templateAprovado);
+
+	return forma("nao_registrado", null);
+}
+
+/**
+ * O cliente escreveu DEPOIS do último toque?
+ *
+ * É o fato (duas datas no banco), e não o status da linha: a situação
+ * `segurado`, por exemplo, usa `RESPONDEU` sem que o cliente tenha respondido
+ * nada — quem parou foi o atendente.
+ */
+export function respondeuDepoisDoToque(linha: {
+	ultimoToqueEm: Date | null;
+	ultimoInboundEm: Date | null;
+}): boolean {
+	if (!linha.ultimoToqueEm || !linha.ultimoInboundEm) return false;
+	return linha.ultimoInboundEm.getTime() > linha.ultimoToqueEm.getTime();
 }
