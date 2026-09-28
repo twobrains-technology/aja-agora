@@ -6,9 +6,9 @@
  * as tabelas.
  */
 
-import { and, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, count, eq, gte, inArray, lte, max } from "drizzle-orm";
 import { db } from "@/db";
-import { conversations, leads, remarketingTouches, visits } from "@/db/schema";
+import { beviProposals, conversations, leads, remarketingTouches, visits } from "@/db/schema";
 import { MOTIVO_SAIDA_TESTE } from "@/lib/remarketing/motivo-de-exclusao";
 import { motivoDeLimpeza } from "./limpeza";
 import { telefonesDaEquipe } from "./regua-por-conversa";
@@ -100,6 +100,16 @@ export interface CandidatoDeLimpeza {
 	ultimaAtividade: string;
 	/** `true` quando a conversa JÁ está fora do funil — o `[x]` da planilha. */
 	jaMarcada: boolean;
+	/**
+	 * Quantas propostas a conversa criou (`bevi_proposals`). 0 quando nenhuma.
+	 *
+	 * É o número que o relatório da administradora mostra e o painel escondia:
+	 * uma conversa simulada com proposta sai com `proposta_em_teste` e a
+	 * contagem — para a Bruna saber quantas linhas limpar do outro lado.
+	 */
+	propostas: number;
+	/** Quando a última proposta da conversa foi criada, ou `null`. */
+	propostaCriadaEm: string | null;
 }
 
 /**
@@ -222,6 +232,30 @@ export async function listarCandidatosDeLimpeza(opcoes: {
 		atual.temOrigemDeCampanha = atual.temOrigemDeCampanha || temOrigem;
 	}
 
+	// AS PROPOSTAS — o cruzamento que a limpeza não fazia (28/09/2026). A
+	// conversa marcada como teste pode ter criado proposta na administradora, e
+	// é ela que aparece no relatório da Bruna como se fosse venda. Uma consulta
+	// agregada só, restrita às conversas em escopo (nunca N+1).
+	const contagemDePropostas = new Map<string, { total: number; ultimaEm: Date | null }>();
+	const ids = [...porConversa.keys()];
+	if (ids.length > 0) {
+		const linhasDeProposta = await db
+			.select({
+				conversationId: beviProposals.conversationId,
+				total: count(),
+				ultimaEm: max(beviProposals.createdAt),
+			})
+			.from(beviProposals)
+			.where(inArray(beviProposals.conversationId, ids))
+			.groupBy(beviProposals.conversationId);
+		for (const l of linhasDeProposta) {
+			contagemDePropostas.set(l.conversationId, {
+				total: Number(l.total ?? 0),
+				ultimaEm: l.ultimaEm ?? null,
+			});
+		}
+	}
+
 	const candidatos: CandidatoDeLimpeza[] = [];
 	for (const [id, linha] of porConversa) {
 		const telefone = linha.telefoneDoLead ?? linha.waId ?? null;
@@ -229,11 +263,14 @@ export async function listarCandidatosDeLimpeza(opcoes: {
 			linha.handedOffUserId !== null && linha.contactId === null && !linha.temContatoNoLead;
 		const semOrigemDeCampanha = linha.handedOffUserId !== null && !linha.temOrigemDeCampanha;
 
+		const propostasDaConversa = contagemDePropostas.get(id);
+
 		const motivo = motivoDeLimpeza({
 			jaMarcadaComoTeste: linha.isSimulated,
 			telefoneDaEquipe: telefone !== null && ehEquipe(telefone),
 			naMesaSemContato: semContato,
 			naMesaSemOrigemDeCampanha: semOrigemDeCampanha,
+			propostas: propostasDaConversa?.total ?? 0,
 		});
 
 		if (motivo === null) continue;
@@ -248,6 +285,8 @@ export async function listarCandidatosDeLimpeza(opcoes: {
 			canal: linha.channel,
 			ultimaAtividade: linha.updatedAt.toISOString(),
 			jaMarcada: linha.isSimulated,
+			propostas: propostasDaConversa?.total ?? 0,
+			propostaCriadaEm: propostasDaConversa?.ultimaEm?.toISOString() ?? null,
 		});
 	}
 

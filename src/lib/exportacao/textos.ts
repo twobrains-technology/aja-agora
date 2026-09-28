@@ -45,6 +45,13 @@ export const SEM_ETAPA_REGISTRADA = "sem etapa registrada";
 /** Nenhum lead_events de forma alguma — não há etapa final para declarar. */
 export const SEM_RESULTADO_COMERCIAL = "sem resultado: lead sem etapa";
 
+/** A conversa não gerou proposta nenhuma — o normal de quase toda linha.
+ *
+ * A limpeza exporta a CONTAGEM de propostas mesmo quando é zero, porque o
+ * arquivo é cruzado com o relatório da administradora; a data, quando não há
+ * proposta, sai nomeada em vez de em branco (célula vazia é proibida). */
+export const SEM_PROPOSTA = "sem proposta registrada";
+
 /** Nada faltou na linha. O contrário de uma lista vazia. */
 export const NENHUM_INDISPONIVEL = "nenhum";
 
