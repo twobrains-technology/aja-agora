@@ -312,13 +312,41 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
   `;
 }
 
+/**
+ * O FATO de cada degrau — a coluna da linha que diz que a pessoa CHEGOU ali.
+ *
+ * É a mesma definição que alimenta `alcancaram` no resumo, e é ela que o modo
+ * `alcancou` precisa filtrar. Filtrando por `profundidade >= alvo`, o degrau
+ * "Só mandou a mensagem do anúncio" (que é RAMIFICAÇÃO, não degrau da cadeia)
+ * abria a lista de TODO mundo que passou por ali a caminho de um degrau mais
+ * fundo — 8 pessoas onde a barra dizia 1. Era o defeito que o operador viu: o
+ * número da barra e a lista aberta não eram a mesma população.
+ *
+ * Os três primeiros degraus ficam como o degrau os lê na escada: quem abriu o
+ * chat ou escreveu também passou pela página, mesmo sem evento de rolagem
+ * gravado — é a leitura que a ajuda do degrau promete.
+ */
+const FATO_DO_PASSO: Record<PassoDoPercurso, SQL | null> = {
+	// Chegou é o piso: todo mundo que o período alcança chegou.
+	so_chegou: null,
+	olhou_a_pagina: sql`(olhou OR abriu_chat)`,
+	abriu_o_chat: sql`abriu_chat`,
+	so_pre_preenchida: sql`so_pre_preenchida`,
+	iniciou_conversa: sql`iniciou_conversa`,
+	se_identificou: sql`identificou`,
+	viu_oferta: sql`viu_oferta`,
+	proposta: sql`teve_proposta`,
+	fechado: sql`fechou`,
+};
+
 /** A condição do degrau, conforme o modo de leitura escolhido. */
 function condicaoDoPasso(filtro: FiltroPercurso): SQL {
 	if (!filtro.passo) return sql``;
-	const alvo = profundidadeDoPasso(filtro.passo);
-	return filtro.modo === "alcancou"
-		? sql` WHERE profundidade >= ${alvo}`
-		: sql` WHERE profundidade = ${alvo}`;
+	if (filtro.modo === "alcancou") {
+		const fato = FATO_DO_PASSO[filtro.passo];
+		return fato ? sql` WHERE ${fato}` : sql``;
+	}
+	return sql` WHERE profundidade = ${profundidadeDoPasso(filtro.passo)}`;
 }
 
 /**

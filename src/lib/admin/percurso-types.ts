@@ -105,6 +105,12 @@ export function rotuloDoPasso(passo: PassoDoPercurso): string {
  * vocabulário: clicar em "Se identificaram" abre esta tela filtrada em
  * `se_identificou`. `visitas` mapeia para `null` de propósito — a etapa inteira
  * é a tela sem filtro nenhum.
+ *
+ * O clique abre em `modo=alcancou`, e `alcancou` no Percurso filtra pelo FATO do
+ * degrau (`identificou`, `teve_proposta`, …) — a MESMA definição que o funil usa
+ * para contar. Filtrando por posição na escada (`profundidade >= X`), a lista
+ * aberta não era a população do número clicado: no degrau de ramificação ("Só
+ * mandaram a mensagem do anúncio"), clicar em 1 abria 7.
  */
 export const PASSO_DA_ETAPA_DO_FUNIL: Record<ChaveEtapaFunil, PassoDoPercurso | null> = {
 	visitas: null,
