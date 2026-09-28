@@ -1,12 +1,14 @@
 ---
 id: FIX-370
 titulo: "O funil de mídia conta PESSOA, não conversa"
-status: todo
+status: done
 bloco: bloco-pessoa
 arquivos:
   - src/lib/admin/performance-queries.ts
   - src/lib/admin/performance-types.ts
   - src/lib/admin/sinais-do-funil.ts
+commit: 3fe5d63c
+executado_em: 2026-09-28
 rodada: 2026-09-28 (plano de fechamento da frente de medição/remarketing/base)
 ---
 ## Palavras do operador
@@ -42,3 +44,15 @@ definição de pessoa existe e é fonte única — o funil é que não a usa.
 Teste de integração em `performance-queries.integration.test.ts`: dois leads da MESMA pessoa (mesmo
 `contact_id` via conversas distintas) ⇒ o degrau conta **1**; e o caso real da cliente: 5 conversas do
 mesmo telefone ⇒ 1 pessoa. A suíte que já existe de `computePorta` não pode mudar de valor.
+
+## Execução
+
+As oito subconsultas de `computeFunilMidia` passaram a
+`count(DISTINCT chaveDaPessoa(fromDate, toDate))` com `JOIN visits v ON v.id =
+c.visit_id` — a mesma chave de `computePorta`. `visitas` continua contando
+CHEGADAS (sessão), que é o topo do funil de mídia, não degrau de pessoa.
+
+A troca de `contagensDoFunil` (tabela por origem e por campanha) ficou no FIX-373:
+o fragmento é o mesmo, e o teste que ele quebra ("cinco propostas da mesma pessoa
+são cinco linhas de proposta") é justamente a regra que o FIX-373 derruba — mudar
+aí deixaria dois itens com o mesmo commit.
