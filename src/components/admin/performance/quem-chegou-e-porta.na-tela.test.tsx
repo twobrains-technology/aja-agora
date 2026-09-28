@@ -32,6 +32,7 @@ const COBERTURA: CoberturaAtribuicao = {
 	conversasComOrigem: 15,
 	conversasTotal: 24,
 	percent: 62.5,
+	conversasDeTeste: 0,
 };
 
 const QUEM_CHEGOU: QuemChegou = {
@@ -67,7 +68,7 @@ describe("AJA-17 — a nota de origem vira linha com ação", () => {
 		render(
 			<PortaDoFunilCard
 				porta={PORTA}
-				cobertura={{ conversasComOrigem: 24, conversasTotal: 24, percent: 100 }}
+				cobertura={{ conversasComOrigem: 24, conversasTotal: 24, percent: 100, conversasDeTeste: 0 }}
 			/>,
 		);
 
@@ -82,6 +83,28 @@ describe("AJA-17 — a nota de origem vira linha com ação", () => {
 
 		expect(screen.getByLabelText("Por que estas conversas ficam fora")).toBeTruthy();
 		expect(screen.queryByText(/não aparecem em nenhum número desta tela/)).toBeNull();
+	});
+});
+
+describe("FIX-374 — o recorte de teste deixa de ser silencioso", () => {
+	it("declara quantas conversas de teste ficaram fora, e leva à lista com elas", () => {
+		// O caso real: 5 propostas do mutirão de teste em 16/09, todas simuladas. O
+		// painel mostrava 0 e estava certo — mas a Bruna comparou com o relatório da
+		// administradora, viu 5 × 0 e concluiu que o painel mentia. O número agora
+		// aparece na tela, com a saída para a lista que inclui as simuladas.
+		render(
+			<PortaDoFunilCard porta={PORTA} cobertura={{ ...COBERTURA, conversasDeTeste: 5 }} />,
+		);
+
+		expect(screen.getByText(/^5 conversas marcadas como teste ficaram fora/)).toBeTruthy();
+		const link = screen.getByRole("link", { name: /Ver as 5/ });
+		expect(link.getAttribute("href")).toBe("/admin/conversations?include_simulated=true");
+	});
+
+	it("sem conversa de teste, a linha NÃO aparece — nada de '0 conversas' poluindo a tela", () => {
+		render(<PortaDoFunilCard porta={PORTA} cobertura={COBERTURA} />);
+
+		expect(screen.queryByText(/marcadas como teste/)).toBeNull();
 	});
 });
 

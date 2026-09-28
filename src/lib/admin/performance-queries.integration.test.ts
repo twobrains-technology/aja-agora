@@ -526,8 +526,15 @@ describeIfDb("performance — funil de mídia (integration)", () => {
 		it("mede quanto do funil tem origem conhecida", async () => {
 			const cobertura = await queries.computeCobertura(JANELA_DE, JANELA_ATE);
 
-			// Todas as conversas da janela nasceram de visita semeada.
-			expect(cobertura).toMatchObject({ conversasComOrigem: 7, conversasTotal: 7, percent: 100 });
+			// Todas as conversas da janela nasceram de visita semeada. A única
+			// simulada entra DECLARADA em `conversasDeTeste` — não somem e não
+			// inflam: o funil mostra a exclusão em número (FIX-374).
+			expect(cobertura).toMatchObject({
+				conversasComOrigem: 7,
+				conversasTotal: 7,
+				percent: 100,
+				conversasDeTeste: 1,
+			});
 		});
 
 		it("não divide por zero em período sem conversa", async () => {
@@ -536,7 +543,12 @@ describeIfDb("performance — funil de mídia (integration)", () => {
 				new Date("2018-01-31T00:00:00Z"),
 			);
 
-			expect(cobertura).toEqual({ conversasComOrigem: 0, conversasTotal: 0, percent: 0 });
+			expect(cobertura).toEqual({
+				conversasComOrigem: 0,
+				conversasTotal: 0,
+				percent: 0,
+				conversasDeTeste: 0,
+			});
 		});
 	});
 

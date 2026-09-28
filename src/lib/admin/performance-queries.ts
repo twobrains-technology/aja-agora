@@ -588,10 +588,11 @@ export async function computeSerie(fromDate: Date, toDate: Date): Promise<PontoS
 export async function computeCobertura(fromDate: Date, toDate: Date): Promise<CoberturaAtribuicao> {
 	const resultado = await db.execute<Record<string, unknown>>(sql`
     SELECT
-      count(*) FILTER (WHERE visit_id IS NOT NULL) AS com_origem,
-      count(*) AS total
+      count(*) FILTER (WHERE is_simulated = false AND visit_id IS NOT NULL) AS com_origem,
+      count(*) FILTER (WHERE is_simulated = false) AS total,
+      count(*) FILTER (WHERE is_simulated = true) AS de_teste
     FROM conversations
-    WHERE is_simulated = false AND created_at BETWEEN ${fromDate} AND ${toDate}
+    WHERE created_at BETWEEN ${fromDate} AND ${toDate}
   `);
 
 	const linha = resultado.rows[0] ?? {};
@@ -602,5 +603,9 @@ export async function computeCobertura(fromDate: Date, toDate: Date): Promise<Co
 		conversasComOrigem,
 		conversasTotal,
 		percent: pct(conversasComOrigem, conversasTotal),
+		// A conversa de TESTE não entra no total do funil (é o recorte que a tela
+		// declara) e não pode entrar aqui: misturá-la faria a porcentagem de
+		// atribuição cair por causa de conversa que não é do negócio.
+		conversasDeTeste: num(linha.de_teste),
 	};
 }

@@ -228,6 +228,17 @@ export interface CoberturaAtribuicao {
 	conversasComOrigem: number;
 	conversasTotal: number;
 	percent: number;
+	/**
+	 * Conversas do período marcadas como TESTE (`is_simulated`).
+	 *
+	 * Elas ficam fora do funil por decisão de produto — teste interno inflando o
+	 * relatório é como verba vai pro criativo errado —, mas sair em SILÊNCIO custa
+	 * caro: a cliente comparou 5 propostas do relatório da administradora com o 0
+	 * do painel e concluiu que o painel mentia (16/09/2026, mutirão de teste da
+	 * equipe). Com o número na tela, o zero se explica sozinho e a linha leva à
+	 * lista com as simuladas incluídas.
+	 */
+	conversasDeTeste: number;
 }
 
 // ─── "Quem chegou" (cheiro de perfil) ───────────────────────────────────
