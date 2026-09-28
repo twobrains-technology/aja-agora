@@ -1,10 +1,12 @@
 ---
 id: FIX-371
 titulo: "pararamAqui / aindaVivas passam a agrupar por pessoa"
-status: todo
+status: done
 bloco: bloco-pessoa
 arquivos:
   - src/lib/admin/performance-queries.ts
+commit: 5ab560ab
+executado_em: 2026-09-28
 rodada: 2026-09-28
 ---
 ## Palavras do operador
@@ -30,3 +32,13 @@ degraus.
 ## Regressão exigida
 Integração: pessoa com duas conversas em degraus diferentes conta em UM degrau (o mais fundo), e
 `soma(pararamAqui) + pessoas que avançaram` fecha com o degrau do FIX-370.
+
+## Execução
+
+A CTE `conv` ganhou a chave da pessoa e a `profundidade` virou um `GROUP BY
+chave` com `max(...)` do degrau. `viva` virou `bool_or` — basta uma conversa da
+pessoa estar viva para ela ser retomável.
+
+O teste de integração semeia a MESMA visitante com duas conversas (uma que
+engajou, outra com proposta) e prova que ela conta em UM degrau — o mais fundo —
+e que a soma das paradas é o total de pessoas com conversa.
