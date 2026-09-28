@@ -1,7 +1,9 @@
 ---
 id: FIX-376
 titulo: "Cadência intra-janela: os toques 1, 2 e 3 dentro das 24 h"
-status: todo
+status: done
+commit: 5164aeb0
+executado_em: 2026-09-28
 bloco: bloco-regua
 arquivos:
   - src/lib/remarketing/motor.ts
