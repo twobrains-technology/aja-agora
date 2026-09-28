@@ -9,9 +9,11 @@ import {
 import {
 	contadoresDe,
 	estadoHonestoDaRegua,
+	filtrarPorPasso,
 	filtrarPorSituacao,
 	insightsDaRegua,
 	linhasDaTela,
+	passoDoParametro,
 	type RespostaDaRegua,
 	resumoDaRegua,
 	situacaoDoParametro,
@@ -62,6 +64,9 @@ export async function GET(req: NextRequest) {
 
 	const situacao = situacaoDoParametro(sp.get("situacao"));
 	const objetivo = parseObjetivo(sp.get("objetivo"));
+	// A porta da pergunta "para quem foi?" (FIX-379): o passo exato ou "com
+	// toque". Valor desconhecido mostra tudo — link velho não vira tela vazia.
+	const passo = passoDoParametro(sp.get("passo"));
 	const limit = parseLimit(sp.get("limit"));
 	const offset = parseOffset(sp.get("offset"));
 	const agora = new Date();
@@ -80,7 +85,7 @@ export async function GET(req: NextRequest) {
 			contarLinhasDaRegua(),
 			contarElegiveisParaRegua(agora),
 		]);
-		const visiveis = filtrarPorSituacao(doRecorte, situacao);
+		const visiveis = filtrarPorSituacao(filtrarPorPasso(doRecorte, passo), situacao);
 
 		const resposta: RespostaDaRegua = {
 			linhas: linhasDaTela(visiveis.slice(offset, offset + limit), agora),

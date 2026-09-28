@@ -35,22 +35,56 @@ function Cartao({
 	valor,
 	detalhe,
 	title,
+	onClick,
 }: {
 	titulo: string;
 	valor: string;
 	detalhe?: string;
 	title?: string;
+	/** Quando existe, o cartão vira a porta para a lista que responde o número. */
+	onClick?: () => void;
 }) {
-	return (
-		<Card size="sm" className="gap-0 px-4" title={title}>
+	const conteudo = (
+		<>
 			<span className="block text-xs text-muted-foreground">{titulo}</span>
 			<span className="mt-0.5 block font-heading text-2xl font-semibold tabular-nums">{valor}</span>
 			{detalhe && <span className="mt-0.5 block text-xs text-muted-foreground">{detalhe}</span>}
+		</>
+	);
+
+	return (
+		<Card size="sm" className="gap-0" title={title}>
+			{onClick ? (
+				<button
+					type="button"
+					onClick={onClick}
+					className="w-full px-4 text-left transition-colors hover:bg-muted/50"
+					title={
+						title ? `${title} Clique para ver a lista.` : "Clique para ver a lista destes toques"
+					}
+				>
+					{conteudo}
+				</button>
+			) : (
+				<div className="px-4">{conteudo}</div>
+			)}
 		</Card>
 	);
 }
 
-export function BlocoResumoDaRegua({ resumo, ligada }: { resumo: ResumoDaRegua; ligada: boolean }) {
+export function BlocoResumoDaRegua({
+	resumo,
+	ligada,
+	onFiltrarToques,
+}: {
+	resumo: ResumoDaRegua;
+	ligada: boolean;
+	/**
+	 * Leva à lista de quem recebeu toque — a primeira metade da pergunta do dono
+	 * ("para quem que foi?"), logo no número que ele lê primeiro.
+	 */
+	onFiltrarToques?: () => void;
+}) {
 	const { aguardando } = resumo;
 	return (
 		<div className="space-y-2">
@@ -74,6 +108,7 @@ export function BlocoResumoDaRegua({ resumo, ligada }: { resumo: ResumoDaRegua; 
 				<Cartao
 					titulo="Toques enviados"
 					valor={nf.format(resumo.toquesEnviados)}
+					onClick={onFiltrarToques}
 					title="Mensagens que a régua disparou no período, somando os 3 passos."
 				/>
 				<Cartao

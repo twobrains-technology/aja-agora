@@ -115,7 +115,23 @@ export function TabelaRemarketing({
 								<TableCell>{linha.rotuloDoObjetivo}</TableCell>
 
 								<TableCell className="tabular-nums">
+									{/* A célula responde a pergunta inteira do dono no lugar onde o operador
+									    já está olhando: em que passo está, QUANDO saiu, COMO saiu (FIX-380)
+									    e se a pessoa respondeu depois. */}
 									{linha.passoLegivel}
+									{linha.forma && (
+										<span
+											className="block text-xs text-muted-foreground"
+											title={linha.forma.explicacao}
+										>
+											{linha.ultimoToqueISO && `${instanteLegivel(linha.ultimoToqueISO)} · `}
+											{linha.forma.rotulo}
+											{linha.forma.nomeDoTemplate ? `: ${linha.forma.nomeDoTemplate}` : ""}
+										</span>
+									)}
+									{linha.respondeuDepoisDoToque && (
+										<span className="block text-xs text-muted-foreground">respondeu depois</span>
+									)}
 									<span className="block text-xs text-muted-foreground">
 										cota de 30 dias: {linha.cotaLegivel}
 									</span>

@@ -9,12 +9,17 @@
 import { describe, expect, it } from "vitest";
 import {
 	contadoresDe,
+	filtrarPorPasso,
 	filtrarPorSituacao,
 	type LinhaBruta,
 	linhaDaTela,
 	linhasDaTela,
 	MOTIVO_SEGURADO,
+	passoDa,
+	passoDoParametro,
 	proximoToqueDe,
+	resumoDaRegua,
+	rotuloDoFiltroDePasso,
 	rotuloDoMotivo,
 	situacaoDe,
 	situacaoDoParametro,
@@ -248,5 +253,64 @@ describe("situacaoDoParametro", () => {
 		expect(situacaoDoParametro("segurado")).toBe("segurado");
 		expect(situacaoDoParametro("qualquer")).toBeNull();
 		expect(situacaoDoParametro(null)).toBeNull();
+	});
+});
+
+describe("filtrarPorPasso — a porta da pergunta 'para quem foi? (FIX-379)", () => {
+	// A invariante que faz o funil e o resumo contarem a MESMA coisa: o resumo
+	// soma o `step` de cada conversa ("toques enviados") e o funil classifica a
+	// conversa por esse mesmo `step`. Se as duas contas divergirem, o operador
+	// clica em "8 toques" e a lista filtrada mostra outra coisa.
+	it("a soma dos passos bate com os 'toques enviados' do resumo", () => {
+		const linhas = [
+			linha({ step: 1 }),
+			linha({ conversationId: "b", step: 3 }),
+			linha({ conversationId: "c", step: 0 }),
+			linha({ conversationId: "d", step: 2 }),
+		];
+
+		const somaDosPassos = linhas.reduce((soma, l) => soma + passoDa(l), 0);
+		expect(somaDosPassos).toBe(resumoDaRegua(linhas).toquesEnviados);
+	});
+
+	it("o recorte por passo devolve exatamente quem está naquele passo", () => {
+		const linhas = [
+			linha({ conversationId: "a", step: 0 }),
+			linha({ conversationId: "b", step: 2 }),
+			linha({ conversationId: "c", step: 2 }),
+			linha({ conversationId: "d", step: 3 }),
+		];
+
+		expect(filtrarPorPasso(linhas, 2).map((l) => l.conversationId)).toEqual(["b", "c"]);
+		expect(filtrarPorPasso(linhas, 0).map((l) => l.conversationId)).toEqual(["a"]);
+		expect(filtrarPorPasso(linhas, 1)).toEqual([]);
+	});
+
+	it("'com toque' traz quem recebeu pelo menos um toque, e nenhum a mais", () => {
+		const linhas = [
+			linha({ conversationId: "a", step: 0 }),
+			linha({ conversationId: "b", step: 1 }),
+			linha({ conversationId: "c", step: 3 }),
+		];
+
+		expect(filtrarPorPasso(linhas, "com_toque").map((l) => l.conversationId)).toEqual(["b", "c"]);
+	});
+
+	it("sem filtro a lista inteira volta", () => {
+		expect(filtrarPorPasso([linha(), linha({ conversationId: "b" })], null)).toHaveLength(2);
+	});
+
+	it("passoDoParametro reconhece 0..3 e com_toque, e ignora o resto", () => {
+		expect(passoDoParametro("0")).toBe(0);
+		expect(passoDoParametro("3")).toBe(3);
+		expect(passoDoParametro("com_toque")).toBe("com_toque");
+		expect(passoDoParametro("4")).toBeNull();
+		expect(passoDoParametro("carro")).toBeNull();
+		expect(passoDoParametro(null)).toBeNull();
+	});
+
+	it("o rótulo do filtro é o mesmo vocabulário do funil", () => {
+		expect(rotuloDoFiltroDePasso(1)).toBe("Depois do toque 01");
+		expect(rotuloDoFiltroDePasso("com_toque")).toBe("Com algum toque enviado");
 	});
 });

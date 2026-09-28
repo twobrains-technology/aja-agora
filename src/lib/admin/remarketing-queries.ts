@@ -48,7 +48,12 @@ import type { StatusRegua } from "@/lib/remarketing/regua";
 import { chaveTelefoneBR } from "@/lib/whatsapp/mesmo-numero";
 import { JANELA_DE_ENTRADA_MS, motivoForaDaRegua, opcoesDoAmbiente } from "./motivo-fora-da-regua";
 import { telefonesDaEquipe } from "./regua-por-conversa";
-import type { EvidenciaDaForma, LinhaBruta, RastroDoAtendente, StatusDaFila } from "./remarketing-tela";
+import type {
+	EvidenciaDaForma,
+	LinhaBruta,
+	RastroDoAtendente,
+	StatusDaFila,
+} from "./remarketing-tela";
 
 export interface FiltroDaRegua {
 	/** Início da janela (instante, já resolvido pelo período do painel). */

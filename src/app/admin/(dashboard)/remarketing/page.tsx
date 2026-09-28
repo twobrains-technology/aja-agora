@@ -48,11 +48,18 @@ import { parseAsDiaDoNegocio } from "@/lib/admin/periodo-querystring";
 import type {
 	AcaoDaRegua,
 	Contadores,
+	FiltroDePasso,
 	LinhaDaTela,
 	RespostaDaRegua,
 	Situacao,
 } from "@/lib/admin/remarketing-tela";
-import { ROTULO_DA_SITUACAO, SITUACOES, situacaoDoParametro } from "@/lib/admin/remarketing-tela";
+import {
+	passoDoParametro,
+	ROTULO_DA_SITUACAO,
+	rotuloDoFiltroDePasso,
+	SITUACOES,
+	situacaoDoParametro,
+} from "@/lib/admin/remarketing-tela";
 import { BENS } from "@/lib/admin/rotulo-do-bem";
 
 const POR_PAGINA = 50;
@@ -83,12 +90,16 @@ function ReguaContent() {
 
 	const [situacao, setSituacao] = useQueryState("situacao", parseAsString);
 	const [objetivo, setObjetivo] = useQueryState("objetivo", parseAsString);
+	// O passo (`?passo=0..3` ou `com_toque`) é a porta que o cartão "Toques
+	// enviados" e cada degrau do funil abrem (FIX-379).
+	const [passo, setPasso] = useQueryState("passo", parseAsString);
 	const [offset, setOffset] = useQueryState("offset", parseAsInteger.withDefault(0));
 
 	// Valor cru da URL vira situação conhecida ou `null` (todas). Um link velho,
 	// ou um favorito com uma situação que não existe mais, mostra a lista inteira
 	// em vez de uma tela vazia com o filtro "ligado" em nada.
 	const situacaoAtiva = situacaoDoParametro(situacao);
+	const passoAtivo = passoDoParametro(passo);
 
 	const [data, setData] = useState<RespostaDaRegua | null>(null);
 	const [erro, setErro] = useState<string | null>(null);
@@ -114,6 +125,7 @@ function ReguaContent() {
 			});
 			if (situacaoAtiva) p.set("situacao", situacaoAtiva);
 			if (objetivo) p.set("objetivo", objetivo);
+			if (passoAtivo !== null) p.set("passo", String(passoAtivo));
 
 			const res = await fetch(`/api/admin/remarketing?${p.toString()}`);
 			if (!res.ok) {
@@ -130,7 +142,7 @@ function ReguaContent() {
 		} finally {
 			setCarregando(false);
 		}
-	}, [deMs, ateMs, offset, situacaoAtiva, objetivo]);
+	}, [deMs, ateMs, offset, situacaoAtiva, objetivo, passoAtivo]);
 
 	useEffect(() => {
 		void carregar();
@@ -159,6 +171,13 @@ function ReguaContent() {
 
 	const trocarSituacao = (nova: Situacao | null) => {
 		setSituacao(nova);
+		setOffset(0);
+	};
+
+	// O passo entra na URL pelo mesmo caminho da situação: o link que o cartão e
+	// o funil abrem é o MESMO estado que o operador vê no chip e pode limpar.
+	const trocarPasso = (novo: FiltroDePasso | null) => {
+		setPasso(novo === null ? null : String(novo));
 		setOffset(0);
 	};
 
@@ -222,7 +241,11 @@ function ReguaContent() {
 					    a tela — "quantas foram disparadas?". A lista operacional é o
 					    segundo bloco, e o funil/atribuição fecha a página. */}
 					{data ? (
-						<BlocoResumoDaRegua resumo={data.resumo} ligada={data.ligada} />
+						<BlocoResumoDaRegua
+							resumo={data.resumo}
+							ligada={data.ligada}
+							onFiltrarToques={() => trocarPasso("com_toque")}
+						/>
 					) : (
 						<Skeleton className="h-24 w-full" />
 					)}
@@ -302,6 +325,22 @@ function ReguaContent() {
 									</Badge>
 								)}
 
+								{/* O filtro que o cartão/funil abre aparece POR ESCRITO: sem o chip,
+								    o operador não sabe por que a lista encolheu depois do clique. */}
+								{passoAtivo !== null && (
+									<Badge variant="secondary" className="gap-1.5">
+										Passo: {rotuloDoFiltroDePasso(passoAtivo)}
+										<button
+											type="button"
+											aria-label="Remover o filtro de passo"
+											className="hover:text-foreground"
+											onClick={() => trocarPasso(null)}
+										>
+											<XIcon className="size-3" aria-hidden="true" />
+										</button>
+									</Badge>
+								)}
+
 								{data && (
 									<span className="ml-auto text-sm text-muted-foreground tabular-nums">
 										{situacaoAtiva ? (
@@ -334,9 +373,19 @@ function ReguaContent() {
 												Ninguém na régua neste período com esses filtros.
 											</strong>
 											<span className="mt-1 block">
-												A régua recebe a conversa de WhatsApp que ficou 90 minutos em silêncio. Com
-												o período em <strong>Hoje</strong>, só aparece quem entrou na régua hoje —
-												os outros períodos estão no filtro acima.
+												{passoAtivo !== null ? (
+													<>
+														O filtro de passo está ligado (
+														<strong>{rotuloDoFiltroDePasso(passoAtivo)}</strong>). Remova o chip
+														acima para ver a régua inteira.
+													</>
+												) : (
+													<>
+														A régua recebe a conversa de WhatsApp que ficou 90 minutos em silêncio.
+														Com o período em <strong>Hoje</strong>, só aparece quem entrou na régua
+														hoje — os outros períodos estão no filtro acima.
+													</>
+												)}
 											</span>
 										</>
 									}
@@ -373,7 +422,13 @@ function ReguaContent() {
 
 					{/* Funil por passo e atribuição da conversão fecham a página: são análise,
 					    não operação — quem abre a Régua quer a lista e o resumo antes. */}
-					{data && <SecaoDeInsights insights={data.insights} estado={data.estado} />}
+					{data && (
+						<SecaoDeInsights
+							insights={data.insights}
+							estado={data.estado}
+							onFiltrarPasso={(p) => trocarPasso(p)}
+						/>
+					)}
 				</>
 			)}
 

@@ -1,7 +1,7 @@
 ---
 id: FIX-379
 titulo: "Clicar em \"Toques enviados\" mostra PARA QUEM foi o toque"
-status: todo
+status: done
 bloco: bloco-toques
 arquivos:
   - src/components/admin/remarketing/resumo-da-regua.tsx
@@ -9,6 +9,8 @@ arquivos:
   - src/app/api/admin/remarketing/route.ts
   - src/components/admin/remarketing/tabela-remarketing.tsx
 rodada: 2026-09-28
+commit: 1beb9c0c
+executado_em: 2026-09-28
 ---
 ## Palavras do operador
 Reunião de 22/09 (Kairo, 12:12:30): *"a gente teria aqui uma métrica de ó: já foram enviados oito. Para

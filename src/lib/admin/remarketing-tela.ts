@@ -997,14 +997,12 @@ const ROTULO_DA_FORMA: Record<FormaDoToque, string> = {
 };
 
 const EXPLICACAO_DA_FORMA: Record<FormaDoToque, string> = {
-	texto_livre:
-		"Turno de retomada: quem falou foi o agente, dentro da janela de 24 h do cliente.",
+	texto_livre: "Turno de retomada: quem falou foi o agente, dentro da janela de 24 h do cliente.",
 	template:
 		"Template aprovado da Meta — fora da janela de 24 h é a única entrega que a Meta aceita.",
 	template_aguardando:
 		"Entrou na fila esperando o template ser aprovado na Meta; sai quando a aprovação chegar.",
-	nao_registrado:
-		"Sem rastro do envio no banco: sem fila de template e sem fala do agente.",
+	nao_registrado: "Sem rastro do envio no banco: sem fila de template e sem fala do agente.",
 };
 
 function forma(tipo: FormaDoToque, nomeDoTemplate: string | null): FormaDoEnvio {
@@ -1058,4 +1056,53 @@ export function respondeuDepoisDoToque(linha: {
 }): boolean {
 	if (!linha.ultimoToqueEm || !linha.ultimoInboundEm) return false;
 	return linha.ultimoInboundEm.getTime() > linha.ultimoToqueEm.getTime();
+}
+
+// ─── O FILTRO POR PASSO: a porta para "para quem foi?" (FIX-379) ─────────────
+//
+// O dono perguntou "já foram enviados oito — para quem que foi?" e a resposta
+// só existia agregada: o cartão "Toques enviados" e o funil por passo contavam,
+// mas não levavam a lugar nenhum. Aqui mora a decisão do recorte; a rota só lê
+// o parâmetro e a tela só escreve o link.
+//
+// O recorte é uma função PURA sobre as mesmas linhas que a lista já leu — o
+// mesmo desenho do filtro de situação, e pelo mesmo motivo: `contadores`,
+// `insights` e `resumo` continuam sendo do RECORTE inteiro. Filtrá-los junto
+// faria o funil mudar de forma quando o operador clicasse num degrau dele.
+
+/**
+ * O que `?passo=` aceita: um passo exato (0..3) ou "com toque" — quem recebeu
+ * pelo menos um toque, que é para onde o cartão "Toques enviados" aponta (ele é
+ * a soma dos passos, não um passo).
+ */
+export type FiltroDePasso = Passo | "com_toque";
+
+/** `?passo=` cru vira filtro conhecido, ou `null` (lista inteira). */
+export function passoDoParametro(valor: string | null | undefined): FiltroDePasso | null {
+	if (!valor) return null;
+	if (valor === "com_toque") return "com_toque";
+	return (PASSOS as readonly number[]).map(String).includes(valor)
+		? (Number(valor) as Passo)
+		: null;
+}
+
+/** Só quem está no passo pedido (`null` = todos). */
+export function filtrarPorPasso(
+	linhas: readonly LinhaBruta[],
+	filtro: FiltroDePasso | null,
+): LinhaBruta[] {
+	// `null` é "sem filtro" — e o teste com `0` é o que guarda contra o clássico
+	// `if (!filtro)`, que engoliria o passo 0 (falsy) e devolveria a lista inteira.
+	if (filtro === null) return [...linhas];
+	if (filtro === "com_toque") return linhas.filter((linha) => passoDa(linha) > 0);
+	return linhas.filter((linha) => passoDa(linha) === filtro);
+}
+
+/**
+ * O rótulo do filtro ativo, no MESMO vocabulário do funil — o operador lê
+ * "Depois do toque 02" no degrau e no chip do filtro, sem um terceiro nome para
+ * a mesma coisa.
+ */
+export function rotuloDoFiltroDePasso(filtro: FiltroDePasso): string {
+	return filtro === "com_toque" ? "Com algum toque enviado" : ROTULO_DO_PASSO[filtro];
 }

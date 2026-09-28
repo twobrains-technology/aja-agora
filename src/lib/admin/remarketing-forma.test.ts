@@ -7,11 +7,7 @@
 // livre" por omissão.
 
 import { describe, expect, it } from "vitest";
-import {
-	type EvidenciaDaForma,
-	formaDoEnvio,
-	type LinhaBruta,
-} from "./remarketing-tela";
+import { type EvidenciaDaForma, formaDoEnvio, type LinhaBruta } from "./remarketing-tela";
 
 const TOQUE = new Date("2026-09-10T13:00:00Z");
 
