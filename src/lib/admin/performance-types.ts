@@ -22,10 +22,12 @@ import type { Origem } from "./origem-label";
  * gente do que "Viram oferta" — 200% de uma etapa pra outra, um funil que
  * cresce.
  *
- * Todas as etapas depois de `visitas` contam apenas conversas COM ORIGEM
- * conhecida. É o que faz disto um funil de MÍDIA: conversa que nunca passou
- * pela landing (WhatsApp orgânico, por exemplo) não nasceu de uma visita e
- * infla o funil sem pertencer a ele. O funil comercial completo vive na seção
+ * Todas as etapas depois de `visitas` contam apenas PESSOAS com conversa COM
+ * ORIGEM conhecida — a chave é a de `chaveDaPessoa` (o contato quando conhecido,
+ * senão o visitante), a mesma da Porta e do Percurso. É o que faz disto um funil
+ * de MÍDIA: conversa que nunca passou pela landing (WhatsApp orgânico, por
+ * exemplo) não nasceu de uma visita e infla o funil sem pertencer a ele. O funil
+ * comercial completo vive na seção
  * de baixo da mesma tela, e a faixa de cobertura diz quanto um representa do
  * outro.
  */
@@ -56,7 +58,7 @@ export const ETAPAS_FUNIL_MIDIA = [
 	{
 		chave: "propostas",
 		label: "Conversas com proposta",
-		ajuda: "Proposta criada na administradora — conta conversas, não linhas de proposta",
+		ajuda: "Proposta criada na administradora — conta pessoas, não linhas de proposta",
 	},
 	{ chave: "fechados", label: "Fechados", ajuda: "Contrato fechado" },
 ] as const;
@@ -79,6 +81,15 @@ export interface EtapaFunilMidia {
 	chave: ChaveEtapaFunil;
 	label: string;
 	ajuda: string;
+	/**
+	 * O número do degrau — em PESSOAS, nunca em conversas.
+	 *
+	 * A unidade é pessoa em TODAS as etapas depois de `visitas` (que conta
+	 * chegadas, sessão). "5 conversas do mesmo telefone" é 1 pessoa, e foi o
+	 * caso real que originou a mudança — medido em produção em 16/09/2026.
+	 * Voltar a contar conversa aqui faz a tela discordar do Percurso, da Porta
+	 * e do relatório da administradora, com o mesmo rótulo.
+	 */
 	count: number;
 	/** % em relação ao topo do funil (visitas). */
 	percentDoTopo: number;

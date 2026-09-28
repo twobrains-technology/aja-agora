@@ -102,6 +102,12 @@ export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<E
 	// declarar as conversas que ficam fora).
 	const atribuida = conversaAtribuida(fromDate, toDate);
 
+	// A CHAVE DA PESSOA — a fonte única de `sinais-do-funil`, a mesma que a Porta
+	// e o Percurso usam. Cada degrau conta PESSOAS, não conversas: cinco conversas
+	// do mesmo telefone são uma pessoa (decisão do dono, 23/09/2026). Duas
+	// definições de pessoa divergem no primeiro caso raro, com o mesmo rótulo.
+	const chave = chaveDaPessoa(fromDate, toDate);
+
 	// AJA-01 — as duas metades do que era só "tem mensagem do usuário".
 	// `engajou` é o que o negócio chama de "iniciou a conversa";
 	// `so_pre_preenchida` é quem só apertou enviar no texto que o CTA escreveu.
@@ -114,7 +120,8 @@ export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<E
         WHERE v.created_at BETWEEN ${fromDate} AND ${toDate}
           AND ${VISITA_CONTAVEL}) AS visitas,
 
-      (SELECT count(*) FROM conversations c
+      (SELECT count(DISTINCT ${chave}) FROM conversations c
+        JOIN visits v ON v.id = c.visit_id
         WHERE ${atribuida}) AS conversas,
 
       -- 'engajadas' EXIGE mensagem que o produto NÃO escreveu (AJA-01).
@@ -122,33 +129,36 @@ export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<E
       -- pronta: 47% das conversas web medidas em produção tinham uma única
       -- mensagem, e ela era o texto do anúncio. O predicado mora em
       -- 'src/lib/funil/mensagem-pre-preenchida', o mesmo da tela de Percurso.
-      (SELECT count(DISTINCT c.id) FROM conversations c
+      (SELECT count(DISTINCT ${chave}) FROM conversations c
+        JOIN visits v ON v.id = c.visit_id
         WHERE ${atribuida} AND ${engajou}) AS engajadas,
 
       -- O degrau que faltava: existe mensagem do cliente, e TODAS são texto do
       -- produto. Era o vazamento somado dentro de "Engajaram".
-      (SELECT count(DISTINCT c.id) FROM conversations c
+      (SELECT count(DISTINCT ${chave}) FROM conversations c
+        JOIN visits v ON v.id = c.visit_id
         WHERE ${atribuida} AND ${soPrePreenchida}) AS so_pre_preenchida,
 
-      -- Conta CONVERSAS identificadas, não leads: uma conversa com dois leads
-      -- (dedup imperfeito) contaria duas vezes e passaria do total. O predicado
-      -- (nome E contato) mora em sinais-do-funil e lê as DUAS casas do nome —
-      -- leads.name e conversations.contactName —, então o EXISTS substitui o JOIN
-      -- que descartava a conversa sem linha em leads.
-      (SELECT count(DISTINCT c.id) FROM conversations c
+      -- Conta PESSOAS identificadas: a regra é do CANAL e o fragmento é o
+      -- compartilhado com Percurso, Exportação e Campanhas.
+      (SELECT count(DISTINCT ${chave}) FROM conversations c
+        JOIN visits v ON v.id = c.visit_id
         WHERE ${atribuida} AND ${conversaIdentificada(sql`c`)}) AS identificados,
 
-      (SELECT count(DISTINCT c.id) FROM conversations c
+      (SELECT count(DISTINCT ${chave}) FROM conversations c
+        JOIN visits v ON v.id = c.visit_id
         JOIN messages m ON m.conversation_id = c.id
         JOIN artifacts a ON a.message_id = m.id
         WHERE ${atribuida}
           AND a.type IN (${ARTIFACTS_DE_OFERTA_SQL})) AS viram_oferta,
 
-      (SELECT count(DISTINCT c.id) FROM conversations c
+      (SELECT count(DISTINCT ${chave}) FROM conversations c
+        JOIN visits v ON v.id = c.visit_id
         JOIN bevi_proposals bp ON bp.conversation_id = c.id
         WHERE ${atribuida}) AS propostas,
 
-      (SELECT count(DISTINCT c.id) FROM conversations c
+      (SELECT count(DISTINCT ${chave}) FROM conversations c
+        JOIN visits v ON v.id = c.visit_id
         JOIN leads l ON l.conversation_id = c.id
           AND l.is_simulated = false
           AND l.stage = 'fechado_ganho'

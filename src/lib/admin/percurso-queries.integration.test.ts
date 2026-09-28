@@ -471,7 +471,7 @@ describeIfDb("percurso — até onde cada pessoa foi (integration)", () => {
 				createdAt: QUANDO_ISOLADO,
 			});
 
-			const { resumo, totalDeConversas } = await queries.listarPercurso({
+			const { resumo, totalDePessoas, totalDeConversas } = await queries.listarPercurso({
 				from: DE_ISOLADO,
 				to: ATE_ISOLADO,
 			});
@@ -488,14 +488,16 @@ describeIfDb("percurso — até onde cada pessoa foi (integration)", () => {
 			// todas as conversas das pessoas, identificadas ou não.
 			expect(totalDeConversas).toBe(4);
 
-			// E o funil de mídia, lido na MESMA janela, conta a mesma gente: 4
-			// conversas no total, 3 delas identificadas, para 2 PESSOAS. A diferença
-			// entre conversa e pessoa é exatamente quem abriu duas.
+			// E o funil de mídia, lido na MESMA janela, conta a mesma gente — agora em
+			// PESSOA (FIX-370). As três pessoas com conversa: quem seguiu adiante, quem
+			// parou no degrau (com DUAS conversas) e quem só iniciou. Contando conversa,
+			// o funil dizia 4 aqui e a lista do Percurso, 3 — mesmo rótulo, populações
+			// diferentes.
 			const { computeFunilMidia } = await import("./performance-queries");
 			const funil = await computeFunilMidia(DE_ISOLADO, ATE_ISOLADO);
-			expect(funil.find((e) => e.chave === "conversas")?.count).toBe(totalDeConversas);
+			expect(funil.find((e) => e.chave === "conversas")?.count).toBe(totalDePessoas);
 			const etapa = funil.find((e) => e.chave === "identificados");
-			expect(etapa?.count).toBe(3);
+			expect(etapa?.count).toBe(por.se_identificou?.alcancaram);
 			expect(por.se_identificou?.alcancaram).toBeLessThanOrEqual(etapa?.count ?? 0);
 		});
 
