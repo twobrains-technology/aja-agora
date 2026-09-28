@@ -23,6 +23,7 @@ import {
 import { rotularOrigem } from "./origem-label";
 import {
 	type CoberturaAtribuicao,
+	type ChaveEtapaFunil,
 	ETAPAS_FUNIL_MIDIA,
 	ETAPAS_RAMIFICADAS,
 	type EtapaFunilMidia,
@@ -37,12 +38,10 @@ import {
 	contagensDoFunil,
 	conversaAtribuida,
 	conversaIdentificada,
+	conversaViva,
 	VISITA_CONTAVEL,
 	VISITA_DE_GENTE,
 } from "./sinais-do-funil";
-
-/** Quantos dias sem o cliente escrever até a conversa deixar de contar como viva. */
-const DIAS_PARA_CONSIDERAR_VIVA = 7;
 
 /** O dia que o negócio enxerga. A operação é brasileira; o servidor é UTC. */
 const TZ = "America/Sao_Paulo";
@@ -165,35 +164,110 @@ export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<E
         WHERE ${atribuida}) AS fechados
   `);
 
-	// ONDE CADA PESSOA PAROU — e se ela ainda está de pé.
-	//
-	// O funil dizia "44,4% saíram aqui" e parava por aí. Duas conversas paradas
-	// na mesma etapa pedem decisões opostas: a que morreu manda consertar o
-	// agente; a que ainda responde manda puxar de volta (o watchdog de retomada
-	// existe exatamente para isso). Sem separar, o painel manda consertar o que
-	// só precisava de um empurrão.
-	//
-	// `lastInboundAt` não serve como sinal de vida: é específico do WhatsApp
-	// (schema.ts). A última mensagem do CLIENTE vale nos dois canais.
-	//
-	// A parada é por PESSOA, no degrau MAIS FUNDO que ela alcançou. Contando
-	// conversa, quem voltou e abriu duas — uma que engajou, outra que virou
-	// proposta — aparecia parada em dois degraus, e a soma das paradas passava do
-	// topo do funil (que já conta pessoa).
-	const paradas = await db.execute<Record<string, unknown>>(sql`
+	// ONDE CADA PESSOA PAROU — e se ela ainda está de pé. A leitura mora em
+	// `pessoasQuePararam` (com o critério de vida compartilhado com o Percurso, em
+	// `conversaViva`); aqui só o agregado por degrau entra no funil.
+	const paradas = await pessoasQuePararam(fromDate, toDate);
+
+	// Chave da etapa → quantas PESSOAS pararam ali e quantas seguem vivas. A
+	// unidade do mapa é a mesma do `count` acima (pessoa), senão a soma das
+	// paradas deixaria de fechar com o topo do funil.
+	const pararamPorEtapa = new Map<string, { pararam: number; vivas: number }>();
+	for (const p of paradas) {
+		const atual = pararamPorEtapa.get(p.etapa) ?? { pararam: 0, vivas: 0 };
+		atual.pararam += 1;
+		if (p.viva) atual.vivas += 1;
+		pararamPorEtapa.set(p.etapa, atual);
+	}
+
+	const linha = resultado.rows[0] ?? {};
+	const topo = num(linha.visitas);
+	const conversas = num(linha.conversas);
+
+	let anterior = 0;
+	return ETAPAS_FUNIL_MIDIA.map((etapa, i) => {
+		const count = num(linha[etapa.chave]);
+		// Ramificação não tem "etapa anterior": ela reparte a etapa de cima, e
+		// medir queda contra a etapa anterior inventaria um encolhimento que
+		// ninguém viveu. Ver `ETAPAS_RAMIFICADAS`.
+		const quedaDaAnterior = ETAPAS_RAMIFICADAS.has(etapa.chave)
+			? 0
+			: i === 0 || anterior === 0
+				? 0
+				: Math.max(0, pct(anterior - count, anterior));
+		// `visitas` é o índice 0 do array e não é etapa de conversa — a
+		// profundidade 1 ("abriu e não escreveu") casa com `conversas`, no índice 1.
+		const parada = pararamPorEtapa.get(etapa.chave);
+		const resultadoEtapa: EtapaFunilMidia = {
+			chave: etapa.chave,
+			label: etapa.label,
+			ajuda: etapa.ajuda,
+			count,
+			percentDoTopo: pct(count, topo),
+			percentDasConversas: etapa.chave === "visitas" ? 100 : pct(count, conversas),
+			quedaDaAnterior,
+			pararamAqui: parada?.pararam ?? 0,
+			aindaVivas: parada?.vivas ?? 0,
+		};
+		// A cadeia avança mesmo quando a etapa é ramificação: o "anterior" de quem
+		// vem depois dela continua sendo a etapa de cima, e não a ramificação.
+		if (!ETAPAS_RAMIFICADAS.has(etapa.chave)) anterior = count;
+		return resultadoEtapa;
+	});
+}
+
+/**
+ * Uma PESSOA parada num degrau do funil de mídia — e se ela ainda está viva.
+ *
+ * Existe como leitura separada por duas razões: a tela precisa do AGREGADO por
+ * degrau, e o teste de equivalência precisa dos IDS — comparar contagem entre
+ * duas telas não prova que elas falam das mesmas pessoas.
+ */
+export interface PessoaParada {
+	/** A chave de `chaveDaPessoa`: o contato quando conhecido, senão o visitante. */
+	chave: string;
+	/** O degrau MAIS FUNDO que a pessoa alcançou — uma pessoa, um degrau. */
+	etapa: ChaveEtapaFunil;
+	/** O cliente escreveu na janela recente e a conversa não foi encerrada. */
+	viva: boolean;
+}
+
+/**
+ * ONDE CADA PESSOA PAROU — e se ela ainda está de pé.
+ *
+ * O funil dizia "44,4% saíram aqui" e parava por aí. Duas pessoas paradas na
+ * mesma etapa pedem decisões opostas: a que morreu manda consertar o agente; a
+ * que ainda responde manda puxar de volta (o watchdog de retomada existe
+ * exatamente para isso). Sem separar, o painel manda consertar o que só
+ * precisava de um empurrão.
+ *
+ * `lastInboundAt` não serve como sinal de vida: é específico do WhatsApp
+ * (schema). A última mensagem do CLIENTE vale nos dois canais — e o critério
+ * vive em `conversaViva` (`sinais-do-funil`), o MESMO que o Percurso lê.
+ *
+ * A parada é por PESSOA, no degrau mais fundo que ela alcançou. Contando
+ * conversa, quem voltou e abriu duas — uma que engajou, outra que virou
+ * proposta — aparecia parada em dois degraus, e a soma das paradas passava do
+ * topo do funil (que conta pessoa).
+ */
+export async function pessoasQuePararam(fromDate: Date, toDate: Date): Promise<PessoaParada[]> {
+	const atribuida = conversaAtribuida(fromDate, toDate);
+	// A chave da PESSOA — a mesma de computePorta e da escada do Percurso.
+	const chave = chaveDaPessoa(fromDate, toDate);
+	const engajou = sqlEscreveuAlgoProprio(sql`c.id`);
+	const soPrePreenchida = sqlSoPrePreenchida(sql`c.id`);
+
+	const resultado = await db.execute<Record<string, unknown>>(sql`
     WITH conv AS (
       SELECT
-        c.id,
-        c.status,
-        -- A chave da PESSOA — a mesma de computePorta e da escada do Percurso.
         ${chave} AS chave,
-        (SELECT max(m.created_at) FROM messages m
-          WHERE m.conversation_id = c.id AND m.role = 'user') AS ultimo_inbound,
-      -- O ONDE CADA CONVERSA PAROU agora tem um degrau a mais: quem só mandou
-      -- a mensagem pré-preenchida era contado como engajado. As duas colunas
+        ${conversaViva(sql`(SELECT max(m.created_at) FROM messages m
+          WHERE m.conversation_id = c.id AND m.role = 'user')`)} AS viva,
+      -- O ONDE CADA CONVERSA PAROU tem um degrau a mais: quem só mandou a
+      -- mensagem pré-preenchida era contado como engajado. As duas colunas
       -- ("engajou" e "so_pre_preenchida") saem do MESMO predicado que as
-      -- contagens acima — duas definições de "escreveu" divergiriam no primeiro
-      -- dia, com o mesmo rótulo na mesma tela.
+      -- contagens do funil — duas definições de "escreveu" divergiriam no
+      -- primeiro dia, com o mesmo rótulo na mesma tela.
         ${engajou} AS engajou,
         ${soPrePreenchida} AS so_pre_preenchida,
         ${conversaIdentificada(sql`c`)} AS identificou,
@@ -222,57 +296,21 @@ export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<E
           WHEN so_pre_preenchida THEN 2
           ELSE 1
         END) AS etapa,
-        -- Viva = o cliente escreveu na janela recente e ninguém encerrou a
-        -- conversa. Conversa encerrada não é retomável, por mais nova que seja.
         -- Por PESSOA: basta UMA conversa viva para ela ser retomável.
-        bool_or(ultimo_inbound >= now() - ${sql.raw(`interval '${DIAS_PARA_CONSIDERAR_VIVA} days'`)}
-          AND status = 'active') AS viva
+        bool_or(viva) AS viva
       FROM conv
       GROUP BY chave
     )
-    SELECT etapa, count(*) AS pararam, count(*) FILTER (WHERE viva) AS vivas
-    FROM profundidade GROUP BY etapa
+    SELECT chave, etapa, viva FROM profundidade
   `);
 
-	// Índice da etapa (1..6) → quantas pararam ali e quantas seguem vivas.
-	const pararamPorEtapa = new Map<number, { pararam: number; vivas: number }>();
-	for (const p of paradas.rows) {
-		pararamPorEtapa.set(num(p.etapa), { pararam: num(p.pararam), vivas: num(p.vivas) });
-	}
-
-	const linha = resultado.rows[0] ?? {};
-	const topo = num(linha.visitas);
-	const conversas = num(linha.conversas);
-
-	let anterior = 0;
-	return ETAPAS_FUNIL_MIDIA.map((etapa, i) => {
-		const count = num(linha[etapa.chave]);
-		// Ramificação não tem "etapa anterior": ela reparte a etapa de cima, e
-		// medir queda contra a etapa anterior inventaria um encolhimento que
-		// ninguém viveu. Ver `ETAPAS_RAMIFICADAS`.
-		const quedaDaAnterior = ETAPAS_RAMIFICADAS.has(etapa.chave)
-			? 0
-			: i === 0 || anterior === 0
-				? 0
-				: Math.max(0, pct(anterior - count, anterior));
-		// `visitas` é o índice 0 do array e não é etapa de conversa — a
-		// profundidade 1 ("abriu e não escreveu") casa com `conversas`, no índice 1.
-		const parada = pararamPorEtapa.get(i);
-		const resultadoEtapa: EtapaFunilMidia = {
-			chave: etapa.chave,
-			label: etapa.label,
-			ajuda: etapa.ajuda,
-			count,
-			percentDoTopo: pct(count, topo),
-			percentDasConversas: etapa.chave === "visitas" ? 100 : pct(count, conversas),
-			quedaDaAnterior,
-			pararamAqui: parada?.pararam ?? 0,
-			aindaVivas: parada?.vivas ?? 0,
+	return resultado.rows.map((linha) => {
+		const indice = Math.min(Math.max(num(linha.etapa), 1), ETAPAS_FUNIL_MIDIA.length - 1);
+		return {
+			chave: String(linha.chave),
+			etapa: ETAPAS_FUNIL_MIDIA[indice].chave,
+			viva: linha.viva === true,
 		};
-		// A cadeia avança mesmo quando a etapa é ramificação: o "anterior" de quem
-		// vem depois dela continua sendo a etapa de cima, e não a ramificação.
-		if (!ETAPAS_RAMIFICADAS.has(etapa.chave)) anterior = count;
-		return resultadoEtapa;
 	});
 }
 

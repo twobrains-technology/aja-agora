@@ -38,6 +38,8 @@ function pessoa(over: Partial<PessoaDoPercurso> = {}): PessoaDoPercurso {
 		stageDoLead: null,
 		perdido: false,
 		conversationId: null,
+		/** Mesmo critério do funil de mídia (FIX-375). */
+		aindaViva: false,
 		...over,
 	};
 }
@@ -203,6 +205,9 @@ describe("a escada do percurso", () => {
 		// para semear a diferença: no degrau "Se identificou" duas pessoas fizeram
 		// aquilo e seguiram adiante — é o caso que a tela passou a mostrar.
 		alcancaram: [105, 74, 44, 17, 9, 2, 3, 1][i],
+		// As mesmas pessoas que PARARAM, separadas por ainda serem retomáveis
+		// (FIX-375) — o número que decide entre consertar e puxar de volta.
+		pessoasVivas: [0, 1, 0, 2, 0, 0, 1, 0][i],
 	}));
 
 	it("mostra os oito degraus, inclusive os dois que antecedem a conversa", () => {

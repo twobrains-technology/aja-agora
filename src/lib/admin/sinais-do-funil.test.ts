@@ -20,6 +20,8 @@ import {
 	conversaAtribuida,
 	conversaIdentificada,
 	conversaSemOrigem,
+	conversaViva,
+	DIAS_PARA_CONSIDERAR_VIVA,
 	leadIdentificado,
 } from "./sinais-do-funil";
 
@@ -123,6 +125,29 @@ describe("conversaIdentificada", () => {
 	it("não exige nome em nenhuma das casas", () => {
 		expect(t).not.toContain("contact_name");
 		expect(t).not.toContain("li.name");
+	});
+});
+
+/**
+ * O critério de conversa VIVA — um só, no servidor.
+ *
+ * Ele existia como const local em `performance-queries.ts` e não existia no
+ * Percurso: a mesma palavra ("parada") com dois sentidos e nenhum jeito de saber
+ * qual valia. Aqui se prova que o fragmento carrega as DUAS condições — fala
+ * recente do cliente e conversa aberta — e que a janela sai da constante
+ * compartilhada.
+ */
+describe("conversaViva", () => {
+	it("exige a fala recente E a conversa aberta", () => {
+		const t = texto(conversaViva());
+		expect(t).toContain(`interval '${DIAS_PARA_CONSIDERAR_VIVA} days'`);
+		expect(t).toContain("status = 'active'");
+		expect(DIAS_PARA_CONSIDERAR_VIVA).toBe(7);
+	});
+
+	it("aceita o timestamp e o status por parâmetro", () => {
+		const t = texto(conversaViva(sql`c.last_inbound_at`, sql`c.status`));
+		expect(t).toContain("c.last_inbound_at >=");
 	});
 });
 

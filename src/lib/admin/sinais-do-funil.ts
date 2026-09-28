@@ -68,6 +68,46 @@ export function chaveDaPessoa(de: Date, ate: Date, colunaVisitor: SQL = sql`v.vi
 const JANELA_DE_ECO = "2 seconds";
 
 /**
+ * Quantos dias sem o cliente escrever até a conversa deixar de contar como
+ * VIVA.
+ *
+ * **É o critério ÚNICO de "parado" no painel.** Ele vivia como const local de
+ * `performance-queries.ts` e não existia no Percurso — quem abrisse as duas telas
+ * via dois sentidos para a mesma palavra, e nenhum jeito de saber qual valia.
+ *
+ * **O que ele NÃO é.** A régua de remarketing tem a janela dela
+ * (`JANELA_DE_ENTRADA_MS`, em `motivo-de-exclusao.ts`), e ela responde outra
+ * pergunta: "posso mandar um toque?". Aqui a pergunta é "dá para ler esta pessoa
+ * como retomável?". São decisões diferentes, com donos diferentes — juntar as
+ * duas faria mudar a cadência quando alguém mexesse no desenho do painel.
+ */
+export const DIAS_PARA_CONSIDERAR_VIVA = 7;
+
+/**
+ * A CONVERSA está VIVA — o cliente escreveu na janela recente e ninguém a
+ * encerrou.
+ *
+ * Conversa encerrada não é retomável por mais nova que seja a fala: o time já
+ * decidiu que aquele caso acabou. Os dois cortes andam juntos de propósito — uma
+ * tela que aplicasse só um deles mostraria uma população diferente das outras.
+ *
+ * Uma CONVERSA ser viva não faz a PESSOA viva: quem agrega precisa de
+ * `bool_or(viva)` sobre as conversas dela (basta uma aberta para ser retomável).
+ *
+ * O timestamp e o status entram por parâmetro porque cada consulta chega aqui
+ * com um alias diferente: no funil a fala do cliente vem de uma subconsulta e o
+ * status é `c.status`; no Percurso, do CTE `conv`. Acoplar a um alias faria o
+ * fragmento compilar num lugar e explodir no outro.
+ */
+export function conversaViva(
+	ultimoInbound: SQL = sql`ultimo_inbound`,
+	status: SQL = sql`c.status`,
+): SQL {
+	return sql`(${ultimoInbound} >= now() - ${sql.raw(`interval '${DIAS_PARA_CONSIDERAR_VIVA} days'`)}
+    AND ${status} = 'active')`;
+}
+
+/**
  * A visita não é ECO de outra — o mesmo visitante gravado de novo em instantes.
  *
  * **O que aconteceu.** Depois de hidratar, o App Router dispara `fetch` de
