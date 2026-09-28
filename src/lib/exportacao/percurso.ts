@@ -15,14 +15,18 @@
  * pedido pede explicitamente "incluir quem não virou lead, quem interrompeu".
  */
 
-import { sql } from "drizzle-orm";
+import { type SQL, sql } from "drizzle-orm";
 import { db } from "@/db";
+import type { Campanhas } from "@/lib/admin/campanhas";
+import { predicadoDeOrigemNaVisita } from "@/lib/admin/filtro-origem";
 import {
+	type ModoDoPasso,
 	ORDEM_DOS_PASSOS,
 	PASSOS_DO_PERCURSO,
 	type PassoDoPercurso,
 } from "@/lib/admin/percurso-types";
 import { conversaIdentificada } from "@/lib/admin/sinais-do-funil";
+import { sqlEscreveuAlgoProprio, sqlSoPrePreenchida } from "@/lib/funil/mensagem-pre-preenchida";
 import { isoDeSaoPaulo } from "./conversas";
 import type { LinhaExportada } from "./formato";
 import { mascararEmail, mascararNome, mascararTelefone } from "./mascarar";
@@ -43,6 +47,22 @@ export interface OpcoesDePercurso {
 	mascarar?: boolean;
 	/** Padrão `true`: inclui a visita sem conversa (quem não virou lead). */
 	incluirSemConversa?: boolean;
+	/**
+	 * O RECORTE da tela de Percurso, para o arquivo responder o mesmo que a
+	 * lista. Exportar sem ele devolvia todos os degraus enquanto a tela mostrava
+	 * um só — o arquivo respondia por OUTRO recorte (Bruna, 23/09).
+	 *
+	 * O critério é o MESMO da lista: os nove degraus de `ORDEM_DOS_PASSOS` e o
+	 * modo `parou`/`alcancou`.
+	 */
+	passo?: PassoDoPercurso | null;
+	modo?: ModoDoPasso;
+	/** Chave de canal como a tabela por origem monta (`campanha:ig`, `direto`). */
+	origem?: string | null;
+	/** Campanha (ou lista de campanhas) — só corta junto com `origem` de campanha. */
+	campanha?: Campanhas;
+	/** Busca por nome, telefone ou e-mail — o mesmo `q` da lista. */
+	q?: string | null;
 }
 
 interface LinhaCrua extends Record<string, unknown> {
@@ -75,6 +95,11 @@ function rotuloDaProfundidade(profundidade: number): PassoDoPercurso {
 	return ORDEM_DOS_PASSOS[indice];
 }
 
+/** A profundidade que nomeia o degrau — o índice na escada canônica, +1. */
+function profundidadeDoPasso(passo: PassoDoPercurso): number {
+	return ORDEM_DOS_PASSOS.indexOf(passo) + 1;
+}
+
 /** A legenda legível do degrau — o pedido é lido por gente, não só por script. */
 function legendaDoPasso(passo: PassoDoPercurso): string {
 	return PASSOS_DO_PERCURSO.find((p) => p.chave === passo)?.label ?? passo;
@@ -88,9 +113,31 @@ function ouIndisponivel(valor: unknown, campo: string): string {
 export async function exportarPercurso(opcoes: OpcoesDePercurso): Promise<LinhaExportada[]> {
 	const mascara = opcoes.mascarar ?? true;
 	const incluirSemConversa = opcoes.incluirSemConversa ?? true;
-	// Sem conversa não há conversa para exigir — o filtro só faz sentido quando o
-	// chamador pediu para excluir quem não falou.
-	const filtroConversa = incluirSemConversa ? sql`` : sql` WHERE cr.chave IS NOT NULL`;
+
+	// A origem corta na VISITA, com o mesmo predicado da tabela por origem — é
+	// o que faz o arquivo ter as mesmas linhas do link que a tela abriu.
+	const origem = opcoes.origem?.trim()
+		? predicadoDeOrigemNaVisita(opcoes.origem.trim(), opcoes.campanha ?? null)
+		: null;
+	const filtroOrigem = origem ? sql` AND ${origem}` : sql``;
+
+	// As condições que SÓ existem no recorte externo (`final`): a exclusão de
+	// quem não falou vive na coluna `conversation_id`, e a busca de `q` lê o nome
+	// já resolvido (contato ou lead).
+	const condicoes: SQL[] = [];
+	if (!incluirSemConversa) condicoes.push(sql`conversation_id IS NOT NULL`);
+	if (opcoes.passo) {
+		const alvo = profundidadeDoPasso(opcoes.passo);
+		condicoes.push(
+			opcoes.modo === "alcancou" ? sql`profundidade >= ${alvo}` : sql`profundidade = ${alvo}`,
+		);
+	}
+	const busca = opcoes.q?.trim();
+	if (busca) {
+		const alvo = `%${busca}%`;
+		condicoes.push(sql`(name ILIKE ${alvo} OR phone ILIKE ${alvo} OR email ILIKE ${alvo})`);
+	}
+	const filtroFinal = condicoes.length > 0 ? sql` WHERE ${sql.join(condicoes, sql` AND `)}` : sql``;
 
 	const { rows } = await db.execute<LinhaCrua>(sql`
     WITH visita AS (
@@ -101,7 +148,7 @@ export async function exportarPercurso(opcoes: OpcoesDePercurso): Promise<LinhaE
       FROM visits v
       WHERE v.created_at BETWEEN ${opcoes.de} AND ${opcoes.ate}
         AND (EXISTS (SELECT 1 FROM conversations cg WHERE cg.visit_id = v.id AND cg.is_simulated = false)
-          OR (v.user_agent IS NOT NULL AND v.user_agent !~* '(ELB-HealthChecker|facebookexternalhit|python-requests|HeadlessChrome|crawler|spider|curl|wget|bot)([^a-z]|$)'))
+          OR (v.user_agent IS NOT NULL AND v.user_agent !~* '(ELB-HealthChecker|facebookexternalhit|python-requests|HeadlessChrome|crawler|spider|curl|wget|bot)([^a-z]|$)'))${filtroOrigem}
     ),
     por_visita AS (
       SELECT vi.*,
@@ -131,7 +178,12 @@ export async function exportarPercurso(opcoes: OpcoesDePercurso): Promise<LinhaE
       SELECT c.id, c.visit_id, c.updated_at,
         (SELECT count(*) FROM messages m WHERE m.conversation_id = c.id AND m.role = 'user') AS msgs,
         (SELECT max(m.created_at) FROM messages m WHERE m.conversation_id = c.id AND m.role = 'user') AS ultimo_inbound,
-        EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.role = 'user') AS escreveu,
+        -- AJA-01: "escreveu" era o EXISTS de mensagem do cliente, e o CTA do
+        -- anúncio escreve a primeira fala. O degrau se parte em dois, com os
+        -- MESMOS predicados da lista do Percurso — é o que faz a exportação do
+        -- degrau devolver exatamente as linhas que a tela mostrava.
+        ${sqlEscreveuAlgoProprio(sql`c.id`)} AS iniciou_conversa,
+        ${sqlSoPrePreenchida(sql`c.id`)} AS so_pre_preenchida,
         ${conversaIdentificada(sql`c`)} AS identificou,
         EXISTS (SELECT 1 FROM messages m JOIN artifacts a ON a.message_id = m.id WHERE m.conversation_id = c.id AND a.type IN ('real_offer','simulation_result')) AS viu_oferta,
         EXISTS (SELECT 1 FROM bevi_proposals bp WHERE bp.conversation_id = c.id) AS teve_proposta,
@@ -140,7 +192,9 @@ export async function exportarPercurso(opcoes: OpcoesDePercurso): Promise<LinhaE
     ),
     conv_pessoa AS (
       SELECT pv.chave, count(DISTINCT c.id) AS conversations, COALESCE(sum(c.msgs),0) AS customer_messages,
-        max(c.ultimo_inbound) AS ultimo_inbound, bool_or(c.escreveu) AS escreveu, bool_or(c.identificou) AS identificou,
+        max(c.ultimo_inbound) AS ultimo_inbound,
+        bool_or(c.iniciou_conversa) AS iniciou_conversa, bool_or(c.so_pre_preenchida) AS so_pre_preenchida,
+        bool_or(c.identificou) AS identificou,
         bool_or(c.viu_oferta) AS viu_oferta, bool_or(c.teve_proposta) AS teve_proposta, bool_or(c.fechou) AS fechou
       FROM por_visita pv JOIN conv c ON c.visit_id = pv.id GROUP BY pv.chave
     ),
@@ -162,16 +216,25 @@ export async function exportarPercurso(opcoes: OpcoesDePercurso): Promise<LinhaE
         cr.ctwa_source_id, cr.ctwa_headline, cr.referrer, cr.landing_path, p.first_arrival,
         GREATEST(p.last_visit, COALESCE(cp.ultimo_inbound, p.last_visit)) AS last_activity, p.arrivals,
         COALESCE(cp.conversations,0) AS conversations, COALESCE(cp.customer_messages,0) AS customer_messages,
-        CASE WHEN COALESCE(cp.fechou,false) THEN 8 WHEN COALESCE(cp.teve_proposta,false) THEN 7
-          WHEN COALESCE(cp.viu_oferta,false) THEN 6 WHEN COALESCE(cp.identificou,false) THEN 5
-          WHEN COALESCE(cp.escreveu,false) THEN 4 WHEN COALESCE(cp.conversations,0) > 0 OR p.abriu_teatro THEN 3
+        -- A ESCADA é a mesma da lista do Percurso, os nove degraus de
+        -- ORDEM_DOS_PASSOS: 'so_pre_preenchida' entrou e a antiga contagem de
+        -- oito degraus rotulava 'fechado' como 'proposta'. Sem isto a exportação
+        -- de um degrau devolveria outro recorte que a tela.
+        CASE
+          WHEN COALESCE(cp.fechou,false) THEN 9
+          WHEN COALESCE(cp.teve_proposta,false) THEN 8
+          WHEN COALESCE(cp.viu_oferta,false) THEN 7
+          WHEN COALESCE(cp.identificou,false) THEN 6
+          WHEN COALESCE(cp.iniciou_conversa,false) THEN 5
+          WHEN COALESCE(cp.so_pre_preenchida,false) THEN 4
+          WHEN COALESCE(cp.conversations,0) > 0 OR p.abriu_teatro THEN 3
           WHEN p.olhou THEN 2 ELSE 1 END AS profundidade,
         lp.stage, rc.conversation_id
       FROM pessoa p JOIN credito cr ON cr.chave = p.chave LEFT JOIN conv_pessoa cp ON cp.chave = p.chave
       LEFT JOIN conversa_recente rc ON rc.chave = p.chave LEFT JOIN lead_pessoa lp ON lp.chave = p.chave
       LEFT JOIN contato ct ON ct.chave = p.chave
     )
-    SELECT * FROM final${filtroConversa} ORDER BY last_activity DESC, visitor_id ASC
+    SELECT * FROM final${filtroFinal} ORDER BY last_activity DESC, visitor_id ASC
   `);
 
 	return rows.map((linha) => {
@@ -230,12 +293,19 @@ export async function exportarPercurso(opcoes: OpcoesDePercurso): Promise<LinhaE
 	});
 }
 
-/** Contagem barata para o cartão da tela. */
-export async function contarPercurso(opcoes: {
-	de: Date;
-	ate: Date;
-	incluirSemConversa?: boolean;
-}): Promise<{ pessoas: number }> {
+/**
+ * Contagem para o cartão da tela.
+ *
+ * Com RECORTE (degrau, origem ou busca), a contagem é `exportarPercurso` —
+ * materializar as linhas é mais caro, e é de propósito: o cartão e o arquivo
+ * não podem discordar. Sem recorte, o caminho leve de sempre (o teste "a
+ * contagem de pessoas bate com o número de linhas" prova que os dois concordam
+ * no caso sem filtro).
+ */
+export async function contarPercurso(opcoes: OpcoesDePercurso): Promise<{ pessoas: number }> {
+	const temRecorte = Boolean(opcoes.passo || opcoes.origem?.trim() || opcoes.q?.trim());
+	if (temRecorte) return { pessoas: (await exportarPercurso(opcoes)).length };
+
 	const incluirSemConversa = opcoes.incluirSemConversa ?? true;
 	const filtroConversa = incluirSemConversa
 		? sql``

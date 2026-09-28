@@ -6,6 +6,7 @@
 
 import { inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { PassoDoPercurso } from "@/lib/admin/percurso-types";
 
 const HAS_DB = Boolean(process.env.DATABASE_URL) && !process.env.DATABASE_URL?.includes("sentinel");
 const describeIfDb = HAS_DB ? describe : describe.skip;
@@ -143,5 +144,132 @@ describeIfDb("exportação — percurso por pessoa (integration)", () => {
 		// A contagem usa a MESMA definição de chave da query; divergência aqui é o
 		// bug clássico de dois SQL parecidos.
 		expect(linhas.length).toBe(pessoas);
+	});
+
+	// ── FIX-383: A EXPORTAÇÃO LEVA O FILTRO DA TELA ────────────────────────
+	//
+	// O pedido da cliente (23/09): *"Só preciso ter um diagnóstico por etapa"*.
+	// Exportar com um degrau selecionado devolvia TODOS os degraus — o arquivo
+	// respondia por outro recorte que a lista. Aqui o arquivo e a lista são
+	// comparados chave a chave, na mesma janela: nem uma linha a mais, nem a menos.
+	describe("o arquivo leva o recorte da lista (FIX-383)", () => {
+		const ANO_F = 2065 + Math.floor(Math.random() * 10);
+		const MES_F = String(1 + Math.floor(Math.random() * 12)).padStart(2, "0");
+		const DE_F = new Date(`${ANO_F}-${MES_F}-01T00:00:00Z`);
+		const ATE_F = new Date(`${ANO_F}-${MES_F}-28T23:59:59Z`);
+		const DIA_F = new Date(`${ANO_F}-${MES_F}-15T12:00:00Z`);
+
+		const visitas: Record<string, string> = {};
+
+		/** Semeia uma pessoa parada no degrau pedido, no visitante indicado. */
+		async function semearNivel(
+			chave: "so_chegou" | "iniciou_conversa" | "se_identificou" | "viu_oferta",
+		): Promise<void> {
+			const visitorId = `v-${chave}-${crypto.randomUUID()}`;
+			visitas[chave] = visitorId;
+			const [visita] = await db
+				.insert(schema.visits)
+				.values({
+					visitorId,
+					channel: "web",
+					landingPath: "/motos",
+					utmSource: "facebook",
+					utmCampaign: "filtro",
+					userAgent: UA,
+					createdAt: DIA_F,
+				})
+				.returning({ id: schema.visits.id });
+			visitIds.push(visita.id);
+			if (chave === "so_chegou") return;
+
+			await db.insert(schema.pageEvents).values({
+				visitId: visita.id,
+				type: "click",
+				path: "/motos",
+				viewportWidth: 390,
+				viewportHeight: 844,
+				device: "mobile",
+				createdAt: DIA_F,
+			});
+			const [conversa] = await db
+				.insert(schema.conversations)
+				.values({
+					channel: "web",
+					visitId: visita.id,
+					isSimulated: false,
+					createdAt: DIA_F,
+					updatedAt: DIA_F,
+				})
+				.returning({ id: schema.conversations.id });
+			convIds.push(conversa.id);
+			const [mensagem] = await db
+				.insert(schema.messages)
+				.values({
+					conversationId: conversa.id,
+					role: "user",
+					content: "quero uma moto",
+					createdAt: DIA_F,
+				})
+				.returning({ id: schema.messages.id });
+			if (chave === "iniciou_conversa") return;
+
+			await db.insert(schema.leads).values({
+				conversationId: conversa.id,
+				name: "Cliente Filtro",
+				phone: "+5511900001111",
+				stage: "qualificado",
+				isSimulated: false,
+				createdAt: DIA_F,
+				updatedAt: DIA_F,
+			});
+			if (chave === "se_identificou") return;
+
+			await db.insert(schema.artifacts).values({
+				messageId: mensagem.id,
+				type: "real_offer",
+				payload: {},
+				createdAt: DIA_F,
+			});
+		}
+
+		beforeAll(async () => {
+			await semearNivel("so_chegou");
+			await semearNivel("iniciou_conversa");
+			await semearNivel("se_identificou");
+			await semearNivel("viu_oferta");
+		});
+
+		it("exportar com o degrau devolve exatamente as linhas da lista filtrada", async () => {
+			const { listarPercurso } = await import("@/lib/admin/percurso-queries");
+			for (const passo of [
+				"iniciou_conversa",
+				"se_identificou",
+				"viu_oferta",
+			] as const satisfies readonly PassoDoPercurso[]) {
+				const lista = await listarPercurso({
+					from: DE_F,
+					to: ATE_F,
+					passo,
+					modo: "parou",
+					limit: 200,
+				});
+				const arquivo = await percurso.exportarPercurso({
+					de: DE_F,
+					ate: ATE_F,
+					passo,
+					modo: "parou",
+				});
+
+				const chavesDaLista = lista.pessoas.map((p) => p.visitorId).sort();
+				const chavesDoArquivo = arquivo.map((l) => l.visitanteId).sort();
+				expect(chavesDoArquivo).toEqual(chavesDaLista);
+				expect(chavesDoArquivo).toEqual([visitas[passo]]);
+			}
+		});
+
+		it("sem o filtro, o arquivo traz o recorte inteiro", async () => {
+			const linhas = await percurso.exportarPercurso({ de: DE_F, ate: ATE_F });
+			expect(linhas).toHaveLength(4);
+		});
 	});
 });

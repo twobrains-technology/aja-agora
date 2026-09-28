@@ -16,11 +16,25 @@
  */
 
 import { NextResponse } from "next/server";
+import {
+	type ModoDoPasso,
+	ORDEM_DOS_PASSOS,
+	type PassoDoPercurso,
+} from "@/lib/admin/percurso-types";
 import { diaDoNegocio } from "@/lib/admin/periodo";
 import { periodoDaRequisicao } from "@/lib/admin/periodo-da-requisicao";
 import { requireRole } from "@/lib/admin/require-role";
 import { ehTipoExportacao, exportar, gerar } from "@/lib/exportacao";
 import { registrarExportacao } from "@/lib/exportacao/historico";
+
+/**
+ * O degrau, com a MESMA tolerância da rota do Percurso: chave desconhecida vira
+ * `null` (link velho exporta o recorte inteiro) em vez de erro 400.
+ */
+function parsePasso(raw: string | null): PassoDoPercurso | null {
+	if (!raw) return null;
+	return (ORDEM_DOS_PASSOS as readonly string[]).includes(raw) ? (raw as PassoDoPercurso) : null;
+}
 
 export async function GET(request: Request, { params }: { params: Promise<{ tipo: string }> }) {
 	const { error, session } = await requireRole("admin");
@@ -33,13 +47,26 @@ export async function GET(request: Request, { params }: { params: Promise<{ tipo
 
 	const { de, ate } = periodoDaRequisicao(request);
 
-	const formato = new URL(request.url).searchParams.get("formato") === "json" ? "json" : "csv";
-	const completo = ["1", "true", "sim"].includes(
-		(new URL(request.url).searchParams.get("completo") ?? "").toLowerCase(),
-	);
+	const url = new URL(request.url);
+	const sp = url.searchParams;
+
+	const formato = sp.get("formato") === "json" ? "json" : "csv";
+	const completo = ["1", "true", "sim"].includes((sp.get("completo") ?? "").toLowerCase());
 	const mascarado = !completo;
 
-	const linhas = await exportar(tipo, { de, ate, mascarar: mascarado });
+	// O recorte da tela viaja junto com o pedido de arquivo: sem isto, exportar
+	// com um degrau selecionado devolvia todos os degraus (FIX-383).
+	const modo: ModoDoPasso = sp.get("modo") === "alcancou" ? "alcancou" : "parou";
+	const linhas = await exportar(tipo, {
+		de,
+		ate,
+		mascarar: mascarado,
+		passo: parsePasso(sp.get("passo")),
+		modo,
+		origem: sp.get("origem"),
+		campanha: sp.get("campanha"),
+		q: sp.get("q"),
+	});
 	const corpo = gerar(formato, linhas);
 
 	await registrarExportacao({
