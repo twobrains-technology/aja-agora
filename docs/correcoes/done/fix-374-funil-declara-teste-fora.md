@@ -1,12 +1,14 @@
 ---
 id: FIX-374
 titulo: "O funil declara quantas conversas de teste ficaram fora"
-status: todo
+status: done
 bloco: bloco-pessoa
 arquivos:
   - src/lib/admin/performance-queries.ts
   - src/lib/admin/performance-types.ts
   - src/components/admin/performance/porta-do-funil.tsx
+commit: 86aec53f
+executado_em: 2026-09-28
 rodada: 2026-09-28
 ---
 ## Palavras do operador
@@ -34,3 +36,18 @@ cobertura já declara `conversasComOrigem`/`conversasTotal` (`performance-querie
 Unitário do texto (sem teste de browser): com 5 conversas simuladas no período, a tela renderiza
 "N conversas marcadas como teste" e o número 5; sem nenhuma, a linha NÃO aparece (nada de "0 conversas
 de teste" poluindo a tela).
+
+## Execução
+
+`CoberturaAtribuicao.conversasDeTeste` conta as conversas `is_simulated = true`
+do período, **separadas** de `conversasTotal` (que mantém `is_simulated = false`)
+— somar as duas faria a porcentagem de atribuição cair por causa de conversa que
+não é do negócio.
+
+A linha na `PortaDoFunilCard` só renderiza com `conversasDeTeste > 0` e leva a
+`/admin/conversations?include_simulated=true` (o mesmo opt-in literal que a rota
+de conversas já aceita). Sem teste no período, a tela não ganha "0 conversas".
+
+Prova: unitário de DOM em `quem-chegou-e-porta.na-tela.test.tsx` (com 5 e com 0)
+e integração de `computeCobertura` na janela semeada (1 simulada ⇒
+`conversasDeTeste: 1`).
