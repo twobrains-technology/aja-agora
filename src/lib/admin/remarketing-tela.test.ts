@@ -9,11 +9,14 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { normalizarParametros } from "@/lib/remarketing/regua";
 import {
 	duracaoLegivel,
 	estadoHonestoDaRegua,
 	insightsDaRegua,
 	type LinhaBruta,
+	linhaDaTela,
+	motivoDoProximoToque,
 	passoDa,
 	passoDaConversao,
 	resumoDaRegua,
@@ -22,6 +25,7 @@ import {
 
 const HORA = 60 * 60 * 1000;
 const DIA = 24 * HORA;
+const MINUTO = 60 * 1000;
 
 /** Um toque bem no passado, para a conversão/resposta ter espaço de vir depois. */
 const TOQUE = new Date("2026-09-10T13:00:00Z");
@@ -351,5 +355,79 @@ describe("resumoDaRegua — os contadores fecham com a soma das linhas", () => {
 		]);
 		expect(r.responderam).toBe(0);
 		expect(r.aguardando.n).toBe(0);
+	});
+});
+
+// ─── FIX-378: por que o próximo toque não saiu ────────────────────────────────
+//
+// O motivo é CALCULADO a partir do estado da linha (PRD §AJA-20 T5), não
+// persistido: nada de coluna nova nem de backfill mentindo sobre o passado. Os
+// quatro motivos de repetição têm rótulo humano; quando não há motivo, a coluna
+// não inventa texto.
+
+describe("FIX-378 — o motivo de o próximo toque não ter saído", () => {
+	/** 12h de Brasília — dentro da janela de envio (9h–20h). */
+	const AGORA = new Date("2026-09-14T15:00:00Z");
+
+	it("data futura é 'aguardando_data', com rótulo legível", () => {
+		const l = linha({ nextTouchAt: new Date(AGORA.getTime() + 3 * HORA) });
+		expect(motivoDoProximoToque(l, AGORA)).toBe("aguardando_data");
+
+		const tela = linhaDaTela(l, AGORA);
+		expect(tela.motivoDoProximoToque).toBe("aguardando_data");
+		expect(tela.motivoDoProximoToqueLegivel).toBe("Ainda não é hora do próximo toque");
+	});
+
+	it("cota de 30 dias cheia é 'teto_30_dias' — e manda sobre a data", () => {
+		const l = linha({
+			touches30d: 3,
+			nextTouchAt: new Date(AGORA.getTime() + 3 * HORA),
+		});
+		expect(motivoDoProximoToque(l, AGORA)).toBe("teto_30_dias");
+		expect(linhaDaTela(l, AGORA).motivoDoProximoToqueLegivel).toBe("Cota de 30 dias cheia");
+	});
+
+	it("vencido e fora do horário é 'fora_da_janela_de_horario'", () => {
+		// 23h em Brasília (02h UTC do dia seguinte).
+		const tardeDaNoite = new Date("2026-09-15T02:00:00Z");
+		const l = linha({ nextTouchAt: new Date(tardeDaNoite.getTime() - HORA) });
+		expect(motivoDoProximoToque(l, tardeDaNoite)).toBe("fora_da_janela_de_horario");
+		expect(linhaDaTela(l, tardeDaNoite).motivoDoProximoToqueLegivel).toBe(
+			"Fora do horário de envio (9h às 20h)",
+		);
+	});
+
+	it("esgotado é 'esgotado' — e a coluna diz isso mesmo sem próximo toque", () => {
+		const l = linha({ status: "ESGOTADO", nextTouchAt: null, step: 3, touches30d: 3 });
+		expect(motivoDoProximoToque(l, AGORA)).toBe("esgotado");
+
+		const tela = linhaDaTela(l, AGORA);
+		expect(tela.proximoToqueISO).toBeNull();
+		expect(tela.motivoDoProximoToqueLegivel).toBe("Esgotou os três toques");
+	});
+
+	it("vencido, dentro do horário e com cota: não há motivo — e a tela não inventa", () => {
+		const l = linha({ nextTouchAt: new Date(AGORA.getTime() - MINUTO) });
+		expect(motivoDoProximoToque(l, AGORA)).toBeNull();
+
+		const tela = linhaDaTela(l, AGORA);
+		expect(tela.motivoDoProximoToque).toBeNull();
+		expect(tela.motivoDoProximoToqueLegivel).toBeNull();
+	});
+
+	it("linha que já saiu (respondeu, opt-out, converteu) não tem motivo de repetição", () => {
+		for (const status of ["RESPONDEU", "OPTOUT", "CONVERTEU"] as const) {
+			const l = linha({ status, nextTouchAt: null });
+			expect(motivoDoProximoToque(l, AGORA), status).toBeNull();
+			expect(linhaDaTela(l, AGORA).motivoDoProximoToqueLegivel, status).toBeNull();
+		}
+	});
+
+	it("o cadastro move o motivo: teto menor faz a linha virar 'teto_30_dias'", () => {
+		const l = linha({ touches30d: 1, nextTouchAt: new Date(AGORA.getTime() - MINUTO) });
+		expect(motivoDoProximoToque(l, AGORA)).toBeNull();
+		expect(motivoDoProximoToque(l, AGORA, normalizarParametros({ tetoToques30Dias: 1 }))).toBe(
+			"teto_30_dias",
+		);
 	});
 });

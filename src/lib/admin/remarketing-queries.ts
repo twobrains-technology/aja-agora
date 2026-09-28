@@ -44,10 +44,15 @@ import { contacts, conversations, remarketingTouches } from "@/db/schema";
 import { maskPhoneForDisplay } from "@/lib/conversation/identity";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { objetivoCanonico } from "@/lib/remarketing/motor";
-import type { StatusRegua } from "@/lib/remarketing/regua";
+import {
+	PARAMETROS_DE_FABRICA,
+	type ParametrosRegua,
+	type StatusRegua,
+} from "@/lib/remarketing/regua";
 import { chaveTelefoneBR } from "@/lib/whatsapp/mesmo-numero";
 import { JANELA_DE_ENTRADA_MS, motivoForaDaRegua, opcoesDoAmbiente } from "./motivo-fora-da-regua";
 import { telefonesDaEquipe } from "./regua-por-conversa";
+import { lerParametrosRegua } from "./remarketing-config";
 import type { LinhaBruta, RastroDoAtendente } from "./remarketing-tela";
 
 export interface FiltroDaRegua {
@@ -199,6 +204,24 @@ export async function lerLinhaDaRegua(conversationId: string): Promise<LinhaBrut
 
 	const [linha] = resultado.rows;
 	return linha ? montarLinha(linha) : null;
+}
+
+/**
+ * Os parâmetros VIGENTES do cadastro, para a derivação da tela (FIX-378).
+ *
+ * O motivo de o próximo toque não ter saído depende da janela de horário e do
+ * teto que o MOTOR está usando — lê-los da fábrica faria a tela mentir no dia em
+ * que o dono mudasse a hora pelo cadastro.
+ *
+ * Falha de leitura NÃO derruba a tela: cai na fábrica (o lado de "menos toque"),
+ * que é o mesmo que o motor usaria num ciclo com o cadastro ilegível.
+ */
+export async function lerParametrosDaTela(): Promise<ParametrosRegua> {
+	try {
+		return await lerParametrosRegua();
+	} catch {
+		return PARAMETROS_DE_FABRICA;
+	}
 }
 
 /**
