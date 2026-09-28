@@ -244,6 +244,7 @@ function ReguaContent() {
 						<BlocoResumoDaRegua
 							resumo={data.resumo}
 							ligada={data.ligada}
+							maxToques={data.maxToques}
 							onFiltrarToques={() => trocarPasso("com_toque")}
 						/>
 					) : (

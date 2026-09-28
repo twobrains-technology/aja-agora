@@ -230,6 +230,12 @@ export interface RespostaDaRegua {
 	resumo: ResumoDaRegua;
 	/** `REMARKETING_ATIVO` — o interruptor operacional, lido na borda. */
 	ligada: boolean;
+	/**
+	 * O teto de toques vigente — do CADASTRO (`remarketing_config`), não da
+	 * constante: é o mesmo número que o ciclo usa, e é ele que a tela mostra em
+	 * "2 de 3". Vem no shape para a página poder rotular o que exibe.
+	 */
+	maxToques: number;
 	/** Se a régua está ligada, desligada ou só sem toque neste período. */
 	estado: EstadoDaRegua;
 }
@@ -302,13 +308,22 @@ export function rotuloDoMotivo(motivo: string | null): string | null {
 	return motivoDeSaidaLegivel(motivo);
 }
 
-export function passoLegivel(step: number): string {
+export function passoLegivel(step: number, maxToques: number = MAX_TOQUES): string {
 	if (step <= 0) return "—";
-	return `${Math.min(step, MAX_TOQUES)} de ${MAX_TOQUES}`;
+	return `${Math.min(step, maxToques)} de ${maxToques}`;
 }
 
-export function cotaLegivel(touches30d: number): string {
-	return `${touches30d} de ${MAX_TOQUES}`;
+/**
+ * A cota de 30 dias ("2 de 3"), pelo MESMO teto que o ciclo usa.
+ *
+ * `maxToques` entra por parâmetro porque o teto virou ajuste do cadastro
+ * (`remarketing_config`, AJA-20 T1): ler a constante aqui faria a tela dizer
+ * "1 de 3" depois de alguém cadastrar 2 — o painel mentiria para quem opera. O
+ * default é o valor de fábrica, o mesmo em que o ciclo cai quando não há
+ * cadastro.
+ */
+export function cotaLegivel(touches30d: number, maxToques: number = MAX_TOQUES): string {
+	return `${touches30d} de ${maxToques}`;
 }
 
 export function rotuloDoObjetivo(objetivo: string): string {
@@ -334,7 +349,11 @@ export function proximoToqueDe(linha: {
 }
 
 /** A linha bruta vira a linha da tela. PURA: `agora` entra por parâmetro. */
-export function linhaDaTela(linha: LinhaBruta, agora: Date): LinhaDaTela {
+export function linhaDaTela(
+	linha: LinhaBruta,
+	agora: Date,
+	maxToques: number = MAX_TOQUES,
+): LinhaDaTela {
 	const situacao = situacaoDe(linha);
 	const proximo = proximoToqueDe(linha);
 	const soltar = podeSoltar(linha, agora);
@@ -347,7 +366,7 @@ export function linhaDaTela(linha: LinhaBruta, agora: Date): LinhaDaTela {
 		objetivo: linha.objetivo,
 		rotuloDoObjetivo: rotuloDoObjetivo(linha.objetivo),
 		step: linha.step,
-		passoLegivel: passoLegivel(linha.step),
+		passoLegivel: passoLegivel(linha.step, maxToques),
 		touches30d: linha.touches30d,
 		situacao,
 		rotuloDaSituacao: ROTULO_DA_SITUACAO[situacao],
@@ -359,7 +378,7 @@ export function linhaDaTela(linha: LinhaBruta, agora: Date): LinhaDaTela {
 		forma: formaDoEnvio(linha),
 		respondeuDepoisDoToque: respondeuDepoisDoToque(linha),
 		criadoEmISO: linha.criadoEm.toISOString(),
-		cotaLegivel: cotaLegivel(linha.touches30d),
+		cotaLegivel: cotaLegivel(linha.touches30d, maxToques),
 		// Uma fonte só para o guarda: `podeSegurar` já recusa opt-out, e a tela não
 		// pode discordar dele sobre o que dá para fazer.
 		podeSegurar: podeSegurar(linha).pode,
@@ -369,8 +388,12 @@ export function linhaDaTela(linha: LinhaBruta, agora: Date): LinhaDaTela {
 	};
 }
 
-export function linhasDaTela(linhas: readonly LinhaBruta[], agora: Date): LinhaDaTela[] {
-	return linhas.map((linha) => linhaDaTela(linha, agora));
+export function linhasDaTela(
+	linhas: readonly LinhaBruta[],
+	agora: Date,
+	maxToques: number = MAX_TOQUES,
+): LinhaDaTela[] {
+	return linhas.map((linha) => linhaDaTela(linha, agora, maxToques));
 }
 
 /** Conta a régua inteira por situação. Sem banco, sem limite: contador tem que fechar. */

@@ -21,6 +21,7 @@ import { Clock, Power, PowerOff } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import type { ResumoDaRegua } from "@/lib/admin/remarketing-tela";
+import { MAX_TOQUES } from "@/lib/remarketing/regua";
 
 const nf = new Intl.NumberFormat("pt-BR");
 const nfDecimal = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
@@ -76,6 +77,7 @@ export function BlocoResumoDaRegua({
 	resumo,
 	ligada,
 	onFiltrarToques,
+	maxToques = MAX_TOQUES,
 }: {
 	resumo: ResumoDaRegua;
 	ligada: boolean;
@@ -84,6 +86,12 @@ export function BlocoResumoDaRegua({
 	 * ("para quem que foi?"), logo no número que ele lê primeiro.
 	 */
 	onFiltrarToques?: () => void;
+	/**
+	 * O teto de toques vigente, do CADASTRO. Entra só nos RÓTULOS que citam o
+	 * número: com o cadastro em 2, "Esgotaram os 3 toques" seria mentira na tela
+	 * que existe justamente para dizer onde a régua para.
+	 */
+	maxToques?: number;
 }) {
 	const { aguardando } = resumo;
 	return (
@@ -109,7 +117,7 @@ export function BlocoResumoDaRegua({
 					titulo="Toques enviados"
 					valor={nf.format(resumo.toquesEnviados)}
 					onClick={onFiltrarToques}
-					title="Mensagens que a régua disparou no período, somando os 3 passos."
+					title={`Mensagens que a régua disparou no período, somando os ${maxToques} passos.`}
 				/>
 				<Cartao
 					titulo="Responderam"
@@ -127,9 +135,9 @@ export function BlocoResumoDaRegua({
 					title="Opt-out: não recebem mais toque automático, por decisão do cliente."
 				/>
 				<Cartao
-					titulo="Esgotaram os 3 toques"
+					titulo={`Esgotaram os ${maxToques} toques`}
 					valor={nf.format(resumo.esgotaram)}
-					title="Os três toques saíram sem resposta."
+					title={`Os ${maxToques} toques saíram sem resposta.`}
 				/>
 				<Cartao
 					titulo="Aguardando o próximo toque"

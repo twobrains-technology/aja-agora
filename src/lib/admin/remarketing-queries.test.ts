@@ -9,6 +9,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	contadoresDe,
+	cotaLegivel,
 	filtrarPorPasso,
 	filtrarPorSituacao,
 	type LinhaBruta,
@@ -17,6 +18,7 @@ import {
 	MOTIVO_SEGURADO,
 	passoDa,
 	passoDoParametro,
+	passoLegivel,
 	proximoToqueDe,
 	resumoDaRegua,
 	rotuloDoFiltroDePasso,
@@ -312,5 +314,34 @@ describe("filtrarPorPasso — a porta da pergunta 'para quem foi? (FIX-379)", ()
 	it("o rótulo do filtro é o mesmo vocabulário do funil", () => {
 		expect(rotuloDoFiltroDePasso(1)).toBe("Depois do toque 01");
 		expect(rotuloDoFiltroDePasso("com_toque")).toBe("Com algum toque enviado");
+	});
+});
+
+describe("o teto exibido vem do cadastro, não da constante (FIX-381)", () => {
+	// O ciclo já lê `maxToques` do `remarketing_config` (AJA-20 T1); a TELA ficou
+	// presa na constante. Com o cadastro em 2 a tela dizia "1 de 3" e mentia para
+	// quem opera. O default continua sendo a fábrica, que é o mesmo valor que o
+	// ciclo usa quando não há cadastro.
+	it("com o cadastro em 2, a tela diz '1 de 2'", () => {
+		expect(passoLegivel(1, 2)).toBe("1 de 2");
+		expect(cotaLegivel(1, 2)).toBe("1 de 2");
+	});
+
+	it("o passo nunca passa do teto, mesmo com o dado adiantado", () => {
+		expect(passoLegivel(3, 2)).toBe("2 de 2");
+	});
+
+	it("sem cadastro, cai no valor de fábrica", () => {
+		expect(passoLegivel(1)).toBe("1 de 3");
+		expect(cotaLegivel(2)).toBe("2 de 3");
+	});
+
+	it("a linha da tela carrega o teto recebido", () => {
+		const comDois = linhaDaTela(linha({ step: 1, touches30d: 1 }), AGORA, 2);
+		expect(comDois.passoLegivel).toBe("1 de 2");
+		expect(comDois.cotaLegivel).toBe("1 de 2");
+
+		const semCadastro = linhaDaTela(linha({ step: 1, touches30d: 1 }), AGORA);
+		expect(semCadastro.passoLegivel).toBe("1 de 3");
 	});
 });
