@@ -1,7 +1,9 @@
 ---
 id: FIX-389
 titulo: "Arte só quando o bem é conhecido — confirmar e travar"
-status: todo
+status: done
+commit: 645d3f5f
+executado_em: 2026-09-29
 bloco: bloco-comunicacoes
 arquivos:
   - src/lib/remarketing/motor.ts

@@ -1,7 +1,9 @@
 ---
 id: FIX-387
 titulo: "A fase do funil é um fato do servidor (função pura)"
-status: todo
+status: done
+commit: 7e796347
+executado_em: 2026-09-29
 bloco: bloco-comunicacoes
 arquivos:
   - src/lib/admin/sinais-do-funil.ts
