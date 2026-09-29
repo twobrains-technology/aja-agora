@@ -4,6 +4,7 @@
 // rápida e carrossel de 3 cards — e as regras de categoria/copy que a Meta exige.
 // Design: docs/design/specs/2026-07-02-whatsapp-templates-meta-design.md.
 import { describe, expect, it } from "vitest";
+import { chavesDoToque } from "@/lib/remarketing/motor";
 import type { ComponenteDeTemplate } from "./whatsapp-template";
 import {
 	buildTemplateComponents,
@@ -331,8 +332,13 @@ describe("Bloco 3 — carrossel de 3 cards", () => {
 });
 
 describe("Bloco 3 — chaves canônicas do motor (contrato, não sugestão de UI)", () => {
-	it("lista exatamente os quatro usageKeys que o motor consome", () => {
+	it("lista as chaves dos DOIS caminhos do motor: campanha (arte) e régua (fase)", () => {
 		expect(OBJETIVOS_DE_REMARKETING.map((o) => o.usageKey)).toEqual([
+			// Régua — por macro-fase, texto + botão (FIX-399).
+			"remarketing_inicio_generico",
+			"remarketing_viu_oferta_generico",
+			"remarketing_fechamento_generico",
+			// Campanha — por objetivo, com arte.
 			"remarketing_oportunidade_carro",
 			"remarketing_oportunidade_moto",
 			"remarketing_oportunidade_imovel",
@@ -392,5 +398,31 @@ describe("Bloco 3 — recusaDeSubmissao (barreira ancorada no que está persisti
 				components: [{ type: "HEADER", format: "IMAGE" }],
 			}),
 		).toContain("handle");
+	});
+});
+
+// ─── FIX-399: a lista do form é o que a TELA oferece, e a tela é por onde um
+// template da régua nasce. Se a chave do motor não estiver aqui, o operador cria
+// o template com o nome que o motor nunca pede e o toque de fora da janela fica
+// preso na fila — o defeito que só aparece como "a campanha não sai".
+describe("FIX-399 — o form cobre as chaves que a régua pede", () => {
+	const fases = ["inicio", "viu_oferta", "fechamento"] as const;
+
+	it("oferece o genérico de TODA fase da régua", () => {
+		const oferecidas = new Set<string>(OBJETIVOS_DE_REMARKETING.map((o) => o.usageKey));
+		for (const fase of fases) {
+			// Sem bem conhecido a lista tem uma chave só: o genérico da fase.
+			const [generico] = chavesDoToque(fase, null);
+			expect(oferecidas.has(generico), `o form não oferece ${generico}`).toBe(true);
+		}
+	});
+
+	it("o genérico é o ÚLTIMO candidato — com ele aprovado o toque nunca enfileira", () => {
+		const oferecidas = new Set<string>(OBJETIVOS_DE_REMARKETING.map((o) => o.usageKey));
+		for (const fase of fases) {
+			const candidatas = chavesDoToque(fase, "carro");
+			expect(candidatas.at(-1)).toBe(`remarketing_${fase}_generico`);
+			expect(oferecidas.has(candidatas.at(-1) as string)).toBe(true);
+		}
 	});
 });
