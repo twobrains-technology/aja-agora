@@ -72,6 +72,37 @@ export const QUICK_REPLY_PADRAO = "Quero ver";
  * `arte` é o nome do arquivo já versionado em `public/kv/remarketing/`.
  */
 export const OBJETIVOS_DE_REMARKETING = [
+	// ── A RÉGUA (por macro-fase do funil) ───────────────────────────────────
+	// As chaves que o MOTOR da régua pede, em `chavesDoToque(fase, objetivo)`:
+	// `[remarketing_<fase>_<bem>, remarketing_<fase>_generico]`. O genérico é o
+	// ÚLTIMO da lista e por isso é o que precisa existir — com ele aprovado, o
+	// toque de fora da janela nunca fica preso na fila.
+	//
+	// FIX-399 (29/09): até aqui estas três NÃO estavam na lista, e a lista é o que
+	// a tela oferece. Quem criasse o template da régua seguindo a sugestão do form
+	// nascia com uma chave que o motor nunca pede — e todo toque de fora da janela
+	// enfileirava sem sair, exatamente o que a régua existe para evitar.
+	{
+		valor: "regua_inicio",
+		rotulo: "Régua — chegou e não viu oferta (genérico)",
+		usageKey: "remarketing_inicio_generico",
+		modo: "TEXT",
+		arte: "sem arte (texto + botão)",
+	},
+	{
+		valor: "regua_viu_oferta",
+		rotulo: "Régua — viu a oferta e parou (genérico)",
+		usageKey: "remarketing_viu_oferta_generico",
+		modo: "TEXT",
+		arte: "sem arte (texto + botão)",
+	},
+	{
+		valor: "regua_fechamento",
+		rotulo: "Régua — já comparou e só falta decidir (genérico)",
+		usageKey: "remarketing_fechamento_generico",
+		modo: "TEXT",
+		arte: "sem arte (texto + botão)",
+	},
 	{
 		valor: "oportunidade_carro",
 		rotulo: "Oportunidade — carro",
@@ -104,7 +135,7 @@ export const OBJETIVOS_DE_REMARKETING = [
 	valor: string;
 	rotulo: string;
 	usageKey: string;
-	modo: "IMAGE" | "CARROSSEL";
+	modo: "TEXT" | "IMAGE" | "CARROSSEL";
 	arte: string;
 }>;
 
