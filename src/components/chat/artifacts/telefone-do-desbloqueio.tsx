@@ -26,9 +26,9 @@
 // qualquer outra. Nenhum template, nenhuma chamada à Meta.
 // ============================================================================
 
+import { ShieldCheck } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
-import { ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useChatContext } from "@/lib/chat/provider";
@@ -72,7 +72,11 @@ function ehCelularValido(digitos: string): boolean {
 }
 
 function moeda(valor: number): string {
-	return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+	return valor.toLocaleString("pt-BR", {
+		style: "currency",
+		currency: "BRL",
+		maximumFractionDigits: 0,
+	});
 }
 
 type Fase = "pedindo" | "liberado" | "recusado";
@@ -141,7 +145,6 @@ export function TelefoneDoDesbloqueio({
 				onChange={(e) => setMasked(mascararCelular(e.target.value))}
 				placeholder="(11) 98765-4321"
 				disabled={inerte}
-				// biome-ignore lint/a11y/noAutofocus: intencional — só no card vivo, não rouba foco do histórico
 				autoFocus={active && fase === "pedindo"}
 				data-testid="desbloqueio-phone"
 				className="h-[46px] rounded-xl border-border bg-background px-[13px] text-base text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/20 w-full"
@@ -195,8 +198,8 @@ export function TelefoneDoDesbloqueio({
 							</span>
 						</div>
 						<span className="sr-only">
-							Os detalhes da melhor opção (valor da carta e prazo) aparecem depois que você
-							informar o seu WhatsApp.
+							Os detalhes da melhor opção (valor da carta e prazo) aparecem depois que você informar
+							o seu WhatsApp.
 						</span>
 					</div>
 				) : null}

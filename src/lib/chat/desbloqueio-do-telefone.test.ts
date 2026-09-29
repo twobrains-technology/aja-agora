@@ -33,15 +33,15 @@ describe("estadoDoDesbloqueio — a regra", () => {
 	});
 
 	it("'Agora não' ⇒ livre (só a variante C tem essa saída)", () => {
-		expect(
-			estadoDoDesbloqueio({ variante: "C", celularConhecido: false, recusado: true }),
-		).toBe("livre");
+		expect(estadoDoDesbloqueio({ variante: "C", celularConhecido: false, recusado: true })).toBe(
+			"livre",
+		);
 	});
 
 	it("telefone conhecido GANHA da recusa (nunca trava quem já deu o número)", () => {
-		expect(
-			estadoDoDesbloqueio({ variante: "C", celularConhecido: true, recusado: true }),
-		).toBe("livre");
+		expect(estadoDoDesbloqueio({ variante: "C", celularConhecido: true, recusado: true })).toBe(
+			"livre",
+		);
 	});
 });
 

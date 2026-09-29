@@ -161,9 +161,9 @@ describe("estadoDoDesbloqueio — a decisão de variante C (FIX-396)", () => {
 	});
 
 	it("'Agora não' ⇒ livre (a comparação segue, sem telefone)", () => {
-		expect(
-			estadoDoDesbloqueio({ variante: "C", celularConhecido: false, recusado: true }),
-		).toBe("livre");
+		expect(estadoDoDesbloqueio({ variante: "C", celularConhecido: false, recusado: true })).toBe(
+			"livre",
+		);
 	});
 
 	it("telefone conhecido ⇒ livre", () => {

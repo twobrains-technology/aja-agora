@@ -41,7 +41,7 @@ const messageSpring = {
 	damping: 30,
 };
 
-type RenderablePart =
+export type RenderablePart =
 	| { kind: "text"; id: string; text: string }
 	| { kind: "transition"; id: string; data: TransitionPartData }
 	| { kind: "artifact"; id: string; artifact: Artifact }
@@ -83,7 +83,33 @@ function classifyParts(message: AjaUIMessage): RenderablePart[] {
 			out.push({ kind: "handoff", id: partId, data: part.data as HandoffPartData });
 		}
 	}
-	return out;
+	return comDesbloqueioDoTelefone(out);
+}
+
+/**
+ * bloco-telefone-ab (FIX-395) — variante B: a comparação NÃO aparece na tela
+ * antes do telefone.
+ *
+ * O servidor já segura o reveal no stream quando o estado é `pede-antes`, mas os
+ * cards foram PERSISTIDOS pelo nó `persist` (é o que permite re-emiti-los depois
+ * e o que o painel conta como "viu oferta"). Ao reidratar a conversa — retomada,
+ * histórico, admin — eles voltariam a aparecer. Esta é a segunda linha: numa
+ * mensagem que traz o card do telefone em `pede-antes`, os cards de oferta
+ * ficam fora do render.
+ *
+ * É regra de RENDER (estática, derivada do que está na mensagem), então vale
+ * igual ao vivo e na retomada, sem estado de sessão.
+ */
+export function comDesbloqueioDoTelefone(parts: RenderablePart[]): RenderablePart[] {
+	const seguraOReveal = parts.some(
+		(p) =>
+			p.kind === "artifact" &&
+			p.artifact.type === "telefone_do_desbloqueio" &&
+			(p.artifact.payload as { estado?: string }).estado === "pede-antes",
+	);
+	if (!seguraOReveal) return parts;
+	const REVELAM_OFERTA = new Set(["comparison_table", "recommendation_card"]);
+	return parts.filter((p) => !(p.kind === "artifact" && REVELAM_OFERTA.has(p.artifact.type)));
 }
 
 /** O rótulo de status ("Comparando grupos") só vale enquanto NADA saiu depois
