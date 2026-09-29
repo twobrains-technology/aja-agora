@@ -7,7 +7,8 @@
  *   1. Janela de 24h ABERTA  → texto livre rico (executa o `freeTextFallback` do
  *      caller — a copy atual, intacta). Melhor UX, sem custo de template.
  *   2. Janela FECHADA + template `APPROVED` (por `usageKey`) → envia o template
- *      Meta (`sendTemplate`) com os placeholders mapeados de `params`.
+ *      Meta (`sendTemplate`) com os placeholders mapeados de `params`. Quando a
+ *      lista tem mais de uma candidata (fase × bem), vale a PRIMEIRA aprovada.
  *   3. Janela FECHADA + template não aprovado (ou nem cadastrado) → enfileira em
  *      `whatsappOutboundQueue` (status `pending`) + alerta admin. Ao template
  *      virar `APPROVED` (webhook/poll), `flushOutboundQueue` esvazia a fila.
@@ -30,8 +31,14 @@ export interface ResolveAndSendArgs {
 	to: string;
 	/** Conversa cujo `lastInboundAt` define a janela de 24h (chave do `isWindowOpen`). */
 	conversationId: string;
-	/** Chave lógica do ponto de disparo (ex `confirmacao_contratacao`). */
-	usageKey: string;
+	/** Chave lógica única do ponto de disparo (ex `confirmacao_contratacao`). */
+	usageKey?: string;
+	/**
+	 * A LISTA ORDENADA de chaves candidatas — fase × bem, com o genérico da fase
+	 * como fallback (FIX-388). Tem precedência sobre `usageKey`; um chamador antigo
+	 * pode continuar passando a chave única. Nunca as duas vazias.
+	 */
+	usageKeys?: readonly string[];
 	/** Valores dos placeholders do template (`{ body: [...], header?: [...] }`). */
 	params?: Record<string, unknown>;
 	/** Copy rica atual — executada quando a janela está ABERTA. */
@@ -40,8 +47,34 @@ export interface ResolveAndSendArgs {
 
 export type ResolveAndSendResult =
 	| { channel: "free_text" }
-	| { channel: "template"; messageId?: string }
-	| { channel: "queued"; queueId: string };
+	| { channel: "template"; usageKey: string; messageId?: string }
+	| { channel: "queued"; usageKey: string; queueId: string };
+
+/** O que fazer com a lista: usar a primeira aprovada, ou enfileirar a primeira. */
+export type EscolhaDeChave =
+	| { canal: "aprovado"; usageKey: string }
+	| { canal: "enfileirar"; usageKey: string };
+
+/**
+ * Percorre a lista ORDENADA e devolve a decisão — PURA, sem banco.
+ *
+ * A primeira chave `APPROVED` vence; sem nenhuma, a linha é ENFILEIRADA com a
+ * primeira candidata (a mais específica) e o alerta sobe — nunca o silêncio. A
+ * pergunta "o template existe/aprovado?" é do dispatcher, e chega aqui pelo
+ * `statusDe` — é o que mantém a função do motor pura (regra dura do PRD).
+ */
+export function escolherChave(
+	candidatas: readonly string[],
+	statusDe: (usageKey: string) => string | null,
+): EscolhaDeChave {
+	if (candidatas.length === 0) {
+		throw new Error("escolherChave exige uma lista de chaves candidatas não vazia");
+	}
+	for (const usageKey of candidatas) {
+		if (statusDe(usageKey) === "APPROVED") return { canal: "aprovado", usageKey };
+	}
+	return { canal: "enfileirar", usageKey: candidatas[0] };
+}
 
 /**
  * Constrói o array `components` que a Cloud API espera no ENVIO de um template a
@@ -118,7 +151,15 @@ async function enqueue(
 }
 
 export async function resolveAndSend(args: ResolveAndSendArgs): Promise<ResolveAndSendResult> {
-	const { to, conversationId, usageKey, params, freeTextFallback } = args;
+	const { to, conversationId, params, freeTextFallback } = args;
+	const candidatas = args.usageKeys?.length
+		? [...args.usageKeys]
+		: args.usageKey
+			? [args.usageKey]
+			: [];
+	if (candidatas.length === 0) {
+		throw new Error("resolveAndSend exige `usageKey` ou `usageKeys`");
+	}
 
 	// Simulador (SIM-<uuid>): a saída é interceptada pelo simulator-bus, NUNCA vai
 	// pra Meta — então a regra de janela 24h / template não se aplica. Sem isto, o
@@ -136,26 +177,36 @@ export async function resolveAndSend(args: ResolveAndSendArgs): Promise<ResolveA
 		return { channel: "free_text" };
 	}
 
-	// Janela fechada: o template é a única saída. Se ele ainda consta em análise,
-	// pergunta à Meta antes de desistir — a aprovação pode ter saído e o webhook
-	// ter se perdido. Import dinâmico porque template-sync depende deste módulo
-	// (flushOutboundQueue) e o ciclo estático quebraria o bundle.
+	// Janela fechada: o template é a única saída. Se alguma candidata ainda consta
+	// em análise, pergunta à Meta antes de desistir — a aprovação pode ter saído e o
+	// webhook ter se perdido. Import dinâmico porque template-sync depende deste
+	// módulo (flushOutboundQueue) e o ciclo estático quebraria o bundle.
 	const { reconciliarSePendente } = await import("./template-sync");
-	await reconciliarSePendente(usageKey);
-
-	const template = await findTemplateByUsageKey(usageKey);
-	if (template && template.status === "APPROVED") {
-		const result = await sendTemplate(
-			to,
-			template.metaName,
-			template.language,
-			componentsFromParams(params),
-		);
-		return { channel: "template", messageId: (result as { messageId?: string })?.messageId };
+	const templates = new Map<string, Awaited<ReturnType<typeof findTemplateByUsageKey>>>();
+	for (const usageKey of candidatas) {
+		await reconciliarSePendente(usageKey);
+		templates.set(usageKey, await findTemplateByUsageKey(usageKey));
 	}
 
-	const queueId = await enqueue(to, usageKey, params, template?.status ?? null);
-	return { channel: "queued", queueId };
+	const escolha = escolherChave(candidatas, (usageKey) => templates.get(usageKey)?.status ?? null);
+	const escolhido = templates.get(escolha.usageKey);
+
+	if (escolha.canal === "aprovado" && escolhido) {
+		const result = await sendTemplate(
+			to,
+			escolhido.metaName,
+			escolhido.language,
+			componentsFromParams(params),
+		);
+		return {
+			channel: "template",
+			usageKey: escolha.usageKey,
+			messageId: (result as { messageId?: string })?.messageId,
+		};
+	}
+
+	const queueId = await enqueue(to, escolha.usageKey, params, escolhido?.status ?? null);
+	return { channel: "queued", usageKey: escolha.usageKey, queueId };
 }
 
 /**
