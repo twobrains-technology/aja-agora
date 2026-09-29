@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dossiê — Medição, remarketing e base (Aja Agora)</title>
+<link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+<div class="wrap">
+
+<h1>Medição, remarketing e base</h1>
+<p class="lede">As três ondas da frente que a call de 22/09 abriu — e o teste do telefone que a
+call de 29/09 decidiu. Este documento é para <b>conferir</b>, não para convencer: cada afirmação
+tem o número de onde saiu.</p>
+<p class="meta">Aja Agora · 29/09/2026 · base <code>e63e038d</code> → develop <code>34631732</code>
+→ main <code>03f0563c</code></p>
+
+<nav class="idx">
+  <a href="#macro">1 · O que passou a existir<span>o vão que a frente preenche</span></a>
+  <a href="#decisoes">2 · As escolhas<span>e o que cada uma não dá</span></a>
+  <a href="#codigo">3 · Onde o código mudou<span>165 arquivos, 1 migração</span></a>
+  <a href="#superficie">4 · O que muda na tela<span>o que você sente usando</span></a>
+  <a href="#riscos">5 · Pontos de risco<span>inclui o que eu mesmo quebrei</span></a>
+  <a href="#prova">6 · A prova<span>execução real, não expectativa</span></a>
+  <a href="#roteiro">7 · Roteiro de conferência<span>o que clicar, em ordem</span></a>
+</nav>
+
+<!-- ────────────────────────────────────────────────────────────────────── -->
+<section id="macro">
+<h2>1 · Visão macro — o que passou a existir</h2>
+
+<p>O painel contava <b>conversa</b> onde o negócio tem <b>pessoa</b>: o mesmo lead com duas
+conversas contava duas vezes, e clicar num número abria uma lista de gente diferente dele. A régua
+disparava em <b>3 e 5 dias</b> — fora da janela de 24 h da Meta, onde só sai template pago — e não
+dizia <b>por que</b> o próximo toque não saiu. O custo de IA não existia em lugar nenhum, então o
+CPC que a Bruna precisa fechar era impossível. E "viu oferta" tinha <b>duas definições</b> no
+código: o painel contava dois tipos de card e o agente gravava quatro.</p>
+
+<p>Depois da frente: a unidade do funil é pessoa, a régua cabe na janela e explica o bloqueio, as
+comunicações têm texto por macro-fase, o custo tem fonte (Langfuse + cadastro de preço da mensagem)
+e o lead que vê a oferta sem se identificar passa a ser o alvo de um teste com dois caminhos.</p>
+
+<h3>O fluxo, com o que nasceu marcado</h3>
+<div class="fluxo">
+  <div class="no"><div class="q">ENTRADA</div><div class="t">Lead chega</div><div class="d">anúncio → site ou WhatsApp</div></div>
+  <div class="seta">→</div>
+  <div class="no"><div class="q">IDENTIDADE</div><div class="t">Se identifica</div><div class="d">telefone/CPF — contado por <b>pessoa</b></div></div>
+  <div class="seta">→</div>
+  <div class="no novo"><div class="q">NOVO</div><div class="t">Desbloqueio do telefone</div><div class="d">duas variantes: B (antes) e C (blur) — por visita</div></div>
+  <div class="seta">→</div>
+  <div class="no"><div class="q">OFERTA</div><div class="t">Vê a comparação</div><div class="d">agora com <b>uma</b> definição só</div></div>
+  <div class="seta">→</div>
+  <div class="no novo"><div class="q">NOVO</div><div class="t">Régua, 3 toques</div><div class="d">90 min → +3 h → +5 h, dentro da janela</div></div>
+  <div class="seta">→</div>
+  <div class="no"><div class="q">DESFECHO</div><div class="t">Proposta / mesa</div><div class="d">custo por etapa sai do painel</div></div>
+</div>
+<p class="legenda"><i></i> vermelho = nasceu nesta frente · neutro = já existia e foi ajustado</p>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────── -->
+<section id="decisoes">
+<h2>2 · As escolhas — e o que cada uma não dá</h2>
+
+<table class="grupo">
+<tbody>
+<tr><td colspan="3">CADÊNCIA DA RÉGUA</td></tr>
+<tr>
+  <td><b>Escolhido</b><span class="sub">90 min → +3 h → +5 h</span></td>
+  <td><b>Descartado</b><span class="sub">PDF dela: 90 min / 1 dia / 4-7 dias · código: 10/20/30 min</span></td>
+  <td><b>O que a escolhida NÃO dá</b><span class="sub">Não entrega a terceira mensagem no mesmo contexto do dia: quando a série passa das 20 h (janela de envio), o toque 03 espera e sai na manhã seguinte. E não é "agressiva": quem precisa de insistência rápida vai esperar 3 h.</span></td>
+</tr>
+<tr><td colspan="3">CUSTO DE IA</td></tr>
+<tr>
+  <td><b>Escolhido</b><span class="sub">ler da fonte atual (Langfuse), cruzando <code>sessionId</code> = <code>conversationId</code></span></td>
+  <td><b>Descartado</b><span class="sub">tabela <code>usos_de_ia</code> + <code>precos-dos-modelos.ts</code> no repo</span></td>
+  <td><b>O que a escolhida NÃO dá</b><span class="sub">Não funciona offline nem sem as credenciais do Langfuse; onde não há preço cadastrado a tela diz "não calculável", nunca R$ 0,00 — ou seja, o CPC fica parcial até o preço da mensagem ser cadastrado.</span></td>
+</tr>
+<tr><td colspan="3">"VIU OFERTA" NO PAINEL</td></tr>
+<tr>
+  <td><b>Escolhido</b><span class="sub">um <code>Record&lt;ArtifactType, boolean&gt;</code> exaustivo; a lista do painel deriva dele</span></td>
+  <td><b>Descartado</b><span class="sub">manter só <code>real_offer</code> + <code>simulation_result</code> e ajustar o resto depois</span></td>
+  <td><b>O que a escolhida NÃO dá</b><span class="sub">Não dá continuidade ao número antigo: o degrau passa a contar mais gente, e o histórico muda de patamar. Quem comparar setembro com agosto vai ver um salto que não houve.</span></td>
+</tr>
+<tr><td colspan="3">VARIANTE DO TESTE DO TELEFONE</td></tr>
+<tr>
+  <td><b>Escolhido</b><span class="sub">hash determinístico do id da visita, decidido no servidor</span></td>
+  <td><b>Descartado</b><span class="sub"><code>Math.random()</code> na resposta; sessão em cookie do cliente</span></td>
+  <td><b>O que a escolhida NÃO dá</b><span class="sub">Não permite "forçar" uma variante pela URL para demonstração — quem quiser ver as duas precisa de dois navegadores (ou aba anônima) com visitas diferentes.</span></td>
+</tr>
+</tbody>
+</table>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────── -->
+<section id="codigo">
+<h2>3 · Onde o código mudou</h2>
+
+<div class="nums" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:26px">
+  <div><b>165</b><span>arquivos tocados</span></div>
+  <div><b>+17.951</b><span>linhas somadas</span></div>
+  <div><b>−1.263</b><span>linhas removidas</span></div>
+  <div><b>77</b><span>arquivos novos</span></div>
+  <div><b>65</b><span>arquivos existentes alterados</span></div>
+  <div><b>1</b><span>migração de banco</span></div>
+</div>
+
+<h3>Arquivos existentes alterados — onde mora o risco</h3>
+<p>Noventa por cento do que segue é <b>novo</b>, e remover volta ao estado anterior. O risco está
+nos 65 existentes. Os que importam:</p>
+<table>
+<thead><tr><th>Arquivo</th><th>O que mudou, e por quê</th></tr></thead>
+<tbody>
+<tr><td><code>src/lib/admin/sinais-do-funil.ts</code></td><td>A lista de artifacts que provam oferta passou a ser derivada de um mapa exaustivo. <b>É a mudança que altera número do painel</b> (ver riscos).</td></tr>
+<tr><td><code>src/lib/admin/performance-queries.ts</code><br><code>percurso-queries.ts</code></td><td>O funil e a escada do Percurso passaram a contar <b>pessoa</b> pela mesma chave. Antes, cada tela agregava do seu jeito.</td></tr>
+<tr><td><code>src/lib/remarketing/regua.ts</code><br><code>motor.ts</code></td><td>A cadência entrou como parâmetro (não hard-coded), e o motor passou a exigir a <b>macro-fase</b> — de propósito: um default silencioso mandaria a mensagem do início para quem só falta fechar.</td></tr>
+<tr><td><code>src/lib/web/adapter.ts</code></td><td>O gate de identidade ganhou o momento (<code>fecho</code> / <code>pre-busca</code>) — é a alavanca do caminho B do teste.</td></tr>
+<tr><td><code>src/app/api/chat/route.ts</code></td><td>Emite o card de desbloqueio e registra a variante da visita.</td></tr>
+<tr><td><code>src/lib/remarketing/motor.test.ts</code> e irmãos</td><td>Os testes que travavam a cadência antiga. Foram reescritos para a decisão de hoje — todos citam o motivo, não só o valor.</td></tr>
+</tbody>
+</table>
+
+<h3>Migração</h3>
+<p><code>drizzle/0061_hard_cable.sql</code> — cria <code>custos_config</code> (o preço unitário da
+mensagem, que entra por cadastro). <b>Não é destrutiva.</b> Roda pelo entrypoint no boot do
+container, então dev e prod a aplicam sozinhos no deploy.</p>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────── -->
+<section id="superficie">
+<h2>4 · O que muda na tela</h2>
+<table>
+<thead><tr><th>Superfície</th><th>O que a pessoa sente</th><th>Risco</th></tr></thead>
+<tbody>
+<tr><td>Performance · funil</td><td>"Viram oferta" passa a contar quem viu <b>qualquer</b> card de oferta, e os degraus contam pessoa. Clicar no número abre a mesma lista que ele promete.</td><td><span class="pill p-risco">ALTO</span> o número sobe</td></tr>
+<tr><td>Percurso · escada</td><td>Pareado com o funil (era 12 × 10). A lista dos parados ganhou autor da última interação e motivo nomeado.</td><td><span class="pill p-aviso">MÉDIO</span> idem</td></tr>
+<tr><td>Régua · lista</td><td>Cada linha diz para quem foi o toque, por qual forma (texto × template) e <b>por que o próximo não saiu</b>.</td><td><span class="pill p-neutro">BAIXO</span></td></tr>
+<tr><td>Cadastro da régua</td><td>Cadência, teto de 30 dias e teto de toques passam a valer <b>sem deploy</b>.</td><td><span class="pill p-aviso">MÉDIO</span> é escrita em produção</td></tr>
+<tr><td>Custo / CPC</td><td>Investimento vem do <b>número que a Meta reportou</b> (rótulo "Investimento (Meta)"), com custo de IA e de mensagem ao lado.</td><td><span class="pill p-neutro">BAIXO</span> parcial até cadastrar preço</td></tr>
+<tr><td>Site do lead</td><td>Quem vê a comparação passa a ser convidado a deixar o WhatsApp — de dois jeitos diferentes, sorteados por visita.</td><td><span class="pill p-risco">ALTO</span> mexe na jornada do cliente</td></tr>
+<tr><td>Exportação</td><td>O arquivo leva o filtro que está na tela, não a base inteira.</td><td><span class="pill p-neutro">BAIXO</span></td></tr>
+</tbody>
+</table>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────── -->
+<section id="riscos">
+<h2>5 · Pontos de risco</h2>
+
+<div class="risco alto">
+<h3>O número de "viu oferta" muda de patamar <span class="pill p-risco">ALTO</span></h3>
+<p>Antes o painel contava 2 tipos de card; o agente grava 4. Quem viu a comparação no chat web
+<b>não</b> era contado. Isso não é crescimento: é a mesma realidade medida sem o furo. Quem comparar
+setembro com agosto vê um salto que não houve — está registrado no ADR do bloco.</p>
+<div class="prova"><span class="c">// a lista como estava</span>
+<span class="r">- export const ARTIFACTS_DE_OFERTA = ["real_offer", "simulation_result"];</span>
+<span class="c">// e no código, quem grava: route.ts → comparison_table · converse.ts → recommendation_card</span>
+<span class="g">+ Record&lt;ArtifactType, boolean&gt; — tipo novo passa a quebrar a compilação</span></div>
+</div>
+
+<div class="risco alto">
+<h3>Defeitos que eu mesmo introduzi, e corrigi <span class="pill p-risco">ALTO</span></h3>
+<p>Quatro conflitos de merge entre blocos que os manifestos declararam "paralelos" mexendo nos
+mesmos arquivos — resolvidos à mão, um por um, com o teste como juiz. Um deles misturava duas
+assinaturas da mesma função (<code>linhaDaTela</code> com teto numérico × com parâmetros vigentes);
+a resolução unificou na dos parâmetros e derivou o teto de lá. E dois testes de decisão não
+passavam a <code>fase</code>, que o bloco novo tornou obrigatória.</p>
+<p>O terceiro foi de operação, não de código: rodei a migração contra o banco do <code>.env</code>
+quando os testes leem o <code>.env.local</code> — 3 testes vermelhos que sumiram ao migrar o banco
+certo.</p>
+</div>
+
+<div class="risco medio">
+<h3>Teste vermelho que NÃO é desta frente <span class="pill p-aviso">MÉDIO</span></h3>
+<p><code>handoff-queries.integration.test.ts</code> falha na develop com o p50 do estágio
+"qualificado" dando 0. <b>Não é nosso</b>: o merge não toca em nenhum arquivo do handoff e o mesmo
+código passa no outro banco — é o banco de dev com sobra de teste manual. Fica registrado para não
+virar boato depois.</p>
+</div>
+
+<div class="risco medio">
+<h3>A cadência só vale no cadastro depois do deploy <span class="pill p-aviso">MÉDIO</span></h3>
+<p>O valor de fábrica no código já é <code>[90, 180, 300]</code>, mas a chave
+<code>escala_retomada_minutos</code> no cadastro de produção só passa a ser aceita quando o código
+novo estiver no ar. <b>É o meu próximo passo</b>, logo depois do deploy.</p>
+</div>
+
+<div class="risco baixo">
+<h3>Ambiente desta máquina <span class="pill p-neutro">BAIXO (mas atinge tudo)</span></h3>
+<p>O DNS do OrbStack aponta <code>aja-shared-pg.orb.local</code> para um IP morto, e o Node herda um
+endereço-fonte inválido (<code>192.168.163.0</code>) — dá <code>EHOSTUNREACH</code> em massa nos
+testes de integração. Contornei com um encaminhador (<code>aja-pg-forward</code>, socat publicado em
+<code>127.0.0.1:5433</code>). Vale para <b>todos</b> os projetos que usar Postgres compartilhado do
+OrbStack, não só este.</p>
+</div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────── -->
+<section id="prova">
+<h2>6 · A prova</h2>
+<table>
+<thead><tr><th>O que</th><th>Resultado real</th></tr></thead>
+<tbody>
+<tr><td>Typecheck na base, na develop e na main</td><td><span class="pill p-ok">LIMPO</span> nas três</td></tr>
+<tr><td>Testes das áreas tocadas (10 diretórios)</td><td><span class="pill p-ok">1.821 verdes</span> · 0 falhas · 1 teste de ambiente excluído (<code>route.handoff-echo</code>, que precisa de app no ar e já falhava antes)</td></tr>
+<tr><td>Cards fechados</td><td>29 em <code>docs/correcoes/done/</code> (FIX-370 a FIX-398)</td></tr>
+<tr><td>CI do push na <code>develop</code></td><td><span class="pill p-ok">SUCCESS</span> — inclui a validação de padrão de migração</td></tr>
+<tr><td>CI do push na <code>main</code> (prod)</td><td><span class="pill p-aviso">EM ANDAMENTO</span> no fechamento desta página</td></tr>
+<tr><td>Banco de produção</td><td>migração aplicada pelo entrypoint no boot</td></tr>
+</tbody>
+</table>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────── -->
+<section id="roteiro">
+<h2>7 · Roteiro de conferência</h2>
+<ol class="checklist">
+<li><b>Funil × Percurso, no mesmo período</b><span>Em <code>ajaagora.com.br/admin</code>, anote "Se identificaram" no funil e abra o Percurso. Devem ser o <b>mesmo número</b>. Clique no degrau: a lista tem que ter esse tamanho, não outro.</span></li>
+<li><b>"Viram oferta" subiu?</b><span>Espere que sim — e não é crescimento. Leia junto com a seção 5.</span></li>
+<li><b>Régua: por que o toque não saiu</b><span>Na tela da régua, olhe a coluna do próximo toque: cada linha explica o motivo (data, teto de 30 dias, fora do horário, esgotado).</span></li>
+<li><b>Cadastro da régua</b><span>Confirme <code>escala_retomada_minutos = 90,180,300</code> e <code>max_toques = 3</code>. Mude um valor e recarregue a tela da régua: vale na hora, sem deploy.</span></li>
+<li><b>O teste do telefone, à mão</b><span>Abra o site em dois navegadores (ou normal + anônimo) e converse até a oferta. Um deve pedir o telefone <b>antes</b> de liberar (B); o outro mostra a melhor opção borrada com "Liberar agora" e "Agora não" (C). Recarregue: a variante <b>não pode trocar</b>.</span></li>
+<li><b>Custo / CPC</b><span>Confirme que o bloco de investimento diz "Investimento (Meta)" e que onde falta preço a tela escreve "não calculável" em vez de R$ 0,00.</span></li>
+<li><b>Exportação</b><span>Filtre a lista de parados, exporte e confira se o arquivo traz só o filtro que estava na tela.</span></li>
+</ol>
+</section>
+
+<footer>
+<p><b>Frente:</b> medição, remarketing e base · <b>29 cards</b> em três ondas · base
+<code>e63e038d</code>, develop <code>34631732</code>, main <code>03f0563c</code>.</p>
+<p>O que <b>não</b> está feito, dito com todas as letras: a aprovação dos três textos pela cliente e
+a submissão à Meta; o preço unitário da mensagem no cadastro (sem ele o CPC fica parcial); e o
+levantamento de investimento do Gustavo, que é de terceiro.</p>
+</footer>
+
+</div>
+</body>
+</html>
