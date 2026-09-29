@@ -30,34 +30,53 @@ function ativo(extra: Partial<Omit<EstadoRegua, "objetivo">> = {}): EstadoRegua 
 	return estadoInicial({ objetivo: "carro", ultimoInboundEm: INBOUND, ...extra });
 }
 
+/**
+ * Um instante em que o último inbound já FECHOU a janela de 24 h — o regime em
+ * que o cadastro dos DIAS (`diasAte*Toque`) continua sendo o que decide.
+ */
+function foraDaJanela(referencia: Date): EstadoRegua {
+	return ativo({ ultimoInboundEm: new Date(referencia.getTime() - 25 * HORA) });
+}
+
 describe("sem ajuste, a régua é exatamente a de antes", () => {
 	it("a fábrica é o conjunto nomeado das constantes", () => {
 		expect(normalizarParametros({})).toEqual(PARAMETROS_DE_FABRICA);
 	});
 
-	it("o silêncio continua 90 minutos quando ninguém passa parâmetro", () => {
-		expect(podeDisparar(ativo(), new Date(INBOUND.getTime() + 89 * MIN))).toEqual({
-			pode: false,
-			motivo: "aguardando_data",
-		});
-		expect(podeDisparar(ativo(), new Date(INBOUND.getTime() + 90 * MIN))).toMatchObject({
-			pode: true,
-			step: 1,
-		});
+	it("sem ajuste, a fábrica é nomeada — e a escala curta é quem manda dentro da janela", () => {
+		// A régua continua sendo exatamente a de antes POR FORA da janela. Dentro
+		// dela, a cadência combinada em 22/09 (FIX-376, escala `[10, 20, 30]` min)
+		// ocupa o lugar do silêncio de 90 min — que seria tarde demais para uma
+		// conversa viva.
+		expect(PARAMETROS_DE_FABRICA.esperaSilencioMs).toBe(90 * MIN);
+		expect(PARAMETROS_DE_FABRICA.escalaDeRetomadaMs).toEqual([10 * MIN, 20 * MIN, 30 * MIN]);
+
+		// Prova de que é a ESCALA que decide dentro da janela: mesmo cadastrando um
+		// silêncio longo (20 h), o toque 01 sai em 10 minutos.
+		const comSilencioLongo = normalizarParametros({ esperaSilencioMs: 20 * HORA });
+		expect(
+			podeDisparar(ativo(), new Date(INBOUND.getTime() + 10 * MIN), comSilencioLongo),
+		).toMatchObject({ pode: true, step: 1 });
 	});
 });
 
 describe("o ajuste do cadastro move a decisão", () => {
-	it("silêncio menor libera o toque 01 mais cedo", () => {
+	it("silêncio menor libera a REENTRADA mais cedo (fora da janela)", () => {
+		// Fora da janela, a espera da reentrada é `simulacaoEm + esperaSilencioMs`
+		// (dentro dela seria a escala curta).
 		const parametros = normalizarParametros({ esperaSilencioMs: 15 * MIN });
+		const agora = new Date(INBOUND.getTime() + 25 * HORA);
+		const reentrada = (minutosDaSimulacao: number) =>
+			estadoInicial({
+				objetivo: "carro",
+				status: "RESPONDEU",
+				ultimoInboundEm: new Date(agora.getTime() - 25 * HORA),
+				ultimoToqueEm: new Date(agora.getTime() - 26 * HORA),
+				simulacaoEm: new Date(agora.getTime() - minutosDaSimulacao * MIN),
+			});
 
-		expect(podeDisparar(ativo(), new Date(INBOUND.getTime() + 20 * MIN), parametros)).toMatchObject(
-			{
-				pode: true,
-				step: 1,
-			},
-		);
-		expect(podeDisparar(ativo(), new Date(INBOUND.getTime() + 10 * MIN), parametros)).toEqual({
+		expect(podeDisparar(reentrada(20), agora, parametros)).toMatchObject({ pode: true, step: 1 });
+		expect(podeDisparar(reentrada(10), agora, parametros)).toEqual({
 			pode: false,
 			motivo: "aguardando_data",
 		});
@@ -66,7 +85,7 @@ describe("o ajuste do cadastro move a decisão", () => {
 	it("o intervalo do toque 02 vira o cadastrado, no agendamento e no próximo toque", () => {
 		const parametros = normalizarParametros({ diasAteSegundoToque: 1 });
 
-		const primeiro = registrarToque(ativo(), INBOUND, parametros);
+		const primeiro = registrarToque(foraDaJanela(INBOUND), INBOUND, parametros);
 		expect(primeiro.status).toBe("ATIVO");
 		expect(primeiro.nextTouchAt?.toISOString()).toBe(
 			new Date(INBOUND.getTime() + 1 * DIA).toISOString(),

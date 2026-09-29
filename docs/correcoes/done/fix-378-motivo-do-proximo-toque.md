@@ -1,7 +1,9 @@
 ---
 id: FIX-378
 titulo: "A tela diz por que o próximo toque não saiu"
-status: todo
+status: done
+commit: 3c3e48e5
+executado_em: 2026-09-28
 bloco: bloco-regua
 arquivos:
   - src/lib/admin/remarketing-tela.ts

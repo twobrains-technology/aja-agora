@@ -503,9 +503,16 @@ describeIfDb("régua — entrada, higiene e motivo (integration)", () => {
 			await db.delete(schema.remarketingConfig).where(eq(schema.remarketingConfig.chave, CHAVE));
 		});
 
+		// A janela de 24 h fica FECHADA nestes três (o último inbound é de 25 h):
+		// dentro dela vale a ESCALA CURTA do FIX-376 (10/20/30 min), que substitui
+		// `esperaSilencioMs` e os `diasAte...`; é FORA dela que o cadastro de dias
+		// manda — e é isso que este teste prova. Sem semear a janela fechada, os
+		// três mediriam a escala curta e o nome do teste viraria mentira.
+		const FORA_DA_JANELA = 25 * 60 * MIN;
+
 		it("sem linha no cadastro, o ciclo agenda o intervalo de fábrica (3 dias)", async () => {
 			await gravarCadastro(null);
-			const { conversationId } = await semear({ jaNaRegua: true });
+			const { conversationId } = await semear({ jaNaRegua: true, inboundHa: FORA_DA_JANELA });
 
 			await rodarCiclo();
 
@@ -514,7 +521,7 @@ describeIfDb("régua — entrada, higiene e motivo (integration)", () => {
 
 		it("com a linha no cadastro, o MESMO ciclo agenda 1 dia — o ajuste vale sem deploy", async () => {
 			await gravarCadastro("1");
-			const { conversationId } = await semear({ jaNaRegua: true });
+			const { conversationId } = await semear({ jaNaRegua: true, inboundHa: FORA_DA_JANELA });
 
 			await rodarCiclo();
 
@@ -523,7 +530,7 @@ describeIfDb("régua — entrada, higiene e motivo (integration)", () => {
 
 		it("linha corrompida não muda o ciclo: ele segue na fábrica", async () => {
 			await gravarCadastro("amanhã");
-			const { conversationId } = await semear({ jaNaRegua: true });
+			const { conversationId } = await semear({ jaNaRegua: true, inboundHa: FORA_DA_JANELA });
 
 			await rodarCiclo();
 

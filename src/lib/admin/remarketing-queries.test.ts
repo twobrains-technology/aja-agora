@@ -7,6 +7,9 @@
 // (`listarReguas`) não tem unidade para provar além do SQL.
 
 import { describe, expect, it } from "vitest";
+// O teto agora entra por `ParametrosRegua` (união toques-lista + regua-cadencia):
+// a tela deriva com os parâmetros VIGENTES, não com um número solto.
+import { PARAMETROS_DE_FABRICA } from "@/lib/remarketing/regua";
 import {
 	contadoresDe,
 	cotaLegivel,
@@ -337,7 +340,10 @@ describe("o teto exibido vem do cadastro, não da constante (FIX-381)", () => {
 	});
 
 	it("a linha da tela carrega o teto recebido", () => {
-		const comDois = linhaDaTela(linha({ step: 1, touches30d: 1 }), AGORA, 2);
+		const comDois = linhaDaTela(linha({ step: 1, touches30d: 1 }), AGORA, {
+			...PARAMETROS_DE_FABRICA,
+			maxToques: 2,
+		});
 		expect(comDois.passoLegivel).toBe("1 de 2");
 		expect(comDois.cotaLegivel).toBe("1 de 2");
 

@@ -41,6 +41,14 @@ const TOQUE_1 = new Date("2026-09-14T15:30:00Z");
 const HORA = 60 * 60 * 1000;
 const DIA = 24 * HORA;
 
+/**
+ * Um inbound que FECHOU a janela de 24 h no instante de referência — é o regime
+ * em que a cadência por DIAS (as 3 e 5 do PDF) continua valendo.
+ */
+function inboundForaDaJanela(referencia: Date): Date {
+	return new Date(referencia.getTime() - 25 * HORA);
+}
+
 /** Um estado ATIVO nascido do silêncio do cliente, com o objetivo preenchido. */
 function ativo(opcoes: Partial<Omit<EstadoRegua, "objetivo">>) {
 	return estadoInicial({
@@ -50,16 +58,34 @@ function ativo(opcoes: Partial<Omit<EstadoRegua, "objetivo">>) {
 	});
 }
 
-describe("o toque 01 — 90 minutos de silêncio", () => {
-	it("não sai antes do silêncio: 'não respondeu em 1h30' não é 50 minutos", () => {
+describe("o toque 01 — o silêncio que o abre", () => {
+	it("dentro da janela de 24 h, o silêncio é a ESCALA CURTA: 5 min não, 10 min sim", () => {
+		// A cadência combinada na reunião de 22/09 (FIX-376): enquanto a janela da
+		// Meta está aberta, o toque 01 abre em minutos — 90 min seriam tarde demais
+		// para uma conversa viva.
 		const estado = ativo({});
-		expect(podeDisparar(estado, new Date("2026-09-14T15:20:00Z"))).toEqual({
+		expect(podeDisparar(estado, new Date(INBOUND.getTime() + 5 * 60_000))).toEqual({
 			pode: false,
 			motivo: "aguardando_data",
 		});
+		expect(podeDisparar(estado, new Date(INBOUND.getTime() + 10 * 60_000))).toEqual({
+			pode: true,
+			step: 1,
+			entrega: "texto_livre",
+		});
 	});
 
-	it("sai no minuto do silêncio e é texto livre (janela de 24h aberta)", () => {
+	it("fora da janela de 24 h, o silêncio já passou — e o próximo intervalo volta a ser em DIAS", () => {
+		// Só entra aqui quem já está fora das 24 h: o toque sai como template e a
+		// espera nomeada de 90 min (fábrica) já está vencida de qualquer forma.
+		const agora = new Date(INBOUND.getTime() + 25 * HORA);
+		expect(podeDisparar(ativo({}), agora)).toEqual({ pode: true, step: 1, entrega: "template" });
+		expect(registrarToque(ativo({}), agora).nextTouchAt?.toISOString()).toBe(
+			new Date(agora.getTime() + 3 * DIA).toISOString(),
+		);
+	});
+
+	it("sai no minuto da escala e é texto livre (janela de 24h aberta)", () => {
 		expect(podeDisparar(ativo({}), TOQUE_1)).toEqual({
 			pode: true,
 			step: 1,
@@ -83,9 +109,12 @@ describe("o toque 01 — 90 minutos de silêncio", () => {
 	});
 });
 
-describe("a escada dos 3 toques", () => {
+describe("a escada dos 3 toques (fora da janela: o desenho por DIAS)", () => {
 	it("o toque 02 sai 3 dias depois do 01", () => {
-		const depoisDoPrimeiro = registrarToque(ativo({}), TOQUE_1);
+		const depoisDoPrimeiro = registrarToque(
+			ativo({ ultimoInboundEm: inboundForaDaJanela(TOQUE_1) }),
+			TOQUE_1,
+		);
 		expect(depoisDoPrimeiro.step).toBe(1);
 		expect(depoisDoPrimeiro.nextTouchAt?.toISOString()).toBe("2026-09-17T15:30:00.000Z");
 
@@ -103,7 +132,10 @@ describe("a escada dos 3 toques", () => {
 	});
 
 	it("o toque 03 sai 5 dias depois do 02 — 5 é decisão do dono, dentro dos 4 a 7 do PDF", () => {
-		const depoisDoPrimeiro = registrarToque(ativo({}), TOQUE_1);
+		const depoisDoPrimeiro = registrarToque(
+			ativo({ ultimoInboundEm: inboundForaDaJanela(TOQUE_1) }),
+			TOQUE_1,
+		);
 		const depoisDoSegundo = registrarToque(depoisDoPrimeiro, depoisDoPrimeiro.nextTouchAt as Date);
 		expect(depoisDoSegundo.step).toBe(2);
 		expect(depoisDoSegundo.nextTouchAt?.toISOString()).toBe("2026-09-22T15:30:00.000Z");

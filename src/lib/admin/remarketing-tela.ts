@@ -49,8 +49,11 @@
 
 import { montarEstado } from "@/lib/remarketing/motor";
 import {
+	dentroDaJanelaDeHorario,
 	MAX_TOQUES,
 	type MotivoBloqueio,
+	PARAMETROS_DE_FABRICA,
+	type ParametrosRegua,
 	podeDisparar,
 	type StatusRegua,
 } from "@/lib/remarketing/regua";
@@ -191,6 +194,14 @@ export interface LinhaDaTela {
 	proximoToqueISO: string | null;
 	/** `true` quando a data já passou e o ciclo ainda não alcançou a linha. */
 	proximoToqueVencido: boolean;
+	/**
+	 * POR QUE o próximo toque não saiu (FIX-378): um dos quatro motivos de
+	 * repetição, CALCULADO do estado da linha — nunca persistido (ver
+	 * `motivoDoProximoToque`). `null` quando a régua não tem o que explicar.
+	 */
+	motivoDoProximoToque: MotivoDoProximoToque | null;
+	/** O motivo em português, pronto para a coluna; `null` quando não há. */
+	motivoDoProximoToqueLegivel: string | null;
 	/** ISO do último toque que saiu. */
 	ultimoToqueISO: string | null;
 	/** COMO o último toque saiu; `null` quando nenhum toque saiu ainda. */
@@ -348,15 +359,88 @@ export function proximoToqueDe(linha: {
 	return linha.nextTouchAt;
 }
 
-/** A linha bruta vira a linha da tela. PURA: `agora` entra por parâmetro. */
+/**
+ * Os quatro motivos de REPETIÇÃO — por que o próximo toque ainda não saiu.
+ *
+ * São um recorte de `MotivoBloqueio`: os terminais (`optout`, `converteu`,
+ * `ja_respondeu`) não entram, porque em linha terminal não existe "próximo
+ * toque" — a coluna diz "Nenhum a caminho", e inventar motivo ali seria mentir.
+ */
+export type MotivoDoProximoToque =
+	| "aguardando_data"
+	| "teto_30_dias"
+	| "fora_da_janela_de_horario"
+	| "esgotado";
+
+/** O motivo em português, como a coluna do próximo toque o mostra. */
+export const ROTULO_DO_PROXIMO_TOQUE: Record<MotivoDoProximoToque, string> = {
+	aguardando_data: "Ainda não é hora do próximo toque",
+	teto_30_dias: "Cota de 30 dias cheia",
+	fora_da_janela_de_horario: "Fora do horário de envio (9h às 20h)",
+	esgotado: "Esgotou os três toques",
+};
+
+/**
+ * POR QUE o próximo toque não saiu — calculado do estado da linha (FIX-378).
+ *
+ * O PRD (§AJA-20 T5) recomenda CALCULAR em tela em vez de persistir: não exige
+ * migration, e uma coluna nova nasceria mentindo sobre o passado (o backfill
+ * fica `NULL`). O que a linha já traz (`status`, `nextTouchAt`, `touches30d`)
+ * mais a janela de horário e o teto vigentes bastam.
+ *
+ * A PRECEDÊNCIA é a mesma de `podeDisparar` — teto antes de data, data antes de
+ * horário —, para a tela não discordar do motor sobre o motivo do bloqueio.
+ * `null` é resposta: quando não houver o que explicar, a coluna não escreve
+ * nada (o toque sai no próximo ciclo).
+ */
+export function motivoDoProximoToque(
+	linha: {
+		status: StatusRegua;
+		nextTouchAt: Date | null;
+		touches30d: number;
+	},
+	agora: Date,
+	parametros: ParametrosRegua = PARAMETROS_DE_FABRICA,
+): MotivoDoProximoToque | null {
+	// Fora de `ATIVO` não há próximo toque; a única linha terminal que ainda tem
+	// o que dizer é a esgotada (e ela diz por quê).
+	if (linha.status !== "ATIVO") return linha.status === "ESGOTADO" ? "esgotado" : null;
+
+	// O teto vem ANTES da data porque é ele que empurra a data.
+	if (linha.touches30d >= parametros.tetoToques30Dias) return "teto_30_dias";
+
+	// Sem data (ou data futura): ainda não é hora.
+	if (!linha.nextTouchAt || linha.nextTouchAt.getTime() > agora.getTime()) {
+		return "aguardando_data";
+	}
+
+	// Vencido e fora do horário: a régua espera a janela abrir.
+	if (!dentroDaJanelaDeHorario(agora, parametros)) return "fora_da_janela_de_horario";
+
+	// Vencido, dentro do horário e com cota: o toque sai no próximo ciclo.
+	return null;
+}
+
+/**
+ * A linha bruta vira a linha da tela. PURA: `agora` entra por parâmetro.
+ *
+ * `parametros` são os vigentes do cadastro (quando o chamador os tem): sem eles,
+ * vale a fábrica — a tela não pode MENTIR sobre a hora de envio nem sobre o teto
+ * que o motor está usando.
+ */
 export function linhaDaTela(
 	linha: LinhaBruta,
 	agora: Date,
-	maxToques: number = MAX_TOQUES,
+	parametros: ParametrosRegua = PARAMETROS_DE_FABRICA,
 ): LinhaDaTela {
+	// O teto de toques vem do MESMO `parametros` da régua (cadastro > fábrica): a
+	// tela não pode contar uma cota e o motor outra. União dos blocos toques-lista
+	// e regua-cadencia (onda 1) — os dois mexeram neste parâmetro.
+	const maxToques = parametros.maxToques;
 	const situacao = situacaoDe(linha);
 	const proximo = proximoToqueDe(linha);
 	const soltar = podeSoltar(linha, agora);
+	const motivo = motivoDoProximoToque(linha, agora, parametros);
 
 	return {
 		conversationId: linha.conversationId,
@@ -374,6 +458,8 @@ export function linhaDaTela(
 		motivoLegivel: rotuloDoMotivo(linha.motivoSaida),
 		proximoToqueISO: proximo ? proximo.toISOString() : null,
 		proximoToqueVencido: proximo ? proximo.getTime() <= agora.getTime() : false,
+		motivoDoProximoToque: motivo,
+		motivoDoProximoToqueLegivel: motivo === null ? null : ROTULO_DO_PROXIMO_TOQUE[motivo],
 		ultimoToqueISO: linha.ultimoToqueEm ? linha.ultimoToqueEm.toISOString() : null,
 		forma: formaDoEnvio(linha),
 		respondeuDepoisDoToque: respondeuDepoisDoToque(linha),
@@ -391,9 +477,9 @@ export function linhaDaTela(
 export function linhasDaTela(
 	linhas: readonly LinhaBruta[],
 	agora: Date,
-	maxToques: number = MAX_TOQUES,
+	parametros: ParametrosRegua = PARAMETROS_DE_FABRICA,
 ): LinhaDaTela[] {
-	return linhas.map((linha) => linhaDaTela(linha, agora, maxToques));
+	return linhas.map((linha) => linhaDaTela(linha, agora, parametros));
 }
 
 /** Conta a régua inteira por situação. Sem banco, sem limite: contador tem que fechar. */

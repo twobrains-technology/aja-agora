@@ -132,10 +132,10 @@ export function EscadaDoPercurso({
 							</TooltipTrigger>
 							<TooltipContent className="max-w-sm">
 								Uma linha por pessoa, não por conversa nem por clique no anúncio: quem voltou três
-								vezes conta uma vez, no degrau mais fundo que alcançou. O número grande é quem
-								PAROU ali; quando aparece "alcançaram o degrau" embaixo dele, é o outro número —
-								quem fez aquilo e seguiu adiante. É esse segundo que compara com o funil de mídia,
-								porque lá cada etapa conta quem tem o fato, não quem parou nele.
+								vezes conta uma vez, no degrau mais fundo que alcançou. O número grande é quem PAROU
+								ali; quando aparece "alcançaram o degrau" embaixo dele, é o outro número — quem fez
+								aquilo e seguiu adiante. É esse segundo que compara com o funil de mídia, porque lá
+								cada etapa conta quem tem o fato, não quem parou nele.
 								{totalDeConversas > 0 && (
 									<>
 										{" "}

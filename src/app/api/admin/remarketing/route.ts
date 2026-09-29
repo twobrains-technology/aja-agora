@@ -5,6 +5,7 @@ import { lerParametrosRegua } from "@/lib/admin/remarketing-config";
 import {
 	contarElegiveisParaRegua,
 	contarLinhasDaRegua,
+	lerParametrosDaTela,
 	listarReguas,
 } from "@/lib/admin/remarketing-queries";
 import {
@@ -100,15 +101,18 @@ export async function GET(req: NextRequest) {
 		// duas leituras que não dependem do recorte são o histórico total (para
 		// separar "régua desligada" de "sem toque no período") e a fila de
 		// elegíveis de agora (o número que a tela mostra enquanto não há dado).
-		const [doRecorte, totalNoHistorico, elegiveisAgora] = await Promise.all([
+		const [doRecorte, totalNoHistorico, elegiveisAgora, parametros] = await Promise.all([
 			listarReguas({ de, ate, objetivo }),
 			contarLinhasDaRegua(),
 			contarElegiveisParaRegua(agora),
+			// O motivo do próximo toque (FIX-378) depende da janela de horário e do
+			// teto VIGENTES — a tela deriva com o mesmo cadastro que o motor usa.
+			lerParametrosDaTela(),
 		]);
 		const visiveis = filtrarPorSituacao(filtrarPorPasso(doRecorte, passo), situacao);
 
 		const resposta: RespostaDaRegua = {
-			linhas: linhasDaTela(visiveis.slice(offset, offset + limit), agora, maxToques),
+			linhas: linhasDaTela(visiveis.slice(offset, offset + limit), agora, parametros),
 			contadores: contadoresDe(doRecorte),
 			total: visiveis.length,
 			totalDoRecorte: doRecorte.length,

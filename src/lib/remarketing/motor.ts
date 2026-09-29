@@ -35,6 +35,27 @@
  * `OPTOUT` como terminal no estado; aqui o fato vem do contato, para valer
  * também numa conversa que ainda nem existe. Telefone interno (equipe) nunca
  * recebe toque, e a chamada isto é código, não boa intenção.
+ *
+ * ── SÓ a régua conta os toques da régua (FIX-377) ───────────────────────────
+ *
+ * Havia aqui um portão a mais: `retomadaPermitida` (o `MAX_RETOMADAS = 2` /
+ * backoff de 30 min de `workers/retomada.ts`), que devolvia
+ * `semDisparo("teto_de_retomadas")` **antes do envio e sem gravar**. Com a
+ * cadência curta ele mataria o toque 02 e o 03 em silêncio — a régua passaria
+ * verde nos testes e não dispararia em produção.
+ *
+ * O contador do watchdog mede OUTRA coisa: o TURNO de retomada que morreu sem
+ * conduzir (`conversationMetadata.retomada`, escrito e lido pelo
+ * `gate-reengage-poll`). Os toques intra-janela NÃO são turnos de retomada: são
+ * a sequência da régua, e o contador dela já existe e é o certo — `step` e
+ * `toques_30d`, com as guardas `maxToques` e `tetoToques30Dias` (`podeDisparar`).
+ * Por isso o motor NÃO consulta mais o portão do watchdog, e o ciclo não
+ * incrementa mais o contador dele. `retomada.ts` fica intacto para a retomada
+ * normal.
+ *
+ * Sem duplicidade: o watchdog só age quando a ÚLTIMA mensagem é do cliente
+ * (`findConversasSemResposta`); o turno da régua deixa a última mensagem como do
+ * assistente e silencia o watchdog por construção.
  */
 
 import { chaveTelefoneBR } from "@/lib/whatsapp/mesmo-numero";
@@ -326,8 +347,7 @@ export type MotivoSemDisparo =
 	| MotivoBloqueio
 	| "optout_da_pessoa"
 	| "telefone_interno"
-	| "sem_destino"
-	| "teto_de_retomadas";
+	| "sem_destino";
 
 export type AcaoRemarketing =
 	| { tipo: "nada"; motivo: MotivoSemDisparo }
@@ -348,8 +368,6 @@ export interface EntradaDoMotor {
 	telefone: string | null;
 	/** `contacts.remarketing_optout_at` — opt-out por pessoa. */
 	optoutDaPessoaEm?: Date | null;
-	/** `podeRetomar` da retomada (MAX_RETOMADAS + backoff), para o turno. */
-	retomadaPermitida?: boolean;
 	/**
 	 * O telefone é de um atendente ATIVO no banco? O ciclo resolve (é I/O);
 	 * o motor só decide. Soma-se à lista de telefones internos em código.
@@ -395,8 +413,12 @@ export function ehTelefoneInterno(
  *   1. opt-out da PESSOA (vence tudo, inclusive reentrada);
  *   2. destino e telefone interno;
  *   3. a régua (`podeDisparar`) — que já cobre terminal, teto, horário e data;
- *   4. entrega: texto livre → turno de retomada (respeitando MAX_RETOMADAS);
- *      template → `usageKey` do objetivo.
+ *   4. entrega: texto livre → turno de retomada; template → `usageKey` do
+ *      objetivo.
+ *
+ * Não existe portão do contador do watchdog aqui (FIX-377): quem conta os toques
+ * da régua é a própria régua (`step` / `toques_30d`), e um bloqueio transitório
+ * sai daqui com motivo NOMEADO — nunca mudo.
  */
 export function decidir(entrada: EntradaDoMotor): DecisaoDoMotor {
 	const { agora, estado, telefone } = entrada;
@@ -439,9 +461,6 @@ export function decidir(entrada: EntradaDoMotor): DecisaoDoMotor {
 	const touches30d = contarToquesNaJanela(proximoEstado, agora, parametros);
 
 	if (pode.entrega === "texto_livre") {
-		if (entrada.retomadaPermitida === false) {
-			return semDisparo("teto_de_retomadas");
-		}
 		return {
 			acao: { tipo: "turno_de_retomada", passo: pode.step, arte: arteDoObjetivo(estado.objetivo) },
 			proximoEstado,

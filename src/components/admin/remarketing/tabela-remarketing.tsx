@@ -157,6 +157,13 @@ export function TabelaRemarketing({
 									) : (
 										<span className="text-muted-foreground">Nenhum a caminho</span>
 									)}
+									{/* POR QUE o próximo toque não saiu (FIX-378): derivado do estado da
+									    linha na própria API. Quando não há motivo, nada é inventado. */}
+									{linha.motivoDoProximoToqueLegivel && (
+										<span className="block text-xs text-muted-foreground">
+											{linha.motivoDoProximoToqueLegivel}
+										</span>
+									)}
 								</TableCell>
 
 								<TableCell>

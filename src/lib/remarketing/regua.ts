@@ -44,6 +44,12 @@
  *    sequência morta sem nova simulação). Horário, teto e silêncio são do
  *    `podeDisparar`: quem decide SE dispara é ele; o registro registra o que
  *    aconteceu.
+ * 6. **Dentro da janela de 24 h da Meta vale a ESCALA CURTA** (`escalaDeRetomadaMs`,
+ *    fábrica `[10, 20, 30]` min): o toque 01 sai em minutos, não em 90, e os
+ *    intervalos seguintes são 20 e 30 min, não 3 e 5 dias. Fora da janela, o
+ *    desenho por dias continua intacto. O fato que decide os dois é o MESMO —
+ *    `dentroDaJanelaDeTexto` —, então a cadência e a forma do envio
+ *    (`texto_livre` × `template`) nunca discordam.
  */
 
 import { TZ_NEGOCIO } from "@/lib/admin/periodo";
@@ -75,7 +81,22 @@ export const JANELA_24H_MS = 24 * 60 * 60 * 1000;
 export const HORA_ABERTURA = 9;
 export const HORA_FECHAMENTO = 20;
 
-const HORA_MS = 60 * 60 * 1000;
+/**
+ * A ESCALA CURTA dos toques enquanto a janela de 24 h da Meta está aberta.
+ *
+ * Um intervalo por toque: o toque 01 aos 10 min de silêncio, o 02 vinte minutos
+ * depois do 01, o 03 trinta minutos depois do 02. É a cadência combinada na
+ * reunião de 22/09 — "primeiro o cara não respondeu em 10 minutos, eu pingo em
+ * 10; depois é 20; aí depois 30".
+ *
+ * A razão de existir é a janela: com 3 e 5 dias entre toques, o toque 03 sai
+ * 4 dias depois do 01 e o cliente não recebe texto livre nenhum. Em minutos, a
+ * série inteira cabe dentro das 24 h.
+ */
+export const ESCALA_DE_RETOMADA_MS: readonly number[] = [10, 20, 30].map((min) => min * 60_000);
+
+const MINUTO_MS = 60_000;
+const HORA_MS = 60 * MINUTO_MS;
 const DIA_MS = 24 * HORA_MS;
 
 // ─── Os parâmetros: o padrão de fábrica e o ajuste do cadastro ──────────────
@@ -112,6 +133,18 @@ export interface ParametrosRegua {
 	horaAbertura: number;
 	/** E para a esta hora (fim exclusivo). */
 	horaFechamento: number;
+	/**
+	 * A ESCALA CURTA dos toques quando a janela de 24 h da Meta está ABERTA — um
+	 * intervalo por toque (índice 0 → toque 01, 1 → 02, ...). Fábrica
+	 * `[10, 20, 30]` minutos.
+	 *
+	 * É uma LISTA, e não um número: a cadência combinada é 10 → 20 → 30, não um
+	 * passo fixo. Enquanto a janela está aberta ela substitui `esperaSilencioMs`
+	 * (toque 01) e `diasAteSegundoToque`/`diasAteTerceiroToque` (02 e 03); fora
+	 * dela, o desenho por dias continua valendo, intacto. Se a lista for mais
+	 * curta que o número de toques, o último intervalo se repete.
+	 */
+	escalaDeRetomadaMs: readonly number[];
 }
 
 /** O comportamento de sempre: as constantes deste arquivo, nomeadas. */
@@ -124,10 +157,18 @@ export const PARAMETROS_DE_FABRICA: ParametrosRegua = {
 	janelaDoTetoMs: JANELA_DO_TETO_MS,
 	horaAbertura: HORA_ABERTURA,
 	horaFechamento: HORA_FECHAMENTO,
+	escalaDeRetomadaMs: ESCALA_DE_RETOMADA_MS,
 };
 
+/**
+ * Os campos que o cadastro guarda UM A UM (número por linha). É `keyof
+ * ParametrosRegua` menos a escala, que é uma LISTA e tem o seu próprio molde
+ * (`LIMITES_DA_ESCALA` + `escalaValida`).
+ */
+export type CampoEscalar = Exclude<keyof ParametrosRegua, "escalaDeRetomadaMs">;
+
 /** A ordem canônica dos campos — a mesma que a tela de cadastro percorre. */
-export const CAMPOS_DOS_PARAMETROS: readonly (keyof ParametrosRegua)[] = [
+export const CAMPOS_DOS_PARAMETROS: readonly CampoEscalar[] = [
 	"esperaSilencioMs",
 	"diasAteSegundoToque",
 	"diasAteTerceiroToque",
@@ -147,10 +188,7 @@ export const CAMPOS_DOS_PARAMETROS: readonly (keyof ParametrosRegua)[] = [
  * disse que não quer; um `diasAteSegundoToque` gigante só atrasa. O limite
  * existe para que o cadastro não consiga transformar a régua em spam.
  */
-export const LIMITES_DOS_PARAMETROS: Record<
-	keyof ParametrosRegua,
-	{ minimo: number; maximo: number }
-> = {
+export const LIMITES_DOS_PARAMETROS: Record<CampoEscalar, { minimo: number; maximo: number }> = {
 	esperaSilencioMs: { minimo: 60_000, maximo: 24 * HORA_MS }, // 1 min a 24 h
 	diasAteSegundoToque: { minimo: 1, maximo: 30 },
 	diasAteTerceiroToque: { minimo: 1, maximo: 60 },
@@ -169,7 +207,7 @@ export const LIMITES_DOS_PARAMETROS: Record<
  * 22h com fechamento às 6h, e a régua passaria a falar de madrugada.
  */
 export function parametroValido(
-	campo: keyof ParametrosRegua,
+	campo: CampoEscalar,
 	valor: number,
 	demais: Partial<ParametrosRegua> = {},
 ): boolean {
@@ -187,6 +225,51 @@ export function parametroValido(
 }
 
 /**
+ * A faixa aceita de cada elemento da escala intra-janela, e o teto de passos.
+ *
+ * O viés é o de sempre — na dúvida, menos toque. Um intervalo de 0 mandaria uma
+ * rajada; um de meses cairia fora da janela e viraria template (o oposto do que
+ * a escala existe para fazer).
+ */
+export const LIMITES_DA_ESCALA = {
+	minimoMs: MINUTO_MS, // 1 minuto
+	maximoMs: 24 * HORA_MS, // 24 horas
+	maximoDePassos: 5,
+} as const;
+
+/**
+ * A escala intra-janela é válida? Cada intervalo inteiro, entre 1 min e 24 h, e
+ * a lista NÃO-DECRESCENTE (pode repetir o último — "de 30 em 30" —, nunca
+ * voltar a um intervalo menor). Lista vazia NÃO vale: seria "nenhum toque", o
+ * oposto do que ela existe para fazer.
+ */
+export function escalaValida(escala: readonly number[]): boolean {
+	if (!Array.isArray(escala)) return false;
+	if (escala.length < 1 || escala.length > LIMITES_DA_ESCALA.maximoDePassos) return false;
+
+	let anterior = 0;
+	for (const intervalo of escala) {
+		if (!Number.isInteger(intervalo)) return false;
+		if (intervalo < LIMITES_DA_ESCALA.minimoMs || intervalo > LIMITES_DA_ESCALA.maximoMs) {
+			return false;
+		}
+		if (intervalo < anterior) return false;
+		anterior = intervalo;
+	}
+	return true;
+}
+
+/**
+ * O intervalo do PASSO `passo` (1 = toque 01). A lista é usada na ordem; se for
+ * mais curta que o número de toques, o ÚLTIMO intervalo se repete — é o "de 30
+ * em 30 até a janela fechar" da reunião de 22/09.
+ */
+export function elementoDaEscala(escala: readonly number[], passo: number): number {
+	const indice = Math.max(0, Math.min(passo, escala.length) - 1);
+	return escala[indice] ?? PARAMETROS_DE_FABRICA.escalaDeRetomadaMs[0];
+}
+
+/**
  * O objeto SEMPRE válido: só os campos válidos do parcial entram; o resto vem
  * da fábrica. É a rede de proteção do cadastro — valor corrompido no banco não
  * derruba a régua nem a faz disparar mais, ela simplesmente ignora o ajuste.
@@ -199,6 +282,13 @@ export function normalizarParametros(parcial: Partial<ParametrosRegua>): Paramet
 		if (valor === undefined) continue;
 		if (!parametroValido(campo, valor, parcial)) continue;
 		resultado[campo] = valor;
+	}
+
+	// A escala é uma LISTA: a validação é a dela, e o valor entra como cópia (o
+	// array do chamador não pode virar estado compartilhado da régua).
+	const escala = parcial.escalaDeRetomadaMs;
+	if (escala !== undefined && escalaValida(escala)) {
+		resultado.escalaDeRetomadaMs = [...escala];
 	}
 
 	// O par de horário vale junto ou não vale: uma janela invertida não é "quase
@@ -323,7 +413,7 @@ export function podeDisparar(
 	if (passo > parametros.maxToques) return { pode: false, motivo: "esgotado" };
 
 	// Sem agendamento não há toque: a régua nunca dispara sem data de referência.
-	const quando = agendamento(estado, reentrada, parametros);
+	const quando = agendamento(estado, reentrada, parametros, agora);
 	if (!quando || agora.getTime() < quando.getTime()) {
 		return { pode: false, motivo: "aguardando_data" };
 	}
@@ -359,7 +449,7 @@ export function proximoToque(
 		return queda ? empurrarParaJanela(queda, agora, parametros) : null;
 	}
 
-	const quando = agendamento(estado, reentrada, parametros);
+	const quando = agendamento(estado, reentrada, parametros, agora);
 	if (!quando) return null;
 
 	return empurrarParaJanela(quando, agora, parametros);
@@ -398,7 +488,7 @@ export function registrarToque(
 		toquesNaJanela: [...podarForaDaJanela(estado.toquesNaJanela, agora, parametros), agora],
 		nextTouchAt: esgotou
 			? null
-			: new Date(agora.getTime() + intervaloAteProximo(passo, parametros)),
+			: new Date(agora.getTime() + esperaAteProximo(passo, estado, parametros, agora)),
 	};
 }
 
@@ -457,6 +547,20 @@ export function dentroDaJanelaDeHorario(
 	return hora >= parametros.horaAbertura && hora < parametros.horaFechamento;
 }
 
+/**
+ * O último inbound do cliente está DENTRO da janela de 24 h da Meta?
+ *
+ * É o fato que decide duas coisas ao mesmo tempo, e é por isso que ele mora
+ * numa função só: a FORMA do envio (`texto_livre` × `template`) e a CADÊNCIA
+ * (escala curta × desenho por dias). Se cada uma perguntasse por si, uma
+ * mudança futura numa delas as faria discordar — o toque sairia em minutos como
+ * template, ou em dias como texto livre.
+ */
+export function dentroDaJanelaDeTexto(estado: EstadoRegua, agora: Date): boolean {
+	const inbound = estado.ultimoInboundEm;
+	return inbound !== null && agora.getTime() - inbound.getTime() < JANELA_24H_MS;
+}
+
 // ─── Miolo ──────────────────────────────────────────────────────────────────
 
 /** Nova simulação DEPOIS do último toque é o único caminho de volta. */
@@ -473,29 +577,54 @@ function houveNovaSimulacao(estado: EstadoRegua): boolean {
  * Quando o próximo toque está agendado. Com `nextTouchAt` gravado, ele manda;
  * no começo do ciclo (step 0) a data sai do silêncio do cliente — é o mesmo
  * cálculo, só que sem depender de o motor ter materializado a coluna.
+ *
+ * `agora` entra porque a ESCALA depende da janela de 24 h: se o último inbound
+ * está dentro dela, a espera é a curta (minutos); fora, a de sempre (90 min /
+ * dias).
  */
 function agendamento(
 	estado: EstadoRegua,
 	reentrada: boolean,
 	parametros: ParametrosRegua,
+	agora: Date,
 ): Date | null {
 	if (reentrada) {
 		return estado.simulacaoEm
-			? new Date(estado.simulacaoEm.getTime() + parametros.esperaSilencioMs)
+			? new Date(estado.simulacaoEm.getTime() + esperaAteProximo(0, estado, parametros, agora))
 			: null;
 	}
 	if (estado.nextTouchAt) return estado.nextTouchAt;
 	if (estado.step === 0 && estado.ultimoInboundEm) {
-		return new Date(estado.ultimoInboundEm.getTime() + parametros.esperaSilencioMs);
+		return new Date(
+			estado.ultimoInboundEm.getTime() + esperaAteProximo(0, estado, parametros, agora),
+		);
 	}
 	return null;
 }
 
+/**
+ * Quanto esperar até o PRÓXIMO toque, contado da referência do `step` (0 = o
+ * silêncio do cliente; N = o instante do toque N).
+ *
+ * Dentro da janela de 24 h vale a ESCALA CURTA; fora dela, o desenho por dias de
+ * sempre — o que inclui o silêncio de 90 min que abre o toque 01.
+ */
+function esperaAteProximo(
+	step: number,
+	estado: EstadoRegua,
+	parametros: ParametrosRegua,
+	agora: Date,
+): number {
+	if (dentroDaJanelaDeTexto(estado, agora)) {
+		return elementoDaEscala(parametros.escalaDeRetomadaMs, step + 1);
+	}
+	if (step === 0) return parametros.esperaSilencioMs;
+	return intervaloAteProximo(step, parametros);
+}
+
 /** A janela de 24h da Meta decide só a forma do envio — ver decisão 2 no topo. */
 function entregaDe(estado: EstadoRegua, agora: Date): Entrega {
-	const inbound = estado.ultimoInboundEm;
-	if (inbound && agora.getTime() - inbound.getTime() < JANELA_24H_MS) return "texto_livre";
-	return "template";
+	return dentroDaJanelaDeTexto(estado, agora) ? "texto_livre" : "template";
 }
 
 /** +N dias do 01 para o 02; +N dias do 02 para o 03 (fábrica: 3 e 5). */

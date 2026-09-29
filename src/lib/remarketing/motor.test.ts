@@ -355,16 +355,23 @@ describe("o teto de 30 dias (global, por pessoa) bloqueia o disparo", () => {
 	});
 });
 
-describe("teto de retomadas (MAX_RETOMADAS) barra o turno", () => {
-	it("retomadaPermitida=false → nada, mas o estado não avança", () => {
+describe("FIX-377 — o contador do watchdog NÃO barra o turno da régua", () => {
+	it("o toque sai: quem conta os toques da régua é a régua (step / toques_30d)", () => {
+		// `conversationMetadata.retomada` (MAX_RETOMADAS + backoff) é do TURNO do
+		// watchdog, não desta sequência. Antes, um `retomadaPermitida=false` devolvia
+		// `nada` mudo aqui — e a escala curta morria no toque 02.
 		const decisao = decidir({
 			agora: TOQUE_1,
 			estado: ativo({}),
 			telefone: "5562999998888",
-			retomadaPermitida: false,
 		});
-		expect(decisao.acao).toEqual({ tipo: "nada", motivo: "teto_de_retomadas" });
-		expect(decisao.proximoEstado).toBeNull();
+		expect(decisao.acao).toEqual({
+			tipo: "turno_de_retomada",
+			passo: 1,
+			arte: "/kv/remarketing/oportunidade-carro.png",
+		});
+		// O que bloqueia é a guarda da PRÓPRIA régua — e sempre com motivo nomeado.
+		expect(decisao.proximoEstado?.step).toBe(1);
 	});
 });
 
