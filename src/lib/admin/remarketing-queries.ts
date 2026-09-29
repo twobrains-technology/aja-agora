@@ -99,7 +99,7 @@ export function rastroDoMetadata(metadata: unknown): RastroDoAtendente | null {
 	if (!acao || typeof acao !== "object") return null;
 
 	const { tipo, por, porId, em } = acao as Record<string, unknown>;
-	if (tipo !== "segurar" && tipo !== "soltar") return null;
+	if (tipo !== "segurar" && tipo !== "soltar" && tipo !== "reentrada") return null;
 	if (typeof em !== "string" || Number.isNaN(Date.parse(em))) return null;
 
 	return {

@@ -125,7 +125,8 @@ export const ROTULO_DO_OBJETIVO: Record<string, string> = {
 
 /** O rastro da última ação do atendente, guardado no metadata da conversa. */
 export interface RastroDoAtendente {
-	tipo: AcaoDaRegua;
+	/** A ação: segurar/soltar por conversa, ou `reentrada` (ação em LOTE). */
+	tipo: AcaoDaRegua | "reentrada";
 	/** Quem agiu — nome de quem estava logado. */
 	por: string;
 	/** O id da sessão, para quando dois nomes iguais agirem. */

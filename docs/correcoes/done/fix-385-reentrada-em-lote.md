@@ -1,7 +1,7 @@
 ---
 id: FIX-385
 titulo: "Reentrada deliberada do bolo parado, em lote"
-status: todo
+status: done
 bloco: bloco-reentrada
 arquivos:
   - src/lib/remarketing/regua.ts
@@ -9,6 +9,8 @@ arquivos:
   - src/app/api/admin/remarketing/
   - src/components/admin/remarketing/
 rodada: 2026-09-28
+executado_em: 2026-09-30
+commit: c83177fe
 ---
 ## Palavras do operador
 Reunião de 22/09 (Kairo, 12:20:41): *"eu tento separar eles e montar uma mensagem pelo menos para cada
