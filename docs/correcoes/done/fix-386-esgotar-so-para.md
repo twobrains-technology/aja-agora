@@ -1,12 +1,14 @@
 ---
 id: FIX-386
 titulo: "Esgotar os toques SÓ para — não vira \"perdido\" e não cria alerta"
-status: todo
+status: done
 bloco: bloco-reentrada
 arquivos:
   - src/lib/remarketing/motor.ts
   - src/lib/remarketing/regua.ts
 rodada: 2026-09-28
+executado_em: 2026-09-30
+commit: 12c7dcd7
 ---
 ## Palavras do operador
 Kairo, 28/09: *"esgotar os toques qd chegar, so parar mesmo"*.
