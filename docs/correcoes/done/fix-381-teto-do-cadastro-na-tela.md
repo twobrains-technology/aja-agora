@@ -1,12 +1,14 @@
 ---
 id: FIX-381
 titulo: "O teto exibido vem do cadastro, não da constante"
-status: todo
+status: done
 bloco: bloco-toques
 arquivos:
   - src/lib/admin/remarketing-tela.ts
   - src/app/api/admin/remarketing/route.ts
 rodada: 2026-09-28
+commit: 8a93a762
+executado_em: 2026-09-28
 ---
 ## Palavras do operador
 Reunião de 22/09 — o "onde a gente para" (Kairo, 12:12:30): a tela precisa dizer o limite real, e o
