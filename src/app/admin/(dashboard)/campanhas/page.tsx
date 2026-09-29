@@ -164,6 +164,8 @@ function CampanhasContent() {
 							totais={
 								dados?.totais ?? {
 									investimentoCents: 0,
+									investimentoAtribuidoCents: 0,
+									investimentoSemAtribuicaoCents: 0,
 									leadsMeta: 0,
 									leadsCrm: 0,
 									comTelefone: 0,

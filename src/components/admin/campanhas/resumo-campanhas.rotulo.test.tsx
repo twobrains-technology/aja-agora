@@ -22,6 +22,8 @@ afterEach(cleanup);
 function totais(parcial: Partial<TotaisDeCampanhas> = {}): TotaisDeCampanhas {
 	return {
 		investimentoCents: 100_000,
+		investimentoAtribuidoCents: 70_000,
+		investimentoSemAtribuicaoCents: 30_000,
 		leadsMeta: 20,
 		leadsCrm: 12,
 		comTelefone: 31,
