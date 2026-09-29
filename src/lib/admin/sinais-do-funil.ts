@@ -342,3 +342,70 @@ export const ARTIFACTS_DE_OFERTA_SQL = sql.join(
 	ARTIFACTS_DE_OFERTA.map((tipo) => sql`${tipo}`),
 	sql`, `,
 );
+
+/**
+ * O CLIENTE VIU NÚMERO DE OFERTA — existe um artefato de oferta na conversa.
+ *
+ * É o degrau "Viram oferta" do funil de mídia, da escada do Percurso e da
+ * exportação. Fonte única dos três: enquanto o `EXISTS` morava copiado em cada
+ * consulta, uma correção valia para uma tela e não para a outra.
+ *
+ * O alias da conversa entra por parâmetro pelo mesmo motivo dos outros
+ * fragmentos (`c` nas telas de hoje) — amarrar ao alias faria o fragmento
+ * compilar num lugar e explodir no outro.
+ */
+export function viuOferta(conversa: SQL = sql`c`): SQL {
+	return sql`EXISTS (SELECT 1 FROM messages m
+    JOIN artifacts a ON a.message_id = m.id
+    WHERE m.conversation_id = ${conversa}.id
+      AND a.type IN (${ARTIFACTS_DE_OFERTA_SQL}))`;
+}
+
+/**
+ * A PROPOSTA existe para a conversa — a simulação da Bevi é o FATO.
+ *
+ * É o degrau "Propostas" do funil, "Proposta" da escada e da exportação. Nasceu
+ * inline em TRÊS consultas (`percurso-queries`, `performance-queries` e
+ * `exportacao/percurso`); aqui ela existe uma vez, para não nascer a quarta
+ * definição no próximo consumidor.
+ */
+export function teveProposta(conversa: SQL = sql`c`): SQL {
+	return sql`EXISTS (SELECT 1 FROM bevi_proposals bp
+    WHERE bp.conversation_id = ${conversa}.id)`;
+}
+
+/**
+ * Os sinais que definem a macro-fase do funil em que a pessoa está.
+ *
+ * São DOIS porque são dois os fatos que a reunião de 22/09 nomeou como marcos da
+ * jornada: ver a oferta e ter a proposta na mesa. O degrau mais fundo vence.
+ */
+export interface SinaisDoFunil {
+	/** O cliente viu número de oferta na tela (`artifacts`: `real_offer` / `simulation_result`). */
+	viuOferta: boolean;
+	/** Existe proposta/simulação Bevi para a conversa. */
+	teveProposta: boolean;
+}
+
+/**
+ * As três macro-fases da comunicação (Kairo, reunião de 22/09 12:02:49).
+ *
+ * Não são os nove degraus do Percurso: são as três mensagens genéricas do
+ * remarketing — quem ainda não viu oferta, quem já viu e quem só falta fechar.
+ */
+export type FaseDoFunil = "inicio" | "viu_oferta" | "fechamento";
+
+/**
+ * A FASE do funil a partir dos sinais — função PURA, sem banco e sem relógio.
+ *
+ * Os nomes são os do operador: *"se o cara tá no início… ele chegou até
+ * visualizar a oferta… Já tá no finalzinho, é só fechar?"*. A ordem de leitura é
+ * do degrau mais FUNDO para o mais raso — ter proposta implica ter visto a
+ * oferta, e o evento de oferta pode não estar no histórico de uma conversa
+ * antiga. Ler a fase pelo degrau mais fundo é o que a escada do Percurso já faz.
+ */
+export function faseDoFunil(sinais: SinaisDoFunil): FaseDoFunil {
+	if (sinais.teveProposta) return "fechamento";
+	if (sinais.viuOferta) return "viu_oferta";
+	return "inicio";
+}
