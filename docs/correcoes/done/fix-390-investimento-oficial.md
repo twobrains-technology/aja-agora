@@ -1,13 +1,14 @@
 ---
 id: FIX-390
 titulo: "\"Investimento reportado pela Meta\" é o oficial; o atribuído vira a linha vizinha"
-status: todo
+status: done
 bloco: bloco-investimento
 arquivos:
   - src/components/admin/campanhas/resumo-campanhas.tsx
   - src/components/admin/campanhas/tabela-campanhas.tsx
   - src/lib/admin/campanhas-queries.ts
 rodada: 2026-09-28
+executado_em: 2026-09-29
 ---
 ## Palavras do operador
 Reunião de 22/09 — Gustavo, 11:44:04: *"Não, não, está muito alto."* (sobre o investimento que o painel

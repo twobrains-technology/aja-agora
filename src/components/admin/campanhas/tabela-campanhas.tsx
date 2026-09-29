@@ -244,7 +244,12 @@ export function TabelaCampanhas({ linhas }: { linhas: LinhaCampanha[] }) {
 							<TableHeader>
 								<TableRow>
 									<TableHead>Campanha</TableHead>
-									<TableHead className="text-right">Investimento</TableHead>
+									<TableHead
+										className="text-right"
+										title="O que a Meta reportou para esta campanha no período — a leitura oficial da verba"
+									>
+										Investimento (Meta)
+									</TableHead>
 									<TableHead className="text-right">Custo / qualificado</TableHead>
 									<TableHead
 										className="text-right"
