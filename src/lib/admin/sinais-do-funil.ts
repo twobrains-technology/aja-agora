@@ -9,6 +9,7 @@
 
 import { type SQL, sql } from "drizzle-orm";
 import { PADRAO_ROBO_SQL } from "@/lib/attribution/user-agent-robo";
+import type { ArtifactType } from "@/lib/chat/types";
 import { ESTAGIOS_QUALIFICADOS } from "./lead-stages";
 
 /**
@@ -334,11 +335,69 @@ function pessoaConversou(): SQL {
 	return sql`c.id IS NOT NULL`;
 }
 
-/** Artifacts que provam que o cliente VIU número de oferta na tela. */
-export const ARTIFACTS_DE_OFERTA = ["real_offer", "simulation_result"];
+/**
+ * TODO tipo de artifact, classificado: prova que o cliente VIU número de oferta
+ * na tela?
+ *
+ * FIX-398 (bloco-telefone-ab). Antes disto havia DUAS listas para a mesma
+ * pergunta: esta, com `["real_offer","simulation_result"]`, e a dos escritores
+ * de artifact no código (`comparison_table` em `src/app/api/chat/route.ts`,
+ * `recommendation_card` em `nodes/converse.ts`, `real_offer` em
+ * `closing-presentation.ts`). Quem viu a comparação no chat web NÃO era contado
+ * como quem viu oferta — o degrau que a Bruna lê para decidir investimento
+ * estava subcontado (palavras dela na call de 29/09: *"viram oferta, 9 → 18... e
+ * a proposta criada: zero"*).
+ *
+ * Agora a lista do painel DERIVA daqui, e o `Record<ArtifactType, boolean>` é
+ * exaustivo em tempo de compilação: nasceu um tipo novo em
+ * `src/lib/chat/types.ts`, o TypeScript quebra aqui — e o teste
+ * `sinais-do-funil.viu-oferta.fix-398.test.ts` quebra em runtime, lendo o
+ * arquivo de tipos. Um tipo novo não passa mais despercebido até o painel.
+ */
+export const CLASSIFICACAO_DOS_ARTIFACTS: Record<ArtifactType, boolean> = {
+	// ── PROVAM que a pessoa viu nº de oferta na tela ──────────────────────────
+	comparison_table: true,
+	recommendation_card: true,
+	real_offer: true,
+	simulation_result: true,
+	// ── Não provam (contexto, pergunta, formulário, dado do cliente) ──────────
+	group_card: false,
+	lead_form: false,
+	quick_reply: false,
+	value_picker: false,
+	topic_picker: false,
+	scenarios: false,
+	financing_comparison: false,
+	whatsapp_optin: false,
+	decision_prompt: false,
+	contract_form: false,
+	signature_handoff: false,
+	atendimento_handoff: false,
+	document_upload: false,
+	contemplation_dial: false,
+	embedded_bid: false,
+	two_paths: false,
+	scarcity: false,
+	// FIX-396 — o card do teste do telefone NÃO prova oferta: o que prova é o
+	// `comparison_table`/`recommendation_card` que ele acompanha.
+	telefone_do_desbloqueio: false,
+};
+
+/** Artifacts que provam que o cliente VIU número de oferta na tela.
+ *
+ * FONTE ÚNICA: derivada de `CLASSIFICACAO_DOS_ARTIFACTS` acima — não existe
+ * segunda lista. Usada pelo painel de Performance/Percurso e pelo endpoint do
+ * teste do telefone. */
+export const ARTIFACTS_DE_OFERTA: readonly ArtifactType[] = (
+	Object.keys(CLASSIFICACAO_DOS_ARTIFACTS) as ArtifactType[]
+).filter((tipo) => CLASSIFICACAO_DOS_ARTIFACTS[tipo]);
 
 /** Os mesmos tipos, prontos para um `IN (...)` de SQL. */
 export const ARTIFACTS_DE_OFERTA_SQL = sql.join(
 	ARTIFACTS_DE_OFERTA.map((tipo) => sql`${tipo}`),
 	sql`, `,
 );
+
+/** A lista literal, como TEXTO — para diagnóstico e para o teste de acoplamento
+ *  provar que o fragmento SQL carrega os MESMOS tipos. Derivada da fonte única. */
+export const PADRAO_SQL_DE_OFERTA = ARTIFACTS_DE_OFERTA.map((tipo) => `'${tipo}'`).join(", ");
