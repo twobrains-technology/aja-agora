@@ -1,11 +1,13 @@
 ---
 id: FIX-394
 titulo: "A variante do teste é da VISITA, não da pessoa — uma fonte só"
-status: todo
+status: done
 bloco: bloco-telefone-ab
 arquivos:
   - src/lib/chat/variante-da-visita.ts
 rodada: 2026-09-29
+commit: b66645e3
+executado_em: 2026-09-29
 ---
 ## Palavras do operador
 Gustavo, 12:10:35: *"A cada visita diferente, gera. É um modelo de conversa. Então, assim, eu entrei,

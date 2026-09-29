@@ -1,12 +1,14 @@
 ---
 id: FIX-396
 titulo: "Variante C — a melhor opção visível e borrada, com o telefone liberando"
-status: todo
+status: done
 bloco: bloco-telefone-ab
 arquivos:
   - src/components/chat/
   - src/lib/chat/
 rodada: 2026-09-29
+commit: a5d19d35
+executado_em: 2026-09-29
 ---
 ## Palavras do operador
 Kairo, 12:08:56: *"Eu gosto dessa estratégia do Gustavo de causar ali aquele sentimento de curiosidade.

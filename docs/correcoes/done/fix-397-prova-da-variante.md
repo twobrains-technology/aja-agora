@@ -1,12 +1,14 @@
 ---
 id: FIX-397
 titulo: "Cada visita registra a sua variante — senão não há resultado em 01/10"
-status: todo
+status: done
 bloco: bloco-telefone-ab
 arquivos:
   - src/lib/chat/
   - src/app/api/admin/performance/
 rodada: 2026-09-29
+commit: 6b3959d6
+executado_em: 2026-09-29
 ---
 ## Palavras do operador
 Kairo, 12:13:46: *"O melhor jeito de a gente validar isso vai ser realmente com essa metrificação. A

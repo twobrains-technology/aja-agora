@@ -55,3 +55,24 @@ a correção do sinal "viu oferta" — que é o que a medição inteira usa.
   colidir com o bloco de custo, que está na onda 2).
 - **Não** decide prazo de teste nem volume de investimento: isso é do dono.
 - **Não** mergeia, não abre PR, não faz deploy.
+## Onde as coisas vivem — MEDIDO em 29/09 (não presuma, isto foi verificado)
+
+| O quê | Onde |
+|---|---|
+| A visita nasce e o cookie é setado — **é aqui que o sorteio da variante entra** (já existe `registrarVisita()` e há um comentário no `/direto` dizendo "quando o sorteio entrar no proxy.ts") | `src/proxy.ts:184`, `:120` (`LANDINGS`), `:122` (`ehLanding`), `:291` (`matcher`) |
+| Cookies da visita (`aja_uid`, `aja_visit`, TTL 90 d) e a decisão nova-visita-vs-reuso (30 min) | `src/lib/attribution/visit-cookie.ts:12-16`, `:105` |
+| Gravação da visita (`visits`) e leitura pelo cookie | `src/lib/attribution/visit-store.ts:46`, `:174` |
+| Tabelas: `visits` (`visitorId`) e `conversations.visitId` → a variante pode morar aqui | `src/db/schema.ts:345`, `:351`, `:406` |
+| O gate de identidade (CPF + celular + LGPD) — **já tem `momento: "fecho" | "pre-busca"`**: é a alavanca da variante B | `src/lib/web/adapter.ts:193`; componente `src/components/chat/artifacts/gate-identity-form.tsx:186` (campo do telefone), `:111-118` (submit) |
+| A cópia do gate de identidade por canal (é aqui que o texto do pedido do telefone vive hoje) | `src/lib/agent/orchestrator/gate-questions.ts:272` |
+| Captura pré-reveal alternativa: artifact `lead_form` (nome + telefone + e-mail) | `src/components/chat/artifacts/lead-form.tsx:47`; política em `src/lib/agent/orchestrator/tool-policy.ts:135` |
+| **O "reveal" da melhor opção** — junta `recommendation_card` (cota recomendada) + `comparison_table`: é a superfície da variante C | `src/components/chat/reveal-selection.tsx:87` |
+| Cards da oferta | `comparison-table.tsx:34`, `simulation-result.tsx:34`, `recommendation-card.tsx:74`; despacho em `src/components/chat/artifact-renderer.tsx:25` (`:56/:57/:60`) |
+| Escrita do artifact (uma função só) e o log do card na mensagem | `src/lib/conversation/cards.ts:53`; `src/lib/conversation/messages.ts:86`; nó `persist` em `src/lib/agent/langgraph/nodes/persist.ts` |
+| Artefatos de oferta reconhecidos pelo painel (a lista do FIX-398) | `src/lib/admin/sinais-do-funil.ts:338` |
+| Funil de 7 etapas e percurso de 9 passos (para o resultado do teste) | `src/lib/admin/performance-types.ts:32`; `src/lib/admin/percurso-types.ts:39`, `:93` |
+| Já existe uma variante A/B de HERO por ROTA (não por visita) — não confunda com esta | `src/components/kv/heros.tsx:101`; `src/components/kv/landing-kv.tsx:39` |
+
+**Consequência para o plano:** se `proxy.ts` já grava a visita e seta cookie, a variante **não precisa de
+`Math.random()` no cliente**: decide-se no middleware, persiste-se com a visita e chega ao componente por
+prop/contexto — que é o padrão que o hero já usa (`LandingKv({ hero })`).

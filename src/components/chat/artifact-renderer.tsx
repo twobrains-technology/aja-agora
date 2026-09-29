@@ -16,6 +16,7 @@ import { Scarcity } from "./artifacts/scarcity";
 import { Scenarios } from "./artifacts/scenarios";
 import { SignatureHandoff } from "./artifacts/signature-handoff";
 import { SimulationResult } from "./artifacts/simulation-result";
+import { TelefoneDoDesbloqueio } from "./artifacts/telefone-do-desbloqueio";
 import { TopicPicker } from "./artifacts/topic-picker";
 import { TwoPaths } from "./artifacts/two-paths";
 import { ValuePicker } from "./artifacts/value-picker";
@@ -93,6 +94,8 @@ function renderArtifact(artifact: Artifact, active: boolean) {
 			return <TwoPaths payload={artifact.payload} />;
 		case "scarcity":
 			return <Scarcity payload={artifact.payload} />;
+		case "telefone_do_desbloqueio":
+			return <TelefoneDoDesbloqueio payload={artifact.payload} active={active} />;
 		case "quick_reply":
 			return <QuickReply payload={artifact.payload} active={active} />;
 	}
