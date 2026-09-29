@@ -5,6 +5,8 @@
  * Compartilhado entre a rota da API e a UI.
  */
 
+import type { ResultadoCustoDeIA } from "./custo-de-ia";
+import type { ResultadoCustoDeMensagem } from "./custo-de-mensagem";
 import type { FunilDeHandoff } from "./handoff-queries";
 import type { Origem } from "./origem-label";
 
@@ -267,6 +269,41 @@ export interface QuemChegou {
 	comValorInformado: number;
 }
 
+/**
+ * De onde cada número do bloco de custos saiu — a tela DECLARA a fonte.
+ *
+ * Não é decoração: sem isto, um custo de IA lido do Langfuse e um investimento
+ * lido da Meta apareceriam lado a lado como se fossem a mesma coisa medida do
+ * mesmo jeito, e quem lê não saberia em qual confiar.
+ */
+export interface FontesDoCusto {
+	investimento: string;
+	custoDeIA: string;
+	custoDeMensagem: string;
+	contagens: string;
+}
+
+/** As contagens da tela de Performance que o CPC usa como denominador. */
+export interface ContagensDoCpc {
+	conversas: number;
+	identificados: number;
+	qualificados: number;
+}
+
+/**
+ * O bloco de custos do período — cada metade com a sua leitura.
+ *
+ * `investimentoMetaCents` é `null` quando a Meta não reportou no período (nunca
+ * zero): o mesmo vale de "não calculável" que governa o resto da frente.
+ */
+export interface CustosDoCpc {
+	investimentoMetaCents: number | null;
+	custoDeIA: ResultadoCustoDeIA;
+	custoDeMensagem: ResultadoCustoDeMensagem;
+	contagens: ContagensDoCpc;
+	fontes: FontesDoCusto;
+}
+
 export interface PerformanceResponse {
 	funil: EtapaFunilMidia[];
 	porta: PortaDoFunil;
@@ -283,4 +320,6 @@ export interface PerformanceResponse {
 	 * só esconderia justamente a fronteira que interessa — a passagem de bastão.
 	 */
 	handoff: FunilDeHandoff;
+	/** O CPC que a cliente quer fechar: os custos do período, um a um. */
+	custos: CustosDoCpc;
 }

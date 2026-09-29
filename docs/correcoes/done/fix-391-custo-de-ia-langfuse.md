@@ -1,7 +1,9 @@
 ---
 id: FIX-391
 titulo: "Custo de IA pela fonte atual (Langfuse), cruzado por conversationId"
-status: todo
+status: done
+commit: a3faddf5
+executado_em: 2026-09-29
 bloco: bloco-custo
 arquivos:
   - src/lib/admin/custo-de-ia.ts

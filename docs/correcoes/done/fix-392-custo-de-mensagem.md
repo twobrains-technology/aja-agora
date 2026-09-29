@@ -1,7 +1,9 @@
 ---
 id: FIX-392
 titulo: "Custo de mensagem: a contagem é fato, o preço é cadastro"
-status: todo
+status: done
+commit: add7e98a
+executado_em: 2026-09-29
 bloco: bloco-custo
 arquivos:
   - src/lib/admin/custo-de-mensagem.ts

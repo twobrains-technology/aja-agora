@@ -20,10 +20,13 @@ import {
 	ROTULO_SEM_VALOR,
 	rotuloDaFaixa,
 } from "@/lib/funil/quem-chegou";
+import { computeCustoDeIA } from "./custo-de-ia";
+import { computeCustoDeMensagem } from "./custo-de-mensagem";
 import { rotularOrigem } from "./origem-label";
 import {
 	type ChaveEtapaFunil,
 	type CoberturaAtribuicao,
+	type CustosDoCpc,
 	ETAPAS_FUNIL_MIDIA,
 	ETAPAS_RAMIFICADAS,
 	type EtapaFunilMidia,
@@ -32,6 +35,7 @@ import {
 	type PortaDoFunil,
 	type QuemChegou,
 } from "./performance-types";
+import { diaDoNegocio } from "./periodo";
 import {
 	ARTIFACTS_DE_OFERTA_SQL,
 	chaveDaPessoa,
@@ -607,5 +611,67 @@ export async function computeCobertura(fromDate: Date, toDate: Date): Promise<Co
 		// declara) e não pode entrar aqui: misturá-la faria a porcentagem de
 		// atribuição cair por causa de conversa que não é do negócio.
 		conversasDeTeste: num(linha.de_teste),
+	};
+}
+
+// ─── Custos do período (o CPC) ──────────────────────────────────────────────
+
+/**
+ * O bloco de custos da tela: os três custos do período, o denominador e as
+ * fontes declaradas.
+ *
+ * Cada metade lê de onde é dona do fato — investimento em `meta_insights_diarios`
+ * (nível `campaign`, senão os sub-níveis do mesmo gasto entrariam duas vezes),
+ * custo de IA no Langfuse, custo de mensagem no Postgres + cadastro. Nenhuma é
+ * derivada de tabela paralela nem de constante em código.
+ *
+ * Ausência de número é `null`/motivo, nunca zero: quem decide o que mostrar é o
+ * componente (`calcularCpc`), com a mesma lei do resto da frente.
+ */
+export async function computeCustosDoCpc(de: Date, ate: Date): Promise<CustosDoCpc> {
+	const deDia = diaDoNegocio(de);
+	const ateDia = diaDoNegocio(ate);
+
+	const [investimento, contagens, custoDeIA, custoDeMensagem] = await Promise.all([
+		// A meta não reporta gasto como zero: ou há linha, ou não há leitura. Por
+		// isso `linhas = 0` vira `null` ("não reportado") e não R$ 0,00.
+		db.execute<Record<string, unknown>>(sql`
+      SELECT count(*)::int AS linhas, sum(spend_cents) AS total_cents
+      FROM meta_insights_diarios
+      WHERE nivel = 'campaign' AND data BETWEEN ${deDia} AND ${ateDia}
+    `),
+		// As MESMAS contagens do funil — uma definição de "qualificado" só.
+		db.execute<Record<string, unknown>>(sql`
+      SELECT ${contagensDoFunil(de, ate)}
+      FROM visits v
+      LEFT JOIN conversations c ON c.visit_id = v.id AND c.is_simulated = false
+      LEFT JOIN leads l ON l.conversation_id = c.id AND l.is_simulated = false
+      LEFT JOIN bevi_proposals bp ON bp.conversation_id = c.id
+      WHERE v.created_at BETWEEN ${de} AND ${ate}
+        AND ${VISITA_DE_GENTE}
+    `),
+		computeCustoDeIA({ de, ate }),
+		computeCustoDeMensagem({ de, ate }),
+	]);
+
+	const linhaInvestimento = investimento.rows[0] ?? {};
+	const linhaContagens = contagens.rows[0] ?? {};
+	const temLeituraDaMeta = num(linhaInvestimento.linhas) > 0;
+
+	return {
+		investimentoMetaCents: temLeituraDaMeta ? num(linhaInvestimento.total_cents) : null,
+		custoDeIA,
+		custoDeMensagem,
+		contagens: {
+			conversas: num(linhaContagens.conversas),
+			identificados: num(linhaContagens.identificados),
+			qualificados: num(linhaContagens.qualificados),
+		},
+		fontes: {
+			investimento: "Meta (reportado)",
+			custoDeIA: "Langfuse",
+			custoDeMensagem: "Postgres (volume) + cadastro de preço",
+			contagens: "Postgres",
+		},
 	};
 }

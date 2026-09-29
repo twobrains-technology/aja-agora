@@ -1,7 +1,9 @@
 ---
 id: FIX-393
 titulo: "A tela do CPC, com a fonte de cada número"
-status: todo
+status: done
+commit: 217980f4
+executado_em: 2026-09-29
 bloco: bloco-custo
 arquivos:
   - src/lib/admin/performance-queries.ts
