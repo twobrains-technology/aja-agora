@@ -484,6 +484,10 @@ export function registrarToque(
 	const passo = (reentrada ? 0 : estado.step) + 1;
 	if (passo > parametros.maxToques) return estado;
 
+	// DECISÃO DO DONO (28/09/2026): esgotar SÓ PARA. `ESGOTADO` é terminal sem
+	// transição para `perdido` e sem alerta — nada aqui toca `leads.stage`. A
+	// prova é o FIX-386 (`motor.test.ts`); o ponto gêmeo do esgotamento está em
+	// `motor.ts` (`normalizarSequenciaMorta`).
 	const esgotou = passo >= parametros.maxToques;
 
 	return {

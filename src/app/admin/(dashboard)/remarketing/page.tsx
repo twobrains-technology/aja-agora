@@ -31,6 +31,7 @@ import { ConversationDetailPanel } from "@/components/admin/conversations/conver
 import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter";
 import { usePeriodoPadrao } from "@/components/admin/dashboard/periodo-provider";
 import { CartoesDaRegua } from "@/components/admin/remarketing/cartoes-da-regua";
+import { PainelDeReentrada } from "@/components/admin/remarketing/painel-de-reentrada";
 import { SecaoDeInsights } from "@/components/admin/remarketing/insights-da-regua";
 import { BlocoResumoDaRegua } from "@/components/admin/remarketing/resumo-da-regua";
 import { TabelaRemarketing } from "@/components/admin/remarketing/tabela-remarketing";
@@ -249,6 +250,12 @@ function ReguaContent() {
 						/>
 					) : (
 						<Skeleton className="h-24 w-full" />
+					)}
+
+					{/* A PORTA DO BOLO PARADO: a régua não inscreve sozinha quem passou dos 7
+					    dias — esta ação traz o bolo de volta, em lote e por decisão do operador. */}
+					{data && (
+						<PainelDeReentrada ligada={data.ligada} onReentrou={() => void carregar()} />
 					)}
 
 					{/* Régua nunca ligada: não há lista nem contador para mostrar. O estado

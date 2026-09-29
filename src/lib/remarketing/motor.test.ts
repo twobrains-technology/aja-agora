@@ -25,7 +25,14 @@ import {
 	ultimoToqueDerivado,
 	ultimoToqueDoFato,
 } from "./motor";
-import { type EstadoRegua, estadoInicial, JANELA_DO_TETO_MS, MAX_TOQUES } from "./regua";
+import {
+	type EstadoRegua,
+	estadoInicial,
+	JANELA_DO_TETO_MS,
+	MAX_TOQUES,
+	podeDisparar,
+	registrarToque,
+} from "./regua";
 
 const DIA = 24 * 60 * 60 * 1000;
 const HORA = 60 * 60 * 1000;
@@ -470,5 +477,89 @@ describe("o opt-out é detectado no texto do inbound, com parcimônia", () => {
 	it("marca com acento e sem acento (o texto é normalizado)", () => {
 		expect(ehPedidoDeOptout("não quero mais")).toBe(true);
 		expect(ehPedidoDeOptout("nao quero mais")).toBe(true);
+	});
+});
+
+// ─── FIX-386: esgotar os toques SÓ PARA (decisão do dono, 28/09/2026) ────────
+//
+// O comportamento já era o pedido pelo dono: `ESGOTADO` é terminal e não toca
+// `leads.stage`. O que faltava era o TESTE que trava isso — para que ninguém
+// (nem nós, na próxima onda) faça o esgotamento transitar o lead para `perdido`
+// nem criar alerta de revisão humana (o T2/T3 do AJA-24 morreram nesta decisão).
+describe("esgotar a sequência SÓ PARA — não vira `perdido` e não cria alerta", () => {
+	it("o terceiro toque grava ESGOTADO com o motivo da régua, e nada de `perdido`", () => {
+		// Dois toques já saíram; o terceiro é o que esgota.
+		const antes = estadoInicial({
+			objetivo: "carro",
+			status: "ATIVO",
+			step: 2,
+			nextTouchAt: TOQUE_1,
+			ultimoToqueEm: new Date(TOQUE_1.getTime() - 3 * DIA),
+			ultimoInboundEm: INBOUND,
+		});
+
+		const depois = registrarToque(antes, TOQUE_1);
+
+		expect(depois.status).toBe("ESGOTADO");
+		expect(depois.step).toBe(MAX_TOQUES);
+		expect(depois.motivoSaida).toBe("tres_toques_sem_resposta");
+		expect(depois.nextTouchAt).toBeNull();
+		// A linha da régua SÓ tem campos da régua: nenhum vestígio de transição de
+		// funil. O motivo do esgotamento nunca é "perdido".
+		expect(depois.motivoSaida).not.toBe("perdido");
+		expect(Object.keys(depois)).not.toContain("stage");
+		expect(Object.keys(depois)).not.toContain("perdido");
+	});
+
+	it("esgotado é terminal: a régua para e o motivo é `esgotado`, nunca `perdido`", () => {
+		const esgotado = estadoInicial({
+			objetivo: "carro",
+			status: "ESGOTADO",
+			step: MAX_TOQUES,
+			motivoSaida: "tres_toques_sem_resposta",
+		});
+
+		const veredito = podeDisparar(esgotado, TOQUE_1);
+		expect(veredito).toEqual({ pode: false, motivo: "esgotado" });
+	});
+
+	it("o motor fecha a linha em ESGOTADO (sem tocar lead) quando a cota reabre", () => {
+		// Linha ATIVO no teto de toques, com a cota de 30 dias já livre: o motor
+		// fecha a sequência gravando ESGOTADO — e SÓ isso.
+		const ativoNoTeto = estadoInicial({
+			objetivo: "carro",
+			status: "ATIVO",
+			step: MAX_TOQUES,
+			nextTouchAt: TOQUE_1,
+			ultimoToqueEm: new Date(TOQUE_1.getTime() - 40 * DIA),
+			ultimoInboundEm: INBOUND,
+		});
+
+		const decisao = decidir({ agora: TOQUE_1, estado: ativoNoTeto, telefone: "5562999998888" });
+
+		expect(decisao.acao).toEqual({ tipo: "nada", motivo: "esgotado" });
+		expect(decisao.proximoEstado?.status).toBe("ESGOTADO");
+		expect(decisao.proximoEstado?.motivoSaida).toBe("tres_toques_sem_resposta");
+		expect(decisao.proximoEstado?.nextTouchAt).toBeNull();
+		expect(decisao.proximoEstado?.motivoSaida).not.toBe("perdido");
+	});
+
+	it("quem respondeu no meio do caminho continua sem esgotar", () => {
+		// Dois toques saíram, o cliente respondeu: a linha para em RESPONDEU e o
+		// esgotamento nunca acontece — mesmo com `step` abaixo do teto.
+		const respondeu = estadoInicial({
+			objetivo: "carro",
+			status: "RESPONDEU",
+			step: 2,
+			motivoSaida: "cliente_respondeu",
+			ultimoToqueEm: new Date(TOQUE_1.getTime() - 3 * DIA),
+			ultimoInboundEm: new Date(TOQUE_1.getTime() - DIA),
+		});
+
+		const decisao = decidir({ agora: TOQUE_1, estado: respondeu, telefone: "5562999998888" });
+
+		expect(decisao.acao).toEqual({ tipo: "nada", motivo: "ja_respondeu" });
+		expect(decisao.proximoEstado?.status).toBe("RESPONDEU");
+		expect(decisao.proximoEstado?.status).not.toBe("ESGOTADO");
 	});
 });

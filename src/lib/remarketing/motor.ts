@@ -503,6 +503,15 @@ function normalizarSequenciaMorta(estado: EstadoRegua, motivo: MotivoBloqueio): 
 		};
 	}
 
+	// ── DECISÃO DO DONO (28/09/2026): esgotar os toques SÓ PARA ────────────────
+	//
+	// `ESGOTADO` é TERMINAL e NÃO transita o lead para `perdido`, e NÃO cria
+	// alerta de "aguardando revisão humana" (morreram o T2 e o T3 do AJA-24, que
+	// previam transição automática). Nada aqui — nem em `regua.ts` — toca
+	// `leads.stage` nem escreve `lead_events`: quem cuida da raia do funil é a
+	// mesa, à mão. O que a régua grava é só o estado da LINHA dela (`status`,
+	// `motivo_saida`, `next_touch_at`). Quem ler isto depois não "conserte"
+	// criando a transição: a prova está em `motor.test.ts` (FIX-386).
 	if (motivo === "esgotado") {
 		return {
 			...estado,
