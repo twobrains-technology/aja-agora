@@ -25,7 +25,12 @@ import {
 	PASSOS_DO_PERCURSO,
 	type PassoDoPercurso,
 } from "@/lib/admin/percurso-types";
-import { chaveDaPessoa, conversaIdentificada, teveProposta, viuOferta } from "@/lib/admin/sinais-do-funil";
+import {
+	chaveDaPessoa,
+	conversaIdentificada,
+	teveProposta,
+	viuOferta,
+} from "@/lib/admin/sinais-do-funil";
 import { sqlEscreveuAlgoProprio, sqlSoPrePreenchida } from "@/lib/funil/mensagem-pre-preenchida";
 import { isoDeSaoPaulo } from "./conversas";
 import type { LinhaExportada } from "./formato";

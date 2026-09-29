@@ -34,9 +34,9 @@ import {
 	conversaIdentificada,
 	conversaViva,
 	teveProposta,
-	viuOferta,
 	VISITA_DE_GENTE,
 	VISITA_NAO_E_ECO,
+	viuOferta,
 } from "./sinais-do-funil";
 
 /** Teto de linhas por página. Acima disso a tela deixa de ser lista e vira dump. */

@@ -40,9 +40,9 @@ import {
 	conversaIdentificada,
 	conversaViva,
 	teveProposta,
-	viuOferta,
 	VISITA_CONTAVEL,
 	VISITA_DE_GENTE,
+	viuOferta,
 } from "./sinais-do-funil";
 
 /** O dia que o negócio enxerga. A operação é brasileira; o servidor é UTC. */
