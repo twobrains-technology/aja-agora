@@ -1,11 +1,13 @@
 ---
 id: FIX-398
 titulo: "`viu oferta` tem UMA verdade — hoje o painel e o agente discordam"
-status: todo
+status: done
 bloco: bloco-telefone-ab
 arquivos:
   - src/lib/admin/sinais-do-funil.ts
 rodada: 2026-09-29
+commit: 2c3d88e0
+executado_em: 2026-09-29
 ---
 ## Palavras do operador
 Bruna, 12:19 (lendo o funil dela): *"viram oferta, 9 → 18... e a proposta criada: zero"*. Ela está

@@ -1,12 +1,14 @@
 ---
 id: FIX-395
 titulo: "Variante B — o telefone ANTES de liberar a comparação"
-status: todo
+status: done
 bloco: bloco-telefone-ab
 arquivos:
   - src/components/chat/
   - src/lib/chat/
 rodada: 2026-09-29
+commit: caff5083
+executado_em: 2026-09-29
 ---
 ## Palavras do operador
 Bruna Perrotta, 12:07:52: *"Primeiro coisa que a gente está falando aqui de plano de ação é: antes de
