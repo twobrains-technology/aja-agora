@@ -207,6 +207,30 @@ export function chavesDoToque(fase: FaseDoFunil, objetivo: string | null | undef
 	return [`remarketing_${fase}_${objetivoCanonico(objetivo)}`, generico];
 }
 
+/** A chave e a arte que saem JUNTAS — a mesma entrada produz as duas. */
+export interface ComunicacaoDoToque {
+	fase: FaseDoFunil;
+	/** Lista ordenada de chaves candidatas: `[fase+bem, genérico]` ou só o genérico. */
+	chaves: string[];
+	/** A arte do MESMO bem da primeira chave; `null` quando não há bem conhecido. */
+	arte: string | null;
+}
+
+/**
+ * A comunicação do toque numa peça só: fase, chaves e arte (FIX-389).
+ *
+ * Existe para que chave e arte não possam divergir: as duas nascem do MESMO
+ * `objetivo`, e é a primeira chave que diz qual bem a arte representa. Chave
+ * genérica (sem bem) nunca vem com arte de bem — o `arteDoObjetivo` devolve
+ * `null` e a comunicação sai só com o texto.
+ */
+export function comunicacaoDoToque(
+	fase: FaseDoFunil,
+	objetivo: string | null | undefined,
+): ComunicacaoDoToque {
+	return { fase, chaves: chavesDoToque(fase, objetivo), arte: arteDoObjetivo(objetivo) };
+}
+
 /**
  * A arte que acompanha o toque 01 (o único que sai como conversa).
  *
@@ -490,20 +514,20 @@ export function decidir(entrada: EntradaDoMotor): DecisaoDoMotor {
 	// 4. COMO entregar. A comunicação (chave e arte) nasce da MESMA entrada: a
 	// fase × o bem. O toque SAIU: registra uma vez e usa o mesmo estado para
 	// contagem e gravação.
-	const chaves = chavesDoToque(entrada.fase, estado.objetivo);
+	const comunicacao = comunicacaoDoToque(entrada.fase, estado.objetivo);
 	const proximoEstado = registrarToque(estado, agora, parametros);
 	const touches30d = contarToquesNaJanela(proximoEstado, agora, parametros);
 
 	if (pode.entrega === "texto_livre") {
 		return {
-			acao: { tipo: "turno_de_retomada", passo: pode.step, arte: arteDoObjetivo(estado.objetivo) },
+			acao: { tipo: "turno_de_retomada", passo: pode.step, arte: comunicacao.arte },
 			proximoEstado,
 			touches30d,
 		};
 	}
 
 	return {
-		acao: { tipo: "template", passo: pode.step, usageKeys: chaves },
+		acao: { tipo: "template", passo: pode.step, usageKeys: comunicacao.chaves },
 		proximoEstado,
 		touches30d,
 	};
