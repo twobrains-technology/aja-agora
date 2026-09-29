@@ -25,16 +25,25 @@
  * O SINAL que põe a conversa na lista de candidatos.
  *
  * A ordem de precedência importa: uma conversa pode ter mais de um sinal, e o
- * relatório precisa de UM motivo por linha para ser acionável. `teste` vem
- * primeiro porque é o mais forte (já é decisão tomada); `telefone_da_equipe`
- * depois, que é quase-certeza (é o número de quem atende); `sem_contato` em
- * seguida, que é "chegou à mesa e não dá para recontactar"; e `mesa_sem_origem`
- * por último, porque "sem campanha" é indício, não prova — cliente que chegou
- * por indicação ou busca também não tem campanha.
+ * relatório precisa de UM motivo por linha para ser acionável.
+ * `proposta_em_teste` vem primeiro porque é o mais ESPECÍFICO e o mais caro se
+ * ficar invisível: a conversa de teste gerou proposta na ADMINISTRADORA, e é
+ * ela que aparece no relatório da Bruna (23/09) como se fosse venda. Dizer
+ * "teste" sozinho não conta essa história. `teste` depois, que é decisão já
+ * tomada; `telefone_da_equipe` em seguida, que é quase-certeza (é o número de
+ * quem atende); `sem_contato`, que é "chegou à mesa e não dá para recontactar";
+ * e `mesa_sem_origem` por último, porque "sem campanha" é indício, não prova —
+ * cliente que chegou por indicação ou busca também não tem campanha.
  */
-export type MotivoDeLimpeza = "teste" | "telefone_da_equipe" | "sem_contato" | "mesa_sem_origem";
+export type MotivoDeLimpeza =
+	| "proposta_em_teste"
+	| "teste"
+	| "telefone_da_equipe"
+	| "sem_contato"
+	| "mesa_sem_origem";
 
 export const ROTULO_DO_MOTIVO_DE_LIMPEZA: Record<MotivoDeLimpeza, string> = {
+	proposta_em_teste: "proposta criada em conversa de teste",
 	teste: "já marcada como teste",
 	telefone_da_equipe: "telefone da equipe",
 	sem_contato: "na mesa e sem contato",
@@ -43,6 +52,7 @@ export const ROTULO_DO_MOTIVO_DE_LIMPEZA: Record<MotivoDeLimpeza, string> = {
 
 /** Em que ordem os sinais são avaliados — o primeiro que casa é o motivo. */
 export const ORDEM_DOS_MOTIVOS_DE_LIMPEZA: readonly MotivoDeLimpeza[] = [
+	"proposta_em_teste",
 	"teste",
 	"telefone_da_equipe",
 	"sem_contato",
@@ -59,6 +69,16 @@ export interface FatosParaLimpeza {
 	naMesaSemContato: boolean;
 	/** Chegou à mesa (handoff) e a conversa NÃO tem campanha que a explique. */
 	naMesaSemOrigemDeCampanha: boolean;
+	/**
+	 * Quantas propostas (`bevi_proposals`) esta conversa tem.
+	 *
+	 * O sinal que a limpeza não olhava: uma conversa marcada como teste pode ter
+	 * criado proposta na administradora, e essa proposta continua existindo lá —
+	 * invisível no painel (que exclui `is_simulated`) e visível no relatório dela.
+	 * A contagem só vira motivo junto com `jaMarcadaComoTeste`; proposta REAL numa
+	 * conversa de cliente não é sinal de limpeza nenhuma.
+	 */
+	propostas: number;
 }
 
 /**
@@ -68,6 +88,10 @@ export interface FatosParaLimpeza {
  * decide marcar é o dono, na lista.
  */
 export function motivoDeLimpeza(fatos: FatosParaLimpeza): MotivoDeLimpeza | null {
+	// Mais específico antes do genérico: a conversa de teste COM proposta é o
+	// caso que polui a administradora, e o motivo tem que dizer isso — `teste`
+	// sozinho faria a proposta parecer já resolvida.
+	if (fatos.jaMarcadaComoTeste && fatos.propostas > 0) return "proposta_em_teste";
 	if (fatos.jaMarcadaComoTeste) return "teste";
 	if (fatos.telefoneDaEquipe) return "telefone_da_equipe";
 	if (fatos.naMesaSemContato) return "sem_contato";

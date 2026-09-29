@@ -6,6 +6,8 @@
  * só. Duas listas (a da tela e a da rota) divergiriam no primeiro tipo novo.
  */
 
+import type { Campanhas } from "@/lib/admin/campanhas";
+import type { ModoDoPasso, PassoDoPercurso } from "@/lib/admin/percurso-types";
 import { contarConversas, exportarConversas } from "./conversas";
 import type { LinhaExportada } from "./formato";
 import { contarCandidatosDeLimpeza, exportarCandidatosDeLimpeza } from "./limpeza";
@@ -27,6 +29,21 @@ export interface OpcoesDeExportacao {
 	ate: Date;
 	/** Padrão `true`. */
 	mascarar?: boolean;
+	/**
+	 * O RECORTE da tela que pediu o arquivo.
+	 *
+	 * Nasceu do pedido da cliente (23/09): *"Só preciso ter um diagnóstico por
+	 * etapa"*. Sem estes campos, exportar com um degrau selecionado devolvia TODOS
+	 * os degraus — o arquivo respondia por outro recorte que a lista.
+	 *
+	 * Só o recorte de Percurso os usa hoje; os demais tipos ignoram o que não lhes
+	 * diz respeito (o contrato é um só, como o `tipo` da URL).
+	 */
+	passo?: PassoDoPercurso | null;
+	modo?: ModoDoPasso;
+	origem?: string | null;
+	campanha?: Campanhas;
+	q?: string | null;
 }
 
 /** Roda o recorte pedido e devolve as linhas tipadas. */

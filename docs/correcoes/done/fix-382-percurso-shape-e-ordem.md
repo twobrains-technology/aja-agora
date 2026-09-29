@@ -1,12 +1,14 @@
 ---
 id: FIX-382
 titulo: "A lista de parados traz autor da última interação e ordena pelo mais parado"
-status: todo
+status: done
 bloco: bloco-percurso9
 arquivos:
   - src/lib/admin/percurso-types.ts
   - src/lib/admin/percurso-queries.ts
 rodada: 2026-09-28
+commit: 5b07705a
+executado_em: 2026-09-28
 ---
 ## Palavras do operador
 Bruna, reunião de 22/09 (12:10:09): *"Eu preciso saber quem são esses nove, porque se for o caso, eu

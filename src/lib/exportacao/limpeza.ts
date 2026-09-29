@@ -18,6 +18,7 @@
 import { listarCandidatosDeLimpeza } from "@/lib/admin/limpeza-queries";
 import type { LinhaExportada } from "./formato";
 import { mascararNome, mascararTelefone } from "./mascarar";
+import { SEM_PROPOSTA } from "./textos";
 
 export interface OpcoesDeLimpeza {
 	de: Date;
@@ -65,6 +66,12 @@ export async function exportarCandidatosDeLimpeza(
 		motivo: candidato.motivo ?? "sem_motivo",
 		canal: candidato.canal,
 		ultimaAtividade: candidato.ultimaAtividade,
+		// A CONTAGEM sai sempre, inclusive "0": o arquivo é cruzado com o
+		// relatório da administradora, e "0 propostas" é a afirmação de que a
+		// conversa não poluiu lá. A data só existe quando há proposta; sem ela vai
+		// o texto nomeado — célula vazia derruba o download (`conferirSemVazio`).
+		propostas: String(candidato.propostas),
+		propostaCriadaEm: candidato.propostaCriadaEm ?? SEM_PROPOSTA,
 		// O `[ ]` do pedido: quem aprova marca na planilha. Já marcada como teste
 		// sai `[x]` — a linha continua na lista para o dono ver o que já está fora
 		// do funil, em vez de sumir e parecer que nunca teve sinal.
