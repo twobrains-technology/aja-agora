@@ -1367,6 +1367,41 @@ export const remarketingConfig = pgTable(
 	(table) => [uniqueIndex("remarketing_config_chave_idx").on(table.chave)],
 );
 
+// ─── Cadastro de custos (o número que o dono digita na tela) ─────────────────
+//
+// O custo de IA sai do Langfuse em DÓLAR; o investimento da Meta e o preço da
+// mensagem saem em REAL. Para o painel fechar um CPC numa moeda só, os dois
+// números que NÃO são fato medido passam a ser CADASTRO — mesmo desenho do
+// `remarketing_config`: chave-valor de texto, lido com tipo na borda, ausência
+// de linha = "não calculável" (nunca zero).
+//
+// Chaves conhecidas hoje:
+//   `cotacao_usd_brl`        — quantos reais vale 1 dólar (custo de IA → R$).
+//   `preco_mensagem_cents`   — preço em centavos de R$ de uma mensagem de
+//                              template/remarketing (a tabela da Meta muda por
+//                              categoria e país; por isso é cadastro, não código).
+//
+// Nada de preço de MODELO aqui: o preço por modelo vive no Langfuse (rota B),
+// e o spec de 28/09 listou a tabela de preço versionada em código como fora de
+// escopo.
+export const custosConfig = pgTable(
+	"custos_config",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		// Ex `cotacao_usd_brl`, `preco_mensagem_cents`.
+		chave: text().notNull(),
+		// Sempre texto: o tipo está na constante que esta chave substitui.
+		valor: text().notNull(),
+		descricao: text(),
+		atualizadoPor: text("atualizado_por"),
+		atualizadoEm: timestamp("atualizado_em", { withTimezone: true })
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull(),
+	},
+	(table) => [uniqueIndex("custos_config_chave_idx").on(table.chave)],
+);
+
 // ─── WhatsApp: idempotência + serialização por conversa ──────────────────────
 
 // Chave de "isso só pode acontecer UMA vez" no canal WhatsApp. Insert-if-absent
