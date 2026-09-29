@@ -54,12 +54,19 @@ describe("o cadastro nasce vazio e não muda nada", () => {
 		}
 	});
 
-	it("o cadastro cobre exatamente os oito campos da régua", () => {
+	it("o cadastro cobre exatamente os oito campos ESCALARES da régua", () => {
 		expect([...CAMPOS_COM_CADASTRO].sort()).toEqual([...CAMPOS_DOS_PARAMETROS].sort());
 		for (const campo of CAMPOS_DOS_PARAMETROS) {
 			expect(chaveDoCampo(campo), campo).toBeTypeOf("string");
 		}
 		expect(PARAMETROS_DO_CADASTRO).toHaveLength(CAMPOS_DOS_PARAMETROS.length);
+	});
+
+	it("a escala intra-janela é a única lista — e não tem chave escalar", () => {
+		// Ela é guardada numa linha CSV (ver ADR do bloco régua) e por isso NÃO
+		// entra em `PARAMETROS_DO_CADASTRO`: a tela de config reenvia todos os
+		// vigentes no save e um valor não-numérico voltaria como remoção.
+		expect(chaveDoCampo("escalaDeRetomadaMs")).toBeNull();
 	});
 
 	it("toda chave do cadastro é snake_case de banco (sem acento, sem espaço)", () => {
@@ -91,6 +98,9 @@ describe("com linha, o banco manda — na unidade humana, convertida uma vez só
 			janelaDoTetoMs: 15 * DIA_MS,
 			horaAbertura: 8,
 			horaFechamento: 21,
+			// A escala não tem linha no cadastro: com as 8 linhas da régua, ela fica
+			// na fábrica.
+			escalaDeRetomadaMs: PARAMETROS_DE_FABRICA.escalaDeRetomadaMs,
 		});
 
 		for (const vigente of leitura.vigentes) {
@@ -253,6 +263,67 @@ describe("a validação da gravação recusa o que o motor não pode ler", () =>
 	});
 });
 
+describe("a escala intra-janela no cadastro (linha CSV, com validação de faixa)", () => {
+	const MIN = 60 * 1000;
+
+	it("sem linha, a escala é a de fábrica e a origem é 'fabrica'", () => {
+		const leitura = montarLeitura([]);
+		expect(leitura.escalaDeRetomada).toEqual({
+			chave: "escala_retomada_minutos",
+			valor: "90,180,300",
+			origem: "fabrica",
+			valorInvalido: null,
+			minimo: 1,
+			maximo: 24 * 60,
+			maximoDePassos: 5,
+		});
+	});
+
+	it("com linha, o banco manda e a origem vira 'cadastro'", () => {
+		const leitura = montarLeitura([{ chave: "escala_retomada_minutos", valor: " 5 , 10 ,15 " }]);
+		expect(leitura.parametros.escalaDeRetomadaMs).toEqual([5 * MIN, 10 * MIN, 15 * MIN]);
+		expect(leitura.escalaDeRetomada.valor).toBe("5,10,15");
+		expect(leitura.escalaDeRetomada.origem).toBe("cadastro");
+		expect(leitura.escalaDeRetomada.valorInvalido).toBeNull();
+	});
+
+	it("linha corrompida cai na fábrica e a tela avisa", () => {
+		for (const bruta of ["dez,vinte", "30,10", "0", "1441", "1,2,3,4,5,6"]) {
+			const leitura = montarLeitura([{ chave: "escala_retomada_minutos", valor: bruta }]);
+			expect(leitura.parametros.escalaDeRetomadaMs, bruta).toEqual(
+				PARAMETROS_DE_FABRICA.escalaDeRetomadaMs,
+			);
+			expect(leitura.escalaDeRetomada.origem, bruta).toBe("fabrica");
+			expect(leitura.escalaDeRetomada.valorInvalido, bruta).toBe(bruta);
+		}
+	});
+
+	it("a gravação recusa o que o motor não pode ler, e normaliza o que aceita", () => {
+		expect(validarEntradas([{ chave: "escala_retomada_minutos", valor: "10, 20, 30" }])).toEqual({
+			erros: {},
+			valores: [{ chave: "escala_retomada_minutos", valor: "10,20,30" }],
+			remocoes: [],
+		});
+		expect(
+			validarEntradas([{ chave: "escala_retomada_minutos", valor: "10,cinco" }]).erros
+				.escala_retomada_minutos,
+		).toMatch(/vírgula/i);
+		expect(
+			validarEntradas([{ chave: "escala_retomada_minutos", valor: "1500" }]).erros
+				.escala_retomada_minutos,
+		).toMatch(/entre 1 e 1440/);
+	});
+
+	it("campo vazio é remoção — a escala volta ao padrão de fábrica", () => {
+		const { erros, remocoes, valores } = validarEntradas([
+			{ chave: "escala_retomada_minutos", valor: "  " },
+		]);
+		expect(erros).toEqual({});
+		expect(valores).toHaveLength(0);
+		expect(remocoes).toEqual(["escala_retomada_minutos"]);
+	});
+});
+
 // ─── A costura: o cadastro vira DECISÃO ───────────────────────────────────
 //
 // O que se prova aqui é a ligação inteira, não a leitura: cadastro (banco) →
@@ -261,25 +332,22 @@ describe("a validação da gravação recusa o que o motor não pode ler", () =>
 // ciclo, sem deploy" sem que nada do banco chegasse ao envio.
 
 describe("o cadastro move a decisão do motor — não só o número lido", () => {
-	const INBOUND = new Date("2026-09-14T14:00:00Z");
 	/** 12h30 em Brasília — o instante do toque 01 (90 min de silêncio). */
 	const TOQUE_1 = new Date("2026-09-14T15:30:00Z");
 
 	/**
-	 * O estado ANTES do toque 01: o cliente falou e ficou em silêncio mais que os
-	 * 90 min, então o toque 01 está elegível agora. O intervalo que o motor vai
-	 * AGENDAR para o toque seguinte é `diasAteSegundoToque` — o parâmetro sob
-	 * teste. `retomadaPermitida` entra verdadeiro porque o portão de retomadas
-	 * (`MAX_RETOMADAS`/backoff, em `workers/retomada.ts`) é OUTRO item: aqui se
-	 * prova só que o cadastro move a data do toque.
+	 * O estado ANTES do toque 01, FORA da janela de 24 h do último inbound: é o
+	 * regime em que o intervalo seguinte é o de DIAS (`diasAteSegundoToque`), o
+	 * parâmetro sob teste. Dentro da janela valeria a escala curta (FIX-376), e o
+	 * que se prova aqui é a ligação cadastro → motor.
 	 */
 	function estadoAguardandoToque1() {
 		return estadoInicial({
 			objetivo: "carro",
 			status: "ATIVO",
 			step: 0,
-			ultimoInboundEm: INBOUND,
-			nextTouchAt: new Date(INBOUND.getTime() + 90 * 60_000),
+			ultimoInboundEm: new Date(TOQUE_1.getTime() - 25 * 60 * 60_000),
+			nextTouchAt: new Date(TOQUE_1.getTime() - 25 * 60 * 60_000 + 90 * 60_000),
 			toquesNaJanela: [],
 		});
 	}
@@ -290,12 +358,12 @@ describe("o cadastro move a decisão do motor — não só o número lido", () =
 			agora: TOQUE_1,
 			estado: estadoAguardandoToque1(),
 			telefone: "5562999998888",
-			retomadaPermitida: true,
+			fase: "inicio",
 			parametros,
 		});
 
-		expect(decisao.acao.tipo).toBe("turno_de_retomada");
-		expect(decisao.acao.tipo === "turno_de_retomada" ? decisao.acao.passo : null).toBe(1);
+		expect(decisao.acao.tipo).toBe("template");
+		expect(decisao.acao.tipo === "template" ? decisao.acao.passo : null).toBe(1);
 		const quando = decisao.proximoEstado?.nextTouchAt ?? null;
 		return quando ? quando.getTime() - TOQUE_1.getTime() : null;
 	}

@@ -21,6 +21,7 @@ import { Clock, Power, PowerOff } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import type { ResumoDaRegua } from "@/lib/admin/remarketing-tela";
+import { MAX_TOQUES } from "@/lib/remarketing/regua";
 
 const nf = new Intl.NumberFormat("pt-BR");
 const nfDecimal = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
@@ -35,22 +36,63 @@ function Cartao({
 	valor,
 	detalhe,
 	title,
+	onClick,
 }: {
 	titulo: string;
 	valor: string;
 	detalhe?: string;
 	title?: string;
+	/** Quando existe, o cartão vira a porta para a lista que responde o número. */
+	onClick?: () => void;
 }) {
-	return (
-		<Card size="sm" className="gap-0 px-4" title={title}>
+	const conteudo = (
+		<>
 			<span className="block text-xs text-muted-foreground">{titulo}</span>
 			<span className="mt-0.5 block font-heading text-2xl font-semibold tabular-nums">{valor}</span>
 			{detalhe && <span className="mt-0.5 block text-xs text-muted-foreground">{detalhe}</span>}
+		</>
+	);
+
+	return (
+		<Card size="sm" className="gap-0" title={title}>
+			{onClick ? (
+				<button
+					type="button"
+					onClick={onClick}
+					className="w-full px-4 text-left transition-colors hover:bg-muted/50"
+					title={
+						title ? `${title} Clique para ver a lista.` : "Clique para ver a lista destes toques"
+					}
+				>
+					{conteudo}
+				</button>
+			) : (
+				<div className="px-4">{conteudo}</div>
+			)}
 		</Card>
 	);
 }
 
-export function BlocoResumoDaRegua({ resumo, ligada }: { resumo: ResumoDaRegua; ligada: boolean }) {
+export function BlocoResumoDaRegua({
+	resumo,
+	ligada,
+	onFiltrarToques,
+	maxToques = MAX_TOQUES,
+}: {
+	resumo: ResumoDaRegua;
+	ligada: boolean;
+	/**
+	 * Leva à lista de quem recebeu toque — a primeira metade da pergunta do dono
+	 * ("para quem que foi?"), logo no número que ele lê primeiro.
+	 */
+	onFiltrarToques?: () => void;
+	/**
+	 * O teto de toques vigente, do CADASTRO. Entra só nos RÓTULOS que citam o
+	 * número: com o cadastro em 2, "Esgotaram os 3 toques" seria mentira na tela
+	 * que existe justamente para dizer onde a régua para.
+	 */
+	maxToques?: number;
+}) {
 	const { aguardando } = resumo;
 	return (
 		<div className="space-y-2">
@@ -74,7 +116,8 @@ export function BlocoResumoDaRegua({ resumo, ligada }: { resumo: ResumoDaRegua; 
 				<Cartao
 					titulo="Toques enviados"
 					valor={nf.format(resumo.toquesEnviados)}
-					title="Mensagens que a régua disparou no período, somando os 3 passos."
+					onClick={onFiltrarToques}
+					title={`Mensagens que a régua disparou no período, somando os ${maxToques} passos.`}
 				/>
 				<Cartao
 					titulo="Responderam"
@@ -92,9 +135,9 @@ export function BlocoResumoDaRegua({ resumo, ligada }: { resumo: ResumoDaRegua; 
 					title="Opt-out: não recebem mais toque automático, por decisão do cliente."
 				/>
 				<Cartao
-					titulo="Esgotaram os 3 toques"
+					titulo={`Esgotaram os ${maxToques} toques`}
 					valor={nf.format(resumo.esgotaram)}
-					title="Os três toques saíram sem resposta."
+					title={`Os ${maxToques} toques saíram sem resposta.`}
 				/>
 				<Cartao
 					titulo="Aguardando o próximo toque"

@@ -60,8 +60,14 @@ import {
 	pickEmptyTurnFallback,
 } from "@/lib/chat/empty-turn-guard";
 import { publishMessage } from "@/lib/chat/message-bus";
+import { CHAVE_DO_TESTE_NO_METADATA } from "@/lib/chat/resultado-do-teste-do-telefone";
 import { streamErrorMessage } from "@/lib/chat/stream-error";
+import {
+	comparacaoGuardadaDaConversa,
+	registrarDesfechoDoTeste,
+} from "@/lib/chat/telefone-ab-do-servidor";
 import type { AjaUIMessage, ArtifactPartData } from "@/lib/chat/ui-message";
+import { varianteDaConversa } from "@/lib/chat/variante-da-visita";
 import {
 	isValidCpf,
 	loadIdentity,
@@ -296,10 +302,25 @@ export async function POST(req: NextRequest) {
 
 	// FIX-46: vincula o cookie `aja_uid` à conversa web ao criar, pra retomada
 	// same-device (GET /api/chat/resume acha "a conversa deste cookie").
+	//
+	// bloco-telefone-ab: a conversa NASCE com a sua variante do teste do telefone
+	// (FIX-394) — derivada da visita, decidida no servidor e gravada junto do
+	// `webCookie`. Aqui e não num turno posterior: é o único momento em que a
+	// semente (visitId) está garantidamente à mão, e sem persistir a variante o
+	// dia 01/10 só teria opinião (FIX-397).
 	if (providedId && !conv) {
 		const [created] = await db
 			.insert(conversations)
-			.values({ id: providedId, visitId, metadata: { webCookie: userKey } })
+			.values({
+				id: providedId,
+				visitId,
+				metadata: {
+					webCookie: userKey,
+					[CHAVE_DO_TESTE_NO_METADATA]: {
+						variante: varianteDaConversa({ visitId, conversationId: providedId }),
+					},
+				},
+			})
 			.returning();
 		conversationId = created.id;
 	} else if (conv) {
@@ -319,9 +340,22 @@ export async function POST(req: NextRequest) {
 				.where(eq(conversations.id, conv.id));
 		}
 	} else {
+		// bloco-telefone-ab: id GERADO aqui (em vez de `defaultRandom()`) porque a
+		// variante é derivada da conversa quando não há visita no cookie — e a
+		// semente precisa existir ANTES do insert para nascer junto do `webCookie`.
+		const novoId = crypto.randomUUID();
 		const [created] = await db
 			.insert(conversations)
-			.values({ visitId, metadata: { webCookie: userKey } })
+			.values({
+				id: novoId,
+				visitId,
+				metadata: {
+					webCookie: userKey,
+					[CHAVE_DO_TESTE_NO_METADATA]: {
+						variante: varianteDaConversa({ visitId, conversationId: novoId }),
+					},
+				},
+			})
 			.returning();
 		conversationId = created.id;
 	}
@@ -542,6 +576,81 @@ export async function POST(req: NextRequest) {
 										writer,
 										userKey,
 									});
+									return;
+								}
+
+								// ── bloco-telefone-ab (FIX-395/396) ───────────────────────────────────
+								// O telefone do desbloqueio da comparação: o dado mais sensível do
+								// teste, coletado no ponto em que a pessoa VÊ a oferta. Salva com a
+								// MESMA régua do `whatsapp_optin` (o celular vira contato do lead) e,
+								// na variante B, RE-EMITE a comparação que ficou guardada — os cards
+								// já foram persistidos pelo nó `persist`, então não há re-busca na
+								// Bevi nem número novo.
+								//
+								// 🚫 Nada aqui chama a Meta: nenhum template, nenhum teste A/B na
+								// plataforma. O número apenas deixa de estar descoberto.
+								if (body.action?.kind === "telefone_desbloqueio") {
+									const celularDigits = normalizePhoneBR(body.action.celular ?? "") ?? "";
+									if (celularDigits.length < 10) {
+										await writeAndSaveText(
+											writer,
+											conversationId,
+											meta.currentPersona ?? null,
+											"Preciso do celular completo, com DDD — dá uma conferida e me manda de novo?",
+										);
+										return;
+									}
+
+									// Grava o desfecho do teste ANTES de qualquer coisa: é ele que libera a
+									// comparação e que o endpoint do dia 01/10 lê.
+									await registrarDesfechoDoTeste(conversationId, {
+										desbloqueadoEm: new Date().toISOString(),
+									});
+									const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
+									// Falha ao gravar o contato não prende ninguém: o desfecho já está
+									// registrado e a comparação libera do mesmo jeito (item do FIX-395:
+									// "falha de gravação do telefone ⇒ a pessoa não fica travada").
+									await saveContactWhatsapp(conversationId, celularDigits).catch((err) => {
+										console.error("[telefone-ab] falha ao salvar o contato do desbloqueio:", err);
+									});
+
+									const guardada = await comparacaoGuardadaDaConversa(conversationId).catch(
+										() => [],
+									);
+									if (guardada.length > 0) {
+										await writeAndSaveText(
+											writer,
+											conversationId,
+											meta.currentPersona ?? null,
+											"Prontinho, anotei seu WhatsApp. Aqui está a sua comparação:",
+										);
+										for (const card of guardada) {
+											writer.write({
+												type: "data-artifact",
+												id: crypto.randomUUID(),
+												data: card as unknown as ArtifactPartData,
+											});
+										}
+									} else {
+										await writeAndSaveText(
+											writer,
+											conversationId,
+											meta.currentPersona ?? null,
+											"Prontinho, anotei seu WhatsApp. ✅",
+										);
+									}
+									return;
+								}
+
+								if (body.action?.kind === "telefone_desbloqueio_recusar") {
+									// "Agora não" fecha o pedido SEM apagar a comparação.
+									await registrarDesfechoDoTeste(conversationId, { recusado: true });
+									await writeAndSaveText(
+										writer,
+										conversationId,
+										meta.currentPersona ?? null,
+										"Sem problema — a sua comparação continua aí. Se quiser falar comigo pelo WhatsApp, é só me deixar o número.",
+									);
 									return;
 								}
 

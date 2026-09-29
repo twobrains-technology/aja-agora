@@ -5,6 +5,8 @@
  * Compartilhado entre a rota da API e a UI.
  */
 
+import type { ResultadoCustoDeIA } from "./custo-de-ia";
+import type { ResultadoCustoDeMensagem } from "./custo-de-mensagem";
 import type { FunilDeHandoff } from "./handoff-queries";
 import type { Origem } from "./origem-label";
 
@@ -22,10 +24,12 @@ import type { Origem } from "./origem-label";
  * gente do que "Viram oferta" — 200% de uma etapa pra outra, um funil que
  * cresce.
  *
- * Todas as etapas depois de `visitas` contam apenas conversas COM ORIGEM
- * conhecida. É o que faz disto um funil de MÍDIA: conversa que nunca passou
- * pela landing (WhatsApp orgânico, por exemplo) não nasceu de uma visita e
- * infla o funil sem pertencer a ele. O funil comercial completo vive na seção
+ * Todas as etapas depois de `visitas` contam apenas PESSOAS com conversa COM
+ * ORIGEM conhecida — a chave é a de `chaveDaPessoa` (o contato quando conhecido,
+ * senão o visitante), a mesma da Porta e do Percurso. É o que faz disto um funil
+ * de MÍDIA: conversa que nunca passou pela landing (WhatsApp orgânico, por
+ * exemplo) não nasceu de uma visita e infla o funil sem pertencer a ele. O funil
+ * comercial completo vive na seção
  * de baixo da mesma tela, e a faixa de cobertura diz quanto um representa do
  * outro.
  */
@@ -56,7 +60,7 @@ export const ETAPAS_FUNIL_MIDIA = [
 	{
 		chave: "propostas",
 		label: "Conversas com proposta",
-		ajuda: "Proposta criada na administradora — conta conversas, não linhas de proposta",
+		ajuda: "Proposta criada na administradora — conta pessoas, não linhas de proposta",
 	},
 	{ chave: "fechados", label: "Fechados", ajuda: "Contrato fechado" },
 ] as const;
@@ -79,6 +83,15 @@ export interface EtapaFunilMidia {
 	chave: ChaveEtapaFunil;
 	label: string;
 	ajuda: string;
+	/**
+	 * O número do degrau — em PESSOAS, nunca em conversas.
+	 *
+	 * A unidade é pessoa em TODAS as etapas depois de `visitas` (que conta
+	 * chegadas, sessão). "5 conversas do mesmo telefone" é 1 pessoa, e foi o
+	 * caso real que originou a mudança — medido em produção em 16/09/2026.
+	 * Voltar a contar conversa aqui faz a tela discordar do Percurso, da Porta
+	 * e do relatório da administradora, com o mesmo rótulo.
+	 */
 	count: number;
 	/** % em relação ao topo do funil (visitas). */
 	percentDoTopo: number;
@@ -95,7 +108,12 @@ export interface EtapaFunilMidia {
 	/** % que se perdeu da etapa anterior — onde o dinheiro vaza. */
 	quedaDaAnterior: number;
 	/**
-	 * Quantas conversas PARARAM nesta etapa (chegaram aqui e não passaram).
+	 * Quantas PESSOAS pararam nesta etapa (chegaram aqui e não passaram).
+	 *
+	 * Mesma unidade do `count`: se o degrau conta pessoa e este número conta
+	 * conversa, a soma das paradas deixa de fechar com o topo e o "% que se
+	 * perdeu" mistura duas unidades na mesma linha da tela. A pessoa para no
+	 * degrau MAIS FUNDO que alcançou — uma pessoa, um degrau.
 	 *
 	 * Absoluto, não percentual: "44,4% saíram aqui" sobre 18 conversas é
 	 * precisão falsa — o que se conserta é "8 pararam aqui".
@@ -108,6 +126,8 @@ export interface EtapaFunilMidia {
 	 * É a diferença entre duas decisões opostas: conserte o agente (morreu) ou
 	 * puxe de volta (está viva — o watchdog de retomada existe para isso). Sem
 	 * separar, o painel manda consertar o que só precisava de um empurrão.
+	 *
+	 * Por PESSOA: basta uma conversa dela estar viva para ela ser retomável.
 	 */
 	aindaVivas: number;
 }
@@ -182,7 +202,7 @@ export interface LinhaOrigem {
 	 * coisa, e o rótulo de cada um diz qual.
 	 */
 	comTelefone: number;
-	/** Propostas CRIADAS na administradora — conta linhas, não pessoas. */
+	/** Propostas CRIADAS na administradora — conta PESSOAS, não linhas de proposta. */
 	propostas: number;
 	fechados: number;
 	/** Fechados ÷ visitas, em %. A pergunta que decide onde a verba vai. */
@@ -210,6 +230,17 @@ export interface CoberturaAtribuicao {
 	conversasComOrigem: number;
 	conversasTotal: number;
 	percent: number;
+	/**
+	 * Conversas do período marcadas como TESTE (`is_simulated`).
+	 *
+	 * Elas ficam fora do funil por decisão de produto — teste interno inflando o
+	 * relatório é como verba vai pro criativo errado —, mas sair em SILÊNCIO custa
+	 * caro: a cliente comparou 5 propostas do relatório da administradora com o 0
+	 * do painel e concluiu que o painel mentia (16/09/2026, mutirão de teste da
+	 * equipe). Com o número na tela, o zero se explica sozinho e a linha leva à
+	 * lista com as simuladas incluídas.
+	 */
+	conversasDeTeste: number;
 }
 
 // ─── "Quem chegou" (cheiro de perfil) ───────────────────────────────────
@@ -238,6 +269,41 @@ export interface QuemChegou {
 	comValorInformado: number;
 }
 
+/**
+ * De onde cada número do bloco de custos saiu — a tela DECLARA a fonte.
+ *
+ * Não é decoração: sem isto, um custo de IA lido do Langfuse e um investimento
+ * lido da Meta apareceriam lado a lado como se fossem a mesma coisa medida do
+ * mesmo jeito, e quem lê não saberia em qual confiar.
+ */
+export interface FontesDoCusto {
+	investimento: string;
+	custoDeIA: string;
+	custoDeMensagem: string;
+	contagens: string;
+}
+
+/** As contagens da tela de Performance que o CPC usa como denominador. */
+export interface ContagensDoCpc {
+	conversas: number;
+	identificados: number;
+	qualificados: number;
+}
+
+/**
+ * O bloco de custos do período — cada metade com a sua leitura.
+ *
+ * `investimentoMetaCents` é `null` quando a Meta não reportou no período (nunca
+ * zero): o mesmo vale de "não calculável" que governa o resto da frente.
+ */
+export interface CustosDoCpc {
+	investimentoMetaCents: number | null;
+	custoDeIA: ResultadoCustoDeIA;
+	custoDeMensagem: ResultadoCustoDeMensagem;
+	contagens: ContagensDoCpc;
+	fontes: FontesDoCusto;
+}
+
 export interface PerformanceResponse {
 	funil: EtapaFunilMidia[];
 	porta: PortaDoFunil;
@@ -254,4 +320,6 @@ export interface PerformanceResponse {
 	 * só esconderia justamente a fronteira que interessa — a passagem de bastão.
 	 */
 	handoff: FunilDeHandoff;
+	/** O CPC que a cliente quer fechar: os custos do período, um a um. */
+	custos: CustosDoCpc;
 }

@@ -64,8 +64,9 @@ import { and, desc, eq, type SQL, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { beviProposals, remarketingTouches } from "@/db/schema";
 import { lerParametrosRegua } from "@/lib/admin/remarketing-config";
+import { faseDoFunil, teveProposta, viuOferta } from "@/lib/admin/sinais-do-funil";
 import type { ConversationMetadata } from "@/lib/agent/personas";
-import { metaOf, persistMeta } from "@/lib/conversation/meta";
+import { metaOf } from "@/lib/conversation/meta";
 import { despacharConversoesPendentes } from "@/lib/conversions/dispatch";
 import {
 	agregarMotivos,
@@ -96,7 +97,7 @@ import {
 	type ParametrosRegua,
 } from "@/lib/remarketing/regua";
 import { chaveTelefoneBR } from "@/lib/whatsapp/mesmo-numero";
-import { buildRetomadaDirective, podeRetomar } from "./retomada";
+import { buildRetomadaDirective } from "./retomada";
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 
@@ -119,6 +120,10 @@ export interface LinhaDaRegua {
 	phone: string | null;
 	nome: string | null;
 	optoutDaPessoaEm: Date | null;
+	/** O cliente já viu número de oferta na tela (`viuOferta`). */
+	viuOferta: boolean;
+	/** Existe proposta/simulação Bevi para a conversa (`teveProposta`). */
+	teveProposta: boolean;
 }
 
 export interface RemarketingDeps {
@@ -137,12 +142,7 @@ export interface RemarketingDeps {
 		touches30d: number;
 		agora: Date;
 	}) => Promise<void>;
-	/** Conta a retomada no metadata (MAX_RETOMADAS). Antes do envio. */
-	gravarRetomada?: (args: {
-		conversationId: string;
-		meta: ConversationMetadata;
-		agora: Date;
-	}) => Promise<void>;
+	/** Executa o turno de retomada (o mesmo directive do watchdog, sem o teto dele). */
 	dispararTurno?: (args: {
 		conversationId: string;
 		channel: "web" | "whatsapp";
@@ -153,7 +153,8 @@ export interface RemarketingDeps {
 	enviarTemplate?: (args: {
 		to: string;
 		conversationId: string;
-		usageKey: string;
+		/** Lista ordenada de chaves candidatas (fase × bem) — o dispatcher escolhe. */
+		usageKeys: readonly string[];
 		freeTextFallback: () => Promise<void>;
 	}) => Promise<void>;
 	/** O telefone é de atendente ATIVO no banco? (além da lista em código) */
@@ -330,7 +331,9 @@ export async function listarVencidas(agora: Date): Promise<LinhaDaRegua[]> {
 			       c.channel, c.wa_id AS "waId", c.metadata,
 			       c.last_inbound_at AS "lastInboundAt",
 			       ct.phone, ct.name AS "nome",
-			       ct.remarketing_optout_at AS "optoutDaPessoaEm"
+			       ct.remarketing_optout_at AS "optoutDaPessoaEm",
+			       ${viuOferta(sql`c`)} AS "viuOferta",
+			       ${teveProposta(sql`c`)} AS "teveProposta"
 			FROM remarketing_touches t
 			JOIN conversations c ON c.id = t.conversation_id
 			JOIN contacts ct ON ct.id = t.contact_id
@@ -364,6 +367,8 @@ export async function listarVencidas(agora: Date): Promise<LinhaDaRegua[]> {
 		phone: (l.phone as string | null) ?? null,
 		nome: (l.nome as string | null) ?? null,
 		optoutDaPessoaEm: l.optoutDaPessoaEm ? new Date(l.optoutDaPessoaEm as string) : null,
+		viuOferta: l.viuOferta === true,
+		teveProposta: l.teveProposta === true,
 	}));
 }
 
@@ -719,23 +724,6 @@ async function gravarEstado({
 		.where(eq(remarketingTouches.conversationId, conversationId));
 }
 
-async function gravarRetomada({
-	conversationId,
-	meta,
-	agora,
-}: {
-	conversationId: string;
-	meta: ConversationMetadata;
-	agora: Date;
-}): Promise<void> {
-	// Conta a tentativa antes de disparar: turno que morre no meio continua
-	// contado, senão o watchdog persegue justamente a conversa que quebra.
-	await persistMeta(conversationId, {
-		...meta,
-		retomada: { attempts: (meta.retomada?.attempts ?? 0) + 1, lastAt: agora.getTime() },
-	});
-}
-
 const dispararTurnoReal: NonNullable<RemarketingDeps["dispararTurno"]> = async ({
 	conversationId,
 	channel,
@@ -787,11 +775,11 @@ const enviarArteReal: NonNullable<RemarketingDeps["enviarArte"]> = async ({ to, 
 const enviarTemplateReal: NonNullable<RemarketingDeps["enviarTemplate"]> = async ({
 	to,
 	conversationId,
-	usageKey,
+	usageKeys,
 	freeTextFallback,
 }) => {
 	const { resolveAndSend } = await import("@/lib/whatsapp/template-dispatch");
-	await resolveAndSend({ to, conversationId, usageKey, freeTextFallback });
+	await resolveAndSend({ to, conversationId, usageKeys, freeTextFallback });
 };
 
 // ─── O ciclo ────────────────────────────────────────────────────────────────
@@ -807,7 +795,6 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 	const lerToques = deps.toquesDoContato ?? toquesDoContato;
 	const lerSimulacao = deps.simulacaoDoContato ?? simulacaoDoContato;
 	const gravar = deps.gravarEstado ?? gravarEstado;
-	const gravarRet = deps.gravarRetomada ?? gravarRetomada;
 	const dispararTurno = deps.dispararTurno ?? dispararTurnoReal;
 	const enviarArte = deps.enviarArte ?? enviarArteReal;
 	const enviarTemplate = deps.enviarTemplate ?? enviarTemplateReal;
@@ -952,8 +939,11 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 				agora,
 				estado,
 				telefone,
+				// A MACRO-FASE do funil é fato do servidor, lido dos sinais da conversa
+				// (`viu_oferta` / `teve_proposta`) na leitura da linha. É o que faz a
+				// mensagem certa para o momento certo (FIX-387/388).
+				fase: faseDoFunil({ viuOferta: linha.viuOferta, teveProposta: linha.teveProposta }),
 				optoutDaPessoaEm: linha.optoutDaPessoaEm,
-				retomadaPermitida: podeRetomar(meta, agora.getTime()),
 				telefoneDaEquipe: daEquipe,
 				parametros,
 			});
@@ -992,7 +982,9 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 			if (!telefone) continue;
 
 			if (decisao.acao.tipo === "turno_de_retomada") {
-				await gravarRet({ conversationId: linha.conversationId, meta, agora });
+				// O contador do WATCHDOG não é tocado aqui (FIX-377): quem conta os
+				// toques da régua é a régua (`step` / `toques_30d`). O `meta` entra só
+				// para o directive — o agente sabe onde a conversa parou.
 				await dispararTurno({
 					conversationId: linha.conversationId,
 					channel: linha.channel,
@@ -1012,7 +1004,7 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 			await enviarTemplate({
 				to: telefone,
 				conversationId: linha.conversationId,
-				usageKey: decisao.acao.usageKey,
+				usageKeys: decisao.acao.usageKeys,
 				freeTextFallback: async () => {
 					await dispararTurno({
 						conversationId: linha.conversationId,

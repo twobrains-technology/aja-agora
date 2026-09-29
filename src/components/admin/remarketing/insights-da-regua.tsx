@@ -35,6 +35,7 @@ import {
 	type EstadoDaRegua,
 	type InsightsDaRegua,
 	type LinhaDoFunil,
+	type Passo,
 	type ResumoDeTempos,
 } from "@/lib/admin/remarketing-tela";
 import { cn } from "@/lib/utils";
@@ -109,7 +110,19 @@ function SemDados({ estado }: { estado: EstadoDaRegua }) {
 	return null;
 }
 
-function FunilDaRegua({ linhas }: { linhas: LinhaDoFunil[] }) {
+function FunilDaRegua({
+	linhas,
+	onFiltrarPasso,
+}: {
+	linhas: LinhaDoFunil[];
+	/**
+	 * Leva à lista recortada naquele passo — a resposta a "para quem foi?".
+	 *
+	 * Opcional de propósito: sem o handler o passo continua sendo TEXTO, e não um
+	 * botão que não faz nada.
+	 */
+	onFiltrarPasso?: (passo: Passo) => void;
+}) {
 	return (
 		<Card>
 			<CardHeader>
@@ -138,7 +151,20 @@ function FunilDaRegua({ linhas }: { linhas: LinhaDoFunil[] }) {
 					<TableBody>
 						{linhas.map((linha) => (
 							<TableRow key={linha.passo}>
-								<TableCell className="font-medium">{linha.rotulo}</TableCell>
+								<TableCell className="font-medium">
+									{onFiltrarPasso ? (
+										<button
+											type="button"
+											onClick={() => onFiltrarPasso(linha.passo)}
+											className="text-left font-medium hover:underline"
+											title={`Ver quem está neste passo: ${linha.rotulo.toLowerCase()}`}
+										>
+											{linha.rotulo}
+										</button>
+									) : (
+										linha.rotulo
+									)}
+								</TableCell>
 								<TableCell className="text-right tabular-nums">
 									{nf.format(linha.chegaram)}
 								</TableCell>
@@ -269,15 +295,17 @@ function AtribuicaoDaConversao({ insights }: { insights: InsightsDaRegua }) {
 export function SecaoDeInsights({
 	insights,
 	estado,
+	onFiltrarPasso,
 }: {
 	insights: InsightsDaRegua;
 	estado: EstadoDaRegua;
+	onFiltrarPasso?: (passo: Passo) => void;
 }) {
 	return (
 		<section className="space-y-4" aria-label="Insights da régua">
 			{estado.tipo === "com_dados" ? (
 				<>
-					<FunilDaRegua linhas={insights.funil} />
+					<FunilDaRegua linhas={insights.funil} onFiltrarPasso={onFiltrarPasso} />
 					<AtribuicaoDaConversao insights={insights} />
 				</>
 			) : (

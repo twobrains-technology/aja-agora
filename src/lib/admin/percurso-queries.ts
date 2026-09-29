@@ -28,12 +28,15 @@ import {
 	type PessoaDoPercurso,
 	type ResumoDoPasso,
 } from "./percurso-types";
+import { type AvaliacaoDaRegua, avaliarReguaPorIds } from "./regua-por-conversa";
 import {
-	ARTIFACTS_DE_OFERTA_SQL,
 	chaveDaPessoa,
 	conversaIdentificada,
+	conversaViva,
+	teveProposta,
 	VISITA_DE_GENTE,
 	VISITA_NAO_E_ECO,
+	viuOferta,
 } from "./sinais-do-funil";
 
 /** Teto de linhas por página. Acima disso a tela deixa de ser lista e vira dump. */
@@ -52,6 +55,38 @@ function texto(valor: unknown): string | null {
 
 function iso(valor: unknown): string {
 	return new Date(valor as string).toISOString();
+}
+
+/**
+ * O papel da última mensagem vira quem falou, na língua da tela.
+ *
+ * `user` é o cliente; `assistant` é o agente. Qualquer outro valor (ou a
+ * ausência de mensagem) é `null` — a lista não inventa autor para quem nunca
+ * trocou uma fala.
+ */
+function autorDaInteracao(papel: unknown): PessoaDoPercurso["ultimaInteracaoAutor"] {
+	if (papel === "user") return "cliente";
+	if (papel === "assistant") return "agente";
+	return null;
+}
+
+/**
+ * A situação da pessoa na régua, no shape plano da lista.
+ *
+ * Mesma decisão da coluna da rota (`reguaDaPessoa`): sem conversa não há como
+ * entrar na régua — o fato é `sem_contato`, um motivo NOMEADO, nunca nulo em
+ * silêncio. Com conversa na régua, `motivoForaDaRegua` é `null` (não há motivo
+ * de exclusão a nomear); fora dela e não elegível, sai o motivo que a guarda
+ * devolveu.
+ */
+function situacaoNaRegua(
+	conversationId: string | null,
+	avaliacao: AvaliacaoDaRegua | undefined,
+): Pick<PessoaDoPercurso, "naRegua" | "motivoForaDaRegua"> {
+	if (!conversationId) return { naRegua: false, motivoForaDaRegua: "sem_contato" };
+	if (!avaliacao) return { naRegua: false, motivoForaDaRegua: null };
+	const naRegua = avaliacao.regua !== null;
+	return { naRegua, motivoForaDaRegua: naRegua ? null : avaliacao.motivo };
 }
 
 /** Profundidade (1..8) → o degrau que ela nomeia. */
@@ -116,11 +151,20 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
     -- Os sinais de cada conversa nascida dessas visitas. Os mesmos EXISTS que o
     -- funil de mídia usa, um por fato, cada um lendo a tabela dona dele.
     conv AS (
-      SELECT c.id, c.visit_id, c.contact_id, c.updated_at,
+      SELECT c.id, c.visit_id, c.contact_id, c.updated_at, c.status,
         (SELECT count(*) FROM messages m
           WHERE m.conversation_id = c.id AND m.role = 'user') AS msgs,
         (SELECT max(m.created_at) FROM messages m
           WHERE m.conversation_id = c.id AND m.role = 'user') AS ultimo_inbound,
+        -- QUEM falou por último — a última fala trocada, do cliente OU do
+        -- agente. O papel 'system' fica de fora de propósito: é log, não fala. O
+        -- par (autor, instante) sai da MESMA lista de mensagens para não se
+        -- separar — é a pergunta que a cliente faz antes de ligar (25/09).
+        (SELECT (array_agg(m.role ORDER BY m.created_at DESC, m.id DESC))[1]
+          FROM messages m
+          WHERE m.conversation_id = c.id AND m.role IN ('user', 'assistant')) AS ultimo_autor,
+        (SELECT max(m.created_at) FROM messages m
+          WHERE m.conversation_id = c.id AND m.role IN ('user', 'assistant')) AS ultimo_autor_em,
         EXISTS (SELECT 1 FROM messages m
           WHERE m.conversation_id = c.id AND m.role = 'user') AS mandou_algo,
         -- AJA-01: "escreveu" era o EXISTS acima, e o CTA entrega a primeira fala
@@ -130,13 +174,17 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
         -- importado de 'src/lib/funil/mensagem-pre-preenchida'.
         ${sqlEscreveuAlgoProprio(sql`c.id`)} AS iniciou_conversa,
         ${sqlSoPrePreenchida(sql`c.id`)} AS so_pre_preenchida,
+        -- O critério de "parado" é o MESMO do funil de mídia (conversaViva), e
+        -- é este bool_or que faz dele um fato da PESSOA: basta uma conversa
+        -- viva para ela ser retomável.
+        ${conversaViva(
+					sql`(SELECT max(m.created_at) FROM messages m
+          WHERE m.conversation_id = c.id AND m.role = 'user')`,
+					sql`c.status`,
+				)} AS viva,
         ${conversaIdentificada(sql`c`)} AS identificou,
-        EXISTS (SELECT 1 FROM messages m
-          JOIN artifacts a ON a.message_id = m.id
-          WHERE m.conversation_id = c.id
-            AND a.type IN (${ARTIFACTS_DE_OFERTA_SQL})) AS viu_oferta,
-        EXISTS (SELECT 1 FROM bevi_proposals bp
-          WHERE bp.conversation_id = c.id) AS teve_proposta,
+        ${viuOferta(sql`c`)} AS viu_oferta,
+        ${teveProposta(sql`c`)} AS teve_proposta,
         EXISTS (SELECT 1 FROM leads l
           WHERE l.conversation_id = c.id AND l.is_simulated = false
             AND l.stage = 'fechado_ganho') AS fechou
@@ -214,9 +262,12 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
              count(DISTINCT c.id) AS conversas,
              COALESCE(sum(c.msgs), 0) AS msgs,
              max(c.ultimo_inbound) AS ultimo_inbound,
+             (array_agg(c.ultimo_autor ORDER BY c.ultimo_autor_em DESC NULLS LAST))[1] AS ultima_interacao_autor,
+             max(c.ultimo_autor_em) AS ultima_interacao_em,
              bool_or(c.mandou_algo) AS mandou_algo,
              bool_or(c.iniciou_conversa) AS iniciou_conversa,
              bool_or(c.so_pre_preenchida) AS so_pre_preenchida,
+             bool_or(c.viva) AS ainda_viva,
              bool_or(c.identificou) AS identificou,
              bool_or(c.viu_oferta) AS viu_oferta,
              bool_or(c.teve_proposta) AS teve_proposta,
@@ -281,6 +332,9 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
              COALESCE(cp.fechou, false) AS fechou,
              COALESCE(cp.iniciou_conversa, false) AS iniciou_conversa,
              COALESCE(cp.so_pre_preenchida, false) AS so_pre_preenchida,
+             cp.ultima_interacao_autor,
+             cp.ultima_interacao_em,
+             COALESCE(cp.ainda_viva, false) AS ainda_viva,
              (COALESCE(cp.conversas, 0) > 0 OR p.abriu_teatro) AS abriu_chat,
              p.olhou AS olhou,
              CASE
@@ -312,13 +366,41 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
   `;
 }
 
+/**
+ * O FATO de cada degrau — a coluna da linha que diz que a pessoa CHEGOU ali.
+ *
+ * É a mesma definição que alimenta `alcancaram` no resumo, e é ela que o modo
+ * `alcancou` precisa filtrar. Filtrando por `profundidade >= alvo`, o degrau
+ * "Só mandou a mensagem do anúncio" (que é RAMIFICAÇÃO, não degrau da cadeia)
+ * abria a lista de TODO mundo que passou por ali a caminho de um degrau mais
+ * fundo — 8 pessoas onde a barra dizia 1. Era o defeito que o operador viu: o
+ * número da barra e a lista aberta não eram a mesma população.
+ *
+ * Os três primeiros degraus ficam como o degrau os lê na escada: quem abriu o
+ * chat ou escreveu também passou pela página, mesmo sem evento de rolagem
+ * gravado — é a leitura que a ajuda do degrau promete.
+ */
+const FATO_DO_PASSO: Record<PassoDoPercurso, SQL | null> = {
+	// Chegou é o piso: todo mundo que o período alcança chegou.
+	so_chegou: null,
+	olhou_a_pagina: sql`(olhou OR abriu_chat)`,
+	abriu_o_chat: sql`abriu_chat`,
+	so_pre_preenchida: sql`so_pre_preenchida`,
+	iniciou_conversa: sql`iniciou_conversa`,
+	se_identificou: sql`identificou`,
+	viu_oferta: sql`viu_oferta`,
+	proposta: sql`teve_proposta`,
+	fechado: sql`fechou`,
+};
+
 /** A condição do degrau, conforme o modo de leitura escolhido. */
 function condicaoDoPasso(filtro: FiltroPercurso): SQL {
 	if (!filtro.passo) return sql``;
-	const alvo = profundidadeDoPasso(filtro.passo);
-	return filtro.modo === "alcancou"
-		? sql` WHERE profundidade >= ${alvo}`
-		: sql` WHERE profundidade = ${alvo}`;
+	if (filtro.modo === "alcancou") {
+		const fato = FATO_DO_PASSO[filtro.passo];
+		return fato ? sql` WHERE ${fato}` : sql``;
+	}
+	return sql` WHERE profundidade = ${profundidadeDoPasso(filtro.passo)}`;
 }
 
 /**
@@ -333,6 +415,16 @@ export async function listarPercurso(filtro: FiltroPercurso): Promise<PercursoRe
 	const offset = Math.max(filtro.offset ?? 0, 0);
 	const base = baseDoPercurso(filtro);
 
+	// A ORDEM responde à pergunta, e não à simetria da tela. Em `parou`, a
+	// cliente pergunta "quem está parado há mais tempo" — o mais antigo primeiro
+	// é a resposta literal (25/09/2026); em `alcancou`, o recente primeiro segue
+	// sendo o que se quer ver. O DESEMPATE pela chave continua: sem ele duas
+	// pessoas com o mesmo instante trocam de lugar entre páginas e a linha some.
+	const ordem =
+		filtro.modo === "parou"
+			? sql`ORDER BY ultima_atividade ASC, chave ASC`
+			: sql`ORDER BY ultima_atividade DESC, chave ASC`;
+
 	const [linhas, escada, fatos] = await Promise.all([
 		db.execute<Record<string, unknown>>(sql`
       ${base}
@@ -341,12 +433,13 @@ export async function listarPercurso(filtro: FiltroPercurso): Promise<PercursoRe
       -- Desempate pela chave: sem ele duas pessoas com o mesmo instante podem
       -- trocar de lugar entre uma página e a seguinte, e a mesma linha aparece
       -- duas vezes (ou some).
-      ORDER BY ultima_atividade DESC, chave ASC
+      ${ordem}
       LIMIT ${limit} OFFSET ${offset}
     `),
 		db.execute<Record<string, unknown>>(sql`
       ${base}
       SELECT profundidade, count(*) AS pessoas,
+             count(*) FILTER (WHERE ainda_viva) AS pessoas_vivas,
              COALESCE(sum(chegadas), 0) AS chegadas,
              COALESCE(sum(conversas), 0) AS conversas
       FROM filtrado GROUP BY profundidade
@@ -372,12 +465,14 @@ export async function listarPercurso(filtro: FiltroPercurso): Promise<PercursoRe
 	]);
 
 	const pessoasPorProfundidade = new Map<number, number>();
+	const vivasPorProfundidade = new Map<number, number>();
 	let totalDePessoas = 0;
 	let totalDeChegadas = 0;
 	let totalDeConversas = 0;
 	for (const linha of escada.rows) {
 		const pessoas = num(linha.pessoas);
 		pessoasPorProfundidade.set(num(linha.profundidade), pessoas);
+		vivasPorProfundidade.set(num(linha.profundidade), num(linha.pessoas_vivas));
 		totalDePessoas += pessoas;
 		totalDeChegadas += num(linha.chegadas);
 		totalDeConversas += num(linha.conversas);
@@ -403,10 +498,13 @@ export async function listarPercurso(filtro: FiltroPercurso): Promise<PercursoRe
 		label: passo.label,
 		ajuda: passo.ajuda,
 		pessoas: pessoasPorProfundidade.get(indice + 1) ?? 0,
+		pessoasVivas: vivasPorProfundidade.get(indice + 1) ?? 0,
 		alcancaram: alcancaramPorPasso[passo.chave] ?? 0,
 	}));
 
-	const pessoas: PessoaDoPercurso[] = linhas.rows.map((linha) => {
+	type SemSituacaoNaRegua = Omit<PessoaDoPercurso, "naRegua" | "motivoForaDaRegua">;
+
+	const semSituacaoNaRegua: SemSituacaoNaRegua[] = linhas.rows.map((linha) => {
 		const origem = origemDaVisita({
 			utmSource: texto(linha.utm_source),
 			utmMedium: texto(linha.utm_medium),
@@ -439,15 +537,37 @@ export async function listarPercurso(filtro: FiltroPercurso): Promise<PercursoRe
 			landingPath: texto(linha.landing_path),
 			primeiraChegada: iso(linha.primeira_chegada),
 			ultimaAtividade: iso(linha.ultima_atividade),
+			ultimaInteracaoEm: linha.ultima_interacao_em ? iso(linha.ultima_interacao_em) : null,
+			ultimaInteracaoAutor: autorDaInteracao(linha.ultima_interacao_autor),
+			pediuSimulacao: Boolean(linha.viu_oferta),
 			chegadas: num(linha.chegadas),
 			conversas: num(linha.conversas),
 			mensagensDoCliente: num(linha.msgs),
 			passo: passoDaProfundidade(num(linha.profundidade)),
+			/** O MESMO critério de vida do funil de mídia (`conversaViva`). */
+			aindaViva: linha.ainda_viva === true,
 			stageDoLead: stage,
 			perdido: stage === "perdido",
 			conversationId: texto(linha.conversation_id),
 		};
 	});
+
+	// A RÉGUA entra aqui, e não na rota, porque é o MESMO item da lista que a
+	// Bruna lê para ligar — a rota já resolvia a coluna por fora, e uma pessoa
+	// saía com a régua na resposta e sem ela no shape. A leitura é uma consulta
+	// só para o lote (`avaliarReguaPorIds`), nunca N+1.
+	const avaliacoes = await avaliarReguaPorIds(
+		semSituacaoNaRegua.map((p) => p.conversationId).filter((id): id is string => Boolean(id)),
+		new Date(),
+	);
+
+	const pessoas: PessoaDoPercurso[] = semSituacaoNaRegua.map((p) => ({
+		...p,
+		...situacaoNaRegua(
+			p.conversationId,
+			p.conversationId ? avaliacoes.get(p.conversationId) : undefined,
+		),
+	}));
 
 	return {
 		pessoas,

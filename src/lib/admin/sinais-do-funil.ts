@@ -9,6 +9,7 @@
 
 import { type SQL, sql } from "drizzle-orm";
 import { PADRAO_ROBO_SQL } from "@/lib/attribution/user-agent-robo";
+import type { ArtifactType } from "@/lib/chat/types";
 import { ESTAGIOS_QUALIFICADOS } from "./lead-stages";
 
 /**
@@ -66,6 +67,46 @@ export function chaveDaPessoa(de: Date, ate: Date, colunaVisitor: SQL = sql`v.vi
 
 /** Quanto tempo depois da anterior uma visita do mesmo visitante ainda é eco. */
 const JANELA_DE_ECO = "2 seconds";
+
+/**
+ * Quantos dias sem o cliente escrever até a conversa deixar de contar como
+ * VIVA.
+ *
+ * **É o critério ÚNICO de "parado" no painel.** Ele vivia como const local de
+ * `performance-queries.ts` e não existia no Percurso — quem abrisse as duas telas
+ * via dois sentidos para a mesma palavra, e nenhum jeito de saber qual valia.
+ *
+ * **O que ele NÃO é.** A régua de remarketing tem a janela dela
+ * (`JANELA_DE_ENTRADA_MS`, em `motivo-de-exclusao.ts`), e ela responde outra
+ * pergunta: "posso mandar um toque?". Aqui a pergunta é "dá para ler esta pessoa
+ * como retomável?". São decisões diferentes, com donos diferentes — juntar as
+ * duas faria mudar a cadência quando alguém mexesse no desenho do painel.
+ */
+export const DIAS_PARA_CONSIDERAR_VIVA = 7;
+
+/**
+ * A CONVERSA está VIVA — o cliente escreveu na janela recente e ninguém a
+ * encerrou.
+ *
+ * Conversa encerrada não é retomável por mais nova que seja a fala: o time já
+ * decidiu que aquele caso acabou. Os dois cortes andam juntos de propósito — uma
+ * tela que aplicasse só um deles mostraria uma população diferente das outras.
+ *
+ * Uma CONVERSA ser viva não faz a PESSOA viva: quem agrega precisa de
+ * `bool_or(viva)` sobre as conversas dela (basta uma aberta para ser retomável).
+ *
+ * O timestamp e o status entram por parâmetro porque cada consulta chega aqui
+ * com um alias diferente: no funil a fala do cliente vem de uma subconsulta e o
+ * status é `c.status`; no Percurso, do CTE `conv`. Acoplar a um alias faria o
+ * fragmento compilar num lugar e explodir no outro.
+ */
+export function conversaViva(
+	ultimoInbound: SQL = sql`ultimo_inbound`,
+	status: SQL = sql`c.status`,
+): SQL {
+	return sql`(${ultimoInbound} >= now() - ${sql.raw(`interval '${DIAS_PARA_CONSIDERAR_VIVA} days'`)}
+    AND ${status} = 'active')`;
+}
 
 /**
  * A visita não é ECO de outra — o mesmo visitante gravado de novo em instantes.
@@ -250,7 +291,13 @@ export function conversaIdentificada(conversa: SQL = sql`c`): SQL {
  * `visits v`, `conversations c`, `leads l`, `bevi_proposals bp`. Quem não usa
  * `qualificados` simplesmente ignora a coluna.
  *
- * `identificados` conta CONVERSAS cujo cliente se identificou
+ * **A unidade é PESSOA** (decisão do dono, 23/09/2026): cinco conversas do mesmo
+ * telefone são UMA pessoa. A chave é a `chaveDaPessoa` — a mesma da Porta e do
+ * Percurso —, e não `c.id`. Contando conversa, a tabela por origem discordava do
+ * funil logo acima dela na mesma tela; contando linha de proposta, discordava da
+ * escada do Percurso (5 × 1) com o mesmo rótulo.
+ *
+ * `identificados` conta PESSOAS cujo cliente se identificou
  * (`conversaIdentificada`) — no WhatsApp, quem entrou (o canal entregou número e
  * perfil); na web, quem deixou contato. É a MESMA definição do funil de mídia
  * (`computeFunilMidia`). Contando leads, uma conversa com dedup imperfeito
@@ -260,27 +307,164 @@ export function conversaIdentificada(conversa: SQL = sql`c`): SQL {
  * ALCANÇAR (telefone/e-mail no lead), e não são ordem um do outro (a conversa de
  * WhatsApp sem linha em `leads` é identificada e não tem contato no lead).
  */
-export function contagensDoFunil(): SQL {
+export function contagensDoFunil(de: Date, ate: Date): SQL {
 	const qualificados = sql.join(
 		ESTAGIOS_QUALIFICADOS.map((estagio) => sql`${estagio}`),
 		sql`, `,
 	);
+	const pessoa = chaveDaPessoa(de, ate);
 	return sql`
     count(DISTINCT v.id) FILTER (WHERE ${VISITA_NAO_E_ECO}) AS visitas,
-    count(DISTINCT c.id) AS conversas,
-    count(DISTINCT c.id) FILTER (WHERE ${leadComContato()}) AS com_contato,
-    count(DISTINCT c.id) FILTER (WHERE ${conversaIdentificada(sql`c`)}) AS identificados,
-    count(DISTINCT l.id) FILTER (WHERE l.stage IN (${qualificados})) AS qualificados,
-    count(DISTINCT bp.id) AS propostas,
-    count(DISTINCT l.id) FILTER (WHERE l.stage = 'fechado_ganho') AS fechados
+    count(DISTINCT ${pessoa}) FILTER (WHERE ${pessoaConversou()}) AS conversas,
+    count(DISTINCT ${pessoa}) FILTER (WHERE ${pessoaConversou()} AND ${leadComContato()}) AS com_contato,
+    count(DISTINCT ${pessoa}) FILTER (WHERE ${pessoaConversou()} AND ${conversaIdentificada(sql`c`)}) AS identificados,
+    count(DISTINCT ${pessoa}) FILTER (WHERE l.stage IN (${qualificados})) AS qualificados,
+    count(DISTINCT ${pessoa}) FILTER (WHERE bp.id IS NOT NULL) AS propostas,
+    count(DISTINCT ${pessoa}) FILTER (WHERE l.stage = 'fechado_ganho') AS fechados
   `;
 }
 
-/** Artifacts que provam que o cliente VIU número de oferta na tela. */
-export const ARTIFACTS_DE_OFERTA = ["real_offer", "simulation_result"];
+/**
+ * A pessoa ABRIU uma conversa nestas visitas — a linha do `LEFT JOIN` existe.
+ *
+ * Existe como condição de `FILTER` porque contar pessoa em vez de `c.id`
+ * incluiria, sem ela, o visitante que só passou e nunca abriu o chat: ele tem
+ * chave (o próprio `visitor_id`) e entraria em "Conversas" por acidente.
+ */
+function pessoaConversou(): SQL {
+	return sql`c.id IS NOT NULL`;
+}
+
+/**
+ * TODO tipo de artifact, classificado: prova que o cliente VIU número de oferta
+ * na tela?
+ *
+ * FIX-398 (bloco-telefone-ab). Antes disto havia DUAS listas para a mesma
+ * pergunta: esta, com `["real_offer","simulation_result"]`, e a dos escritores
+ * de artifact no código (`comparison_table` em `src/app/api/chat/route.ts`,
+ * `recommendation_card` em `nodes/converse.ts`, `real_offer` em
+ * `closing-presentation.ts`). Quem viu a comparação no chat web NÃO era contado
+ * como quem viu oferta — o degrau que a Bruna lê para decidir investimento
+ * estava subcontado (palavras dela na call de 29/09: *"viram oferta, 9 → 18... e
+ * a proposta criada: zero"*).
+ *
+ * Agora a lista do painel DERIVA daqui, e o `Record<ArtifactType, boolean>` é
+ * exaustivo em tempo de compilação: nasceu um tipo novo em
+ * `src/lib/chat/types.ts`, o TypeScript quebra aqui — e o teste
+ * `sinais-do-funil.viu-oferta.fix-398.test.ts` quebra em runtime, lendo o
+ * arquivo de tipos. Um tipo novo não passa mais despercebido até o painel.
+ */
+export const CLASSIFICACAO_DOS_ARTIFACTS: Record<ArtifactType, boolean> = {
+	// ── PROVAM que a pessoa viu nº de oferta na tela ──────────────────────────
+	comparison_table: true,
+	recommendation_card: true,
+	real_offer: true,
+	simulation_result: true,
+	// ── Não provam (contexto, pergunta, formulário, dado do cliente) ──────────
+	group_card: false,
+	lead_form: false,
+	quick_reply: false,
+	value_picker: false,
+	topic_picker: false,
+	scenarios: false,
+	financing_comparison: false,
+	whatsapp_optin: false,
+	decision_prompt: false,
+	contract_form: false,
+	signature_handoff: false,
+	atendimento_handoff: false,
+	document_upload: false,
+	contemplation_dial: false,
+	embedded_bid: false,
+	two_paths: false,
+	scarcity: false,
+	// FIX-396 — o card do teste do telefone NÃO prova oferta: o que prova é o
+	// `comparison_table`/`recommendation_card` que ele acompanha.
+	telefone_do_desbloqueio: false,
+};
+
+/** Artifacts que provam que o cliente VIU número de oferta na tela.
+ *
+ * FONTE ÚNICA: derivada de `CLASSIFICACAO_DOS_ARTIFACTS` acima — não existe
+ * segunda lista. Usada pelo painel de Performance/Percurso e pelo endpoint do
+ * teste do telefone. */
+export const ARTIFACTS_DE_OFERTA: readonly ArtifactType[] = (
+	Object.keys(CLASSIFICACAO_DOS_ARTIFACTS) as ArtifactType[]
+).filter((tipo) => CLASSIFICACAO_DOS_ARTIFACTS[tipo]);
 
 /** Os mesmos tipos, prontos para um `IN (...)` de SQL. */
 export const ARTIFACTS_DE_OFERTA_SQL = sql.join(
 	ARTIFACTS_DE_OFERTA.map((tipo) => sql`${tipo}`),
 	sql`, `,
 );
+
+/** A lista literal, como TEXTO — para diagnóstico e para o teste de acoplamento
+ *  provar que o fragmento SQL carrega os MESMOS tipos. Derivada da fonte única. */
+export const PADRAO_SQL_DE_OFERTA = ARTIFACTS_DE_OFERTA.map((tipo) => `'${tipo}'`).join(", ");
+
+/**
+ * O CLIENTE VIU NÚMERO DE OFERTA — existe um artefato de oferta na conversa.
+ *
+ * É o degrau "Viram oferta" do funil de mídia, da escada do Percurso e da
+ * exportação. Fonte única dos três: enquanto o `EXISTS` morava copiado em cada
+ * consulta, uma correção valia para uma tela e não para a outra.
+ *
+ * O alias da conversa entra por parâmetro pelo mesmo motivo dos outros
+ * fragmentos (`c` nas telas de hoje) — amarrar ao alias faria o fragmento
+ * compilar num lugar e explodir no outro.
+ */
+export function viuOferta(conversa: SQL = sql`c`): SQL {
+	return sql`EXISTS (SELECT 1 FROM messages m
+    JOIN artifacts a ON a.message_id = m.id
+    WHERE m.conversation_id = ${conversa}.id
+      AND a.type IN (${ARTIFACTS_DE_OFERTA_SQL}))`;
+}
+
+/**
+ * A PROPOSTA existe para a conversa — a simulação da Bevi é o FATO.
+ *
+ * É o degrau "Propostas" do funil, "Proposta" da escada e da exportação. Nasceu
+ * inline em TRÊS consultas (`percurso-queries`, `performance-queries` e
+ * `exportacao/percurso`); aqui ela existe uma vez, para não nascer a quarta
+ * definição no próximo consumidor.
+ */
+export function teveProposta(conversa: SQL = sql`c`): SQL {
+	return sql`EXISTS (SELECT 1 FROM bevi_proposals bp
+    WHERE bp.conversation_id = ${conversa}.id)`;
+}
+
+/**
+ * Os sinais que definem a macro-fase do funil em que a pessoa está.
+ *
+ * São DOIS porque são dois os fatos que a reunião de 22/09 nomeou como marcos da
+ * jornada: ver a oferta e ter a proposta na mesa. O degrau mais fundo vence.
+ */
+export interface SinaisDoFunil {
+	/** O cliente viu número de oferta na tela (`artifacts`: `real_offer` / `simulation_result`). */
+	viuOferta: boolean;
+	/** Existe proposta/simulação Bevi para a conversa. */
+	teveProposta: boolean;
+}
+
+/**
+ * As três macro-fases da comunicação (Kairo, reunião de 22/09 12:02:49).
+ *
+ * Não são os nove degraus do Percurso: são as três mensagens genéricas do
+ * remarketing — quem ainda não viu oferta, quem já viu e quem só falta fechar.
+ */
+export type FaseDoFunil = "inicio" | "viu_oferta" | "fechamento";
+
+/**
+ * A FASE do funil a partir dos sinais — função PURA, sem banco e sem relógio.
+ *
+ * Os nomes são os do operador: *"se o cara tá no início… ele chegou até
+ * visualizar a oferta… Já tá no finalzinho, é só fechar?"*. A ordem de leitura é
+ * do degrau mais FUNDO para o mais raso — ter proposta implica ter visto a
+ * oferta, e o evento de oferta pode não estar no histórico de uma conversa
+ * antiga. Ler a fase pelo degrau mais fundo é o que a escada do Percurso já faz.
+ */
+export function faseDoFunil(sinais: SinaisDoFunil): FaseDoFunil {
+	if (sinais.teveProposta) return "fechamento";
+	if (sinais.viuOferta) return "viu_oferta";
+	return "inicio";
+}

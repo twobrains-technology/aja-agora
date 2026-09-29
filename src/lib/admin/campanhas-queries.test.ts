@@ -317,4 +317,40 @@ describe("totalizarCampanhas", () => {
 		expect(totais.leadsCrm).toBe(3);
 		expect(totais.comTelefone).toBe(12);
 	});
+
+	it("separa o investimento reportado em atribuído no CRM e sem atribuição", () => {
+		const linhas = combinarCampanhas(
+			[
+				// Com vínculo: uma visita já amarra a campanha da Meta a algo do CRM.
+				funil({ chave: "com-vinculo", visitas: 10, qualificados: 1 }),
+				// A campanha existe no funil, mas sem nenhuma atividade do CRM.
+				funil({ chave: "sem-vinculo" }),
+			],
+			[
+				gasto({ entityId: "com-vinculo", nome: "Com vínculo", spendCents: 60_000 }),
+				gasto({ entityId: "sem-vinculo", nome: "Sem vínculo", spendCents: 40_000 }),
+			],
+		);
+
+		const totais = totalizarCampanhas(linhas);
+		// A leitura OFICIAL é o reportado — e ele não muda por causa do rótulo novo.
+		expect(totais.investimentoCents).toBe(100_000);
+		expect(totais.investimentoAtribuidoCents).toBe(60_000);
+		expect(totais.investimentoSemAtribuicaoCents).toBe(40_000);
+		// As duas parcelas fecham o total, sempre: é o que sustenta a diferença na tela.
+		expect(totais.investimentoAtribuidoCents + totais.investimentoSemAtribuicaoCents).toBe(
+			totais.investimentoCents,
+		);
+	});
+
+	it("campanha só-Meta (gastou sem trazer ninguém) entra no sem atribuição", () => {
+		const linhas = combinarCampanhas(
+			[],
+			[gasto({ entityId: "queimou", nome: "Queimou verba", spendCents: 35_000 })],
+		);
+
+		const totais = totalizarCampanhas(linhas);
+		expect(totais.investimentoAtribuidoCents).toBe(0);
+		expect(totais.investimentoSemAtribuicaoCents).toBe(35_000);
+	});
 });

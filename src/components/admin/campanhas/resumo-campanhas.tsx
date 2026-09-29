@@ -9,6 +9,10 @@
  * **CRM é o número grande**, e a Meta aparece ao lado com a diferença nomeada:
  * ela conta clique que não virou conversa, e é por isso que os dois nunca
  * fecham.
+ *
+ * Na verba o dono decidiu o contrário (28/09): a leitura oficial é **a reportada
+ * pela Meta** — o número que a cliente vê no gerenciador. O atribuído no CRM fica
+ * ao lado, e a diferença em reais tem nome. Nenhuma soma muda por isso.
  */
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,7 +27,7 @@ function Cartao({
 }: {
 	titulo: string;
 	valor: string;
-	nota?: string;
+	nota?: React.ReactNode;
 	tooltip?: string;
 }) {
 	return (
@@ -51,6 +55,29 @@ function explicarDiferenca(diferenca: number): string {
 	return `O CRM contou +${inteiro(Math.abs(diferenca))} — lead que a Meta não atribuiu`;
 }
 
+/**
+ * A frase que explica a divergência de VERBA (Meta × CRM) — a mesma linguagem de
+ * `explicarDiferenca`, só trocando leads por reais.
+ *
+ * O total reportado pela Meta É a leitura oficial; o atribuído no CRM é a linha
+ * vizinha. Os dois nunca fecham porque há campanha que gastou sem nenhuma visita
+ * ou conversa apontando para ela — e porque a janela de data da Meta não é a
+ * mesma do CRM. Nomear de que lado caiu a diferença é o que evita a conclusão de
+ * que o painel está errado.
+ */
+function explicarDiferencaDeVerba(reconciliacao: {
+	reportadoCents: number;
+	atribuidoCents: number;
+}): string {
+	if (reconciliacao.reportadoCents === 0)
+		return "Sem investimento reportado no período — não há verba a reconciliar";
+	// Nunca negativo por desenho: o atribuído é um subconjunto do reportado.
+	const diferenca = reconciliacao.reportadoCents - reconciliacao.atribuidoCents;
+	if (diferenca === 0)
+		return "As duas leituras bateram no período — raro, e não significa que medem o mesmo";
+	return `A Meta reportou +${reais(diferenca)} — campanha sem atribuição no CRM: o gasto não achou visita dentro da janela de data`;
+}
+
 export function ResumoCampanhas({ totais }: { totais: TotaisDeCampanhas }) {
 	const custo = descreverCusto(totais.custoPorQualificado);
 	const diferenca = totais.leadsMeta - totais.leadsCrm;
@@ -59,9 +86,25 @@ export function ResumoCampanhas({ totais }: { totais: TotaisDeCampanhas }) {
 		<div className="space-y-4">
 			<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 				<Cartao
-					titulo="Investimento no período"
+					titulo="Investimento reportado pela Meta"
 					valor={reais(totais.investimentoCents)}
-					nota="Soma do que o gerenciador reportou para as campanhas"
+					nota={
+						<>
+							O número oficial do período — soma do que o gerenciador reportou para as campanhas.{" "}
+							<span className="mt-1 block">
+								Investimento atribuído no CRM:{" "}
+								<span className="tabular-nums text-foreground">
+									{reais(totais.investimentoAtribuidoCents)}
+								</span>
+							</span>
+							<span className="mt-1 block">
+								{explicarDiferencaDeVerba({
+									reportadoCents: totais.investimentoCents,
+									atribuidoCents: totais.investimentoAtribuidoCents,
+								})}
+							</span>
+						</>
+					}
 				/>
 				<Cartao
 					titulo="Custo por lead qualificado"

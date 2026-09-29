@@ -11,6 +11,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	arteDoObjetivo,
+	chavesDoToque,
 	decidir,
 	ehObjetivoConhecido,
 	ehPedidoDeOptout,
@@ -25,7 +26,14 @@ import {
 	ultimoToqueDerivado,
 	ultimoToqueDoFato,
 } from "./motor";
-import { type EstadoRegua, estadoInicial, JANELA_DO_TETO_MS, MAX_TOQUES } from "./regua";
+import {
+	type EstadoRegua,
+	estadoInicial,
+	JANELA_DO_TETO_MS,
+	MAX_TOQUES,
+	podeDisparar,
+	registrarToque,
+} from "./regua";
 
 const DIA = 24 * 60 * 60 * 1000;
 const HORA = 60 * 60 * 1000;
@@ -59,7 +67,7 @@ function linha(over: Record<string, unknown> = {}) {
 describe("o toque 01 dentro da janela de 24h vira TURNO de retomada", () => {
 	it("texto livre → turno_de_retomada, com a arte do objetivo", () => {
 		const estado = ativo({});
-		const decisao = decidir({ agora: TOQUE_1, estado, telefone: "5562999998888" });
+		const decisao = decidir({ agora: TOQUE_1, estado, telefone: "5562999998888", fase: "inicio" });
 
 		expect(decisao.acao).toEqual({
 			tipo: "turno_de_retomada",
@@ -112,37 +120,85 @@ describe("AJA-14 — arte só quando o bem é CONHECIDO", () => {
 
 	it("o turno de retomada sai SEM arte quando o objetivo é desconhecido", () => {
 		const estado = ativo({ objetivo: OBJETIVO_DESCONHECIDO });
-		const decisao = decidir({ agora: TOQUE_1, estado, telefone: "5562999998888" });
+		const decisao = decidir({ agora: TOQUE_1, estado, telefone: "5562999998888", fase: "inicio" });
 
 		expect(decisao.acao).toEqual({ tipo: "turno_de_retomada", passo: 1, arte: null });
 	});
-
-	it("o template do objetivo desconhecido segue caindo em carro — decisão registrada", () => {
-		// Não há template neutro: sem o bem, o eixo mais frequente é a única opção.
-		// Trocar isto é trocar o texto aprovado na Meta, que não é desta frente.
-		expect(templateDoObjetivo(OBJETIVO_DESCONHECIDO)).toBe("remarketing_oportunidade_carro");
-	});
 });
 
-describe("fora da janela de 24h vira TEMPLATE, escolhido pelo objetivo", () => {
-	it("entrega template → usageKey do objetivo", () => {
+describe("fora da janela de 24h vira TEMPLATE, com a lista de chaves por fase × bem", () => {
+	it("entrega template → lista ORDENADA de chaves candidatas", () => {
 		const estado = ativo({ ultimoInboundEm: new Date(TOQUE_1.getTime() - 3 * DIA) });
-		const decisao = decidir({ agora: TOQUE_1, estado, telefone: "5562999998888" });
+		const decisao = decidir({
+			agora: TOQUE_1,
+			estado,
+			telefone: "5562999998888",
+			fase: "viu_oferta",
+		});
 
 		expect(decisao.acao).toEqual({
 			tipo: "template",
 			passo: 1,
-			usageKey: "remarketing_oportunidade_carro",
+			usageKeys: ["remarketing_viu_oferta_carro", "remarketing_viu_oferta_generico"],
 		});
 		expect(decisao.proximoEstado?.step).toBe(1);
 	});
 
-	it("o template segue o objetivo, e `auto` e `carro` são o mesmo eixo", () => {
-		expect(templateDoObjetivo("moto")).toBe("remarketing_oportunidade_moto");
-		expect(templateDoObjetivo("imovel")).toBe("remarketing_oportunidade_imovel");
-		expect(templateDoObjetivo("auto")).toBe("remarketing_oportunidade_carro");
-		expect(templateDoObjetivo("carro")).toBe("remarketing_oportunidade_carro");
+	it("`auto` e `carro` são o mesmo eixo", () => {
 		expect(objetivoCanonico("AUTOS")).toBe("carro");
+		expect(chavesDoToque("inicio", "auto")).toEqual([
+			"remarketing_inicio_carro",
+			"remarketing_inicio_generico",
+		]);
+	});
+});
+
+describe("FIX-388 — chave por fase × bem, com fallback ordenado", () => {
+	it("bem conhecido → [fase+bem, genérico da fase]", () => {
+		expect(chavesDoToque("inicio", "moto")).toEqual([
+			"remarketing_inicio_moto",
+			"remarketing_inicio_generico",
+		]);
+		expect(chavesDoToque("viu_oferta", "imovel")).toEqual([
+			"remarketing_viu_oferta_imovel",
+			"remarketing_viu_oferta_generico",
+		]);
+		expect(chavesDoToque("fechamento", "carro")).toEqual([
+			"remarketing_fechamento_carro",
+			"remarketing_fechamento_generico",
+		]);
+	});
+
+	it("bem desconhecido → SÓ o genérico da fase (nunca o bem de outra pessoa)", () => {
+		for (const semBem of [null, undefined, "", "  ", OBJETIVO_DESCONHECIDO, "caminhao"]) {
+			expect(chavesDoToque("fechamento", semBem)).toEqual(["remarketing_fechamento_generico"]);
+		}
+	});
+
+	it("a fase muda a chave — o mesmo bem em fases diferentes não é o mesmo template", () => {
+		expect(chavesDoToque("inicio", "moto")[0]).not.toBe(chavesDoToque("fechamento", "moto")[0]);
+	});
+
+	it("o motor entrega a LISTA — quem decide se existe aprovado é o dispatcher", () => {
+		const estado = ativo({ ultimoInboundEm: new Date(TOQUE_1.getTime() - 3 * DIA) });
+		const decisao = decidir({
+			agora: TOQUE_1,
+			estado,
+			telefone: "5562999998888",
+			fase: "fechamento",
+		});
+		expect(decisao.acao).toEqual({
+			tipo: "template",
+			passo: 1,
+			usageKeys: ["remarketing_fechamento_carro", "remarketing_fechamento_generico"],
+		});
+	});
+
+	it("a função LEGADA da tela continua caindo em carro (dívida do ADR)", () => {
+		// `templateDoObjetivo` continua existindo para a tela de forma do toque, que
+		// ainda não conhece a fase — dívida registrada no ADR do bloco. O DISPARO não
+		// a usa mais: usa `chavesDoToque`.
+		expect(templateDoObjetivo(OBJETIVO_DESCONHECIDO)).toBe("remarketing_oportunidade_carro");
 	});
 });
 
@@ -166,6 +222,7 @@ describe("quem respondeu não recebe — qualquer resposta encerra a sequência"
 			agora: new Date(TOQUE_1.getTime() + 3 * DIA),
 			estado,
 			telefone: "5562999998888",
+			fase: "inicio",
 		});
 		expect(decisao.acao).toEqual({ tipo: "nada", motivo: "ja_respondeu" });
 		// O estado terminal é gravado para a linha SAIR do índice parcial.
@@ -189,7 +246,7 @@ describe("quem respondeu não recebe — qualquer resposta encerra a sequência"
 			toquesNaJanela: [],
 		});
 
-		const decisao = decidir({ agora: TOQUE_1, estado, telefone: "5562999998888" });
+		const decisao = decidir({ agora: TOQUE_1, estado, telefone: "5562999998888", fase: "inicio" });
 
 		expect(decisao.acao).toEqual({ tipo: "nada", motivo: "esgotado" });
 		expect(decisao.proximoEstado?.status).toBe("ESGOTADO");
@@ -214,7 +271,7 @@ describe("quem respondeu não recebe — qualquer resposta encerra a sequência"
 			toquesNaJanela: recentes,
 		});
 
-		const decisao = decidir({ agora: TOQUE_1, estado, telefone: "5562999998888" });
+		const decisao = decidir({ agora: TOQUE_1, estado, telefone: "5562999998888", fase: "inicio" });
 
 		expect(decisao.acao).toEqual({ tipo: "nada", motivo: "teto_30_dias" });
 		expect(decisao.proximoEstado).toBeNull();
@@ -249,6 +306,7 @@ describe("opt-out por telefone vence tudo, inclusive nova simulação", () => {
 			agora: new Date(simulacaoEm.getTime() + 2 * HORA),
 			estado,
 			telefone: "5562999998888",
+			fase: "inicio",
 			optoutDaPessoaEm: new Date(TOQUE_1.getTime() + 20 * DIA),
 		});
 
@@ -262,6 +320,7 @@ describe("opt-out por telefone vence tudo, inclusive nova simulação", () => {
 			agora: TOQUE_1,
 			estado: ativo({ status: "OPTOUT", motivoSaida: "optout_do_cliente" }),
 			telefone: "5562999998888",
+			fase: "inicio",
 		});
 		expect(decisao.acao).toEqual({ tipo: "nada", motivo: "optout_da_pessoa" });
 		expect(decisao.proximoEstado).toBeNull();
@@ -301,7 +360,12 @@ describe("telefone da equipe nunca recebe toque", () => {
 	});
 
 	it("o motor não dispara para telefone interno, mesmo com tudo vencido", () => {
-		const decisao = decidir({ agora: TOQUE_1, estado: ativo({}), telefone: "556292496793" });
+		const decisao = decidir({
+			agora: TOQUE_1,
+			estado: ativo({}),
+			telefone: "556292496793",
+			fase: "inicio",
+		});
 		expect(decisao.acao).toEqual({ tipo: "nada", motivo: "telefone_interno" });
 		expect(decisao.proximoEstado).toBeNull();
 	});
@@ -311,6 +375,7 @@ describe("telefone da equipe nunca recebe toque", () => {
 			agora: TOQUE_1,
 			estado: ativo({}),
 			telefone: "5562999998888",
+			fase: "inicio",
 			telefoneDaEquipe: true,
 		});
 		expect(decisao.acao).toEqual({ tipo: "nada", motivo: "telefone_interno" });
@@ -327,7 +392,7 @@ describe("o teto de 30 dias (global, por pessoa) bloqueia o disparo", () => {
 				new Date(TOQUE_1.getTime() - 2 * DIA),
 			],
 		});
-		const decisao = decidir({ agora: TOQUE_1, estado, telefone: "5562999998888" });
+		const decisao = decidir({ agora: TOQUE_1, estado, telefone: "5562999998888", fase: "inicio" });
 		expect(decisao.acao).toEqual({ tipo: "nada", motivo: "teto_30_dias" });
 		expect(decisao.proximoEstado).toBeNull();
 		expect(decisao.touches30d).toBe(3);
@@ -348,6 +413,7 @@ describe("o teto de 30 dias (global, por pessoa) bloqueia o disparo", () => {
 		const decisao = decidir({
 			agora: new Date(TOQUE_1.getTime() + 60_000),
 			telefone: "5562999998888",
+			fase: "inicio",
 			estado,
 		});
 		expect(decisao.acao.tipo).not.toBe("nada");
@@ -355,16 +421,24 @@ describe("o teto de 30 dias (global, por pessoa) bloqueia o disparo", () => {
 	});
 });
 
-describe("teto de retomadas (MAX_RETOMADAS) barra o turno", () => {
-	it("retomadaPermitida=false → nada, mas o estado não avança", () => {
+describe("FIX-377 — o contador do watchdog NÃO barra o turno da régua", () => {
+	it("o toque sai: quem conta os toques da régua é a régua (step / toques_30d)", () => {
+		// `conversationMetadata.retomada` (MAX_RETOMADAS + backoff) é do TURNO do
+		// watchdog, não desta sequência. Antes, um `retomadaPermitida=false` devolvia
+		// `nada` mudo aqui — e a escala curta morria no toque 02.
 		const decisao = decidir({
 			agora: TOQUE_1,
 			estado: ativo({}),
 			telefone: "5562999998888",
-			retomadaPermitida: false,
+			fase: "inicio",
 		});
-		expect(decisao.acao).toEqual({ tipo: "nada", motivo: "teto_de_retomadas" });
-		expect(decisao.proximoEstado).toBeNull();
+		expect(decisao.acao).toEqual({
+			tipo: "turno_de_retomada",
+			passo: 1,
+			arte: "/kv/remarketing/oportunidade-carro.png",
+		});
+		// O que bloqueia é a guarda da PRÓPRIA régua — e sempre com motivo nomeado.
+		expect(decisao.proximoEstado?.step).toBe(1);
 	});
 });
 
@@ -388,7 +462,12 @@ describe("o teto de 30 dias conta a partir de um instante REAL (`ultimo_toque_em
 	});
 
 	it("o motor grava o instante do toque novo em `ultimo_toque_em`", () => {
-		const decisao = decidir({ agora: TOQUE_1, estado: ativo({}), telefone: "5562999998888" });
+		const decisao = decidir({
+			agora: TOQUE_1,
+			estado: ativo({}),
+			telefone: "5562999998888",
+			fase: "inicio",
+		});
 		expect(decisao.proximoEstado?.ultimoToqueEm?.toISOString()).toBe(TOQUE_1.toISOString());
 	});
 });
@@ -463,5 +542,99 @@ describe("o opt-out é detectado no texto do inbound, com parcimônia", () => {
 	it("marca com acento e sem acento (o texto é normalizado)", () => {
 		expect(ehPedidoDeOptout("não quero mais")).toBe(true);
 		expect(ehPedidoDeOptout("nao quero mais")).toBe(true);
+	});
+});
+
+// ─── FIX-386: esgotar os toques SÓ PARA (decisão do dono, 28/09/2026) ────────
+//
+// O comportamento já era o pedido pelo dono: `ESGOTADO` é terminal e não toca
+// `leads.stage`. O que faltava era o TESTE que trava isso — para que ninguém
+// (nem nós, na próxima onda) faça o esgotamento transitar o lead para `perdido`
+// nem criar alerta de revisão humana (o T2/T3 do AJA-24 morreram nesta decisão).
+describe("esgotar a sequência SÓ PARA — não vira `perdido` e não cria alerta", () => {
+	it("o terceiro toque grava ESGOTADO com o motivo da régua, e nada de `perdido`", () => {
+		// Dois toques já saíram; o terceiro é o que esgota.
+		const antes = estadoInicial({
+			objetivo: "carro",
+			status: "ATIVO",
+			step: 2,
+			nextTouchAt: TOQUE_1,
+			ultimoToqueEm: new Date(TOQUE_1.getTime() - 3 * DIA),
+			ultimoInboundEm: INBOUND,
+		});
+
+		const depois = registrarToque(antes, TOQUE_1);
+
+		expect(depois.status).toBe("ESGOTADO");
+		expect(depois.step).toBe(MAX_TOQUES);
+		expect(depois.motivoSaida).toBe("tres_toques_sem_resposta");
+		expect(depois.nextTouchAt).toBeNull();
+		// A linha da régua SÓ tem campos da régua: nenhum vestígio de transição de
+		// funil. O motivo do esgotamento nunca é "perdido".
+		expect(depois.motivoSaida).not.toBe("perdido");
+		expect(Object.keys(depois)).not.toContain("stage");
+		expect(Object.keys(depois)).not.toContain("perdido");
+	});
+
+	it("esgotado é terminal: a régua para e o motivo é `esgotado`, nunca `perdido`", () => {
+		const esgotado = estadoInicial({
+			objetivo: "carro",
+			status: "ESGOTADO",
+			step: MAX_TOQUES,
+			motivoSaida: "tres_toques_sem_resposta",
+		});
+
+		const veredito = podeDisparar(esgotado, TOQUE_1);
+		expect(veredito).toEqual({ pode: false, motivo: "esgotado" });
+	});
+
+	it("o motor fecha a linha em ESGOTADO (sem tocar lead) quando a cota reabre", () => {
+		// Linha ATIVO no teto de toques, com a cota de 30 dias já livre: o motor
+		// fecha a sequência gravando ESGOTADO — e SÓ isso.
+		const ativoNoTeto = estadoInicial({
+			objetivo: "carro",
+			status: "ATIVO",
+			step: MAX_TOQUES,
+			nextTouchAt: TOQUE_1,
+			ultimoToqueEm: new Date(TOQUE_1.getTime() - 40 * DIA),
+			ultimoInboundEm: INBOUND,
+		});
+
+		const decisao = decidir({
+			agora: TOQUE_1,
+			estado: ativoNoTeto,
+			telefone: "5562999998888",
+			fase: "inicio",
+		});
+
+		expect(decisao.acao).toEqual({ tipo: "nada", motivo: "esgotado" });
+		expect(decisao.proximoEstado?.status).toBe("ESGOTADO");
+		expect(decisao.proximoEstado?.motivoSaida).toBe("tres_toques_sem_resposta");
+		expect(decisao.proximoEstado?.nextTouchAt).toBeNull();
+		expect(decisao.proximoEstado?.motivoSaida).not.toBe("perdido");
+	});
+
+	it("quem respondeu no meio do caminho continua sem esgotar", () => {
+		// Dois toques saíram, o cliente respondeu: a linha para em RESPONDEU e o
+		// esgotamento nunca acontece — mesmo com `step` abaixo do teto.
+		const respondeu = estadoInicial({
+			objetivo: "carro",
+			status: "RESPONDEU",
+			step: 2,
+			motivoSaida: "cliente_respondeu",
+			ultimoToqueEm: new Date(TOQUE_1.getTime() - 3 * DIA),
+			ultimoInboundEm: new Date(TOQUE_1.getTime() - DIA),
+		});
+
+		const decisao = decidir({
+			agora: TOQUE_1,
+			estado: respondeu,
+			telefone: "5562999998888",
+			fase: "inicio",
+		});
+
+		expect(decisao.acao).toEqual({ tipo: "nada", motivo: "ja_respondeu" });
+		expect(decisao.proximoEstado?.status).toBe("RESPONDEU");
+		expect(decisao.proximoEstado?.status).not.toBe("ESGOTADO");
 	});
 });

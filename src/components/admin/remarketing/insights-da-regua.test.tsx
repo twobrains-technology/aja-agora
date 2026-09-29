@@ -10,7 +10,7 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { LinhaBruta } from "@/lib/admin/remarketing-tela";
 import { estadoHonestoDaRegua, insightsDaRegua } from "@/lib/admin/remarketing-tela";
@@ -40,6 +40,7 @@ function linha(parcial: Partial<LinhaBruta> = {}): LinhaBruta {
 		optoutDaPessoaEm: null,
 		converteuEm: null,
 		rastro: null,
+		evidenciaDaForma: null,
 		...parcial,
 	};
 }
@@ -81,6 +82,33 @@ describe("SecaoDeInsights — régua ligada, sem toque no período", () => {
 		expect(screen.getByText(/Nenhum toque no período/i)).toBeInTheDocument();
 		expect(screen.getByText("40")).toBeInTheDocument();
 		expect(screen.queryByText(/Funil da régua por passo/i)).not.toBeInTheDocument();
+	});
+});
+
+describe("SecaoDeInsights — o funil é a porta da lista (FIX-379)", () => {
+	it("clicar no passo leva ao recorte daquele passo", () => {
+		const cliques: number[] = [];
+		render(
+			<SecaoDeInsights
+				insights={insightsDaRegua([linha({ step: 2 })])}
+				estado={{ tipo: "com_dados", totalNoPeriodo: 1 }}
+				onFiltrarPasso={(passo) => cliques.push(passo)}
+			/>,
+		);
+
+		fireEvent.click(screen.getAllByRole("button", { name: /Depois do toque 02/i })[0]);
+		expect(cliques).toEqual([2]);
+	});
+
+	it("sem o handler o passo continua sendo texto, não um botão morto", () => {
+		render(
+			<SecaoDeInsights
+				insights={insightsDaRegua([linha()])}
+				estado={{ tipo: "com_dados", totalNoPeriodo: 1 }}
+			/>,
+		);
+
+		expect(screen.queryByRole("button", { name: /Depois do toque 01/i })).not.toBeInTheDocument();
 	});
 });
 

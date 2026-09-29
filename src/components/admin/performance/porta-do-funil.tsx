@@ -35,6 +35,7 @@ export function PortaDoFunilCard({
 	cobertura: CoberturaAtribuicao;
 }) {
 	const semOrigem = Math.max(0, cobertura.conversasTotal - cobertura.conversasComOrigem);
+	const deTeste = cobertura.conversasDeTeste;
 
 	return (
 		<Card className="shadow-sm">
@@ -126,6 +127,32 @@ export function PortaDoFunilCard({
 						</Tooltip>
 					</TooltipProvider>
 				</div>
+
+				{/* FIX-374 — o recorte de teste deixa de ser silencioso.
+
+				    As conversas marcadas como teste ficam FORA do funil (decisão de
+				    produto), mas o funil mostrava 0 sem dizer por quê: a cliente comparou 5
+				    propostas do mutirão de 16/09 com o relatório da administradora e
+				    concluiu que o painel mentia. A linha só aparece quando existe alguma —
+				    "0 conversas de teste" é ruído em toda leitura normal da tela. */}
+				{deTeste > 0 && (
+					<div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+						<InfoIcon className="size-3.5 shrink-0" aria-hidden="true" />
+						<span>
+							{nf.format(deTeste)}{" "}
+							{deTeste === 1
+								? "conversa marcada como teste ficou fora"
+								: "conversas marcadas como teste ficaram fora"}{" "}
+							deste funil
+						</span>
+						<Link
+							href="/admin/conversations?include_simulated=true"
+							className="font-medium text-foreground underline underline-offset-2 hover:text-foreground/80"
+						>
+							Ver as {nf.format(deTeste)}
+						</Link>
+					</div>
+				)}
 			</CardContent>
 		</Card>
 	);
