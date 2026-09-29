@@ -471,7 +471,7 @@ describeIfDb("percurso — até onde cada pessoa foi (integration)", () => {
 				createdAt: QUANDO_ISOLADO,
 			});
 
-			const { resumo, totalDeConversas } = await queries.listarPercurso({
+			const { resumo, totalDePessoas, totalDeConversas } = await queries.listarPercurso({
 				from: DE_ISOLADO,
 				to: ATE_ISOLADO,
 			});
@@ -488,14 +488,16 @@ describeIfDb("percurso — até onde cada pessoa foi (integration)", () => {
 			// todas as conversas das pessoas, identificadas ou não.
 			expect(totalDeConversas).toBe(4);
 
-			// E o funil de mídia, lido na MESMA janela, conta a mesma gente: 4
-			// conversas no total, 3 delas identificadas, para 2 PESSOAS. A diferença
-			// entre conversa e pessoa é exatamente quem abriu duas.
+			// E o funil de mídia, lido na MESMA janela, conta a mesma gente — agora em
+			// PESSOA (FIX-370). As três pessoas com conversa: quem seguiu adiante, quem
+			// parou no degrau (com DUAS conversas) e quem só iniciou. Contando conversa,
+			// o funil dizia 4 aqui e a lista do Percurso, 3 — mesmo rótulo, populações
+			// diferentes.
 			const { computeFunilMidia } = await import("./performance-queries");
 			const funil = await computeFunilMidia(DE_ISOLADO, ATE_ISOLADO);
-			expect(funil.find((e) => e.chave === "conversas")?.count).toBe(totalDeConversas);
+			expect(funil.find((e) => e.chave === "conversas")?.count).toBe(totalDePessoas);
 			const etapa = funil.find((e) => e.chave === "identificados");
-			expect(etapa?.count).toBe(3);
+			expect(etapa?.count).toBe(por.se_identificou?.alcancaram);
 			expect(por.se_identificou?.alcancaram).toBeLessThanOrEqual(etapa?.count ?? 0);
 		});
 
@@ -863,6 +865,197 @@ describeIfDb("percurso — até onde cada pessoa foi (integration)", () => {
 			const pessoa = await pessoaDe(ABRIU_O_TEATRO);
 			expect(pessoa?.conversas).toBe(0);
 			expect(pessoa?.passo).toBe("abriu_o_chat");
+		});
+	});
+
+	// ── FIX-382: A LISTA QUE A BRUNA USA PARA LIGAR ─────────────────────────
+	//
+	// O shape que faltava: AUTOR da última interação, se pediu simulação, se está
+	// na régua e o motivo NOMEADO quando não está. Janela própria para as
+	// contagens serem exatas e não dependerem do resto do arquivo.
+	describe("a lista para ligar (FIX-382)", () => {
+		const ANO_P = 2030 + Math.floor(Math.random() * 25);
+		const MES_P = String(1 + Math.floor(Math.random() * 12)).padStart(2, "0");
+		const DE_P = new Date(`${ANO_P}-${MES_P}-01T00:00:00Z`);
+		const ATE_P = new Date(`${ANO_P}-${MES_P}-28T23:59:59Z`);
+		const QUANDO_P = new Date(`${ANO_P}-${MES_P}-10T12:00:00Z`);
+		const RESPOSTA_DO_AGENTE = new Date(`${ANO_P}-${MES_P}-11T12:00:00Z`);
+
+		const envAntes = {
+			ativo: process.env.REMARKETING_ATIVO,
+			web: process.env.REMARKETING_ENTRADA_WEB,
+		};
+
+		async function conversaDaVisita(visitId: string): Promise<string> {
+			const conversa = await db.query.conversations.findFirst({
+				where: (c, { eq: igual }) => igual(c.visitId, visitId),
+				columns: { id: true },
+			});
+			if (!conversa) throw new Error("visita semeada sem conversa");
+			return conversa.id;
+		}
+
+		beforeAll(async () => {
+			// A régua precisa estar LIGADA para os motivos existirem; a entrada web
+			// fica desligada (o padrão de produção), então a conversa web sai nomeada
+			// como `conversa_web` — nunca nula em silêncio.
+			process.env.REMARKETING_ATIVO = "1";
+			process.env.REMARKETING_ENTRADA_WEB = "0";
+
+			// (a) o AGENTE falou por último — há resposta depois da fala do cliente.
+			const visitaAgente = await semear({
+				utmSource: "facebook",
+				utmCampaign: "liga-agente",
+				ate: "iniciou_conversa",
+				quando: QUANDO_P,
+			});
+			await db.insert(schema.messages).values({
+				conversationId: await conversaDaVisita(visitaAgente),
+				role: "assistant",
+				content: "posso te ajudar com a simulacao",
+				createdAt: RESPOSTA_DO_AGENTE,
+			});
+
+			// (b) o CLIENTE falou por último.
+			await semear({
+				utmSource: "facebook",
+				utmCampaign: "liga-cliente",
+				ate: "iniciou_conversa",
+				quando: QUANDO_P,
+			});
+
+			// (c) pediu SIMULAÇÃO (artefato de oferta).
+			await semear({
+				utmSource: "facebook",
+				utmCampaign: "liga-simulacao",
+				ate: "viu_oferta",
+				quando: QUANDO_P,
+				nome: "Pediu Simulacao",
+			});
+
+			// (d) JÁ NA RÉGUA — linha em remarketing_touches.
+			const [contato] = await db
+				.insert(schema.contacts)
+				.values({ name: "Contato Regua", phone: "+5511977776666" })
+				.returning({ id: schema.contacts.id });
+			contactIds.push(contato.id);
+			const visitaRegua = await semear({
+				utmSource: "facebook",
+				utmCampaign: "liga-regua",
+				ate: "iniciou_conversa",
+				quando: QUANDO_P,
+				nome: "Na Regua",
+			});
+			const conversaRegua = await conversaDaVisita(visitaRegua);
+			await db
+				.update(schema.conversations)
+				.set({ contactId: contato.id })
+				.where(eq(schema.conversations.id, conversaRegua));
+			await db.insert(schema.remarketingTouches).values({
+				conversationId: conversaRegua,
+				contactId: contato.id,
+				objetivo: "carro",
+			});
+
+			// (e) só chegou, sem conversa nenhuma — a régua não a alcança.
+			await semear({
+				utmSource: "facebook",
+				utmCampaign: "liga-sem-conversa",
+				ate: "so_chegou",
+				quando: QUANDO_P,
+			});
+		});
+
+		afterAll(() => {
+			if (envAntes.ativo === undefined) delete process.env.REMARKETING_ATIVO;
+			else process.env.REMARKETING_ATIVO = envAntes.ativo;
+			if (envAntes.web === undefined) delete process.env.REMARKETING_ENTRADA_WEB;
+			else process.env.REMARKETING_ENTRADA_WEB = envAntes.web;
+		});
+
+		async function pessoaDaCampanha(campanha: string) {
+			const { pessoas } = await queries.listarPercurso({
+				from: DE_P,
+				to: ATE_P,
+				limit: 200,
+			});
+			return pessoas.find((p) => p.campanha === campanha);
+		}
+
+		it("diz QUEM falou por último, com a data da interação", async () => {
+			const agente = await pessoaDaCampanha("liga-agente");
+			expect(agente?.ultimaInteracaoAutor).toBe("agente");
+			expect(agente?.ultimaInteracaoEm).toBe(RESPOSTA_DO_AGENTE.toISOString());
+
+			const cliente = await pessoaDaCampanha("liga-cliente");
+			expect(cliente?.ultimaInteracaoAutor).toBe("cliente");
+
+			// Quem nunca trocou uma fala não ganha autor inventado.
+			const semConversa = await pessoaDaCampanha("liga-sem-conversa");
+			expect(semConversa?.ultimaInteracaoAutor).toBeNull();
+			expect(semConversa?.ultimaInteracaoEm).toBeNull();
+		});
+
+		it("diz se pediu simulação", async () => {
+			expect((await pessoaDaCampanha("liga-simulacao"))?.pediuSimulacao).toBe(true);
+			expect((await pessoaDaCampanha("liga-cliente"))?.pediuSimulacao).toBe(false);
+		});
+
+		it("quem está fora da régua sai com o motivo NOMEADO", async () => {
+			const web = await pessoaDaCampanha("liga-cliente");
+			expect(web?.naRegua).toBe(false);
+			expect(web?.motivoForaDaRegua).toBe("conversa_web");
+
+			// Sem conversa não há como entrar na régua: o fato é `sem_contato`, e o
+			// motivo sai escrito — nunca nulo em silêncio.
+			const semConversa = await pessoaDaCampanha("liga-sem-conversa");
+			expect(semConversa?.naRegua).toBe(false);
+			expect(semConversa?.motivoForaDaRegua).toBe("sem_contato");
+		});
+
+		it("quem está na régua sai com naRegua = true, sem motivo de exclusão", async () => {
+			const naRegua = await pessoaDaCampanha("liga-regua");
+			expect(naRegua?.naRegua).toBe(true);
+			expect(naRegua?.motivoForaDaRegua).toBeNull();
+		});
+	});
+
+	// ── FIX-382: A ORDEM QUE RESPONDE A PERGUNTA DELA ───────────────────────
+	//
+	// "Eles continuam parados desde a semana passada" — em `parou`, a lista tem
+	// que abrir pelo mais ANTIGO. Janela própria: os dois únicos da janela são o
+	// par cuja ordem se afirma.
+	describe("a ordem em parou (FIX-382)", () => {
+		const ANO_O = 2055 + Math.floor(Math.random() * 10);
+		const MES_O = String(1 + Math.floor(Math.random() * 12)).padStart(2, "0");
+		const DE_O = new Date(`${ANO_O}-${MES_O}-01T00:00:00Z`);
+		const ATE_O = new Date(`${ANO_O}-${MES_O}-28T23:59:59Z`);
+		const DIA_VELHO = new Date(`${ANO_O}-${MES_O}-05T12:00:00Z`);
+		const DIA_NOVO = new Date(`${ANO_O}-${MES_O}-20T12:00:00Z`);
+
+		beforeAll(async () => {
+			await semear({
+				utmSource: "facebook",
+				utmCampaign: "ordem-velho",
+				ate: "iniciou_conversa",
+				quando: DIA_VELHO,
+			});
+			await semear({
+				utmSource: "facebook",
+				utmCampaign: "ordem-novo",
+				ate: "iniciou_conversa",
+				quando: DIA_NOVO,
+			});
+		});
+
+		it("parado há mais tempo primeiro", async () => {
+			const { pessoas } = await queries.listarPercurso({
+				from: DE_O,
+				to: ATE_O,
+				passo: "iniciou_conversa",
+				modo: "parou",
+			});
+			expect(pessoas.map((p) => p.campanha)).toEqual(["ordem-velho", "ordem-novo"]);
 		});
 	});
 });

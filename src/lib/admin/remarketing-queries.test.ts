@@ -7,14 +7,24 @@
 // (`listarReguas`) não tem unidade para provar além do SQL.
 
 import { describe, expect, it } from "vitest";
+// O teto agora entra por `ParametrosRegua` (união toques-lista + regua-cadencia):
+// a tela deriva com os parâmetros VIGENTES, não com um número solto.
+import { PARAMETROS_DE_FABRICA } from "@/lib/remarketing/regua";
 import {
 	contadoresDe,
+	cotaLegivel,
+	filtrarPorPasso,
 	filtrarPorSituacao,
 	type LinhaBruta,
 	linhaDaTela,
 	linhasDaTela,
 	MOTIVO_SEGURADO,
+	passoDa,
+	passoDoParametro,
+	passoLegivel,
 	proximoToqueDe,
+	resumoDaRegua,
+	rotuloDoFiltroDePasso,
 	rotuloDoMotivo,
 	situacaoDe,
 	situacaoDoParametro,
@@ -42,6 +52,7 @@ function linha(parcial: Partial<LinhaBruta> = {}): LinhaBruta {
 		optoutDaPessoaEm: null,
 		converteuEm: null,
 		rastro: null,
+		evidenciaDaForma: null,
 		...parcial,
 	};
 }
@@ -247,5 +258,96 @@ describe("situacaoDoParametro", () => {
 		expect(situacaoDoParametro("segurado")).toBe("segurado");
 		expect(situacaoDoParametro("qualquer")).toBeNull();
 		expect(situacaoDoParametro(null)).toBeNull();
+	});
+});
+
+describe("filtrarPorPasso — a porta da pergunta 'para quem foi? (FIX-379)", () => {
+	// A invariante que faz o funil e o resumo contarem a MESMA coisa: o resumo
+	// soma o `step` de cada conversa ("toques enviados") e o funil classifica a
+	// conversa por esse mesmo `step`. Se as duas contas divergirem, o operador
+	// clica em "8 toques" e a lista filtrada mostra outra coisa.
+	it("a soma dos passos bate com os 'toques enviados' do resumo", () => {
+		const linhas = [
+			linha({ step: 1 }),
+			linha({ conversationId: "b", step: 3 }),
+			linha({ conversationId: "c", step: 0 }),
+			linha({ conversationId: "d", step: 2 }),
+		];
+
+		const somaDosPassos = linhas.reduce((soma, l) => soma + passoDa(l), 0);
+		expect(somaDosPassos).toBe(resumoDaRegua(linhas).toquesEnviados);
+	});
+
+	it("o recorte por passo devolve exatamente quem está naquele passo", () => {
+		const linhas = [
+			linha({ conversationId: "a", step: 0 }),
+			linha({ conversationId: "b", step: 2 }),
+			linha({ conversationId: "c", step: 2 }),
+			linha({ conversationId: "d", step: 3 }),
+		];
+
+		expect(filtrarPorPasso(linhas, 2).map((l) => l.conversationId)).toEqual(["b", "c"]);
+		expect(filtrarPorPasso(linhas, 0).map((l) => l.conversationId)).toEqual(["a"]);
+		expect(filtrarPorPasso(linhas, 1)).toEqual([]);
+	});
+
+	it("'com toque' traz quem recebeu pelo menos um toque, e nenhum a mais", () => {
+		const linhas = [
+			linha({ conversationId: "a", step: 0 }),
+			linha({ conversationId: "b", step: 1 }),
+			linha({ conversationId: "c", step: 3 }),
+		];
+
+		expect(filtrarPorPasso(linhas, "com_toque").map((l) => l.conversationId)).toEqual(["b", "c"]);
+	});
+
+	it("sem filtro a lista inteira volta", () => {
+		expect(filtrarPorPasso([linha(), linha({ conversationId: "b" })], null)).toHaveLength(2);
+	});
+
+	it("passoDoParametro reconhece 0..3 e com_toque, e ignora o resto", () => {
+		expect(passoDoParametro("0")).toBe(0);
+		expect(passoDoParametro("3")).toBe(3);
+		expect(passoDoParametro("com_toque")).toBe("com_toque");
+		expect(passoDoParametro("4")).toBeNull();
+		expect(passoDoParametro("carro")).toBeNull();
+		expect(passoDoParametro(null)).toBeNull();
+	});
+
+	it("o rótulo do filtro é o mesmo vocabulário do funil", () => {
+		expect(rotuloDoFiltroDePasso(1)).toBe("Depois do toque 01");
+		expect(rotuloDoFiltroDePasso("com_toque")).toBe("Com algum toque enviado");
+	});
+});
+
+describe("o teto exibido vem do cadastro, não da constante (FIX-381)", () => {
+	// O ciclo já lê `maxToques` do `remarketing_config` (AJA-20 T1); a TELA ficou
+	// presa na constante. Com o cadastro em 2 a tela dizia "1 de 3" e mentia para
+	// quem opera. O default continua sendo a fábrica, que é o mesmo valor que o
+	// ciclo usa quando não há cadastro.
+	it("com o cadastro em 2, a tela diz '1 de 2'", () => {
+		expect(passoLegivel(1, 2)).toBe("1 de 2");
+		expect(cotaLegivel(1, 2)).toBe("1 de 2");
+	});
+
+	it("o passo nunca passa do teto, mesmo com o dado adiantado", () => {
+		expect(passoLegivel(3, 2)).toBe("2 de 2");
+	});
+
+	it("sem cadastro, cai no valor de fábrica", () => {
+		expect(passoLegivel(1)).toBe("1 de 3");
+		expect(cotaLegivel(2)).toBe("2 de 3");
+	});
+
+	it("a linha da tela carrega o teto recebido", () => {
+		const comDois = linhaDaTela(linha({ step: 1, touches30d: 1 }), AGORA, {
+			...PARAMETROS_DE_FABRICA,
+			maxToques: 2,
+		});
+		expect(comDois.passoLegivel).toBe("1 de 2");
+		expect(comDois.cotaLegivel).toBe("1 de 2");
+
+		const semCadastro = linhaDaTela(linha({ step: 1, touches30d: 1 }), AGORA);
+		expect(semCadastro.passoLegivel).toBe("1 de 3");
 	});
 });

@@ -24,9 +24,10 @@
  *    já usa, e a arte vai anexada como imagem. Foi a doutrina registrada em
  *    `workers/retomada.ts` — "não existe canal paralelo de texto enlatado".
  * 2. **Template** (fora da janela). A Meta só entrega template aprovado; a
- *    chave lógica (`usageKey`) é escolhida pelo `objetivo` do disparo. Quem
- *    resolve o template é o `template-dispatch` (FIX-201), que ainda decide se
- *    enfileira quando o template não está aprovado — nenhum toque se perde.
+ *    chave lógica (`usageKey`) é resolvida por uma LISTA ordenada — fase × bem,
+ *    com o genérico da fase como fallback (`chavesDoToque`). Quem resolve o
+ *    template é o `template-dispatch` (FIX-201), que ainda decide se enfileira
+ *    quando nenhum da lista está aprovado — nenhum toque se perde.
  *
  * ── Opt-out e telefone interno são TERMINAIS ────────────────────────────────
  *
@@ -35,8 +36,30 @@
  * `OPTOUT` como terminal no estado; aqui o fato vem do contato, para valer
  * também numa conversa que ainda nem existe. Telefone interno (equipe) nunca
  * recebe toque, e a chamada isto é código, não boa intenção.
+ *
+ * ── SÓ a régua conta os toques da régua (FIX-377) ───────────────────────────
+ *
+ * Havia aqui um portão a mais: `retomadaPermitida` (o `MAX_RETOMADAS = 2` /
+ * backoff de 30 min de `workers/retomada.ts`), que devolvia
+ * `semDisparo("teto_de_retomadas")` **antes do envio e sem gravar**. Com a
+ * cadência curta ele mataria o toque 02 e o 03 em silêncio — a régua passaria
+ * verde nos testes e não dispararia em produção.
+ *
+ * O contador do watchdog mede OUTRA coisa: o TURNO de retomada que morreu sem
+ * conduzir (`conversationMetadata.retomada`, escrito e lido pelo
+ * `gate-reengage-poll`). Os toques intra-janela NÃO são turnos de retomada: são
+ * a sequência da régua, e o contador dela já existe e é o certo — `step` e
+ * `toques_30d`, com as guardas `maxToques` e `tetoToques30Dias` (`podeDisparar`).
+ * Por isso o motor NÃO consulta mais o portão do watchdog, e o ciclo não
+ * incrementa mais o contador dele. `retomada.ts` fica intacto para a retomada
+ * normal.
+ *
+ * Sem duplicidade: o watchdog só age quando a ÚLTIMA mensagem é do cliente
+ * (`findConversasSemResposta`); o turno da régua deixa a última mensagem como do
+ * assistente e silencia o watchdog por construção.
  */
 
+import type { FaseDoFunil } from "@/lib/admin/sinais-do-funil";
 import { chaveTelefoneBR } from "@/lib/whatsapp/mesmo-numero";
 import {
 	contarToquesNaJanela,
@@ -151,14 +174,61 @@ export function objetivoCanonico(valor: string | null | undefined): ObjetivoDoTo
 /**
  * A chave lógica do template aprovado, por objetivo.
  *
- * O nome segue a convenção do projeto (`snake_case`), e o vínculo uso↔template
- * Meta é resolvido no banco por essa chave — o código nunca crava o nome do
- * template na Meta (ver `template-dispatch.ts`). As linhas nascem no admin /
- * na migration do bloco de templates; enquanto não estiverem `APPROVED`, o
- * `template-dispatch` enfileira em vez de perder o toque.
+ * ── LEGADO (a tela, não o disparo) ─────────────────────────────────────────
+ *
+ * Continua existindo porque a tela de forma do toque (`admin/remarketing-queries`)
+ * casa o objetivo com o nome do template por esta chave — e a tela ainda não
+ * conhece a FASE. O DISPARO não a usa mais: desde o FIX-388 ele resolve a lista
+ * por `chavesDoToque(fase, objetivo)`. A dívida (levar a fase até a tela) está
+ * registrada no ADR do bloco-comunicacoes.
  */
 export function templateDoObjetivo(objetivo: string): string {
 	return `remarketing_oportunidade_${objetivoCanonico(objetivo)}`;
+}
+
+/** O rótulo do template GENÉRICO de uma fase — o fallback quando o bem é desconhecido. */
+export const BEM_GENERICO = "generico";
+
+/**
+ * A LISTA ORDENADA de chaves candidatas do toque — `[fase+bem, genérico da fase]`.
+ *
+ * A função NÃO decide se o template existe ou está aprovado: isso é do dispatcher
+ * (regra dura do PRD — nenhum texto de comunicação é decidido no servidor). Aqui
+ * só se monta a ORDEM de tentativa, e a segunda posição é o genérico da fase, para
+ * que exista sempre uma alternativa mais larga para o mesmo momento.
+ *
+ * Sem bem conhecido, a lista tem UMA chave: o genérico da fase. É o que impede a
+ * comunicação de `fechamento` de um lead sem bem de pegar a arte/o texto do bem de
+ * outra pessoa (AJA-14).
+ */
+export function chavesDoToque(fase: FaseDoFunil, objetivo: string | null | undefined): string[] {
+	const generico = `remarketing_${fase}_${BEM_GENERICO}`;
+	if (!ehObjetivoConhecido(objetivo)) return [generico];
+	return [`remarketing_${fase}_${objetivoCanonico(objetivo)}`, generico];
+}
+
+/** A chave e a arte que saem JUNTAS — a mesma entrada produz as duas. */
+export interface ComunicacaoDoToque {
+	fase: FaseDoFunil;
+	/** Lista ordenada de chaves candidatas: `[fase+bem, genérico]` ou só o genérico. */
+	chaves: string[];
+	/** A arte do MESMO bem da primeira chave; `null` quando não há bem conhecido. */
+	arte: string | null;
+}
+
+/**
+ * A comunicação do toque numa peça só: fase, chaves e arte (FIX-389).
+ *
+ * Existe para que chave e arte não possam divergir: as duas nascem do MESMO
+ * `objetivo`, e é a primeira chave que diz qual bem a arte representa. Chave
+ * genérica (sem bem) nunca vem com arte de bem — o `arteDoObjetivo` devolve
+ * `null` e a comunicação sai só com o texto.
+ */
+export function comunicacaoDoToque(
+	fase: FaseDoFunil,
+	objetivo: string | null | undefined,
+): ComunicacaoDoToque {
+	return { fase, chaves: chavesDoToque(fase, objetivo), arte: arteDoObjetivo(objetivo) };
 }
 
 /**
@@ -326,8 +396,7 @@ export type MotivoSemDisparo =
 	| MotivoBloqueio
 	| "optout_da_pessoa"
 	| "telefone_interno"
-	| "sem_destino"
-	| "teto_de_retomadas";
+	| "sem_destino";
 
 export type AcaoRemarketing =
 	| { tipo: "nada"; motivo: MotivoSemDisparo }
@@ -338,7 +407,7 @@ export type AcaoRemarketing =
 			 * quando o bem não é conhecido — o toque sai só com o texto. */
 			arte: string | null;
 	  }
-	| { tipo: "template"; passo: PassoDisparo; usageKey: string };
+	| { tipo: "template"; passo: PassoDisparo; usageKeys: string[] };
 
 export interface EntradaDoMotor {
 	agora: Date;
@@ -348,13 +417,18 @@ export interface EntradaDoMotor {
 	telefone: string | null;
 	/** `contacts.remarketing_optout_at` — opt-out por pessoa. */
 	optoutDaPessoaEm?: Date | null;
-	/** `podeRetomar` da retomada (MAX_RETOMADAS + backoff), para o turno. */
-	retomadaPermitida?: boolean;
 	/**
 	 * O telefone é de um atendente ATIVO no banco? O ciclo resolve (é I/O);
 	 * o motor só decide. Soma-se à lista de telefones internos em código.
 	 */
 	telefoneDaEquipe?: boolean;
+	/**
+	 * A macro-fase do funil em que a pessoa está — FATO do servidor, calculado
+	 * pelo ciclo com `faseDoFunil(sinais)` (FIX-387). Obrigatória de propósito:
+	 * um default silencioso aqui mandaria a mensagem do início para quem só falta
+	 * fechar, e o defeito passaria despercebido.
+	 */
+	fase: FaseDoFunil;
 	/**
 	 * Os parâmetros vigentes da régua — o ajuste do cadastro, já validado por
 	 * `normalizarParametros`. Ausente = padrão de fábrica (comportamento de
@@ -395,8 +469,12 @@ export function ehTelefoneInterno(
  *   1. opt-out da PESSOA (vence tudo, inclusive reentrada);
  *   2. destino e telefone interno;
  *   3. a régua (`podeDisparar`) — que já cobre terminal, teto, horário e data;
- *   4. entrega: texto livre → turno de retomada (respeitando MAX_RETOMADAS);
- *      template → `usageKey` do objetivo.
+ *   4. entrega: texto livre → turno de retomada; template → `usageKey` do
+ *      objetivo.
+ *
+ * Não existe portão do contador do watchdog aqui (FIX-377): quem conta os toques
+ * da régua é a própria régua (`step` / `toques_30d`), e um bloqueio transitório
+ * sai daqui com motivo NOMEADO — nunca mudo.
  */
 export function decidir(entrada: EntradaDoMotor): DecisaoDoMotor {
 	const { agora, estado, telefone } = entrada;
@@ -433,24 +511,23 @@ export function decidir(entrada: EntradaDoMotor): DecisaoDoMotor {
 		return semDisparo(pode.motivo, normalizarSequenciaMorta(estado, pode.motivo));
 	}
 
-	// 4. COMO entregar.
-	// O toque SAIU: registra uma vez e usa o mesmo estado para contagem e gravação.
+	// 4. COMO entregar. A comunicação (chave e arte) nasce da MESMA entrada: a
+	// fase × o bem. O toque SAIU: registra uma vez e usa o mesmo estado para
+	// contagem e gravação.
+	const comunicacao = comunicacaoDoToque(entrada.fase, estado.objetivo);
 	const proximoEstado = registrarToque(estado, agora, parametros);
 	const touches30d = contarToquesNaJanela(proximoEstado, agora, parametros);
 
 	if (pode.entrega === "texto_livre") {
-		if (entrada.retomadaPermitida === false) {
-			return semDisparo("teto_de_retomadas");
-		}
 		return {
-			acao: { tipo: "turno_de_retomada", passo: pode.step, arte: arteDoObjetivo(estado.objetivo) },
+			acao: { tipo: "turno_de_retomada", passo: pode.step, arte: comunicacao.arte },
 			proximoEstado,
 			touches30d,
 		};
 	}
 
 	return {
-		acao: { tipo: "template", passo: pode.step, usageKey: templateDoObjetivo(estado.objetivo) },
+		acao: { tipo: "template", passo: pode.step, usageKeys: comunicacao.chaves },
 		proximoEstado,
 		touches30d,
 	};
@@ -484,6 +561,15 @@ function normalizarSequenciaMorta(estado: EstadoRegua, motivo: MotivoBloqueio): 
 		};
 	}
 
+	// ── DECISÃO DO DONO (28/09/2026): esgotar os toques SÓ PARA ────────────────
+	//
+	// `ESGOTADO` é TERMINAL e NÃO transita o lead para `perdido`, e NÃO cria
+	// alerta de "aguardando revisão humana" (morreram o T2 e o T3 do AJA-24, que
+	// previam transição automática). Nada aqui — nem em `regua.ts` — toca
+	// `leads.stage` nem escreve `lead_events`: quem cuida da raia do funil é a
+	// mesa, à mão. O que a régua grava é só o estado da LINHA dela (`status`,
+	// `motivo_saida`, `next_touch_at`). Quem ler isto depois não "conserte"
+	// criando a transição: a prova está em `motor.test.ts` (FIX-386).
 	if (motivo === "esgotado") {
 		return {
 			...estado,

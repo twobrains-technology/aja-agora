@@ -17,6 +17,10 @@ import {
 import { type Gate, shouldAskMotive } from "@/lib/agent/qualify-state";
 import { vitrineDisponivel } from "@/lib/bevi/identidade-vitrine";
 import { EMPTY_TURN_FALLBACK } from "@/lib/chat/empty-turn-guard";
+import {
+	type LeituraDoDesbloqueio,
+	leituraDoDesbloqueio,
+} from "@/lib/chat/telefone-ab-do-servidor";
 import type { ArtifactType } from "@/lib/chat/types";
 import type {
 	AjaUIMessage,
@@ -326,6 +330,34 @@ export async function pipeServerArtifact(args: {
 	});
 }
 
+/** bloco-telefone-ab — a melhor opção que a variante C mostra borrada.
+ *  Só número REAL da oferta: campo ausente ⇒ `undefined`, nunca derivado. */
+export interface MelhorOpcaoDoDesbloqueio {
+	administradora: string;
+	creditValue: number;
+	monthlyPayment: number;
+	termMonths: number;
+}
+
+/** Extrai a melhor opção de um payload de `recommendation_card`. Puro. */
+export function melhorOpcaoDoCard(
+	payload: Record<string, unknown>,
+): MelhorOpcaoDoDesbloqueio | undefined {
+	const administradora = payload.administradora;
+	const creditValue = payload.creditValue;
+	const monthlyPayment = payload.monthlyPayment;
+	const termMonths = payload.termMonths;
+	if (
+		typeof administradora !== "string" ||
+		typeof creditValue !== "number" ||
+		typeof monthlyPayment !== "number" ||
+		typeof termMonths !== "number"
+	) {
+		return undefined;
+	}
+	return { administradora, creditValue, monthlyPayment, termMonths };
+}
+
 // FIX-130 (D21): 3 categorias de entrada — Imóvel, Automóvel, Moto — vêm da
 // FONTE ÚNICA client-safe. O evento `welcome-categories` (backend) e o
 // `EmptyState` do chat (`message-list.tsx`) importam a MESMA lista, pra não
@@ -344,6 +376,27 @@ export async function pipeOrchestratorToWriter(
 	// transição/welcome/handoff)? O tool-call é chip transitório — NÃO conta. Usado
 	// pelo dispatch de descoberta pra detectar a pendura (turno só-chip) e recuperar.
 	let emittedVisible = false;
+
+	// ── bloco-telefone-ab (FIX-395/396/397) ──────────────────────────────────────
+	//
+	// O teste A/B do telefone, decidido UMA vez por turno e só quando um artifact
+	// de reveal chega — no caso comum (sem teste ativo, ou telefone já conhecido)
+	// sequer toca o banco.
+	const REVEAL_TYPES: ReadonlySet<string> = new Set(["comparison_table", "recommendation_card"]);
+	let estadoDoTurno: LeituraDoDesbloqueio | null | undefined;
+	let cardDoTelefoneEmitido = false;
+	let viuReveal = false;
+	let melhorOpcao: MelhorOpcaoDoDesbloqueio | undefined;
+	const desbloqueioLazy = async (): Promise<LeituraDoDesbloqueio | null> => {
+		if (estadoDoTurno === undefined) {
+			estadoDoTurno = await leituraDoDesbloqueio(conversationId).catch((err) => {
+				// Best-effort, como toda a atribuição: o teste nunca derruba a venda.
+				console.error("[telefone-ab] falha ao ler o desbloqueio do telefone:", err);
+				return null;
+			});
+		}
+		return estadoDoTurno;
+	};
 
 	const ensureTextStarted = (): string => {
 		if (!textId) {
@@ -402,15 +455,54 @@ export async function pipeOrchestratorToWriter(
 					break;
 				}
 
-				case "artifact":
+				case "artifact": {
 					closeTextIfOpen();
 					emittedVisible = true;
+
+					// ── bloco-telefone-ab (FIX-395/396/397) ────────────────────────────────
+					//
+					// O teste A/B do telefone vive no ponto em que a pessoa VÊ a oferta.
+					// A variante é da VISITA (decidida no servidor na criação da conversa,
+					// FIX-394) e o desfecho é lido aqui:
+					//
+					//  • `pede-antes` (B): o reveal NÃO vai pra tela — o card do telefone
+					//    ocupa o lugar e o telefone libera. Os cards já foram persistidos
+					//    pelo nó `persist`; quando o telefone chega, a rota os RE-EMITE a
+					//    partir do banco (`comparacaoGuardadaDaConversa`), sem re-buscar na
+					//    Bevi.
+					//  • `borrado` (C): o reveal vai normalmente, com a melhor opção
+					//    borrada no próprio card do telefone.
+					//  • `livre`: nada muda — quem já deu o telefone vê tudo.
+					const estado = await desbloqueioLazy();
+					if (estado && estado.estado !== "livre" && REVEAL_TYPES.has(ev.artifactType)) {
+						viuReveal = true;
+						if (ev.artifactType === "recommendation_card") {
+							melhorOpcao = melhorOpcaoDoCard(ev.payload);
+							// A variante B já terá emitido o card no primeiro artifact do reveal.
+						}
+						if (estado.estado === "pede-antes") {
+							// SEGURA o reveal: a comparação não aparece antes do telefone.
+							if (!cardDoTelefoneEmitido) {
+								await pipeServerArtifact({
+									conversationId,
+									artifactType: "telefone_do_desbloqueio",
+									payload: { variante: estado.variante, estado: estado.estado },
+									persona: (await reloadMeta(conversationId)).currentPersona ?? null,
+									writer,
+								});
+								cardDoTelefoneEmitido = true;
+							}
+							break;
+						}
+					}
+
 					writer.write({
 						type: "data-artifact",
 						id: ev.toolCallId,
 						data: { type: ev.artifactType, payload: ev.payload } as unknown as ArtifactPartData,
 					});
 					break;
+				}
 
 				case "gate": {
 					closeTextIfOpen();
@@ -552,6 +644,31 @@ export async function pipeOrchestratorToWriter(
 					closeTextIfOpen();
 					break;
 			}
+		}
+
+		// `borrado` (variante C): o reveal foi emitido; o card do telefone fecha o
+		// turno — com a MELHOR OPÇÃO (parcela legível, resto borrado). Emitido aqui,
+		// depois do loop, porque o `recommendation_card` (a fonte da melhor opção)
+		// pode chegar depois do `comparison_table`.
+		if (
+			!cardDoTelefoneEmitido &&
+			viuReveal &&
+			estadoDoTurno &&
+			estadoDoTurno.estado === "borrado"
+		) {
+			await pipeServerArtifact({
+				conversationId,
+				artifactType: "telefone_do_desbloqueio",
+				payload: {
+					variante: estadoDoTurno.variante,
+					estado: estadoDoTurno.estado,
+					...(melhorOpcao ? { melhorOpcao } : {}),
+				},
+				persona: (await reloadMeta(conversationId)).currentPersona ?? null,
+				writer,
+			});
+			cardDoTelefoneEmitido = true;
+			emittedVisible = true;
 		}
 	} finally {
 		clearInterval(batimento);

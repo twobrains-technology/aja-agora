@@ -526,8 +526,15 @@ describeIfDb("performance — funil de mídia (integration)", () => {
 		it("mede quanto do funil tem origem conhecida", async () => {
 			const cobertura = await queries.computeCobertura(JANELA_DE, JANELA_ATE);
 
-			// Todas as conversas da janela nasceram de visita semeada.
-			expect(cobertura).toMatchObject({ conversasComOrigem: 7, conversasTotal: 7, percent: 100 });
+			// Todas as conversas da janela nasceram de visita semeada. A única
+			// simulada entra DECLARADA em `conversasDeTeste` — não somem e não
+			// inflam: o funil mostra a exclusão em número (FIX-374).
+			expect(cobertura).toMatchObject({
+				conversasComOrigem: 7,
+				conversasTotal: 7,
+				percent: 100,
+				conversasDeTeste: 1,
+			});
 		});
 
 		it("não divide por zero em período sem conversa", async () => {
@@ -536,7 +543,12 @@ describeIfDb("performance — funil de mídia (integration)", () => {
 				new Date("2018-01-31T00:00:00Z"),
 			);
 
-			expect(cobertura).toEqual({ conversasComOrigem: 0, conversasTotal: 0, percent: 0 });
+			expect(cobertura).toEqual({
+				conversasComOrigem: 0,
+				conversasTotal: 0,
+				percent: 0,
+				conversasDeTeste: 0,
+			});
 		});
 	});
 
@@ -763,5 +775,265 @@ describeIfDb("performance — funil de mídia (integration)", () => {
 
 			expect(vazio).toEqual({ total: 0, porBem: [], porFaixa: [], comValorInformado: 0 });
 		});
+	});
+});
+
+/**
+ * FIX-370 — a unidade do funil de mídia é PESSOA, não conversa.
+ *
+ * O caso que originou a correção é o real, medido em produção na janela
+ * 01–21/09: **cinco propostas, todas do MESMO telefone**, no mutirão de teste
+ * do dia 16/09. Contadas por conversa davam 5; contadas por pessoa, 1. A cliente
+ * comparou com o relatório da administradora, viu 5 × 0 e concluiu que o painel
+ * mentia — quando o painel estava certo e o recorte de teste ficava fora em
+ * silêncio (ver FIX-374).
+ *
+ * A definição de pessoa é FONTE ÚNICA (`chaveDaPessoa`, em `sinais-do-funil`):
+ * o contato quando conhecido, senão o visitante. Este bloco roda numa JANELA
+ * ISOLADA (2019-06) para que as contagens sejam exatas.
+ */
+describeIfDb("FIX-370 — o funil conta PESSOA", () => {
+	let db: typeof import("@/db").db;
+	let schema: typeof import("@/db/schema");
+	let queries: typeof import("./performance-queries");
+
+	beforeAll(async () => {
+		({ db } = await import("@/db"));
+		schema = await import("@/db/schema");
+		queries = await import("./performance-queries");
+	});
+
+	const DE = new Date("2019-06-01T00:00:00Z");
+	const ATE = new Date("2019-06-30T23:59:59Z");
+	/** 16/06 — o dia do mutirão, transposto para a janela isolada. */
+	const EM = new Date("2019-06-16T15:35:00Z");
+	const UA_GENTE =
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36";
+
+	const contatos: string[] = [];
+	const visitas: string[] = [];
+	const conversas: string[] = [];
+
+	afterAll(async () => {
+		if (conversas.length > 0) {
+			await db.delete(schema.conversations).where(inArray(schema.conversations.id, conversas));
+		}
+		if (visitas.length > 0) {
+			await db.delete(schema.visits).where(inArray(schema.visits.id, visitas));
+		}
+		if (contatos.length > 0) {
+			await db.delete(schema.contacts).where(inArray(schema.contacts.id, contatos));
+		}
+	});
+
+	/**
+	 * Uma PESSOA com N conversas e N propostas — todas do mesmo telefone, como o
+	 * mutirão de 16/09. Cada conversa nasce de uma visita e de um visitante
+	 * DIFERENTE: é o pior caso para a contagem por conversa, e o caso normal de
+	 * quem volta pelo WhatsApp com o mesmo número.
+	 */
+	async function semearPessoa(telefone: string, quantasConversas: number): Promise<string> {
+		const [contato] = await db
+			.insert(schema.contacts)
+			.values({ phone: telefone, name: `Pessoa ${telefone}` })
+			.returning({ id: schema.contacts.id });
+		contatos.push(contato.id);
+
+		for (let i = 0; i < quantasConversas; i++) {
+			const [visita] = await db
+				.insert(schema.visits)
+				.values({
+					visitorId: `v-${crypto.randomUUID()}`,
+					channel: "web",
+					createdAt: EM,
+					userAgent: UA_GENTE,
+					utmSource: "facebook",
+					utmCampaign: "mutirao-de-teste",
+				})
+				.returning({ id: schema.visits.id });
+			visitas.push(visita.id);
+
+			const [conversa] = await db
+				.insert(schema.conversations)
+				.values({
+					channel: "web",
+					visitId: visita.id,
+					contactId: contato.id,
+					createdAt: EM,
+					updatedAt: EM,
+				})
+				.returning({ id: schema.conversations.id });
+			conversas.push(conversa.id);
+
+			await db.insert(schema.beviProposals).values({
+				conversationId: conversa.id,
+				contactId: contato.id,
+				proposalId: `prop-${crypto.randomUUID()}`,
+				createdAt: EM,
+				updatedAt: EM,
+			});
+		}
+		return contato.id;
+	}
+
+	beforeAll(async () => {
+		// A pessoa do caso real: cinco conversas, cinco propostas, UM telefone.
+		await semearPessoa("+5511960000001", 5);
+	});
+
+	it("cinco conversas do MESMO telefone contam UMA pessoa", async () => {
+		const funil = await queries.computeFunilMidia(DE, ATE);
+		const por = Object.fromEntries(funil.map((e) => [e.chave, e.count]));
+
+		// Cinco chegadas semeadas — `visitas` continua contando CHEGADAS (sessão).
+		expect(por.visitas).toBe(5);
+		expect(por.conversas).toBe(1);
+		expect(por.propostas).toBe(1);
+	});
+
+	it("duas pessoas contam DUAS — e o degrau não passa do topo", async () => {
+		const segunda = await semearPessoa("+5511960000002", 1);
+		try {
+			const funil = await queries.computeFunilMidia(DE, ATE);
+			const por = Object.fromEntries(funil.map((e) => [e.chave, e.count]));
+
+			expect(por.visitas).toBe(6);
+			expect(por.conversas).toBe(2);
+			expect(por.propostas).toBe(2);
+		} finally {
+			// O segundo contato sai da janela junto com o que ele trouxe: deixá-lo
+			// vivo mudaria a contagem exata dos outros testes deste bloco.
+			await db.delete(schema.contacts).where(eq(schema.contacts.id, segunda));
+			contatos.splice(contatos.indexOf(segunda), 1);
+		}
+	});
+});
+
+/**
+ * FIX-371 — "pararam aqui" / "ainda vivas" também são por PESSOA.
+ *
+ * Se o degrau conta pessoa (FIX-370) e a parada continua contando CONVERSA, a
+ * soma das paradas deixa de fechar com o topo e o "% que se perdeu" mistura duas
+ * unidades na mesma linha da tela. Pior: quem tem duas conversas — uma que
+ * engajou e outra que chegou à proposta — aparecia parada em DOIS degraus.
+ *
+ * A profundidade da pessoa é a MÁXIMA que ela alcançou. Uma pessoa, um degrau.
+ */
+describeIfDb("FIX-371 — as paradas contam PESSOA, no degrau mais fundo", () => {
+	let db: typeof import("@/db").db;
+	let schema: typeof import("@/db/schema");
+	let queries: typeof import("./performance-queries");
+
+	beforeAll(async () => {
+		({ db } = await import("@/db"));
+		schema = await import("@/db/schema");
+		queries = await import("./performance-queries");
+	});
+
+	const DE = new Date("2019-07-01T00:00:00Z");
+	const ATE = new Date("2019-07-31T23:59:59Z");
+	const EM = new Date("2019-07-10T12:00:00Z");
+	const UA_GENTE =
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36";
+
+	const visitas: string[] = [];
+	const conversas: string[] = [];
+
+	afterAll(async () => {
+		if (conversas.length > 0) {
+			await db.delete(schema.conversations).where(inArray(schema.conversations.id, conversas));
+		}
+		if (visitas.length > 0) {
+			await db.delete(schema.visits).where(inArray(schema.visits.id, visitas));
+		}
+	});
+
+	/**
+	 * Uma conversa da pessoa, nascida de uma visita do MESMO visitante.
+	 *
+	 * Um visitante, várias conversas: é o caso que separa "parou em um degrau" de
+	 * "apareceu em dois". `inboundRecente` grava uma mensagem do cliente AGORA —
+	 * é o sinal de vida (`ultimo_inbound >= now() - 7 dias`), independente de a
+	 * conversa ter nascido em 2019.
+	 */
+	async function conversa(
+		visitante: string,
+		ate: "abriu" | "engajou" | "proposta",
+		inboundRecente = false,
+	): Promise<void> {
+		const [visita] = await db
+			.insert(schema.visits)
+			.values({
+				visitorId: visitante,
+				channel: "web",
+				createdAt: EM,
+				userAgent: UA_GENTE,
+				utmSource: "facebook",
+				utmCampaign: "paradas",
+			})
+			.returning({ id: schema.visits.id });
+		visitas.push(visita.id);
+
+		const [conv] = await db
+			.insert(schema.conversations)
+			.values({ channel: "web", visitId: visita.id, createdAt: EM, updatedAt: EM })
+			.returning({ id: schema.conversations.id });
+		conversas.push(conv.id);
+
+		if (ate !== "abriu") {
+			await db.insert(schema.messages).values({
+				conversationId: conv.id,
+				role: "user",
+				content: "quero um carro",
+				createdAt: inboundRecente ? new Date() : EM,
+			});
+		}
+		if (ate === "proposta") {
+			await db.insert(schema.beviProposals).values({
+				conversationId: conv.id,
+				proposalId: `prop-${crypto.randomUUID()}`,
+				createdAt: EM,
+				updatedAt: EM,
+			});
+		}
+	}
+
+	beforeAll(async () => {
+		// A pessoa que voltou: uma conversa que só engajou e outra que chegou à
+		// proposta. Contada por conversa, ela aparecia parada em DOIS degraus.
+		await conversa("v-parou-fundo", "engajou");
+		await conversa("v-parou-fundo", "proposta", true);
+		// Uma segunda pessoa que abriu o chat e não escreveu nada.
+		await conversa("v-so-abriu", "abriu");
+	});
+
+	it("pessoa com duas conversas parou em UM degrau — o mais fundo", async () => {
+		const funil = await queries.computeFunilMidia(DE, ATE);
+		const por = Object.fromEntries(funil.map((e) => [e.chave, e.pararamAqui]));
+
+		expect(funil.find((e) => e.chave === "conversas")?.count).toBe(2);
+		expect(por.propostas).toBe(1);
+		// A conversa que só engajou não faz a pessoa "parar" lá: ela parou na
+		// proposta, que é o degrau mais fundo que alcançou.
+		expect(por.engajadas).toBe(0);
+		expect(por.conversas).toBe(1);
+	});
+
+	it("a soma das paradas é o total de PESSOAS com conversa", async () => {
+		const funil = await queries.computeFunilMidia(DE, ATE);
+		const conversas = funil.find((e) => e.chave === "conversas")?.count ?? 0;
+		const somaDasParadas = funil.reduce((acc, e) => acc + e.pararamAqui, 0);
+
+		expect(somaDasParadas).toBe(conversas);
+	});
+
+	it("'ainda viva' segue a pessoa, não a conversa que a fez parar", async () => {
+		const funil = await queries.computeFunilMidia(DE, ATE);
+		const por = Object.fromEntries(funil.map((e) => [e.chave, e.aindaVivas]));
+
+		// A pessoa do fundo escreveu agora: está viva no degrau onde parou.
+		expect(por.propostas).toBe(1);
+		// Quem só abriu o chat em 2019 está morto — nenhum inbound recente.
+		expect(por.conversas).toBe(0);
 	});
 });

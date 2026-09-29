@@ -58,6 +58,15 @@ function ExportacaoContent() {
 	const [completo, setCompleto] = useQueryState("completo", parseAsBoolean.withDefault(false));
 	const [, setFormato] = useQueryState("formato", parseAsString);
 
+	// O RECORTE da lista chega pela URL (o link que abre esta tela carrega o que
+	// estava filtrando lá) e VOLTA para a rota no link de download. Sem ele, o
+	// arquivo respondia por outro recorte que a lista (FIX-383).
+	const [passo] = useQueryState("passo", parseAsString);
+	const [modo] = useQueryState("modo", parseAsString);
+	const [origem] = useQueryState("origem", parseAsString);
+	const [campanha] = useQueryState("campanha", parseAsString);
+	const [q] = useQueryState("q", parseAsString);
+
 	const [dados, setDados] = useState<RespostaDoResumo | null>(null);
 	const [erro, setErro] = useState<string | null>(null);
 	const [carregando, setCarregando] = useState(true);
@@ -67,13 +76,25 @@ function ExportacaoContent() {
 	const deMs = from.getTime();
 	const ateMs = to.getTime();
 
+	// Os parâmetros do recorte, num lugar só: a contagem e o download leem daqui,
+	// e duas montagens divergiriam no primeiro filtro novo.
+	const paramsDoRecorte = useCallback((): URLSearchParams => {
+		const p = new URLSearchParams({
+			from: diaDoNegocio(new Date(deMs)),
+			to: diaDoNegocio(new Date(ateMs)),
+		});
+		if (passo) p.set("passo", passo);
+		if (modo) p.set("modo", modo);
+		if (origem) p.set("origem", origem);
+		if (campanha) p.set("campanha", campanha);
+		if (q) p.set("q", q);
+		return p;
+	}, [deMs, ateMs, passo, modo, origem, campanha, q]);
+
 	const carregar = useCallback(async () => {
 		setCarregando(true);
 		try {
-			const p = new URLSearchParams({
-				from: diaDoNegocio(new Date(deMs)),
-				to: diaDoNegocio(new Date(ateMs)),
-			});
+			const p = paramsDoRecorte();
 			const res = await fetch(`/api/admin/exportacao?${p.toString()}`);
 			if (!res.ok) {
 				const corpo = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -89,18 +110,15 @@ function ExportacaoContent() {
 		} finally {
 			setCarregando(false);
 		}
-	}, [deMs, ateMs]);
+	}, [paramsDoRecorte]);
 
 	useEffect(() => {
 		void carregar();
 	}, [carregar]);
 
 	const exportar = (tipo: TipoExportacao, formato: "csv" | "json") => {
-		const p = new URLSearchParams({
-			from: diaDoNegocio(new Date(deMs)),
-			to: diaDoNegocio(new Date(ateMs)),
-			formato,
-		});
+		const p = paramsDoRecorte();
+		p.set("formato", formato);
 		if (completo) p.set("completo", "1");
 		// O download é uma navegação de arquivo: um link programático deixa o
 		// `Content-Disposition` do servidor decidir o nome, sem carregar a página.

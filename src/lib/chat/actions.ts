@@ -53,6 +53,19 @@ export type ChatAction =
 			label: string;
 	  }
 	| { kind: "category"; category: Category }
+	// bloco-telefone-ab (FIX-395/396) — o telefone do desbloqueio da comparação.
+	// O campo é o MESMO celular do gate `identify` (máscara/validação em
+	// `@/lib/forms/mascaras`), só que sozinho e no ponto em que a pessoa vê a
+	// oferta. `variante` vai junto para o servidor saber qual caminho registrou.
+	| {
+			kind: "telefone_desbloqueio";
+			variante: "B" | "C";
+			celular: string;
+			label: string;
+	  }
+	// O "Agora não" da variante C — saída REAL, sem telefone. Sem ele o card
+	// vira pedágio e a pessoa abandona o site inteiro.
+	| { kind: "telefone_desbloqueio_recusar"; variante: "B" | "C" }
 	| {
 			kind: "select-group";
 			groupId: string;

@@ -1,22 +1,27 @@
 import type { NextRequest } from "next/server";
 import { opcoesDoAmbiente } from "@/lib/admin/motivo-fora-da-regua";
 import { periodoDaRequisicao } from "@/lib/admin/periodo-da-requisicao";
+import { lerParametrosRegua } from "@/lib/admin/remarketing-config";
 import {
 	contarElegiveisParaRegua,
 	contarLinhasDaRegua,
+	lerParametrosDaTela,
 	listarReguas,
 } from "@/lib/admin/remarketing-queries";
 import {
 	contadoresDe,
 	estadoHonestoDaRegua,
+	filtrarPorPasso,
 	filtrarPorSituacao,
 	insightsDaRegua,
 	linhasDaTela,
+	passoDoParametro,
 	type RespostaDaRegua,
 	resumoDaRegua,
 	situacaoDoParametro,
 } from "@/lib/admin/remarketing-tela";
 import { requireRole } from "@/lib/admin/require-role";
+import { PARAMETROS_DE_FABRICA } from "@/lib/remarketing/regua";
 
 const LIMITE_PADRAO = 50;
 const LIMITE_MAXIMO = 200;
@@ -62,9 +67,30 @@ export async function GET(req: NextRequest) {
 
 	const situacao = situacaoDoParametro(sp.get("situacao"));
 	const objetivo = parseObjetivo(sp.get("objetivo"));
+	// A porta da pergunta "para quem foi?" (FIX-379): o passo exato ou "com
+	// toque". Valor desconhecido mostra tudo — link velho não vira tela vazia.
+	const passo = passoDoParametro(sp.get("passo"));
 	const limit = parseLimit(sp.get("limit"));
 	const offset = parseOffset(sp.get("offset"));
 	const agora = new Date();
+
+	// O TETO da tela vem do CADASTRO (AJA-20 T1 ligou o cadastro ao ciclo, mas não
+	// à tela): com o `max_toques` em 2 a tela continuava dizendo "1 de 3" e
+	// mentia para quem opera. Falha de leitura NÃO derruba a página — cai no valor
+	// de fábrica, que é o mesmo em que o ciclo cai (lado de "menos toque").
+	let maxToques = PARAMETROS_DE_FABRICA.maxToques;
+	try {
+		maxToques = (await lerParametrosRegua()).maxToques;
+	} catch (err) {
+		console.error(
+			JSON.stringify({
+				level: "error",
+				source: "admin-remarketing",
+				etapa: "cadastro",
+				error: err instanceof Error ? err.message : String(err),
+			}),
+		);
+	}
 
 	try {
 		// Uma leitura para os dois: os contadores do topo são do RECORTE inteiro
@@ -75,15 +101,18 @@ export async function GET(req: NextRequest) {
 		// duas leituras que não dependem do recorte são o histórico total (para
 		// separar "régua desligada" de "sem toque no período") e a fila de
 		// elegíveis de agora (o número que a tela mostra enquanto não há dado).
-		const [doRecorte, totalNoHistorico, elegiveisAgora] = await Promise.all([
+		const [doRecorte, totalNoHistorico, elegiveisAgora, parametros] = await Promise.all([
 			listarReguas({ de, ate, objetivo }),
 			contarLinhasDaRegua(),
 			contarElegiveisParaRegua(agora),
+			// O motivo do próximo toque (FIX-378) depende da janela de horário e do
+			// teto VIGENTES — a tela deriva com o mesmo cadastro que o motor usa.
+			lerParametrosDaTela(),
 		]);
-		const visiveis = filtrarPorSituacao(doRecorte, situacao);
+		const visiveis = filtrarPorSituacao(filtrarPorPasso(doRecorte, passo), situacao);
 
 		const resposta: RespostaDaRegua = {
-			linhas: linhasDaTela(visiveis.slice(offset, offset + limit), agora),
+			linhas: linhasDaTela(visiveis.slice(offset, offset + limit), agora, parametros),
 			contadores: contadoresDe(doRecorte),
 			total: visiveis.length,
 			totalDoRecorte: doRecorte.length,
@@ -92,6 +121,7 @@ export async function GET(req: NextRequest) {
 			// O resumo agregado (AJA-04) sobre o RECORTE inteiro, não a página: é a
 			// resposta a "quantos toques saíram no período" que a Bruna pediu.
 			resumo: resumoDaRegua(doRecorte, { elegiveisAgora }),
+			maxToques,
 			ligada: opcoesDoAmbiente().reguaLigada,
 			estado: estadoHonestoDaRegua({
 				totalNoHistorico,

@@ -44,7 +44,7 @@ export const META_DO_TIPO: Record<TipoExportacao, MetaDoTipo> = {
 	limpeza: {
 		titulo: "Candidatos à limpeza",
 		descricao:
-			"Uma linha por conversa com sinal de não ser cliente real — já marcada como teste, telefone da equipe ou na mesa sem contato — com o motivo e o `[ ] aplicar` para você aprovar o que sai.",
+			"Uma linha por conversa com sinal de não ser cliente real — já marcada como teste, telefone da equipe, na mesa sem contato ou com proposta criada em conversa de teste — com o motivo, a contagem de propostas e o `[ ] aplicar` para você aprovar o que sai.",
 		unidade: "candidatos",
 	},
 };

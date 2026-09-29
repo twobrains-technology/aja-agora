@@ -487,6 +487,19 @@ export type ConversationMetadata = {
 	 * fechamento), MASCARADO (LGPD — vai pro prompt). Presença → o opt-in vira
 	 * confirmação de canal (stage "confirm") em vez de re-coletar o número. */
 	contactPhone?: string;
+	/** bloco-telefone-ab (FIX-394/395/396/397) — estado do teste A/B do telefone
+	 * nesta conversa.
+	 *
+	 * `variante` é derivada da VISITA (`varianteDaVisita(visitId)`, decidida no
+	 * servidor na criação da conversa) e persistida aqui para o resultado do dia
+	 * 01/10 ser lido por consulta, sem recalcular o hash — e para sobreviver a uma
+	 * eventual mudança do algoritmo. `recusado` é o "Agora não" da variante C;
+	 * `desbloqueadoEm` é quando o telefone foi informado. */
+	telefoneDoDesbloqueio?: {
+		variante: import("@/lib/chat/variante-da-visita").VarianteDoTelefone;
+		recusado?: boolean;
+		desbloqueadoEm?: string;
+	};
 	/** FIX-27 — fechamento (contract-submit) falhou com erro Bevi e aguarda
 	 * re-tentativa. Enquanto pendente, o opt-in de WhatsApp NÃO é oferecido —
 	 * o assunto do turno é re-tentar a proposta, não pedir WhatsApp. */

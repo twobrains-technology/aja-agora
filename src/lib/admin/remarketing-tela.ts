@@ -49,8 +49,11 @@
 
 import { montarEstado } from "@/lib/remarketing/motor";
 import {
+	dentroDaJanelaDeHorario,
 	MAX_TOQUES,
 	type MotivoBloqueio,
+	PARAMETROS_DE_FABRICA,
+	type ParametrosRegua,
 	podeDisparar,
 	type StatusRegua,
 } from "@/lib/remarketing/regua";
@@ -122,7 +125,8 @@ export const ROTULO_DO_OBJETIVO: Record<string, string> = {
 
 /** O rastro da última ação do atendente, guardado no metadata da conversa. */
 export interface RastroDoAtendente {
-	tipo: AcaoDaRegua;
+	/** A ação: segurar/soltar por conversa, ou `reentrada` (ação em LOTE). */
+	tipo: AcaoDaRegua | "reentrada";
 	/** Quem agiu — nome de quem estava logado. */
 	por: string;
 	/** O id da sessão, para quando dois nomes iguais agirem. */
@@ -167,6 +171,8 @@ export interface LinhaBruta {
 	 */
 	converteuEm: Date | null;
 	rastro: RastroDoAtendente | null;
+	/** O que o banco registra do ÚLTIMO toque — insumo da FORMA (`formaDoEnvio`). */
+	evidenciaDaForma: EvidenciaDaForma | null;
 }
 
 /** A linha como a TELA a mostra: tudo derivado, nada para o cliente decidir. */
@@ -189,8 +195,20 @@ export interface LinhaDaTela {
 	proximoToqueISO: string | null;
 	/** `true` quando a data já passou e o ciclo ainda não alcançou a linha. */
 	proximoToqueVencido: boolean;
+	/**
+	 * POR QUE o próximo toque não saiu (FIX-378): um dos quatro motivos de
+	 * repetição, CALCULADO do estado da linha — nunca persistido (ver
+	 * `motivoDoProximoToque`). `null` quando a régua não tem o que explicar.
+	 */
+	motivoDoProximoToque: MotivoDoProximoToque | null;
+	/** O motivo em português, pronto para a coluna; `null` quando não há. */
+	motivoDoProximoToqueLegivel: string | null;
 	/** ISO do último toque que saiu. */
 	ultimoToqueISO: string | null;
+	/** COMO o último toque saiu; `null` quando nenhum toque saiu ainda. */
+	forma: FormaDoEnvio | null;
+	/** O cliente escreveu depois do último toque? (o fato, não o status) */
+	respondeuDepoisDoToque: boolean;
 	criadoEmISO: string;
 	/** Rótulo da cota de 30 dias ("2 de 3"), sempre do dado — nunca estimado. */
 	cotaLegivel: string;
@@ -224,6 +242,12 @@ export interface RespostaDaRegua {
 	resumo: ResumoDaRegua;
 	/** `REMARKETING_ATIVO` — o interruptor operacional, lido na borda. */
 	ligada: boolean;
+	/**
+	 * O teto de toques vigente — do CADASTRO (`remarketing_config`), não da
+	 * constante: é o mesmo número que o ciclo usa, e é ele que a tela mostra em
+	 * "2 de 3". Vem no shape para a página poder rotular o que exibe.
+	 */
+	maxToques: number;
 	/** Se a régua está ligada, desligada ou só sem toque neste período. */
 	estado: EstadoDaRegua;
 }
@@ -296,13 +320,22 @@ export function rotuloDoMotivo(motivo: string | null): string | null {
 	return motivoDeSaidaLegivel(motivo);
 }
 
-export function passoLegivel(step: number): string {
+export function passoLegivel(step: number, maxToques: number = MAX_TOQUES): string {
 	if (step <= 0) return "—";
-	return `${Math.min(step, MAX_TOQUES)} de ${MAX_TOQUES}`;
+	return `${Math.min(step, maxToques)} de ${maxToques}`;
 }
 
-export function cotaLegivel(touches30d: number): string {
-	return `${touches30d} de ${MAX_TOQUES}`;
+/**
+ * A cota de 30 dias ("2 de 3"), pelo MESMO teto que o ciclo usa.
+ *
+ * `maxToques` entra por parâmetro porque o teto virou ajuste do cadastro
+ * (`remarketing_config`, AJA-20 T1): ler a constante aqui faria a tela dizer
+ * "1 de 3" depois de alguém cadastrar 2 — o painel mentiria para quem opera. O
+ * default é o valor de fábrica, o mesmo em que o ciclo cai quando não há
+ * cadastro.
+ */
+export function cotaLegivel(touches30d: number, maxToques: number = MAX_TOQUES): string {
+	return `${touches30d} de ${maxToques}`;
 }
 
 export function rotuloDoObjetivo(objetivo: string): string {
@@ -327,11 +360,88 @@ export function proximoToqueDe(linha: {
 	return linha.nextTouchAt;
 }
 
-/** A linha bruta vira a linha da tela. PURA: `agora` entra por parâmetro. */
-export function linhaDaTela(linha: LinhaBruta, agora: Date): LinhaDaTela {
+/**
+ * Os quatro motivos de REPETIÇÃO — por que o próximo toque ainda não saiu.
+ *
+ * São um recorte de `MotivoBloqueio`: os terminais (`optout`, `converteu`,
+ * `ja_respondeu`) não entram, porque em linha terminal não existe "próximo
+ * toque" — a coluna diz "Nenhum a caminho", e inventar motivo ali seria mentir.
+ */
+export type MotivoDoProximoToque =
+	| "aguardando_data"
+	| "teto_30_dias"
+	| "fora_da_janela_de_horario"
+	| "esgotado";
+
+/** O motivo em português, como a coluna do próximo toque o mostra. */
+export const ROTULO_DO_PROXIMO_TOQUE: Record<MotivoDoProximoToque, string> = {
+	aguardando_data: "Ainda não é hora do próximo toque",
+	teto_30_dias: "Cota de 30 dias cheia",
+	fora_da_janela_de_horario: "Fora do horário de envio (9h às 20h)",
+	esgotado: "Esgotou os três toques",
+};
+
+/**
+ * POR QUE o próximo toque não saiu — calculado do estado da linha (FIX-378).
+ *
+ * O PRD (§AJA-20 T5) recomenda CALCULAR em tela em vez de persistir: não exige
+ * migration, e uma coluna nova nasceria mentindo sobre o passado (o backfill
+ * fica `NULL`). O que a linha já traz (`status`, `nextTouchAt`, `touches30d`)
+ * mais a janela de horário e o teto vigentes bastam.
+ *
+ * A PRECEDÊNCIA é a mesma de `podeDisparar` — teto antes de data, data antes de
+ * horário —, para a tela não discordar do motor sobre o motivo do bloqueio.
+ * `null` é resposta: quando não houver o que explicar, a coluna não escreve
+ * nada (o toque sai no próximo ciclo).
+ */
+export function motivoDoProximoToque(
+	linha: {
+		status: StatusRegua;
+		nextTouchAt: Date | null;
+		touches30d: number;
+	},
+	agora: Date,
+	parametros: ParametrosRegua = PARAMETROS_DE_FABRICA,
+): MotivoDoProximoToque | null {
+	// Fora de `ATIVO` não há próximo toque; a única linha terminal que ainda tem
+	// o que dizer é a esgotada (e ela diz por quê).
+	if (linha.status !== "ATIVO") return linha.status === "ESGOTADO" ? "esgotado" : null;
+
+	// O teto vem ANTES da data porque é ele que empurra a data.
+	if (linha.touches30d >= parametros.tetoToques30Dias) return "teto_30_dias";
+
+	// Sem data (ou data futura): ainda não é hora.
+	if (!linha.nextTouchAt || linha.nextTouchAt.getTime() > agora.getTime()) {
+		return "aguardando_data";
+	}
+
+	// Vencido e fora do horário: a régua espera a janela abrir.
+	if (!dentroDaJanelaDeHorario(agora, parametros)) return "fora_da_janela_de_horario";
+
+	// Vencido, dentro do horário e com cota: o toque sai no próximo ciclo.
+	return null;
+}
+
+/**
+ * A linha bruta vira a linha da tela. PURA: `agora` entra por parâmetro.
+ *
+ * `parametros` são os vigentes do cadastro (quando o chamador os tem): sem eles,
+ * vale a fábrica — a tela não pode MENTIR sobre a hora de envio nem sobre o teto
+ * que o motor está usando.
+ */
+export function linhaDaTela(
+	linha: LinhaBruta,
+	agora: Date,
+	parametros: ParametrosRegua = PARAMETROS_DE_FABRICA,
+): LinhaDaTela {
+	// O teto de toques vem do MESMO `parametros` da régua (cadastro > fábrica): a
+	// tela não pode contar uma cota e o motor outra. União dos blocos toques-lista
+	// e regua-cadencia (onda 1) — os dois mexeram neste parâmetro.
+	const maxToques = parametros.maxToques;
 	const situacao = situacaoDe(linha);
 	const proximo = proximoToqueDe(linha);
 	const soltar = podeSoltar(linha, agora);
+	const motivo = motivoDoProximoToque(linha, agora, parametros);
 
 	return {
 		conversationId: linha.conversationId,
@@ -341,7 +451,7 @@ export function linhaDaTela(linha: LinhaBruta, agora: Date): LinhaDaTela {
 		objetivo: linha.objetivo,
 		rotuloDoObjetivo: rotuloDoObjetivo(linha.objetivo),
 		step: linha.step,
-		passoLegivel: passoLegivel(linha.step),
+		passoLegivel: passoLegivel(linha.step, maxToques),
 		touches30d: linha.touches30d,
 		situacao,
 		rotuloDaSituacao: ROTULO_DA_SITUACAO[situacao],
@@ -349,9 +459,13 @@ export function linhaDaTela(linha: LinhaBruta, agora: Date): LinhaDaTela {
 		motivoLegivel: rotuloDoMotivo(linha.motivoSaida),
 		proximoToqueISO: proximo ? proximo.toISOString() : null,
 		proximoToqueVencido: proximo ? proximo.getTime() <= agora.getTime() : false,
+		motivoDoProximoToque: motivo,
+		motivoDoProximoToqueLegivel: motivo === null ? null : ROTULO_DO_PROXIMO_TOQUE[motivo],
 		ultimoToqueISO: linha.ultimoToqueEm ? linha.ultimoToqueEm.toISOString() : null,
+		forma: formaDoEnvio(linha),
+		respondeuDepoisDoToque: respondeuDepoisDoToque(linha),
 		criadoEmISO: linha.criadoEm.toISOString(),
-		cotaLegivel: cotaLegivel(linha.touches30d),
+		cotaLegivel: cotaLegivel(linha.touches30d, maxToques),
 		// Uma fonte só para o guarda: `podeSegurar` já recusa opt-out, e a tela não
 		// pode discordar dele sobre o que dá para fazer.
 		podeSegurar: podeSegurar(linha).pode,
@@ -361,8 +475,12 @@ export function linhaDaTela(linha: LinhaBruta, agora: Date): LinhaDaTela {
 	};
 }
 
-export function linhasDaTela(linhas: readonly LinhaBruta[], agora: Date): LinhaDaTela[] {
-	return linhas.map((linha) => linhaDaTela(linha, agora));
+export function linhasDaTela(
+	linhas: readonly LinhaBruta[],
+	agora: Date,
+	parametros: ParametrosRegua = PARAMETROS_DE_FABRICA,
+): LinhaDaTela[] {
+	return linhas.map((linha) => linhaDaTela(linha, agora, parametros));
 }
 
 /** Conta a régua inteira por situação. Sem banco, sem limite: contador tem que fechar. */
@@ -913,4 +1031,188 @@ export function duracaoLegivel(ms: number | null): string | null {
 	return arredondado < 2
 		? `${arredondado.toLocaleString("pt-BR")} dia`
 		: `${arredondado.toLocaleString("pt-BR")} dias`;
+}
+
+// ─── A FORMA DO ENVIO: como o último toque saiu (FIX-380) ────────────────────
+//
+// A régua sabe SE o toque sai (`regua.ts`) e o motor decide COMO entregar
+// (`motor.ts`): turno de retomada quando a janela de 24 h do cliente está
+// aberta, template aprovado quando está fechada. O que a tela não dizia era
+// como aquilo DE FATO saiu — e é a segunda metade da pergunta do dono ("e como
+// que foi?"): a diferença entre os dois é a explicação de por que o texto muda
+// de um toque para o outro.
+//
+// ── Reuso, e não coluna nova ────────────────────────────────────────────────
+//
+// A forma é DERIVADA do que o banco já grava, sem migration e sem passar pelo
+// ciclo — o que também faz ela valer para o histórico, em vez de nascer NULL:
+//
+//   - `whatsapp_outbound_queue`: linha para o destino = o toque entrou na fila
+//     de template. `pending` = esperando aprovação na Meta (o toque NÃO saiu
+//     como mensagem ainda); `sent` = a fila esvaziou e o template saiu;
+//   - `messages`: a fala do agente logo depois do toque = turno de retomada. É
+//     o marcador que separa "o agente falou" de "saiu template", porque o envio
+//     de template NÃO grava mensagem no histórico;
+//   - `messages.template_name`: nome do template quando a saída foi um template
+//     (hoje quem grava é o painel do atendente; a régua não — mas a coluna é a
+//     evidência declarada do bloco e entra na ordem);
+//   - `whatsapp_templates`: o template do bem, quando já está `APPROVED` — o
+//     caso do envio direto, que não deixa fila nem fala.
+//
+// ── O que não se deriva não se inventa ──────────────────────────────────────
+//
+// Sem rastro nenhum a resposta é `nao_registrado`, NUNCA "texto livre" por
+// omissão: não ter o dado não é o mesmo que ter o dado "não", que é a mesma
+// disciplina do `estadoHonestoDaRegua`. E o passo 0 (nenhum toque saiu) não tem
+// forma — devolve `null`, não um rótulo vazio.
+
+export type StatusDaFila = "pending" | "sent" | "failed";
+
+/** O rastro do último toque, colhido pelo servidor (`remarketing-queries.ts`). */
+export interface EvidenciaDaForma {
+	/** O agente falou logo depois do toque? (turno de retomada) */
+	houveFalaDoAgente: boolean;
+	/** `messages.template_name` da fala, quando ela foi um template. */
+	nomeDoTemplateNaMensagem: string | null;
+	/** A linha da fila de template do destino, quando o toque entrou nela. */
+	naFila: { status: StatusDaFila; nomeDoTemplate: string | null } | null;
+	/** Nome do template aprovado do bem (envio direto, sem passar pela fila). */
+	templateAprovado: string | null;
+}
+
+export const FORMAS_DO_TOQUE = [
+	"texto_livre",
+	"template",
+	"template_aguardando",
+	"nao_registrado",
+] as const;
+
+export type FormaDoToque = (typeof FORMAS_DO_TOQUE)[number];
+
+export interface FormaDoEnvio {
+	tipo: FormaDoToque;
+	/** O rótulo curto da célula. O nome do template vai em `nomeDoTemplate`. */
+	rotulo: string;
+	/** Nome do template na Meta, quando a forma é template. */
+	nomeDoTemplate: string | null;
+	/** A frase do `title`: o que aquela forma significa, em português. */
+	explicacao: string;
+}
+
+const ROTULO_DA_FORMA: Record<FormaDoToque, string> = {
+	texto_livre: "Texto livre",
+	template: "Template",
+	template_aguardando: "Template aguardando",
+	nao_registrado: "Não registrado",
+};
+
+const EXPLICACAO_DA_FORMA: Record<FormaDoToque, string> = {
+	texto_livre: "Turno de retomada: quem falou foi o agente, dentro da janela de 24 h do cliente.",
+	template:
+		"Template aprovado da Meta — fora da janela de 24 h é a única entrega que a Meta aceita.",
+	template_aguardando:
+		"Entrou na fila esperando o template ser aprovado na Meta; sai quando a aprovação chegar.",
+	nao_registrado: "Sem rastro do envio no banco: sem fila de template e sem fala do agente.",
+};
+
+function forma(tipo: FormaDoToque, nomeDoTemplate: string | null): FormaDoEnvio {
+	return {
+		tipo,
+		rotulo: ROTULO_DA_FORMA[tipo],
+		nomeDoTemplate,
+		explicacao: EXPLICACAO_DA_FORMA[tipo],
+	};
+}
+
+/**
+ * COMO o último toque saiu — `null` quando nenhum toque saiu ainda (passo 0).
+ *
+ * A ordem dos testes É a precedência: a FILA primeiro (um toque enfileirado não
+ * saiu como conversa, por mais que haja fala no histórico), depois o nome do
+ * template gravado na mensagem, depois a fala do agente (texto livre) e, por
+ * fim, o template aprovado do bem — o envio direto, que não deixa outro rastro.
+ */
+export function formaDoEnvio(linha: {
+	step: number;
+	evidenciaDaForma: EvidenciaDaForma | null;
+}): FormaDoEnvio | null {
+	if (passoDa(linha) === 0) return null;
+
+	const evidencia = linha.evidenciaDaForma;
+	if (!evidencia) return forma("nao_registrado", null);
+
+	const fila = evidencia.naFila;
+	if (fila?.status === "pending") return forma("template_aguardando", fila.nomeDoTemplate);
+	if (fila?.status === "sent") return forma("template", fila.nomeDoTemplate);
+	if (evidencia.nomeDoTemplateNaMensagem) {
+		return forma("template", evidencia.nomeDoTemplateNaMensagem);
+	}
+	if (evidencia.houveFalaDoAgente) return forma("texto_livre", null);
+	if (evidencia.templateAprovado) return forma("template", evidencia.templateAprovado);
+
+	return forma("nao_registrado", null);
+}
+
+/**
+ * O cliente escreveu DEPOIS do último toque?
+ *
+ * É o fato (duas datas no banco), e não o status da linha: a situação
+ * `segurado`, por exemplo, usa `RESPONDEU` sem que o cliente tenha respondido
+ * nada — quem parou foi o atendente.
+ */
+export function respondeuDepoisDoToque(linha: {
+	ultimoToqueEm: Date | null;
+	ultimoInboundEm: Date | null;
+}): boolean {
+	if (!linha.ultimoToqueEm || !linha.ultimoInboundEm) return false;
+	return linha.ultimoInboundEm.getTime() > linha.ultimoToqueEm.getTime();
+}
+
+// ─── O FILTRO POR PASSO: a porta para "para quem foi?" (FIX-379) ─────────────
+//
+// O dono perguntou "já foram enviados oito — para quem que foi?" e a resposta
+// só existia agregada: o cartão "Toques enviados" e o funil por passo contavam,
+// mas não levavam a lugar nenhum. Aqui mora a decisão do recorte; a rota só lê
+// o parâmetro e a tela só escreve o link.
+//
+// O recorte é uma função PURA sobre as mesmas linhas que a lista já leu — o
+// mesmo desenho do filtro de situação, e pelo mesmo motivo: `contadores`,
+// `insights` e `resumo` continuam sendo do RECORTE inteiro. Filtrá-los junto
+// faria o funil mudar de forma quando o operador clicasse num degrau dele.
+
+/**
+ * O que `?passo=` aceita: um passo exato (0..3) ou "com toque" — quem recebeu
+ * pelo menos um toque, que é para onde o cartão "Toques enviados" aponta (ele é
+ * a soma dos passos, não um passo).
+ */
+export type FiltroDePasso = Passo | "com_toque";
+
+/** `?passo=` cru vira filtro conhecido, ou `null` (lista inteira). */
+export function passoDoParametro(valor: string | null | undefined): FiltroDePasso | null {
+	if (!valor) return null;
+	if (valor === "com_toque") return "com_toque";
+	return (PASSOS as readonly number[]).map(String).includes(valor)
+		? (Number(valor) as Passo)
+		: null;
+}
+
+/** Só quem está no passo pedido (`null` = todos). */
+export function filtrarPorPasso(
+	linhas: readonly LinhaBruta[],
+	filtro: FiltroDePasso | null,
+): LinhaBruta[] {
+	// `null` é "sem filtro" — e o teste com `0` é o que guarda contra o clássico
+	// `if (!filtro)`, que engoliria o passo 0 (falsy) e devolveria a lista inteira.
+	if (filtro === null) return [...linhas];
+	if (filtro === "com_toque") return linhas.filter((linha) => passoDa(linha) > 0);
+	return linhas.filter((linha) => passoDa(linha) === filtro);
+}
+
+/**
+ * O rótulo do filtro ativo, no MESMO vocabulário do funil — o operador lê
+ * "Depois do toque 02" no degrau e no chip do filtro, sem um terceiro nome para
+ * a mesma coisa.
+ */
+export function rotuloDoFiltroDePasso(filtro: FiltroDePasso): string {
+	return filtro === "com_toque" ? "Com algum toque enviado" : ROTULO_DO_PASSO[filtro];
 }

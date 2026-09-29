@@ -13,6 +13,7 @@
  * virou lead desde o `lead-stage-tracker`, e nenhuma tela lia esse campo.
  */
 
+import type { MotivoDeExclusao } from "@/lib/remarketing/motivo-de-exclusao";
 import type { Campanhas } from "./campanhas";
 import type { ChaveEtapaFunil } from "./performance-types";
 
@@ -105,6 +106,12 @@ export function rotuloDoPasso(passo: PassoDoPercurso): string {
  * vocabulário: clicar em "Se identificaram" abre esta tela filtrada em
  * `se_identificou`. `visitas` mapeia para `null` de propósito — a etapa inteira
  * é a tela sem filtro nenhum.
+ *
+ * O clique abre em `modo=alcancou`, e `alcancou` no Percurso filtra pelo FATO do
+ * degrau (`identificou`, `teve_proposta`, …) — a MESMA definição que o funil usa
+ * para contar. Filtrando por posição na escada (`profundidade >= X`), a lista
+ * aberta não era a população do número clicado: no degrau de ramificação ("Só
+ * mandaram a mensagem do anúncio"), clicar em 1 abria 7.
  */
 export const PASSO_DA_ETAPA_DO_FUNIL: Record<ChaveEtapaFunil, PassoDoPercurso | null> = {
 	visitas: null,
@@ -183,6 +190,41 @@ export interface PessoaDoPercurso {
 	primeiraChegada: string;
 	/** Último sinal de vida: a chegada mais recente ou a última mensagem dele. */
 	ultimaAtividade: string;
+	/**
+	 * O instante da última INTERAÇÃO — a última fala trocada, do cliente OU do
+	 * agente — ou `null` quando a pessoa nunca conversou.
+	 *
+	 * Não é a mesma data que `ultimaAtividade`: aquele é o último sinal de vida
+	 * (inclui visita e só a mensagem do CLIENTE), e este é a última mensagem de
+	 * qualquer lado. É o par do `ultimaInteracaoAutor`; sem ele a linha diria
+	 * "agente" acompanhada de uma data anterior à própria resposta.
+	 */
+	ultimaInteracaoEm: string | null;
+	/**
+	 * QUEM falou por último — foi o cliente que parou, ou a bola está com o
+	 * agente? É a pergunta que a cliente faz antes de ligar (25/09/2026).
+	 *
+	 * `null` quando não houve interação nenhuma (só chegou, ou só abriu o chat).
+	 */
+	ultimaInteracaoAutor: "cliente" | "agente" | null;
+	/**
+	 * Recebeu oferta ou simulação — o fato por trás do degrau "Viu oferta".
+	 *
+	 * É o "de fato pediram a simulação" do levantamento (2026-09-22, plano
+	 * §AJA-15/Task 3): o degrau honesto é `viram_oferta`, e não se cria métrica
+	 * paralela — este campo expõe o mesmo fato no shape plano da lista.
+	 */
+	pediuSimulacao: boolean;
+	/** Se há linha na régua de remarketing para a conversa desta pessoa. */
+	naRegua: boolean;
+	/**
+	 * Por que a pessoa NÃO está na régua, quando não está — o motivo NOMEADO.
+	 *
+	 * `null` quando ela está na régua, ou quando é elegível e ainda não entrou
+	 * (aí não há guarda a nomear). Nunca `null` em silêncio para quem ficou de
+	 * fora por causa de uma guarda.
+	 */
+	motivoForaDaRegua: MotivoDeExclusao | null;
 	chegadas: number;
 	conversas: number;
 	mensagensDoCliente: number;
@@ -197,6 +239,15 @@ export interface PessoaDoPercurso {
 	perdido: boolean;
 	/** Conversa mais recente da pessoa — o link para ler o que ela falou. */
 	conversationId: string | null;
+	/**
+	 * A pessoa ainda é RETOMÁVEL — o cliente escreveu na janela recente e ao menos
+	 * uma conversa dela não foi encerrada.
+	 *
+	 * É o MESMO critério de "ainda viva" do funil de mídia (`conversaViva`, em
+	 * `sinais-do-funil`), e é por isso que ele não é derivado aqui: duas telas com
+	 * dois sentidos para "parada" é o defeito que este campo fecha.
+	 */
+	aindaViva: boolean;
 }
 
 export interface ResumoDoPasso {
@@ -205,6 +256,14 @@ export interface ResumoDoPasso {
 	ajuda: string;
 	/** Quantas pessoas PARARAM neste degrau. */
 	pessoas: number;
+	/**
+	 * Dessas, quantas ainda são RETOMÁVEIS — o cliente escreveu na janela recente
+	 * e a conversa não foi encerrada.
+	 *
+	 * Mesmo critério, mesma constante e mesmo fragmento que o `aindaVivas` do funil
+	 * de mídia (FIX-375): a palavra "parada" não pode ter dois sentidos no painel.
+	 */
+	pessoasVivas: number;
 	/**
 	 * Quantas pessoas ALCANÇARAM este degrau — o mesmo fato por trás dele, sem
 	 * exigir que a pessoa tenha parado ali.

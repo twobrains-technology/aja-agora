@@ -183,7 +183,24 @@ export interface LinhaCampanha {
 }
 
 export interface TotaisDeCampanhas {
+	/**
+	 * O total reportado pelo gerenciador — **a leitura OFICIAL** (decisão do dono,
+	 * 28/09). Nenhuma soma muda por causa disso: o que muda é o nome.
+	 */
 	investimentoCents: number;
+	/**
+	 * O investimento que o CRM consegue ATRIBUIR: soma do gasto das campanhas com
+	 * vínculo — alguma visita, conversa, identificado ou qualificado aponta para
+	 * elas. É a linha vizinha do total, nunca a substituta dele.
+	 */
+	investimentoAtribuidoCents: number;
+	/**
+	 * A verba que a Meta reportou e o CRM **não** conseguiu atribuir: campanhas que
+	 * gastaram sem nenhuma visita ou conversa apontando para elas. É o motivo da
+	 * diferença entre as duas leituras, e por desenho
+	 * `investimentoCents = atribuído + sem atribuição`, sempre.
+	 */
+	investimentoSemAtribuicaoCents: number;
 	leadsMeta: number;
 	/**
 	 * Conversas em que o cliente se identificou (nome E contato) — o número que a
@@ -287,11 +304,7 @@ export function combinarCampanhas(
 				qualificados: linha.qualificados,
 				// Qualquer atividade no CRM já é vínculo: a linha veio do funil, então
 				// a campanha da Meta casa com algo nosso.
-				temVinculo:
-					linha.visitas > 0 ||
-					linha.conversas > 0 ||
-					linha.identificados > 0 ||
-					linha.qualificados > 0,
+				temVinculo: temVinculoComCrm(linha),
 			}),
 			semOrigemConhecida: false,
 			criativos: criativosPorCampanha?.get(linha.chave) ?? [],
@@ -381,9 +394,33 @@ export function combinarCampanhas(
 	return linhas;
 }
 
+/**
+ * A campanha tem vínculo com o CRM?
+ *
+ * Basta UMA visita, conversa, identificado ou qualificado apontando para ela — é
+ * o mesmo corte de `custoPor`, e é o que separa o investimento **atribuído** do
+ * gasto que a Meta reportou sem que o CRM consiga amarrar a nada. Uma definição
+ * só para os dois usos (o motivo do custo e a reconciliação da verba).
+ */
+export function temVinculoComCrm(contagens: {
+	visitas: number;
+	conversas: number;
+	identificados: number;
+	qualificados: number;
+}): boolean {
+	return (
+		contagens.visitas > 0 ||
+		contagens.conversas > 0 ||
+		contagens.identificados > 0 ||
+		contagens.qualificados > 0
+	);
+}
+
 /** O rodapé: soma o que foi gasto e o que o CRM produziu — duas moedas, uma nota. */
 export function totalizarCampanhas(linhas: LinhaCampanha[]): TotaisDeCampanhas {
 	let investimentoCents = 0;
+	let investimentoAtribuidoCents = 0;
+	let investimentoSemAtribuicaoCents = 0;
 	let leadsMeta = 0;
 	let leadsCrm = 0;
 	let comTelefone = 0;
@@ -394,6 +431,10 @@ export function totalizarCampanhas(linhas: LinhaCampanha[]): TotaisDeCampanhas {
 
 	for (const linha of linhas) {
 		investimentoCents += linha.spendCents;
+		// A mesma partição que dá o motivo do custo: com vínculo = o CRM atribui a
+		// verba; sem vínculo = gastou e o CRM não achou a campanha.
+		if (temVinculoComCrm(linha)) investimentoAtribuidoCents += linha.spendCents;
+		else investimentoSemAtribuicaoCents += linha.spendCents;
 		leadsMeta += linha.leadsMeta;
 		leadsCrm += linha.identificados;
 		comTelefone += linha.comTelefone;
@@ -405,6 +446,8 @@ export function totalizarCampanhas(linhas: LinhaCampanha[]): TotaisDeCampanhas {
 
 	return {
 		investimentoCents,
+		investimentoAtribuidoCents,
+		investimentoSemAtribuicaoCents,
 		leadsMeta,
 		leadsCrm,
 		comTelefone,
@@ -429,7 +472,7 @@ async function funilPorCampanha(de: Date, ate: Date): Promise<LinhaFunilCampanha
       COALESCE(NULLIF(v.campaign_id, ''), NULLIF(v.utm_campaign, ''), NULLIF(v.ctwa_source_id, '')) AS chave,
       max(v.utm_campaign) AS utm_campaign,
       -- As MESMAS contagens de computeOrigens — uma definição de funil só.
-      ${contagensDoFunil()}
+      ${contagensDoFunil(de, ate)}
     FROM visits v
     LEFT JOIN conversations c ON c.visit_id = v.id AND c.is_simulated = false
     LEFT JOIN leads l ON l.conversation_id = c.id AND l.is_simulated = false
@@ -545,7 +588,7 @@ async function criativosPorCampanha(de: Date, ate: Date): Promise<Map<string, Li
       v.utm_content AS criativo,
       max(a.creative_name) AS creative_name,
       max(a.thumbnail_url) AS thumbnail_url,
-      ${contagensDoFunil()}
+      ${contagensDoFunil(de, ate)}
     FROM visits v
     LEFT JOIN conversations c ON c.visit_id = v.id AND c.is_simulated = false
     LEFT JOIN leads l ON l.conversation_id = c.id AND l.is_simulated = false

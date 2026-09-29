@@ -3,6 +3,7 @@
 import { useQueryState } from "nuqs";
 import { useCallback, useEffect, useState } from "react";
 import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter";
+import { BlocoDeCustos } from "@/components/admin/performance/bloco-de-custos";
 import { FunilDeHandoffCard } from "@/components/admin/performance/funil-de-handoff";
 import { FunilMidiaChart } from "@/components/admin/performance/funil-midia-chart";
 import { PortaDoFunilCard } from "@/components/admin/performance/porta-do-funil";
@@ -123,6 +124,12 @@ function PerformanceContent() {
 			{pronto ? <FunilDeHandoffCard handoff={midia.handoff} /> : <BlocoSkeleton altura={360} />}
 
 			{pronto ? <SerieAquisicaoChart data={midia.serie} /> : <BlocoSkeleton />}
+
+			{/* O CPC fecha a leitura: depois de ver onde o tráfego entra, onde vaza e o
+			    que fecha, o bloco de custos responde quanto custou cada qualificado —
+			    o número que a cliente pediu para levantar (Bruna, 22/09). Vem por
+			    último de propósito: ele soma tudo o que está acima. */}
+			{pronto ? <BlocoDeCustos custos={midia.custos} /> : <BlocoSkeleton altura={220} />}
 
 			{pronto ? (
 				<TabelaOrigens origens={midia.origens} de={from} ate={to} />

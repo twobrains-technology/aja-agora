@@ -89,7 +89,7 @@ export function TabelaOrigens({
 									<TableHead className="text-right">Conversas</TableHead>
 									<TableHead
 										className="text-right"
-										title="Conversas em que o cliente informou nome e telefone ou e-mail — o telefone do WhatsApp não conta"
+										title="Conversas em que o cliente se identificou: no WhatsApp, quem entrou (o canal entrega o número e o perfil); na web, quem deixou contato"
 									>
 										Identificados
 									</TableHead>

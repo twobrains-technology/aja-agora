@@ -35,6 +35,8 @@ import { db } from "@/db";
 import { remarketingConfig } from "@/db/schema";
 import {
 	CAMPOS_DOS_PARAMETROS,
+	type CampoEscalar,
+	LIMITES_DA_ESCALA,
 	LIMITES_DOS_PARAMETROS,
 	normalizarParametros,
 	PARAMETROS_DE_FABRICA,
@@ -63,7 +65,7 @@ export const ROTULO_DA_UNIDADE: Record<UnidadeDoParametro, string> = {
  */
 export interface DefinicaoDeParametro {
 	chave: string;
-	campo: keyof ParametrosRegua;
+	campo: CampoEscalar;
 	rotulo: string;
 	descricao: string;
 	unidade: UnidadeDoParametro;
@@ -164,6 +166,58 @@ export const PARAMETROS_DO_CADASTRO: readonly DefinicaoDeParametro[] = [
 
 const POR_CHAVE = new Map(PARAMETROS_DO_CADASTRO.map((def) => [def.chave, def]));
 
+// ─── A escala intra-janela (uma linha CSV, não um número) ────────────────────
+//
+// `escalaDeRetomadaMs` é uma LISTA (`[10, 20, 30]` min), e `remarketing_config`
+// é chave/valor de TEXTO — a linha guarda os minutos separados por vírgula. Ela
+// NÃO entra em `PARAMETROS_DO_CADASTRO` de propósito: a tela de config renderiza
+// um `<input type="number">` por vigente e, no save, reenvia TODOS; um valor CSV
+// voltaria como remoção e apagaria a escala. Por isso a leitura dela é exposta
+// à parte (`LeituraDoCadastro.escalaDeRetomada`) e a tela a consome num bloco
+// próprio. O caminho do banco (gravar a linha) já vale sem deploy.
+
+export const CHAVE_DA_ESCALA = "escala_retomada_minutos";
+
+/** " 10 , 20,30 " → [10, 20, 30]; qualquer token não-inteiro devolve `null`. */
+export function minutosDaEscala(bruto: string): number[] | null {
+	const tokens = bruto
+		.split(",")
+		.map((token) => token.trim())
+		.filter(Boolean);
+	if (tokens.length === 0) return null;
+
+	const minutos: number[] = [];
+	for (const token of tokens) {
+		const numero = numeroInteiro(token);
+		if (numero === null) return null;
+		minutos.push(numero);
+	}
+	return minutos;
+}
+
+/**
+ * A faixa aceita de CADA elemento, na unidade da tela (minutos) — a mesma que o
+ * motor valida em ms (`LIMITES_DA_ESCALA`).
+ */
+export const LIMITES_DA_ESCALA_NA_TELA = {
+	minimo: LIMITES_DA_ESCALA.minimoMs / MINUTO_MS,
+	maximo: LIMITES_DA_ESCALA.maximoMs / MINUTO_MS,
+	maximoDePassos: LIMITES_DA_ESCALA.maximoDePassos,
+} as const;
+
+/** A escala como a tela/DB a mostra, com a origem do valor. */
+export interface EscalaDoCadastro {
+	chave: string;
+	/** Os minutos como o banco guarda ("10,20,30"); a fábrica quando não há linha. */
+	valor: string;
+	origem: OrigemDoValor;
+	/** O texto gravado e RECUSADO — a tela avisa que existe ajuste ignorado. */
+	valorInvalido: string | null;
+	/** A faixa aceita de cada elemento, em minutos. */
+	minimo: number;
+	maximo: number;
+}
+
 /** A faixa aceita NA UNIDADE DA TELA — o que o `<input>` deve mostrar. */
 export function limiteNaTela(def: DefinicaoDeParametro): { minimo: number; maximo: number } {
 	const faixa = LIMITES_DOS_PARAMETROS[def.campo];
@@ -183,7 +237,7 @@ export type OrigemDoValor = "cadastro" | "fabrica";
 
 export interface ParametroVigente {
 	chave: string;
-	campo: keyof ParametrosRegua;
+	campo: CampoEscalar;
 	rotulo: string;
 	descricao: string;
 	unidade: UnidadeDoParametro;
@@ -208,6 +262,8 @@ export interface LeituraDoCadastro {
 	parametros: ParametrosRegua;
 	/** O que a tela mostra, com a origem de cada valor. */
 	vigentes: ParametroVigente[];
+	/** A escala intra-janela, que é lista e tem leitura própria (ver acima). */
+	escalaDeRetomada: EscalaDoCadastro;
 }
 
 /** "  90 " → 90; "90.5", "noventa" e "" → null. Só inteiro, só positivo. */
@@ -238,6 +294,12 @@ export function montarLeitura(linhas: readonly LinhaDoCadastro[]): LeituraDoCada
 		candidatos[def.campo] = def.paraMotor(numero);
 	}
 
+	// A escala: lista de minutos, validada e traduzida para ms. Inválida, fica na
+	// fábrica — e a leitura guarda o texto recusado para a tela avisar.
+	const brutoDaEscala = gravados.get(CHAVE_DA_ESCALA);
+	const minutos = brutoDaEscala === undefined ? null : minutosDaEscala(brutoDaEscala);
+	if (minutos !== null) candidatos.escalaDeRetomadaMs = minutos.map((min) => min * MINUTO_MS);
+
 	// A peneira final: faixa, inteiro e janela de horário coerente. O que não
 	// passar aqui simplesmente não vira ajuste.
 	const parametros = normalizarParametros(candidatos);
@@ -261,7 +323,31 @@ export function montarLeitura(linhas: readonly LinhaDoCadastro[]): LeituraDoCada
 		};
 	});
 
-	return { parametros, vigentes };
+	return { parametros, vigentes, escalaDeRetomada: escalaMontada(gravados, parametros) };
+}
+
+/**
+ * A escala intra-janela como a leitura a expõe: o valor vigente (a fábrica
+ * quando não há linha válida), a origem e o texto recusado, se houver.
+ */
+function escalaMontada(
+	gravados: Map<string, string>,
+	parametros: ParametrosRegua,
+): EscalaDoCadastro {
+	const bruto = gravados.get(CHAVE_DA_ESCALA);
+	const minutos = bruto === undefined ? null : minutosDaEscala(bruto);
+	const doCadastro =
+		minutos !== null &&
+		minutos.length === parametros.escalaDeRetomadaMs.length &&
+		minutos.every((min, i) => min * MINUTO_MS === parametros.escalaDeRetomadaMs[i]);
+
+	return {
+		chave: CHAVE_DA_ESCALA,
+		valor: parametros.escalaDeRetomadaMs.map((ms) => ms / MINUTO_MS).join(","),
+		origem: doCadastro ? "cadastro" : "fabrica",
+		valorInvalido: bruto !== undefined && !doCadastro ? bruto : null,
+		...LIMITES_DA_ESCALA_NA_TELA,
+	};
 }
 
 /** Lê `remarketing_config` inteira e devolve a leitura montada. Server-only. */
@@ -319,13 +405,46 @@ export function validarEntradas(
 	const candidatos: Partial<ParametrosRegua> = {};
 
 	for (const entrada of entradas) {
+		const texto = String(entrada.valor ?? "").trim();
+
+		// A escala é a única LISTA: uma linha CSV, com validação própria.
+		if (entrada.chave === CHAVE_DA_ESCALA) {
+			if (texto === "") {
+				remocoes.push(CHAVE_DA_ESCALA);
+				continue;
+			}
+			const minutos = minutosDaEscala(texto);
+			if (minutos === null) {
+				erros[CHAVE_DA_ESCALA] = "Use números inteiros separados por vírgula (ex.: 10,20,30).";
+				continue;
+			}
+			const invalido = minutos.find(
+				(min) => min < LIMITES_DA_ESCALA_NA_TELA.minimo || min > LIMITES_DA_ESCALA_NA_TELA.maximo,
+			);
+			if (invalido !== undefined) {
+				erros[CHAVE_DA_ESCALA] =
+					`Cada intervalo precisa ficar entre ${LIMITES_DA_ESCALA_NA_TELA.minimo} e ${LIMITES_DA_ESCALA_NA_TELA.maximo} minutos.`;
+				continue;
+			}
+			if (minutos.length > LIMITES_DA_ESCALA_NA_TELA.maximoDePassos) {
+				erros[CHAVE_DA_ESCALA] =
+					`Use no máximo ${LIMITES_DA_ESCALA_NA_TELA.maximoDePassos} intervalos.`;
+				continue;
+			}
+			if (minutos.some((min, i) => i > 0 && min < minutos[i - 1])) {
+				erros[CHAVE_DA_ESCALA] = "A escala não pode diminuir (cada intervalo é ≥ o anterior).";
+				continue;
+			}
+			valores.push({ chave: CHAVE_DA_ESCALA, valor: minutos.join(",") });
+			continue;
+		}
+
 		const def = POR_CHAVE.get(entrada.chave);
 		if (!def) {
 			erros[entrada.chave] = "Parâmetro desconhecido.";
 			continue;
 		}
 
-		const texto = String(entrada.valor ?? "").trim();
 		if (texto === "") {
 			remocoes.push(def.chave);
 			continue;
@@ -399,7 +518,7 @@ export async function gravarCadastro(
 }
 
 /** Os campos na ordem canônica da régua — usado pelo teste de completude. */
-export const CAMPOS_COM_CADASTRO: readonly (keyof ParametrosRegua)[] = CAMPOS_DOS_PARAMETROS;
+export const CAMPOS_COM_CADASTRO: readonly CampoEscalar[] = CAMPOS_DOS_PARAMETROS;
 
 /**
  * O banco pode guardar linha de chave que o código não conhece mais (chave

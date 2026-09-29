@@ -29,6 +29,7 @@ vi.mock("bullmq", () => ({
 }));
 vi.mock("ioredis", () => ({ default: class {} }));
 
+import { PARAMETROS_DE_FABRICA } from "@/lib/remarketing/regua";
 import {
 	entradaWebLigada,
 	inteiroDaEnv,
@@ -59,6 +60,8 @@ function linha(over: Partial<LinhaDaRegua> = {}): LinhaDaRegua {
 		phone: null,
 		nome: "Ana",
 		optoutDaPessoaEm: null,
+		viuOferta: false,
+		teveProposta: false,
 		...over,
 	};
 }
@@ -78,9 +81,6 @@ function deps(over: Record<string, unknown> = {}) {
 				ordem.push("grava");
 			},
 		),
-		gravarRetomada: vi.fn(async () => {
-			ordem.push("retomada");
-		}),
 		segurarToquesDaEquipe: vi.fn(async () => 0),
 		dispararTurno: vi.fn(async () => {
 			ordem.push("turno");
@@ -88,7 +88,7 @@ function deps(over: Record<string, unknown> = {}) {
 		enviarArte: vi.fn(async () => {
 			ordem.push("arte");
 		}),
-		enviarTemplate: vi.fn(async (_args: { usageKey: string }) => {
+		enviarTemplate: vi.fn(async (_args: { usageKeys: readonly string[] }) => {
 			ordem.push("template");
 		}),
 		despacharConversoes: vi.fn(async () => ({ enviados: 0 })),
@@ -181,12 +181,14 @@ describe("a entrada da WEB na régua", () => {
 });
 
 describe("o ciclo grava o contador ANTES de enviar", () => {
-	it("turno de retomada: grava → conta a retomada → dispara o turno → anexa a arte", async () => {
+	it("turno de retomada: grava → dispara o turno → anexa a arte (sem tocar o contador do watchdog)", async () => {
 		const { deps: d, ordem } = deps({ listarVencidas: vi.fn(async () => [linha()]) });
 		const r = await runRemarketingCycle(d);
 
 		expect(r.disparados).toBe(1);
-		expect(ordem).toEqual(["grava", "retomada", "turno", "arte"]);
+		// O "retomada" que estava entre "grava" e "turno" era o contador do
+		// watchdog — quem conta os toques da régua é a régua (FIX-377).
+		expect(ordem).toEqual(["grava", "turno", "arte"]);
 		// O que foi gravado tem o passo já contado — é o toque 01 do ciclo.
 		const gravado = d.gravarEstado.mock.calls[0][0] as { estado: { step: number } };
 		expect(gravado.estado.step).toBe(1);
@@ -202,9 +204,27 @@ describe("o ciclo grava o contador ANTES de enviar", () => {
 
 		expect(r.disparados).toBe(1);
 		expect(ordem).toEqual(["grava", "template"]);
-		// A chave lógica sai do objetivo — nunca do nome do template na Meta.
-		const envio = d.enviarTemplate.mock.calls[0][0] as { usageKey: string };
-		expect(envio.usageKey).toBe("remarketing_oportunidade_carro");
+		// A chave sai do OBJETIVO gravado na linha — e da FASE lida dos sinais; sem
+		// sinal nenhum, a fase é "inicio". Quem decide se o template existe é o
+		// dispatcher, não o ciclo.
+		const envio = d.enviarTemplate.mock.calls[0][0] as { usageKeys: readonly string[] };
+		expect(envio.usageKeys).toEqual(["remarketing_inicio_carro", "remarketing_inicio_generico"]);
+	});
+
+	it("template com proposta na mesa → chaves de `fechamento` (a fase muda a mensagem)", async () => {
+		const { deps: d } = deps({
+			listarVencidas: vi.fn(async () => [
+				linha({ lastInboundAt: new Date(AGORA.getTime() - 4 * DIA), teveProposta: true }),
+			]),
+		});
+		const r = await runRemarketingCycle(d);
+
+		expect(r.disparados).toBe(1);
+		const envio = d.enviarTemplate.mock.calls[0][0] as { usageKeys: readonly string[] };
+		expect(envio.usageKeys).toEqual([
+			"remarketing_fechamento_carro",
+			"remarketing_fechamento_generico",
+		]);
 	});
 
 	it("no MESMO tick, despacha as conversões pendentes do CAPI", async () => {
@@ -253,7 +273,7 @@ describe("os bloqueios do motor chegam ao ciclo", () => {
 		expect(r.disparados).toBe(1);
 		// Nasceu o turno, mas a imagem não saiu: é o defeito de 18/09 (a foto do
 		// carro embaixo de "carro, apartamento ou moto?").
-		expect(ordem).toEqual(["grava", "retomada", "turno"]);
+		expect(ordem).toEqual(["grava", "turno"]);
 		expect(d.enviarArte).not.toHaveBeenCalled();
 	});
 
@@ -308,6 +328,118 @@ describe("os bloqueios do motor chegam ao ciclo", () => {
 		expect(r.nada.optout_da_pessoa).toBe(1);
 		const gravado = d.gravarEstado.mock.calls[0][0] as { estado: { status: string } };
 		expect(gravado.estado.status).toBe("OPTOUT");
+	});
+});
+
+describe("FIX-376/377 — a escala intra-janela entrega os TRÊS toques", () => {
+	/** 10h de Brasília (13h UTC) — o instante do toque 01, cedo o bastante para a
+	 * série inteira (90 min + 3 h + 5 h) caber dentro da janela de envio (9h-20h). */
+	const T0 = new Date("2026-09-14T13:00:00Z");
+	const MIN = 60_000;
+
+	/**
+	 * A prova pedida pelo card: com a escala intra-janela, o toque 01, o 02 e o 03
+	 * SAEM — e o portão do watchdog (`conversationMetadata.retomada` esgotado) NÃO os
+	 * mata.
+	 *
+	 * A pessoa está PARADA HÁ 1 H 35 (`last_inbound_at` antes do silêncio da escala,
+	 * que é 90 min) e a linha já está na régua, vencida — o cenário do card. O ciclo é
+	 * rodado TRÊS vezes com um estado vivo da linha, como em produção (uma passada a
+	 * cada 30 s): o que o ciclo grava em `gravarEstado` é o que a leitura do tick
+	 * seguinte enxerga.
+	 */
+	async function tocarTresVezes(metadata: unknown) {
+		let viva = linha({
+			step: 0,
+			status: "ATIVO",
+			nextTouchAt: T0,
+			ultimoToqueEm: null,
+			lastInboundAt: new Date(T0.getTime() - 95 * MIN),
+			metadata,
+		});
+		const disparos: Array<{ passo: number; em: Date; via: string }> = [];
+		let agora = T0;
+
+		const rodar = async () => {
+			const r = await runRemarketingCycle({
+				agora,
+				entrarNaRegua: async () => 0,
+				// A linha só volta quando `next_touch_at` venceu — como o índice real.
+				listarVencidas: async (t) =>
+					viva.nextTouchAt && viva.nextTouchAt.getTime() <= t.getTime() ? [viva] : [],
+				toquesDoContato: async () => [],
+				simulacaoDoContato: async () => null,
+				telefoneDaEquipe: async () => false,
+				gravarEstado: async ({ estado, touches30d }) => {
+					viva = {
+						...viva,
+						step: estado.step,
+						status: estado.status,
+						nextTouchAt: estado.nextTouchAt,
+						ultimoToqueEm: estado.ultimoToqueEm,
+						motivoSaida: estado.motivoSaida,
+						touches30d,
+					};
+				},
+				segurarToquesDaEquipe: async () => 0,
+				dispararTurno: async () => {
+					disparos.push({ passo: viva.step, em: agora, via: "turno" });
+				},
+				enviarArte: async () => {},
+				enviarTemplate: async () => {
+					disparos.push({ passo: viva.step, em: agora, via: "template" });
+				},
+				lerParametros: async () => PARAMETROS_DE_FABRICA,
+				despacharConversoes: async () => ({ enviados: 0 }),
+			});
+			return r;
+		};
+
+		const resultado = [await rodar()];
+		// Os dois ticks seguintes acontecem no instante que o ciclo agendou.
+		for (let i = 0; i < 2; i++) {
+			agora = viva.nextTouchAt as Date;
+			resultado.push(await rodar());
+		}
+		return { disparos, resultado, viva };
+	}
+
+	it("o 01, o 02 e o 03 saem, com 3 e 5 horas entre eles", async () => {
+		const { disparos, resultado, viva } = await tocarTresVezes({});
+
+		expect(resultado.map((r) => r.disparados)).toEqual([1, 1, 1]);
+		expect(disparos.map((d) => d.passo)).toEqual([1, 2, 3]);
+		expect(disparos.map((d) => d.via)).toEqual(["turno", "turno", "turno"]);
+
+		// O toque 01 sai com o silêncio da escala (90 min), não com os 10 min de antes.
+		expect(disparos[0].em.getTime()).toBe(T0.getTime());
+		// E os intervalos são os da escala: +3 h e +5 h.
+		expect(disparos[1].em.getTime() - disparos[0].em.getTime()).toBe(180 * MIN);
+		expect(disparos[2].em.getTime() - disparos[1].em.getTime()).toBe(300 * MIN);
+		// Esgotou os três: a linha sai do índice com o motivo nomeado.
+		expect(viva.status).toBe("ESGOTADO");
+		expect(viva.motivoSaida).toBe("tres_toques_sem_resposta");
+	});
+
+	it("o contador do watchdog esgotado NÃO barra os toques da régua", async () => {
+		// É o defeito do FIX-377: `MAX_RETOMADAS = 2` barrava o turno da régua.
+		const { disparos, resultado } = await tocarTresVezes({
+			retomada: { attempts: 9, lastAt: T0.getTime() },
+		});
+
+		expect(resultado.map((r) => r.disparados)).toEqual([1, 1, 1]);
+		expect(disparos).toHaveLength(3);
+	});
+
+	it("opt-out da pessoa continua barrando os três", async () => {
+		const { deps: d } = deps({
+			listarVencidas: vi.fn(async () => [
+				linha({ lastInboundAt: T0, optoutDaPessoaEm: new Date(T0.getTime() + MIN) }),
+			]),
+		});
+		const r = await runRemarketingCycle(d);
+		expect(r.disparados).toBe(0);
+		expect(r.nada.optout_da_pessoa).toBe(1);
 	});
 });
 
