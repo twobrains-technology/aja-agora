@@ -1,11 +1,13 @@
 ---
 id: FIX-372
 titulo: "O clique do degrau abre a MESMA população do número clicado"
-status: todo
+status: done
 bloco: bloco-pessoa
 arquivos:
   - src/components/admin/performance/funil-midia-chart.tsx
   - src/lib/admin/percurso-types.ts
+commit: 3049a5a7
+executado_em: 2026-09-28
 rodada: 2026-09-28
 ---
 ## Palavras do operador
@@ -31,3 +33,21 @@ MESMA chave e a MESMA janela, inclusive no caso de conversa de WhatsApp sem linh
 ## Regressão exigida
 Integração: para a mesma janela e o mesmo degrau, `funil.count == percurso.total` e
 `== percurso.alcancaram` — os três números que a cliente compara.
+
+## Execução
+
+A causa raiz era maior que a descrita no card: não era só "conferir que o passo
+usa a fonte única" — o `modo=alcancou` do Percurso lia a POSIÇÃO na escada
+(`profundidade >= alvo`), e a barra do funil lê o FATO do degrau. Os dois
+coincidem nos degraus da cadeia e divergem na ramificação: quem iniciou a
+conversa também mandou a mensagem do anúncio antes, então `profundidade >= 4`
+trazia 7 pessoas para uma barra que dizia 1.
+
+`condicaoDoPasso` passou a filtrar `alcancou` pelo fato de cada degrau
+(`FATO_DO_PASSO`), o que torna `total == alcancaram` por construção. Os três
+primeiros degraus mantêm a leitura da escada (`olhou OR abriu_chat`), porque a
+ajuda deles promete "passou por aqui".
+
+Novo arquivo `ponte-funil-percurso.integration.test.ts` percorre a ponte para
+todos os degraus e cobre as duas bordas: conversa de WhatsApp sem linha em
+`leads` e a pessoa que voltou (duas conversas, uma pessoa).

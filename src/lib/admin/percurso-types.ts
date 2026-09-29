@@ -106,6 +106,12 @@ export function rotuloDoPasso(passo: PassoDoPercurso): string {
  * vocabulário: clicar em "Se identificaram" abre esta tela filtrada em
  * `se_identificou`. `visitas` mapeia para `null` de propósito — a etapa inteira
  * é a tela sem filtro nenhum.
+ *
+ * O clique abre em `modo=alcancou`, e `alcancou` no Percurso filtra pelo FATO do
+ * degrau (`identificou`, `teve_proposta`, …) — a MESMA definição que o funil usa
+ * para contar. Filtrando por posição na escada (`profundidade >= X`), a lista
+ * aberta não era a população do número clicado: no degrau de ramificação ("Só
+ * mandaram a mensagem do anúncio"), clicar em 1 abria 7.
  */
 export const PASSO_DA_ETAPA_DO_FUNIL: Record<ChaveEtapaFunil, PassoDoPercurso | null> = {
 	visitas: null,
@@ -233,6 +239,15 @@ export interface PessoaDoPercurso {
 	perdido: boolean;
 	/** Conversa mais recente da pessoa — o link para ler o que ela falou. */
 	conversationId: string | null;
+	/**
+	 * A pessoa ainda é RETOMÁVEL — o cliente escreveu na janela recente e ao menos
+	 * uma conversa dela não foi encerrada.
+	 *
+	 * É o MESMO critério de "ainda viva" do funil de mídia (`conversaViva`, em
+	 * `sinais-do-funil`), e é por isso que ele não é derivado aqui: duas telas com
+	 * dois sentidos para "parada" é o defeito que este campo fecha.
+	 */
+	aindaViva: boolean;
 }
 
 export interface ResumoDoPasso {
@@ -241,6 +256,14 @@ export interface ResumoDoPasso {
 	ajuda: string;
 	/** Quantas pessoas PARARAM neste degrau. */
 	pessoas: number;
+	/**
+	 * Dessas, quantas ainda são RETOMÁVEIS — o cliente escreveu na janela recente
+	 * e a conversa não foi encerrada.
+	 *
+	 * Mesmo critério, mesma constante e mesmo fragmento que o `aindaVivas` do funil
+	 * de mídia (FIX-375): a palavra "parada" não pode ter dois sentidos no painel.
+	 */
+	pessoasVivas: number;
 	/**
 	 * Quantas pessoas ALCANÇARAM este degrau — o mesmo fato por trás dele, sem
 	 * exigir que a pessoa tenha parado ali.

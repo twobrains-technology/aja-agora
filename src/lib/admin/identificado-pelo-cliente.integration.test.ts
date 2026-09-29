@@ -8,9 +8,11 @@
 //      WhatsApp conta (o canal entrega número e perfil); conversa de web conta
 //      quando o contato foi coletado. Antes o predicado pedia NOME + contato e,
 //      como o pushName cai na conversa, o degrau empatava com "Conversas".
-//   2. **Cinco propostas da mesma pessoa são cinco linhas e UMA pessoa.** As duas
-//      unidades são legítimas e medem coisas diferentes; o que não pode existir é
-//      as duas com o mesmo rótulo na mesma tela.
+//   2. **A unidade é PESSOA, inclusive em "Propostas".** Cinco propostas da
+//      mesma pessoa contam 1 — na tabela por origem da tela de Performance e na
+//      escada do Percurso. Contando LINHAS de proposta, as duas telas discordavam
+//      com o mesmo rótulo (5 × 1), e a cliente comparava com a administradora e
+//      concluía que o painel mentia.
 //
 // Skip se DATABASE_URL ausente (mesmo padrão dos outros de integração).
 
@@ -222,18 +224,62 @@ describeIfDb("identificado pelo canal × contato conhecido (integration)", () =>
 		expect(identificados).toBeGreaterThan(comTelefone);
 	});
 
-	it("cinco propostas da mesma pessoa são cinco linhas de proposta", async () => {
+	it("cinco propostas da mesma pessoa são UMA pessoa", async () => {
+		// A regra do rótulo do Percurso — "uma linha por pessoa, por mais propostas
+		// que ela tenha" — vale também para a tabela por origem. Contando linhas de
+		// proposta, a coluna dizia 5 onde a escada do Percurso dizia 1, na mesma tela.
 		const origens = await performance.computeOrigens(JANELA_DE, JANELA_ATE);
-		expect(origens.reduce((soma, l) => soma + l.propostas, 0)).toBe(5);
+		expect(origens.reduce((soma, l) => soma + l.propostas, 0)).toBe(1);
 	});
 
-	it("e UMA pessoa com proposta — a unidade do Percurso", async () => {
+	it("o número da tela de Performance é o da escada do Percurso", async () => {
+		const origens = await performance.computeOrigens(JANELA_DE, JANELA_ATE);
+		const naTela = origens.reduce((soma, l) => soma + l.propostas, 0);
+
 		const resposta = await percurso.listarPercurso({
 			from: JANELA_DE,
 			to: JANELA_ATE,
 			passo: "proposta",
 			modo: "alcancou",
 		});
-		expect(resposta.total).toBe(1);
+
+		expect(naTela).toBe(1);
+		expect(resposta.total).toBe(naTela);
+		expect(resposta.resumo.find((r) => r.chave === "proposta")?.alcancaram).toBe(naTela);
+	});
+
+	it("duas pessoas com uma proposta cada contam DUAS", async () => {
+		// O outro lado da mesma regra: contar pessoa não pode COLAPSAR quem é
+		// distinto. Semeia uma segunda pessoa com UMA proposta e confere o delta.
+		const antes = await performance.computeOrigens(JANELA_DE, JANELA_ATE);
+		const antesSoma = antes.reduce((soma, l) => soma + l.propostas, 0);
+
+		const [visita] = await db
+			.insert(schema.visits)
+			.values({
+				visitorId: `v-${crypto.randomUUID()}`,
+				channel: "web",
+				createdAt: DENTRO,
+				userAgent: UA_GENTE,
+				utmSource: "teste-identificado",
+			})
+			.returning({ id: schema.visits.id });
+		visitIds.push(visita.id);
+		const [conversa] = await db
+			.insert(schema.conversations)
+			.values({ channel: "web", visitId: visita.id, createdAt: DENTRO, updatedAt: DENTRO })
+			.returning({ id: schema.conversations.id });
+		convIds.push(conversa.id);
+		await db.insert(schema.beviProposals).values({
+			conversationId: conversa.id,
+			proposalId: `prop-${crypto.randomUUID()}`,
+			createdAt: DENTRO,
+			updatedAt: DENTRO,
+		});
+
+		const depois = await performance.computeOrigens(JANELA_DE, JANELA_ATE);
+		const depoisSoma = depois.reduce((soma, l) => soma + l.propostas, 0);
+
+		expect(depoisSoma).toBe(antesSoma + 1);
 	});
 });

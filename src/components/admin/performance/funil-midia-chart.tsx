@@ -94,8 +94,8 @@ export function FunilMidiaChart({
 			<CardHeader>
 				<CardTitle>A conversa</CardTitle>
 				<CardDescription>
-					Das {nf.format(topo)} que abriram o chat, onde cada uma parou — só conversas com origem
-					conhecida
+					Das {nf.format(topo)} pessoas que abriram o chat, onde cada uma parou — só conversas com
+					origem conhecida
 				</CardDescription>
 				{/* O número que decide vem primeiro e maior, e vem com régua: o
 				    percentual que iniciou a conversa contra a meta acordada. Número
@@ -244,10 +244,11 @@ export function FunilMidiaChart({
 							</TooltipTrigger>
 							<TooltipContent className="max-w-sm">
 								“Ainda viva” = o cliente escreveu nos últimos 7 dias e a conversa não foi encerrada
-								— essas dá para puxar de volta. Contagem de conversas, nunca de leads. Clique numa
-								etapa para ver, nome a nome, quem chegou até ela. “Só mandaram a mensagem do
-								anúncio” não é um degrau abaixo de “Conversas”: é o outro destino dela — quem só
-								apertou enviar no texto que o anúncio já escreve.
+								— essas dá para puxar de volta. Contagem de PESSOAS, nunca de conversas nem de
+								leads: cinco conversas do mesmo telefone são uma pessoa. Clique numa etapa para ver,
+								nome a nome, quem chegou até ela. “Só mandaram a mensagem do anúncio” não é um
+								degrau abaixo de “Conversas”: é o outro destino dela — quem só apertou enviar no
+								texto que o anúncio já escreve.
 							</TooltipContent>
 						</Tooltip>
 					</TooltipProvider>

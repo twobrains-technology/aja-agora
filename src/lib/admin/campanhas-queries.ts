@@ -429,7 +429,7 @@ async function funilPorCampanha(de: Date, ate: Date): Promise<LinhaFunilCampanha
       COALESCE(NULLIF(v.campaign_id, ''), NULLIF(v.utm_campaign, ''), NULLIF(v.ctwa_source_id, '')) AS chave,
       max(v.utm_campaign) AS utm_campaign,
       -- As MESMAS contagens de computeOrigens — uma definição de funil só.
-      ${contagensDoFunil()}
+      ${contagensDoFunil(de, ate)}
     FROM visits v
     LEFT JOIN conversations c ON c.visit_id = v.id AND c.is_simulated = false
     LEFT JOIN leads l ON l.conversation_id = c.id AND l.is_simulated = false
@@ -545,7 +545,7 @@ async function criativosPorCampanha(de: Date, ate: Date): Promise<Map<string, Li
       v.utm_content AS criativo,
       max(a.creative_name) AS creative_name,
       max(a.thumbnail_url) AS thumbnail_url,
-      ${contagensDoFunil()}
+      ${contagensDoFunil(de, ate)}
     FROM visits v
     LEFT JOIN conversations c ON c.visit_id = v.id AND c.is_simulated = false
     LEFT JOIN leads l ON l.conversation_id = c.id AND l.is_simulated = false

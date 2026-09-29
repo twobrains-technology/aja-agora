@@ -68,6 +68,46 @@ export function chaveDaPessoa(de: Date, ate: Date, colunaVisitor: SQL = sql`v.vi
 const JANELA_DE_ECO = "2 seconds";
 
 /**
+ * Quantos dias sem o cliente escrever até a conversa deixar de contar como
+ * VIVA.
+ *
+ * **É o critério ÚNICO de "parado" no painel.** Ele vivia como const local de
+ * `performance-queries.ts` e não existia no Percurso — quem abrisse as duas telas
+ * via dois sentidos para a mesma palavra, e nenhum jeito de saber qual valia.
+ *
+ * **O que ele NÃO é.** A régua de remarketing tem a janela dela
+ * (`JANELA_DE_ENTRADA_MS`, em `motivo-de-exclusao.ts`), e ela responde outra
+ * pergunta: "posso mandar um toque?". Aqui a pergunta é "dá para ler esta pessoa
+ * como retomável?". São decisões diferentes, com donos diferentes — juntar as
+ * duas faria mudar a cadência quando alguém mexesse no desenho do painel.
+ */
+export const DIAS_PARA_CONSIDERAR_VIVA = 7;
+
+/**
+ * A CONVERSA está VIVA — o cliente escreveu na janela recente e ninguém a
+ * encerrou.
+ *
+ * Conversa encerrada não é retomável por mais nova que seja a fala: o time já
+ * decidiu que aquele caso acabou. Os dois cortes andam juntos de propósito — uma
+ * tela que aplicasse só um deles mostraria uma população diferente das outras.
+ *
+ * Uma CONVERSA ser viva não faz a PESSOA viva: quem agrega precisa de
+ * `bool_or(viva)` sobre as conversas dela (basta uma aberta para ser retomável).
+ *
+ * O timestamp e o status entram por parâmetro porque cada consulta chega aqui
+ * com um alias diferente: no funil a fala do cliente vem de uma subconsulta e o
+ * status é `c.status`; no Percurso, do CTE `conv`. Acoplar a um alias faria o
+ * fragmento compilar num lugar e explodir no outro.
+ */
+export function conversaViva(
+	ultimoInbound: SQL = sql`ultimo_inbound`,
+	status: SQL = sql`c.status`,
+): SQL {
+	return sql`(${ultimoInbound} >= now() - ${sql.raw(`interval '${DIAS_PARA_CONSIDERAR_VIVA} days'`)}
+    AND ${status} = 'active')`;
+}
+
+/**
  * A visita não é ECO de outra — o mesmo visitante gravado de novo em instantes.
  *
  * **O que aconteceu.** Depois de hidratar, o App Router dispara `fetch` de
@@ -250,7 +290,13 @@ export function conversaIdentificada(conversa: SQL = sql`c`): SQL {
  * `visits v`, `conversations c`, `leads l`, `bevi_proposals bp`. Quem não usa
  * `qualificados` simplesmente ignora a coluna.
  *
- * `identificados` conta CONVERSAS cujo cliente se identificou
+ * **A unidade é PESSOA** (decisão do dono, 23/09/2026): cinco conversas do mesmo
+ * telefone são UMA pessoa. A chave é a `chaveDaPessoa` — a mesma da Porta e do
+ * Percurso —, e não `c.id`. Contando conversa, a tabela por origem discordava do
+ * funil logo acima dela na mesma tela; contando linha de proposta, discordava da
+ * escada do Percurso (5 × 1) com o mesmo rótulo.
+ *
+ * `identificados` conta PESSOAS cujo cliente se identificou
  * (`conversaIdentificada`) — no WhatsApp, quem entrou (o canal entregou número e
  * perfil); na web, quem deixou contato. É a MESMA definição do funil de mídia
  * (`computeFunilMidia`). Contando leads, uma conversa com dedup imperfeito
@@ -260,20 +306,32 @@ export function conversaIdentificada(conversa: SQL = sql`c`): SQL {
  * ALCANÇAR (telefone/e-mail no lead), e não são ordem um do outro (a conversa de
  * WhatsApp sem linha em `leads` é identificada e não tem contato no lead).
  */
-export function contagensDoFunil(): SQL {
+export function contagensDoFunil(de: Date, ate: Date): SQL {
 	const qualificados = sql.join(
 		ESTAGIOS_QUALIFICADOS.map((estagio) => sql`${estagio}`),
 		sql`, `,
 	);
+	const pessoa = chaveDaPessoa(de, ate);
 	return sql`
     count(DISTINCT v.id) FILTER (WHERE ${VISITA_NAO_E_ECO}) AS visitas,
-    count(DISTINCT c.id) AS conversas,
-    count(DISTINCT c.id) FILTER (WHERE ${leadComContato()}) AS com_contato,
-    count(DISTINCT c.id) FILTER (WHERE ${conversaIdentificada(sql`c`)}) AS identificados,
-    count(DISTINCT l.id) FILTER (WHERE l.stage IN (${qualificados})) AS qualificados,
-    count(DISTINCT bp.id) AS propostas,
-    count(DISTINCT l.id) FILTER (WHERE l.stage = 'fechado_ganho') AS fechados
+    count(DISTINCT ${pessoa}) FILTER (WHERE ${pessoaConversou()}) AS conversas,
+    count(DISTINCT ${pessoa}) FILTER (WHERE ${pessoaConversou()} AND ${leadComContato()}) AS com_contato,
+    count(DISTINCT ${pessoa}) FILTER (WHERE ${pessoaConversou()} AND ${conversaIdentificada(sql`c`)}) AS identificados,
+    count(DISTINCT ${pessoa}) FILTER (WHERE l.stage IN (${qualificados})) AS qualificados,
+    count(DISTINCT ${pessoa}) FILTER (WHERE bp.id IS NOT NULL) AS propostas,
+    count(DISTINCT ${pessoa}) FILTER (WHERE l.stage = 'fechado_ganho') AS fechados
   `;
+}
+
+/**
+ * A pessoa ABRIU uma conversa nestas visitas — a linha do `LEFT JOIN` existe.
+ *
+ * Existe como condição de `FILTER` porque contar pessoa em vez de `c.id`
+ * incluiria, sem ela, o visitante que só passou e nunca abriu o chat: ele tem
+ * chave (o próprio `visitor_id`) e entraria em "Conversas" por acidente.
+ */
+function pessoaConversou(): SQL {
+	return sql`c.id IS NOT NULL`;
 }
 
 /** Artifacts que provam que o cliente VIU número de oferta na tela. */

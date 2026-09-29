@@ -1,12 +1,14 @@
 ---
 id: FIX-375
 titulo: "\"Parado\" tem critério único, no servidor"
-status: todo
+status: done
 bloco: bloco-pessoa
 arquivos:
   - src/lib/admin/performance-queries.ts
   - src/lib/admin/percurso-queries.ts
   - src/lib/admin/sinais-do-funil.ts
+commit: 05aba501
+executado_em: 2026-09-28
 rodada: 2026-09-28
 ---
 ## Palavras do operador
@@ -32,3 +34,19 @@ nenhum, e o motivo da régua vive em `motivo-de-exclusao.ts`.
 ## Regressão exigida
 Integração de equivalência: a mesma janela produz o MESMO conjunto de "parados" no funil e no Percurso
 (comparar os ids, não só a contagem).
+
+## Execução
+
+`DIAS_PARA_CONSIDERAR_VIVA` e o predicado viraram `conversaViva()` em
+`sinais-do-funil.ts`; `performance-queries.ts` deixou de ter a const local, e o
+Percurso (CTE `conv`) passou a usar o mesmo fragmento, expondo `aindaViva` por
+pessoa e `pessoasVivas` no resumo.
+
+A leitura das paradas saiu para `pessoasQuePararam(fromDate, toDate)` — é o que
+permite comparar os **ids** das duas telas, e não só a contagem.
+
+**A régua NÃO foi unificada**, de propósito: `JANELA_DE_ENTRADA_MS`
+(`motivo-de-exclusao.ts`) responde "posso mandar um toque?", uma decisão de
+cadência com dono próprio; `conversaViva` responde "dá para ler esta pessoa como
+retomável?". Juntar as duas faria mexer no desenho do painel mudar a régua em
+silêncio. O doc de `DIAS_PARA_CONSIDERAR_VIVA` diz isso em voz alta.

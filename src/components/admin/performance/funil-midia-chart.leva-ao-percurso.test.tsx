@@ -114,6 +114,25 @@ describe("funil de mídia — cada etapa leva ao percurso", () => {
 		expect(screen.queryByText("Visitas")).toBeNull();
 	});
 
+	it("a ramificação abre pelo FATO, não pela posição na escada", () => {
+		// "Só mandaram a mensagem do anúncio" é ramificação: quem escreveu algo
+		// próprio TAMBÉM mandou a mensagem do anúncio antes de escrever. O degrau
+		// conta quem SÓ mandou o texto do anúncio, e é esse o fato que o link tem que
+		// abrir — filtrando por posição na escada, clicar em 1 abria a lista de 7.
+		//
+		// O modo é o mesmo dos outros degraus (`alcancou`); o que mudou foi o
+		// SERVIDOR, que passou a ler o fato do degrau em vez de `profundidade >= X`.
+		// Este caso existe para que tirar o modo da ramificação — ou trocá-lo por
+		// `parou`, que é o padrão da tela de destino — caia aqui e não na tela do
+		// operador.
+		render(<FunilMidiaChart etapas={ETAPAS} de={DE} ate={ATE} />);
+		const href = hrefDe("Só mandaram a mensagem do anúncio");
+
+		expect(href).toContain("passo=so_pre_preenchida");
+		expect(href).toContain("modo=alcancou");
+		expect(href).toContain(`from=${encodeURIComponent(DE.toISOString())}`);
+	});
+
 	it("diz a meta do primeiro degrau com palavra, e não só com cor", () => {
 		// 12 de 20 = 60% iniciaram a conversa, contra a meta de 4%: ACIMA, dito.
 		render(<FunilMidiaChart etapas={ETAPAS} de={DE} ate={ATE} />);
