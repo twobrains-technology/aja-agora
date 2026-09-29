@@ -1,7 +1,9 @@
 ---
 id: FIX-388
 titulo: "A chave do template passa a ser fase × bem, com lista ordenada de candidatas"
-status: todo
+status: done
+commit: 29ea1476
+executado_em: 2026-09-29
 bloco: bloco-comunicacoes
 arquivos:
   - src/lib/remarketing/motor.ts

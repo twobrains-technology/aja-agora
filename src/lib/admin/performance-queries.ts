@@ -43,8 +43,10 @@ import {
 	conversaAtribuida,
 	conversaIdentificada,
 	conversaViva,
+	teveProposta,
 	VISITA_CONTAVEL,
 	VISITA_DE_GENTE,
+	viuOferta,
 } from "./sinais-do-funil";
 
 /** O dia que o negócio enxerga. A operação é brasileira; o servidor é UTC. */
@@ -275,12 +277,8 @@ export async function pessoasQuePararam(fromDate: Date, toDate: Date): Promise<P
         ${engajou} AS engajou,
         ${soPrePreenchida} AS so_pre_preenchida,
         ${conversaIdentificada(sql`c`)} AS identificou,
-        EXISTS (SELECT 1 FROM messages m
-          JOIN artifacts a ON a.message_id = m.id
-          WHERE m.conversation_id = c.id
-            AND a.type IN (${ARTIFACTS_DE_OFERTA_SQL})) AS viu_oferta,
-        EXISTS (SELECT 1 FROM bevi_proposals bp
-          WHERE bp.conversation_id = c.id) AS teve_proposta,
+        ${viuOferta(sql`c`)} AS viu_oferta,
+        ${teveProposta(sql`c`)} AS teve_proposta,
         EXISTS (SELECT 1 FROM leads l
           WHERE l.conversation_id = c.id AND l.is_simulated = false
             AND l.stage = 'fechado_ganho') AS fechou

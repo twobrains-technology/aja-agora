@@ -30,12 +30,13 @@ import {
 } from "./percurso-types";
 import { type AvaliacaoDaRegua, avaliarReguaPorIds } from "./regua-por-conversa";
 import {
-	ARTIFACTS_DE_OFERTA_SQL,
 	chaveDaPessoa,
 	conversaIdentificada,
 	conversaViva,
+	teveProposta,
 	VISITA_DE_GENTE,
 	VISITA_NAO_E_ECO,
+	viuOferta,
 } from "./sinais-do-funil";
 
 /** Teto de linhas por página. Acima disso a tela deixa de ser lista e vira dump. */
@@ -182,12 +183,8 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
 					sql`c.status`,
 				)} AS viva,
         ${conversaIdentificada(sql`c`)} AS identificou,
-        EXISTS (SELECT 1 FROM messages m
-          JOIN artifacts a ON a.message_id = m.id
-          WHERE m.conversation_id = c.id
-            AND a.type IN (${ARTIFACTS_DE_OFERTA_SQL})) AS viu_oferta,
-        EXISTS (SELECT 1 FROM bevi_proposals bp
-          WHERE bp.conversation_id = c.id) AS teve_proposta,
+        ${viuOferta(sql`c`)} AS viu_oferta,
+        ${teveProposta(sql`c`)} AS teve_proposta,
         EXISTS (SELECT 1 FROM leads l
           WHERE l.conversation_id = c.id AND l.is_simulated = false
             AND l.stage = 'fechado_ganho') AS fechou

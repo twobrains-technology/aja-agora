@@ -60,6 +60,8 @@ function linha(over: Partial<LinhaDaRegua> = {}): LinhaDaRegua {
 		phone: null,
 		nome: "Ana",
 		optoutDaPessoaEm: null,
+		viuOferta: false,
+		teveProposta: false,
 		...over,
 	};
 }
@@ -86,7 +88,7 @@ function deps(over: Record<string, unknown> = {}) {
 		enviarArte: vi.fn(async () => {
 			ordem.push("arte");
 		}),
-		enviarTemplate: vi.fn(async (_args: { usageKey: string }) => {
+		enviarTemplate: vi.fn(async (_args: { usageKeys: readonly string[] }) => {
 			ordem.push("template");
 		}),
 		despacharConversoes: vi.fn(async () => ({ enviados: 0 })),
@@ -202,9 +204,27 @@ describe("o ciclo grava o contador ANTES de enviar", () => {
 
 		expect(r.disparados).toBe(1);
 		expect(ordem).toEqual(["grava", "template"]);
-		// A chave lógica sai do objetivo — nunca do nome do template na Meta.
-		const envio = d.enviarTemplate.mock.calls[0][0] as { usageKey: string };
-		expect(envio.usageKey).toBe("remarketing_oportunidade_carro");
+		// A chave sai do OBJETIVO gravado na linha — e da FASE lida dos sinais; sem
+		// sinal nenhum, a fase é "inicio". Quem decide se o template existe é o
+		// dispatcher, não o ciclo.
+		const envio = d.enviarTemplate.mock.calls[0][0] as { usageKeys: readonly string[] };
+		expect(envio.usageKeys).toEqual(["remarketing_inicio_carro", "remarketing_inicio_generico"]);
+	});
+
+	it("template com proposta na mesa → chaves de `fechamento` (a fase muda a mensagem)", async () => {
+		const { deps: d } = deps({
+			listarVencidas: vi.fn(async () => [
+				linha({ lastInboundAt: new Date(AGORA.getTime() - 4 * DIA), teveProposta: true }),
+			]),
+		});
+		const r = await runRemarketingCycle(d);
+
+		expect(r.disparados).toBe(1);
+		const envio = d.enviarTemplate.mock.calls[0][0] as { usageKeys: readonly string[] };
+		expect(envio.usageKeys).toEqual([
+			"remarketing_fechamento_carro",
+			"remarketing_fechamento_generico",
+		]);
 	});
 
 	it("no MESMO tick, despacha as conversões pendentes do CAPI", async () => {

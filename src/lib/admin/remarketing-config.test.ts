@@ -358,6 +358,7 @@ describe("o cadastro move a decisão do motor — não só o número lido", () =
 			agora: TOQUE_1,
 			estado: estadoAguardandoToque1(),
 			telefone: "5562999998888",
+			fase: "inicio",
 			parametros,
 		});
 

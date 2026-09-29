@@ -25,7 +25,12 @@ import {
 	PASSOS_DO_PERCURSO,
 	type PassoDoPercurso,
 } from "@/lib/admin/percurso-types";
-import { chaveDaPessoa, conversaIdentificada } from "@/lib/admin/sinais-do-funil";
+import {
+	chaveDaPessoa,
+	conversaIdentificada,
+	teveProposta,
+	viuOferta,
+} from "@/lib/admin/sinais-do-funil";
 import { sqlEscreveuAlgoProprio, sqlSoPrePreenchida } from "@/lib/funil/mensagem-pre-preenchida";
 import { isoDeSaoPaulo } from "./conversas";
 import type { LinhaExportada } from "./formato";
@@ -186,8 +191,8 @@ export async function exportarPercurso(opcoes: OpcoesDePercurso): Promise<LinhaE
         ${sqlEscreveuAlgoProprio(sql`c.id`)} AS iniciou_conversa,
         ${sqlSoPrePreenchida(sql`c.id`)} AS so_pre_preenchida,
         ${conversaIdentificada(sql`c`)} AS identificou,
-        EXISTS (SELECT 1 FROM messages m JOIN artifacts a ON a.message_id = m.id WHERE m.conversation_id = c.id AND a.type IN ('real_offer','simulation_result')) AS viu_oferta,
-        EXISTS (SELECT 1 FROM bevi_proposals bp WHERE bp.conversation_id = c.id) AS teve_proposta,
+        ${viuOferta(sql`c`)} AS viu_oferta,
+        ${teveProposta(sql`c`)} AS teve_proposta,
         EXISTS (SELECT 1 FROM leads l WHERE l.conversation_id = c.id AND l.is_simulated = false AND l.stage = 'fechado_ganho') AS fechou
       FROM conversations c JOIN visita vi ON vi.id = c.visit_id WHERE c.is_simulated = false
     ),
