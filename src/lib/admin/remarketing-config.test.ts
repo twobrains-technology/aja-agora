@@ -270,7 +270,7 @@ describe("a escala intra-janela no cadastro (linha CSV, com validação de faixa
 		const leitura = montarLeitura([]);
 		expect(leitura.escalaDeRetomada).toEqual({
 			chave: "escala_retomada_minutos",
-			valor: "10,20,30",
+			valor: "90,180,300",
 			origem: "fabrica",
 			valorInvalido: null,
 			minimo: 1,

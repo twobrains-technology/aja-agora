@@ -85,15 +85,22 @@ export const HORA_FECHAMENTO = 20;
  * A ESCALA CURTA dos toques enquanto a janela de 24 h da Meta está aberta.
  *
  * Um intervalo por toque: o toque 01 aos 10 min de silêncio, o 02 vinte minutos
- * depois do 01, o 03 trinta minutos depois do 02. É a cadência combinada na
- * reunião de 22/09 — "primeiro o cara não respondeu em 10 minutos, eu pingo em
- * 10; depois é 20; aí depois 30".
+ * depois do 01, o 03 cinco horas depois do 02.
  *
  * A razão de existir é a janela: com 3 e 5 dias entre toques, o toque 03 sai
- * 4 dias depois do 01 e o cliente não recebe texto livre nenhum. Em minutos, a
- * série inteira cabe dentro das 24 h.
+ * 4 dias depois do 01 e o cliente não recebe texto livre nenhum. Em horas, a
+ * série inteira cabe dentro das 24 h — e sai como TEXTO LIVRE, que é onde a
+ * cópia escrita para a fase faz sentido.
+ *
+ * O `[10, 20, 30]` min original era rápido demais: três mensagens na mesma hora,
+ * a primeira 10 min depois do silêncio. Além de ler como robô (e o próprio texto
+ * da fase diz que disparo automático derruba a resposta), três pings seguidos são
+ * o que faz o lead bloquear e denunciar — e denúncia derruba a qualidade do
+ * número, atingindo todas as campanhas. Decisão do dono em 29/09, com a análise
+ * em `docs/decisoes/2026-09-29-cadencia-da-regua.md`: mantém o 01 em 90 min (o
+ * número do PDF da cliente) e abre os seguintes em horas.
  */
-export const ESCALA_DE_RETOMADA_MS: readonly number[] = [10, 20, 30].map((min) => min * 60_000);
+export const ESCALA_DE_RETOMADA_MS: readonly number[] = [90, 180, 300].map((min) => min * 60_000);
 
 const MINUTO_MS = 60_000;
 const HORA_MS = 60 * MINUTO_MS;

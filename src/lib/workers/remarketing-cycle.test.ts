@@ -311,19 +311,22 @@ describe("os bloqueios do motor chegam ao ciclo", () => {
 	});
 });
 
-describe("FIX-376/377 — a escala curta entrega os TRÊS toques", () => {
-	/** 12h30 de Brasília (15h30 UTC) — o instante do toque 01. */
-	const T0 = new Date("2026-09-14T15:30:00Z");
+describe("FIX-376/377 — a escala intra-janela entrega os TRÊS toques", () => {
+	/** 10h de Brasília (13h UTC) — o instante do toque 01, cedo o bastante para a
+	 * série inteira (90 min + 3 h + 5 h) caber dentro da janela de envio (9h-20h). */
+	const T0 = new Date("2026-09-14T13:00:00Z");
 	const MIN = 60_000;
 
 	/**
-	 * A prova pedida pelo card: com a escala curta, o toque 01, o 02 e o 03 SAEM —
-	 * e o portão do watchdog (`conversationMetadata.retomada` esgotado) NÃO os mata.
+	 * A prova pedida pelo card: com a escala intra-janela, o toque 01, o 02 e o 03
+	 * SAEM — e o portão do watchdog (`conversationMetadata.retomada` esgotado) NÃO os
+	 * mata.
 	 *
-	 * A pessoa está PARADA HÁ 1 H (`last_inbound_at` uma hora antes) e a linha já
-	 * está na régua, vencida — o cenário do card. O ciclo é rodado TRÊS vezes com
-	 * um estado vivo da linha, como em produção (uma passada a cada 30 s): o que o
-	 * ciclo grava em `gravarEstado` é o que a leitura do tick seguinte enxerga.
+	 * A pessoa está PARADA HÁ 1 H 35 (`last_inbound_at` antes do silêncio da escala,
+	 * que é 90 min) e a linha já está na régua, vencida — o cenário do card. O ciclo é
+	 * rodado TRÊS vezes com um estado vivo da linha, como em produção (uma passada a
+	 * cada 30 s): o que o ciclo grava em `gravarEstado` é o que a leitura do tick
+	 * seguinte enxerga.
 	 */
 	async function tocarTresVezes(metadata: unknown) {
 		let viva = linha({
@@ -331,7 +334,7 @@ describe("FIX-376/377 — a escala curta entrega os TRÊS toques", () => {
 			status: "ATIVO",
 			nextTouchAt: T0,
 			ultimoToqueEm: null,
-			lastInboundAt: new Date(T0.getTime() - 60 * MIN),
+			lastInboundAt: new Date(T0.getTime() - 95 * MIN),
 			metadata,
 		});
 		const disparos: Array<{ passo: number; em: Date; via: string }> = [];
@@ -381,18 +384,18 @@ describe("FIX-376/377 — a escala curta entrega os TRÊS toques", () => {
 		return { disparos, resultado, viva };
 	}
 
-	it("o 01, o 02 e o 03 saem, com 20 e 30 minutos entre eles", async () => {
+	it("o 01, o 02 e o 03 saem, com 3 e 5 horas entre eles", async () => {
 		const { disparos, resultado, viva } = await tocarTresVezes({});
 
 		expect(resultado.map((r) => r.disparados)).toEqual([1, 1, 1]);
 		expect(disparos.map((d) => d.passo)).toEqual([1, 2, 3]);
 		expect(disparos.map((d) => d.via)).toEqual(["turno", "turno", "turno"]);
 
-		// O toque 01 sai com 1 h de silêncio — em MINUTOS, não em 90.
+		// O toque 01 sai com o silêncio da escala (90 min), não com os 10 min de antes.
 		expect(disparos[0].em.getTime()).toBe(T0.getTime());
-		// E os intervalos são os da escala: +20 e +30 minutos.
-		expect(disparos[1].em.getTime() - disparos[0].em.getTime()).toBe(20 * MIN);
-		expect(disparos[2].em.getTime() - disparos[1].em.getTime()).toBe(30 * MIN);
+		// E os intervalos são os da escala: +3 h e +5 h.
+		expect(disparos[1].em.getTime() - disparos[0].em.getTime()).toBe(180 * MIN);
+		expect(disparos[2].em.getTime() - disparos[1].em.getTime()).toBe(300 * MIN);
 		// Esgotou os três: a linha sai do índice com o motivo nomeado.
 		expect(viva.status).toBe("ESGOTADO");
 		expect(viva.motivoSaida).toBe("tres_toques_sem_resposta");

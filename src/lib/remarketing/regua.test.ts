@@ -59,16 +59,18 @@ function ativo(opcoes: Partial<Omit<EstadoRegua, "objetivo">>) {
 }
 
 describe("o toque 01 — o silêncio que o abre", () => {
-	it("dentro da janela de 24 h, o silêncio é a ESCALA CURTA: 5 min não, 10 min sim", () => {
-		// A cadência combinada na reunião de 22/09 (FIX-376): enquanto a janela da
-		// Meta está aberta, o toque 01 abre em minutos — 90 min seriam tarde demais
-		// para uma conversa viva.
+	it("dentro da janela de 24 h, o silêncio é a ESCALA INTRA-JANELA: 80 min não, 90 min sim", () => {
+		// Decisão do dono em 29/09 (ver docs/decisoes/2026-09-29-cadencia-da-regua.md):
+		// dentro da janela o toque 01 sai em 90 min — o mesmo número do PDF da
+		// cliente —, e os toques 02 e 03 em 3 e 5 horas. A série inteira (≈9h30)
+		// cabe nas 24 h e sai como TEXTO LIVRE; por dias, os toques 02 e 03
+		// cairiam fora da janela e virariam template pago.
 		const estado = ativo({});
-		expect(podeDisparar(estado, new Date(INBOUND.getTime() + 5 * 60_000))).toEqual({
+		expect(podeDisparar(estado, new Date(INBOUND.getTime() + 80 * 60_000))).toEqual({
 			pode: false,
 			motivo: "aguardando_data",
 		});
-		expect(podeDisparar(estado, new Date(INBOUND.getTime() + 10 * 60_000))).toEqual({
+		expect(podeDisparar(estado, new Date(INBOUND.getTime() + 90 * 60_000))).toEqual({
 			pode: true,
 			step: 1,
 			entrega: "texto_livre",

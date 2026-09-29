@@ -43,19 +43,18 @@ describe("sem ajuste, a régua é exatamente a de antes", () => {
 		expect(normalizarParametros({})).toEqual(PARAMETROS_DE_FABRICA);
 	});
 
-	it("sem ajuste, a fábrica é nomeada — e a escala curta é quem manda dentro da janela", () => {
+	it("sem ajuste, a fábrica é nomeada — e a escala intra-janela é quem manda dentro da janela", () => {
 		// A régua continua sendo exatamente a de antes POR FORA da janela. Dentro
-		// dela, a cadência combinada em 22/09 (FIX-376, escala `[10, 20, 30]` min)
-		// ocupa o lugar do silêncio de 90 min — que seria tarde demais para uma
-		// conversa viva.
+		// dela, a escala intra-janela (FIX-376, decisão de 29/09: `[90, 180, 300]`
+		// min) ocupa o lugar do silêncio de 90 min no toque 01 e dos dias no 02 e 03.
 		expect(PARAMETROS_DE_FABRICA.esperaSilencioMs).toBe(90 * MIN);
-		expect(PARAMETROS_DE_FABRICA.escalaDeRetomadaMs).toEqual([10 * MIN, 20 * MIN, 30 * MIN]);
+		expect(PARAMETROS_DE_FABRICA.escalaDeRetomadaMs).toEqual([90 * MIN, 180 * MIN, 300 * MIN]);
 
 		// Prova de que é a ESCALA que decide dentro da janela: mesmo cadastrando um
-		// silêncio longo (20 h), o toque 01 sai em 10 minutos.
+		// silêncio longo (20 h), o toque 01 sai com a escala (90 min), não com ele.
 		const comSilencioLongo = normalizarParametros({ esperaSilencioMs: 20 * HORA });
 		expect(
-			podeDisparar(ativo(), new Date(INBOUND.getTime() + 10 * MIN), comSilencioLongo),
+			podeDisparar(ativo(), new Date(INBOUND.getTime() + 90 * MIN), comSilencioLongo),
 		).toMatchObject({ pode: true, step: 1 });
 	});
 });

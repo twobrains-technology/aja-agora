@@ -3,10 +3,10 @@
 //
 // O que este arquivo tranca, em ordem:
 //
-//   1. sem ajuste, a escala é `[10, 20, 30]` min (fábrica) e o comportamento por
-//      DIAS continua valendo fora da janela — não regride;
-//   2. dentro da janela, quem manda é a escala: o toque 01 sai em 10 min e os
-//      intervalos seguintes são 20 e 30 min, não 3 e 5 dias;
+//   1. sem ajuste, a escala é `[90, 180, 300]` min (fábrica, decisão de 29/09) e o
+//      comportamento por DIAS continua valendo fora da janela — não regride;
+//   2. dentro da janela, quem manda é a escala: o toque 01 sai em 90 min e os
+//      intervalos seguintes são 3 e 5 horas, não 3 e 5 dias;
 //   3. as guardas NÃO afrouxam: teto de 30 dias, `maxToques` e janela de horário
 //      continuam valendo com a escala curta;
 //   4. valor corrompido no cadastro cai na fábrica (o viés de sempre: na dúvida,
@@ -36,8 +36,8 @@ const DIA = 24 * HORA;
 /** Segunda 14/09/2026, 11h em Brasília (14h UTC) — o silêncio começa aqui. */
 const INBOUND = new Date("2026-09-14T14:00:00Z");
 
-/** A escala de fábrica, em ms — o contrato que o dono combinou na reunião. */
-const ESCALA_DE_FABRICA = [10 * MIN, 20 * MIN, 30 * MIN];
+/** A escala de fábrica, em ms — o contrato que o dono decidiu em 29/09. */
+const ESCALA_DE_FABRICA = [90 * MIN, 180 * MIN, 300 * MIN];
 
 function noSilencio(extra: Partial<Omit<EstadoRegua, "objetivo">> = {}): EstadoRegua {
 	return estadoInicial({ objetivo: "carro", ultimoInboundEm: INBOUND, ...extra });
@@ -47,16 +47,16 @@ function comEscala(escala: readonly number[]): ParametrosRegua {
 	return normalizarParametros({ escalaDeRetomadaMs: escala });
 }
 
-describe("a fábrica da escala curta é [10, 20, 30] minutos", () => {
+describe("a fábrica da escala intra-janela é [90, 180, 300] minutos", () => {
 	it("o padrão e o normalizado concordam", () => {
 		expect(PARAMETROS_DE_FABRICA.escalaDeRetomadaMs).toEqual(ESCALA_DE_FABRICA);
 		expect(normalizarParametros({}).escalaDeRetomadaMs).toEqual(ESCALA_DE_FABRICA);
 	});
 
 	it("o elemento do passo N é o N-ésimo da lista", () => {
-		expect(elementoDaEscala(ESCALA_DE_FABRICA, 1)).toBe(10 * MIN);
-		expect(elementoDaEscala(ESCALA_DE_FABRICA, 2)).toBe(20 * MIN);
-		expect(elementoDaEscala(ESCALA_DE_FABRICA, 3)).toBe(30 * MIN);
+		expect(elementoDaEscala(ESCALA_DE_FABRICA, 1)).toBe(90 * MIN);
+		expect(elementoDaEscala(ESCALA_DE_FABRICA, 2)).toBe(180 * MIN);
+		expect(elementoDaEscala(ESCALA_DE_FABRICA, 3)).toBe(300 * MIN);
 	});
 
 	it("lista mais curta que o número de toques repete o ÚLTIMO intervalo", () => {
@@ -67,9 +67,9 @@ describe("a fábrica da escala curta é [10, 20, 30] minutos", () => {
 	});
 });
 
-describe("dentro da janela de 24 h, a escala curta decide", () => {
-	it("o toque 01 sai em 10 minutos de silêncio, não em 90", () => {
-		const agora = new Date(INBOUND.getTime() + 12 * MIN);
+describe("dentro da janela de 24 h, a escala intra-janela decide", () => {
+	it("o toque 01 sai em 90 minutos — o mesmo número do PDF da cliente", () => {
+		const agora = new Date(INBOUND.getTime() + 95 * MIN);
 		expect(podeDisparar(noSilencio(), agora)).toEqual({
 			pode: true,
 			step: 1,
@@ -85,20 +85,37 @@ describe("dentro da janela de 24 h, a escala curta decide", () => {
 		});
 	});
 
-	it("os intervalos até o toque 02 e o 03 são 20 e 30 minutos", () => {
+	it("os intervalos até o toque 02 e o 03 são 3 e 5 horas", () => {
 		const t1 = new Date(INBOUND.getTime() + 90 * MIN);
 
 		const apos1 = registrarToque(noSilencio(), t1);
-		expect(apos1.nextTouchAt?.toISOString()).toBe(new Date(t1.getTime() + 20 * MIN).toISOString());
+		expect(apos1.nextTouchAt?.toISOString()).toBe(new Date(t1.getTime() + 180 * MIN).toISOString());
 
-		const t2 = new Date(t1.getTime() + 20 * MIN);
+		const t2 = new Date(t1.getTime() + 180 * MIN);
 		expect(podeDisparar(apos1, t2)).toEqual({ pode: true, step: 2, entrega: "texto_livre" });
 
 		const apos2 = registrarToque(apos1, t2);
-		expect(apos2.nextTouchAt?.toISOString()).toBe(new Date(t2.getTime() + 30 * MIN).toISOString());
+		expect(apos2.nextTouchAt?.toISOString()).toBe(new Date(t2.getTime() + 300 * MIN).toISOString());
 
-		const t3 = new Date(t2.getTime() + 30 * MIN);
-		expect(podeDisparar(apos2, t3)).toEqual({ pode: true, step: 3, entrega: "texto_livre" });
+		const t3 = new Date(t2.getTime() + 300 * MIN);
+
+		// 20h30 — FORA da janela de envio (9h às 20h). O toque não sai: a régua
+		// espera a janela abrir. Isto é o comportamento certo, e é o que faz a
+		// cadência em horas funcionar: o toque 03 escorrega para a MANHÃ SEGUINTE
+		// (contexto diferente, que é o que a mensagem quer), e mesmo assim dentro
+		// das 24 h do último inbound — tanto que segue saindo como TEXTO LIVRE.
+		expect(podeDisparar(apos2, t3)).toEqual({
+			pode: false,
+			motivo: "fora_da_janela_de_horario",
+		});
+
+		// 9h de 15/09 (INBOUND + 22 h, ainda dentro das 24 h): o toque 03 sai.
+		const manhaSeguinte = new Date("2026-09-15T12:00:00Z");
+		expect(podeDisparar(apos2, manhaSeguinte)).toEqual({
+			pode: true,
+			step: 3,
+			entrega: "texto_livre",
+		});
 
 		// O terceiro toque esgota a sequência: não há um quarto agendamento.
 		const apos3 = registrarToque(apos2, t3);
@@ -106,11 +123,11 @@ describe("dentro da janela de 24 h, a escala curta decide", () => {
 		expect(apos3.nextTouchAt).toBeNull();
 	});
 
-	it("o próximo toque (o que a tela mostra) também sai da escala curta", () => {
+	it("o próximo toque (o que a tela mostra) também sai da escala intra-janela", () => {
 		const t1 = new Date(INBOUND.getTime() + 90 * MIN);
 		const apos1 = registrarToque(noSilencio(), t1);
 		expect(proximoToque(apos1, t1)?.toISOString()).toBe(
-			new Date(t1.getTime() + 20 * MIN).toISOString(),
+			new Date(t1.getTime() + 180 * MIN).toISOString(),
 		);
 	});
 
