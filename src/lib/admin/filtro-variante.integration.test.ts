@@ -33,11 +33,11 @@ import { chaveDaPessoa, contagensDoFunil } from "./sinais-do-funil";
 const HAS_DB = Boolean(process.env.DATABASE_URL) && !process.env.DATABASE_URL?.includes("sentinel");
 const describeIfDb = HAS_DB ? describe : describe.skip;
 
-const DE = new Date("2019-05-01T00:00:00Z");
-const ATE = new Date("2019-05-31T23:59:59.999Z");
-const DENTRO = new Date("2019-05-10T12:00:00Z");
-const DEPOIS = new Date("2019-05-20T12:00:00Z");
-const FORA = new Date("2019-04-10T12:00:00Z");
+const DE = new Date("2021-05-01T00:00:00Z");
+const ATE = new Date("2021-05-31T23:59:59.999Z");
+const DENTRO = new Date("2021-05-10T12:00:00Z");
+const DEPOIS = new Date("2021-05-20T12:00:00Z");
+const FORA = new Date("2021-04-10T12:00:00Z");
 
 const UA_GENTE =
 	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36";
