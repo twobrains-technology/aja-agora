@@ -43,6 +43,7 @@ import { db } from "@/db";
 import { contacts, conversations, remarketingTouches, whatsappTemplates } from "@/db/schema";
 import { maskPhoneForDisplay } from "@/lib/conversation/identity";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
+import type { RecorteAB } from "@/lib/experimentos/registro";
 import { objetivoCanonico, templateDoObjetivo } from "@/lib/remarketing/motor";
 import {
 	PARAMETROS_DE_FABRICA,
@@ -50,6 +51,7 @@ import {
 	type StatusRegua,
 } from "@/lib/remarketing/regua";
 import { chaveTelefoneBR } from "@/lib/whatsapp/mesmo-numero";
+import { condicaoDeBracoNaConversa } from "./filtro-variante";
 import { JANELA_DE_ENTRADA_MS, motivoForaDaRegua, opcoesDoAmbiente } from "./motivo-fora-da-regua";
 import { telefonesDaEquipe } from "./regua-por-conversa";
 import { lerParametrosRegua } from "./remarketing-config";
@@ -67,6 +69,8 @@ export interface FiltroDaRegua {
 	ate: Date;
 	/** `carro` · `moto` · `imovel`; ausente = todos. */
 	objetivo?: string | null;
+	/** O recorte por braço de experimento (`?ab=…`). `[]` = todas. */
+	recorte?: RecorteAB;
 }
 
 function texto(valor: unknown): string | null {
@@ -223,14 +227,23 @@ const ORDEM = sql`
 	         t.created_at DESC
 `;
 
-/** O recorte do período e do objetivo, compartilhado pelas duas consultas. */
+/** O recorte da leitura — período, objetivo e braço do teste — num ponto só.
+ *
+ *  O braço é o da PRÓPRIA conversa da linha (`D10`) — a linha da régua É uma
+ *  conversa, não uma pessoa. `[]` (nenhum recorte) devolve `null` no fragmento e
+ *  **nenhum SQL novo entra**: é o que faz o default não mover número nenhum.
+ *
+ *  A lista, a contagem e os contadores do topo saem TODAS desta função — por
+ *  isso o recorte aqui fecha os três de uma vez. */
 function recorte(filtro: FiltroDaRegua) {
 	const objetivo = filtro.objetivo?.trim() ? objetivoCanonico(filtro.objetivo) : null;
+	const doBraco = condicaoDeBracoNaConversa(filtro.recorte ?? [], sql`c`);
 	return sql`
 		WHERE t.created_at BETWEEN ${filtro.de.toISOString()}::timestamptz
 		                       AND ${filtro.ate.toISOString()}::timestamptz
 		  AND c.is_simulated = false
 		  ${objetivo ? sql`AND t.objetivo = ${objetivo}` : sql``}
+		  ${doBraco ? sql`AND ${doBraco}` : sql``}
 	`;
 }
 

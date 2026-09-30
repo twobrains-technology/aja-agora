@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { recorteDaRequisicao } from "@/lib/admin/filtro-variante";
 import { opcoesDoAmbiente } from "@/lib/admin/motivo-fora-da-regua";
 import { periodoDaRequisicao } from "@/lib/admin/periodo-da-requisicao";
 import { lerParametrosRegua } from "@/lib/admin/remarketing-config";
@@ -64,6 +65,10 @@ export async function GET(req: NextRequest) {
 	// O período da PESSOA (URL > cookie > hoje), resolvido uma vez — a mesma
 	// regra que o filtro da tela escreve.
 	const { de, ate } = periodoDaRequisicao(req);
+	// O recorte por braço do teste (URL `ab` > cookie `aja_ab` > nenhum), pelo
+	// MESMO trilho. Ele entra na leitura que alimenta lista, contadores e resumo,
+	// então os três fecham com o recorte ativo.
+	const recorte = recorteDaRequisicao(req);
 
 	const situacao = situacaoDoParametro(sp.get("situacao"));
 	const objetivo = parseObjetivo(sp.get("objetivo"));
@@ -102,7 +107,7 @@ export async function GET(req: NextRequest) {
 		// separar "régua desligada" de "sem toque no período") e a fila de
 		// elegíveis de agora (o número que a tela mostra enquanto não há dado).
 		const [doRecorte, totalNoHistorico, elegiveisAgora, parametros] = await Promise.all([
-			listarReguas({ de, ate, objetivo }),
+			listarReguas({ de, ate, objetivo, recorte }),
 			contarLinhasDaRegua(),
 			contarElegiveisParaRegua(agora),
 			// O motivo do próximo toque (FIX-378) depende da janela de horário e do
