@@ -1,0 +1,178 @@
+"use client";
+
+// O filtro de recorte A/B do painel — o irmão do `<DateRangeFilter/>`.
+//
+// Ele escolhe um RECORTE (por experimento) e o grava nos dois lados de uma vez:
+// a URL (`?ab=<experimento>:<braço>`, para o link carregar o recorte e para as
+// rotas o lerem) e o cookie `aja_ab` (para ele sobreviver à navegação, que não
+// carrega a querystring). A precedência que o servidor resolve é a mesma:
+// URL > cookie > nenhum (`filtro-variante.ts`).
+//
+// ── Genérico por experimento (D4) ────────────────────────────────────────────
+//
+// O componente NÃO conhece o teste do telefone: ele lê o REGISTRO
+// (`@/lib/experimentos/registro`) e monta UM SELETOR POR EXPERIMENTO. Com o
+// registro real, um seletor; com dois experimentos, dois seletores — sem tocar
+// aqui. É por isso que o teste injeta um registro fictício pela prop `registro`.
+//
+// ── Cookie de SESSÃO, sem `max-age` ──────────────────────────────────────────
+//
+// Ao contrário do período (ano de validade), o recorte NÃO é preferência de
+// trabalho: ele é a lente de uma leitura. Um cookie com prazo faria a Bruna
+// abrir o painel amanhã vendo "só A" sem saber por quê. Sem `max-age`, o recorte
+// acompanha a navegação e morre com o navegador.
+//
+// ── O valor inválido na URL não desce para o cookie ─────────────────────────
+//
+// `?ab=x:y` é link velho ou adulterado. `lerRecorteAB` descarta o par, o que dá
+// "nenhum recorte", e o controle mostra "Todas" — o mesmo que o servidor faz. Se
+// ele descesse para o cookie, tela e servidor mostrariam recortes diferentes.
+
+import { parseAsString, useQueryState } from "nuqs";
+import { useEffect, useRef, useState } from "react";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
+import { valorDoCookie } from "@/lib/admin/periodo";
+import {
+	COOKIE_DO_RECORTE_AB,
+	EXPERIMENTOS,
+	type Experimento,
+	lerRecorteAB,
+	PARAMETRO_DO_RECORTE_AB,
+	type RecorteAB,
+	rotuloDoRecorte,
+	SEM_BRACO,
+	serializarRecorteAB,
+} from "@/lib/experimentos/registro";
+import { cn } from "@/lib/utils";
+
+/**
+ * O `null` ("todas") não cabe num `SelectItem`, então o controle fala a língua
+ * do `Select` com uma string e traduz na borda do registro.
+ */
+const TODAS = "todas";
+
+/** O texto de uma escolha do seletor — "Todas", o rótulo do braço, ou "Sem variante". */
+function rotuloDaEscolha(experimento: Experimento, braco: string | null): string {
+	if (braco === null) return "Todas";
+	if (braco === SEM_BRACO) return "Sem variante";
+	return experimento.rotulosDosBracos[braco] ?? braco;
+}
+
+/**
+ * Grava o recorte no cookie de sessão. Nenhum recorte APAGA o cookie (voltar
+ * para "Todas" tem que sumir dos DOIS lados, senão a navegação seguinte o traria
+ * de volta).
+ */
+function gravarCookie(recorte: RecorteAB) {
+	const valor = serializarRecorteAB(recorte);
+	// biome-ignore lint/suspicious/noDocumentCookie: o desenho é cookie `httpOnly: false` justamente para o cliente gravar; a Cookie Store API é assíncrona e não é o mecanismo decidido.
+	document.cookie =
+		valor === null
+			? `${COOKIE_DO_RECORTE_AB}=; path=/; max-age=0; samesite=lax`
+			: `${COOKIE_DO_RECORTE_AB}=${encodeURIComponent(valor)}; path=/; samesite=lax`;
+}
+
+export function FiltroAB({
+	registro = EXPERIMENTOS,
+	className,
+}: {
+	/** Os experimentos oferecidos. Injetável para o teste provar que o componente
+	 *  é genérico (dois experimentos ⇒ dois seletores, sem mudar código). */
+	registro?: readonly Experimento[];
+	className?: string;
+}) {
+	// Sem `withDefault`: o valor cru diz se a querystring trouxe o recorte. Um
+	// valor inválido também é "trouxe" — e ele vale "nenhum", sem descer para o
+	// cookie.
+	const [daUrl, setDaUrl] = useQueryState(PARAMETRO_DO_RECORTE_AB, parseAsString);
+
+	// O recorte do cookie, lido na hidratação. Sem ele, quem escolheu "A" e
+	// navegou pelo menu (que monta `href` puro, sem querystring) veria o controle
+	// dizendo "Todas" enquanto o servidor filtra A.
+	const [doCookie, setDoCookie] = useState<RecorteAB>([]);
+	const hidratado = useRef(false);
+	useEffect(() => {
+		if (hidratado.current) return;
+		hidratado.current = true;
+
+		// Quem chegou com `?ab=` já disse o que quer — inclusive se disse um par
+		// inválido.
+		if (daUrl !== null) return;
+
+		setDoCookie(lerRecorteAB(valorDoCookie(document.cookie, COOKIE_DO_RECORTE_AB), registro));
+	}, [daUrl, registro]);
+
+	const recorte = daUrl !== null ? lerRecorteAB(daUrl, registro) : doCookie;
+
+	const gravar = (proximo: RecorteAB) => {
+		setDoCookie(proximo);
+		// `null` REMOVE o parâmetro da URL (não escreve `ab=` vazio, que o servidor
+		// leria como valor desconhecido).
+		void setDaUrl(serializarRecorteAB(proximo));
+		gravarCookie(proximo);
+	};
+
+	// Trocar UM experimento preserva o recorte dos outros: o estado é uma lista de
+	// pares, e cada seletor só mexe no par do seu experimento. `null` é o "sem
+	// valor" do base-ui — aqui vale o mesmo que "Todas" (nenhum par).
+	const trocar = (experimento: Experimento, escolha: string | null) => {
+		const outros = recorte.filter((par) => par.experimento !== experimento.id);
+		if (escolha === null || escolha === TODAS) return gravar(outros);
+		gravar([...outros, { experimento: experimento.id, braco: escolha }]);
+	};
+
+	const rotulo = rotuloDoRecorte(recorte, registro);
+
+	return (
+		<div className={cn("flex flex-wrap items-center gap-2", className)}>
+			{registro.map((experimento) => {
+				const atual = recorte.find((par) => par.experimento === experimento.id)?.braco ?? null;
+				return (
+					<span key={experimento.id} className="flex items-center gap-2">
+						<span className="hidden text-muted-foreground text-sm sm:inline">
+							{experimento.rotulo}:
+						</span>
+
+						<Select
+							value={atual ?? TODAS}
+							onValueChange={(escolha) => trocar(experimento, escolha)}
+						>
+							<SelectTrigger size="sm" aria-label={`Recorte do ${experimento.rotulo}`}>
+								{/* O rótulo entra explícito: o `SelectValue` sozinho só o
+								    encontra depois que a lista abre, e a tela mostraria o
+								    valor cru. */}
+								<SelectValue>{rotuloDaEscolha(experimento, atual)}</SelectValue>
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value={TODAS}>Todas</SelectItem>
+								{experimento.bracos.map((braco) => (
+									<SelectItem key={braco} value={braco}>
+										{rotuloDaEscolha(experimento, braco)}
+									</SelectItem>
+								))}
+								<SelectItem value={SEM_BRACO}>Sem variante</SelectItem>
+							</SelectContent>
+						</Select>
+					</span>
+				);
+			})}
+
+			{/* O recorte ativo escrito na tela — nunca só a cor do controle (o dono
+			    é daltônico). */}
+			{rotulo !== null && (
+				<span
+					className="inline-flex h-8 items-center rounded-md border border-dashed border-input px-3 text-xs text-muted-foreground"
+					title="O painel está recortado por este experimento"
+				>
+					{rotulo}
+				</span>
+			)}
+		</div>
+	);
+}
