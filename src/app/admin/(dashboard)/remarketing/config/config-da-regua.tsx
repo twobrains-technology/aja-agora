@@ -17,6 +17,10 @@
  *
  * Esvaziar um campo e salvar APAGA o ajuste: o parâmetro volta ao padrão de
  * fábrica. É o caminho de desfazer, e está escrito na tela.
+ *
+ * A escala de retomada não é um número e NÃO entra no mapa dos vigentes: ela tem
+ * bloco e estado próprios, porque o save reenvia todos os vigentes — um CSV que
+ * voltasse pelo `<input type="number">` apagaria a escala do banco.
  */
 
 import { Factory, PencilLine, RotateCcw } from "lucide-react";
@@ -27,25 +31,40 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { ParametroVigente } from "@/lib/admin/remarketing-config";
+import type { EscalaDoCadastro, ParametroVigente } from "@/lib/admin/remarketing-config";
+
+/**
+ * A escala como a rota a devolve. A leitura do cadastro expõe o teto de passos
+ * (`LIMITES_DA_ESCALA_NA_TELA.maximoDePassos`) junto da faixa, e a tela precisa
+ * dele para dizer até quantos intervalos a lista aceita.
+ */
+type EscalaNaTela = EscalaDoCadastro & { maximoDePassos: number };
 
 interface RespostaDoCadastro {
 	parametros: ParametroVigente[];
+	escalaDeRetomada: EscalaNaTela;
 }
 
 export function ConfigDaRegua() {
 	const [vigentes, setVigentes] = useState<ParametroVigente[] | null>(null);
 	const [valores, setValores] = useState<Record<string, string>>({});
+	const [escala, setEscala] = useState<EscalaNaTela | null>(null);
+	const [valorDaEscala, setValorDaEscala] = useState("");
 	const [erros, setErros] = useState<Record<string, string>>({});
 	const [erroGeral, setErroGeral] = useState<string | null>(null);
 	const [salvo, setSalvo] = useState(false);
 	const [carregando, setCarregando] = useState(true);
 	const [salvando, setSalvando] = useState(false);
 
-	const aplicarLeitura = useCallback((parametros: ParametroVigente[]) => {
-		setVigentes(parametros);
-		setValores(Object.fromEntries(parametros.map((p) => [p.chave, String(p.valor)])));
-	}, []);
+	const aplicarLeitura = useCallback(
+		(corpo: { parametros: ParametroVigente[]; escalaDeRetomada?: EscalaNaTela | null }) => {
+			setVigentes(corpo.parametros);
+			setValores(Object.fromEntries(corpo.parametros.map((p) => [p.chave, String(p.valor)])));
+			setEscala(corpo.escalaDeRetomada ?? null);
+			setValorDaEscala(corpo.escalaDeRetomada?.valor ?? "");
+		},
+		[],
+	);
 
 	useEffect(() => {
 		let vivo = true;
@@ -54,7 +73,7 @@ export function ConfigDaRegua() {
 				const res = await fetch("/api/admin/remarketing/config");
 				const corpo = (await res.json()) as RespostaDoCadastro & { error?: string };
 				if (!res.ok) throw new Error(corpo.error ?? "Falha ao ler o cadastro.");
-				if (vivo) aplicarLeitura(corpo.parametros);
+				if (vivo) aplicarLeitura(corpo);
 			} catch (err) {
 				if (vivo) setErroGeral(err instanceof Error ? err.message : "Falha ao ler o cadastro.");
 			} finally {
@@ -67,7 +86,7 @@ export function ConfigDaRegua() {
 	}, [aplicarLeitura]);
 
 	async function salvar() {
-		if (!vigentes) return;
+		if (!vigentes || !escala) return;
 		setSalvando(true);
 		setSalvo(false);
 		setErros({});
@@ -78,7 +97,11 @@ export function ConfigDaRegua() {
 				method: "PUT",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
-					parametros: vigentes.map((p) => ({ chave: p.chave, valor: valores[p.chave] ?? "" })),
+					parametros: [
+						...vigentes.map((p) => ({ chave: p.chave, valor: valores[p.chave] ?? "" })),
+						// A escala vai como CSV junto dos outros — o servidor valida e normaliza.
+						{ chave: escala.chave, valor: valorDaEscala },
+					],
 				}),
 			});
 			const corpo = (await res.json()) as RespostaDoCadastro & {
@@ -93,7 +116,7 @@ export function ConfigDaRegua() {
 				return;
 			}
 
-			aplicarLeitura(corpo.parametros);
+			aplicarLeitura(corpo);
 			setSalvo(true);
 		} catch {
 			setErroGeral("Não foi possível falar com o servidor.");
@@ -120,6 +143,8 @@ export function ConfigDaRegua() {
 			</Card>
 		);
 	}
+
+	const erroDaEscala = escala ? erros[escala.chave] : undefined;
 
 	return (
 		<div className="space-y-4">
@@ -207,6 +232,74 @@ export function ConfigDaRegua() {
 				})}
 			</div>
 
+			{escala && (
+				<Card className="gap-3" data-testid="escala-da-regua">
+					<CardHeader>
+						<div className="flex flex-wrap items-center justify-between gap-2">
+							<CardTitle className="text-sm">Escala de retomada</CardTitle>
+							<Badge
+								variant={escala.origem === "cadastro" ? "warning" : "outline"}
+								className="gap-1"
+								title={
+									escala.origem === "cadastro"
+										? "Esta escala foi ajustada neste cadastro; o padrão do código foi substituído."
+										: "A escala vigente é o padrão do código — nenhum ajuste foi salvo para ela."
+								}
+							>
+								{escala.origem === "cadastro" ? (
+									<PencilLine className="size-3" aria-hidden="true" />
+								) : (
+									<Factory className="size-3" aria-hidden="true" />
+								)}
+								{escala.origem === "cadastro" ? "Editado" : "Padrão de fábrica"}
+							</Badge>
+						</div>
+					</CardHeader>
+					<CardContent className="space-y-2">
+						<p className="text-muted-foreground text-xs">
+							Os intervalos entre os toques enquanto a janela de 24 h da Meta está aberta. Fora dela, a
+							régua segue os dias entre os toques.
+						</p>
+
+						<div className="flex items-center gap-2">
+							<Label htmlFor={escala.chave} className="sr-only">
+								Escala de retomada
+							</Label>
+							<Input
+								id={escala.chave}
+								type="text"
+								inputMode="numeric"
+								placeholder="90,180,300"
+								className="w-48"
+								value={valorDaEscala}
+								aria-invalid={erroDaEscala ? true : undefined}
+								onChange={(evento) => setValorDaEscala(evento.target.value)}
+							/>
+							<span className="text-muted-foreground text-sm">minutos</span>
+						</div>
+
+						<p className="text-muted-foreground text-xs">
+							Intervalos em minutos separados por vírgula, em ordem crescente. Cada um aceita de{" "}
+							{escala.minimo} a {escala.maximo} minutos, até {escala.maximoDePassos} intervalos. Deixe
+							em branco para voltar ao padrão de fábrica.
+						</p>
+
+						{erroDaEscala && (
+							<p className="text-destructive text-sm" role="alert">
+								{erroDaEscala}
+							</p>
+						)}
+
+						{escala.valorInvalido !== null && (
+							<p className="text-destructive text-xs">
+								Há uma escala gravada que a régua está ignorando (&quot;{escala.valorInvalido}&quot;) — por
+								isso o padrão de fábrica está valendo.
+							</p>
+						)}
+					</CardContent>
+				</Card>
+			)}
+
 			<div className="flex flex-wrap items-center gap-3">
 				<Button onClick={salvar} disabled={salvando}>
 					{salvando ? "Salvando…" : "Salvar cadastro"}
@@ -214,9 +307,10 @@ export function ConfigDaRegua() {
 				<Button
 					variant="outline"
 					disabled={salvando}
-					onClick={() =>
-						setValores(Object.fromEntries(vigentes.map((p) => [p.chave, String(p.valor)])))
-					}
+					onClick={() => {
+						setValores(Object.fromEntries(vigentes.map((p) => [p.chave, String(p.valor)])));
+						setValorDaEscala(escala?.valor ?? "");
+					}}
 				>
 					<RotateCcw className="size-3.5" />
 					Desfazer edições
