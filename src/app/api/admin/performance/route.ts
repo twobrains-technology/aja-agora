@@ -1,3 +1,4 @@
+import { recorteDaRequisicao } from "@/lib/admin/filtro-variante";
 import { computeFunilDeHandoff } from "@/lib/admin/handoff-queries";
 import {
 	computeCobertura,
@@ -20,15 +21,21 @@ export async function GET(request: Request) {
 	// mesma regra que o filtro da tela usa, resolvida num lugar só.
 	const { de: fromDate, ate: toDate } = periodoDaRequisicao(request);
 
+	// O recorte do teste A/B (FIX-404), lido logo depois do período — URL `ab` >
+	// cookie `aja_ab` > nenhum. `[]` significa "todas", e aí nenhum número muda.
+	const recorte = recorteDaRequisicao(request);
+
+	// O card do TESTE DO TELEFONE não é cortado por este recorte (D7): ele tem
+	// rota própria (`performance/telefone-ab`) e conta por VISITA, de propósito.
 	const [funil, porta, quemChegou, origens, serie, cobertura, handoff, custos] = await Promise.all([
-		computeFunilMidia(fromDate, toDate),
-		computePorta(fromDate, toDate),
-		computeQuemChegou(fromDate, toDate),
-		computeOrigens(fromDate, toDate),
-		computeSerie(fromDate, toDate),
-		computeCobertura(fromDate, toDate),
-		computeFunilDeHandoff(fromDate, toDate),
-		computeCustosDoCpc(fromDate, toDate),
+		computeFunilMidia(fromDate, toDate, recorte),
+		computePorta(fromDate, toDate, recorte),
+		computeQuemChegou(fromDate, toDate, recorte),
+		computeOrigens(fromDate, toDate, recorte),
+		computeSerie(fromDate, toDate, recorte),
+		computeCobertura(fromDate, toDate, recorte),
+		computeFunilDeHandoff(fromDate, toDate, undefined, recorte),
+		computeCustosDoCpc(fromDate, toDate, recorte),
 	]);
 
 	const response: PerformanceResponse = {
