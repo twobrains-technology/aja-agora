@@ -10,6 +10,13 @@
 import { type SQL, sql } from "drizzle-orm";
 import { PADRAO_ROBO_SQL } from "@/lib/attribution/user-agent-robo";
 import type { ArtifactType } from "@/lib/chat/types";
+import type { EtapaDoFunil, RecorteAB } from "@/lib/experimentos/registro";
+// O ciclo com `filtro-variante` é de CHAMADA, não de inicialização: os dois
+// módulos só usam o outro dentro de função (nenhum `const` de topo depende do
+// outro). Existe porque o FATO da etapa mora aqui (fonte única do funil) e o
+// FRAGMENTO que o lê mora lá — separar os dois exigiria um terceiro módulo, e
+// duplicar o fato é o defeito que este arquivo existe para impedir.
+import { condicaoDeBracoDaPessoa } from "./filtro-variante";
 import { ESTAGIOS_QUALIFICADOS } from "./lead-stages";
 
 /**
@@ -277,6 +284,52 @@ export function conversaIdentificada(conversa: SQL = sql`c`): SQL {
 }
 
 /**
+ * O FATO de uma etapa do funil, na forma "por CONVERSA".
+ *
+ * Existe para o recorte por braço de experimento: a pessoa é atribuída ao braço
+ * da conversa que a fez **avançar a etapa âncora do teste**, e o fragmento
+ * precisa perguntar "esta conversa avançou?" sem reimplementar o critério.
+ *
+ * Cada etapa devolve o MESMO predicado que este módulo já usa — `identificados`
+ * é literalmente `conversaIdentificada`, e as demais são a forma por conversa dos
+ * `FILTER` que `contagensDoFunil` já aplica (`leadComContato`, estados do lead,
+ * proposta). **Não há segundo caminho para um fato que já vive aqui.**
+ *
+ * `visitas` e `conversas` devolvem `null`: não existe "avanço" para elas — a
+ * pessoa está lá por ter chegado/aberto, e a atribuição cai na exposição.
+ */
+export function fatoDaEtapaNaConversa(etapa: EtapaDoFunil, conversa: SQL = sql`c`): SQL | null {
+	switch (etapa) {
+		case "visitas":
+		case "conversas":
+			return null;
+		case "identificados":
+			return conversaIdentificada(conversa);
+		case "com_contato":
+			return sql`EXISTS (SELECT 1 FROM leads li
+        WHERE li.conversation_id = ${conversa}.id
+          AND li.is_simulated = false
+          AND ${leadComContato(sql`li`)}))`;
+		case "qualificados":
+			return sql`EXISTS (SELECT 1 FROM leads li
+        WHERE li.conversation_id = ${conversa}.id
+          AND li.is_simulated = false
+          AND li.stage IN (${sql.join(
+						ESTAGIOS_QUALIFICADOS.map((estagio) => sql`${estagio}`),
+						sql`, `,
+					)}))`;
+		case "propostas":
+			return sql`EXISTS (SELECT 1 FROM bevi_proposals bp
+        WHERE bp.conversation_id = ${conversa}.id)`;
+		case "fechados":
+			return sql`EXISTS (SELECT 1 FROM leads li
+        WHERE li.conversation_id = ${conversa}.id
+          AND li.is_simulated = false
+          AND li.stage = 'fechado_ganho')`;
+	}
+}
+
+/**
  * As CONTAGENS do funil por origem/campanha — a definição de cada degrau num
  * lugar só.
  *
@@ -307,20 +360,39 @@ export function conversaIdentificada(conversa: SQL = sql`c`): SQL {
  * ALCANÇAR (telefone/e-mail no lead), e não são ordem um do outro (a conversa de
  * WhatsApp sem linha em `leads` é identificada e não tem contato no lead).
  */
-export function contagensDoFunil(de: Date, ate: Date): SQL {
+export function contagensDoFunil(de: Date, ate: Date, recorte: RecorteAB = []): SQL {
 	const qualificados = sql.join(
 		ESTAGIOS_QUALIFICADOS.map((estagio) => sql`${estagio}`),
 		sql`, `,
 	);
 	const pessoa = chaveDaPessoa(de, ate);
+	// `[]` ⇒ `null` ⇒ NENHUM SQL novo entra: sem recorte o SQL gerado é o mesmo de
+	// antes desta mudança (é o que faz o default não mover número nenhum).
+	//
+	// O recorte entra como conjunção sobre a CONDIÇÃO INTEIRA do `FILTER`, com
+	// parênteses. Sem eles, o `OR` de `leadComContato` engoliria o recorte pela
+	// precedência (`A AND B OR C AND R` = `(A AND B) OR (C AND R)`) e o balde
+	// deixaria de fechar.
+	const daPessoa = condicaoDeBracoDaPessoa(recorte, {
+		de,
+		ate,
+		chave: pessoa,
+		colunaVisitor: sql`v.visitor_id`,
+	});
+	const comRecorte = (condicao: SQL): SQL =>
+		daPessoa ? sql`(${condicao}) AND (${daPessoa})` : condicao;
 	return sql`
-    count(DISTINCT v.id) FILTER (WHERE ${VISITA_NAO_E_ECO}) AS visitas,
-    count(DISTINCT ${pessoa}) FILTER (WHERE ${pessoaConversou()}) AS conversas,
-    count(DISTINCT ${pessoa}) FILTER (WHERE ${pessoaConversou()} AND ${leadComContato()}) AS com_contato,
-    count(DISTINCT ${pessoa}) FILTER (WHERE ${pessoaConversou()} AND ${conversaIdentificada(sql`c`)}) AS identificados,
-    count(DISTINCT ${pessoa}) FILTER (WHERE l.stage IN (${qualificados})) AS qualificados,
-    count(DISTINCT ${pessoa}) FILTER (WHERE bp.id IS NOT NULL) AS propostas,
-    count(DISTINCT ${pessoa}) FILTER (WHERE l.stage = 'fechado_ganho') AS fechados
+    count(DISTINCT v.id) FILTER (WHERE ${comRecorte(VISITA_NAO_E_ECO)}) AS visitas,
+    count(DISTINCT ${pessoa}) FILTER (WHERE ${comRecorte(pessoaConversou())}) AS conversas,
+    count(DISTINCT ${pessoa}) FILTER (WHERE ${comRecorte(
+			sql`${pessoaConversou()} AND ${leadComContato()}`,
+		)}) AS com_contato,
+    count(DISTINCT ${pessoa}) FILTER (WHERE ${comRecorte(
+			sql`${pessoaConversou()} AND ${conversaIdentificada(sql`c`)}`,
+		)}) AS identificados,
+    count(DISTINCT ${pessoa}) FILTER (WHERE ${comRecorte(sql`l.stage IN (${qualificados})`)}) AS qualificados,
+    count(DISTINCT ${pessoa}) FILTER (WHERE ${comRecorte(sql`bp.id IS NOT NULL`)}) AS propostas,
+    count(DISTINCT ${pessoa}) FILTER (WHERE ${comRecorte(sql`l.stage = 'fechado_ganho'`)}) AS fechados
   `;
 }
 
