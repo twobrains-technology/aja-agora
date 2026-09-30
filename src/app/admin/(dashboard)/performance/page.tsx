@@ -13,6 +13,7 @@ import { PortaDoFunilCard } from "@/components/admin/performance/porta-do-funil"
 // import { QuemChegouCard } from "@/components/admin/performance/quem-chegou";
 import { SerieAquisicaoChart } from "@/components/admin/performance/serie-aquisicao-chart";
 import { TabelaOrigens } from "@/components/admin/performance/tabela-origens";
+import { TesteDoTelefone } from "@/components/admin/performance/teste-do-telefone";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { PerformanceResponse } from "@/lib/admin/performance-types";
@@ -136,6 +137,14 @@ function PerformanceContent() {
 			) : (
 				<BlocoSkeleton altura={200} />
 			)}
+
+			{/* O resultado do A/B do telefone fecha a página: é a leitura do teste que
+			    decide qual caminho do pedido de telefone fica — e o período é o MESMO
+			    que o resto da tela, senão o número do teste não bate com o dos blocos
+			    acima dele. Puxa sozinho (`/api/admin/performance/telefone-ab`), com o
+			    mesmo `from`/`to`: é outro assunto, não uma segunda versão destes
+			    números. */}
+			<TesteDoTelefone de={from} ate={to} />
 		</div>
 	);
 }

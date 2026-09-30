@@ -6,11 +6,13 @@
  * comparação. Sem dado de um lado, a resposta é **"não calculável"** — nunca
  * zero (ver `resultado-do-teste-do-telefone.ts`).
  *
- * Só LEITURA e só ADMIN/VIEWER (o dono lê). Nada aqui dispara evento para a
- * Meta: é consulta ao que já está no banco.
+ * Só LEITURA, e para ADMIN, VIEWER e ATTENDANT — o mesmo trio da rota irmã
+ * `/api/admin/performance` (o código manda; este comentário estava atrás dele).
+ * Nada aqui dispara evento para a Meta: é consulta ao que já está no banco.
  *
- * ⚠️ O bloco NÃO desenha a tela — o desenho do painel vem em outro bloco (para
- * não colidir com a onda 2). Este endpoint é o dado pronto.
+ * A tela que lê isto é o card `teste-do-telefone.tsx`, montado em
+ * `/admin/performance` com o mesmo `from`/`to` do resto da página. Este endpoint
+ * continua sendo só o dado.
  */
 
 import { periodoDaRequisicao } from "@/lib/admin/periodo-da-requisicao";

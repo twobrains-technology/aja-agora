@@ -1,7 +1,9 @@
 "use client";
 
-// As tags de anúncio (GTM, GA4, Meta Pixel), com uma trava: NUNCA dentro de um
-// iframe.
+// As tags de anúncio (GTM, GA4, Meta Pixel), com DUAS travas: nunca dentro de um
+// iframe e nunca dentro do painel.
+//
+// ── TRAVA 1 · NUNCA DENTRO DE UM IFRAME ────────────────────────────────────
 //
 // O painel embute a própria landing para desenhar o mapa de calor por cima dela
 // (`visor-do-mapa.tsx`). Sem esta trava, cada abertura daquela tela carregava um
@@ -12,6 +14,24 @@
 //
 // A trava é aqui, e não no componente do visor, porque protege qualquer embed —
 // inclusive um que alguém venha a criar amanhã sem lembrar deste detalhe.
+//
+// ── TRAVA 2 · NUNCA DENTRO DO PAINEL (29/09/2026) ──────────────────────────
+//
+// A trava de iframe pegava o preview; não pegava a equipe NAVEGANDO no painel.
+// `/admin` é montado no mesmo layout raiz que a landing (é lá que
+// `AnalyticsScripts` vive), então abrir qualquer tela do painel — pipeline,
+// mapa de calor, o próprio login — disparava GTM, GA4 e `fbq('track','PageView')`.
+//
+// O mal é o mesmo da trava 1, e é de negócio, não de relatório: quem opera o
+// produto não é público da campanha, e cada PageView da equipe entra no
+// denominador que o algoritmo usa para decidir para quem mostrar o anúncio. Some
+// a isso o Connect Rate que a mídia já persegue — visita interna contando como
+// alcance é dinheiro pago lido como se tivesse virado gente.
+//
+// A régua é a ROTA, não a tela: tudo que começa em `/admin` (inclui
+// `/admin/login`) não renderiza tag NENHUMA. Fica na raiz, e não em cada página
+// do painel, pela mesma razão da trava 1: quem criar a próxima tela do painel
+// amanhã já nasce protegido, sem precisar lembrar deste detalhe.
 //
 // Cliente e não servidor de propósito: ler o request no layout tornaria a
 // landing inteira dinâmica, trocando um defeito de medição por um custo de
@@ -61,6 +81,7 @@
 //
 // O Meta Pixel não entra nessa conta, e é por isso que ele ficou onde estava.
 
+import { usePathname } from "next/navigation";
 import Script from "next/script";
 
 const GTM_ID = "GTM-KZXWKBZ3";
@@ -78,7 +99,19 @@ function ehJanelaDeTopo(): boolean {
 	}
 }
 
+/** `true` para toda rota do painel — `/admin`, `/admin/login`, `/admin/pipeline`. */
+function ehRotaDoPainel(caminho: string | null): boolean {
+	// Igualdade ou barra: `/administradoras` é CONTEÚDO e casa com um
+	// `startsWith("/admin")` — prefixo cru mataria as tags de anúncio lá.
+	return caminho === "/admin" || (caminho?.startsWith("/admin/") ?? false);
+}
+
 export function AnalyticsScripts() {
+	// O hook vem antes das travas: a ordem das chamadas não pode mudar entre um
+	// render e outro. Ele responde `/admin` também no login.
+	const caminho = usePathname();
+
+	if (ehRotaDoPainel(caminho)) return null;
 	if (!ehJanelaDeTopo()) return null;
 
 	return (

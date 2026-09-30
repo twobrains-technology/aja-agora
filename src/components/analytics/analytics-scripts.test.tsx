@@ -12,11 +12,22 @@ vi.mock("next/script", () => ({
 	),
 }));
 
+// A rota é a segunda trava do componente e quem a decide é o teste: `usePathname`
+// sai do `next/navigation` mockado, e o valor vira o cenário de cada caso.
+const rota = vi.hoisted(() => ({ atual: "/" }));
+vi.mock("next/navigation", () => ({
+	usePathname: () => rota.atual,
+}));
+
 function comTopo(top: unknown) {
 	Object.defineProperty(window, "top", { value: top, configurable: true, writable: true });
 }
 
-afterEach(() => comTopo(window));
+afterEach(() => {
+	comTopo(window);
+	rota.atual = "/";
+	vi.unstubAllEnvs();
+});
 
 describe("AnalyticsScripts", () => {
 	it("injeta as tags na navegação normal", () => {
@@ -86,4 +97,54 @@ describe("AnalyticsScripts", () => {
 		// a estratégia não pode ter mudado junto com as outras.
 		if (pixel) expect(pixel.getAttribute("data-strategy")).toBe("afterInteractive");
 	});
+
+	// ── O PAINEL NÃO CONTA COMO VISITA DA CAMPANHA (29/09/2026) ──────────────
+	//
+	// A trava de iframe resolvia o preview da landing dentro do painel. Mas a
+	// navegação normal da EQUIPE pelo `/admin` continuava disparando GTM, GA4 e
+	// `fbq('track','PageView')` — visita de quem opera o produto virando sinal de
+	// otimização da mídia paga. A trava por rota fecha isso em qualquer tela do
+	// painel, inclusive o login.
+	// `/administradoras` é rota de CONTEÚDO, não do painel. O `startsWith("/admin")`
+	// antigo casava com ela por prefixo e matava as tags de anúncio ali.
+	it("mantém as tags em /administradoras — é conteúdo, não painel", () => {
+		rota.atual = "/administradoras";
+		comTopo(window);
+
+		const { container } = render(<AnalyticsScripts />);
+
+		expect(container.querySelectorAll("[data-tag]").length).toBeGreaterThan(0);
+	});
+
+	it.each(["/admin", "/admin/pipeline", "/admin/login"])(
+		"não injeta tag nenhuma em %s",
+		(caminho) => {
+			rota.atual = caminho;
+			comTopo(window);
+
+			const { container } = render(<AnalyticsScripts />);
+
+			expect(container.querySelectorAll("[data-tag]")).toHaveLength(0);
+		},
+	);
+
+	it.each(["/", "/chat"])(
+		"mantém as tags fora do painel em %s, com o Pixel presente e não adiado",
+		async (caminho) => {
+			// `META_PIXEL_ID` é lido no load do MÓDULO: só `stubEnv` + `resetModules`
+			// + import dinâmico provam a presença do Pixel sem depender do `.env`.
+			vi.resetModules();
+			vi.stubEnv("NEXT_PUBLIC_META_PIXEL_ID", "1111222233334444");
+			rota.atual = caminho;
+			comTopo(window);
+
+			const { AnalyticsScripts: Componente } = await import("./analytics-scripts");
+			const { container } = render(<Componente />);
+
+			expect(container.querySelector('[data-tag="gtm"]')).not.toBeNull();
+			const pixel = container.querySelector('[data-tag="meta-pixel"]');
+			expect(pixel).not.toBeNull();
+			expect(pixel?.getAttribute("data-strategy")).toBe("afterInteractive");
+		},
+	);
 });

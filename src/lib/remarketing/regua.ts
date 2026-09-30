@@ -45,9 +45,10 @@
  *    `podeDisparar`: quem decide SE dispara é ele; o registro registra o que
  *    aconteceu.
  * 6. **Dentro da janela de 24 h da Meta vale a ESCALA CURTA** (`escalaDeRetomadaMs`,
- *    fábrica `[10, 20, 30]` min): o toque 01 sai em minutos, não em 90, e os
- *    intervalos seguintes são 20 e 30 min, não 3 e 5 dias. Fora da janela, o
- *    desenho por dias continua intacto. O fato que decide os dois é o MESMO —
+ *    fábrica `[90, 180, 300]` min): o toque 01 sai em 90 min — o mesmo número do
+ *    silêncio — e os intervalos seguintes são 3 h e 5 h, não 3 e 5 dias. Fora da
+ *    janela, o desenho por dias continua intacto. O fato que decide os dois é o
+ *    MESMO —
  *    `dentroDaJanelaDeTexto` —, então a cadência e a forma do envio
  *    (`texto_livre` × `template`) nunca discordam.
  */
@@ -143,9 +144,9 @@ export interface ParametrosRegua {
 	/**
 	 * A ESCALA CURTA dos toques quando a janela de 24 h da Meta está ABERTA — um
 	 * intervalo por toque (índice 0 → toque 01, 1 → 02, ...). Fábrica
-	 * `[10, 20, 30]` minutos.
+	 * `[90, 180, 300]` minutos.
 	 *
-	 * É uma LISTA, e não um número: a cadência combinada é 10 → 20 → 30, não um
+	 * É uma LISTA, e não um número: a cadência combinada é 90 → 180 → 300, não um
 	 * passo fixo. Enquanto a janela está aberta ela substitui `esperaSilencioMs`
 	 * (toque 01) e `diasAteSegundoToque`/`diasAteTerceiroToque` (02 e 03); fora
 	 * dela, o desenho por dias continua valendo, intacto. Se a lista for mais
