@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { recorteDaRequisicao } from "@/lib/admin/filtro-variante";
 import { listarPercurso } from "@/lib/admin/percurso-queries";
 import {
 	type ModoDoPasso,
@@ -73,12 +74,17 @@ export async function GET(req: NextRequest) {
 	// Dia inteiro, no fuso do negócio, com a precedência URL > cookie > hoje — a
 	// mesma regra que o filtro da tela usa, resolvida num lugar só.
 	const { de: from, ate: to } = periodoDaRequisicao(req);
+	// O recorte por braço de experimento (`?ab=…`, ou o cookie `aja_ab`), pelo
+	// MESMO trilho do período. Sem recorte: `[]`, e a consulta sai idêntica à de
+	// antes desta frente.
+	const recorte = recorteDaRequisicao(req);
 
 	const modo: ModoDoPasso = sp.get("modo") === "alcancou" ? "alcancou" : "parou";
 
 	const resposta = await listarPercurso({
 		from,
 		to,
+		recorte,
 		origem: sp.get("origem"),
 		campanha: sp.get("campanha"),
 		passo: parsePasso(sp.get("passo")),

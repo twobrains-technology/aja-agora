@@ -16,8 +16,15 @@
 
 import { type SQL, sql } from "drizzle-orm";
 import { db } from "@/db";
+import {
+	EXPERIMENTOS,
+	type Experimento,
+	type RecorteAB,
+	SEM_BRACO,
+} from "@/lib/experimentos/registro";
 import { sqlEscreveuAlgoProprio, sqlSoPrePreenchida } from "@/lib/funil/mensagem-pre-preenchida";
 import { predicadoDeOrigemNaVisita } from "./filtro-origem";
+import { bracoDaConversaSql } from "./filtro-variante";
 import { origemDaVisita } from "./origem-label";
 import {
 	type FiltroPercurso,
@@ -99,6 +106,85 @@ function profundidadeDoPasso(passo: PassoDoPercurso): number {
 	return ORDEM_DOS_PASSOS.indexOf(passo) + 1;
 }
 
+// ─── Recorte por braço de experimento A/B (FIX-404) ─────────────────────────
+//
+// A unidade desta tela é PESSOA. O braço dela NÃO é uma leitura solta do
+// metadata da conversa mais recente: é o da conversa em que ela passou de não
+// identificada para identificada (a âncora do experimento) e, quando nunca se
+// identificou, o da última conversa com braço do período (exposição).
+//
+// Onde isso é resolvido: no `conv_pessoa`. O CTE `conv` já calcula
+// `identificou` por conversa — o fato da âncora já está lá. Basta levar
+// `created_at` e o braço e agregar por pessoa com a ordenação canônica. Não
+// existe (nem pode existir) um segundo caminho de identidade nem uma função que
+// DERIVE braço: o fragmento lê o metadata, e conversa sem braço gravado é
+// `sem variante`.
+
+/**
+ * A coluna do braço de UM experimento, dentro do SQL desta tela.
+ *
+ * O nome sai do `id` do registro (que é a chave no metadata) — nada aqui
+ * conhece o nome do teste do telefone. `sql.identifier` é o que impede que um
+ * id com caractere estranho virasse injeção.
+ */
+function colunaDoBraco(experimento: Experimento): SQL {
+	return sql`${sql.identifier(`braco_${experimento.id}`)}`;
+}
+
+/**
+ * Os experimentos que o recorte ATIVO pede.
+ *
+ * Com recorte vazio a lista é vazia, e é isso que faz a consulta sair idêntica
+ * à de antes desta frente: nenhuma coluna, nenhum agregado, nenhum WHERE novo.
+ */
+function experimentosDoRecorte(recorte: RecorteAB): Experimento[] {
+	const pedidos = new Set(recorte.map((par) => par.experimento));
+	return EXPERIMENTOS.filter((experimento) => pedidos.has(experimento.id));
+}
+
+/**
+ * O braço da pessoa, agregado a partir das conversas dela.
+ *
+ * A ordenação é a canônica do estudo (refino 3, §4a), lida dentro de cada
+ * partição: primeiro quem AVANÇOU a etapa âncora — e, entre essas, a PRIMEIRA;
+ * depois as que não avançaram — e, entre essas, a ÚLTIMA. O `id` desempata
+ * sempre. É a MESMA ordenação que a escalar dos funis usa; a diferença é que
+ * aqui ela cabe num `array_agg` porque a linha já é a pessoa.
+ *
+ * O `FILTER (WHERE … IS NOT NULL)` é o que implementa "conversa sem braço não é
+ * candidata": sem ele, uma conversa pré-teste identificada ganharia a ordem e a
+ * pessoa cairia em `sem variante` em vez de herdar a última exposição com braço.
+ */
+function bracoDaPessoaNaLinha(experimento: Experimento): SQL {
+	const coluna = colunaDoBraco(experimento);
+	return sql`(array_agg(c.${coluna} ORDER BY
+          c.identificou DESC,
+          (CASE WHEN c.identificou THEN c.created_at END) ASC,
+          (CASE WHEN NOT c.identificou THEN c.created_at END) DESC,
+          c.id ASC
+        ) FILTER (WHERE c.${coluna} IS NOT NULL))[1]`;
+}
+
+/**
+ * A condição do recorte sobre as colunas de braço já resolvidas por pessoa.
+ *
+ * `sem variante` é `IS NULL` sobre a coluna (que é `'A'`/`'B'`/NULL, porque o
+ * fragmento do braço tem allowlist): valor fora da allowlist no metadata cai
+ * aqui, e `A + B + sem variante = total` fecha.
+ */
+function condicaoDoRecorte(recorte: RecorteAB): SQL | null {
+	const condicoes: SQL[] = [];
+	for (const par of recorte) {
+		const experimento = EXPERIMENTOS.find((exp) => exp.id === par.experimento);
+		if (!experimento) continue;
+		const coluna = colunaDoBraco(experimento);
+		condicoes.push(
+			par.braco === SEM_BRACO ? sql`${coluna} IS NULL` : sql`${coluna} = ${par.braco}`,
+		);
+	}
+	return condicoes.length > 0 ? sql.join(condicoes, sql` AND `) : null;
+}
+
 /**
  * A CTE que monta uma linha por pessoa, com a profundidade já calculada.
  *
@@ -119,11 +205,66 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
 	// A chave da pessoa, com o alias deste CTE (`vi`), montada uma vez só.
 	const chave = chaveDaPessoa(filtro.from, filtro.to, sql`vi.visitor_id`);
 
+	// ── O recorte por braço (FIX-404) ────────────────────────────────────────
+	//
+	// Tudo abaixo nasce VAZIO quando não há recorte ativo: nenhuma coluna, nenhum
+	// agregado, nenhum `WHERE` novo. Sem recorte a consulta é a de antes — é o
+	// que faz o filtro em "todas" não mover um número sequer.
+	const recorte = filtro.recorte ?? [];
+	const experimentos = experimentosDoRecorte(recorte);
+
+	// No `conv`: o instante da conversa (a ordem canônica precisa dele) e o braço
+	// dela — o `CASE WHEN` de período é o mesmo recorte da escalar dos funis:
+	// conversa nascida fora da janela não é candidata.
+	const pedacosDoConv = experimentos.map(
+		(experimento) => sql`CASE WHEN c.created_at BETWEEN ${filtro.from} AND ${filtro.to}
+          THEN ${bracoDaConversaSql(experimento, sql`c`)} END AS ${colunaDoBraco(experimento)}`,
+	);
+	const colunasDoBracoNoConv =
+		pedacosDoConv.length > 0
+			? sql`c.created_at,
+        ${sql.join(pedacosDoConv, sql`, `)},`
+			: sql``;
+
+	// No `conv_pessoa`: uma coluna por experimento, agregando as conversas DA
+	// PESSOA com a ordenação canônica (a mesma dos funis).
+	const bracosDaPessoa =
+		experimentos.length > 0
+			? sql`,
+             ${sql.join(
+								experimentos.map(
+									(experimento) =>
+										sql`${bracoDaPessoaNaLinha(experimento)} AS ${colunaDoBraco(experimento)}`,
+								),
+								sql`,
+             `,
+							)}`
+			: sql``;
+
+	// No `final`: as colunas por pessoa, que o `filtrado` recorta.
+	const bracosNoFinal =
+		experimentos.length > 0
+			? sql`,
+             ${sql.join(
+								experimentos.map((experimento) => sql`cp.${colunaDoBraco(experimento)}`),
+								sql`, `,
+							)}`
+			: sql``;
+
 	const busca = filtro.q?.trim();
-	const filtroBusca = busca
-		? sql` WHERE (lp.name ILIKE ${`%${busca}%`} OR lp.phone ILIKE ${`%${busca}%`}
-        OR lp.email ILIKE ${`%${busca}%`})`
-		: sql``;
+	const condicoesDoFiltrado: SQL[] = [];
+	if (busca) {
+		condicoesDoFiltrado.push(
+			sql`(lp.name ILIKE ${`%${busca}%`} OR lp.phone ILIKE ${`%${busca}%`}
+        OR lp.email ILIKE ${`%${busca}%`})`,
+		);
+	}
+	const doRecorte = condicaoDoRecorte(recorte);
+	if (doRecorte) condicoesDoFiltrado.push(doRecorte);
+	const filtroFinal =
+		condicoesDoFiltrado.length > 0
+			? sql` WHERE ${sql.join(condicoesDoFiltrado, sql` AND `)}`
+			: sql``;
 
 	return sql`
     WITH visita AS (
@@ -152,6 +293,7 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
     -- funil de mídia usa, um por fato, cada um lendo a tabela dona dele.
     conv AS (
       SELECT c.id, c.visit_id, c.contact_id, c.updated_at, c.status,
+        ${colunasDoBracoNoConv}
         (SELECT count(*) FROM messages m
           WHERE m.conversation_id = c.id AND m.role = 'user') AS msgs,
         (SELECT max(m.created_at) FROM messages m
@@ -271,7 +413,7 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
              bool_or(c.identificou) AS identificou,
              bool_or(c.viu_oferta) AS viu_oferta,
              bool_or(c.teve_proposta) AS teve_proposta,
-             bool_or(c.fechou) AS fechou
+             bool_or(c.fechou) AS fechou${bracosDaPessoa}
       FROM por_visita pv
       JOIN conv c ON c.visit_id = pv.id
       GROUP BY pv.chave
@@ -351,7 +493,7 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
                WHEN COALESCE(cp.conversas, 0) > 0 OR p.abriu_teatro THEN 3
                WHEN p.olhou THEN 2
                ELSE 1
-             END AS profundidade
+             END AS profundidade${bracosNoFinal}
       FROM pessoa p
       JOIN credito cr ON cr.chave = p.chave
       LEFT JOIN conv_pessoa cp ON cp.chave = p.chave
@@ -361,7 +503,7 @@ function baseDoPercurso(filtro: FiltroPercurso): SQL {
     ),
 
     filtrado AS (
-      SELECT * FROM final lp${filtroBusca}
+      SELECT * FROM final lp${filtroFinal}
     )
   `;
 }
