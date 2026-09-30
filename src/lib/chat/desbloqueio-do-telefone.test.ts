@@ -20,26 +20,26 @@ import {
 
 describe("estadoDoDesbloqueio — a regra", () => {
 	it("variante B sem telefone ⇒ pede-antes (a comparação NÃO foi liberada)", () => {
-		expect(estadoDoDesbloqueio({ variante: "B", celularConhecido: false })).toBe("pede-antes");
+		expect(estadoDoDesbloqueio({ variante: "A", celularConhecido: false })).toBe("pede-antes");
 	});
 
 	it("variante C sem telefone ⇒ borrado (a comparação veio, escondida)", () => {
-		expect(estadoDoDesbloqueio({ variante: "C", celularConhecido: false })).toBe("borrado");
+		expect(estadoDoDesbloqueio({ variante: "B", celularConhecido: false })).toBe("borrado");
 	});
 
 	it("telefone já conhecido ⇒ livre, nas DUAS variantes", () => {
+		expect(estadoDoDesbloqueio({ variante: "A", celularConhecido: true })).toBe("livre");
 		expect(estadoDoDesbloqueio({ variante: "B", celularConhecido: true })).toBe("livre");
-		expect(estadoDoDesbloqueio({ variante: "C", celularConhecido: true })).toBe("livre");
 	});
 
 	it("'Agora não' ⇒ livre (só a variante C tem essa saída)", () => {
-		expect(estadoDoDesbloqueio({ variante: "C", celularConhecido: false, recusado: true })).toBe(
+		expect(estadoDoDesbloqueio({ variante: "B", celularConhecido: false, recusado: true })).toBe(
 			"livre",
 		);
 	});
 
 	it("telefone conhecido GANHA da recusa (nunca trava quem já deu o número)", () => {
-		expect(estadoDoDesbloqueio({ variante: "C", celularConhecido: true, recusado: true })).toBe(
+		expect(estadoDoDesbloqueio({ variante: "B", celularConhecido: true, recusado: true })).toBe(
 			"livre",
 		);
 	});

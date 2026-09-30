@@ -36,7 +36,7 @@ function uuidDe(n: number): string {
 
 describe("VARIANTES_DO_TELEFONE (fonte única)", () => {
 	it("são exatamente DUAS — B (telefone antes) e C (blur)", () => {
-		expect(VARIANTES_DO_TELEFONE).toEqual(["B", "C"]);
+		expect(VARIANTES_DO_TELEFONE).toEqual(["A", "B"]);
 	});
 });
 
@@ -55,15 +55,15 @@ describe("varianteDaVisita — determinística", () => {
 	});
 
 	it("visitas diferentes distribuem nos DOIS lados (amostra grande)", () => {
-		const contagem: Record<VarianteDoTelefone, number> = { B: 0, C: 0 };
+		const contagem: Record<VarianteDoTelefone, number> = { A: 0, B: 0 };
 		const N = 5_000;
 		for (let i = 0; i < N; i++) {
 			contagem[varianteDaVisita(uuidDe(i))]++;
 		}
 		// 50/50 num FNV-1a de UUID: folga generosa, mas nunca um lado vazio.
+		expect(contagem.A).toBeGreaterThan(N * 0.4);
 		expect(contagem.B).toBeGreaterThan(N * 0.4);
-		expect(contagem.C).toBeGreaterThan(N * 0.4);
-		expect(contagem.B + contagem.C).toBe(N);
+		expect(contagem.A + contagem.B).toBe(N);
 	});
 
 	it("não usa `Math.random()` — o resultado é derivado só da semente", () => {
@@ -126,12 +126,12 @@ describe("varianteDaConversa — visita primeiro, conversa como reserva", () => 
 
 describe("lerVariante — variante persistida desconhecida ⇒ erro alto", () => {
 	it("aceita B e C", () => {
+		expect(lerVariante("A")).toBe("A");
 		expect(lerVariante("B")).toBe("B");
-		expect(lerVariante("C")).toBe("C");
 	});
 
-	it("recusa qualquer outra coisa (incluindo 'A' — variante descartada)", () => {
-		expect(() => lerVariante("A")).toThrow(/variante/i);
+	it("recusa qualquer outra coisa (incluindo 'C' — variante que não existe)", () => {
+		expect(() => lerVariante("C")).toThrow(/variante/i);
 		expect(() => lerVariante("b")).toThrow(/variante/i);
 		expect(() => lerVariante("")).toThrow(/variante/i);
 		expect(() => lerVariante(null)).toThrow(/variante/i);
@@ -140,8 +140,9 @@ describe("lerVariante — variante persistida desconhecida ⇒ erro alto", () =>
 	});
 
 	it("ehVarianteDoTelefone é o guard barato, sem lançar", () => {
+		expect(ehVarianteDoTelefone("A")).toBe(true);
 		expect(ehVarianteDoTelefone("B")).toBe(true);
-		expect(ehVarianteDoTelefone("A")).toBe(false);
+		expect(ehVarianteDoTelefone("C")).toBe(false);
 		expect(ehVarianteDoTelefone(null)).toBe(false);
 	});
 });

@@ -17,6 +17,20 @@ import { generateId } from "@/lib/utils/id";
 import type { ChatAction } from "./actions";
 import { appendBusMessage } from "./bus-merge";
 import { isStreamStuck } from "./stream-watchdog";
+
+/**
+ * FIX-403 — o `?variante=A|B` da URL da PÁGINA, para QA e para o dono.
+ *
+ * Fica no cliente porque a URL da página não acompanha o POST para `/api/chat`:
+ * o dono abriria `?variante=B`, não veria diferença nenhuma e concluiria — com
+ * razão — que o teste não funciona. Sem valor (ou no servidor) devolve `null`, e
+ * aí quem manda é o sorteio por visita.
+ */
+function varianteDaUrl(): string | null {
+	if (typeof window === "undefined") return null;
+	const valor = new URLSearchParams(window.location.search).get("variante")?.trim();
+	return valor && valor.length > 0 ? valor : null;
+}
 import type { AjaUIMessage } from "./ui-message";
 
 /** @deprecated Use `ChatAction` from `./actions`. Kept as alias for back-compat. */
@@ -96,7 +110,15 @@ export function ChatProvider({
 			new DefaultChatTransport<AjaUIMessage>({
 				api: "/api/chat",
 				prepareSendMessagesRequest: ({ messages, body }) => ({
-					body: { conversationId, messages, ...(body ?? {}) },
+					body: {
+						conversationId,
+						messages,
+						// FIX-403: `?variante=A|B` na URL vira pedido explícito de QA/dono.
+						// Lido aqui, no cliente, porque a URL da PÁGINA não chega à rota —
+						// e sem o override o sorteio por visita dá sempre a mesma ponta.
+						...(varianteDaUrl() ? { variante: varianteDaUrl() } : {}),
+						...(body ?? {}),
+					},
 				}),
 			}),
 		[conversationId],

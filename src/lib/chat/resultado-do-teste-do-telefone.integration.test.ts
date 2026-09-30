@@ -49,7 +49,7 @@ describeIfDb("resultadoDoTesteDoTelefone (integration)", () => {
 	 * como "viu oferta". Nada de PII real: o telefone é o padrão de teste.
 	 */
 	async function semear(opts: {
-		variante: "B" | "C";
+		variante: "A" | "B";
 		telefone: boolean;
 		comparacao: boolean;
 	}): Promise<void> {
@@ -104,13 +104,13 @@ describeIfDb("resultadoDoTesteDoTelefone (integration)", () => {
 	}
 
 	it("separa por variante e soma o total", async () => {
-		await semear({ variante: "B", telefone: true, comparacao: true });
-		await semear({ variante: "B", telefone: false, comparacao: true });
-		await semear({ variante: "C", telefone: true, comparacao: false });
+		await semear({ variante: "A", telefone: true, comparacao: true });
+		await semear({ variante: "A", telefone: false, comparacao: true });
+		await semear({ variante: "B", telefone: true, comparacao: false });
 
 		const r = await consulta.resultadoDoTesteDoTelefone(DE, ATE);
-		const b = r.find((v) => v.variante === "B");
-		const c = r.find((v) => v.variante === "C");
+		const b = r.find((v) => v.variante === "A");
+		const c = r.find((v) => v.variante === "B");
 
 		// não asseguramos "exatamente", porque a janela de 2019 é isolada mas
 		// poderíamos ter resíduo; o TOTAL das semeadas tem que bater.
@@ -129,7 +129,7 @@ describeIfDb("resultadoDoTesteDoTelefone (integration)", () => {
 			ate: new Date("2019-05-31T23:59:59Z"),
 		};
 		const r = await consulta.resultadoDoTesteDoTelefone(outroPeriodo.de, outroPeriodo.ate);
-		expect(r.map((v) => v.variante)).toEqual(["B", "C"]);
+		expect(r.map((v) => v.variante)).toEqual(["A", "B"]);
 		for (const v of r) {
 			expect(v.visitas).toBeNull();
 			expect(v.taxaDeTelefone).toBeNull();
@@ -155,13 +155,13 @@ describeIfDb("resultadoDoTesteDoTelefone (integration)", () => {
 				waId: "5511999999999",
 				isSimulated: false,
 				createdAt: DENTRO,
-				metadata: { [CHAVE_DO_TESTE_NO_METADATA]: { variante: "B" } },
+				metadata: { [CHAVE_DO_TESTE_NO_METADATA]: { variante: "A" } },
 			})
 			.returning({ id: schema.conversations.id });
 		convIds.push(conversa.id);
 
 		const r = await consulta.resultadoDoTesteDoTelefone(DE, ATE);
-		const b = r.find((v) => v.variante === "B");
+		const b = r.find((v) => v.variante === "A");
 		// a visita de WhatsApp não somou: B continua com as 2 do primeiro teste
 		expect(b?.visitas).toBe(2);
 	});
@@ -169,10 +169,10 @@ describeIfDb("resultadoDoTesteDoTelefone (integration)", () => {
 	it("o tipo das linhas bate com o contrato puro (LinhaDoTesteDoTelefone)", () => {
 		// trava a forma do contrato — se mudar, o compilador aponta aqui
 		const exemplo: LinhaDoTesteDoTelefone = {
-			variante: "B",
+			variante: "A",
 			telefone: true,
 			comparacao: false,
 		};
-		expect(exemplo.variante).toBe("B");
+		expect(exemplo.variante).toBe("A");
 	});
 });

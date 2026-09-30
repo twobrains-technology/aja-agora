@@ -22,7 +22,7 @@ const artefato = (type: string, payload: Record<string, unknown> = {}): Renderab
 });
 
 const telefone = (estado: "pede-antes" | "borrado"): RenderablePart =>
-	artefato("telefone_do_desbloqueio", { variante: "B", estado });
+	artefato("telefone_do_desbloqueio", { variante: "A", estado });
 
 describe("comDesbloqueioDoTelefone (FIX-395)", () => {
 	it("variante B (pede-antes) ⇒ a comparação sai do render", () => {

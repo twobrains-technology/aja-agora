@@ -14,40 +14,40 @@ import {
 } from "./resultado-do-teste-do-telefone";
 
 const linha = (
-	variante: "B" | "C",
+	variante: "A" | "B",
 	telefone = false,
 	comparacao = false,
 ): LinhaDoTesteDoTelefone => ({ variante, telefone, comparacao });
 
 describe("agregarResultadoDoTesteDoTelefone (FIX-397)", () => {
 	it("sempre devolve as DUAS variantes, na ordem canônica B, C", () => {
-		const r = agregarResultadoDoTesteDoTelefone([linha("B")]);
-		expect(r.map((v) => v.variante)).toEqual(["B", "C"]);
+		const r = agregarResultadoDoTesteDoTelefone([linha("A")]);
+		expect(r.map((v) => v.variante)).toEqual(["A", "B"]);
 	});
 
 	it("variante sem visita ⇒ 'não calculável' (null), nunca zero", () => {
-		const r = agregarResultadoDoTesteDoTelefone([linha("B", true, true)]);
-		const c = r.find((v) => v.variante === "C");
+		const r = agregarResultadoDoTesteDoTelefone([linha("A", true, true)]);
+		const c = r.find((v) => v.variante === "B");
 		expect(c?.visitas).toBeNull();
 		expect(c?.telefones).toBeNull();
 		expect(c?.naComparacao).toBeNull();
 		expect(c?.taxaDeTelefone).toBeNull();
 
 		// e a B, que tem dado, NÃO é null
-		const b = r.find((v) => v.variante === "B");
+		const b = r.find((v) => v.variante === "A");
 		expect(b?.visitas).toBe(1);
 	});
 
 	it("separa a contagem por variante e soma o total", () => {
 		const r = agregarResultadoDoTesteDoTelefone([
+			linha("A", true, true),
+			linha("A", false, true),
+			linha("A", true, false),
 			linha("B", true, true),
-			linha("B", false, true),
-			linha("B", true, false),
-			linha("C", true, true),
-			linha("C", false, false),
+			linha("B", false, false),
 		]);
-		const b = r.find((v) => v.variante === "B");
-		const c = r.find((v) => v.variante === "C");
+		const b = r.find((v) => v.variante === "A");
+		const c = r.find((v) => v.variante === "B");
 		expect(b?.visitas).toBe(3);
 		expect(b?.telefones).toBe(2);
 		expect(b?.naComparacao).toBe(2);
@@ -60,12 +60,12 @@ describe("agregarResultadoDoTesteDoTelefone (FIX-397)", () => {
 
 	it("taxa de telefone por variante (é o número que decide o vencedor)", () => {
 		const r = agregarResultadoDoTesteDoTelefone([
-			linha("B", true),
-			linha("B", true),
-			linha("B", false),
-			linha("B", false),
+			linha("A", true),
+			linha("A", true),
+			linha("A", false),
+			linha("A", false),
 		]);
-		expect(r.find((v) => v.variante === "B")?.taxaDeTelefone).toBe(0.5);
+		expect(r.find((v) => v.variante === "A")?.taxaDeTelefone).toBe(0.5);
 	});
 
 	it("nenhuma visita ⇒ total 'não calculável'", () => {
@@ -77,7 +77,7 @@ describe("agregarResultadoDoTesteDoTelefone (FIX-397)", () => {
 		expect(() =>
 			agregarResultadoDoTesteDoTelefone([
 				// @ts-expect-error — contrato em runtime, testado de propósito
-				{ variante: "A", telefone: false, comparacao: false },
+				{ variante: "Z", telefone: false, comparacao: false },
 			]),
 		).toThrow(/variante desconhecida/i);
 	});

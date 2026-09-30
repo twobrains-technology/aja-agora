@@ -16,7 +16,7 @@ import {
 } from "./teste-do-telefone-leitura";
 
 const b = (over: Partial<ResultadoPorVariante> = {}): ResultadoPorVariante => ({
-	variante: "B",
+	variante: "A",
 	visitas: 31,
 	telefones: 8,
 	naComparacao: 3,
@@ -43,7 +43,7 @@ describe("lerVarianteDoTeste", () => {
 			"meta atingida",
 		);
 		expect(lerVarianteDoTeste(b({ visitas: 31 })).meta).toBe("meta atingida");
-		expect(lerVarianteDoTeste(b({ variante: "C", visitas: 12 })).meta).toBe("faltam 18");
+		expect(lerVarianteDoTeste(b({ variante: "B", visitas: 12 })).meta).toBe("faltam 18");
 	});
 
 	it("a taxa sai em % no padrão brasileiro, com vírgula decimal", () => {
