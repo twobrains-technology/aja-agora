@@ -6,8 +6,8 @@
 // nem as de WhatsApp. E, sem recorte, a lista tem que ser a de sempre.
 //
 // Por que integração contra Postgres real e não mock: o que pode divergir é o
-// SQL. O braço vive no metadata (`conversations.metadata ->
-// 'telefoneDoDesbloqueio' ->> 'variante'`), e o balde `sem-variante` precisa
+// SQL. O braço vive no metadata da conversa (a chave do experimento do registro,
+// lida com `-> … ->> 'variante'`), e o balde `sem-variante` precisa
 // incluir WhatsApp, conversa pré-teste E valor fora da allowlist — é o que faz
 // `A + B + sem-variante = todas` fechar. Um mock afirmaria o predicado que o
 // teste imaginou, não o que o Postgres devolve.

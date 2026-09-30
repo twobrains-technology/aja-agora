@@ -18,11 +18,18 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { NuqsTestingAdapter, type UrlUpdateEvent } from "nuqs/adapters/testing";
 import { afterEach, describe, expect, it } from "vitest";
-import { type Experimento, PARAMETRO_DO_RECORTE_AB } from "@/lib/experimentos/registro";
+import {
+	EXPERIMENTOS,
+	type Experimento,
+	PARAMETRO_DO_RECORTE_AB,
+} from "@/lib/experimentos/registro";
 import { FiltroAB } from "./filtro-ab";
 
 /** O rótulo do seletor do experimento real. */
 const SELETOR_REAL = "Recorte do Teste do telefone";
+
+/** O id do experimento real — lido do REGISTRO, nunca redigitado (D4/C5). */
+const ID_DO_EXPERIMENTO = EXPERIMENTOS[0].id;
 
 /** Um segundo experimento, só para o teste — nenhum código o conhece. */
 const EXPERIMENTO_FICTICIO: Experimento = {
@@ -116,15 +123,15 @@ describe("o seletor do registro real", () => {
 });
 
 describe("a escolha grava a URL E o cookie de sessão", () => {
-	it("escolher A grava `?ab=telefoneDoDesbloqueio:A` e o cookie `aja_ab` sem `max-age`", async () => {
+	it(`escolher A grava \`?ab=${ID_DO_EXPERIMENTO}:A\` e o cookie \`aja_ab\` sem \`max-age\``, async () => {
 		const atualizacoes: UrlUpdateEvent[] = [];
 		montar({ onUrlUpdate: (evento) => atualizacoes.push(evento) });
 
 		await escolher(SELETOR_REAL, "A — telefone antes das ofertas");
 
-		await waitFor(() => expect(ultimoRecorteNaUrl(atualizacoes)).toBe("telefoneDoDesbloqueio:A"));
+		await waitFor(() => expect(ultimoRecorteNaUrl(atualizacoes)).toBe(`${ID_DO_EXPERIMENTO}:A`));
 		const doCookie = document.cookie;
-		expect(doCookie).toContain("aja_ab=telefoneDoDesbloqueio%3AA");
+		expect(doCookie).toContain(`aja_ab=${encodeURIComponent(ID_DO_EXPERIMENTO)}%3AA`);
 		expect(doCookie).not.toContain("max-age");
 	});
 
@@ -135,14 +142,14 @@ describe("a escolha grava a URL E o cookie de sessão", () => {
 		await escolher(SELETOR_REAL, "Sem variante");
 
 		await waitFor(() =>
-			expect(ultimoRecorteNaUrl(atualizacoes)).toBe("telefoneDoDesbloqueio:sem-variante"),
+			expect(ultimoRecorteNaUrl(atualizacoes)).toBe(`${ID_DO_EXPERIMENTO}:sem-variante`),
 		);
 	});
 
 	it("voltar para Todas REMOVE o parâmetro da URL e apaga o cookie", async () => {
 		const atualizacoes: UrlUpdateEvent[] = [];
 		montar({
-			searchParams: "?ab=telefoneDoDesbloqueio:A",
+			searchParams: `?ab=${ID_DO_EXPERIMENTO}:A`,
 			onUrlUpdate: (evento) => atualizacoes.push(evento),
 		});
 
@@ -151,22 +158,22 @@ describe("a escolha grava a URL E o cookie de sessão", () => {
 		await waitFor(() =>
 			expect(atualizacoes.at(-1)?.searchParams.has(PARAMETRO_DO_RECORTE_AB)).toBe(false),
 		);
-		expect(document.cookie).not.toContain("aja_ab=telefoneDoDesbloqueio");
+		expect(document.cookie).not.toContain(`aja_ab=${encodeURIComponent(ID_DO_EXPERIMENTO)}`);
 	});
 });
 
 describe("o recorte vem da URL", () => {
 	it("um carregamento novo com a mesma URL mostra o mesmo recorte (sobrevive à navegação)", () => {
-		const primeiro = montar({ searchParams: "?ab=telefoneDoDesbloqueio:B" });
+		const primeiro = montar({ searchParams: `?ab=${ID_DO_EXPERIMENTO}:B` });
 		expect(screen.getByText("Recorte: Teste do telefone · braço B")).toBeTruthy();
 		primeiro.unmount();
 
-		montar({ searchParams: "?ab=telefoneDoDesbloqueio:B" });
+		montar({ searchParams: `?ab=${ID_DO_EXPERIMENTO}:B` });
 		expect(screen.getByText("Recorte: Teste do telefone · braço B")).toBeTruthy();
 	});
 
 	it("um par inválido na URL mostra Todas — não um recorte silencioso", () => {
-		montar({ searchParams: "?ab=telefoneDoDesbloqueio:C" });
+		montar({ searchParams: `?ab=${ID_DO_EXPERIMENTO}:C` });
 		expect(screen.queryByText(/^Recorte:/)).toBeNull();
 		expect(screen.getByText("Todas")).toBeTruthy();
 	});
@@ -177,7 +184,7 @@ describe("o recorte vem da URL", () => {
 	});
 
 	it("o recorte ativo escreve o rótulo na tela", () => {
-		montar({ searchParams: "?ab=telefoneDoDesbloqueio:sem-variante" });
+		montar({ searchParams: `?ab=${ID_DO_EXPERIMENTO}:sem-variante` });
 		expect(screen.getByText("Recorte: Teste do telefone · sem variante")).toBeTruthy();
 	});
 });
@@ -185,7 +192,7 @@ describe("o recorte vem da URL", () => {
 describe("o recorte vem do cookie quando a URL não traz", () => {
 	it("o cookie `aja_ab` da navegação anterior é adotado", async () => {
 		// biome-ignore lint/suspicious/noDocumentCookie: o teste escreve o cookie que a navegação anterior deixou.
-		document.cookie = "aja_ab=telefoneDoDesbloqueio%3AA; path=/";
+		document.cookie = `aja_ab=${encodeURIComponent(ID_DO_EXPERIMENTO)}%3AA; path=/`;
 
 		montar();
 
@@ -204,7 +211,6 @@ describe("genérico por registro (D4)", () => {
 	});
 
 	it("com o registro real MAIS um fictício, os dois seletores convivem", async () => {
-		const { EXPERIMENTOS } = await import("@/lib/experimentos/registro");
 		montar({ registro: [...EXPERIMENTOS, EXPERIMENTO_FICTICIO] });
 
 		expect(screen.getByLabelText(SELETOR_REAL)).toBeTruthy();
@@ -212,10 +218,9 @@ describe("genérico por registro (D4)", () => {
 	});
 
 	it("escolher num experimento preserva o recorte do outro", async () => {
-		const { EXPERIMENTOS } = await import("@/lib/experimentos/registro");
 		const atualizacoes: UrlUpdateEvent[] = [];
 		montar({
-			searchParams: "?ab=telefoneDoDesbloqueio:A",
+			searchParams: `?ab=${ID_DO_EXPERIMENTO}:A`,
 			registro: [...EXPERIMENTOS, EXPERIMENTO_FICTICIO],
 			onUrlUpdate: (evento) => atualizacoes.push(evento),
 		});
@@ -225,7 +230,7 @@ describe("genérico por registro (D4)", () => {
 		await waitFor(() =>
 			expect(ultimoRecorteNaUrl(atualizacoes)?.split(",").sort()).toEqual([
 				"precoNaVitrine:variante",
-				"telefoneDoDesbloqueio:A",
+				`${ID_DO_EXPERIMENTO}:A`,
 			]),
 		);
 	});
