@@ -168,7 +168,7 @@ const POR_CHAVE = new Map(PARAMETROS_DO_CADASTRO.map((def) => [def.chave, def]))
 
 // ─── A escala intra-janela (uma linha CSV, não um número) ────────────────────
 //
-// `escalaDeRetomadaMs` é uma LISTA (`[10, 20, 30]` min), e `remarketing_config`
+// `escalaDeRetomadaMs` é uma LISTA (`[90, 180, 300]` min), e `remarketing_config`
 // é chave/valor de TEXTO — a linha guarda os minutos separados por vírgula. Ela
 // NÃO entra em `PARAMETROS_DO_CADASTRO` de propósito: a tela de config renderiza
 // um `<input type="number">` por vigente e, no save, reenvia TODOS; um valor CSV
@@ -208,7 +208,7 @@ export const LIMITES_DA_ESCALA_NA_TELA = {
 /** A escala como a tela/DB a mostra, com a origem do valor. */
 export interface EscalaDoCadastro {
 	chave: string;
-	/** Os minutos como o banco guarda ("10,20,30"); a fábrica quando não há linha. */
+	/** Os minutos como o banco guarda ("90,180,300"); a fábrica quando não há linha. */
 	valor: string;
 	origem: OrigemDoValor;
 	/** O texto gravado e RECUSADO — a tela avisa que existe ajuste ignorado. */
@@ -415,7 +415,7 @@ export function validarEntradas(
 			}
 			const minutos = minutosDaEscala(texto);
 			if (minutos === null) {
-				erros[CHAVE_DA_ESCALA] = "Use números inteiros separados por vírgula (ex.: 10,20,30).";
+				erros[CHAVE_DA_ESCALA] = "Use números inteiros separados por vírgula (ex.: 90,180,300).";
 				continue;
 			}
 			const invalido = minutos.find(
