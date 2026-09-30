@@ -52,6 +52,20 @@ export const SEM_RESULTADO_COMERCIAL = "sem resultado: lead sem etapa";
  * proposta, sai nomeada em vez de em branco (célula vazia é proibida). */
 export const SEM_PROPOSTA = "sem proposta registrada";
 
+/**
+ * A pessoa (ou a conversa) está FORA do teste A/B: não há braço gravado no
+ * metadata — WhatsApp, conversa anterior ao teste, ou visita que nunca abriu
+ * conversa.
+ *
+ * Por que este texto existe em vez de uma célula vazia, e por que ele NÃO é um
+ * braço: `exportar é afirmar`. Derivar o braço por hash (o chute do cartão do
+ * teste a partir do id da visita) encheria o arquivo com um valor que o outro
+ * lado leria como fato. O `SEM_BRACO` do registro é o valor do RECORTE (o balde
+ * "sem variante"); aqui é o rótulo do arquivo — mesma ideia, texto próprio para
+ * quem abre o CSV.
+ */
+export const SEM_BRACO_NO_EXPORT = "sem variante: fora do teste";
+
 /** Nada faltou na linha. O contrário de uma lista vazia. */
 export const NENHUM_INDISPONIVEL = "nenhum";
 

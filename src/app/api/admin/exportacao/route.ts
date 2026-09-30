@@ -7,6 +7,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { recorteDaRequisicao } from "@/lib/admin/filtro-variante";
 import {
 	type ModoDoPasso,
 	ORDEM_DOS_PASSOS,
@@ -32,6 +33,10 @@ export async function GET(request: Request) {
 	// tela diria "todos os degraus" enquanto o botão baixasse um só (FIX-383).
 	const sp = new URL(request.url).searchParams;
 	const modo: ModoDoPasso = sp.get("modo") === "alcancou" ? "alcancou" : "parou";
+	// O recorte por braço de experimento (`?ab=…` > cookie `aja_ab` > nenhum), pelo
+	// mesmo trilho do período: sem isto o cartão contaria "todas" enquanto o botão
+	// baixasse o recorte da tela.
+	const recorteDaTela = recorteDaRequisicao(request);
 	const recorte = {
 		de,
 		ate,
@@ -40,6 +45,7 @@ export async function GET(request: Request) {
 		origem: sp.get("origem"),
 		campanha: sp.get("campanha"),
 		q: sp.get("q"),
+		recorte: recorteDaTela,
 	};
 
 	const contagens = {} as Record<(typeof TIPOS_DE_EXPORTACAO)[number], number>;

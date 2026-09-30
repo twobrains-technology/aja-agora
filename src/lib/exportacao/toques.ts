@@ -13,14 +13,25 @@
 
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
+import { bracoDaConversaSql, condicaoDeBracoNaConversa } from "@/lib/admin/filtro-variante";
+import {
+	EXPERIMENTOS,
+	type Experimento,
+	type RecorteAB,
+	SEM_BRACO,
+} from "@/lib/experimentos/registro";
 import { isoDeSaoPaulo } from "./conversas";
-import type { LinhaExportada } from "./formato";
-import { listaDeIndisponiveis, SEM_VINCULO_SEM_CONTATO } from "./textos";
+import { colunaDoBraco, type LinhaExportada } from "./formato";
+import { listaDeIndisponiveis, SEM_BRACO_NO_EXPORT, SEM_VINCULO_SEM_CONTATO } from "./textos";
 
 export interface OpcoesDeToques {
 	de: Date;
 	ate: Date;
 	mascarar?: boolean;
+	/** O recorte por braço de experimento (`?ab=…`); `[]` = todas as variantes. */
+	recorte?: RecorteAB;
+	/** O registro de experimentos (padrão `EXPERIMENTOS`); injetável no teste de D4. */
+	experimentos?: readonly Experimento[];
 }
 
 interface LinhaCrua extends Record<string, unknown> {
@@ -38,12 +49,37 @@ interface LinhaCrua extends Record<string, unknown> {
 }
 
 export async function exportarToquesDaRegua(opcoes: OpcoesDeToques): Promise<LinhaExportada[]> {
+	// ─── O BRAÇO DO EXPERIMENTO (FIX-404) ────────────────────────────────────
+	//
+	// A linha da régua é uma CONVERSA (`remarketing_touches` tem índice único em
+	// `conversation_id`), então a coluna é a da própria conversa (D10): UMA coluna
+	// por experimento do registro (D8), lida direto do metadata (D9).
+	const experimentos = opcoes.experimentos ?? EXPERIMENTOS;
+	const recorte = opcoes.recorte ?? [];
+	const colunasDoBraco = experimentos.map((experimento) => ({
+		experimento,
+		coluna: colunaDoBraco(experimento.id),
+	}));
+	const projecaoDoBraco =
+		colunasDoBraco.length === 0
+			? sql``
+			: sql`, ${sql.join(
+					colunasDoBraco.map(
+						({ experimento, coluna }) =>
+							sql`${bracoDaConversaSql(experimento, sql`c`)} AS ${sql.raw(`"${coluna}"`)}`,
+					),
+					sql`, `,
+				)}`;
+	const daVariante = condicaoDeBracoNaConversa(recorte, sql`c`);
+	const filtroDoBraco = daVariante ? sql` AND ${daVariante}` : sql``;
+
 	const { rows } = await db.execute<LinhaCrua>(sql`
     SELECT rt.conversation_id::text AS conversation_id, rt.contact_id::text AS contact_id,
       rt.objetivo, rt.step, rt.status, rt.next_touch_at, rt.ultimo_toque_em,
-      rt.touches_30d, rt.motivo_saida, rt.created_at, rt.updated_at
+      rt.touches_30d, rt.motivo_saida, rt.created_at, rt.updated_at${projecaoDoBraco}
     FROM remarketing_touches rt
-    WHERE rt.created_at BETWEEN ${opcoes.de} AND ${opcoes.ate}
+    JOIN conversations c ON c.id = rt.conversation_id
+    WHERE rt.created_at BETWEEN ${opcoes.de} AND ${opcoes.ate}${filtroDoBraco}
     ORDER BY rt.created_at ASC
   `);
 
@@ -56,6 +92,16 @@ export async function exportarToquesDaRegua(opcoes: OpcoesDeToques): Promise<Lin
 		if (!linha.ultimo_toque_em) motivos.push("indisponível: nenhum toque disparado");
 		if (!linha.motivo_saida && linha.status !== "ATIVO") {
 			motivos.push("indisponível: motivo de saída não registrado");
+		}
+
+		// A coluna do braço da conversa da linha — sem metadata sai escrita. O
+		// valor interno do BALDE (`sem-variante`) também vira o texto do arquivo:
+		// o arquivo nunca carrega o token do recorte.
+		const bracos: Record<string, string> = {};
+		for (const { coluna } of colunasDoBraco) {
+			const bruto = linha[coluna];
+			const limpo = bruto === null || bruto === undefined ? "" : String(bruto).trim();
+			bracos[coluna] = limpo === "" || limpo === SEM_BRACO ? SEM_BRACO_NO_EXPORT : limpo;
 		}
 
 		return {
@@ -78,13 +124,24 @@ export async function exportarToquesDaRegua(opcoes: OpcoesDeToques): Promise<Lin
 					: "indisponível: motivo de saída não registrado",
 			criadoEm: isoDeSaoPaulo(linha.created_at),
 			atualizadoEm: isoDeSaoPaulo(linha.updated_at),
+			...bracos,
 			dadosIndisponiveis: listaDeIndisponiveis(motivos),
 		};
 	});
 }
 
 /** Contagem barata para o cartão da tela. */
-export async function contarToques(opcoes: { de: Date; ate: Date }): Promise<{ toques: number }> {
+export async function contarToques(opcoes: {
+	de: Date;
+	ate: Date;
+	recorte?: RecorteAB;
+	experimentos?: readonly Experimento[];
+}): Promise<{ toques: number }> {
+	// Com RECORTE, o cartão conta o mesmo que o arquivo (FIX-383 para o A/B).
+	if ((opcoes.recorte?.length ?? 0) > 0) {
+		return { toques: (await exportarToquesDaRegua(opcoes)).length };
+	}
+
 	const { rows } = await db.execute<{ toques: string | number }>(sql`
     SELECT count(*) AS toques FROM remarketing_touches rt
     WHERE rt.created_at BETWEEN ${opcoes.de} AND ${opcoes.ate}

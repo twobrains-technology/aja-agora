@@ -295,6 +295,9 @@ describeIfDb("exportação — conversas mensagem a mensagem (integration)", () 
 			"resultadoComercial",
 			"remarketingStatus",
 			"remarketingPasso",
+			// A coluna do braço do experimento (FIX-404): uma por experimento do
+			// registro, logo antes do resumo de vínculos.
+			"varianteTelefoneDoDesbloqueio",
 			"dadosIndisponiveis",
 		]);
 	});

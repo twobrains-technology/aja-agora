@@ -23,12 +23,20 @@
 
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
+import { bracoDaConversaSql, condicaoDeBracoNaConversa } from "@/lib/admin/filtro-variante";
+import {
+	EXPERIMENTOS,
+	type Experimento,
+	type RecorteAB,
+	SEM_BRACO,
+} from "@/lib/experimentos/registro";
 import { ehFalaDaMesa } from "@/lib/mesa/acolhida-n1";
-import type { LinhaExportada } from "./formato";
+import { colunaDoBraco, type LinhaExportada } from "./formato";
 import {
 	listaDeIndisponiveis,
 	NAO_ESTRUTURADO_EXPERIMENTO,
 	NAO_ESTRUTURADO_VERSAO,
+	SEM_BRACO_NO_EXPORT,
 	SEM_ETAPA_REGISTRADA,
 	SEM_RESULTADO_COMERCIAL,
 	SEM_VINCULO_FORA_DA_REGUA,
@@ -47,6 +55,10 @@ export interface OpcoesDeConversas {
 	conversationIds?: string[];
 	/** Trava no N conversas com mensagem mais recente na janela. */
 	limiteConversas?: number;
+	/** O recorte por braço de experimento (`?ab=…`); `[]` = todas as variantes. */
+	recorte?: RecorteAB;
+	/** O registro de experimentos (padrão `EXPERIMENTOS`); injetável no teste de D4. */
+	experimentos?: readonly Experimento[];
 }
 
 /** Autoria como o pedido quer: cliente, agente, atendente ou sistema. */
@@ -148,6 +160,31 @@ export async function exportarConversas(opcoes: OpcoesDeConversas): Promise<Linh
 			? sql` LIMIT ${opcoes.limiteConversas}`
 			: sql``;
 
+	// ─── O BRAÇO DO EXPERIMENTO (FIX-404) ────────────────────────────────────
+	//
+	// Aqui a linha É uma mensagem de uma conversa, então a coluna é a DA CONVERSA
+	// (D10): predicado direto no metadata dela, por experimento do registro — UMA
+	// coluna por experimento (D8). Ler só o metadata é o contrato: derivar braço
+	// por hash faria o arquivo afirmar um A/B que nunca aconteceu (D9).
+	const experimentos = opcoes.experimentos ?? EXPERIMENTOS;
+	const recorte = opcoes.recorte ?? [];
+	const colunasDoBraco = experimentos.map((experimento) => ({
+		experimento,
+		coluna: colunaDoBraco(experimento.id),
+	}));
+	const projecaoDoBraco =
+		colunasDoBraco.length === 0
+			? sql``
+			: sql`, ${sql.join(
+					colunasDoBraco.map(
+						({ experimento, coluna }) =>
+							sql`${bracoDaConversaSql(experimento, sql`c`)} AS ${sql.raw(`"${coluna}"`)}`,
+					),
+					sql`, `,
+				)}`;
+	const daVariante = condicaoDeBracoNaConversa(recorte, sql`c`);
+	const filtroDoBraco = daVariante ? sql` AND ${daVariante}` : sql``;
+
 	const { rows } = await db.execute<LinhaCrua>(sql`
     WITH janela AS (
       SELECT m.conversation_id,
@@ -157,10 +194,10 @@ export async function exportarConversas(opcoes: OpcoesDeConversas): Promise<Linh
       GROUP BY m.conversation_id
     ),
     alvo AS (
-      SELECT c.id, c.visit_id, c.contact_id, c.channel
+      SELECT c.id, c.visit_id, c.contact_id, c.channel, c.metadata
       FROM conversations c
       JOIN janela j ON j.conversation_id = c.id
-      WHERE c.is_simulated = false${filtroIds}
+      WHERE c.is_simulated = false${filtroIds}${filtroDoBraco}
       ORDER BY j.ultima DESC
       ${filtroLimite}
     )
@@ -182,7 +219,7 @@ export async function exportarConversas(opcoes: OpcoesDeConversas): Promise<Linh
       rt.status AS remarketing_status,
       rt.step AS remarketing_passo,
       (SELECT a.type FROM artifacts a WHERE a.message_id = m.id
-        ORDER BY a.created_at ASC LIMIT 1) AS artifact_type
+        ORDER BY a.created_at ASC LIMIT 1) AS artifact_type${projecaoDoBraco}
     FROM alvo c
     JOIN messages m ON m.conversation_id = c.id
       AND m.created_at BETWEEN ${opcoes.de} AND ${opcoes.ate}
@@ -247,6 +284,16 @@ export async function exportarConversas(opcoes: OpcoesDeConversas): Promise<Linh
 
 		const conteudo = texto(linha.content) ?? "indisponível: mensagem sem conteúdo";
 
+		// A coluna do braço da CONVERSA — sem metadata ela sai escrita. O valor
+		// interno do BALDE (`sem-variante`) também vira o texto do arquivo: o
+		// arquivo nunca carrega o token do recorte.
+		const bracos: Record<string, string> = {};
+		for (const { coluna } of colunasDoBraco) {
+			const bruto = linha[coluna];
+			const limpo = bruto === null || bruto === undefined ? "" : String(bruto).trim();
+			bracos[coluna] = limpo === "" || limpo === SEM_BRACO ? SEM_BRACO_NO_EXPORT : limpo;
+		}
+
 		return {
 			conversaId: linha.conversa_id,
 			contatoId: contatoId ?? SEM_VINCULO_SEM_CONTATO,
@@ -279,6 +326,7 @@ export async function exportarConversas(opcoes: OpcoesDeConversas): Promise<Linh
 			remarketingPasso: foraDaRegua
 				? SEM_VINCULO_FORA_DA_REGUA
 				: String(linha.remarketing_passo ?? 0),
+			...bracos,
 			dadosIndisponiveis: listaDeIndisponiveis(motivos),
 		};
 	});
@@ -289,7 +337,17 @@ export async function contarConversas(opcoes: {
 	de: Date;
 	ate: Date;
 	conversationIds?: string[];
+	recorte?: RecorteAB;
+	experimentos?: readonly Experimento[];
 }): Promise<{ mensagens: number; conversas: number }> {
+	// Com RECORTE, o cartão conta o mesmo que o arquivo: materializar as linhas é
+	// mais caro, e é de propósito — o número da tela não pode divergir do
+	// download (FIX-383). Sem recorte, o caminho leve de sempre.
+	if ((opcoes.recorte?.length ?? 0) > 0) {
+		const linhas = await exportarConversas(opcoes);
+		return { mensagens: linhas.length, conversas: new Set(linhas.map((l) => l.conversaId)).size };
+	}
+
 	const ids = (opcoes.conversationIds ?? []).filter(Boolean);
 	const filtroIds =
 		ids.length > 0

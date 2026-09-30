@@ -16,6 +16,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { recorteDaRequisicao } from "@/lib/admin/filtro-variante";
 import {
 	type ModoDoPasso,
 	ORDEM_DOS_PASSOS,
@@ -66,6 +67,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ tipo
 		origem: sp.get("origem"),
 		campanha: sp.get("campanha"),
 		q: sp.get("q"),
+		// O recorte A/B da tela viaja junto com o pedido do arquivo (D12): o
+		// arquivo responde o mesmo que a lista.
+		recorte: recorteDaRequisicao(request),
 	});
 	const corpo = gerar(formato, linhas);
 
