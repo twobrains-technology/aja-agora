@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/table";
 import type { MotivoForaDaRegua } from "@/lib/admin/motivo-fora-da-regua";
 import { rotuloDoBem } from "@/lib/admin/rotulo-do-bem";
+import { PARAMETRO_DO_RECORTE_AB } from "@/lib/experimentos/registro";
 import { ConversationDetailPanel } from "./conversation-detail-panel";
 import { ConversationsFilters, type ConversationsFiltersValue } from "./conversations-filters";
 import { MarcarLoteDialog } from "./marcar-lote-dialog";
@@ -201,6 +202,10 @@ export function ConversationsTable() {
 		"identificavel",
 		parseAsBoolean.withDefault(false),
 	);
+	// O recorte por braço de experimento (D10): aqui a linha É uma conversa, então
+	// quem filtra no servidor é o predicado do metadata DELA. O filtro escreve na
+	// URL; o servidor cai no cookie `aja_ab` quando o parâmetro falta.
+	const [ab] = useQueryState(PARAMETRO_DO_RECORTE_AB, parseAsString);
 
 	const [data, setData] = useState<ListResponse | null>(null);
 	const [loadError, setLoadError] = useState<string | null>(null);
@@ -274,6 +279,9 @@ export function ConversationsTable() {
 		if (origem) params.set("origem", origem);
 		if (mostrarTestes) params.set("include_simulated", "true");
 		if (identificavel) params.set("identificavel", "true");
+		// O recorte por braço de experimento — ele já vem resolvido pela URL (o
+		// filtro escreve lá) e o servidor cai no cookie `aja_ab` quando falta.
+		if (ab) params.set(PARAMETRO_DO_RECORTE_AB, ab);
 		// A rota separa a vírgula de volta numa lista (ver `campanhas.ts`); a URL
 		// fica com um parâmetro só, que é o que cabe num link.
 		if (campanhas.length > 0) params.set("campanha", campanhas.join(","));
@@ -310,6 +318,7 @@ export function ConversationsTable() {
 		recarga,
 		mostrarTestes,
 		identificavel,
+		ab,
 	]);
 
 	const total = data?.total ?? 0;

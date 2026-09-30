@@ -13,6 +13,7 @@
  * virou lead desde o `lead-stage-tracker`, e nenhuma tela lia esse campo.
  */
 
+import type { RecorteAB } from "@/lib/experimentos/registro";
 import type { MotivoDeExclusao } from "@/lib/remarketing/motivo-de-exclusao";
 import type { Campanhas } from "./campanhas";
 import type { ChaveEtapaFunil } from "./performance-types";
@@ -142,6 +143,21 @@ export interface FiltroPercurso {
 	passo?: PassoDoPercurso | null;
 	/** `parou` = o percurso terminou aqui; `alcancou` = chegou ao menos aqui. */
 	modo?: ModoDoPasso;
+	/**
+	 * O recorte por braço de experimento A/B (`?ab=experimento:braço`).
+	 *
+	 * `[]` (ou ausente) = todas — e aí NENHUM SQL novo entra na consulta.
+	 *
+	 * Aqui a unidade é PESSOA, e o braço dela é resolvido no `conv_pessoa` pela
+	 * MESMA ordenação canônica dos funis (`sinais-do-funil`): a conversa em que
+	 * ela se identificou (a primeira, se houve mais de uma) e, quando nunca se
+	 * identificou, a última conversa com braço do período (exposição).
+	 *
+	 * A coluna do visitante não entra por parâmetro de propósito: a chave da
+	 * pessoa é a do CTE do Percurso (`chaveDaPessoa(de, ate, vi.visitor_id)`), a
+	 * mesma que monta as linhas da tela.
+	 */
+	recorte?: RecorteAB;
 	/** Busca por nome, telefone ou e-mail. */
 	q?: string | null;
 	limit?: number;

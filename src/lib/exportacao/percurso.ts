@@ -19,6 +19,7 @@ import { type SQL, sql } from "drizzle-orm";
 import { db } from "@/db";
 import type { Campanhas } from "@/lib/admin/campanhas";
 import { predicadoDeOrigemNaVisita } from "@/lib/admin/filtro-origem";
+import { cteDoBracoDaPessoa, NOME_DO_CTE_DO_BRACO_DA_PESSOA } from "@/lib/admin/filtro-variante";
 import {
 	type ModoDoPasso,
 	ORDEM_DOS_PASSOS,
@@ -31,15 +32,22 @@ import {
 	teveProposta,
 	viuOferta,
 } from "@/lib/admin/sinais-do-funil";
+import {
+	EXPERIMENTOS,
+	type Experimento,
+	type RecorteAB,
+	SEM_BRACO,
+} from "@/lib/experimentos/registro";
 import { sqlEscreveuAlgoProprio, sqlSoPrePreenchida } from "@/lib/funil/mensagem-pre-preenchida";
 import { isoDeSaoPaulo } from "./conversas";
-import type { LinhaExportada } from "./formato";
+import { colunaDoBraco, type LinhaExportada } from "./formato";
 import { mascararEmail, mascararNome, mascararTelefone } from "./mascarar";
 import {
 	INDISPONIVEL_EMAIL,
 	INDISPONIVEL_NOME,
 	INDISPONIVEL_TELEFONE,
 	listaDeIndisponiveis,
+	SEM_BRACO_NO_EXPORT,
 	SEM_RESULTADO_COMERCIAL,
 	SEM_VINCULO_SEM_CONTATO,
 	SEM_VINCULO_VISITA_SEM_ORIGEM,
@@ -68,6 +76,10 @@ export interface OpcoesDePercurso {
 	campanha?: Campanhas;
 	/** Busca por nome, telefone ou e-mail — o mesmo `q` da lista. */
 	q?: string | null;
+	/** O recorte por braço de experimento (`?ab=…`); `[]` = todas as variantes. */
+	recorte?: RecorteAB;
+	/** O registro de experimentos (padrão `EXPERIMENTOS`); injetável no teste de D4. */
+	experimentos?: readonly Experimento[];
 }
 
 interface LinhaCrua extends Record<string, unknown> {
@@ -115,6 +127,11 @@ function ouIndisponivel(valor: unknown, campo: string): string {
 	return t ? t : `indisponível: ${campo} não informado`;
 }
 
+/** O alias SQL do braço de um experimento no arquivo (`braco_<id>`). */
+function aliasDoBraco(experimento: Experimento): string {
+	return `braco_${experimento.id}`;
+}
+
 export async function exportarPercurso(opcoes: OpcoesDePercurso): Promise<LinhaExportada[]> {
 	const mascara = opcoes.mascarar ?? true;
 	const incluirSemConversa = opcoes.incluirSemConversa ?? true;
@@ -142,6 +159,71 @@ export async function exportarPercurso(opcoes: OpcoesDePercurso): Promise<LinhaE
 		const alvo = `%${busca}%`;
 		condicoes.push(sql`(name ILIKE ${alvo} OR phone ILIKE ${alvo} OR email ILIKE ${alvo})`);
 	}
+
+	// ─── O BRAÇO DO EXPERIMENTO (FIX-404) ────────────────────────────────────
+	//
+	// UMA COLUNA POR EXPERIMENTO DO REGISTRO (D8), resolvida por PESSOA pela CTE
+	// canônica do refino 3 (§4a): a pessoa é atribuída ao braço da conversa em que
+	// se IDENTIFICOU (a etapa âncora); quem nunca se identificou cai na última
+	// exposição. A chave é a MESMA que este arquivo já usa (`por_visita.chave` =
+	// `chaveDaPessoa`), e a fonte é o `por_visita` — não se reimplementa resolução
+	// de identidade, e não há segundo caminho para o fato da etapa (ele vem de
+	// `fatoDaEtapaNaConversa`, dentro da CTE do `filtro-variante`).
+	//
+	// A CTE entra dentro de uma tabela derivada por experimento porque o nome
+	// dela é fixo (`braco_da_pessoa`): um escopo por experimento permite N
+	// colunas sem renomear nada e sem avaliar a subconsulta por linha.
+	const experimentos = opcoes.experimentos ?? EXPERIMENTOS;
+	const recorte = opcoes.recorte ?? [];
+	const colunasDoBraco = experimentos.map((experimento) => ({
+		experimento,
+		coluna: colunaDoBraco(experimento.id),
+	}));
+
+	const juncoesDoBraco =
+		colunasDoBraco.length === 0
+			? sql``
+			: sql.join(
+					colunasDoBraco.map(({ experimento }) => {
+						const alias = aliasDoBraco(experimento);
+						return sql`
+      LEFT JOIN (
+        WITH ${cteDoBracoDaPessoa(experimento, {
+					de: opcoes.de,
+					ate: opcoes.ate,
+					chave: sql`pv.chave`,
+					fonte: sql`por_visita`,
+				})}
+        SELECT chave, braco FROM ${sql.raw(NOME_DO_CTE_DO_BRACO_DA_PESSOA)}
+      ) ${sql.raw(alias)} ON ${sql.raw(alias)}.chave = p.chave`;
+					}),
+					sql``,
+				);
+
+	const projecaoDoBraco =
+		colunasDoBraco.length === 0
+			? sql``
+			: sql`, ${sql.join(
+					colunasDoBraco.map(
+						({ experimento, coluna }) =>
+							sql`${sql.raw(aliasDoBraco(experimento))}.braco AS ${sql.raw(`"${coluna}"`)}`,
+					),
+					sql`, `,
+				)}`;
+
+	// O recorte é aplicado sobre a COLUNA já resolvida — é a forma canônica
+	// ("braço X ⇒ `bp.braco = X`; sem variante ⇒ `IS NULL`"), não uma segunda
+	// resolução do braço.
+	for (const par of recorte) {
+		const alvo = colunasDoBraco.find(({ experimento }) => experimento.id === par.experimento);
+		if (!alvo) continue;
+		if (par.braco !== SEM_BRACO && !alvo.experimento.bracos.includes(par.braco)) continue;
+		const coluna = sql.raw(`"${alvo.coluna}"`);
+		condicoes.push(
+			par.braco === SEM_BRACO ? sql`${coluna} IS NULL` : sql`${coluna} = ${par.braco}`,
+		);
+	}
+
 	const filtroFinal = condicoes.length > 0 ? sql` WHERE ${sql.join(condicoes, sql` AND `)}` : sql``;
 
 	const { rows } = await db.execute<LinhaCrua>(sql`
@@ -235,10 +317,10 @@ export async function exportarPercurso(opcoes: OpcoesDePercurso): Promise<LinhaE
           WHEN COALESCE(cp.so_pre_preenchida,false) THEN 4
           WHEN COALESCE(cp.conversations,0) > 0 OR p.abriu_teatro THEN 3
           WHEN p.olhou THEN 2 ELSE 1 END AS profundidade,
-        lp.stage, rc.conversation_id
+        lp.stage, rc.conversation_id${projecaoDoBraco}
       FROM pessoa p JOIN credito cr ON cr.chave = p.chave LEFT JOIN conv_pessoa cp ON cp.chave = p.chave
       LEFT JOIN conversa_recente rc ON rc.chave = p.chave LEFT JOIN lead_pessoa lp ON lp.chave = p.chave
-      LEFT JOIN contato ct ON ct.chave = p.chave
+      LEFT JOIN contato ct ON ct.chave = p.chave${juncoesDoBraco}
     )
     SELECT * FROM final${filtroFinal} ORDER BY last_activity DESC, visitor_id ASC
   `);
@@ -270,6 +352,15 @@ export async function exportarPercurso(opcoes: OpcoesDePercurso): Promise<LinhaE
 		const origemCampo = (valor: string | null, campo: string): string =>
 			semOrigem ? `${SEM_VINCULO_VISITA_SEM_ORIGEM} (${campo})` : ouIndisponivel(valor, campo);
 
+		// A coluna do braço, uma por experimento do registro. Sem braço gravado a
+		// célula sai ESCRITA — nunca vazia, nunca um chute derivado por hash.
+		const bracos: Record<string, string> = {};
+		for (const { coluna } of colunasDoBraco) {
+			const bruto = linha[coluna];
+			const limpo = bruto === null || bruto === undefined ? "" : String(bruto).trim();
+			bracos[coluna] = limpo === "" ? SEM_BRACO_NO_EXPORT : limpo;
+		}
+
 		return {
 			contatoId: contatoId ?? SEM_VINCULO_SEM_CONTATO,
 			visitanteId: String(linha.visitor_id),
@@ -294,6 +385,7 @@ export async function exportarPercurso(opcoes: OpcoesDePercurso): Promise<LinhaE
 			passoRotulo: legendaDoPasso(passo),
 			etapaDoLead,
 			conversaId: conversaId ?? "sem vínculo: pessoa sem conversa",
+			...bracos,
 			dadosIndisponiveis: listaDeIndisponiveis(motivos),
 		};
 	});
@@ -309,7 +401,9 @@ export async function exportarPercurso(opcoes: OpcoesDePercurso): Promise<LinhaE
  * no caso sem filtro).
  */
 export async function contarPercurso(opcoes: OpcoesDePercurso): Promise<{ pessoas: number }> {
-	const temRecorte = Boolean(opcoes.passo || opcoes.origem?.trim() || opcoes.q?.trim());
+	const temRecorte =
+		Boolean(opcoes.passo || opcoes.origem?.trim() || opcoes.q?.trim()) ||
+		(opcoes.recorte?.length ?? 0) > 0;
 	if (temRecorte) return { pessoas: (await exportarPercurso(opcoes)).length };
 
 	const incluirSemConversa = opcoes.incluirSemConversa ?? true;

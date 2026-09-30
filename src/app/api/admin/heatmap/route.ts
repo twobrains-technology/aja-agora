@@ -1,5 +1,6 @@
 // GET /api/admin/heatmap — leitura do mapa de calor para o painel.
 
+import { recorteDaRequisicao } from "@/lib/admin/filtro-variante";
 import { periodoDaRequisicao } from "@/lib/admin/periodo-da-requisicao";
 import { requireRole } from "@/lib/admin/require-role";
 import { ehPathDeLanding, LANDINGS_COM_MAPA } from "@/lib/heatmap/events";
@@ -25,6 +26,10 @@ export async function GET(request: Request) {
 	// Dia inteiro, no fuso do negócio, com a precedência URL > cookie > hoje — a
 	// mesma regra que o filtro da tela usa. Ver `periodo-da-requisicao.ts`.
 	const { de: from, ate: to } = periodoDaRequisicao(request);
+	// O recorte por braço de experimento (`?ab=…` > cookie `aja_ab` > nenhum), pelo
+	// MESMO trilho do período. Aqui ele é o da PESSOA — o mapa conta pessoas por
+	// página, e é o fragmento compartilhado com Performance e Percurso.
+	const recorte = recorteDaRequisicao(request);
 
 	const deviceParam = searchParams.get("device") ?? "todos";
 	const desfechoParam = searchParams.get("desfecho") ?? "todos";
@@ -44,6 +49,7 @@ export async function GET(request: Request) {
 		to,
 		device: deviceParam as FiltroDevice,
 		desfecho: desfechoParam as Desfecho,
+		recorte,
 	});
 
 	return Response.json(mapa);

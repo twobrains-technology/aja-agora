@@ -26,11 +26,20 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { ARTIFACTS_DE_OFERTA_SQL, conversaIdentificada } from "@/lib/admin/sinais-do-funil";
-import { lerVariante, VARIANTES_DO_TELEFONE, type VarianteDoTelefone } from "./variante-da-visita";
+import {
+	CHAVE_DO_TESTE_NO_METADATA,
+	lerVariante,
+	VARIANTES_DO_TELEFONE,
+	type VarianteDoTelefone,
+} from "./variante-da-visita";
 
 /** A chave em `conversations.metadata` onde a variante escolhida vive. Fonte
- *  única: quem grava e quem lê usam ESTA constante. */
-export const CHAVE_DO_TESTE_NO_METADATA = "telefoneDoDesbloqueio";
+ *  única: quem grava e quem lê usam ESTA constante.
+ *
+ *  Reexportada do módulo PURO (`variante-da-visita`) desde o FIX-404: o registro
+ *  de experimentos é importável no cliente e não pode puxar este arquivo (que
+ *  importa `@/db`). Quem já lia a constante daqui continua lendo daqui. */
+export { CHAVE_DO_TESTE_NO_METADATA };
 
 /** Uma visita do teste: em que variante caiu e o que aconteceu com ela. */
 export interface LinhaDoTesteDoTelefone {

@@ -302,6 +302,18 @@ export interface CustosDoCpc {
 	custoDeMensagem: ResultadoCustoDeMensagem;
 	contagens: ContagensDoCpc;
 	fontes: FontesDoCusto;
+	/**
+	 * O investimento da Meta NÃO se divide por braço de teste (D6).
+	 *
+	 * O gasto é do PERÍODO INTEIRO: não existe coluna de braço em
+	 * `meta_insights_diarios`, e ratear o investimento pelo funil recortado seria
+	 * inventar um número por onde a verba passa. Com recorte ativo,
+	 * `investimentoMetaCents` sai `null` e este campo sai `true`, para a tela
+	 * declarar o motivo em vez de mostrar R$ 0,00 ou um CPC falso.
+	 *
+	 * Sempre presente: sem recorte é `false` (e os valores são os de sempre).
+	 */
+	custoNaoAplicavelAoRecorte: boolean;
 }
 
 export interface PerformanceResponse {

@@ -146,28 +146,32 @@ export async function comparacaoGuardadaDaConversa(
 }
 
 /** Grava o desfecho (telefone informado / "Agora não") no metadata da conversa,
- *  SEM tocar em `webCookie` nem em qualquer outro campo que já esteja lá. */
+ *  SEM tocar em `webCookie` nem em qualquer outro campo que já esteja lá.
+ *
+ *  O braço só entra se JÁ estiver persistido como fato (allowlist `A`/`B`). Sem
+ *  ele — ou com valor fora da allowlist — a conversa recebe o desfecho e
+ *  **nenhum** `variante`: derivar por hash gravaria como fato um chute, e quem
+ *  lê o metadata é o filtro do painel e a coluna da exportação. */
 export async function registrarDesfechoDoTeste(
 	conversationId: string,
 	patch: { desbloqueadoEm?: string; recusado?: boolean },
 ): Promise<void> {
 	const conversa = await db.query.conversations.findFirst({
 		where: eq(conversations.id, conversationId),
-		columns: { visitId: true, metadata: true },
+		columns: { metadata: true },
 	});
 	if (!conversa) return;
 	const metadata = (conversa.metadata ?? {}) as Record<string, unknown>;
-	const persistido = lerEstadoPersistido(conversa.metadata);
-	const variante = ehVarianteDoTelefone(persistido.variante)
-		? persistido.variante
-		: varianteDaConversa({ visitId: conversa.visitId, conversationId });
+	const { variante: persistida, ...resto } = lerEstadoPersistido(conversa.metadata);
+	const teste: Record<string, unknown> = { ...resto, ...patch };
+	if (ehVarianteDoTelefone(persistida)) teste.variante = persistida;
 
 	await db
 		.update(conversations)
 		.set({
 			metadata: {
 				...metadata,
-				[CHAVE_DO_TESTE_NO_METADATA]: { ...persistido, variante, ...patch },
+				[CHAVE_DO_TESTE_NO_METADATA]: teste,
 			},
 		})
 		.where(eq(conversations.id, conversationId));

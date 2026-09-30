@@ -7,6 +7,7 @@
 
 import { NextResponse } from "next/server";
 import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
+import { EXPERIMENTOS, serializarRecorteAB } from "@/lib/experimentos/registro";
 
 vi.mock("@/lib/admin/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/exportacao", () => ({
@@ -24,6 +25,10 @@ let gerar: Mock;
 let registrarExportacao: Mock;
 
 const params = Promise.resolve({ tipo: "conversas" });
+
+const ID_DO_EXPERIMENTO = EXPERIMENTOS[0]?.id ?? "";
+/** O `?ab=` do teste — montado do REGISTRO, nunca com o nome da chave na mão. */
+const RECORTE_NA_URL = serializarRecorteAB([{ experimento: ID_DO_EXPERIMENTO, braco: "A" }]) ?? "";
 
 beforeEach(async () => {
 	({ GET } = await import("./route"));
@@ -102,5 +107,23 @@ describe("GET /api/admin/exportacao/[tipo]", () => {
 		expect(registrarExportacao).toHaveBeenCalledWith(
 			expect.objectContaining({ mascarado: false, formato: "json" }),
 		);
+	});
+
+	it("o recorte A/B da URL viaja no pedido do arquivo", async () => {
+		const res = await GET(new Request(url(`?from=2026-09-01&to=2026-09-10&ab=${RECORTE_NA_URL}`)), {
+			params,
+		});
+		expect(res.status).toBe(200);
+		expect(exportar).toHaveBeenCalledWith(
+			"conversas",
+			expect.objectContaining({
+				recorte: [{ experimento: ID_DO_EXPERIMENTO, braco: "A" }],
+			}),
+		);
+	});
+
+	it("sem `ab`, o arquivo é pedido sem recorte", async () => {
+		await GET(new Request(url("?from=2026-09-01&to=2026-09-10")), { params });
+		expect(exportar).toHaveBeenCalledWith("conversas", expect.objectContaining({ recorte: [] }));
 	});
 });

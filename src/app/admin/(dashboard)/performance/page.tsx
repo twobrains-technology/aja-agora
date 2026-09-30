@@ -1,8 +1,9 @@
 "use client";
 
-import { useQueryState } from "nuqs";
+import { parseAsString, useQueryState } from "nuqs";
 import { useCallback, useEffect, useState } from "react";
 import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter";
+import { FiltroAB, NOTA_DO_BRACO_DA_PESSOA } from "@/components/admin/dashboard/filtro-ab";
 import { BlocoDeCustos } from "@/components/admin/performance/bloco-de-custos";
 import { FunilDeHandoffCard } from "@/components/admin/performance/funil-de-handoff";
 import { FunilMidiaChart } from "@/components/admin/performance/funil-midia-chart";
@@ -19,6 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { PerformanceResponse } from "@/lib/admin/performance-types";
 import { diaDeHoje } from "@/lib/admin/periodo";
 import { parseAsDiaDoNegocio } from "@/lib/admin/periodo-querystring";
+import { PARAMETRO_DO_RECORTE_AB } from "@/lib/experimentos/registro";
 
 // O período padrão vive em `periodo.ts` — desde 24/08/2026 é HOJE, e é o mesmo
 // objeto que o filtro e a rota resolvem.
@@ -41,6 +43,10 @@ function BlocoSkeleton({ altura = 300 }: { altura?: number }) {
 function PerformanceContent() {
 	const [from] = useQueryState("from", parseAsDiaDoNegocio.withDefault(defaultFrom()));
 	const [to] = useQueryState("to", parseAsDiaDoNegocio.withDefault(defaultTo()));
+	// O recorte por braço de experimento. Ele viaja pelo MESMO trilho do período
+	// (querystring + cookie `aja_ab`) e é o servidor que resolve a precedência —
+	// aqui só se repassa o que veio na URL, e a ausência deixa o cookie decidir.
+	const [ab] = useQueryState(PARAMETRO_DO_RECORTE_AB, parseAsString);
 
 	const [midia, setMidia] = useState<PerformanceResponse | null>(null);
 	const [carregando, setCarregando] = useState(true);
@@ -61,6 +67,7 @@ function PerformanceContent() {
 			const params = new URLSearchParams();
 			if (from) params.set("from", from.toISOString());
 			if (to) params.set("to", to.toISOString());
+			if (ab) params.set(PARAMETRO_DO_RECORTE_AB, ab);
 
 			const resMidia = await fetch(`/api/admin/performance?${params.toString()}`);
 			if (!resMidia.ok) throw new Error(`Erro ao carregar performance: ${resMidia.status}`);
@@ -71,7 +78,7 @@ function PerformanceContent() {
 		} finally {
 			setCarregando(false);
 		}
-	}, [from, to]);
+	}, [from, to, ab]);
 
 	useEffect(() => {
 		carregar();
@@ -88,7 +95,10 @@ function PerformanceContent() {
 						De onde vem o tráfego, onde ele vaza e o que vira contrato
 					</p>
 				</div>
-				<DateRangeFilter />
+				<div className="flex flex-wrap items-center gap-2">
+					<FiltroAB nota={NOTA_DO_BRACO_DA_PESSOA} />
+					<DateRangeFilter />
+				</div>
 			</div>
 
 			{erro && (

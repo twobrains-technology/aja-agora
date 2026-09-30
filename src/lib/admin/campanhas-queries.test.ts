@@ -20,17 +20,18 @@ import {
 	totalizarCampanhas,
 } from "./campanhas-queries";
 
-/** O valor, quando há; `null` quando o custo não pode ser calculado. */
-function centavos(c: CustoPorQualificado): number | null {
-	return c.tipo === "valor" ? c.centavos : null;
+/** O valor, quando há; `null` quando o custo não pode ser calculado ou não se
+ *  aplica ao recorte ativo (o recorte por braço zera o custo — D6). */
+function centavos(c: CustoPorQualificado | null): number | null {
+	return c?.tipo === "valor" ? c.centavos : null;
 }
 
-function motivo(c: CustoPorQualificado): string | null {
-	return c.tipo === "motivo" ? c.motivo : null;
+function motivo(c: CustoPorQualificado | null): string | null {
+	return c?.tipo === "motivo" ? c.motivo : null;
 }
 
 /** O custo da linha `chave` — falha alto se ela não existir, em vez de `!`. */
-function custoDe(linhas: LinhaCampanha[], chave: string): CustoPorQualificado {
+function custoDe(linhas: LinhaCampanha[], chave: string): CustoPorQualificado | null {
 	const linha = linhas.find((l) => l.chave === chave);
 	if (!linha) throw new Error(`linha ${chave} ausente`);
 	return linha.custoPorQualificado;
@@ -338,9 +339,9 @@ describe("totalizarCampanhas", () => {
 		expect(totais.investimentoAtribuidoCents).toBe(60_000);
 		expect(totais.investimentoSemAtribuicaoCents).toBe(40_000);
 		// As duas parcelas fecham o total, sempre: é o que sustenta a diferença na tela.
-		expect(totais.investimentoAtribuidoCents + totais.investimentoSemAtribuicaoCents).toBe(
-			totais.investimentoCents,
-		);
+		expect(
+			(totais.investimentoAtribuidoCents ?? 0) + (totais.investimentoSemAtribuicaoCents ?? 0),
+		).toBe(totais.investimentoCents);
 	});
 
 	it("campanha só-Meta (gastou sem trazer ninguém) entra no sem atribuição", () => {

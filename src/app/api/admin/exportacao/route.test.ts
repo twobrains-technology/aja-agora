@@ -6,6 +6,7 @@
 
 import { NextResponse } from "next/server";
 import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
+import { EXPERIMENTOS, serializarRecorteAB } from "@/lib/experimentos/registro";
 
 vi.mock("@/lib/admin/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/exportacao", () => ({
@@ -37,6 +38,10 @@ beforeEach(async () => {
 	listarUltimasExportacoes.mockResolvedValue([]);
 });
 
+const ID_DO_EXPERIMENTO = EXPERIMENTOS[0]?.id ?? "";
+/** O `?ab=` do teste — montado do REGISTRO, nunca com o nome da chave na mão. */
+const RECORTE_NA_URL = serializarRecorteAB([{ experimento: ID_DO_EXPERIMENTO, braco: "A" }]) ?? "";
+
 describe("GET /api/admin/exportacao", () => {
 	it("sem admin devolve 403", async () => {
 		requireRole.mockResolvedValueOnce({
@@ -63,5 +68,25 @@ describe("GET /api/admin/exportacao", () => {
 		expect(corpo.contagens).toEqual({ conversas: 7, percurso: 7, toques: 7 });
 		expect(contar).toHaveBeenCalledTimes(3);
 		expect(corpo.ultimas).toEqual([]);
+	});
+
+	it("o recorte A/B da URL chega à contagem (o cartão conta o mesmo que o arquivo)", async () => {
+		const res = await GET(
+			new Request(
+				`http://localhost/api/admin/exportacao?from=2026-09-01&to=2026-09-10&ab=${RECORTE_NA_URL}`,
+			),
+		);
+		expect(res.status).toBe(200);
+		expect(contar).toHaveBeenCalledWith(
+			"percurso",
+			expect.objectContaining({
+				recorte: [{ experimento: ID_DO_EXPERIMENTO, braco: "A" }],
+			}),
+		);
+	});
+
+	it("sem `ab`, o recorte sai vazio — nenhum SQL novo entra na contagem", async () => {
+		await GET(new Request("http://localhost/api/admin/exportacao?from=2026-09-01&to=2026-09-10"));
+		expect(contar).toHaveBeenCalledWith("percurso", expect.objectContaining({ recorte: [] }));
 	});
 });

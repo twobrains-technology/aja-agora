@@ -8,6 +8,7 @@
 
 import type { Campanhas } from "@/lib/admin/campanhas";
 import type { ModoDoPasso, PassoDoPercurso } from "@/lib/admin/percurso-types";
+import type { Experimento, RecorteAB } from "@/lib/experimentos/registro";
 import { contarConversas, exportarConversas } from "./conversas";
 import type { LinhaExportada } from "./formato";
 import { contarCandidatosDeLimpeza, exportarCandidatosDeLimpeza } from "./limpeza";
@@ -44,6 +45,20 @@ export interface OpcoesDeExportacao {
 	origem?: string | null;
 	campanha?: Campanhas;
 	q?: string | null;
+	/**
+	 * O RECORTE por braço de experimento (`?ab=<experimento>:<braço>`) — o mesmo
+	 * que a tela está mostrando. Sem ele o arquivo responderia por outro recorte
+	 * que a lista (o defeito do FIX-383, agora para o A/B).
+	 *
+	 * `[]` (ausente) = todas as variantes ⇒ NENHUM SQL novo entra.
+	 */
+	recorte?: RecorteAB;
+	/**
+	 * O REGISTRO de experimentos que a exportação lê. Injetável para o teste de
+	 * generalidade (D4: um experimento fictício tem que gerar a coluna dele sem
+	 * tocar em código); em produção é `EXPERIMENTOS`.
+	 */
+	experimentos?: readonly Experimento[];
 }
 
 /** Roda o recorte pedido e devolve as linhas tipadas. */

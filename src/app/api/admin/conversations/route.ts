@@ -11,6 +11,7 @@ import {
 	user as userTable,
 } from "@/db/schema";
 import { condicaoDeOrigem } from "@/lib/admin/filtro-origem";
+import { condicaoDeBracoNaConversa, recorteDaRequisicao } from "@/lib/admin/filtro-variante";
 import { marcarConversasComoTeste } from "@/lib/admin/limpeza-queries";
 import {
 	avaliarRegua,
@@ -93,6 +94,15 @@ export async function GET(req: NextRequest) {
 		endOfDay.setHours(23, 59, 59, 999);
 		conditions.push(lte(conversations.updatedAt, endOfDay));
 	}
+
+	// O recorte por BRAÇO de experimento A/B (`?ab=<experimento>:<braço>`, ou o
+	// cookie `aja_ab` no mesmo formato). Esta lista é o destino do drill-down da
+	// Performance/Percurso: o número clicado com o recorte ativo tem que abrir
+	// exatamente aquelas conversas. Aqui a linha É uma conversa, então o
+	// predicado é direto no metadata dela (D10) — o balde `sem-variante` inclui
+	// WhatsApp e conversa pré-teste. Sem recorte, nenhum SQL novo entra.
+	const daVariante = condicaoDeBracoNaConversa(recorteDaRequisicao(req));
+	if (daVariante) conditions.push(daVariante);
 
 	// De onde a conversa veio — é o que faz o número clicado na tela de
 	// Performance abrir exatamente aquelas conversas. `desconhecida` é a porta do

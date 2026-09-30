@@ -2,6 +2,7 @@
 
 import { ChevronRightIcon } from "lucide-react";
 import Link from "next/link";
+import { parseAsString, useQueryState } from "nuqs";
 import { Fragment, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,6 +17,7 @@ import {
 import { agruparPorCanal, rotuloDaCampanha } from "@/lib/admin/agrupar-origens";
 import type { TipoOrigem } from "@/lib/admin/origem-label";
 import type { LinhaOrigem } from "@/lib/admin/performance-types";
+import { PARAMETRO_DO_RECORTE_AB } from "@/lib/experimentos/registro";
 
 const ROTULO_TIPO: Record<TipoOrigem, string> = {
 	campanha: "Campanha",
@@ -50,6 +52,10 @@ export function TabelaOrigens({
 }) {
 	const canais = agruparPorCanal(origens);
 	const [abertos, setAbertos] = useState<Set<string>>(new Set());
+	// O recorte por braço viaja para a LISTA (D12): o número clicado abre as
+	// conversas do mesmo recorte que a tabela está contando. Sem ele na URL, a
+	// lista abriria sem a lente e mostraria mais conversas do que o número diz.
+	const [ab] = useQueryState(PARAMETRO_DO_RECORTE_AB, parseAsString);
 
 	/** O link que abre exatamente as conversas contadas nesta célula. */
 	const linkDasConversas = (chave: string, campanha?: string | null) => {
@@ -57,6 +63,7 @@ export function TabelaOrigens({
 		if (campanha) p.set("campanha", campanha);
 		if (de) p.set("from", de.toISOString());
 		if (ate) p.set("to", ate.toISOString());
+		if (ab) p.set(PARAMETRO_DO_RECORTE_AB, ab);
 		return `/admin/conversations?${p.toString()}`;
 	};
 

@@ -38,6 +38,8 @@
 import { inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
+import type { RecorteAB } from "@/lib/experimentos/registro";
+import { condicaoDeBracoNaConversa } from "./filtro-variante";
 import type { LeadStage } from "./lead-stages";
 import { telefonesDaEquipe } from "./regua-por-conversa";
 
@@ -180,15 +182,23 @@ export async function computeFunilDeHandoff(
 	fromDate: Date,
 	toDate: Date,
 	limiteHoras: number = LIMITE_SLA_HORAS_PADRAO,
+	recorte: RecorteAB = [],
 ): Promise<FunilDeHandoff> {
 	const estagios = SUB_ETAPAS_HANDOFF.map((e) => e.estagio);
+
+	// O handoff é NÍVEL CONVERSA (D10): a linha conta LEAD, e o lead tem UMA
+	// conversa (`leads.conversation_id`) — o braço é o daquela conversa, sem
+	// agregação por pessoa. `[]` ⇒ `null` ⇒ o SQL sai igual ao de hoje.
+	const filtro = condicaoDeBracoNaConversa(recorte, sql`c`);
 
 	const resultado = await db.execute<Record<string, unknown>>(sql`
     WITH leads_da_janela AS (
       SELECT l.id
         FROM leads l
+        JOIN conversations c ON c.id = l.conversation_id
        WHERE l.is_simulated = false
          AND l.created_at BETWEEN ${fromDate} AND ${toDate}
+         ${filtro ? sql`AND (${filtro})` : sql``}
     ),
     -- Toda transição desses leads, com o INSTANTE DA PRÓXIMA ao lado: é a
     -- diferença entre as duas que dá o tempo gasto no estágio. \`lead\` (sem

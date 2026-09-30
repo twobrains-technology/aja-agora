@@ -15,6 +15,7 @@
  * ao lado, e a diferença em reais tem nome. Nenhuma soma muda por isso.
  */
 
+import { FRASE_CUSTO_NAO_APLICAVEL } from "@/components/admin/dashboard/filtro-ab";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { TotaisDeCampanhas } from "@/lib/admin/campanhas-queries";
 import { descreverCusto, inteiro, reais } from "./formato";
@@ -66,9 +67,14 @@ function explicarDiferenca(diferenca: number): string {
  * que o painel está errado.
  */
 function explicarDiferencaDeVerba(reconciliacao: {
-	reportadoCents: number;
-	atribuidoCents: number;
+	reportadoCents: number | null;
+	atribuidoCents: number | null;
 }): string {
+	// Com o recorte por braço ativo não há verba a reconciliar: o gasto da Meta é
+	// do período inteiro e não se divide (D6). A frase do recorte é de B3b.
+	if (reconciliacao.reportadoCents === null || reconciliacao.atribuidoCents === null) {
+		return "Custo não se divide por braço de teste: o investimento da Meta é do período inteiro.";
+	}
 	if (reconciliacao.reportadoCents === 0)
 		return "Sem investimento reportado no período — não há verba a reconciliar";
 	// Nunca negativo por desenho: o atribuído é um subconjunto do reportado.
@@ -78,12 +84,30 @@ function explicarDiferencaDeVerba(reconciliacao: {
 	return `A Meta reportou +${reais(diferenca)} — campanha sem atribuição no CRM: o gasto não achou visita dentro da janela de data`;
 }
 
-export function ResumoCampanhas({ totais }: { totais: TotaisDeCampanhas }) {
+export function ResumoCampanhas({
+	totais,
+	custoNaoAplicavelAoRecorte = false,
+}: {
+	totais: TotaisDeCampanhas;
+	/** Recorte por braço ativo (D6): o investimento da Meta sai `null` e a
+	 *  verba/CPC deixam de ser aplicáveis a este recorte. A tela declara isso em
+	 *  vez de mostrar `R$ 0,00` ou um CPC falso. Sempre presente na resposta:
+	 *  `false` é o default (sem recorte, os valores são os de sempre). */
+	custoNaoAplicavelAoRecorte?: boolean;
+}) {
 	const custo = descreverCusto(totais.custoPorQualificado);
 	const diferenca = totais.leadsMeta - totais.leadsCrm;
 
 	return (
 		<div className="space-y-4">
+			{custoNaoAplicavelAoRecorte && (
+				<p
+					data-testid="custo-nao-aplicavel-ao-recorte"
+					className="rounded-md border border-dashed border-input bg-muted/30 p-3 text-sm text-muted-foreground"
+				>
+					{FRASE_CUSTO_NAO_APLICAVEL}
+				</p>
+			)}
 			<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 				<Cartao
 					titulo="Investimento reportado pela Meta"

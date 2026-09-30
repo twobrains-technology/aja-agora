@@ -17,6 +17,7 @@ import { InfoIcon, MousePointerClickIcon, ScrollTextIcon } from "lucide-react";
 import { parseAsString, useQueryState } from "nuqs";
 import { useCallback, useEffect, useState } from "react";
 import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter";
+import { FiltroAB, NOTA_DO_BRACO_DA_PESSOA } from "@/components/admin/dashboard/filtro-ab";
 import { ListaDeAlvos } from "@/components/admin/heatmap/lista-de-alvos";
 import { type ModoDoMapa, VisorDoMapa } from "@/components/admin/heatmap/visor-do-mapa";
 import {
@@ -30,6 +31,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { diaDeHoje } from "@/lib/admin/periodo";
 import { parseAsDiaDoNegocio } from "@/lib/admin/periodo-querystring";
+import { PARAMETRO_DO_RECORTE_AB } from "@/lib/experimentos/registro";
 import { LANDINGS_COM_MAPA } from "@/lib/heatmap/events";
 import type { FiltroDevice, MapaDeCalor } from "@/lib/heatmap/queries";
 import { cn } from "@/lib/utils";
@@ -93,6 +95,9 @@ function MapaDeCalorContent() {
 	const [path, setPath] = useQueryState("path", parseAsString.withDefault("/"));
 	const [device, setDevice] = useQueryState("device", parseAsString.withDefault(DEVICE_PADRAO));
 	const [desfecho, setDesfecho] = useQueryState("desfecho", parseAsString.withDefault("todos"));
+	// O recorte por braço de experimento — mesmo trilho do período. Aqui a conta é
+	// de PESSOAS por página, então o braço é o da pessoa.
+	const [ab] = useQueryState(PARAMETRO_DO_RECORTE_AB, parseAsString);
 	const [modo, setModo] = useState<ModoDoMapa>("cliques");
 
 	const [mapa, setMapa] = useState<MapaDeCalor | null>(null);
@@ -107,6 +112,7 @@ function MapaDeCalorContent() {
 			const params = new URLSearchParams({ path, device, desfecho });
 			if (from) params.set("from", from.toISOString());
 			if (to) params.set("to", to.toISOString());
+			if (ab) params.set(PARAMETRO_DO_RECORTE_AB, ab);
 
 			const res = await fetch(`/api/admin/heatmap?${params.toString()}`);
 			if (!res.ok) {
@@ -120,7 +126,7 @@ function MapaDeCalorContent() {
 		} finally {
 			setCarregando(false);
 		}
-	}, [from, to, path, device, desfecho]);
+	}, [from, to, path, device, desfecho, ab]);
 
 	useEffect(() => {
 		carregar();
@@ -145,7 +151,10 @@ function MapaDeCalorContent() {
 						Onde o visitante clica e até onde ele rola em cada landing
 					</p>
 				</div>
-				<DateRangeFilter />
+				<div className="flex flex-wrap items-center gap-2">
+					<FiltroAB nota={NOTA_DO_BRACO_DA_PESSOA} />
+					<DateRangeFilter />
+				</div>
 			</div>
 
 			{/* Barra de controle: o que estou olhando (página, aparelho, quem) e como

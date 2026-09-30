@@ -37,6 +37,7 @@ const base = (over: Partial<CustosDoCpc> = {}): CustosDoCpc => ({
 		custoDeMensagem: "cadastro de preço",
 		contagens: "Postgres",
 	},
+	custoNaoAplicavelAoRecorte: false,
 	...over,
 });
 

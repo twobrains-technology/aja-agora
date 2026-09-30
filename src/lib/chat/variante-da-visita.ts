@@ -30,6 +30,18 @@
  * a troca foi feita (medido: 0 linhas com `telefoneDoDesbloqueio` no metadata). */
 export const VARIANTES_DO_TELEFONE = ["A", "B"] as const;
 
+/** A chave em `conversations.metadata` onde o braço SORTEADO do teste é gravado.
+ *
+ *  Mora aqui — e não no módulo de leitura do resultado — porque este arquivo é
+ *  PURO (sem banco): o registro de experimentos (`src/lib/experimentos/`), que
+ *  roda também no cliente, precisa do id do experimento sem arrastar o driver do
+ *  Postgres para o bundle do navegador. O módulo antigo da constante a
+ *  reexporta para quem já a lia de lá.
+ *
+ *  Fonte única: quem grava (`api/chat/route.ts`) e quem lê (painel, exportação)
+ *  usam ESTA constante. */
+export const CHAVE_DO_TESTE_NO_METADATA = "telefoneDoDesbloqueio";
+
 export type VarianteDoTelefone = (typeof VARIANTES_DO_TELEFONE)[number];
 
 const VARIANTES_VALIDAS: ReadonlySet<string> = new Set(VARIANTES_DO_TELEFONE);

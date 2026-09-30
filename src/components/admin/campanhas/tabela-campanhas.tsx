@@ -89,16 +89,16 @@ const ICONE_DO_MOTIVO = {
 } as const;
 
 /** A célula de custo: o motivo vira ÍCONE + RÓTULO, nunca só cor. */
-function CelulaCusto({ custo }: { custo: CustoPorQualificado }) {
+function CelulaCusto({ custo }: { custo: CustoPorQualificado | null }) {
 	const descrito = descreverCusto(custo);
 	const Icone = descrito.motivo ? ICONE_DO_MOTIVO[descrito.motivo] : null;
+	// `null` (recorte ativo) e os motivos são os dois casos em que NÃO há número.
+	const semValor = custo === null || descrito.motivo !== null;
 	return (
 		<TableCell className="text-right tabular-nums" title={descrito.tooltip}>
 			<span className="inline-flex items-center justify-end gap-1.5">
 				{Icone && <Icone className="size-3.5 text-muted-foreground" aria-hidden="true" />}
-				<span className={descrito.motivo ? "text-muted-foreground" : "font-medium"}>
-					{descrito.texto}
-				</span>
+				<span className={semValor ? "text-muted-foreground" : "font-medium"}>{descrito.texto}</span>
 			</span>
 		</TableCell>
 	);
@@ -125,11 +125,12 @@ export function TabelaCampanhas({ linhas }: { linhas: LinhaCampanha[] }) {
 	const [maisColunas, setMaisColunas] = useState(false);
 	const [expandida, setExpandida] = useState<string | null>(null);
 
-	// Quando NENHUMA campanha tem custo calculável, a ordenação efetiva deixa de
-	// ser custo e passa a ser investimento. Dizer "ordenado por custo" nesse
-	// estado seria falso — o operador ordenaria mentalmente por uma coluna que
-	// está toda sem valor.
-	const temCustoCalculavel = linhas.some((l) => l.custoPorQualificado.tipo === "valor");
+	// Quando NENHUMA campanha tem custo calculável — ou nenhuma tem custo aplicável
+	// (recorte por braço ativo, D6) —, a ordenação efetiva deixa de ser custo e
+	// passa a ser investimento. Dizer "ordenado por custo" nesse estado seria
+	// falso: o operador ordenaria mentalmente por uma coluna que está toda sem
+	// valor.
+	const temCustoCalculavel = linhas.some((l) => l.custoPorQualificado?.tipo === "valor");
 
 	if (linhas.length === 0) {
 		return null;

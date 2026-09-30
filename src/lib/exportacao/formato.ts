@@ -21,6 +21,22 @@ export function chaveParaColuna(chave: string): string {
 	return chave.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
 }
 
+/**
+ * A CHAVE da coluna do braço de um experimento A/B: `variante` + o id
+ * capitalizado.
+ *
+ * O id do experimento entra capitalizado — com o registro real, isso dá a coluna
+ * `variante<TesteDoTelefone>`; o cabeçalho do CSV segue a regra da casa,
+ * snake_case (`chaveParaColuna`).
+ *
+ * O nome vem do REGISTRO do experimento, nunca de uma string do teste do
+ * telefone: um teste novo entra no registro e a coluna nasce sozinha — é o que
+ * mantém a exportação genérica (D4/D8 do FIX-404).
+ */
+export function colunaDoBraco(idDoExperimento: string): string {
+	return `variante${idDoExperimento.charAt(0).toUpperCase()}${idDoExperimento.slice(1)}`;
+}
+
 function vazia(valor: unknown): boolean {
 	return valor === null || valor === undefined || String(valor) === "";
 }
