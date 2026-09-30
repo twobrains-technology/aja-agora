@@ -4,7 +4,7 @@ titulo: A escala de retomada da régua aparece e se salva na tela
 status: done
 severidade: media
 executado_em: 2026-09-29
-commit: (a preencher no commit da lane — test+fix(remarketing))
+commit: 1b473d01
 mexe_em:
   - src/app/api/admin/remarketing/config/route.ts
   - src/app/admin/(dashboard)/remarketing/config/config-da-regua.tsx
