@@ -19,6 +19,7 @@ import type {
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import { useSmoothText } from "@/lib/hooks/use-smooth-text";
 import { ArtifactRenderer } from "./artifact-renderer";
+import { OfertaEmbacada } from "./oferta-embacada";
 import { GateRenderer } from "./artifacts/gate-renderer";
 import { WelcomeCategories } from "./artifacts/welcome-categories";
 import { RevealSelectionProvider } from "./reveal-selection";
@@ -44,7 +45,7 @@ const messageSpring = {
 export type RenderablePart =
 	| { kind: "text"; id: string; text: string }
 	| { kind: "transition"; id: string; data: TransitionPartData }
-	| { kind: "artifact"; id: string; artifact: Artifact }
+	| { kind: "artifact"; id: string; artifact: Artifact; embacada?: boolean }
 	| { kind: "gate"; id: string; data: GatePartData }
 	| { kind: "welcome"; id: string; data: WelcomePartData }
 	| { kind: "handoff"; id: string; data: HandoffPartData };
@@ -87,29 +88,46 @@ function classifyParts(message: AjaUIMessage): RenderablePart[] {
 }
 
 /**
- * bloco-telefone-ab (FIX-395) — variante B: a comparação NÃO aparece na tela
- * antes do telefone.
+ * bloco-telefone-ab — as DUAS variantes do teste do telefone, no render.
  *
- * O servidor já segura o reveal no stream quando o estado é `pede-antes`, mas os
- * cards foram PERSISTIDOS pelo nó `persist` (é o que permite re-emiti-los depois
- * e o que o painel conta como "viu oferta"). Ao reidratar a conversa — retomada,
- * histórico, admin — eles voltariam a aparecer. Esta é a segunda linha: numa
- * mensagem que traz o card do telefone em `pede-antes`, os cards de oferta
- * ficam fora do render.
+ *  • **A** (`pede-antes`): a comparação NÃO aparece antes do telefone. O servidor
+ *    já segura o reveal no stream, mas os cards foram PERSISTIDOS pelo nó
+ *    `persist` (é o que permite re-emiti-los depois e o que o painel conta como
+ *    "viu oferta"). Ao reidratar a conversa — retomada, histórico, admin — eles
+ *    voltariam a aparecer. Esta é a segunda linha: numa mensagem que traz o card
+ *    do telefone em `pede-antes`, os cards de oferta ficam fora do render.
+ *
+ *  • **B** (`borrado`): as ofertas APARECEM, mas **embaçadas** — o número legível
+ *    é o prêmio do telefone. Aqui os cards não saem: eles ganham a marca
+ *    `embacada`, e quem os envolve em blur é o `OfertaEmbacada`.
  *
  * É regra de RENDER (estática, derivada do que está na mensagem), então vale
  * igual ao vivo e na retomada, sem estado de sessão.
  */
 export function comDesbloqueioDoTelefone(parts: RenderablePart[]): RenderablePart[] {
-	const seguraOReveal = parts.some(
-		(p) =>
-			p.kind === "artifact" &&
-			p.artifact.type === "telefone_do_desbloqueio" &&
-			(p.artifact.payload as { estado?: string }).estado === "pede-antes",
-	);
-	if (!seguraOReveal) return parts;
+const estado = parts
+		.flatMap((p) =>
+			p.kind === "artifact" && p.artifact.type === "telefone_do_desbloqueio"
+				? [(p.artifact.payload as { estado?: string }).estado]
+				: [],
+		)
+		.find((e) => e === "pede-antes" || e === "borrado");
+
+	if (!estado) return parts;
+
 	const REVELAM_OFERTA = new Set(["comparison_table", "recommendation_card"]);
-	return parts.filter((p) => !(p.kind === "artifact" && REVELAM_OFERTA.has(p.artifact.type)));
+
+	// Variante A: fora do render, o que a pessoa veria antes de dar o número.
+	if (estado === "pede-antes") {
+		return parts.filter((p) => !(p.kind === "artifact" && REVELAM_OFERTA.has(p.artifact.type)));
+	}
+
+	// Variante B: ficam na tela, embaçadas — o clique é o caminho do telefone.
+	return parts.map((p) =>
+		p.kind === "artifact" && REVELAM_OFERTA.has(p.artifact.type)
+			? { ...p, embacada: true }
+			: p,
+	);
 }
 
 /** O rótulo de status ("Comparando grupos") só vale enquanto NADA saiu depois
@@ -362,7 +380,13 @@ export function ChatMessage({
 												}}
 												className="w-full"
 											>
-												<ArtifactRenderer artifact={segment.artifact} active={isInteractive} />
+												{segment.embacada ? (
+													<OfertaEmbacada>
+														<ArtifactRenderer artifact={segment.artifact} active={isInteractive} />
+													</OfertaEmbacada>
+												) : (
+													<ArtifactRenderer artifact={segment.artifact} active={isInteractive} />
+												)}
 											</motion.div>
 										);
 									}

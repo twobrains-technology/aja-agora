@@ -48,7 +48,7 @@ const RODAPE_DE_CONFIANCA =
 	"Seus dados seguem a LGPD. A AJA não vende consórcio próprio e não repassa seu contato.";
 const ROTULO_DO_CAMPO = "Seu WhatsApp com DDD";
 
-const COPIA_B = {
+const COPIA_A = {
 	selo: null,
 	titulo: "Falta um passo para ver a sua comparação",
 	apoio:
@@ -57,8 +57,8 @@ const COPIA_B = {
 	secundario: null,
 } as const;
 
-const COPIA_C = {
-	selo: "Sua melhor opção está aqui",
+const COPIA_B = {
+	selo: "Suas opções estão prontas",
 	titulo: "Libere a comparação completa",
 	apoio:
 		"Se a sua internet cair, eu continuo a conversa com você pelo WhatsApp. Me deixa o seu número que eu libero a comparação agora.",
@@ -69,14 +69,6 @@ const COPIA_C = {
 function ehCelularValido(digitos: string): boolean {
 	// Mesma régua do gate `identify`: DDD válido (1-9) + 8 ou 9 dígitos.
 	return /^[1-9]{2}9?\d{8}$/.test(digitos);
-}
-
-function moeda(valor: number): string {
-	return valor.toLocaleString("pt-BR", {
-		style: "currency",
-		currency: "BRL",
-		maximumFractionDigits: 0,
-	});
 }
 
 type Fase = "pedindo" | "liberado" | "recusado";
@@ -90,7 +82,7 @@ export function TelefoneDoDesbloqueio({
 }) {
 	const { sendAction, status } = useChatContext();
 	const variante = payload.variante;
-	const copia = variante === "B" ? COPIA_B : COPIA_C;
+	const copia = variante === "A" ? COPIA_A : COPIA_B;
 	const [masked, setMasked] = useState("");
 	const [fase, setFase] = useState<Fase>("pedindo");
 	const prefersReduced = useReducedMotion();
@@ -165,45 +157,11 @@ export function TelefoneDoDesbloqueio({
 					<p className="text-sm font-semibold text-foreground">{copia.titulo}</p>
 				</div>
 
-				{/* A MELHOR OPÇÃO (só na variante C): a parcela legível, o resto
-				    borrado. Não é card vazio nem cadeado genérico — o prêmio está na
-				    tela, só não está legível. */}
-				{variante === "C" && payload.melhorOpcao ? (
-					<div
-						data-testid="melhor-opcao-borrada"
-						className="rounded-[10px] border border-border bg-secondary px-3 py-2.5 flex flex-col gap-1.5"
-					>
-						<span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-							{payload.melhorOpcao.administradora}
-						</span>
-						<div className="flex items-baseline gap-1.5">
-							<span className="text-lg font-semibold text-foreground">
-								{moeda(payload.melhorOpcao.monthlyPayment)}
-							</span>
-							<span className="text-xs text-muted-foreground">/mês</span>
-						</div>
-						{/* O RESTO vai borrado e fora da árvore de acessibilidade — mas o
-						    leitor de tela recebe o caminho: o texto `sr-only` abaixo diz
-						    que há conteúdo a liberar, em vez de sumir com a informação. */}
-						<div
-							data-testid="conteudo-borrado"
-							aria-hidden="true"
-							className="flex items-center gap-3 blur-[5px] select-none"
-						>
-							<span className="text-xs text-muted-foreground">
-								Carta {moeda(payload.melhorOpcao.creditValue)}
-							</span>
-							<span className="text-xs text-muted-foreground">
-								{payload.melhorOpcao.termMonths} meses
-							</span>
-						</div>
-						<span className="sr-only">
-							Os detalhes da melhor opção (valor da carta e prazo) aparecem depois que você informar
-							o seu WhatsApp.
-						</span>
-					</div>
-				) : null}
-
+				{/* A MELHOR OPÇÃO saiu daqui (FIX-403). Até 29/09 a variante do blur
+				    mostrava a PARCELA legível dentro deste card — e o dono foi explícito:
+				    *"mostra as ofertas TOTALMENTE embacadas com blur"*. O prêmio da tela
+				    agora é a própria oferta embaçada, que o `OfertaEmbacada` envolve acima;
+				    este card só pede o número. */}
 				<p className="text-xs leading-[1.45] text-muted-foreground">{copia.apoio}</p>
 
 				{fase === "pedindo" ? (

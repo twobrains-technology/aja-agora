@@ -15,10 +15,20 @@
 // quando não há visita). O hash é FNV-1a de 32 bits — estável, barato e com
 // distribuição boa o bastante para 50/50 em ids (uuid) que já são uniformes.
 
-/** As DUAS variantes vivas do teste. `A` ("como está hoje") foi descartada na
- *  call: medir o problema já conhecido gasta massa que não temos. Esta
- *  constante é a fonte única — o número de variantes e seus nomes saem daqui. */
-export const VARIANTES_DO_TELEFONE = ["B", "C"] as const;
+/** As DUAS variantes vivas do teste, na nomenclatura do dono (29/09/2026):
+ *
+ *  - `A` — o telefone é pedido ANTES de qualquer oferta aparecer.
+ *  - `B` — as ofertas aparecem EMBACADAS, com um clique para desbloquear; o
+ *    telefone vem em seguida.
+ *
+ * NÃO existe `C`. A versão anterior deste arquivo usava `["B", "C"]` (o
+ * `pede-antes` chamava-se B e o borrado chamava-se C, com a parcela legível) — o
+ * dono renomeou e cortou a terceira ponta: "teste C nao existe, sao somente esses
+ * 2". Esta constante é a fonte única do número e dos nomes das variantes.
+ *
+ * Renomear é seguro: nenhuma conversa em produção tinha variante gravada quando
+ * a troca foi feita (medido: 0 linhas com `telefoneDoDesbloqueio` no metadata). */
+export const VARIANTES_DO_TELEFONE = ["A", "B"] as const;
 
 export type VarianteDoTelefone = (typeof VARIANTES_DO_TELEFONE)[number];
 
@@ -72,6 +82,20 @@ export function varianteDaVisita(semente: string): VarianteDoTelefone {
 }
 
 /**
+ * A variante FORÇADA por query string (`?variante=A`), para QA e para o dono.
+ *
+ * Existe porque o sorteio é por VISITA e determinístico: no mesmo navegador a
+ * pessoa cai sempre na MESMA ponta — o dono testou quatro vezes e viu quatro
+ * vezes o mesmo caminho. Sem um override, validar as duas pontas à mão é
+ * loteria. Valor desconhecido é IGNORADO (não vira sorteio nem erro): o pedido
+ * de QA não pode derrubar o chat de um visitante. */
+export function varianteForcada(valor: unknown): VarianteDoTelefone | null {
+	if (typeof valor !== "string") return null;
+	const limpo = valor.trim().toUpperCase();
+	return VARIANTES_VALIDAS.has(limpo) ? (limpo as VarianteDoTelefone) : null;
+}
+
+/**
  * A variante de uma conversa: a VISITA manda (é ela que define o sorteio da
  * entrada); sem visita — WhatsApp orgânico, conversa anterior ao cookie, teste —
  * a conversa é a semente. Nunca `Math.random()`: a mesma conversa recarregada
@@ -80,7 +104,11 @@ export function varianteDaVisita(semente: string): VarianteDoTelefone {
 export function varianteDaConversa(input: {
 	visitId?: string | null;
 	conversationId?: string | null;
+	/** `?variante=A|B` — pedido explícito de QA/dono, ganha do sorteio. */
+	forcar?: unknown;
 }): VarianteDoTelefone {
+	const forcada = varianteForcada(input.forcar);
+	if (forcada) return forcada;
 	const visita = typeof input.visitId === "string" ? input.visitId.trim() : "";
 	if (visita.length > 0) return varianteDaVisita(visita);
 	return varianteDaVisita(input.conversationId ?? "");

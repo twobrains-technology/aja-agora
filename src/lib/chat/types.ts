@@ -2,6 +2,12 @@
 
 // ---- Artifact payload types (derived from adapter domain types) ----
 
+// A variante do teste do telefone vem do MÓDULO que a define (`VARIANTES_DO_TELEFONE`).
+// Antes ela era redigitada aqui como `"B" | "C"` — duas fontes para a mesma
+// verdade, e foi exatamente isso que deixou o painel e o card divergirem quando a
+// nomenclatura mudou (FIX-403). Fonte única ou nada.
+import type { VarianteDoTelefone } from "./variante-da-visita";
+
 export interface GroupCardPayload {
 	id: string;
 	administradora: string;
@@ -461,12 +467,12 @@ export interface ScarcityPayload {
  * `docs/decisoes/2026-09-29-copia-do-desbloqueio-do-telefone.md`. Texto fixo no
  * servidor é exatamente o que o CLAUDE.md proíbe.
  *
- * `pede-antes` = variante B (a comparação NÃO foi liberada). `borrado` =
- * variante C (a comparação veio, a melhor opção aparece com a parcela legível e
- * o resto borrado até o telefone).
+ * `pede-antes` = variante A (a comparação NÃO foi liberada — nada da oferta
+ * aparece antes do telefone). `borrado` = variante B (as ofertas aparecem
+ * embaçadas, com um clique para desbloquear, e o telefone libera).
  */
 export interface TelefoneDoDesbloqueioPayload {
-	variante: "B" | "C";
+	variante: VarianteDoTelefone;
 	estado: "pede-antes" | "borrado";
 	/** A melhor opção que a variante C mostra borrada. Ausente na variante B
 	 *  (não há comparação na tela para borrar). Os números vêm da oferta REAL, e

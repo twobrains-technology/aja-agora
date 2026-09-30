@@ -67,7 +67,7 @@ import {
 	registrarDesfechoDoTeste,
 } from "@/lib/chat/telefone-ab-do-servidor";
 import type { AjaUIMessage, ArtifactPartData } from "@/lib/chat/ui-message";
-import { varianteDaConversa } from "@/lib/chat/variante-da-visita";
+import { varianteDaConversa, varianteForcada } from "@/lib/chat/variante-da-visita";
 import {
 	isValidCpf,
 	loadIdentity,
@@ -110,6 +110,15 @@ type ChatRequestBody = {
 	 * heurística de texto no servidor. Combinado com `meta.contractClosed`,
 	 * dispara a seção do prompt que reconhece a reserva já feita.
 	 */
+	/**
+	 * bloco-telefone-ab (FIX-403): `?variante=A|B` — override de QA/dono.
+	 *
+	 * O sorteio é por VISITA e determinístico: no mesmo navegador a pessoa cai
+	 * SEMPRE na mesma ponta (o dono testou quatro vezes e viu quatro vezes o mesmo
+	 * caminho). Sem este campo, validar as duas pontas à mão é loteria. Valor
+	 * desconhecido é ignorado — pedido de QA não derruba o chat de ninguém.
+	 */
+	variante?: string;
 	isResumeGreeting?: boolean;
 };
 
@@ -317,7 +326,11 @@ export async function POST(req: NextRequest) {
 				metadata: {
 					webCookie: userKey,
 					[CHAVE_DO_TESTE_NO_METADATA]: {
-						variante: varianteDaConversa({ visitId, conversationId: providedId }),
+						variante: varianteDaConversa({
+							visitId,
+							conversationId: providedId,
+							forcar: body.variante,
+						}),
 					},
 				},
 			})
@@ -332,6 +345,24 @@ export async function POST(req: NextRequest) {
 		// resume filtra por esse campo, então "Voltar à conversa" pulava todas as
 		// conversas recentes e caía sempre na última que por acaso tinha cookie.
 		// Só preenche quando está VAZIO — nunca rouba conversa de outro device.
+		// OVERRIDE de QA numa conversa que já existe (FIX-403): sem isto, `?variante=`
+		// só valeria na primeira mensagem de uma conversa nova — e o dono testando
+		// na conversa já aberta continuaria vendo sempre a mesma ponta.
+		const variantePedida = varianteForcada(body.variante);
+		const varianteGravada = (conv.metadata as Record<string, unknown> | null)?.[
+			CHAVE_DO_TESTE_NO_METADATA
+		] as { variante?: string } | undefined;
+		if (variantePedida && variantePedida !== varianteGravada?.variante) {
+			await db
+				.update(conversations)
+				.set({
+					metadata: {
+						...(conv.metadata as object),
+						[CHAVE_DO_TESTE_NO_METADATA]: { variante: variantePedida },
+					},
+				})
+				.where(eq(conversations.id, conv.id));
+		}
 		const cookieAtual = (conv.metadata as { webCookie?: string } | null)?.webCookie;
 		if (!cookieAtual && userKey) {
 			await db
@@ -352,7 +383,11 @@ export async function POST(req: NextRequest) {
 				metadata: {
 					webCookie: userKey,
 					[CHAVE_DO_TESTE_NO_METADATA]: {
-						variante: varianteDaConversa({ visitId, conversationId: novoId }),
+						variante: varianteDaConversa({
+							visitId,
+							conversationId: novoId,
+							forcar: body.variante,
+						}),
 					},
 				},
 			})

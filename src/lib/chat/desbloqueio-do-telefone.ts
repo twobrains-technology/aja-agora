@@ -5,12 +5,15 @@
  * As duas variantes do teste (docs/decisoes/2026-09-29-copia-do-desbloqueio-do-
  * telefone.md) diferem em ONDE o telefone é pedido:
  *
- *  - **B** ("pede-antes"): o telefone vem ANTES de liberar a comparação — a
- *    ideia da Bruna na call: *"antes de mostrar a simulação, a gente colocar o
- *    telefone"*.
- *  - **C** ("borrado"): a melhor opção aparece na tela com a parcela legível e o
- *    resto borrado, e o telefone desbloqueia — a ideia do Gustavo, endossada
- *    pelo Kairo.
+ *  - **A** ("pede-antes"): o telefone vem ANTES de liberar a comparação — nada
+ *    da oferta aparece na tela antes do número.
+ *  - **B** ("borrado"): as OFERTAS aparecem embaçadas (blur em tudo, sem valor
+ *    legível) com um clique para desbloquear, e o telefone vem em seguida.
+ *
+ * A variante `C` não existe: até 29/09 o `pede-antes` chamava-se B e o borrado
+ * chamava-se C — e o borrado mostrava a parcela legível. O dono cortou a terceira
+ * ponta e mandou embaçar tudo. A mudança de comportamento mora no render
+ * (`comDesbloqueioDoTelefone` + `OfertaEmbacada`).
  *
  * O módulo é PURO (sem banco, sem React) porque a MESMA pergunta — "esta visita
  * já pode ver a comparação?" — é feita no servidor (para decidir o que emitir)
@@ -22,8 +25,8 @@ import type { VarianteDoTelefone } from "./variante-da-visita";
 
 /**
  * - `livre` — pode ver a comparação inteira; nenhum passo de telefone.
- * - `pede-antes` — variante B: pede o telefone ANTES de liberar a comparação.
- * - `borrado` — variante C: mostra a melhor opção borrada e o telefone libera.
+ * - `pede-antes` — variante A: pede o telefone ANTES de liberar a comparação.
+ * - `borrado` — variante B: as ofertas aparecem embaçadas e o telefone libera.
  */
 export type EstadoDoDesbloqueio = "livre" | "pede-antes" | "borrado";
 
@@ -57,7 +60,7 @@ export interface EntradaDoDesbloqueio {
 export function estadoDoDesbloqueio(input: EntradaDoDesbloqueio): EstadoDoDesbloqueio {
 	if (input.celularConhecido) return "livre";
 	if (input.recusado) return "livre";
-	return input.variante === "B" ? "pede-antes" : "borrado";
+	return input.variante === "A" ? "pede-antes" : "borrado";
 }
 
 /** `true` quando há card de telefone a renderizar (o caminho oposto de `livre`). */

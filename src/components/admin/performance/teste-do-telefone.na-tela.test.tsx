@@ -34,7 +34,7 @@ function stubDaResposta(corpo: unknown) {
 }
 
 const variante = (over: Partial<ResultadoPorVariante>): ResultadoPorVariante => ({
-	variante: "B",
+	variante: "A",
 	visitas: 31,
 	telefones: 8,
 	naComparacao: 3,
@@ -46,9 +46,9 @@ describe("TesteDoTelefone", () => {
 	it("com uma variante sem dado, ela diz 'não calculável' e não mostra nenhum número", async () => {
 		stubDaResposta({
 			variantes: [
-				variante({ variante: "B", visitas: 31, telefones: 8, taxaDeTelefone: 8 / 31 }),
+				variante({ variante: "A", visitas: 31, telefones: 8, taxaDeTelefone: 8 / 31 }),
 				variante({
-					variante: "C",
+					variante: "B",
 					visitas: null,
 					telefones: null,
 					naComparacao: null,
@@ -60,63 +60,63 @@ describe("TesteDoTelefone", () => {
 
 		render(<TesteDoTelefone de={DE} ate={ATE} />);
 
-		const colunaC = await screen.findByTestId("variante-C");
+		const colunaB = await screen.findByTestId("variante-B");
 		// Ausência em cada uma das quatro linhas + no selo da meta.
-		expect(within(colunaC).getAllByText("não calculável").length).toBeGreaterThanOrEqual(5);
+		expect(within(colunaB).getAllByText("não calculável").length).toBeGreaterThanOrEqual(5);
 		// O lado inteiro não tem NENHUM dígito: "0", "0%" e "NaN" não aparecem.
-		expect(colunaC.textContent).not.toMatch(/[0-9]/);
+		expect(colunaB.textContent).not.toMatch(/[0-9]/);
 
 		// O outro lado continua com os números dele.
-		const colunaB = screen.getByTestId("variante-B");
-		expect(within(colunaB).getByText("31")).toBeTruthy();
-		expect(colunaB.textContent).not.toContain("não calculável");
+		const colunaA = screen.getByTestId("variante-A");
+		expect(within(colunaA).getByText("31")).toBeTruthy();
+		expect(colunaA.textContent).not.toContain("não calculável");
 	});
 
-	it("B com 31 mostra 'meta atingida'; C com 12 mostra 'faltam 18'", async () => {
+	it('A com 31 mostra "meta atingida"; B com 12 mostra "faltam 18"', async () => {
 		stubDaResposta({
 			variantes: [
-				variante({ variante: "B", visitas: 31 }),
-				variante({ variante: "C", visitas: 12, telefones: 4, taxaDeTelefone: 4 / 12 }),
+				variante({ variante: "A", visitas: 31 }),
+				variante({ variante: "B", visitas: 12, telefones: 4, taxaDeTelefone: 4 / 12 }),
 			],
 			total: { visitas: 43, telefones: 12, naComparacao: 5 },
 		});
 
 		render(<TesteDoTelefone de={DE} ate={ATE} />);
 
-		const colunaB = await screen.findByTestId("variante-B");
-		expect(within(colunaB).getByText("meta atingida")).toBeTruthy();
+		const colunaA = await screen.findByTestId("variante-A");
+		expect(within(colunaA).getByText("meta atingida")).toBeTruthy();
 
-		const colunaC = screen.getByTestId("variante-C");
-		expect(within(colunaC).getByText("faltam 18")).toBeTruthy();
+		const colunaB = screen.getByTestId("variante-B");
+		expect(within(colunaB).getByText("faltam 18")).toBeTruthy();
 	});
 
 	it("a taxa sai em % com vírgula decimal (0.25 → 25%)", async () => {
 		stubDaResposta({
 			variantes: [
+				variante({ variante: "A", visitas: 4, telefones: 1, taxaDeTelefone: 0.25 }),
 				variante({ variante: "B", visitas: 4, telefones: 1, taxaDeTelefone: 0.25 }),
-				variante({ variante: "C", visitas: 4, telefones: 1, taxaDeTelefone: 0.25 }),
 			],
 			total: { visitas: 8, telefones: 2, naComparacao: 0 },
 		});
 
 		render(<TesteDoTelefone de={DE} ate={ATE} />);
 
-		const colunaB = await screen.findByTestId("variante-B");
-		expect(within(colunaB).getByText("25%")).toBeTruthy();
+		const colunaA = await screen.findByTestId("variante-A");
+		expect(within(colunaA).getByText("25%")).toBeTruthy();
 	});
 
 	it("total null (nenhuma visita no teste) também é 'não calculável'", async () => {
 		stubDaResposta({
 			variantes: [
 				variante({
-					variante: "B",
+					variante: "A",
 					visitas: null,
 					telefones: null,
 					naComparacao: null,
 					taxaDeTelefone: null,
 				}),
 				variante({
-					variante: "C",
+					variante: "B",
 					visitas: null,
 					telefones: null,
 					naComparacao: null,
@@ -138,12 +138,12 @@ describe("TesteDoTelefone", () => {
 		// novo a cada render refazia o fetch em laço — mesmo instante, chamada
 		// nova. A dependência é a identidade TEMPORAL, não o objeto.
 		const fetchMock = stubDaResposta({
-			variantes: [variante({ variante: "B" }), variante({ variante: "C", visitas: 12 })],
+			variantes: [variante({ variante: "A" }), variante({ variante: "B", visitas: 12 })],
 			total: { visitas: 43, telefones: 12, naComparacao: 5 },
 		});
 
 		const { rerender } = render(<TesteDoTelefone de={DE} ate={ATE} />);
-		await screen.findByTestId("variante-B");
+		await screen.findByTestId("variante-A");
 		const aposPrimeiroFetch = fetchMock.mock.calls.length;
 
 		// Mesmo instante, objeto novo (é o que `withDefault(diaDeHoje())` faz).
@@ -163,15 +163,15 @@ describe("TesteDoTelefone", () => {
 	it("lê o endpoint do teste com o período da tela em from/to", async () => {
 		const fetchMock = stubDaResposta({
 			variantes: [
-				variante({ variante: "B", visitas: 31 }),
-				variante({ variante: "C", visitas: 12 }),
+				variante({ variante: "A", visitas: 31 }),
+				variante({ variante: "B", visitas: 12 }),
 			],
 			total: { visitas: 43, telefones: 12, naComparacao: 5 },
 		});
 
 		render(<TesteDoTelefone de={DE} ate={ATE} />);
 
-		await screen.findByTestId("variante-B");
+		await screen.findByTestId("variante-A");
 		const url = String(fetchMock.mock.calls[0]?.[0]);
 		expect(url).toContain("/api/admin/performance/telefone-ab");
 		expect(url).toContain(`from=${encodeURIComponent(DE.toISOString())}`);

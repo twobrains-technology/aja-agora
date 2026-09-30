@@ -1,6 +1,7 @@
 import type { Category, ExperiencePrev } from "@/lib/agent/personas";
 import type { PlanIntent } from "@/lib/agent/qualify-config";
 import type { SimulationActionIntent } from "./types";
+import type { VarianteDoTelefone } from "./variante-da-visita";
 
 /**
  * Single source of truth for all client → server actions in the chat.
@@ -59,13 +60,13 @@ export type ChatAction =
 	// oferta. `variante` vai junto para o servidor saber qual caminho registrou.
 	| {
 			kind: "telefone_desbloqueio";
-			variante: "B" | "C";
+			variante: VarianteDoTelefone;
 			celular: string;
 			label: string;
 	  }
-	// O "Agora não" da variante C — saída REAL, sem telefone. Sem ele o card
+	// O "Agora não" da variante B — saída REAL, sem telefone. Sem ele o card
 	// vira pedágio e a pessoa abandona o site inteiro.
-	| { kind: "telefone_desbloqueio_recusar"; variante: "B" | "C" }
+	| { kind: "telefone_desbloqueio_recusar"; variante: VarianteDoTelefone }
 	| {
 			kind: "select-group";
 			groupId: string;

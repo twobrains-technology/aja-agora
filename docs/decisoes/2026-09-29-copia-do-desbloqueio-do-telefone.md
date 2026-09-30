@@ -1,4 +1,12 @@
-# Cópia do desbloqueio do telefone — variantes B e C
+# Cópia do desbloqueio do telefone — variantes A e B
+
+> **Revisado pelo dono em 29/09/2026, 23h (FIX-403).** A nomenclatura deste documento era
+> `B`/`C`; o dono corrigiu: *"teste A deveria ser, antes de mostrar para o cliente as ofertas,
+> pedir o numero dele... teste B deveria ser, mostra as ofertas totalmente embacadas com blur,
+> e alguma especie de clique para desbloquear, e ai pede o numero do cliente. teste C nao existe,
+> sao somente esses 2."* — Logo: **A** = o antigo "B" (`pede-antes`) e **B** = o antigo "C"
+> (`borrado`), que agora embaça **todas** as ofertas em vez de deixar a parcela legível.
+> O texto abaixo é o registro da call de 29/09 e ficou como estava; a nomenclatura vigente é A/B.
 
 **Origem:** call Aja Agora de 29/09/2026, 11:37–12:37 (Kairo, Bruna Perrotta, Gustavo Barbosa).
 **Prazo combinado:** teste rodando **quinta-feira 01/10 à noite** / sexta manhã.
