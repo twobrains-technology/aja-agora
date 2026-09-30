@@ -10,7 +10,9 @@
 
 import { type SQL, sql } from "drizzle-orm";
 import { db } from "@/db";
+import { condicaoDeBracoDaPessoa } from "@/lib/admin/filtro-variante";
 import { chaveDaPessoa, VISITA_DE_GENTE } from "@/lib/admin/sinais-do-funil";
+import type { RecorteAB } from "@/lib/experimentos/registro";
 import { type AlvoDoMapa, type DegrauDoFunil, montarAlvos, montarFunilDeSecoes } from "./aggregate";
 import { type Device, normalizarRotulo } from "./events";
 
@@ -23,6 +25,43 @@ export interface FiltroMapa {
 	to: Date;
 	device?: FiltroDevice;
 	desfecho?: Desfecho;
+	/** O recorte por braço de experimento (`?ab=…`). `[]` = todas. */
+	recorte?: RecorteAB;
+}
+
+/**
+ * O recorte por braço de experimento, no nível PESSOA.
+ *
+ * O mapa conta PESSOAS, então a régua é a de `condicaoDeBracoDaPessoa` — a
+ * MESMA que Performance, Porta e Campanhas usam. É essa escolha que faz o
+ * número desta tela fechar com o das outras; um predicado por conversa daria
+ * outro balde para a mesma gente.
+ *
+ * A visita entra como COLUNA (`pe.visit_id` nas consultas de evento, `v.id` nas
+ * de visita) porque é o que cada consulta tem em mãos — o visitante sai dela, e
+ * assim nenhum `JOIN` novo entra para mudar cardinalidade. Mesmo desenho do
+ * `recorteDesfecho`, que também recebe a coluna da visita.
+ *
+ * `[]` (o default) devolve `null`, e aí NENHUM SQL novo entra: é o que faz o
+ * recorte em "todas" não mover um número sequer (C4).
+ */
+function recorteAB(
+	recorte: RecorteAB | undefined,
+	from: Date,
+	to: Date,
+	colunaVisita: SQL,
+): SQL | null {
+	// O visitante da visita — a coluna de identidade que este módulo tem em cada
+	// consulta. Alias próprio (`vv`) para não sombrear o `vp` que `chaveDaPessoa`
+	// e `bracoDaPessoaSql` já usam.
+	const visitante = sql`(SELECT vv.visitor_id FROM visits vv WHERE vv.id = ${colunaVisita})`;
+
+	return condicaoDeBracoDaPessoa(recorte ?? [], {
+		de: from,
+		ate: to,
+		chave: chaveDaPessoa(from, to, visitante),
+		colunaVisitor: visitante,
+	});
 }
 
 /** Uma célula da nuvem de calor, já agregada — o cru nunca sai do banco. */
@@ -64,8 +103,13 @@ export interface MapaDeCalor {
 	 * /autos. Número que não fecha com o vizinho vira suspeita — ainda mais depois
 	 * de um dia em que o painel realmente estava inflado.
 	 *
-	 * Fora de todo recorte de propósito (página, aparelho, desfecho): ela existe
-	 * para reconciliar com telas que não conhecem nenhum dos três.
+	 * Fora do recorte de PÁGINA, APARELHO e DESFECHO de propósito: ela existe para
+	 * reconciliar com telas que não conhecem nenhum dos três.
+	 *
+	 * O recorte por BRAÇO de experimento, ao contrário, VALE aqui (FIX-404): as
+	 * telas com que ela reconcilia — Performance e Percurso — passaram a ser
+	 * recortadas por braço, então uma linha de base sem o recorte deixaria de
+	 * fechar com elas.
 	 */
 	pessoasPorPagina: { path: string; pessoas: number }[];
 	cliques: number;
@@ -149,18 +193,21 @@ function num(valor: unknown): number {
 }
 
 export async function computeMapaDeCalor(filtro: FiltroMapa): Promise<MapaDeCalor> {
-	const { path, from, to, device = "todos", desfecho = "todos" } = filtro;
+	const { path, from, to, device = "todos", desfecho = "todos", recorte } = filtro;
 
 	// O recorte comum a todas as consultas abaixo. Montado uma vez pra que um
 	// filtro não possa valer numa consulta e faltar na outra — foi assim que a
 	// mesma tela já mostrou funil de um recorte e alvos de outro em outros
 	// painéis.
+	const filtroDoBraco = recorteAB(recorte, from, to, sql`pe.visit_id`);
+	const filtroDoBracoDaVisita = recorteAB(recorte, from, to, sql`v.id`);
 	const base = sql`
     pe.path = ${path}
     AND pe.created_at BETWEEN ${from} AND ${to}
     AND ${recorteDevice(device)}
     AND ${recorteDesfecho(desfecho)}
     AND ${EVENTO_DE_GENTE}
+    ${filtroDoBraco ? sql`AND ${filtroDoBraco}` : sql``}
   `;
 
 	const [totais, naPagina, porPagina, rolagem, secoes, alvos, pontos] = await Promise.all([
@@ -195,6 +242,7 @@ export async function computeMapaDeCalor(filtro: FiltroMapa): Promise<MapaDeCalo
       WHERE v.created_at BETWEEN ${from} AND ${to}
         AND ${VISITA_DE_GENTE}
         AND ${recorteDesfecho(desfecho, sql`v.id`)}
+        ${filtroDoBracoDaVisita ? sql`AND ${filtroDoBracoDaVisita}` : sql``}
         AND (
           v.landing_path = ${path}
           OR EXISTS (
@@ -205,13 +253,16 @@ export async function computeMapaDeCalor(filtro: FiltroMapa): Promise<MapaDeCalo
     `),
 
 		// A divisão do período entre as páginas — a ponte com as outras telas.
-		// Fora de todo recorte de propósito: ela existe para reconciliar com
-		// Performance e Percurso, que não conhecem página nem aparelho.
+		// Fora do recorte de página e aparelho de propósito: ela existe para
+		// reconciliar com Performance e Percurso, que não conhecem nenhum dos
+		// dois. O recorte por BRAÇO vale aqui porque as duas passaram a ser
+		// recortadas por ele (FIX-404) — sem ele, esta linha deixaria de fechar.
 		db.execute<Record<string, unknown>>(sql`
       SELECT v.landing_path AS path, count(DISTINCT ${chaveDaPessoa(from, to)}) AS pessoas
       FROM visits v
       WHERE v.created_at BETWEEN ${from} AND ${to}
         AND ${VISITA_DE_GENTE}
+        ${filtroDoBracoDaVisita ? sql`AND ${filtroDoBracoDaVisita}` : sql``}
       GROUP BY v.landing_path
       ORDER BY 2 DESC
     `),
