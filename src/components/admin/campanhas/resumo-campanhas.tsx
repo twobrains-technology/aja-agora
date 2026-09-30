@@ -66,9 +66,14 @@ function explicarDiferenca(diferenca: number): string {
  * que o painel está errado.
  */
 function explicarDiferencaDeVerba(reconciliacao: {
-	reportadoCents: number;
-	atribuidoCents: number;
+	reportadoCents: number | null;
+	atribuidoCents: number | null;
 }): string {
+	// Com o recorte por braço ativo não há verba a reconciliar: o gasto da Meta é
+	// do período inteiro e não se divide (D6). A frase do recorte é de B3b.
+	if (reconciliacao.reportadoCents === null || reconciliacao.atribuidoCents === null) {
+		return "Custo não se divide por braço de teste: o investimento da Meta é do período inteiro.";
+	}
 	if (reconciliacao.reportadoCents === 0)
 		return "Sem investimento reportado no período — não há verba a reconciliar";
 	// Nunca negativo por desenho: o atribuído é um subconjunto do reportado.

@@ -9,9 +9,11 @@ import type { CustoPorQualificado, MotivoSemCusto } from "@/lib/admin/campanhas-
 const BR = new Intl.NumberFormat("pt-BR");
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
-/** Centavos → "R$ 1.234,56". */
-export function reais(centavos: number): string {
-	return BRL.format(centavos / 100);
+/** Centavos → "R$ 1.234,56". `null` é "—": não aplicável ao recorte ativo
+ *  (o investimento da Meta é do período inteiro), e `R$ 0,00` afirmaria que não
+ *  houve gasto. */
+export function reais(centavos: number | null): string {
+	return centavos === null ? "—" : BRL.format(centavos / 100);
 }
 
 /** Inteiro → "1.234". */
@@ -60,8 +62,21 @@ const MOTIVOS: Record<MotivoSemCusto, CustoDescrito> = {
  * graça. E 'sem base' — a resposta antiga — juntava três problemas diferentes
  * (sem vínculo, sem gasto, sem qualificado) sob um rótulo que não mandava
  * ninguém a lugar nenhum.
+ *
+ * O custo `null` é o quarto caso, e não é um dos três: com o recorte por braço
+ * de teste ativo, o investimento da Meta é do PERÍODO INTEIRO e não se divide
+ * por braço (D6). A frase do recorte na tela é de B3b; aqui só não se inventa
+ * número.
  */
-export function descreverCusto(custo: CustoPorQualificado): CustoDescrito {
+export function descreverCusto(custo: CustoPorQualificado | null): CustoDescrito {
+	if (custo === null) {
+		return {
+			texto: "—",
+			motivo: null,
+			tooltip:
+				"Custo não se divide por braço de teste: o investimento da Meta é do período inteiro.",
+		};
+	}
 	if (custo.tipo === "valor") {
 		return {
 			texto: reais(custo.centavos),
