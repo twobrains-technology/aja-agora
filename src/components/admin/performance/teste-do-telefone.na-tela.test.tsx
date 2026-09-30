@@ -11,7 +11,7 @@
  * com 12 mostra "faltam 18") e o padrão brasileiro da taxa (`0.25` → `25%`).
  */
 
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ResultadoPorVariante } from "@/lib/chat/resultado-do-teste-do-telefone";
 import { TesteDoTelefone } from "./teste-do-telefone";
@@ -131,6 +131,33 @@ describe("TesteDoTelefone", () => {
 		const total = await screen.findByTestId("teste-do-telefone-total");
 		expect(within(total).getAllByText("não calculável")).toHaveLength(3);
 		expect(total.textContent).not.toMatch(/[0-9]/);
+	});
+
+	it("re-render com Date de mesmo instante não refaz o fetch; instante novo refaz", async () => {
+		// O defeito medido (FIX-401): com o efeito preso em `[de, ate]`, um `Date`
+		// novo a cada render refazia o fetch em laço — mesmo instante, chamada
+		// nova. A dependência é a identidade TEMPORAL, não o objeto.
+		const fetchMock = stubDaResposta({
+			variantes: [variante({ variante: "B" }), variante({ variante: "C", visitas: 12 })],
+			total: { visitas: 43, telefones: 12, naComparacao: 5 },
+		});
+
+		const { rerender } = render(<TesteDoTelefone de={DE} ate={ATE} />);
+		await screen.findByTestId("variante-B");
+		const aposPrimeiroFetch = fetchMock.mock.calls.length;
+
+		// Mesmo instante, objeto novo (é o que `withDefault(diaDeHoje())` faz).
+		rerender(<TesteDoTelefone de={new Date(DE.getTime())} ate={new Date(ATE.getTime())} />);
+		await act(async () => {
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		});
+		expect(fetchMock.mock.calls.length).toBe(aposPrimeiroFetch);
+
+		// Instante diferente: aí sim o período mudou e o fetch refaz.
+		rerender(
+			<TesteDoTelefone de={new Date(DE.getTime() + 86_400_000)} ate={new Date(ATE.getTime())} />,
+		);
+		await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(aposPrimeiroFetch));
 	});
 
 	it("lê o endpoint do teste com o período da tela em from/to", async () => {

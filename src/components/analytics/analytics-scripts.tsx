@@ -101,7 +101,9 @@ function ehJanelaDeTopo(): boolean {
 
 /** `true` para toda rota do painel — `/admin`, `/admin/login`, `/admin/pipeline`. */
 function ehRotaDoPainel(caminho: string | null): boolean {
-	return caminho?.startsWith("/admin") ?? false;
+	// Igualdade ou barra: `/administradoras` é CONTEÚDO e casa com um
+	// `startsWith("/admin")` — prefixo cru mataria as tags de anúncio lá.
+	return caminho === "/admin" || (caminho?.startsWith("/admin/") ?? false);
 }
 
 export function AnalyticsScripts() {

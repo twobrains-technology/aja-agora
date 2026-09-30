@@ -105,14 +105,28 @@ describe("AnalyticsScripts", () => {
 	// `fbq('track','PageView')` — visita de quem opera o produto virando sinal de
 	// otimização da mídia paga. A trava por rota fecha isso em qualquer tela do
 	// painel, inclusive o login.
-	it.each(["/admin/pipeline", "/admin/login"])("não injeta tag nenhuma em %s", (caminho) => {
-		rota.atual = caminho;
+	// `/administradoras` é rota de CONTEÚDO, não do painel. O `startsWith("/admin")`
+	// antigo casava com ela por prefixo e matava as tags de anúncio ali.
+	it("mantém as tags em /administradoras — é conteúdo, não painel", () => {
+		rota.atual = "/administradoras";
 		comTopo(window);
 
 		const { container } = render(<AnalyticsScripts />);
 
-		expect(container.querySelectorAll("[data-tag]")).toHaveLength(0);
+		expect(container.querySelectorAll("[data-tag]").length).toBeGreaterThan(0);
 	});
+
+	it.each(["/admin", "/admin/pipeline", "/admin/login"])(
+		"não injeta tag nenhuma em %s",
+		(caminho) => {
+			rota.atual = caminho;
+			comTopo(window);
+
+			const { container } = render(<AnalyticsScripts />);
+
+			expect(container.querySelectorAll("[data-tag]")).toHaveLength(0);
+		},
+	);
 
 	it.each(["/", "/chat"])(
 		"mantém as tags fora do painel em %s, com o Pixel presente e não adiado",

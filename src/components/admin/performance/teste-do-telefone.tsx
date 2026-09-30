@@ -110,6 +110,12 @@ export function TesteDoTelefone({ de, ate }: { de: Date | null; ate: Date | null
 	const [carregando, setCarregando] = useState(true);
 	const [erro, setErro] = useState<string | null>(null);
 
+	// A dependência do efeito é a identidade TEMPORAL do período, não o objeto
+	// `Date`: sem `from`/`to` na URL o período é recriado a cada render
+	// (`withDefault(diaDeHoje())`), e depender do objeto refazia o fetch em laço.
+	const deEm = de?.getTime() ?? null;
+	const ateEm = ate?.getTime() ?? null;
+
 	useEffect(() => {
 		let vivo = true;
 
@@ -118,8 +124,8 @@ export function TesteDoTelefone({ de, ate }: { de: Date | null; ate: Date | null
 			setErro(null);
 			try {
 				const params = new URLSearchParams();
-				if (de) params.set("from", de.toISOString());
-				if (ate) params.set("to", ate.toISOString());
+				if (deEm !== null) params.set("from", new Date(deEm).toISOString());
+				if (ateEm !== null) params.set("to", new Date(ateEm).toISOString());
 
 				const res = await fetch(`/api/admin/performance/telefone-ab?${params.toString()}`);
 				if (!res.ok) throw new Error(`Erro ao carregar o teste do telefone: ${res.status}`);
@@ -137,7 +143,7 @@ export function TesteDoTelefone({ de, ate }: { de: Date | null; ate: Date | null
 		return () => {
 			vivo = false;
 		};
-	}, [de, ate]);
+	}, [deEm, ateEm]);
 
 	const total = lerTotalDoTeste(resposta?.total ?? null);
 
