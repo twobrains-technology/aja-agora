@@ -28,8 +28,8 @@ Validação contra o código e decisões do chefe: `.orientacao/diario.md` (30/0
 
 | # | Decisão |
 |---|---|
-| D1 | **Regra da PESSOA = a conversa mais recente QUE TEM variante, dentro do período** (`c.created_at BETWEEN de AND ate`, `ORDER BY c.created_at DESC, c.id DESC` — desempate obrigatório). Conversa sem variante (WhatsApp, pré-teste) **não reseta**. Decisão do dono de 30/09 (*"se ela passou de etapa do funil, deve considerar a que fez ela ir para lá, que foi a última"*), fechada pelo estudo `.orientacao/ESTUDO-REFINO-2026-09-30-atribuicao-da-variante.md`. Não soma a pessoa em A e B, não existe balde `mista`. |
-| D1′ | **Nível ETAPA: NÃO construir** (estudo de 30/09): quebra `A + B = total` (a mesma pessoa pode ter "viu oferta" numa conversa A e "proposta" numa B) e o dado não existe — o override de QA do FIX-403 **regrava** a variante, o banco guarda o valor atual e não o histórico. Nada de `RegraDeAtribuicao`, nada de parâmetro de instante. |
+| D1 | ⏸️ **EM REVISÃO — decisão do dono de 30/09 12:41** (`.orientacao/DECISAO-DO-DONO-2026-09-30-ancorar-na-identificacao.md`): a variante da PESSOA é a da **conversa web em que ela passou de não identificada para identificada** (a que *acionou* a identificação); identificou-se mais de uma vez ⇒ vale a **primeira** identificação; **nunca se identificou** ⇒ a da **última conversa com variante no período** (`created_at DESC, id DESC`; sem variante não reseta); WhatsApp não entra (nasce identificado; quem seguiu da web para o WhatsApp mantém a variante da conversa web). A pessoa cai num balde só, então `A + B + sem = todas` fecha. **O SQL do "fato da identificação" aguarda o estudo de refino em voo** — B1b só começa quando o chefe gravar aqui o SQL. |
+| D1′ | Atribuição **etapa a etapa** (variante em vigor em cada evento): **não construir** — quebra a partição e o dado do instante não existe (o override de QA do FIX-403 regrava a variante). A regra D1 é ancorada em **um** evento (a identificação), por isso não sofre essa objeção. |
 | D2 | Balde **`sem-variante`** (esse nome) = WhatsApp, conversa pré-teste, pessoa sem conversa web. **`A + B + sem-variante = todas`** tem que fechar em toda tela. |
 | D3 | **Default = todas.** Com o filtro no default, **nenhum número muda** (provado por teste, ver C4). Com filtro ≠ todas a tela diz *"Recorte: variante A"* (ou B / sem variante). |
 | D4 | **Custo não se filtra por variante** (`meta_insights_diarios` não tem variante). Com filtro ≠ todas: investimento, CPC, CPL e custo por etapa saem `null` + `custoNaoAplicavelAoRecorte: true`; a tela escreve *"Custo não se divide por variante: o investimento da Meta é do período inteiro."* O funil segue visível. |
@@ -134,13 +134,24 @@ boolean` (sempre presente; `false` sem filtro). Toda query tocada ganha **últim
 
 | Onda | Lanes | Por quê |
 |---|---|---|
-| 1 | **B1** sozinha | todo o resto consome o contrato |
-| 2 | B2a · B2b · B2c · B2d · B2e · B4 · B5 · B3a (paralelo, arquivos disjuntos) | cada uma é um módulo |
+| 1 | **B1a**; ⏸️ B1b quando o SQL de D1 chegar | todo o resto consome o contrato |
+| 2 | B2e · B5 · B3a logo após B1a; B2a · B2b · B2c · B2d · B4 após B1b (paralelo, arquivos disjuntos) | cada uma é um módulo |
 | 3 | **B3b** (fiação da UI nas páginas) | consome os tipos de B2a/B2c e o componente de B3a |
 
 Merge na base na ordem: B1 → onda 2 (qualquer ordem, **exceto B2c depois de B2a**, que é dona do `contagensDoFunil`; gate integrado depois de cada merge) → B3b.
 
-### B1 · fundação — `filtro-variante-opcoes.ts` + `filtro-variante.ts`
+### B1 · fundação — dividida em B1a (fecha já) e B1b (⏸️ segurada)
+
+**B1a** — tudo que não depende da regra da pessoa: `filtro-variante-opcoes.ts` inteiro,
+`varianteDaRequisicao`, `condicaoDeVarianteNaConversa`, `varianteDaConversaSql` e os testes deles (allowlist,
+URL > cookie > null, caso 6 do estudo). **Gate:** `pnpm -s vitest run src/lib/admin/filtro-variante.test.ts && pnpm -s typecheck`.
+Integrada B1a, podem começar **só** as lanes de nível conversa: **B2e, B5, B3a**.
+
+**B1b** — ⏸️ `varianteDaPessoa` / `condicaoDeVarianteDaPessoa` / `cteDaVarianteDaPessoa`: **não começa**
+até o chefe gravar o SQL da identificação em D1. O miolo fica **isolado numa função** (as assinaturas do
+contrato não mudam; só o corpo). Depois de B1b integrada: B2a, B2b, B2c, B2d, B4.
+
+Texto original do bloco (vale para B1a+B1b; os casos de pessoa serão reescritos com a regra D1 final):
 **Files:** Create `src/lib/admin/filtro-variante-opcoes.ts`, `src/lib/admin/filtro-variante.ts`,
 `src/lib/admin/filtro-variante.test.ts`, `src/lib/admin/filtro-variante.integration.test.ts`.
 **Interfaces:** Consome `ehVarianteDoTelefone`, `CHAVE_DO_TESTE_NO_METADATA`, `chaveDaPessoa` · Produz o contrato acima.
