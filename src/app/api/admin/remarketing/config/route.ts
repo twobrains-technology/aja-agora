@@ -6,6 +6,11 @@
  * pode ler, com a mensagem no campo, porque o que fica no banco é o que a régua
  * vai ler a cada ciclo.
  *
+ * A escala de retomada viaja SEPARADA de `parametros`, nos dois verbos: ela é
+ * uma lista (linha CSV) e não tem lugar no `<input type="number">` que a tela
+ * renderiza por vigente — dentro do mapa, o save a reenviaria vazia e apagaria
+ * a escala do banco.
+ *
  * Quem lê é `admin` e `viewer` (a tela é leitura para quem não decide). Quem
  * grava é só `admin`: mudar o teto de toques de uma pessoa é mudar quantas
  * mensagens saem para o cliente.
@@ -40,8 +45,8 @@ export async function GET() {
 	if (error) return error;
 
 	try {
-		const { vigentes } = await lerCadastroDoRemarketing();
-		return Response.json({ parametros: vigentes });
+		const { vigentes, escalaDeRetomada } = await lerCadastroDoRemarketing();
+		return Response.json({ parametros: vigentes, escalaDeRetomada });
 	} catch (err) {
 		console.error("[admin/remarketing/config GET]", err);
 		return Response.json({ error: "Não foi possível ler o cadastro da régua." }, { status: 500 });
@@ -81,7 +86,10 @@ export async function PUT(req: Request) {
 		}
 
 		const leitura = await gravarCadastro(validacao, session.user.id);
-		return Response.json({ parametros: leitura.vigentes });
+		return Response.json({
+			parametros: leitura.vigentes,
+			escalaDeRetomada: leitura.escalaDeRetomada,
+		});
 	} catch (err) {
 		console.error("[admin/remarketing/config PUT]", err);
 		return Response.json(
