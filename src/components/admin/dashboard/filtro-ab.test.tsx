@@ -23,7 +23,7 @@ import {
 	type Experimento,
 	PARAMETRO_DO_RECORTE_AB,
 } from "@/lib/experimentos/registro";
-import { FiltroAB } from "./filtro-ab";
+import { FiltroAB, NOTA_DO_BRACO_DA_PESSOA } from "./filtro-ab";
 
 /** O rótulo do seletor do experimento real. */
 const SELETOR_REAL = "Recorte do Teste do telefone";
@@ -46,10 +46,12 @@ const EXPERIMENTO_FICTICIO: Experimento = {
 function montar({
 	searchParams = "",
 	registro,
+	nota,
 	onUrlUpdate,
 }: {
 	searchParams?: string;
 	registro?: readonly Experimento[];
+	nota?: string;
 	onUrlUpdate?: (evento: UrlUpdateEvent) => void;
 } = {}) {
 	return render(
@@ -59,7 +61,7 @@ function montar({
 			resetUrlUpdateQueueOnMount={false}
 			onUrlUpdate={onUrlUpdate}
 		>
-			<FiltroAB registro={registro} />
+			<FiltroAB registro={registro} nota={nota} />
 		</NuqsTestingAdapter>,
 	);
 }
@@ -233,5 +235,22 @@ describe("genérico por registro (D4)", () => {
 				`${ID_DO_EXPERIMENTO}:A`,
 			]),
 		);
+	});
+});
+
+describe("a frase de quem é o braço (D5/D10)", () => {
+	it("com recorte ativo, escreve a nota da tela junto do rótulo do recorte", () => {
+		montar({ searchParams: `?ab=${ID_DO_EXPERIMENTO}:A`, nota: NOTA_DO_BRACO_DA_PESSOA });
+
+		expect(screen.getByTestId("nota-do-recorte").textContent).toBe(NOTA_DO_BRACO_DA_PESSOA);
+		// O rótulo do recorte continua na tela — é texto, nunca só a cor do
+		// controle (o dono é daltônico).
+		expect(screen.getByText(`Recorte: ${EXPERIMENTOS[0].rotulo} · braço A`)).toBeTruthy();
+	});
+
+	it("sem recorte ativo, a nota não aparece — ela falaria de uma lente desligada", () => {
+		montar({ nota: NOTA_DO_BRACO_DA_PESSOA });
+
+		expect(screen.queryByTestId("nota-do-recorte")).toBeNull();
 	});
 });

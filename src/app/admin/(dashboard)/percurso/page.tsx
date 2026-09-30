@@ -5,6 +5,7 @@ import { parseAsInteger, parseAsString, useQueryState } from "nuqs";
 import { useCallback, useEffect, useState } from "react";
 import { ConversationDetailPanel } from "@/components/admin/conversations/conversation-detail-panel";
 import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter";
+import { FiltroAB, NOTA_DO_BRACO_DA_PESSOA } from "@/components/admin/dashboard/filtro-ab";
 import { EscadaDoPercurso } from "@/components/admin/percurso/escada-do-percurso";
 import { TabelaPercurso } from "@/components/admin/percurso/tabela-percurso";
 import { ContactDetailPanel } from "@/components/admin/pipeline/contact-detail-panel";
@@ -23,6 +24,7 @@ import {
 } from "@/lib/admin/percurso-types";
 import { diaDeHoje } from "@/lib/admin/periodo";
 import { parseAsDiaDoNegocio } from "@/lib/admin/periodo-querystring";
+import { PARAMETRO_DO_RECORTE_AB } from "@/lib/experimentos/registro";
 
 const POR_PAGINA = 50;
 const nf = new Intl.NumberFormat("pt-BR");
@@ -84,6 +86,7 @@ function PercursoContent() {
 	const [campanha, setCampanha] = useQueryState("campanha", parseAsString);
 	const [q, setQ] = useQueryState("q", parseAsString.withDefault(""));
 	const [offset, setOffset] = useQueryState("offset", parseAsInteger.withDefault(0));
+	const [ab] = useQueryState(PARAMETRO_DO_RECORTE_AB, parseAsString);
 
 	const [data, setData] = useState<PercursoResponse | null>(null);
 	const [erro, setErro] = useState<string | null>(null);
@@ -122,6 +125,7 @@ function PercursoContent() {
 			if (origem) p.set("origem", origem);
 			if (campanha) p.set("campanha", campanha);
 			if (q) p.set("q", q);
+			if (ab) p.set(PARAMETRO_DO_RECORTE_AB, ab);
 
 			const res = await fetch(`/api/admin/percurso?${p.toString()}`);
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -132,7 +136,7 @@ function PercursoContent() {
 		} finally {
 			setCarregando(false);
 		}
-	}, [deMs, ateMs, offset, modo, passo, origem, campanha, q]);
+	}, [deMs, ateMs, offset, modo, passo, origem, campanha, q, ab]);
 
 	useEffect(() => {
 		void carregar();
@@ -202,7 +206,10 @@ function PercursoContent() {
 						Quem chegou pela campanha e até onde foi — inclusive quem não chegou a falar.
 					</p>
 				</div>
-				<DateRangeFilter />
+				<div className="flex flex-wrap items-center gap-2">
+					<FiltroAB nota={NOTA_DO_BRACO_DA_PESSOA} />
+					<DateRangeFilter />
+				</div>
 			</div>
 
 			{erro && (

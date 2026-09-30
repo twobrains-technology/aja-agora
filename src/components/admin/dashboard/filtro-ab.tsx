@@ -78,13 +78,42 @@ function gravarCookie(recorte: RecorteAB) {
 			: `${COOKIE_DO_RECORTE_AB}=${encodeURIComponent(valor)}; path=/; samesite=lax`;
 }
 
+/**
+ * As frases que explicam DE QUEM é o braço, uma por tipo de tela (D10).
+ *
+ * Elas vivem aqui, e não espalhadas pelas páginas, por dois motivos: o texto é o
+ * mesmo em todas as telas de funil (e a cópia divergiria), e o lugar onde ele
+ * aparece é decidido por quem sabe que o recorte está ativo — o próprio filtro.
+ */
+export const NOTA_DO_BRACO_DA_PESSOA =
+	"O braço é o da conversa em que a pessoa se identificou; nas etapas seguintes ela segue no mesmo braço.";
+export const NOTA_DO_BRACO_DA_CONVERSA =
+	"Nesta tela o braço é o da própria conversa — aqui a linha é uma conversa, não uma pessoa.";
+export const NOTA_DA_EXPORTACAO =
+	"No percurso o braço é o da pessoa; nas conversas e nos toques, o da própria conversa.";
+
+/**
+ * A frase do D6 — o custo não se divide por braço de teste.
+ *
+ * Mora aqui, com as outras frases do recorte, porque aparece em DUAS telas
+ * (Performance e Campanhas) e porque é a explicação do recorte, não do bloco de
+ * custos. Duas cópias divergiriam calado.
+ */
+export const FRASE_CUSTO_NAO_APLICAVEL =
+	"Custo não se divide por braço de teste: o investimento da Meta é do período inteiro.";
+
 export function FiltroAB({
 	registro = EXPERIMENTOS,
+	nota,
 	className,
 }: {
 	/** Os experimentos oferecidos. Injetável para o teste provar que o componente
 	 *  é genérico (dois experimentos ⇒ dois seletores, sem mudar código). */
 	registro?: readonly Experimento[];
+	/** A frase que explica de quem é o braço NESTA tela (D10). Só aparece com
+	 *  recorte ativo — sem recorte ela seria ruído sobre uma lente que ninguém
+	 *  ligou. */
+	nota?: string;
 	className?: string;
 }) {
 	// Sem `withDefault`: o valor cru diz se a querystring trouxe o recorte. Um
@@ -130,7 +159,7 @@ export function FiltroAB({
 	const rotulo = rotuloDoRecorte(recorte, registro);
 
 	return (
-		<div className={cn("flex flex-wrap items-center gap-2", className)}>
+		<div className={cn("flex flex-wrap items-center gap-x-2 gap-y-1", className)}>
 			{registro.map((experimento) => {
 				const atual = recorte.find((par) => par.experimento === experimento.id)?.braco ?? null;
 				return (
@@ -166,12 +195,19 @@ export function FiltroAB({
 			{/* O recorte ativo escrito na tela — nunca só a cor do controle (o dono
 			    é daltônico). */}
 			{rotulo !== null && (
-				<span
-					className="inline-flex h-8 items-center rounded-md border border-dashed border-input px-3 text-xs text-muted-foreground"
-					title="O painel está recortado por este experimento"
-				>
-					{rotulo}
-				</span>
+				<>
+					<span
+						className="inline-flex h-8 items-center rounded-md border border-dashed border-input px-3 text-xs text-muted-foreground"
+						title="O painel está recortado por este experimento"
+					>
+						{rotulo}
+					</span>
+					{nota && (
+						<span data-testid="nota-do-recorte" className="w-full text-xs text-muted-foreground">
+							{nota}
+						</span>
+					)}
+				</>
 			)}
 		</div>
 	);

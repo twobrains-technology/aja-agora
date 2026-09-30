@@ -23,6 +23,7 @@ import { DownloadIcon } from "lucide-react";
 import { parseAsBoolean, parseAsString, useQueryState } from "nuqs";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter";
+import { FiltroAB, NOTA_DA_EXPORTACAO } from "@/components/admin/dashboard/filtro-ab";
 import { usePeriodoPadrao } from "@/components/admin/dashboard/periodo-provider";
 import { CartoesDeExportacao } from "@/components/admin/exportacao/cartoes-de-exportacao";
 import { UltimasExportacoes } from "@/components/admin/exportacao/ultimas-exportacoes";
@@ -31,6 +32,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { diaDoNegocio } from "@/lib/admin/periodo";
 import { parseAsDiaDoNegocio } from "@/lib/admin/periodo-querystring";
+import { PARAMETRO_DO_RECORTE_AB } from "@/lib/experimentos/registro";
 import type { RespostaDoResumo, TipoExportacao } from "@/lib/exportacao/tipos";
 import { TIPOS_DE_EXPORTACAO } from "@/lib/exportacao/tipos";
 
@@ -66,6 +68,7 @@ function ExportacaoContent() {
 	const [origem] = useQueryState("origem", parseAsString);
 	const [campanha] = useQueryState("campanha", parseAsString);
 	const [q] = useQueryState("q", parseAsString);
+	const [ab] = useQueryState(PARAMETRO_DO_RECORTE_AB, parseAsString);
 
 	const [dados, setDados] = useState<RespostaDoResumo | null>(null);
 	const [erro, setErro] = useState<string | null>(null);
@@ -88,8 +91,9 @@ function ExportacaoContent() {
 		if (origem) p.set("origem", origem);
 		if (campanha) p.set("campanha", campanha);
 		if (q) p.set("q", q);
+		if (ab) p.set(PARAMETRO_DO_RECORTE_AB, ab);
 		return p;
-	}, [deMs, ateMs, passo, modo, origem, campanha, q]);
+	}, [deMs, ateMs, passo, modo, origem, campanha, q, ab]);
 
 	const carregar = useCallback(async () => {
 		setCarregando(true);
@@ -144,7 +148,10 @@ function ExportacaoContent() {
 						autoria e a etapa do funil no momento de cada uma.
 					</p>
 				</div>
-				<DateRangeFilter />
+				<div className="flex flex-wrap items-center gap-2">
+					<FiltroAB nota={NOTA_DA_EXPORTACAO} />
+					<DateRangeFilter />
+				</div>
 			</div>
 
 			{erro && (

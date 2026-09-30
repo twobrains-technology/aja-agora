@@ -20,11 +20,12 @@
  */
 
 import { InfoIcon } from "lucide-react";
-import { useQueryState } from "nuqs";
+import { parseAsString, useQueryState } from "nuqs";
 import { useCallback, useEffect, useState } from "react";
 import { ResumoCampanhas } from "@/components/admin/campanhas/resumo-campanhas";
 import { TabelaCampanhas } from "@/components/admin/campanhas/tabela-campanhas";
 import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter";
+import { FiltroAB, NOTA_DO_BRACO_DA_PESSOA } from "@/components/admin/dashboard/filtro-ab";
 import { usePeriodoPadrao } from "@/components/admin/dashboard/periodo-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -32,6 +33,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { RespostaDeCampanhas } from "@/lib/admin/campanhas-queries";
 import { parseAsDiaDoNegocio } from "@/lib/admin/periodo-querystring";
+import { PARAMETRO_DO_RECORTE_AB } from "@/lib/experimentos/registro";
 
 function BlocoSkeleton({ altura = 320 }: { altura?: number }) {
 	return (
@@ -52,6 +54,9 @@ function CampanhasContent() {
 	const [toUrl] = useQueryState("to", parseAsDiaDoNegocio);
 	const from = fromUrl ?? padrao.de;
 	const to = toUrl ?? padrao.ate;
+	// O recorte por braço de experimento — mesmo trilho do período. O servidor
+	// resolve URL > cookie `aja_ab`, então só se repassa o que veio na URL.
+	const [ab] = useQueryState(PARAMETRO_DO_RECORTE_AB, parseAsString);
 
 	const deMs = from.getTime();
 	const ateMs = to.getTime();
@@ -68,6 +73,7 @@ function CampanhasContent() {
 				from: new Date(deMs).toISOString(),
 				to: new Date(ateMs).toISOString(),
 			});
+			if (ab) params.set(PARAMETRO_DO_RECORTE_AB, ab);
 			const res = await fetch(`/api/admin/campanhas?${params.toString()}`);
 			if (!res.ok) {
 				const corpo = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -83,7 +89,7 @@ function CampanhasContent() {
 		} finally {
 			setCarregando(false);
 		}
-	}, [deMs, ateMs]);
+	}, [deMs, ateMs, ab]);
 
 	useEffect(() => {
 		void carregar();
@@ -121,7 +127,10 @@ function CampanhasContent() {
 						</Tooltip>
 					</div>
 				</div>
-				<DateRangeFilter />
+				<div className="flex flex-wrap items-center gap-2">
+					<FiltroAB nota={NOTA_DO_BRACO_DA_PESSOA} />
+					<DateRangeFilter />
+				</div>
 			</div>
 
 			{erro && (
@@ -176,6 +185,7 @@ function CampanhasContent() {
 									conversas: 0,
 								}
 							}
+							custoNaoAplicavelAoRecorte={dados?.custoNaoAplicavelAoRecorte ?? false}
 						/>
 					)}
 

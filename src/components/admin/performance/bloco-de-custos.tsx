@@ -23,6 +23,7 @@
  */
 
 import { inteiro, reais } from "@/components/admin/campanhas/formato";
+import { FRASE_CUSTO_NAO_APLICAVEL } from "@/components/admin/dashboard/filtro-ab";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { CustosDoCpc } from "@/lib/admin/performance-types";
 import { calcularCpc } from "./custos-do-cpc";
@@ -54,8 +55,47 @@ function Linha({
 	);
 }
 
+/**
+ * A frase do D6 — o custo não se divide por braço de teste.
+ *
+ * A mesma frase das telas de Campanhas (`resumo-campanhas.tsx`): a explicação é
+ * do produto, não da tela — por isso ela mora em `filtro-ab.tsx`, com as demais
+ * frases do recorte, e é importada aqui.
+ */
 export function BlocoDeCustos({ custos }: { custos: CustosDoCpc }) {
 	const cpc = calcularCpc(custos);
+
+	// ── Recorte por braço ativo: nenhum R$ nesta tela (D6) ────────────────────
+	//
+	// O gasto da Meta é do PERÍODO INTEIRO: não existe coluna de braço em
+	// `meta_insights_diarios`. Ratear o investimento pelo funil recortado seria
+	// inventar um número por onde a verba passa — e mostrar o custo de IA ou de
+	// mensagem em reais ao lado de um funil recortado convidaria a mesma divisão
+	// errada. Então NÃO se renderiza cifra nenhuma: mostra a frase e a contagem
+	// que continua válida (o funil segue visível — é o que o dono pediu).
+	if (custos.custoNaoAplicavelAoRecorte) {
+		return (
+			<Card className="shadow-sm">
+				<CardHeader>
+					<CardTitle>Custo por lead qualificado (CPC)</CardTitle>
+				</CardHeader>
+				<CardContent className="space-y-3">
+					<p
+						data-testid="custo-nao-aplicavel-ao-recorte"
+						className="rounded-md border border-dashed border-input bg-muted/30 p-3 text-sm text-muted-foreground"
+					>
+						{FRASE_CUSTO_NAO_APLICAVEL}
+					</p>
+					<Linha
+						titulo="Conversas / qualificados"
+						valor={`${inteiro(custos.contagens.conversas)} / ${inteiro(custos.contagens.qualificados)}`}
+						nota={`${inteiro(custos.contagens.identificados)} se identificaram no período`}
+						fonte={custos.fontes.contagens}
+					/>
+				</CardContent>
+			</Card>
+		);
+	}
 
 	const investimento =
 		custos.investimentoMetaCents === null ? "não reportado" : reais(custos.investimentoMetaCents);

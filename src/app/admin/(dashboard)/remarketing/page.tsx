@@ -29,10 +29,11 @@ import { parseAsInteger, parseAsString, useQueryState } from "nuqs";
 import { useCallback, useEffect, useState } from "react";
 import { ConversationDetailPanel } from "@/components/admin/conversations/conversation-detail-panel";
 import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter";
+import { FiltroAB, NOTA_DO_BRACO_DA_CONVERSA } from "@/components/admin/dashboard/filtro-ab";
 import { usePeriodoPadrao } from "@/components/admin/dashboard/periodo-provider";
 import { CartoesDaRegua } from "@/components/admin/remarketing/cartoes-da-regua";
-import { PainelDeReentrada } from "@/components/admin/remarketing/painel-de-reentrada";
 import { SecaoDeInsights } from "@/components/admin/remarketing/insights-da-regua";
+import { PainelDeReentrada } from "@/components/admin/remarketing/painel-de-reentrada";
 import { BlocoResumoDaRegua } from "@/components/admin/remarketing/resumo-da-regua";
 import { TabelaRemarketing } from "@/components/admin/remarketing/tabela-remarketing";
 import { Badge } from "@/components/ui/badge";
@@ -62,6 +63,7 @@ import {
 	situacaoDoParametro,
 } from "@/lib/admin/remarketing-tela";
 import { BENS } from "@/lib/admin/rotulo-do-bem";
+import { PARAMETRO_DO_RECORTE_AB } from "@/lib/experimentos/registro";
 
 const POR_PAGINA = 50;
 const nf = new Intl.NumberFormat("pt-BR");
@@ -95,6 +97,9 @@ function ReguaContent() {
 	// enviados" e cada degrau do funil abrem (FIX-379).
 	const [passo, setPasso] = useQueryState("passo", parseAsString);
 	const [offset, setOffset] = useQueryState("offset", parseAsInteger.withDefault(0));
+	// O recorte por braço de experimento (mesmo trilho do período). Aqui a linha
+	// da régua É uma conversa, então o braço é o DA CONVERSA.
+	const [ab] = useQueryState(PARAMETRO_DO_RECORTE_AB, parseAsString);
 
 	// Valor cru da URL vira situação conhecida ou `null` (todas). Um link velho,
 	// ou um favorito com uma situação que não existe mais, mostra a lista inteira
@@ -127,6 +132,7 @@ function ReguaContent() {
 			if (situacaoAtiva) p.set("situacao", situacaoAtiva);
 			if (objetivo) p.set("objetivo", objetivo);
 			if (passoAtivo !== null) p.set("passo", String(passoAtivo));
+			if (ab) p.set(PARAMETRO_DO_RECORTE_AB, ab);
 
 			const res = await fetch(`/api/admin/remarketing?${p.toString()}`);
 			if (!res.ok) {
@@ -143,7 +149,7 @@ function ReguaContent() {
 		} finally {
 			setCarregando(false);
 		}
-	}, [deMs, ateMs, offset, situacaoAtiva, objetivo, passoAtivo]);
+	}, [deMs, ateMs, offset, situacaoAtiva, objetivo, passoAtivo, ab]);
 
 	useEffect(() => {
 		void carregar();
@@ -207,6 +213,7 @@ function ReguaContent() {
 						<SettingsIcon className="size-3.5" />
 						Cadastro da régua
 					</Button>
+					<FiltroAB nota={NOTA_DO_BRACO_DA_CONVERSA} />
 					<DateRangeFilter />
 				</div>
 			</div>
@@ -254,9 +261,7 @@ function ReguaContent() {
 
 					{/* A PORTA DO BOLO PARADO: a régua não inscreve sozinha quem passou dos 7
 					    dias — esta ação traz o bolo de volta, em lote e por decisão do operador. */}
-					{data && (
-						<PainelDeReentrada ligada={data.ligada} onReentrou={() => void carregar()} />
-					)}
+					{data && <PainelDeReentrada ligada={data.ligada} onReentrou={() => void carregar()} />}
 
 					{/* Régua nunca ligada: não há lista nem contador para mostrar. O estado
 					    honesto vem com os insights, no fim — e um funil de zeros mentiria. */}
