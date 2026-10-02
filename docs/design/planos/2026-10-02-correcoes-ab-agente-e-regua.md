@@ -81,7 +81,7 @@ O que de fato quebrou:
 | D2 | **Todo card que revela número de oferta obedece à trava**, com uma lista única exportada de `desbloqueio-do-telefone.ts` e lida por servidor e cliente: `comparison_table`, `recommendation_card`, `simulation_result`, `group_card`, `financing_comparison`, `scenarios`. No A fica retido; no B fica borrado. |
 | D3 | **B sem janela legível:** o card do telefone sai **junto do primeiro card de oferta**, como o A já faz (`adapter.ts:483-494`). Nada de placeholder nem copy nova: a copy do card é do dono. |
 | D4 | **Fila do A/B:** alternância estrita A, B, A, B por **conversa web nova**, via contador atômico no Postgres por experimento (`UPDATE … SET proximo = proximo + 1 RETURNING`). Todo caminho de criação web grava o braço (inclusive o clique de categoria), e nenhum writer posterior pode apagá-lo. O `?variante=` continua forçando, **não consome a fila**, grava `forcada: true` e fica **fora do teste**: o resultado (`resultado-do-teste-do-telefone.ts`) e o filtro do painel (`filtro-variante.ts`) tratam a conversa como "sem variante". Conversa já com braço mantém o braço. |
-| D5 | **Analyzer = o modelo do agente.** O turn-analyzer passa a usar `AI_MODEL` (hoje `qwen3.8-flash`). `AI_ANALYZER_MODEL` deixa de ser lido. A rota segue a regra que o código já usa (`isNativeAnthropicModel`): `claude-*` vai pelo provider Anthropic do gateway; o resto pelo cliente OpenAI-compatível do gateway (`createGatewayOpenAI`, `/v1/chat/completions`). Fábrica única em `src/lib/llm/model-provider.ts`. Decisão do dono, 02/10: "ajusta isso já para ficar homogêneo". |
+| D5 | **Analyzer = o modelo padrão do projeto.** O turn-analyzer deixa de ter modelo próprio fixo e herda o padrão: **`AI_ANALYZER_MODEL ?? AI_MODEL ?? default do projeto`** (cada um com `?.trim() ||`), lido num ponto só, `modeloDoAnalisador()` em `src/lib/llm/model-provider.ts`, com teste da precedência. O `AI_ANALYZER_MODEL` fica como **override opcional**, não como modelo próprio: ausente, o analyzer roda no `AI_MODEL` (hoje `qwen3.8-flash`). A rota segue a regra que o código já usa (`isNativeAnthropicModel`): `claude-*` vai pelo provider Anthropic do gateway; o resto pelo cliente OpenAI-compatível do gateway (`createGatewayOpenAI`, `/v1/chat/completions`). Ordens do dono, 02/10: "ajusta isso já para ficar homogêneo" e a direção das 12:5x (precedência + `PENDENTE-KAIRO` de produção). **Em produção nada muda até tirar `AI_ANALYZER_MODEL=claude-haiku-4-5` da `environment` das task definitions `aja-agora-prod` e `aja-agora-worker-prod`** (a env vence): comando exato no `PENDENTE-KAIRO`. Fato medido em 02/10: o `AI_MODEL` **chega** ao container pelo bloco `secrets` (`valueFrom` do secret `tb/prod/aja-agora/env`, `qwen3.8-flash`); o agente NÃO roda no default `claude-sonnet-5`. |
 | D6 | **Analyzer fora do ar não troca parcela por valor do bem.** O fallback neutro passa a carregar `indisponivel: true`. Nesse modo: (a) texto com marcador mensal (`MONTHLY_MARKER` de `parse-asset-value.ts`) vira `parcelaAlvo`/`alvoDeBusca="parcela"` pelo parser determinístico, nunca `creditMax`; (b) valor parseado abaixo de `CREDIT_BOUNDS[categoria].min` não vira valor do bem. Sinal determinístico: score `analisador_indisponivel` (BOOLEAN) em todo turno de cliente, no mesmo trace do `conducao_entregue`. |
 | D7 | **Número do card vem da tool.** Para `financing_comparison`, `simulation_result` e `scenarios`, o payload numérico sai do **resultado mais recente da tool de origem** (`compare_with_financing`, `simulate_quota`, `compute_scenarios`) no histórico de mensagens do grafo, para o mesmo grupo/carta. O argumento do modelo só fornece chave (categoria, groupId). Sem resultado de origem, o card **não sai** e fica um log `[card-sem-fonte]`. |
 | D8 | **Retomada não cobra gate com desbloqueio pendente.** `pendingGateAfterTurn` recebe o estado do desbloqueio: com `pede-antes`/`borrado` não arma gate de coleta. O worker `gate-reengage-poll` confere de novo antes de enviar e consome o marcador sem mandar nada. O lembrete do telefone **não** ganha texto novo nesta onda (copy é do dono: `PENDENTE-KAIRO`). |
@@ -147,7 +147,7 @@ O que de fato quebrou:
 | Onda | Blocos (subagentes simultâneos, arquivos disjuntos) |
 |---|---|
 | 1 | **B3** · **B4** · **B2** · **B7** (até 4) → depois **B8** · **B9** |
-| 2 | **B1** (`converse.ts`) · **B6** (`persist.ts`, `gate-reengage*`), em paralelo |
+| 2 | **B1** (`converse.ts`) · **B6** (`persist.ts`, `gate-reengage*`) · **B8b** (ponteiro do e-mail do SLA) · **B9b** (tirar o nº do card do prompt) · **B4c** (precedência do modelo do analyzer), em paralelo, até 4 por vez |
 | 3 | **B5** (`converse.ts` de novo, depois de B1) |
 | 4 | **B10** (cards e docs) |
 
@@ -220,6 +220,16 @@ piso da categoria), `src/lib/agent/parse-asset-value.ts` (parser determinístico
 - [ ] `test+fix(agente): analyzer no modelo do agente e sem trocar parcela por valor do bem`.
 **Gate:** `pnpm -s vitest run src/lib/llm src/lib/agent/orchestrator src/lib/agent/turn-analyzer src/lib/observability/langfuse && pnpm -s typecheck && ! grep -rn "AI_ANALYZER_MODEL" src scripts`
 
+### B4c · FIX-435 (complemento) — precedência do modelo do analyzer (D5, direção do dono das 12:5x; onda 2)
+**Files:** Modify `src/lib/llm/model-provider.ts` (+ `modeloDoAnalisador()`), `src/lib/llm/model-provider.test.ts`,
+`src/lib/agent/turn-analyzer.ts` (usar `modeloDoAnalisador()`), `scripts/sonda-intent-aceite.ts` e
+`scripts/sonda-analisador.ts` (imprimir o modelo efetivo do analyzer).
+- [ ] Unit (ver falhar antes): `AI_ANALYZER_MODEL=x` + `AI_MODEL=y` ⇒ `x`; só `AI_MODEL=y` ⇒ `y`; nenhum ⇒ o default do
+  projeto (`MODELO_DO_AGENTE_PADRAO`); string vazia/espaços em qualquer um ⇒ cai para o próximo. O analyzer chama
+  `modeloDoAnalisador()`, e `AI_ANALYZER_MODEL` é lido **só** em `model-provider.ts`.
+- [ ] `test+fix(agente): analyzer herda o modelo padrão com override opcional`.
+**Gate:** `pnpm -s vitest run src/lib/llm src/lib/agent/turn-analyzer && pnpm -s typecheck && test "$(grep -rln AI_ANALYZER_MODEL src scripts | grep -v '\.test\.' )" = "src/lib/llm/model-provider.ts"`
+
 ### B5 · FIX-436 — número do card vem da tool (D7)
 **Files:** Create `src/lib/agent/langgraph/numeros-do-card.ts` + `numeros-do-card.test.ts`. Modify
 `src/lib/agent/langgraph/nodes/converse.ts` (o ramo `PRESENTATION_TOOLS` ~1446, chamando o módulo novo).
@@ -288,7 +298,7 @@ de candidatos e vencidas), `src/lib/remarketing/regua.ts` (agendamento; template
 | C2 | Sem telefone, sem número (D1) | `pnpm -s vitest run src/lib/agent/langgraph/nodes/converse.desbloqueio.integration.test.ts` |
 | C3 | Trava total e B sem janela (D2/D3) | `pnpm -s vitest run src/lib/web src/components/chat src/lib/chat/desbloqueio-do-telefone` |
 | C4 | Fila 50/50 e braço em toda entrada (D4) | `pnpm -s vitest run src/lib/experimentos src/lib/chat src/lib/admin/filtro-variante` |
-| C5 | Analyzer homogêneo e degradação (D5/D6) | `pnpm -s vitest run src/lib/llm src/lib/agent/orchestrator src/lib/agent/turn-analyzer src/lib/observability/langfuse` + `! grep -rn AI_ANALYZER_MODEL src scripts` |
+| C5 | Analyzer no modelo padrão e degradação (D5/D6) | `pnpm -s vitest run src/lib/llm src/lib/agent/orchestrator src/lib/agent/turn-analyzer src/lib/observability/langfuse` + `grep -rln AI_ANALYZER_MODEL src scripts \| grep -v '\.test\.'` = só `src/lib/llm/model-provider.ts` |
 | C6 | Analyzer vivo no qwen pelo gateway | `pnpm tsx scripts/sonda-analisador.ts` com o túnel do LiteLLM (chefe): todos os casos OK, p95 registrado |
 | C7 | Card com número da tool (D7) | `pnpm -s vitest run src/lib/agent/langgraph` |
 | C8 | Retomada (D8) | `pnpm -s vitest run src/lib/agent/gate-reengage src/lib/workers/gate-reengage-poll` |
