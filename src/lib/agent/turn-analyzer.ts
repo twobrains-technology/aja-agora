@@ -1,17 +1,22 @@
 import { generateObject } from "ai";
 import { z } from "zod";
-import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
+import { modeloAiSdkDoGateway, modeloDoAgente } from "@/lib/llm/model-provider";
 import { isLangfuseConfigured } from "@/lib/observability/langfuse/env";
 import { fetchManagedPrompt, PROMPT_NAMES } from "@/lib/observability/langfuse/prompts";
 import type { Category, ConversationMetadata } from "./personas";
 import { listExpertisesByCategory } from "./personas-repo";
 
-const anthropic = createGatewayAnthropic();
+// D5 (FIX-435, 02/10/2026) — o analyzer usa o MESMO modelo do agente
+// (`AI_MODEL`). A var antiga de modelo do analyzer deixou de ser lida: era o fio
+// que mantinha a classificação no `claude-haiku-4-5` enquanto o agente já rodava
+// no qwen, e por isso os 29× HTTP 400 "credit balance too low" de 01/10
+// derrubaram só o analyzer — a parte que decide o que o cliente disse.
 
-const ANALYZER_MODEL = process.env.AI_ANALYZER_MODEL ?? "claude-haiku-4-5";
 // 4s era apertado em cold starts da Anthropic — quando timeout, fallback neutro
 // faz o concierge atender mesmo quando o usuário foi explicito ("quero imovel").
 // 6s permite Haiku completar com folga; usuário nem percebe diferença.
+// Com o analyzer no qwen o número pode mudar — mas só com o dado da sonda
+// (`scripts/sonda-analisador.ts`, p50/p95) na mão. Sem medição, não se mexe.
 const ANALYZER_TIMEOUT_MS = 6000;
 
 export const userIntentAnalyzerEnum = z.enum([
@@ -133,9 +138,19 @@ export const turnAnalysisSchema = z.object({
 	),
 });
 
-export type TurnAnalysis = z.infer<typeof turnAnalysisSchema>;
+export type TurnAnalysis = z.infer<typeof turnAnalysisSchema> & {
+	/** D6 (FIX-435) — SÓ o fallback carrega esta marca. É o dado que faltava para
+	 * o chamador (`orchestrator/analyze.ts`) saber que o modelo não respondeu e
+	 * que, portanto, quem decide o texto é o parser determinístico. Sem ela, o
+	 * fallback era indistinguível de um "não vi sinal nenhum" e "Entre R$ 800 e
+	 * R$ 1.200" virou carta de R$ 800 na sessão `0e5d777a`. */
+	indisponivel?: true;
+};
 
-const NEUTRAL_FALLBACK: TurnAnalysis = {
+/** Fallback do analyzer quando a chamada falha (timeout, rede, 4xx).
+ * Exportado pra o teste da marca `indisponivel` (D6) — é o MESMO objeto que a
+ * produção recebe, não uma cópia que pode divergir dele. */
+export const NEUTRAL_FALLBACK: TurnAnalysis = {
 	reasoning: "fallback",
 	detectedCategory: null,
 	detectedSubTopic: null,
@@ -152,6 +167,10 @@ const NEUTRAL_FALLBACK: TurnAnalysis = {
 	monthlySavings: null,
 	fgtsValue: null,
 	userIntent: "neutral",
+	// D6 — o fallback se identifica. `true` (não `boolean`) de propósito: só o
+	// fallback constrói este valor; o caminho normal deixa a chave AUSENTE, e
+	// ausência é o que o score lê como 0.
+	indisponivel: true,
 };
 
 export const BASE_SYSTEM_INSTRUCTION = `Você analisa turnos de WhatsApp em portugues brasileiro de um sistema de consórcio.
@@ -314,7 +333,7 @@ export async function analyzeTurn(
 		// A seção de sub-tópicos é dinâmica (vem do DB) — continua código.
 		const managedSystem = await fetchManagedPrompt(PROMPT_NAMES.analyzer, BASE_SYSTEM_INSTRUCTION);
 		const result = await generateObject({
-			model: anthropic(ANALYZER_MODEL),
+			model: modeloAiSdkDoGateway(modeloDoAgente()),
 			schema: turnAnalysisSchema,
 			system: managedSystem.text + renderSubTopicSection(subTopics),
 			prompt: `Persona ativa atualmente: ${currentPersona}${anchorHint}

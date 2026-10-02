@@ -2,10 +2,11 @@
 //
 // Por que existe: o fix do `detectYesNoText` (yes-no.ts) só resolve metade do
 // bug. Ele passou a aceitar quando o intent é `ready_to_proceed` — mas quem
-// produz esse intent é o analyzer (Haiku), e a spec dele descrevia `neutral`
-// como "afirmação curta de acolhimento" ('entendi', 'legal', 'show'), que é
-// exatamente onde "faz sentido" caía. Sem medir o classificador REAL, o fix
-// ficaria verde no teste e quebrado em produção.
+// produz esse intent é o analyzer (o modelo do agente, ver D5/FIX-435), e a
+// spec dele descrevia `neutral` como "afirmação curta de acolhimento"
+// ('entendi', 'legal', 'show'), que é exatamente onde "faz sentido" caía. Sem
+// medir o classificador REAL, o fix ficaria verde no teste e quebrado em
+// produção.
 //
 // O teste determinístico (`cenario-embutido-faz-sentido.fix-387.test.ts`) prova
 // a CONSEQUÊNCIA do intent. Esta sonda prova a CLASSIFICAÇÃO. São coisas
@@ -13,14 +14,16 @@
 //
 // Uso (precisa do gateway local de pé — ver skill local-dev §5.5):
 //   LITELLM_BASE_URL=http://litellm.orb.local LITELLM_API_KEY=sk-local-dev \
-//   AI_ANALYZER_MODEL=claude-haiku-4-5 pnpm sonda:intent
+//   AI_MODEL=claude-haiku-4-5 pnpm sonda:intent
 //
-// Trocar `AI_ANALYZER_MODEL` compara modelos (claude-haiku-4-5, qwen3.6-flash).
+// D5 (FIX-435): o analyzer passou a usar o MESMO `AI_MODEL` do agente — trocar
+// `AI_MODEL` compara modelos (claude-haiku-4-5, qwen3.8-flash).
 
 // Precisa ser o PRIMEIRO import: carrega .env e traduz DNS de container→host.
 import "./_env-host";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { analyzeTurn } from "@/lib/agent/turn-analyzer";
+import { modeloDoAgente } from "@/lib/llm/model-provider";
 
 /** A pergunta REAL que o agente fez ao Bernardo em 28/07 16:07 (print
  * `2807-1607-bernardo-06-nao-apresentou-carta-1-milhao.jpg`). */
@@ -77,7 +80,7 @@ const CASOS: Array<{ fala: string; aceitaveis: string[]; nota: string }> = [
 	},
 ];
 
-const modelo = process.env.AI_ANALYZER_MODEL ?? "claude-haiku-4-5";
+const modelo = modeloDoAgente();
 /** Quantas vezes tentar cada fala antes de contar como erro. O analyzer roda com
  * `ANALYZER_TIMEOUT_MS = 6000` (turn-analyzer.ts) contra latências medidas de
  * 3,2–5,8s: ~8% das chamadas estouram e caem no `NEUTRAL_FALLBACK`. Sem retry, a
