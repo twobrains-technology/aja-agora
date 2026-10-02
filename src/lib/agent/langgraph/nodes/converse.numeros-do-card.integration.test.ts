@@ -5,11 +5,13 @@
 // (a tool executa de verdade e devolve o número certo), e no beat seguinte
 // chama `present_financing_comparison` com número INVENTADO. O card desenhado
 // tem que ser o da tool.
+import type { ToolMessage } from "@langchain/core/messages";
 import { afterAll, describe, expect, it } from "vitest";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { encryptIdentity } from "@/lib/conversation/identity";
 import { compareWithFinancing } from "@/lib/finance/pmt";
 import { limparCenario, runScenario } from "../testing/scenario";
+import { modelosRoteirizados } from "../testing/scripted-model";
 
 const HAS_DB = Boolean(process.env.DATABASE_URL) && !process.env.DATABASE_URL?.includes("sentinel");
 const describeIfDb = HAS_DB ? describe : describe.skip;
@@ -102,5 +104,65 @@ describeIfDb("FIX-436 — o card pega o número do resultado da tool", () => {
 		expect(p.diff.monthlyDelta).toBe(esperado.diff.monthlyDelta);
 		// O número inventado NÃO chegou à tela.
 		expect(p.financing.monthlyPayment).not.toBe(NUMERO_INVENTADO);
+	});
+
+	// B14.2 (FIX-436) — o card DESCARTADO não volta ao modelo como sucesso.
+	it("card sem fonte: nenhum artifact e o modelo recebe uma recusa honesta", async () => {
+		const indice = modelosRoteirizados.length;
+		const resultado = await runScenario({
+			channel: "web",
+			metaInicial: META_PRONTA as never,
+			turns: [
+				{
+					user: "me mostra a simulação",
+					beats: [
+						{
+							text: "Deixa eu calcular.",
+							// `get_rates` mantém o loop de tool-calls vivo (tool de dado pede fala);
+							// `present_simulation_result` SEM `simulate_quota` antes ⇒ sem fonte.
+							toolCalls: [
+								{ name: "get_rates", args: {} },
+								{
+									name: "present_simulation_result",
+									args: {
+										groupId: "g-sem-fonte",
+										administradora: "Itaú",
+										category: "auto",
+										creditValue: 180_000,
+										monthlyPayment: 1092.5,
+										adminFee: 27_000,
+										reserveFund: 3600,
+										insurance: 0,
+										totalCost: 218_500,
+										termMonths: 200,
+										effectiveRate: 0.18,
+									},
+								},
+							],
+						},
+						{ text: "Vou te mostrar as opções." },
+					],
+				},
+			],
+		});
+		criadas.push(resultado.conversationId);
+
+		// Sem fonte, o card NÃO sai.
+		const artifact = resultado.turns[0].events.find(
+			(e): e is Extract<TurnEvent, { type: "artifact" }> =>
+				e.type === "artifact" && e.artifactType === "simulation_result",
+		);
+		expect(artifact).toBeUndefined();
+
+		// E o modelo NÃO ouve "sucesso": o tool-result virou recusa honesta.
+		const modelo = modelosRoteirizados[indice];
+		if (!modelo) throw new Error("o cenário não criou o modelo roteirizado");
+		const recebidas = modelo.mensagensRecebidas[1] ?? [];
+		const toolResult = recebidas.find(
+			(m): m is ToolMessage => m.getType() === "tool" && m.name === "present_simulation_result",
+		);
+		expect(toolResult).toBeDefined();
+		const corpo = JSON.parse(toolResult?.content as string) as { error?: string };
+		expect(corpo.error).toContain("simulate_quota");
 	});
 });

@@ -57,7 +57,11 @@ import {
 } from "@/lib/observability/langfuse/funil-scores";
 import { fetchManagedPrompt, PROMPT_NAMES } from "@/lib/observability/langfuse/prompts";
 import { projectToMeta } from "../emit";
-import { payloadComNumerosDaFonte, TOOL_DE_ORIGEM } from "../numeros-do-card";
+import {
+	payloadComNumerosDaFonte,
+	TOOL_DE_ORIGEM,
+	toolResultsComRecusaDeCard,
+} from "../numeros-do-card";
 import { cacheableSystemBlock } from "../provider";
 import { pausaDeConversa, RITMO } from "../ritmo";
 import type { AgentGraphStateType, FunnelState } from "../state";
@@ -1300,6 +1304,12 @@ export function createConverseNode(model: BaseChatModel) {
 					events.push(ev);
 				}
 
+				// B14.2 (FIX-436) — toolCallId → tool de origem dos cards que forem
+				// DESCARTADOS por falta de fonte neste beat. O `ToolNode` executa a tool
+				// de apresentação de qualquer forma e devolveria SUCESSO — e o modelo,
+				// ouvindo sucesso, narra "confere no card abaixo" de um card que não
+				// existe. Depois do ToolNode, o tool-result desses vira RECUSA.
+				const cardsSemFonte = new Map<string, string>();
 				for (const call of aiMessage.tool_calls) {
 					const ev: TurnEvent = {
 						type: "tool-call",
@@ -1518,6 +1528,7 @@ export function createConverseNode(model: BaseChatModel) {
 							console.error(
 								`[card-sem-fonte] ${artifactType} sem resultado de ${toolDeOrigem} (conv=${state.conversationId})`,
 							);
+							if (call.id) cardsSemFonte.set(call.id, toolDeOrigem);
 							continue;
 						}
 						const guardCtx: GuardContext = {
@@ -1697,10 +1708,12 @@ export function createConverseNode(model: BaseChatModel) {
 				// erro (status "error"). É a garantia estrutural de "0 NoSuchToolError"
 				// desta fundação (crítico ALTA-2): o toolset what-if é fechado e
 				// pequeno, mas mesmo uma alucinação de nome de tool não derruba o turno.
-				const { messages: toolMessagesCruas } = await toolNode.invoke(
+				const { messages: toolMessagesBrutas } = await toolNode.invoke(
 					{ messages: [aiMessage] },
 					config,
 				);
+				// B14.2 (FIX-436) — o card descartado não volta ao modelo como SUCESSO.
+				const toolMessagesCruas = toolResultsComRecusaDeCard(toolMessagesBrutas, cardsSemFonte);
 				// FIX-431: o turno não cai, mas o ERRO CRU ("Error: Tool "search_groups"
 				// not found. Please fix your mistakes.") ia inteiro pro contexto do
 				// modelo, que o traduzia pro cliente como "tive um problema técnico" e,
