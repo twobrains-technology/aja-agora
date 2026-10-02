@@ -141,6 +141,10 @@ export async function resultadoDoTesteDoTelefone(
 	ate: Date,
 ): Promise<ResultadoPorVariante[]> {
 	const variante = sql`c.metadata -> ${CHAVE_DO_TESTE_NO_METADATA} ->> 'variante'`;
+	// FIX-434 (D4): conversa com braço FORÇADO (`?variante=`, QA/dono) está FORA do
+	// teste — forçar não consome a fila e não é resultado de A/B. Sem esta linha,
+	// o teste manual do dono entrava na leitura como se fosse entrada sorteada.
+	const forcada = sql`c.metadata -> ${CHAVE_DO_TESTE_NO_METADATA} ->> 'forcada'`;
 	const { rows } = await db.execute<{
 		visit_id: string;
 		variante: string;
@@ -164,6 +168,7 @@ export async function resultadoDoTesteDoTelefone(
      AND c.channel = 'web'
     WHERE v.created_at BETWEEN ${de} AND ${ate}
       AND ${variante} IS NOT NULL
+      AND ${forcada} IS DISTINCT FROM 'true'
     GROUP BY v.id
   `);
 

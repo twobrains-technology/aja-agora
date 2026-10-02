@@ -1,6 +1,7 @@
 import { relations, sql } from "drizzle-orm";
 import {
 	type AnyPgColumn,
+	bigint,
 	boolean,
 	check,
 	index,
@@ -1602,6 +1603,19 @@ export const whatsappConversationLocks = pgTable("whatsapp_conversation_locks", 
 	holder: varchar("holder", { length: 64 }).notNull(),
 	lockedUntil: timestamp("locked_until", { withTimezone: true }).notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// Fila do A/B (FIX-434, D4): um contador ATÔMICO por experimento.
+//
+// O app roda em várias tasks do ECS — um contador em memória não coordenaria
+// nada. `UPDATE … RETURNING` por linha é o que dá a alternância estrita A, B, A,
+// B sem perder incremento sob concorrência. `experimento` é o mesmo id do
+// registro de experimentos (`CHAVE_DO_TESTE_NO_METADATA`): um teste novo é uma
+// linha nova, não uma coluna nova.
+export const experimentoFila = pgTable("experimento_fila", {
+	experimento: text().primaryKey(),
+	/** Índice 0-based da PRÓXIMA entrada; `bracoDaFila` faz o módulo pela lista de braços. */
+	proximo: bigint("proximo", { mode: "number" }).notNull().default(0),
 });
 
 // ─── Relations ───────────────────────────────────────────────────────────────
