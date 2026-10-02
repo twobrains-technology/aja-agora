@@ -106,6 +106,7 @@ import {
 	MOTIVO_SAIDA_META,
 } from "@/lib/remarketing/status-do-toque";
 import { chaveTelefoneBR } from "@/lib/whatsapp/mesmo-numero";
+import type { ResolveAndSendResult } from "@/lib/whatsapp/template-dispatch";
 import { buildRetomadaDirective } from "./retomada";
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
@@ -191,6 +192,8 @@ export interface RemarketingDeps {
 		conversationId: string;
 		/** Lista ordenada de chaves candidatas (fase × bem) — o dispatcher escolhe. */
 		usageKeys: readonly string[];
+		/** O canal da linha — a web NUNCA entrega por turno de retomada (FIX-441). */
+		channel: "web" | "whatsapp";
 		freeTextFallback: () => Promise<void>;
 		// O `void` na união é o que mantém os dublês legados (`Promise<void>`) compilando; o ciclo
 		// trata `undefined` como sucesso.
@@ -628,7 +631,20 @@ async function candidatosDaEntrada(agora: Date): Promise<CandidatoDaEntrada[]> {
 			    SELECT max(m.created_at) AS em FROM messages m
 			     WHERE m.conversation_id = c.id AND m.role = 'user'
 			) fala ON true
-			WHERE coalesce(c.last_inbound_at, fala.em, c.created_at) >= ${desde}::timestamptz
+			WHERE (
+			    -- PRÉ-FILTRO (FIX-441/D12): superset da condição final e NÃO depende do
+			    -- LATERAL, então o planner a empurra para c antes de calcular o max.
+			    -- Sem isto o max(messages) roda para TODAS as conversas a cada 30 s.
+			    c.last_inbound_at >= ${desde}::timestamptz
+			    OR c.created_at >= ${desde}::timestamptz
+			    OR c.updated_at >= ${desde}::timestamptz
+			    OR EXISTS (
+			        SELECT 1 FROM messages m2
+			         WHERE m2.conversation_id = c.id AND m2.role = 'user'
+			           AND m2.created_at >= ${desde}::timestamptz
+			    )
+			)
+			  AND coalesce(c.last_inbound_at, fala.em, c.created_at) >= ${desde}::timestamptz
 			ORDER BY coalesce(c.last_inbound_at, fala.em) DESC NULLS LAST
 			LIMIT ${CANDIDATOS_POR_CICLO}
 		`),
@@ -799,6 +815,13 @@ async function gravarEstado({
 			ultimoToqueEm: estado.ultimoToqueEm,
 			touches30d,
 			motivoSaida: estado.motivoSaida,
+			// O carimbo NOVO zera o rastro de ENVIO da rodada anterior (FIX-441):
+			// sem isto, o `failed` do `wamid` da rodada anterior encontraria a
+			// linha ainda com `ultimo_wamid = W-anterior` + `envio_status =
+			// 'enviado'` e descontaria um toque que não é o dele. O `enviarTemplate`
+			// reescreve estes dois campos depois que a Meta aceita.
+			ultimoWamid: null,
+			envioStatus: null,
 		})
 		.where(eq(remarketingTouches.conversationId, conversationId));
 }
@@ -853,7 +876,10 @@ export async function compensarToqueDaConversa(args: CompensacaoArgs): Promise<v
  *
  * IDEMPOTENTE pelo `envio_status`: só compensa linha ainda `enviado`. Depois da
  * primeira compensação o campo vira `falhou` e a reentrega do mesmo status não
- * desconta a cota duas vezes. Devolve `true` quando compensou de fato.
+ * desconta a cota duas vezes. E só age em linha `ATIVO` (FIX-441): um `failed`
+ * ATRASADO não pode reabrir uma sequência que já terminou — OPTOUT, CONVERTEU ou
+ * RESPONDEU continuam como estão, mesmo com o `wamid` batendo. Devolve `true`
+ * quando compensou de fato.
  */
 export async function compensarToqueFalho(args: {
 	wamid: string;
@@ -873,6 +899,7 @@ export async function compensarToqueFalho(args: {
 		})
 		.where(
 			and(
+				eq(remarketingTouches.status, "ATIVO"),
 				eq(remarketingTouches.ultimoWamid, args.wamid),
 				eq(remarketingTouches.envioStatus, ENVIO_STATUS_ENVIADO),
 			),
@@ -934,33 +961,61 @@ const enviarArteReal: NonNullable<RemarketingDeps["enviarArte"]> = async ({ to, 
  *    enxergavam o que foi enviado.
  * 3. **Grava o `wamid` + `envio_status='enviado'`** na linha da régua, para o
  *    webhook de status `failed` achar a linha e devolver a cota.
+ *
+ * ── A fronteira entre ENVIO e PERSISTÊNCIA (revisão C15) ───────────────────────
+ *
+ * O `catch` do `resolveAndSend` devolve `codigo: null` — exceção não é recusa da
+ * Meta, e o ciclo só compensa com **código explícito**. Já a gravação da mensagem
+ * e do `wamid` vem DEPOIS do aceite: se falhar, o erro só vai para o log. Sem
+ * esta separação, uma falha de INSERT/UPDATE derrubava o toque numa compensação
+ * e o mesmo template saía de novo no backoff.
  */
 const enviarTemplateReal: NonNullable<RemarketingDeps["enviarTemplate"]> = async ({
 	to,
 	conversationId,
 	usageKeys,
 	freeTextFallback,
+	channel,
 }) => {
+	// 1) O ENVIO. Só o desfecho da META decide a compensação (FIX-441).
+	let resultado: ResolveAndSendResult;
 	try {
 		const { resolveAndSend } = await import("@/lib/whatsapp/template-dispatch");
 		// SEM `params` (decisão do líder, rodada 2): o shape dos templates de
 		// remarketing ainda não está definido, e mandar `components` para um template
 		// sem `{{1}}` faz a Meta recusar. Quando tiver placeholder, é uma linha aqui.
-		const resultado = await resolveAndSend({ to, conversationId, usageKeys, freeTextFallback });
+		resultado = await resolveAndSend({
+			to,
+			conversationId,
+			usageKeys,
+			freeTextFallback,
+			channel,
+		});
+	} catch (err) {
+		// AMBÍGUO: exceção (rede, DB, config) NÃO é recusa da Meta — ela pode ter
+		// entregado. Sem código, o ciclo NÃO devolve a cota (o lado de menos toque).
+		const mensagem = err instanceof Error ? err.message : String(err);
+		return { ok: false, error: mensagem, codigo: null };
+	}
 
-		// Texto livre (janela aberta) ou fila: não há `wamid` da Meta a guardar, e
-		// nada a compensar — quem fala é o agente, ou o dispatcher reenvia depois.
-		if (resultado.channel !== "template") return { ok: true, wamid: null };
+	// Texto livre (janela aberta) ou fila: não há `wamid` da Meta a guardar, e
+	// nada a compensar — quem fala é o agente, ou o dispatcher reenvia depois.
+	if (resultado.channel !== "template") return { ok: true, wamid: null };
 
-		const wamid = resultado.messageId ?? null;
-		if (resultado.error || !wamid) {
-			return {
-				ok: false,
-				error: resultado.error ?? "a Meta não devolveu o wamid",
-				codigo: codigoDaMeta(resultado.error),
-			};
-		}
+	const wamid = resultado.messageId ?? null;
+	if (resultado.error || !wamid) {
+		return {
+			ok: false,
+			error: resultado.error ?? "a Meta não devolveu o wamid",
+			codigo: codigoDaMeta(resultado.error),
+		};
+	}
 
+	// 2) A PERSISTÊNCIA, DEPOIS DO ACEITE. A Meta já aceitou (`wamid` na mão): se
+	// gravar a mensagem ou o `ultimo_wamid` falhar, isto NÃO é falha de envio —
+	// compensar aqui faria o MESMO template sair de novo no backoff, e o cliente
+	// receberia duas vezes. O erro fica no log e o toque segue contado.
+	try {
 		await registrarMensagemDoTemplate({
 			conversationId,
 			metaName: resultado.metaName ?? null,
@@ -970,12 +1025,19 @@ const enviarTemplateReal: NonNullable<RemarketingDeps["enviarTemplate"]> = async
 			.update(remarketingTouches)
 			.set({ ultimoWamid: wamid, envioStatus: ENVIO_STATUS_ENVIADO })
 			.where(eq(remarketingTouches.conversationId, conversationId));
-
-		return { ok: true, wamid };
 	} catch (err) {
-		const mensagem = err instanceof Error ? err.message : String(err);
-		return { ok: false, error: mensagem, codigo: codigoDaMeta(mensagem) };
+		console.error(
+			JSON.stringify({
+				level: "error",
+				source: "remarketing-cycle",
+				etapa: "persistencia-pos-aceite",
+				conversation_id: conversationId,
+				error: err instanceof Error ? err.message : String(err),
+			}),
+		);
 	}
+
+	return { ok: true, wamid };
 };
 
 /**
@@ -1165,6 +1227,8 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 				agora,
 				estado,
 				telefone,
+				// O canal da linha: a web NUNCA entrega por turno de retomada (FIX-441).
+				channel: linha.channel,
 				// A MACRO-FASE do funil é fato do servidor, lido dos sinais da conversa
 				// (`viu_oferta` / `teve_proposta`) na leitura da linha. É o que faz a
 				// mensagem certa para o momento certo (FIX-387/388).
@@ -1231,6 +1295,7 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 				to: telefone,
 				conversationId: linha.conversationId,
 				usageKeys: decisao.acao.usageKeys,
+				channel: linha.channel,
 				freeTextFallback: async () => {
 					await dispararTurno({
 						conversationId: linha.conversationId,
@@ -1254,17 +1319,23 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 						error: resultadoDoEnvio.error,
 					}),
 				);
-				await compensarToque({
-					conversationId: linha.conversationId,
-					anterior: {
-						step: linha.step,
-						ultimoToqueEm: linha.ultimoToqueEm,
-						touches30d: linha.touches30d,
-					},
-					agora,
-					codigo: resultadoDoEnvio.codigo,
-				});
-				continue;
+				// Só compensa com recusa EXPLÍCITA da Meta (código presente). Sem código
+				// (timeout/rede/DB/config) o desfecho é AMBÍGUO: a Meta pode ter
+				// entregado — não se devolve a cota (o lado de menos toque) e o carimbo
+				// fica de pé, contando como o toque que a cota já assumiu.
+				if (resultadoDoEnvio.codigo !== null) {
+					await compensarToque({
+						conversationId: linha.conversationId,
+						anterior: {
+							step: linha.step,
+							ultimoToqueEm: linha.ultimoToqueEm,
+							touches30d: linha.touches30d,
+						},
+						agora,
+						codigo: resultadoDoEnvio.codigo,
+					});
+					continue;
+				}
 			}
 			disparados += 1;
 		} catch (err) {

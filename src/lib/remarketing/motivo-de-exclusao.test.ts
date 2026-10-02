@@ -229,14 +229,43 @@ describe("a ordem dos guardas é a precedência do motivo", () => {
 });
 
 describe("a referência do silêncio, por canal", () => {
-	it("web: a última fala do cliente; `last_inbound_at` não entra", () => {
+	it("web: o MAIS RECENTE entre a fala do cliente e o `last_inbound_at`", () => {
+		// A fala é mais nova que a coluna: a fala ganha.
 		expect(
 			referenciaDoSilencio({
 				channel: "web",
-				lastInboundAt: new Date(AGORA.getTime() - 60 * 60_000),
+				lastInboundAt: new Date(AGORA.getTime() - 2 * 60 * 60_000),
 				ultimaMensagemDoClienteEm: INBOUND,
 			}),
 		).toEqual(INBOUND);
+
+		// A coluna é mais nova (a conversa virou lead e ganhou `last_inbound_at`):
+		// ela ganha — sem isto a régua tocaria quem já voltou a falar.
+		const coluna = new Date(AGORA.getTime() - 60 * 60_000);
+		expect(
+			referenciaDoSilencio({
+				channel: "web",
+				lastInboundAt: coluna,
+				ultimaMensagemDoClienteEm: INBOUND,
+			}),
+		).toEqual(coluna);
+	});
+
+	it("web: sem a coluna, sobra a fala; sem os dois, `null`", () => {
+		expect(
+			referenciaDoSilencio({
+				channel: "web",
+				lastInboundAt: null,
+				ultimaMensagemDoClienteEm: INBOUND,
+			}),
+		).toEqual(INBOUND);
+		expect(
+			referenciaDoSilencio({
+				channel: "web",
+				lastInboundAt: null,
+				ultimaMensagemDoClienteEm: null,
+			}),
+		).toBeNull();
 	});
 
 	it("whatsapp: o último inbound, mesmo com uma fala mais nova no histórico", () => {
@@ -247,6 +276,23 @@ describe("a referência do silêncio, por canal", () => {
 				ultimaMensagemDoClienteEm: new Date(AGORA.getTime() - 10 * 60_000),
 			}),
 		).toEqual(INBOUND);
+	});
+
+	it("a web com `last_inbound_at` recente NÃO é elegível — o cliente falou há pouco", () => {
+		// A fala é antiga (2 h), mas a coluna é de 10 min atrás. Antes do conserto a
+		// régua olhava só a fala e tocava quem tinha acabado de falar.
+		expect(
+			motivo(
+				conversa({
+					channel: "web",
+					lastInboundAt: new Date(AGORA.getTime() - 10 * 60_000),
+					ultimaMensagemDoClienteEm: new Date(AGORA.getTime() - 2 * 60 * 60_000),
+					waId: null,
+					phone: "+55 62 99999-8888",
+				}),
+				opcoes({ entradaWeb: true }),
+			),
+		).toBe("ainda_em_silencio");
 	});
 });
 

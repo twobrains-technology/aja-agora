@@ -90,9 +90,12 @@ function deps(over: Record<string, unknown> = {}) {
 		enviarArte: vi.fn(async () => {
 			ordem.push("arte");
 		}),
-		enviarTemplate: vi.fn(async (_args: { usageKeys: readonly string[] }) => {
-			ordem.push("template");
-		}),
+		enviarTemplate: vi.fn(
+			async (_args: { usageKeys: readonly string[]; channel?: "web" | "whatsapp" }) => {
+				ordem.push("template");
+			},
+		),
+		compensarToque: vi.fn(async (_args: { codigo: number | null }) => {}),
 		despacharConversoes: vi.fn(async () => ({ enviados: 0 })),
 		...over,
 	};
@@ -458,5 +461,67 @@ describe("o job repetível tem jobId FIXO (uma cópia por vez)", () => {
 		expect(bullmq.adds[0].opts.jobId).toBe("remarketing-cycle-cron");
 		expect(bullmq.adds[0].opts.repeat).toEqual({ every: 30_000 });
 		expect(bullmq.workers.length).toBe(1);
+	});
+});
+
+describe("FIX-441 — a compensação só acontece com recusa EXPLÍCITA da Meta", () => {
+	/** Uma linha vencida e FORA da janela de 24 h: a entrega é template. */
+	function linhaDeTemplate(over: Partial<LinhaDaRegua> = {}) {
+		return linha({ lastInboundAt: new Date(AGORA.getTime() - 5 * DIA), ...over });
+	}
+
+	it("recusa com CÓDIGO (131049) devolve a cota e reagenda", async () => {
+		const compensarToque = vi.fn(async (_args: { codigo: number | null }) => {});
+		const { deps: d } = deps({
+			listarVencidas: vi.fn(async () => [linhaDeTemplate()]),
+			enviarTemplate: vi.fn(async () => ({
+				ok: false as const,
+				error: "not delivered",
+				codigo: 131049,
+			})),
+			compensarToque,
+		});
+		const r = await runRemarketingCycle(d);
+		expect(compensarToque).toHaveBeenCalledTimes(1);
+		expect(compensarToque.mock.calls[0][0]).toMatchObject({ codigo: 131049 });
+		// Cota devolvida ⇒ o ciclo não conta como disparado.
+		expect(r.disparados).toBe(0);
+	});
+
+	it("AMBÍGUO (timeout/rede, sem código) NÃO devolve a cota", async () => {
+		const compensarToque = vi.fn(async (_args: { codigo: number | null }) => {});
+		const { deps: d } = deps({
+			listarVencidas: vi.fn(async () => [linhaDeTemplate()]),
+			enviarTemplate: vi.fn(async () => ({
+				ok: false as const,
+				error: "timeout ao falar com a Meta (>15s)",
+				codigo: null,
+			})),
+			compensarToque,
+		});
+		const r = await runRemarketingCycle(d);
+		expect(compensarToque).not.toHaveBeenCalled();
+		// O carimbo fica de pé (a Meta pode ter entregado): conta como o toque.
+		expect(r.disparados).toBe(1);
+	});
+});
+
+describe("FIX-441 — a web do ciclo não roda turno no chat do site", () => {
+	it("web com `last_inbound_at` dentro das 24 h vai por template, sem `dispararTurno`", async () => {
+		const dezHoras = 10 * 60 * 60_000;
+		const { deps: d } = deps({
+			listarVencidas: vi.fn(async () => [
+				linha({
+					channel: "web",
+					lastInboundAt: new Date(AGORA.getTime() - dezHoras),
+					ultimaMensagemDoClienteEm: new Date(AGORA.getTime() - dezHoras),
+				}),
+			]),
+		});
+		const r = await runRemarketingCycle(d);
+		expect(d.dispararTurno).not.toHaveBeenCalled();
+		expect(d.enviarTemplate).toHaveBeenCalledTimes(1);
+		expect((d.enviarTemplate.mock.calls[0][0] as { channel?: string }).channel).toBe("web");
+		expect(r.disparados).toBe(1);
 	});
 });

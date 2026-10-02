@@ -41,6 +41,14 @@ export interface ResolveAndSendArgs {
 	usageKeys?: readonly string[];
 	/** Valores dos placeholders do template (`{ body: [...], header?: [...] }`). */
 	params?: Record<string, unknown>;
+	/**
+	 * O canal da conversa. A web NUNCA sai por texto livre (FIX-441): o
+	 * `freeTextFallback` dela roda o turno no chat do site, que ninguém está
+	 * olhando, e a cota é consumida. Mesmo com a janela de 24 h aberta (a
+	 * conversa da web pode ter `last_inbound_at` depois de virar lead), a web
+	 * vai por template. Ausente = WhatsApp (comportamento de sempre).
+	 */
+	channel?: "web" | "whatsapp";
 	/** Copy rica atual — executada quando a janela está ABERTA. */
 	freeTextFallback: () => Promise<void> | void;
 }
@@ -182,7 +190,7 @@ export async function resolveAndSend(args: ResolveAndSendArgs): Promise<ResolveA
 		return { channel: "free_text" };
 	}
 
-	const { open } = await isWindowOpen(conversationId);
+	const { open } = args.channel === "web" ? { open: false } : await isWindowOpen(conversationId);
 	if (open) {
 		await freeTextFallback();
 		return { channel: "free_text" };

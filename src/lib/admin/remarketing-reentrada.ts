@@ -10,10 +10,10 @@
  *
  * O bolo parado é todo mundo cujo silêncio é maior que o piso de 90 min — SEM o
  * teto de 7 dias da entrada normal. O silêncio é o MESMO fato da entrada (D9):
- * na web, a última FALA do cliente (`messages.role='user'`, porque a coluna
- * `last_inbound_at` nunca é escrita nesse canal); no WhatsApp, o próprio
- * `last_inbound_at`. Sem isso, o lead da web nem entrava no recorte — a
- * reentrada manual dele era impossível, não só recusada.
+ * na web, o MAIS RECENTE entre a última FALA do cliente (`messages.role='user'`)
+ * e o `last_inbound_at` (a coluna pode chegar quando a conversa vira lead); no
+ * WhatsApp, o próprio `last_inbound_at`. Sem isso, o lead da web nem entrava no
+ * recorte — a reentrada manual dele era impossível, não só recusada.
  *
  * A consulta só PRÉ-FILTRA (o piso de silêncio tem índice); quem decide é
  * `avaliarReentrada`, a mesma função que a tela usa para dizer quantas vão
@@ -60,6 +60,18 @@ import { telefonesDaEquipe } from "./regua-por-conversa";
 /** Teto de conversas avaliadas por lote — trabalho, não elegibilidade. */
 const CANDIDATOS_POR_LOTE = 500;
 
+/**
+ * A janela de ATIVIDADE do recorte da reentrada (FIX-441/D12).
+ *
+ * A reentrada NÃO tem o teto de 7 dias da entrada normal — ela existe para
+ * reabrir quem ficou de fora dele. Mas o `LEFT JOIN LATERAL max(messages…)`
+ * rodava para TODAS as conversas da base. O pré-filtro (que não depende do
+ * LATERAL) limita a varredura a quem teve QUALQUER atividade nos últimos 30
+ * dias; quem está dormente há mais que isso sai do recorte — e o `LIMIT` já
+ * dizia que o lote é teto de trabalho.
+ */
+const JANELA_DE_REENTRADA_MS = 30 * 24 * 60 * 60 * 1000;
+
 /** O candidato já com o que a GRAVAÇÃO precisa (a decisão só vê `conversa`). */
 interface Candidato {
 	conversationId: string;
@@ -103,6 +115,7 @@ function objetivoDaMetadata(metadata: unknown): string | null {
  */
 async function candidatosDaReentrada(agora: Date, limite: number): Promise<Candidato[]> {
 	const piso = new Date(agora.getTime() - ESPERA_SILENCIO_MS).toISOString();
+	const desde = new Date(agora.getTime() - JANELA_DE_REENTRADA_MS).toISOString();
 	const linhas = linhasDeExecucao(
 		await db.execute(sql`
 			SELECT c.id AS "conversationId", c.channel, c.status,
@@ -119,7 +132,19 @@ async function candidatosDaReentrada(agora: Date, limite: number): Promise<Candi
 			     WHERE m.conversation_id = c.id AND m.role = 'user'
 			) fala ON true
 			LEFT JOIN remarketing_touches t ON t.conversation_id = c.id
-			WHERE coalesce(c.last_inbound_at, fala.em) IS NOT NULL
+			WHERE (
+			    -- PRÉ-FILTRO (FIX-441/D12): não depende do LATERAL e é superset das
+			    -- condições finais — o planner o empurra para c antes do max.
+			    c.last_inbound_at >= ${desde}::timestamptz
+			    OR c.created_at >= ${desde}::timestamptz
+			    OR c.updated_at >= ${desde}::timestamptz
+			    OR EXISTS (
+			        SELECT 1 FROM messages m2
+			         WHERE m2.conversation_id = c.id AND m2.role = 'user'
+			           AND m2.created_at >= ${desde}::timestamptz
+			    )
+			)
+			  AND coalesce(c.last_inbound_at, fala.em) IS NOT NULL
 			  AND coalesce(c.last_inbound_at, fala.em) <= ${piso}::timestamptz
 			ORDER BY coalesce(c.last_inbound_at, fala.em) DESC NULLS LAST
 			LIMIT ${limite}

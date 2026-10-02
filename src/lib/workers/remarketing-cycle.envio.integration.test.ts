@@ -78,6 +78,7 @@ describeIfDb("régua — envio, compensação e visibilidade (integration)", () 
 	async function semearLinha(
 		over: {
 			step?: number;
+			status?: "ATIVO" | "RESPONDEU" | "ESGOTADO" | "OPTOUT" | "CONVERTEU";
 			ultimoToqueEm?: Date | null;
 			touches30d?: number;
 			nextTouchAt?: Date | null;
@@ -116,7 +117,7 @@ describeIfDb("régua — envio, compensação e visibilidade (integration)", () 
 			contactId: contact.id,
 			objetivo: "carro",
 			step: over.step ?? 0,
-			status: "ATIVO",
+			status: over.status ?? "ATIVO",
 			nextTouchAt:
 				over.nextTouchAt === undefined ? new Date(AGORA.getTime() - MIN) : over.nextTouchAt,
 			ultimoToqueEm,
@@ -386,5 +387,109 @@ describeIfDb("régua — envio, compensação e visibilidade (integration)", () 
 		const linha = linhas.find((l) => l.conversationId === conversationId);
 		expect(linha).toBeDefined();
 		expect(linha?.evidenciaDaForma?.naFila?.nomeDoTemplate).toBe(META_NAME);
+	});
+
+	it("(e) a Meta ACEITOU e a persistência falhou ⇒ o toque NÃO é compensado", async () => {
+		// `conversationId` sem linha em `conversations`: o INSERT em `messages` viola
+		// a FK — é a falha PÓS-ACEITE. A Meta aceitou (fetch 200 + wamid); compensar
+		// aqui faria o MESMO template sair de novo no backoff.
+		const fantasma = "00000000-0000-0000-0000-0000000000ff";
+		const compensarToque = vi.fn(async () => {});
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => resposta(200, { messages: [{ id: `wamid.pend-${SUF}` }] })),
+		);
+		const d = {
+			...deps(fantasma),
+			listarVencidas: async () => [
+				{
+					conversationId: fantasma,
+					contactId: "22222222-2222-2222-2222-222222222222",
+					objetivo: "carro",
+					step: 0,
+					status: "ATIVO" as const,
+					nextTouchAt: new Date(AGORA.getTime() - MIN),
+					ultimoToqueEm: null,
+					touches30d: 0,
+					motivoSaida: null,
+					channel: "whatsapp" as const,
+					waId: FONE,
+					phone: null,
+					metadata: {},
+					lastInboundAt: new Date(AGORA.getTime() - 5 * DIA),
+					ultimaMensagemDoClienteEm: null,
+					nome: null,
+					optoutDaPessoaEm: null,
+					viuOferta: false,
+					teveProposta: false,
+				},
+			],
+			compensarToque,
+		};
+		const r = await ciclo.runRemarketingCycle(d);
+		expect(r.disparados).toBe(1);
+		expect(compensarToque).not.toHaveBeenCalled();
+	});
+
+	it("(f) TIMEOUT na Meta (sem código) NÃO devolve a cota", async () => {
+		const conversationId = await semearLinha({
+			// `inboundHa` é em MILISSEGUNDOS (o default já é 5 dias). Passar `5` aqui
+			// significava "o cliente falou 5 ms atrás" e o motor devolvia
+			// `aguardando_data` — o toque 01 ainda esperava o silêncio de 90 min.
+			nextTouchAt: new Date(AGORA.getTime() - MIN),
+		});
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => {
+				throw new Error("timeout ao falar com a Meta (>15s)");
+			}),
+		);
+		const r = await ciclo.runRemarketingCycle(deps(conversationId));
+		// O carimbo fica de pé: sem código explícito da Meta, o desfecho é ambíguo.
+		expect(r.disparados).toBe(1);
+		const linha = await lerLinha(conversationId);
+		expect(linha.step).toBe(1);
+		expect(linha.envioStatus).not.toBe("falhou");
+	});
+
+	it("(g) um `failed` atrasado NÃO reabre uma linha OPTOUT", async () => {
+		const wamid = `wamid.opt-${SUF}`;
+		const conversationId = await semearLinha({
+			status: "OPTOUT",
+			step: 1,
+			ultimoToqueEm: new Date(AGORA.getTime() - MIN),
+			touches30d: 1,
+			ultimoWamid: wamid,
+			envioStatus: ENVIO_STATUS_ENVIADO,
+			nextTouchAt: null,
+		});
+		const res = await POST(
+			postWebhook({
+				entry: [
+					{
+						changes: [
+							{
+								field: "statuses",
+								value: {
+									statuses: [
+										{
+											status: "failed",
+											id: wamid,
+											recipient_id: FONE,
+											errors: [{ code: 131049, title: "not delivered" }],
+										},
+									],
+								},
+							},
+						],
+					},
+				],
+			}),
+		);
+		expect(res.status).toBe(200);
+		const linha = await lerLinha(conversationId);
+		expect(linha.status).toBe("OPTOUT");
+		expect(linha.step).toBe(1);
+		expect(linha.envioStatus).toBe(ENVIO_STATUS_ENVIADO);
 	});
 });

@@ -204,22 +204,33 @@ export function destinoDoToque(conversa: Pick<ConversaAvaliada, "waId" | "phone"
  *
  * Dois canais, duas fontes, e é aqui que elas se separam (D9):
  *
- *   - **web**: a última FALA dele (`messages.role='user'`). A coluna
- *     `last_inbound_at` NUNCA é escrita nesse canal — quem a escreve é o webhook
- *     do WhatsApp —, e era por isso que 119 conversas da web caíam em
- *     `ainda_em_silencio` desde 18/09, com ZERO na régua (o lead 774 entre elas);
+ *   - **web**: a última FALA dele (`messages.role='user'`) e, quando existir, o
+ *     `last_inbound_at`. A web não escreve essa coluna pelo webhook, mas uma
+ *     conversa da web pode ganhá-la ao virar lead (`waId` +
+ *     `updateLastInboundAt` por chave canônica do número) — em produção, 1 das
+ *     119 tinha. O silêncio é o MAIS RECENTE dos dois: usar só a fala ignorava
+ *     essa escrita e tocava quem já tinha voltado a falar;
  *   - **WhatsApp**: o último inbound, que é a mesma fala e já está na coluna.
  *
  * `last_inbound_at` continua sendo o fato da JANELA DE 24 H DA META — outra
  * pergunta, respondida em outro lugar (`regua.ts`, `dentroDaJanelaDeTexto`). É
- * por isso que conversa da web sai sempre por template: sem a coluna, a janela
- * de texto livre não existe para ela.
+ * por isso que conversa da web sai sempre por template: a janela de texto livre
+ * olha a coluna, e a web não conta com ela.
  */
 export function referenciaDoSilencio(
 	conversa: Pick<ConversaAvaliada, "channel" | "lastInboundAt" | "ultimaMensagemDoClienteEm">,
 ): Date | null {
-	if (conversa.channel === "web") return conversa.ultimaMensagemDoClienteEm ?? null;
+	if (conversa.channel === "web") {
+		return maisRecente(conversa.ultimaMensagemDoClienteEm ?? null, conversa.lastInboundAt);
+	}
 	return conversa.lastInboundAt;
+}
+
+/** O mais recente dos dois instantes — `null` quando nenhum existe. */
+function maisRecente(a: Date | null, b: Date | null): Date | null {
+	if (!a) return b;
+	if (!b) return a;
+	return a.getTime() >= b.getTime() ? a : b;
 }
 
 /**

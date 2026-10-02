@@ -625,7 +625,7 @@ function agendamento(
 			: null;
 	}
 	if (estado.nextTouchAt) return estado.nextTouchAt;
-	const silencio = referenciaDoSilencio(estado);
+	const silencio = referenciaDoSilencioDoEstado(estado);
 	if (estado.step === 0 && silencio) {
 		return new Date(silencio.getTime() + esperaAteProximo(0, estado, parametros, agora));
 	}
@@ -653,14 +653,20 @@ function esperaAteProximo(
 }
 
 /**
- * A referência do SILÊNCIO do cliente no estado: a fala dele quando ela foi
- * resolvida (web), senão o último inbound (WhatsApp).
+ * A referência do SILÊNCIO do cliente NO ESTADO da régua: a fala dele quando ela
+ * foi resolvida (web), senão o último inbound (WhatsApp).
  *
  * D9: são dois fatos. `dentroDaJanelaDeTexto` continua perguntando pelo
  * `ultimoInboundEm` — a janela da Meta é OUTRA pergunta, e é ela que manda a web
  * para o template. Este é o fato que o agendamento do toque 01 usa.
+ *
+ * Nota (FIX-441): existe OUTRA `referenciaDoSilencio`, em `motivo-de-exclusao.ts`,
+ * que responde a mesma pergunta a partir dos fatos da CONVERSA (`ConversaAvaliada`
+ * — com o `mais recente` entre fala e `last_inbound_at` na web). As duas foram
+ * separadas por nome porque as entradas são diferentes; a semântica é a mesma
+ * (o silêncio é do cliente) e as duas precisam concordar.
  */
-export function referenciaDoSilencio(estado: EstadoRegua): Date | null {
+export function referenciaDoSilencioDoEstado(estado: EstadoRegua): Date | null {
 	return estado.silencioDoClienteEm ?? estado.ultimoInboundEm;
 }
 
