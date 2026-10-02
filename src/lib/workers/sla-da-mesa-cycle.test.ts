@@ -259,6 +259,30 @@ describe("o alarme não repete os mesmos nomes todo dia", () => {
 		}
 	});
 
+	it("o ponteiro da lista completa aponta para onde a lista vive, e o p50/p90 fica na Performance", async () => {
+		// D10 tirou a lista COMPLETA de /admin/performance (que passou a mostrar só a
+		// população do período) e a levou para /admin/remarketing. O e-mail mandava a
+		// mesa para a tela onde ela não vê mais a lista — o alerta estava certo, só o
+		// ponteiro ficou velho. O p50/p90 por sub-etapa continua em /admin/performance.
+		computeLeadsParados.mockResolvedValue([
+			parado({ nome: "Recém-parado", horasParado: 26 }),
+			parado({
+				nome: "Esquecido",
+				horasParado: 401,
+				desdeISO: "2026-08-14T10:00:00.000Z",
+				slaAlertadoEm: "2026-08-20T10:00:00.000Z",
+			}),
+		]);
+
+		await runSlaDaMesaCycle();
+		const { text, html } = sendEmail.mock.calls[0][0];
+
+		for (const campo of [text, html]) {
+			expect(campo).toContain("/admin/remarketing");
+			expect(campo).toContain("/admin/performance");
+		}
+	});
+
 	it("o resultado declara os dois números", async () => {
 		computeLeadsParados.mockResolvedValue([
 			parado({ horasParado: 26 }),
