@@ -35,6 +35,18 @@ export interface LinhaDaReguaResumida {
 	step: number;
 	nextTouchAt: Date | null;
 	ultimoToqueEm: Date | null;
+	/**
+	 * `remarketing_touches.motivo_saida` — o fato que separa um `ESGOTADO` de rotina
+	 * (os três toques saíram) do `ESGOTADO` porque a Meta recusou a entrega
+	 * (`recusado_pela_meta`, FIX-441/D12). Sem ele, a coluna "Régua" do Percurso
+	 * não tem como não mentir.
+	 *
+	 * Opcional de propósito ("aditivo, sem quebrar contrato"): `fatosDeConversas`
+	 * o traz; a rota de Conversas monta `FatosDaConversa` para `avaliarRegua` sem
+	 * ele, e lá o motivo não é lido da régua (a coluna usa o próprio objeto
+	 * `remarketing`, com `r.reguaMotivoSaida`).
+	 */
+	motivoSaida?: string | null;
 }
 
 /** Os fatos de uma conversa que o motivo e a coluna precisam. */
@@ -199,6 +211,7 @@ export async function fatosDeConversas(
 			reguaStep: remarketingTouches.step,
 			reguaNextTouchAt: remarketingTouches.nextTouchAt,
 			reguaUltimoToqueEm: remarketingTouches.ultimoToqueEm,
+			reguaMotivoSaida: remarketingTouches.motivoSaida,
 		})
 		.from(conversations)
 		.leftJoin(contacts, eq(contacts.id, conversations.contactId))
@@ -223,6 +236,7 @@ export async function fatosDeConversas(
 					step: Number(l.reguaStep ?? 0),
 					nextTouchAt: l.reguaNextTouchAt ?? null,
 					ultimoToqueEm: l.reguaUltimoToqueEm ?? null,
+					motivoSaida: l.reguaMotivoSaida ?? null,
 				}
 			: null,
 	}));

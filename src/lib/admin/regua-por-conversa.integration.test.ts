@@ -176,4 +176,27 @@ describeIfDb("fatosDeConversas — a fala do cliente na web (integration)", () =
 		expect(avaliacoes.get(conversationId)?.motivo).toBe("ja_na_regua");
 		expect(avaliacoes.get(conversationId)?.regua?.status).toBe("ATIVO");
 	});
+
+	// FIX-441 (D12): sem o MOTIVO da saída, a coluna "Régua" do Percurso não tem
+	// como separar `ESGOTADO` dos três toques de `ESGOTADO` porque a Meta recusou a
+	// entrega — e diria "Esgotou os 3 toques" para quem nunca recebeu nada.
+	it("a linha da régua traz o motivo da saída — o fato que separa a recusa da META", async () => {
+		const { conversationId, contactId } = await semearWeb(
+			"0010",
+			new Date(AGORA.getTime() - 100 * MIN),
+		);
+		await db.insert(schema.remarketingTouches).values({
+			conversationId,
+			contactId,
+			objetivo: "carro",
+			step: 1,
+			status: "ESGOTADO",
+			motivoSaida: "recusado_pela_meta",
+			nextTouchAt: null,
+		});
+
+		const [fatos] = await regua.fatosDeConversas([conversationId]);
+
+		expect(fatos.regua?.motivoSaida).toBe("recusado_pela_meta");
+	});
 });
