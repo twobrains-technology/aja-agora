@@ -18,7 +18,7 @@
  * ganha motivo — ela está na régua, e o que a tela mostra é o passo dela.
  */
 
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { contacts, conversations, remarketingTouches } from "@/db/schema";
 import type { StatusRegua } from "@/lib/remarketing/regua";
@@ -45,6 +45,11 @@ export interface FatosDaConversa {
 	isSimulated: boolean;
 	contactId: string | null;
 	lastInboundAt: Date | null;
+	/**
+	 * A última FALA do cliente (`messages.role='user'`) — a referência do silêncio
+	 * na web (D9). `null`/ausente no WhatsApp, onde quem manda é `lastInboundAt`.
+	 */
+	ultimaMensagemDoClienteEm?: Date | null;
 	waId: string | null;
 	/** `contacts.phone` — fonte do lead da web e do telefone alcançável. */
 	telefone: string | null;
@@ -129,6 +134,7 @@ export function avaliarRegua(
 			isSimulated: f.isSimulated,
 			contactId: f.contactId,
 			lastInboundAt: f.lastInboundAt,
+			ultimaMensagemDoClienteEm: f.ultimaMensagemDoClienteEm,
 			waId: f.waId,
 			phone: f.telefone,
 			jaNaRegua: f.regua !== null,
@@ -181,6 +187,12 @@ export async function fatosDeConversas(
 			isSimulated: conversations.isSimulated,
 			contactId: conversations.contactId,
 			lastInboundAt: conversations.lastInboundAt,
+			// A fala do cliente: só a web a usa para contar silêncio, e só ela pode
+			// contar com ela — no WhatsApp o fato é `last_inbound_at` (D9).
+			ultimaMensagemDoClienteEm: sql<Date | null>`CASE WHEN ${conversations.channel} = 'web' THEN (
+				SELECT max(m.created_at) FROM messages m
+				 WHERE m.conversation_id = ${conversations.id} AND m.role = 'user'
+			) END`,
 			waId: conversations.waId,
 			telefone: contacts.phone,
 			reguaStatus: remarketingTouches.status,
@@ -200,6 +212,9 @@ export async function fatosDeConversas(
 		isSimulated: l.isSimulated,
 		contactId: l.contactId ?? null,
 		lastInboundAt: l.lastInboundAt ?? null,
+		ultimaMensagemDoClienteEm: l.ultimaMensagemDoClienteEm
+			? new Date(l.ultimaMensagemDoClienteEm)
+			: null,
 		waId: l.waId ?? null,
 		telefone: l.telefone ?? null,
 		regua: l.reguaStatus

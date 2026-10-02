@@ -19,6 +19,7 @@ import {
 	motivoDeSaidaLegivel,
 	type OpcoesDaElegibilidade,
 	ROTULO_DO_MOTIVO_DE_EXCLUSAO,
+	referenciaDoSilencio,
 } from "./motivo-de-exclusao";
 
 /** 12:00 UTC de inbound, 13:40 de agora: 100 min de silêncio (o guarda pede >90). */
@@ -74,7 +75,14 @@ describe("avaliarElegibilidade — um motivo para cada guarda", () => {
 	});
 
 	it("conversa da web com a flag ligada e telefone válido entra", () => {
-		expect(motivo(conversa({ channel: "web" }), opcoes({ entradaWeb: true }))).toBeNull();
+		// A web NUNCA grava `last_inbound_at` (só o webhook do WhatsApp escreve):
+		// quem conta o silêncio dela é a FALA do cliente (D9).
+		expect(
+			motivo(
+				conversa({ channel: "web", lastInboundAt: null, ultimaMensagemDoClienteEm: INBOUND }),
+				opcoes({ entradaWeb: true }),
+			),
+		).toBeNull();
 	});
 
 	it("conversa da web com a flag ligada e SEM telefone válido fica fora", () => {
@@ -116,6 +124,52 @@ describe("avaliarElegibilidade — um motivo para cada guarda", () => {
 		expect(
 			motivo(conversa({ lastInboundAt: new Date(AGORA.getTime() - 8 * 24 * 60 * 60_000) })),
 		).toBe("parada_ha_mais_de_7_dias");
+	});
+});
+
+describe("D9 — o silêncio da web conta da FALA do cliente, não do `last_inbound_at`", () => {
+	// O defeito medido: desde 18/09, 119 conversas da web, 1 com `last_inbound_at`
+	// e ZERO na régua. A coluna nunca é escrita nesse canal (quem a escreve é o
+	// webhook do WhatsApp), então a guarda do silêncio excluía a web inteira com o
+	// motivo `ainda_em_silencio` — o lead 774 entre eles.
+	const FALA = new Date(AGORA.getTime() - 100 * 60_000);
+	const web = (over: Partial<ConversaAvaliada> = {}) =>
+		conversa({ channel: "web", lastInboundAt: null, ultimaMensagemDoClienteEm: FALA, ...over });
+
+	it("a fala de 100 min atrás abre a régua, mesmo sem `last_inbound_at`", () => {
+		expect(motivo(web(), opcoes({ entradaWeb: true }))).toBeNull();
+	});
+
+	it("fala recente (10 min) ainda é silêncio — a pessoa acabou de escrever", () => {
+		expect(
+			motivo(
+				web({ ultimaMensagemDoClienteEm: new Date(AGORA.getTime() - 10 * 60_000) }),
+				opcoes({ entradaWeb: true }),
+			),
+		).toBe("ainda_em_silencio");
+	});
+
+	it("sem fala nenhuma não há como afirmar silêncio — continua `ainda_em_silencio`", () => {
+		expect(motivo(web({ ultimaMensagemDoClienteEm: null }), opcoes({ entradaWeb: true }))).toBe(
+			"ainda_em_silencio",
+		);
+	});
+
+	it("a janela de 7 dias da web conta da fala dela", () => {
+		expect(
+			motivo(
+				web({ ultimaMensagemDoClienteEm: new Date(AGORA.getTime() - 8 * 24 * 60 * 60_000) }),
+				opcoes({ entradaWeb: true }),
+			),
+		).toBe("parada_ha_mais_de_7_dias");
+	});
+
+	it("no WhatsApp o silêncio continua vindo do `last_inbound_at`", () => {
+		// A fala é o mesmo fato no canal que a tem; o que não pode é ela passar a
+		// mandar no WhatsApp, onde `last_inbound_at` governa a janela da Meta.
+		expect(
+			motivo(conversa({ ultimaMensagemDoClienteEm: new Date(AGORA.getTime() - 10 * 60_000) })),
+		).toBeNull();
 	});
 });
 
@@ -171,6 +225,28 @@ describe("a ordem dos guardas é a precedência do motivo", () => {
 		// silêncio, não "parada há mais de 7 dias" — a data não existe para afirmar
 		// isso.
 		expect(motivo(conversa({ lastInboundAt: null }))).toBe("ainda_em_silencio");
+	});
+});
+
+describe("a referência do silêncio, por canal", () => {
+	it("web: a última fala do cliente; `last_inbound_at` não entra", () => {
+		expect(
+			referenciaDoSilencio({
+				channel: "web",
+				lastInboundAt: new Date(AGORA.getTime() - 60 * 60_000),
+				ultimaMensagemDoClienteEm: INBOUND,
+			}),
+		).toEqual(INBOUND);
+	});
+
+	it("whatsapp: o último inbound, mesmo com uma fala mais nova no histórico", () => {
+		expect(
+			referenciaDoSilencio({
+				channel: "whatsapp",
+				lastInboundAt: INBOUND,
+				ultimaMensagemDoClienteEm: new Date(AGORA.getTime() - 10 * 60_000),
+			}),
+		).toEqual(INBOUND);
 	});
 });
 

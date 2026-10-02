@@ -57,6 +57,8 @@ function linha(over: Partial<LinhaDaRegua> = {}): LinhaDaRegua {
 		waId: "5562999998888",
 		metadata: {},
 		lastInboundAt: new Date(AGORA.getTime() - 91 * 60_000),
+		// WhatsApp: o silêncio vem do `lastInboundAt` (D9).
+		ultimaMensagemDoClienteEm: null,
 		phone: null,
 		nome: "Ana",
 		optoutDaPessoaEm: null,

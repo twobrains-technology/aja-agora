@@ -76,6 +76,7 @@ import {
 	MOTIVO_SAIDA_EQUIPE,
 	motivoDeSaidaLegivel,
 	type ResultadoDeElegibilidade,
+	referenciaDoSilencio,
 } from "@/lib/remarketing/motivo-de-exclusao";
 import {
 	type DecisaoDoMotor,
@@ -117,6 +118,12 @@ export interface LinhaDaRegua {
 	waId: string | null;
 	metadata: unknown;
 	lastInboundAt: Date | null;
+	/**
+	 * A última FALA do cliente (`messages.role='user'`) — na web, a referência do
+	 * silêncio (D9). `null` no WhatsApp de propósito: lá quem manda é
+	 * `lastInboundAt`.
+	 */
+	ultimaMensagemDoClienteEm: Date | null;
 	phone: string | null;
 	nome: string | null;
 	optoutDaPessoaEm: Date | null;
@@ -330,6 +337,10 @@ export async function listarVencidas(agora: Date): Promise<LinhaDaRegua[]> {
 			       t.touches_30d AS "touches30d", t.motivo_saida AS "motivoSaida",
 			       c.channel, c.wa_id AS "waId", c.metadata,
 			       c.last_inbound_at AS "lastInboundAt",
+			       CASE WHEN c.channel = 'web' THEN (
+			           SELECT max(m.created_at) FROM messages m
+			            WHERE m.conversation_id = c.id AND m.role = 'user'
+			       ) END AS "ultimaMensagemDoClienteEm",
 			       ct.phone, ct.name AS "nome",
 			       ct.remarketing_optout_at AS "optoutDaPessoaEm",
 			       ${viuOferta(sql`c`)} AS "viuOferta",
@@ -364,6 +375,9 @@ export async function listarVencidas(agora: Date): Promise<LinhaDaRegua[]> {
 		waId: (l.waId as string | null) ?? null,
 		metadata: l.metadata,
 		lastInboundAt: l.lastInboundAt ? new Date(l.lastInboundAt as string) : null,
+		ultimaMensagemDoClienteEm: l.ultimaMensagemDoClienteEm
+			? new Date(l.ultimaMensagemDoClienteEm as string)
+			: null,
 		phone: (l.phone as string | null) ?? null,
 		nome: (l.nome as string | null) ?? null,
 		optoutDaPessoaEm: l.optoutDaPessoaEm ? new Date(l.optoutDaPessoaEm as string) : null,
@@ -439,8 +453,9 @@ export async function simulacaoDoContato(contactId: string): Promise<Date | null
  * ENTRADA NA RÉGUA: quem conversou e ficou em silêncio, e ainda não tem linha.
  *
  * O ciclo só LÊ linhas ATIVAS; sem este passo ninguém nunca entra e o motor é
- * código morto. A entrada é criada 90 min depois do último inbound (o mesmo
- * silêncio do toque 01).
+ * código morto. A entrada é criada 90 min depois do SILÊNCIO do cliente (o
+ * mesmo silêncio do toque 01) — no WhatsApp o último inbound, na web a última
+ * fala dele (D9, `referenciaDoSilencio`).
  *
  * ── O que mudou aqui (18/09) ───────────────────────────────────────────────
  *
@@ -459,6 +474,13 @@ export async function simulacaoDoContato(contactId: string): Promise<Date | null
  *    `avaliarElegibilidade`) e passou a guardar também a SAÍDA — `listarVencidas`
  *    é quem decide QUEM dispara e não tinha essa guarda: conversa marcada como
  *    teste DEPOIS de entrar continuava recebendo toque.
+ * 5. **D9:** o silêncio passou a ter a fonte do CANAL. No WhatsApp ele continua
+ *    vindo de `last_inbound_at`; na web, da última fala do cliente
+ *    (`messages.role='user'`), porque a coluna nunca é escrita nesse canal — e
+ *    era isso que deixava as 119 conversas da web em `ainda_em_silencio`, com
+ *    ZERO na régua desde 18/09. O recorte e a ORDEM dos candidatos passaram a
+ *    usar o mesmo fato (`coalesce(last_inbound_at, fala)`), senão a web cairia
+ *    no fim da fila e o `LIMIT` a descartaria.
  *
  * O teto real (3 toques/30 dias) continua valendo no disparo — a entrada não é
  * o lugar de contá-lo.
@@ -489,13 +511,16 @@ export async function entrarNaRegua(agora: Date): Promise<number> {
 		console.log("[remarketing-cycle] excluídos", JSON.stringify(agregado));
 	}
 
-	// A ordem da consulta (inbound mais recente primeiro) é a prioridade da
+	// A ordem da consulta (silêncio mais recente primeiro) é a prioridade da
 	// cota: quem falou por último é quem tem mais chance de responder.
 	let entradas = 0;
 	for (const candidato of elegiveis) {
 		if (entradas >= ENTRADAS_POR_CICLO) break;
-		const ultimoInbound = candidato.lastInboundAt;
-		if (!ultimoInbound) continue;
+		// O SILÊNCIO, não o `last_inbound_at`: na web a coluna não existe e a data
+		// vem da última fala do cliente (D9). Sem referência nenhuma não há toque 01
+		// — a elegibilidade já teria barrado, e esta guarda evita data inventada.
+		const silencio = referenciaDoSilencio(candidato);
+		if (!silencio) continue;
 		try {
 			await db
 				.insert(remarketingTouches)
@@ -505,7 +530,7 @@ export async function entrarNaRegua(agora: Date): Promise<number> {
 					objetivo: objetivoDoMetadata(candidato.metadata) ?? OBJETIVO_DESCONHECIDO,
 					step: 0,
 					status: "ATIVO",
-					nextTouchAt: new Date(ultimoInbound.getTime() + ESPERA_SILENCIO_MS),
+					nextTouchAt: new Date(silencio.getTime() + ESPERA_SILENCIO_MS),
 					touches30d: 0,
 				})
 				.onConflictDoNothing({ target: remarketingTouches.conversationId });
@@ -532,12 +557,21 @@ interface CandidatoDaEntrada extends ConversaAvaliada {
 }
 
 /**
- * O recorte da entrada: 30 dias de conversas, com contato e o "já tem linha"
- * resolvidos no banco.
+ * O recorte da entrada: 30 dias de conversas, com contato, a FALA do cliente e o
+ * "já tem linha" resolvidos no banco.
+ *
+ * ── O silêncio da web, no recorte e na ordem (D9) ──────────────────────
+ *
+ * A conversa da web não tem `last_inbound_at`, então uma janela que olhasse só
+ * essa coluna (e uma ordem `NULLS LAST` sobre ela) jogava a web inteira para o
+ * fim — e, com o `LIMIT`, para fora: era o caminho estrutural de as 119 conversas
+ * da web nunca chegarem à régua. Aqui o recorte e a ORDEM usam o mesmo fato que
+ * a decisão usa: `coalesce(last_inbound_at, última fala do cliente, created_at)`.
+ * O `created_at` fica como último recurso — conversa sem mensagem nenhuma não
+ * tem silêncio para contar.
  *
  * O `LIMIT` é teto de trabalho, não filtro de elegibilidade — por isso ele é
- * generoso (500) e a ordem é a mesma prioridade do insert. O índice
- * `conversations_last_inbound_at_idx` cobre a janela.
+ * generoso (500).
  */
 async function candidatosDaEntrada(agora: Date): Promise<CandidatoDaEntrada[]> {
 	const desde = new Date(agora.getTime() - JANELA_DE_CANDIDATOS_MS).toISOString();
@@ -547,13 +581,17 @@ async function candidatosDaEntrada(agora: Date): Promise<CandidatoDaEntrada[]> {
 			       c.is_simulated AS "isSimulated", c.contact_id AS "contactId",
 			       c.wa_id AS "waId", c.metadata,
 			       c.last_inbound_at AS "lastInboundAt", ct.phone,
+			       CASE WHEN c.channel = 'web' THEN fala.em END AS "ultimaMensagemDoClienteEm",
 			       EXISTS (SELECT 1 FROM remarketing_touches t
 			                WHERE t.conversation_id = c.id) AS "jaNaRegua"
 			FROM conversations c
 			LEFT JOIN contacts ct ON ct.id = c.contact_id
-			WHERE c.last_inbound_at >= ${desde}::timestamptz
-			   OR (c.last_inbound_at IS NULL AND c.created_at >= ${desde}::timestamptz)
-			ORDER BY c.last_inbound_at DESC NULLS LAST
+			LEFT JOIN LATERAL (
+			    SELECT max(m.created_at) AS em FROM messages m
+			     WHERE m.conversation_id = c.id AND m.role = 'user'
+			) fala ON true
+			WHERE coalesce(c.last_inbound_at, fala.em, c.created_at) >= ${desde}::timestamptz
+			ORDER BY coalesce(c.last_inbound_at, fala.em) DESC NULLS LAST
 			LIMIT ${CANDIDATOS_POR_CICLO}
 		`),
 	);
@@ -565,6 +603,9 @@ async function candidatosDaEntrada(agora: Date): Promise<CandidatoDaEntrada[]> {
 		isSimulated: l.isSimulated === true,
 		contactId: (l.contactId as string | null) ?? null,
 		lastInboundAt: l.lastInboundAt ? new Date(l.lastInboundAt as string) : null,
+		ultimaMensagemDoClienteEm: l.ultimaMensagemDoClienteEm
+			? new Date(l.ultimaMensagemDoClienteEm as string)
+			: null,
 		waId: (l.waId as string | null) ?? null,
 		phone: (l.phone as string | null) ?? null,
 		jaNaRegua: l.jaNaRegua === true,
@@ -928,6 +969,9 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 					nextTouchAt: linha.nextTouchAt,
 					ultimoToqueEm: linha.ultimoToqueEm,
 					ultimoInboundEm: linha.lastInboundAt,
+					// O SILÊNCIO resolvido pelo canal (D9): na web é a fala do cliente; no
+					// WhatsApp, o próprio último inbound.
+					silencioDoClienteEm: referenciaDoSilencio(linha),
 				},
 				toquesNaJanela: await lerToques(linha.contactId, agora),
 				simulacaoEm: await lerSimulacao(linha.contactId),
@@ -1053,14 +1097,19 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 
 function directiveDaRetomada(meta: ConversationMetadata, linha: LinhaDaRegua, agora: Date): string {
 	return buildRetomadaDirective(meta, {
-		minutosParado: minutosDeSilencio(linha.lastInboundAt, agora),
+		minutosParado: minutosDeSilencio(linha, agora),
 		channel: linha.channel,
 	});
 }
 
-function minutosDeSilencio(ultimoInbound: Date | null, agora: Date): number {
-	if (!ultimoInbound) return SILENCIO_MINUTOS;
-	return Math.max(1, Math.round((agora.getTime() - ultimoInbound.getTime()) / 60_000));
+/**
+ * Quantos minutos de silêncio o "parado há N minutos" do directive cita. A
+ * referência é o silêncio resolvido pelo canal (D9) — na web, a fala do cliente.
+ */
+function minutosDeSilencio(linha: LinhaDaRegua, agora: Date): number {
+	const silencio = referenciaDoSilencio(linha);
+	if (!silencio) return SILENCIO_MINUTOS;
+	return Math.max(1, Math.round((agora.getTime() - silencio.getTime()) / 60_000));
 }
 
 // ─── Wiring BullMQ (só no entrypoint do worker; nunca em teste) ──────────────

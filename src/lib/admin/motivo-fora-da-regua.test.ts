@@ -229,8 +229,17 @@ describe("cada guarda vira um motivo, na ordem", () => {
 
 describe("as flags de ambiente", () => {
 	it("com entrada web ligada, web deixa de ser motivo", () => {
+		// A web nunca tem `last_inbound_at`: o silêncio dela é a FALA do cliente (D9).
 		expect(
-			motivoForaDaRegua(conversa({ channel: "web" }), AGORA, { ...OPCOES, entradaWeb: true }),
+			motivoForaDaRegua(
+				conversa({
+					channel: "web",
+					lastInboundAt: null,
+					ultimaMensagemDoClienteEm: new Date(AGORA.getTime() - 2 * 60 * MIN),
+				}),
+				AGORA,
+				{ ...OPCOES, entradaWeb: true },
+			),
 		).toBe(null);
 	});
 });
