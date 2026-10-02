@@ -12,12 +12,17 @@ import { listExpertisesByCategory } from "./personas-repo";
 // no qwen, e por isso os 29× HTTP 400 "credit balance too low" de 01/10
 // derrubaram só o analyzer — a parte que decide o que o cliente disse.
 
-// 4s era apertado em cold starts da Anthropic — quando timeout, fallback neutro
-// faz o concierge atender mesmo quando o usuário foi explicito ("quero imovel").
-// 6s permite Haiku completar com folga; usuário nem percebe diferença.
-// Com o analyzer no qwen o número pode mudar — mas só com o dado da sonda
-// (`scripts/sonda-analisador.ts`, p50/p95) na mão. Sem medição, não se mexe.
-const ANALYZER_TIMEOUT_MS = 6000;
+// Timeout medido, não arbitrado. 4s era apertado em cold starts da Anthropic —
+// quando estoura, o fallback neutro faz o concierge atender mesmo quando o
+// usuário foi explicito ("quero imovel").
+//
+// Medição de 02/10/2026 (chefe, `scripts/sonda-analisador.ts` contra o GATEWAY
+// DE PRODUÇÃO, `qwen3.8-flash` — o mesmo modelo do agente — com os 10 payloads
+// REAIS do analyzer, capturados da sonda): classificação 10/10 certa, mas
+// latência p50 5,4 s · p90 6,9 s · máx 7,1 s. Com 6 s, 3 dos 10 caíam no
+// fallback neutro — perdendo a classificação que o modelo tinha acertado.
+// 10 s cobre o pior caso medido com folga. Sem nova medição, não se mexe.
+const ANALYZER_TIMEOUT_MS = 10000;
 
 export const userIntentAnalyzerEnum = z.enum([
 	"ready_to_proceed",
