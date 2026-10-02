@@ -94,3 +94,41 @@ export function disposicaoDaFalha(codigo: number | null): DisposicaoDaFalha {
 export function backoffDaFalha(codigo: number | null): number {
 	return codigo === CODIGO_DEVOLVE_COTA ? BACKOFF_DE_DIAS_MS : BACKOFF_PADRAO_MS;
 }
+
+/**
+ * O DESFECHO de uma tentativa de envio — o que o ciclo usa para decidir se o
+ * carimbo volta (FIX-441, achado da revisão C15b).
+ *
+ * O defeito que isto fecha: "sem código = ambíguo" era largo demais. Um erro
+ * de config/banco antes do `fetch`, uma conexão que não chegou (`fetch failed`,
+ * DNS, `ECONNREFUSED`) ou um HTTP de erro sem `wamid` (502 em HTML) **com
+ * certeza** não entregaram — e deixar a cota consumida por eles é um toque a
+ * menos para quem não recebeu. Só o timeout/abort DEPOIS de a requisição ter
+ * saído é ambíguo (a Meta pode ter entregue).
+ */
+export type DesfechoDoEnvio = "saiu" | "recusado" | "nao_saiu" | "ambiguo";
+
+/**
+ * Classifica o desfecho a partir do que o envio devolveu.
+ *
+ * `antesDaRede` é a exceção que escapou ANTES da chamada de rede (config, banco,
+ * import) — o `callApi` engole os erros de rede e os devolve como `error`, então
+ * o que chega aqui como exceção é sempre pré-rede. `timeout` vem do próprio
+ * `callApi` (`AbortSignal.timeout`), e é o ÚNICO caso ambíguo.
+ */
+export function classificarDesfechoDoEnvio(args: {
+	messageId?: string | null;
+	error?: string | null;
+	/** O envio estourou o timeout DEPOIS de a requisição ter saído. */
+	timeout?: boolean;
+	/** A exceção aconteceu antes de a requisição sair (config/banco/import). */
+	antesDaRede?: boolean;
+}): DesfechoDoEnvio {
+	if (args.messageId) return "saiu";
+	if (args.antesDaRede) return "nao_saiu";
+	if (args.timeout) return "ambiguo";
+	const erro = args.error?.trim() ?? "";
+	if (!erro) return "nao_saiu";
+	if (codigoDaMeta(erro) !== null) return "recusado";
+	return "nao_saiu";
+}

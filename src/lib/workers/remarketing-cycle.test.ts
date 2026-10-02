@@ -464,7 +464,7 @@ describe("o job repetível tem jobId FIXO (uma cópia por vez)", () => {
 	});
 });
 
-describe("FIX-441 — a compensação só acontece com recusa EXPLÍCITA da Meta", () => {
+describe("FIX-441 — a compensação acontece quando o envio com certeza NÃO saiu", () => {
 	/** Uma linha vencida e FORA da janela de 24 h: a entrega é template. */
 	function linhaDeTemplate(over: Partial<LinhaDaRegua> = {}) {
 		return linha({ lastInboundAt: new Date(AGORA.getTime() - 5 * DIA), ...over });
@@ -478,6 +478,7 @@ describe("FIX-441 — a compensação só acontece com recusa EXPLÍCITA da Meta
 				ok: false as const,
 				error: "not delivered",
 				codigo: 131049,
+				desfecho: "recusado" as const,
 			})),
 			compensarToque,
 		});
@@ -496,6 +497,7 @@ describe("FIX-441 — a compensação só acontece com recusa EXPLÍCITA da Meta
 				ok: false as const,
 				error: "timeout ao falar com a Meta (>15s)",
 				codigo: null,
+				desfecho: "ambiguo" as const,
 			})),
 			compensarToque,
 		});
@@ -503,6 +505,23 @@ describe("FIX-441 — a compensação só acontece com recusa EXPLÍCITA da Meta
 		expect(compensarToque).not.toHaveBeenCalled();
 		// O carimbo fica de pé (a Meta pode ter entregado): conta como o toque.
 		expect(r.disparados).toBe(1);
+	});
+
+	it("`nao_saiu` (erro sem código, mas sem ambiguidade) TAMBÉM devolve a cota", async () => {
+		const compensarToque = vi.fn(async (_args: { codigo: number | null }) => {});
+		const { deps: d } = deps({
+			listarVencidas: vi.fn(async () => [linhaDeTemplate()]),
+			enviarTemplate: vi.fn(async () => ({
+				ok: false as const,
+				error: "<html>502 Bad Gateway</html>",
+				codigo: null,
+				desfecho: "nao_saiu" as const,
+			})),
+			compensarToque,
+		});
+		const r = await runRemarketingCycle(d);
+		expect(compensarToque).toHaveBeenCalledTimes(1);
+		expect(r.disparados).toBe(0);
 	});
 });
 

@@ -60,7 +60,7 @@
  */
 
 import type { ConnectionOptions } from "bullmq";
-import { and, desc, eq, type SQL, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, type SQL, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { beviProposals, messages, remarketingTouches } from "@/db/schema";
 import { lerParametrosRegua } from "@/lib/admin/remarketing-config";
@@ -99,7 +99,9 @@ import {
 } from "@/lib/remarketing/regua";
 import {
 	backoffDaFalha,
+	classificarDesfechoDoEnvio,
 	codigoDaMeta,
+	type DesfechoDoEnvio,
 	disposicaoDaFalha,
 	ENVIO_STATUS_ENVIADO,
 	ENVIO_STATUS_FALHOU,
@@ -151,8 +153,8 @@ export interface LinhaDaRegua {
  * comportamento de sempre.
  */
 export type ResultadoDoEnvio =
-	| { ok: true; wamid: string | null }
-	| { ok: false; error: string; codigo: number | null };
+	| { ok: true; wamid: string | null; desfecho: DesfechoDoEnvio }
+	| { ok: false; error: string; codigo: number | null; desfecho: DesfechoDoEnvio };
 
 /** O que a compensação precisa saber para devolver o carimbo (FIX-441/D12). */
 export interface CompensacaoArgs {
@@ -607,9 +609,14 @@ interface CandidatoDaEntrada extends ConversaAvaliada {
  * essa coluna (e uma ordem `NULLS LAST` sobre ela) jogava a web inteira para o
  * fim — e, com o `LIMIT`, para fora: era o caminho estrutural de as 119 conversas
  * da web nunca chegarem à régua. Aqui o recorte e a ORDEM usam o mesmo fato que
- * a decisão usa: `coalesce(last_inbound_at, última fala do cliente, created_at)`.
- * O `created_at` fica como último recurso — conversa sem mensagem nenhuma não
- * tem silêncio para contar.
+ * a decisão usa: o silêncio do cliente — o MAIS RECENTE entre a fala e
+ * `last_inbound_at` (`GREATEST` ignora `NULL`), com `created_at` como último
+ * recurso (conversa sem mensagem nenhuma não tem silêncio para contar).
+ *
+ * Antes era `coalesce(...)`, que pega a data ANTIGA: uma web com
+ * `last_inbound_at` velho (a coluna é gravada via `waId`) e fala recente era
+ * cortada pelo filtro e jogada para o fim da ordem — a regra nova (D9) não
+ * valia no recorte (revisão C15b).
  *
  * O `LIMIT` é teto de trabalho, não filtro de elegibilidade — por isso ele é
  * generoso (500).
@@ -644,8 +651,8 @@ async function candidatosDaEntrada(agora: Date): Promise<CandidatoDaEntrada[]> {
 			           AND m2.created_at >= ${desde}::timestamptz
 			    )
 			)
-			  AND coalesce(c.last_inbound_at, fala.em, c.created_at) >= ${desde}::timestamptz
-			ORDER BY coalesce(c.last_inbound_at, fala.em) DESC NULLS LAST
+			  AND GREATEST(c.last_inbound_at, fala.em, c.created_at) >= ${desde}::timestamptz
+			ORDER BY GREATEST(c.last_inbound_at, fala.em) DESC NULLS LAST
 			LIMIT ${CANDIDATOS_POR_CICLO}
 		`),
 	);
@@ -876,10 +883,15 @@ export async function compensarToqueDaConversa(args: CompensacaoArgs): Promise<v
  *
  * IDEMPOTENTE pelo `envio_status`: só compensa linha ainda `enviado`. Depois da
  * primeira compensação o campo vira `falhou` e a reentrega do mesmo status não
- * desconta a cota duas vezes. E só age em linha `ATIVO` (FIX-441): um `failed`
- * ATRASADO não pode reabrir uma sequência que já terminou — OPTOUT, CONVERTEU ou
- * RESPONDEU continuam como estão, mesmo com o `wamid` batendo. Devolve `true`
- * quando compensou de fato.
+ * desconta a cota duas vezes. E o status da linha tem que ser NÃO TERMINAL por
+ * OUTRO evento (FIX-441, revisão C15b): `ATIVO`, ou o `ESGOTADO` do PRÓPRIO
+ * toque — `registrarToque` grava `ESGOTADO` + `tres_toques_sem_resposta` no
+ * carimbo do 3º toque ANTES do envio, e um `failed` de W3 antes só não achava a
+ * linha, deixando o lead esgotado por uma mensagem que não chegou. `OPTOUT`,
+ * `CONVERTEU` e `RESPONDEU` continuam intocados: um `failed` ATRASADO não pode
+ * reabrir uma sequência que terminou por OUTRO evento.
+ *
+ * Devolve `true` quando compensou de fato.
  */
 export async function compensarToqueFalho(args: {
 	wamid: string;
@@ -899,7 +911,7 @@ export async function compensarToqueFalho(args: {
 		})
 		.where(
 			and(
-				eq(remarketingTouches.status, "ATIVO"),
+				inArray(remarketingTouches.status, ["ATIVO", "ESGOTADO"]),
 				eq(remarketingTouches.ultimoWamid, args.wamid),
 				eq(remarketingTouches.envioStatus, ENVIO_STATUS_ENVIADO),
 			),
@@ -992,22 +1004,29 @@ const enviarTemplateReal: NonNullable<RemarketingDeps["enviarTemplate"]> = async
 			channel,
 		});
 	} catch (err) {
-		// AMBÍGUO: exceção (rede, DB, config) NÃO é recusa da Meta — ela pode ter
-		// entregado. Sem código, o ciclo NÃO devolve a cota (o lado de menos toque).
+		// A exceção que escapa do `resolveAndSend` é SEMPRE pré-rede: o `callApi`
+		// engole os erros de rede e os devolve como `error`. Config/banco/import
+		// antes do fetch ⇒ com certeza não saiu ⇒ o carimbo volta (C15b).
 		const mensagem = err instanceof Error ? err.message : String(err);
-		return { ok: false, error: mensagem, codigo: null };
+		return { ok: false, error: mensagem, codigo: null, desfecho: "nao_saiu" };
 	}
 
 	// Texto livre (janela aberta) ou fila: não há `wamid` da Meta a guardar, e
 	// nada a compensar — quem fala é o agente, ou o dispatcher reenvia depois.
-	if (resultado.channel !== "template") return { ok: true, wamid: null };
+	if (resultado.channel !== "template") return { ok: true, wamid: null, desfecho: "saiu" };
 
 	const wamid = resultado.messageId ?? null;
 	if (resultado.error || !wamid) {
+		const error = resultado.error ?? "a Meta não devolveu o wamid";
 		return {
 			ok: false,
-			error: resultado.error ?? "a Meta não devolveu o wamid",
+			error,
 			codigo: codigoDaMeta(resultado.error),
+			desfecho: classificarDesfechoDoEnvio({
+				messageId: wamid,
+				error: resultado.error ?? null,
+				timeout: resultado.timeout === true,
+			}),
 		};
 	}
 
@@ -1037,7 +1056,7 @@ const enviarTemplateReal: NonNullable<RemarketingDeps["enviarTemplate"]> = async
 		);
 	}
 
-	return { ok: true, wamid };
+	return { ok: true, wamid, desfecho: "saiu" };
 };
 
 /**
@@ -1306,8 +1325,11 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 				},
 			});
 
-			// A Meta RECUSOU o envio (sem `wamid` ou com erro): o carimbo gravado
-			// antes NÃO vale — devolve a cota e reagenda com backoff (FIX-441/D12).
+			// O desfecho decide: `recusado` (a Meta respondeu com código) e `nao_saiu`
+			// (com certeza não entregou: pré-rede, conexão, HTTP sem `wamid`, 2xx sem
+			// `wamid`) devolvem a cota. `ambiguo` (timeout depois de a requisição sair)
+			// NÃO devolve — a Meta pode ter entregue, e a doutrina é errar pelo lado de
+			// MENOS toque (FIX-441, revisão C15b).
 			if (resultadoDoEnvio && resultadoDoEnvio.ok === false) {
 				console.error(
 					JSON.stringify({
@@ -1315,15 +1337,12 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 						source: "remarketing-cycle",
 						etapa: "envio-template",
 						conversation_id: linha.conversationId,
+						desfecho: resultadoDoEnvio.desfecho,
 						codigo: resultadoDoEnvio.codigo,
 						error: resultadoDoEnvio.error,
 					}),
 				);
-				// Só compensa com recusa EXPLÍCITA da Meta (código presente). Sem código
-				// (timeout/rede/DB/config) o desfecho é AMBÍGUO: a Meta pode ter
-				// entregado — não se devolve a cota (o lado de menos toque) e o carimbo
-				// fica de pé, contando como o toque que a cota já assumiu.
-				if (resultadoDoEnvio.codigo !== null) {
+				if (resultadoDoEnvio.desfecho === "recusado" || resultadoDoEnvio.desfecho === "nao_saiu") {
 					await compensarToque({
 						conversationId: linha.conversationId,
 						anterior: {

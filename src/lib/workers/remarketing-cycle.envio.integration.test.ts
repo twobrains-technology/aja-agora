@@ -24,6 +24,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import {
 	BACKOFF_DE_DIAS_MS,
 	ENVIO_STATUS_ENVIADO,
+	ENVIO_STATUS_FALHOU,
 	MOTIVO_SAIDA_META,
 } from "@/lib/remarketing/status-do-toque";
 
@@ -84,6 +85,7 @@ describeIfDb("régua — envio, compensação e visibilidade (integration)", () 
 			nextTouchAt?: Date | null;
 			ultimoWamid?: string | null;
 			envioStatus?: string | null;
+			motivoSaida?: string | null;
 			inboundHa?: number;
 		} = {},
 	): Promise<string> {
@@ -118,6 +120,7 @@ describeIfDb("régua — envio, compensação e visibilidade (integration)", () 
 			objetivo: "carro",
 			step: over.step ?? 0,
 			status: over.status ?? "ATIVO",
+			motivoSaida: over.motivoSaida ?? null,
 			nextTouchAt:
 				over.nextTouchAt === undefined ? new Date(AGORA.getTime() - MIN) : over.nextTouchAt,
 			ultimoToqueEm,
@@ -169,6 +172,31 @@ describeIfDb("régua — envio, compensação e visibilidade (integration)", () 
 		});
 		if (!linha) throw new Error("linha da régua não encontrada");
 		return linha;
+	}
+
+	/** O payload de um `failed` da Meta para um `wamid` (webhook de status). */
+	function failedDe(wamid: string, codigo: number): unknown {
+		return {
+			entry: [
+				{
+					changes: [
+						{
+							field: "statuses",
+							value: {
+								statuses: [
+									{
+										status: "failed",
+										id: wamid,
+										recipient_id: FONE,
+										errors: [{ code: codigo, title: "not delivered" }],
+									},
+								],
+							},
+						},
+					],
+				},
+			],
+		};
 	}
 
 	beforeAll(async () => {
@@ -441,7 +469,11 @@ describeIfDb("régua — envio, compensação e visibilidade (integration)", () 
 		vi.stubGlobal(
 			"fetch",
 			vi.fn(async () => {
-				throw new Error("timeout ao falar com a Meta (>15s)");
+				// O `callApi` reconhece timeout pelo `name` (AbortSignal.timeout lança
+				// TimeoutError/AbortError) — é o ÚNICO desfecho ambíguo.
+				const err = new Error("timeout ao falar com a Meta (>15s)");
+				err.name = "TimeoutError";
+				throw err;
 			}),
 		);
 		const r = await ciclo.runRemarketingCycle(deps(conversationId));
@@ -491,5 +523,95 @@ describeIfDb("régua — envio, compensação e visibilidade (integration)", () 
 		expect(linha.status).toBe("OPTOUT");
 		expect(linha.step).toBe(1);
 		expect(linha.envioStatus).toBe(ENVIO_STATUS_ENVIADO);
+	});
+
+	it("(h) o `failed` do 3º toque compensa e devolve a linha para ATIVO", async () => {
+		// `registrarToque` grava `ESGOTADO` + `tres_toques_sem_resposta` no carimbo do
+		// 3º toque ANTES do envio; a guarda antiga (só `ATIVO`) não achava a linha e o
+		// lead ficava esgotado por uma mensagem que não chegou (revisão C15b).
+		const wamid = `wamid.w3-${SUF}`;
+		const conversationId = await semearLinha({
+			status: "ESGOTADO",
+			motivoSaida: "tres_toques_sem_resposta",
+			step: 3,
+			ultimoToqueEm: new Date(AGORA.getTime() - MIN),
+			touches30d: 3,
+			ultimoWamid: wamid,
+			envioStatus: ENVIO_STATUS_ENVIADO,
+			nextTouchAt: null,
+		});
+
+		const res = await POST(postWebhook(failedDe(wamid, 131049)));
+		expect(res.status).toBe(200);
+
+		const linha = await lerLinha(conversationId);
+		expect(linha.status).toBe("ATIVO");
+		expect(linha.motivoSaida).toBeNull();
+		expect(linha.step).toBe(2);
+		expect(linha.touches30d).toBe(2);
+		expect(linha.envioStatus).toBe(ENVIO_STATUS_FALHOU);
+	});
+
+	it("(i) HTTP de erro sem `wamid` (502 em HTML) COMPENSA a cota", async () => {
+		// Com certeza não saiu: a resposta é o HTML do gateway, não um aceite da Meta.
+		const conversationId = await semearLinha();
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(
+				async () =>
+					({
+						ok: false,
+						status: 502,
+						async text() {
+							return "<html>502 Bad Gateway</html>";
+						},
+						async json() {
+							return {};
+						},
+					}) as unknown as Response,
+			),
+		);
+
+		const r = await ciclo.runRemarketingCycle(deps(conversationId));
+		expect(r.disparados).toBe(0);
+		const linha = await lerLinha(conversationId);
+		expect(linha.step).toBe(0);
+		expect(linha.envioStatus).toBe(ENVIO_STATUS_FALHOU);
+	});
+
+	it("(j) 2xx sem `wamid` COMPENSA a cota", async () => {
+		// A Meta respondeu 200 mas sem `wamid`: não há aceite, não há entrega.
+		const conversationId = await semearLinha();
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => resposta(200, {})),
+		);
+
+		const r = await ciclo.runRemarketingCycle(deps(conversationId));
+		expect(r.disparados).toBe(0);
+		const linha = await lerLinha(conversationId);
+		expect(linha.step).toBe(0);
+		expect(linha.envioStatus).toBe(ENVIO_STATUS_FALHOU);
+	});
+
+	it("(k) exceção ANTES da rede (sem credencial) COMPENSA a cota", async () => {
+		// `getConfig` sem credencial lança ANTES do fetch: com certeza não saiu.
+		const conversationId = await semearLinha();
+		const fetchMock = vi.fn(async () => {
+			throw new Error("não deveria tocar a rede");
+		});
+		vi.stubGlobal("fetch", fetchMock);
+		const token = process.env.WHATSAPP_ACCESS_TOKEN;
+		delete process.env.WHATSAPP_ACCESS_TOKEN;
+		try {
+			const r = await ciclo.runRemarketingCycle(deps(conversationId));
+			expect(r.disparados).toBe(0);
+			expect(fetchMock).not.toHaveBeenCalled();
+			const linha = await lerLinha(conversationId);
+			expect(linha.step).toBe(0);
+			expect(linha.envioStatus).toBe(ENVIO_STATUS_FALHOU);
+		} finally {
+			if (token !== undefined) process.env.WHATSAPP_ACCESS_TOKEN = token;
+		}
 	});
 });

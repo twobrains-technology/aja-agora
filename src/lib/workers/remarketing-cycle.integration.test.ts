@@ -68,6 +68,11 @@ describeIfDb("régua — entrada, higiene e motivo (integration)", () => {
 		waId?: string | null;
 		phone?: string | null;
 		metadata?: Record<string, unknown>;
+		/**
+		 * `last_inbound_at` EXPLÍCITO para a web (a coluna existe em prod quando o
+		 * lead tem `waId` — 1 de 119 conversas). O default da web continua `null`.
+		 */
+		lastInboundAtWeb?: Date | null;
 		/** Pré-cria a linha ATIVA em `remarketing_touches`. */
 		jaNaRegua?: boolean;
 	}
@@ -81,7 +86,7 @@ describeIfDb("régua — entrada, higiene e motivo (integration)", () => {
 		// WhatsApp. A fixture antiga gravava para a web também e era FALSO-VERDE —
 		// ela fazia a entrada parecer viva num canal que, em produção, nunca tinha a
 		// coluna (119 conversas da web, 1 com `last_inbound_at`, zero na régua).
-		const lastInboundAt = daWeb ? null : inboundEm;
+		const lastInboundAt = daWeb ? (semente.lastInboundAtWeb ?? null) : inboundEm;
 		// O silêncio da web conta da FALA do cliente — a fixture passa a gravar a
 		// mensagem de verdade em vez de mentir na coluna.
 		const falaEm = semente.falaEm !== undefined ? semente.falaEm : daWeb ? inboundEm : null;
@@ -655,6 +660,42 @@ describeIfDb("régua — entrada, higiene e motivo (integration)", () => {
 			const depois = await linhaDaRegua(conversationId);
 			expect(depois?.step).toBe(1);
 			expect(depois?.ultimoToqueEm?.toISOString()).toBe(ABERTURA.toISOString());
+		});
+
+		it("web com `last_inbound_at` VELHO e fala de ontem entra como candidata (GREATEST)", async () => {
+			// O defeito (C15b): o recorte usava `coalesce(last_inbound_at, fala)` e pegava
+			// a coluna ANTIGA — a web era cortada (ou jogada para o fim da ordem) mesmo
+			// com a fala de ontem. O silêncio é o MAIS RECENTE dos dois.
+			const { conversationId } = await semear({
+				channel: "web",
+				waId: null,
+				phone: FONE_WEB,
+				falaEm: FALA,
+				lastInboundAtWeb: new Date(AGORA.getTime() - 40 * DIA),
+			});
+			expect(await linhaDaRegua(conversationId)).toBeUndefined();
+
+			process.env.REMARKETING_ENTRADA_WEB = "1";
+			try {
+				await ciclo.entrarNaRegua(ABERTURA);
+			} finally {
+				delete process.env.REMARKETING_ENTRADA_WEB;
+			}
+
+			const linha = await linhaDaRegua(conversationId);
+			expect(linha?.status).toBe("ATIVO");
+			// O agendamento nasce da FALA (ontem), não da coluna velha.
+			expect(linha?.nextTouchAt?.toISOString()).toBe(SILENCIO.toISOString());
+
+			// Limpeza do lixo que o `entrarNaRegua` real inscreveu além da fixture.
+			const novas = [...(await conversasNaRegua())].filter(
+				(id) => id !== conversationId && !convIds.includes(id),
+			);
+			if (novas.length) {
+				await db
+					.delete(schema.remarketingTouches)
+					.where(inArray(schema.remarketingTouches.conversationId, novas));
+			}
 		});
 
 		it("sem a flag web a conversa segue fora, com o motivo `conversa_web`", async () => {

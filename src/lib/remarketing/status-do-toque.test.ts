@@ -17,6 +17,7 @@ import {
 	BACKOFF_DE_DIAS_MS,
 	BACKOFF_PADRAO_MS,
 	backoffDaFalha,
+	classificarDesfechoDoEnvio,
 	codigoDaMeta,
 	disposicaoDaFalha,
 } from "./status-do-toque";
@@ -78,5 +79,46 @@ describe("backoffDaFalha — quanto esperar para tentar de novo", () => {
 	it("as demais falhas esperam o backoff curto", () => {
 		expect(backoffDaFalha(null)).toBe(BACKOFF_PADRAO_MS);
 		expect(backoffDaFalha(500)).toBe(BACKOFF_PADRAO_MS);
+	});
+});
+
+describe("classificarDesfechoDoEnvio — o que aconteceu com o envio", () => {
+	// A doutrina da régua é errar pelo lado de MENOS toque: só o AMBÍGUO (timeout
+	// depois de a requisição sair) deixa de compensar. Tudo o que com certeza não
+	// saiu devolve a cota.
+
+	it("com `wamid` ⇒ saiu", () => {
+		expect(classificarDesfechoDoEnvio({ messageId: "wamid.abc" })).toBe("saiu");
+	});
+
+	it("exceção ANTES da rede (config, banco, import) ⇒ nao_saiu", () => {
+		expect(classificarDesfechoDoEnvio({ error: "env faltando", antesDaRede: true })).toBe(
+			"nao_saiu",
+		);
+	});
+
+	it("erro com código explícito da Meta ⇒ recusado", () => {
+		expect(
+			classificarDesfechoDoEnvio({
+				error: '{"error":{"message":"not delivered","code":131049}}',
+			}),
+		).toBe("recusado");
+	});
+
+	it("timeout/abort DEPOIS de a requisição sair ⇒ ambiguo", () => {
+		expect(classificarDesfechoDoEnvio({ timeout: true })).toBe("ambiguo");
+	});
+
+	it("conexão que não chegou (`fetch failed`) ⇒ nao_saiu", () => {
+		expect(classificarDesfechoDoEnvio({ error: "TypeError: fetch failed" })).toBe("nao_saiu");
+	});
+
+	it("HTTP de erro sem `wamid` (502 em HTML) ⇒ nao_saiu", () => {
+		expect(classificarDesfechoDoEnvio({ error: "<html>502 Bad Gateway</html>" })).toBe("nao_saiu");
+	});
+
+	it("2xx sem `wamid` ⇒ nao_saiu", () => {
+		expect(classificarDesfechoDoEnvio({})).toBe("nao_saiu");
+		expect(classificarDesfechoDoEnvio({ error: "" })).toBe("nao_saiu");
 	});
 });

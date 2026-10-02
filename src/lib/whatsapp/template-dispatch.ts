@@ -66,6 +66,12 @@ export type ResolveAndSendResult =
 			messageId?: string;
 			/** O corpo do erro da Meta quando o envio NÃO saiu (FIX-441/D12). */
 			error?: string;
+			/**
+			 * O envio estourou o timeout DEPOIS de a requisição sair (FIX-441/C15b).
+			 * É o único desfecho ambíguo: a Meta pode ter entregue. Sobe do `callApi`
+			 * para o ciclo não tratar timeout como “não saiu”.
+			 */
+			timeout?: boolean;
 	  }
 	| { channel: "queued"; usageKey: string; queueId: string };
 
@@ -222,6 +228,7 @@ export async function resolveAndSend(args: ResolveAndSendArgs): Promise<ResolveA
 		// compensar o carimbo quando o envio não saiu (FIX-441/D12).
 		const messageId = (result as { messageId?: string })?.messageId;
 		const error = (result as { error?: string })?.error;
+		const timeout = (result as { timeout?: boolean })?.timeout === true;
 		return {
 			channel: "template",
 			usageKey: escolha.usageKey,
@@ -229,6 +236,7 @@ export async function resolveAndSend(args: ResolveAndSendArgs): Promise<ResolveA
 			bodyPreview: escolhido.bodyPreview ?? null,
 			...(messageId ? { messageId } : {}),
 			...(error ? { error } : {}),
+			...(timeout ? { timeout: true } : {}),
 		};
 	}
 
