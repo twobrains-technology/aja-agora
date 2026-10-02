@@ -1,9 +1,17 @@
 // src/lib/llm/model-provider.ts
 //
-// Fábrica ÚNICA de modelo pro gateway LiteLLM. Antes desta função a mesma
-// decisão de rota vivia em dois lugares (`builder.ts` e inline no
-// `turn-analyzer.ts`) — duas cópias da mesma regra divergem em silêncio, e é
-// exatamente a regra que quebra o `tool_choice` quando errada.
+// Fábrica única de modelo pro gateway LiteLLM. Antes desta função a mesma
+// decisão de rota vivia em vários lugares (`builder.ts`, `mesa-copilot` e
+// inline no `turn-analyzer.ts`) — cópias da mesma regra divergem em silêncio,
+// e é exatamente a regra que quebra o `tool_choice` quando errada.
+//
+// Quem consome esta fábrica: `builder.ts` (agente web/WhatsApp),
+// `mesa-copilot/index.ts` e `turn-analyzer.ts` (via `modeloDoAnalisador`).
+//
+// EXCEÇÃO CONHECIDA: `src/lib/agent/langgraph/provider.ts` NÃO passa por aqui.
+// O runtime do LangGraph monta o `ChatAnthropic` por caminho próprio
+// (congelado pelo PRD, C12) — se ele mudar, é decisão de outra rodada, com
+// medição, não um deslize desta fábrica.
 //
 // Ver model-provider.test.ts pro bug que isso evita.
 import type { LanguageModel } from "ai";
