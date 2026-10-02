@@ -82,6 +82,58 @@ describe("a janela de 7 dias é a ÚNICA guarda que a reentrada afrouxa", () => 
 	});
 });
 
+describe("a fala do cliente conta o silêncio da web (D9)", () => {
+	const ENTRADA_WEB = { ...OPCOES, entradaWeb: true };
+
+	/**
+	 * Uma conversa da WEB parada: a coluna `last_inbound_at` nunca é escrita nesse
+	 * canal — quem responde o silêncio é a última fala do cliente.
+	 */
+	function webParada(over: Partial<ConversaParaReentrada> = {}): ConversaParaReentrada {
+		return parada({
+			channel: "web",
+			lastInboundAt: null,
+			waId: null,
+			ultimaMensagemDoClienteEm: new Date(AGORA.getTime() - 10 * DIA),
+			...over,
+		});
+	}
+
+	it("lead da web parado há dias REENTRA, mesmo sem `last_inbound_at`", () => {
+		expect(avaliarReentrada(webParada(), AGORA, ENTRADA_WEB)).toEqual({ reentra: true });
+	});
+
+	it("mas o piso de 90 min continua: fala de 5 min atrás não reentra", () => {
+		expect(
+			avaliarReentrada(
+				webParada({ ultimaMensagemDoClienteEm: new Date(AGORA.getTime() - 5 * MINUTO) }),
+				AGORA,
+				ENTRADA_WEB,
+			),
+		).toEqual({ reentra: false, motivo: "ainda_em_silencio" });
+	});
+
+	it("web sem fala nenhuma segue em silêncio (não inventa uma data)", () => {
+		expect(
+			avaliarReentrada(webParada({ ultimaMensagemDoClienteEm: null }), AGORA, ENTRADA_WEB),
+		).toEqual({ reentra: false, motivo: "ainda_em_silencio" });
+	});
+
+	it("no WhatsApp quem manda continua sendo `last_inbound_at`", () => {
+		// A fala recente NÃO conta no WhatsApp: o fato do canal é a coluna.
+		expect(
+			avaliarReentrada(
+				parada({
+					lastInboundAt: new Date(AGORA.getTime() - 10 * DIA),
+					ultimaMensagemDoClienteEm: new Date(AGORA.getTime() - 5 * MINUTO),
+				}),
+				AGORA,
+				OPCOES,
+			),
+		).toEqual({ reentra: true });
+	});
+});
+
 describe("as guardas que NÃO se afrouxam", () => {
 	it("opt-out nunca reentra (terminal por pessoa)", () => {
 		expect(
@@ -154,7 +206,12 @@ describe("as guardas que NÃO se afrouxam", () => {
 	});
 
 	it("conversa da web só reentra com a flag ligada", () => {
-		const conversa = parada({ channel: "web" });
+		// A web não tem `last_inbound_at`: o silêncio dela é a fala do cliente (D9).
+		const conversa = parada({
+			channel: "web",
+			lastInboundAt: null,
+			ultimaMensagemDoClienteEm: new Date(AGORA.getTime() - 10 * DIA),
+		});
 		expect(avaliarReentrada(conversa, AGORA, OPCOES)).toEqual({
 			reentra: false,
 			motivo: "conversa_web",

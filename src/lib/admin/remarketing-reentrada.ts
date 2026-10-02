@@ -8,11 +8,17 @@
  *
  * ── O recorte dos candidatos ────────────────────────────────────────────────
  *
- * O bolo parado é todo mundo com `last_inbound_at` mais velho que o silêncio de
- * 90 min — SEM o teto de 7 dias da entrada normal. A consulta só PRÉ-FILTRA (o
- * piso de silêncio tem índice); quem decide é `avaliarReentrada`, a mesma função
- * que a tela usa para dizer quantas vão entrar e por que o resto fica de fora.
- * Um `CASE WHEN` em SQL daria duas verdades para a mesma pergunta.
+ * O bolo parado é todo mundo cujo silêncio é maior que o piso de 90 min — SEM o
+ * teto de 7 dias da entrada normal. O silêncio é o MESMO fato da entrada (D9):
+ * na web, a última FALA do cliente (`messages.role='user'`, porque a coluna
+ * `last_inbound_at` nunca é escrita nesse canal); no WhatsApp, o próprio
+ * `last_inbound_at`. Sem isso, o lead da web nem entrava no recorte — a
+ * reentrada manual dele era impossível, não só recusada.
+ *
+ * A consulta só PRÉ-FILTRA (o piso de silêncio tem índice); quem decide é
+ * `avaliarReentrada`, a mesma função que a tela usa para dizer quantas vão
+ * entrar e por que o resto fica de fora. Um `CASE WHEN` em SQL daria duas
+ * verdades para a mesma pergunta.
  *
  * O `LIMIT` é teto de trabalho (não filtro): a ação é deliberada e em lote, e o
  * preview diz se o recorte foi truncado.
@@ -102,15 +108,20 @@ async function candidatosDaReentrada(agora: Date, limite: number): Promise<Candi
 			SELECT c.id AS "conversationId", c.channel, c.status,
 			       c.is_simulated AS "isSimulated", c.contact_id AS "contactId",
 			       c.wa_id AS "waId", c.last_inbound_at AS "lastInboundAt", c.metadata,
+			       CASE WHEN c.channel = 'web' THEN fala.em END AS "ultimaMensagemDoClienteEm",
 			       ct.phone, ct.remarketing_optout_at AS "optoutDaPessoaEm",
 			       t.status AS "reguaStatus", t.motivo_saida AS "reguaMotivoSaida",
 			       t.objetivo AS "reguaObjetivo", t.touches_30d AS "touches30d"
 			FROM conversations c
 			LEFT JOIN contacts ct ON ct.id = c.contact_id
+			LEFT JOIN LATERAL (
+			    SELECT max(m.created_at) AS em FROM messages m
+			     WHERE m.conversation_id = c.id AND m.role = 'user'
+			) fala ON true
 			LEFT JOIN remarketing_touches t ON t.conversation_id = c.id
-			WHERE c.last_inbound_at IS NOT NULL
-			  AND c.last_inbound_at <= ${piso}::timestamptz
-			ORDER BY c.last_inbound_at DESC
+			WHERE coalesce(c.last_inbound_at, fala.em) IS NOT NULL
+			  AND coalesce(c.last_inbound_at, fala.em) <= ${piso}::timestamptz
+			ORDER BY coalesce(c.last_inbound_at, fala.em) DESC NULLS LAST
 			LIMIT ${limite}
 		`),
 	);
@@ -125,6 +136,9 @@ async function candidatosDaReentrada(agora: Date, limite: number): Promise<Candi
 				isSimulated: l.isSimulated === true,
 				contactId: (l.contactId as string | null) ?? null,
 				lastInboundAt: l.lastInboundAt ? new Date(l.lastInboundAt as string) : null,
+				ultimaMensagemDoClienteEm: l.ultimaMensagemDoClienteEm
+					? new Date(l.ultimaMensagemDoClienteEm as string)
+					: null,
 				waId: (l.waId as string | null) ?? null,
 				phone: (l.phone as string | null) ?? null,
 				jaNaRegua: reguaStatus !== null,
