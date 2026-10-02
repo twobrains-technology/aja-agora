@@ -1,6 +1,6 @@
 // FIX-436 (D7) — prova que o payload do card pega os números do RESULTADO da
 // tool de dado, não do argumento (inventado) do modelo. Reproduz `db26cd54`.
-import { AIMessage, type BaseMessage, ToolMessage } from "@langchain/core/messages";
+import { AIMessage, type BaseMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 import { describe, expect, it } from "vitest";
 import {
 	fonteMaisRecente,
@@ -123,6 +123,72 @@ describe("payloadComNumerosDaFonte", () => {
 		expect(p.scenarios.acelerado.lancePercent).toBe(25);
 		// Identidade do modelo.
 		expect(p.groupId).toBe("G171");
+	});
+
+	// B17 (revisão C15b) — o `compute_scenarios` NÃO recebe `creditValue` (o schema do
+	// grafo só aceita `usarLanceEmbutido`) e o RESULTADO não carrega a cota. Logo a
+	// única prova possível é o TURNO: um resultado de `compute_scenarios` de outro
+	// turno pode ser de outra cota e não pode desenhar o card deste.
+	it("scenarios: resultado de OUTRO turno (fonte velha de outra cota) não desenha o card", () => {
+		const turnoAnterior = new HumanMessage("quais os cenários?");
+		const chamadaAntiga = new AIMessage({
+			content: "",
+			tool_calls: [
+				{ id: "call_sc_velho", name: "compute_scenarios", args: { usarLanceEmbutido: true } },
+			],
+		});
+		const daOutraCota = new ToolMessage({
+			content: JSON.stringify({
+				conservador: { lancePercent: 0, expectedTermMonths: 200, strategy: "s", disclaimer: "d" },
+				provavel: { lancePercent: 12, expectedTermMonths: 120, strategy: "s", disclaimer: "d" },
+				acelerado: { lancePercent: 25, expectedTermMonths: 70, strategy: "s", disclaimer: "d" },
+			}),
+			tool_call_id: "call_sc_velho",
+			name: "compute_scenarios",
+		});
+		const turnoDeAgora = new HumanMessage("e os cenários da Canopus?");
+		const argsDoModelo: Record<string, unknown> = {
+			groupId: "canopus-99",
+			administradora: "Canopus",
+			creditValue: 200_000,
+			termMonths: 200,
+		};
+		expect(
+			payloadComNumerosDaFonte("scenarios", argsDoModelo, [
+				turnoAnterior,
+				chamadaAntiga,
+				daOutraCota,
+				turnoDeAgora,
+			]),
+		).toBeNull();
+	});
+
+	it("scenarios: resultado do MESMO turno usa os cenários da tool", () => {
+		const turno = new HumanMessage("me mostra os cenários");
+		const chamada = new AIMessage({
+			content: "",
+			tool_calls: [{ id: "call_sc", name: "compute_scenarios", args: {} }],
+		});
+		const daTool = new ToolMessage({
+			content: JSON.stringify({
+				conservador: { lancePercent: 0, expectedTermMonths: 200, strategy: "s", disclaimer: "d" },
+				provavel: { lancePercent: 12, expectedTermMonths: 120, strategy: "s", disclaimer: "d" },
+				acelerado: { lancePercent: 25, expectedTermMonths: 70, strategy: "s", disclaimer: "d" },
+			}),
+			tool_call_id: "call_sc",
+			name: "compute_scenarios",
+		});
+		const argsDoModelo: Record<string, unknown> = {
+			groupId: "G171",
+			administradora: "Itaú",
+			creditValue: 180_000,
+			termMonths: 200,
+		};
+		const p = payloadComNumerosDaFonte("scenarios", argsDoModelo, [turno, chamada, daTool]) as {
+			scenarios: Record<string, { expectedTermMonths: number; lancePercent: number }>;
+		};
+		expect(p.scenarios.provavel.expectedTermMonths).toBe(120);
+		expect(p.scenarios.acelerado.lancePercent).toBe(25);
 	});
 
 	it("sem resultado de origem ⇒ null (o card não sai)", () => {

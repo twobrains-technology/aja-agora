@@ -87,8 +87,8 @@ function numero(v: unknown): number | undefined {
 
 /** A fonte de uma tool de dado: o RESULTADO que ela devolveu e os ARGS com que
  *  foi chamada. O resultado nem sempre carrega a identidade da cota
- *  (`compare_with_financing`/`compute_scenarios` não trazem a carta); os args
- *  da chamada trazem. */
+ *  (`compare_with_financing` não traz a carta; `compute_scenarios` não traz nada
+ *  da cota); os args da chamada trazem em alguns casos. */
 export interface FonteDaTool {
 	resultado: Record<string, unknown>;
 	args: Record<string, unknown> | null;
@@ -111,6 +111,18 @@ function argsDaChamada(
 		if (chamada) return objeto(chamada.args);
 	}
 	return null;
+}
+
+/** O índice onde começa o TURNO de agora: logo depois da última mensagem do
+ *  cliente. O `converse` monta `loopMessages` como `[system, ...histórico,
+ *  turnMessage]` e o `turnMessage` é SEMPRE um `HumanMessage` (fala do cliente ou
+ *  directive de servidor) — logo a última `HumanMessage` é a fronteira do turno,
+ *  e tudo que vem depois dela pertence a este turno. */
+function inicioDoTurnoAtual(mensagens: readonly BaseMessage[]): number {
+	for (let i = mensagens.length - 1; i >= 0; i--) {
+		if (mensagens[i].getType() === "human") return i + 1;
+	}
+	return 0;
 }
 
 /** A fonte MAIS RECENTE da tool de dado no histórico, ou `null` se ela não
@@ -180,9 +192,14 @@ function chaveCota(v: Record<string, unknown> | null | undefined, campo: string)
  * A fonte da tool é da MESMA cota que o card apresenta?
  *
  * `simulation_result` casa por `groupId` (o retorno do `simulate_quota` carrega
- * o id da cota); `financing_comparison`/`scenarios` casam pela CARTA
- * (`creditValue`), que vem dos args da tool de dado ou da cota ancorada. É o
- * que impede um resultado VELHO de outra cota de desenhar o card desta.
+ * o id da cota); `financing_comparison` casa pela CARTA (`creditValue`), que vem
+ * dos args da tool de dado ou da cota ancorada. É o que impede um resultado
+ * VELHO de outra cota de desenhar o card desta.
+ *
+ * `scenarios` NÃO tem chave de cota em lugar nenhum: o `compute_scenarios` do
+ * grafo só recebe `usarLanceEmbutido` e o retorno não carrega carta/grupo. Para
+ * ele a prova é o TURNO — ver `payloadComNumerosDaFonte` (a fonte é buscada só
+ * nas mensagens deste turno), e por isso esta função não decide nada aqui.
  *
  * Sem prova (nenhum dos lados traz a chave) devolve `true`: a ausência de prova
  * não é prova de troca — a supressão só acontece quando os dois lados declaram
@@ -252,7 +269,15 @@ export function payloadComNumerosDaFonte(
 	const tool = TOOL_DE_ORIGEM[artifactType];
 	if (!tool) return argsDoModelo;
 
-	const fonte = fonteMaisRecente(mensagens, tool);
+	// `scenarios` é o único card sem chave de cota nos args E no resultado: o
+	// `compute_scenarios` do grafo só recebe `usarLanceEmbutido` e devolve os três
+	// cenários sem carta/grupo. A única prova de que a fonte é desta cota é o
+	// TURNO — um resultado de turno anterior pode ser de outra cota (a conversa
+	// troca de cota entre turnos), então a busca da fonte para este card fica
+	// restrita às mensagens deste turno (revisão C15b / B17).
+	const mensagensDaFonte =
+		artifactType === "scenarios" ? mensagens.slice(inicioDoTurnoAtual(mensagens)) : mensagens;
+	const fonte = fonteMaisRecente(mensagensDaFonte, tool);
 
 	if (artifactType === "simulation_result") {
 		if (
@@ -295,7 +320,7 @@ export function payloadComNumerosDaFonte(
 	}
 
 	// scenarios: o retorno do `compute_scenarios` É o bloco `scenarios` do card.
-	if (!mesmaCotaDaFonte(artifactType, argsDoModelo, fonte, cotaAncorada)) return null;
+	// A guarda de cota aqui é o TURNO (a fonte já foi buscada só neste turno).
 	const cenarios = fonte.resultado;
 	const temOsTres = ["conservador", "provavel", "acelerado"].every(
 		(nome) => objeto(cenarios[nome]) != null,
