@@ -12,6 +12,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { CARDS_QUE_REVELAM_OFERTA } from "@/lib/chat/desbloqueio-do-telefone";
 import { comDesbloqueioDoTelefone, type RenderablePart } from "./chat-message";
 
 const artefato = (type: string, payload: Record<string, unknown> = {}): RenderablePart => ({
@@ -63,5 +64,40 @@ describe("comDesbloqueioDoTelefone (FIX-395)", () => {
 		const parts = [telefone("pede-antes"), artefato("contemplation_dial"), artefato("two_paths")];
 		const saida = comDesbloqueioDoTelefone(parts);
 		expect(saida.filter((p) => p.kind === "artifact")).toHaveLength(3);
+	});
+});
+
+// FIX-433 (D2) — a segunda linha do cliente usa a MESMA lista do servidor
+// (`CARDS_QUE_REVELAM_OFERTA`), e ela cobre os 6 cards que revelam número de
+// oferta. Antes a lista local só tinha `comparison_table`/`recommendation_card`,
+// e `simulation_result`/`group_card` passavam legíveis no braço A.
+describe("comDesbloqueioDoTelefone — cobre TODO card de oferta (FIX-433)", () => {
+	it("a lista única tem os 6 tipos que revelam oferta", () => {
+		expect([...CARDS_QUE_REVELAM_OFERTA].sort()).toEqual(
+			[
+				"comparison_table",
+				"financing_comparison",
+				"group_card",
+				"recommendation_card",
+				"scenarios",
+				"simulation_result",
+			].sort(),
+		);
+	});
+
+	it("braço A ⇒ os 6 saem do render", () => {
+		for (const tipo of CARDS_QUE_REVELAM_OFERTA) {
+			const saida = comDesbloqueioDoTelefone([telefone("pede-antes"), artefato(tipo)]);
+			expect(saida.some((p) => p.kind === "artifact" && p.artifact.type === tipo)).toBe(false);
+		}
+	});
+
+	it("braço B ⇒ os 6 ganham a marca `embacada` (não somem da tela)", () => {
+		for (const tipo of CARDS_QUE_REVELAM_OFERTA) {
+			const saida = comDesbloqueioDoTelefone([telefone("borrado"), artefato(tipo)]);
+			const card = saida.find((p) => p.kind === "artifact" && p.artifact.type === tipo);
+			expect(card).toBeDefined();
+			expect(card && card.kind === "artifact" ? card.embacada : false).toBe(true);
+		}
 	});
 });
