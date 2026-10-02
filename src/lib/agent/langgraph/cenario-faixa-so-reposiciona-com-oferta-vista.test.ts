@@ -73,6 +73,7 @@ describeIfDb("faixa de busca só se reposiciona com oferta na tela", () => {
 				// não rodou, então o `discovery` entra NESTE turno.
 				qualifyAnswers: { creditMin: 214_200, creditMax: 238_000 },
 			},
+			telefone: "62999998888",
 			turns: [{ user: "Enviei meus dados pra buscar as ofertas", beats: BEATS_AJUSTE }],
 		});
 		criadas.push(r.conversationId);
@@ -110,6 +111,7 @@ describeIfDb("faixa de busca só se reposiciona com oferta na tela", () => {
 				},
 				qualifyAnswers: { creditMin: 214_200, creditMax: 238_000 },
 			},
+			telefone: "62999998888",
 			turns: [{ user: "essa parcela não cabe pra mim, só consigo 1800", beats: BEATS_AJUSTE }],
 		});
 		criadas.push(r.conversationId);
