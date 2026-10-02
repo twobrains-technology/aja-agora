@@ -62,7 +62,7 @@ pela Meta, porque `regua-por-conversa.ts` faz `leftJoin` sem filtrar status (a l
 `naRegua=true`) e o `tabela-percurso.tsx` passava `motivoSaida: null`. O bloco **B12b** leva o `motivo_saida` até
 a célula (`regua-por-conversa.ts`, `app/api/admin/percurso/route.ts`, `tabela-percurso.tsx`). Gate:
 `pnpm -s vitest run src/lib/admin/regua-por-conversa src/lib/admin/percurso-queries src/components/admin/percurso`.
-Commit a seguir (o gerente commita).
+Commit `44844789 test+fix(admin): percurso diz quando a meta recusou o toque`.
 
 ## Provado
 - `status-do-toque.test.ts` (11 testes): classificação/backoff por código; visto vermelho antes do módulo.
