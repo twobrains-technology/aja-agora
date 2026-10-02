@@ -1219,6 +1219,23 @@ export const remarketingTouches = pgTable(
 		touches30d: smallint("touches_30d").default(0).notNull(),
 		/** Por que saiu da régua (`cliente_respondeu`, `optout_do_cliente`...). */
 		motivoSaida: text("motivo_saida"),
+		/**
+		 * O `wamid` do último toque que a Meta ACEITOU (FIX-441, D12).
+		 *
+		 * O carimbo é gravado ANTES do envio, então o `wamid` só existe depois da
+		 * resposta. Guardá-lo é o que permite o webhook de status `failed` achar a
+		 * linha e devolver a cota quando a entrega falha DEPOIS do envio ter saído.
+		 * Nulo enquanto o envio não confirmou.
+		 */
+		ultimoWamid: text("ultimo_wamid"),
+		/**
+		 * O destino do último toque: `enviado` (a Meta aceitou e o `wamid` está
+		 * gravado) ou `falhou` (o carimbo foi compensado — a cota voltou). É o
+		 * guarda de IDEMPOTÊNCIA da compensação assíncrona: o webhook só compensa
+		 * linha cujo `envio_status` ainda é `enviado`, então reentrega do mesmo
+		 * status não desconta a cota duas vezes.
+		 */
+		envioStatus: text("envio_status"),
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true })
 			.defaultNow()

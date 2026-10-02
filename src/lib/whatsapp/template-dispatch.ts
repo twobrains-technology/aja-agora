@@ -47,7 +47,18 @@ export interface ResolveAndSendArgs {
 
 export type ResolveAndSendResult =
 	| { channel: "free_text" }
-	| { channel: "template"; usageKey: string; messageId?: string }
+	| {
+			channel: "template";
+			usageKey: string;
+			/** Nome do template na Meta — para gravar no histórico a mensagem que saiu. */
+			metaName?: string;
+			/** Corpo denormalizado do template — o texto que o cliente leu. */
+			bodyPreview?: string | null;
+			/** `wamid` quando a Meta ACEITOU o envio; ausente quando falhou. */
+			messageId?: string;
+			/** O corpo do erro da Meta quando o envio NÃO saiu (FIX-441/D12). */
+			error?: string;
+	  }
 	| { channel: "queued"; usageKey: string; queueId: string };
 
 /** O que fazer com a lista: usar a primeira aprovada, ou enfileirar a primeira. */
@@ -198,10 +209,18 @@ export async function resolveAndSend(args: ResolveAndSendArgs): Promise<ResolveA
 			escolhido.language,
 			componentsFromParams(params),
 		);
+		// O resultado sobe INTEIRO: quem chamou precisa saber se a Meta aceitou
+		// (tem `messageId`) ou recusou (tem `error`) — é o que a régua usa para
+		// compensar o carimbo quando o envio não saiu (FIX-441/D12).
+		const messageId = (result as { messageId?: string })?.messageId;
+		const error = (result as { error?: string })?.error;
 		return {
 			channel: "template",
 			usageKey: escolha.usageKey,
-			messageId: (result as { messageId?: string })?.messageId,
+			metaName: escolhido.metaName,
+			bodyPreview: escolhido.bodyPreview ?? null,
+			...(messageId ? { messageId } : {}),
+			...(error ? { error } : {}),
 		};
 	}
 

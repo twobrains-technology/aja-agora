@@ -62,7 +62,7 @@
 import type { ConnectionOptions } from "bullmq";
 import { and, desc, eq, type SQL, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { beviProposals, remarketingTouches } from "@/db/schema";
+import { beviProposals, messages, remarketingTouches } from "@/db/schema";
 import { lerParametrosRegua } from "@/lib/admin/remarketing-config";
 import { faseDoFunil, teveProposta, viuOferta } from "@/lib/admin/sinais-do-funil";
 import type { ConversationMetadata } from "@/lib/agent/personas";
@@ -97,6 +97,14 @@ import {
 	PARAMETROS_DE_FABRICA,
 	type ParametrosRegua,
 } from "@/lib/remarketing/regua";
+import {
+	backoffDaFalha,
+	codigoDaMeta,
+	disposicaoDaFalha,
+	ENVIO_STATUS_ENVIADO,
+	ENVIO_STATUS_FALHOU,
+	MOTIVO_SAIDA_META,
+} from "@/lib/remarketing/status-do-toque";
 import { chaveTelefoneBR } from "@/lib/whatsapp/mesmo-numero";
 import { buildRetomadaDirective } from "./retomada";
 
@@ -133,6 +141,27 @@ export interface LinhaDaRegua {
 	teveProposta: boolean;
 }
 
+/**
+ * O resultado de um envio por template, do ponto de vista da régua (FIX-441).
+ *
+ * `ok: false` significa que a Meta RECUSOU o envio (ou a chamada estourou): o
+ * carimbo gravado antes precisa ser compensado. `undefined` (o que os dublês
+ * antigos devolvem) é tratado como sucesso — quem não informa nada não muda o
+ * comportamento de sempre.
+ */
+export type ResultadoDoEnvio =
+	| { ok: true; wamid: string | null }
+	| { ok: false; error: string; codigo: number | null };
+
+/** O que a compensação precisa saber para devolver o carimbo (FIX-441/D12). */
+export interface CompensacaoArgs {
+	conversationId: string;
+	/** O estado da linha ANTES do carimbo — o que o toque que falhou consumiu. */
+	anterior: { step: number; ultimoToqueEm: Date | null; touches30d: number };
+	agora: Date;
+	codigo: number | null;
+}
+
 export interface RemarketingDeps {
 	agora?: Date;
 	/** Entrada na régua: cria a linha de quem ficou em silêncio e ainda não tem. */
@@ -163,7 +192,16 @@ export interface RemarketingDeps {
 		/** Lista ordenada de chaves candidatas (fase × bem) — o dispatcher escolhe. */
 		usageKeys: readonly string[];
 		freeTextFallback: () => Promise<void>;
-	}) => Promise<void>;
+		// O `void` na união é o que mantém os dublês legados (`Promise<void>`) compilando; o ciclo
+		// trata `undefined` como sucesso.
+		// biome-ignore lint/suspicious/noConfusingVoidType: contrato dos dublês de teste
+	}) => Promise<ResultadoDoEnvio | void>;
+	/**
+	 * Compensa o carimbo de um toque cujo envio falhou de forma SÍNCRONA
+	 * (`resolveAndSend` sem `wamid` ou com erro). Devolve step/`ultimo_toque_em`/
+	 * cota ao estado anterior e empurra `next_touch_at` para um backoff.
+	 */
+	compensarToque?: (args: CompensacaoArgs) => Promise<void>;
 	/** O telefone é de atendente ATIVO no banco? (além da lista em código) */
 	telefoneDaEquipe?: (telefone: string) => Promise<boolean>;
 	/** Segura os toques ATIVOS cujo destino é telefone da equipe (idempotente). */
@@ -765,6 +803,84 @@ async function gravarEstado({
 		.where(eq(remarketingTouches.conversationId, conversationId));
 }
 
+/**
+ * COMPENSA o carimbo de um toque cujo envio falhou de forma SÍNCRONA (FIX-441/D12).
+ *
+ * O carimbo sobe ANTES do envio (a defesa contra duplicidade); quando a Meta
+ * recusa na hora, a cota não pode ficar consumida por uma mensagem que nunca
+ * saiu. Aqui o estado VOLTA ao de antes do carimbo (step, `ultimo_toque_em` e
+ * `touches_30d` vêm da linha lida no início do ciclo) e `next_touch_at` é
+ * empurrado para o backoff da falha — 3 dias no 131049, horas nas demais.
+ *
+ * O `WHERE ultimo_toque_em = $agora` é a guarda: ele só desfaz o carimbo que
+ * ESTE toque escreveu. Se outra escrita já mexeu na linha, a compensação não
+ * pisa — é preferível perder a compensação a duplicar/atropelar um toque.
+ *
+ * Para as recusas em que insistir não adianta (131050/131026), a régua ENCERRA:
+ * `ESGOTADO` + `motivo_saida`, para a linha sair do índice e a mesa ver.
+ */
+export async function compensarToqueDaConversa(args: CompensacaoArgs): Promise<void> {
+	const encerra = disposicaoDaFalha(args.codigo) === "encerra_regua";
+	await db
+		.update(remarketingTouches)
+		.set({
+			step: args.anterior.step,
+			ultimoToqueEm: args.anterior.ultimoToqueEm,
+			touches30d: args.anterior.touches30d,
+			status: encerra ? "ESGOTADO" : "ATIVO",
+			motivoSaida: encerra ? MOTIVO_SAIDA_META : null,
+			nextTouchAt: encerra ? null : new Date(args.agora.getTime() + backoffDaFalha(args.codigo)),
+			envioStatus: ENVIO_STATUS_FALHOU,
+		})
+		.where(
+			and(
+				eq(remarketingTouches.conversationId, args.conversationId),
+				eq(remarketingTouches.ultimoToqueEm, args.agora),
+			),
+		);
+}
+
+/**
+ * COMPENSA o carimbo de um toque cuja falha chegou DEPOIS do envio, pelo `wamid`
+ * (FIX-441/D12). É o que o webhook de status chama quando a Meta manda `failed`.
+ *
+ * Aqui não há o estado anterior: a linha só guarda o ÚLTIMO toque. A cota volta
+ * decrementando `step` e `touches_30d` (sem inchar o lado errado — o viés é não
+ * subcontar), e o `next_touch_at` vai para o backoff (ou `NULL` quando a Meta
+ * recusou de vez). De propósito **não** mexe em `ultimo_toque_em`: a linha
+ * antiga continua reconstruindo os toques da janela, e zerá-lo liberaria uma
+ * mensagem a mais — o lado que não se pode errar.
+ *
+ * IDEMPOTENTE pelo `envio_status`: só compensa linha ainda `enviado`. Depois da
+ * primeira compensação o campo vira `falhou` e a reentrega do mesmo status não
+ * desconta a cota duas vezes. Devolve `true` quando compensou de fato.
+ */
+export async function compensarToqueFalho(args: {
+	wamid: string;
+	codigo: number | null;
+	agora: Date;
+}): Promise<boolean> {
+	const encerra = disposicaoDaFalha(args.codigo) === "encerra_regua";
+	const atualizadas = await db
+		.update(remarketingTouches)
+		.set({
+			step: sql`GREATEST(${remarketingTouches.step} - 1, 0)`,
+			touches30d: sql`GREATEST(${remarketingTouches.touches30d} - 1, 0)`,
+			status: encerra ? "ESGOTADO" : "ATIVO",
+			motivoSaida: encerra ? MOTIVO_SAIDA_META : null,
+			nextTouchAt: encerra ? null : new Date(args.agora.getTime() + backoffDaFalha(args.codigo)),
+			envioStatus: ENVIO_STATUS_FALHOU,
+		})
+		.where(
+			and(
+				eq(remarketingTouches.ultimoWamid, args.wamid),
+				eq(remarketingTouches.envioStatus, ENVIO_STATUS_ENVIADO),
+			),
+		)
+		.returning({ id: remarketingTouches.id });
+	return atualizadas.length > 0;
+}
+
 const dispararTurnoReal: NonNullable<RemarketingDeps["dispararTurno"]> = async ({
 	conversationId,
 	channel,
@@ -808,10 +924,16 @@ const enviarArteReal: NonNullable<RemarketingDeps["enviarArte"]> = async ({ to, 
  * resolução janela/template/fila. O `freeTextFallback` NÃO é texto enlatado: se
  * a janela estiver aberta, quem fala é o agente, pelo mesmo turno de retomada.
  *
- * SEM `params` (decisão do líder, rodada 2): o shape dos templates de
- * remarketing ainda não está definido, e mandar `components` para um template
- * sem `{{1}}` faz a Meta recusar o envio. Quando o template tiver placeholder, é
- * uma linha aqui — o `resolveAndSend` já aceita `params`.
+ * ── O que muda no FIX-441 (D12) ───────────────────────────────────────────────
+ *
+ * 1. **Devolve o resultado** — `ok:false` (sem `wamid` ou com `error`) sobe para
+ *    o ciclo compensar o carimbo.
+ * 2. **Grava o toque em `messages`** quando saiu: o template vira mensagem do
+ *    assistente com `template_name` + o corpo renderizado. Até aqui a "ausência
+ *    de fala" era o único rastro de um template, e o painel e o agente não
+ *    enxergavam o que foi enviado.
+ * 3. **Grava o `wamid` + `envio_status='enviado'`** na linha da régua, para o
+ *    webhook de status `failed` achar a linha e devolver a cota.
  */
 const enviarTemplateReal: NonNullable<RemarketingDeps["enviarTemplate"]> = async ({
 	to,
@@ -819,9 +941,68 @@ const enviarTemplateReal: NonNullable<RemarketingDeps["enviarTemplate"]> = async
 	usageKeys,
 	freeTextFallback,
 }) => {
-	const { resolveAndSend } = await import("@/lib/whatsapp/template-dispatch");
-	await resolveAndSend({ to, conversationId, usageKeys, freeTextFallback });
+	try {
+		const { resolveAndSend } = await import("@/lib/whatsapp/template-dispatch");
+		// SEM `params` (decisão do líder, rodada 2): o shape dos templates de
+		// remarketing ainda não está definido, e mandar `components` para um template
+		// sem `{{1}}` faz a Meta recusar. Quando tiver placeholder, é uma linha aqui.
+		const resultado = await resolveAndSend({ to, conversationId, usageKeys, freeTextFallback });
+
+		// Texto livre (janela aberta) ou fila: não há `wamid` da Meta a guardar, e
+		// nada a compensar — quem fala é o agente, ou o dispatcher reenvia depois.
+		if (resultado.channel !== "template") return { ok: true, wamid: null };
+
+		const wamid = resultado.messageId ?? null;
+		if (resultado.error || !wamid) {
+			return {
+				ok: false,
+				error: resultado.error ?? "a Meta não devolveu o wamid",
+				codigo: codigoDaMeta(resultado.error),
+			};
+		}
+
+		await registrarMensagemDoTemplate({
+			conversationId,
+			metaName: resultado.metaName ?? null,
+			bodyPreview: resultado.bodyPreview ?? null,
+		});
+		await db
+			.update(remarketingTouches)
+			.set({ ultimoWamid: wamid, envioStatus: ENVIO_STATUS_ENVIADO })
+			.where(eq(remarketingTouches.conversationId, conversationId));
+
+		return { ok: true, wamid };
+	} catch (err) {
+		const mensagem = err instanceof Error ? err.message : String(err);
+		return { ok: false, error: mensagem, codigo: codigoDaMeta(mensagem) };
+	}
 };
+
+/**
+ * O toque por template vira mensagem do assistente em `messages` (FIX-441/D12c).
+ *
+ * O `content` é o corpo denormalizado do template (`bodyPreview`) — o texto que
+ * o cliente leu —, com o nome do template como reserva. `templateName` marca o
+ * disparo automático: meses depois, template e fala escrita à mão não podem ser
+ * a mesma coisa no histórico.
+ */
+async function registrarMensagemDoTemplate(args: {
+	conversationId: string;
+	metaName: string | null;
+	bodyPreview: string | null;
+}): Promise<void> {
+	const conteudo =
+		args.bodyPreview?.trim() ||
+		(args.metaName ? `Template enviado: ${args.metaName}` : "Template enviado");
+	await db.insert(messages).values({
+		conversationId: args.conversationId,
+		role: "assistant",
+		content: conteudo,
+		channel: "whatsapp",
+		personaId: null,
+		templateName: args.metaName,
+	});
+}
 
 // ─── O ciclo ────────────────────────────────────────────────────────────────
 
@@ -839,6 +1020,7 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 	const dispararTurno = deps.dispararTurno ?? dispararTurnoReal;
 	const enviarArte = deps.enviarArte ?? enviarArteReal;
 	const enviarTemplate = deps.enviarTemplate ?? enviarTemplateReal;
+	const compensarToque = deps.compensarToque ?? compensarToqueDaConversa;
 	const telefoneDaEquipe = deps.telefoneDaEquipe ?? ehDaEquipe;
 	const segurarEquipe = deps.segurarToquesDaEquipe ?? segurarToquesDaEquipe;
 	const lerParametros = deps.lerParametros ?? lerParametrosRegua;
@@ -1045,7 +1227,7 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 				continue;
 			}
 
-			await enviarTemplate({
+			const resultadoDoEnvio = await enviarTemplate({
 				to: telefone,
 				conversationId: linha.conversationId,
 				usageKeys: decisao.acao.usageKeys,
@@ -1058,6 +1240,32 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 					});
 				},
 			});
+
+			// A Meta RECUSOU o envio (sem `wamid` ou com erro): o carimbo gravado
+			// antes NÃO vale — devolve a cota e reagenda com backoff (FIX-441/D12).
+			if (resultadoDoEnvio && resultadoDoEnvio.ok === false) {
+				console.error(
+					JSON.stringify({
+						level: "error",
+						source: "remarketing-cycle",
+						etapa: "envio-template",
+						conversation_id: linha.conversationId,
+						codigo: resultadoDoEnvio.codigo,
+						error: resultadoDoEnvio.error,
+					}),
+				);
+				await compensarToque({
+					conversationId: linha.conversationId,
+					anterior: {
+						step: linha.step,
+						ultimoToqueEm: linha.ultimoToqueEm,
+						touches30d: linha.touches30d,
+					},
+					agora,
+					codigo: resultadoDoEnvio.codigo,
+				});
+				continue;
+			}
 			disparados += 1;
 		} catch (err) {
 			console.error(

@@ -442,6 +442,13 @@
       "when": 1790957964586,
       "tag": "0062_crazy_king_cobra",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1790961304821,
+      "tag": "0063_tan_nuke",
+      "breakpoints": true
     }
   ]
 }
