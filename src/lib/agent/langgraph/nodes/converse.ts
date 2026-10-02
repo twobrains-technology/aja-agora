@@ -57,6 +57,7 @@ import {
 } from "@/lib/observability/langfuse/funil-scores";
 import { fetchManagedPrompt, PROMPT_NAMES } from "@/lib/observability/langfuse/prompts";
 import { projectToMeta } from "../emit";
+import { payloadComNumerosDaFonte, TOOL_DE_ORIGEM } from "../numeros-do-card";
 import { cacheableSystemBlock } from "../provider";
 import { pausaDeConversa, RITMO } from "../ritmo";
 import type { AgentGraphStateType, FunnelState } from "../state";
@@ -1498,6 +1499,27 @@ export function createConverseNode(model: BaseChatModel) {
 					// chamava a tool, ela executava, e nada aparecia na tela.
 					if (PRESENTATION_TOOLS.has(call.name)) {
 						const artifactType = call.name.replace("present_", "") as ArtifactType;
+						// FIX-436 (D7) — o card que revela número de oferta sai com o RESULTADO
+						// da tool de dado, nunca com o número que o modelo digitou. Sem o
+						// resultado de origem no histórico, o card NÃO sai: a tela não mente.
+						const toolDeOrigem = TOOL_DE_ORIGEM[artifactType];
+						const payloadDaFonte = toolDeOrigem
+							? payloadComNumerosDaFonte(
+									artifactType,
+									call.args as Record<string, unknown>,
+									loopMessages,
+									// Extensão D7 (gerente): a cota ancorada no estado é fato do
+									// servidor e vale como origem do `simulation_result` quando a
+									// tool de dado não está no histórico — para a MESMA cota.
+									state.funnel.escolha ?? state.funnel.recommendedOffer ?? null,
+								)
+							: null;
+						if (toolDeOrigem && !payloadDaFonte) {
+							console.error(
+								`[card-sem-fonte] ${artifactType} sem resultado de ${toolDeOrigem} (conv=${state.conversationId})`,
+							);
+							continue;
+						}
 						const guardCtx: GuardContext = {
 							meta: projectToMeta(state),
 							userIntent: state.intent ?? "neutral",
@@ -1523,7 +1545,11 @@ export function createConverseNode(model: BaseChatModel) {
 							// reproduzido pelo gate em 13/08 assim que os cenários pararam
 							// de ficar SKIPPED. Invariante — vive aqui, não no prompt.
 							let payloadFinal = payloadSemOfertasRepetidas(
-								coagirContraEscolha(artifactType, call.args, state.funnel.escolha),
+								coagirContraEscolha(
+									artifactType,
+									payloadDaFonte ?? (call.args as Record<string, unknown>),
+									state.funnel.escolha,
+								),
 							);
 							// O ATALHO QUE ESCOLHE COTA PASSA A CARREGAR A COTA (D6).
 							//
