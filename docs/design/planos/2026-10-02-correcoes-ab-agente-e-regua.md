@@ -87,6 +87,7 @@ O que de fato quebrou:
 | D8 | **Retomada não cobra gate com desbloqueio pendente.** `pendingGateAfterTurn` recebe o estado do desbloqueio: com `pede-antes`/`borrado` não arma gate de coleta. O worker `gate-reengage-poll` confere de novo antes de enviar e consome o marcador sem mandar nada. O lembrete do telefone **não** ganha texto novo nesta onda (copy é do dono: `PENDENTE-KAIRO`). |
 | D9 | **Régua web:** "silêncio do cliente" e "janela de 24h da Meta" viram dois fatos separados. Para conversa web, o silêncio conta da **última mensagem do cliente** (`messages.role='user'`); `last_inbound_at` segue só do WhatsApp e continua governando a janela de texto livre, e por isso conversa web vai sempre por template. Tela (`motivo-fora-da-regua.ts`) e worker usam a mesma função. A ordenação de candidatos não pode jogar a web para o fim (`NULLS LAST` + limite). |
 | D10 | **Performance:** "Parados há mais de 24h" passa a ser a população **do período** (leads criados no período e parados há mais de 24h), com rótulo escrito dizendo isso. A lista global ("todos os períodos") vai para `/admin/remarketing`, como bloco próprio, atendendo ao "uma só de remarketing" do dono. O fetch da Performance descarta resposta atrasada, no padrão de `teste-do-telefone.tsx:119-145`. |
+| D12 | **Toque da régua: carimbo honesto e visível** (card `2026-10-02-regua-carimba-toque-e-a-meta-recusa`, ordem do dono de 02/10). (a) O carimbo continua **antes** do envio (carimbar só depois do `wamid` abre envio duplicado e irreversível se o processo cair no meio), mas com **compensação**: falha síncrona (`resolveAndSend` sem `messageId` ou com `error`) restaura step/`ultimo_toque_em`/`touches_30d` com `WHERE ultimo_toque_em = $agora` e empurra `next_touch_at` para um backoff; o `wamid` do sucesso fica em `remarketing_touches.ultimo_wamid`; o webhook de status `failed` devolve a cota de forma **idempotente** pelo `wamid`. (b) Códigos da Meta: **131049** devolve a cota e reagenda com backoff de dias; **131050/131026** encerram a régua (`motivo_saida`); demais falhas, compensação + backoff. (c) **O toque por template vira mensagem do assistente em `messages`** (`template_name` + texto renderizado), para o painel e o agente enxergarem o que foi enviado (hoje a "ausência de fala" é o sinal de template, `remarketing-queries.ts:258-259`). (d) O painel volta a enxergar os toques: o `LIKE 'remarketing_oportunidade_%'` (`remarketing-queries.ts:290`) não casa as chaves reais `remarketing_<fase>_*`. **Fora:** a régua não manda texto livre fora da janela (provado no código) e os dois 131047 de 02/10 vieram de outro remetente. |
 | D11 | **Vocabulário por prompt:** uma linha na seção "## Tom e Personalidade" do `SYSTEM_PROMPT` (`system-prompt.ts:14-25`, fora do trecho que o `leanSystemPrompt` corta): carro se diz "carro novo" e "seminovo" (sem hífen), nunca "carro popular"/"popular", inclusive nos atalhos. Publicação via `pnpm sync-prompts` = `PENDENTE-KAIRO`. Tabela/cadastro novo descartado: seria a 3ª fonte de verdade, e as personas já não chegam ao grafo. |
 
 ### Anti-padrões proibidos
@@ -148,7 +149,7 @@ O que de fato quebrou:
 |---|---|
 | 1 | **B3** · **B4** · **B2** · **B7** (até 4) → depois **B8** · **B9** |
 | 2 | **B1** (`converse.ts`) · **B6** (`persist.ts`, `gate-reengage*`) · **B8b** (ponteiro do e-mail do SLA) · **B9b** (tirar o nº do card do prompt) · **B4c** (precedência do modelo do analyzer), em paralelo, até 4 por vez |
-| 3 | **B5** (`converse.ts` de novo, depois de B1) |
+| 3 | **B5** (`converse.ts` de novo, depois de B1) · **B11** (régua: carimbo compensado e toque visível), em paralelo |
 | 4 | **B10** (cards e docs) |
 
 ---
@@ -284,6 +285,29 @@ de candidatos e vencidas), `src/lib/remarketing/regua.ts` (agendamento; template
   `sync-prompts`: esperado, `PENDENTE-KAIRO`.
 **Gate:** `pnpm -s vitest run src/lib/agent/langgraph/nodes/lean-prompt-entrega-as-regras.test.ts && pnpm -s typecheck`
 
+### B11 · FIX-441 — toque da régua: carimbo compensado, visível e com os códigos da Meta (D12; onda 3, em paralelo com B5)
+**Contexto medido (prod, 02/10 14:00):** a reentrada pôs 15 na régua; o ciclo carimbou 10 (`disparados: 10`,
+`teto_30_dias: 5`). O log tem `Status: sent` para 9 e `delivered` para pelo menos 8; **1 falhou com 131049**
+(`8b8f3244`, final 6246) e perdeu a cota. Nenhuma linha em `messages`: o template nunca é gravado. Nenhuma mensagem de
+régua foi persistida desde que ela existe; os 14 templates do histórico são `aja_agora_atendente_retomada`.
+**Files:** Modify `src/lib/whatsapp/template-dispatch.ts` (devolver o resultado; falha = sem `messageId` ou com `error`),
+`src/lib/workers/remarketing-cycle.ts` (`enviarTemplate` devolve o resultado; compensação no `catch`/falha; gravar o
+template em `messages`), `src/app/api/webhook/whatsapp/route.ts` (status `failed` → compensação por `wamid`),
+`src/lib/admin/remarketing-queries.ts` (chaves reais + a fala gravada), `src/db/schema.ts` + `drizzle/0063_*` + `meta/`
+(`remarketing_touches.ultimo_wamid text`, `envio_status text`). Create `src/lib/remarketing/status-do-toque.ts` (+ teste).
+Test: `src/lib/workers/remarketing-cycle.envio.integration.test.ts` (Postgres real, `REMARKETING_ATIVO=1`, fetch da Meta
+mockado com `vi.stubGlobal("fetch")`, **nenhum envio real**).
+- [ ] (a) Lead com inbound há 5 dias + `remarketing_inicio_generico` APPROVED; o fetch devolve 400 com código 131049 ⇒
+  depois de `runRemarketingCycle`: step, `ultimo_toque_em` e `touches_30d` como antes, `next_touch_at` = backoff; um 2º
+  ciclo logo em seguida **não** chama o fetch.
+- [ ] (b) O fetch devolve 200 com `wamid` ⇒ step 1, `ultimo_wamid` gravado, o corpo enviado é `type: "template"` (nunca
+  `text`) e existe **uma** mensagem do assistente em `messages` com `template_name` e o texto renderizado.
+- [ ] (c) POST no webhook com `failed 131049` para esse `wamid` ⇒ a cota volta; repetir o mesmo payload não muda nada
+  (idempotente). `failed 131050` ⇒ régua encerrada com `motivo_saida`.
+- [ ] (d) A query do painel conta o toque por template (chave `remarketing_inicio_generico`).
+- [ ] Ver falhar; implementar; `pnpm db:migrate` no banco local; ver passar; `test+fix(remarketing): toque compensado e visível quando a meta recusa`.
+**Gate:** `pnpm -s vitest run src/lib/workers/remarketing-cycle src/lib/remarketing src/app/api/webhook/whatsapp src/lib/admin/remarketing-queries src/lib/whatsapp/template-dispatch && pnpm -s typecheck`
+
 ### B10 · cards e docs (onda 4)
 **Files:** Create `docs/correcoes/done/fix-432-…md` a `fix-440-…md`, no padrão de `docs/correcoes/done/fix-403-*`.
 `git mv` dos 7 cards de 02/10 do inbox para `done/` (o da `develop` **fica** no inbox, com `PENDENTE-KAIRO`), com
@@ -305,7 +329,8 @@ de candidatos e vencidas), `src/lib/remarketing/regua.ts` (agendamento; template
 | C9 | Régua web (D9) | `pnpm -s vitest run src/lib/remarketing src/lib/workers/remarketing-cycle src/lib/admin/regua-por-conversa src/lib/admin/motivo-fora-da-regua` |
 | C10 | Performance (D10) + base verde | `pnpm -s vitest run src/lib/admin/handoff-queries.integration.test.ts src/lib/admin/performance-queries.integration.test.ts src/components/admin/performance` |
 | C11 | Vocabulário (D11) | `pnpm -s vitest run src/lib/agent/langgraph/nodes/lean-prompt-entrega-as-regras.test.ts` |
-| C12 | O que NÃO muda | `git diff --stat $BASE..HEAD -- src/lib/agent/qualify-state.ts src/lib/adapters/bevi src/lib/bevi src/lib/observability/langfuse/prompts.ts src/lib/agent/langgraph/provider.ts src/components/chat/artifacts/telefone-do-desbloqueio.tsx .github` vazio; `git diff $BASE..HEAD -- src/lib/agent/system-prompt.ts` = só a linha de D11; `git diff --name-only $BASE..HEAD -- drizzle` = só `0062_*` + `meta/` |
+| C12 | O que NÃO muda | `git diff --stat $BASE..HEAD -- src/lib/agent/qualify-state.ts src/lib/adapters/bevi src/lib/bevi src/lib/observability/langfuse/prompts.ts src/lib/agent/langgraph/provider.ts src/components/chat/artifacts/telefone-do-desbloqueio.tsx .github` vazio; `git diff $BASE..HEAD -- src/lib/agent/system-prompt.ts` = só a linha de D11; `git diff --name-only $BASE..HEAD -- drizzle` = só `0062_*`, `0063_*` + `meta/` |
+| C17 | Toque da régua (D12) | `pnpm -s vitest run src/lib/workers/remarketing-cycle src/app/api/webhook/whatsapp src/lib/admin/remarketing-queries` |
 | C13 | Lint | `pnpm -s biome check $(git diff --name-only --diff-filter=AM $BASE..HEAD -- src scripts)` |
 | C14 | Integração do caminho do dinheiro | `pnpm test:caminho-do-dinheiro` verde (é o que o husky rodaria e o `HUSKY=0` pula) |
 | C15 | Revisão | `/code-review high` sobre `$BASE..HEAD`; achados CONFIRMED voltam ao gerente |
