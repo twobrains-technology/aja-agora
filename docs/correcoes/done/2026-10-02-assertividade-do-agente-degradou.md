@@ -1,7 +1,7 @@
 ---
 slug: assertividade-do-agente-degradou
 titulo: "Assertividade do agente caiu: condução entregue 0,56 hoje contra 0,90 da base"
-status: inbox
+status: done
 severidade: alta
 projeto: aja-agora
 rodada: 2026-10-02 — medição de produção (Langfuse + banco) sobre a suspeita levantada na call de 01/10

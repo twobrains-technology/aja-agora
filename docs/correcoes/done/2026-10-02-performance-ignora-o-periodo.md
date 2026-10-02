@@ -1,7 +1,7 @@
 ---
 slug: performance-ignora-o-periodo
 titulo: "A tela de Performance não obedece ao filtro de período (e mistura parados/remarketing)"
-status: inbox
+status: done
 severidade: alta
 projeto: aja-agora
 rodada: 2026-10-02 — call com a Bruna (01/10 11:38-12:01)

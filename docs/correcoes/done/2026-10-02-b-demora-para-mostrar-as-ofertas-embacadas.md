@@ -1,7 +1,7 @@
 ---
 slug: b-demora-para-mostrar-as-ofertas-embacadas
 titulo: "No braço B, as ofertas embaçadas demoram a aparecer — o cliente encara espera"
-status: inbox
+status: done
 severidade: media
 projeto: aja-agora
 rodada: 2026-10-02 — call com a Bruna (01/10 11:38-12:01)

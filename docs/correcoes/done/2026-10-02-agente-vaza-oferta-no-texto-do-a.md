@@ -1,7 +1,7 @@
 ---
 slug: agente-vaza-oferta-no-texto-do-a
 titulo: "No braço A, o texto do agente entrega os valores da oferta antes do telefone"
-status: inbox
+status: done
 severidade: alta
 projeto: aja-agora
 rodada: 2026-10-02 — smoke do A/B gravado em vídeo (2min14) + call com a Bruna de 01/10

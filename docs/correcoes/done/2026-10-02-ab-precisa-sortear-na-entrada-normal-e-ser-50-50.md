@@ -1,7 +1,7 @@
 ---
 slug: ab-precisa-sortear-na-entrada-normal-e-ser-50-50
 titulo: "Garantir que o A/B sorteie pela entrada normal e divida 50/50 de verdade (fila, não sorteio enviesado)"
-status: inbox
+status: done
 severidade: alta
 projeto: aja-agora
 rodada: 2026-10-02 — call com a Bruna (01/10 11:38-12:01)

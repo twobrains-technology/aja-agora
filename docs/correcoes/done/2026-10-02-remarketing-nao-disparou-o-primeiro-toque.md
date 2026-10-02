@@ -1,7 +1,7 @@
 ---
 slug: remarketing-nao-disparou-o-primeiro-toque
 titulo: "Régua não disparou o primeiro toque (90 min) de um lead real da meia-noite"
-status: inbox
+status: done
 severidade: alta
 projeto: aja-agora
 rodada: 2026-10-02 — call com a Bruna (01/10 11:38-12:01)

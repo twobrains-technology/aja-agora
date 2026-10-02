@@ -1,7 +1,7 @@
 ---
 slug: agente-fala-carro-popular
 titulo: "O agente fala 'carro popular' — a taxonomia combinada é novo e seminovo"
-status: inbox
+status: done
 severidade: media
 projeto: aja-agora
 rodada: 2026-10-02 — call com a Bruna (01/10 11:38-12:01)
