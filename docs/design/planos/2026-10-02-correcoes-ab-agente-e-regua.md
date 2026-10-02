@@ -20,6 +20,24 @@ e histórico das decisões: `.orientacao/diario.md` (seção "02/10 ~13:30 — v
 
 ## Contexto (validado em 02/10 contra o código desta worktree e contra produção)
 
+**Atualização 02/10 ~14:3x — o degrau de 02/10 é REAL e atingiu LEAD REAL.** O dono confirmou que as 3 conversas web
+de 02/10 (`7b5082a1` "Guilherme", `db26cd54` anônima, `9b30b5ac` "Fernando") são lead, não teste. Reapurado **só com
+`is_simulated=false`** (43 conversas de teste marcadas pelo dono): haiku **0,93** (141/151) · qwen antes do A/B **0,87**
+(127/146) · qwen+A/B até 01/10 **0,78** (7/9 — quase todo o tráfego desses dias era teste) · **02/10 0,56 (9/16), p=0,005
+contra o qwen antes do A/B.** Os 7 turnos que falharam, um a um (Langfuse prod, entrada e saída de cada geração):
+- **Analyzer descartado:** nos 7, o analyzer respondeu sem erro e certo (categoria, valor do bem 210–220 mil, intenção).
+  Ele não mudou (haiku fixo pela env desde antes de 20/09), nada foi deployado entre 30/09 14:54 e 02/10, e em 01/10 ele
+  teve 29/50 erros com condução 0,94.
+- **Braço B com contexto que mente (3 turnos — `db26cd54` 10:57:31, 11:04:40, e o cliente repetindo "Carrro de 220 mil
+  reais"):** "as opções já estão na sua tela / dá uma olhada nas parcelas", com tudo borrado → **B1**.
+- **qwen só com tool, sem texto, e com número inventado no card (2 turnos — `db26cd54` 11:05:20, 11:07:15)** → o número,
+  **B5**; o turno sem fala continua sendo comportamento do modelo.
+- **qwen fechando sem pergunta (2 turnos — `7b5082a1` 11:02:55, 772 caracteres sobre lance sem convite;
+  `9b30b5ac` 11:09:05, fechamento "Show" e a pergunta sem "?"; `db26cd54` 11:03:16, fechamento sem pergunta no reveal).
+  Em 10:57:31 o qwen chamou `search_groups`, tool que não existe no grafo.**
+- ⇒ O que este PRD conserta (B1, B5) cobre o braço B e o número. **A qualidade de fala do qwen não é código:** é a decisão
+  do `AI_MODEL` (`PENDENTE-KAIRO` nº 1, com estes números).
+
 **Degradação: o que os dados dizem.** Condução entregue (`conducao_entregue`, Langfuse prod) por era:
 haiku até 20/09 22h **0,904** (151/167) · qwen antes do A/B **0,869** (133/153, p=0,38) · qwen com A/B (29/09 23h15
 → 01/10) **0,919** (57/62) · 02/10 **0,56** (9/16, concentrado em 2 conversas). **O A/B não faz degrau na condução.**
