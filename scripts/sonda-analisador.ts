@@ -24,7 +24,7 @@
 import "./_env-host";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { analyzeTurn, type TurnAnalysis } from "@/lib/agent/turn-analyzer";
-import { modeloDoAgente } from "@/lib/llm/model-provider";
+import { modeloDoAnalisador } from "@/lib/llm/model-provider";
 
 type Campo = "detectedCategory" | "creditMin" | "creditMax" | "parcelaMensal" | "isExplicitSwitch";
 
@@ -149,7 +149,7 @@ function percentil(ordenados: number[], p: number): number {
 }
 
 async function main() {
-	console.log(`\nSonda do analyzer — modelo = ${modeloDoAgente()} · ${CASOS.length} casos\n`);
+	console.log(`\nSonda do analyzer — modelo = ${modeloDoAnalisador()} · ${CASOS.length} casos\n`);
 
 	const latencias: number[] = [];
 	let ok = 0;

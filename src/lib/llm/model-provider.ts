@@ -36,6 +36,19 @@ export function modeloDoAgente(): string {
 }
 
 /**
+ * O modelo do ANALYZER (turn-analyzer). Herda o modelo padrão e aceita um
+ * override opcional: a var antiga `AI_ANALYZER_MODEL` volta a valer quando
+ * alguém quer isolar o classificador do agente, mas o normal é os dois andarem
+ * juntos — foi separar os dois que deixou o analyzer no `claude-haiku-4-5`
+ * enquanto o agente já rodava no qwen (FIX-435). `?.trim() ||` em cada passo
+ * pelo mesmo footgun do compose: var vazia/espaços cai para o próximo da
+ * cadeia. Esta é a ÚNICA leitura de `AI_ANALYZER_MODEL` no projeto.
+ */
+export function modeloDoAnalisador(): string {
+	return process.env.AI_ANALYZER_MODEL?.trim() || modeloDoAgente();
+}
+
+/**
  * Instancia um modelo do gateway pela rota certa:
  * `claude-*` → provider Anthropic (`/v1/messages`); o resto → client
  * OpenAI-compatible (`/v1/chat/completions`, via `.chat()` — a Responses API

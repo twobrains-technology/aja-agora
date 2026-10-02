@@ -1,6 +1,11 @@
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isNativeAnthropicModel, modeloAiSdkDoGateway, modeloDoAgente } from "./model-provider";
+import {
+	isNativeAnthropicModel,
+	modeloAiSdkDoGateway,
+	modeloDoAgente,
+	modeloDoAnalisador,
+} from "./model-provider";
 
 // ============================================================================
 // Bug real (2026-07-05): o gateway LiteLLM quebra `tool_choice` ao traduzir
@@ -72,5 +77,49 @@ describe("modeloDoAgente", () => {
 	it("cai no default com a var ausente", () => {
 		vi.stubEnv("AI_MODEL", "");
 		expect(modeloDoAgente()).toBe("claude-sonnet-5");
+	});
+});
+
+// ============================================================================
+// B4c (02/10/2026) — o analyzer HERDA o modelo padrão e aceita override
+// opcional. Precedência: AI_ANALYZER_MODEL → AI_MODEL → default do projeto.
+// `?.trim() ||` em cada passo: o compose materializa var vazia, e vazio/espaços
+// precisa cair para o próximo da cadeia, não virar modelo.
+// ============================================================================
+describe("modeloDoAnalisador", () => {
+	it("o override do analyzer vence o modelo do agente", () => {
+		vi.stubEnv("AI_ANALYZER_MODEL", "claude-haiku-4-5");
+		vi.stubEnv("AI_MODEL", "qwen3.8-flash");
+		expect(modeloDoAnalisador()).toBe("claude-haiku-4-5");
+	});
+
+	it("sem override, herda AI_MODEL", () => {
+		vi.stubEnv("AI_ANALYZER_MODEL", "");
+		vi.stubEnv("AI_MODEL", "qwen3.8-flash");
+		expect(modeloDoAnalisador()).toBe("qwen3.8-flash");
+	});
+
+	it("sem override e sem AI_MODEL, cai no default do projeto", () => {
+		vi.stubEnv("AI_ANALYZER_MODEL", "");
+		vi.stubEnv("AI_MODEL", "");
+		expect(modeloDoAnalisador()).toBe("claude-sonnet-5");
+	});
+
+	it("apara espaço em volta do override", () => {
+		vi.stubEnv("AI_ANALYZER_MODEL", "  claude-haiku-4-5  ");
+		vi.stubEnv("AI_MODEL", "qwen3.8-flash");
+		expect(modeloDoAnalisador()).toBe("claude-haiku-4-5");
+	});
+
+	it("override vazio (compose) cai para AI_MODEL", () => {
+		vi.stubEnv("AI_ANALYZER_MODEL", "   ");
+		vi.stubEnv("AI_MODEL", "qwen3.8-flash");
+		expect(modeloDoAnalisador()).toBe("qwen3.8-flash");
+	});
+
+	it("AI_MODEL vazio sem override cai no default do projeto", () => {
+		vi.stubEnv("AI_ANALYZER_MODEL", "");
+		vi.stubEnv("AI_MODEL", "   ");
+		expect(modeloDoAnalisador()).toBe("claude-sonnet-5");
 	});
 });

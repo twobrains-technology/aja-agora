@@ -23,7 +23,7 @@
 import "./_env-host";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { analyzeTurn } from "@/lib/agent/turn-analyzer";
-import { modeloDoAgente } from "@/lib/llm/model-provider";
+import { modeloDoAnalisador } from "@/lib/llm/model-provider";
 
 /** A pergunta REAL que o agente fez ao Bernardo em 28/07 16:07 (print
  * `2807-1607-bernardo-06-nao-apresentou-carta-1-milhao.jpg`). */
@@ -80,7 +80,7 @@ const CASOS: Array<{ fala: string; aceitaveis: string[]; nota: string }> = [
 	},
 ];
 
-const modelo = modeloDoAgente();
+const modelo = modeloDoAnalisador();
 /** Quantas vezes tentar cada fala antes de contar como erro. O analyzer roda com
  * `ANALYZER_TIMEOUT_MS = 6000` (turn-analyzer.ts) contra latências medidas de
  * 3,2–5,8s: ~8% das chamadas estouram e caem no `NEUTRAL_FALLBACK`. Sem retry, a

@@ -1,16 +1,18 @@
 import { generateObject } from "ai";
 import { z } from "zod";
-import { modeloAiSdkDoGateway, modeloDoAgente } from "@/lib/llm/model-provider";
+import { modeloAiSdkDoGateway, modeloDoAnalisador } from "@/lib/llm/model-provider";
 import { isLangfuseConfigured } from "@/lib/observability/langfuse/env";
 import { fetchManagedPrompt, PROMPT_NAMES } from "@/lib/observability/langfuse/prompts";
 import type { Category, ConversationMetadata } from "./personas";
 import { listExpertisesByCategory } from "./personas-repo";
 
-// D5 (FIX-435, 02/10/2026) — o analyzer usa o MESMO modelo do agente
-// (`AI_MODEL`). A var antiga de modelo do analyzer deixou de ser lida: era o fio
-// que mantinha a classificação no `claude-haiku-4-5` enquanto o agente já rodava
-// no qwen, e por isso os 29× HTTP 400 "credit balance too low" de 01/10
-// derrubaram só o analyzer — a parte que decide o que o cliente disse.
+// D5 (FIX-435, 02/10/2026; B4c) — o analyzer usa o MESMO modelo do agente
+// (`AI_MODEL`) por padrão, com override opcional por env própria do analyzer. A
+// precedência vive em `modeloDoAnalisador()` (model-provider.ts) — é o único
+// ponto do projeto que lê a env do override. Antes o analyzer tinha modelo
+// próprio fixo em `claude-haiku-4-5`: foi esse fio que derrubou só a
+// classificação nos 29× HTTP 400 "credit balance too low" de 01/10, enquanto o
+// agente seguia no qwen — a parte que decide o que o cliente disse ficou fora.
 
 // Timeout medido, não arbitrado. 4s era apertado em cold starts da Anthropic —
 // quando estoura, o fallback neutro faz o concierge atender mesmo quando o
@@ -338,7 +340,7 @@ export async function analyzeTurn(
 		// A seção de sub-tópicos é dinâmica (vem do DB) — continua código.
 		const managedSystem = await fetchManagedPrompt(PROMPT_NAMES.analyzer, BASE_SYSTEM_INSTRUCTION);
 		const result = await generateObject({
-			model: modeloAiSdkDoGateway(modeloDoAgente()),
+			model: modeloAiSdkDoGateway(modeloDoAnalisador()),
 			schema: turnAnalysisSchema,
 			system: managedSystem.text + renderSubTopicSection(subTopics),
 			prompt: `Persona ativa atualmente: ${currentPersona}${anchorHint}
