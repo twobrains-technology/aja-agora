@@ -23,7 +23,7 @@
  *      escrito. Silenciar o botão esconderia a regra de quem opera.
  */
 
-import { SettingsIcon, XIcon } from "lucide-react";
+import { SettingsIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { parseAsInteger, parseAsString, useQueryState } from "nuqs";
 import { useCallback, useEffect, useState } from "react";
@@ -31,6 +31,7 @@ import { ConversationDetailPanel } from "@/components/admin/conversations/conver
 import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter";
 import { FiltroAB, NOTA_DO_BRACO_DA_CONVERSA } from "@/components/admin/dashboard/filtro-ab";
 import { usePeriodoPadrao } from "@/components/admin/dashboard/periodo-provider";
+import { formatarHoras } from "@/components/admin/performance/funil-de-handoff";
 import { CartoesDaRegua } from "@/components/admin/remarketing/cartoes-da-regua";
 import { SecaoDeInsights } from "@/components/admin/remarketing/insights-da-regua";
 import { PainelDeReentrada } from "@/components/admin/remarketing/painel-de-reentrada";
@@ -38,6 +39,7 @@ import { BlocoResumoDaRegua } from "@/components/admin/remarketing/resumo-da-reg
 import { TabelaRemarketing } from "@/components/admin/remarketing/tabela-remarketing";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
 	Select,
 	SelectContent,
@@ -46,6 +48,8 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { LeadParado } from "@/lib/admin/handoff-queries";
+import { rotuloDoEstagio } from "@/lib/admin/lead-stages";
 import { parseAsDiaDoNegocio } from "@/lib/admin/periodo-querystring";
 import type {
 	AcaoDaRegua,
@@ -81,6 +85,90 @@ const CONTADORES_VAZIOS: Contadores = {
 	converteu: 0,
 };
 
+/**
+ * A régua mais a lista GLOBAL de parados (D10, 02/10/2026).
+ *
+ * `parados` viaja fora de `RespostaDaRegua` de propósito: é a única coisa desta
+ * resposta que NÃO obedece ao período (a régua conta a entrada na fila na
+ * janela escolhida; esta lista é "quem a mesa precisa ligar agora", de qualquer
+ * data). Alargar o tipo da régua faria o período parecer valer para ela também.
+ */
+interface RespostaDaReguaComParados extends RespostaDaRegua {
+	parados: { limiteHoras: number; leads: LeadParado[] };
+}
+
+/**
+ * "PARADOS — TODOS OS PERÍODOS".
+ *
+ * Este bloco morava na Performance, com o rótulo do período e a população de
+ * todos eles: o filtro em "Hoje" listava gente de julho. Lá a lista passou a ser
+ * a DO PERÍODO (lead criado na janela e sem toque há mais de `limiteHoras`, a
+ * mesma janela do funil de handoff), e o bolo inteiro veio para cá — que é a
+ * tela onde a mesa opera a régua, e onde o dono pediu "uma só de remarketing".
+ *
+ * É leitura pura: a campainha do SLA continua sendo do ciclo (`sla-da-mesa`),
+ * com o mesmo relógio (a última TRANSIÇÃO de estágio) e a mesma guarda de
+ * telefone da casa. Duas listas com definições diferentes seriam duas verdades.
+ *
+ * Exportado para o teste da tela provar o rótulo e a leitura sem subir a página
+ * inteira (a régua puxa lista, filtros e funil que nada têm a ver com isto).
+ */
+export function BlocoDosParados({
+	parados,
+	limiteHoras,
+}: {
+	parados: readonly LeadParado[];
+	limiteHoras: number;
+}) {
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>Parados — todos os períodos</CardTitle>
+				<CardDescription>
+					Quem a mesa precisa ligar agora: sem toque há mais de {limiteHoras}h, de qualquer data —
+					inclusive quem entrou na base antes do período selecionado acima.
+				</CardDescription>
+			</CardHeader>
+			<CardContent>
+				<div className="mb-2 flex items-center gap-2">
+					<TriangleAlertIcon
+						className={`size-4 ${parados.length > 0 ? "text-destructive" : "text-muted-foreground"}`}
+						aria-hidden
+					/>
+					<span className="text-sm font-semibold tabular-nums">
+						{parados.length} {parados.length === 1 ? "lead parado" : "leads parados"}
+					</span>
+				</div>
+
+				{parados.length === 0 ? (
+					<p className="text-xs text-muted-foreground">
+						Ninguém parado além do limite. É o estado que se quer.
+					</p>
+				) : (
+					<ul className="divide-y divide-border rounded-md border border-border">
+						{parados.slice(0, 15).map((lead) => (
+							<li
+								key={lead.leadId}
+								className="flex items-center justify-between gap-3 px-3 py-2 text-xs"
+							>
+								<span className="min-w-0 truncate">
+									<strong className="font-medium">{lead.nome ?? "Sem nome"}</strong>
+									{lead.telefone ? (
+										<span className="ml-2 text-muted-foreground">{lead.telefone}</span>
+									) : null}
+								</span>
+								<span className="shrink-0 text-muted-foreground tabular-nums">
+									{rotuloDoEstagio(lead.estagio)} · há {formatarHoras(lead.horasParado)}
+								</span>
+							</li>
+						))}
+					</ul>
+				)}
+			</CardContent>
+		</Card>
+	);
+}
+
 function ReguaContent() {
 	// O período da PESSOA: a URL manda, o cookie é o segundo degrau (o provider
 	// entrega o que o layout leu do servidor). Mesmo par de fontes que o filtro
@@ -107,7 +195,7 @@ function ReguaContent() {
 	const situacaoAtiva = situacaoDoParametro(situacao);
 	const passoAtivo = passoDoParametro(passo);
 
-	const [data, setData] = useState<RespostaDaRegua | null>(null);
+	const [data, setData] = useState<RespostaDaReguaComParados | null>(null);
 	const [erro, setErro] = useState<string | null>(null);
 	const [carregando, setCarregando] = useState(true);
 	const [aberta, setAberta] = useState<LinhaDaTela | null>(null);
@@ -139,7 +227,7 @@ function ReguaContent() {
 				const corpo = (await res.json().catch(() => null)) as { error?: string } | null;
 				throw new Error(corpo?.error ?? `HTTP ${res.status}`);
 			}
-			setData((await res.json()) as RespostaDaRegua);
+			setData((await res.json()) as RespostaDaReguaComParados);
 			setErro(null);
 		} catch (e) {
 			// Sem dados, a tela não mostra número: um contador zerado por falha de
@@ -441,6 +529,13 @@ function ReguaContent() {
 							estado={data.estado}
 							onFiltrarPasso={(p) => trocarPasso(p)}
 						/>
+					)}
+
+					{/* O bolo parado de TODAS as datas fecha a página: ele não obedece ao
+					    período (D10) e por isso fica fora do resumo e da lista acima, que
+					    são recortados. */}
+					{data && (
+						<BlocoDosParados parados={data.parados.leads} limiteHoras={data.parados.limiteHoras} />
 					)}
 				</>
 			)}

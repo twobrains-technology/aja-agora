@@ -4,6 +4,7 @@ import { updateLastInboundAt } from "@/app/actions/whatsapp";
 import { extrairCodigoDeOrigem, removerCarimbo } from "@/lib/attribution/codigo-de-origem";
 import { parseCtwaReferral } from "@/lib/attribution/referral";
 import { recordWhatsAppVisit } from "@/lib/attribution/visit-store";
+import { codigoDaMeta } from "@/lib/remarketing/status-do-toque";
 import { markAsRead } from "@/lib/whatsapp/api";
 import { receberMidiaDoCliente } from "@/lib/whatsapp/midia-do-cliente";
 import { claimInboundMessage } from "@/lib/whatsapp/once";
@@ -86,6 +87,24 @@ export async function POST(req: NextRequest) {
 				console.error(`${msg} | error: ${errCode} ${errTitle}`);
 			} else {
 				console.log(msg);
+			}
+
+			// FIX-441 (D12) — a entrega FALHOU depois de a régua já ter carimbado o
+			// toque: devolve a cota da régua pelo `wamid`, de forma IDEMPOTENTE (a Meta
+			// reentrega o webhook). É `await` de propósito: a compensação é escrita, e o
+			// teste precisa vê-la concluída antes do 200. Falha aqui não pode virar 5xx
+			// (a Meta re-tentaria em laço): fica no log.
+			if (status.status === "failed" && status.id) {
+				try {
+					const { compensarToqueFalho } = await import("@/lib/workers/remarketing-cycle");
+					await compensarToqueFalho({
+						wamid: status.id,
+						codigo: codigoDaMeta(status.errors?.[0]),
+						agora: new Date(),
+					});
+				} catch (err) {
+					console.error("[whatsapp] compensação do toque falhou:", err);
+				}
 			}
 
 			// Até 2026-08-15 a linha acima era TUDO o que acontecia com um status.

@@ -638,3 +638,36 @@ describe("esgotar a sequência SÓ PARA — não vira `perdido` e não cria aler
 		expect(decisao.proximoEstado?.status).not.toBe("ESGOTADO");
 	});
 });
+
+describe("FIX-441 — a web NUNCA entrega por turno de retomada", () => {
+	it("WhatsApp com a janela aberta continua virando turno_de_retomada", () => {
+		const decisao = decidir({
+			agora: TOQUE_1,
+			estado: ativo({}),
+			telefone: "5562999998888",
+			fase: "inicio",
+			channel: "whatsapp",
+		});
+		expect(decisao.acao.tipo).toBe("turno_de_retomada");
+	});
+
+	it("web com `last_inbound_at` DENTRO das 24 h vira TEMPLATE, não turno", () => {
+		// A web pode ter a coluna (ela chega quando a conversa vira lead) e, com
+		// ela, a janela de 24 h aberta mandaria texto livre — o turno rodaria no
+		// chat do site, que ninguém está olhando. O canal força o template.
+		const decisao = decidir({
+			agora: TOQUE_1,
+			estado: ativo({}),
+			telefone: "5562999998888",
+			fase: "inicio",
+			channel: "web",
+		});
+		expect(decisao.acao).toEqual({
+			tipo: "template",
+			passo: 1,
+			usageKeys: ["remarketing_inicio_carro", "remarketing_inicio_generico"],
+		});
+		// O carimbo continua contando o toque — a entrega muda, o estado não.
+		expect(decisao.proximoEstado?.step).toBe(1);
+	});
+});

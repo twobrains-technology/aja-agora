@@ -265,8 +265,15 @@ export interface FatosDaLinha {
 	 * 2). É a fonte preferida; `next_touch_at` só entra como fallback.
 	 */
 	ultimoToqueEm: Date | null;
-	/** Último inbound do cliente (`conversations.last_inbound_at`). */
+	/** Último inbound do cliente (`conversations.last_inbound_at`) — a janela de
+	 * 24 h da Meta. A web nunca tem esta coluna. */
 	ultimoInboundEm: Date | null;
+	/**
+	 * A referência do SILÊNCIO, já resolvida pelo canal (D9): na web, a última
+	 * fala do cliente; no WhatsApp, o próprio `ultimoInboundEm`. Ausente = não
+	 * resolvida, e aí vale o último inbound (comportamento de sempre).
+	 */
+	silencioDoClienteEm?: Date | null;
 }
 
 /**
@@ -363,28 +370,33 @@ export function montarEstado(
 	// A coluna `ultimo_toque_em` é a fonte; a derivação é fallback de linha antiga
 	// (e usa a cadência vigente, para o fallback não mentir depois de um ajuste).
 	const ultimoToqueEm = ultimoToqueDoFato(fatos, parametros);
+	const silencio = fatos.silencioDoClienteEm ?? fatos.ultimoInboundEm;
 
 	// Resposta posterior ao último toque mata a sequência; a reentrada por
-	// simulação posterior é decisão da régua (`podeDisparar`), não daqui.
+	// simulação posterior é decisão da régua (`podeDisparar`), não daqui. É o
+	// SILÊNCIO que responde "o cliente falou depois do toque?" — na web, a coluna
+	// `last_inbound_at` não existe, e é a fala dele que encerra a sequência.
 	const respondeuDepoisDoToque =
 		status === "ATIVO" &&
-		fatos.ultimoInboundEm !== null &&
+		silencio !== null &&
 		ultimoToqueEm !== null &&
-		fatos.ultimoInboundEm.getTime() > ultimoToqueEm.getTime();
+		silencio.getTime() > ultimoToqueEm.getTime();
 
 	return {
 		objetivo,
 		status: respondeuDepoisDoToque ? "RESPONDEU" : status,
 		step: fatos.step as EstadoRegua["step"],
 		// No começo do ciclo (step 0) quem manda é o silêncio: com `next_touch_at`
-		// zerado, `agendamento` recalcula a partir do ÚLTIMO inbound. É o que
-		// empurra o toque 01 de novo quando o cliente volta a falar antes dos 90
-		// minutos — sem isto a linha vencida dispararia com a conversa viva.
+		// zerado, `agendamento` recalcula a partir do ÚLTIMO inbound — ou da fala do
+		// cliente, na web. É o que empurra o toque 01 de novo quando o cliente volta
+		// a falar antes dos 90 minutos — sem isto a linha vencida dispararia com a
+		// conversa viva.
 		nextTouchAt: fatos.step === 0 ? null : fatos.nextTouchAt,
 		ultimoToqueEm,
 		toquesNaJanela,
 		simulacaoEm,
 		ultimoInboundEm: fatos.ultimoInboundEm,
+		silencioDoClienteEm: silencio,
 		motivoSaida: respondeuDepoisDoToque ? "cliente_respondeu" : motivoSaida,
 	};
 }
@@ -429,6 +441,17 @@ export interface EntradaDoMotor {
 	 * fechar, e o defeito passaria despercebido.
 	 */
 	fase: FaseDoFunil;
+	/**
+	 * O canal da conversa — a web NUNCA entrega por turno de retomada (FIX-441).
+	 *
+	 * Opcional para preservar os dublês e chamadas antigas (ausente = WhatsApp, o
+	 * comportamento de sempre); o ciclo SEMPRE passa o canal da linha. O turno de
+	 * retomada roda no chat do site, que ninguém está olhando: para a web, a
+	 * entrega é sempre `template`, mesmo quando ela tem `last_inbound_at` (a
+	 * coluna pode chegar depois de a conversa virar lead) e a janela de 24 h está
+	 * aberta.
+	 */
+	channel?: "web" | "whatsapp";
 	/**
 	 * Os parâmetros vigentes da régua — o ajuste do cadastro, já validado por
 	 * `normalizarParametros`. Ausente = padrão de fábrica (comportamento de
@@ -518,7 +541,14 @@ export function decidir(entrada: EntradaDoMotor): DecisaoDoMotor {
 	const proximoEstado = registrarToque(estado, agora, parametros);
 	const touches30d = contarToquesNaJanela(proximoEstado, agora, parametros);
 
-	if (pode.entrega === "texto_livre") {
+	// WEB SEMPRE POR TEMPLATE (FIX-441): o turno de retomada roda o grafo no chat
+	// do site, que ninguém está olhando, e a cota é consumida do mesmo jeito. A
+	// web pode ter `last_inbound_at` (a coluna chega quando a conversa vira lead),
+	// e aí a janela de 24 h mandaria `texto_livre` — o turno sai no vazio. Para a
+	// web, a entrega é template mesmo nesse caso.
+	const entrega = entrada.channel === "web" ? "template" : pode.entrega;
+
+	if (entrega === "texto_livre") {
 		return {
 			acao: { tipo: "turno_de_retomada", passo: pode.step, arte: comunicacao.arte },
 			proximoEstado,

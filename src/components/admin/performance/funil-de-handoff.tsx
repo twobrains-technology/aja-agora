@@ -31,6 +31,11 @@ const nf = new Intl.NumberFormat("pt-BR");
  * documentado do custo disso: em 14/08/2026 uma cliente fechou proposta de
  * R$ 211 mil, escreveu e recebeu silêncio; a notificação levou 42 minutos para
  * ser entregue e 17h24 para ser lida.
+ *
+ * A lista é a DO PERÍODO (D10, 02/10/2026): todos os outros blocos desta tela
+ * aplicam o período e este lia a população global — com o filtro em "Hoje", o
+ * bloco do dia pintava gente de julho. A lista de todos os períodos continua
+ * existindo em Remarketing, que é onde a mesa opera a régua.
  */
 export function FunilDeHandoffCard({ handoff }: { handoff: FunilDeHandoff }) {
 	const { etapas, parados, limiteHoras, amostraSuficiente } = handoff;
@@ -108,22 +113,30 @@ export function FunilDeHandoffCard({ handoff }: { handoff: FunilDeHandoff }) {
 				) : null}
 
 				<div>
-					<div className="mb-2 flex items-center gap-2">
+					<div className="mb-1 flex items-center gap-2">
 						<AlertTriangleIcon
 							className={`size-4 ${parados.length > 0 ? "text-destructive" : "text-muted-foreground"}`}
 							aria-hidden
 						/>
+						{/* "no período" é o rótulo inteiro (D10): a lista deixou de ser a global,
+						    e sem esta palavra o número do dia pareceria o bolo inteiro da
+						    operação. */}
 						<h3 className="text-sm font-semibold">
-							Parados há mais de {limiteHoras}h
+							Parados há mais de {limiteHoras}h no período
 							<span className="ml-1.5 font-normal text-muted-foreground tabular-nums">
 								({parados.length})
 							</span>
 						</h3>
 					</div>
+					<p className="mb-2 text-[11px] leading-relaxed text-muted-foreground">
+						Conta só o lead <strong className="font-medium">criado no período</strong> e sem toque
+						há mais de {limiteHoras}h — a mesma janela do funil acima. O bolo inteiro, de qualquer
+						data, está em Remarketing, no bloco “Parados — todos os períodos”.
+					</p>
 
 					{parados.length === 0 ? (
 						<p className="text-xs text-muted-foreground">
-							Ninguém parado além do limite. É o estado que se quer.
+							Ninguém criado neste período está parado além do limite. É o estado que se quer.
 						</p>
 					) : (
 						<ul className="divide-y divide-border rounded-md border border-border">
@@ -153,8 +166,13 @@ export function FunilDeHandoffCard({ handoff }: { handoff: FunilDeHandoff }) {
 	);
 }
 
-/** Horas viram dias quando passam de 48 — "312h" ninguém lê como 13 dias. */
-function formatarHoras(horas: number | null): string {
+/** Horas viram dias quando passam de 48 — "312h" ninguém lê como 13 dias.
+ *
+ * Exportada porque a lista global de parados (o bloco "Parados — todos os
+ * períodos", em `/admin/remarketing`) mostra a MESMA grandeza: duas formatações
+ * para "há quanto tempo" fariam a mesma distância aparecer de dois jeitos.
+ */
+export function formatarHoras(horas: number | null): string {
 	if (horas === null) return "—";
 	if (horas < 1) return `${Math.round(horas * 60)}min`;
 	if (horas < 48) return `${Math.round(horas)}h`;

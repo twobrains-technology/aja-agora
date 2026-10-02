@@ -488,3 +488,65 @@ describe("reentrada por nova simulação", () => {
 		expect(proximoToque(vazio, MEIO_DIA)).toBeNull();
 	});
 });
+
+describe("D9 — a conversa da web: silêncio da FALA do cliente e entrega sempre por template", () => {
+	// A web nunca grava `last_inbound_at`, então a janela de 24 h da Meta NUNCA
+	// está aberta nesse canal: o toque sai por template e a cadência é a de dias
+	// (o silêncio nomeado de 90 min), não a escala curta intra-janela. O silêncio,
+	// por sua vez, conta da última fala do cliente — que é o fato que a web tem.
+
+	/** Quinta 17/09/2026, 00:00 em Brasília (03:00 UTC) — a fala do cliente. */
+	const FALA_WEB = new Date("2026-09-17T03:00:00Z");
+	/** 01:30 BRT — o silêncio de 90 min vencido, ainda de madrugada. */
+	const SILENCIO_WEB = new Date(FALA_WEB.getTime() + ESPERA_SILENCIO_MS);
+	/** 09:00 BRT — a abertura da janela de horário. */
+	const ABERTURA = new Date("2026-09-17T12:00:00Z");
+
+	/** Uma linha da web: `ultimoInboundEm` é NULL (a coluna não existe no canal). */
+	function web(extra: Partial<Omit<EstadoRegua, "objetivo">> = {}): EstadoRegua {
+		return estadoInicial({
+			objetivo: "carro",
+			ultimoInboundEm: null,
+			silencioDoClienteEm: FALA_WEB,
+			...extra,
+		});
+	}
+
+	it("o agendamento do toque 01 sai da fala: 90 min depois dela", () => {
+		expect(podeDisparar(web(), new Date(FALA_WEB.getTime() + 80 * 60_000))).toEqual({
+			pode: false,
+			motivo: "aguardando_data",
+		});
+	});
+
+	it("às 01:30 o silêncio venceu, mas a régua dorme: fora da janela de horário", () => {
+		expect(podeDisparar(web(), SILENCIO_WEB)).toEqual({
+			pode: false,
+			motivo: "fora_da_janela_de_horario",
+		});
+	});
+
+	it("às 09:00 o toque sai — e sai como TEMPLATE (sem `last_inbound_at` não há janela)", () => {
+		expect(podeDisparar(web(), ABERTURA)).toEqual({ pode: true, step: 1, entrega: "template" });
+	});
+
+	it("uma fala DENTRO das 24 h não abre a janela da Meta: web é template de qualquer jeito", () => {
+		// A janela da Meta é do WhatsApp: quem a governa é `last_inbound_at`. Sem
+		// ele, nem a cadência curta nem o texto livre valem para a web.
+		const estado = web({
+			ultimoInboundEm: null,
+			silencioDoClienteEm: new Date(ABERTURA.getTime() - 2 * HORA),
+		});
+		expect(podeDisparar(estado, ABERTURA)).toEqual({ pode: true, step: 1, entrega: "template" });
+	});
+
+	it("o WhatsApp segue igual: o silêncio vem do `ultimoInboundEm`", () => {
+		// Sem `silencioDoClienteEm` preenchido (o caminho do WhatsApp no ciclo), a
+		// referência continua sendo o último inbound — comportamento de sempre.
+		expect(podeDisparar(ativo({}), TOQUE_1)).toEqual({
+			pode: true,
+			step: 1,
+			entrega: "texto_livre",
+		});
+	});
+});

@@ -156,6 +156,7 @@ describe("rede 2 — o watchdog enxerga quem some neste gate", () => {
 				gateFired: false,
 				isUserTurn: true,
 				hasContactName: false,
+				desbloqueioPendente: false,
 			}),
 		).toBe("name");
 	});
@@ -167,6 +168,7 @@ describe("rede 2 — o watchdog enxerga quem some neste gate", () => {
 				gateFired: false,
 				isUserTurn: true,
 				hasContactName: true,
+				desbloqueioPendente: false,
 			}),
 		).toBe("identify");
 	});

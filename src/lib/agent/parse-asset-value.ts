@@ -26,8 +26,12 @@ import type { Gate } from "@/lib/agent/qualify-state";
 export type AssetValueContext = { gate?: Gate | null; category?: Category | null };
 
 /** Marca orçamento/parcela mensal — quando presente, o número é parcela, não o
- * valor do bem. Espelha a separação que o turn-analyzer faz (850/mês = orçamento). */
-const MONTHLY_MARKER = /(\/\s*m[êe]s|por\s+m[êe]s|ao\s+m[êe]s|mensa(l|is)|\/m\b|\bmes\b)/i;
+ * valor do bem. Espelha a separação que o turn-analyzer faz (850/mês = orçamento).
+ *
+ * Exportado (D6/FIX-435) porque o `orchestrator/analyze.ts` precisa do MESMO
+ * marcador para decidir, no modo indisponível, que o número com cadência mensal
+ * não é valor do bem. Duas cópias da mesma pergunta divergem em silêncio. */
+export const MONTHLY_MARKER = /(\/\s*m[êe]s|por\s+m[êe]s|ao\s+m[êe]s|mensa(l|is)|\/m\b|\bmes\b)/i;
 
 /** Converte o miolo numérico de um valor BR EXPLÍCITO ("347.500", "50.000,00")
  * em Number. Ponto = separador de milhar; vírgula = decimal. */
@@ -168,6 +172,34 @@ function bareNumberAsValue(t: string): number | null {
 	if (!m) return null;
 	const n = Number.parseFloat(m[2] ? `${m[1]}.${m[2]}` : m[1]);
 	return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * Extrai a PARCELA MENSAL de um texto livre, de forma determinística.
+ *
+ * D6 (FIX-435): com o analyzer fora do ar ninguém interpreta o texto — e a
+ * pergunta "quanto você pretende pagar por mês?" é a mais frequente do funil.
+ * `parseAssetValue` já recusa qualquer frase com cadência mensal (por design:
+ * orçamento mensal NUNCA é o valor do bem); este é o par dele, o parser do outro
+ * lado da mesma pergunta. "Quero um carro. Consigo pagar R$ 680/mês." (sessão
+ * `8b64899b`) precisa virar `parcelaAlvo: 680`, não sumir.
+ *
+ * Conservador: o número tem que estar COLADO ao marcador mensal ("/mês",
+ * "por mês", "mensal(mente)", "mensais"), no máximo com "reais" de ligação.
+ * Assim "12 parcelas mensais" (prazo, não parcela) e "mensalidade de 300"
+ * (marcador antes do número) seguem devolvendo null — ambíguo é seguro: o gate
+ * continua pendente e o agente pergunta de novo.
+ */
+export function parseParcelaMensal(text: string | null | undefined): number | null {
+	if (!text) return null;
+	// Mesma limpeza de CPF do `parseAssetValue`: um CPF não é dinheiro.
+	const t = text.toLowerCase().replace(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g, " ");
+	const m = t.match(
+		/(?:r\$\s*)?(\d[\d.]*(?:,\d{1,2})?)\s*(?:reais\s*)?(?:\/\s*m[êe]s\b|\/\s*m\b|por\s+m[êe]s\b|ao\s+m[êe]s\b|mensal(?:mente)?\b|mensais\b)/,
+	);
+	if (!m) return null;
+	const n = brNumber(m[1]);
+	return n !== null && n > 0 ? Math.round(n) : null;
 }
 
 /** Um número nu no gate de valor é dado em MILHARES quando abaixo do piso da

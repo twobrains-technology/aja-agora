@@ -132,6 +132,7 @@ describeIfDb("A conversa da Rute — responder à pergunta do agente FECHA a por
 			busca: BUSCA_DA_RUTE,
 			metaInicial: ANTES_DA_BUSCA,
 			contactName: "Rute",
+			telefone: "62999998888",
 			turns: [REVEAL, PERGUNTA_DE_ESCOLHA],
 		});
 		criadas.push(r.conversationId);
@@ -156,6 +157,7 @@ describeIfDb("A conversa da Rute — responder à pergunta do agente FECHA a por
 			busca: BUSCA_DA_RUTE,
 			metaInicial: ANTES_DA_BUSCA,
 			contactName: "Rute",
+			telefone: "62999998888",
 			turns: [
 				REVEAL,
 				PERGUNTA_DE_ESCOLHA,
@@ -192,6 +194,7 @@ describeIfDb("A conversa da Rute — responder à pergunta do agente FECHA a por
 			busca: BUSCA_DA_RUTE,
 			metaInicial: ANTES_DA_BUSCA,
 			contactName: "Rute",
+			telefone: "62999998888",
 			turns: [
 				REVEAL,
 				{
@@ -215,6 +218,7 @@ describeIfDb("A conversa da Rute — responder à pergunta do agente FECHA a por
 			busca: BUSCA_DA_RUTE,
 			metaInicial: ANTES_DA_BUSCA,
 			contactName: "Rute",
+			telefone: "62999998888",
 			turns: [
 				REVEAL,
 				PERGUNTA_DE_ESCOLHA,

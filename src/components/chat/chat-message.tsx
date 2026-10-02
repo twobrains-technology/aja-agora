@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { SunMark } from "@/components/brand/sun-mark";
 import { Button } from "@/components/ui/button";
+import { CARDS_QUE_REVELAM_OFERTA } from "@/lib/chat/desbloqueio-do-telefone";
 import type { Artifact } from "@/lib/chat/types";
 import type {
 	AjaUIMessage,
@@ -19,9 +20,9 @@ import type {
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import { useSmoothText } from "@/lib/hooks/use-smooth-text";
 import { ArtifactRenderer } from "./artifact-renderer";
-import { OfertaEmbacada } from "./oferta-embacada";
 import { GateRenderer } from "./artifacts/gate-renderer";
 import { WelcomeCategories } from "./artifacts/welcome-categories";
+import { OfertaEmbacada } from "./oferta-embacada";
 import { RevealSelectionProvider } from "./reveal-selection";
 import { StreamingDots } from "./streaming-dots";
 
@@ -105,7 +106,7 @@ function classifyParts(message: AjaUIMessage): RenderablePart[] {
  * igual ao vivo e na retomada, sem estado de sessão.
  */
 export function comDesbloqueioDoTelefone(parts: RenderablePart[]): RenderablePart[] {
-const estado = parts
+	const estado = parts
 		.flatMap((p) =>
 			p.kind === "artifact" && p.artifact.type === "telefone_do_desbloqueio"
 				? [(p.artifact.payload as { estado?: string }).estado]
@@ -115,16 +116,16 @@ const estado = parts
 
 	if (!estado) return parts;
 
-	const REVELAM_OFERTA = new Set(["comparison_table", "recommendation_card"]);
-
 	// Variante A: fora do render, o que a pessoa veria antes de dar o número.
 	if (estado === "pede-antes") {
-		return parts.filter((p) => !(p.kind === "artifact" && REVELAM_OFERTA.has(p.artifact.type)));
+		return parts.filter(
+			(p) => !(p.kind === "artifact" && CARDS_QUE_REVELAM_OFERTA.has(p.artifact.type)),
+		);
 	}
 
 	// Variante B: ficam na tela, embaçadas — o clique é o caminho do telefone.
 	return parts.map((p) =>
-		p.kind === "artifact" && REVELAM_OFERTA.has(p.artifact.type)
+		p.kind === "artifact" && CARDS_QUE_REVELAM_OFERTA.has(p.artifact.type)
 			? { ...p, embacada: true }
 			: p,
 	);

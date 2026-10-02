@@ -18,6 +18,8 @@ import { turnoEntregouConducao } from "@/lib/agent/conducao";
 import { pendingGateAfterTurn } from "@/lib/agent/gate-reengage";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { shouldMarkDoubtsAddressed } from "@/lib/agent/qualify-state";
+import { temCardDeTelefone } from "@/lib/chat/desbloqueio-do-telefone";
+import { leituraDoDesbloqueio } from "@/lib/chat/telefone-ab-do-servidor";
 import { sincronizarNomeDoContato } from "@/lib/contacts/sincronizar-nome";
 import { registrarCardEnviado } from "@/lib/conversation/cards";
 import { saveMessage } from "@/lib/conversation/messages";
@@ -255,11 +257,34 @@ export async function persistNode(
 	// âncora também não sai o cliente fica sem nada a responder — sem que
 	// pendência nenhuma fosse gravada (sessão `ff8f2080`). `null` (turno de
 	// servidor, contrato fechado) conta como entregue: ali não se cobra ninguém.
+	// D8 — o desbloqueio do telefone (teste A/B web) conta para o watchdog.
+	//
+	// Com o card do telefone na tela, o funil NÃO pode ser re-cobrado por um gate
+	// de coleta: era o defeito de 30/09 (`576e5b66`), em que o watchdog repetiu
+	// "valor do bem" três vezes para quem estava parado no pedido de número. A
+	// leitura é a MESMA do card (`leituraDoDesbloqueio`); só a web tem o teste —
+	// no WhatsApp o telefone é o próprio `waId` e não há card, então ler ali
+	// marcaria pendência falsa. Best-effort: se a leitura falhar, o watchdog
+	// segue cobrando como antes (o teste A/B nunca derruba a venda).
+	//
+	// Só é lida quando MUDARIA a decisão (`gateFired: conduziu !== false`): num
+	// turno que conduziu — ou de servidor — `pendingGateAfterTurn` devolve `null`
+	// de qualquer forma, e a leitura extra é desperdício no caminho quente.
+	let desbloqueioPendente = false;
+	if (isUserTurn && conduziu === false && channel === "web") {
+		const desbloqueio = await leituraDoDesbloqueio(conversationId).catch((err) => {
+			console.error("[telefone-ab] falha ao ler o desbloqueio no persist:", err);
+			return null;
+		});
+		desbloqueioPendente = desbloqueio !== null && temCardDeTelefone(desbloqueio.estado);
+	}
+
 	const pendingGate = pendingGateAfterTurn({
 		meta: projetado,
 		gateFired: conduziu !== false,
 		isUserTurn,
 		hasContactName: Boolean(state.contactName),
+		desbloqueioPendente,
 	});
 	if (pendingGate) {
 		// Reseta o relógio a cada turno de usuário que deixa o funil pendente.

@@ -1,6 +1,7 @@
 import { relations, sql } from "drizzle-orm";
 import {
 	type AnyPgColumn,
+	bigint,
 	boolean,
 	check,
 	index,
@@ -1218,6 +1219,23 @@ export const remarketingTouches = pgTable(
 		touches30d: smallint("touches_30d").default(0).notNull(),
 		/** Por que saiu da régua (`cliente_respondeu`, `optout_do_cliente`...). */
 		motivoSaida: text("motivo_saida"),
+		/**
+		 * O `wamid` do último toque que a Meta ACEITOU (FIX-441, D12).
+		 *
+		 * O carimbo é gravado ANTES do envio, então o `wamid` só existe depois da
+		 * resposta. Guardá-lo é o que permite o webhook de status `failed` achar a
+		 * linha e devolver a cota quando a entrega falha DEPOIS do envio ter saído.
+		 * Nulo enquanto o envio não confirmou.
+		 */
+		ultimoWamid: text("ultimo_wamid"),
+		/**
+		 * O destino do último toque: `enviado` (a Meta aceitou e o `wamid` está
+		 * gravado) ou `falhou` (o carimbo foi compensado — a cota voltou). É o
+		 * guarda de IDEMPOTÊNCIA da compensação assíncrona: o webhook só compensa
+		 * linha cujo `envio_status` ainda é `enviado`, então reentrega do mesmo
+		 * status não desconta a cota duas vezes.
+		 */
+		envioStatus: text("envio_status"),
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true })
 			.defaultNow()
@@ -1602,6 +1620,19 @@ export const whatsappConversationLocks = pgTable("whatsapp_conversation_locks", 
 	holder: varchar("holder", { length: 64 }).notNull(),
 	lockedUntil: timestamp("locked_until", { withTimezone: true }).notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// Fila do A/B (FIX-434, D4): um contador ATÔMICO por experimento.
+//
+// O app roda em várias tasks do ECS — um contador em memória não coordenaria
+// nada. `UPDATE … RETURNING` por linha é o que dá a alternância estrita A, B, A,
+// B sem perder incremento sob concorrência. `experimento` é o mesmo id do
+// registro de experimentos (`CHAVE_DO_TESTE_NO_METADATA`): um teste novo é uma
+// linha nova, não uma coluna nova.
+export const experimentoFila = pgTable("experimento_fila", {
+	experimento: text().primaryKey(),
+	/** Índice 0-based da PRÓXIMA entrada; `bracoDaFila` faz o módulo pela lista de braços. */
+	proximo: bigint("proximo", { mode: "number" }).notNull().default(0),
 });
 
 // ─── Relations ───────────────────────────────────────────────────────────────

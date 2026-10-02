@@ -161,6 +161,9 @@ describeIfDb("apresentação espontânea chega à coluna", () => {
 		// primeiro.
 		const r = await runScenario({
 			contactName: null,
+			// A vitrine já roda com a oferta na tela — telefone conhecido (o reveal
+			// deste turno abre as ofertas e mantém os DOIS beats do modelo).
+			telefone: "62999998888",
 			turns: [
 				{
 					user: "quero um carro de 80 mil",

@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { recorteDaRequisicao } from "@/lib/admin/filtro-variante";
+import { computeLeadsParados, LIMITE_SLA_HORAS_PADRAO } from "@/lib/admin/handoff-queries";
 import { opcoesDoAmbiente } from "@/lib/admin/motivo-fora-da-regua";
 import { periodoDaRequisicao } from "@/lib/admin/periodo-da-requisicao";
 import { lerParametrosRegua } from "@/lib/admin/remarketing-config";
@@ -106,13 +107,18 @@ export async function GET(req: NextRequest) {
 		// duas leituras que não dependem do recorte são o histórico total (para
 		// separar "régua desligada" de "sem toque no período") e a fila de
 		// elegíveis de agora (o número que a tela mostra enquanto não há dado).
-		const [doRecorte, totalNoHistorico, elegiveisAgora, parametros] = await Promise.all([
+		const [doRecorte, totalNoHistorico, elegiveisAgora, parametros, parados] = await Promise.all([
 			listarReguas({ de, ate, objetivo, recorte }),
 			contarLinhasDaRegua(),
 			contarElegiveisParaRegua(agora),
 			// O motivo do próximo toque (FIX-378) depende da janela de horário e do
 			// teto VIGENTES — a tela deriva com o mesmo cadastro que o motor usa.
 			lerParametrosDaTela(),
+			// "Parados — todos os períodos": a lista GLOBAL, SEM janela, que saiu da
+			// Performance (D10) — lá o bloco passou a ser só a população do período, e
+			// é aqui que a mesa enxerga o bolo inteiro (inclusive quem entrou na base
+			// antes do período selecionado). Mesmo relógio e mesmo limite do SLA.
+			computeLeadsParados(LIMITE_SLA_HORAS_PADRAO, undefined, recorte),
 		]);
 		const visiveis = filtrarPorSituacao(filtrarPorPasso(doRecorte, passo), situacao);
 
@@ -134,7 +140,14 @@ export async function GET(req: NextRequest) {
 				elegiveisAgora,
 			}),
 		};
-		return Response.json(resposta);
+		// `parados` viaja FORA do `RespostaDaRegua`: é a única coisa desta resposta
+		// que NÃO é recortada pelo período (o tipo da tela é do período, e alargá-lo
+		// faria toda a régua parecer global). O limite vai junto para o rótulo não
+		// repetir o número em código.
+		return Response.json({
+			...resposta,
+			parados: { limiteHoras: LIMITE_SLA_HORAS_PADRAO, leads: parados },
+		});
 	} catch (err) {
 		// Falha de consulta NÃO vira contador zerado: a tela mostra o erro e não
 		// exibe número nenhum (dizer "0 na régua" com o banco fora do ar é o pior

@@ -10,6 +10,7 @@
 
 import { describe, expect, it } from "vitest";
 import { normalizarParametros } from "@/lib/remarketing/regua";
+import { MOTIVO_SAIDA_META } from "@/lib/remarketing/status-do-toque";
 import {
 	duracaoLegivel,
 	estadoHonestoDaRegua,
@@ -21,6 +22,7 @@ import {
 	passoDaConversao,
 	resumoDaRegua,
 	resumoDeTempos,
+	rotuloDoMotivo,
 } from "./remarketing-tela";
 
 const HORA = 60 * 60 * 1000;
@@ -430,5 +432,49 @@ describe("FIX-378 — o motivo de o próximo toque não ter saído", () => {
 		expect(motivoDoProximoToque(l, AGORA, normalizarParametros({ tetoToques30Dias: 1 }))).toBe(
 			"teto_30_dias",
 		);
+	});
+});
+
+// ─── FIX-441 (D12b): a régua encerrada pela META não pode ler "Esgotou os 3 toques" ─
+//
+// O B11 encerra a régua quando a Meta recusa a entrega (131050/131026) com
+// `status=ESGOTADO` + `motivo_saida=recusado_pela_meta`. Dizer "Esgotou os 3
+// toques" seria falso (não saíram três toques — a Meta recusou), e o motivo cru
+// não é texto de operador. O rótulo e o motivo legível passam a dizer o FATO.
+
+describe("FIX-441 — esgotado pela recusa da META tem rótulo próprio", () => {
+	const AGORA = new Date("2026-09-14T15:00:00Z");
+
+	it("o motivo da recusa da META tem rótulo legível, nunca o identificador cru", () => {
+		expect(rotuloDoMotivo(MOTIVO_SAIDA_META)).toBe("A Meta recusou a entrega");
+		expect(rotuloDoMotivo("recusado_pela_meta")).toBe("A Meta recusou a entrega");
+	});
+
+	it("ESGOTADO + recusado_pela_meta: a situação segue 'esgotado', mas o rótulo é a recusa", () => {
+		const l = linha({
+			status: "ESGOTADO",
+			motivoSaida: MOTIVO_SAIDA_META,
+			step: 1,
+			nextTouchAt: null,
+		});
+		const tela = linhaDaTela(l, AGORA);
+		expect(tela.situacao).toBe("esgotado");
+		expect(tela.rotuloDaSituacao).toBe("A Meta recusou a entrega");
+		expect(tela.motivoLegivel).toBe("A Meta recusou a entrega");
+		expect(tela.rotuloDaSituacao).not.toBe("Esgotou os 3 toques");
+	});
+
+	it("ESGOTADO sem o motivo da META continua 'Esgotou os 3 toques'", () => {
+		const l = linha({
+			status: "ESGOTADO",
+			motivoSaida: "tres_toques_sem_resposta",
+			step: 3,
+			nextTouchAt: null,
+		});
+		expect(linhaDaTela(l, AGORA).rotuloDaSituacao).toBe("Esgotou os 3 toques");
+	});
+
+	it("um motivo desconhecido continua cru (não inventamos rótulo)", () => {
+		expect(rotuloDoMotivo("motivo_do_futuro")).toBe("motivo_do_futuro");
 	});
 });

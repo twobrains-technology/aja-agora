@@ -46,6 +46,7 @@ import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import { vitrineDisponivel } from "@/lib/bevi/identidade-vitrine";
 import { dossieDaConversa } from "@/lib/bevi/pessoa";
+import { leituraDoDesbloqueio } from "@/lib/chat/telefone-ab-do-servidor";
 import type { ArtifactType } from "@/lib/chat/types";
 import { registrarFalaContraCatalogo } from "@/lib/observability/langfuse/busca-scores";
 import { registrarToolsRecusadas } from "@/lib/observability/langfuse/conducao-scores";
@@ -56,6 +57,11 @@ import {
 } from "@/lib/observability/langfuse/funil-scores";
 import { fetchManagedPrompt, PROMPT_NAMES } from "@/lib/observability/langfuse/prompts";
 import { projectToMeta } from "../emit";
+import {
+	payloadComNumerosDaFonte,
+	TOOL_DE_ORIGEM,
+	toolResultsComRecusaDeCard,
+} from "../numeros-do-card";
 import { cacheableSystemBlock } from "../provider";
 import { pausaDeConversa, RITMO } from "../ritmo";
 import type { AgentGraphStateType, FunnelState } from "../state";
@@ -71,6 +77,27 @@ import {
 import { artifactAllowed, type GuardContext } from "./guarded-artifact";
 
 const MAX_TOOL_LOOP_ITERATIONS = 4;
+
+/** As tools que DEVOLVEM ou DESENHAM número de oferta — carta, parcela, prazo,
+ * taxa, contemplação, lance.
+ *
+ * Com o desbloqueio do telefone pendente (D1 do FIX-432), elas saem do `bind`:
+ * a trava é de CONTEXTO e de TOOL, nunca de regex sobre a fala. Sem o número na
+ * mão e sem a ferramenta que o busca, o modelo não tem como citá-lo. */
+export const TOOLS_QUE_REVELAM_OFERTA: ReadonlySet<string> = new Set([
+	"simulate_quota",
+	"compare_with_financing",
+	"compute_scenarios",
+	"simulate_contemplation",
+	"ajustar_por_parcela",
+	"get_group_details",
+	"get_rates",
+	"present_simulation_result",
+	"present_group_card",
+	"present_comparison_table",
+	"present_financing_comparison",
+	"present_scenarios",
+]);
 
 /** Depois de executar estas tools, o modelo tem algo NOVO pra dizer?
  *
@@ -451,6 +478,17 @@ export function createConverseNode(model: BaseChatModel) {
 		state: AgentGraphStateType,
 		config: LangGraphRunnableConfig,
 	): Promise<Partial<AgentGraphStateType>> {
+		const desbloqueio =
+			state.channel === "web"
+				? await leituraDoDesbloqueio(state.conversationId).catch(() => null)
+				: null;
+		// `pede-antes` e `borrado` são os dois braços que escondem a oferta até o
+		// telefone chegar. `livre` (telefone já conhecido / recusou) segue como antes.
+		const desbloqueioPendente = desbloqueio !== null && desbloqueio.estado !== "livre";
+		const nomesDasTools = desbloqueioPendente
+			? WHAT_IF_TOOL_NAMES.filter((nome) => !TOOLS_QUE_REVELAM_OFERTA.has(nome))
+			: WHAT_IF_TOOL_NAMES;
+
 		const tools = buildLangGraphTools({
 			conversationId: state.conversationId,
 			channel: state.channel,
@@ -491,7 +529,7 @@ export function createConverseNode(model: BaseChatModel) {
 			// exibido / id fabricado) só podem citar tool que existe nesta fase —
 			// citar uma escondida faz o modelo tomar NoSuchToolError e o turno cair
 			// no fallback enlatado.
-			allowedToolNames: WHAT_IF_TOOL_NAMES,
+			allowedToolNames: nomesDasTools,
 			// O turno do cliente vai junto para que `escolher_cota` responda ao
 			// modelo pelo MESMO critério que este nó usa para gravar. Enquanto ela
 			// não tinha isso, dizia "confirmada" para um efeito que o veto abaixo
@@ -499,9 +537,9 @@ export function createConverseNode(model: BaseChatModel) {
 			// servidor não tinha (`fd76e393`, prod, 16/08/2026).
 			turnoDoCliente: { texto: state.userText ?? "", intent: state.intent },
 		});
-		const whatIfTools = WHAT_IF_TOOL_NAMES.map((name) => tools[name]).filter(
-			(t): t is NonNullable<typeof t> => Boolean(t),
-		);
+		const whatIfTools = nomesDasTools
+			.map((name) => tools[name])
+			.filter((t): t is NonNullable<typeof t> => Boolean(t));
 		const boundModel = model.bindTools ? model.bindTools(whatIfTools) : model;
 		const toolNode = new ToolNode(whatIfTools);
 		/** Preenchido quando o modelo chama `suggest_handoff` — vira estado no
@@ -592,7 +630,7 @@ export function createConverseNode(model: BaseChatModel) {
 			querAntecipar(state.funnel.qualifyAnswers) ||
 			/\blance|embutid|antecip|contempla[çc]/i.test(state.userText ?? "");
 		const blocoEmbutido =
-			valorDoBem && lanceEstaEmJogo
+			valorDoBem && lanceEstaEmJogo && !desbloqueioPendente
 				? `Regra do lance embutido (fato, não opinião): o embutido sai DA PRÓPRIA CARTA, até ` +
 					`${pctEmbutido}% dela — então o crédito que o cliente recebe DIMINUI nessa proporção. ` +
 					`O bem que ele quer custa ${brl(valorDoBem)}. É por isso que a carta do tamanho do bem ` +
@@ -616,6 +654,24 @@ export function createConverseNode(model: BaseChatModel) {
 		// acontecer. Os NÚMEROS vêm daqui (do estado, coagidos contra o grupo real),
 		// nunca da cabeça dele; a APRESENTAÇÃO é dele.
 		const oferta = state.funnel.recommendedOffer;
+
+		// ── O TELEFONE AINDA É PEDÁGIO: AS OPÇÕES EXISTEM, MAS NÃO TÊM NÚMERO ──
+		// D1 do FIX-432: enquanto o desbloqueio está pendente (`pede-antes` no braço A,
+		// `borrado` no B), o modelo NÃO recebe carta, parcela, prazo, taxa, contemplação
+		// nem lance da oferta — nem nos blocos de contexto, nem por tool de número. No
+		// lugar, recebe o FATO verdadeiro: a busca já rodou e as opções aparecem quando o
+		// cliente informar o WhatsApp no card. É contexto, não fala: nenhuma frase fixa
+		// vai ao cliente.
+		const blocoOfertaAguardandoTelefone =
+			desbloqueioPendente && oferta
+				? `O sistema JÁ BUSCOU as opções para este cliente, mas elas ainda NÃO foram ` +
+					`liberadas: os valores só aparecem depois que ele informar o WhatsApp no card de ` +
+					`telefone. Você NÃO tem esses números agora. É PROIBIDO citar carta, parcela, ` +
+					`prazo, taxa, contemplação ou lance da oferta, e é PROIBIDO dizer que os valores ` +
+					`"estão na tela" para ele conferir. Se ele pedir números ou opções, diga com ` +
+					`naturalidade que falta um passo: informar o WhatsApp no card, e as opções ` +
+					`liberam. Quem pede o telefone é o card, não você por texto.`
+				: null;
 
 		// ── O QUE ELE JÁ VIU NA TELA ──
 		// O contexto só carregava a oferta RECOMENDADA, então o modelo não sabia
@@ -659,7 +715,7 @@ export function createConverseNode(model: BaseChatModel) {
 		// parcela que não existia no card, e afirmou que "as opções apareceram" no
 		// mesmo turno em que a busca voltou vazia. Proibir a frase não devolvia o
 		// dado a ele — estes blocos devolvem.
-		const blocoTela = blocoDoQueEstaNaTela(ofertasExibidas);
+		const blocoTela = desbloqueioPendente ? null : blocoDoQueEstaNaTela(ofertasExibidas);
 		// O que ele JÁ respondeu — para o modelo não reabrir pergunta fechada
 		// (medido em produção, 21/09/2026: um "Oi" depois de o cliente já ter dito o
 		// carro reabria "que carro você tem em mente?").
@@ -686,7 +742,7 @@ export function createConverseNode(model: BaseChatModel) {
 				})
 			: null;
 		const blocoVazia =
-			(state.funnel.discoveryEmptyStreak ?? 0) > 0
+			!desbloqueioPendente && (state.funnel.discoveryEmptyStreak ?? 0) > 0
 				? blocoDeBuscaVazia({
 						alvo: alvoDeBusca(state.funnel.qualifyAnswers),
 						parcelaAlvo: state.funnel.qualifyAnswers.parcelaAlvo,
@@ -698,7 +754,7 @@ export function createConverseNode(model: BaseChatModel) {
 		// compra de consórcio e que ficava só no objeto do servidor (D4). O corte
 		// de oito itens também saiu daqui: escondia a 11ª cota e o agente contou
 		// errado o que estava na tela. Ver `blocoDeOpcoesNaTela`.
-		const blocoOpcoesNaTela = blocoDeOpcoesNaTela(ofertasExibidas);
+		const blocoOpcoesNaTela = desbloqueioPendente ? null : blocoDeOpcoesNaTela(ofertasExibidas);
 
 		// A instrução da TOOL fica separada da lista de propósito: ela só pode
 		// entrar na janela quando a tool existe no bind.
@@ -710,7 +766,7 @@ export function createConverseNode(model: BaseChatModel) {
 		// com o id entre colchetes, que o vazamento chegou à tela do cliente na web
 		// (`ff8f2080`, 16/08/2026: "[card: escolher_cota com id 6a7b59c1…]").
 		const blocoChamarEscolherCota =
-			ofertasExibidas.length > 1
+			!desbloqueioPendente && ofertasExibidas.length > 1
 				? // Falar os números certos NÃO basta: sem esta chamada o sistema segue
 					// ancorado na cota anterior e a contratação fecha errada. Foi assim
 					// que um cliente escolheu a carta de R$ 120 mil com parcela de
@@ -748,7 +804,7 @@ export function createConverseNode(model: BaseChatModel) {
 			state.funnel.qualifyAnswers.objetivo === "investimento" ||
 			(state.funnel.qualifyAnswers.prazoMeses ?? 0) >= 120;
 		const blocoEscolha =
-			escolha && oferta?.monthlyPayment
+			escolha && oferta?.monthlyPayment && !desbloqueioPendente
 				? `A ESCOLHA JÁ ESTÁ FEITA — está no estado desta conversa, não é suposição sua: ` +
 					`${oferta.administradora}, ${brl(oferta.monthlyPayment)} por mês em ${oferta.termMonths} ` +
 					`meses.${
@@ -767,7 +823,7 @@ export function createConverseNode(model: BaseChatModel) {
 		// cliente via três "lance médio deste grupo" diferentes, sem nada explicar
 		// (visto ao vivo, 2026-07-21). O fato é do código; a frase é dele.
 		const blocoGrupoTrocado =
-			jaAceitouEmbutido && oferta?.avgBidValue
+			jaAceitouEmbutido && oferta?.avgBidValue && !desbloqueioPendente
 				? `A oferta na mesa MUDOU quando ele aceitou o embutido: o sistema foi atrás de cartas ` +
 					`maiores, e o grupo é outro. Qualquer lance médio que você tenha citado ANTES era de ` +
 					`outro grupo e não vale mais. O número que vale agora é ${brl(oferta.avgBidValue)}. Se ` +
@@ -776,7 +832,7 @@ export function createConverseNode(model: BaseChatModel) {
 				: null;
 
 		const blocoLance =
-			lanceTotal > 0 && lanceMedio
+			lanceTotal > 0 && lanceMedio && !desbloqueioPendente
 				? lanceTotal >= lanceMedio
 					? `O lance dele ALCANÇA o lance médio desse grupo (${brl(lanceMedio)}): ` +
 						(embutidoDisponivel > 0
@@ -819,7 +875,7 @@ export function createConverseNode(model: BaseChatModel) {
 		// um acordeão pra descobrir. "Melhor opção" sem dizer melhor em quê não
 		// vende — e, pior, soa a truque.
 		const blocoOfertas =
-			temCardsDeOferta && oferta
+			temCardsDeOferta && oferta && !desbloqueioPendente
 				? `As ofertas REAIS das administradoras JÁ FORAM BUSCADAS e os cards estão na tela. ` +
 					`Você NUNCA precisa buscar, confirmar ou validar nada com a administradora: os números ` +
 					`abaixo são finais. É PROIBIDO dizer "só um instante", "vou confirmar", "já te trago", ` +
@@ -953,7 +1009,7 @@ export function createConverseNode(model: BaseChatModel) {
 				? valorDoBem - oferta.creditValue
 				: 0;
 		const blocoCartaMenor =
-			faltaParaOBem > 0
+			!desbloqueioPendente && faltaParaOBem > 0
 				? `ATENÇÃO — a carta NÃO cobre o bem que ele quer: a carta é de ${brl(
 						oferta?.creditValue as number,
 					)} e o bem custa ${brl(valorDoBem as number)}, então faltam ${brl(faltaParaOBem)} ` +
@@ -1006,6 +1062,9 @@ export function createConverseNode(model: BaseChatModel) {
 						: []),
 					...(blocoCanal ? [{ type: "text" as const, text: blocoCanal }] : []),
 					...(blocoOfertas ? [{ type: "text" as const, text: blocoOfertas }] : []),
+					...(blocoOfertaAguardandoTelefone
+						? [{ type: "text" as const, text: blocoOfertaAguardandoTelefone }]
+						: []),
 					...(blocoPessoa ? [{ type: "text" as const, text: blocoPessoa }] : []),
 					...(blocoTela ? [{ type: "text" as const, text: blocoTela }] : []),
 					...(blocoJaRespondido ? [{ type: "text" as const, text: blocoJaRespondido }] : []),
@@ -1245,6 +1304,12 @@ export function createConverseNode(model: BaseChatModel) {
 					events.push(ev);
 				}
 
+				// B14.2 (FIX-436) — toolCallId → tool de origem dos cards que forem
+				// DESCARTADOS por falta de fonte neste beat. O `ToolNode` executa a tool
+				// de apresentação de qualquer forma e devolveria SUCESSO — e o modelo,
+				// ouvindo sucesso, narra "confere no card abaixo" de um card que não
+				// existe. Depois do ToolNode, o tool-result desses vira RECUSA.
+				const cardsSemFonte = new Map<string, string>();
 				for (const call of aiMessage.tool_calls) {
 					const ev: TurnEvent = {
 						type: "tool-call",
@@ -1444,6 +1509,28 @@ export function createConverseNode(model: BaseChatModel) {
 					// chamava a tool, ela executava, e nada aparecia na tela.
 					if (PRESENTATION_TOOLS.has(call.name)) {
 						const artifactType = call.name.replace("present_", "") as ArtifactType;
+						// FIX-436 (D7) — o card que revela número de oferta sai com o RESULTADO
+						// da tool de dado, nunca com o número que o modelo digitou. Sem o
+						// resultado de origem no histórico, o card NÃO sai: a tela não mente.
+						const toolDeOrigem = TOOL_DE_ORIGEM[artifactType];
+						const payloadDaFonte = toolDeOrigem
+							? payloadComNumerosDaFonte(
+									artifactType,
+									call.args as Record<string, unknown>,
+									loopMessages,
+									// Extensão D7 (gerente): a cota ancorada no estado é fato do
+									// servidor e vale como origem do `simulation_result` quando a
+									// tool de dado não está no histórico — para a MESMA cota.
+									state.funnel.escolha ?? state.funnel.recommendedOffer ?? null,
+								)
+							: null;
+						if (toolDeOrigem && !payloadDaFonte) {
+							console.error(
+								`[card-sem-fonte] ${artifactType} sem resultado de ${toolDeOrigem} (conv=${state.conversationId})`,
+							);
+							if (call.id) cardsSemFonte.set(call.id, toolDeOrigem);
+							continue;
+						}
 						const guardCtx: GuardContext = {
 							meta: projectToMeta(state),
 							userIntent: state.intent ?? "neutral",
@@ -1469,7 +1556,11 @@ export function createConverseNode(model: BaseChatModel) {
 							// reproduzido pelo gate em 13/08 assim que os cenários pararam
 							// de ficar SKIPPED. Invariante — vive aqui, não no prompt.
 							let payloadFinal = payloadSemOfertasRepetidas(
-								coagirContraEscolha(artifactType, call.args, state.funnel.escolha),
+								coagirContraEscolha(
+									artifactType,
+									payloadDaFonte ?? (call.args as Record<string, unknown>),
+									state.funnel.escolha,
+								),
 							);
 							// O ATALHO QUE ESCOLHE COTA PASSA A CARREGAR A COTA (D6).
 							//
@@ -1617,10 +1708,12 @@ export function createConverseNode(model: BaseChatModel) {
 				// erro (status "error"). É a garantia estrutural de "0 NoSuchToolError"
 				// desta fundação (crítico ALTA-2): o toolset what-if é fechado e
 				// pequeno, mas mesmo uma alucinação de nome de tool não derruba o turno.
-				const { messages: toolMessagesCruas } = await toolNode.invoke(
+				const { messages: toolMessagesBrutas } = await toolNode.invoke(
 					{ messages: [aiMessage] },
 					config,
 				);
+				// B14.2 (FIX-436) — o card descartado não volta ao modelo como SUCESSO.
+				const toolMessagesCruas = toolResultsComRecusaDeCard(toolMessagesBrutas, cardsSemFonte);
 				// FIX-431: o turno não cai, mas o ERRO CRU ("Error: Tool "search_groups"
 				// not found. Please fix your mistakes.") ia inteiro pro contexto do
 				// modelo, que o traduzia pro cliente como "tive um problema técnico" e,

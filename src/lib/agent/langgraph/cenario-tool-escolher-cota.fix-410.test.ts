@@ -58,6 +58,9 @@ async function comToolCall(fala: string, intent: "ready_to_proceed" | "declines"
 	return runScenario({
 		busca: buscaDoMock(96),
 		metaInicial: ANTES_DA_BUSCA,
+		// A oferta tem que estar VISÍVEL para o modelo escolher a cota: sem telefone
+		// conhecido, o D1 esconde os números e tira a tool do bind.
+		telefone: "62999998888",
 		turns: [
 			BUSCA,
 			{
