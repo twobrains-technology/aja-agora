@@ -138,8 +138,12 @@ export async function saveContactName(
 	// Lei 3 — entidade não-ancorada não vira dado. "Cliente", "Comprador" e
 	// "Interessado" passam em qualquer heurística de "parece nome"; o que os
 	// separa de um nome real é ter sido DITO. Ver `nome-ancorado-na-fala.test.ts`.
+	//
+	// Motivo DISTINTO (`nao_ancorado`): é o que permite à tool contar ao MODELO o
+	// fato do servidor (o nome proposto não está na fala, e a fala foi "<fala>") em
+	// vez do `name_invalid` opaco — sem o porquê, o modelo inventava a causa.
 	if (opts && "ancorarEm" in opts && !nomeAncoradoNaFala(firstToken, opts.ancorarEm)) {
-		return { ok: false, error: "name_invalid" };
+		return { ok: false, error: "nao_ancorado" };
 	}
 	// FIX-299: capitalização determinística — independe de como o usuário digitou.
 	const displayName = capitalizeName(firstToken);

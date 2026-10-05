@@ -62,6 +62,7 @@ import {
 import { publishMessage } from "@/lib/chat/message-bus";
 import { CHAVE_DO_TESTE_NO_METADATA } from "@/lib/chat/resultado-do-teste-do-telefone";
 import { streamErrorMessage } from "@/lib/chat/stream-error";
+import { registrarFalhaDoLlm } from "@/lib/llm/alerta-do-llm";
 import {
 	comparacaoGuardadaDaConversa,
 	registrarDesfechoDoTeste,
@@ -103,6 +104,15 @@ import {
 import { relayWebUserToAgent } from "@/lib/whatsapp/proxy";
 
 export const maxDuration = 60;
+
+// B5 — a falha do LLM virou sinal também no web: antes o route só devolvia a
+// mensagem ao cliente e a falha de crédito passava despercebida. Aqui ela é
+// registrada (log estruturado + alerta de billing, com dedupe) e o cliente
+// recebe o CÓDIGO, nunca a mensagem crua do gateway.
+const onErrorDoStream = (error: unknown): string => {
+	void registrarFalhaDoLlm(error, { origem: "web" });
+	return streamErrorMessage(error);
+};
 
 /**
  * O metadata com que uma conversa WEB NASCE: o vínculo com o cookie (`webCookie`)
@@ -471,7 +481,7 @@ export async function POST(req: NextRequest) {
 					writer.write({ type: "text-end", id });
 				},
 				// FIX-110: onError uniforme em TODO stream do route (helper único).
-				onError: streamErrorMessage,
+				onError: onErrorDoStream,
 			});
 			return createUIMessageStreamResponse({
 				stream,
@@ -670,8 +680,12 @@ export async function POST(req: NextRequest) {
 
 									// Grava o desfecho do teste ANTES de qualquer coisa: é ele que libera a
 									// comparação e que o endpoint do dia 01/10 lê.
+									// `desbloqueadoEm` é estado de NEGÓCIO do turno (quando a pessoa
+									// desbloqueou o telefone), não um carimbo de log: usa o relógio
+									// simulado, como as outras gravações do route, para o time-travel
+									// do simulador não vazar para o dado.
 									await registrarDesfechoDoTeste(conversationId, {
-										desbloqueadoEm: new Date().toISOString(),
+										desbloqueadoEm: simulatorNow().toISOString(),
 									});
 									const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
 									// Falha ao gravar o contato não prende ninguém: o desfecho já está
@@ -1844,7 +1858,7 @@ export async function POST(req: NextRequest) {
 				);
 			},
 			// FIX-110: onError uniforme via helper único (era inline).
-			onError: streamErrorMessage,
+			onError: onErrorDoStream,
 		});
 		return createUIMessageStreamResponse({
 			stream,
@@ -1882,7 +1896,7 @@ export async function POST(req: NextRequest) {
 				writer.write({ type: "text-end", id });
 			},
 			// FIX-110: onError uniforme em TODO stream do route (helper único).
-			onError: streamErrorMessage,
+			onError: onErrorDoStream,
 		});
 		return createUIMessageStreamResponse({
 			stream,
@@ -2008,7 +2022,7 @@ export async function POST(req: NextRequest) {
 			);
 		},
 		// FIX-110: onError uniforme via helper único (era inline).
-		onError: streamErrorMessage,
+		onError: onErrorDoStream,
 	});
 
 	const responseHeaders: Record<string, string> = {

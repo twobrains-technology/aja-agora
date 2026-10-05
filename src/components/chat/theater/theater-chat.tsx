@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { empurrarMarcosNoDataLayer } from "@/lib/analytics/data-layer";
 import { ChatProvider, useChatContext } from "@/lib/chat/provider";
+import { TEXTO_ERRO_DO_CHAT, textoDoErroDoChat } from "@/lib/chat/stream-error";
 import type { AjaUIMessage } from "@/lib/chat/ui-message";
 import { cn } from "@/lib/utils";
 import { ChatInput } from "../chat-input";
@@ -225,6 +226,14 @@ function TheaterChatBody({
 	const { messages, status, regenerate, error, sendUserMessage, conversationId } = useChatContext();
 	const isStreaming = status === "submitted" || status === "streaming";
 
+	// B5b: o erro que chega do servidor é um CÓDIGO (`llm_billing`, `erro_interno`…),
+	// nunca a mensagem crua. A tela mostra o texto em português. Só os códigos
+	// conhecidos viram banner: um erro que não é do conjunto (ex.: watchdog de
+	// stream preso, que já tem copy própria) segue com o retry, sem texto nosso
+	// por cima — e o código cru nunca aparece.
+	const textoErro =
+		error && error.message in TEXTO_ERRO_DO_CHAT ? textoDoErroDoChat(error.message) : null;
+
 	// Marcos do funil no dataLayer, para o GTM. Roda ao FIM de cada turno porque
 	// é aí que o servidor acabou de registrar o que houve — `lead` nasce quando o
 	// contato é capturado, no meio da conversa. O `event_id` vem de lá, nunca
@@ -263,6 +272,15 @@ function TheaterChatBody({
 					onRetry={regenerate}
 				/>
 			</TheaterStage>
+			{textoErro && (
+				<div
+					role="alert"
+					data-testid="chat-erro"
+					className="shrink-0 border-t border-destructive/30 bg-destructive/10 px-4 py-2 text-sm text-destructive"
+				>
+					{textoErro}
+				</div>
+			)}
 			<div
 				className={cn(
 					"shrink-0 transition-opacity duration-300",

@@ -69,6 +69,7 @@ import {
 	type ParametrosRegua,
 	type PassoDisparo,
 	podeDisparar,
+	proximoToque,
 	registrarOptout,
 	registrarToque,
 	type StatusRegua,
@@ -281,9 +282,13 @@ export interface FatosDaLinha {
  *
  * É **FALLBACK**, não o mecanismo: a coluna `ultimo_toque_em` (rodada 2) é a
  * fonte. A derivação só serve para linha antiga, gravada antes de a coluna
- * existir. Ela depende de a cadência não ter sido reajustada — invariante que o
- * próprio ciclo pode quebrar (reentrada, linha terminal). O ciclo NUNCA reescreve
- * `next_touch_at` num ciclo bloqueado, para o fallback continuar exato.
+ * existir, e só é exata enquanto a cadência não tiver sido reajustada.
+ *
+ * ⚠️ E o ciclo **reescreve** `next_touch_at` em ciclo bloqueado: o bloqueio
+ * `teto_30_dias` numa linha `ATIVO` reagenda a data para quando o toque mais
+ * antigo da janela sai dos 30 dias (`normalizarBloqueio` → `proximoToque`, B4/P4),
+ * e o terminal (`esgotado`/`RESPONDEU`) a zera. Por isso a coluna `ultimo_toque_em`
+ * é a fonte: esta derivação não é autoridade.
  */
 export function ultimoToqueDerivado(
 	fatos: {
@@ -466,9 +471,11 @@ export interface DecisaoDoMotor {
 	/**
 	 * O estado a GRAVAR quando há mudança real — `null` quando nada muda.
 	 *
-	 * Nulo de propósito nos bloqueios transitórios (horário, teto, aguardando):
-	 * gravar ali reescreveria `next_touch_at` (e quebraria a derivação do último
-	 * toque) sem necessidade — a linha já está vencida e volta no próximo ciclo.
+	 * Nulo de propósito nos bloqueios de data/horário (`aguardando_data`,
+	 * `fora_da_janela_de_horario`): gravar ali reescreveria `next_touch_at` (e
+	 * quebraria a derivação do último toque) sem necessidade — a linha volta no
+	 * próximo ciclo. A EXCEÇÃO é `teto_30_dias`: ali a data vencida mentia no
+	 * painel, e o estado é reagendado para quando a cota reabre (P4).
 	 */
 	proximoEstado: EstadoRegua | null;
 	/** Contagem para a coluna `touches_30d`, derivada do estado. */
@@ -531,7 +538,7 @@ export function decidir(entrada: EntradaDoMotor): DecisaoDoMotor {
 	// 3. A régua decide SE pode sair.
 	const pode = podeDisparar(estado, agora, parametros);
 	if (!pode.pode) {
-		return semDisparo(pode.motivo, normalizarSequenciaMorta(estado, pode.motivo));
+		return semDisparo(pode.motivo, normalizarBloqueio(estado, pode.motivo, agora, parametros));
 	}
 
 	// 4. COMO entregar. A comunicação (chave e arte) nasce da MESMA entrada: a
@@ -564,6 +571,8 @@ export function decidir(entrada: EntradaDoMotor): DecisaoDoMotor {
 }
 
 /**
+ * O que gravar quando a régua BLOQUEIA o toque (não há disparo).
+ *
  * Sequência morta: grava o status terminal para a linha sair do índice parcial
  * (`WHERE status = 'ATIVO'`). Sem isto ela seria relida a cada 30 s para sempre.
  *
@@ -578,10 +587,24 @@ export function decidir(entrada: EntradaDoMotor): DecisaoDoMotor {
  *      motivo de saída nunca é gravado — o oposto do que a tela precisa para
  *      dizer "esgotou os 3 toques".
  *
- * Bloqueio transitório (teto, data, horário) em linha `ATIVO` devolve `null` de
- * propósito: nada muda e a linha volta no próximo ciclo, como sempre foi.
+ *   TETO DE 30 DIAS (`teto_30_dias`) em linha `ATIVO` é o caso que mentia: a
+ *   pessoa já gastou a cota e o `next_touch_at` vencido ficava no passado, a
+ *   linha era relida a cada 30 s e o painel mostrava "Ativo" com toque
+ *   vencido. Aqui o estado é REAGENDADO para quando a cota reabre — o instante
+ *   exato em que o toque mais antigo da janela completa 30 dias, que a própria
+ *   régua calcula (`proximoToque`). Nunca fica no passado.
+ *
+ * Bloqueio transitório de data/horário (`aguardando_data`,
+ * `fora_da_janela_de_horario`) em linha `ATIVO` devolve `null` de propósito: o
+ * `next_touch_at` é futuro ou volta no próximo ciclo, e reescrevê-lo quebraria a
+ * derivação do último toque para linha antiga.
  */
-function normalizarSequenciaMorta(estado: EstadoRegua, motivo: MotivoBloqueio): EstadoRegua | null {
+function normalizarBloqueio(
+	estado: EstadoRegua,
+	motivo: MotivoBloqueio,
+	agora: Date,
+	parametros: ParametrosRegua,
+): EstadoRegua | null {
 	if (estado.status === "RESPONDEU" || estado.status === "ESGOTADO") {
 		return {
 			...estado,
@@ -607,6 +630,14 @@ function normalizarSequenciaMorta(estado: EstadoRegua, motivo: MotivoBloqueio): 
 			nextTouchAt: null,
 			motivoSaida: estado.motivoSaida ?? "tres_toques_sem_resposta",
 		};
+	}
+
+	// P4: a cota de 30 dias reabre quando o toque mais antigo completa a janela.
+	// A régua sabe o instante; gravar aqui tira a linha do "vencido" sem matar a
+	// sequência (status segue `ATIVO`).
+	if (motivo === "teto_30_dias") {
+		const reabre = proximoToque(estado, agora, parametros);
+		return reabre ? { ...estado, nextTouchAt: reabre } : null;
 	}
 
 	return null;

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { rotuloDoCard, tipoDeCard } from "@/components/admin/conversa/conversa";
 import { HandoffBanner } from "../handoff-banner";
 import { SimulatorInbox } from "../inbox";
 import { MemoryDevPanel } from "../memory-dev-panel";
@@ -19,15 +20,20 @@ type PersistedMessage = {
 function toStageItems(messages: PersistedMessage[]): WhatsAppStageItem[] {
 	return messages
 		.filter((m) => m.role === "user" || m.role === "assistant")
-		.map<WhatsAppStageItem>((m) => ({
-			kind: "bubble",
-			id: m.id,
-			// role user = mensagem ENVIADA pelo cliente simulado (verde, à direita)
-			// role assistant = RECEBIDA do agente (cinza, à esquerda)
-			direction: m.role === "user" ? "sent" : "received",
-			text: m.content,
-			createdAt: m.createdAt,
-		}));
+		.map<WhatsAppStageItem>((m) => {
+			// O stage do WhatsApp só desenha bolha de texto: o card entra como o
+			// rótulo humano em PT — nunca o marcador cru.
+			const tipo = tipoDeCard(m.content);
+			return {
+				kind: "bubble",
+				id: m.id,
+				// role user = mensagem ENVIADA pelo cliente simulado (verde, à direita)
+				// role assistant = RECEBIDA do agente (cinza, à esquerda)
+				direction: m.role === "user" ? "sent" : "received",
+				text: tipo ? rotuloDoCard(tipo) : m.content,
+				createdAt: m.createdAt,
+			};
+		});
 }
 
 export function SimulatorWhatsapp() {
