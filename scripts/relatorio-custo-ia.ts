@@ -10,22 +10,20 @@
  * Performance mostra o total do período; falta a SÉRIE — dia a dia, mês a mês,
  * com as duas fontes lado a lado e a diferença entre elas declarada.
  *
- * ── As duas fontes, e qual manda no histórico ───────────────────────────────
+ * ── As fontes, e qual manda no histórico ────────────────────────────────────
  *
- * 1. **LiteLLM** (`/spend/logs`) — é a fonte OFICIAL do gasto da key de
- *    produção, mas o log por requisição tem **retenção de 14 dias**: o que é
- *    mais velho que isso some, e o dia ausente NÃO é gasto zero. Por isso o
- *    LiteLLM entra como coluna de reconferência, com a janela que ele de fato
- *    cobre rotulada, e dia sem linha aparece como `sem dado retido` — nunca
- *    `0,0000`.
- * 2. **Langfuse** (`/api/public/v2/metrics`) — é a fonte do painel e a única
- *    com HISTÓRICO COMPLETO. É dela que sai a série diária do relatório,
- *    filtrada por `environment = production` e SEM os evaluators `judge_*`
- *    (que rodam no environment `langfuse-llm-as-a-judge` e aparecem em coluna
- *    própria). Dev (development/default/…) também vai em coluna à parte.
- *
- * A reconciliação só usa os dias em que AS DUAS fontes têm dado — comparar um
- * dia sem retenção com um dia com custo seria inventar diferença.
+ * 1. **Gateway `LiteLLM_DailyUserSpend`** — a fonte que COBRA. É o agregado
+ *    diário da key de produção, no banco do próprio LiteLLM, desde 24/06/2026.
+ *    Dele sai a série principal (dia a dia, mês a mês, por modelo, USD e R$).
+ * 2. **LiteLLM `/spend/logs`** — RECONFERÊNCIA. O log por requisição tem
+ *    **retenção de 14 dias**: dia ausente NÃO é gasto zero, aparece como
+ *    `sem dado retido`. Reconcilia com o agregado do gateway nos dias em que os
+ *    dois existem.
+ * 3. **Langfuse `environment=production`** (`/api/public/v2/metrics`) — CONFERÊNCIA,
+ *    nunca a fonte que cobra. Desde a troca para o `qwen3.8-flash` ele registra
+ *    ~0, e o relatório DECLARA por quê: a tabela de modelos do Langfuse não
+ *    conhece o qwen (não tem preço para ele), então as gerações entram com custo
+ *    0. Juiz (`langfuse-llm-as-a-judge`) e dev vão em coluna à parte.
  *
  * ── O Real ──────────────────────────────────────────────────────────────────
  *
@@ -38,6 +36,7 @@
  *
  *   RELATORIO_CUSTO_LITELLM_BASE=http://127.0.0.1:14000 \
  *   RELATORIO_CUSTO_LITELLM_KEY=<master key do cofre> \
+ *   RELATORIO_CUSTO_LITELLM_DB_URL=<banco do gateway, só leitura> \
  *   RELATORIO_CUSTO_DATABASE_URL=<túnel de produção, só leitura> \
  *     pnpm tsx scripts/relatorio-custo-ia.ts
  *
@@ -103,12 +102,19 @@ const usd = (valor: number): string =>
 	});
 
 const brl = (valor: number): string =>
-	valor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2, style: "currency", currency: "BRL" });
+	valor.toLocaleString("pt-BR", {
+		minimumFractionDigits: 2,
+		maximumFractionDigits: 2,
+		style: "currency",
+		currency: "BRL",
+	});
 
 const usdFixo = (valor: number): string => valor.toFixed(4);
 
 const pct = (parte: number, base: number): string =>
-	base === 0 ? "—" : `${((parte / base) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
+	base === 0
+		? "—"
+		: `${((parte / base) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
 
 /** A diferença relativa COM sinal — é o que o relatório reconcilia. */
 const diferenca = (liteLLM: number, langfuse: number): string =>
@@ -181,8 +187,63 @@ async function serieDoLiteLLM(
 	return serie;
 }
 
+/**
+ * O AGREGADO DIÁRIO do gateway — a fonte que COBRA.
+ *
+ * O `/spend/logs` vive 14 dias e some com o passado; o `LiteLLM_DailyUserSpend`,
+ * no banco do próprio gateway, guarda o agregado diário da key desde 24/06/2026.
+ * É ele que responde "quanto a IA custou" de verdade, dia a dia e por modelo.
+ */
+interface SerieGateway {
+	porDia: Map<string, number>;
+	porModelo: Map<string, number>;
+	porDiaModelo: Map<string, Map<string, number>>;
+	primeiro: string;
+	ultimo: string;
+}
+
+/**
+ * Lê o `LiteLLM_DailyUserSpend` da key no banco do gateway (só leitura). O token
+ * da key vai no SQL por **stdin** (`psql -f -`), nunca em argumento — a linha de
+ * comando é pública para o `ps` da máquina.
+ */
+function lerGateway(dbUrl: string, token: string): SerieGateway {
+	const tokenSeguro = token.replace(/'/g, "''");
+	const sql =
+		`select date, coalesce(model, '(sem modelo)') as modelo, spend ` +
+		`from "LiteLLM_DailyUserSpend" where api_key = '${tokenSeguro}' ` +
+		`and spend > 0 order by date`;
+	const saida = execPsql(dbUrl, ["-tA", "-F", "\t"], 64 * 1024 * 1024, sql);
+
+	const porDia = new Map<string, number>();
+	const porModelo = new Map<string, number>();
+	const porDiaModelo = new Map<string, Map<string, number>>();
+	for (const linha of saida.split("\n")) {
+		if (!linha) continue;
+		const [dia, modelo, valorBruto] = linha.split("\t");
+		const valor = Number(valorBruto) || 0;
+		if (!dia || !/^\d{4}-\d{2}-\d{2}$/.test(dia) || valor <= 0) continue;
+		const chaveModelo = modelo || "(sem modelo)";
+		porDia.set(dia, (porDia.get(dia) ?? 0) + valor);
+		porModelo.set(chaveModelo, (porModelo.get(chaveModelo) ?? 0) + valor);
+		const doDia = porDiaModelo.get(dia) ?? new Map<string, number>();
+		doDia.set(chaveModelo, (doDia.get(chaveModelo) ?? 0) + valor);
+		porDiaModelo.set(dia, doDia);
+	}
+	const dias = [...porDia.keys()].sort();
+	return {
+		porDia,
+		porModelo,
+		porDiaModelo,
+		primeiro: dias[0] ?? "",
+		ultimo: dias[dias.length - 1] ?? "",
+	};
+}
+
 /** Uma consulta de métricas v2 do Langfuse, com as credenciais de produção. */
-async function consultarMetricas(query: Record<string, unknown>): Promise<Array<Record<string, unknown>>> {
+async function consultarMetricas(
+	query: Record<string, unknown>,
+): Promise<Array<Record<string, unknown>>> {
 	const base = process.env.LANGFUSE_BASE_URL?.trim();
 	const publicKey = process.env.LANGFUSE_PUBLIC_KEY?.trim();
 	const secretKey = process.env.LANGFUSE_SECRET_KEY?.trim();
@@ -239,37 +300,88 @@ async function serieDoLangfuse(de: string, ate: string): Promise<SerieLangfuse> 
 }
 
 /**
- * O custo diário das observações cujo NOME casa `judge` — a prova de que os
- * evaluators `judge_*` não estão dentro da produção. Devolve o total por dia.
+ * O Langfuse NÃO tem preço para o `qwen3.8-flash`? Consulta a tabela de modelos
+ * dele: se o modelo não está lá, as gerações do qwen entram com custo **0** — e é
+ * isso que explica o `environment=production` registrar ~0 desde a troca para o
+ * qwen. Devolve `true` quando os preços do qwen NÃO estão cadastrados na fonte;
+ * `false` tanto quando o preço existe quanto quando a consulta não responde
+ * (abstenção: sem prova, o relatório não afirma).
  */
-async function serieDosEvaluatorsJudge(de: string, ate: string): Promise<Map<string, number>> {
-	const dados = await consultarMetricas({
-		view: "observations",
-		dimensions: [],
-		metrics: [{ measure: "totalCost", aggregation: "sum" }],
-		filters: [{ column: "name", operator: "contains", value: "judge", type: "string" }],
-		timeDimension: { granularity: "day" },
-		config: { row_limit: 1000 },
-		fromTimestamp: `${de}T00:00:00.000Z`,
-		toTimestamp: `${ate}T23:59:59.999Z`,
-	});
-	const porDia = new Map<string, number>();
-	for (const linha of dados) {
-		const dia = String(linha.time_dimension ?? "").slice(0, 10);
-		if (!/^\d{4}-\d{2}-\d{2}$/.test(dia)) continue;
-		porDia.set(dia, (porDia.get(dia) ?? 0) + (Number(linha.sum_totalCost) || 0));
+async function confirmarQwenSemPreco(): Promise<boolean> {
+	const base = process.env.LANGFUSE_BASE_URL?.trim();
+	const publicKey = process.env.LANGFUSE_PUBLIC_KEY?.trim();
+	const secretKey = process.env.LANGFUSE_SECRET_KEY?.trim();
+	if (!base || !publicKey || !secretKey) return false;
+	const cabecalho = {
+		Authorization: `Basic ${Buffer.from(`${publicKey}:${secretKey}`).toString("base64")}`,
+	};
+	try {
+		for (let pagina = 1; pagina <= 3; pagina += 1) {
+			const resposta = await fetch(
+				`${base.replace(/\/$/, "")}/api/public/models?limit=100&page=${pagina}`,
+				{ headers: cabecalho, cache: "no-store" },
+			);
+			if (!resposta.ok) return false;
+			const payload = (await resposta.json()) as { data?: Array<{ modelName?: string }> };
+			const modelos = payload.data ?? [];
+			if (modelos.length === 0) break;
+			if (
+				modelos.some((m) =>
+					String(m.modelName ?? "")
+						.toLowerCase()
+						.includes("qwen"),
+				)
+			) {
+				return false;
+			}
+			if (modelos.length < 100) break;
+		}
+		return true;
+	} catch {
+		return false;
 	}
-	return porDia;
+}
+
+/**
+ * Roda o `psql` com a credencial do banco FORA do argv.
+ *
+ * A `DATABASE_URL` completa (com senha) como argumento do `psql` aparece no `ps`
+ * da máquina — qualquer processo local lia a senha de produção. Aqui ela é
+ * quebrada nas variáveis `PG*` do ambiente do filho: mesma conexão, sem segredo
+ * visível na linha de comando.
+ */
+function execPsql(
+	dbUrl: string,
+	args: string[],
+	maxBuffer = 1024 * 1024,
+	entrada?: string,
+): string {
+	const url = new URL(dbUrl);
+	const env: NodeJS.ProcessEnv = {
+		...process.env,
+		PGHOST: url.hostname,
+		PGPORT: url.port || "5432",
+		PGUSER: decodeURIComponent(url.username),
+		PGDATABASE: url.pathname.replace(/^\//, ""),
+	};
+	if (url.password) env.PGPASSWORD = decodeURIComponent(url.password);
+	const sslmode = url.searchParams.get("sslmode");
+	if (sslmode) env.PGSSLMODE = sslmode;
+	return execFileSync("psql", args, {
+		encoding: "utf8",
+		maxBuffer,
+		env,
+		...(entrada !== undefined ? { input: entrada } : {}),
+	}).trim();
 }
 
 /** O valor de uma chave do cadastro de custos no Postgres (só leitura). */
 function lerDoCadastro(dbUrl: string, chave: string): string | null {
 	try {
-		const saida = execFileSync(
-			"psql",
-			[dbUrl, "-tAc", `select valor from custos_config where chave='${chave}' limit 1`],
-			{ encoding: "utf8", maxBuffer: 1024 * 1024 },
-		).trim();
+		const saida = execPsql(dbUrl, [
+			"-tAc",
+			`select valor from custos_config where chave='${chave}' limit 1`,
+		]);
 		return saida || null;
 	} catch {
 		return null;
@@ -324,7 +436,10 @@ async function resolverCotacao(dia: string, dbUrl: string | undefined): Promise<
 	if (dbUrl) {
 		const doCadastro = cotacaoDaString(lerDoCadastro(dbUrl, "cotacao_usd_brl"));
 		if (doCadastro) {
-			return { valor: doCadastro, fonte: "cadastro do painel (custos_config.cotacao_usd_brl, produção)" };
+			return {
+				valor: doCadastro,
+				fonte: "cadastro do painel (custos_config.cotacao_usd_brl, produção)",
+			};
 		}
 	}
 	return ptaxDoDia(dia);
@@ -332,11 +447,11 @@ async function resolverCotacao(dia: string, dbUrl: string | undefined): Promise<
 
 /** Os `conversationId` com o selo de teste da casa, lidos do Postgres (só leitura). */
 function conversasDoPostgres(url: string): Map<string, boolean> {
-	const saida = execFileSync(
-		"psql",
-		[url, "-tA", "-F", "\t", "-c", "select id, is_simulated from conversations"],
-		{ encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
-	).trim();
+	const saida = execPsql(
+		url,
+		["-tA", "-F", "\t", "-c", "select id, is_simulated from conversations"],
+		64 * 1024 * 1024,
+	);
 	const mapa = new Map<string, boolean>();
 	for (const linha of saida.split("\n")) {
 		if (!linha) continue;
@@ -405,7 +520,11 @@ function chaveDoMes(dia: string): string {
 
 interface LinhaDoRelatorio {
 	dia: string;
+	/** A fonte que COBRA (agregado diário do gateway). `null` = dia sem gasto registrado. */
+	gateway: number | null;
+	/** `/spend/logs` — reconferência, só os 14 dias que ele retém. `null` = sem dado retido. */
 	liteLLM: number | null;
+	/** Langfuse `environment=production` — CONFERÊNCIA (desde o qwen registra ~0). */
 	producao: number;
 	juiz: number;
 	dev: number;
@@ -413,15 +532,19 @@ interface LinhaDoRelatorio {
 
 /** Monta a grade do relatório: todo dia que existe em QUALQUER das fontes. */
 function montarLinhas(
+	gateway: SerieGateway,
 	liteLLM: SerieLiteLLM,
 	langfuse: SerieLangfuse,
 ): { linhas: LinhaDoRelatorio[]; janelaLL: [string, string] | null } {
-	const dias = [...new Set([...liteLLM.keys(), ...langfuse.keys()])].sort();
+	const dias = [
+		...new Set([...gateway.porDia.keys(), ...liteLLM.keys(), ...langfuse.keys()]),
+	].sort();
 	const linhas = dias
 		.map((dia) => {
 			const doLangfuse = langfuse.get(dia) ?? { producao: 0, juiz: 0, dev: 0 };
 			return {
 				dia,
+				gateway: gateway.porDia.has(dia) ? (gateway.porDia.get(dia) ?? 0) : null,
 				liteLLM: liteLLM.has(dia) ? (liteLLM.get(dia) ?? 0) : null,
 				producao: doLangfuse.producao,
 				juiz: doLangfuse.juiz,
@@ -429,9 +552,9 @@ function montarLinhas(
 			};
 		})
 		// Dia sem custo em lado nenhum é ruído (a v2 devolve o dia com soma 0).
-		// A série é "desde o primeiro gasto": só entra o dia com custo ou com
-		// linha retida no LiteLLM.
-		.filter((l) => l.liteLLM !== null || l.producao > 0 || l.juiz > 0 || l.dev > 0);
+		.filter(
+			(l) => l.gateway !== null || l.liteLLM !== null || l.producao > 0 || l.juiz > 0 || l.dev > 0,
+		);
 	const comLL = [...liteLLM.keys()].sort();
 	const janelaLL: [string, string] | null =
 		comLL.length > 0 ? [comLL[0], comLL[comLL.length - 1]] : null;
@@ -443,41 +566,47 @@ function htmlDoRelatorio(args: {
 	ate: string;
 	linhas: LinhaDoRelatorio[];
 	janelaLL: [string, string] | null;
+	janelaGateway: [string, string] | null;
+	porModelo: Map<string, number>;
 	cotacao: Cotacao | null;
+	erroGateway: string | null;
 	erroLiteLLM: string | null;
 	erroLangfuse: string | null;
-	judgeDentroDaProducao: number;
+	qwenSemPreco: boolean;
 	separacao: { real: number; teste: number; semConversa: number } | null | { erro: string };
 	dbInformado: boolean;
 	geradoEm: string;
 }): string {
 	const { linhas } = args;
+	const cotacao = args.cotacao;
+	const paraBrl = (valor: number): string => (cotacao ? brl(valor * cotacao.valor) : "—");
+
+	// O número que COBRA é o agregado diário do gateway.
+	const totalGateway = linhas.reduce((t, l) => t + (l.gateway ?? 0), 0);
+	// O Langfuse é CONFERÊNCIA: desde a troca para o qwen ele registra ~0.
 	const totalProducao = linhas.reduce((t, l) => t + l.producao, 0);
 	const totalJuiz = linhas.reduce((t, l) => t + l.juiz, 0);
 	const totalDev = linhas.reduce((t, l) => t + l.dev, 0);
 	const linhasLL = linhas.filter((l) => l.liteLLM !== null);
 	const totalLL = linhasLL.reduce((t, l) => t + (l.liteLLM ?? 0), 0);
-	const cotacao = args.cotacao;
-	const paraBrl = (valor: number): string => (cotacao ? brl(valor * cotacao.valor) : "—");
 
-	// A reconciliação só olha os dias em que as DUAS fontes têm dado: linha
-	// retida no LiteLLM E custo de produção medido no Langfuse.
-	const reconciliacao = linhas.filter((l) => l.liteLLM !== null && l.producao > 0);
-	const totalLLNaIntersecao = reconciliacao.reduce((t, l) => t + (l.liteLLM ?? 0), 0);
-	const totalProducaoNaIntersecao = reconciliacao.reduce((t, l) => t + l.producao, 0);
+	// A reconferência `/spend/logs` × agregado do gateway só olha os dias em que os
+	// DOIS existem (a retenção de 14 dias do log por requisição).
+	const reconferencia = linhas.filter((l) => l.liteLLM !== null && l.gateway !== null);
+	const totalLLReconf = reconferencia.reduce((t, l) => t + (l.liteLLM ?? 0), 0);
+	const totalGatewayReconf = reconferencia.reduce((t, l) => t + (l.gateway ?? 0), 0);
 
 	const linhasDia = linhas
 		.map((l) => {
+			const gatewayCelula =
+				l.gateway === null
+					? `<td class="num vazio">—</td><td class="num vazio">—</td>`
+					: `<td class="num">${usdFixo(l.gateway)}</td><td class="num">${paraBrl(l.gateway)}</td>`;
 			const litellmCelula =
 				l.liteLLM === null
 					? `<td class="num vazio">${SEM_DADO_RETIDO}</td>`
 					: `<td class="num">${usdFixo(l.liteLLM)}</td>`;
-			const delta = l.liteLLM !== null && l.producao > 0 ? l.liteLLM - l.producao : null;
-			const deltaCelula =
-				delta === null
-					? `<td class="num vazio">—</td><td class="num vazio">—</td>`
-					: `<td class="num ${delta < 0 ? "neg" : ""}">${usdFixo(delta)}</td><td class="num">${pct(delta, l.producao)}</td>`;
-			return `<tr><td>${esc(l.dia)}</td>${litellmCelula}<td class="num">${usdFixo(l.producao)}</td><td class="num">${paraBrl(l.producao)}</td><td class="num">${usdFixo(l.juiz)}</td><td class="num">${usdFixo(l.dev)}</td>${deltaCelula}</tr>`;
+			return `<tr><td>${esc(l.dia)}</td>${gatewayCelula}${litellmCelula}<td class="num">${usdFixo(l.producao)}</td><td class="num">${usdFixo(l.juiz)}</td><td class="num">${usdFixo(l.dev)}</td></tr>`;
 		})
 		.join("");
 
@@ -485,6 +614,7 @@ function htmlDoRelatorio(args: {
 	const linhasMes = meses
 		.map((mes) => {
 			const doMes = linhas.filter((l) => chaveDoMes(l.dia) === mes);
+			const gateway = doMes.reduce((t, l) => t + (l.gateway ?? 0), 0);
 			const producao = doMes.reduce((t, l) => t + l.producao, 0);
 			const juiz = doMes.reduce((t, l) => t + l.juiz, 0);
 			const dev = doMes.reduce((t, l) => t + l.dev, 0);
@@ -494,8 +624,16 @@ function htmlDoRelatorio(args: {
 				doMesLL.length === 0
 					? `<td class="num vazio">${SEM_DADO_RETIDO}</td>`
 					: `<td class="num">${usdFixo(litellm)}</td>`;
-			return `<tr><td>${esc(mes)}</td><td class="num">${usdFixo(producao)}</td><td class="num">${paraBrl(producao)}</td>${litellmCelula}<td class="num">${usdFixo(juiz)}</td><td class="num">${usdFixo(dev)}</td></tr>`;
+			return `<tr><td>${esc(mes)}</td><td class="num">${usdFixo(gateway)}</td><td class="num">${paraBrl(gateway)}</td>${litellmCelula}<td class="num">${usdFixo(producao)}</td><td class="num">${usdFixo(juiz)}</td><td class="num">${usdFixo(dev)}</td></tr>`;
 		})
+		.join("");
+
+	const linhasModelo = [...args.porModelo.entries()]
+		.sort((a, b) => b[1] - a[1])
+		.map(
+			([modelo, valor]) =>
+				`<tr><td>${esc(modelo)}</td><td class="num">${usdFixo(valor)}</td><td class="num">${paraBrl(valor)}</td><td class="num">${pct(valor, totalGateway)}</td></tr>`,
+		)
 		.join("");
 
 	const separacao = args.separacao && !("erro" in args.separacao) ? args.separacao : null;
@@ -530,9 +668,15 @@ function htmlDoRelatorio(args: {
 	const rotuloJanela = args.janelaLL
 		? `${esc(args.janelaLL[0])} a ${esc(args.janelaLL[1])}`
 		: "nenhum dia retido";
+	const rotuloGateway = args.janelaGateway
+		? `${esc(args.janelaGateway[0])} a ${esc(args.janelaGateway[1])}`
+		: "sem dado";
 	const cotacaoRodape = cotacao
 		? `Cotação usada: <strong>R$ ${cotacao.valor.toFixed(4).replace(".", ",")}</strong> por US$ 1,00 — fonte: ${esc(cotacao.fonte)}.`
 		: `Sem cotação USD→BRL: o R$ não é calculável (o cadastro <code>custos_config.cotacao_usd_brl</code> está vazio e a PTAX do dia não respondeu). O dólar continua sendo o número; o R$ fica <code>—</code>, nunca zero.`;
+	const notaQwen = args.qwenSemPreco
+		? `O Langfuse <strong>não tem preço para o <code>qwen3.8-flash</code></strong>: a tabela de modelos dele (174 modelos) não conhece o modelo, então as gerações do qwen entram com custo <strong>0</strong>. Medido em 01–05/10: o qwen aparece com 278 observações e US$ 0,0000 em <code>environment=production</code>, enquanto o <code>claude-haiku-4-5</code> (140 observações) responde por US$ 0,3218. Por isso, desde a troca para o qwen, o Langfuse registra ~0 — ele é CONFERÊNCIA, não a fonte que cobra.`
+		: `Não foi possível confirmar se o Langfuse tem preço para o <code>qwen3.8-flash</code> (a tabela de modelos não respondeu). O Langfuse segue como CONFERÊNCIA, nunca como a fonte que cobra.`;
 
 	return `<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8">
@@ -559,33 +703,39 @@ function htmlDoRelatorio(args: {
 	.rodape { margin-top: 26px; font-size: 11px; color: #7b8b9c; line-height: 1.6; }
 </style></head><body>
 	<h1>Custo de IA — Aja Agora</h1>
-	<p class="sub">Key <strong>${esc(ALIAS_DA_KEY)}</strong> no LiteLLM (reconferência) · Langfuse <code>environment=production</code> (histórico completo) · período ${esc(args.de)} a ${esc(args.ate)} · gerado em ${esc(args.geradoEm)}</p>
+	<p class="sub">Key <strong>${esc(ALIAS_DA_KEY)}</strong> — série principal: agregado diário do gateway (<code>LiteLLM_DailyUserSpend</code>) · Langfuse <code>environment=production</code>: CONFERÊNCIA · período ${esc(args.de)} a ${esc(args.ate)} · gerado em ${esc(args.geradoEm)}</p>
 
 	<div class="kpis">
-		<div class="kpi"><div class="rotulo">Produção (Langfuse, histórico completo)</div><div class="valor">${usd(totalProducao)}</div><div class="obs">${paraBrl(totalProducao)}</div></div>
-		<div class="kpi"><div class="rotulo">LiteLLM (key ${esc(ALIAS_DA_KEY)})</div><div class="valor">${usd(totalLL)}</div><div class="obs">janela coberta: ${rotuloJanela}</div></div>
-		<div class="kpi"><div class="rotulo">Juiz (evaluators <code>judge_*</code>)</div><div class="valor">${usd(totalJuiz)}</div><div class="obs">environment ${esc(ENV_JUIZ)}</div></div>
-		<div class="kpi"><div class="rotulo">Dev</div><div class="valor">${usd(totalDev)}</div><div class="obs">development / default / demais</div></div>
+		<div class="kpi"><div class="rotulo">Gateway — a fonte que cobra (LiteLLM_DailyUserSpend)</div><div class="valor">${usd(totalGateway)}</div><div class="obs">${paraBrl(totalGateway)} · janela ${rotuloGateway}</div></div>
+		<div class="kpi"><div class="rotulo">Langfuse produção (conferência)</div><div class="valor">${usd(totalProducao)}</div><div class="obs">${paraBrl(totalProducao)} · registra ~0 desde o qwen</div></div>
+		<div class="kpi"><div class="rotulo">/spend/logs — reconferência (retenção)</div><div class="valor">${usd(totalLL)}</div><div class="obs">janela coberta: ${rotuloJanela}</div></div>
+		<div class="kpi"><div class="rotulo">Juiz + Dev (Langfuse, à parte)</div><div class="valor">${usd(totalJuiz + totalDev)}</div><div class="obs">juiz ${usd(totalJuiz)} · dev ${usd(totalDev)}</div></div>
 	</div>
-	${aviso("LiteLLM", args.erroLiteLLM)}
+	${aviso("Gateway (LiteLLM_DailyUserSpend)", args.erroGateway)}
+	${aviso("/spend/logs", args.erroLiteLLM)}
 	${aviso("Langfuse", args.erroLangfuse)}
 
 	<h2>Total por mês</h2>
-	<table><thead><tr><th>Mês</th><th class="num">Produção USD</th><th class="num">Produção R$</th><th class="num">LiteLLM USD</th><th class="num">Juiz USD</th><th class="num">Dev USD</th></tr></thead>
-	<tbody>${linhasMes || "<tr><td colspan='6'>sem dado</td></tr>"}</tbody></table>
+	<table><thead><tr><th>Mês</th><th class="num">Gateway USD</th><th class="num">Gateway R$</th><th class="num">/spend/logs USD</th><th class="num">Langfuse produção USD</th><th class="num">Juiz USD</th><th class="num">Dev USD</th></tr></thead>
+	<tbody>${linhasMes || "<tr><td colspan='7'>sem dado</td></tr>"}</tbody></table>
+
+	<h2>Custo por modelo (gateway, período completo)</h2>
+	<table><thead><tr><th>Modelo</th><th class="num">USD</th><th class="num">R$</th><th class="num">% do total</th></tr></thead>
+	<tbody>${linhasModelo || "<tr><td colspan='4'>sem dado</td></tr>"}</tbody></table>
 
 	<h2>Série diária</h2>
-	<table><thead><tr><th>Dia</th><th class="num">LiteLLM USD</th><th class="num">Produção USD</th><th class="num">Produção R$</th><th class="num">Juiz USD</th><th class="num">Dev USD</th><th class="num">Δ LiteLLM − Produção</th><th class="num">Δ %</th></tr></thead>
-	<tbody>${linhasDia || "<tr><td colspan='8'>sem dado</td></tr>"}</tbody></table>
+	<table><thead><tr><th>Dia</th><th class="num">Gateway USD</th><th class="num">Gateway R$</th><th class="num">/spend/logs USD</th><th class="num">Langfuse produção USD</th><th class="num">Juiz USD</th><th class="num">Dev USD</th></tr></thead>
+	<tbody>${linhasDia || "<tr><td colspan='7'>sem dado</td></tr>"}</tbody></table>
 
 	${separacaoHtml}
 
 	<p class="rodape">
-		<strong>Reconciliação.</strong> Só entram os dias em que as DUAS fontes têm dado: ${reconciliacao.length} dia(s). Neles, o LiteLLM soma ${usd(totalLLNaIntersecao)} e a produção do Langfuse soma ${usd(totalProducaoNaIntersecao)} — diferença ${diferenca(totalLLNaIntersecao, totalProducaoNaIntersecao)}. Dia sem linha no LiteLLM é <em>${SEM_DADO_RETIDO}</em> (a retenção de <code>/spend/logs</code> é de 14 dias), nunca <code>0,0000</code>.<br>
-		<strong>Janela do LiteLLM:</strong> ${rotuloJanela} — é o que a fonte de fato cobre; fora dela não há dado retido.<br>
+		<strong>A fonte que cobra é o gateway.</strong> Série principal = <code>LiteLLM_DailyUserSpend</code> da key ${esc(ALIAS_DA_KEY)}: ${usd(totalGateway)} (${paraBrl(totalGateway)}).<br>
+		<strong>Reconferência /spend/logs × agregado do gateway.</strong> Só entram os dias em que os DOIS existem: ${reconferencia.length} dia(s). Neles, o log soma ${usd(totalLLReconf)} e o agregado ${usd(totalGatewayReconf)} — diferença ${diferenca(totalLLReconf, totalGatewayReconf)}. Dia sem linha no log é <em>${SEM_DADO_RETIDO}</em> (retenção de 14 dias), nunca <code>0,0000</code>.<br>
+		<strong>Janela do /spend/logs:</strong> ${rotuloJanela}.<br>
+		<strong>Langfuse é conferência, não a fonte que cobra.</strong> ${notaQwen}<br>
 		<strong>${cotacaoRodape}</strong><br>
-		<strong>Sem os evaluators na produção:</strong> as observações <code>judge_*</code> rodam no environment <code>${esc(ENV_JUIZ)}</code> (coluna Juiz). Medido no período: o custo <code>name contains judge</code> dentro de <code>environment=production</code> é ${usdFixo(args.judgeDentroDaProducao)} — nada a subtrair, e a série de produção sai limpa.<br>
-		Langfuse: <code>/api/public/v2/metrics</code>, dimensão <code>environment</code>, granularidade dia. LiteLLM: <code>/spend/logs</code>.<br>
+		Langfuse: <code>/api/public/v2/metrics</code>, dimensão <code>environment</code>, granularidade dia. Gateway: <code>LiteLLM_DailyUserSpend</code> no banco do LiteLLM (só leitura). <code>/spend/logs</code> pelo HTTP do gateway.<br>
 		Relatório gerado localmente. Não foi enviado a ninguém.
 	</p>
 </body></html>`;
@@ -599,6 +749,7 @@ async function main(): Promise<void> {
 	const litellmKey =
 		process.env.RELATORIO_CUSTO_LITELLM_KEY?.trim() || process.env.LITELLM_API_KEY?.trim();
 	const dbUrl = process.env.RELATORIO_CUSTO_DATABASE_URL?.trim() || undefined;
+	const gatewayDbUrl = process.env.RELATORIO_CUSTO_LITELLM_DB_URL?.trim() || undefined;
 	if (!litellmBase || !litellmKey) {
 		throw new Error(
 			"Informe RELATORIO_CUSTO_LITELLM_BASE e RELATORIO_CUSTO_LITELLM_KEY (o .env.local aponta para o gateway LOCAL).",
@@ -608,7 +759,30 @@ async function main(): Promise<void> {
 	const hoje = diaDoNegocio(new Date());
 	const { token, criadaEm } = await tokenDaKey(litellmBase, litellmKey);
 	const de = (criadaEm.slice(0, 10) || hoje) < hoje ? criadaEm.slice(0, 10) : hoje;
-	console.log(`LiteLLM: key ${ALIAS_DA_KEY} criada em ${de} · janela pedida ${de}..${hoje}`);
+	console.log(`LiteLLM: key ${ALIAS_DA_KEY} criada em ${de} · /spend/logs ${de}..${hoje}`);
+
+	// A SÉRIE PRINCIPAL: o agregado diário do gateway — a fonte que COBRA. O
+	// `/spend/logs` só retém 14 dias; o `LiteLLM_DailyUserSpend` guarda desde
+	// 24/06/2026. Sem o banco informado, o relatório DECLARA a ausência.
+	const serieVazia: SerieGateway = {
+		porDia: new Map(),
+		porModelo: new Map(),
+		porDiaModelo: new Map(),
+		primeiro: "",
+		ultimo: "",
+	};
+	let erroGateway: string | null = null;
+	let gateway: SerieGateway = serieVazia;
+	if (!gatewayDbUrl) {
+		erroGateway =
+			"informe RELATORIO_CUSTO_LITELLM_DB_URL (banco do gateway, só leitura) para a série principal";
+	} else {
+		try {
+			gateway = lerGateway(gatewayDbUrl, token);
+		} catch (erro) {
+			erroGateway = erro instanceof Error ? erro.message : String(erro);
+		}
+	}
 
 	let erroLiteLLM: string | null = null;
 	const liteLLM = await serieDoLiteLLM(litellmBase, litellmKey, token, de, hoje).catch(
@@ -618,30 +792,28 @@ async function main(): Promise<void> {
 		},
 	);
 
+	// O Langfuse entra como CONFERÊNCIA, desde o primeiro gasto do gateway até
+	// hoje — não é a fonte que cobra.
+	const deConferencia = gateway.primeiro || de;
 	let erroLangfuse: string | null = null;
-	const [langfuseBruto, judgeDentroDaProducao, cotacao, separacao] = await Promise.all([
-		serieDoLangfuse(de, hoje).catch((erro: Error) => {
+	const [langfuseBruto, cotacao, separacao, qwenSemPreco] = await Promise.all([
+		serieDoLangfuse(deConferencia, hoje).catch((erro: Error) => {
 			erroLangfuse = erro.message;
 			return new Map<string, { producao: number; juiz: number; dev: number }>();
 		}),
-		// Prova de que os evaluators `judge_*` não estão na produção.
-		(async () => {
-			const diario = await serieDosEvaluatorsJudge(de, hoje).catch(() => new Map<string, number>());
-			// Só o que estiver DENTRO de production seria subtraído; o resto é do ambiente do juiz.
-			return [...diario.entries()].reduce((t, [, valor]) => t + valor, 0);
-		})(),
 		resolverCotacao(hoje, dbUrl),
-		separacaoRealTeste(de, hoje, dbUrl).catch((erro: Error) => ({ erro: erro.message })),
+		separacaoRealTeste(deConferencia, hoje, dbUrl).catch((erro: Error) => ({ erro: erro.message })),
+		confirmarQwenSemPreco(),
 	]);
 
-	// Produção SEM os evaluators `judge_*`: com o environment já separado, o
-	// custo `judge_*` dentro da produção é zero; a subtração fica explícita para
-	// que a regra não dependa de o ambiente continuar separado.
 	const langfuse: SerieLangfuse = new Map(
 		[...langfuseBruto.entries()].map(([dia, valor]) => [dia, { ...valor }]),
 	);
 
-	const { linhas, janelaLL } = montarLinhas(liteLLM, langfuse);
+	const { linhas, janelaLL } = montarLinhas(gateway, liteLLM, langfuse);
+	const janelaGateway: [string, string] | null = gateway.primeiro
+		? [gateway.primeiro, gateway.ultimo]
+		: null;
 
 	const geradoEm = new Intl.DateTimeFormat("pt-BR", {
 		timeZone: FUSO,
@@ -651,20 +823,16 @@ async function main(): Promise<void> {
 	const saida = join(homedir(), "Downloads");
 	mkdirSync(saida, { recursive: true });
 
-	// CSV — a série crua, para quem quiser reconferir. Dia sem retenção no
-	// LiteLLM escreve `sem dado retido`, NUNCA `0,0000`.
+	// CSV — a série crua, para reconferir. A série principal é o gateway; o
+	// `/spend/logs` entra como reconferência (dia sem retenção = `sem dado
+	// retido`, NUNCA `0`). Ausência de gateway é vazio, nunca `0`.
 	const cabecalhoCsv =
-		"dia;litellm_usd;langfuse_producao_usd;producao_brl;cotacao_usd_brl;langfuse_juiz_usd;langfuse_dev_usd;delta_usd;delta_pct";
+		"dia;gateway_usd;gateway_brl;spend_logs_usd;langfuse_producao_usd;langfuse_juiz_usd;langfuse_dev_usd;cotacao_usd_brl";
 	const linhasCsv = linhas.map((l) => {
+		const gatewayCampo = l.gateway === null ? "" : l.gateway.toFixed(6);
+		const gatewayBrl = l.gateway !== null && cotacao ? (l.gateway * cotacao.valor).toFixed(2) : "";
 		const liteLLMCampo = l.liteLLM === null ? SEM_DADO_RETIDO : l.liteLLM.toFixed(6);
-		const valorBrl = cotacao ? (l.producao * cotacao.valor).toFixed(2) : "";
-		const delta =
-			l.liteLLM === null || l.producao <= 0 ? "" : (l.liteLLM - l.producao).toFixed(6);
-		const deltaPct =
-			l.liteLLM === null || l.producao <= 0
-				? ""
-				: (((l.liteLLM - l.producao) / l.producao) * 100).toFixed(1);
-		return `${l.dia};${liteLLMCampo};${l.producao.toFixed(6)};${valorBrl};${cotacao ? cotacao.valor.toFixed(4) : ""};${l.juiz.toFixed(6)};${l.dev.toFixed(6)};${delta};${deltaPct}`;
+		return `${l.dia};${gatewayCampo};${gatewayBrl};${liteLLMCampo};${l.producao.toFixed(6)};${l.juiz.toFixed(6)};${l.dev.toFixed(6)};${cotacao ? cotacao.valor.toFixed(4) : ""}`;
 	});
 	const csv = [cabecalhoCsv, ...linhasCsv].join("\n");
 	const csvPath = join(saida, `custo-ia-aja-agora-${hoje}.csv`);
@@ -676,14 +844,17 @@ async function main(): Promise<void> {
 	writeFileSync(
 		htmlPath,
 		htmlDoRelatorio({
-			de,
+			de: deConferencia,
 			ate: hoje,
 			linhas,
 			janelaLL,
+			janelaGateway,
+			porModelo: gateway.porModelo,
 			cotacao,
+			erroGateway,
 			erroLiteLLM,
 			erroLangfuse,
-			judgeDentroDaProducao,
+			qwenSemPreco,
 			separacao,
 			dbInformado: Boolean(dbUrl),
 			geradoEm,
@@ -702,15 +873,21 @@ async function main(): Promise<void> {
 		{ stdio: "ignore" },
 	);
 
-	// Notas: os números das duas fontes e a diferença — o que o relatório afirma.
+	// Notas: os números das fontes — o que o relatório afirma.
+	const totalGateway = linhas.reduce((t, l) => t + (l.gateway ?? 0), 0);
 	const totalProducao = linhas.reduce((t, l) => t + l.producao, 0);
 	const totalLL = linhas.reduce((t, l) => t + (l.liteLLM ?? 0), 0);
 	console.log(
-		`Produção (Langfuse, histórico completo): ${totalProducao.toFixed(4)} USD` +
-			(cotacao ? ` = ${(totalProducao * cotacao.valor).toFixed(2)} BRL (cotação ${cotacao.valor})` : ""),
+		`Gateway (LiteLLM_DailyUserSpend, ${janelaGateway ? `${janelaGateway[0]}..${janelaGateway[1]}` : "sem dado"}): ${totalGateway.toFixed(4)} USD` +
+			(cotacao
+				? ` = ${(totalGateway * cotacao.valor).toFixed(2)} BRL (cotação ${cotacao.valor})`
+				: ""),
 	);
 	console.log(
-		`LiteLLM (janela ${janelaLL ? `${janelaLL[0]}..${janelaLL[1]}` : "—"}): ${erroLiteLLM ? `indisponível (${erroLiteLLM})` : `${totalLL.toFixed(4)} USD`}`,
+		`Langfuse production (conferência, ${deConferencia}..${hoje}): ${erroLangfuse ? `indisponível (${erroLangfuse})` : `${totalProducao.toFixed(4)} USD`}${qwenSemPreco ? " — qwen SEM preço no Langfuse (registra 0)" : ""}`,
+	);
+	console.log(
+		`/spend/logs (retenção ${janelaLL ? `${janelaLL[0]}..${janelaLL[1]}` : "—"}): ${erroLiteLLM ? `indisponível (${erroLiteLLM})` : `${totalLL.toFixed(4)} USD`}`,
 	);
 	console.log(`Cotação: ${cotacao ? `${cotacao.valor} — ${cotacao.fonte}` : "não calculável"}`);
 	console.log(`CSV: ${csvPath}`);
