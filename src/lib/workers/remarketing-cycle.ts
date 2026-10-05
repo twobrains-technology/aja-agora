@@ -74,6 +74,7 @@ import {
 	type ConversaAvaliada,
 	destinoDoToque,
 	MOTIVO_SAIDA_EQUIPE,
+	MOTIVO_SAIDA_TESTE,
 	motivoDeSaidaLegivel,
 	type ResultadoDeElegibilidade,
 	referenciaDoSilencio,
@@ -212,6 +213,13 @@ export interface RemarketingDeps {
 	/** Segura os toques ATIVOS cujo destino é telefone da equipe (idempotente). */
 	segurarToquesDaEquipe?: (agora: Date) => Promise<number>;
 	/**
+	 * Encerra os toques ATIVOS de conversa SIMULADA que já entraram na régua
+	 * (idempotente). Fecha o caso em que a conversa virou teste DEPOIS de entrar:
+	 * a consulta de disparo filtra `is_simulated = false`, então sem isto a linha
+	 * ficaria `ATIVO` com `next_touch_at` vencido para sempre.
+	 */
+	encerrarToquesDeTeste?: (agora: Date) => Promise<number>;
+	/**
 	 * O CADASTRO da régua (`remarketing_config`), lido UMA vez por ciclo.
 	 * É o que faz a tela de config valer sem deploy: a régua continua pura, quem
 	 * lê o banco é o ciclo e passa o objeto ao motor por `parametros`.
@@ -229,6 +237,8 @@ export interface ResultadoCiclo {
 	nada: Record<string, number>;
 	/** Toques ATIVOS segurados por o destino ser telefone da equipe. */
 	seguradosDaEquipe: number;
+	/** Toques ATIVOS de conversa simulada encerrados por serem teste. */
+	encerradosDeTeste: number;
 	/** O que o CAPI devolveu (ou o motivo de não ter tentado). */
 	conversoes?: unknown;
 }
@@ -795,6 +805,54 @@ export async function segurarToquesDaEquipe(agora: Date): Promise<number> {
 	return segurados;
 }
 
+/**
+ * Encerra os toques ATIVOS de conversa SIMULADA.
+ *
+ * O caso real (`d8bc426e`, medido pós-deploy): a conversa entrou na régua e só
+ * DEPOIS foi marcada como teste. A consulta de disparo (`listarVencidas`) filtra
+ * `c.is_simulated = false`, então a linha nunca mais era visitada e ficava
+ * `ATIVO` com `next_touch_at` vencido para sempre — a mesma classe de defeito do
+ * teto de 30 dias (B4), e igualmente mentirosa na tela.
+ *
+ * Mesmo desenho da higiene da equipe (`segurarToquesDaEquipe`) e do PATCH que
+ * marca `is_simulated` (`admin/limpeza-queries.ts`): `status = 'RESPONDEU'` +
+ * `motivo_saida = 'teste'`. A tela lê `RESPONDEU` + motivo de
+ * `MOTIVOS_DE_PARADA` como "segurado" com o rótulo "Conversa de teste", em vez
+ * de dizer que o cliente respondeu — a razão está documentada em
+ * `.orientacao/b10-decisao.md`. `next_touch_at` não é zerado: só linha `ATIVO`
+ * tem próximo toque, então tirar o `status` de `ATIVO` já resolve a mentira.
+ *
+ * Idempotente pelo `WHERE status = 'ATIVO'`: o segundo ciclo não mexe em mais
+ * nada.
+ */
+export async function encerrarToquesDeTeste(agora: Date): Promise<number> {
+	const linhas = linhasDeExecucao(
+		await db.execute(sql`
+			SELECT t.conversation_id AS "conversationId"
+			FROM remarketing_touches t
+			JOIN conversations c ON c.id = t.conversation_id
+			WHERE t.status = 'ATIVO'
+			  AND c.is_simulated = true
+		`),
+	);
+
+	let encerrados = 0;
+	for (const linha of linhas) {
+		const atualizadas = await db
+			.update(remarketingTouches)
+			.set({ status: "RESPONDEU", motivoSaida: MOTIVO_SAIDA_TESTE, updatedAt: agora })
+			.where(
+				and(
+					eq(remarketingTouches.conversationId, String(linha.conversationId)),
+					eq(remarketingTouches.status, "ATIVO"),
+				),
+			)
+			.returning({ id: remarketingTouches.id });
+		encerrados += atualizadas.length;
+	}
+	return encerrados;
+}
+
 // ─── Efeitos (default) ──────────────────────────────────────────────────────
 
 /**
@@ -1104,6 +1162,7 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 	const compensarToque = deps.compensarToque ?? compensarToqueDaConversa;
 	const telefoneDaEquipe = deps.telefoneDaEquipe ?? ehDaEquipe;
 	const segurarEquipe = deps.segurarToquesDaEquipe ?? segurarToquesDaEquipe;
+	const encerrarTeste = deps.encerrarToquesDeTeste ?? encerrarToquesDeTeste;
 	const lerParametros = deps.lerParametros ?? lerParametrosRegua;
 	const despachar = deps.despacharConversoes ?? despacharConversoesPendentes;
 
@@ -1111,6 +1170,7 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 	let disparados = 0;
 	let entradas = 0;
 	let seguradosDaEquipe = 0;
+	let encerradosDeTeste = 0;
 
 	// ── Chave operacional (default desligado) ─────────────────────────────────
 	// Desligada, o ciclo NÃO inscreve nem dispara — mas segue despachando o CAPI,
@@ -1134,6 +1194,7 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 			disparados: 0,
 			nada,
 			seguradosDaEquipe: 0,
+			encerradosDeTeste: 0,
 			conversoes: conversoesDesligada,
 		};
 	}
@@ -1172,6 +1233,33 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 				level: "error",
 				source: "remarketing-cycle",
 				etapa: "segurar-equipe",
+				error: err instanceof Error ? err.message : String(err),
+			}),
+		);
+	}
+
+	// ── Higiene: a conversa de TESTE sai da régua COM MOTIVO ──────────────────
+	// Fecha o caso em que a conversa virou teste DEPOIS de entrar: a consulta de
+	// disparo filtra `is_simulated = false`, então sem isto a linha ficaria ATIVA
+	// com `next_touch_at` vencido para sempre (mesma classe do teto de 30 dias).
+	// Idempotente pelo `WHERE status = 'ATIVO'`.
+	try {
+		encerradosDeTeste = await encerrarTeste(agora);
+		if (encerradosDeTeste > 0) {
+			console.log(
+				"[remarketing-cycle] testes encerrados",
+				JSON.stringify({
+					encerrados: encerradosDeTeste,
+					motivo: motivoDeSaidaLegivel(MOTIVO_SAIDA_TESTE),
+				}),
+			);
+		}
+	} catch (err) {
+		console.error(
+			JSON.stringify({
+				level: "error",
+				source: "remarketing-cycle",
+				etapa: "encerrar-teste",
 				error: err instanceof Error ? err.message : String(err),
 			}),
 		);
@@ -1390,7 +1478,7 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 		);
 	}
 
-	return { entradas, disparados, nada, seguradosDaEquipe, conversoes };
+	return { entradas, disparados, nada, seguradosDaEquipe, encerradosDeTeste, conversoes };
 }
 
 function directiveDaRetomada(meta: ConversationMetadata, linha: LinhaDaRegua, agora: Date): string {

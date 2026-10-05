@@ -339,6 +339,36 @@ describeIfDb("régua — entrada, higiene e motivo (integration)", () => {
 			expect(depois.map((l) => l.conversationId)).not.toContain(conversationId);
 		});
 
+		it("linha ATIVO de conversa de TESTE é ENCERRADA, não ignorada para sempre", async () => {
+			// O d8bc426e real: a conversa entrou na régua e só DEPOIS virou teste. Sem
+			// encerramento, a linha fica ATIVA com `next_touch_at` vencido para sempre,
+			// porque a consulta de disparo filtra `is_simulated = false`.
+			const { conversationId } = await semear({ jaNaRegua: true });
+			await db
+				.update(schema.conversations)
+				.set({ isSimulated: true })
+				.where(eq(schema.conversations.id, conversationId));
+
+			const encerrados = await ciclo.encerrarToquesDeTeste(AGORA);
+			// A higiene é GLOBAL (como a da equipe): pode encerrar linhas residuais do
+			// banco compartilhado. O que importa é que ESTA saiu.
+			expect(encerrados).toBeGreaterThanOrEqual(1);
+
+			const linha = await db.query.remarketingTouches.findFirst({
+				where: eq(schema.remarketingTouches.conversationId, conversationId),
+			});
+			expect(linha?.status).not.toBe("ATIVO");
+			expect(linha?.status).toBe("RESPONDEU");
+			expect(linha?.motivoSaida).toBe("teste");
+			expect(motivo.motivoDeSaidaLegivel(linha?.motivoSaida ?? null)).toBe("Conversa de teste");
+
+			const vencidas = await ciclo.listarVencidas(new Date(AGORA.getTime() + 2 * MIN));
+			expect(vencidas.map((l) => l.conversationId)).not.toContain(conversationId);
+
+			// IDEMPOTENTE: o segundo tick não mexe em mais nada.
+			expect(await ciclo.encerrarToquesDeTeste(new Date(AGORA.getTime() + MIN))).toBe(0);
+		});
+
 		it("telefone de atendente de mesa NÃO é listado — nem o inativo", async () => {
 			const [atendente] = await db
 				.insert(schema.mesaAttendants)
@@ -489,6 +519,23 @@ describeIfDb("régua — entrada, higiene e motivo (integration)", () => {
 
 			const vencidas = await ciclo.listarVencidas(new Date(AGORA.getTime() + MIN));
 			expect(vencidas.map((l) => l.conversationId)).not.toContain(conversationId);
+		});
+
+		it("a higiene do ciclo encerra a linha ATIVO de conversa de TESTE", async () => {
+			const { conversationId } = await semear({ jaNaRegua: true });
+			await db
+				.update(schema.conversations)
+				.set({ isSimulated: true })
+				.where(eq(schema.conversations.id, conversationId));
+
+			const resultado = await rodarCiclo(AGORA);
+			expect(resultado.encerradosDeTeste).toBeGreaterThanOrEqual(1);
+
+			const linha = await db.query.remarketingTouches.findFirst({
+				where: eq(schema.remarketingTouches.conversationId, conversationId),
+			});
+			expect(linha?.status).toBe("RESPONDEU");
+			expect(linha?.motivoSaida).toBe("teste");
 		});
 	});
 
