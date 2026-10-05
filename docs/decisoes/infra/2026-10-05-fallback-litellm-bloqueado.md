@@ -46,3 +46,37 @@ zero enquanto o crédito não existir.
 
 - o dono confirmar o crédito (aí a porta 1 abre); ou
 - o dono pedir explicitamente a configuração mesmo sem crédito.
+
+---
+
+# Atualização — 05/10/2026, tarde: destravou, e a medição muda a decisão
+
+As duas portas abriram (SSO renovado com o dono; acesso ao gateway). Medido, não suposto:
+
+1. **Gateway de pé:** `GET /health/readiness` → **200** `{"status":"healthy","db":"connected"}`.
+2. **Chamada real, com a chave que o Aja usa em produção** (`LITELLM_API_KEY` do secret
+   `tb/prod/aja-agora/env`): `POST /v1/chat/completions`, modelo `qwen3.8-flash` → **HTTP 200**,
+   `"content":"ok"`, `usage.total_tokens: 31`. Portanto **não há bloqueio de crédito** no caminho
+   do Aja Agora.
+3. **`GET /model/info` → 200**, com 7 modelos e **nenhum fallback declarado**: `claude-opus-4-8`,
+   `claude-sonnet-5` (duas entradas), `claude-sonnet-4-6`, `claude-haiku-4-5`, `qwen3.8-flash`,
+   `qwen3.6-flash`.
+4. **O Aja usa `qwen3.8-flash` → upstream `openai/qwen3.8-flash`**: não passa por crédito de nuvem.
+   O crédito que bloqueava o item **não toca o caminho do Aja**. E o secret do app traz
+   `LITELLM_SRV_NAME=litellm-srv.tb.local` — o app usa o nome **auto-registrado** (o que o ECS
+   mantém vivo), não o registro manual `litellm` que foi consertado de manhã.
+
+## A decisão continua a mesma — agora por medida, não por falta de acesso
+
+**Não mexer no gateway.** A razão mudou: não é "falta crédito", é que **não existe fallback
+nenhum para consertar** e o caminho em uso responde 200. Declarar fallback agora cria risco em
+infra compartilhada (`litellm-shared` serve todos os projetos) para proteger contra uma falha que
+não está medida. Quando um provedor de nuvem passar a ser usado pelo Aja, aí a conversa muda —
+e aí com janela.
+
+## O que esta medição NÃO prova
+
+- **Não prova que o crédito esteja pago.** O Aja não depende dele; quem usa os `claude-*` no
+  gateway (outros projetos) continua dependendo, e isso eu não medi.
+- **Não é diagnóstico do registro manual `litellm`**: o app usa `litellm-srv.tb.local`. Quem ainda
+  consome o nome `litellm` (o Langfuse, por exemplo) segue não medido.
