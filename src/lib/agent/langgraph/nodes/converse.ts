@@ -46,6 +46,7 @@ import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { PRESENTATION_TOOLS } from "@/lib/agent/tools/ai-sdk";
 import { vitrineDisponivel } from "@/lib/bevi/identidade-vitrine";
 import { dossieDaConversa } from "@/lib/bevi/pessoa";
+import { CARDS_QUE_REVELAM_OFERTA } from "@/lib/chat/desbloqueio-do-telefone";
 import { leituraDoDesbloqueio } from "@/lib/chat/telefone-ab-do-servidor";
 import type { ArtifactType } from "@/lib/chat/types";
 import { registrarFalaContraCatalogo } from "@/lib/observability/langfuse/busca-scores";
@@ -601,8 +602,13 @@ export function createConverseNode(model: BaseChatModel) {
 		// tela pedir outra. No gate `credit` da web, o que está na tela é a agulha do
 		// VALOR do bem com a parcela estimada ao vivo. O texto tem que pedir o valor;
 		// perguntar o modelo antes do valor morreu em 15 de 31 conversas (02–05/10).
-		const cardDoValorNaTela =
-			!pedirMotivo && gateAtivo === "credit" && state.channel === "web";
+		// O CARD DO VALOR só está na tela quando o gate `credit` é o card DESTE
+		// turno. `state.gate` é o card que de fato vai aparecer (`routeNode` só o
+		// preenche quando `decideShowGate` libera); `state.answeredGate` é o gate que
+		// o funil AGUARDA, mesmo suprimido. Olhar os dois (`??`) afirmava que a
+		// agulha do valor estava na tela em turno em que ela não estava — e o texto
+		// pedia o valor apontando para um card inexistente.
+		const cardDoValorNaTela = !pedirMotivo && state.gate === "credit" && state.channel === "web";
 		const gateContextText = pedirMotivo
 			? `Próximo passo do funil: descobrir por que ele quer isso AGORA — o que mudou, o ` +
 				`que está pesando. Faça VOCÊ essa pergunta, com as suas palavras, UMA pergunta só; ` +
@@ -691,7 +697,22 @@ export function createConverseNode(model: BaseChatModel) {
 		// Sem isto, o `gateContextText` mandava o modelo perguntar experiência/prazo
 		// enquanto o card pedia o telefone: duas perguntas no mesmo turno e a pessoa
 		// respondia nenhuma (medido 02–05/10). O card é a autoridade da janela.
-		const cardDoTelefoneNaTela = desbloqueioPendente && Boolean(oferta);
+		// O CARD DO TELEFONE só é EMITIDO no turno em que um artifact que revela
+		// oferta chega — a MESMA regra do `adapter` (`src/lib/web/adapter.ts`), que
+		// escreve o `telefone_do_desbloqueio` junto do primeiro card de oferta do
+		// turno. Nos turnos seguintes a oferta continua no estado, mas o card NÃO
+		// reaparece: afirmar "NESTE turno o card aparece" manda o modelo apontar para
+		// um card que não está na tela e trava o funil. Com o desbloqueio pendente as
+		// tools de reveal não são vinculadas, então a única fonte de card do turno é
+		// o `discovery` (eventos do estado) ou o `emitCard` (card pendente) — os dois
+		// são emitidos neste mesmo turno.
+		const cardDeOfertaEmitidoNesteTurno =
+			Boolean(state.funnel.pendingRecommendationCard) ||
+			state.events.some(
+				(ev) => ev.type === "artifact" && CARDS_QUE_REVELAM_OFERTA.has(ev.artifactType),
+			);
+		const cardDoTelefoneNaTela =
+			desbloqueioPendente && Boolean(oferta) && cardDeOfertaEmitidoNesteTurno;
 		const conducaoDoTurno = cardDoTelefoneNaTela
 			? `NESTE turno o card que pede o WhatsApp aparece na tela, junto com a sua fala: ` +
 				`informar o número ali é o que LIBERA a comparação. Conduza para esse card em UMA ` +
