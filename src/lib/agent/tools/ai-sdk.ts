@@ -1399,8 +1399,19 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 				// A recusa por âncora conta o FATO ao MODELO (nunca ao cliente): o nome
 				// proposto não está na fala e a fala foi a do cliente. Sem o porquê, o
 				// modelo inventava a causa ("o sistema não deixou registrar <fala>").
+				//
+				// Turno SERVER-AUTHORED não tem fala do cliente (`userText` chega null de
+				// propósito — ver `converse.ts` e `ConsorcioToolsContext.userText`): aí
+				// não existe fala para citar, e mandar "grave o nome que ele disse /
+				// pergunte o nome" faz o modelo repetir o pedido num turno em que o
+				// cliente não falou. O fato verdadeiro é que este turno é do sistema.
 				if (result.error === "nao_ancorado") {
-					return `[Nome NÃO gravado: "${name}" não foi dito pelo cliente nesta mensagem. A fala dele foi: "${userText ?? ""}". Grave o nome que ele disse; se a fala não trouxer um nome, pergunte o nome.]`;
+					const falaDoCliente =
+						typeof userText === "string" && userText.trim().length > 0 ? userText : null;
+					if (!falaDoCliente) {
+						return `[Nome NÃO gravado: "${name}" não foi dito pelo cliente. Este turno é do sistema (sem fala do cliente). Nome só se grava quando ele mesmo diz; não peça o nome de novo se ele já disse antes.]`;
+					}
+					return `[Nome NÃO gravado: "${name}" não foi dito pelo cliente nesta mensagem. A fala dele foi: "${falaDoCliente}". Grave o nome que ele disse; se a fala não trouxer um nome, pergunte o nome.]`;
 				}
 				return `[Nome inválido: ${result.error}. Peça o nome novamente de forma natural.]`;
 			}
