@@ -680,8 +680,12 @@ export async function POST(req: NextRequest) {
 
 									// Grava o desfecho do teste ANTES de qualquer coisa: é ele que libera a
 									// comparação e que o endpoint do dia 01/10 lê.
+									// `desbloqueadoEm` é estado de NEGÓCIO do turno (quando a pessoa
+									// desbloqueou o telefone), não um carimbo de log: usa o relógio
+									// simulado, como as outras gravações do route, para o time-travel
+									// do simulador não vazar para o dado.
 									await registrarDesfechoDoTeste(conversationId, {
-										desbloqueadoEm: new Date().toISOString(),
+										desbloqueadoEm: simulatorNow().toISOString(),
 									});
 									const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
 									// Falha ao gravar o contato não prende ninguém: o desfecho já está

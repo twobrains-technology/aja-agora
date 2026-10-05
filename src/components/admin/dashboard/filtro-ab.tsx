@@ -150,10 +150,13 @@ export function FiltroAB({
 	// Trocar UM experimento preserva o recorte dos outros: o estado é uma lista de
 	// pares, e cada seletor só mexe no par do seu experimento. `null` é o "sem
 	// valor" do base-ui — aqui vale o mesmo que "Todas" (nenhum par).
-	const trocar = (experimento: Experimento, escolha: string | null) => {
+	// O parâmetro é o BRAÇO escolhido, não uma `escolha` de contrato: o nome
+	// `braco` não colide com o campo `escolha`/`contractOffer` do funil que o
+	// guard `quem-assina-contrato` vigia (filtro de painel não amarra cota).
+	const trocar = (experimento: Experimento, braco: string | null) => {
 		const outros = recorte.filter((par) => par.experimento !== experimento.id);
-		if (escolha === null || escolha === TODAS) return gravar(outros);
-		gravar([...outros, { experimento: experimento.id, braco: escolha }]);
+		if (braco === null || braco === TODAS) return gravar(outros);
+		gravar([...outros, { experimento: experimento.id, braco }]);
 	};
 
 	const rotulo = rotuloDoRecorte(recorte, registro);
@@ -170,7 +173,7 @@ export function FiltroAB({
 
 						<Select
 							value={atual ?? TODAS}
-							onValueChange={(escolha) => trocar(experimento, escolha)}
+							onValueChange={(braco) => trocar(experimento, braco)}
 						>
 							<SelectTrigger size="sm" aria-label={`Recorte do ${experimento.rotulo}`}>
 								{/* O rótulo entra explícito: o `SelectValue` sozinho só o

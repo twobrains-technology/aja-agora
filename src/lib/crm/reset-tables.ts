@@ -48,6 +48,11 @@ export const TABELAS_LIMPAS: readonly string[] = [
 	"whatsapp_outbound_queue",
 	"whatsapp_once_keys",
 	"whatsapp_conversation_locks",
+	// Contador atômico do A/B (FIX-434): estado de execução do operador — diz
+	// qual braço a PRÓXIMA conversa recebe. Não é medição de cliente nem
+	// configuração do vendedor; zerar reinicia a alternância em A, que é
+	// exatamente o que o marco zero quer para o teste começar limpo.
+	"experimento_fila",
 	// Origem de mídia: visita de teste contaminaria o relatório da campanha nova
 	"visits",
 	// O FATO da mídia: gasto e entrega de cada dia, por entidade. Fica aqui pelo
@@ -86,6 +91,12 @@ export const TABELAS_PRESERVADAS: readonly string[] = [
 	// antiga. Zerar isto não é marco zero: é desligar a régua, e o dono acharia
 	// que o ajuste dele sumiu sem ninguém ter pedido.
 	"remarketing_config",
+	// CADASTRO da operação: a cotação USD/BRL e o preço da mensagem de template,
+	// chave-valor de texto. Mesmo desenho do `remarketing_config` — não é fato
+	// medido, é o número que o operador cadastra (a Meta e o dólar mudam, o
+	// cadastro fica). Apagar deixaria o CPC sem cotação (`sem_cotacao`), não um
+	// marco zero limpo.
+	"custos_config",
 	// Time da mesa
 	"mesa_attendants",
 	// A DIMENSÃO da mídia: o id, o nome e a situação de cada campanha, conjunto e
