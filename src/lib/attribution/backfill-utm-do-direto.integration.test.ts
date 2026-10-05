@@ -16,6 +16,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { inArray, sql as drizzleSql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { parseCampaignParams } from "./params";
 
 const HAS_DB = Boolean(process.env.DATABASE_URL) && !process.env.DATABASE_URL?.includes("sentinel");
 const describeIfDb = HAS_DB ? describe : describe.skip;
@@ -128,6 +129,52 @@ describeIfDb("B3 — backfill da UTM do /direto (integration)", () => {
 		await aplicar();
 
 		expect(await ler(id)).toMatchObject({ utmCampaign: null, utmSource: null, fbclid: null });
+	});
+
+	it("decodifica %XX e `+` como o parseCampaignParams — nunca grava a UTM codificada", async () => {
+		// Se o backfill transcrevesse a UTM ainda codificada, `CR-002 CARRO` (o que o
+		// caminho vivo grava) e `CR%2D002+CARRO` (o que o backfill gravaria) virariam
+		// DUAS campanhas na dashboard — o mesmo defeito que a migration existe para
+		// fechar, só que por outra porta.
+		const referrer =
+			"https://ajaagora.com.br/direto?utm_source=meta&utm_campaign=CR%2D002+CARRO" +
+			"&utm_content=a%20b&utm_term=120210000000000002&fbclid=IwAR%2Bdireto";
+		const id = await semear({ landingPath: "/", referrer });
+
+		await aplicar();
+
+		const esperado = parseCampaignParams(new URLSearchParams(new URL(referrer).search));
+		const linha = await ler(id);
+		expect(linha).toMatchObject({
+			utmSource: esperado.utmSource,
+			utmCampaign: esperado.utmCampaign,
+			utmContent: esperado.utmContent,
+			utmTerm: esperado.utmTerm,
+			fbclid: esperado.fbclid,
+			campaignId: null,
+			adsetId: "120210000000000002",
+		});
+		// E o valor cru, decodificado — não o codificado.
+		expect(linha?.utmCampaign).toBe("CR-002 CARRO");
+		expect(linha?.utmContent).toBe("a b");
+		expect(linha?.fbclid).toBe("IwAR+direto");
+	});
+
+	it("faz trim e corta em 255 como o caminho vivo", async () => {
+		const longo = "x".repeat(300);
+		const referrer =
+			"https://ajaagora.com.br/direto?utm_campaign=%20%20CR%2D9%20%20" +
+			`&utm_content=${longo}`;
+		const id = await semear({ landingPath: "/", referrer });
+
+		await aplicar();
+
+		const esperado = parseCampaignParams(new URLSearchParams(new URL(referrer).search));
+		const linha = await ler(id);
+		expect(linha?.utmCampaign).toBe("CR-9");
+		expect(linha?.utmCampaign).toBe(esperado.utmCampaign);
+		expect(linha?.utmContent?.length).toBe(255);
+		expect(linha?.utmContent).toBe(esperado.utmContent);
 	});
 
 	it("ignora referrer de /direto sem utm_campaign", async () => {
