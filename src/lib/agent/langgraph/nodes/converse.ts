@@ -597,11 +597,24 @@ export function createConverseNode(model: BaseChatModel) {
 		// Beat do MOTIVO — turno próprio, logo depois do bem. Sem isto o gate
 		// `desire` pedia bem + motivo no mesmo balão e o cliente respondia só um.
 		const pedirMotivo = state.isUserTurn && shouldAskMotive(projectToMeta(state));
+		// O que o CARD deste turno pede — o fato que evita a fala pedir uma coisa e a
+		// tela pedir outra. No gate `credit` da web, o que está na tela é a agulha do
+		// VALOR do bem com a parcela estimada ao vivo. O texto tem que pedir o valor;
+		// perguntar o modelo antes do valor morreu em 15 de 31 conversas (02–05/10).
+		const cardDoValorNaTela =
+			!pedirMotivo && gateAtivo === "credit" && state.channel === "web";
 		const gateContextText = pedirMotivo
 			? `Próximo passo do funil: descobrir por que ele quer isso AGORA — o que mudou, o ` +
 				`que está pesando. Faça VOCÊ essa pergunta, com as suas palavras, UMA pergunta só; ` +
 				`o sistema mostra os atalhos de resposta logo depois e NÃO vai repetir a pergunta.`
-			: buildGateContextText(gateAtivo, Boolean(state.gate));
+			: cardDoValorNaTela
+				? `O CARD DESTE TURNO pede o VALOR do bem: a tela mostra a agulha do valor com a ` +
+					`parcela estimada se movendo junto. Faça VOCÊ a pergunta do valor, com as suas ` +
+					`palavras e de forma calorosa — o sistema mostra o campo logo depois e NÃO vai ` +
+					`repetir. É PROIBIDO perguntar o modelo/versão do bem antes do valor: se ele já ` +
+					`contou o modelo, reaja a isso numa frase e siga direto para o valor. Faça UMA ` +
+					`pergunta só, sobre ISSO.`
+				: buildGateContextText(gateAtivo, Boolean(state.gate));
 
 		const brl = (n: number) => `R$ ${n.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}`;
 
@@ -672,6 +685,21 @@ export function createConverseNode(model: BaseChatModel) {
 					`naturalidade que falta um passo: informar o WhatsApp no card, e as opções ` +
 					`liberam. Quem pede o telefone é o card, não você por texto.`
 				: null;
+
+		// O CARD DESTE TURNO, quando a busca já rodou e o telefone ainda não chegou:
+		// quem pede o próximo passo é o CARD do WhatsApp — não a pergunta do funil.
+		// Sem isto, o `gateContextText` mandava o modelo perguntar experiência/prazo
+		// enquanto o card pedia o telefone: duas perguntas no mesmo turno e a pessoa
+		// respondia nenhuma (medido 02–05/10). O card é a autoridade da janela.
+		const cardDoTelefoneNaTela = desbloqueioPendente && Boolean(oferta);
+		const conducaoDoTurno = cardDoTelefoneNaTela
+			? `NESTE turno o card que pede o WhatsApp aparece na tela, junto com a sua fala: ` +
+				`informar o número ali é o que LIBERA a comparação. Conduza para esse card em UMA ` +
+				`frase natural (as opções já estão prontas e falta só o telefone pra elas aparecerem) ` +
+				`e NÃO faça nenhuma outra pergunta neste turno — nem experiência prévia, nem prazo, ` +
+				`nem lance, nem qualquer etapa do funil. Quem pede o telefone é o card, nunca você ` +
+				`por texto.`
+			: gateContextText;
 
 		// ── O QUE ELE JÁ VIU NA TELA ──
 		// O contexto só carregava a oferta RECOMENDADA, então o modelo não sabia
@@ -1165,7 +1193,7 @@ export function createConverseNode(model: BaseChatModel) {
 						`Termine SEM pergunta: nenhuma frase sua pode terminar em "?" aqui, e não anuncie ` +
 						`que vai perguntar algo em seguida. Os CARDS com as opções aparecem logo abaixo da ` +
 						`sua mensagem, e são eles o próximo passo — deixe o cliente olhar. Seja breve.`
-				: gateContextText,
+				: conducaoDoTurno,
 		);
 		let loopMessages: BaseMessage[] = [
 			systemBeat1,
