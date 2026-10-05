@@ -30,7 +30,19 @@ falhava sempre (num round-robin, ele derrubava uma tentativa em cada).
 `deregister-instance litellm-28` e `litellm-98`; `register-instance`
 `litellm-host` com `AWS_INSTANCE_IPV4=10.30.1.143,AWS_INSTANCE_PORT=4000`.
 
-## Observação
-Consumidores com cache de DNS (Langfuse entre eles) podem levar alguns minutos
-para re-resolver. Se os juízes não voltarem, o próximo passo é reiniciar o
-serviço do Langfuse — aí o registro já está correto.
+## Prova de que o endereço funciona (não só que o registro mudou)
+
+Túnel SSM até `10.30.1.28:4000` (o IP agora publicado) e requisição direta:
+
+```
+GET /health/readiness -> HTTP 200
+{"status":"healthy","db":"connected"}
+```
+
+E o consumidor está de pé: serviço `langfuse-shared` no `tb-cluster`, **1 de 1**
+task rodando (`tb-langfuse-shared:10`).
+
+Ou seja: o registro está correto **e** o alvo responde. O que resta é o cache de
+DNS do consumidor expirar (o resolver do Cloud Map tem TTL curto; não exige
+restart). Se em ~15 minutos os juízes ainda não rodarem, um restart do
+`langfuse-shared` resolve — mas aí já não é registro, é cache.
