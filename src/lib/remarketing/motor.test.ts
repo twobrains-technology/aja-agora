@@ -254,9 +254,10 @@ describe("quem respondeu não recebe — qualquer resposta encerra a sequência"
 		expect(decisao.proximoEstado?.nextTouchAt).toBeNull();
 	});
 
-	it("bloqueio TRANSITÓRIO em linha ATIVO não grava nada (volta no próximo ciclo)", () => {
-		// O teto de 30 dias é o caso real: a linha espera a cota reabrir. Gravar aqui
-		// reescreveria `next_touch_at` e quebraria a derivação do último toque.
+	it("teto de 30 dias em linha ATIVO REAGENDA para quando a cota reabre", () => {
+		// P4: com o teto cheio em linha `ATIVO`, a linha não pode ficar com o
+		// `next_touch_at` no passado (o painel mostrava toque vencido sem explicar).
+		// O estado é reagendado para a queda do toque mais antigo — nunca no passado.
 		const recentes = [
 			new Date(TOQUE_1.getTime() - 3 * DIA),
 			new Date(TOQUE_1.getTime() - 2 * DIA),
@@ -274,7 +275,10 @@ describe("quem respondeu não recebe — qualquer resposta encerra a sequência"
 		const decisao = decidir({ agora: TOQUE_1, estado, telefone: "5562999998888", fase: "inicio" });
 
 		expect(decisao.acao).toEqual({ tipo: "nada", motivo: "teto_30_dias" });
-		expect(decisao.proximoEstado).toBeNull();
+		expect(decisao.proximoEstado?.status).toBe("ATIVO");
+		expect(decisao.proximoEstado?.nextTouchAt?.toISOString()).toBe(
+			new Date(recentes[0].getTime() + JANELA_DO_TETO_MS).toISOString(),
+		);
 	});
 
 	it("inbound ANTES do último toque não encerra nada", () => {
@@ -383,18 +387,21 @@ describe("telefone da equipe nunca recebe toque", () => {
 });
 
 describe("o teto de 30 dias (global, por pessoa) bloqueia o disparo", () => {
-	it("3 toques na janela → teto_30_dias, e nada é gravado", () => {
+	it("3 toques na janela → teto_30_dias e reagendamento para a queda do mais antigo", () => {
+		const maisAntigo = new Date(TOQUE_1.getTime() - 8 * DIA);
 		const estado = ativo({
 			ultimoInboundEm: new Date(TOQUE_1.getTime() - DIA),
 			toquesNaJanela: [
-				new Date(TOQUE_1.getTime() - 8 * DIA),
+				maisAntigo,
 				new Date(TOQUE_1.getTime() - 5 * DIA),
 				new Date(TOQUE_1.getTime() - 2 * DIA),
 			],
 		});
 		const decisao = decidir({ agora: TOQUE_1, estado, telefone: "5562999998888", fase: "inicio" });
 		expect(decisao.acao).toEqual({ tipo: "nada", motivo: "teto_30_dias" });
-		expect(decisao.proximoEstado).toBeNull();
+		expect(decisao.proximoEstado?.nextTouchAt?.toISOString()).toBe(
+			new Date(maisAntigo.getTime() + JANELA_DO_TETO_MS).toISOString(),
+		);
 		expect(decisao.touches30d).toBe(3);
 	});
 

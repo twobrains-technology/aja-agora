@@ -282,7 +282,7 @@ describe("os bloqueios do motor chegam ao ciclo", () => {
 		expect(d.enviarArte).not.toHaveBeenCalled();
 	});
 
-	it("teto de 30 dias montado pelo ciclo bloqueia o toque", async () => {
+	it("teto de 30 dias montado pelo ciclo REAGENDA em vez de vencer", async () => {
 		const recentes = [
 			new Date(AGORA.getTime() - 3 * DIA),
 			new Date(AGORA.getTime() - 2 * DIA),
@@ -296,7 +296,16 @@ describe("os bloqueios do motor chegam ao ciclo", () => {
 
 		expect(r.disparados).toBe(0);
 		expect(r.nada.teto_30_dias).toBe(1);
-		expect(d.gravarEstado).not.toHaveBeenCalled();
+		// P4: o ciclo GRAVA o reagendamento (o motor antes devolvia `null` e a linha
+		// ficava com `next_touch_at` vencido para sempre).
+		expect(d.gravarEstado).toHaveBeenCalledTimes(1);
+		const gravado = (d.gravarEstado as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
+			estado: { status: string; nextTouchAt: Date | null };
+		};
+		expect(gravado.estado.status).toBe("ATIVO");
+		expect(gravado.estado.nextTouchAt?.toISOString()).toBe(
+			new Date(recentes[0].getTime() + 30 * DIA).toISOString(),
+		);
 	});
 
 	it("quem respondeu não recebe: grava o terminal para sair do índice", async () => {
