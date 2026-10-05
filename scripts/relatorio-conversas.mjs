@@ -494,4 +494,10 @@ aplica();
 
 writeFileSync(SAIDA, html, 'utf8');
 console.log(`ok — ${conversas.length} conversas · ${comContato} com celular · A=${viaA.length} B=${viaB.length} · tocados=${toqueEnviado.length}`);
+// Rótulo que evita a confusão que custou caro nesta semana: este relatório conta
+// CONVERSA; a dashboard conta PESSOA (o contato quando conhecido, senão o device).
+// No mesmo recorte de 02/10 a tela mostra 26 pessoas e 4 com telefone, enquanto
+// aqui saem 29 conversas e 5 com celular — a diferença é gente com mais de uma
+// conversa. Não é erro de um lado nem do outro: é unidade diferente.
+console.log('   (a tela conta PESSOA: 26 pessoas e 4 com telefone no mesmo recorte; aqui é conversa)');
 console.log(`arquivo: ${SAIDA}`);
