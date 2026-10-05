@@ -32,12 +32,6 @@ vi.mock("@/lib/chat/provider", () => ({
 const PAYLOAD_C: TelefoneDoDesbloqueioPayload = {
 	variante: "B",
 	estado: "borrado",
-	melhorOpcao: {
-		administradora: "RODOBENS",
-		creditValue: 89_000,
-		monthlyPayment: 1_234,
-		termMonths: 96,
-	},
 };
 
 describe("TelefoneDoDesbloqueio — variante C (FIX-396)", () => {

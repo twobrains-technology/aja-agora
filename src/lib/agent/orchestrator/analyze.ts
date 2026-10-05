@@ -1,7 +1,7 @@
-import { parseAssetValue } from "@/lib/agent/parse-asset-value";
+import { MONTHLY_MARKER, parseAssetValue, parseParcelaMensal } from "@/lib/agent/parse-asset-value";
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
 import { aplicarFaixaDeCredito } from "@/lib/agent/qualify-answers";
-import { clampCreditToCategory, objetivoForPrazo } from "@/lib/agent/qualify-config";
+import { CREDIT_BOUNDS, clampCreditToCategory, objetivoForPrazo } from "@/lib/agent/qualify-config";
 import { type Gate, nextGate, registerGateStuckTurn } from "@/lib/agent/qualify-state";
 import { analyzeTurn, type TurnAnalysis } from "@/lib/agent/turn-analyzer";
 import { valorAncoradoNoTexto } from "@/lib/agent/valor-declarado";
@@ -119,6 +119,11 @@ export async function analyzeAndMerge(
 		activeGate: activeGateAtTurnStart,
 		lastAssistantText,
 	});
+	// D6 (FIX-435) — o analyzer fora do ar se identifica (`NEUTRAL_FALLBACK`
+	// carrega `indisponivel: true`). Só nesse modo entram os dois amortecedores
+	// abaixo: com o modelo de pé, quem interpreta o texto livre é ele, e nada
+	// muda.
+	const analyzerIndisponivel = analysis.indisponivel === true;
 	// FIX-296: snapshot de `desireAnswered` ANTES de qualquer mutação deste
 	// turno (a marcação de `desireAnswered`, logo abaixo, pode acontecer NESTE
 	// MESMO turno — o guard de creditMax mais adiante precisa saber se o
@@ -222,13 +227,32 @@ export async function analyzeAndMerge(
 		Boolean(meta.currentCategory) &&
 		Boolean(meta.desireAnswered) &&
 		!meta.pendingFollowUp;
-	const parsedCreditMax =
+	const parsedCreditMaxBruto =
 		analysis.creditMax === null && q.creditMax === undefined
 			? parseAssetValue(
 					text,
 					creditGatePending ? { gate: "credit", category: meta.currentCategory } : undefined,
 				)
 			: null;
+	// D6 (b) — VALOR ABAIXO DO PISO DA CATEGORIA NÃO É VALOR DO BEM.
+	//
+	// Produção 01/10 11:47:38 (`0e5d777a`), no minuto exato do "ele não deveria
+	// terminar o valor do bem": o analyzer tinha caído no fallback e o
+	// "Entre R$ 800 e R$ 1.200" — resposta à pergunta da PARCELA — foi lido como
+	// valor do bem, porque `parseAssetValue` pega o primeiro `R$` da frase. A
+	// busca inteira saiu na faixa de R$ 800.
+	//
+	// O piso é o da CATEGORIA (`CREDIT_BOUNDS`): não é opinião sobre o que é
+	// caro, é o limite abaixo do qual a Bevi não tem carta. Sem categoria não há
+	// faixa de referência e o valor cru segue como antes.
+	const pisoDaCategoria = meta.currentCategory ? CREDIT_BOUNDS[meta.currentCategory].min : null;
+	const parsedCreditMax =
+		analyzerIndisponivel &&
+		parsedCreditMaxBruto !== null &&
+		pisoDaCategoria !== null &&
+		parsedCreditMaxBruto < pisoDaCategoria
+			? null
+			: parsedCreditMaxBruto;
 	const sourceCreditMax = analysis.creditMax ?? parsedCreditMax;
 	// FIX-279 (loop r9, baseline Sonnet 3/10, G3): mesmo guard do FIX-236 (linha
 	// 140, hasLance) aplicado a creditMax — captura oportunista irrestrita
@@ -434,8 +458,19 @@ export async function analyzeAndMerge(
 	// era forçado a virar crédito de R$ 200 mil. O Haiku entendia certo — escreveu
 	// no próprio reasoning que era parcela — e gravava no campo errado porque era
 	// o único que existia. Quem declara parcela passa a ser buscado por parcela.
-	if (analysis.parcelaMensal !== null && analysis.parcelaMensal > 0) {
-		q.parcelaAlvo = analysis.parcelaMensal;
+	//
+	// D6 (a) — ANALYZER FORA DO AR: QUEM DECIDE É O MARCADOR MENSAL.
+	//
+	// Sem o LLM, "Consigo pagar R$ 680/mês" (sessão `8b64899b`) não era parcela
+	// nenhuma e o agente perguntava de novo. O parser determinístico lê o número
+	// colado ao marcador — e, por construção, ele NUNCA vira `creditMax`:
+	// `parseAssetValue` já devolve null com marcador mensal, e o número daqui só
+	// entra neste bloco de parcela.
+	const parcelaMensalEfetiva =
+		analysis.parcelaMensal ??
+		(analyzerIndisponivel && MONTHLY_MARKER.test(text ?? "") ? parseParcelaMensal(text) : null);
+	if (parcelaMensalEfetiva !== null && parcelaMensalEfetiva > 0) {
+		q.parcelaAlvo = parcelaMensalEfetiva;
 		q.alvoDeBusca = "parcela";
 		meta.qualifyAnswers = q;
 		metaChanged = true;

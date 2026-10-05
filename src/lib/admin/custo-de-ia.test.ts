@@ -11,9 +11,18 @@
 //
 // Nenhum teste daqui fala com o Langfuse: os dois lados entram por fixture.
 
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConversaDoPostgres, LinhaDeCustoDoLangfuse } from "./custo-de-ia";
-import { computeCustoDeIA, linhasDoMetricasDoLangfuse, somarCustoDeIA } from "./custo-de-ia";
+import {
+	buscarMetricasDoLangfuse,
+	computeCustoDeIA,
+	consultaDeMetricasDoLangfuse,
+	diasDaJanela,
+	linhasDoMetricasDoLangfuse,
+	mapComConcorrencia,
+	somarCustoDeIA,
+} from "./custo-de-ia";
+import { fimDoDia, inicioDoDia } from "./periodo";
 
 const conversa = (
 	conversationId: string,
@@ -204,5 +213,168 @@ describe("computeCustoDeIA — a costura, provada com fontes injetadas", () => {
 			},
 		);
 		expect(resultado).toMatchObject({ tipo: "motivo", motivo: "fonte_indisponivel" });
+	});
+});
+
+describe("consultaDeMetricasDoLangfuse — a rota é a v2 (v4), nunca a v1 que responde 404", () => {
+	const de = new Date("2026-09-15T00:00:00.000Z");
+	const ate = new Date("2026-09-16T00:00:00.000Z");
+
+	it("aponta para /api/public/v2/metrics e não para /api/public/metrics", () => {
+		const consulta = consultaDeMetricasDoLangfuse("https://langfuse.exemplo.com/", de, ate);
+		expect(consulta.url).toContain("/api/public/v2/metrics?");
+		expect(consulta.url).not.toContain("/api/public/metrics?");
+	});
+
+	it("pede sessão/modelo com config.row_limit e orderBy — exigência da v2 para dimensão de alta cardinalidade", () => {
+		const consulta = consultaDeMetricasDoLangfuse("https://langfuse.exemplo.com", de, ate);
+		const query = JSON.parse(consulta.query);
+		expect(query.view).toBe("observations");
+		expect(query.dimensions).toEqual([{ field: "sessionId" }, { field: "providedModelName" }]);
+		expect(query.metrics).toEqual([{ measure: "totalCost", aggregation: "sum" }]);
+		expect(query.config.row_limit).toBeGreaterThan(0);
+		expect(query.orderBy).toEqual([{ field: "sum_totalCost", direction: "desc" }]);
+		expect(query.fromTimestamp).toBe(de.toISOString());
+		expect(query.toTimestamp).toBe(ate.toISOString());
+	});
+
+	it("não manda timeDimension junto de sessionId — a v2 recusa a combinação", () => {
+		const consulta = consultaDeMetricasDoLangfuse("https://langfuse.exemplo.com", de, ate);
+		expect(JSON.parse(consulta.query).timeDimension).toBeUndefined();
+	});
+
+	it("normaliza a barra final da base sem duplicar o separador", () => {
+		const consulta = consultaDeMetricasDoLangfuse("https://langfuse.exemplo.com/", de, ate);
+		expect(consulta.url.startsWith("https://langfuse.exemplo.com/api/public/v2/metrics?")).toBe(
+			true,
+		);
+	});
+});
+
+describe("linhasDoMetricasDoLangfuse — v2 sem time_dimension usa o dia do recorte", () => {
+	it("atribui o dia pedido quando a resposta não traz time_dimension", () => {
+		expect(
+			linhasDoMetricasDoLangfuse(
+				{ data: [{ sessionId: "conv-1", providedModelName: "gpt-x", sum_totalCost: 2 }] },
+				"2026-09-15",
+			),
+		).toEqual([{ sessionId: "conv-1", modelo: "gpt-x", dia: "2026-09-15", custoUsdCents: 200 }]);
+	});
+
+	it("sem dia no payload e sem recorte, a linha não vira fato (custo órfão de dia fica de fora)", () => {
+		expect(
+			linhasDoMetricasDoLangfuse({
+				data: [{ sessionId: "conv-1", providedModelName: "gpt-x", sum_totalCost: 2 }],
+			}),
+		).toEqual([]);
+	});
+});
+
+describe("diasDaJanela — a janela de cada dia é o RECORTE, não o dia inteiro", () => {
+	it("corta o primeiro e o último dia no instante pedido", () => {
+		const de = new Date("2026-09-15T15:00:00.000Z");
+		const ate = new Date("2026-09-16T06:00:00.000Z");
+
+		const dias = diasDaJanela(de, ate);
+
+		expect(dias.map((d) => d.dia)).toEqual(["2026-09-15", "2026-09-16"]);
+		expect(dias[0]?.de.toISOString()).toBe(de.toISOString());
+		expect(dias[0]?.ate.toISOString()).toBe(fimDoDia(de).toISOString());
+		expect(dias[1]?.de.toISOString()).toBe(inicioDoDia(ate).toISOString());
+		expect(dias[1]?.ate.toISOString()).toBe(ate.toISOString());
+	});
+
+	it("dia único não é esticado para as bordas do dia", () => {
+		const de = new Date("2026-09-15T09:00:00.000Z");
+		const ate = new Date("2026-09-15T11:00:00.000Z");
+
+		const dias = diasDaJanela(de, ate);
+
+		expect(dias).toHaveLength(1);
+		expect(dias[0]?.de.toISOString()).toBe(de.toISOString());
+		expect(dias[0]?.ate.toISOString()).toBe(ate.toISOString());
+	});
+});
+
+describe("mapComConcorrencia — teto de consultas, não N simultâneas", () => {
+	it("nunca deixa mais que o limite em voo", async () => {
+		let ativo = 0;
+		let pico = 0;
+
+		await mapComConcorrencia([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 4, async (n) => {
+			ativo += 1;
+			pico = Math.max(pico, ativo);
+			await new Promise((r) => setTimeout(r, 5));
+			ativo -= 1;
+			return n;
+		});
+
+		expect(pico).toBeLessThanOrEqual(4);
+		expect(pico).toBeGreaterThan(1);
+	});
+
+	it("preserva a ordem do resultado e devolve vazio sem itens", async () => {
+		await expect(mapComConcorrencia([1, 2, 3], 2, async (n) => n * 10)).resolves.toEqual([
+			10, 20, 30,
+		]);
+		await expect(mapComConcorrencia([], 4, async (n) => n)).resolves.toEqual([]);
+	});
+});
+
+describe("buscarMetricasDoLangfuse — dia com erro é 'sem dado' DAQUELE dia, não apaga a tela", () => {
+	const env = {
+		LANGFUSE_BASE_URL: "https://langfuse.exemplo.com",
+		LANGFUSE_PUBLIC_KEY: "pk",
+		LANGFUSE_SECRET_KEY: "sk",
+	};
+
+	beforeEach(() => {
+		Object.assign(process.env, env);
+	});
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		for (const chave of Object.keys(env)) delete process.env[chave];
+	});
+
+	const diaPedido = (url: string): string => {
+		const query = new URL(url).searchParams.get("query") ?? "{}";
+		return String(JSON.parse(query).fromTimestamp).slice(0, 10);
+	};
+
+	it("mantém os dias que responderam e descarta só o que deu 500", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string) => {
+				if (diaPedido(url) === "2026-09-16") return new Response("", { status: 500 });
+				return new Response(
+					JSON.stringify({
+						data: [{ sessionId: "conv-1", providedModelName: "gpt-x", sum_totalCost: 1 }],
+					}),
+					{ status: 200 },
+				);
+			}),
+		);
+
+		const linhas = await buscarMetricasDoLangfuse(
+			new Date("2026-09-15T12:00:00.000Z"),
+			new Date("2026-09-17T12:00:00.000Z"),
+		);
+
+		expect(linhas.map((l) => l.dia).sort()).toEqual(["2026-09-15", "2026-09-17"]);
+	});
+
+	it("se TODOS os dias falharem, ainda é ERRO (fonte_indisponivel), não 'sem dado'", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => new Response("", { status: 503 })),
+		);
+
+		await expect(
+			buscarMetricasDoLangfuse(
+				new Date("2026-09-15T12:00:00.000Z"),
+				new Date("2026-09-16T12:00:00.000Z"),
+			),
+		).rejects.toThrow();
 	});
 });

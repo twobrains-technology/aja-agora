@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dossiê — condução, card do telefone, atribuição e leitura da conversa (05/10/2026)</title>
+<link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+<main>
+
+<h1>Condução e conversão — dossiê de entrega</h1>
+<p class="sub">Aja Agora · 05/10/2026 · PR <a href="https://github.com/twobrains-technology/aja-agora/pull/156">#156</a> (merge <code>e8f3b8c1</code> em <code>main</code>) · em produção desde 15:05 · plano <code>docs/design/planos/2026-10-05-conducao-e-conversao.md</code></p>
+
+<div class="card">
+<p><strong>O que mudou desde o último relato:</strong></p>
+<ol>
+<li>O <strong>P5 não era verba desperdiçada</strong>: era atribuição perdida. Depois do deploy, as campanhas de "zero chegada" aparecem com gente: CR-002 (carro) com 44 visitas e 6 conversas, CR-001 com 28 visitas e 4 conversas.</li>
+<li>O <strong>P3 foi refutado</strong>: a "Lucia" recusou três vezes e o agente respeitou. Nada foi mudado ali.</li>
+<li>O <strong>custo de IA cobrável é US$ 75,89 (R$ 378,37)</strong> de 24/06 a 05/10, pelo gateway. O Langfuse dizia US$ 16, porque não tem o preço do qwen cadastrado.</li>
+<li>A revisão de código achou <strong>10 defeitos nos blocos do enxame</strong> antes do merge. O mais grave: o alerta de crédito do LLM nunca dispararia no WhatsApp. Todos foram corrigidos com teste.</li>
+</ol>
+</div>
+
+<h2>1 · Visão macro — o que passou a existir</h2>
+<p>Quem chegava pelo anúncio caía num agente que <strong>perguntava antes de entregar</strong>. O texto pedia uma coisa e o card na tela pedia outra: "Já tem um modelo em mente?" ao lado do card de valor; "Você já fez consórcio antes?" ao lado do card do WhatsApp. Ao mesmo tempo, a visita que vinha pelo <code>/direto</code> (o destino dos anúncios) perdia a campanha, e o painel lia como "verba sem chegada".</p>
+<div class="fluxo">
+<span class="no">Anúncio Meta</span>
+<span class="no novo">/direto grava a visita com a campanha</span>
+<span class="no novo">1º turno pede o valor, com a parcela na tela</span>
+<span class="no">busca nas administradoras</span>
+<span class="no novo">reveal: o texto aponta para o card do WhatsApp</span>
+<span class="no">comparação liberada</span>
+<span class="no novo">admin lê a conversa como o cliente viu</span>
+</div>
+<p>Em paralelo: a falha de crédito do LLM vira alerta (e-mail + Cortex) em vez de silêncio; a régua não deixa linha "vencida" que nunca vai sair; o painel de custo volta a ler o Langfuse; e saiu o relatório de custo para a Bruna cobrar.</p>
+
+<h2>2 · Decisões — por que assim</h2>
+<table>
+<tr><th>Ponto</th><th>Escolhido</th><th>Descartado, e por quê</th><th>O que a escolha NÃO dá</th></tr>
+<tr><td>P1/P2 condução</td><td>Dar ao modelo o <strong>fato</strong> do card daquele turno e tirar do prompt o "modelo antes do valor"</td><td>Trocar para o Haiku: o defeito medido é de prompt (texto × tela), e trocar o modelo agora mediria a variável errada (decisão de 05/10 mantida)</td><td>Não prova que o qwen conduz bem no resto da jornada; isso se mede na janela seguinte</td></tr>
+<tr><td>Nome trocado (Bruna → "Ana")</td><td>Tirar os nomes de exemplo copiáveis e fazer a recusa contar ao modelo a fala real</td><td>Guard ou regex sobre a frase "o sistema não deixou": fala ruim não vira regex, e esconderia a causa</td><td>Se o modelo inventar outro nome sem exemplo nenhum, a âncora recusa, mas a fala pode sair estranha naquele turno</td></tr>
+<tr><td>Atribuição</td><td><code>/direto</code> em <code>LANDINGS</code> + backfill que transcreve a UTM do <code>referrer</code></td><td>Deixar o histórico errado: a dashboard é a régua, e o sinal estava gravado no próprio <code>referrer</code> (não é atribuição inventada)</td><td>Números já reportados (paper de 05/10) mudam</td></tr>
+<tr><td>Régua (teto)</td><td>Reagendar <code>next_touch_at</code> (a tela já deriva "Cota de 30 dias cheia")</td><td>Encerrar com motivo novo: a tela não tem rótulo para ele, e a linha sumiria de "ativo" como se a sequência tivesse morrido</td><td>—</td></tr>
+<tr><td>Fonte do custo</td><td><code>LiteLLM_DailyUserSpend</code> (gateway), com Langfuse como conferência</td><td>Langfuse como fonte: sem preço do qwen ele registra zero (278 observações a US$ 0,0000)</td><td>Não separa conversa real de teste da casa; a key é de produção</td></tr>
+</table>
+
+<h2>3 · Onde o código mudou</h2>
+<p class="nums">59 arquivos · 21 novos · 35 alterados · 3 removidos · +9.654 / −699 linhas (5.165 delas são o snapshot do drizzle). Base para a conta: <code>d5441402</code> (merge de <code>main</code>) → <code>e8f3b8c1</code>.</p>
+<table>
+<tr><th>Bloco</th><th>Arquivos existentes tocados (onde mora o risco)</th><th>O que mudou</th></tr>
+<tr><td>B1 condução</td><td><code>system-prompt.ts</code>, <code>gate-questions.ts</code>, <code>langgraph/nodes/converse.ts</code></td><td>Sai o "modelo antes do valor"; nomes de exemplo viram <code>&lt;nome&gt;</code>; contexto do card de valor/telefone só no turno em que ele é emitido</td></tr>
+<tr><td>B2 nome</td><td><code>tools/ai-sdk.ts</code>, <code>orchestrator/directives.ts</code>, <code>leads/contact-capture.ts</code></td><td>Recusa <code>nao_ancorado</code> distinta; tool-result carrega a fala real; turno do servidor não inventa fala</td></tr>
+<tr><td>B3 atribuição</td><td><code>src/proxy.ts</code> + <code>drizzle/0064_backfill_utm_do_direto.sql</code> (novo)</td><td><code>/direto</code> no matcher; backfill decodifica como o <code>URLSearchParams</code></td></tr>
+<tr><td>B4 régua</td><td><code>remarketing/motor.ts</code>, <code>workers/remarketing-cycle.ts</code></td><td>Linha no teto reagenda</td></tr>
+<tr><td>B5 erro do LLM</td><td><code>chat/stream-error.ts</code>, <code>whatsapp/processor.ts</code>, <code>theater/theater-chat.tsx</code> + <code>llm/erro-do-llm.ts</code>, <code>llm/alerta-do-llm.ts</code> (novos)</td><td>Classifica billing/rate-limit; alerta com dedupe só após envio; cliente vê texto em português</td></tr>
+<tr><td>B6 admin</td><td><code>admin/conversa/conversa.tsx</code> (novo), removidos <code>whatsapp-view.tsx</code> e <code>artifact-preview.tsx</code></td><td>Um visualizador; card pelo payload ou rótulo humano; desempate de ordem estável</td></tr>
+<tr><td>B7 custo</td><td><code>admin/custo-de-ia.ts</code> + <code>scripts/relatorio-custo-ia.ts</code> (novo)</td><td>Métricas v2; janela clampada; concorrência ≤ 4; credencial fora do argv</td></tr>
+<tr><td>B8 herdado</td><td><code>filtro-ab.tsx</code>, <code>crm/reset-tables.ts</code>, <code>api/chat/route.ts</code></td><td>As 3 falhas antigas de <code>test:unit</code></td></tr>
+</table>
+
+<h2>4 · Impacto na superfície — o smoke em produção</h2>
+<p>Jornada real em <strong>ajaagora.com.br</strong> às 15:09, depois do deploy (conversa <code>95a5cbde</code>, marcada como simulada em seguida, com o telefone da equipe, que fica fora da régua). Vídeo completo: <code>~/Downloads/smoke-aja-2026-10-05/smoke-aja-conducao-2026-10-05.mp4</code> (30,8 s).</p>
+<p><img src="img/2026-10-05-conducao-1-primeiro-turno.png" alt="Primeiro turno pede o valor com a parcela estimada na tela" style="max-width:100%"></p>
+<p><img src="img/2026-10-05-conducao-2-reveal.png" alt="Reveal com o card do WhatsApp e o texto sem pergunta concorrente" style="max-width:100%"></p>
+<p><img src="img/2026-10-05-conducao-3-comparacao.png" alt="Comparação liberada com quatro ofertas reais depois do WhatsApp" style="max-width:100%"></p>
+<div class="prova">banco de produção, conversa 95a5cbde (smoke):
+18:09:41 user       Quero comprar um carro.
+18:09:41 assistant  Que ótimo, carro novo muda tudo! Quanto custa o que você tem em mente?
+18:10:15 user       Valor do bem: R$ 80.000
+18:10:15 assistant  Boa, R$ 80 mil dá pra fazer um ótimo negócio no consórcio.
+18:10:15 assistant  [card: comparison_table] / [card: quick_reply] / [card: telefone_do_desbloqueio]
+18:10:31 user       Ver a minha comparação
+18:10:31 assistant  Prontinho, anotei seu WhatsApp. Aqui está a sua comparação:
+telefoneDoDesbloqueio = {"variante":"A","desbloqueadoEm":"2026-10-05T18:10:31.423Z"}</div>
+
+<h2>5 · Pontos de risco</h2>
+
+<div class="risco alto"><p><strong>Alerta de crédito do LLM nunca dispararia no WhatsApp</strong> <span class="pill p-ok">CORRIGIDO</span> — introduzido pelo enxame</p>
+<p>O registro da falha ficou no <code>.catch</code> do webhook, mas o processor já engolia todo erro e respondia "Desculpe, tive um problema". O incidente de 01/10 (29 erros 400 sem ninguém avisado) se repetiria justamente no canal que o bloco deveria cobrir.</p>
+<p>Correção: o registro foi para o catch do processor (todos os caminhos), e o dedupe só marca depois de um envio com sucesso. Achado pela revisão <code>/code-review high</code>. Commit <code>7fcc3782</code>.</p></div>
+
+<div class="risco alto"><p><strong>Modelo avisado de card que não estava na tela</strong> <span class="pill p-ok">CORRIGIDO</span> — introduzido pelo enxame</p>
+<p>A primeira versão do B1 dizia "o card do WhatsApp aparece NESTE turno" em todo turno com desbloqueio pendente; o adapter só manda o card no turno do reveal. O modelo apontaria para um card inexistente e o funil travaria. Correção: o fato só vale no turno em que o card é emitido. Commit <code>d2ece2f8</code>.</p></div>
+
+<div class="risco medio"><p><strong>Backfill gravaria a UTM ainda codificada</strong> <span class="pill p-ok">CORRIGIDO ANTES DE RODAR</span></p>
+<p>A mesma campanha viraria dois grupos na dashboard (<code>CR%2D002+CARRO</code> × <code>CR-002 CARRO</code>). A migration foi corrigida antes do deploy para decodificar como o caminho vivo. Antes do deploy medi os 1.053 referrers candidatos: só escapes ASCII (<code>%25 %2B %2F %7B %7C %7D</code>), sem risco de abortar.</p>
+<div class="prova">antes do deploy: visitas /direto com UTM perdida   = 1053
+depois do deploy: visitas /direto com UTM perdida  = 0
+CR-002 carro (id 120251784722830104 + nome): 27 + 17 visitas · 5 + 1 conversas
+CR-001 geral (por nome):                     28 visitas · 4 conversas</div></div>
+
+<div class="risco medio"><p><strong>Relatório de custo subestimava o valor a cobrar</strong> <span class="pill p-ok">CORRIGIDO</span></p>
+<p>A 1ª versão mostrava o LiteLLM com "0,0000" em agosto (dado expirado, não gasto zero) e total de US$ 1,95. Refeito duas vezes até a fonte certa.</p>
+<div class="prova">gateway DailyUserSpend (24/06→05/10): US$ 75,8871 = R$ 378,37 (PTAX 4,9859 de 05/10)
+  jul US$ 53,04 · ago 12,14 · set 8,14 · out 0,43 · jun 2,14
+  por modelo: haiku-4-5 68,1% · sonnet-4-6 17,1% · sonnet-5 14,2% · qwen 0,6%
+/spend/logs × DailyUserSpend nos 14 dias comuns: 1,9494 × 1,9494 → 0%
+Langfuse production: US$ 16,22 (sem preço do qwen: 278 observações → US$ 0,0000)</div></div>
+
+<div class="risco medio"><p><strong>6 linhas da régua "vencidas" que nunca sairiam</strong> <span class="pill p-ok">CORRIGIDO</span></p>
+<div class="prova">antes:  ATIVO com next_touch_at vencido = 7 (6 presas no teto de 30 dias, desde 02/10)
+depois (#156): ATIVO vencido &gt; 1 h     = 1 (d8bc426e, outra causa)
+depois (#157): ATIVO vencido &gt; 1 h     = 0</div>
+<p>Cobertura: <code>src/lib/workers/remarketing-cycle.teto-reagenda.test.ts</code>, <code>src/lib/remarketing/motor.teto-reagenda.test.ts</code>.</p></div>
+
+<div class="risco baixo"><p><strong>Nome de exemplo copiado como dado (Bruna → "Ana")</strong> <span class="pill p-ok">CORRIGIDO</span> — herdado</p>
+<p>Confirmado no trace do Langfuse de produção (<code>c762da1f…</code>): duas chamadas <code>save_contact_name("Ana")</code>, duas recusas <code>name_invalid</code> sem motivo, e a frase inventada. "Ana" estava literalmente na instrução de sistema e também no prompt publicado no Langfuse (v7). Publicado v8 sem nomes de exemplo. Cobertura: <code>src/lib/agent/langgraph/save-contact-name.nao-ancorado.integration.test.ts</code>.</p></div>
+
+<div class="risco baixo"><p><strong>Cliente veria o erro cru em inglês</strong> <span class="pill p-ok">CORRIGIDO</span> — herdado</p>
+<p><code>stream-error.ts</code> devolvia <code>error.message</code>. A 1ª versão ligou o texto em português num componente que nenhuma rota renderiza (<code>ChatLayout</code>); religado no componente vivo (<code>theater-chat.tsx</code>). Cobertura: <code>theater-chat.erro-do-stream.test.tsx</code>.</p></div>
+
+<h2>6 · O que ficou em aberto</h2>
+<ol>
+<li><strong>O antes/depois de conversão ainda não existe.</strong> A correção entrou às 15:05 de 05/10; mortes no primeiro turno (15 de 31 na janela 02–05/10) e conversão do card do telefone (5 de 14) só se comparam com tráfego novo. A amostra é pequena: será sinal, não prova estatística.</li>
+<li><strong>Dois chamados à ação no turno do reveal.</strong> O smoke mostrou os botões "Pode buscar as opções / Quero entender melhor" ao lado do card do WhatsApp: é card do servidor, não do modelo, e não estava no escopo. É o próximo candidato se a conversão do card não subir.</li>
+<li><strong>Linha <code>d8bc426e</code> vencida desde 21/09</strong>: conversa marcada como simulada depois de entrar na régua; o ciclo filtrava <code>is_simulated = false</code> e nunca mais a visitava. Corrigido no B10 (<code>da9c5e79</code>, teste de integração com banco 16/16), no ar pelo PR #157 (worker 15:24). Medido depois: a linha saiu como <code>RESPONDEU</code>/<code>teste</code> e há <strong>0</strong> toques ativos vencidos.</li>
+<li><strong>Senha do banco de produção exposta localmente.</strong> Durante a sessão, o <code>psql</code> do chefe recebeu a URL com senha como argumento, e a senha do usuário <code>app_aja_agora</code> apareceu na lista de processos da máquina e no contexto da sessão. Corrigido o hábito (credencial por variável de ambiente; scripts corrigidos no R6). <strong>PENDENTE-KAIRO:</strong> rotacionar a senha no RDS e no secret <code>tb/prod/aja-agora/env</code> (exige atualizar o serviço).</li>
+<li><strong>Dedupe do alerta do LLM é por processo</strong>: um restart ou outra réplica do ECS pode repetir um alerta na mesma hora. Persistir exigiria tabela.</li>
+<li><strong>O Langfuse não tem preço do qwen.</strong> O painel de custo por conversa fica em "sem dado" enquanto não se cadastrar o preço do modelo no Langfuse (decisão do dono: cadastrar ou manter o gateway como fonte).</li>
+<li><strong><code>utm_campaign</code> chega em dois formatos</strong> (id numérico e nome por extenso), conforme o anúncio. A mesma campanha aparece em duas linhas. É configuração de URL no Gerenciador de Anúncios, sem conserto no código.</li>
+<li><strong>Visualizador do admin sem captura em produção</strong>: o browser do Orca não tem sessão do painel, e digitar a senha de produção não é permitido ao agente. Ficou provado pelo teste de componente (<code>conversa.test.tsx</code>, 15 casos).</li>
+<li><strong>O relatório de custo não foi enviado</strong> à Bruna nem ao Gustavo: o envio a terceiros é seu.</li>
+</ol>
+
+<h2>7 · Como validar você mesmo</h2>
+<h3>Na tela</h3>
+<ul class="checklist">
+<li>Abra ajaagora.com.br numa janela anônima → "Carro". <strong>Esperado:</strong> o agente pergunta quanto custa e o card mostra a parcela estimada; não pergunta o modelo.</li>
+<li>Clique em "Buscar opções". <strong>Esperado:</strong> o texto não faz outra pergunta; aparece o card do WhatsApp (variante A) ou as ofertas borradas (B).</li>
+<li>No admin, abra a conversa <code>95a5cbde</code>. <strong>Esperado:</strong> nenhum <code>[card: …]</code> cru; "Pediu o WhatsApp para liberar a comparação" no lugar.</li>
+<li>Assista a <code>~/Downloads/smoke-aja-2026-10-05/smoke-aja-conducao-2026-10-05.mp4</code>.</li>
+</ul>
+<h3>Conferindo os riscos</h3>
+<div class="prova">pnpm prompts:check                               → "Prompts em dia: aja-system-prompt (v8), aja-turn-analyzer (v2)"
+SQL: visitas web com utm_campaign NULL e referrer /direto?…utm_campaign=  → 0
+SQL: remarketing_touches ATIVO com next_touch_at &lt; now()-1h       → 0 depois do deploy do B10
+grep -n "modelo em mente" src/lib/agent/system-prompt.ts src/lib/agent/orchestrator/gate-questions.ts → vazio
+grep -rnE "me chamo Ana|sou o Ricardo" src/lib/agent                → vazio</div>
+<h3>Pelos testes (última execução, na base integrada)</h3>
+<div class="prova">pnpm -s typecheck                → exit 0
+pnpm -s test:unit                → Test Files 599 passed (599) · Tests 4919 passed | 1 skipped
+integração dos arquivos tocados  → 5 files · 18 tests passed (RUN_DB_TESTS=1, banco local)
+~/.local/bin/skills-doctor       → carregadas 118 · não carregam 0
+CI do PR #156                    → check-migrations ✓ · check-prompt-sync ✓ · build ✓ (deploy 15:05)</div>
+
+<p class="rodape">Missão do chefe do enxame (Claude) com gerente Pi (enxame-agentes). Diários: <code>.orientacao/diario.md</code> e <code>.orientacao/diario-enxame.md</code> da worktree <code>chefe-conducao</code>.</p>
+</main>
+</body>
+</html>

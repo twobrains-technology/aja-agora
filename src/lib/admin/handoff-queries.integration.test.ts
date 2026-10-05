@@ -126,20 +126,40 @@ describeIfDb("D1 — funil por sub-etapa do handoff (integration)", () => {
 		// como zero puxaria a mediana para baixo e a tela diria que a mesa é rápida
 		// justamente por causa de quem está parado.
 		//
-		// Um lead que ENTRA e fica: o estágio final dele não pode ganhar p50.
+		// ── Correção de 02/10/2026: por que a prova é de AMOSTRA CONTROLADA ──────
+		//
+		// A versão anterior varria TODAS as etapas e exigia p50 > 0 em cada uma
+		// que tivesse amostra. Isso media dado que o teste não criou: o banco deste
+		// workspace tem 13 leads de CARGA de 14/08 com ~5 s entre estágios, e
+		// `numOuNulo` arredonda hora a uma casa decimal — 0,0017 h vira 0. A
+		// varredura então acusava "tempo zero" (`qualificado: expected 0 to be
+		// greater than 0`) sobre transições rápidas e reais, que nada têm a ver com
+		// quem ficou parado. Zero de arredondamento não é zero de "ninguém saiu";
+		// quem separa os dois é o NULL, e é ele que se afirma aqui.
+		//
+		// `aguardando_pagamento` e `fechado_ganho` são os estágios que nenhum dado
+		// do banco alcança, então a amostra deles é só a destes dois leads:
+		//
+		//   • o que ENTRA e FICA (sem saída) não vira amostra — p50 nulo;
+		//   • o que ENTRA e sai em 3 h responde 3 h. Se o parado entrasse como zero,
+		//     a mediana de duas amostras (0 h e 3 h) seria 1,5 h.
+		await leadComTrilha([
+			{ de: "novo", para: "aguardando_pagamento", em: new Date("2026-08-15T08:00:00Z") },
+		]);
 		await leadComTrilha([
 			{ de: "novo", para: "aguardando_pagamento", em: new Date("2026-08-15T10:00:00Z") },
+			{ de: "aguardando_pagamento", para: "fechado_ganho", em: new Date("2026-08-15T13:00:00Z") },
 		]);
 
 		const funil = await computeFunilDeHandoff(DE, ATE);
-		const parado = funil.etapas.find((e) => e.estagio === "aguardando_pagamento");
-		expect(parado?.alcancaram).toBeGreaterThan(0);
-		expect(parado?.horasP50).toBeNull();
 
-		// E onde há p50, ele é positivo — zero seria a duração de quem não saiu.
-		for (const etapa of funil.etapas) {
-			if (etapa.horasP50 !== null) expect(etapa.horasP50, etapa.estagio).toBeGreaterThan(0);
-		}
+		const comSaida = funil.etapas.find((e) => e.estagio === "aguardando_pagamento");
+		expect(comSaida?.alcancaram).toBe(2);
+		expect(comSaida?.horasP50).toBe(3);
+
+		const semSaida = funil.etapas.find((e) => e.estagio === "fechado_ganho");
+		expect(semSaida?.alcancaram).toBe(1);
+		expect(semSaida?.horasP50).toBeNull();
 	});
 
 	it("lead simulado não entra no funil da operação", async () => {
@@ -386,5 +406,118 @@ describeIfDb("D3/E1 — a campainha do SLA (integration)", () => {
 	it("lead SIMULADO continua fora — a guarda antiga segue valendo", async () => {
 		const id = await leadParadoHa(50, "proposta_enviada", "Simulado", "11988887777", true);
 		expect((await computeLeadsParados(24)).find((p) => p.leadId === id)).toBeUndefined();
+	});
+
+	// ── D10: a lista DO PERÍODO x a lista GLOBAL ───────────────────────────────
+	//
+	// A Performance mostrava "Parados há mais de 24h" com o rótulo do período
+	// escolhido e a população de TODOS os períodos: com o filtro em "Hoje", o
+	// bloco do dia listava gente de julho. O que fecha com o resto do funil é a
+	// janela de `leads.created_at` (nascimento do lead); a lista global continua
+	// existindo para a tela de Remarketing, onde a pergunta é "quem a mesa precisa
+	// ligar agora".
+
+	it("parado DO PERÍODO: quem nasceu antes da janela não entra na lista recortada", async () => {
+		const agora = new Date();
+		const agoraMaisUm = new Date(agora.getTime() + 60_000);
+		const inicioDeHoje = new Date(`${agora.toISOString().slice(0, 10)}T00:00:00.000Z`);
+
+		// Nasceu há 10 dias e continua sem toque: é o caso "parado há 10 dias".
+		const antigo = await leadParadoHa(240, "proposta_enviada", "Parado há 10 dias", "11977776666");
+
+		// Período "Hoje": ele nasceu ANTES da janela e fica de fora.
+		const deHoje = await computeLeadsParados(24, { de: inicioDeHoje, ate: agoraMaisUm });
+		expect(deHoje.find((p) => p.leadId === antigo)).toBeUndefined();
+
+		// A GLOBAL continua incluindo — é ela que a tela de Remarketing mostra.
+		const global = await computeLeadsParados(24);
+		expect(global.find((p) => p.leadId === antigo)).toBeTruthy();
+
+		// E a janela que cobre o nascimento dele também inclui: o recorte é por
+		// `created_at`, e não por "parou dentro da janela".
+		const trintaDias = await computeLeadsParados(24, {
+			de: new Date(agora.getTime() - 30 * 24 * 3600_000),
+			ate: agoraMaisUm,
+		});
+		expect(trintaDias.find((p) => p.leadId === antigo)).toBeTruthy();
+	});
+
+	it("parado DO PERÍODO: a janela não esconde quem já está parado dentro dela", async () => {
+		const agora = new Date();
+		const janela = {
+			de: new Date(agora.getTime() - 2 * 24 * 3600_000),
+			ate: new Date(agora.getTime() + 60_000),
+		};
+
+		// Nasceu 40 h atrás e segue sem toque: dentro da janela e acima do limite.
+		const parado = await leadParadoHa(
+			40,
+			"proposta_enviada",
+			"Parado dentro da janela",
+			"11955554444",
+		);
+		// Nascido AGORA e sem toque: está na janela, mas parado há menos de 24 h —
+		// o limite do SLA continua valendo DENTRO do período, que é o ponto: a
+		// janela recorta o nascimento, não o limite.
+		const novo = await leadParadoHa(0, "proposta_enviada", "Nascido agora", "11966665555");
+
+		const doPeriodo = await computeLeadsParados(24, janela);
+		expect(doPeriodo.find((p) => p.leadId === parado)).toBeTruthy();
+		expect(doPeriodo.find((p) => p.leadId === parado)?.horasParado).toBeGreaterThan(24);
+		expect(doPeriodo.find((p) => p.leadId === novo)).toBeUndefined();
+	});
+
+	// ── O recorte por braço vale também aqui ────────────────────────────────
+	//
+	// A lista de parados é lida nas DUAS telas que têm o seletor de braço
+	// (Performance e Remarketing). Um número que ignora o filtro ativo é a mesma
+	// classe de defeito do período ignorado — e a condição SQL do braço entra pela
+	// MESMA função que o funil usa (`condicaoDeBracoNaConversa`), sobre o JOIN com
+	// `conversations`.
+
+	async function leadParadoNoBraco(braco: string | null) {
+		const { CHAVE_DO_TESTE_NO_METADATA } = await import("@/lib/chat/variante-da-visita");
+		const [conv] = await db
+			.insert(schema.conversations)
+			.values({
+				channel: "web",
+				metadata: braco === null ? null : { [CHAVE_DO_TESTE_NO_METADATA]: { variante: braco } },
+			})
+			.returning({ id: schema.conversations.id });
+		convIds.push(conv.id);
+
+		const quando = new Date(Date.now() - 50 * 3600_000);
+		const [lead] = await db
+			.insert(schema.leads)
+			.values({
+				conversationId: conv.id,
+				name: `Parado ${braco ?? "sem braço"}`,
+				phone: "11944443333",
+				isSimulated: false,
+				stage: "proposta_enviada" as never,
+				createdAt: quando,
+				updatedAt: quando,
+			})
+			.returning({ id: schema.leads.id });
+		leadIds.push(lead.id);
+		return lead.id;
+	}
+
+	it("o recorte por braço vale também na lista de parados", async () => {
+		const { CHAVE_DO_TESTE_NO_METADATA } = await import("@/lib/chat/variante-da-visita");
+		const noA = await leadParadoNoBraco("A");
+		const semBraco = await leadParadoNoBraco(null);
+
+		const doA = await computeLeadsParados(24, undefined, [
+			{ experimento: CHAVE_DO_TESTE_NO_METADATA, braco: "A" },
+		]);
+		expect(doA.find((p) => p.leadId === noA)).toBeTruthy();
+		expect(doA.find((p) => p.leadId === semBraco)).toBeUndefined();
+
+		const semVariante = await computeLeadsParados(24, undefined, [
+			{ experimento: CHAVE_DO_TESTE_NO_METADATA, braco: "sem-variante" },
+		]);
+		expect(semVariante.find((p) => p.leadId === semBraco)).toBeTruthy();
+		expect(semVariante.find((p) => p.leadId === noA)).toBeUndefined();
 	});
 });

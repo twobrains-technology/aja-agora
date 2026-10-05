@@ -83,6 +83,8 @@ describeIfDb("parcela declarada manda na busca", () => {
 		const r = await runScenario({
 			busca: busca as never,
 			metaInicial: metaComOfertaNaTela(),
+			// A oferta está na tela e o modelo vai ajustar por parcela — telefone conhecido.
+			telefone: "62999998888",
 			turns: [
 				{
 					user: "essa parcela é alta, só consigo 200 por mês",

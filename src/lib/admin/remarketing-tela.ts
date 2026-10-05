@@ -57,6 +57,7 @@ import {
 	podeDisparar,
 	type StatusRegua,
 } from "@/lib/remarketing/regua";
+import { MOTIVO_SAIDA_META } from "@/lib/remarketing/status-do-toque";
 import {
 	MOTIVO_SAIDA_EQUIPE,
 	MOTIVO_SAIDA_SEGURADO,
@@ -113,6 +114,29 @@ export const ROTULO_DA_SITUACAO: Record<Situacao, string> = {
 	optout: "Pediu para sair",
 	converteu: "Fechou contrato",
 };
+
+/**
+ * O rótulo da linha que a META mandou encerrar (FIX-441/D12).
+ *
+ * `status=ESGOTADO` + `motivo_saida=recusado_pela_meta` NÃO são "os três toques
+ * saíram sem resposta": a Meta recusou a entrega (131050/131026) e a régua
+ * parou. Mostrar "Esgotou os 3 toques" seria afirmar um fato que não aconteceu.
+ */
+export const ROTULO_DA_RECUSA_DA_META = "A Meta recusou a entrega";
+
+/**
+ * O rótulo da situação como a linha o mostra.
+ *
+ * A situação `esgotado` cobre dois fatos distintos — os três toques saíram sem
+ * resposta OU a Meta recusou o envio —, e é o MOTIVO que separa um do outro. Só
+ * esse par recebe rótulo próprio; todo o resto segue a tabela por situação.
+ */
+export function rotuloDaSituacao(situacao: Situacao, motivoSaida: string | null): string {
+	if (situacao === "esgotado" && motivoSaida === MOTIVO_SAIDA_META) {
+		return ROTULO_DA_RECUSA_DA_META;
+	}
+	return ROTULO_DA_SITUACAO[situacao];
+}
 
 /** Os objetivos da régua (`motor.objetivoCanonico`), com o rótulo do painel.
  * Derivado do dicionário único do bem — a Régua não mantém uma segunda tabela.
@@ -317,6 +341,9 @@ export function situacaoDe(linha: {
 
 /** O motivo de saída em português. Desconhecido sai cru — inventar rótulo seria pior. */
 export function rotuloDoMotivo(motivo: string | null): string | null {
+	// A recusa da Meta é um motivo desta frente (FIX-441): a tela diz o FATO em
+	// vez de deixar o identificador cru (`recusado_pela_meta`) na cara do operador.
+	if (motivo === MOTIVO_SAIDA_META) return ROTULO_DA_RECUSA_DA_META;
 	return motivoDeSaidaLegivel(motivo);
 }
 
@@ -454,7 +481,7 @@ export function linhaDaTela(
 		passoLegivel: passoLegivel(linha.step, maxToques),
 		touches30d: linha.touches30d,
 		situacao,
-		rotuloDaSituacao: ROTULO_DA_SITUACAO[situacao],
+		rotuloDaSituacao: rotuloDaSituacao(situacao, linha.motivoSaida),
 		motivoSaida: linha.motivoSaida,
 		motivoLegivel: rotuloDoMotivo(linha.motivoSaida),
 		proximoToqueISO: proximo ? proximo.toISOString() : null,

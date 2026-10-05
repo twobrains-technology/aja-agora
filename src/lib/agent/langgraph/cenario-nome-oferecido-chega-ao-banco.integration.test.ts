@@ -14,9 +14,9 @@
  *
  * O caso é literal do app, com a vitrine ligada:
  *
- *   👤 "Oi, me chamo Ana e quero um carro de 80 mil"
- *   🤖 [save_contact_name("Ana")] "Oi Ana! …"
- *   banco: contact_name = "Ana"
+ *   👤 "Oi, me chamo Bruna e quero um carro de 80 mil"
+ *   🤖 [save_contact_name("Bruna")] "Oi Bruna! …"
+ *   banco: contact_name = "Bruna"
  */
 
 import { eq } from "drizzle-orm";
@@ -75,12 +75,12 @@ describeIfDb("apresentação espontânea chega à coluna", () => {
 		for (const id of criadas) await limparCenario(id);
 	});
 
-	it("o modelo chama save_contact_name → contact_name = 'Ana'", async () => {
+	it("o modelo chama save_contact_name → contact_name = 'Bruna'", async () => {
 		const r = await runScenario({
 			contactName: null,
 			turns: [
 				{
-					user: "Oi, me chamo Ana e quero um carro de 80 mil",
+					user: "Oi, me chamo Bruna e quero um carro de 80 mil",
 					intent: "providing_info",
 					extrai: (meta) => {
 						meta.currentCategory = "auto";
@@ -88,8 +88,8 @@ describeIfDb("apresentação espontânea chega à coluna", () => {
 					},
 					beats: [
 						{
-							text: "Perfeito, Ana! Já vou buscar as cartas.",
-							toolCalls: [{ name: "save_contact_name", args: { name: "Ana" } }],
+							text: "Perfeito, Bruna! Já vou buscar as cartas.",
+							toolCalls: [{ name: "save_contact_name", args: { name: "Bruna" } }],
 						},
 						// O `converse` chama `.stream()` de novo depois da tool — sem este
 						// beat a fila do modelo scriptado acaba e o turno pendura.
@@ -100,7 +100,7 @@ describeIfDb("apresentação espontânea chega à coluna", () => {
 		});
 		criadas.push(r.conversationId);
 
-		expect(await nomeNoBanco(r.conversationId)).toBe("Ana");
+		expect(await nomeNoBanco(r.conversationId)).toBe("Bruna");
 	});
 
 	it("o modelo INVENTA um nome que ninguém disse → o servidor recusa", async () => {
@@ -161,6 +161,9 @@ describeIfDb("apresentação espontânea chega à coluna", () => {
 		// primeiro.
 		const r = await runScenario({
 			contactName: null,
+			// A vitrine já roda com a oferta na tela — telefone conhecido (o reveal
+			// deste turno abre as ofertas e mantém os DOIS beats do modelo).
+			telefone: "62999998888",
 			turns: [
 				{
 					user: "quero um carro de 80 mil",

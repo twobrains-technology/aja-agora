@@ -62,12 +62,17 @@ import {
 import { publishMessage } from "@/lib/chat/message-bus";
 import { CHAVE_DO_TESTE_NO_METADATA } from "@/lib/chat/resultado-do-teste-do-telefone";
 import { streamErrorMessage } from "@/lib/chat/stream-error";
+import { registrarFalhaDoLlm } from "@/lib/llm/alerta-do-llm";
 import {
 	comparacaoGuardadaDaConversa,
 	registrarDesfechoDoTeste,
 } from "@/lib/chat/telefone-ab-do-servidor";
 import type { AjaUIMessage, ArtifactPartData } from "@/lib/chat/ui-message";
-import { varianteDaConversa, varianteForcada } from "@/lib/chat/variante-da-visita";
+import {
+	VARIANTES_DO_TELEFONE,
+	varianteDaConversa,
+	varianteForcada,
+} from "@/lib/chat/variante-da-visita";
 import {
 	isValidCpf,
 	loadIdentity,
@@ -76,6 +81,7 @@ import {
 } from "@/lib/conversation/identity";
 import { loadConversationHistory, saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
+import { bracoDaFila } from "@/lib/experimentos/fila";
 import { normalizePhoneBR } from "@/lib/leads/phone";
 import { COOKIE_MAX_AGE_SECONDS, COOKIE_NAME, generateCookieValue } from "@/lib/memory/identity";
 import { checkRateLimit } from "@/lib/middleware/rate-limit";
@@ -98,6 +104,42 @@ import {
 import { relayWebUserToAgent } from "@/lib/whatsapp/proxy";
 
 export const maxDuration = 60;
+
+// B5 — a falha do LLM virou sinal também no web: antes o route só devolvia a
+// mensagem ao cliente e a falha de crédito passava despercebida. Aqui ela é
+// registrada (log estruturado + alerta de billing, com dedupe) e o cliente
+// recebe o CÓDIGO, nunca a mensagem crua do gateway.
+const onErrorDoStream = (error: unknown): string => {
+	void registrarFalhaDoLlm(error, { origem: "web" });
+	return streamErrorMessage(error);
+};
+
+/**
+ * O metadata com que uma conversa WEB NASCE: o vínculo com o cookie (`webCookie`)
+ * e o braço do teste do telefone (FIX-394 / FIX-434).
+ *
+ * O braço de uma conversa NOVA vem da FILA (`src/lib/experimentos/fila.ts`) —
+ * alternância estrita A, B, A, B, sem perder incremento sob concorrência. O
+ * hash antigo (`varianteDaConversa`) virou o último recurso, para conversa que
+ * nunca passou por aqui.
+ *
+ * `?variante=` (QA/dono) FORÇA o braço, NÃO consome a fila e grava
+ * `forcada: true` — é o que mantém a conversa de teste FORA da leitura do A/B.
+ */
+async function metadataDeConversaWebNova(
+	userKey: string | null,
+	variantePedida: string | undefined,
+): Promise<ConversationMetadata> {
+	const forcada = varianteForcada(variantePedida);
+	const daFila = forcada
+		? null
+		: await bracoDaFila(CHAVE_DO_TESTE_NO_METADATA, VARIANTES_DO_TELEFONE);
+	const variante = varianteDaConversa({ forcar: variantePedida, daFila });
+	return {
+		webCookie: userKey,
+		[CHAVE_DO_TESTE_NO_METADATA]: forcada ? { variante, forcada: true } : { variante },
+	} as ConversationMetadata;
+}
 
 type ChatRequestBody = {
 	id?: string;
@@ -313,83 +355,85 @@ export async function POST(req: NextRequest) {
 	// same-device (GET /api/chat/resume acha "a conversa deste cookie").
 	//
 	// bloco-telefone-ab: a conversa NASCE com a sua variante do teste do telefone
-	// (FIX-394) — derivada da visita, decidida no servidor e gravada junto do
-	// `webCookie`. Aqui e não num turno posterior: é o único momento em que a
-	// semente (visitId) está garantidamente à mão, e sem persistir a variante o
-	// dia 01/10 só teria opinião (FIX-397).
+	// (FIX-394) — decidida no servidor e gravada junto do `webCookie`. Aqui e não
+	// num turno posterior: sem persistir a variante o dia 01/10 só teria opinião
+	// (FIX-397).
+	//
+	// FIX-434 (D4): a variante nasce da FILA (alternância estrita A, B, A, B) — e
+	// `meta` passa a carregar ESTE metadata, não um `{}`. Antes, para conversa
+	// recém-criada, `meta` era `{}` (o `conv` do banco é lido ANTES do insert) e o
+	// primeiro `persistMeta({ ...meta, … })` do turno apagava o braço e o
+	// `webCookie` — foi assim que quatro conversas de clique de categoria
+	// (`1758757e`, `d108a748`, `cc4f3bac`, `9b30b5ac`) ficaram sem braço.
+	let meta: ConversationMetadata;
 	if (providedId && !conv) {
+		meta = await metadataDeConversaWebNova(userKey, body.variante);
 		const [created] = await db
 			.insert(conversations)
 			.values({
 				id: providedId,
 				visitId,
-				metadata: {
-					webCookie: userKey,
-					[CHAVE_DO_TESTE_NO_METADATA]: {
-						variante: varianteDaConversa({
-							visitId,
-							conversationId: providedId,
-							forcar: body.variante,
-						}),
-					},
-				},
+				metadata: meta,
 			})
 			.returning();
 		conversationId = created.id;
 	} else if (conv) {
 		conversationId = conv.id;
 		contactName = conv.contactName ?? null;
+		const metadataAtual = metaOf(conv);
+		const registro = metadataAtual as Record<string, unknown>;
+
+		// OVERRIDE de QA numa conversa que já existe (FIX-403): sem isto, `?variante=`
+		// só valeria na primeira mensagem de uma conversa nova — e o dono testando
+		// na conversa já aberta continuaria vendo sempre a mesma ponta. O que já
+		// estava no registro (`desbloqueadoEm`, `recusado`) fica: o override troca o
+		// BRAÇO, não apaga o desfecho (FIX-434).
+		const variantePedida = varianteForcada(body.variante);
+		const testeAtual = registro[CHAVE_DO_TESTE_NO_METADATA] as
+			| { variante?: string; forcada?: boolean }
+			| undefined;
+		const precisaOverride =
+			variantePedida !== null &&
+			(testeAtual?.variante !== variantePedida || testeAtual.forcada !== true);
+
 		// BACKFILL do vínculo com o cookie. O `webCookie` só era gravado na
 		// CRIAÇÃO — e quando a conversa nascia antes de o `aja_uid` existir no
 		// browser (primeira visita, aba nova), ela ficava órfã pra sempre: o
 		// resume filtra por esse campo, então "Voltar à conversa" pulava todas as
 		// conversas recentes e caía sempre na última que por acaso tinha cookie.
 		// Só preenche quando está VAZIO — nunca rouba conversa de outro device.
-		// OVERRIDE de QA numa conversa que já existe (FIX-403): sem isto, `?variante=`
-		// só valeria na primeira mensagem de uma conversa nova — e o dono testando
-		// na conversa já aberta continuaria vendo sempre a mesma ponta.
-		const variantePedida = varianteForcada(body.variante);
-		const varianteGravada = (conv.metadata as Record<string, unknown> | null)?.[
-			CHAVE_DO_TESTE_NO_METADATA
-		] as { variante?: string } | undefined;
-		if (variantePedida && variantePedida !== varianteGravada?.variante) {
+		const cookieAtual = registro.webCookie;
+		const precisaBackfill = !cookieAtual && Boolean(userKey);
+
+		if (precisaOverride || precisaBackfill) {
+			const proximo: Record<string, unknown> = { ...registro };
+			if (precisaOverride) {
+				proximo[CHAVE_DO_TESTE_NO_METADATA] = {
+					...testeAtual,
+					variante: variantePedida,
+					forcada: true,
+				};
+			}
+			if (precisaBackfill) proximo.webCookie = userKey;
 			await db
 				.update(conversations)
-				.set({
-					metadata: {
-						...(conv.metadata as object),
-						[CHAVE_DO_TESTE_NO_METADATA]: { variante: variantePedida },
-					},
-				})
+				.set({ metadata: proximo })
 				.where(eq(conversations.id, conv.id));
-		}
-		const cookieAtual = (conv.metadata as { webCookie?: string } | null)?.webCookie;
-		if (!cookieAtual && userKey) {
-			await db
-				.update(conversations)
-				.set({ metadata: { ...(conv.metadata as object), webCookie: userKey } })
-				.where(eq(conversations.id, conv.id));
+			meta = proximo as ConversationMetadata;
+		} else {
+			meta = metadataAtual;
 		}
 	} else {
-		// bloco-telefone-ab: id GERADO aqui (em vez de `defaultRandom()`) porque a
-		// variante é derivada da conversa quando não há visita no cookie — e a
-		// semente precisa existir ANTES do insert para nascer junto do `webCookie`.
+		// bloco-telefone-ab: id GERADO aqui (em vez de `defaultRandom()`) porque o
+		// metadata nasce junto do `webCookie` no mesmo insert.
 		const novoId = crypto.randomUUID();
+		meta = await metadataDeConversaWebNova(userKey, body.variante);
 		const [created] = await db
 			.insert(conversations)
 			.values({
 				id: novoId,
 				visitId,
-				metadata: {
-					webCookie: userKey,
-					[CHAVE_DO_TESTE_NO_METADATA]: {
-						variante: varianteDaConversa({
-							visitId,
-							conversationId: novoId,
-							forcar: body.variante,
-						}),
-					},
-				},
+				metadata: meta,
 			})
 			.returning();
 		conversationId = created.id;
@@ -437,7 +481,7 @@ export async function POST(req: NextRequest) {
 					writer.write({ type: "text-end", id });
 				},
 				// FIX-110: onError uniforme em TODO stream do route (helper único).
-				onError: streamErrorMessage,
+				onError: onErrorDoStream,
 			});
 			return createUIMessageStreamResponse({
 				stream,
@@ -448,8 +492,6 @@ export async function POST(req: NextRequest) {
 			`[chat] handoff sem destinatário — nenhum atendente recebeu; o agente assume o turno (conv ${conversationId})`,
 		);
 	}
-
-	const meta = conv ? metaOf(conv) : ({} as ConversationMetadata);
 
 	// Simulator: persiste o cookie key na 1ª passagem pra que GET /memory
 	// reconstrua identity em qualquer admin. No-op em conv real.
@@ -638,8 +680,12 @@ export async function POST(req: NextRequest) {
 
 									// Grava o desfecho do teste ANTES de qualquer coisa: é ele que libera a
 									// comparação e que o endpoint do dia 01/10 lê.
+									// `desbloqueadoEm` é estado de NEGÓCIO do turno (quando a pessoa
+									// desbloqueou o telefone), não um carimbo de log: usa o relógio
+									// simulado, como as outras gravações do route, para o time-travel
+									// do simulador não vazar para o dado.
 									await registrarDesfechoDoTeste(conversationId, {
-										desbloqueadoEm: new Date().toISOString(),
+										desbloqueadoEm: simulatorNow().toISOString(),
 									});
 									const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
 									// Falha ao gravar o contato não prende ninguém: o desfecho já está
@@ -1812,7 +1858,7 @@ export async function POST(req: NextRequest) {
 				);
 			},
 			// FIX-110: onError uniforme via helper único (era inline).
-			onError: streamErrorMessage,
+			onError: onErrorDoStream,
 		});
 		return createUIMessageStreamResponse({
 			stream,
@@ -1850,7 +1896,7 @@ export async function POST(req: NextRequest) {
 				writer.write({ type: "text-end", id });
 			},
 			// FIX-110: onError uniforme em TODO stream do route (helper único).
-			onError: streamErrorMessage,
+			onError: onErrorDoStream,
 		});
 		return createUIMessageStreamResponse({
 			stream,
@@ -1976,7 +2022,7 @@ export async function POST(req: NextRequest) {
 			);
 		},
 		// FIX-110: onError uniforme via helper único (era inline).
-		onError: streamErrorMessage,
+		onError: onErrorDoStream,
 	});
 
 	const responseHeaders: Record<string, string> = {

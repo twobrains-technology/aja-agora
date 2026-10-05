@@ -131,8 +131,14 @@ export interface LeadParado {
 export interface FunilDeHandoff {
 	etapas: SubEtapaHandoff[];
 	/**
-	 * Quem está parado além do limite. É esta lista que faz o SLA existir: sem
-	 * ela, "definir SLA" é combinar um número que ninguém verifica.
+	 * Quem está parado além do limite, DENTRO DO PERÍODO (D10, 02/10/2026): lead
+	 * criado na janela do funil e sem toque há mais de `limiteHoras`.
+	 *
+	 * A população é a do período pelo mesmo critério do resto do funil
+	 * (`leads.created_at`) — senão o bloco de baixo responderia por outra janela
+	 * que o de cima, e o leitor não teria como saber. A lista GLOBAL (todos os
+	 * períodos) vive em `/admin/remarketing`, em "Parados — todos os períodos",
+	 * que é a tela onde a mesa opera a régua.
 	 */
 	parados: LeadParado[];
 	/** O limite usado, em horas — declarado para a tela não inventar o seu. */
@@ -284,7 +290,7 @@ export async function computeFunilDeHandoff(
 		};
 	});
 
-	const parados = await computeLeadsParados(limiteHoras);
+	const parados = await computeLeadsParados(limiteHoras, { de: fromDate, ate: toDate }, recorte);
 	const propostas = etapas.find((e) => e.estagio === "proposta_enviada")?.alcancaram ?? 0;
 
 	return {
@@ -331,10 +337,22 @@ export function semTelefoneDaEquipe(
 /**
  * Quem está parado além do limite — a campainha do D3/E1.
  *
- * Sem janela de período de propósito: um lead esquecido em julho continua
- * esquecido hoje, e some da tela justamente quando o filtro de data se estreita.
- * O que importa aqui não é "quando ele entrou", é "há quanto tempo ninguém
- * mexe".
+ * ── Duas populações, e quem escolhe é o chamador (D10, 02/10/2026) ──────────
+ *
+ * Sem `periodo`, a lista é GLOBAL: um lead esquecido em julho continua
+ * esquecido hoje, e a pergunta da tela de Remarketing é "quem a mesa precisa
+ * ligar agora", sem recorte de data.
+ *
+ * Com `periodo`, a população é a DO PERÍODO: leads criados dentro da janela E
+ * parados há mais de `limiteHoras`. O recorte é por `leads.created_at` — o
+ * mesmo critério de `computeFunilDeHandoff`, pela mesma razão (agrupar pela
+ * data do movimento partiria o lead entre duas janelas e o funil deixaria de
+ * fechar). O defeito que isto corrige: a Performance aplicava o período a todos
+ * os blocos MENOS a este, e o bloco do dia listava gente de julho.
+ *
+ * O recorte por braço de experimento vem no terceiro parâmetro pelo motivo de
+ * sempre: uma lista que ignora o filtro da tela é a mesma classe de defeito do
+ * período ignorado.
  *
  * ── Duas correções de 30/08/2026, as duas sobre o mesmo risco ───────────────
  *
@@ -357,7 +375,14 @@ export function semTelefoneDaEquipe(
  */
 export async function computeLeadsParados(
 	limiteHoras: number = LIMITE_SLA_HORAS_PADRAO,
+	/** Janela de NASCIMENTO do lead (inclusiva nas duas pontas). Ausente = todos os períodos. */
+	periodo?: { de: Date; ate: Date },
+	recorte: RecorteAB = [],
 ): Promise<LeadParado[]> {
+	const filtro = condicaoDeBracoNaConversa(recorte, sql`c`);
+	// Ausente = nenhum SQL novo entra: a lista global sai igual à de sempre.
+	const janela = periodo ? sql`AND l.created_at BETWEEN ${periodo.de} AND ${periodo.ate}` : sql``;
+
 	const resultado = await db.execute<Record<string, unknown>>(sql`
     SELECT l.id,
            l.name,
@@ -376,7 +401,13 @@ export async function computeLeadsParados(
              l.created_at
            ))) / 3600.0 AS horas
       FROM leads l
+      -- O JOIN e do recorte por braco (alias c), e nao custa nada quando nao ha
+      -- recorte: leads.conversation_id e NOT NULL com FK em cascata, entao a
+      -- linha sempre tem conversa.
+      JOIN conversations c ON c.id = l.conversation_id
      WHERE l.is_simulated = false
+       ${janela}
+       ${filtro ? sql`AND (${filtro})` : sql``}
        -- ALLOWLIST, e nao "tudo menos tres" -- ver o comentario da funcao.
        AND l.stage::text IN (
          'qualificado', 'em_negociacao', 'proposta_enviada',

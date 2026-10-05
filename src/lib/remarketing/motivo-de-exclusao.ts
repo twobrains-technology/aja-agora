@@ -40,14 +40,23 @@
  *   6. `sem_telefone` — sem destino não há toque;
  *   7. `telefone_da_equipe` — a casa não recebe remarketing;
  *   8. `ja_na_regua` — já tem linha, não entra de novo;
- *   9. `ainda_em_silencio` — menos de 90 min (ou `last_inbound_at` nulo, a
- *      corrida do FIX-86);
+ *   9. `ainda_em_silencio` — menos de 90 min desde que o cliente falou (ou sem
+ *      data nenhuma, a corrida do FIX-86) — ver `referenciaDoSilencio`;
  *  10. `parada_ha_mais_de_7_dias` — a janela fechou; NÃO se reabre
  *      retroativamente (decisão de produto, PRD §5.4).
  *
- * ── O que NÃO está aqui ─────────────────────────────────────────────────────
+ * ── Dois fatos que andavam juntos e não são o mesmo (D9) ────────────────
  *
- * Nada de leitura de banco, env ou relógio: `agora`, as flags e o veredito de
+ * "Quando o cliente falou" e "a janela de 24 h da Meta está aberta" eram a
+ * MESMA coluna (`last_inbound_at`) — e a web nunca a escreve, então o silêncio
+ * dela era sempre "desconhecido" e a régua a descartava inteira (119 conversas,
+ * ZERO na régua desde 18/09). Agora são dois fatos: o SILÊNCIO vem de
+ * `referenciaDoSilencio` (na web, a última fala do cliente) e a JANELA continua
+ * vindo de `last_inbound_at`, que segue só do WhatsApp. É o que faz a conversa
+ * da web entrar pelo silêncio e sair sempre por template.
+ *
+ * ── O que NÃO está aqui ─────────────────────────────────────────────────────
+ * * Nada de leitura de banco, env ou relógio: `agora`, as flags e o veredito de
  * "telefone da equipe" entram por parâmetro (o ciclo resolve o I/O). É o que
  * permite provar cada guarda com uma fixture, sem Postgres.
  */
@@ -141,6 +150,12 @@ export interface ConversaAvaliada {
 	contactId: string | null;
 	/** `conversations.last_inbound_at` — pode ser nulo (corrida do FIX-86). */
 	lastInboundAt: Date | null;
+	/**
+	 * A última FALA DO CLIENTE (`messages.role='user'`) — a referência do
+	 * SILÊNCIO quando o canal é a web, que nunca grava `last_inbound_at`.
+	 * `null`/ausente = não lida (o WhatsApp conta de `lastInboundAt`).
+	 */
+	ultimaMensagemDoClienteEm?: Date | null;
 	/** `conversations.wa_id` — o destino do WhatsApp, quando existe. */
 	waId: string | null;
 	/** `contacts.phone` — o telefone do cadastro (a fonte do lead da web). */
@@ -182,6 +197,40 @@ export function destinoDoToque(conversa: Pick<ConversaAvaliada, "waId" | "phone"
 		if (candidato && chaveTelefoneBR(candidato) !== null) return candidato;
 	}
 	return null;
+}
+
+/**
+ * A referência do SILÊNCIO do cliente — quando ele falou pela última vez.
+ *
+ * Dois canais, duas fontes, e é aqui que elas se separam (D9):
+ *
+ *   - **web**: a última FALA dele (`messages.role='user'`) e, quando existir, o
+ *     `last_inbound_at`. A web não escreve essa coluna pelo webhook, mas uma
+ *     conversa da web pode ganhá-la ao virar lead (`waId` +
+ *     `updateLastInboundAt` por chave canônica do número) — em produção, 1 das
+ *     119 tinha. O silêncio é o MAIS RECENTE dos dois: usar só a fala ignorava
+ *     essa escrita e tocava quem já tinha voltado a falar;
+ *   - **WhatsApp**: o último inbound, que é a mesma fala e já está na coluna.
+ *
+ * `last_inbound_at` continua sendo o fato da JANELA DE 24 H DA META — outra
+ * pergunta, respondida em outro lugar (`regua.ts`, `dentroDaJanelaDeTexto`). É
+ * por isso que conversa da web sai sempre por template: a janela de texto livre
+ * olha a coluna, e a web não conta com ela.
+ */
+export function referenciaDoSilencio(
+	conversa: Pick<ConversaAvaliada, "channel" | "lastInboundAt" | "ultimaMensagemDoClienteEm">,
+): Date | null {
+	if (conversa.channel === "web") {
+		return maisRecente(conversa.ultimaMensagemDoClienteEm ?? null, conversa.lastInboundAt);
+	}
+	return conversa.lastInboundAt;
+}
+
+/** O mais recente dos dois instantes — `null` quando nenhum existe. */
+function maisRecente(a: Date | null, b: Date | null): Date | null {
+	if (!a) return b;
+	if (!b) return a;
+	return a.getTime() >= b.getTime() ? a : b;
 }
 
 /**
@@ -231,19 +280,21 @@ export function avaliarElegibilidade(
 	// entrada (reentrada por simulação é decisão de OUTRO predicado).
 	if (conversa.jaNaRegua) return exclui("ja_na_regua");
 
-	// 10. Silêncio: 90 min contados do último inbound. Data ausente cai aqui de
-	// propósito — sem saber quando a pessoa falou, não há como dizer que ela
-	// está parada há tempo suficiente (FIX-86: 100% das conversas com UMA
-	// mensagem do usuário tinham `last_inbound_at` nulo em produção).
-	if (!conversa.lastInboundAt) return exclui("ainda_em_silencio");
-	if (conversa.lastInboundAt.getTime() > agora.getTime() - ESPERA_SILENCIO_MS) {
+	// 10. Silêncio: 90 min contados de quando o cliente falou (ver
+	// `referenciaDoSilencio`). Data ausente cai aqui de propósito — sem saber
+	// quando a pessoa falou, não há como dizer que ela está parada há tempo
+	// suficiente (FIX-86: 100% das conversas com UMA mensagem do usuário tinham
+	// `last_inbound_at` nulo em produção).
+	const silencio = referenciaDoSilencio(conversa);
+	if (!silencio) return exclui("ainda_em_silencio");
+	if (silencio.getTime() > agora.getTime() - ESPERA_SILENCIO_MS) {
 		return exclui("ainda_em_silencio");
 	}
 
 	// 11. A janela de 7 dias. Quem saiu dela NÃO é reaberto retroativamente
 	// (decisão de produto, PRD §5.4): aparece na lista como "fora da régua" e a
 	// decisão de falar com a pessoa é da mesa.
-	if (conversa.lastInboundAt.getTime() <= agora.getTime() - JANELA_DE_ENTRADA_MS) {
+	if (silencio.getTime() <= agora.getTime() - JANELA_DE_ENTRADA_MS) {
 		return exclui("parada_ha_mais_de_7_dias");
 	}
 

@@ -1,34 +1,12 @@
 "use client";
 
-import { formatDistanceToNow } from "date-fns";
-import { ptBR } from "date-fns/locale/pt-BR";
 import { List, Maximize2, MessageCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AtendimentoWhatsAppDialog } from "@/components/admin/conversa/atendimento-whatsapp-dialog";
-import { WhatsAppView } from "@/components/admin/conversa/whatsapp-view";
+import { Conversa, type MensagemDaConversa } from "@/components/admin/conversa/conversa";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArtifactPreview } from "./artifact-preview";
-
-interface MessageArtifact {
-	id: string;
-	type: string;
-	payload: Record<string, unknown>;
-}
-
-interface Message {
-	id: string;
-	role: "user" | "assistant" | "system";
-	content: string;
-	createdAt: string;
-	artifacts: MessageArtifact[];
-	/** Presente só quando a mensagem tem anexo (colunas nullable em `messages`). */
-	mediaType?: string | null;
-	mediaFilename?: string | null;
-	/** Preenchido quando saiu como template (HSM) — a bolha ganha o selo. */
-	templateName?: string | null;
-}
 
 /** Dados do cliente pro cabeçalho da tela cheia. Sem eles, o botão "Expandir"
  *  não aparece — abrir um atendimento sem saber com quem se fala não ajuda. */
@@ -40,13 +18,18 @@ interface DadosDoAtendimento {
 
 type Props = (
 	| { endpoint: string; initialMessages?: undefined }
-	| { initialMessages: Message[]; endpoint?: undefined }
+	| { initialMessages: MensagemDaConversa[]; endpoint?: undefined }
 ) &
 	DadosDoAtendimento;
 
+/**
+ * Carrega uma conversa e delega TODO o desenho para `Conversa` (o visualizador
+ * único do admin). Aqui fica só o que depende da tela: buscar por `endpoint`,
+ * alternar lista × WhatsApp e abrir o atendimento em tela cheia.
+ */
 export function ConversationTimeline(props: Props) {
 	const { endpoint, initialMessages, conversationId, nomeDoContato, telefone } = props;
-	const [messages, setMessages] = useState<Message[]>(initialMessages ?? []);
+	const [messages, setMessages] = useState<MensagemDaConversa[]>(initialMessages ?? []);
 	const [loading, setLoading] = useState(endpoint !== undefined);
 	const [error, setError] = useState<string | null>(null);
 	/** Tela cheia de atendimento (layout do simulador + caixa de envio). */
@@ -173,65 +156,12 @@ export function ConversationTimeline(props: Props) {
 		/>
 	) : null;
 
-	if (modo === "whatsapp") {
-		return (
-			<div className="flex flex-1 flex-col">
-				{alternador}
-				<ScrollArea className="h-full min-h-0 flex-1">
-					<div className="p-4">
-						<WhatsAppView mensagens={messages} />
-					</div>
-				</ScrollArea>
-				{telaCheia}
-			</div>
-		);
-	}
-
 	return (
 		<ScrollArea className="h-full min-h-0 flex-1">
 			{alternador}
 			{telaCheia}
-			<div className="flex flex-col gap-3 p-4">
-				{messages
-					.filter((msg) => msg.role !== "system")
-					.map((msg) => {
-						const isUser = msg.role === "user";
-						return (
-							<div key={msg.id} className={`flex flex-col ${isUser ? "items-start" : "items-end"}`}>
-								<span className="text-[10px] font-medium text-muted-foreground mb-0.5 px-1">
-									{isUser ? "Cliente" : "Agente"}
-								</span>
-								<div
-									className={`max-w-[80%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
-										isUser ? "bg-blue-100 dark:bg-blue-900/30" : "bg-muted"
-									}`}
-								>
-									{msg.content}
-								</div>
-								{msg.artifacts.length > 0 && (
-									<div
-										className={`flex flex-col gap-1.5 mt-1.5 max-w-[80%] ${isUser ? "" : "self-end"}`}
-									>
-										{msg.artifacts.map((artifact) => (
-											<ArtifactPreview
-												key={artifact.id}
-												type={artifact.type}
-												payload={artifact.payload}
-											/>
-										))}
-									</div>
-								)}
-								<span className="text-[10px] text-muted-foreground mt-0.5 px-1">
-									{formatDistanceToNow(new Date(msg.createdAt), {
-										addSuffix: true,
-										locale: ptBR,
-									})}
-								</span>
-							</div>
-						);
-					})}
-				<div ref={bottomRef} />
-			</div>
+			<Conversa mensagens={messages} modo={modo} />
+			<div ref={bottomRef} />
 		</ScrollArea>
 	);
 }

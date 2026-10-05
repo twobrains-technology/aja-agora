@@ -1,18 +1,30 @@
 import { generateObject } from "ai";
 import { z } from "zod";
-import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
+import { modeloAiSdkDoGateway, modeloDoAnalisador } from "@/lib/llm/model-provider";
 import { isLangfuseConfigured } from "@/lib/observability/langfuse/env";
 import { fetchManagedPrompt, PROMPT_NAMES } from "@/lib/observability/langfuse/prompts";
 import type { Category, ConversationMetadata } from "./personas";
 import { listExpertisesByCategory } from "./personas-repo";
 
-const anthropic = createGatewayAnthropic();
+// D5 (FIX-435, 02/10/2026; B4c) — o analyzer usa o MESMO modelo do agente
+// (`AI_MODEL`) por padrão, com override opcional por env própria do analyzer. A
+// precedência vive em `modeloDoAnalisador()` (model-provider.ts) — é o único
+// ponto do projeto que lê a env do override. Antes o analyzer tinha modelo
+// próprio fixo em `claude-haiku-4-5`: foi esse fio que derrubou só a
+// classificação nos 29× HTTP 400 "credit balance too low" de 01/10, enquanto o
+// agente seguia no qwen — a parte que decide o que o cliente disse ficou fora.
 
-const ANALYZER_MODEL = process.env.AI_ANALYZER_MODEL ?? "claude-haiku-4-5";
-// 4s era apertado em cold starts da Anthropic — quando timeout, fallback neutro
-// faz o concierge atender mesmo quando o usuário foi explicito ("quero imovel").
-// 6s permite Haiku completar com folga; usuário nem percebe diferença.
-const ANALYZER_TIMEOUT_MS = 6000;
+// Timeout medido, não arbitrado. 4s era apertado em cold starts da Anthropic —
+// quando estoura, o fallback neutro faz o concierge atender mesmo quando o
+// usuário foi explicito ("quero imovel").
+//
+// Medição de 02/10/2026 (chefe, `scripts/sonda-analisador.ts` contra o GATEWAY
+// DE PRODUÇÃO, `qwen3.8-flash` — o mesmo modelo do agente — com os 10 payloads
+// REAIS do analyzer, capturados da sonda): classificação 10/10 certa, mas
+// latência p50 5,4 s · p90 6,9 s · máx 7,1 s. Com 6 s, 3 dos 10 caíam no
+// fallback neutro — perdendo a classificação que o modelo tinha acertado.
+// 10 s cobre o pior caso medido com folga. Sem nova medição, não se mexe.
+const ANALYZER_TIMEOUT_MS = 10000;
 
 export const userIntentAnalyzerEnum = z.enum([
 	"ready_to_proceed",
@@ -133,9 +145,19 @@ export const turnAnalysisSchema = z.object({
 	),
 });
 
-export type TurnAnalysis = z.infer<typeof turnAnalysisSchema>;
+export type TurnAnalysis = z.infer<typeof turnAnalysisSchema> & {
+	/** D6 (FIX-435) — SÓ o fallback carrega esta marca. É o dado que faltava para
+	 * o chamador (`orchestrator/analyze.ts`) saber que o modelo não respondeu e
+	 * que, portanto, quem decide o texto é o parser determinístico. Sem ela, o
+	 * fallback era indistinguível de um "não vi sinal nenhum" e "Entre R$ 800 e
+	 * R$ 1.200" virou carta de R$ 800 na sessão `0e5d777a`. */
+	indisponivel?: true;
+};
 
-const NEUTRAL_FALLBACK: TurnAnalysis = {
+/** Fallback do analyzer quando a chamada falha (timeout, rede, 4xx).
+ * Exportado pra o teste da marca `indisponivel` (D6) — é o MESMO objeto que a
+ * produção recebe, não uma cópia que pode divergir dele. */
+export const NEUTRAL_FALLBACK: TurnAnalysis = {
 	reasoning: "fallback",
 	detectedCategory: null,
 	detectedSubTopic: null,
@@ -152,6 +174,10 @@ const NEUTRAL_FALLBACK: TurnAnalysis = {
 	monthlySavings: null,
 	fgtsValue: null,
 	userIntent: "neutral",
+	// D6 — o fallback se identifica. `true` (não `boolean`) de propósito: só o
+	// fallback constrói este valor; o caminho normal deixa a chave AUSENTE, e
+	// ausência é o que o score lê como 0.
+	indisponivel: true,
 };
 
 export const BASE_SYSTEM_INSTRUCTION = `Você analisa turnos de WhatsApp em portugues brasileiro de um sistema de consórcio.
@@ -314,7 +340,7 @@ export async function analyzeTurn(
 		// A seção de sub-tópicos é dinâmica (vem do DB) — continua código.
 		const managedSystem = await fetchManagedPrompt(PROMPT_NAMES.analyzer, BASE_SYSTEM_INSTRUCTION);
 		const result = await generateObject({
-			model: anthropic(ANALYZER_MODEL),
+			model: modeloAiSdkDoGateway(modeloDoAnalisador()),
 			schema: turnAnalysisSchema,
 			system: managedSystem.text + renderSubTopicSection(subTopics),
 			prompt: `Persona ativa atualmente: ${currentPersona}${anchorHint}

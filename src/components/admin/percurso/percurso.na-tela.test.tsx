@@ -271,3 +271,40 @@ describe("a escada do percurso", () => {
 		expect(screen.getByLabelText("Como ler esta escada")).toBeTruthy();
 	});
 });
+
+describe("a coluna Régua do Percurso (FIX-441)", () => {
+	it("não diz 'Esgotou os 3 toques' quando a META recusou a entrega", () => {
+		const comRecusa = {
+			...pessoa({ conversationId: "c-recusa" }),
+			regua: {
+				naRegua: true,
+				motivo: null,
+				status: "ESGOTADO",
+				step: 1,
+				nextTouchAt: null,
+				motivoSaida: "recusado_pela_meta",
+			},
+		};
+		render(<TabelaPercurso pessoas={[comRecusa]} carregando={false} onAbrir={() => {}} />);
+
+		expect(screen.getByText("A Meta recusou a entrega")).toBeTruthy();
+		expect(screen.queryByText("Esgotou os 3 toques")).toBeNull();
+	});
+
+	it("mantém 'Esgotou os 3 toques' quando os três toques saíram de fato", () => {
+		const semRecusa = {
+			...pessoa({ conversationId: "c-esgotado" }),
+			regua: {
+				naRegua: true,
+				motivo: null,
+				status: "ESGOTADO",
+				step: 3,
+				nextTouchAt: null,
+				motivoSaida: null,
+			},
+		};
+		render(<TabelaPercurso pessoas={[semRecusa]} carregando={false} onAbrir={() => {}} />);
+
+		expect(screen.getByText("Esgotou os 3 toques")).toBeTruthy();
+	});
+});

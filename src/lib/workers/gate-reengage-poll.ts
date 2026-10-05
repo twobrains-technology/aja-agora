@@ -37,6 +37,8 @@ import {
 } from "@/lib/agent/gate-reengage";
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { nextGate } from "@/lib/agent/qualify-state";
+import { temCardDeTelefone } from "@/lib/chat/desbloqueio-do-telefone";
+import { leituraDoDesbloqueio } from "@/lib/chat/telefone-ab-do-servidor";
 import { saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta } from "@/lib/conversation/meta";
 import type { fireGate as FireGate } from "@/lib/whatsapp/adapter";
@@ -177,6 +179,20 @@ export async function runReengageCycle(deps: ReengageDeps = {}): Promise<{ reeng
 			await persistMeta(row.id, cleared);
 
 			if (NON_REENGAGE_GATES.has(gate)) continue;
+
+			// D8 — RECONFERE o desbloqueio no disparo, não só na marcação: entre
+			// marcar a pendência e cobrá-la, o cliente pode ter parado no card do
+			// telefone. Com o card pendente o watchdog CONSOME o marcador (já apagado
+			// acima) e não manda nada — cobrar CPF/valor por cima do pedido de número
+			// é o `576e5b66`. Só a web tem o teste A/B (o WhatsApp não tem card), e a
+			// leitura é best-effort: falhou, cobra como antes.
+			if (row.channel === "web") {
+				const desbloqueio = await leituraDoDesbloqueio(row.id).catch((err) => {
+					console.error("[telefone-ab] falha ao ler o desbloqueio no watchdog:", err);
+					return null;
+				});
+				if (desbloqueio !== null && temCardDeTelefone(desbloqueio.estado)) continue;
+			}
 
 			if (row.channel === "whatsapp") {
 				if (!row.waId) continue;
