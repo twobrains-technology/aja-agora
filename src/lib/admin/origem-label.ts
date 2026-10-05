@@ -61,6 +61,41 @@ function limpo(valor: string | null | undefined): string | null {
 	return t ? t : null;
 }
 
+/**
+ * Os hosts que são o NOSSO site.
+ *
+ * Medido em produção em 05/10/2026: 155 de 312 visitas do período (50%) entravam
+ * na tela como "Referência · ajaagora.com.br". Não são referência: é navegação
+ * DENTRO do site (sair da página do carro para a home manda o nosso domínio como
+ * referrer), mais as variantes com `www`, o domínio sem o "a" que também serve o
+ * app, e as portas em que ele responde (`:2086`, `:8080`, `:8880`…). Pior que o
+ * ruído: 3 dos 5 telefones do período ficaram pendurados nessa origem falsa.
+ *
+ * O agrupador já declarava a intenção (`agrupar-origens.ts`, "abrir para mostrar
+ * a si mesmo é ruído", devendo cair em Direto) — o filtro é que não existia.
+ */
+const NOSSOS_HOSTS = [
+	"ajaagora.com.br",
+	"ajagora.com.br",
+	"tb-aja-agora.twobrainstechnology.com",
+];
+
+/**
+ * O referrer veio de navegação interna? Ignora `www.`, a porta e o esquema.
+ *
+ * `true` significa "já era nosso visitante" — não é canal de aquisição, e a
+ * origem cai em Direto. Host de terceiro (google, instagram, um blog) continua
+ * sendo Referência de verdade.
+ */
+export function ehNavegacaoInterna(referrerHost: string | null): boolean {
+	const host = limpo(referrerHost)
+		?.toLowerCase()
+		.replace(/^https?:\/\//, "")
+		.replace(/^www\./, "")
+		.replace(/:\d+$/, "");
+	return host !== undefined && NOSSOS_HOSTS.includes(host);
+}
+
 /** As colunas da tabela `visits` que decidem a origem. */
 export interface ColunasDaVisita {
 	utmSource: string | null;
@@ -142,13 +177,18 @@ export function rotularOrigem(bruta: OrigemBruta | null): Origem {
 	}
 
 	if (referrerHost) {
-		return {
-			tipo: "referencia",
-			fonte: referrerHost,
-			campanha: null,
-			criativo: null,
-			label: referrerHost,
-		};
+		// Navegação interna não é canal de aquisição: quem voltou de uma página
+		// nossa para outra já era nosso visitante. Cai em Direto — a chegada
+		// medida sem mídia — em vez de virar uma "referência" que não existe.
+		if (!ehNavegacaoInterna(referrerHost)) {
+			return {
+				tipo: "referencia",
+				fonte: referrerHost,
+				campanha: null,
+				criativo: null,
+				label: referrerHost,
+			};
+		}
 	}
 
 	return { tipo: "direto", fonte: null, campanha: null, criativo: null, label: "Direto" };
