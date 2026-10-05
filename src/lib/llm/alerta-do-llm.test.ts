@@ -81,4 +81,19 @@ describe("registrarFalhaDoLlm", () => {
 		await expect(registrarFalhaDoLlm(ERRO_DE_BILLING, {}, AGORA)).resolves.toBeUndefined();
 		expect(sendEmail).not.toHaveBeenCalled();
 	});
+
+	it("envio que falha NÃO consome a janela: a próxima falha ainda alerta", async () => {
+		// Os dois canais caem na primeira tentativa — nada saiu, então o dedupe
+		// não pode ser marcado. Se fosse marcado antes de enviar, a segunda falha
+		// (5 min depois) ficaria 55 min em silêncio, que é o defeito medido.
+		sendEmail.mockRejectedValueOnce(new Error("sendgrid fora do ar"));
+		abrirOcorrenciaNoCortex.mockRejectedValueOnce(new Error("cortex fora do ar"));
+		await registrarFalhaDoLlm(ERRO_DE_BILLING, {}, AGORA);
+
+		sendEmail.mockResolvedValueOnce(undefined);
+		abrirOcorrenciaNoCortex.mockResolvedValueOnce({ aberta: true });
+		await registrarFalhaDoLlm(ERRO_DE_BILLING, {}, AGORA + 5 * 60_000);
+
+		expect(sendEmail).toHaveBeenCalledTimes(2);
+	});
 });

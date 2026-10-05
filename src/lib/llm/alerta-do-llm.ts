@@ -143,11 +143,15 @@ export async function registrarFalhaDoLlm(
 	logEstruturadoDoErro(tipo, err);
 
 	if (tipo !== "billing" || !deveAlertar(tipo, agoraMs)) return;
-	marcarAlerta(tipo, agoraMs);
 
 	// Contexto só no log de alerta — nunca vai ao cliente.
 	if (Object.keys(contexto).length > 0) {
 		console.error(`[llm-erro] alerta de billing ${JSON.stringify(contexto)}`);
 	}
-	await dispararAlerta(tipo, err);
+
+	// A janela só é consumida quando ALGO saiu. Marcar antes de enviar faz um
+	// SendGrid fora do ar comprar 1 h de silêncio — o oposto do que este bloco
+	// existe para fazer.
+	const { email, cortex } = await dispararAlerta(tipo, err);
+	if (email || cortex) marcarAlerta(tipo, agoraMs);
 }

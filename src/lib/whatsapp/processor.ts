@@ -1,6 +1,7 @@
 import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { contacts, conversations, remarketingTouches } from "@/db/schema";
+import { registrarFalhaDoLlm } from "@/lib/llm/alerta-do-llm";
 import { detectBackIntent, popNavState } from "@/lib/agent/orchestrator/navigation";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { nextGate } from "@/lib/agent/qualify-state";
@@ -277,6 +278,10 @@ async function processTextMessageSerialized(
 		);
 	} catch (err) {
 		console.error(`[whatsapp-processor] Error processing message from ${from}:`, err);
+		// R1 (B5c) — a falha do LLM vira sinal AQUI. Este catch engole o erro antes
+		// de ele chegar ao `.catch` do webhook (que por isso nunca rodava no caminho
+		// de texto); o alerta de billing morava no lugar errado.
+		void registrarFalhaDoLlm(err, { origem: "whatsapp", from });
 		try {
 			await sendTextMessage(
 				from,
@@ -303,6 +308,24 @@ export async function processInteractiveReply(
 }
 
 async function processInteractiveReplySerialized(
+	from: string,
+	replyId: string,
+	replyTitle: string,
+	contactName?: string,
+	messageId?: string,
+): Promise<void> {
+	// R1 (B5c) — o clique também roda um turno de LLM, e este caminho não tinha
+	// catch nenhum: o erro subia até o webhook, que só fazia `console.error`. O
+	// alerta mora aqui, no mesmo ponto do caminho de texto.
+	try {
+		await processInteractiveReplyInterno(from, replyId, replyTitle, contactName, messageId);
+	} catch (err) {
+		console.error(`[whatsapp-processor] Interactive error from ${from}:`, err);
+		void registrarFalhaDoLlm(err, { origem: "whatsapp", from, canal: "clique" });
+	}
+}
+
+async function processInteractiveReplyInterno(
 	from: string,
 	replyId: string,
 	replyTitle: string,

@@ -259,7 +259,13 @@ export async function POST(req: NextRequest) {
 							tipo: msgType,
 							filename: message.document?.filename,
 							caption: media?.caption,
-						}).catch((err) => console.error("[whatsapp] Media inbound error:", err));
+						}).catch((err) => {
+							console.error("[whatsapp] Media inbound error:", err);
+							// R1 (B5c) — a mídia não passa pelo catch do processor: o turno de
+							// KYC/diretiva sobe até aqui, e este era o único ponto que ainda
+							// engolia a falha do LLM sem sinal.
+							void registrarFalhaDoLlm(err, { origem: "whatsapp", from, canal: "midia" });
+						});
 					} else {
 						console.warn(`[whatsapp] ${msgType} inbound sem media id — ignorado`);
 					}
