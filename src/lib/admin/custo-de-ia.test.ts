@@ -13,7 +13,12 @@
 
 import { describe, expect, it } from "vitest";
 import type { ConversaDoPostgres, LinhaDeCustoDoLangfuse } from "./custo-de-ia";
-import { computeCustoDeIA, linhasDoMetricasDoLangfuse, somarCustoDeIA } from "./custo-de-ia";
+import {
+	computeCustoDeIA,
+	consultaDeMetricasDoLangfuse,
+	linhasDoMetricasDoLangfuse,
+	somarCustoDeIA,
+} from "./custo-de-ia";
 
 const conversa = (
 	conversationId: string,
@@ -204,5 +209,59 @@ describe("computeCustoDeIA — a costura, provada com fontes injetadas", () => {
 			},
 		);
 		expect(resultado).toMatchObject({ tipo: "motivo", motivo: "fonte_indisponivel" });
+	});
+});
+
+describe("consultaDeMetricasDoLangfuse — a rota é a v2 (v4), nunca a v1 que responde 404", () => {
+	const de = new Date("2026-09-15T00:00:00.000Z");
+	const ate = new Date("2026-09-16T00:00:00.000Z");
+
+	it("aponta para /api/public/v2/metrics e não para /api/public/metrics", () => {
+		const consulta = consultaDeMetricasDoLangfuse("https://langfuse.exemplo.com/", de, ate);
+		expect(consulta.url).toContain("/api/public/v2/metrics?");
+		expect(consulta.url).not.toContain("/api/public/metrics?");
+	});
+
+	it("pede sessão/modelo com config.row_limit e orderBy — exigência da v2 para dimensão de alta cardinalidade", () => {
+		const consulta = consultaDeMetricasDoLangfuse("https://langfuse.exemplo.com", de, ate);
+		const query = JSON.parse(consulta.query);
+		expect(query.view).toBe("observations");
+		expect(query.dimensions).toEqual([{ field: "sessionId" }, { field: "providedModelName" }]);
+		expect(query.metrics).toEqual([{ measure: "totalCost", aggregation: "sum" }]);
+		expect(query.config.row_limit).toBeGreaterThan(0);
+		expect(query.orderBy).toEqual([{ field: "sum_totalCost", direction: "desc" }]);
+		expect(query.fromTimestamp).toBe(de.toISOString());
+		expect(query.toTimestamp).toBe(ate.toISOString());
+	});
+
+	it("não manda timeDimension junto de sessionId — a v2 recusa a combinação", () => {
+		const consulta = consultaDeMetricasDoLangfuse("https://langfuse.exemplo.com", de, ate);
+		expect(JSON.parse(consulta.query).timeDimension).toBeUndefined();
+	});
+
+	it("normaliza a barra final da base sem duplicar o separador", () => {
+		const consulta = consultaDeMetricasDoLangfuse("https://langfuse.exemplo.com/", de, ate);
+		expect(consulta.url.startsWith("https://langfuse.exemplo.com/api/public/v2/metrics?")).toBe(
+			true,
+		);
+	});
+});
+
+describe("linhasDoMetricasDoLangfuse — v2 sem time_dimension usa o dia do recorte", () => {
+	it("atribui o dia pedido quando a resposta não traz time_dimension", () => {
+		expect(
+			linhasDoMetricasDoLangfuse(
+				{ data: [{ sessionId: "conv-1", providedModelName: "gpt-x", sum_totalCost: 2 }] },
+				"2026-09-15",
+			),
+		).toEqual([{ sessionId: "conv-1", modelo: "gpt-x", dia: "2026-09-15", custoUsdCents: 200 }]);
+	});
+
+	it("sem dia no payload e sem recorte, a linha não vira fato (custo órfão de dia fica de fora)", () => {
+		expect(
+			linhasDoMetricasDoLangfuse({
+				data: [{ sessionId: "conv-1", providedModelName: "gpt-x", sum_totalCost: 2 }],
+			}),
+		).toEqual([]);
 	});
 });
