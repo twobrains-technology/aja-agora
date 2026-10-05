@@ -282,9 +282,13 @@ export interface FatosDaLinha {
  *
  * É **FALLBACK**, não o mecanismo: a coluna `ultimo_toque_em` (rodada 2) é a
  * fonte. A derivação só serve para linha antiga, gravada antes de a coluna
- * existir. Ela depende de a cadência não ter sido reajustada — invariante que o
- * próprio ciclo pode quebrar (reentrada, linha terminal). O ciclo NUNCA reescreve
- * `next_touch_at` num ciclo bloqueado, para o fallback continuar exato.
+ * existir, e só é exata enquanto a cadência não tiver sido reajustada.
+ *
+ * ⚠️ E o ciclo **reescreve** `next_touch_at` em ciclo bloqueado: o bloqueio
+ * `teto_30_dias` numa linha `ATIVO` reagenda a data para quando o toque mais
+ * antigo da janela sai dos 30 dias (`normalizarBloqueio` → `proximoToque`, B4/P4),
+ * e o terminal (`esgotado`/`RESPONDEU`) a zera. Por isso a coluna `ultimo_toque_em`
+ * é a fonte: esta derivação não é autoridade.
  */
 export function ultimoToqueDerivado(
 	fatos: {
