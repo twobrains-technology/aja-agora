@@ -1155,7 +1155,7 @@ export const consorcioTools = {
 
 	save_contact_name: tool({
 		description:
-			"Salva o nome do usuário. Chame IMEDIATAMENTE em DOIS casos: (1) o usuário respondeu à pergunta 'como posso te chamar?'; (2) ele se apresentou por conta própria, no meio de qualquer frase ('me chamo Ana e quero um carro de 80 mil') — este segundo caso é hoje o mais comum, porque o funil não pergunta o nome de quem já traz o valor. Extraia SÓ o primeiro nome (de 'sou o Alan Carlos da Silva' -> 'Alan'). NÃO chame quando a palavra depois de 'sou'/'meu nome é' não for uma apresentação: 'meu nome está sujo no Serasa' fala de crédito, 'sou o comprador'/'sou aposentado' é papel. Idempotente — chamar 2x com o mesmo nome é seguro. NUNCA chame sem um nome real dito pelo usuário.",
+			"Salva o nome do usuário. Chame IMEDIATAMENTE em DOIS casos: (1) o usuário respondeu à pergunta 'como posso te chamar?'; (2) ele se apresentou por conta própria, no meio de qualquer frase ('me chamo <nome> e quero um carro de 80 mil') — este segundo caso é hoje o mais comum, porque o funil não pergunta o nome de quem já traz o valor. Extraia SÓ o primeiro nome (de 'sou <nome> <sobrenome>' -> '<nome>'). NÃO chame quando a palavra depois de 'sou'/'meu nome é' não for uma apresentação: 'meu nome está sujo no Serasa' fala de crédito, 'sou o comprador'/'sou aposentado' é papel. Idempotente — chamar 2x com o mesmo nome é seguro. NUNCA chame sem um nome real dito pelo usuário.",
 		inputSchema: z.object({
 			conversationId: z.string().describe("ID da conversa atual"),
 			name: z
@@ -1380,7 +1380,7 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 
 	const save_contact_name = tool({
 		description:
-			"Salva o nome do usuário. Chame IMEDIATAMENTE em DOIS casos: (1) o usuário respondeu à pergunta 'como posso te chamar?'; (2) ele se apresentou por conta própria, no meio de qualquer frase ('me chamo Ana e quero um carro de 80 mil') — este segundo caso é hoje o mais comum, porque o funil não pergunta o nome de quem já traz o valor. Extraia SÓ o primeiro nome (de 'sou o Alan Carlos da Silva' -> 'Alan'). NÃO chame quando a palavra depois de 'sou'/'meu nome é' não for uma apresentação: 'meu nome está sujo no Serasa' fala de crédito, 'sou o comprador'/'sou aposentado' é papel. Idempotente — chamar 2x com o mesmo nome é seguro. NUNCA chame sem um nome real dito pelo usuário.",
+			"Salva o nome do usuário. Chame IMEDIATAMENTE em DOIS casos: (1) o usuário respondeu à pergunta 'como posso te chamar?'; (2) ele se apresentou por conta própria, no meio de qualquer frase ('me chamo <nome> e quero um carro de 80 mil') — este segundo caso é hoje o mais comum, porque o funil não pergunta o nome de quem já traz o valor. Extraia SÓ o primeiro nome (de 'sou <nome> <sobrenome>' -> '<nome>'). NÃO chame quando a palavra depois de 'sou'/'meu nome é' não for uma apresentação: 'meu nome está sujo no Serasa' fala de crédito, 'sou o comprador'/'sou aposentado' é papel. Idempotente — chamar 2x com o mesmo nome é seguro. NUNCA chame sem um nome real dito pelo usuário.",
 		inputSchema: z.object({
 			name: z
 				.string()
@@ -1396,6 +1396,12 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 			// Ancorado na fala: o nome tem que ter sido DITO neste turno.
 			const result = await saveContactName(conversationId, name, { ancorarEm: userText });
 			if (!result.ok) {
+				// A recusa por âncora conta o FATO ao MODELO (nunca ao cliente): o nome
+				// proposto não está na fala e a fala foi a do cliente. Sem o porquê, o
+				// modelo inventava a causa ("o sistema não deixou registrar <fala>").
+				if (result.error === "nao_ancorado") {
+					return `[Nome NÃO gravado: "${name}" não foi dito pelo cliente nesta mensagem. A fala dele foi: "${userText ?? ""}". Grave o nome que ele disse; se a fala não trouxer um nome, pergunte o nome.]`;
+				}
 				return `[Nome inválido: ${result.error}. Peça o nome novamente de forma natural.]`;
 			}
 			return `[Nome '${name}' salvo. Use-o nas próximas respostas.]`;

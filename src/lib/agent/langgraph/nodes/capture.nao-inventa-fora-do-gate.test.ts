@@ -3,7 +3,7 @@
  *
  * Este arquivo trava uma REVERSÃO, e o motivo dela é a lição mais cara desta
  * entrega. A vitrine tirou o gate `name` do caminho de quem já traz o valor, e
- * com isso a apresentação espontânea ("me chamo Ana e quero um carro de 80 mil")
+ * com isso a apresentação espontânea ("me chamo Bruna e quero um carro de 80 mil")
  * passou a não ter quem a lesse. A primeira tentativa foi capturar aqui, por
  * FORMA da apresentação. A sonda contra o código, com frases do domínio:
  *
@@ -20,7 +20,7 @@
  *
  * Dentro do gate a mesma heurística é segura, e continua valendo: ali a pergunta
  * ACABOU de ser feita e a resposta é curta. Fora dele, quem lê a frase inteira e
- * distingue "me chamo Ana" de "meu nome está sujo no Serasa" é o MODELO, com
+ * distingue "me chamo Bruna" de "meu nome está sujo no Serasa" é o MODELO, com
  * `save_contact_name` — e o servidor ancora o que ele tentar gravar.
  */
 import { describe, expect, it } from "vitest";
@@ -62,7 +62,7 @@ describe("captureAnswerNode — fora do gate `name` não se grava nome", () => {
 	it("nem mesmo a apresentação de verdade — quem grava essa é a tool do modelo", () => {
 		// Não é descuido: é a divisão. Perder aqui é o preço de não inventar acima,
 		// e o nome não se perde — a regra da tool está no SYSTEM_PROMPT.
-		expect(captureAnswerNode(foraDoGate("Oi, me chamo Ana e quero um carro"))).toEqual({});
+		expect(captureAnswerNode(foraDoGate("Oi, me chamo Bruna e quero um carro"))).toEqual({});
 	});
 
 	it("o gate `name` continua capturando — a reversão não mexeu nele", () => {
