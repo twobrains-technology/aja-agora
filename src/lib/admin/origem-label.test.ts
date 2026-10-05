@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type OrigemBruta, rotularOrigem } from "./origem-label";
+import { ehNavegacaoInterna, type OrigemBruta, rotularOrigem } from "./origem-label";
 
 const VAZIA: OrigemBruta = {
 	utmSource: null,
@@ -118,5 +118,56 @@ describe("rotularOrigem", () => {
 		expect(rotularOrigem({ ...VAZIA, utmSource: "  ", referrerHost: "" })).toMatchObject({
 			tipo: "direto",
 		});
+	});
+});
+
+// FIX-443 (05/10/2026): medido em produção — 155 de 312 visitas do período
+// entravam como "Referência · ajaagora.com.br". Era navegação interna.
+describe("ehNavegacaoInterna (o nosso domínio não é referência)", () => {
+	it("reconhece o nosso domínio em todas as formas que o navegador manda", () => {
+		for (const h of [
+			"ajaagora.com.br",
+			"www.ajaagora.com.br",
+			"ajagora.com.br",
+			"www.ajagora.com.br",
+			"ajaagora.com.br:2086",
+			"ajaagora.com.br:8080",
+			"ajaagora.com.br:8880",
+			"tb-aja-agora.twobrainstechnology.com",
+			"https://ajaagora.com.br",
+			"AJAAGORA.COM.BR",
+		]) {
+			expect(ehNavegacaoInterna(h)).toBe(true);
+		}
+	});
+
+	it("não engole referência de terceiro", () => {
+		for (const h of ["www.google.com", "google.com", "instagram.com", "l.instagram.com", "blog.com.br"]) {
+			expect(ehNavegacaoInterna(h)).toBe(false);
+		}
+	});
+
+	it("a visita que veio do nosso próprio site vira Direto, não Referência", () => {
+		const semReferrer = rotularOrigem({
+			utmSource: null, utmMedium: null, utmCampaign: null, utmContent: null,
+			ctwaSourceId: null, ctwaHeadline: null, referrerHost: null, campaignId: null,
+		});
+		for (const h of ["ajaagora.com.br", "www.ajaagora.com.br", "ajagora.com.br", "ajaagora.com.br:2086"]) {
+			const comReferrerInterno = rotularOrigem({
+				utmSource: null, utmMedium: null, utmCampaign: null, utmContent: null,
+				ctwaSourceId: null, ctwaHeadline: null, referrerHost: h, campaignId: null,
+			});
+			expect(comReferrerInterno.tipo).toBe("direto");
+			expect(comReferrerInterno.label).toBe(semReferrer.label);
+		}
+	});
+
+	it("referência de terceiro continua referência", () => {
+		const o = rotularOrigem({
+			utmSource: null, utmMedium: null, utmCampaign: null, utmContent: null,
+			ctwaSourceId: null, ctwaHeadline: null, referrerHost: "www.google.com", campaignId: null,
+		});
+		expect(o.tipo).toBe("referencia");
+		expect(o.label).toBe("www.google.com");
 	});
 });
