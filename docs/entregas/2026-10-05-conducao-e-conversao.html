@@ -100,7 +100,8 @@ Langfuse production: US$ 16,22 (sem preço do qwen: 278 observações → US$ 0,
 
 <div class="risco medio"><p><strong>6 linhas da régua "vencidas" que nunca sairiam</strong> <span class="pill p-ok">CORRIGIDO</span></p>
 <div class="prova">antes:  ATIVO com next_touch_at vencido = 7 (6 presas no teto de 30 dias, desde 02/10)
-depois: ATIVO vencido &gt; 1 h            = 1 (d8bc426e, outra causa — ver seção 6)</div>
+depois (#156): ATIVO vencido &gt; 1 h     = 1 (d8bc426e, outra causa)
+depois (#157): ATIVO vencido &gt; 1 h     = 0</div>
 <p>Cobertura: <code>src/lib/workers/remarketing-cycle.teto-reagenda.test.ts</code>, <code>src/lib/remarketing/motor.teto-reagenda.test.ts</code>.</p></div>
 
 <div class="risco baixo"><p><strong>Nome de exemplo copiado como dado (Bruna → "Ana")</strong> <span class="pill p-ok">CORRIGIDO</span> — herdado</p>
@@ -113,7 +114,8 @@ depois: ATIVO vencido &gt; 1 h            = 1 (d8bc426e, outra causa — ver se�
 <ol>
 <li><strong>O antes/depois de conversão ainda não existe.</strong> A correção entrou às 15:05 de 05/10; mortes no primeiro turno (15 de 31 na janela 02–05/10) e conversão do card do telefone (5 de 14) só se comparam com tráfego novo. A amostra é pequena: será sinal, não prova estatística.</li>
 <li><strong>Dois chamados à ação no turno do reveal.</strong> O smoke mostrou os botões "Pode buscar as opções / Quero entender melhor" ao lado do card do WhatsApp: é card do servidor, não do modelo, e não estava no escopo. É o próximo candidato se a conversão do card não subir.</li>
-<li><strong>Linha <code>d8bc426e</code> vencida desde 21/09</strong>: conversa marcada como simulada depois de entrar na régua; o ciclo filtrava <code>is_simulated = false</code> e nunca mais a visitava. Corrigido no B10 (<code>da9c5e79</code>, teste de integração com banco 16/16), que vai para produção no PR seguinte. A medição pós-deploy está no fim deste dossiê.</li>
+<li><strong>Linha <code>d8bc426e</code> vencida desde 21/09</strong>: conversa marcada como simulada depois de entrar na régua; o ciclo filtrava <code>is_simulated = false</code> e nunca mais a visitava. Corrigido no B10 (<code>da9c5e79</code>, teste de integração com banco 16/16), no ar pelo PR #157 (worker 15:24). Medido depois: a linha saiu como <code>RESPONDEU</code>/<code>teste</code> e há <strong>0</strong> toques ativos vencidos.</li>
+<li><strong>Senha do banco de produção exposta localmente.</strong> Durante a sessão, o <code>psql</code> do chefe recebeu a URL com senha como argumento, e a senha do usuário <code>app_aja_agora</code> apareceu na lista de processos da máquina e no contexto da sessão. Corrigido o hábito (credencial por variável de ambiente; scripts corrigidos no R6). <strong>PENDENTE-KAIRO:</strong> rotacionar a senha no RDS e no secret <code>tb/prod/aja-agora/env</code> (exige atualizar o serviço).</li>
 <li><strong>Dedupe do alerta do LLM é por processo</strong>: um restart ou outra réplica do ECS pode repetir um alerta na mesma hora. Persistir exigiria tabela.</li>
 <li><strong>O Langfuse não tem preço do qwen.</strong> O painel de custo por conversa fica em "sem dado" enquanto não se cadastrar o preço do modelo no Langfuse (decisão do dono: cadastrar ou manter o gateway como fonte).</li>
 <li><strong><code>utm_campaign</code> chega em dois formatos</strong> (id numérico e nome por extenso), conforme o anúncio. A mesma campanha aparece em duas linhas. É configuração de URL no Gerenciador de Anúncios, sem conserto no código.</li>
