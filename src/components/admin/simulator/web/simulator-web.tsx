@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { rotuloDoCard, tipoDeCard } from "@/components/admin/conversa/conversa";
 import { ChatInput } from "@/components/chat/chat-input";
 import { MessageList } from "@/components/chat/message-list";
 import { ChatProvider, useChatContext } from "@/lib/chat/provider";
-import type { AjaUIMessage } from "@/lib/chat/ui-message";
+import type { AjaUIMessage, ArtifactPartData } from "@/lib/chat/ui-message";
 import { HandoffBanner } from "../handoff-banner";
 import { SimulatorInbox } from "../inbox";
 import { MemoryDevPanel } from "../memory-dev-panel";
@@ -21,19 +22,39 @@ type PersistedMessage = {
 	content: string;
 	channel: string;
 	createdAt: string;
+	artifacts?: Array<{ id: string; type: string; payload: Record<string, unknown> }>;
 };
 
+/**
+ * As mensagens persistidas viram parts do chat. Um marcador de card vira
+ * um part `data-artifact` (o card como o cliente viu); sem o payload, vira o
+ * rótulo humano em PT — nunca o marcador cru. Fala comum continua como texto.
+ */
 function toUIMessages(messages: PersistedMessage[]): AjaUIMessage[] {
 	return messages
 		.filter((m) => m.role === "user" || m.role === "assistant")
-		.map(
-			(m) =>
-				({
+		.map((m) => {
+			const tipo = tipoDeCard(m.content);
+			if (tipo) {
+				const artefato = m.artifacts?.find((a) => a.type === tipo);
+				const part = artefato
+					? ({
+							type: "data-artifact",
+							data: { type: artefato.type, payload: artefato.payload },
+						} as { type: "data-artifact"; data: ArtifactPartData })
+					: ({ type: "text", text: rotuloDoCard(tipo) } as const);
+				return {
 					id: m.id,
 					role: m.role as "user" | "assistant",
-					parts: [{ type: "text" as const, text: m.content }],
-				}) as AjaUIMessage,
-		);
+					parts: [part],
+				} as AjaUIMessage;
+			}
+			return {
+				id: m.id,
+				role: m.role as "user" | "assistant",
+				parts: [{ type: "text" as const, text: m.content }],
+			} as AjaUIMessage;
+		});
 }
 
 export function SimulatorWeb() {

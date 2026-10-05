@@ -4,7 +4,7 @@ import { Phone, Video } from "lucide-react";
 import { useState } from "react";
 import { ClientChatBox } from "@/components/admin/pipeline/client-chat-box";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { type MensagemDaConversa, WhatsAppView } from "./whatsapp-view";
+import { Conversa, type MensagemDaConversa } from "./conversa";
 
 /**
  * A conversa em TELA CHEIA, no layout do WhatsApp — a visão de atendimento.
@@ -68,7 +68,7 @@ export function AtendimentoWhatsAppDialog({
 
 				<div className="min-h-0 flex-1 overflow-y-auto bg-[#efeae2] dark:bg-[#0b141a]">
 					<div className="p-3">
-						<WhatsAppView mensagens={mensagens} />
+						<Conversa mensagens={mensagens} modo="whatsapp" />
 						{/* Depois de disparar a retomada, a conversa fica esperando o
 						    cliente. Dizer isso DENTRO da conversa — e não num canto — é
 						    o que evita o atendente ficar tentando mandar de novo. */}
