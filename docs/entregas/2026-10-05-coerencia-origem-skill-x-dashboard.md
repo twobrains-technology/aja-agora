@@ -18,11 +18,11 @@ Ordem de precedência, idêntica nas duas pontas (`src/lib/admin/origem-label.ts
 
 | balde | dashboard ANTES do #155 | régua correta (skill) | dashboard DEPOIS do #155 |
 |---|---|---|---|
-| visitas | 312 | 320 (a tela exclui 8: bot/duplicata da janela) | 312 |
-| campanha | 80 | 86 (6 com `campaign_id` sem `utm_source`) | 80 |
+| visitas | 313 | 320 visitas cruas = 313 pessoas (a tela conta PESSOA, com VISITA_CONTAVEL) | 313 |
+| campanha | 81 | 89 visitas cruas (6 com `campaign_id` sem `utm_source`) | 81 |
 | click-to-WhatsApp | 0 | 0 | 0 |
 | navegação interna | — (não existia o balde) | **160** | entra em Direto por decisão de produto |
-| referência | **161** ✗ (88 + 49 + 12 + 6, todos o nosso domínio) | **3** (2 google + 1 app Android) | **3** ✓ (2 google + 1 app Android) |
+| referência | **161** ✗ (88 + 49 + 12 + 6, todos o nosso domínio) | **3** (2 google + 1 app Android) | **3** ✓ |
 | direto | 71 | 71 | **229** (71 + os 158 de navegação interna) |
 
 E o achado que motivou tudo: **3 dos 5 telefones do período estavam pendurados em
