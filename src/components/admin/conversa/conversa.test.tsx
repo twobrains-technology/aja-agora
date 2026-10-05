@@ -216,3 +216,67 @@ describe("visão de conversa no estilo WhatsApp", () => {
 		expect(screen.queryByRole("img")).toBeNull();
 	});
 });
+
+describe("R4 — payload parcial não inventa número", () => {
+	it("campo null/''/undefined é omitido, nunca vira 0 / 'R$ 0,00' / 'null meses'", () => {
+		render(
+			<Conversa
+				mensagens={[
+					msg({
+						role: "assistant",
+						content: "[card: simulation_result]",
+						artifacts: [
+							{
+								id: "a1",
+								type: "simulation_result",
+								payload: {
+									administradora: "Itaú",
+									monthlyPayment: null,
+									creditValue: "",
+									termMonths: null,
+								},
+							},
+						],
+					}),
+				]}
+			/>,
+		);
+
+		const card = screen.getByTestId("card-legivel");
+		// O que existe no payload aparece; o que é ausente não vira número.
+		expect(card.textContent).toContain("Itaú");
+		expect(card.textContent).not.toContain("R$ 0,00");
+		expect(card.textContent).not.toContain("null meses");
+		expect(card.textContent).not.toContain("0 meses");
+	});
+
+	it("availableSlots null não vira '0 vagas'", () => {
+		render(
+			<Conversa
+				mensagens={[
+					msg({
+						role: "assistant",
+						content: "[card: scarcity]",
+						artifacts: [
+							{
+								id: "a2",
+								type: "scarcity",
+								payload: { administradora: "Porto Seguro", availableSlots: null },
+							},
+						],
+					}),
+				]}
+			/>,
+		);
+
+		const card = screen.getByTestId("card-legivel");
+		expect(card.textContent).toContain("Porto Seguro");
+		expect(card.textContent).not.toContain("0 vagas");
+	});
+
+	it("contemplation_dial fala português, não 'dial'", () => {
+		render(<Conversa mensagens={[msg({ role: "assistant", content: "[card: contemplation_dial]" })]} />);
+
+		expect(screen.getByText("Mostrou o seletor de prazo de contemplação")).toBeDefined();
+	});
+});

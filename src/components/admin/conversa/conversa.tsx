@@ -100,7 +100,7 @@ const ROTULOS_DE_CARD: Record<string, string> = {
 	simulation_result: "Mostrou a simulação da parcela",
 	scenarios: "Mostrou cenários de lance",
 	financing_comparison: "Mostrou a comparação com financiamento",
-	contemplation_dial: "Mostrou o dial de contemplação",
+	contemplation_dial: "Mostrou o seletor de prazo de contemplação",
 	embedded_bid: "Mostrou o lance embutido",
 	two_paths: "Mostrou dois caminhos de decisão",
 	scarcity: "Mostrou a disponibilidade da cota",
@@ -124,10 +124,23 @@ export function rotuloDoCard(tipo: string): string {
 
 const formatadorBRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
+/**
+ * Número do payload, ou `null` quando o campo está ausente.
+ *
+ * `Number(null)` e `Number("")` dão `0` e passam em `isFinite` — tratá-los como
+ * número faz a tela INVENTAR dado: "R$ 0,00", "0 meses", "0 vagas" para um
+ * campo que o payload simplesmente não trouxe. Ausente é ausente.
+ */
+function numero(valor: unknown): number | null {
+	if (valor === null || valor === undefined) return null;
+	if (typeof valor === "string" && valor.trim().length === 0) return null;
+	const n = Number(valor);
+	return Number.isFinite(n) ? n : null;
+}
+
 function formatarBRL(valor: unknown): string | null {
-	const numero = Number(valor);
-	if (!Number.isFinite(numero)) return null;
-	return formatadorBRL.format(numero);
+	const n = numero(valor);
+	return n === null ? null : formatadorBRL.format(n);
 }
 
 function texto(valor: unknown): string | null {
@@ -138,7 +151,8 @@ function texto(valor: unknown): string | null {
 function detalhesDoCard(tipo: string, payload: Record<string, unknown>): string | null {
 	const parcela = formatarBRL(payload.monthlyPayment);
 	const credito = formatarBRL(payload.creditValue);
-	const prazo = Number.isFinite(Number(payload.termMonths)) ? `${payload.termMonths} meses` : null;
+	const meses = numero(payload.termMonths);
+	const prazo = meses === null ? null : `${meses} meses`;
 
 	switch (tipo) {
 		case "group_card":
@@ -164,9 +178,9 @@ function detalhesDoCard(tipo: string, payload: Record<string, unknown>): string 
 			return rotulos.length > 0 ? rotulos.join(" · ") : null;
 		}
 		case "scarcity": {
-			const vagas = Number(payload.availableSlots);
+			const vagas = numero(payload.availableSlots);
 			const partes = [
-				Number.isFinite(vagas) ? `${vagas} vagas` : null,
+				vagas === null ? null : `${vagas} vagas`,
 				texto(payload.administradora),
 			].filter(Boolean);
 			return partes.length > 0 ? partes.join(" · ") : null;
