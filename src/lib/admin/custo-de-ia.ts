@@ -323,29 +323,76 @@ export function linhasDoMetricasDoLangfuse(
  * `diaComoData`) não escorrega de data em fuso nenhum e a soma de 24 h a partir
  * dela não cai no vizinho.
  */
-function diasDaJanela(de: Date, ate: Date): { dia: string; de: Date; ate: Date }[] {
+export function diasDaJanela(de: Date, ate: Date): { dia: string; de: Date; ate: Date }[] {
 	const UM_DIA_MS = 24 * 60 * 60 * 1000;
 	const dias: { dia: string; de: Date; ate: Date }[] = [];
 	const ultimo = diaComoData(diaDoNegocio(ate)).getTime();
 	let cursor = diaComoData(diaDoNegocio(de));
 	while (cursor.getTime() <= ultimo) {
-		dias.push({ dia: diaDoNegocio(cursor), de: inicioDoDia(cursor), ate: fimDoDia(cursor) });
+		const inicio = inicioDoDia(cursor);
+		const fim = fimDoDia(cursor);
+		// O dia carrega o RECORTE pedido, não as bordas do dia: quem lê de 15:00
+		// às 06:00 do dia seguinte não pode buscar o dia inteiro dos dois lados —
+		// somaria horas que não foram pedidas (e cobraria custo de fora da janela).
+		dias.push({
+			dia: diaDoNegocio(cursor),
+			de: de.getTime() > inicio.getTime() ? de : inicio,
+			ate: ate.getTime() < fim.getTime() ? ate : fim,
+		});
 		cursor = new Date(cursor.getTime() + UM_DIA_MS);
 	}
 	return dias;
 }
 
 /**
+ * Executa `fn` sobre os itens com no máximo `limite` promessas em voo, na ordem
+ * do array de entrada. Existe porque o `Promise.all` sobre 30 dias disparava 30
+ * consultas simultâneas ao ClickHouse do Langfuse — o que toma 429/5xx e derruba
+ * a leitura inteira por causa de um dia. O teto mantém a latência baixa sem
+ * encostar no limite do provedor.
+ */
+export async function mapComConcorrencia<T, R>(
+	itens: readonly T[],
+	limite: number,
+	fn: (item: T, indice: number) => Promise<R>,
+): Promise<R[]> {
+	const resultados = new Array<R>(itens.length);
+	let proximo = 0;
+	const trabalhadores = Array.from(
+		{ length: Math.min(Math.max(1, limite), itens.length) },
+		async () => {
+			while (true) {
+				const i = proximo;
+				proximo += 1;
+				if (i >= itens.length) return;
+				resultados[i] = await fn(itens[i] as T, i);
+			}
+		},
+	);
+	await Promise.all(trabalhadores);
+	return resultados;
+}
+
+/** O teto de consultas simultâneas ao Langfuse — medido contra o ClickHouse. */
+const CONCORRENCIA_DE_CONSULTAS = 4;
+
+/**
  * Lê o custo de IA do Langfuse (Metrics API **v2** — a v1 responde 404 no v4).
  *
  * Uma consulta por DIA: a v2 recusa `sessionId` junto de `timeDimension`, e o
  * vínculo com a conversa depende do `sessionId`. O dia de cada linha é o do
- * recorte desta consulta — `Promise.all` mantém a leitura na latência de um dia.
+ * recorte desta consulta — a leitura roda com concorrência limitada. O dia que
+ * responde erro vira AUSENTE (sem dado daquele dia): uma falha isolada não pode
+ * apagar a tela inteira. Só quando TODOS os dias falham é que a fonte está fora,
+ * e aí o erro sobe para `computeCustoDeIA` virar `fonte_indisponivel`.
  *
  * A credencial vive no ambiente (vault), nunca em log: só o STATUS do erro
  * aparece, jamais a chave.
  */
-async function buscarMetricasDoLangfuse(de: Date, ate: Date): Promise<LinhaDeCustoDoLangfuse[]> {
+export async function buscarMetricasDoLangfuse(
+	de: Date,
+	ate: Date,
+): Promise<LinhaDeCustoDoLangfuse[]> {
 	const base = process.env.LANGFUSE_BASE_URL?.trim();
 	const publicKey = process.env.LANGFUSE_PUBLIC_KEY?.trim();
 	const secretKey = process.env.LANGFUSE_SECRET_KEY?.trim();
@@ -354,15 +401,28 @@ async function buscarMetricasDoLangfuse(de: Date, ate: Date): Promise<LinhaDeCus
 	const headers = {
 		Authorization: `Basic ${Buffer.from(`${publicKey}:${secretKey}`).toString("base64")}`,
 	};
-	const porDia = await Promise.all(
-		diasDaJanela(de, ate).map(async ({ dia, de: inicio, ate: fim }) => {
-			const { url } = consultaDeMetricasDoLangfuse(base, inicio, fim);
-			const resposta = await fetch(url, { headers, cache: "no-store" });
-			if (!resposta.ok) throw new Error(`langfuse-metrics-${resposta.status}`);
-			return linhasDoMetricasDoLangfuse(await resposta.json(), dia);
-		}),
+	const dias = diasDaJanela(de, ate);
+	const porDia = await mapComConcorrencia(
+		dias,
+		CONCORRENCIA_DE_CONSULTAS,
+		async ({ dia, de: inicio, ate: fim }) => {
+			try {
+				const { url } = consultaDeMetricasDoLangfuse(base, inicio, fim);
+				const resposta = await fetch(url, { headers, cache: "no-store" });
+				if (!resposta.ok) throw new Error(`langfuse-metrics-${resposta.status}`);
+				return linhasDoMetricasDoLangfuse(await resposta.json(), dia);
+			} catch (erro) {
+				return erro instanceof Error ? erro : new Error(String(erro));
+			}
+		},
 	);
-	return porDia.flat();
+
+	const sucessos = porDia.filter((r): r is LinhaDeCustoDoLangfuse[] => Array.isArray(r));
+	const falhas = porDia.filter((r): r is Error => r instanceof Error);
+	// Nenhum dia respondeu (com um dia ao menos para consultar) → a FONTE caiu.
+	// Não é "sem dado": é `fonte_indisponivel`, e o erro sobe.
+	if (sucessos.length === 0 && falhas.length > 0) throw falhas[0];
+	return sucessos.flat();
 }
 
 /** O custo de IA do Langfuse, por sessão/modelo/dia. Server-only. */
