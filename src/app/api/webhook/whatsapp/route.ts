@@ -5,6 +5,7 @@ import { extrairCodigoDeOrigem, removerCarimbo } from "@/lib/attribution/codigo-
 import { parseCtwaReferral } from "@/lib/attribution/referral";
 import { recordWhatsAppVisit } from "@/lib/attribution/visit-store";
 import { codigoDaMeta } from "@/lib/remarketing/status-do-toque";
+import { registrarFalhaDoLlm } from "@/lib/llm/alerta-do-llm";
 import { markAsRead } from "@/lib/whatsapp/api";
 import { receberMidiaDoCliente } from "@/lib/whatsapp/midia-do-cliente";
 import { claimInboundMessage } from "@/lib/whatsapp/once";
@@ -195,9 +196,12 @@ export async function POST(req: NextRequest) {
 						// nada além do que já estava pronto.
 						const text = codigo ? removerCarimbo(bruto) : bruto;
 						console.log(`[whatsapp] Text: "${text}"`);
-						processTextMessage(from, text || "Oi", contactName, message.id).catch((err) =>
-							console.error("[whatsapp] Processor error:", err),
-						);
+						processTextMessage(from, text || "Oi", contactName, message.id).catch((err) => {
+							console.error("[whatsapp] Processor error:", err);
+							// B5: falha do LLM vira sinal (log estruturado + alerta de billing).
+							// Nunca lança — observabilidade não pode derrubar o webhook.
+							void registrarFalhaDoLlm(err, { origem: "whatsapp", from });
+						});
 					}
 					break;
 				}

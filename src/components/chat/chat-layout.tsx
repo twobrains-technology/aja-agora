@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { SunMark } from "@/components/brand/sun-mark";
 import { Button } from "@/components/ui/button";
+import { textoDoErroDoChat } from "@/lib/chat/stream-error";
 
 interface ChatLayoutProps {
 	children: React.ReactNode;
@@ -15,7 +16,10 @@ interface ChatLayoutProps {
 export function ChatLayout({ children, onReset, error }: ChatLayoutProps) {
 	const router = useRouter();
 	const [dismissedError, setDismissedError] = useState<string | null>(null);
-	const showError = error && error !== dismissedError;
+	// B5: o `error` que chega é um CÓDIGO (ex.: `llm_billing`), nunca a mensagem
+	// crua do servidor. A tela traduz para português.
+	const textoErro = error ? textoDoErroDoChat(error) : null;
+	const showError = Boolean(textoErro) && error !== dismissedError;
 
 	const handleBack = useCallback(() => {
 		if (typeof window !== "undefined" && window.history.length > 1) {
@@ -89,11 +93,11 @@ export function ChatLayout({ children, onReset, error }: ChatLayoutProps) {
 			{/* Dismissible error banner */}
 			{showError && (
 				<div className="flex items-center justify-between gap-2 bg-destructive/10 px-4 py-2 text-sm text-destructive">
-					<span>{error}</span>
+					<span>{textoErro}</span>
 					<Button
 						variant="ghost"
 						size="icon"
-						onClick={() => setDismissedError(error)}
+						onClick={() => setDismissedError(error ?? null)}
 						className="size-7 shrink-0 text-destructive hover:text-destructive"
 						aria-label="Fechar erro"
 					>
