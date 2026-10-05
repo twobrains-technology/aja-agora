@@ -102,18 +102,35 @@ function leituraDoBraco(experimento: Experimento, conversa: SQL): SQL {
 }
 
 /**
+ * O predicado de "braço FORÇADO" — `?variante=` (QA/dono) grava `forcada: true`.
+ *
+ * Forçar não consome a fila e não é entrada do experimento: para o painel, a
+ * conversa conta como `sem variante` (D4) — senão o teste manual do dono vira
+ * "resultado" e contamina a leitura que ele mesmo vai ler.
+ */
+function bracoForcado(experimento: Experimento, conversa: SQL): SQL {
+	return sql`(${conversa}.metadata -> ${experimento.id} ->> 'forcada') = 'true'`;
+}
+
+/**
  * A EXPRESSÃO do braço de uma conversa — `'A'` | `'B'` | NULL, **com allowlist**.
  *
  * O `CASE WHEN … IN (…) THEN … END` sem `ELSE` devolve NULL para qualquer valor
  * fora da lista: um `"C"` legado no metadata cai em `sem variante` em vez de não
  * cair em balde nenhum — é o que mantém `A + B + sem variante = total`.
  *
+ * O braço FORÇADO (`forcada: true`, FIX-434/D4) também devolve NULL: está fora do
+ * teste.
+ *
  * Recebe a referência SQL da tabela/alias porque quem chama já tem um JOIN
  * montado e o filtro tem que falar sobre a MESMA linha.
  */
 export function bracoDaConversaSql(experimento: Experimento, conversa: SQL): SQL {
 	const leitura = leituraDoBraco(experimento, conversa);
-	return sql`CASE WHEN ${leitura} IN (${bracosDoExperimento(experimento)}) THEN ${leitura} END`;
+	return sql`CASE
+    WHEN ${bracoForcado(experimento, conversa)} THEN NULL
+    WHEN ${leitura} IN (${bracosDoExperimento(experimento)}) THEN ${leitura}
+  END`;
 }
 
 /**
@@ -173,17 +190,17 @@ function ordenacaoDaPessoa(fato: SQL | null, prefixo: SQL): SQL {
  * cairia em `sem variante` e contaria em dois baldes.
  */
 export function bracoDaPessoaSql(experimento: Experimento, opcoes: OpcoesDeBracoDaPessoa): SQL {
-	const leitura = leituraDoBraco(experimento, sql`c2`);
+	const braco = bracoDaConversaSql(experimento, sql`c2`);
 	const fato = fatoDaEtapaNaConversa(experimento.etapaAncora, sql`c2`);
 	const visitante = opcoes.colunaVisitor ?? sql`v.visitor_id`;
 
 	return sql`(
-    SELECT ${leitura}
+    SELECT ${braco}
     FROM conversations c2
     JOIN visits vp ON vp.id = c2.visit_id
     WHERE c2.is_simulated = false
       AND c2.created_at BETWEEN ${opcoes.de} AND ${opcoes.ate}
-      AND ${leitura} IN (${bracosDoExperimento(experimento)})
+      AND ${braco} IS NOT NULL
       AND (${visitante} = vp.visitor_id OR c2.contact_id::text = ${opcoes.chave})
     ORDER BY ${ordenacaoDaPessoa(fato, sql`c2`)}
     LIMIT 1
@@ -233,14 +250,14 @@ export function cteDoBracoDaPessoa(
 	experimento: Experimento,
 	opcoes: OpcoesDaCteDoBracoDaPessoa,
 ): SQL {
-	const leitura = leituraDoBraco(experimento, sql`c`);
+	const braco = bracoDaConversaSql(experimento, sql`c`);
 	const fato = fatoDaEtapaNaConversa(experimento.etapaAncora, sql`c`);
 
 	return sql`${sql.raw(NOME_DO_CTE_DO_BRACO_DA_PESSOA)} AS (
     SELECT DISTINCT ON (chave) chave, braco
     FROM (
       SELECT ${opcoes.chave} AS chave,
-             ${leitura} AS braco,
+             ${braco} AS braco,
              c.id AS id,
              c.created_at AS created_at,
              ${fato ?? sql`false`} AS avancou
@@ -248,7 +265,7 @@ export function cteDoBracoDaPessoa(
       JOIN ${opcoes.fonte} pv ON pv.id = c.visit_id
       WHERE c.is_simulated = false
         AND c.created_at BETWEEN ${opcoes.de} AND ${opcoes.ate}
-        AND ${leitura} IN (${bracosDoExperimento(experimento)})
+        AND ${braco} IS NOT NULL
     ) s
     ORDER BY chave, ${ordemDoCte(fato)}
   )`;

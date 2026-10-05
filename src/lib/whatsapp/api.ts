@@ -103,7 +103,7 @@ async function callApi(
 	phoneNumberId: string,
 	accessToken: string,
 	payload: Record<string, unknown>,
-): Promise<{ messageId?: string; error?: string }> {
+): Promise<{ messageId?: string; error?: string; timeout?: boolean }> {
 	const url = `${GRAPH_API}/${phoneNumberId}/messages`;
 	try {
 		const res = await fetch(url, {
@@ -132,7 +132,10 @@ async function callApi(
 	} catch (err) {
 		if (isTimeoutError(err)) {
 			console.error("[whatsapp-api] Send timeout (>15s) ao falar com a Meta");
-			return { error: "timeout ao falar com a Meta (>15s)" };
+			// `timeout: true` sobe para o caller classificar o desfecho: é o ÚNICO caso
+			// ambíguo (a requisição saiu e a Meta pode ter entregado). Sem a marca, o
+			// caller só teria a mensagem de erro — frágil (FIX-441/C15b).
+			return { error: "timeout ao falar com a Meta (>15s)", timeout: true };
 		}
 		console.error("[whatsapp-api] Send error:", err);
 		return { error: String(err) };

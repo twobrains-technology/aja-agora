@@ -155,6 +155,13 @@ export async function GET(req: NextRequest) {
 			isSimulated: conversations.isSimulated,
 			contactId: conversations.contactId,
 			lastInboundAt: conversations.lastInboundAt,
+			// A fala do cliente: a web conta o silêncio por ela (D9). Mesmo `CASE`
+			// que `fatosDeConversas` seleciona, para a lista de Conversas dar o
+			// MESMO veredito que o Percurso, a ficha e o worker.
+			ultimaMensagemDoClienteEm: sql<Date | null>`CASE WHEN ${conversations.channel} = 'web' THEN (
+				SELECT max(m.created_at) FROM messages m
+				 WHERE m.conversation_id = ${conversations.id} AND m.role = 'user'
+			) END`,
 			metadata: conversations.metadata,
 			handedOffUserId: conversations.handedOffUserId,
 			handedOffUserName: userTable.name,
@@ -201,6 +208,9 @@ export async function GET(req: NextRequest) {
 		isSimulated: r.isSimulated,
 		contactId: r.contactId ?? null,
 		lastInboundAt: r.lastInboundAt ?? null,
+		ultimaMensagemDoClienteEm: r.ultimaMensagemDoClienteEm
+			? new Date(r.ultimaMensagemDoClienteEm)
+			: null,
 		waId: r.waId ?? null,
 		telefone: r.phone ?? null,
 		regua: r.reguaStatus

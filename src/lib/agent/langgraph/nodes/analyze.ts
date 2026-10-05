@@ -9,6 +9,7 @@ import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { pickPersonaForCategory } from "@/lib/agent/personas-repo";
 import { aplicarTrocaDeCategoria, reverterFaixaDeCredito } from "@/lib/agent/qualify-answers";
 import { valorAncoradoNoTexto } from "@/lib/agent/valor-declarado";
+import { registrarAnalisadorIndisponivel } from "@/lib/observability/langfuse/analisador-scores";
 import { registrarValorRevertido } from "@/lib/observability/langfuse/funil-scores";
 import { projectToMeta } from "../emit";
 import type { AgentGraphStateType } from "../state";
@@ -50,6 +51,13 @@ export function createAnalyzeNode(analyze: AnalyzeFn = analyzeAndMerge) {
 			// turno em que a tela pergunta o nome.
 			Boolean(state.contactName),
 		);
+
+		// D6 (FIX-435) — o sinal vai em TODO turno de cliente, no MESMO trace do
+		// `conducao_entregue` (o nó `analyze` roda dentro do `withLangfuseTurn` do
+		// turno): 1 quando o analyzer caiu no fallback, 0 quando respondeu. Sem o
+		// 0 não haveria denominador, e "o analyzer caiu" seria indistinguível de
+		// "não havia o que extrair" — que é como o episódio de 01/10 passou.
+		registrarAnalisadorIndisponivel(analysis.indisponivel === true);
 
 		// ── O DINHEIRO QUE ELE TEM NÃO É O PREÇO DO QUE ELE QUER ──
 		// "Tenho uns 80 mil guardado, podia dar de lance" saía do analyzer como

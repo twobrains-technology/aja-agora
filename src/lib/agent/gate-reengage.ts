@@ -72,13 +72,26 @@ export function pendingGateAfterTurn(args: {
 	gateFired: boolean;
 	isUserTurn: boolean;
 	hasContactName: boolean;
+	/**
+	 * O desbloqueio do telefone (teste A/B web) ainda está pendente? Com `true`,
+	 * o watchdog NÃO arma gate de COLETA: o cliente está parado no card do
+	 * telefone, e re-cobrar CPF/valor por cima do pedido de número é o defeito
+	 * medido em 30/09 (`576e5b66` — "valor do bem" três vezes para quem devia o
+	 * WhatsApp). Fonte: `leituraDoDesbloqueio` (D8).
+	 */
+	desbloqueioPendente: boolean;
 }): Gate | null {
-	const { meta, gateFired, isUserTurn, hasContactName } = args;
+	const { meta, gateFired, isUserTurn, hasContactName, desbloqueioPendente } = args;
 	if (!isUserTurn) return null;
 	if (gateFired) return null;
 	if (isConversationPausedOrTerminal(meta)) return null;
 	const gate = nextGate(meta, { hasContactName });
 	if (NON_REENGAGE_GATES.has(gate)) return null;
+	// Sem número, sem cobrança. Com o card do telefone na tela, um gate de coleta
+	// fica retido — a retomada do telefone é do card, não do watchdog. Gates de
+	// outra natureza (timeframe, decision…) seguem como antes: não são o defeito
+	// e bloqueá-los mudaria o comportamento fora do escopo de D8.
+	if (desbloqueioPendente && isMandatoryCollectionGate(gate)) return null;
 	return gate;
 }
 

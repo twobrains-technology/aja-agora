@@ -88,3 +88,39 @@ describe("hasCampaignSignal", () => {
 		);
 	});
 });
+
+// FIX-442 (hotfix de 05/10/2026): os IDs de campanha/conjunto/anúncio chegavam
+// DENTRO das UTMs e não eram lidos — as colunas campaign_id/adset_id/ad_id
+// ficaram vazias em toda a base (9.455 de 9.658 visitas tinham o id na UTM e
+// nenhuma tinha na coluna). Estes casos travam o fallback.
+describe("parseCampaignParams — id da Meta dentro da UTM (hotfix 05/10/2026)", () => {
+	it("deriva campanha, anúncio e conjunto das UTMs que a Meta usa", () => {
+		const p = parseCampaignParams(
+			new URLSearchParams(
+				"utm_source=fb&utm_campaign=120251784723480104&utm_content=120251242916450104&utm_term=120251242855400104",
+			),
+		);
+		expect(p.campaignId).toBe("120251784723480104");
+		expect(p.adId).toBe("120251242916450104");
+		expect(p.adsetId).toBe("120251242855400104");
+	});
+
+	it("o parâmetro explícito ganha do fallback", () => {
+		const p = parseCampaignParams(
+			new URLSearchParams("utm_campaign=120251784723480104&campaign_id=999999999999999999"),
+		);
+		expect(p.campaignId).toBe("999999999999999999");
+	});
+
+	it("UTM que não é id não vira id (não grava lixo na atribuição)", () => {
+		const p = parseCampaignParams(new URLSearchParams("utm_campaign=black-friday&utm_content=carrossel"));
+		expect(p.campaignId).toBeNull();
+		expect(p.adId).toBeNull();
+		expect(p.utmCampaign).toBe("black-friday");
+	});
+
+	it("sem UTM de mídia, nada é inferido", () => {
+		const p = parseCampaignParams(new URLSearchParams(""));
+		expect(p.campaignId == null && p.adId == null && p.adsetId == null).toBe(true);
+	});
+});

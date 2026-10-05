@@ -461,9 +461,8 @@ export interface ScarcityPayload {
  * bloco-telefone-ab (FIX-395/396) — o card do teste do telefone no ponto em que
  * a pessoa vê a oferta.
  *
- * O payload carrega SÓ ESTADO (variante + modo + a melhor opção, quando ela
- * existe). A CÓPIA não passa por aqui: ela vive no componente cliente
- * (`telefone-do-desbloqueio.tsx`), na régua de
+ * O payload carrega SÓ ESTADO (variante + modo). A CÓPIA não passa por aqui:
+ * ela vive no componente cliente (`telefone-do-desbloqueio.tsx`), na régua de
  * `docs/decisoes/2026-09-29-copia-do-desbloqueio-do-telefone.md`. Texto fixo no
  * servidor é exatamente o que o CLAUDE.md proíbe.
  *
@@ -474,19 +473,6 @@ export interface ScarcityPayload {
 export interface TelefoneDoDesbloqueioPayload {
 	variante: VarianteDoTelefone;
 	estado: "pede-antes" | "borrado";
-	/** A melhor opção que a variante C mostra borrada. Ausente na variante B
-	 *  (não há comparação na tela para borrar). Os números vêm da oferta REAL, e
-	 *  só a parcela é legível — o resto é escondido na renderização. */
-	melhorOpcao?: {
-		administradora: string;
-		/** Valor da carta (R$) — vai BORRADO. */
-		creditValue: number;
-		/** Parcela mensal (R$) — o ÚNICO número legível de propósito: é o que
-		 *  faz a pessoa querer desbloquear. */
-		monthlyPayment: number;
-		/** Prazo em meses — vai BORRADO. */
-		termMonths: number;
-	};
 }
 
 export type ArtifactByType =

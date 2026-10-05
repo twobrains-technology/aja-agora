@@ -124,6 +124,28 @@ describe("varianteDaConversa — visita primeiro, conversa como reserva", () => 
 	});
 });
 
+describe("varianteDaConversa — a FILA manda no que o hash só chutava (FIX-434)", () => {
+	it("`daFila` ganha do hash — é a alternância estrita da conversa web nova", () => {
+		const visitId = uuidDe(21);
+		const conversationId = uuidDe(22);
+		// O braço OPOSTO ao do hash, para a asserção não passar por acaso.
+		const peloHash = varianteDaVisita(visitId);
+		const daFila: VarianteDoTelefone = peloHash === "A" ? "B" : "A";
+		expect(varianteDaConversa({ visitId, conversationId, daFila })).toBe(daFila);
+	});
+
+	it("`forcar` (QA) ganha da fila — e o valor inválido é ignorado", () => {
+		expect(varianteDaConversa({ visitId: uuidDe(23), forcar: "B", daFila: "A" })).toBe("B");
+		expect(varianteDaConversa({ visitId: uuidDe(23), forcar: "C", daFila: "A" })).toBe("A");
+	});
+
+	it("sem fila (null/undefined), volta ao hash de sempre — não consome fila quem não é entrada nova", () => {
+		const visitId = uuidDe(24);
+		expect(varianteDaConversa({ visitId, daFila: null })).toBe(varianteDaVisita(visitId));
+		expect(varianteDaConversa({ visitId, daFila: undefined })).toBe(varianteDaVisita(visitId));
+	});
+});
+
 describe("lerVariante — variante persistida desconhecida ⇒ erro alto", () => {
 	it("aceita B e C", () => {
 		expect(lerVariante("A")).toBe("A");

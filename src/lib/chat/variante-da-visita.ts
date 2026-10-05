@@ -112,15 +112,25 @@ export function varianteForcada(valor: unknown): VarianteDoTelefone | null {
  * entrada); sem visita — WhatsApp orgânico, conversa anterior ao cookie, teste —
  * a conversa é a semente. Nunca `Math.random()`: a mesma conversa recarregada
  * continua no mesmo caminho.
+ *
+ * A precedência é `forcar` > `daFila` > hash. O `daFila` é o braço que a FILA
+ * (`src/lib/experimentos/fila.ts`) já reservou para uma conversa web NOVA — a
+ * alternância estrita A, B, A, B. O hash virou o ÚLTIMO recurso, para conversa
+ * que nunca passou pela criação (legado, backfill): ali não se consome a fila,
+ * senão uma leitura de conversa antiga mexeria no sorteio de quem chega.
  */
 export function varianteDaConversa(input: {
 	visitId?: string | null;
 	conversationId?: string | null;
-	/** `?variante=A|B` — pedido explícito de QA/dono, ganha do sorteio. */
+	/** `?variante=A|B` — pedido explícito de QA/dono, ganha de tudo. */
 	forcar?: unknown;
+	/** Braço JÁ RESOLVIDO pela fila para uma conversa web nova. Null/ausente quando
+	 *  não há fila (não se consome a fila para conversa que já existe). */
+	daFila?: VarianteDoTelefone | null;
 }): VarianteDoTelefone {
 	const forcada = varianteForcada(input.forcar);
 	if (forcada) return forcada;
+	if (ehVarianteDoTelefone(input.daFila)) return input.daFila;
 	const visita = typeof input.visitId === "string" ? input.visitId.trim() : "";
 	if (visita.length > 0) return varianteDaVisita(visita);
 	return varianteDaVisita(input.conversationId ?? "");

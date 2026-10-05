@@ -33,6 +33,14 @@ export type ScriptedChatModelFields = BaseChatModelParams & {
 	fallback?: ScriptedBeat;
 };
 
+/** Os modelos roteirizados criados NESTE processo, na ordem.
+ *
+ * `runScenario` monta o modelo internamente e não o devolve; um teste que
+ * precisa provar o que o `converse` MANDOU (as mensagens) ou o que ele VINCULOU
+ * (as tools do bind) não tem outro caminho até a instância. Guardar a lista é
+ * mais honesto do que duplicar a montagem do grafo só pra ver esses dois fatos. */
+export const modelosRoteirizados: ScriptedChatModel[] = [];
+
 /**
  * Modelo de teste que segue um roteiro. Cada `.stream()` consome um beat.
  *
@@ -46,18 +54,28 @@ export class ScriptedChatModel extends BaseChatModel {
 	/** Beats já consumidos — inspecionável no teste pra provar quantas vezes o
 	 * modelo foi chamado no turno. */
 	public callCount = 0;
+	/** As mensagens EXATAS de cada chamada `.stream()`/`_generate()`, na ordem.
+	 * É por aqui que o teste vê o que o `converse` montou para o modelo. */
+	public readonly mensagensRecebidas: BaseMessage[][] = [];
+	/** Nomes das tools passadas ao `bindTools` — prova o que o modelo podia chamar. */
+	public readonly toolsVinculadas: string[] = [];
 
 	constructor(fields: ScriptedChatModelFields) {
 		super(fields);
 		this.beats = fields.beats;
 		this.fallback = fields.fallback ?? { text: "" };
+		modelosRoteirizados.push(this);
 	}
 
 	_llmType(): string {
 		return "scripted";
 	}
 
-	bindTools(_tools: unknown[]): this {
+	bindTools(tools: unknown[]): this {
+		for (const t of tools) {
+			const nome = (t as { name?: unknown } | null)?.name;
+			if (typeof nome === "string") this.toolsVinculadas.push(nome);
+		}
 		return this;
 	}
 
@@ -96,10 +114,11 @@ export class ScriptedChatModel extends BaseChatModel {
 	}
 
 	async *_streamResponseChunks(
-		_messages: BaseMessage[],
+		messages: BaseMessage[],
 		_options: this["ParsedCallOptions"],
 		runManager?: CallbackManagerForLLMRun,
 	): AsyncGenerator<ChatGenerationChunk> {
+		this.mensagensRecebidas.push(messages);
 		for (const chunk of this.chunksDoBeat(this.nextBeat())) {
 			const texto = typeof chunk.content === "string" ? chunk.content : "";
 			yield new ChatGenerationChunk({ text: texto, message: chunk });

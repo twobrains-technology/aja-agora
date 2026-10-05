@@ -191,7 +191,7 @@ export async function runSlaDaMesaCycle(): Promise<ResultadoSlaDaMesa> {
 		jaAlertados.length === 0
 			? []
 			: [
-					`Além destes, ${jaAlertados.length} lead(s) continuam parados e já foram avisados antes — o mais antigo há ${emDias(maisAntigo)}. Não são repetidos aqui todo dia de propósito; a lista completa está em /admin/performance.`,
+					`Além destes, ${jaAlertados.length} lead(s) continuam parados e já foram avisados antes — o mais antigo há ${emDias(maisAntigo)}. Não são repetidos aqui todo dia de propósito; a lista completa está em /admin/remarketing.`,
 				];
 
 	const text = [
@@ -201,7 +201,7 @@ export async function runSlaDaMesaCycle(): Promise<ResultadoSlaDaMesa> {
 		"",
 		...rodape,
 		"O relógio é a última transição de estágio (lead_events), não a última escrita na linha.",
-		"Lista completa e p50/p90 por sub-etapa: /admin/performance",
+		"Lista completa: /admin/remarketing. p50/p90 por sub-etapa: /admin/performance",
 	].join("\n");
 
 	const html = [
@@ -213,7 +213,7 @@ export async function runSlaDaMesaCycle(): Promise<ResultadoSlaDaMesa> {
 		),
 		"</ul>",
 		...rodape.map((linha) => `<p>${linha}</p>`),
-		'<p style="color:#666;font-size:13px">O relógio é a última transição de estágio (<code>lead_events</code>), não a última escrita na linha. Lista completa e p50/p90 por sub-etapa em <code>/admin/performance</code>.</p>',
+		'<p style="color:#666;font-size:13px">O relógio é a última transição de estágio (<code>lead_events</code>), não a última escrita na linha. Lista completa em <code>/admin/remarketing</code>; p50/p90 por sub-etapa em <code>/admin/performance</code>.</p>',
 	].join("\n");
 
 	try {

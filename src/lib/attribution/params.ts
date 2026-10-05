@@ -41,21 +41,44 @@ function clean(input: CampaignParamsInput, key: string): string | null {
 	return trimmed.slice(0, MAX_VALUE_LENGTH);
 }
 
+/**
+ * Id de entidade da Meta (campanha, conjunto ou anúncio): só dígitos, 15 a 18.
+ *
+ * Existe para o fallback abaixo nunca gravar texto solto na coluna de
+ * atribuição — uma UTM com valor qualquer (`utm_content=carrossel`) não vira
+ * "id de anúncio".
+ */
+function idDaMeta(valor: string | null): string | null {
+	return valor !== null && /^\d{15,18}$/.test(valor) ? valor : null;
+}
+
 /** Extrai UTM e click IDs de uma URL de chegada. Nunca lança. */
 export function parseCampaignParams(input: CampaignParamsInput): CampaignParams {
+	const utmCampaign = clean(input, "utm_campaign");
+	const utmContent = clean(input, "utm_content");
+	const utmTerm = clean(input, "utm_term");
 	return {
 		utmSource: clean(input, "utm_source"),
 		utmMedium: clean(input, "utm_medium"),
-		utmCampaign: clean(input, "utm_campaign"),
-		utmContent: clean(input, "utm_content"),
-		utmTerm: clean(input, "utm_term"),
+		utmCampaign,
+		utmContent,
+		utmTerm,
 		gclid: clean(input, "gclid"),
 		fbclid: clean(input, "fbclid"),
-		// Aceitamos os nomes usados pelos links do Meta e aliases explícitos;
-		// todos chegam ao mesmo contrato persistido, sem inferência por UTM.
-		campaignId: clean(input, "campaign_id") ?? clean(input, "meta_campaign_id"),
-		adsetId: clean(input, "adset_id") ?? clean(input, "meta_adset_id"),
-		adId: clean(input, "ad_id") ?? clean(input, "meta_ad_id"),
+		// O parâmetro explícito ganha quando existe; sem ele, o ID vem DENTRO da
+		// UTM — é assim que os links da Meta carregam (`utm_campaign={{campaign.id}}`,
+		// `utm_content={{ad.id}}`, `utm_term={{adset.id}}`).
+		//
+		// Medido em produção em 05/10/2026: das 9.658 visitas com `utm_campaign`,
+		// 9.455 casam com o id de uma campanha real em `meta_entities`; numa
+		// amostra de 3.000, `utm_campaign` = campanha, `utm_content` = anúncio e
+		// `utm_term` = conjunto, 3.000/3.000 em cada. As colunas
+		// `campaign_id`/`adset_id`/`ad_id` estavam **vazias em toda a base** porque
+		// este fallback não existia (o insert de `visit-store.ts` sempre as grava).
+		campaignId:
+			clean(input, "campaign_id") ?? clean(input, "meta_campaign_id") ?? idDaMeta(utmCampaign),
+		adsetId: clean(input, "adset_id") ?? clean(input, "meta_adset_id") ?? idDaMeta(utmTerm),
+		adId: clean(input, "ad_id") ?? clean(input, "meta_ad_id") ?? idDaMeta(utmContent),
 	};
 }
 

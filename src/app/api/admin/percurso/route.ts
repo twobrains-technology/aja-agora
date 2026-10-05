@@ -48,13 +48,28 @@ function reguaDaPessoa(
 	status: string | null;
 	step: number | null;
 	nextTouchAt: string | null;
+	motivoSaida: string | null;
 } {
 	if (!conversationId) {
 		// Sem conversa não há como entrar na régua: o fato é "sem contato".
-		return { naRegua: false, motivo: "sem_contato", status: null, step: null, nextTouchAt: null };
+		return {
+			naRegua: false,
+			motivo: "sem_contato",
+			status: null,
+			step: null,
+			nextTouchAt: null,
+			motivoSaida: null,
+		};
 	}
 	if (!avaliacao) {
-		return { naRegua: false, motivo: null, status: null, step: null, nextTouchAt: null };
+		return {
+			naRegua: false,
+			motivo: null,
+			status: null,
+			step: null,
+			nextTouchAt: null,
+			motivoSaida: null,
+		};
 	}
 	return {
 		naRegua: avaliacao.regua !== null,
@@ -62,6 +77,9 @@ function reguaDaPessoa(
 		status: avaliacao.regua?.status ?? null,
 		step: avaliacao.regua?.step ?? null,
 		nextTouchAt: avaliacao.regua?.nextTouchAt?.toISOString() ?? null,
+		// FIX-441: a coluna "Régua" do Percurso precisa do motivo da saída para não
+		// dizer "Esgotou os 3 toques" a quem a Meta recusou a entrega.
+		motivoSaida: avaliacao.regua?.motivoSaida ?? null,
 	};
 }
 

@@ -76,6 +76,7 @@ import {
 	type MotivoDeExclusao,
 	type OpcoesDaElegibilidade,
 	ROTULO_DO_MOTIVO_DE_EXCLUSAO,
+	referenciaDoSilencio,
 } from "./motivo-de-exclusao";
 import { ESPERA_SILENCIO_MS, type EstadoRegua, estadoInicial, type StatusRegua } from "./regua";
 
@@ -188,9 +189,11 @@ export function avaliarReentrada(
 
 	// 13. O PISO de silêncio continua: a janela de 7 dias é o teto que a reentrada
 	// derruba, mas ninguém entra falando com quem acabou de escrever (ou sem saber
-	// quando falou — a corrida do FIX-86).
-	if (!conversa.lastInboundAt) return recusa("ainda_em_silencio");
-	if (conversa.lastInboundAt.getTime() > agora.getTime() - ESPERA_SILENCIO_MS) {
+	// quando falou — a corrida do FIX-86). A referência é a MESMA da entrada (D9):
+	// na web, a última FALA do cliente; no WhatsApp, o último inbound.
+	const silencio = referenciaDoSilencio(conversa);
+	if (!silencio) return recusa("ainda_em_silencio");
+	if (silencio.getTime() > agora.getTime() - ESPERA_SILENCIO_MS) {
 		return recusa("ainda_em_silencio");
 	}
 

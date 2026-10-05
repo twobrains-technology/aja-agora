@@ -120,6 +120,16 @@ describe("leanSystemPrompt — o prompt que o modelo de fato recebe", () => {
 		});
 	});
 
+	it("entrega o vocabulário de carro: carro novo/seminovo, nunca carro popular", () => {
+		// O termo vem do MODELO: em produção o próprio atalho ofereceu "Um popular
+		// novo" (`8b64899b`). A regra mora na seção "## Tom e Personalidade", que o
+		// `leanSystemPrompt` NÃO corta — o corte começa em "## Fluxo de Vendas". Se
+		// ela não chega ao texto que o modelo recebe, o modelo repete o termo.
+		const lean = leanSystemPrompt(SYSTEM_PROMPT);
+		expect(lean).toContain("seminovo");
+		expect(lean).toContain('nunca "carro popular" nem "popular"');
+	});
+
 	it("extrai SÓ as regras — não arrasta o item do fluxo que vem depois", () => {
 		// A extração fatiava por linha em branco; sem uma delas entre a REGRA DURA e
 		// o item seguinte, o "5. Feche (self-service)" vinha de carona, órfão do

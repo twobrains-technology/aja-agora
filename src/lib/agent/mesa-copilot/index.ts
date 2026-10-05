@@ -11,10 +11,8 @@
  */
 
 import { type LanguageModel, type ModelMessage, type SystemModelMessage, streamText } from "ai";
-import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
+import { modeloAiSdkDoGateway, modeloDoAgente } from "@/lib/llm/model-provider";
 import { buildMesaCopilotPrompt, type MesaCopilotCaso } from "./system-prompt";
-
-const anthropic = createGatewayAnthropic();
 
 export interface MesaCopilotTurn {
 	role: "attendant" | "assistant";
@@ -81,7 +79,9 @@ export async function generateMesaCopilotReply(input: {
 	);
 
 	const result = streamText({
-		model: input.model ?? anthropic(process.env.AI_MODEL ?? "claude-sonnet-5"),
+		// B15: mesma fábrica única do agente. O `?? "claude-sonnet-5"` daqui não
+		// caía no default com `AI_MODEL=""` (compose materializa a var vazia).
+		model: input.model ?? modeloAiSdkDoGateway(modeloDoAgente()),
 		system,
 		messages,
 		// FIX-209 — Sonnet 5 liga adaptive thinking por default; desligamos explícito

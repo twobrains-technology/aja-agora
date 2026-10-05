@@ -19,6 +19,7 @@ import type { AnalyzeResult } from "@/lib/agent/orchestrator/analyze";
 import type { Channel, TurnEvent } from "@/lib/agent/orchestrator/types";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import type { UserIntent } from "@/lib/agent/qualify-state";
+import { encryptIdentity } from "@/lib/conversation/identity";
 import type { BuscaGrupos } from "../nodes/discovery";
 import { createRunTurnLangGraph } from "../run-turn";
 import { type ScriptedBeat, ScriptedChatModel } from "./scripted-model";
@@ -84,6 +85,9 @@ function analyzerDoRoteiro(turnos: ScenarioTurn[], cursor: { i: number }) {
 	};
 }
 
+/** CPF falso para a identidade semeada — PII de teste, nunca de gente real. */
+const CPF_FALSO_DO_CENARIO = "52998224725";
+
 /**
  * Executa o cenário e devolve a trajetória de cada turno.
  *
@@ -96,6 +100,14 @@ export async function runScenario(opts: {
 	metaInicial?: Partial<ConversationMetadata>;
 	channel?: Channel;
 	contactName?: string | null;
+	/**
+	 * Telefone JÁ conhecido (PII FALSA) — semeia a identidade cifrada da conversa
+	 * para ela nascer `livre` no desbloqueio (D1/FIX-432). Sem isto, cenário web
+	 * fica em `pede-antes`/`borrado` e o `converse` (corretamente) NÃO entrega
+	 * número de oferta nem binda as tools de número. Use nos cenários que
+	 * encenam o fluxo DEPOIS do telefone (a Rute que “entregou CPF e WhatsApp”).
+	 */
+	telefone?: string;
 	/** Resultado da busca na Bevi. Sem isto o cenário chamaria a rede de verdade
 	 * — e não daria pra exercitar "voltou vazia", que é o caminho de falha mais
 	 * importante do reveal. */
@@ -108,13 +120,21 @@ export async function runScenario(opts: {
 	// nome default e o primeiro gate do funil ficava impossível de testar.
 	const contactName = "contactName" in opts ? (opts.contactName ?? null) : "Cliente Cenário";
 
+	const metadata: Record<string, unknown> = { ...(opts.metaInicial ?? {}) };
+	if (opts.telefone) {
+		metadata.identityEnc = encryptIdentity({
+			cpf: CPF_FALSO_DO_CENARIO,
+			celular: opts.telefone,
+		});
+	}
+
 	const [conv] = await db
 		.insert(conversations)
 		.values({
 			channel,
 			status: "active",
 			contactName,
-			metadata: (opts.metaInicial ?? {}) as Record<string, unknown>,
+			metadata,
 		})
 		.returning({ id: conversations.id });
 
