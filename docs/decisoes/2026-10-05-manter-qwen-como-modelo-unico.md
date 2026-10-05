@@ -38,3 +38,61 @@ secret `tb/prod/aja-agora/env` e rodando `aws ecs update-service
 - queda medida em conversa → oferta ou conversa → telefone **no mesmo recorte**,
   com o modelo como única variável; ou
 - o dono pedir explicitamente a volta ao Haiku (aí é ordem, e a ordem se cumpre).
+---
+
+## Revisão — 05/10/2026 (fim do dia), com o item do modelo de volta na fila
+
+### Medição nova: o caminho do haiku está aberto
+
+Chamada real pelo gateway (`10.30.1.28:4000`), com a chave do app em produção
+(`LITELLM_API_KEY` do secret `tb/prod/aja-agora/env`):
+
+| modelo | resultado |
+|---|---|
+| `claude-haiku-4-5` | **HTTP 200** em **0,8 s** |
+| `claude-sonnet-5` | HTTP 200 em 1,2 s |
+| `qwen3.8-flash` | HTTP 200 (medido antes, mesmo caminho) |
+
+**O crédito do provedor não está bloqueando a troca.** A decisão de manter o qwen
+não pode mais se apoiar em "não dá para trocar" — dá.
+
+### A decisão revisada: manter o qwen AGORA, e trocar se o gatilho abaixo disparar
+
+Três razões, na ordem de peso:
+
+1. **O conserto mais barato aponta para o prompt, não para o modelo.** A leitura
+   fechada da janela 02–05/10 localizou o ponto de morte dominante: **15 das 31
+   conversas morrem na pergunta de qualificação** ("já tem um modelo em mente?") —
+   o agente pergunta antes de entregar. Isso é **ordem do primeiro turno**, e
+   corrigir isso é prompt, reversível e sem risco de crédito. Trocar o modelo sem
+   corrigir isso mediria a variável errada: a conversa continuaria morrendo no
+   primeiro turno, com um modelo mais caro.
+2. **A dependência de crédito é um risco real e assimétrico.** O qwen é servido por
+   endpoint OpenAI-compatible próprio; o haiku consome o **pool compartilhado** de
+   todos os projetos TwoBrains. Se o pool secar, o Aja não fica "pior" — fica
+   **mudo**. Pior que conduzir mal é não responder.
+3. **O número que sustenta a troca é um juiz, não um fato mecânico.** A queda
+   medida no Langfuse (haiku 0,93 → qwen 0,87 → 0,56) é **score de juiz LLM**, e a
+   calibração desse juiz não foi verificada nesta frente. Score de juiz orienta,
+   mas não decide sozinho — e é justamente o tipo de número que já produziu leitura
+   errada aqui. O que é mecânico na nossa medição é a contagem de onde a conversa
+   morre, não o score.
+
+### Gatilho explícito de troca
+
+**Corrigida a ordem do primeiro turno, se o ponto de morte continuar na condução**
+(medido pela mesma contagem: última mensagem do agente por conversa), então o
+resíduo é o modelo — e aí a troca está pronta e autorizada:
+
+1. `AI_MODEL=claude-haiku-4-5` no secret `tb/prod/aja-agora/env`
+   (o app lê a chave via `secrets`, a task definition já aponta para lá).
+2. `aws ecs update-service --force-new-deployment` no `aja-agora-prod`.
+3. Antes de trocar, **configurar fallback `haiku → qwen` no gateway** — é o que
+   remove o risco de o Aja ficar mudo sem crédito. Sem isso, a troca troca um
+   defeito de condução por um defeito de disponibilidade.
+
+### Ganho a favor da troca, já medido
+
+Latência: p50 **5,4 s (qwen)** contra **2,4 s (haiku)** — o haiku é mais que o dobro
+de rápido, e a cliente já reclamou de lentidão ("meio lento"). Se o prompt não
+resolver, a troca melhora condução **e** latência ao mesmo tempo.
