@@ -39,7 +39,6 @@ import {
 } from "./performance-types";
 import { diaDoNegocio } from "./periodo";
 import {
-	ARTIFACTS_DE_OFERTA_SQL,
 	chaveDaPessoa,
 	contagensDoFunil,
 	conversaAtribuida,
@@ -219,11 +218,8 @@ export async function computeFunilMidia(
 
       (SELECT count(DISTINCT ${chave}) FROM conversations c
         JOIN visits v ON v.id = c.visit_id
-        JOIN messages m ON m.conversation_id = c.id
-        JOIN artifacts a ON a.message_id = m.id
         WHERE ${comRecorte(
-					sql`${atribuida}
-          AND a.type IN (${ARTIFACTS_DE_OFERTA_SQL})`,
+					sql`${atribuida} AND ${viuOferta(sql`c`)}`,
 					filtro,
 				)}) AS viram_oferta,
 
