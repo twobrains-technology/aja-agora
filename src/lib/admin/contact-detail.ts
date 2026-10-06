@@ -170,6 +170,15 @@ export async function getContactDetail(id: string) {
 		currentProposalId,
 		activeConversationId,
 		stageHistory,
+		// O ESTADO DE TESTE do contato. `true` só quando TODAS as conversas dele
+		// estão fora da contagem: quem sai da lista é o contato, então marcar e
+		// desmarcar agem no conjunto — e a leitura tem que ter o mesmo tamanho da
+		// escrita (a rota PATCH marca todas). Meia marcação lida como "false"
+		// faria o botão mentir sobre o que o funil está contando.
+		isSimulated:
+			contact.conversations.length > 0 && contact.conversations.every((c) => c.isSimulated),
+		/** Os ids que o PATCH marca/desmarca de uma vez. */
+		conversationIds: contact.conversations.map((c) => c.id),
 	};
 }
 

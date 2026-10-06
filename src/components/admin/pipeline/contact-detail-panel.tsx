@@ -6,9 +6,22 @@
 
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale/pt-BR";
-import { FileDown, Globe, Headset, MegaphoneIcon, MessageCircle, Smartphone } from "lucide-react";
+import {
+	FileDown,
+	FlaskConical,
+	Globe,
+	Headset,
+	MegaphoneIcon,
+	MessageCircle,
+	Smartphone,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { AtendimentoWhatsAppDialog } from "@/components/admin/conversa/atendimento-whatsapp-dialog";
+import {
+	type ArtefatoDaMensagem,
+	ConteudoDaMensagem,
+	ordenarMensagens,
+} from "@/components/admin/conversa/conversa";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -61,6 +74,9 @@ interface TimelineMsg {
 	role: string;
 	content: string;
 	createdAt: string;
+	/** O payload do card da mensagem — é o que faz a timeline mostrar o card que
+	 *  o cliente viu em vez do marcador cru. A rota já mandava; faltava ler. */
+	artifacts?: ArtefatoDaMensagem[];
 	/** Preenchidos quando a mensagem saiu como template ou trouxe anexo. */
 	templateName?: string | null;
 	mediaType?: string | null;
@@ -106,6 +122,11 @@ interface ContactDetail {
 	timeline: TimelineMsg[];
 	proposals: Proposal[];
 	stageHistory: StageEvent[];
+	/** O contato INTEIRO está fora da contagem (`true` só com todas as conversas
+	 *  marcadas — é o contato que sai da lista, não o canal). */
+	isSimulated: boolean;
+	/** O que a marcação de teste leva de uma vez. */
+	conversationIds: string[];
 }
 
 function ChannelBadge({ channel }: { channel: "web" | "whatsapp" }) {
@@ -150,6 +171,41 @@ export function ContactDetailPanel({
 	const [transbordoOpen, setTransbordoOpen] = useState(false);
 	/** Tela de atendimento (modal no layout do WhatsApp). */
 	const [atendimentoOpen, setAtendimentoOpen] = useState(false);
+	/** Marcação de teste: gravando + confirmação inline (a ação tira o cliente das
+	 *  métricas, então pede um "tem certeza" — mas sem modal, que aqui só atrasa). */
+	const [marcando, setMarcando] = useState(false);
+	const [confirmandoTeste, setConfirmandoTeste] = useState(false);
+
+	/**
+	 * Marca/desmarca o contato INTEIRO como teste — todas as conversas dele.
+	 *
+	 * Vale o clique de confirmação: a marcação tira o cliente do funil, das
+	 * métricas de campanha e ainda segura a régua. É reversível aqui mesmo, mas o
+	 * custo de um clique errado é uma decisão de mídia tomada sobre número torto.
+	 */
+	async function alternarTeste() {
+		if (!contactId || !detail || marcando) return;
+		const alvo = !detail.isSimulated;
+		setMarcando(true);
+		try {
+			const res = await fetch(`/api/admin/contacts/${contactId}`, {
+				method: "PATCH",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ isSimulated: alvo }),
+			});
+			if (!res.ok) {
+				const corpo = (await res.json().catch(() => ({}))) as { error?: string };
+				throw new Error(corpo.error ?? `HTTP ${res.status}`);
+			}
+			setDetail((atual) => (atual ? { ...atual, isSimulated: alvo } : atual));
+		} catch (err) {
+			window.alert(
+				err instanceof Error ? err.message : "Não consegui marcar/desmarcar como teste.",
+			);
+		} finally {
+			setMarcando(false);
+		}
+	}
 	// Estado do download da proposta co-branded (PDF) por linha. A geração é
 	// best-effort no fechamento → "unavailable" quando ainda não existe no S3.
 	const [proposalPdf, setProposalPdf] = useState<Record<string, "loading" | "unavailable">>({});
@@ -244,9 +300,68 @@ export function ContactDetailPanel({
 					<SheetDescription>Tudo que o cliente fez — web e WhatsApp</SheetDescription>
 					{/* No cabeçalho porque precisa estar à mão ANTES de a mensagem
 					    chegar — quem só acha o botão depois já perdeu o aviso. */}
-					<div className="mt-1">
+					<div className="mt-1 flex flex-wrap items-center gap-2">
 						<BotaoNotificacoes />
+						{/*
+						 * MARCAR COMO TESTE — no cabeçalho, e não dentro de uma aba.
+						 *
+						 * O cabeçalho do painel NÃO rola (só o corpo das abas rola), então aqui
+						 * o botão fica fixo: à vista em qualquer aba, em qualquer rolagem, sem
+						 * ninguém precisar procurar. Antes ele só existia na tela de Conversas
+						 * (e por conversa) — no painel do cliente não havia como desconsiderar
+						 * um teste, e a contagem do funil ficava errada por falta de acesso ao
+						 * controle. Medido em 06/10/2026.
+						 */}
+						{detail && !confirmandoTeste && (
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								className="h-8 gap-1.5 text-xs"
+								data-testid="marcar-como-teste"
+								disabled={marcando}
+								aria-pressed={detail.isSimulated}
+								onClick={() => setConfirmandoTeste(true)}
+							>
+								<FlaskConical className="size-3.5" />
+								{detail.isSimulated ? "Voltar a contar" : "Marcar como teste"}
+							</Button>
+						)}
 					</div>
+					{/* A confirmação mora no MESMO lugar do botão: trocar de posição faria o
+					    dedo que ia clicar cair no "Confirmar" sem ler. */}
+					{detail && confirmandoTeste && (
+						<div className="mt-2 rounded-md border bg-muted/40 p-2 text-xs">
+							<p className="text-muted-foreground">
+								{detail.isSimulated
+									? "Este cliente e os leads dele voltam a contar nas métricas. A régua não religa sozinha."
+									: "Este cliente sai das métricas, do funil e da régua. Dá para desfazer."}
+							</p>
+							<div className="mt-2 flex gap-2">
+								<Button
+									type="button"
+									size="sm"
+									className="h-7 text-xs"
+									disabled={marcando}
+									onClick={() => {
+										setConfirmandoTeste(false);
+										void alternarTeste();
+									}}
+								>
+									{marcando ? "Salvando…" : "Confirmar"}
+								</Button>
+								<Button
+									type="button"
+									variant="ghost"
+									size="sm"
+									className="h-7 text-xs"
+									onClick={() => setConfirmandoTeste(false)}
+								>
+									Cancelar
+								</Button>
+							</div>
+						</div>
+					)}
 					{detail && (
 						<div className="flex flex-wrap items-center gap-2 mt-1">
 							{detail.currentStage && (
@@ -289,10 +404,10 @@ export function ContactDetailPanel({
 
 					<TabsContent value="timeline" className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
 						{loading && <p className="text-sm text-muted-foreground">Carregando…</p>}
-						{detail?.timeline.length === 0 && (
+						{detail && detail.timeline.length === 0 && (
 							<p className="text-sm text-muted-foreground">Sem mensagens.</p>
 						)}
-						{detail?.timeline.map((msg) => (
+						{ordenarMensagens(detail?.timeline ?? []).map((msg) => (
 							<div key={msg.id} className="text-sm" data-testid="timeline-message">
 								<div className="flex items-center gap-2 mb-0.5">
 									<ChannelBadge channel={msg.channel} />
@@ -307,10 +422,20 @@ export function ContactDetailPanel({
 										</Badge>
 									)}
 									<span className="text-[11px] text-muted-foreground">
-										{msg.role} · {format(new Date(msg.createdAt), "dd/MM HH:mm", { locale: ptBR })}
+										{msg.role === "user" ? "Cliente" : "Agente"} ·{" "}
+										{format(new Date(msg.createdAt), "dd/MM HH:mm", { locale: ptBR })}
 									</span>
 								</div>
-								<p className="whitespace-pre-wrap">{msg.content}</p>
+								{/* O corpo passa pelo visualizador ÚNICO (`ConteudoDaMensagem`). Era
+								    daqui que saía `[card: quick_reply]` literal na tela — medido em
+								    06/10/2026 com o painel do cliente aberto. Agora sai o card que o
+								    cliente viu (com os fatos do payload) ou o rótulo humano em PT.
+								    A ordem também é a canônica (`ordenarMensagens`): este era o
+								    ÚLTIMO lugar do admin que decidia sozinho como ordenar e como
+								    desenhar a mesma linha de `messages`. */}
+								<div className="whitespace-pre-wrap">
+									<ConteudoDaMensagem content={msg.content} artifacts={msg.artifacts} />
+								</div>
 							</div>
 						))}
 					</TabsContent>
