@@ -69,6 +69,8 @@ describeIfDb("reveal sem âncora devolve o gate", () => {
 		const r = await runScenario({
 			busca: buscaComDuasOpcoes as never,
 			metaInicial: META_DO_REVEAL,
+			// O reveal mostra as ofertas — a conversa já tem telefone.
+			telefone: "62999998888",
 			turns: [
 				{
 					user: "Enviei meus dados pra buscar as ofertas",
@@ -93,6 +95,8 @@ describeIfDb("reveal sem âncora devolve o gate", () => {
 		const r = await runScenario({
 			busca: buscaComDuasOpcoes as never,
 			metaInicial: META_DO_REVEAL,
+			// O reveal mostra as ofertas — a conversa já tem telefone.
+			telefone: "62999998888",
 			turns: [
 				{
 					user: "Enviei meus dados pra buscar as ofertas",

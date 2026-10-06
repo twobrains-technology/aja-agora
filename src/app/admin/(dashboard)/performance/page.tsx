@@ -1,7 +1,7 @@
 "use client";
 
 import { parseAsString, useQueryState } from "nuqs";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DateRangeFilter } from "@/components/admin/dashboard/date-range-filter";
 import { FiltroAB, NOTA_DO_BRACO_DA_PESSOA } from "@/components/admin/dashboard/filtro-ab";
 import { BlocoDeCustos } from "@/components/admin/performance/bloco-de-custos";
@@ -59,7 +59,18 @@ function PerformanceContent() {
 	// escadas na mesma tela, com números que podiam divergir e o leitor sem
 	// saber em qual acreditar. Ficou a que mede o caminho inteiro, da visita ao
 	// contrato; a outra saiu, e o request foi junto.
+	//
+	// ── A resposta que não é mais a do período selecionado NÃO pinta a tela ──
+	//
+	// Trocar o período deixa DUAS consultas no ar, e a mais lenta é a antiga
+	// (janela maior): ela chegava depois e o `setMidia` dela sobrescrevia o número
+	// novo — a tela pintava 30 dias com o rótulo "Hoje". Cada disparo leva um
+	// bilhete, e só o ÚLTIMO pode escrever estado. Mesmo padrão do
+	// `teste-do-telefone.tsx`, que já descarta por uma bandeira `vivo`.
+	const bilheteAtual = useRef(0);
+
 	const carregar = useCallback(async () => {
+		const bilhete = ++bilheteAtual.current;
 		setCarregando(true);
 		setErro(null);
 
@@ -72,11 +83,16 @@ function PerformanceContent() {
 			const resMidia = await fetch(`/api/admin/performance?${params.toString()}`);
 			if (!resMidia.ok) throw new Error(`Erro ao carregar performance: ${resMidia.status}`);
 
-			setMidia((await resMidia.json()) as PerformanceResponse);
+			const dados = (await resMidia.json()) as PerformanceResponse;
+			if (bilhete !== bilheteAtual.current) return;
+			setMidia(dados);
 		} catch (err) {
+			if (bilhete !== bilheteAtual.current) return;
 			setErro(err instanceof Error ? err.message : "Erro desconhecido");
 		} finally {
-			setCarregando(false);
+			// O `carregando` é do ÚLTIMO disparo: quem chegou atrasado não pode
+			// apagar o "Carregando…" de uma consulta que ainda está em curso.
+			if (bilhete === bilheteAtual.current) setCarregando(false);
 		}
 	}, [from, to, ab]);
 

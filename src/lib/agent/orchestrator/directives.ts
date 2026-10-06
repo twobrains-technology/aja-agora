@@ -54,7 +54,7 @@ export function buildTransitionFirstContactDirective(
 	// ANTES de qualquer outra coisa.
 	const nameInstruction = nameHint
 		? ` ${nameHint}`
-		: " IMPORTANTE sobre o nome: PRIMEIRO cheque se o usuário JÁ disse o próprio nome NESTA mensagem (ex.: 'sou o Ricardo', 'me chamo Ana', 'aqui é o João'). SE JÁ DISSE: chame save_contact_name com esse nome e cumprimente por ele ('Boa, Ricardo!') — NÃO pergunte o nome de novo (perguntar o que ele acabou de dizer é burrice). SE NÃO DISSE: reaja em 1 frase curta ao objetivo dele E em SEGUIDA pergunte como pode chamá-lo (ex: 'Show, carro novo abre portas! Antes de eu te ajudar, como posso te chamar?'), e quando ele responder chame save_contact_name imediatamente. Em qualquer caso: NÃO pergunte sobre experiência prévia nem antecipe outros gates — só o nome (usar o que veio, ou pedir).";
+		: " IMPORTANTE sobre o nome: PRIMEIRO cheque se o usuário JÁ disse o próprio nome NESTA mensagem (ex.: 'sou o <nome>', 'me chamo <nome>', 'aqui é o <nome>'). SE JÁ DISSE: chame save_contact_name com esse nome e cumprimente por ele (ex.: 'Boa, <nome>!') — NÃO pergunte o nome de novo (perguntar o que ele acabou de dizer é burrice). SE NÃO DISSE: reaja em 1 frase curta ao objetivo dele E em SEGUIDA pergunte como pode chamá-lo (ex: 'Show, carro novo abre portas! Antes de eu te ajudar, como posso te chamar?'), e quando ele responder chame save_contact_name imediatamente. Em qualquer caso: NÃO pergunte sobre experiência prévia nem antecipe outros gates — só o nome (usar o que veio, ou pedir).";
 	// docx passo 1 (linha 14): a ponte literal pro passo 2 — dita o texto que o
 	// agente usa logo após saber o nome, antes da pergunta de experiência.
 	// A ponte do passo 1 era uma FRASE PRONTA ("Precisamos fazer mais algumas

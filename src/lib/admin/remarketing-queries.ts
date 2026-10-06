@@ -130,7 +130,10 @@ async function templatesAprovados(): Promise<MapaDeTemplates> {
 		.where(
 			and(
 				eq(whatsappTemplates.status, "APPROVED"),
-				like(whatsappTemplates.usageKey, "remarketing_oportunidade_%"),
+				// As chaves reais do disparo são `remarketing_<fase>_<bem>` (FIX-388); o
+				// `remarketing_oportunidade_%` só casava o vocabulário LEGADO e deixava de
+				// fora todo template aprovado de verdade (FIX-441/D12d).
+				like(whatsappTemplates.usageKey, "remarketing_%"),
 			),
 		);
 
@@ -287,7 +290,7 @@ const JUNCOES_DA_FORMA = sql`
 		FROM whatsapp_outbound_queue q
 		LEFT JOIN whatsapp_templates wt ON wt.usage_key = q.usage_key
 		WHERE t.ultimo_toque_em IS NOT NULL
-		  AND q.usage_key LIKE 'remarketing_oportunidade_%'
+		  AND q.usage_key LIKE 'remarketing_%'
 		  AND q.to = COALESCE(c.wa_id, ct.phone)
 		  AND q.created_at >= t.ultimo_toque_em - interval '1 minute'
 		  AND q.created_at <= t.ultimo_toque_em + interval '10 minutes'

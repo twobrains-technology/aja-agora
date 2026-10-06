@@ -1,4 +1,5 @@
 import { CheckCheckIcon, FileTextIcon, MegaphoneIcon, MicIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 /** Anexo exibido dentro da bolha. `url` é o endpoint que assina e redireciona
@@ -16,6 +17,12 @@ interface WhatsAppBubbleProps {
 	attachment?: BubbleAttachment | null;
 	/** Saiu como template aprovado (HSM), não como texto escrito na hora. */
 	ehTemplate?: boolean;
+	/**
+	 * Conteúdo extra DENTRO da bolha — o card de uma mensagem
+	 * marcador de card, renderizado pelo visualizador de conversa. Vazio para
+	 * mensagens de texto comuns.
+	 */
+	children?: ReactNode;
 }
 
 /**
@@ -33,6 +40,7 @@ export function WhatsAppBubble({
 	createdAt,
 	attachment,
 	ehTemplate,
+	children,
 }: WhatsAppBubbleProps) {
 	const time = new Date(createdAt).toLocaleTimeString("pt-BR", {
 		hour: "2-digit",
@@ -93,7 +101,8 @@ export function WhatsAppBubble({
 						Template
 					</div>
 				)}
-				<div className="whitespace-pre-wrap break-words pr-12">{text}</div>
+				{children && <div className="mb-1">{children}</div>}
+				{text && <div className="whitespace-pre-wrap break-words pr-12">{text}</div>}
 				<div
 					className={cn(
 						"pointer-events-none absolute right-2 bottom-1 flex items-center gap-1 text-[10px] opacity-70",

@@ -18,7 +18,7 @@
  * ganha motivo — ela está na régua, e o que a tela mostra é o passo dela.
  */
 
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { contacts, conversations, remarketingTouches } from "@/db/schema";
 import type { StatusRegua } from "@/lib/remarketing/regua";
@@ -35,6 +35,18 @@ export interface LinhaDaReguaResumida {
 	step: number;
 	nextTouchAt: Date | null;
 	ultimoToqueEm: Date | null;
+	/**
+	 * `remarketing_touches.motivo_saida` — o fato que separa um `ESGOTADO` de rotina
+	 * (os três toques saíram) do `ESGOTADO` porque a Meta recusou a entrega
+	 * (`recusado_pela_meta`, FIX-441/D12). Sem ele, a coluna "Régua" do Percurso
+	 * não tem como não mentir.
+	 *
+	 * Opcional de propósito ("aditivo, sem quebrar contrato"): `fatosDeConversas`
+	 * o traz; a rota de Conversas monta `FatosDaConversa` para `avaliarRegua` sem
+	 * ele, e lá o motivo não é lido da régua (a coluna usa o próprio objeto
+	 * `remarketing`, com `r.reguaMotivoSaida`).
+	 */
+	motivoSaida?: string | null;
 }
 
 /** Os fatos de uma conversa que o motivo e a coluna precisam. */
@@ -45,6 +57,11 @@ export interface FatosDaConversa {
 	isSimulated: boolean;
 	contactId: string | null;
 	lastInboundAt: Date | null;
+	/**
+	 * A última FALA do cliente (`messages.role='user'`) — a referência do silêncio
+	 * na web (D9). `null`/ausente no WhatsApp, onde quem manda é `lastInboundAt`.
+	 */
+	ultimaMensagemDoClienteEm?: Date | null;
 	waId: string | null;
 	/** `contacts.phone` — fonte do lead da web e do telefone alcançável. */
 	telefone: string | null;
@@ -129,6 +146,7 @@ export function avaliarRegua(
 			isSimulated: f.isSimulated,
 			contactId: f.contactId,
 			lastInboundAt: f.lastInboundAt,
+			ultimaMensagemDoClienteEm: f.ultimaMensagemDoClienteEm,
 			waId: f.waId,
 			phone: f.telefone,
 			jaNaRegua: f.regua !== null,
@@ -181,12 +199,19 @@ export async function fatosDeConversas(
 			isSimulated: conversations.isSimulated,
 			contactId: conversations.contactId,
 			lastInboundAt: conversations.lastInboundAt,
+			// A fala do cliente: só a web a usa para contar silêncio, e só ela pode
+			// contar com ela — no WhatsApp o fato é `last_inbound_at` (D9).
+			ultimaMensagemDoClienteEm: sql<Date | null>`CASE WHEN ${conversations.channel} = 'web' THEN (
+				SELECT max(m.created_at) FROM messages m
+				 WHERE m.conversation_id = ${conversations.id} AND m.role = 'user'
+			) END`,
 			waId: conversations.waId,
 			telefone: contacts.phone,
 			reguaStatus: remarketingTouches.status,
 			reguaStep: remarketingTouches.step,
 			reguaNextTouchAt: remarketingTouches.nextTouchAt,
 			reguaUltimoToqueEm: remarketingTouches.ultimoToqueEm,
+			reguaMotivoSaida: remarketingTouches.motivoSaida,
 		})
 		.from(conversations)
 		.leftJoin(contacts, eq(contacts.id, conversations.contactId))
@@ -200,6 +225,9 @@ export async function fatosDeConversas(
 		isSimulated: l.isSimulated,
 		contactId: l.contactId ?? null,
 		lastInboundAt: l.lastInboundAt ?? null,
+		ultimaMensagemDoClienteEm: l.ultimaMensagemDoClienteEm
+			? new Date(l.ultimaMensagemDoClienteEm)
+			: null,
 		waId: l.waId ?? null,
 		telefone: l.telefone ?? null,
 		regua: l.reguaStatus
@@ -208,6 +236,7 @@ export async function fatosDeConversas(
 					step: Number(l.reguaStep ?? 0),
 					nextTouchAt: l.reguaNextTouchAt ?? null,
 					ultimoToqueEm: l.reguaUltimoToqueEm ?? null,
+					motivoSaida: l.reguaMotivoSaida ?? null,
 				}
 			: null,
 	}));

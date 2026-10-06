@@ -13,7 +13,7 @@ const HAS_DB = Boolean(process.env.DATABASE_URL) && !process.env.DATABASE_URL?.i
 const describeIfDb = HAS_DB ? describe : describe.skip;
 
 const { db } = await import("@/db");
-const { conversations, messages } = await import("@/db/schema");
+const { conversations, leads, messages } = await import("@/db/schema");
 const { metaOf } = await import("@/lib/conversation/meta");
 const { runReengageCycle } = await import("@/lib/workers/gate-reengage-poll");
 const { GATE_REENGAGE_TIMEOUT_MS, SPECIALIST_EXIT_OFFER } = await import(
@@ -210,6 +210,11 @@ describeIfDb("FIX-302 gate-reengage worker — canal WEB (sem sessão SSE viva)"
 		await db
 			.insert(messages)
 			.values({ conversationId: c.id, role: "user", content: "oi", channel: "web" });
+		// D8: o watchdog só re-engaja web quando o card do telefone NÃO está
+		// pendente. Estes casos testam a ENTREGA da cobrança, então o telefone já
+		// é conhecido (lead) — o caminho com o card pendente tem arquivo próprio
+		// (`gate-reengage-poll.desbloqueio.integration.test.ts`).
+		await db.insert(leads).values({ conversationId: c.id, phone: `551188800${1000 + webCounter}` });
 		return { id: c.id, cookie };
 	}
 

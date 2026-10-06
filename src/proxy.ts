@@ -112,12 +112,19 @@ export async function proxy(request: NextRequest) {
  * UTM chega. Registrar só a home fazia toda campanha apontada para uma vertical
  * nascer sem origem.
  *
+ * `/direto` entra pela mesma razão, e por uma medição: é o destino dos anúncios
+ * da Meta, e enquanto ele ficou de fora a UTM da URL do criativo morria na
+ * primeira navegação — a visita nascia depois, em `/`, sem campanha, e a única
+ * pista ficava no `referrer`. Medido em produção em 05/10/2026: ~130 visitas
+ * assim desde 02/10, e a AJA-CR-002 (58 cliques, conversas reais) aparecendo como
+ * "zero chegada" — número que apontaria para cortar verba de quem trazia gente.
+ *
  * Lista, e não prefixo: as verticais moram na raiz do site, ao lado de qualquer
  * outra página. Vertical nova entra aqui E no `matcher` lá embaixo — fora dele o
  * proxy nem roda, e é `src/proxy.landing-atribuicao.test.ts` que prova que os
  * dois continuam de acordo, porque esquecer um deles não quebra nada na tela.
  */
-export const LANDINGS = ["/", "/autos", "/imoveis", "/motos"] as const;
+export const LANDINGS = ["/", "/autos", "/imoveis", "/motos", "/direto"] as const;
 
 export function ehLanding(pathname: string): boolean {
 	return (LANDINGS as readonly string[]).includes(pathname);
@@ -296,6 +303,7 @@ export const config = {
 		"/autos",
 		"/imoveis",
 		"/motos",
+		"/direto",
 		"/admin",
 		"/admin/((?!login).*)",
 		// A rota de cadastro do better-auth. Sem estas duas linhas o proxy nem é

@@ -16,7 +16,17 @@
  */
 
 import type { LucideIcon } from "lucide-react";
-import { Ban, Check, Clock, Flag, FlaskConical, Megaphone, PauseCircle, Users } from "lucide-react";
+import {
+	AlertTriangle,
+	Ban,
+	Check,
+	Clock,
+	Flag,
+	FlaskConical,
+	Megaphone,
+	PauseCircle,
+	Users,
+} from "lucide-react";
 import {
 	ICONE_DO_MOTIVO,
 	MOTIVO_SAIDA_EQUIPE,
@@ -25,6 +35,7 @@ import {
 	type MotivoForaDaRegua,
 	rotuloForaDaRegua,
 } from "@/lib/admin/motivo-fora-da-regua";
+import { MOTIVO_SAIDA_META } from "@/lib/remarketing/status-do-toque";
 
 export type VarianteDoEstado = "success" | "warning" | "secondary" | "outline" | "destructive";
 
@@ -133,6 +144,18 @@ export function estadoNaLista(args: {
 					variante: "destructive",
 				};
 			case "ESGOTADO":
+				// FIX-441: `ESGOTADO` + recusa da META não são "os 3 toques saíram" — a
+				// Meta recusou a entrega (131050/131026) e a régua parou. Só o motivo
+				// separa os dois fatos, e a célula diz o certo.
+				if (regua.motivoSaida === MOTIVO_SAIDA_META) {
+					return {
+						icone: AlertTriangle,
+						rotulo: "A Meta recusou a entrega",
+						tooltip:
+							"A Meta recusou o envio do toque (opt-in/qualidade); a régua parou. Não foram os três toques.",
+						variante: "warning",
+					};
+				}
 				return {
 					icone: Flag,
 					rotulo: "Esgotou os 3 toques",

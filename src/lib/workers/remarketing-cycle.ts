@@ -60,9 +60,9 @@
  */
 
 import type { ConnectionOptions } from "bullmq";
-import { and, desc, eq, type SQL, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, type SQL, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { beviProposals, remarketingTouches } from "@/db/schema";
+import { beviProposals, messages, remarketingTouches } from "@/db/schema";
 import { lerParametrosRegua } from "@/lib/admin/remarketing-config";
 import { faseDoFunil, teveProposta, viuOferta } from "@/lib/admin/sinais-do-funil";
 import type { ConversationMetadata } from "@/lib/agent/personas";
@@ -74,8 +74,10 @@ import {
 	type ConversaAvaliada,
 	destinoDoToque,
 	MOTIVO_SAIDA_EQUIPE,
+	MOTIVO_SAIDA_TESTE,
 	motivoDeSaidaLegivel,
 	type ResultadoDeElegibilidade,
+	referenciaDoSilencio,
 } from "@/lib/remarketing/motivo-de-exclusao";
 import {
 	type DecisaoDoMotor,
@@ -96,7 +98,18 @@ import {
 	PARAMETROS_DE_FABRICA,
 	type ParametrosRegua,
 } from "@/lib/remarketing/regua";
+import {
+	backoffDaFalha,
+	classificarDesfechoDoEnvio,
+	codigoDaMeta,
+	type DesfechoDoEnvio,
+	disposicaoDaFalha,
+	ENVIO_STATUS_ENVIADO,
+	ENVIO_STATUS_FALHOU,
+	MOTIVO_SAIDA_META,
+} from "@/lib/remarketing/status-do-toque";
 import { chaveTelefoneBR } from "@/lib/whatsapp/mesmo-numero";
+import type { ResolveAndSendResult } from "@/lib/whatsapp/template-dispatch";
 import { buildRetomadaDirective } from "./retomada";
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
@@ -117,6 +130,12 @@ export interface LinhaDaRegua {
 	waId: string | null;
 	metadata: unknown;
 	lastInboundAt: Date | null;
+	/**
+	 * A última FALA do cliente (`messages.role='user'`) — na web, a referência do
+	 * silêncio (D9). `null` no WhatsApp de propósito: lá quem manda é
+	 * `lastInboundAt`.
+	 */
+	ultimaMensagemDoClienteEm: Date | null;
 	phone: string | null;
 	nome: string | null;
 	optoutDaPessoaEm: Date | null;
@@ -124,6 +143,27 @@ export interface LinhaDaRegua {
 	viuOferta: boolean;
 	/** Existe proposta/simulação Bevi para a conversa (`teveProposta`). */
 	teveProposta: boolean;
+}
+
+/**
+ * O resultado de um envio por template, do ponto de vista da régua (FIX-441).
+ *
+ * `ok: false` significa que a Meta RECUSOU o envio (ou a chamada estourou): o
+ * carimbo gravado antes precisa ser compensado. `undefined` (o que os dublês
+ * antigos devolvem) é tratado como sucesso — quem não informa nada não muda o
+ * comportamento de sempre.
+ */
+export type ResultadoDoEnvio =
+	| { ok: true; wamid: string | null; desfecho: DesfechoDoEnvio }
+	| { ok: false; error: string; codigo: number | null; desfecho: DesfechoDoEnvio };
+
+/** O que a compensação precisa saber para devolver o carimbo (FIX-441/D12). */
+export interface CompensacaoArgs {
+	conversationId: string;
+	/** O estado da linha ANTES do carimbo — o que o toque que falhou consumiu. */
+	anterior: { step: number; ultimoToqueEm: Date | null; touches30d: number };
+	agora: Date;
+	codigo: number | null;
 }
 
 export interface RemarketingDeps {
@@ -155,12 +195,30 @@ export interface RemarketingDeps {
 		conversationId: string;
 		/** Lista ordenada de chaves candidatas (fase × bem) — o dispatcher escolhe. */
 		usageKeys: readonly string[];
+		/** O canal da linha — a web NUNCA entrega por turno de retomada (FIX-441). */
+		channel: "web" | "whatsapp";
 		freeTextFallback: () => Promise<void>;
-	}) => Promise<void>;
+		// O `void` na união é o que mantém os dublês legados (`Promise<void>`) compilando; o ciclo
+		// trata `undefined` como sucesso.
+		// biome-ignore lint/suspicious/noConfusingVoidType: contrato dos dublês de teste
+	}) => Promise<ResultadoDoEnvio | void>;
+	/**
+	 * Compensa o carimbo de um toque cujo envio falhou de forma SÍNCRONA
+	 * (`resolveAndSend` sem `wamid` ou com erro). Devolve step/`ultimo_toque_em`/
+	 * cota ao estado anterior e empurra `next_touch_at` para um backoff.
+	 */
+	compensarToque?: (args: CompensacaoArgs) => Promise<void>;
 	/** O telefone é de atendente ATIVO no banco? (além da lista em código) */
 	telefoneDaEquipe?: (telefone: string) => Promise<boolean>;
 	/** Segura os toques ATIVOS cujo destino é telefone da equipe (idempotente). */
 	segurarToquesDaEquipe?: (agora: Date) => Promise<number>;
+	/**
+	 * Encerra os toques ATIVOS de conversa SIMULADA que já entraram na régua
+	 * (idempotente). Fecha o caso em que a conversa virou teste DEPOIS de entrar:
+	 * a consulta de disparo filtra `is_simulated = false`, então sem isto a linha
+	 * ficaria `ATIVO` com `next_touch_at` vencido para sempre.
+	 */
+	encerrarToquesDeTeste?: (agora: Date) => Promise<number>;
 	/**
 	 * O CADASTRO da régua (`remarketing_config`), lido UMA vez por ciclo.
 	 * É o que faz a tela de config valer sem deploy: a régua continua pura, quem
@@ -179,6 +237,8 @@ export interface ResultadoCiclo {
 	nada: Record<string, number>;
 	/** Toques ATIVOS segurados por o destino ser telefone da equipe. */
 	seguradosDaEquipe: number;
+	/** Toques ATIVOS de conversa simulada encerrados por serem teste. */
+	encerradosDeTeste: number;
 	/** O que o CAPI devolveu (ou o motivo de não ter tentado). */
 	conversoes?: unknown;
 }
@@ -330,6 +390,10 @@ export async function listarVencidas(agora: Date): Promise<LinhaDaRegua[]> {
 			       t.touches_30d AS "touches30d", t.motivo_saida AS "motivoSaida",
 			       c.channel, c.wa_id AS "waId", c.metadata,
 			       c.last_inbound_at AS "lastInboundAt",
+			       CASE WHEN c.channel = 'web' THEN (
+			           SELECT max(m.created_at) FROM messages m
+			            WHERE m.conversation_id = c.id AND m.role = 'user'
+			       ) END AS "ultimaMensagemDoClienteEm",
 			       ct.phone, ct.name AS "nome",
 			       ct.remarketing_optout_at AS "optoutDaPessoaEm",
 			       ${viuOferta(sql`c`)} AS "viuOferta",
@@ -364,6 +428,9 @@ export async function listarVencidas(agora: Date): Promise<LinhaDaRegua[]> {
 		waId: (l.waId as string | null) ?? null,
 		metadata: l.metadata,
 		lastInboundAt: l.lastInboundAt ? new Date(l.lastInboundAt as string) : null,
+		ultimaMensagemDoClienteEm: l.ultimaMensagemDoClienteEm
+			? new Date(l.ultimaMensagemDoClienteEm as string)
+			: null,
 		phone: (l.phone as string | null) ?? null,
 		nome: (l.nome as string | null) ?? null,
 		optoutDaPessoaEm: l.optoutDaPessoaEm ? new Date(l.optoutDaPessoaEm as string) : null,
@@ -439,8 +506,9 @@ export async function simulacaoDoContato(contactId: string): Promise<Date | null
  * ENTRADA NA RÉGUA: quem conversou e ficou em silêncio, e ainda não tem linha.
  *
  * O ciclo só LÊ linhas ATIVAS; sem este passo ninguém nunca entra e o motor é
- * código morto. A entrada é criada 90 min depois do último inbound (o mesmo
- * silêncio do toque 01).
+ * código morto. A entrada é criada 90 min depois do SILÊNCIO do cliente (o
+ * mesmo silêncio do toque 01) — no WhatsApp o último inbound, na web a última
+ * fala dele (D9, `referenciaDoSilencio`).
  *
  * ── O que mudou aqui (18/09) ───────────────────────────────────────────────
  *
@@ -459,6 +527,13 @@ export async function simulacaoDoContato(contactId: string): Promise<Date | null
  *    `avaliarElegibilidade`) e passou a guardar também a SAÍDA — `listarVencidas`
  *    é quem decide QUEM dispara e não tinha essa guarda: conversa marcada como
  *    teste DEPOIS de entrar continuava recebendo toque.
+ * 5. **D9:** o silêncio passou a ter a fonte do CANAL. No WhatsApp ele continua
+ *    vindo de `last_inbound_at`; na web, da última fala do cliente
+ *    (`messages.role='user'`), porque a coluna nunca é escrita nesse canal — e
+ *    era isso que deixava as 119 conversas da web em `ainda_em_silencio`, com
+ *    ZERO na régua desde 18/09. O recorte e a ORDEM dos candidatos passaram a
+ *    usar o mesmo fato (`coalesce(last_inbound_at, fala)`), senão a web cairia
+ *    no fim da fila e o `LIMIT` a descartaria.
  *
  * O teto real (3 toques/30 dias) continua valendo no disparo — a entrada não é
  * o lugar de contá-lo.
@@ -489,13 +564,16 @@ export async function entrarNaRegua(agora: Date): Promise<number> {
 		console.log("[remarketing-cycle] excluídos", JSON.stringify(agregado));
 	}
 
-	// A ordem da consulta (inbound mais recente primeiro) é a prioridade da
+	// A ordem da consulta (silêncio mais recente primeiro) é a prioridade da
 	// cota: quem falou por último é quem tem mais chance de responder.
 	let entradas = 0;
 	for (const candidato of elegiveis) {
 		if (entradas >= ENTRADAS_POR_CICLO) break;
-		const ultimoInbound = candidato.lastInboundAt;
-		if (!ultimoInbound) continue;
+		// O SILÊNCIO, não o `last_inbound_at`: na web a coluna não existe e a data
+		// vem da última fala do cliente (D9). Sem referência nenhuma não há toque 01
+		// — a elegibilidade já teria barrado, e esta guarda evita data inventada.
+		const silencio = referenciaDoSilencio(candidato);
+		if (!silencio) continue;
 		try {
 			await db
 				.insert(remarketingTouches)
@@ -505,7 +583,7 @@ export async function entrarNaRegua(agora: Date): Promise<number> {
 					objetivo: objetivoDoMetadata(candidato.metadata) ?? OBJETIVO_DESCONHECIDO,
 					step: 0,
 					status: "ATIVO",
-					nextTouchAt: new Date(ultimoInbound.getTime() + ESPERA_SILENCIO_MS),
+					nextTouchAt: new Date(silencio.getTime() + ESPERA_SILENCIO_MS),
 					touches30d: 0,
 				})
 				.onConflictDoNothing({ target: remarketingTouches.conversationId });
@@ -532,12 +610,26 @@ interface CandidatoDaEntrada extends ConversaAvaliada {
 }
 
 /**
- * O recorte da entrada: 30 dias de conversas, com contato e o "já tem linha"
- * resolvidos no banco.
+ * O recorte da entrada: 30 dias de conversas, com contato, a FALA do cliente e o
+ * "já tem linha" resolvidos no banco.
+ *
+ * ── O silêncio da web, no recorte e na ordem (D9) ──────────────────────
+ *
+ * A conversa da web não tem `last_inbound_at`, então uma janela que olhasse só
+ * essa coluna (e uma ordem `NULLS LAST` sobre ela) jogava a web inteira para o
+ * fim — e, com o `LIMIT`, para fora: era o caminho estrutural de as 119 conversas
+ * da web nunca chegarem à régua. Aqui o recorte e a ORDEM usam o mesmo fato que
+ * a decisão usa: o silêncio do cliente — o MAIS RECENTE entre a fala e
+ * `last_inbound_at` (`GREATEST` ignora `NULL`), com `created_at` como último
+ * recurso (conversa sem mensagem nenhuma não tem silêncio para contar).
+ *
+ * Antes era `coalesce(...)`, que pega a data ANTIGA: uma web com
+ * `last_inbound_at` velho (a coluna é gravada via `waId`) e fala recente era
+ * cortada pelo filtro e jogada para o fim da ordem — a regra nova (D9) não
+ * valia no recorte (revisão C15b).
  *
  * O `LIMIT` é teto de trabalho, não filtro de elegibilidade — por isso ele é
- * generoso (500) e a ordem é a mesma prioridade do insert. O índice
- * `conversations_last_inbound_at_idx` cobre a janela.
+ * generoso (500).
  */
 async function candidatosDaEntrada(agora: Date): Promise<CandidatoDaEntrada[]> {
 	const desde = new Date(agora.getTime() - JANELA_DE_CANDIDATOS_MS).toISOString();
@@ -547,13 +639,30 @@ async function candidatosDaEntrada(agora: Date): Promise<CandidatoDaEntrada[]> {
 			       c.is_simulated AS "isSimulated", c.contact_id AS "contactId",
 			       c.wa_id AS "waId", c.metadata,
 			       c.last_inbound_at AS "lastInboundAt", ct.phone,
+			       CASE WHEN c.channel = 'web' THEN fala.em END AS "ultimaMensagemDoClienteEm",
 			       EXISTS (SELECT 1 FROM remarketing_touches t
 			                WHERE t.conversation_id = c.id) AS "jaNaRegua"
 			FROM conversations c
 			LEFT JOIN contacts ct ON ct.id = c.contact_id
-			WHERE c.last_inbound_at >= ${desde}::timestamptz
-			   OR (c.last_inbound_at IS NULL AND c.created_at >= ${desde}::timestamptz)
-			ORDER BY c.last_inbound_at DESC NULLS LAST
+			LEFT JOIN LATERAL (
+			    SELECT max(m.created_at) AS em FROM messages m
+			     WHERE m.conversation_id = c.id AND m.role = 'user'
+			) fala ON true
+			WHERE (
+			    -- PRÉ-FILTRO (FIX-441/D12): superset da condição final e NÃO depende do
+			    -- LATERAL, então o planner a empurra para c antes de calcular o max.
+			    -- Sem isto o max(messages) roda para TODAS as conversas a cada 30 s.
+			    c.last_inbound_at >= ${desde}::timestamptz
+			    OR c.created_at >= ${desde}::timestamptz
+			    OR c.updated_at >= ${desde}::timestamptz
+			    OR EXISTS (
+			        SELECT 1 FROM messages m2
+			         WHERE m2.conversation_id = c.id AND m2.role = 'user'
+			           AND m2.created_at >= ${desde}::timestamptz
+			    )
+			)
+			  AND GREATEST(c.last_inbound_at, fala.em, c.created_at) >= ${desde}::timestamptz
+			ORDER BY GREATEST(c.last_inbound_at, fala.em) DESC NULLS LAST
 			LIMIT ${CANDIDATOS_POR_CICLO}
 		`),
 	);
@@ -565,6 +674,9 @@ async function candidatosDaEntrada(agora: Date): Promise<CandidatoDaEntrada[]> {
 		isSimulated: l.isSimulated === true,
 		contactId: (l.contactId as string | null) ?? null,
 		lastInboundAt: l.lastInboundAt ? new Date(l.lastInboundAt as string) : null,
+		ultimaMensagemDoClienteEm: l.ultimaMensagemDoClienteEm
+			? new Date(l.ultimaMensagemDoClienteEm as string)
+			: null,
 		waId: (l.waId as string | null) ?? null,
 		phone: (l.phone as string | null) ?? null,
 		jaNaRegua: l.jaNaRegua === true,
@@ -693,6 +805,54 @@ export async function segurarToquesDaEquipe(agora: Date): Promise<number> {
 	return segurados;
 }
 
+/**
+ * Encerra os toques ATIVOS de conversa SIMULADA.
+ *
+ * O caso real (`d8bc426e`, medido pós-deploy): a conversa entrou na régua e só
+ * DEPOIS foi marcada como teste. A consulta de disparo (`listarVencidas`) filtra
+ * `c.is_simulated = false`, então a linha nunca mais era visitada e ficava
+ * `ATIVO` com `next_touch_at` vencido para sempre — a mesma classe de defeito do
+ * teto de 30 dias (B4), e igualmente mentirosa na tela.
+ *
+ * Mesmo desenho da higiene da equipe (`segurarToquesDaEquipe`) e do PATCH que
+ * marca `is_simulated` (`admin/limpeza-queries.ts`): `status = 'RESPONDEU'` +
+ * `motivo_saida = 'teste'`. A tela lê `RESPONDEU` + motivo de
+ * `MOTIVOS_DE_PARADA` como "segurado" com o rótulo "Conversa de teste", em vez
+ * de dizer que o cliente respondeu — a razão está documentada em
+ * `.orientacao/b10-decisao.md`. `next_touch_at` não é zerado: só linha `ATIVO`
+ * tem próximo toque, então tirar o `status` de `ATIVO` já resolve a mentira.
+ *
+ * Idempotente pelo `WHERE status = 'ATIVO'`: o segundo ciclo não mexe em mais
+ * nada.
+ */
+export async function encerrarToquesDeTeste(agora: Date): Promise<number> {
+	const linhas = linhasDeExecucao(
+		await db.execute(sql`
+			SELECT t.conversation_id AS "conversationId"
+			FROM remarketing_touches t
+			JOIN conversations c ON c.id = t.conversation_id
+			WHERE t.status = 'ATIVO'
+			  AND c.is_simulated = true
+		`),
+	);
+
+	let encerrados = 0;
+	for (const linha of linhas) {
+		const atualizadas = await db
+			.update(remarketingTouches)
+			.set({ status: "RESPONDEU", motivoSaida: MOTIVO_SAIDA_TESTE, updatedAt: agora })
+			.where(
+				and(
+					eq(remarketingTouches.conversationId, String(linha.conversationId)),
+					eq(remarketingTouches.status, "ATIVO"),
+				),
+			)
+			.returning({ id: remarketingTouches.id });
+		encerrados += atualizadas.length;
+	}
+	return encerrados;
+}
+
 // ─── Efeitos (default) ──────────────────────────────────────────────────────
 
 /**
@@ -720,8 +880,102 @@ async function gravarEstado({
 			ultimoToqueEm: estado.ultimoToqueEm,
 			touches30d,
 			motivoSaida: estado.motivoSaida,
+			// O carimbo NOVO zera o rastro de ENVIO da rodada anterior (FIX-441):
+			// sem isto, o `failed` do `wamid` da rodada anterior encontraria a
+			// linha ainda com `ultimo_wamid = W-anterior` + `envio_status =
+			// 'enviado'` e descontaria um toque que não é o dele. O `enviarTemplate`
+			// reescreve estes dois campos depois que a Meta aceita.
+			ultimoWamid: null,
+			envioStatus: null,
 		})
 		.where(eq(remarketingTouches.conversationId, conversationId));
+}
+
+/**
+ * COMPENSA o carimbo de um toque cujo envio falhou de forma SÍNCRONA (FIX-441/D12).
+ *
+ * O carimbo sobe ANTES do envio (a defesa contra duplicidade); quando a Meta
+ * recusa na hora, a cota não pode ficar consumida por uma mensagem que nunca
+ * saiu. Aqui o estado VOLTA ao de antes do carimbo (step, `ultimo_toque_em` e
+ * `touches_30d` vêm da linha lida no início do ciclo) e `next_touch_at` é
+ * empurrado para o backoff da falha — 3 dias no 131049, horas nas demais.
+ *
+ * O `WHERE ultimo_toque_em = $agora` é a guarda: ele só desfaz o carimbo que
+ * ESTE toque escreveu. Se outra escrita já mexeu na linha, a compensação não
+ * pisa — é preferível perder a compensação a duplicar/atropelar um toque.
+ *
+ * Para as recusas em que insistir não adianta (131050/131026), a régua ENCERRA:
+ * `ESGOTADO` + `motivo_saida`, para a linha sair do índice e a mesa ver.
+ */
+export async function compensarToqueDaConversa(args: CompensacaoArgs): Promise<void> {
+	const encerra = disposicaoDaFalha(args.codigo) === "encerra_regua";
+	await db
+		.update(remarketingTouches)
+		.set({
+			step: args.anterior.step,
+			ultimoToqueEm: args.anterior.ultimoToqueEm,
+			touches30d: args.anterior.touches30d,
+			status: encerra ? "ESGOTADO" : "ATIVO",
+			motivoSaida: encerra ? MOTIVO_SAIDA_META : null,
+			nextTouchAt: encerra ? null : new Date(args.agora.getTime() + backoffDaFalha(args.codigo)),
+			envioStatus: ENVIO_STATUS_FALHOU,
+		})
+		.where(
+			and(
+				eq(remarketingTouches.conversationId, args.conversationId),
+				eq(remarketingTouches.ultimoToqueEm, args.agora),
+			),
+		);
+}
+
+/**
+ * COMPENSA o carimbo de um toque cuja falha chegou DEPOIS do envio, pelo `wamid`
+ * (FIX-441/D12). É o que o webhook de status chama quando a Meta manda `failed`.
+ *
+ * Aqui não há o estado anterior: a linha só guarda o ÚLTIMO toque. A cota volta
+ * decrementando `step` e `touches_30d` (sem inchar o lado errado — o viés é não
+ * subcontar), e o `next_touch_at` vai para o backoff (ou `NULL` quando a Meta
+ * recusou de vez). De propósito **não** mexe em `ultimo_toque_em`: a linha
+ * antiga continua reconstruindo os toques da janela, e zerá-lo liberaria uma
+ * mensagem a mais — o lado que não se pode errar.
+ *
+ * IDEMPOTENTE pelo `envio_status`: só compensa linha ainda `enviado`. Depois da
+ * primeira compensação o campo vira `falhou` e a reentrega do mesmo status não
+ * desconta a cota duas vezes. E o status da linha tem que ser NÃO TERMINAL por
+ * OUTRO evento (FIX-441, revisão C15b): `ATIVO`, ou o `ESGOTADO` do PRÓPRIO
+ * toque — `registrarToque` grava `ESGOTADO` + `tres_toques_sem_resposta` no
+ * carimbo do 3º toque ANTES do envio, e um `failed` de W3 antes só não achava a
+ * linha, deixando o lead esgotado por uma mensagem que não chegou. `OPTOUT`,
+ * `CONVERTEU` e `RESPONDEU` continuam intocados: um `failed` ATRASADO não pode
+ * reabrir uma sequência que terminou por OUTRO evento.
+ *
+ * Devolve `true` quando compensou de fato.
+ */
+export async function compensarToqueFalho(args: {
+	wamid: string;
+	codigo: number | null;
+	agora: Date;
+}): Promise<boolean> {
+	const encerra = disposicaoDaFalha(args.codigo) === "encerra_regua";
+	const atualizadas = await db
+		.update(remarketingTouches)
+		.set({
+			step: sql`GREATEST(${remarketingTouches.step} - 1, 0)`,
+			touches30d: sql`GREATEST(${remarketingTouches.touches30d} - 1, 0)`,
+			status: encerra ? "ESGOTADO" : "ATIVO",
+			motivoSaida: encerra ? MOTIVO_SAIDA_META : null,
+			nextTouchAt: encerra ? null : new Date(args.agora.getTime() + backoffDaFalha(args.codigo)),
+			envioStatus: ENVIO_STATUS_FALHOU,
+		})
+		.where(
+			and(
+				inArray(remarketingTouches.status, ["ATIVO", "ESGOTADO"]),
+				eq(remarketingTouches.ultimoWamid, args.wamid),
+				eq(remarketingTouches.envioStatus, ENVIO_STATUS_ENVIADO),
+			),
+		)
+		.returning({ id: remarketingTouches.id });
+	return atualizadas.length > 0;
 }
 
 const dispararTurnoReal: NonNullable<RemarketingDeps["dispararTurno"]> = async ({
@@ -767,20 +1021,127 @@ const enviarArteReal: NonNullable<RemarketingDeps["enviarArte"]> = async ({ to, 
  * resolução janela/template/fila. O `freeTextFallback` NÃO é texto enlatado: se
  * a janela estiver aberta, quem fala é o agente, pelo mesmo turno de retomada.
  *
- * SEM `params` (decisão do líder, rodada 2): o shape dos templates de
- * remarketing ainda não está definido, e mandar `components` para um template
- * sem `{{1}}` faz a Meta recusar o envio. Quando o template tiver placeholder, é
- * uma linha aqui — o `resolveAndSend` já aceita `params`.
+ * ── O que muda no FIX-441 (D12) ───────────────────────────────────────────────
+ *
+ * 1. **Devolve o resultado** — `ok:false` (sem `wamid` ou com `error`) sobe para
+ *    o ciclo compensar o carimbo.
+ * 2. **Grava o toque em `messages`** quando saiu: o template vira mensagem do
+ *    assistente com `template_name` + o corpo renderizado. Até aqui a "ausência
+ *    de fala" era o único rastro de um template, e o painel e o agente não
+ *    enxergavam o que foi enviado.
+ * 3. **Grava o `wamid` + `envio_status='enviado'`** na linha da régua, para o
+ *    webhook de status `failed` achar a linha e devolver a cota.
+ *
+ * ── A fronteira entre ENVIO e PERSISTÊNCIA (revisão C15) ───────────────────────
+ *
+ * O `catch` do `resolveAndSend` devolve `codigo: null` — exceção não é recusa da
+ * Meta, e o ciclo só compensa com **código explícito**. Já a gravação da mensagem
+ * e do `wamid` vem DEPOIS do aceite: se falhar, o erro só vai para o log. Sem
+ * esta separação, uma falha de INSERT/UPDATE derrubava o toque numa compensação
+ * e o mesmo template saía de novo no backoff.
  */
 const enviarTemplateReal: NonNullable<RemarketingDeps["enviarTemplate"]> = async ({
 	to,
 	conversationId,
 	usageKeys,
 	freeTextFallback,
+	channel,
 }) => {
-	const { resolveAndSend } = await import("@/lib/whatsapp/template-dispatch");
-	await resolveAndSend({ to, conversationId, usageKeys, freeTextFallback });
+	// 1) O ENVIO. Só o desfecho da META decide a compensação (FIX-441).
+	let resultado: ResolveAndSendResult;
+	try {
+		const { resolveAndSend } = await import("@/lib/whatsapp/template-dispatch");
+		// SEM `params` (decisão do líder, rodada 2): o shape dos templates de
+		// remarketing ainda não está definido, e mandar `components` para um template
+		// sem `{{1}}` faz a Meta recusar. Quando tiver placeholder, é uma linha aqui.
+		resultado = await resolveAndSend({
+			to,
+			conversationId,
+			usageKeys,
+			freeTextFallback,
+			channel,
+		});
+	} catch (err) {
+		// A exceção que escapa do `resolveAndSend` é SEMPRE pré-rede: o `callApi`
+		// engole os erros de rede e os devolve como `error`. Config/banco/import
+		// antes do fetch ⇒ com certeza não saiu ⇒ o carimbo volta (C15b).
+		const mensagem = err instanceof Error ? err.message : String(err);
+		return { ok: false, error: mensagem, codigo: null, desfecho: "nao_saiu" };
+	}
+
+	// Texto livre (janela aberta) ou fila: não há `wamid` da Meta a guardar, e
+	// nada a compensar — quem fala é o agente, ou o dispatcher reenvia depois.
+	if (resultado.channel !== "template") return { ok: true, wamid: null, desfecho: "saiu" };
+
+	const wamid = resultado.messageId ?? null;
+	if (resultado.error || !wamid) {
+		const error = resultado.error ?? "a Meta não devolveu o wamid";
+		return {
+			ok: false,
+			error,
+			codigo: codigoDaMeta(resultado.error),
+			desfecho: classificarDesfechoDoEnvio({
+				messageId: wamid,
+				error: resultado.error ?? null,
+				timeout: resultado.timeout === true,
+			}),
+		};
+	}
+
+	// 2) A PERSISTÊNCIA, DEPOIS DO ACEITE. A Meta já aceitou (`wamid` na mão): se
+	// gravar a mensagem ou o `ultimo_wamid` falhar, isto NÃO é falha de envio —
+	// compensar aqui faria o MESMO template sair de novo no backoff, e o cliente
+	// receberia duas vezes. O erro fica no log e o toque segue contado.
+	try {
+		await registrarMensagemDoTemplate({
+			conversationId,
+			metaName: resultado.metaName ?? null,
+			bodyPreview: resultado.bodyPreview ?? null,
+		});
+		await db
+			.update(remarketingTouches)
+			.set({ ultimoWamid: wamid, envioStatus: ENVIO_STATUS_ENVIADO })
+			.where(eq(remarketingTouches.conversationId, conversationId));
+	} catch (err) {
+		console.error(
+			JSON.stringify({
+				level: "error",
+				source: "remarketing-cycle",
+				etapa: "persistencia-pos-aceite",
+				conversation_id: conversationId,
+				error: err instanceof Error ? err.message : String(err),
+			}),
+		);
+	}
+
+	return { ok: true, wamid, desfecho: "saiu" };
 };
+
+/**
+ * O toque por template vira mensagem do assistente em `messages` (FIX-441/D12c).
+ *
+ * O `content` é o corpo denormalizado do template (`bodyPreview`) — o texto que
+ * o cliente leu —, com o nome do template como reserva. `templateName` marca o
+ * disparo automático: meses depois, template e fala escrita à mão não podem ser
+ * a mesma coisa no histórico.
+ */
+async function registrarMensagemDoTemplate(args: {
+	conversationId: string;
+	metaName: string | null;
+	bodyPreview: string | null;
+}): Promise<void> {
+	const conteudo =
+		args.bodyPreview?.trim() ||
+		(args.metaName ? `Template enviado: ${args.metaName}` : "Template enviado");
+	await db.insert(messages).values({
+		conversationId: args.conversationId,
+		role: "assistant",
+		content: conteudo,
+		channel: "whatsapp",
+		personaId: null,
+		templateName: args.metaName,
+	});
+}
 
 // ─── O ciclo ────────────────────────────────────────────────────────────────
 
@@ -798,8 +1159,10 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 	const dispararTurno = deps.dispararTurno ?? dispararTurnoReal;
 	const enviarArte = deps.enviarArte ?? enviarArteReal;
 	const enviarTemplate = deps.enviarTemplate ?? enviarTemplateReal;
+	const compensarToque = deps.compensarToque ?? compensarToqueDaConversa;
 	const telefoneDaEquipe = deps.telefoneDaEquipe ?? ehDaEquipe;
 	const segurarEquipe = deps.segurarToquesDaEquipe ?? segurarToquesDaEquipe;
+	const encerrarTeste = deps.encerrarToquesDeTeste ?? encerrarToquesDeTeste;
 	const lerParametros = deps.lerParametros ?? lerParametrosRegua;
 	const despachar = deps.despacharConversoes ?? despacharConversoesPendentes;
 
@@ -807,6 +1170,7 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 	let disparados = 0;
 	let entradas = 0;
 	let seguradosDaEquipe = 0;
+	let encerradosDeTeste = 0;
 
 	// ── Chave operacional (default desligado) ─────────────────────────────────
 	// Desligada, o ciclo NÃO inscreve nem dispara — mas segue despachando o CAPI,
@@ -830,6 +1194,7 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 			disparados: 0,
 			nada,
 			seguradosDaEquipe: 0,
+			encerradosDeTeste: 0,
 			conversoes: conversoesDesligada,
 		};
 	}
@@ -868,6 +1233,33 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 				level: "error",
 				source: "remarketing-cycle",
 				etapa: "segurar-equipe",
+				error: err instanceof Error ? err.message : String(err),
+			}),
+		);
+	}
+
+	// ── Higiene: a conversa de TESTE sai da régua COM MOTIVO ──────────────────
+	// Fecha o caso em que a conversa virou teste DEPOIS de entrar: a consulta de
+	// disparo filtra `is_simulated = false`, então sem isto a linha ficaria ATIVA
+	// com `next_touch_at` vencido para sempre (mesma classe do teto de 30 dias).
+	// Idempotente pelo `WHERE status = 'ATIVO'`.
+	try {
+		encerradosDeTeste = await encerrarTeste(agora);
+		if (encerradosDeTeste > 0) {
+			console.log(
+				"[remarketing-cycle] testes encerrados",
+				JSON.stringify({
+					encerrados: encerradosDeTeste,
+					motivo: motivoDeSaidaLegivel(MOTIVO_SAIDA_TESTE),
+				}),
+			);
+		}
+	} catch (err) {
+		console.error(
+			JSON.stringify({
+				level: "error",
+				source: "remarketing-cycle",
+				etapa: "encerrar-teste",
 				error: err instanceof Error ? err.message : String(err),
 			}),
 		);
@@ -928,6 +1320,9 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 					nextTouchAt: linha.nextTouchAt,
 					ultimoToqueEm: linha.ultimoToqueEm,
 					ultimoInboundEm: linha.lastInboundAt,
+					// O SILÊNCIO resolvido pelo canal (D9): na web é a fala do cliente; no
+					// WhatsApp, o próprio último inbound.
+					silencioDoClienteEm: referenciaDoSilencio(linha),
 				},
 				toquesNaJanela: await lerToques(linha.contactId, agora),
 				simulacaoEm: await lerSimulacao(linha.contactId),
@@ -939,6 +1334,8 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 				agora,
 				estado,
 				telefone,
+				// O canal da linha: a web NUNCA entrega por turno de retomada (FIX-441).
+				channel: linha.channel,
 				// A MACRO-FASE do funil é fato do servidor, lido dos sinais da conversa
 				// (`viu_oferta` / `teve_proposta`) na leitura da linha. É o que faz a
 				// mensagem certa para o momento certo (FIX-387/388).
@@ -1001,10 +1398,11 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 				continue;
 			}
 
-			await enviarTemplate({
+			const resultadoDoEnvio = await enviarTemplate({
 				to: telefone,
 				conversationId: linha.conversationId,
 				usageKeys: decisao.acao.usageKeys,
+				channel: linha.channel,
 				freeTextFallback: async () => {
 					await dispararTurno({
 						conversationId: linha.conversationId,
@@ -1014,6 +1412,38 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 					});
 				},
 			});
+
+			// O desfecho decide: `recusado` (a Meta respondeu com código) e `nao_saiu`
+			// (com certeza não entregou: pré-rede, conexão, HTTP sem `wamid`, 2xx sem
+			// `wamid`) devolvem a cota. `ambiguo` (timeout depois de a requisição sair)
+			// NÃO devolve — a Meta pode ter entregue, e a doutrina é errar pelo lado de
+			// MENOS toque (FIX-441, revisão C15b).
+			if (resultadoDoEnvio && resultadoDoEnvio.ok === false) {
+				console.error(
+					JSON.stringify({
+						level: "error",
+						source: "remarketing-cycle",
+						etapa: "envio-template",
+						conversation_id: linha.conversationId,
+						desfecho: resultadoDoEnvio.desfecho,
+						codigo: resultadoDoEnvio.codigo,
+						error: resultadoDoEnvio.error,
+					}),
+				);
+				if (resultadoDoEnvio.desfecho === "recusado" || resultadoDoEnvio.desfecho === "nao_saiu") {
+					await compensarToque({
+						conversationId: linha.conversationId,
+						anterior: {
+							step: linha.step,
+							ultimoToqueEm: linha.ultimoToqueEm,
+							touches30d: linha.touches30d,
+						},
+						agora,
+						codigo: resultadoDoEnvio.codigo,
+					});
+					continue;
+				}
+			}
 			disparados += 1;
 		} catch (err) {
 			console.error(
@@ -1048,19 +1478,24 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 		);
 	}
 
-	return { entradas, disparados, nada, seguradosDaEquipe, conversoes };
+	return { entradas, disparados, nada, seguradosDaEquipe, encerradosDeTeste, conversoes };
 }
 
 function directiveDaRetomada(meta: ConversationMetadata, linha: LinhaDaRegua, agora: Date): string {
 	return buildRetomadaDirective(meta, {
-		minutosParado: minutosDeSilencio(linha.lastInboundAt, agora),
+		minutosParado: minutosDeSilencio(linha, agora),
 		channel: linha.channel,
 	});
 }
 
-function minutosDeSilencio(ultimoInbound: Date | null, agora: Date): number {
-	if (!ultimoInbound) return SILENCIO_MINUTOS;
-	return Math.max(1, Math.round((agora.getTime() - ultimoInbound.getTime()) / 60_000));
+/**
+ * Quantos minutos de silêncio o "parado há N minutos" do directive cita. A
+ * referência é o silêncio resolvido pelo canal (D9) — na web, a fala do cliente.
+ */
+function minutosDeSilencio(linha: LinhaDaRegua, agora: Date): number {
+	const silencio = referenciaDoSilencio(linha);
+	if (!silencio) return SILENCIO_MINUTOS;
+	return Math.max(1, Math.round((agora.getTime() - silencio.getTime()) / 60_000));
 }
 
 // ─── Wiring BullMQ (só no entrypoint do worker; nunca em teste) ──────────────

@@ -29,6 +29,9 @@ interface EstadoPersistido {
 	variante?: unknown;
 	recusado?: unknown;
 	desbloqueadoEm?: unknown;
+	/** `true` quando o braço foi FORÇADO por `?variante=` (QA/dono) — a conversa
+	 *  está fora do teste e conta como "sem variante" para quem mede. */
+	forcada?: unknown;
 }
 
 function lerEstadoPersistido(metadata: unknown): EstadoPersistido {
@@ -37,11 +40,16 @@ function lerEstadoPersistido(metadata: unknown): EstadoPersistido {
 }
 
 /**
- * A variante DESTA conversa.
+ * A variante DESTA conversa para quem MEDE o teste.
  *
  * Prefere o que está persistido; se ainda não foi gravado (conversa anterior a
  * este bloco, ou criação fora da rota), deriva do visitId — a mesma função pura
  * que grava. Nunca devolve uma variante inventada.
+ *
+ * Conversa `forcada` (`?variante=`) devolve `null`: "sem variante". Forçar é QA —
+ * a conversa não entrou na fila e não é resultado de A/B. A UI do chat continua
+ * vendo o braço forçado em `leituraDoDesbloqueio` (o dono precisa validar a ponta
+ * que pediu); o que sai da conta é a LEITURA.
  */
 export async function varianteDaConversaPersistida(
 	conversationId: string,
@@ -51,8 +59,9 @@ export async function varianteDaConversaPersistida(
 		columns: { visitId: true, metadata: true },
 	});
 	if (!conversa) return null;
-	const persistida = lerEstadoPersistido(conversa.metadata).variante;
-	if (ehVarianteDoTelefone(persistida)) return persistida;
+	const persistido = lerEstadoPersistido(conversa.metadata);
+	if (persistido.forcada === true) return null;
+	if (ehVarianteDoTelefone(persistido.variante)) return persistido.variante;
 	return varianteDaConversa({ visitId: conversa.visitId, conversationId });
 }
 

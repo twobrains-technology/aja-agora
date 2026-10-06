@@ -50,7 +50,7 @@ export function captureAnswerNode(state: AgentGraphStateType): Partial<AgentGrap
 
 	// SÓ NO GATE `name`. FORA DELE, QUEM EXTRAI É O MODELO.
 	//
-	// A apresentação espontânea ("me chamo Ana e quero um carro de 80 mil") também
+	// A apresentação espontânea ("me chamo Bruna e quero um carro de 80 mil") também
 	// precisa ser capturada — a vitrine tirou o gate `name` do caminho de quem já
 	// traz o valor, então ninguém mais PERGUNTA o nome. Mas ela NÃO é capturada
 	// aqui, e a tentativa de fazê-lo foi revertida em 27/08/2026 com a sonda na

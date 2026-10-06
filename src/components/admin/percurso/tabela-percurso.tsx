@@ -37,6 +37,8 @@ interface ReguaDaPessoa {
 	status: string | null;
 	step: number | null;
 	nextTouchAt: string | null;
+	/** `remarketing_touches.motivo_saida` — separa a recusa da Meta dos três toques (FIX-441). */
+	motivoSaida?: string | null;
 }
 
 type PessoaComRegua = PessoaDoPercurso & {
@@ -113,7 +115,9 @@ function reguaParaCelula(regua: ReguaDaPessoa | null | undefined) {
 		step: regua.step ?? 0,
 		nextTouchAt: regua.nextTouchAt ? new Date(regua.nextTouchAt) : null,
 		ultimoToqueEm: null,
-		motivoSaida: null,
+		// FIX-441: sem o motivo da saída, a célula diria "Esgotou os 3 toques" a quem
+		// a Meta recusou a entrega — a rota agora manda o fato.
+		motivoSaida: regua.motivoSaida ?? null,
 	};
 }
 

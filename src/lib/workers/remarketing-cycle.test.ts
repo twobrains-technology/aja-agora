@@ -57,6 +57,8 @@ function linha(over: Partial<LinhaDaRegua> = {}): LinhaDaRegua {
 		waId: "5562999998888",
 		metadata: {},
 		lastInboundAt: new Date(AGORA.getTime() - 91 * 60_000),
+		// WhatsApp: o silêncio vem do `lastInboundAt` (D9).
+		ultimaMensagemDoClienteEm: null,
 		phone: null,
 		nome: "Ana",
 		optoutDaPessoaEm: null,
@@ -88,9 +90,12 @@ function deps(over: Record<string, unknown> = {}) {
 		enviarArte: vi.fn(async () => {
 			ordem.push("arte");
 		}),
-		enviarTemplate: vi.fn(async (_args: { usageKeys: readonly string[] }) => {
-			ordem.push("template");
-		}),
+		enviarTemplate: vi.fn(
+			async (_args: { usageKeys: readonly string[]; channel?: "web" | "whatsapp" }) => {
+				ordem.push("template");
+			},
+		),
+		compensarToque: vi.fn(async (_args: { codigo: number | null }) => {}),
 		despacharConversoes: vi.fn(async () => ({ enviados: 0 })),
 		...over,
 	};
@@ -277,7 +282,7 @@ describe("os bloqueios do motor chegam ao ciclo", () => {
 		expect(d.enviarArte).not.toHaveBeenCalled();
 	});
 
-	it("teto de 30 dias montado pelo ciclo bloqueia o toque", async () => {
+	it("teto de 30 dias montado pelo ciclo REAGENDA em vez de vencer", async () => {
 		const recentes = [
 			new Date(AGORA.getTime() - 3 * DIA),
 			new Date(AGORA.getTime() - 2 * DIA),
@@ -291,7 +296,16 @@ describe("os bloqueios do motor chegam ao ciclo", () => {
 
 		expect(r.disparados).toBe(0);
 		expect(r.nada.teto_30_dias).toBe(1);
-		expect(d.gravarEstado).not.toHaveBeenCalled();
+		// P4: o ciclo GRAVA o reagendamento (o motor antes devolvia `null` e a linha
+		// ficava com `next_touch_at` vencido para sempre).
+		expect(d.gravarEstado).toHaveBeenCalledTimes(1);
+		const gravado = (d.gravarEstado as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
+			estado: { status: string; nextTouchAt: Date | null };
+		};
+		expect(gravado.estado.status).toBe("ATIVO");
+		expect(gravado.estado.nextTouchAt?.toISOString()).toBe(
+			new Date(recentes[0].getTime() + 30 * DIA).toISOString(),
+		);
 	});
 
 	it("quem respondeu não recebe: grava o terminal para sair do índice", async () => {
@@ -456,5 +470,86 @@ describe("o job repetível tem jobId FIXO (uma cópia por vez)", () => {
 		expect(bullmq.adds[0].opts.jobId).toBe("remarketing-cycle-cron");
 		expect(bullmq.adds[0].opts.repeat).toEqual({ every: 30_000 });
 		expect(bullmq.workers.length).toBe(1);
+	});
+});
+
+describe("FIX-441 — a compensação acontece quando o envio com certeza NÃO saiu", () => {
+	/** Uma linha vencida e FORA da janela de 24 h: a entrega é template. */
+	function linhaDeTemplate(over: Partial<LinhaDaRegua> = {}) {
+		return linha({ lastInboundAt: new Date(AGORA.getTime() - 5 * DIA), ...over });
+	}
+
+	it("recusa com CÓDIGO (131049) devolve a cota e reagenda", async () => {
+		const compensarToque = vi.fn(async (_args: { codigo: number | null }) => {});
+		const { deps: d } = deps({
+			listarVencidas: vi.fn(async () => [linhaDeTemplate()]),
+			enviarTemplate: vi.fn(async () => ({
+				ok: false as const,
+				error: "not delivered",
+				codigo: 131049,
+				desfecho: "recusado" as const,
+			})),
+			compensarToque,
+		});
+		const r = await runRemarketingCycle(d);
+		expect(compensarToque).toHaveBeenCalledTimes(1);
+		expect(compensarToque.mock.calls[0][0]).toMatchObject({ codigo: 131049 });
+		// Cota devolvida ⇒ o ciclo não conta como disparado.
+		expect(r.disparados).toBe(0);
+	});
+
+	it("AMBÍGUO (timeout/rede, sem código) NÃO devolve a cota", async () => {
+		const compensarToque = vi.fn(async (_args: { codigo: number | null }) => {});
+		const { deps: d } = deps({
+			listarVencidas: vi.fn(async () => [linhaDeTemplate()]),
+			enviarTemplate: vi.fn(async () => ({
+				ok: false as const,
+				error: "timeout ao falar com a Meta (>15s)",
+				codigo: null,
+				desfecho: "ambiguo" as const,
+			})),
+			compensarToque,
+		});
+		const r = await runRemarketingCycle(d);
+		expect(compensarToque).not.toHaveBeenCalled();
+		// O carimbo fica de pé (a Meta pode ter entregado): conta como o toque.
+		expect(r.disparados).toBe(1);
+	});
+
+	it("`nao_saiu` (erro sem código, mas sem ambiguidade) TAMBÉM devolve a cota", async () => {
+		const compensarToque = vi.fn(async (_args: { codigo: number | null }) => {});
+		const { deps: d } = deps({
+			listarVencidas: vi.fn(async () => [linhaDeTemplate()]),
+			enviarTemplate: vi.fn(async () => ({
+				ok: false as const,
+				error: "<html>502 Bad Gateway</html>",
+				codigo: null,
+				desfecho: "nao_saiu" as const,
+			})),
+			compensarToque,
+		});
+		const r = await runRemarketingCycle(d);
+		expect(compensarToque).toHaveBeenCalledTimes(1);
+		expect(r.disparados).toBe(0);
+	});
+});
+
+describe("FIX-441 — a web do ciclo não roda turno no chat do site", () => {
+	it("web com `last_inbound_at` dentro das 24 h vai por template, sem `dispararTurno`", async () => {
+		const dezHoras = 10 * 60 * 60_000;
+		const { deps: d } = deps({
+			listarVencidas: vi.fn(async () => [
+				linha({
+					channel: "web",
+					lastInboundAt: new Date(AGORA.getTime() - dezHoras),
+					ultimaMensagemDoClienteEm: new Date(AGORA.getTime() - dezHoras),
+				}),
+			]),
+		});
+		const r = await runRemarketingCycle(d);
+		expect(d.dispararTurno).not.toHaveBeenCalled();
+		expect(d.enviarTemplate).toHaveBeenCalledTimes(1);
+		expect((d.enviarTemplate.mock.calls[0][0] as { channel?: string }).channel).toBe("web");
+		expect(r.disparados).toBe(1);
 	});
 });

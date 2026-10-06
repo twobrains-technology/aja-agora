@@ -17,7 +17,7 @@
 // O banco é o do workspace (isolado por worktree) e a limpeza é explícita no
 // `afterAll`. Skip quando não há DATABASE_URL.
 
-import { eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ConversaAvaliada, OpcoesDaElegibilidade } from "@/lib/remarketing/motivo-de-exclusao";
 
@@ -60,14 +60,37 @@ describeIfDb("régua — entrada, higiene e motivo (integration)", () => {
 		semContato?: boolean;
 		/** Relativo a `AGORA`. `null` = a corrida do FIX-86 (coluna nula). */
 		inboundHa?: number | null;
+		/**
+		 * Quando o CLIENTE falou pela última vez (`messages.role='user'`) — o fato
+		 * que a régua lê na web. Default: o mesmo instante de `inboundHa`.
+		 */
+		falaEm?: Date | null;
 		waId?: string | null;
 		phone?: string | null;
 		metadata?: Record<string, unknown>;
+		/**
+		 * `last_inbound_at` EXPLÍCITO para a web (a coluna existe em prod quando o
+		 * lead tem `waId` — 1 de 119 conversas). O default da web continua `null`.
+		 */
+		lastInboundAtWeb?: Date | null;
 		/** Pré-cria a linha ATIVA em `remarketing_touches`. */
 		jaNaRegua?: boolean;
 	}
 
 	async function semear(semente: Semente = {}) {
+		const daWeb = (semente.channel ?? "whatsapp") === "web";
+		const inboundRelativo = semente.inboundHa === undefined ? 100 * MIN : semente.inboundHa;
+		const inboundEm = inboundRelativo === null ? null : new Date(AGORA.getTime() - inboundRelativo);
+
+		// A web NUNCA grava `last_inbound_at`: quem escreve a coluna é o webhook do
+		// WhatsApp. A fixture antiga gravava para a web também e era FALSO-VERDE —
+		// ela fazia a entrada parecer viva num canal que, em produção, nunca tinha a
+		// coluna (119 conversas da web, 1 com `last_inbound_at`, zero na régua).
+		const lastInboundAt = daWeb ? (semente.lastInboundAtWeb ?? null) : inboundEm;
+		// O silêncio da web conta da FALA do cliente — a fixture passa a gravar a
+		// mensagem de verdade em vez de mentir na coluna.
+		const falaEm = semente.falaEm !== undefined ? semente.falaEm : daWeb ? inboundEm : null;
+
 		const [conv] = await db
 			.insert(schema.conversations)
 			.values({
@@ -75,16 +98,21 @@ describeIfDb("régua — entrada, higiene e motivo (integration)", () => {
 				status: semente.status ?? "active",
 				isSimulated: semente.isSimulated ?? false,
 				waId: semente.waId === undefined ? FONE_LEAD : semente.waId,
-				lastInboundAt:
-					semente.inboundHa === undefined
-						? new Date(AGORA.getTime() - 100 * MIN)
-						: semente.inboundHa === null
-							? null
-							: new Date(AGORA.getTime() - semente.inboundHa),
+				lastInboundAt,
 				metadata: semente.metadata ?? {},
 			})
 			.returning({ id: schema.conversations.id });
 		convIds.push(conv.id);
+
+		if (daWeb && falaEm) {
+			await db.insert(schema.messages).values({
+				conversationId: conv.id,
+				role: "user",
+				content: "Quero simular um financiamento",
+				channel: "web",
+				createdAt: falaEm,
+			});
+		}
 
 		let contactId: string | null = null;
 		if (!semente.semContato) {
@@ -134,6 +162,15 @@ describeIfDb("régua — entrada, higiene e motivo (integration)", () => {
 		const linha = await db.query.remarketingTouches.findFirst({
 			where: eq(schema.remarketingTouches.conversationId, conversationId),
 		});
+		// A FALA do cliente: é dela que o silêncio da web conta (D9), e é o que a
+		// consulta do ciclo também lê.
+		const fala = await db.query.messages.findFirst({
+			where: and(
+				eq(schema.messages.conversationId, conversationId),
+				eq(schema.messages.role, "user"),
+			),
+			orderBy: [desc(schema.messages.createdAt)],
+		});
 
 		const avaliada: ConversaAvaliada = {
 			channel: conv?.channel ?? "whatsapp",
@@ -141,6 +178,7 @@ describeIfDb("régua — entrada, higiene e motivo (integration)", () => {
 			isSimulated: conv?.isSimulated ?? false,
 			contactId: conv?.contactId ?? null,
 			lastInboundAt: conv?.lastInboundAt ?? null,
+			ultimaMensagemDoClienteEm: fala?.createdAt ?? null,
 			waId: conv?.waId ?? null,
 			phone: contact?.phone ?? null,
 			jaNaRegua: Boolean(linha),
@@ -301,6 +339,36 @@ describeIfDb("régua — entrada, higiene e motivo (integration)", () => {
 			expect(depois.map((l) => l.conversationId)).not.toContain(conversationId);
 		});
 
+		it("linha ATIVO de conversa de TESTE é ENCERRADA, não ignorada para sempre", async () => {
+			// O d8bc426e real: a conversa entrou na régua e só DEPOIS virou teste. Sem
+			// encerramento, a linha fica ATIVA com `next_touch_at` vencido para sempre,
+			// porque a consulta de disparo filtra `is_simulated = false`.
+			const { conversationId } = await semear({ jaNaRegua: true });
+			await db
+				.update(schema.conversations)
+				.set({ isSimulated: true })
+				.where(eq(schema.conversations.id, conversationId));
+
+			const encerrados = await ciclo.encerrarToquesDeTeste(AGORA);
+			// A higiene é GLOBAL (como a da equipe): pode encerrar linhas residuais do
+			// banco compartilhado. O que importa é que ESTA saiu.
+			expect(encerrados).toBeGreaterThanOrEqual(1);
+
+			const linha = await db.query.remarketingTouches.findFirst({
+				where: eq(schema.remarketingTouches.conversationId, conversationId),
+			});
+			expect(linha?.status).not.toBe("ATIVO");
+			expect(linha?.status).toBe("RESPONDEU");
+			expect(linha?.motivoSaida).toBe("teste");
+			expect(motivo.motivoDeSaidaLegivel(linha?.motivoSaida ?? null)).toBe("Conversa de teste");
+
+			const vencidas = await ciclo.listarVencidas(new Date(AGORA.getTime() + 2 * MIN));
+			expect(vencidas.map((l) => l.conversationId)).not.toContain(conversationId);
+
+			// IDEMPOTENTE: o segundo tick não mexe em mais nada.
+			expect(await ciclo.encerrarToquesDeTeste(new Date(AGORA.getTime() + MIN))).toBe(0);
+		});
+
 		it("telefone de atendente de mesa NÃO é listado — nem o inativo", async () => {
 			const [atendente] = await db
 				.insert(schema.mesaAttendants)
@@ -452,6 +520,23 @@ describeIfDb("régua — entrada, higiene e motivo (integration)", () => {
 			const vencidas = await ciclo.listarVencidas(new Date(AGORA.getTime() + MIN));
 			expect(vencidas.map((l) => l.conversationId)).not.toContain(conversationId);
 		});
+
+		it("a higiene do ciclo encerra a linha ATIVO de conversa de TESTE", async () => {
+			const { conversationId } = await semear({ jaNaRegua: true });
+			await db
+				.update(schema.conversations)
+				.set({ isSimulated: true })
+				.where(eq(schema.conversations.id, conversationId));
+
+			const resultado = await rodarCiclo(AGORA);
+			expect(resultado.encerradosDeTeste).toBeGreaterThanOrEqual(1);
+
+			const linha = await db.query.remarketingTouches.findFirst({
+				where: eq(schema.remarketingTouches.conversationId, conversationId),
+			});
+			expect(linha?.status).toBe("RESPONDEU");
+			expect(linha?.motivoSaida).toBe("teste");
+		});
 	});
 
 	describe("o cadastro da régua vale no ciclo de verdade (AJA-20)", () => {
@@ -535,6 +620,145 @@ describeIfDb("régua — entrada, higiene e motivo (integration)", () => {
 			await rodarCiclo();
 
 			expect(await intervaloAgendado(conversationId)).toBe(3 * DIA);
+		});
+	});
+
+	describe("D9 — a régua alcança o lead da web (lead 774)", () => {
+		// O lead 774 (`594e8850`) chegou pela web em 01/10, falou às 00:00 BRT, o
+		// contato tem telefone válido e a conversa NUNCA teve `last_inbound_at` —
+		// como todas as 119 da web desde 18/09, das quais ZERO entraram na régua.
+		// A timeline é própria deste bloco (a do resto do arquivo é `AGORA`): a
+		// fala é de madrugada e o toque só pode sair na abertura do horário.
+		const FALA = new Date("2026-09-17T03:00:00Z"); // 00:00 BRT
+		const SILENCIO = new Date(FALA.getTime() + 90 * MIN); // 01:30 BRT
+		const ABERTURA = new Date("2026-09-17T12:00:00Z"); // 09:00 BRT
+
+		/** As conversas que já têm linha ANTES da rodada — para limpar só o lixo. */
+		async function conversasNaRegua(): Promise<Set<string>> {
+			const linhas = await db
+				.select({ conversationId: schema.remarketingTouches.conversationId })
+				.from(schema.remarketingTouches);
+			return new Set(linhas.map((l) => l.conversationId));
+		}
+
+		async function linhaDaRegua(conversationId: string) {
+			return db.query.remarketingTouches.findFirst({
+				where: eq(schema.remarketingTouches.conversationId, conversationId),
+			});
+		}
+
+		it("entra com o próximo toque às 01:30 e sai como TEMPLATE às 09:00", async () => {
+			const { conversationId } = await semear({
+				channel: "web",
+				waId: null,
+				phone: FONE_WEB,
+				falaEm: FALA,
+			});
+			expect(await linhaDaRegua(conversationId)).toBeUndefined();
+
+			const antes = await conversasNaRegua();
+			process.env.REMARKETING_ENTRADA_WEB = "1";
+			let entradas = 0;
+			try {
+				entradas = await ciclo.entrarNaRegua(ABERTURA);
+			} finally {
+				delete process.env.REMARKETING_ENTRADA_WEB;
+			}
+			expect(entradas).toBeGreaterThanOrEqual(1);
+
+			const linha = await linhaDaRegua(conversationId);
+			expect(linha?.status).toBe("ATIVO");
+			// 00:00 + 90 min de silêncio: o agendamento nasce da FALA do cliente.
+			expect(linha?.nextTouchAt?.toISOString()).toBe(SILENCIO.toISOString());
+
+			// O banco do workspace tem conversas de verdade no recorte: o
+			// `entrarNaRegua` real inscreve o que for elegível. O que esta rodada
+			// criou ALÉM da fixture é lixo de teste e sai daqui (fora da fixture,
+			// nunca se apaga linha que já existia — nem as das outras fixtures).
+			const novas = [...(await conversasNaRegua())].filter(
+				(id) => !antes.has(id) && !convIds.includes(id),
+			);
+			if (novas.length) {
+				await db
+					.delete(schema.remarketingTouches)
+					.where(inArray(schema.remarketingTouches.conversationId, novas));
+			}
+
+			// Às 09:00 o ciclo dispara — como TEMPLATE, nunca como texto livre: sem
+			// `last_inbound_at` a janela de 24 h da Meta não existe para a web.
+			const templates: string[] = [];
+			const turnos: string[] = [];
+			await ciclo.runRemarketingCycle({
+				agora: ABERTURA,
+				entrarNaRegua: async () => 0,
+				segurarToquesDaEquipe: async () => 0,
+				dispararTurno: async ({ conversationId: id }) => {
+					turnos.push(id);
+				},
+				enviarArte: async () => {},
+				enviarTemplate: async ({ conversationId: id }) => {
+					templates.push(id);
+				},
+				despacharConversoes: async () => ({}),
+			});
+			expect(templates).toContain(conversationId);
+			expect(turnos).not.toContain(conversationId);
+
+			const depois = await linhaDaRegua(conversationId);
+			expect(depois?.step).toBe(1);
+			expect(depois?.ultimoToqueEm?.toISOString()).toBe(ABERTURA.toISOString());
+		});
+
+		it("web com `last_inbound_at` VELHO e fala de ontem entra como candidata (GREATEST)", async () => {
+			// O defeito (C15b): o recorte usava `coalesce(last_inbound_at, fala)` e pegava
+			// a coluna ANTIGA — a web era cortada (ou jogada para o fim da ordem) mesmo
+			// com a fala de ontem. O silêncio é o MAIS RECENTE dos dois.
+			const { conversationId } = await semear({
+				channel: "web",
+				waId: null,
+				phone: FONE_WEB,
+				falaEm: FALA,
+				lastInboundAtWeb: new Date(AGORA.getTime() - 40 * DIA),
+			});
+			expect(await linhaDaRegua(conversationId)).toBeUndefined();
+
+			process.env.REMARKETING_ENTRADA_WEB = "1";
+			try {
+				await ciclo.entrarNaRegua(ABERTURA);
+			} finally {
+				delete process.env.REMARKETING_ENTRADA_WEB;
+			}
+
+			const linha = await linhaDaRegua(conversationId);
+			expect(linha?.status).toBe("ATIVO");
+			// O agendamento nasce da FALA (ontem), não da coluna velha.
+			expect(linha?.nextTouchAt?.toISOString()).toBe(SILENCIO.toISOString());
+
+			// Limpeza do lixo que o `entrarNaRegua` real inscreveu além da fixture.
+			const novas = [...(await conversasNaRegua())].filter(
+				(id) => id !== conversationId && !convIds.includes(id),
+			);
+			if (novas.length) {
+				await db
+					.delete(schema.remarketingTouches)
+					.where(inArray(schema.remarketingTouches.conversationId, novas));
+			}
+		});
+
+		it("sem a flag web a conversa segue fora, com o motivo `conversa_web`", async () => {
+			const { conversationId } = await semear({
+				channel: "web",
+				waId: null,
+				phone: FONE_WEB,
+				falaEm: FALA,
+			});
+
+			const veredito = await avaliarSemeada(conversationId, { entradaWeb: false });
+			expect(veredito).toEqual({ elegivel: false, motivo: "conversa_web" });
+
+			delete process.env.REMARKETING_ENTRADA_WEB;
+			await ciclo.entrarNaRegua(ABERTURA);
+			expect(await entrouNaRegua(conversationId)).toBe(false);
 		});
 	});
 });

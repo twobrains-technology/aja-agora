@@ -4,6 +4,8 @@ import { updateLastInboundAt } from "@/app/actions/whatsapp";
 import { extrairCodigoDeOrigem, removerCarimbo } from "@/lib/attribution/codigo-de-origem";
 import { parseCtwaReferral } from "@/lib/attribution/referral";
 import { recordWhatsAppVisit } from "@/lib/attribution/visit-store";
+import { codigoDaMeta } from "@/lib/remarketing/status-do-toque";
+import { registrarFalhaDoLlm } from "@/lib/llm/alerta-do-llm";
 import { markAsRead } from "@/lib/whatsapp/api";
 import { receberMidiaDoCliente } from "@/lib/whatsapp/midia-do-cliente";
 import { claimInboundMessage } from "@/lib/whatsapp/once";
@@ -86,6 +88,24 @@ export async function POST(req: NextRequest) {
 				console.error(`${msg} | error: ${errCode} ${errTitle}`);
 			} else {
 				console.log(msg);
+			}
+
+			// FIX-441 (D12) — a entrega FALHOU depois de a régua já ter carimbado o
+			// toque: devolve a cota da régua pelo `wamid`, de forma IDEMPOTENTE (a Meta
+			// reentrega o webhook). É `await` de propósito: a compensação é escrita, e o
+			// teste precisa vê-la concluída antes do 200. Falha aqui não pode virar 5xx
+			// (a Meta re-tentaria em laço): fica no log.
+			if (status.status === "failed" && status.id) {
+				try {
+					const { compensarToqueFalho } = await import("@/lib/workers/remarketing-cycle");
+					await compensarToqueFalho({
+						wamid: status.id,
+						codigo: codigoDaMeta(status.errors?.[0]),
+						agora: new Date(),
+					});
+				} catch (err) {
+					console.error("[whatsapp] compensação do toque falhou:", err);
+				}
 			}
 
 			// Até 2026-08-15 a linha acima era TUDO o que acontecia com um status.
@@ -176,9 +196,12 @@ export async function POST(req: NextRequest) {
 						// nada além do que já estava pronto.
 						const text = codigo ? removerCarimbo(bruto) : bruto;
 						console.log(`[whatsapp] Text: "${text}"`);
-						processTextMessage(from, text || "Oi", contactName, message.id).catch((err) =>
-							console.error("[whatsapp] Processor error:", err),
-						);
+						processTextMessage(from, text || "Oi", contactName, message.id).catch((err) => {
+							console.error("[whatsapp] Processor error:", err);
+							// B5: falha do LLM vira sinal (log estruturado + alerta de billing).
+							// Nunca lança — observabilidade não pode derrubar o webhook.
+							void registrarFalhaDoLlm(err, { origem: "whatsapp", from });
+						});
 					}
 					break;
 				}
@@ -236,7 +259,13 @@ export async function POST(req: NextRequest) {
 							tipo: msgType,
 							filename: message.document?.filename,
 							caption: media?.caption,
-						}).catch((err) => console.error("[whatsapp] Media inbound error:", err));
+						}).catch((err) => {
+							console.error("[whatsapp] Media inbound error:", err);
+							// R1 (B5c) — a mídia não passa pelo catch do processor: o turno de
+							// KYC/diretiva sobe até aqui, e este era o único ponto que ainda
+							// engolia a falha do LLM sem sinal.
+							void registrarFalhaDoLlm(err, { origem: "whatsapp", from, canal: "midia" });
+						});
 					} else {
 						console.warn(`[whatsapp] ${msgType} inbound sem media id — ignorado`);
 					}

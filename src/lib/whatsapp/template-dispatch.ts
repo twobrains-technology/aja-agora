@@ -41,13 +41,38 @@ export interface ResolveAndSendArgs {
 	usageKeys?: readonly string[];
 	/** Valores dos placeholders do template (`{ body: [...], header?: [...] }`). */
 	params?: Record<string, unknown>;
+	/**
+	 * O canal da conversa. A web NUNCA sai por texto livre (FIX-441): o
+	 * `freeTextFallback` dela roda o turno no chat do site, que ninguém está
+	 * olhando, e a cota é consumida. Mesmo com a janela de 24 h aberta (a
+	 * conversa da web pode ter `last_inbound_at` depois de virar lead), a web
+	 * vai por template. Ausente = WhatsApp (comportamento de sempre).
+	 */
+	channel?: "web" | "whatsapp";
 	/** Copy rica atual — executada quando a janela está ABERTA. */
 	freeTextFallback: () => Promise<void> | void;
 }
 
 export type ResolveAndSendResult =
 	| { channel: "free_text" }
-	| { channel: "template"; usageKey: string; messageId?: string }
+	| {
+			channel: "template";
+			usageKey: string;
+			/** Nome do template na Meta — para gravar no histórico a mensagem que saiu. */
+			metaName?: string;
+			/** Corpo denormalizado do template — o texto que o cliente leu. */
+			bodyPreview?: string | null;
+			/** `wamid` quando a Meta ACEITOU o envio; ausente quando falhou. */
+			messageId?: string;
+			/** O corpo do erro da Meta quando o envio NÃO saiu (FIX-441/D12). */
+			error?: string;
+			/**
+			 * O envio estourou o timeout DEPOIS de a requisição sair (FIX-441/C15b).
+			 * É o único desfecho ambíguo: a Meta pode ter entregue. Sobe do `callApi`
+			 * para o ciclo não tratar timeout como “não saiu”.
+			 */
+			timeout?: boolean;
+	  }
 	| { channel: "queued"; usageKey: string; queueId: string };
 
 /** O que fazer com a lista: usar a primeira aprovada, ou enfileirar a primeira. */
@@ -171,7 +196,7 @@ export async function resolveAndSend(args: ResolveAndSendArgs): Promise<ResolveA
 		return { channel: "free_text" };
 	}
 
-	const { open } = await isWindowOpen(conversationId);
+	const { open } = args.channel === "web" ? { open: false } : await isWindowOpen(conversationId);
 	if (open) {
 		await freeTextFallback();
 		return { channel: "free_text" };
@@ -198,10 +223,20 @@ export async function resolveAndSend(args: ResolveAndSendArgs): Promise<ResolveA
 			escolhido.language,
 			componentsFromParams(params),
 		);
+		// O resultado sobe INTEIRO: quem chamou precisa saber se a Meta aceitou
+		// (tem `messageId`) ou recusou (tem `error`) — é o que a régua usa para
+		// compensar o carimbo quando o envio não saiu (FIX-441/D12).
+		const messageId = (result as { messageId?: string })?.messageId;
+		const error = (result as { error?: string })?.error;
+		const timeout = (result as { timeout?: boolean })?.timeout === true;
 		return {
 			channel: "template",
 			usageKey: escolha.usageKey,
-			messageId: (result as { messageId?: string })?.messageId,
+			metaName: escolhido.metaName,
+			bodyPreview: escolhido.bodyPreview ?? null,
+			...(messageId ? { messageId } : {}),
+			...(error ? { error } : {}),
+			...(timeout ? { timeout: true } : {}),
 		};
 	}
 

@@ -4,7 +4,7 @@
  *
  * Dev-only: returns 404 in production.
  */
-import { and, asc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { conversations, messages, user as userTable } from "@/db/schema";
@@ -25,17 +25,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 	});
 	if (!conv) return new NextResponse("Not Found", { status: 404 });
 
-	const msgs = await db
-		.select({
-			id: messages.id,
-			role: messages.role,
-			content: messages.content,
-			channel: messages.channel,
-			createdAt: messages.createdAt,
-		})
-		.from(messages)
-		.where(eq(messages.conversationId, conv.id))
-		.orderBy(asc(messages.createdAt));
+	const msgs = await db.query.messages.findMany({
+		where: eq(messages.conversationId, conv.id),
+		orderBy: (m, { asc }) => [asc(m.createdAt)],
+		// O card que o cliente viu vive no artifact; sem ele a leitura do simulador
+		// mostra o marcador cru `[card: tipo]` em vez do card.
+		with: { artifacts: true },
+	});
 
 	const createdById =
 		(conv.metadata as { createdBySimUserId?: string } | null)?.createdBySimUserId ?? null;

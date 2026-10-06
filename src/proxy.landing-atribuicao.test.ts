@@ -103,6 +103,54 @@ describe("o proxy grava a chegada em toda landing", () => {
 	});
 });
 
+// `/direto` é o destino dos anúncios da Meta (o link do criativo aponta para lá).
+//
+// Enquanto ele NÃO era landing, a UTM que vinha na URL do anúncio se perdia na
+// primeira navegação: o proxy não gravava a chegada e a visita nascia depois, em
+// `/`, já sem campanha — a UTM ficava só no `referrer`. Medido em produção em
+// 05/10/2026: ~130 visitas desde 02/10 nesse formato, e a campanha AJA-CR-002
+// (58 cliques) aparecia com "zero chegada", o que levaria a cortar verba de quem
+// estava trazendo gente certa.
+//
+// Estes testes NOMEIAM `/direto` em vez de derivar de `LANDINGS`: derivando, eles
+// passariam a valer sozinhos só depois da correção e nunca teriam visto o defeito.
+describe("a chegada por /direto registra a campanha do anúncio", () => {
+	it("conta como landing de gente", async () => {
+		await proxy(
+			chegada(
+				"/direto",
+				"?utm_source=meta&utm_campaign=120210000000000000&utm_content=120210000000000001&utm_term=120210000000000002&fbclid=IwAR0direto",
+			),
+		);
+
+		expect(recordWebVisit).toHaveBeenCalledTimes(1);
+		expect(recordWebVisit.mock.calls[0][0]).toMatchObject({
+			landingPath: "/direto",
+			params: expect.objectContaining({
+				utmSource: "meta",
+				utmCampaign: "120210000000000000",
+				fbclid: "IwAR0direto",
+				// O id da campanha/conjunto/anúncio vem DENTRO da UTM (é assim que a
+				// Meta monta o link): os três campos determinísticos têm de sair
+				// preenchidos, não nulos.
+				campaignId: "120210000000000000",
+				adsetId: "120210000000000002",
+				adId: "120210000000000001",
+			}),
+		});
+	});
+
+	it("está na lista de landings", () => {
+		expect(LANDINGS).toContain("/direto");
+	});
+
+	it("está no matcher — fora dele o proxy nem roda", () => {
+		const casa = (pathname: string) =>
+			config.matcher.some((padrao) => pathToRegexp(padrao).test(pathname));
+		expect(casa("/direto"), "/direto está fora do matcher").toBe(true);
+	});
+});
+
 describe("o matcher deixa o proxy rodar onde ele precisa rodar", () => {
 	// `config.matcher` é o filtro do Next: fora dele o proxy nem é chamado, e
 	// nenhuma lógica de dentro tem chance de rodar. É o ponto onde a landing

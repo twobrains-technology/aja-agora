@@ -44,6 +44,11 @@
  *    sequência morta sem nova simulação). Horário, teto e silêncio são do
  *    `podeDisparar`: quem decide SE dispara é ele; o registro registra o que
  *    aconteceu.
+ * 5.b. **O silêncio e a janela de 24 h da Meta são fatos SEPARADOS** (D9): o
+ *    silêncio vem de `referenciaDoSilencio` — na web, a última fala do cliente —,
+ *    e a janela continua vindo de `ultimoInboundEm`/`last_inbound_at`, que só o
+ *    WhatsApp escreve. A web, por isso, entra com o silêncio da fala dela e sai
+ *    sempre por template.
  * 6. **Dentro da janela de 24 h da Meta vale a ESCALA CURTA** (`escalaDeRetomadaMs`,
  *    fábrica `[90, 180, 300]` min): o toque 01 sai em 90 min — o mesmo número do
  *    silêncio — e os intervalos seguintes são 3 h e 5 h, não 3 e 5 dias. Fora da
@@ -367,8 +372,20 @@ export interface EstadoRegua {
 	toquesNaJanela: readonly Date[];
 	/** Quando o cliente fez a última simulação — o que permite a reentrada. */
 	simulacaoEm: Date | null;
-	/** Último inbound do cliente: silêncio de 90 min e janela de 24h da Meta. */
+	/**
+	 * Último inbound do cliente (`conversations.last_inbound_at`): é o fato da
+	 * JANELA DE 24 H DA META — a forma do envio (texto livre × template). A web
+	 * nunca tem esta coluna, e por isso sai sempre por template.
+	 */
 	ultimoInboundEm: Date | null;
+	/**
+	 * A referência do SILÊNCIO do cliente — quando ele falou pela última vez
+	 * (D9). Na web é a última fala dele (`messages.role='user'`); no WhatsApp é o
+	 * próprio `ultimoInboundEm`. Quem resolve a regra do canal é o I/O
+	 * (`referenciaDoSilencio`, em `motivo-de-exclusao.ts`); aqui ele chega pronto,
+	 * e `null` significa "não resolvido" — aí vale o último inbound.
+	 */
+	silencioDoClienteEm: Date | null;
 	/** Por que saiu da régua; null enquanto está ativa. */
 	motivoSaida: string | null;
 }
@@ -385,6 +402,7 @@ export function estadoInicial(
 		toquesNaJanela: [],
 		simulacaoEm: null,
 		ultimoInboundEm: null,
+		silencioDoClienteEm: null,
 		motivoSaida: null,
 		...entrada,
 	};
@@ -488,7 +506,7 @@ export function registrarToque(
 	// DECISÃO DO DONO (28/09/2026): esgotar SÓ PARA. `ESGOTADO` é terminal sem
 	// transição para `perdido` e sem alerta — nada aqui toca `leads.stage`. A
 	// prova é o FIX-386 (`motor.test.ts`); o ponto gêmeo do esgotamento está em
-	// `motor.ts` (`normalizarSequenciaMorta`).
+	// `motor.ts` (`normalizarBloqueio`).
 	const esgotou = passo >= parametros.maxToques;
 
 	return {
@@ -592,7 +610,8 @@ function houveNovaSimulacao(estado: EstadoRegua): boolean {
  *
  * `agora` entra porque a ESCALA depende da janela de 24 h: se o último inbound
  * está dentro dela, a espera é a curta (minutos); fora, a de sempre (90 min /
- * dias).
+ * dias). O silêncio vem de `referenciaDoSilencio` (D9) — a web conta da fala do
+ * cliente e, sem `last_inbound_at`, nunca cai na escala curta.
  */
 function agendamento(
 	estado: EstadoRegua,
@@ -606,10 +625,9 @@ function agendamento(
 			: null;
 	}
 	if (estado.nextTouchAt) return estado.nextTouchAt;
-	if (estado.step === 0 && estado.ultimoInboundEm) {
-		return new Date(
-			estado.ultimoInboundEm.getTime() + esperaAteProximo(0, estado, parametros, agora),
-		);
+	const silencio = referenciaDoSilencioDoEstado(estado);
+	if (estado.step === 0 && silencio) {
+		return new Date(silencio.getTime() + esperaAteProximo(0, estado, parametros, agora));
 	}
 	return null;
 }
@@ -632,6 +650,24 @@ function esperaAteProximo(
 	}
 	if (step === 0) return parametros.esperaSilencioMs;
 	return intervaloAteProximo(step, parametros);
+}
+
+/**
+ * A referência do SILÊNCIO do cliente NO ESTADO da régua: a fala dele quando ela
+ * foi resolvida (web), senão o último inbound (WhatsApp).
+ *
+ * D9: são dois fatos. `dentroDaJanelaDeTexto` continua perguntando pelo
+ * `ultimoInboundEm` — a janela da Meta é OUTRA pergunta, e é ela que manda a web
+ * para o template. Este é o fato que o agendamento do toque 01 usa.
+ *
+ * Nota (FIX-441): existe OUTRA `referenciaDoSilencio`, em `motivo-de-exclusao.ts`,
+ * que responde a mesma pergunta a partir dos fatos da CONVERSA (`ConversaAvaliada`
+ * — com o `mais recente` entre fala e `last_inbound_at` na web). As duas foram
+ * separadas por nome porque as entradas são diferentes; a semântica é a mesma
+ * (o silêncio é do cliente) e as duas precisam concordar.
+ */
+export function referenciaDoSilencioDoEstado(estado: EstadoRegua): Date | null {
+	return estado.silencioDoClienteEm ?? estado.ultimoInboundEm;
 }
 
 /** A janela de 24h da Meta decide só a forma do envio — ver decisão 2 no topo. */

@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dossiê — Correções do A/B, assertividade do agente e régua web (Aja Agora)</title>
+<link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+<div class="wrap">
+
+<h1>A/B do telefone, assertividade do agente e régua web</h1>
+<p class="lede">A degradação que você viu, a call com a Bruna de 01/10 e o incidente da régua de 02/10 14:00, investigados em produção (banco, Langfuse, CloudWatch, CloudTrail) e corrigidos em 23 blocos. Este documento é para <b>conferir</b>: cada número tem a origem ao lado.</p>
+<p class="meta">Aja Agora · 02/10/2026 · base <code>9bdb2040</code> (= main em produção) → branch <code>kairogyn/chefe-aja-correcoes</code> em <code>09ad2b2d</code> · <b>nada foi deployado</b></p>
+
+<nav class="idx">
+  <a href="#macro">1 · O que degradou e o que passou a existir<span>o diagnóstico com número</span></a>
+  <a href="#decisoes">2 · As escolhas<span>e o que cada uma não dá</span></a>
+  <a href="#codigo">3 · Onde o código mudou<span>30 commits, 2 migrações</span></a>
+  <a href="#superficie">4 · O que muda para quem usa<span>chat, painel, régua</span></a>
+  <a href="#riscos">5 · Pontos de risco<span>inclui o que o próprio trabalho quebrou</span></a>
+  <a href="#pendente">6 · O que fica com você<span>ordenado pelo que mais pesa</span></a>
+  <a href="#roteiro">7 · Como conferir<span>comandos e resultado real</span></a>
+</nav>
+
+<!-- ────────────────────────────────────────────────────────────────────── -->
+<section id="macro">
+<h2>1 · O que degradou de verdade, e o que passou a existir</h2>
+
+<div class="card">
+<h3>O diagnóstico, em uma tela</h3>
+<p><b>O A/B não fez a condução cair. O degrau de 02/10 é real e atingiu lead real.</b> Ele veio de três coisas medidas turno a turno. O analyzer não é a causa: acertou nos 7 turnos que falharam.</p>
+<ul>
+<li><b>Na call de 01/10, a conta da Anthropic ficou sem crédito</b> das 10:50 às 11:52. Foram 29 respostas <code>400 "Your credit balance is too low"</code>, sem fallback no gateway, e o turn-analyzer caiu em "neutro" sem avisar. "Entre R$ 800 e R$ 1.200" (resposta a "quanto pretende pagar por mês?") virou <b>valor do bem = R$ 800</b> (<code>0e5d777a</code> 11:47:38, o minuto da sua fala na call). Foi o único episódio em 9 dias.</li>
+<li><b>O braço B mente para o modelo:</b> ele recebe "as opções já estão na tela" com tudo borrado, e o cliente repete "Carrro de 220 mil reais" (<code>db26cd54</code>). No A e no B, os números da oferta iam para o modelo antes do telefone, e ele os falava (<code>7b5082a1</code>, <code>3a08bf32</code>).</li>
+<li><b>O qwen inventa o número do card:</b> a tool calculou financiamento de R$ 5.678,45/mês e o card mostrou R$ 6.071 (<code>db26cd54</code> 11:05). Ele também fecha turno sem pergunta, só com tool e zero texto, e chama uma tool que não existe.</li>
+</ul>
+</div>
+
+<div class="nums" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:22px">
+  <div><b>0,93</b><span>condução haiku (até 20/09), só lead real</span></div>
+  <div><b>0,87</b><span>qwen antes do A/B (p=0,08)</span></div>
+  <div><b>0,56</b><span>02/10, 3 leads reais (p=0,005)</span></div>
+  <div><b>7/7</b><span>turnos com falha em que o analyzer acertou</span></div>
+</div>
+<p class="legenda">Fonte: score <code>conducao_entregue</code> (Langfuse prod, API v3 com <code>subject</code>) → trace → <code>thread_id</code> → <code>conversations.is_simulated</code>. 398 de 398 scores mapeados; as 43 conversas de teste marcadas por você foram excluídas. O tráfego real entre o A/B (29/09 23h15) e 01/10 tem só 9 turnos, o que não dá para afirmar degrau do A/B.</p>
+
+<h3>Os outros achados que viraram correção</h3>
+<ul>
+<li><b>Régua web nunca funcionou:</b> desde 18/09, 119 conversas web, só 1 com <code>last_inbound_at</code>, zero na régua. O lead 774 (<code>594e8850</code>) não tinha como entrar.</li>
+<li><b>A/B:</b> era hash da visita, sem fila. <b>4 de 25 conversas web perderam o braço:</b> o clique de categoria na home regravava o metadata por cima.</li>
+<li><b>Régua 02/10 14:00:</b> <b>9 de 10 toques saíram</b> (8 com entrega confirmada) e 1 levou 131049. Mas nenhum foi gravado em <code>messages</code>, e o painel filtrava uma chave que não existe mais: daí o "zero toques". Os dois 131047 do log <b>não são da régua</b>: foram para um número que não existe no banco e não aparecem em nenhum log de app.</li>
+<li><b>Juízes LLM do Langfuse mortos desde ≥29/09:</b> o registro manual <code>litellm</code> do Cloud Map aponta para <code>10.30.1.143</code>, IP que não existe mais.</li>
+</ul>
+
+<h3>O fluxo do chat depois das correções</h3>
+<div class="fluxo">
+  <div class="no"><div class="q">ENTRADA</div><div class="t">Conversa web nova</div><div class="d">home, landing ou clique de categoria</div></div>
+  <div class="seta">→</div>
+  <div class="no novo"><div class="q">NOVO</div><div class="t">Fila A/B</div><div class="d">A, B, A, B no Postgres; braço gravado em toda entrada</div></div>
+  <div class="seta">→</div>
+  <div class="no novo"><div class="q">NOVO</div><div class="t">Analyzer no modelo padrão</div><div class="d"><code>AI_ANALYZER_MODEL ?? AI_MODEL</code>; caiu ⇒ parcela segue parcela</div></div>
+  <div class="seta">→</div>
+  <div class="no novo"><div class="q">NOVO</div><div class="t">Sem telefone, sem número</div><div class="d">modelo não recebe oferta nem tool de número (A e B)</div></div>
+  <div class="seta">→</div>
+  <div class="no novo"><div class="q">NOVO</div><div class="t">Card com número da tool</div><div class="d">da mesma cota; sem fonte ⇒ não sai e o modelo sabe</div></div>
+  <div class="seta">→</div>
+  <div class="no novo"><div class="q">NOVO</div><div class="t">Régua honesta</div><div class="d">web entra; toque gravado; falha devolve a cota</div></div>
+</div>
+<p class="legenda"><i></i> vermelho = nasceu nesta frente · neutro = já existia</p>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────── -->
+<section id="decisoes">
+<h2>2 · As escolhas, e o que cada uma não dá</h2>
+<table>
+<tr><th>Decisão</th><th>Descartado</th><th>O que a escolha NÃO dá</th></tr>
+<tr><td><b>Sem telefone, o modelo não recebe o número</b> (contexto + tool), nos dois braços</td><td>Regex sobre a fala, que o CLAUDE.md proíbe, não converge na paráfrase e esconderia o sintoma. Instrução no prompt: regra para invariante.</td><td>Antes do telefone o agente não discute valor nenhum. Se quiser que ele cite faixa genérica, é produto.</td></tr>
+<tr><td><b>Fila estrita</b> A, B, A, B por conversa web nova, com contador atômico no Postgres</td><td>Hash (sem garantia de 50/50); blocos embaralhados (você pediu "fila").</td><td>Com tráfego simultâneo, você não vai ver A e B alternando no seu navegador. Para ver um braço específico existe o <code>?variante=</code>, que agora fica fora da conta.</td></tr>
+<tr><td><b>Analyzer herda o modelo padrão</b>, com override opcional (<code>AI_ANALYZER_MODEL ?? AI_MODEL ?? default</code>)</td><td>Remover a var de vez (sua ordem ao vivo): virou override, conforme a direção das 12:5x.</td><td>No qwen o analyzer leva <b>~5,4 s</b> (haiku ~2,4 s): <b>+3 s por turno</b>. E em prod nada muda até tirar a env da task definition.</td></tr>
+<tr><td><b>Carimbo da régua antes do envio, com compensação</b></td><td>Carimbar só depois do <code>wamid</code>: se o processo cai no meio, manda duas vezes, e isso é irreversível.</td><td>Desfecho ambíguo (timeout com a requisição já enviada) não devolve a cota: erra para o lado de menos toque.</td></tr>
+<tr><td><b>Vocabulário pelo prompt</b> ("carro novo"/"seminovo")</td><td>Tabela de cadastro nova (3ª fonte de verdade; as personas já não chegam ao grafo).</td><td>Só vale em produção depois do <code>sync-prompts</code>.</td></tr>
+</table>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────── -->
+<section id="codigo">
+<h2>3 · Onde o código mudou</h2>
+<div class="nums" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:18px">
+  <div><b>30</b><span>commits à frente da main</span></div>
+  <div><b>50</b><span>arquivos de produção (+2.198 / −310)</span></div>
+  <div><b>46</b><span>arquivos de teste (+4.595)</span></div>
+  <div><b>2</b><span>migrações (0062, 0063)</span></div>
+</div>
+<p class="legenda">Fonte: <code>git diff --shortstat 9bdb2040..HEAD</code>, separando snapshots do drizzle e docs.</p>
+
+<h3>Arquivos novos (remover volta ao estado anterior)</h3>
+<table>
+<tr><th>Arquivo</th><th>Papel</th></tr>
+<tr><td><code>src/lib/experimentos/fila.ts</code></td><td>Fila atômica do A/B (<code>experimento_fila</code>)</td></tr>
+<tr><td><code>src/lib/agent/langgraph/numeros-do-card.ts</code></td><td>O card puxa o número da tool, da mesma cota</td></tr>
+<tr><td><code>src/lib/remarketing/status-do-toque.ts</code></td><td>Classifica o desfecho do envio (saiu, recusado, não saiu, ambíguo) e trata os códigos da Meta</td></tr>
+<tr><td><code>src/lib/observability/langfuse/analisador-scores.ts</code></td><td>Score <code>analisador_indisponivel</code> por turno</td></tr>
+<tr><td><code>drizzle/0062_crazy_king_cobra.sql</code> · <code>0063_tan_nuke.sql</code></td><td>Tabela <code>experimento_fila</code> · colunas <code>ultimo_wamid</code>, <code>envio_status</code> em <code>remarketing_touches</code></td></tr>
+</table>
+
+<h3>Arquivos existentes tocados (onde mora o risco)</h3>
+<table>
+<tr><th>Área</th><th>O que mudou e por quê</th></tr>
+<tr><td><code>langgraph/nodes/converse.ts</code></td><td>Lê o estado do desbloqueio; sem telefone tira os blocos com número e 12 tools; instruções "já estão na tela" condicionadas; card sem fonte devolve erro ao modelo (B1, B5, B14, B17)</td></tr>
+<tr><td><code>web/adapter.ts</code> · <code>chat-message.tsx</code> · <code>desbloqueio-do-telefone.ts</code></td><td>Lista única de cards que revelam oferta; no B o card do telefone sai junto do 1º card de oferta (B2)</td></tr>
+<tr><td><code>app/api/chat/route.ts</code> · <code>variante-da-visita.ts</code> · <code>telefone-ab-do-servidor.ts</code></td><td>Braço pela fila em toda criação; o clique de categoria não apaga mais o braço; forçada marcada e fora da leitura (B3)</td></tr>
+<tr><td><code>turn-analyzer.ts</code> · <code>orchestrator/analyze.ts</code> · <code>parse-asset-value.ts</code> · <code>llm/model-provider.ts</code></td><td>Modelo padrão; fallback marcado; parcela pelo marcador mensal; piso da categoria; timeout de 10 s (B4, B4b, B4c, B15)</td></tr>
+<tr><td><code>workers/remarketing-cycle.ts</code> · <code>remarketing/*</code> · <code>whatsapp/template-dispatch.ts</code> · <code>webhook/whatsapp/route.ts</code></td><td>A web entra pela última fala; template gravado em <code>messages</code>; compensação por desfecho; <code>failed</code> idempotente por <code>wamid</code>; 131049/131050/131026 (B7, B7b, B11, B13, B16)</td></tr>
+<tr><td><code>gate-reengage.ts</code> · <code>persist.ts</code> · <code>gate-reengage-poll.ts</code></td><td>Retomada não cobra gate de coleta com desbloqueio pendente (B6)</td></tr>
+<tr><td><code>admin/handoff-queries.ts</code> · telas de Performance, Remarketing e Percurso</td><td>Parados por período; lista global no Remarketing; resposta atrasada descartada; "A Meta recusou a entrega" (B8, B12, B12b)</td></tr>
+<tr><td><code>agent/system-prompt.ts</code></td><td>Uma linha: "carro novo"/"seminovo" (B9)</td></tr>
+</table>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────── -->
+<section id="superficie">
+<h2>4 · O que muda para quem usa</h2>
+<table>
+<tr><th>Superfície</th><th>O que se sente</th><th>Risco</th></tr>
+<tr><td>Chat, braço A</td><td>Nada da oferta aparece antes do telefone, nem card nem fala; o agente conduz para o WhatsApp.</td><td><span class="pill p-aviso">MÉDIO</span> a conversa antes do telefone fica sem número</td></tr>
+<tr><td>Chat, braço B</td><td>O borrão aparece junto do 1º card, sem a janela em que as ofertas ficavam legíveis; o agente não diz mais "olhe na tela".</td><td><span class="pill p-ok">BAIXO</span></td></tr>
+<tr><td>Teste A/B</td><td>Divisão 50/50 de verdade; quem entra pela home conta; testes com <code>?variante=</code> saem da leitura.</td><td><span class="pill p-aviso">MÉDIO</span> conversas forçadas antigas não têm marca</td></tr>
+<tr><td>Analyzer</td><td>Mesmo modelo do agente (depois de tirar a env); sem dependência do crédito da Anthropic.</td><td><span class="pill p-risco">ALTO</span> +3 s por turno</td></tr>
+<tr><td>Régua (worker)</td><td>Lead web com telefone entra; o toque aparece na conversa; falha da Meta devolve a cota.</td><td><span class="pill p-aviso">MÉDIO</span> 6 conversas (5 telefones) entram de uma vez no deploy</td></tr>
+<tr><td>Painel</td><td>Performance "Parados" obedece ao período; a lista global foi para o Remarketing; recusa da Meta escrita por extenso.</td><td><span class="pill p-ok">BAIXO</span></td></tr>
+</table>
+<p class="aviso"><b>Sem captura de tela nesta entrega:</b> o smoke no navegador não foi rodado. O que está provado é por teste (unit e integração com Postgres real). Ver seção 6.</p>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────── -->
+<section id="riscos">
+<h2>5 · Pontos de risco</h2>
+
+<div class="risco alto">
+<h3>Defeitos que o próprio trabalho introduziu, e foram corrigidos <span class="pill p-risco">ALTO · CORRIGIDO</span></h3>
+<p>Duas rodadas de revisão de código (<code>/code-review</code> high e depois medium, só nos consertos) acharam <b>14 problemas</b> no que o enxame tinha escrito. Todos voltaram como blocos B13 a B17, com teste antes:</p>
+<ul>
+<li><b>A régua podia mandar o mesmo toque duas vezes:</b> compensava quando o banco falhava <b>depois</b> de a Meta aceitar e quando dava timeout ambíguo. Teste (e)(f) em <code>remarketing-cycle.envio.integration.test.ts</code>.</li>
+<li><b>A guarda nova "só compensa ATIVO" impedia devolver a cota do 3º toque</b>, que nasce ESGOTADO. Teste (h).</li>
+<li><b>"Sem código = ambíguo" largo demais:</b> DNS fora, conexão recusada, 502 de proxy e falta de credencial ficavam como enviados. Testes (i)(j)(k) mais um teste por classe de desfecho.</li>
+<li><b>Card com número de OUTRA cota</b> (fonte = resultado mais recente, sem conferir o grupo) e <b>card descartado com "sucesso" devolvido ao modelo</b>. Testes em <code>numeros-do-card.test.ts</code>.</li>
+<li><b>Um <code>failed</code> atrasado reabria régua OPTOUT;</b> o <code>wamid</code> velho descontava o toque seguinte. Teste (g).</li>
+</ul>
+<p>Também: o gate do B1 era estreito demais. 6 cenários fora de <code>nodes/</code> quebraram no commit dele e só voltaram no <code>d3aaafb8</code>; a suíte inteira no fim pegou tudo verde.</p>
+</div>
+
+<div class="risco alto">
+<h3>Número inventado pelo modelo no card <span class="pill p-risco">ALTO · CORRIGIDO</span></h3>
+<div class="prova"><span class="c">// db26cd54, 02/10 11:05 — resultado da tool compare_with_financing</span>
+financiamento 5678.45/mês · total 266886.98 · diferença −11.68/mês
+<span class="c">// o que o qwen passou ao present_financing_comparison (e a tela mostrou)</span>
+<span class="r">financiamento 6071/mês · total 278372 · diferença −404.23/mês</span>
+<span class="g">// depois do B5/B14: payload = números da tool, da mesma cota; sem fonte ⇒ card não sai</span></div>
+<p>Cobertura: <code>numeros-do-card.test.ts</code> reproduz exatamente estes números; <code>converse.numeros-do-card.integration.test.ts</code>.</p>
+</div>
+
+<div class="risco alto">
+<h3>Oferta vazando na fala antes do telefone <span class="pill p-risco">ALTO · CORRIGIDO</span></h3>
+<div class="prova"><span class="c">// 7b5082a1 (braço A), 10:55:35 — telefone só chegou às 10:59</span>
+<span class="r">"O Banco do Brasil tem a menor parcela, R$ 3.484 em 197 meses…"</span>
+<span class="c">// 3a08bf32 (braço B, borrado), 01/10 11:46:37</span>
+<span class="r">"ITAÚ, carta de R$ 81.973, parcela de R$ 1.993 em 48 meses"</span>
+<span class="g">// depois do B1: sem telefone o converse não monta bloco com número e tira 12 tools do bind</span></div>
+<p>Cobertura: <code>converse.desbloqueio.integration.test.ts</code> (A e B sem telefone ⇒ nenhuma mensagem de sistema com carta ou parcela; com telefone ⇒ voltam).</p>
+</div>
+
+<div class="risco medio">
+<h3>Régua web que nunca rodou <span class="pill p-aviso">MÉDIO · CORRIGIDO</span></h3>
+<div class="prova"><span class="c">-- prod, conversas desde 18/09</span>
+web       119 conversas · 1 com last_inbound_at · <span class="r">0 na régua</span>
+whatsapp    6 conversas · 6 com last_inbound_at · 5 na régua
+<span class="g">-- depois do B7: web conta o silêncio pela última fala do cliente; sai sempre por template</span></div>
+<p>A fixture antiga gravava <code>lastInboundAt</code> para web (falso-verde) e foi corrigida. Cobertura: o lead da meia-noite entra às 01:30 e dispara por template às 09:00.</p>
+</div>
+
+<div class="risco medio">
+<h3>Analyzer mais lento no qwen <span class="pill p-aviso">MÉDIO · NÃO RESOLVIDO</span></h3>
+<div class="prova"><span class="c">// os 10 pedidos EXATOS do analyzer novo, reenviados ao gateway de produção (SSM, só leitura)</span>
+classificação 10/10 certa (parcela × valor do bem, faixa, categoria, troca)
+latência 4,6–7,1 s · p50 ≈ 5,4 s · p90 ≈ 6,9 s   <span class="c">(haiku ≈ 2,4 s)</span>
+<span class="g">timeout 6 s ⇒ 3/10 cairiam no fallback → subiu para 10 s (B4b)</span></div>
+</div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────── -->
+<section id="pendente">
+<h2>6 · O que fica com você</h2>
+<ol>
+<li><b>Modelo do agente (<code>AI_MODEL</code>).</b> Lead real perdeu condução: haiku 0,93 contra qwen 0,87, e 0,56 em 02/10. Fechar turno sem pergunta, turno só de tool e tool inexistente são comportamento do modelo; este trabalho não conserta. Voltar = trocar <code>AI_MODEL</code> no secret <code>tb/prod/aja-agora/env</code> e <code>force-new-deployment</code>. A task definition já lê a chave via <code>secrets</code>.</li>
+<li><b>Crédito da Anthropic + fallback no LiteLLM</b> para os grupos <code>claude-*</code>. Foi a causa da call de 01/10.</li>
+<li><b>Smoke no navegador antes do deploy</b> (não rodado aqui): braço A e B sem telefone, Performance com "Hoje", tela da régua.</li>
+<li><b>Antes do deploy: <code>pnpm sync-prompts</code></b> contra o Langfuse de produção, conferindo a URL impressa. O B9 muda o <code>SYSTEM_PROMPT</code> e o CI barra o deploy até publicar.</li>
+<li><b>Deploy</b> (PR para a main). As migrations 0062 e 0063 rodam sozinhas no migrate-guard. Entram 6 conversas web (5 telefones) na régua de uma vez.</li>
+<li><b>Depois do deploy, tirar <code>AI_ANALYZER_MODEL=claude-haiku-4-5</code></b> das task definitions <code>aja-agora-prod</code> e <code>aja-agora-worker-prod</code>, senão o analyzer segue no haiku. O comando completo está em <code>.orientacao/diario.md</code> (PENDENTE 12).</li>
+<li><b>Juízes do Langfuse:</b> re-registrar o <code>litellm</code> do Cloud Map (hoje <code>10.30.1.143</code>, morto; a tarefa viva está em <code>10.30.1.28:4000</code>) ou apontar o Langfuse para endpoint estável. É infra compartilhada.</li>
+<li>Copy de um lembrete do telefone na retomada, se você quiser. Hoje ela só para de cobrar o gate errado.</li>
+<li>"Zero km ou seminovo" no destaque da home contra "carro novo": confirmar com a Bruna.</li>
+<li><b>A conversa <code>8b8f3244</code></b> (131049 às 14:00) perdeu a cota antes do conserto. A compensação não é retroativa.</li>
+</ol>
+<p>Resolvido durante a sessão, por outra pessoa: <code>develop</code> sincronizada com a main (33 → 0).</p>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────── -->
+<section id="roteiro">
+<h2>7 · Como conferir</h2>
+<h3>Pelos testes (execução real em <code>09ad2b2d</code>)</h3>
+<div class="prova"><span class="c">$ pnpm test:caminho-do-dinheiro</span>
+<span class="g"> Test Files  137 passed (137)
+      Tests  767 passed (767)</span>
+<span class="c">$ pnpm -s typecheck</span>                                   <span class="g">exit 0</span>
+<span class="c">$ git diff --name-only --diff-filter=AM 9bdb2040..HEAD -- src scripts | xargs pnpm -s biome check</span>
+<span class="g">Checked 98 files … No fixes applied.</span>
+<span class="c">$ pnpm -s vitest run src/lib/agent/langgraph</span>              <span class="g">66 arquivos / 305 testes</span>
+<span class="c">$ pnpm -s vitest run src/lib/remarketing src/lib/workers/remarketing-cycle …</span>  <span class="g">28 / 428</span>
+<span class="c">$ pnpm -s vitest run src/lib/experimentos src/lib/chat src/lib/admin/filtro-variante</span>  <span class="g">20 / 151</span>
+<span class="c">$ grep -rln AI_ANALYZER_MODEL src scripts | grep -v .test.</span>  <span class="g">src/lib/llm/model-provider.ts</span></div>
+<p>Integração contra o banco local do workspace (<code>aja_agora_ws_develop</code>, 127.0.0.1:5433). A 1ª rodada do caminho do dinheiro teve 1 falha por corrida (o B12b commitou o teste no meio da rodada); isolado passou 5/5 e as duas rodadas seguintes passaram inteiras.</p>
+
+<h3>Conferindo em produção depois do deploy</h3>
+<ul class="checklist">
+<li>Conversas web novas alternam o braço: <code>select metadata-&gt;'telefoneDoDesbloqueio'-&gt;&gt;'variante', count(*) from conversations where channel='web' and created_at &gt; '&lt;deploy&gt;' group by 1</code> → A e B com diferença ≤ 1 (fora as forçadas).</li>
+<li>Toque da régua gravado: <code>select count(*) from messages where template_name like 'remarketing_%'</code> → passa de 0.</li>
+<li>Sinal do analyzer: score <code>analisador_indisponivel</code> no Langfuse fica em 0 no dia a dia e acende se o modelo cair.</li>
+<li>Condução por lead real: o mesmo cálculo da seção 1 (score → trace → conversa, <code>is_simulated=false</code>).</li>
+</ul>
+<p class="meta">Fontes completas: PRD <code>docs/design/planos/2026-10-02-correcoes-ab-agente-e-regua.md</code> · diário do chefe <code>.orientacao/diario.md</code> · revisões <code>.orientacao/revisao-c15.md</code> e <code>revisao-c15b.md</code> · cards <code>docs/correcoes/done/fix-432…441</code>.</p>
+</section>
+
+</div>
+</body>
+</html>

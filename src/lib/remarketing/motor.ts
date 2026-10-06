@@ -69,6 +69,7 @@ import {
 	type ParametrosRegua,
 	type PassoDisparo,
 	podeDisparar,
+	proximoToque,
 	registrarOptout,
 	registrarToque,
 	type StatusRegua,
@@ -265,8 +266,15 @@ export interface FatosDaLinha {
 	 * 2). É a fonte preferida; `next_touch_at` só entra como fallback.
 	 */
 	ultimoToqueEm: Date | null;
-	/** Último inbound do cliente (`conversations.last_inbound_at`). */
+	/** Último inbound do cliente (`conversations.last_inbound_at`) — a janela de
+	 * 24 h da Meta. A web nunca tem esta coluna. */
 	ultimoInboundEm: Date | null;
+	/**
+	 * A referência do SILÊNCIO, já resolvida pelo canal (D9): na web, a última
+	 * fala do cliente; no WhatsApp, o próprio `ultimoInboundEm`. Ausente = não
+	 * resolvida, e aí vale o último inbound (comportamento de sempre).
+	 */
+	silencioDoClienteEm?: Date | null;
 }
 
 /**
@@ -274,9 +282,13 @@ export interface FatosDaLinha {
  *
  * É **FALLBACK**, não o mecanismo: a coluna `ultimo_toque_em` (rodada 2) é a
  * fonte. A derivação só serve para linha antiga, gravada antes de a coluna
- * existir. Ela depende de a cadência não ter sido reajustada — invariante que o
- * próprio ciclo pode quebrar (reentrada, linha terminal). O ciclo NUNCA reescreve
- * `next_touch_at` num ciclo bloqueado, para o fallback continuar exato.
+ * existir, e só é exata enquanto a cadência não tiver sido reajustada.
+ *
+ * ⚠️ E o ciclo **reescreve** `next_touch_at` em ciclo bloqueado: o bloqueio
+ * `teto_30_dias` numa linha `ATIVO` reagenda a data para quando o toque mais
+ * antigo da janela sai dos 30 dias (`normalizarBloqueio` → `proximoToque`, B4/P4),
+ * e o terminal (`esgotado`/`RESPONDEU`) a zera. Por isso a coluna `ultimo_toque_em`
+ * é a fonte: esta derivação não é autoridade.
  */
 export function ultimoToqueDerivado(
 	fatos: {
@@ -363,28 +375,33 @@ export function montarEstado(
 	// A coluna `ultimo_toque_em` é a fonte; a derivação é fallback de linha antiga
 	// (e usa a cadência vigente, para o fallback não mentir depois de um ajuste).
 	const ultimoToqueEm = ultimoToqueDoFato(fatos, parametros);
+	const silencio = fatos.silencioDoClienteEm ?? fatos.ultimoInboundEm;
 
 	// Resposta posterior ao último toque mata a sequência; a reentrada por
-	// simulação posterior é decisão da régua (`podeDisparar`), não daqui.
+	// simulação posterior é decisão da régua (`podeDisparar`), não daqui. É o
+	// SILÊNCIO que responde "o cliente falou depois do toque?" — na web, a coluna
+	// `last_inbound_at` não existe, e é a fala dele que encerra a sequência.
 	const respondeuDepoisDoToque =
 		status === "ATIVO" &&
-		fatos.ultimoInboundEm !== null &&
+		silencio !== null &&
 		ultimoToqueEm !== null &&
-		fatos.ultimoInboundEm.getTime() > ultimoToqueEm.getTime();
+		silencio.getTime() > ultimoToqueEm.getTime();
 
 	return {
 		objetivo,
 		status: respondeuDepoisDoToque ? "RESPONDEU" : status,
 		step: fatos.step as EstadoRegua["step"],
 		// No começo do ciclo (step 0) quem manda é o silêncio: com `next_touch_at`
-		// zerado, `agendamento` recalcula a partir do ÚLTIMO inbound. É o que
-		// empurra o toque 01 de novo quando o cliente volta a falar antes dos 90
-		// minutos — sem isto a linha vencida dispararia com a conversa viva.
+		// zerado, `agendamento` recalcula a partir do ÚLTIMO inbound — ou da fala do
+		// cliente, na web. É o que empurra o toque 01 de novo quando o cliente volta
+		// a falar antes dos 90 minutos — sem isto a linha vencida dispararia com a
+		// conversa viva.
 		nextTouchAt: fatos.step === 0 ? null : fatos.nextTouchAt,
 		ultimoToqueEm,
 		toquesNaJanela,
 		simulacaoEm,
 		ultimoInboundEm: fatos.ultimoInboundEm,
+		silencioDoClienteEm: silencio,
 		motivoSaida: respondeuDepoisDoToque ? "cliente_respondeu" : motivoSaida,
 	};
 }
@@ -430,6 +447,17 @@ export interface EntradaDoMotor {
 	 */
 	fase: FaseDoFunil;
 	/**
+	 * O canal da conversa — a web NUNCA entrega por turno de retomada (FIX-441).
+	 *
+	 * Opcional para preservar os dublês e chamadas antigas (ausente = WhatsApp, o
+	 * comportamento de sempre); o ciclo SEMPRE passa o canal da linha. O turno de
+	 * retomada roda no chat do site, que ninguém está olhando: para a web, a
+	 * entrega é sempre `template`, mesmo quando ela tem `last_inbound_at` (a
+	 * coluna pode chegar depois de a conversa virar lead) e a janela de 24 h está
+	 * aberta.
+	 */
+	channel?: "web" | "whatsapp";
+	/**
 	 * Os parâmetros vigentes da régua — o ajuste do cadastro, já validado por
 	 * `normalizarParametros`. Ausente = padrão de fábrica (comportamento de
 	 * sempre). É por aqui que `remarketing_config` chega ao motor: a régua
@@ -443,9 +471,11 @@ export interface DecisaoDoMotor {
 	/**
 	 * O estado a GRAVAR quando há mudança real — `null` quando nada muda.
 	 *
-	 * Nulo de propósito nos bloqueios transitórios (horário, teto, aguardando):
-	 * gravar ali reescreveria `next_touch_at` (e quebraria a derivação do último
-	 * toque) sem necessidade — a linha já está vencida e volta no próximo ciclo.
+	 * Nulo de propósito nos bloqueios de data/horário (`aguardando_data`,
+	 * `fora_da_janela_de_horario`): gravar ali reescreveria `next_touch_at` (e
+	 * quebraria a derivação do último toque) sem necessidade — a linha volta no
+	 * próximo ciclo. A EXCEÇÃO é `teto_30_dias`: ali a data vencida mentia no
+	 * painel, e o estado é reagendado para quando a cota reabre (P4).
 	 */
 	proximoEstado: EstadoRegua | null;
 	/** Contagem para a coluna `touches_30d`, derivada do estado. */
@@ -508,7 +538,7 @@ export function decidir(entrada: EntradaDoMotor): DecisaoDoMotor {
 	// 3. A régua decide SE pode sair.
 	const pode = podeDisparar(estado, agora, parametros);
 	if (!pode.pode) {
-		return semDisparo(pode.motivo, normalizarSequenciaMorta(estado, pode.motivo));
+		return semDisparo(pode.motivo, normalizarBloqueio(estado, pode.motivo, agora, parametros));
 	}
 
 	// 4. COMO entregar. A comunicação (chave e arte) nasce da MESMA entrada: a
@@ -518,7 +548,14 @@ export function decidir(entrada: EntradaDoMotor): DecisaoDoMotor {
 	const proximoEstado = registrarToque(estado, agora, parametros);
 	const touches30d = contarToquesNaJanela(proximoEstado, agora, parametros);
 
-	if (pode.entrega === "texto_livre") {
+	// WEB SEMPRE POR TEMPLATE (FIX-441): o turno de retomada roda o grafo no chat
+	// do site, que ninguém está olhando, e a cota é consumida do mesmo jeito. A
+	// web pode ter `last_inbound_at` (a coluna chega quando a conversa vira lead),
+	// e aí a janela de 24 h mandaria `texto_livre` — o turno sai no vazio. Para a
+	// web, a entrega é template mesmo nesse caso.
+	const entrega = entrada.channel === "web" ? "template" : pode.entrega;
+
+	if (entrega === "texto_livre") {
 		return {
 			acao: { tipo: "turno_de_retomada", passo: pode.step, arte: comunicacao.arte },
 			proximoEstado,
@@ -534,6 +571,8 @@ export function decidir(entrada: EntradaDoMotor): DecisaoDoMotor {
 }
 
 /**
+ * O que gravar quando a régua BLOQUEIA o toque (não há disparo).
+ *
  * Sequência morta: grava o status terminal para a linha sair do índice parcial
  * (`WHERE status = 'ATIVO'`). Sem isto ela seria relida a cada 30 s para sempre.
  *
@@ -548,10 +587,24 @@ export function decidir(entrada: EntradaDoMotor): DecisaoDoMotor {
  *      motivo de saída nunca é gravado — o oposto do que a tela precisa para
  *      dizer "esgotou os 3 toques".
  *
- * Bloqueio transitório (teto, data, horário) em linha `ATIVO` devolve `null` de
- * propósito: nada muda e a linha volta no próximo ciclo, como sempre foi.
+ *   TETO DE 30 DIAS (`teto_30_dias`) em linha `ATIVO` é o caso que mentia: a
+ *   pessoa já gastou a cota e o `next_touch_at` vencido ficava no passado, a
+ *   linha era relida a cada 30 s e o painel mostrava "Ativo" com toque
+ *   vencido. Aqui o estado é REAGENDADO para quando a cota reabre — o instante
+ *   exato em que o toque mais antigo da janela completa 30 dias, que a própria
+ *   régua calcula (`proximoToque`). Nunca fica no passado.
+ *
+ * Bloqueio transitório de data/horário (`aguardando_data`,
+ * `fora_da_janela_de_horario`) em linha `ATIVO` devolve `null` de propósito: o
+ * `next_touch_at` é futuro ou volta no próximo ciclo, e reescrevê-lo quebraria a
+ * derivação do último toque para linha antiga.
  */
-function normalizarSequenciaMorta(estado: EstadoRegua, motivo: MotivoBloqueio): EstadoRegua | null {
+function normalizarBloqueio(
+	estado: EstadoRegua,
+	motivo: MotivoBloqueio,
+	agora: Date,
+	parametros: ParametrosRegua,
+): EstadoRegua | null {
 	if (estado.status === "RESPONDEU" || estado.status === "ESGOTADO") {
 		return {
 			...estado,
@@ -577,6 +630,14 @@ function normalizarSequenciaMorta(estado: EstadoRegua, motivo: MotivoBloqueio): 
 			nextTouchAt: null,
 			motivoSaida: estado.motivoSaida ?? "tres_toques_sem_resposta",
 		};
+	}
+
+	// P4: a cota de 30 dias reabre quando o toque mais antigo completa a janela.
+	// A régua sabe o instante; gravar aqui tira a linha do "vencido" sem matar a
+	// sequência (status segue `ATIVO`).
+	if (motivo === "teto_30_dias") {
+		const reabre = proximoToque(estado, agora, parametros);
+		return reabre ? { ...estado, nextTouchAt: reabre } : null;
 	}
 
 	return null;

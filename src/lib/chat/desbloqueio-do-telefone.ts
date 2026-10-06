@@ -21,6 +21,7 @@
  * duas respostas divergirem, que é o defeito clássico deste tipo de card.
  */
 
+import type { ArtifactType } from "./types";
 import type { VarianteDoTelefone } from "./variante-da-visita";
 
 /**
@@ -80,3 +81,22 @@ export function temCardDeTelefone(estado: EstadoDoDesbloqueio): estado is Estado
 export function comparacaoLiberada(estado: EstadoDoDesbloqueio): boolean {
 	return estado !== "pede-antes";
 }
+
+/**
+ * Os cards que REVELAM número de oferta (carta, parcela, prazo, taxa, lance…).
+ *
+ * Lista ÚNICA, lida pelo servidor (o `pipeOrchestratorToWriter` segura o card no
+ * braço A) e pelo cliente (`comDesbloqueioDoTelefone` esconde no A / embaça no
+ * B). Estava duplicada — e a cópia só tinha `comparison_table` e
+ * `recommendation_card`, então `simulation_result` e `group_card` (FIX-433)
+ * passavam legíveis antes do telefone nos dois braços. Uma implementação só
+ * evita que as duas voltem a divergir.
+ */
+export const CARDS_QUE_REVELAM_OFERTA: ReadonlySet<ArtifactType> = new Set<ArtifactType>([
+	"comparison_table",
+	"recommendation_card",
+	"simulation_result",
+	"group_card",
+	"financing_comparison",
+	"scenarios",
+]);

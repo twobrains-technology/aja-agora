@@ -15,31 +15,49 @@
  * Design: tokens do próprio Aja (src/app/globals.css) — navy #052440, blue #036eff, cyan #03b2d9,
  * coral #f2404f, paper #fafaf3, ink #021628; fontes Poppins (texto) e DM Mono (números).
  */
-import { execFileSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { execFileSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
 
-const arg1 = process.argv[2] ?? '7';
+const arg1 = process.argv[2] ?? "7";
 const DESDE = /^\d{4}-\d{2}-\d{2}$/.test(arg1) ? arg1 : null;
 const DIAS = DESDE ? null : Number(arg1);
-const SAIDA = process.argv[3] ?? '/tmp/aja-conversas.html';
+const SAIDA = process.argv[3] ?? "/tmp/aja-conversas.html";
 const URL = process.env.DATABASE_URL;
 if (!URL) {
-  console.error('Falta DATABASE_URL (aponte para o túnel de produção).');
-  process.exit(1);
+	console.error("Falta DATABASE_URL (aponte para o túnel de produção).");
+	process.exit(1);
 }
 if (!DESDE && (!Number.isFinite(DIAS) || DIAS <= 0)) {
-  console.error('período inválido: passe AAAA-MM-DD ou um número de dias');
-  process.exit(1);
+	console.error("período inválido: passe AAAA-MM-DD ou um número de dias");
+	process.exit(1);
+}
+
+// A credencial do banco vai nas variáveis PG* do ambiente do `psql`, NUNCA como
+// argumento: a URL completa com senha no argv aparece no `ps` da máquina e
+// qualquer processo local a leria.
+function ambienteDoPsql(conn) {
+	const u = new URL(conn);
+	const env = {
+		...process.env,
+		PGHOST: u.hostname,
+		PGPORT: u.port || "5432",
+		PGUSER: decodeURIComponent(u.username),
+		PGDATABASE: u.pathname.replace(/^\//, ""),
+	};
+	if (u.password) env.PGPASSWORD = decodeURIComponent(u.password);
+	const sslmode = u.searchParams.get("sslmode");
+	if (sslmode) env.PGSSLMODE = sslmode;
+	return env;
 }
 const rotuloPeriodo = DESDE
-  ? `desde ${new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(DESDE + 'T12:00:00-03:00'))}`
-  : `últimos ${DIAS} dias`;
+	? `desde ${new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(DESDE + "T12:00:00-03:00"))}`
+	: `últimos ${DIAS} dias`;
 
 // A coluna created_at é UTC (timestamp sem timezone). `at time zone 'America/Sao_Paulo'` ancora a
 // meia-noite de São Paulo — sem isso o recorte desloca 3 h e come o dia anterior.
 const filtroData = DESDE
-  ? `c.created_at >= (('${DESDE} 00:00:00')::timestamp at time zone 'America/Sao_Paulo')`
-  : `c.created_at >= now() - interval '${DIAS} days'`;
+	? `c.created_at >= (('${DESDE} 00:00:00')::timestamp at time zone 'America/Sao_Paulo')`
+	: `c.created_at >= now() - interval '${DIAS} days'`;
 
 const SQL = `
 select json_agg(x) from (
@@ -60,173 +78,230 @@ select json_agg(x) from (
   order by c.created_at
 ) x;`;
 
-const raw = execFileSync('psql', [URL, '-tA', '-c', SQL], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).trim();
+const raw = execFileSync("psql", ["-tA", "-c", SQL], {
+	encoding: "utf8",
+	maxBuffer: 64 * 1024 * 1024,
+	env: ambienteDoPsql(URL),
+}).trim();
 const conversas = raw ? JSON.parse(raw) : [];
 
 /* ---------- helpers ---------- */
-const fuso = 'America/Sao_Paulo';
+const fuso = "America/Sao_Paulo";
 const quando = (iso, comAno = false) => {
-  if (!iso) return '—';
-  return new Intl.DateTimeFormat('pt-BR', {
-    timeZone: fuso, day: '2-digit', month: '2-digit',
-    ...(comAno ? { year: 'numeric' } : {}), hour: '2-digit', minute: '2-digit',
-  }).format(new Date(iso));
+	if (!iso) return "—";
+	return new Intl.DateTimeFormat("pt-BR", {
+		timeZone: fuso,
+		day: "2-digit",
+		month: "2-digit",
+		...(comAno ? { year: "numeric" } : {}),
+		hour: "2-digit",
+		minute: "2-digit",
+	}).format(new Date(iso));
 };
-const diaBRT = (iso) => new Intl.DateTimeFormat('pt-BR', { timeZone: fuso, weekday: 'short', day: '2-digit', month: '2-digit' })
-  .format(new Date(iso)).replace('.', '');
-const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const soDigitos = (t) => String(t ?? '').replace(/\D/g, '');
+const diaBRT = (iso) =>
+	new Intl.DateTimeFormat("pt-BR", {
+		timeZone: fuso,
+		weekday: "short",
+		day: "2-digit",
+		month: "2-digit",
+	})
+		.format(new Date(iso))
+		.replace(".", "");
+const esc = (s) =>
+	String(s ?? "").replace(
+		/[&<>"]/g,
+		(c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c],
+	);
+const soDigitos = (t) => String(t ?? "").replace(/\D/g, "");
 const waLink = (t) => {
-  const d = soDigitos(t);
-  return d ? `https://wa.me/${d.startsWith('55') ? d : '55' + d}` : null;
+	const d = soDigitos(t);
+	return d ? `https://wa.me/${d.startsWith("55") ? d : "55" + d}` : null;
 };
-const ehCard = (t) => /^\[card:\s*([^\]]+)\]/.test(String(t ?? '').trim());
-const nomeDoCard = (t) => String(t ?? '').match(/^\[card:\s*([^\]]+)\]/)?.[1] ?? 'card';
+const ehCard = (t) => /^\[card:\s*([^\]]+)\]/.test(String(t ?? "").trim());
+const nomeDoCard = (t) => String(t ?? "").match(/^\[card:\s*([^\]]+)\]/)?.[1] ?? "card";
 const rotuloCard = {
-  comparison_table: 'tabela de comparação', financing_comparison: 'comparativo de parcelas',
-  quick_reply: 'respostas rápidas', telefone_do_desbloqueio: 'card do telefone',
-  simulation_result: 'resultado da simulação', scenarios: 'cenários de contemplação',
-  recommendation_card: 'recomendação', topic_picker: 'escolha de tema',
+	comparison_table: "tabela de comparação",
+	financing_comparison: "comparativo de parcelas",
+	quick_reply: "respostas rápidas",
+	telefone_do_desbloqueio: "card do telefone",
+	simulation_result: "resultado da simulação",
+	scenarios: "cenários de contemplação",
+	recommendation_card: "recomendação",
+	topic_picker: "escolha de tema",
 };
 
 /** A escada da venda — o viés de toda leitura. */
 const DEGRAUS = [
-  { n: 1, nome: 'chegou' }, { n: 2, nome: 'conversou' }, { n: 3, nome: 'viu oferta' },
-  { n: 4, nome: 'deixou contato' }, { n: 5, nome: 'avançou no pedido' }, { n: 6, nome: 'vendeu' },
+	{ n: 1, nome: "chegou" },
+	{ n: 2, nome: "conversou" },
+	{ n: 3, nome: "viu oferta" },
+	{ n: 4, nome: "deixou contato" },
+	{ n: 5, nome: "avançou no pedido" },
+	{ n: 6, nome: "vendeu" },
 ];
 function degrau(c) {
-  const md = c.md ?? {};
-  const falou = (c.msgs ?? []).some((m) => m.role === 'user' && !ehCard(m.content));
-  const viuOferta = md.revealCompleted === true || (c.msgs ?? []).some((m) => /comparison_table|financing_comparison|recommendation_card|simulation_result/.test(m.content ?? ''));
-  const contato = Boolean(c.phone);
-  const avancou = /em_negociacao|proposta|contrat/.test(md.maxStageReached ?? '') || Boolean(md.contractOffer);
-  const vendeu = /vendid|contratad|assinad/i.test(md.maxStageReached ?? '') || md.venda === true;
-  if (vendeu) return 6;
-  if (avancou) return 5;
-  if (contato) return 4;
-  if (viuOferta) return 3;
-  if (falou) return 2;
-  return 1;
+	const md = c.md ?? {};
+	const falou = (c.msgs ?? []).some((m) => m.role === "user" && !ehCard(m.content));
+	const viuOferta =
+		md.revealCompleted === true ||
+		(c.msgs ?? []).some((m) =>
+			/comparison_table|financing_comparison|recommendation_card|simulation_result/.test(
+				m.content ?? "",
+			),
+		);
+	const contato = Boolean(c.phone);
+	const avancou =
+		/em_negociacao|proposta|contrat/.test(md.maxStageReached ?? "") || Boolean(md.contractOffer);
+	const vendeu = /vendid|contratad|assinad/i.test(md.maxStageReached ?? "") || md.venda === true;
+	if (vendeu) return 6;
+	if (avancou) return 5;
+	if (contato) return 4;
+	if (viuOferta) return 3;
+	if (falou) return 2;
+	return 1;
 }
 
 /* ---------- agregações ---------- */
 const total = conversas.length;
-const porDegrau = DEGRAUS.map((d) => ({ ...d, qtd: conversas.filter((c) => degrau(c) === d.n).length }));
+const porDegrau = DEGRAUS.map((d) => ({
+	...d,
+	qtd: conversas.filter((c) => degrau(c) === d.n).length,
+}));
 const comContato = conversas.filter((c) => c.phone).length;
-const viaA = conversas.filter((c) => c.md?.telefoneDoDesbloqueio?.variante === 'A');
-const viaB = conversas.filter((c) => c.md?.telefoneDoDesbloqueio?.variante === 'B');
+const viaA = conversas.filter((c) => c.md?.telefoneDoDesbloqueio?.variante === "A");
+const viaB = conversas.filter((c) => c.md?.telefoneDoDesbloqueio?.variante === "B");
 const semCard = conversas.filter((c) => !c.md?.telefoneDoDesbloqueio);
 const viuOferta = conversas.filter((c) => degrau(c) >= 3);
 const tocadas = conversas.filter((c) => (c.toques ?? []).length > 0);
-const toqueEnviado = conversas.filter((c) => (c.toques ?? []).some((t) => t.envio === 'enviado'));
+const toqueEnviado = conversas.filter((c) => (c.toques ?? []).some((t) => t.envio === "enviado"));
 const pct = (n, d = total) => (d ? Math.round((n / d) * 100) : 0);
 
 const porCategoria = {};
 for (const c of conversas) {
-  const k = c.md?.currentCategory ?? '(não disse)';
-  porCategoria[k] = porCategoria[k] ?? { qtd: 0, contato: 0, oferta: 0 };
-  porCategoria[k].qtd++;
-  if (c.phone) porCategoria[k].contato++;
-  if (degrau(c) >= 3) porCategoria[k].oferta++;
+	const k = c.md?.currentCategory ?? "(não disse)";
+	porCategoria[k] = porCategoria[k] ?? { qtd: 0, contato: 0, oferta: 0 };
+	porCategoria[k].qtd++;
+	if (c.phone) porCategoria[k].contato++;
+	if (degrau(c) >= 3) porCategoria[k].oferta++;
 }
 const porOrigem = {};
 for (const c of conversas) {
-  const k = c.visita?.utm ?? 'direto';
-  porOrigem[k] = (porOrigem[k] ?? 0) + 1;
+	const k = c.visita?.utm ?? "direto";
+	porOrigem[k] = (porOrigem[k] ?? 0) + 1;
 }
 const porDia = {};
 for (const c of conversas) {
-  const k = diaBRT(c.created_at);
-  porDia[k] = (porDia[k] ?? 0) + 1;
+	const k = diaBRT(c.created_at);
+	porDia[k] = (porDia[k] ?? 0) + 1;
 }
-const porTurnos = { '1 turno (falou e sumiu)': 0, '2 turnos': 0, '3+ turnos': 0 };
+const porTurnos = { "1 turno (falou e sumiu)": 0, "2 turnos": 0, "3+ turnos": 0 };
 for (const c of conversas) {
-  const t = Number(c.md?.turnosDoCliente ?? 0);
-  if (t <= 1) porTurnos['1 turno (falou e sumiu)']++;
-  else if (t === 2) porTurnos['2 turnos']++;
-  else porTurnos['3+ turnos']++;
+	const t = Number(c.md?.turnosDoCliente ?? 0);
+	if (t <= 1) porTurnos["1 turno (falou e sumiu)"]++;
+	else if (t === 2) porTurnos["2 turnos"]++;
+	else porTurnos["3+ turnos"]++;
 }
 
 /* ---------- gráficos (SVG puro, sem CDN; coordenadas reais em px — nada de esticar texto) ---------- */
-const COR = { blue: '#036eff', navy: '#052440', cyan: '#03b2d9', coral: '#f2404f', stone: '#6b7b92', areia: '#e4e2d6' };
+const COR = {
+	blue: "#036eff",
+	navy: "#052440",
+	cyan: "#03b2d9",
+	coral: "#f2404f",
+	stone: "#6b7b92",
+	areia: "#e4e2d6",
+};
 const W = 640;
-const svg = (h, conteudo) => `<svg viewBox="0 0 ${W} ${h}" style="width:100%;height:auto" class="graf">${conteudo}</svg>`;
+const svg = (h, conteudo) =>
+	`<svg viewBox="0 0 ${W} ${h}" style="width:100%;height:auto" class="graf">${conteudo}</svg>`;
 
 function funil(linhas) {
-  const linhaH = 40;
-  const h = linhas.length * linhaH + 6;
-  const max = Math.max(1, ...linhas.map((l) => l.qtd));
-  const larguraMax = 430;
-  const item = linhas.map((l, i) => {
-    const y = i * linhaH + 4;
-    const largura = Math.max(3, (l.qtd / max) * larguraMax);
-    const cor = l.n === 4 ? COR.coral : l.n >= 5 ? COR.cyan : COR.blue;
-    const opacidade = 0.4 + (l.n / 6) * 0.6;
-    return `
+	const linhaH = 40;
+	const h = linhas.length * linhaH + 6;
+	const max = Math.max(1, ...linhas.map((l) => l.qtd));
+	const larguraMax = 430;
+	const item = linhas
+		.map((l, i) => {
+			const y = i * linhaH + 4;
+			const largura = Math.max(3, (l.qtd / max) * larguraMax);
+			const cor = l.n === 4 ? COR.coral : l.n >= 5 ? COR.cyan : COR.blue;
+			const opacidade = 0.4 + (l.n / 6) * 0.6;
+			return `
       <text x="0" y="${y + 13}" class="g-rot">${l.n} · ${l.nome}</text>
       <rect x="0" y="${y + 18}" width="${larguraMax}" height="10" rx="5" fill="${COR.areia}" opacity=".6"/>
       <rect x="0" y="${y + 18}" width="${largura}" height="10" rx="5" fill="${cor}" opacity="${opacidade}"/>
       <text x="${larguraMax + 14}" y="${y + 27}" class="g-num" fill="${cor}">${l.qtd}<tspan class="g-pct"> · ${pct(l.qtd)}%</tspan></text>`;
-  }).join('');
-  return svg(h, item);
+		})
+		.join("");
+	return svg(h, item);
 }
 
 function colunas(dados) {
-  const max = Math.max(1, ...dados.map((d) => d.qtd));
-  const h = 168, base = 132;
-  const passo = W / Math.max(1, dados.length);
-  const item = dados.map((d, i) => {
-    const altura = (d.qtd / max) * 96;
-    const w = Math.min(64, passo * 0.6);
-    const x = i * passo + (passo - w) / 2;
-    return `
+	const max = Math.max(1, ...dados.map((d) => d.qtd));
+	const h = 168,
+		base = 132;
+	const passo = W / Math.max(1, dados.length);
+	const item = dados
+		.map((d, i) => {
+			const altura = (d.qtd / max) * 96;
+			const w = Math.min(64, passo * 0.6);
+			const x = i * passo + (passo - w) / 2;
+			return `
       <rect x="${x}" y="${base - altura}" width="${w}" height="${altura}" rx="5" fill="${COR.blue}" opacity=".85"/>
       <text x="${x + w / 2}" y="${base - altura - 6}" class="g-num-c">${d.qtd}</text>
       <text x="${x + w / 2}" y="${base + 16}" class="g-rot-c">${esc(d.rotulo)}</text>`;
-  }).join('');
-  return svg(h, item);
+		})
+		.join("");
+	return svg(h, item);
 }
 
 function barrasAgrupadas(dados) {
-  const linhaH = 46;
-  const h = dados.length * linhaH + 6;
-  const max = Math.max(1, ...dados.map((d) => d.qtd));
-  const larguraMax = 380;
-  const item = dados.map((d, i) => {
-    const y = i * linhaH + 4;
-    const w1 = Math.max(2, (d.qtd / max) * larguraMax);
-    const w2 = Math.max(0, (d.contato / max) * larguraMax);
-    return `
+	const linhaH = 46;
+	const h = dados.length * linhaH + 6;
+	const max = Math.max(1, ...dados.map((d) => d.qtd));
+	const larguraMax = 380;
+	const item = dados
+		.map((d, i) => {
+			const y = i * linhaH + 4;
+			const w1 = Math.max(2, (d.qtd / max) * larguraMax);
+			const w2 = Math.max(0, (d.contato / max) * larguraMax);
+			return `
       <text x="0" y="${y + 13}" class="g-rot">${esc(d.rotulo)}</text>
       <rect x="0" y="${y + 18}" width="${w1}" height="9" rx="4.5" fill="${COR.blue}" opacity=".85"/>
       <rect x="0" y="${y + 30}" width="${w2}" height="9" rx="4.5" fill="${COR.coral}"/>
       <text x="${larguraMax + 14}" y="${y + 27}" class="g-num">${d.qtd}<tspan class="g-pct"> · contato ${d.contato}</tspan></text>`;
-  }).join('');
-  return svg(h, item);
+		})
+		.join("");
+	return svg(h, item);
 }
 
 function barrasSimples(dados, cor = COR.cyan) {
-  const linhaH = 34;
-  const h = dados.length * linhaH + 6;
-  const max = Math.max(1, ...dados.map((d) => d.qtd));
-  const x0 = 180, larguraMax = 380;
-  const item = dados.map((d, i) => {
-    const y = i * linhaH + 6;
-    return `
+	const linhaH = 34;
+	const h = dados.length * linhaH + 6;
+	const max = Math.max(1, ...dados.map((d) => d.qtd));
+	const x0 = 180,
+		larguraMax = 380;
+	const item = dados
+		.map((d, i) => {
+			const y = i * linhaH + 6;
+			return `
       <text x="0" y="${y + 14}" class="g-rot">${esc(d.rotulo)}</text>
       <rect x="${x0}" y="${y + 4}" width="${Math.max(2, (d.qtd / max) * larguraMax)}" height="12" rx="6" fill="${cor}" opacity=".82"/>
       <text x="${x0 + larguraMax + 14}" y="${y + 15}" class="g-num">${d.qtd}</text>`;
-  }).join('');
-  return svg(h, item);
+		})
+		.join("");
+	return svg(h, item);
 }
 
 function dueloAB() {
-  const h = 96;
-  const max = Math.max(1, viaA.length, viaB.length);
-  const larguraMax = 400;
-  const wA = Math.max(2, (viaA.length / max) * larguraMax);
-  const wB = Math.max(2, (viaB.length / max) * larguraMax);
-  return svg(h, `
+	const h = 96;
+	const max = Math.max(1, viaA.length, viaB.length);
+	const larguraMax = 400;
+	const wA = Math.max(2, (viaA.length / max) * larguraMax);
+	const wB = Math.max(2, (viaB.length / max) * larguraMax);
+	return svg(
+		h,
+		`
     <text x="0" y="16" class="g-rot">A · card do telefone antes da oferta</text>
     <rect x="0" y="24" width="${larguraMax}" height="14" rx="7" fill="${COR.areia}" opacity=".6"/>
     <rect x="0" y="24" width="${wA}" height="14" rx="7" fill="${COR.blue}"/>
@@ -234,16 +309,17 @@ function dueloAB() {
     <text x="0" y="60" class="g-rot">B · ofertas embaçadas</text>
     <rect x="0" y="68" width="${larguraMax}" height="14" rx="7" fill="${COR.areia}" opacity=".6"/>
     <rect x="0" y="68" width="${wB}" height="14" rx="7" fill="${COR.coral}"/>
-    <text x="${larguraMax + 14}" y="79" class="g-num">${viaB.length} <tspan class="g-pct">· contato ${viaB.filter((c) => c.phone).length}</tspan></text>`);
+    <text x="${larguraMax + 14}" y="79" class="g-num">${viaB.length} <tspan class="g-pct">· contato ${viaB.filter((c) => c.phone).length}</tspan></text>`,
+	);
 }
 
 const card = (titulo, valor, sub, cor = COR.navy) => `
   <div class="kpi"><div class="kpi-v" style="color:${cor}">${valor}</div>
-  <div class="kpi-t">${titulo}</div>${sub ? `<div class="kpi-s">${sub}</div>` : ''}</div>`;
+  <div class="kpi-t">${titulo}</div>${sub ? `<div class="kpi-s">${sub}</div>` : ""}</div>`;
 
-const graf = (titulo, conteudo, legenda = '') => `
+const graf = (titulo, conteudo, legenda = "") => `
   <figure class="bloco-graf"><figcaption>${titulo}</figcaption>${conteudo}
-  ${legenda ? `<div class="legenda">${legenda}</div>` : ''}</figure>`;
+  ${legenda ? `<div class="legenda">${legenda}</div>` : ""}</figure>`;
 
 /* ---------- análise (bullets curtos, sem overdose) ---------- */
 const analiseHtml = () => `
@@ -274,53 +350,57 @@ const analiseHtml = () => `
 
 /* ---------- cartão de conversa ---------- */
 function cartao(c) {
-  const md = c.md ?? {};
-  const d = degrau(c);
-  const braco = md.telefoneDoDesbloqueio?.variante ?? null;
-  const wa = waLink(c.phone);
-  const msgs = c.msgs ?? [];
-  const toques = c.toques ?? [];
+	const md = c.md ?? {};
+	const d = degrau(c);
+	const braco = md.telefoneDoDesbloqueio?.variante ?? null;
+	const wa = waLink(c.phone);
+	const msgs = c.msgs ?? [];
+	const toques = c.toques ?? [];
 
-  const bolhas = msgs.map((m) => {
-    if (ehCard(m.content)) {
-      const nome = nomeDoCard(m.content);
-      return `<div class="card-chip">▦ ${esc(rotuloCard[nome] ?? nome)}</div>`;
-    }
-    const euSou = m.role === 'user';
-    return `<div class="linha ${euSou ? 'cli' : 'ag'}"><div class="bolha">
-      <span class="quem">${euSou ? 'cliente' : 'agente'} · ${quando(m.at)}</span>${esc(m.content)}</div></div>`;
-  }).join('\n');
+	const bolhas = msgs
+		.map((m) => {
+			if (ehCard(m.content)) {
+				const nome = nomeDoCard(m.content);
+				return `<div class="card-chip">▦ ${esc(rotuloCard[nome] ?? nome)}</div>`;
+			}
+			const euSou = m.role === "user";
+			return `<div class="linha ${euSou ? "cli" : "ag"}"><div class="bolha">
+      <span class="quem">${euSou ? "cliente" : "agente"} · ${quando(m.at)}</span>${esc(m.content)}</div></div>`;
+		})
+		.join("\n");
 
-  const faixaToques = toques.length
-    ? toques.map((t) => {
-        const ok = t.envio === 'enviado';
-        return `<span class="toque ${ok ? 'ok' : 'aviso'}">toque ${t.step ?? '?'} · ${esc(t.envio ?? 'sem registro de envio')}${t.motivo ? ' · ' + esc(t.motivo) : ''} · ${quando(t.tocou)}</span>`;
-      }).join(' ')
-    : '<span class="toque vazio">a régua nunca tocou esta pessoa</span>';
+	const faixaToques = toques.length
+		? toques
+				.map((t) => {
+					const ok = t.envio === "enviado";
+					return `<span class="toque ${ok ? "ok" : "aviso"}">toque ${t.step ?? "?"} · ${esc(t.envio ?? "sem registro de envio")}${t.motivo ? " · " + esc(t.motivo) : ""} · ${quando(t.tocou)}</span>`;
+				})
+				.join(" ")
+		: '<span class="toque vazio">a régua nunca tocou esta pessoa</span>';
 
-  return `<details class="conv" data-degrau="${d}" data-cat="${esc(md.currentCategory ?? '-')}"
-            data-braco="${braco ?? 'nenhum'}" data-contato="${c.phone ? 'sim' : 'nao'}"
-            data-origem="${esc(c.visita?.utm ?? 'direto')}" data-busca="${esc((c.contact_name ?? '') + ' ' + c.id)}">
+	return `<details class="conv" data-degrau="${d}" data-cat="${esc(md.currentCategory ?? "-")}"
+            data-braco="${braco ?? "nenhum"}" data-contato="${c.phone ? "sim" : "nao"}"
+            data-origem="${esc(c.visita?.utm ?? "direto")}" data-busca="${esc((c.contact_name ?? "") + " " + c.id)}">
   <summary>
     <span class="degrau g${d}" title="degrau ${d}: ${DEGRAUS[d - 1].nome}">${d}</span>
-    <span class="nome">${esc(c.contact_name ?? 'anônimo')}</span>
-    <span class="meta">${esc(c.phone ?? 'sem telefone')} · ${esc(c.channel)} · ${esc(md.currentCategory ?? '-')}</span>
+    <span class="nome">${esc(c.contact_name ?? "anônimo")}</span>
+    <span class="meta">${esc(c.phone ?? "sem telefone")} · ${esc(c.channel)} · ${esc(md.currentCategory ?? "-")}</span>
     <span class="selos">
       ${braco ? `<span class="selo b${braco}">braço ${braco}</span>` : '<span class="selo cinza">não chegou ao card</span>'}
-      ${c.phone ? '<span class="selo verde">deixou celular</span>' : ''}
-      ${toques.length ? '<span class="selo ambar">régua tocou</span>' : ''}
+      ${c.phone ? '<span class="selo verde">deixou celular</span>' : ""}
+      ${toques.length ? '<span class="selo ambar">régua tocou</span>' : ""}
     </span>
     <span class="hora">${quando(c.created_at)}</span>
   </summary>
   <div class="corpo">
     <div class="ficha">
       <div><b>Entrou</b> ${quando(c.created_at, true)}</div>
-      <div><b>Veio</b> ${esc(c.channel)} · ${esc(c.visita?.utm ?? 'direto')}${c.visita?.camp ? ` <span class="mini">${esc(c.visita.camp)}</span>` : ''}</div>
-      <div><b>Pediu</b> ${esc(md.currentCategory ?? '-')}${md.qualifyAnswers?.creditMax ? ` · até R$ ${Number(md.qualifyAnswers.creditMax).toLocaleString('pt-BR')}` : ''} · ${md.turnosDoCliente ?? 0} turno(s)</div>
-      <div><b>Oferta</b> ${md.recommendedOffer ? `${esc(md.recommendedOffer.administradora)} · R$ ${Number(md.recommendedOffer.creditValue ?? 0).toLocaleString('pt-BR')} · ${esc(md.recommendedOffer.termMonths)}x R$ ${Number(md.recommendedOffer.monthlyPayment ?? 0).toLocaleString('pt-BR')}` : 'nenhuma'}</div>
-      <div><b>Celular</b> ${esc(c.phone ?? 'não deixou')}${wa ? ` · <a href="${wa}" target="_blank" rel="noopener">abrir no WhatsApp ↗</a>` : ''}</div>
+      <div><b>Veio</b> ${esc(c.channel)} · ${esc(c.visita?.utm ?? "direto")}${c.visita?.camp ? ` <span class="mini">${esc(c.visita.camp)}</span>` : ""}</div>
+      <div><b>Pediu</b> ${esc(md.currentCategory ?? "-")}${md.qualifyAnswers?.creditMax ? ` · até R$ ${Number(md.qualifyAnswers.creditMax).toLocaleString("pt-BR")}` : ""} · ${md.turnosDoCliente ?? 0} turno(s)</div>
+      <div><b>Oferta</b> ${md.recommendedOffer ? `${esc(md.recommendedOffer.administradora)} · R$ ${Number(md.recommendedOffer.creditValue ?? 0).toLocaleString("pt-BR")} · ${esc(md.recommendedOffer.termMonths)}x R$ ${Number(md.recommendedOffer.monthlyPayment ?? 0).toLocaleString("pt-BR")}` : "nenhuma"}</div>
+      <div><b>Celular</b> ${esc(c.phone ?? "não deixou")}${wa ? ` · <a href="${wa}" target="_blank" rel="noopener">abrir no WhatsApp ↗</a>` : ""}</div>
       <div><b>Régua</b> ${faixaToques}</div>
-      ${md.reconciliacao?.sinais ? `<div><span class="selo vermelho">${esc(md.reconciliacao.sinais)}</span></div>` : ''}
+      ${md.reconciliacao?.sinais ? `<div><span class="selo vermelho">${esc(md.reconciliacao.sinais)}</span></div>` : ""}
     </div>
     <div class="chat">${bolhas || '<div class="vazio">sem mensagens</div>'}</div>
   </div>
@@ -437,13 +517,13 @@ const html = `<!doctype html>
   </div>
   <div class="norte">🎯 <b>O norte:</b> a <b>primeira venda de consórcio fechada online pelo agente</b>. Todo corte abaixo é lido contra isso — não contra volume de conversa.</div>
   <div class="kpis">
-    ${card('entraram', total, `${conversas.filter((c) => degrau(c) >= 2).length} conversaram`, '#fff')}
-    ${card('viram oferta', viuOferta.length, `${pct(viuOferta.length)}% — degrau 3`, '#fff')}
-    ${card('deixaram celular', comContato, `${pct(comContato)}% — degrau 4`, '#7adcef')}
-    ${card('avançaram no pedido', conversas.filter((c) => degrau(c) >= 5).length, 'degrau 5', '#7adcef')}
-    ${card('vendas', porDegrau.find((d) => d.n === 6).qtd, 'degrau 6', '#f78f98')}
-    ${card('A × B', `${viaA.length} × ${viaB.length}`, `contato: ${viaA.filter((c) => c.phone).length} × ${viaB.filter((c) => c.phone).length}`, '#fff')}
-    ${card('tocados na régua', toqueEnviado.length, `${tocadas.length} com toque gravado`, '#fff')}
+    ${card("entraram", total, `${conversas.filter((c) => degrau(c) >= 2).length} conversaram`, "#fff")}
+    ${card("viram oferta", viuOferta.length, `${pct(viuOferta.length)}% — degrau 3`, "#fff")}
+    ${card("deixaram celular", comContato, `${pct(comContato)}% — degrau 4`, "#7adcef")}
+    ${card("avançaram no pedido", conversas.filter((c) => degrau(c) >= 5).length, "degrau 5", "#7adcef")}
+    ${card("vendas", porDegrau.find((d) => d.n === 6).qtd, "degrau 6", "#f78f98")}
+    ${card("A × B", `${viaA.length} × ${viaB.length}`, `contato: ${viaA.filter((c) => c.phone).length} × ${viaB.filter((c) => c.phone).length}`, "#fff")}
+    ${card("tocados na régua", toqueEnviado.length, `${tocadas.length} com toque gravado`, "#fff")}
   </div>
 </header>
 <main>
@@ -453,26 +533,52 @@ const html = `<!doctype html>
   </figure>
 
   <div class="grade">
-    ${graf('Conversas por dia', colunas(Object.entries(porDia).map(([rotulo, qtd]) => ({ rotulo, qtd }))))}
-    ${graf('O que pediram × deixaram celular', barrasAgrupadas(Object.entries(porCategoria).sort((a, b) => b[1].qtd - a[1].qtd).map(([rotulo, v]) => ({ rotulo, qtd: v.qtd, contato: v.contato }))), 'azul = conversas · coral = deixaram celular')}
-    ${graf('De onde vieram', barrasSimples(Object.entries(porOrigem).sort((a, b) => b[1] - a[1]).map(([rotulo, qtd]) => ({ rotulo, qtd }))))}
-    ${graf('Onde a conversa morre', barrasSimples(Object.entries(porTurnos).map(([rotulo, qtd]) => ({ rotulo, qtd })), COR.coral), 'turnos que a pessoa falou — 1 turno = falou uma vez e sumiu')}
-    ${graf('O teste A/B do telefone', dueloAB(), 'o braço B esconde a oferta; nenhum dos dois levou alguém ao contato')}
+    ${graf("Conversas por dia", colunas(Object.entries(porDia).map(([rotulo, qtd]) => ({ rotulo, qtd }))))}
+    ${graf(
+			"O que pediram × deixaram celular",
+			barrasAgrupadas(
+				Object.entries(porCategoria)
+					.sort((a, b) => b[1].qtd - a[1].qtd)
+					.map(([rotulo, v]) => ({ rotulo, qtd: v.qtd, contato: v.contato })),
+			),
+			"azul = conversas · coral = deixaram celular",
+		)}
+    ${graf(
+			"De onde vieram",
+			barrasSimples(
+				Object.entries(porOrigem)
+					.sort((a, b) => b[1] - a[1])
+					.map(([rotulo, qtd]) => ({ rotulo, qtd })),
+			),
+		)}
+    ${graf(
+			"Onde a conversa morre",
+			barrasSimples(
+				Object.entries(porTurnos).map(([rotulo, qtd]) => ({ rotulo, qtd })),
+				COR.coral,
+			),
+			"turnos que a pessoa falou — 1 turno = falou uma vez e sumiu",
+		)}
+    ${graf("O teste A/B do telefone", dueloAB(), "o braço B esconde a oferta; nenhum dos dois levou alguém ao contato")}
   </div>
 
   ${analiseHtml()}
 
   <h2>As conversas — clique para abrir</h2>
   <div class="filtros">
-    <select id="fDegrau"><option value="">degrau: todos</option>${DEGRAUS.map((d) => `<option value="${d.n}">${d.n} · ${d.nome}</option>`).join('')}</select>
-    <select id="fCat"><option value="">pediu: tudo</option>${Object.keys(porCategoria).map((k) => `<option value="${esc(k)}">${esc(k)}</option>`).join('')}</select>
+    <select id="fDegrau"><option value="">degrau: todos</option>${DEGRAUS.map((d) => `<option value="${d.n}">${d.n} · ${d.nome}</option>`).join("")}</select>
+    <select id="fCat"><option value="">pediu: tudo</option>${Object.keys(porCategoria)
+			.map((k) => `<option value="${esc(k)}">${esc(k)}</option>`)
+			.join("")}</select>
     <select id="fBraco"><option value="">braço: todos</option><option value="A">A</option><option value="B">B</option><option value="nenhum">não chegou ao card</option></select>
     <select id="fContato"><option value="">contato: tanto faz</option><option value="sim">deixou celular</option><option value="nao">não deixou</option></select>
-    <select id="fOrigem"><option value="">origem: toda</option>${Object.keys(porOrigem).map((k) => `<option value="${esc(k)}">${esc(k)}</option>`).join('')}</select>
+    <select id="fOrigem"><option value="">origem: toda</option>${Object.keys(porOrigem)
+			.map((k) => `<option value="${esc(k)}">${esc(k)}</option>`)
+			.join("")}</select>
     <input id="fBusca" placeholder="buscar nome ou id…">
     <span class="meta" id="contagem"></span>
   </div>
-  <div id="lista">${conversas.map(cartao).join('\n')}</div>
+  <div id="lista">${conversas.map(cartao).join("\n")}</div>
 </main>
 <script>
 const cartoes=[...document.querySelectorAll('.conv')];
@@ -492,12 +598,16 @@ Object.values(f).forEach(el=>el.addEventListener('input',aplica));
 aplica();
 </script></body></html>`;
 
-writeFileSync(SAIDA, html, 'utf8');
-console.log(`ok — ${conversas.length} conversas · ${comContato} com celular · A=${viaA.length} B=${viaB.length} · tocados=${toqueEnviado.length}`);
+writeFileSync(SAIDA, html, "utf8");
+console.log(
+	`ok — ${conversas.length} conversas · ${comContato} com celular · A=${viaA.length} B=${viaB.length} · tocados=${toqueEnviado.length}`,
+);
 // Rótulo que evita a confusão que custou caro nesta semana: este relatório conta
 // CONVERSA; a dashboard conta PESSOA (o contato quando conhecido, senão o device).
 // No mesmo recorte de 02/10 a tela mostra 26 pessoas e 4 com telefone, enquanto
 // aqui saem 29 conversas e 5 com celular — a diferença é gente com mais de uma
 // conversa. Não é erro de um lado nem do outro: é unidade diferente.
-console.log('   (a tela conta PESSOA: 26 pessoas e 4 com telefone no mesmo recorte; aqui é conversa)');
+console.log(
+	"   (a tela conta PESSOA: 26 pessoas e 4 com telefone no mesmo recorte; aqui é conversa)",
+);
 console.log(`arquivo: ${SAIDA}`);

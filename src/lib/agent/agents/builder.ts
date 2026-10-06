@@ -1,7 +1,9 @@
 import { stepCountIs, type ToolChoice, ToolLoopAgent } from "ai";
-import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
-import { createGatewayOpenAI } from "@/lib/llm/gateway-openai";
-import { isNativeAnthropicModel } from "@/lib/llm/model-provider";
+import {
+	isNativeAnthropicModel,
+	modeloAiSdkDoGateway,
+	modeloDoAgente,
+} from "@/lib/llm/model-provider";
 import { buildMemorySystemMessage } from "@/lib/memory/reactivation";
 import type { MemoryContext } from "@/lib/memory/types";
 import {
@@ -40,9 +42,6 @@ import {
 	type WhatsappOptinStage,
 } from "../system-prompt";
 import { buildConsorcioTools, consorcioTools } from "../tools/ai-sdk";
-
-const anthropic = createGatewayAnthropic();
-const openaiCompat = createGatewayOpenAI();
 
 type ConsorcioToolName = keyof typeof consorcioTools;
 type ConsorcioToolSet = Record<string, (typeof consorcioTools)[ConsorcioToolName]>;
@@ -364,11 +363,14 @@ export function buildAgent(
 	// `openai/`-compatible. Esses vão pelo client OpenAI-compatible (sem
 	// tradução) e sem os providerOptions específicos da Anthropic (ver
 	// qwen-gateway-provider.test.ts).
-	const modelId = process.env.AI_MODEL ?? "claude-sonnet-5";
+	// B15: o id sai da fábrica única (`modeloDoAgente`), que trata a var vazia
+	// do compose (`?.trim() || default`). Antes o `??` daqui não caía no default
+	// com `AI_MODEL=""` — o modelo virava a string vazia.
+	const modelId = modeloDoAgente();
 	const modelIsNativeAnthropic = isNativeAnthropicModel(modelId);
 
 	const settings = {
-		model: modelIsNativeAnthropic ? anthropic(modelId) : openaiCompat(modelId),
+		model: modeloAiSdkDoGateway(modelId),
 		instructions,
 		tools,
 		// FIX-209 — Sonnet 5 rejeita `temperature` não-default (400), então NÃO

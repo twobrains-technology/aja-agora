@@ -8,11 +8,17 @@
  *
  * ── O recorte dos candidatos ────────────────────────────────────────────────
  *
- * O bolo parado é todo mundo com `last_inbound_at` mais velho que o silêncio de
- * 90 min — SEM o teto de 7 dias da entrada normal. A consulta só PRÉ-FILTRA (o
- * piso de silêncio tem índice); quem decide é `avaliarReentrada`, a mesma função
- * que a tela usa para dizer quantas vão entrar e por que o resto fica de fora.
- * Um `CASE WHEN` em SQL daria duas verdades para a mesma pergunta.
+ * O bolo parado é todo mundo cujo silêncio é maior que o piso de 90 min — SEM o
+ * teto de 7 dias da entrada normal. O silêncio é o MESMO fato da entrada (D9):
+ * na web, o MAIS RECENTE entre a última FALA do cliente (`messages.role='user'`)
+ * e o `last_inbound_at` (a coluna pode chegar quando a conversa vira lead); no
+ * WhatsApp, o próprio `last_inbound_at`. Sem isso, o lead da web nem entrava no
+ * recorte — a reentrada manual dele era impossível, não só recusada.
+ *
+ * A consulta só PRÉ-FILTRA (o piso de silêncio tem índice); quem decide é
+ * `avaliarReentrada`, a mesma função que a tela usa para dizer quantas vão
+ * entrar e por que o resto fica de fora. Um `CASE WHEN` em SQL daria duas
+ * verdades para a mesma pergunta.
  *
  * O `LIMIT` é teto de trabalho (não filtro): a ação é deliberada e em lote, e o
  * preview diz se o recorte foi truncado.
@@ -53,6 +59,18 @@ import { telefonesDaEquipe } from "./regua-por-conversa";
 
 /** Teto de conversas avaliadas por lote — trabalho, não elegibilidade. */
 const CANDIDATOS_POR_LOTE = 500;
+
+/**
+ * A janela de ATIVIDADE do recorte da reentrada (FIX-441/D12).
+ *
+ * A reentrada NÃO tem o teto de 7 dias da entrada normal — ela existe para
+ * reabrir quem ficou de fora dele. Mas o `LEFT JOIN LATERAL max(messages…)`
+ * rodava para TODAS as conversas da base. O pré-filtro (que não depende do
+ * LATERAL) limita a varredura a quem teve QUALQUER atividade nos últimos 30
+ * dias; quem está dormente há mais que isso sai do recorte — e o `LIMIT` já
+ * dizia que o lote é teto de trabalho.
+ */
+const JANELA_DE_REENTRADA_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** O candidato já com o que a GRAVAÇÃO precisa (a decisão só vê `conversa`). */
 interface Candidato {
@@ -97,20 +115,38 @@ function objetivoDaMetadata(metadata: unknown): string | null {
  */
 async function candidatosDaReentrada(agora: Date, limite: number): Promise<Candidato[]> {
 	const piso = new Date(agora.getTime() - ESPERA_SILENCIO_MS).toISOString();
+	const desde = new Date(agora.getTime() - JANELA_DE_REENTRADA_MS).toISOString();
 	const linhas = linhasDeExecucao(
 		await db.execute(sql`
 			SELECT c.id AS "conversationId", c.channel, c.status,
 			       c.is_simulated AS "isSimulated", c.contact_id AS "contactId",
 			       c.wa_id AS "waId", c.last_inbound_at AS "lastInboundAt", c.metadata,
+			       CASE WHEN c.channel = 'web' THEN fala.em END AS "ultimaMensagemDoClienteEm",
 			       ct.phone, ct.remarketing_optout_at AS "optoutDaPessoaEm",
 			       t.status AS "reguaStatus", t.motivo_saida AS "reguaMotivoSaida",
 			       t.objetivo AS "reguaObjetivo", t.touches_30d AS "touches30d"
 			FROM conversations c
 			LEFT JOIN contacts ct ON ct.id = c.contact_id
+			LEFT JOIN LATERAL (
+			    SELECT max(m.created_at) AS em FROM messages m
+			     WHERE m.conversation_id = c.id AND m.role = 'user'
+			) fala ON true
 			LEFT JOIN remarketing_touches t ON t.conversation_id = c.id
-			WHERE c.last_inbound_at IS NOT NULL
-			  AND c.last_inbound_at <= ${piso}::timestamptz
-			ORDER BY c.last_inbound_at DESC
+			WHERE (
+			    -- PRÉ-FILTRO (FIX-441/D12): não depende do LATERAL e é superset das
+			    -- condições finais — o planner o empurra para c antes do max.
+			    c.last_inbound_at >= ${desde}::timestamptz
+			    OR c.created_at >= ${desde}::timestamptz
+			    OR c.updated_at >= ${desde}::timestamptz
+			    OR EXISTS (
+			        SELECT 1 FROM messages m2
+			         WHERE m2.conversation_id = c.id AND m2.role = 'user'
+			           AND m2.created_at >= ${desde}::timestamptz
+			    )
+			)
+			  AND coalesce(c.last_inbound_at, fala.em) IS NOT NULL
+			  AND coalesce(c.last_inbound_at, fala.em) <= ${piso}::timestamptz
+			ORDER BY coalesce(c.last_inbound_at, fala.em) DESC NULLS LAST
 			LIMIT ${limite}
 		`),
 	);
@@ -125,6 +161,9 @@ async function candidatosDaReentrada(agora: Date, limite: number): Promise<Candi
 				isSimulated: l.isSimulated === true,
 				contactId: (l.contactId as string | null) ?? null,
 				lastInboundAt: l.lastInboundAt ? new Date(l.lastInboundAt as string) : null,
+				ultimaMensagemDoClienteEm: l.ultimaMensagemDoClienteEm
+					? new Date(l.ultimaMensagemDoClienteEm as string)
+					: null,
 				waId: (l.waId as string | null) ?? null,
 				phone: (l.phone as string | null) ?? null,
 				jaNaRegua: reguaStatus !== null,
