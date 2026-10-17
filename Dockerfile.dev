@@ -30,7 +30,11 @@ ENV PNPM_HOME=/pnpm \
 
 EXPOSE 3000
 
-# Install no boot (store compartilhado → instantâneo) e sobe o dev server.
+# Install no boot (store compartilhado → instantâneo), MIGRA e sobe o dev server.
+# A migração entrou em 17/10/2026: o dev não tinha entrypoint de migração nenhum, e
+# por isso um workspace novo nascia com o schema do template — que estava atrás (34
+# de 65 migrations), e o sintoma aparece longe da causa ("column ... does not exist").
+# `drizzle-kit migrate` num banco já migrado é no-op.
 # `pnpm exec next ...` chama o binário direto: `pnpm dev -- --port` vazava o `--`
 # pro Next 16 (interpretava como diretório → "Invalid project directory /app/--port").
-CMD ["sh", "-c", "pnpm install --frozen-lockfile && pnpm exec next dev --port 3000 --hostname 0.0.0.0"]
+CMD ["sh", "-c", "pnpm install --frozen-lockfile && pnpm exec drizzle-kit migrate && pnpm exec next dev --port 3000 --hostname 0.0.0.0"]
