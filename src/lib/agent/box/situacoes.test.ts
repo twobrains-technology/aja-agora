@@ -1,5 +1,25 @@
 import { readFileSync } from "node:fs";
 import { afterAll, describe, expect, it } from "vitest";
+
+// ── ESTE TESTE É HERMÉTICO: A CAIXA É O FALLBACK DO CÓDIGO ──
+//
+// `fetchManagedPrompt` prefere o prompt gerenciado (Langfuse) e cai no
+// `SYSTEM_PROMPT` quando não há cliente. Aqui o cliente NÃO é criado de
+// propósito:
+//
+//  1. o `.env.local` que o bootstrap gera aponta o Langfuse para a instância de
+//     PRODUÇÃO (`langfuse.twobrainstechnology.com`) — medido em 17/10/2026 — e um
+//     teste unitário não deve depender de (nem exercitar) infra de produção;
+//  2. o texto publicado é um ARTEFATO OPERACIONAL, versionado lá; o que o código
+//     garante é que a seção existe no fallback e que o fato chega ao modelo.
+//     Comparar com a versão publicada faria o teste quebrar por mudança de
+//     conteúdo remoto, não por defeito no código.
+//
+// Na prática: em qualquer ambiente cujo Langfuse não responda, o agente usa este
+// mesmo texto — então é ele que precisa estar certo.
+process.env.LANGFUSE_PUBLIC_KEY = "";
+process.env.LANGFUSE_SECRET_KEY = "";
+
 import { buscaDoMock } from "@/lib/agent/langgraph/testing/grupos-do-mock";
 import { limparCenario, runScenario } from "@/lib/agent/langgraph/testing/scenario";
 import { modelosRoteirizados } from "@/lib/agent/langgraph/testing/scripted-model";
@@ -26,6 +46,12 @@ import { blocoDeSituacoes, fatoDeReveal, SITUACAO_KEYS } from "./situacoes";
  */
 
 const RAIZ = new URL("../../../../", import.meta.url).pathname;
+/** Onde o CÓDIGO do turno vive hoje: o nó e o módulo de contexto que a extração
+ * de 17/10/2026 separou dele. A conduta não pode voltar em NENHUM dos dois. */
+const ARQUIVOS_DO_TURNO = [
+	`${RAIZ}src/lib/agent/langgraph/nodes/converse.ts`,
+	`${RAIZ}src/lib/agent/langgraph/nodes/turn-context.ts`,
+];
 
 /** Frases de CONDUTA que saíram de `converse.ts` e agora só existem na caixa.
  * A lista é a memória do que já foi migrado: cada bloco migrado acrescenta uma
@@ -49,15 +75,13 @@ describe("caixa — toda situação tem conduta escrita nela", () => {
 
 describe("caixa — a conduta saiu do código", () => {
 	for (const frase of CONDUTA_MIGRADA) {
-		it(`"${frase}" vive na caixa e NÃO em converse.ts`, () => {
-			const converse = readFileSync(
-				`${RAIZ}src/lib/agent/langgraph/nodes/converse.ts`,
-				"utf8",
-			).toLowerCase();
+		it(`"${frase}" vive na caixa e NÃO no código do turno`, () => {
 			expect(SYSTEM_PROMPT.toLowerCase()).toContain(frase.toLowerCase());
-			// Mordida: colar a frase de volta em converse.ts (como era antes da
-			// migração) deixa esta asserção vermelha na hora.
-			expect(converse).not.toContain(frase.toLowerCase());
+			// Mordida: colar a frase de volta no nó (ou no módulo de contexto, que
+			// passou a montar o system prompt) deixa esta asserção vermelha na hora.
+			for (const arquivo of ARQUIVOS_DO_TURNO) {
+				expect(readFileSync(arquivo, "utf8").toLowerCase()).not.toContain(frase.toLowerCase());
+			}
 		});
 	}
 });
@@ -100,10 +124,12 @@ describe("caixa — o turno de REVEAL recebe só o FATO, e a conduta vem dela", 
 		expect(recomendando?.toLowerCase()).not.toMatch(/termine|não peça|você deve/);
 	});
 
-	it("o ramo de apresentação do converse passa pelo fato e não escreve conduta", () => {
-		const converse = readFileSync(`${RAIZ}src/lib/agent/langgraph/nodes/converse.ts`, "utf8");
-		expect(converse).toContain("fatoDeReveal(");
-		expect(converse).toContain("fatoDeFechamento(");
+	it("o ramo de apresentação passa pelo fato e não escreve conduta", () => {
+		// Depois da extração de 17/10/2026, quem monta o system prompt do turno é
+		// `turn-context.ts` — o guard segue a fonte, não o nome antigo do arquivo.
+		const contexto = readFileSync(`${RAIZ}src/lib/agent/langgraph/nodes/turn-context.ts`, "utf8");
+		expect(contexto).toContain("fatoDeReveal(");
+		expect(contexto).toContain("fatoDeFechamento(");
 	});
 });
 

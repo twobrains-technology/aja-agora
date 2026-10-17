@@ -44,6 +44,20 @@ export type ManagedPrompt = {
 	lfPrompt: TextPromptClient | null;
 };
 
+/** A LABEL DO PROMPT É POR AMBIENTE — e isto é conserto de um defeito medido.
+ *
+ * O Langfuse é COMPARTILHADO: a mesma instância serve produção, dev e o
+ * workspace local. Com a label fixa em `production`, publicar a caixa para
+ * testar em dev mudava a conduta de PRODUÇÃO junto — aconteceu em 17/10/2026,
+ * quando três versões foram publicadas com label `production` e precisaram ser
+ * revertidas (a v8 voltou a ser a de produção).
+ *
+ * `LANGFUSE_PROMPT_LABEL` diz qual label cada ambiente lê; o default
+ * `production` preserva o comportamento de quem não setar nada. */
+export function labelDoPrompt(): string {
+	return process.env.LANGFUSE_PROMPT_LABEL?.trim() || "production";
+}
+
 export async function fetchManagedPrompt(
 	name: string,
 	fallbackText: string,
@@ -52,7 +66,7 @@ export async function fetchManagedPrompt(
 	if (!langfuse) return { text: fallbackText, lfPrompt: null };
 	try {
 		const prompt = await langfuse.prompt.get(name, {
-			label: "production",
+			label: labelDoPrompt(),
 			cacheTtlSeconds: 60,
 			fallback: fallbackText,
 			type: "text",

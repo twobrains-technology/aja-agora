@@ -24,7 +24,15 @@ import { listExpertisesByCategory } from "./personas-repo";
 // latência p50 5,4 s · p90 6,9 s · máx 7,1 s. Com 6 s, 3 dos 10 caíam no
 // fallback neutro — perdendo a classificação que o modelo tinha acertado.
 // 10 s cobre o pior caso medido com folga. Sem nova medição, não se mexe.
-const ANALYZER_TIMEOUT_MS = 10000;
+/**
+ * Teto de tempo do analyzer. Configurável porque o teto é do AMBIENTE, não do
+ * código: o gateway de dev, com modelo de nuvem e schema grande, leva mais que
+ * os 10 s que o modelo de produção gastava. Quando estoura, o turno NÃO cai —
+ * `analyzeTurn` cai em `neutral` — mas o funil para de extrair categoria e a
+ * conversa trava no gate do nome, com o app respondendo normalmente na tela
+ * (medido em 17/10/2026). Default preservado: 10 s.
+ */
+const ANALYZER_TIMEOUT_MS = Number(process.env.ANALYZER_TIMEOUT_MS ?? 10000);
 
 export const userIntentAnalyzerEnum = z.enum([
 	"ready_to_proceed",
