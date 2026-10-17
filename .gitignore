@@ -90,3 +90,6 @@ exports/
 # nem lintar. Sem isto o `pnpm lint` do pre-commit reprova em qualquer worktree
 # onde um goal esteja rodando (o snapshot JSON é reescrito pelo harness).
 .pi/
+
+# artefato do spike do pi (fase 4 da campanha do motor)
+.spike-pi-resultado.json
