@@ -50,7 +50,7 @@ function ambienteDoPsql(conn) {
 	return env;
 }
 const rotuloPeriodo = DESDE
-	? `desde ${new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(DESDE + "T12:00:00-03:00"))}`
+	? `desde ${new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(`${DESDE}T12:00:00-03:00`))}`
 	: `últimos ${DIAS} dias`;
 
 // A coluna created_at é UTC (timestamp sem timezone). `at time zone 'America/Sao_Paulo'` ancora a
@@ -115,7 +115,7 @@ const esc = (s) =>
 const soDigitos = (t) => String(t ?? "").replace(/\D/g, "");
 const waLink = (t) => {
 	const d = soDigitos(t);
-	return d ? `https://wa.me/${d.startsWith("55") ? d : "55" + d}` : null;
+	return d ? `https://wa.me/${d.startsWith("55") ? d : `55${d}`}` : null;
 };
 const ehCard = (t) => /^\[card:\s*([^\]]+)\]/.test(String(t ?? "").trim());
 const nomeDoCard = (t) => String(t ?? "").match(/^\[card:\s*([^\]]+)\]/)?.[1] ?? "card";
@@ -170,7 +170,6 @@ const porDegrau = DEGRAUS.map((d) => ({
 const comContato = conversas.filter((c) => c.phone).length;
 const viaA = conversas.filter((c) => c.md?.telefoneDoDesbloqueio?.variante === "A");
 const viaB = conversas.filter((c) => c.md?.telefoneDoDesbloqueio?.variante === "B");
-const semCard = conversas.filter((c) => !c.md?.telefoneDoDesbloqueio);
 const viuOferta = conversas.filter((c) => degrau(c) >= 3);
 const tocadas = conversas.filter((c) => (c.toques ?? []).length > 0);
 const toqueEnviado = conversas.filter((c) => (c.toques ?? []).some((t) => t.envio === "enviado"));
@@ -373,14 +372,14 @@ function cartao(c) {
 		? toques
 				.map((t) => {
 					const ok = t.envio === "enviado";
-					return `<span class="toque ${ok ? "ok" : "aviso"}">toque ${t.step ?? "?"} · ${esc(t.envio ?? "sem registro de envio")}${t.motivo ? " · " + esc(t.motivo) : ""} · ${quando(t.tocou)}</span>`;
+					return `<span class="toque ${ok ? "ok" : "aviso"}">toque ${t.step ?? "?"} · ${esc(t.envio ?? "sem registro de envio")}${t.motivo ? ` · ${esc(t.motivo)}` : ""} · ${quando(t.tocou)}</span>`;
 				})
 				.join(" ")
 		: '<span class="toque vazio">a régua nunca tocou esta pessoa</span>';
 
 	return `<details class="conv" data-degrau="${d}" data-cat="${esc(md.currentCategory ?? "-")}"
             data-braco="${braco ?? "nenhum"}" data-contato="${c.phone ? "sim" : "nao"}"
-            data-origem="${esc(c.visita?.utm ?? "direto")}" data-busca="${esc((c.contact_name ?? "") + " " + c.id)}">
+            data-origem="${esc(c.visita?.utm ?? "direto")}" data-busca="${esc(`${c.contact_name ?? ""} ${c.id}`)}">
   <summary>
     <span class="degrau g${d}" title="degrau ${d}: ${DEGRAUS[d - 1].nome}">${d}</span>
     <span class="nome">${esc(c.contact_name ?? "anônimo")}</span>

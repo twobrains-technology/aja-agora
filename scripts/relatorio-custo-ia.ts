@@ -511,9 +511,6 @@ const esc = (v: unknown): string =>
 		(c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] ?? c,
 	);
 
-const somar = (serie: Map<string, number>): number =>
-	[...serie.values()].reduce((total, valor) => total + valor, 0);
-
 function chaveDoMes(dia: string): string {
 	return dia.slice(0, 7);
 }

@@ -1,11 +1,11 @@
 import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { contacts, conversations, remarketingTouches } from "@/db/schema";
-import { registrarFalhaDoLlm } from "@/lib/llm/alerta-do-llm";
 import { detectBackIntent, popNavState } from "@/lib/agent/orchestrator/navigation";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { nextGate } from "@/lib/agent/qualify-state";
 import { metaOf, persistMeta } from "@/lib/conversation/meta";
+import { registrarFalhaDoLlm } from "@/lib/llm/alerta-do-llm";
 import { withSimulatorClockIfNeeded } from "@/lib/utils/simulator-clock-wrap";
 import { processWithOrchestrator } from "./adapter";
 import { sendTextMessage, sendTypingIndicator } from "./api";

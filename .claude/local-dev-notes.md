@@ -87,13 +87,11 @@ docker exec aja-app-<workspace> pnpm db:migrate
 
 ## 4. Testes de INTEGRAÇÃO no host precisam do DB do workspace
 
-`pnpm test:unit` (Camadas 1+2 do pre-commit) inclui testes que conectam num
-Postgres **real** (ex.: `src/lib/agent/tools/ai-sdk.test.ts`,
-`src/lib/**/lead-history-completeness.test.ts`, e alguns cassettes de
-`tests/regression/agent-trajectory.test.ts` que persistem no DB). Sem DB
-alcançável eles falham com `ECONNREFUSED ::1:5433` — a porta **5433 é legada**;
-o Postgres do workspace está em container, alcançável via DNS OrbStack
-`aja-pg-<workspace>.orb.local:5432` (não publica porta no host).
+Testes que conectam num Postgres **real** (ex.: `src/lib/agent/tools/ai-sdk.test.ts`
+e qualquer `*.integration.test.ts` ao lado do arquivo que você tocou) falham sem
+DB alcançável com `ECONNREFUSED ::1:5433` — a porta **5433 é legada**; o Postgres
+do workspace é o shared do projeto, alcançável via DNS OrbStack
+`db.<workspace>.orb.local:5432` (não publica porta no host).
 
 `vitest.setup.ts` carrega `.env.local` → `.env.test` → `.env`. O `.env.local`
 gerado deixa `DATABASE_URL` comentado (o compose injeta a interna pro container),
@@ -103,15 +101,16 @@ então o host cai no `.env` (5433, morto). Aponte o host pro DB do workspace
 ```bash
 # pega a cred funcional do container e troca o host interno pelo DNS do host
 export DATABASE_URL="$(docker exec aja-app-<workspace> sh -c 'echo $DATABASE_URL' \
-  | sed -E 's#@aja-pg-<workspace>:5432#@aja-pg-<workspace>.orb.local:5432#')"
-./node_modules/.bin/vitest run src/ tests/regression
+  | sed -E 's#@aja-shared-pg:5432#@db.<workspace>.orb.local:5432#')"
+./node_modules/.bin/vitest run src/
 ```
 
-**Pro pre-commit hook passar** (ele roda `test:unit`), o jeito durável é setar
-esse `DATABASE_URL` no `.env.local` (host-only — o compose tem `environment:`
-que sobrescreve a chave pro container, então não afeta o app). `.env.local` é
-gitignored; nada vaza no commit. Sem isso, o hook bloqueia o commit por causa
-desses testes de DB — falha de ambiente, não do seu código.
+**Para o pre-commit hook**, que roda só o teste que mora ao lado do arquivo que
+você mudou, o jeito durável é setar esse `DATABASE_URL` no `.env.local`
+(host-only — o compose tem `environment:` que sobrescreve a chave pro container,
+então não afeta o app). `.env.local` é gitignored; nada vaza no commit. Sem isso,
+um teste de integração ao lado do seu arquivo falha por ambiente, não pelo seu
+código.
 
 ## 5. Pegadinhas de shell
 

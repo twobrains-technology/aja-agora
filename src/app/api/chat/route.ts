@@ -62,7 +62,6 @@ import {
 import { publishMessage } from "@/lib/chat/message-bus";
 import { CHAVE_DO_TESTE_NO_METADATA } from "@/lib/chat/resultado-do-teste-do-telefone";
 import { streamErrorMessage } from "@/lib/chat/stream-error";
-import { registrarFalhaDoLlm } from "@/lib/llm/alerta-do-llm";
 import {
 	comparacaoGuardadaDaConversa,
 	registrarDesfechoDoTeste,
@@ -83,6 +82,7 @@ import { loadConversationHistory, saveMessage } from "@/lib/conversation/message
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { bracoDaFila } from "@/lib/experimentos/fila";
 import { normalizePhoneBR } from "@/lib/leads/phone";
+import { registrarFalhaDoLlm } from "@/lib/llm/alerta-do-llm";
 import { COOKIE_MAX_AGE_SECONDS, COOKIE_NAME, generateCookieValue } from "@/lib/memory/identity";
 import { checkRateLimit } from "@/lib/middleware/rate-limit";
 import { registrarBotaoFantasma } from "@/lib/observability/langfuse/funil-scores";

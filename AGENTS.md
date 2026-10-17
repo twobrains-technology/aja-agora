@@ -4,31 +4,35 @@ Este arquivo é curto de propósito. O contexto do projeto (domínio, arquitetur
 onde as coisas estão) vive em **`CLAUDE.md`** — leia-o antes de trabalhar aqui. O que está
 abaixo é o que muda o *jeito* de trabalhar.
 
-## Testes: pontual sempre, suíte inteira quase nunca
+## Testes: pontual e específico, sempre
 
-**Não rode a suíte inteira como hábito.** `pnpm test:unit` e `pnpm test:pre-commit` levam
-~70 s, puxam banco e serviços compartilhados do workspace, e a falha que aparece ali quase
-sempre é **do ambiente** (migration atrás, container dormindo, banco de outro workspace) e
-não do código recém-escrito. O custo é você depurar ambiente por 20 minutos para escrever
-uma linha de log — já aconteceu nesta casa.
+A suíte de testes foi removida em 16/10/2026 (commit `d67ea102`: 741 arquivos, 101.660
+linhas) e os scripts que a rodavam (`test:unit`, `test:pre-commit`, `test:caminho-do-dinheiro`,
+`test:funil`) saíram do `package.json` em 17/10. **Não existe mais "a suíte inteira"** — o que
+existe é o teste pontual que você escreve para o que tocou.
 
-No lugar disso:
-
-- **Rode o arquivo que você tocou:** `pnpm vitest run src/lib/admin/<arquivo>.test.ts`.
-- **Rode o diretório da costura quando ele for o alvo:** mexeu no funil → `src/lib/admin/`;
-  mexeu na régua → `src/lib/remarketing/`.
-- **`pnpm typecheck`** prova mais que a suíte inteira que o que você escreveu compila e não
+- **Escreva e rode o teste do arquivo que você mexeu, ao lado dele:** `X.ts` → `X.test.ts`
+  (o hook casa por prefixo, então `X.*.test.ts` também vale).
+  `pnpm vitest run src/lib/agent/<arquivo>.test.ts`
+- **`pnpm -s typecheck`** prova mais que qualquer suíte que o que você escreveu compila e não
   quebrou contrato de tipo. Rode ele.
 - **Integração (`*.integration.test.ts`) só quando a mudança é EXATAMENTE na costura que ele
   cobre** — e sabendo que ele depende do banco do workspace estar migrado.
+- **Teste que não morde não é teste:** remova a garantia que ele cobre e confirme que ele fica
+  vermelho antes de commitar.
 
-## Commit vai sem o hook de suíte
+**Não rode teste largo por reflexo.** A falha que aparece nele quase sempre é **do ambiente**
+(migration atrás, container dormindo, banco de outro workspace), não do código recém-escrito —
+e o custo é depurar ambiente por 20 minutos para escrever uma linha de log. Já aconteceu nesta casa.
 
-O `pre-commit` roda lint + `test:unit` + `test:caminho-do-dinheiro`. Como a suíte inteira não
-é o juiz do trabalho (item acima), **commite com `HUSKY=0 git commit …`** e rode à mão o teste
-pontual do que mudou. Rodar o hook aqui rende, com frequência, um vermelho que não é seu.
+## Commit: deixe o hook rodar
 
-Exceção: quando o pedido for explicitamente "valida a suíte inteira" ou pré-merge.
+O `pre-commit` roda, sobre os arquivos que entraram no commit: o **teste que mora ao lado** de
+cada um (se existir) + `pnpm lint`. Se nenhum teste mora ao lado, ele DIZ que não rodou nada e
+segue. É barato de propósito — então **commite normalmente, sem `HUSKY=0`**.
+
+Exceção: quando o hook travar por **ambiente** (ex.: teste de integração sem o banco do
+workspace de pé). Aí `HUSKY=0` e rode à mão o teste que importa.
 
 ## Banco local: o nome do container não resolve do host
 

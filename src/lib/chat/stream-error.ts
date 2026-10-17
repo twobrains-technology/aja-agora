@@ -17,7 +17,11 @@
 import { classificarErroDoLlm, type TipoDeErroDoLlm } from "@/lib/llm/erro-do-llm";
 
 /** Os códigos que podem chegar ao navegador. Fechado de propósito. */
-export type CodigoDeErroDoChat = "llm_billing" | "llm_rate_limit" | "llm_indisponivel" | "erro_interno";
+export type CodigoDeErroDoChat =
+	| "llm_billing"
+	| "llm_rate_limit"
+	| "llm_indisponivel"
+	| "erro_interno";
 
 const CODIGO_POR_TIPO: Record<TipoDeErroDoLlm, CodigoDeErroDoChat> = {
 	billing: "llm_billing",

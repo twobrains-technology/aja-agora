@@ -74,11 +74,7 @@ function limpo(valor: string | null | undefined): string | null {
  * O agrupador já declarava a intenção (`agrupar-origens.ts`, "abrir para mostrar
  * a si mesmo é ruído", devendo cair em Direto) — o filtro é que não existia.
  */
-const NOSSOS_HOSTS = [
-	"ajaagora.com.br",
-	"ajagora.com.br",
-	"tb-aja-agora.twobrainstechnology.com",
-];
+const NOSSOS_HOSTS = ["ajaagora.com.br", "ajagora.com.br", "tb-aja-agora.twobrainstechnology.com"];
 
 /**
  * O referrer veio de navegação interna? Ignora `www.`, a porta e o esquema.

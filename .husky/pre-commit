@@ -1,22 +1,12 @@
 #!/usr/bin/env sh
+# pre-commit — o que este hook faz, e por quê.
+#
 # 2026-07-21 — a suíte de regressão de IA (3 camadas) foi REMOVIDA: travava a
-# evolução do agente cimentando copy e frases do prompt. O gate agora é o Kairo
-# validando ao vivo.
-#
-# 2026-07-30 (3ª revisão independente) — o `package.json` já tinha um script
-# `test:pre-commit` (lint + test:unit) que NADA chamava: nem hook, nem CI. Foi
-# marcado como "gate fechado" numa rodada de correções sem o gate existir de
-# verdade. Isto aqui é a correção — mas com uma distinção importante em relação
-# à suíte removida em 21/07: o `test:unit` de hoje verifica INVARIANTE DE
-# CÓDIGO (allowlist de categoria, aceite/recusa, atribuição de número), nunca
-# frase/copy do agente — os revisores independentes da rodada de 30/07
-# confirmaram isso teste por teste. Não é a cimentação de prosa que motivou a
-# remoção original.
-#
-# `test:unit` PRECISA da stack local de pé (Postgres — skill local-dev) pra
-# rodar os cenários de jornada; sem ela, esses cenários pulam via
-# `describeIfDb` e o resto da suíte roda igual. Se até o biome/tsc travarem por
-# ambiente quebrado, é sinal de configuração — não de motivo pra pular o gate.
+# evolução do agente cimentando copy e frases do prompt. O gate passou a ser o
+# dono validando ao vivo. Os scripts que existiam só para ela (`test:unit`,
+# `test:pre-commit`, `test:caminho-do-dinheiro`, `test:funil`) saíram do
+# `package.json` em 17/10/2026, junto com os 741 arquivos de teste apagados no
+# commit d67ea102 — este hook não os chama mais.
 #
 # 2026-08-13 — o `git add -u` daqui não tinha pathspec, e `git add -u` sem
 # pathspec varre a ÁRVORE INTEIRA: qualquer commit sugava junto todo trabalho
@@ -30,4 +20,54 @@ if [ -n "$STAGED" ]; then
 	printf '%s\n' "$STAGED" | tr '\n' '\0' | xargs -0 git add -- 2>/dev/null || true
 fi
 
-pnpm test:pre-commit
+# 2026-10-16 (2ª) — o dono voltou a fazer teste, mas PONTUAL e ESPECÍFICO. A
+# suíte inteira no commit é o que o `AGENTS.md` do repo chama de desperdício: ela
+# puxa banco e serviços compartilhados e o vermelho que aparece ali quase sempre é
+# do AMBIENTE, não do código recém-escrito — já custou 20 min de depuração de
+# ambiente para escrever uma linha de log nesta casa.
+#
+# A regra do hook, então: para cada arquivo que entrou no commit, rode os testes
+# que moram AO LADO dele. O repo nomeia teste por PREFIXO do arquivo de produto
+# (`qualify-state.ts` → `qualify-state.fix-364.test.ts`,
+# `qualify-state.carta-antes-do-cpf.test.ts`), então casar por prefixo pega todos:
+#
+#     src/lib/agent/qualify-state.ts  →  src/lib/agent/qualify-state.*.test.ts
+#
+# Nenhum teste casou? NÃO varre o repo com glob adivinhando intenção: não roda
+# nada e DIZ que não rodou. Assim o hook nunca fica vermelho por não existir
+# teste — e o dia em que o teste do arquivo voltar, ele roda sozinho.
+#
+# `--config.verify-deps-before-run=false`: todo trabalho aqui roda em worktree do
+# Orca, e o `pnpm` dispara `install` sozinho quando o `node_modules` da worktree
+# não bate com o lockfile (medido em 12/10/2026: 1min09s num único arquivo de
+# teste, com o tempo TODO no install, não no teste).
+TPLIST=$(mktemp)
+git diff --cached --name-only --diff-filter=ACMR | while IFS= read -r f; do
+	case "$f" in
+		src/*) ;;
+		*) continue ;;
+	esac
+	case "$f" in
+		*.test.ts | *.test.tsx) printf '%s\n' "$f" >>"$TPLIST"; continue ;;
+	esac
+	base=${f%.*}
+	[ "$f" = "$base" ] && continue
+	for t in "${base}".*.test.ts "${base}".*.test.tsx; do
+		[ -f "$t" ] && printf '%s\n' "$t" >>"$TPLIST"
+	done
+done
+# shellcheck disable=SC2086: a lista vira vários ARGUMENTOS do vitest, de propósito.
+TESTS=$(sort -u "$TPLIST" | tr '\n' ' ')
+rm -f "$TPLIST"
+
+if [ -n "$TESTS" ]; then
+	printf '%s\n' 'pre-commit: testes pontuais do que mudou:'
+	printf '%s\n' $TESTS | sed 's/^/  /'
+	pnpm --config.verify-deps-before-run=false vitest run $TESTS
+else
+	printf '%s\n' 'pre-commit: nenhum teste ao lado dos arquivos deste commit — gate de teste sem o que rodar.'
+	printf '%s\n' 'pre-commit: o teste do arquivo que você tocou deve morar ao lado dele (X.ts → X.*.test.ts).'
+fi
+
+printf '%s\n' 'pre-commit: lint'
+pnpm lint

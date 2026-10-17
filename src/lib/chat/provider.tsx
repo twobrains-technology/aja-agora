@@ -31,6 +31,7 @@ function varianteDaUrl(): string | null {
 	const valor = new URLSearchParams(window.location.search).get("variante")?.trim();
 	return valor && valor.length > 0 ? valor : null;
 }
+
 import type { AjaUIMessage } from "./ui-message";
 
 /** @deprecated Use `ChatAction` from `./actions`. Kept as alias for back-compat. */

@@ -171,10 +171,7 @@ export function FiltroAB({
 							{experimento.rotulo}:
 						</span>
 
-						<Select
-							value={atual ?? TODAS}
-							onValueChange={(braco) => trocar(experimento, braco)}
-						>
+						<Select value={atual ?? TODAS} onValueChange={(braco) => trocar(experimento, braco)}>
 							<SelectTrigger size="sm" aria-label={`Recorte do ${experimento.rotulo}`}>
 								{/* O rótulo entra explícito: o `SelectValue` sozinho só o
 								    encontra depois que a lista abre, e a tela mostraria o

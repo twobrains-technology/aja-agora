@@ -257,8 +257,8 @@ export function ConfigDaRegua() {
 					</CardHeader>
 					<CardContent className="space-y-2">
 						<p className="text-muted-foreground text-xs">
-							Os intervalos entre os toques enquanto a janela de 24 h da Meta está aberta. Fora dela, a
-							régua segue os dias entre os toques.
+							Os intervalos entre os toques enquanto a janela de 24 h da Meta está aberta. Fora
+							dela, a régua segue os dias entre os toques.
 						</p>
 
 						<div className="flex items-center gap-2">
@@ -280,8 +280,8 @@ export function ConfigDaRegua() {
 
 						<p className="text-muted-foreground text-xs">
 							Intervalos em minutos separados por vírgula, em ordem crescente. Cada um aceita de{" "}
-							{escala.minimo} a {escala.maximo} minutos, até {escala.maximoDePassos} intervalos. Deixe
-							em branco para voltar ao padrão de fábrica.
+							{escala.minimo} a {escala.maximo} minutos, até {escala.maximoDePassos} intervalos.
+							Deixe em branco para voltar ao padrão de fábrica.
 						</p>
 
 						{erroDaEscala && (
@@ -292,8 +292,8 @@ export function ConfigDaRegua() {
 
 						{escala.valorInvalido !== null && (
 							<p className="text-destructive text-xs">
-								Há uma escala gravada que a régua está ignorando (&quot;{escala.valorInvalido}&quot;) — por
-								isso o padrão de fábrica está valendo.
+								Há uma escala gravada que a régua está ignorando (&quot;{escala.valorInvalido}
+								&quot;) — por isso o padrão de fábrica está valendo.
 							</p>
 						)}
 					</CardContent>
