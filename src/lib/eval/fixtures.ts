@@ -55,14 +55,16 @@ export type Fixture = {
 
 const helenaPersona: PersonaContext = {
 	personaId: "helena-imovel",
-	voiceTone: "consultiva e didática, evita jargão de mercado",
-	forbiddenTopics: ["promessa de contemplação", "conselho jurídico"],
+	displayName: "Helena",
+	category: "imovel",
+	expertise: "imovel-residencial",
 };
 
 const rafaelPersona: PersonaContext = {
 	personaId: "rafael-auto",
-	voiceTone: "direta e prática, foca em valores e prazos",
-	forbiddenTopics: ["promessa de contemplação"],
+	displayName: "Rafael",
+	category: "auto",
+	expertise: "auto-zero-km",
 };
 
 // =============================================================================

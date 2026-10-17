@@ -182,18 +182,22 @@ async function loadPersonaContext(
 ): Promise<{ context: PersonaContext; version: number | null }> {
 	try {
 		const row = await getPersonaForAdmin(personaId);
-		const forbidden = row.forbiddenTopics
-			.filter((t) => t.enabled)
-			.map((t) => t.topic)
-			.filter(Boolean);
+		// Campos VIVOS da persona (lidos em produção). Os mortos — voiceTone,
+		// forbiddenTopics — não entram: julgar estilo por campo que ninguém
+		// alimenta mede o vazio.
 		return {
-			context: { personaId: row.id, voiceTone: row.voiceTone, forbiddenTopics: forbidden },
+			context: {
+				personaId: row.id,
+				displayName: row.displayName,
+				category: row.category,
+				expertise: row.expertise,
+			},
 			version: row.version,
 		};
 	} catch {
 		// Persona possivelmente removida; segue sem ela mas mantém o id pra rastreio.
 		return {
-			context: { personaId, voiceTone: null, forbiddenTopics: [] },
+			context: { personaId, displayName: null, category: null, expertise: null },
 			version: null,
 		};
 	}

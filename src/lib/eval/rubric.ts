@@ -53,7 +53,7 @@ decisões do agente.
 Esta conversa pode ter passado por mais de uma persona (ex: concierge → especialista
 de imóvel → especialista de auto). O transcript marca cada transição com
 "[--- Transição: persona muda de X para Y a partir do Turn N ---]". Avalie cada
-segmento contra a persona correspondente (voiceTone e forbiddenTopics da persona
+segmento contra a persona correspondente (nome, categoria e expertise da persona
 ativa naquele segmento). Em **Continuidade**, considere também a suavidade da
 transição em si (o agente fez bridge claro? perdeu contexto coletado antes?).
 
@@ -94,7 +94,8 @@ Se o tom e a forma estão alinhados com a persona configurada e o canal da conve
 Heurísticas:
 - Pra **WhatsApp**, mensagens >800 caracteres ou vários parágrafos sem motivo são desvio.
 - Pra **leigo**, jargão como "cota", "lance livre", "contemplação" sem explicação é desvio.
-- Compare contra \`voiceTone\` da persona.
+- Compare com o segmento da persona (categoria e expertise): o especialista certo
+  fala a língua daquele bem.
 
 ### 5. Assertividade (correção factual e decisões)
 Se a informação dada está correta e se as decisões foram acertadas.
@@ -104,7 +105,8 @@ Se a informação dada está correta e se as decisões foram acertadas.
 
 Use \`numbersInTextFlagged\` — números citados pelo agente que não aparecem em nenhum
 artifact. Cada um é um sinal forte de alucinação.
-Use a lista \`forbiddenTopics\` da persona.
+Tópico proibido é o que a lei ou a administradora proíbe (promessa de contemplação,
+reserva de cota, consultoria jurídica) — não existe lista por persona.
 
 ## Flags (booleanos)
 
@@ -151,10 +153,21 @@ Output esperado (estrutura):
   "topStrengths": ["Coleta natural de contexto", "Linguagem ajustada ao leigo"]
 }`;
 
+/**
+ * O que o juiz precisa saber da persona: QUEM ela é e para que segmento.
+ *
+ * Re-ancorado em 17/10/2026: antes o contexto trazia `voiceTone` e
+ * `forbiddenTopics`, campos que saíram do caminho de produção por serem mortos
+ * (a conduta passou a viver na caixa de prompt). Julgar estilo por um campo que
+ * ninguém alimenta mede o vazio — o juiz agora compara com `displayName`,
+ * `category` e `expertise`, que continuam vivos e são lidos em produção
+ * (`personas-repo.ts` → `analyze.ts` → `routing.ts`).
+ */
 export type PersonaContext = {
 	personaId: string | null;
-	voiceTone: string | null;
-	forbiddenTopics: string[];
+	displayName: string | null;
+	category: string | null;
+	expertise: string | null;
 };
 
 export function buildJudgePrompt(args: {
@@ -194,17 +207,11 @@ function formatPersonas(personas: PersonaContext[]): string {
 }
 
 function formatPersona(p: PersonaContext): string {
-	const lines = [
-		`Persona ID: ${p.personaId ?? "(não definida)"}`,
-		`Voice tone: ${p.voiceTone ?? "(não definida)"}`,
-	];
-	if (p.forbiddenTopics.length > 0) {
-		lines.push("Tópicos proibidos:");
-		for (const t of p.forbiddenTopics) lines.push(`  - ${t}`);
-	} else {
-		lines.push("Tópicos proibidos: (nenhum configurado)");
-	}
-	return lines.join("\n");
+	return [
+		`Persona: ${p.displayName ?? "(sem nome)"} (id: ${p.personaId ?? "n/d"})`,
+		`Categoria: ${p.category ?? "(não definida)"}`,
+		`Expertise: ${p.expertise ?? "(generalista)"}`,
+	].join("\n");
 }
 
 function formatSignals(s: DeterministicSignals): string {
