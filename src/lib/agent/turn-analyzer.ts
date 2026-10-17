@@ -342,7 +342,24 @@ export async function analyzeTurn(
 		const result = await generateObject({
 			model: modeloAiSdkDoGateway(modeloDoAnalisador()),
 			schema: turnAnalysisSchema,
-			system: managedSystem.text + renderSubTopicSection(subTopics),
+			// A PALAVRA "json" É EXIGÊNCIA DO PROVIDER, não estilo.
+			//
+			// `generateObject` manda `response_format: json_object`, e endpoints
+			// compatíveis com OpenAI (Qwen/DashScope via LiteLLM, entre outros)
+			// recusam com 400: "'messages' must contain the word 'json' in some form,
+			// to use 'response_format' of type 'json_object'". Medido em 17/10/2026 no
+			// workspace local: o analyzer falhava em TODOS os turnos, o funil não
+			// extraía categoria e a conversa travava no gate do nome — com o app
+			// "funcionando" na tela.
+			//
+			// O texto do system vem da caixa (Langfuse) e não pode ser editado por
+			// nós para satisfazer um requisito técnico de quem serve o modelo. Então a
+			// linha entra AQUI, do lado que é contrato: se o provider exigir a palavra,
+			// ela existe, com qualquer prompt que a caixa entregue.
+			system:
+				managedSystem.text +
+				renderSubTopicSection(subTopics) +
+				"\n\nResponda em JSON, conforme o schema.",
 			prompt: `Persona ativa atualmente: ${currentPersona}${anchorHint}
 Mensagem do usuário: "${text}"${contextHint}
 
