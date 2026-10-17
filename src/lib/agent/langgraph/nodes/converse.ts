@@ -15,7 +15,14 @@ import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages
 import { RunnablePassthrough, RunnableSequence } from "@langchain/core/runnables";
 import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
-import { blocoDeSituacoes, fatoDeFechamento, fatoDeReveal } from "@/lib/agent/box/situacoes";
+import {
+	blocoDeSituacoes,
+	fatoDeCanal,
+	fatoDeFechamento,
+	fatoDeNovato,
+	fatoDeRetomadaPosFechamento,
+	fatoDeReveal,
+} from "@/lib/agent/box/situacoes";
 import { escolhaPodeSerAncorada } from "@/lib/agent/escolha-ancoravel";
 import { blocoDeFechoPendente } from "@/lib/agent/fecho-pendente";
 import {
@@ -366,21 +373,12 @@ export function resumeAfterCloseSection(
 	isResumeGreeting: boolean,
 	administradora: string | null | undefined,
 ): string | null {
+	// CONDUTA migrada para a caixa ("### retomada-pos-fechamento"). O que sobra
+	// aqui é o FATO: fechou, ele voltou, e com qual administradora. A instrução de
+	// reconhecer a reserva na primeira frase (FIX-368) mora na caixa, onde pode ser
+	// ajustada sem deploy.
 	if (!contractClosed || !isResumeGreeting) return null;
-	const admin = administradora ?? "administradora escolhida";
-	return (
-		`## Retomada pós-fechamento — primeira frase reconhece a reserva (FIX-368)\n` +
-		`Esta é a PRIMEIRA mensagem do usuário desde que ele voltou pra conversa — e a ` +
-		`proposta JÁ está fechada, com a ${admin}.\n\n` +
-		`REGRA DURA: a PRIMEIRA frase da sua resposta reconhece explicitamente que a reserva ` +
-		`já está confirmada e com a administradora, e reforça que um atendente da Aja Agora ` +
-		`fala com ele pelo WhatsApp em breve (pra pedir documentos/seguir os próximos ` +
-		`passos). NUNCA trate esta retomada como se a jornada ainda estivesse em aberto: não ` +
-		`pergunte se ele travou em alguma parte do formulário, não re-pergunte uma decisão ` +
-		`que já foi tomada (ex.: qual cenário de lance embutido), não convide a "seguir com a ` +
-		`contratação" — isso tudo já aconteceu. Escreva com SUAS próprias palavras (isto não ` +
-		`é um texto fixo) — o fato determinístico é só o que está descrito acima.`
-	);
+	return blocoDeSituacoes([fatoDeRetomadaPosFechamento({ administradora })]);
 }
 
 function toBaseMessage(m: { role: "user" | "assistant"; content: string }): BaseMessage {
@@ -960,13 +958,10 @@ export function createConverseNode(model: BaseChatModel) {
 		// a flag, ela insiste até acontecer — e acontece uma vez só.
 		const deveExplicarComoFunciona =
 			state.funnel.experiencePrev === "first" && !state.funnel.explicouComoFunciona;
-		const blocoNovato = deveExplicarComoFunciona
-			? `Ele acabou de dizer que é a PRIMEIRA VEZ dele com consórcio. Antes de seguir pro ` +
-				`próximo passo, explique o mecanismo em 2 ou 3 frases suas, sem jargão: entra num grupo, ` +
-				`paga a parcela (sem juros, só a taxa da administradora), e todo mês alguém é contemplado ` +
-				`— por sorteio ou por lance —, recebendo a carta pra comprar à vista. Só DEPOIS disso ` +
-				`emende a próxima pergunta. Não diga "te explico no caminho": explique agora.`
-			: null;
+		// CONDUTA migrada para a caixa ("### novato", em `system-prompt.ts` / prompt
+		// gerenciado): como explicar consórcio a quem é de primeira viagem deixou de
+		// ser texto em código. Aqui fica só o fato do turno.
+		const blocoNovato = deveExplicarComoFunciona ? blocoDeSituacoes([fatoDeNovato()]) : null;
 
 		// ── O CANAL NÃO TEM TELA ──
 		// No WhatsApp não existe card, botão nem "aqui em cima": tudo é mensagem.
@@ -978,29 +973,10 @@ export function createConverseNode(model: BaseChatModel) {
 		// (`whatsapp/adapter.ts` pede o CPF por texto; `identify-capture.ts` o lê
 		// do texto). Produção 2026-08-13: o cliente ofereceu o CPF e o agente
 		// recusou — obedecendo, corretamente, à regra do canal errado.
-		const blocoCanal =
-			state.channel === "whatsapp"
-				? `Vocês estão conversando pelo WHATSAPP: não existe tela, card, botão nem "aqui em cima". ` +
-					`É PROIBIDO dizer "na tela", "no card", "clica em", "aqui na minha tela" ou pedir que ele ` +
-					`role/toque em algo — fale como quem fala ao telefone. Isso é só sobre COMO você escreve; ` +
-					`não muda o assunto do turno nem te autoriza a reconfirmar coisas já decididas. ` +
-					`AQUI A IDENTIFICAÇÃO É POR MENSAGEM: o CPF chega escrito na conversa, e o sistema o ` +
-					`recebe e protege sozinho. NUNCA recuse o CPF que o cliente mandar, nunca diga que ele ` +
-					`"não precisa mandar" nem que "isso fica pra depois, na plataforma" — não existe outra ` +
-					`plataforma neste canal. Se ele já mandou, apenas siga com a conversa. ` +
-					// O agente pediu "seu WhatsApp pra gente manter contato" a um cliente
-					// que estava falando com ele PELO WhatsApp (`fd76e393`, 16/08/2026
-					// 19:23:24 — "uai, ja estamos falando nele?"). A janela dizia como
-					// ESCREVER no canal, mas nunca dizia o que o canal É: sem esse fato,
-					// o modelo seguiu o roteiro genérico de identificação, que pede CPF
-					// e celular.
-					`E ESTE NÚMERO JÁ É O WHATSAPP DELE: é por ele que vocês estão falando agora. NUNCA ` +
-					`peça "o seu WhatsApp", "um número pra contato" ou "um telefone pra gente te chamar" — ` +
-					`você já está no telefone dele.`
-				: `Vocês estão na WEB, onde existe tela: os dados de identificação (CPF, celular, aceite) ` +
-					`são digitados no formulário que o sistema abre, não por mensagem. Não peça CPF por ` +
-					`texto — mas se o cliente escrever o dele mesmo assim, NUNCA o repreenda nem diga que ` +
-					`ele não devia: agradeça e siga, que o sistema cuida do resto.`;
+		// CONDUTA migrada para a caixa ("### canal"): como escrever em cada canal
+		// (sem tela no WhatsApp, formulário na web) é orientação, não estado. O
+		// código entrega o fato do canal e a caixa decide a redação.
+		const blocoCanal = blocoDeSituacoes([fatoDeCanal(state.channel)]);
 
 		// ── A CONTRATAÇÃO FOI OFERECIDA E AINDA NÃO ACONTECEU ──
 		// No web a contratação se conclui com o cliente confirmando os dados no

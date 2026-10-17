@@ -34,6 +34,9 @@ const CONDUTA_MIGRADA = [
 	"Termine SEM pergunta",
 	"não peça pra ele clicar em botão nenhum",
 	"motivo não vende",
+	"te explico no caminho",
+	"fale como quem fala ao telefone",
+	"trate esta retomada como se a jornada",
 ];
 
 describe("caixa — toda situação tem conduta escrita nela", () => {

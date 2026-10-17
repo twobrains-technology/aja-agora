@@ -28,7 +28,13 @@
  * mesmo nome na caixa (`system-prompt.ts`, "Situações do turno") — o teste
  * `situacoes.test.ts` cobra chave por chave, então acrescentar uma aqui sem
  * escrever a seção dela fica vermelho na hora. */
-export const SITUACAO_KEYS = ["fechamento", "reveal"] as const;
+export const SITUACAO_KEYS = [
+	"fechamento",
+	"reveal",
+	"retomada-pos-fechamento",
+	"novato",
+	"canal",
+] as const;
 
 export type SituacaoKey = (typeof SITUACAO_KEYS)[number];
 
@@ -88,4 +94,39 @@ export function fatoDeReveal(d: {
 				chave: "reveal",
 				fato: `primeira apresentação das opções neste turno${quem}${valores}; os cards com todas as ofertas aparecem logo abaixo desta mensagem.`,
 			};
+}
+
+/** É a primeira vez do cliente com consórcio. */
+export function fatoDeNovato(): SituacaoDoTurno {
+	return {
+		chave: "novato",
+		fato: "é a PRIMEIRA VEZ do cliente com consórcio, e ele acabou de dizer isso.",
+	};
+}
+
+/** O canal muda o que existe na tela e por onde a identificação chega. */
+export function fatoDeCanal(canal: "web" | "whatsapp" | (string & {})): SituacaoDoTurno {
+	return {
+		chave: "canal",
+		fato:
+			canal === "whatsapp"
+				? "canal: WhatsApp — conversa por MENSAGEM; não existe tela, card nem botão; o CPF chega escrito " +
+					"nesta conversa; este número já é o WhatsApp dele."
+				: "canal: web — existe tela; a identificação (CPF, celular, aceite) é digitada no formulário " +
+					"que o sistema abre.",
+	};
+}
+
+/** O cliente VOLTOU depois de fechar: primeira mensagem desde então. */
+export function fatoDeRetomadaPosFechamento(d: {
+	administradora?: string | null;
+}): SituacaoDoTurno {
+	const adm = d.administradora ?? "a administradora escolhida";
+	return {
+		chave: "retomada-pos-fechamento",
+		fato:
+			`é a PRIMEIRA mensagem do cliente desde que ele voltou à conversa; a proposta JÁ está ` +
+			`fechada, com ${adm}, e um atendente da Aja Agora vai falar com ele pelo WhatsApp em breve ` +
+			`(documentos e próximos passos).`,
+	};
 }
