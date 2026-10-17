@@ -52,8 +52,13 @@ git diff --cached --name-only --diff-filter=ACMR | while IFS= read -r f; do
 	esac
 	base=${f%.*}
 	[ "$f" = "$base" ] && continue
+	# `if` e não `[ -f ] && printf`: a husky roda este arquivo com `sh -e`, e um
+	# AND-list falso (arquivo sem teste ao lado) derrubava o hook com exit 1 SEM
+	# mensagem — o commit morria dizendo "pre-commit script failed (code 1)" e
+	# nada mais. Medido em 17/10/2026, no primeiro commit que tocou código de
+	# produto (os anteriores só mexeram em `*.test.ts`, que saem no `case` acima).
 	for t in "${base}".*.test.ts "${base}".*.test.tsx; do
-		[ -f "$t" ] && printf '%s\n' "$t" >>"$TPLIST"
+		if [ -f "$t" ]; then printf '%s\n' "$t" >>"$TPLIST"; fi
 	done
 done
 # shellcheck disable=SC2086: a lista vira vários ARGUMENTOS do vitest, de propósito.

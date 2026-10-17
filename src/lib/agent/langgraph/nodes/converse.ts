@@ -15,6 +15,7 @@ import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages
 import { RunnablePassthrough, RunnableSequence } from "@langchain/core/runnables";
 import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
+import { blocoDeSituacoes, fatoDeFechamento, fatoDeReveal } from "@/lib/agent/box/situacoes";
 import { escolhaPodeSerAncorada } from "@/lib/agent/escolha-ancoravel";
 import { blocoDeFechoPendente } from "@/lib/agent/fecho-pendente";
 import {
@@ -1180,19 +1181,21 @@ export function createConverseNode(model: BaseChatModel) {
 		// A adesão na administradora é feita por um atendente humano, e o canal do
 		// contato muda conforme onde a conversa aconteceu. São fatos operacionais
 		// (quem faz, por onde, qual número) — viram contexto; a fala continua dele.
+		// FECHAMENTO — o FATO fica aqui, a CONDUTA vive na caixa.
+		//
+		// O texto que dizia "não repita nada disso, não peça pra clicar, não liste os
+		// próximos passos" estava AQUI, depois da caixa, e portanto vencia a caixa:
+		// mudar como o agente fala no fecho exigia engenheiro e deploy. Agora o código
+		// entrega só o que o sistema SABE (contrato fechado, quais cards estão na
+		// tela, qual administradora) e a conduta correspondente está na seção
+		// "Situações do turno" de `system-prompt.ts` / do prompt gerenciado.
 		const blocoFechamento = state.baseMeta.contractClosed
-			? `O fechamento JÁ está feito, e o sistema JÁ mostrou na tela os cards do fecho: a ` +
-				`proposta em PDF e ` +
-				(state.channel === "whatsapp"
-					? `o aviso de que um atendente da Aja Agora vai chamar por este mesmo número pra fazer ` +
-						`a ADESÃO na ${state.funnel.recommendedAdministradora ?? "administradora escolhida"}.`
-					: `o card com o botão do WhatsApp oficial, por onde um atendente da Aja Agora vai ` +
-						`continuar com ele pra fazer a ADESÃO na ` +
-						`${state.funnel.recommendedAdministradora ?? "administradora escolhida"}.`) +
-				` Você NÃO precisa repetir nada disso: não escreva o número de telefone, não peça pra ` +
-				`ele clicar em botão nenhum e não liste os próximos passos de novo. Se ele falar com ` +
-				`você, responda o que ele perguntar, com naturalidade. Nunca prometa prazo de ` +
-				`contemplação nem diga que a cota está reservada.`
+			? blocoDeSituacoes([
+					fatoDeFechamento({
+						canal: state.channel,
+						administradora: state.funnel.recommendedAdministradora,
+					}),
+				])
 			: null;
 
 		const blocoRetomadaPosFechamento = resumeAfterCloseSection(
@@ -1201,19 +1204,20 @@ export function createConverseNode(model: BaseChatModel) {
 			state.funnel.recommendedAdministradora,
 		);
 
+		// TURNO DE APRESENTAÇÃO — de novo, FATO aqui e CONDUTA na caixa. O texto que
+		// ordenava fechar sem pergunta, não anunciar pergunta seguinte e dizer por que
+		// a opção é a certa pra ele vivia em código e vencia a caixa; agora o turno leva
+		// a situação `reveal` com o estado real (recomendou ou não, qual administradora,
+		// que valores) e a caixa decide como falar.
 		const systemBeat1 = montarSystem(
 			turnoDeApresentacao
-				? `Esta MENSAGEM é só a apresentação. ${
-						ehRecomendacao
-							? `Você está RECOMENDANDO uma opção — a ${oferta?.administradora}. Diga que é a sua ` +
-								`indicação e, principalmente, POR QUÊ ela é a certa pra ele, usando o que ele te ` +
-								`contou. Recomendação sem motivo não vende.`
-							: `Conte o que encontrou como um vendedor experiente contaria — o que chamou sua ` +
-								`atenção nesses números e por quê.`
-					} ` +
-						`Termine SEM pergunta: nenhuma frase sua pode terminar em "?" aqui, e não anuncie ` +
-						`que vai perguntar algo em seguida. Os CARDS com as opções aparecem logo abaixo da ` +
-						`sua mensagem, e são eles o próximo passo — deixe o cliente olhar. Seja breve.`
+				? blocoDeSituacoes([
+						fatoDeReveal({
+							recomendada: ehRecomendacao,
+							administradora: oferta?.administradora ?? null,
+							valor: oferta?.creditValue ?? null,
+						}),
+					])
 				: conducaoDoTurno,
 		);
 		let loopMessages: BaseMessage[] = [
