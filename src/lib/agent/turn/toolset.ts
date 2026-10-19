@@ -1,4 +1,4 @@
-// O toolset REAL que o modelo recebe no nó `converse` do grafo.
+// O toolset REAL que o modelo recebe no beat de fala.
 //
 // Vive num módulo próprio (e não dentro de `nodes/converse.ts`) porque não é só
 // o converse que precisa saber o que o modelo pode chamar: quem ESCREVE
@@ -38,6 +38,9 @@ export const WHAT_IF_TOOL_NAMES = [
 	// ela foi mesmo exibida. Sem isto o servidor tentava adivinhar sozinho e
 	// fechava contrato numa cota diferente da que o cliente falou.
 	"escolher_cota",
+	// O modelo registra o que o cliente pediu (categoria, valor, parcela). É o
+	// que substituiu o analyzer: o agente que entende a frase é quem a registra.
+	"registrar_pedido",
 	"check_proposal_status",
 	"suggest_handoff",
 	"save_contact_name",
