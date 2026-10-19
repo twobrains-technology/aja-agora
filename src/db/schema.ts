@@ -1913,3 +1913,33 @@ export const exportacoes = pgTable(
 export const exportacoesRelations = relations(exportacoes, ({ one }) => ({
 	usuario: one(user, { fields: [exportacoes.usuarioId], references: [user.id] }),
 }));
+
+// A CAIXA DE PROMPT (conduta do agente), versionada no PRÓPRIO banco.
+//
+// Ela substitui o prompt management do Langfuse (19/10/2026). Os defeitos que
+// motivaram a mudança, todos medidos: (a) a label do prompt era compartilhada
+// entre prod, dev e local — publicar para testar em dev mudava a conduta de
+// produção junto (17/10, três versões publicadas e revertidas); (b) a caixa
+// dependia de um serviço externo no caminho do turno do cliente.
+//
+// Cada linha é uma VERSÃO imutável: editar = inserir versão nova. `label` diz
+// quem lê aquela versão (`production`, `dev`, `staging`); a leitura pega a MAIOR
+// versão da label do ambiente. O texto do código (`SYSTEM_PROMPT`) continua
+// sendo o fallback: banco fora do ar nunca derruba o turno.
+export const caixaDePrompt = pgTable(
+	"caixa_de_prompt",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		/** `aja-system-prompt` — o mesmo nome do prompt que vivia no Langfuse. */
+		nome: text().notNull(),
+		label: text().notNull().default("production"),
+		versao: integer().notNull(),
+		texto: text().notNull(),
+		/** Quem publicou (e-mail do operador) — auditoria de quem mudou a conduta. */
+		publicadoPor: text("publicado_por"),
+		criadoEm: timestamp("criado_em", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [
+		uniqueIndex("caixa_de_prompt_nome_label_versao_idx").on(table.nome, table.label, table.versao),
+	],
+);

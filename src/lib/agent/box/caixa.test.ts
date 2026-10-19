@@ -1,0 +1,86 @@
+import { afterEach, describe, expect, it } from "vitest";
+import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
+import {
+	caixaDoCodigo,
+	decidirCaixa,
+	escolherLinha,
+	labelDaCaixa,
+	lerCaixa,
+	limparCacheDaCaixa,
+} from "./caixa";
+
+afterEach(() => limparCacheDaCaixa());
+
+describe("caixa — a versão publicada governa", () => {
+	it("a MAIOR versão vence, independente da ordem em que veio", () => {
+		const caixa = decidirCaixa(
+			[
+				{ versao: 3, texto: "terceira" },
+				{ versao: 11, texto: "decima primeira" },
+				{ versao: 7, texto: "setima" },
+			],
+			"production",
+		);
+		expect(caixa.texto).toBe("decima primeira");
+		expect(caixa.versao).toBe(11);
+		expect(caixa.origem).toBe("banco");
+	});
+
+	it("versão publicada EM BRANCO não governa — volta para a maior válida", () => {
+		const caixa = decidirCaixa([
+			{ versao: 4, texto: "conduta boa" },
+			{ versao: 5, texto: "   " },
+		]);
+		expect(caixa.versao).toBe(4);
+		expect(caixa.texto).toBe("conduta boa");
+	});
+
+	it("sem nenhuma versão, a caixa é o texto do código (turno nunca fica sem conduta)", () => {
+		expect(escolherLinha([])).toBeNull();
+		const caixa = decidirCaixa([]);
+		expect(caixa.origem).toBe("codigo");
+		expect(caixa.versao).toBe(0);
+		expect(caixa.texto).toBe(SYSTEM_PROMPT);
+	});
+
+	it("a label é por ambiente: CAIXA_LABEL manda e o default é production", () => {
+		expect(labelDaCaixa({} as NodeJS.ProcessEnv)).toBe("production");
+		expect(labelDaCaixa({ CAIXA_LABEL: "dev" } as unknown as NodeJS.ProcessEnv)).toBe("dev");
+		expect(caixaDoCodigo("dev").label).toBe("dev");
+	});
+});
+
+describe("caixa — a leitura não derruba o turno", () => {
+	it("banco fora do ar devolve o texto do código", async () => {
+		const caixa = await lerCaixa({
+			buscarLinhas: async () => {
+				throw new Error("connect ECONNREFUSED");
+			},
+		});
+		expect(caixa.origem).toBe("codigo");
+		expect(caixa.texto).toBe(SYSTEM_PROMPT);
+	});
+
+	it("lê a label pedida e respeita o cache por label", async () => {
+		const chamadas: string[] = [];
+		const buscarLinhas = async (_nome: string, label: string) => {
+			chamadas.push(label);
+			return label === "dev"
+				? [{ versao: 2, texto: "conduta de dev" }]
+				: [{ versao: 9, texto: "conduta de producao" }];
+		};
+
+		const prod = await lerCaixa({ label: "production", buscarLinhas });
+		expect(prod.texto).toBe("conduta de producao");
+
+		// mesmo label de novo: sem nova ida ao banco (o cache é do label corrente)
+		await lerCaixa({ label: "production", buscarLinhas });
+		expect(chamadas).toEqual(["production"]);
+
+		// trocar de label relê — cada ambiente lê a SUA versão, nunca a do vizinho
+		const dev = await lerCaixa({ label: "dev", buscarLinhas });
+		expect(dev.texto).toBe("conduta de dev");
+		expect(dev.label).toBe("dev");
+		expect(chamadas).toEqual(["production", "dev"]);
+	});
+});
