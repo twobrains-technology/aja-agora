@@ -30,11 +30,17 @@ async function main(): Promise<void> {
 	console.log(`Label verificada: ${label}`);
 	console.log(`Origem da caixa em uso: ${caixa.origem} (versão ${caixa.versao})`);
 
+	// Sem versão publicada o agente roda o TEXTO DO CÓDIGO — e isso é o estado
+	// normal até alguém publicar a primeira versão na caixa. Não é falha: o
+	// deploy não pode ser barrado por isso (o CI roda este check a cada deploy,
+	// e em 19/10/2026 a primeira versão em produção foi justamente o código).
+	// Quem quiser o comportamento estrito (gate de promoção) passa `--strict`.
 	if (caixa.origem === "codigo") {
-		console.error(
-			`✗ não há versão publicada para a label "${label}" — o agente está rodando o texto do código.`,
-		);
-		process.exit(1);
+		const estrito = process.argv.includes("--strict");
+		const linha = `não há versão publicada para a label "${label}" — o agente roda o texto do código.`;
+		if (estrito) console.error(`✗ ${linha}`);
+		else console.log(`ℹ️  ${linha}`);
+		process.exit(estrito ? 1 : 0);
 	}
 
 	if (caixa.texto.trim() === SYSTEM_PROMPT.trim()) {
