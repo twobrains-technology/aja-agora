@@ -45,3 +45,13 @@ allowBuilds:
 overrides:
   "@aws-sdk/core": 3.974.24
   "@smithy/core": 3.28.0
+
+# Build scripts AUTORIZADOS (pnpm 11 recusa rodar script de dependência sem
+# aprovação explícita e ABORTA o install com ERR_PNPM_IGNORED_BUILDS).
+#
+# `@google/genai` e `protobufjs` entraram com o pacote do pi (harness do turno).
+# Sem esta lista o build do container morre em `pnpm install --frozen-lockfile`
+# — medido em 19/10/2026 no primeiro deploy do motor novo.
+onlyBuiltDependencies:
+  - '@google/genai'
+  - protobufjs
