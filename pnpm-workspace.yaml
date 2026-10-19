@@ -52,6 +52,10 @@ overrides:
 # `@google/genai` e `protobufjs` entraram com o pacote do pi (harness do turno).
 # Sem esta lista o build do container morre em `pnpm install --frozen-lockfile`
 # — medido em 19/10/2026 no primeiro deploy do motor novo.
-onlyBuiltDependencies:
+# Estes dois NÃO precisam rodar: o `preinstall` do @google/genai é um no-op
+# declarado (`echo 'preinstall: no-op'`) e o `postinstall` do protobufjs só gera
+# artefatos opcionais. Declarar como IGNORADOS satisfaz a política do pnpm sem
+# executar código de terceiro no build.
+ignoredBuiltDependencies:
   - '@google/genai'
   - protobufjs
