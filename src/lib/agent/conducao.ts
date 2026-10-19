@@ -3,7 +3,7 @@
 // Módulo PURO e sem dependência de observabilidade, de propósito: a mesma
 // pergunta é feita por dois consumidores que não podem discordar —
 //
-//   • o score `conducao_entregue` (`observability/langfuse/conducao-scores.ts`),
+//   • o score `conducao_entregue` (`observability/sinais/conducao-scores.ts`),
 //     que mede a taxa em produção;
 //   • o marcador de pendência do watchdog (`nodes/persist.ts` →
 //     `pendingGateAfterTurn`), que decide se alguém volta a puxar a conversa.

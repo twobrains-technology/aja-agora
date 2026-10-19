@@ -1,4 +1,4 @@
-// CENÁRIO DE CONVERSA NO MOTOR DO PI — o irmão de `langgraph/testing/scenario.ts`.
+// CENÁRIO DE CONVERSA NO MOTOR DO PI — o irmão de `pi/testing/cenario.ts`.
 //
 // Roda o turno DE VERDADE (capture → analyze → route → advance → discovery? →
 // fala do pi → emitCard → persist) contra o Postgres de verdade, com as DUAS

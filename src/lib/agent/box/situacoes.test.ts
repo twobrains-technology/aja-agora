@@ -8,7 +8,7 @@ import { afterAll, describe, expect, it } from "vitest";
 // propósito:
 //
 //  1. o `.env.local` que o bootstrap gera aponta o Langfuse para a instância de
-//     PRODUÇÃO (`langfuse.twobrainstechnology.com`) — medido em 17/10/2026 — e um
+//     remoto compartilhado entre prod e dev — medido em 17/10/2026 — e um
 //     teste unitário não deve depender de (nem exercitar) infra de produção;
 //  2. o texto publicado é um ARTEFATO OPERACIONAL, versionado lá; o que o código
 //     garante é que a seção existe no fallback e que o fato chega ao modelo.

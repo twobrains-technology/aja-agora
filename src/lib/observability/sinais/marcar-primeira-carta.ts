@@ -56,6 +56,6 @@ export async function marcarPrimeiraCarta(
 			isSimulated: false,
 		});
 	} catch (err) {
-		console.error("[langfuse] marco da primeira carta não registrado (ignorado):", err);
+		console.error("[sinal] marco da primeira carta não registrado (ignorado):", err);
 	}
 }

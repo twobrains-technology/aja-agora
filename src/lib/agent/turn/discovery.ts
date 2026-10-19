@@ -44,8 +44,8 @@ import { loadAdministradoraLogoMap } from "@/lib/consorcio/administradora-logo-r
 import {
 	registrarBuscaDespachada,
 	registrarOfertaExibida,
-} from "@/lib/observability/langfuse/busca-scores";
-import { registrarFalhasDeTool } from "@/lib/observability/langfuse/funil-scores";
+} from "@/lib/observability/sinais/busca-scores";
+import { registrarFalhasDeTool } from "@/lib/observability/sinais/funil-scores";
 
 /** FIX-374 — snapshot do grupo REAL ranqueado (`best`) que sobrevive no meta
  * pra emissão server-side pós-reveal (`recommendedOffer`, personas.ts). Extraída
@@ -78,7 +78,7 @@ const PRAZO_ALVO_MENOR_PARCELA = 120;
 
 import { buildConsorcioTools } from "@/lib/agent/tools/ai-sdk";
 import type { EstadoDoTurno, FunnelState } from "@/lib/agent/turn/estado";
-import { marcarPrimeiraCarta } from "@/lib/observability/langfuse/marcar-primeira-carta";
+import { marcarPrimeiraCarta } from "@/lib/observability/sinais/marcar-primeira-carta";
 import { artifactAllowed, type GuardContext } from "./guarded-artifact";
 
 /** Fronteira EXTERNA do nó: a busca real na Bevi. Injetável pelo mesmo motivo

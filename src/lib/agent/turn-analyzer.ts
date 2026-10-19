@@ -1,8 +1,6 @@
 import { generateObject } from "ai";
 import { z } from "zod";
 import { modeloAiSdkDoGateway, modeloDoAnalisador } from "@/lib/llm/model-provider";
-import { isLangfuseConfigured } from "@/lib/observability/langfuse/env";
-import { fetchManagedPrompt, PROMPT_NAMES } from "@/lib/observability/langfuse/prompts";
 import type { Category, ConversationMetadata } from "./personas";
 import { listExpertisesByCategory } from "./personas-repo";
 
@@ -343,10 +341,11 @@ export async function analyzeTurn(
 	const controller = new AbortController();
 	const timeoutId = setTimeout(() => controller.abort(), ANALYZER_TIMEOUT_MS);
 	try {
-		// Prompt Management: base do system pode vir do Langfuse (label
-		// `production`, cache 60s); fallback é a constante do código, sempre.
-		// A seção de sub-tópicos é dinâmica (vem do DB) — continua código.
-		const managedSystem = await fetchManagedPrompt(PROMPT_NAMES.analyzer, BASE_SYSTEM_INSTRUCTION);
+		// O system do ANALYZER é instrução técnica de extração, não conduta do
+		// agente — então vive no código (e não na caixa, que governa como o agente
+		// FALA). Até 19/10/2026 isso passava pelo prompt management do Langfuse;
+		// com o Langfuse fora, é constante de código outra vez.
+		const sistemaDoAnalyzer = BASE_SYSTEM_INSTRUCTION;
 		const result = await generateObject({
 			model: modeloAiSdkDoGateway(modeloDoAnalisador()),
 			schema: turnAnalysisSchema,
@@ -360,12 +359,11 @@ export async function analyzeTurn(
 			// extraía categoria e a conversa travava no gate do nome — com o app
 			// "funcionando" na tela.
 			//
-			// O texto do system vem da caixa (Langfuse) e não pode ser editado por
-			// nós para satisfazer um requisito técnico de quem serve o modelo. Então a
-			// linha entra AQUI, do lado que é contrato: se o provider exigir a palavra,
-			// ela existe, com qualquer prompt que a caixa entregue.
+			// O texto do system não pode ser editado para satisfazer requisito técnico
+			// de quem serve o modelo. Então a linha entra AQUI, do lado que é
+			// contrato: se o provider exigir a palavra, ela existe.
 			system:
-				managedSystem.text +
+				sistemaDoAnalyzer +
 				renderSubTopicSection(subTopics) +
 				"\n\nResponda em JSON, conforme o schema.",
 			prompt: `Persona ativa atualmente: ${currentPersona}${anchorHint}
@@ -373,15 +371,6 @@ Mensagem do usuário: "${text}"${contextHint}
 
 Analise conforme o schema. Use null em campos sem sinal claro.`,
 			abortSignal: controller.signal,
-			// Spans OTel do AI SDK aninham no trace do turno (withLangfuseTurn) —
-			// é assim que o classificador aparece no mesmo trace do converse.
-			experimental_telemetry: {
-				isEnabled: isLangfuseConfigured(),
-				functionId: "turn-analyzer",
-				...(managedSystem.lfPrompt
-					? { metadata: { langfusePrompt: managedSystem.lfPrompt.toJSON() } }
-					: {}),
-			},
 		});
 
 		const elapsed = Date.now() - start;

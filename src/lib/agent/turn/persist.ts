@@ -26,8 +26,8 @@ import { sincronizarNomeDoContato } from "@/lib/contacts/sincronizar-nome";
 import { registrarCardEnviado } from "@/lib/conversation/cards";
 import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta } from "@/lib/conversation/meta";
-import { registrarEstadoDoFunil } from "@/lib/observability/langfuse/busca-scores";
-import { registrarConducao } from "@/lib/observability/langfuse/conducao-scores";
+import { registrarEstadoDoFunil } from "@/lib/observability/sinais/busca-scores";
+import { registrarConducao } from "@/lib/observability/sinais/conducao-scores";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
 
 /** Texto com cara de directive interno (nunca é o cliente digitando). */
@@ -226,7 +226,7 @@ export async function persistNode(
 
 	// FIX-207 (watchdog) — o marcador que o worker `gate-reengage-poll` procura.
 	// Ele era escrito SÓ no runtime Vercel (orchestrator/index.ts), e o dispatcher
-	// desvia pro grafo antes daquele bloco: sob `AI_RUNTIME=langgraph` nenhum
+	// desvia pro turno antes daquele bloco: nenhum
 	// caminho gravava `pendingGateSince`, então o `WHERE ... IS NOT NULL` do worker
 	// nunca casava. Quem abandonava a conversa num gate pendente jamais era
 	// cobrado de volta — e sem erro em log nenhum, porque não havia escrita pra

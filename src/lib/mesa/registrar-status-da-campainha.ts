@@ -16,8 +16,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { handoffNotifications } from "@/db/schema";
-import { getLangfuseClient } from "@/lib/observability/langfuse/client";
-import { ambienteLangfuse } from "@/lib/observability/langfuse/env";
+import { publicarScores } from "@/lib/observability/sinais/publicar";
 import { scoresDaCampainha } from "./campainha";
 
 export type StatusDaMeta = {
@@ -113,17 +112,5 @@ function publicarSinais(
 		}),
 	);
 
-	const client = getLangfuseClient();
-	if (!client) return;
-	try {
-		const environment = ambienteLangfuse();
-		for (const score of scores) {
-			// Score de SESSÃO: aqui não existe span ativo — o webhook da Meta não é
-			// um turno de conversa. `sessionId` é o `conversationId`, o mesmo que o
-			// `withLangfuseTurn` carimba nos traces.
-			client.score.create({ ...score, sessionId: conversationId, environment });
-		}
-	} catch (err) {
-		console.error("[campainha] publicação dos scores falhou (ignorado):", err);
-	}
+	publicarScores(scores, "mesa");
 }

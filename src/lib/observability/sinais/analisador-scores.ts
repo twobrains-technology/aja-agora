@@ -17,9 +17,8 @@
 // score que só aparece quando vale 1 não tem denominador e a média no Langfuse
 // viraria 1,0 para sempre — o mesmo vício que `carta_na_tela` documenta em
 // `funil-scores.ts`.
-import { getLangfuseClient } from "./client";
-import { ambienteLangfuse } from "./env";
 import type { Score } from "./funil-scores";
+import { publicarScores } from "./publicar";
 
 /** `1` = o analyzer caiu no fallback; `0` = respondeu. */
 export function scoresDeAnalisador(indisponivel: boolean): Score[] {
@@ -36,14 +35,7 @@ export function scoresDeAnalisador(indisponivel: boolean): Score[] {
  * credencial é no-op, e qualquer erro é engolido com log. */
 function publicar(scores: Score[], onde: string): void {
 	if (scores.length === 0) return;
-	const client = getLangfuseClient();
-	if (!client) return;
-	try {
-		const environment = ambienteLangfuse();
-		for (const score of scores) client.score.activeTrace({ ...score, environment });
-	} catch (err) {
-		console.error(`[langfuse] ${onde} falhou (ignorado):`, err);
-	}
+	publicarScores(scores, onde);
 }
 
 export function registrarAnalisadorIndisponivel(indisponivel: boolean): void {

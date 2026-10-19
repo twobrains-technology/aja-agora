@@ -9,7 +9,7 @@ export type Channel = "web" | "whatsapp";
  * A linha é um MARCADOR de card, não fala?
  *
  * Todo artifact emitido grava uma mensagem de assistente com o corpo
- * `[card: tipo]` (`langgraph/nodes/persist.ts`, `web/adapter.ts`). Ela existe
+ * `[card: tipo]` (`turn/persist.ts`, `web/adapter.ts`). Ela existe
  * para o log do admin — o cliente nunca a vê, e o modelo não deveria vê-la
  * também.
  *
@@ -27,7 +27,7 @@ export function ehMarcadorDeCard(role: string, content: string): boolean {
 }
 
 /**
- * O histórico como o MODELO o recebe (`langgraph/run-turn.ts`).
+ * O histórico como o MODELO o recebe (`pi/turno.ts`).
  *
  * Os marcadores de card saem daqui. Em produção (2026-08-16, conversa
  * `ff8f2080`) o modelo leu meia dúzia de `[card: comparison_table]` como se

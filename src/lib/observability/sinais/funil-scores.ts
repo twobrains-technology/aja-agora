@@ -27,8 +27,7 @@
 type FalhaDeTool = { tool: string; tipo: string; mensagem?: string; errorText?: string };
 
 import type { TurnTraceRecord } from "@/lib/telemetry/turn-trace";
-import { getLangfuseClient } from "./client";
-import { ambienteLangfuse } from "./env";
+import { publicarScores } from "./publicar";
 
 /**
  * Régua de profundidade do funil, para a métrica "quão longe a conversa foi".
@@ -393,14 +392,7 @@ export function scoresDeValorRevertido(args: {
 /** Publica no trace ATIVO. No-op sem credencial. */
 function publicar(scores: Score[], onde: string): void {
 	if (scores.length === 0) return;
-	const client = getLangfuseClient();
-	if (!client) return;
-	try {
-		const environment = ambienteLangfuse();
-		for (const score of scores) client.score.activeTrace({ ...score, environment });
-	} catch (err) {
-		console.error(`[langfuse] ${onde} falhou (ignorado):`, err);
-	}
+	publicarScores(scores, onde);
 }
 
 export function registrarFalaPodada(motivos: string[]): void {
@@ -523,57 +515,21 @@ export function registrarEscolhaNaoAncorada(args: {
 
 /** Publica as falhas de tool no trace ATIVO. No-op sem credencial. */
 export function registrarFalhasDeTool(falhas: FalhaDeTool[]): void {
-	const client = getLangfuseClient();
-	if (!client) return;
-	try {
-		const environment = ambienteLangfuse();
-		for (const score of scoresDeFalhaDeTool(falhas)) {
-			client.score.activeTrace({ ...score, environment });
-		}
-	} catch (err) {
-		console.error("[langfuse] registrar falha de tool falhou (ignorado):", err);
-	}
+	publicarScores(scoresDeFalhaDeTool(falhas), "registrar sinal");
 }
 
 /** Publica a entrega do gate no trace ATIVO (o adapter do WhatsApp roda dentro
  * do callback de `withLangfuseTurn`, então há trace). No-op sem credencial. */
 export function registrarEntregaDoGate(gate: string, via: EntregaDoGate): void {
-	const client = getLangfuseClient();
-	if (!client) return;
-	try {
-		const environment = ambienteLangfuse();
-		for (const score of scoreDeEntregaDoGate(gate, via)) {
-			client.score.activeTrace({ ...score, environment });
-		}
-	} catch (err) {
-		console.error("[langfuse] registrar entrega do gate falhou (ignorado):", err);
-	}
+	publicarScores(scoreDeEntregaDoGate(gate, via), "registrar sinal");
 }
 
 /**
- * Publica os scores do turno no trace Langfuse ATIVO.
+ * Publica os scores do turno (funil, entrega de gate, falha de tool).
  *
- * Depende de estar dentro do callback de `withLangfuseTurn` — é o caso nos
- * dois canais: web finaliza dentro do wrapper (route.ts) e WhatsApp finaliza
- * no `finally` do generator, que roda dentro de `consumeEventsInner`.
- * Fora de contexto o SDK simplesmente descarta, sem lançar.
+ * Chamado no fim do turno pelos dois canais. Sempre dentro do `finally`, e
+ * nunca lança: sinal não pode custar a resposta do cliente.
  */
 export function publicarFunilNoLangfuse(record: TurnTraceRecord): void {
-	const client = getLangfuseClient();
-	if (!client) return;
-	try {
-		// `environment` explícito em CADA score, e não é redundância: o
-		// LangfuseSpanProcessor recebe o ambiente na construção e carimba os
-		// spans, mas o LangfuseClient não aceita `environment` no construtor —
-		// então score criado por ele cai em "default" mesmo com o trace em
-		// "production". Visto ao vivo no primeiro turno após o deploy: trace em
-		// production, scores do funil em default. Como o filtro de ambiente da UI
-		// é global, isso sumiria com o funil inteiro de quem filtrasse produção.
-		const environment = ambienteLangfuse();
-		for (const score of scoresDoTurno(record)) {
-			client.score.activeTrace({ ...score, environment });
-		}
-	} catch (err) {
-		console.error("[langfuse] publicar scores do funil falhou (ignorado):", err);
-	}
+	publicarScores(scoresDoTurno(record), "funil do turno");
 }

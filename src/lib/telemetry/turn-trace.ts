@@ -26,7 +26,7 @@
 
 import type { UIMessage, UIMessageStreamWriter } from "ai";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
-import { publicarFunilNoLangfuse } from "@/lib/observability/langfuse/funil-scores";
+import { publicarFunilNoLangfuse } from "@/lib/observability/sinais/funil-scores";
 
 export type TurnTraceChannel = "web" | "whatsapp";
 
@@ -64,7 +64,7 @@ export type TurnTraceRecord = {
 	/** Latência wall-clock do turno em ms (start → finalize).
 	 *
 	 *  A fronteira é a MESMA da observação `turn` do Langfuse (ver
-	 *  `observability/langfuse/turn.ts`): começa quando o canal entrega o turno e
+	 *  `observability/trace-local.ts`): começa quando o canal entrega o turno e
 	 *  fecha com o stream consumido — inclui a fase pré-LLM (`analyze` e a
 	 *  pré-produção do grafo), não só a geração. Medir só a geração dava um
 	 *  número menor que o turno de verdade. */

@@ -13,9 +13,8 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { metaOf, persistMeta } from "@/lib/conversation/meta";
-import { getLangfuseClient } from "@/lib/observability/langfuse/client";
-import { ambienteLangfuse } from "@/lib/observability/langfuse/env";
 import { scoresDeReconciliacao } from "@/lib/observability/reconciliacao-fala-estado";
+import { publicarScores } from "@/lib/observability/sinais/publicar";
 
 /** Conversas por ciclo. */
 const POR_CICLO = 50;
@@ -199,15 +198,5 @@ function publicarNoLangfuse(
 			sinais: scores.map((s) => s.name),
 		}),
 	);
-	const client = getLangfuseClient();
-	if (!client) return;
-	try {
-		const environment = ambienteLangfuse();
-		for (const score of scores) {
-			// Score de SESSÃO — o defeito é da conversa inteira, não de um turno.
-			client.score.create({ ...score, sessionId: conversationId, environment });
-		}
-	} catch (err) {
-		console.error("[reconciliacao] publicação falhou (ignorado):", err);
-	}
+	publicarScores(scores, "reconciliacao");
 }

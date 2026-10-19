@@ -8,7 +8,7 @@
 // Quem consome esta fábrica: `builder.ts` (agente web/WhatsApp),
 // `mesa-copilot/index.ts` e `turn-analyzer.ts` (via `modeloDoAnalisador`).
 //
-// EXCEÇÃO CONHECIDA: `src/lib/agent/langgraph/provider.ts` NÃO passa por aqui.
+// EXCEÇÃO CONHECIDA: `src/lib/agent/pi/sessao.ts` NÃO passa por aqui.
 // O runtime do LangGraph monta o `ChatAnthropic` por caminho próprio
 // (congelado pelo PRD, C12) — se ele mudar, é decisão de outra rodada, com
 // medição, não um deslize desta fábrica.

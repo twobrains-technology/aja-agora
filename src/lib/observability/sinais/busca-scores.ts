@@ -23,9 +23,8 @@
 // é sobre ela que o Monitor alerta.
 import type { Category } from "@/lib/agent/personas";
 import { creditoBuscavel } from "@/lib/consorcio/credito-minimo";
-import { getLangfuseClient } from "./client";
-import { ambienteLangfuse } from "./env";
 import type { Score } from "./funil-scores";
+import { publicarScores } from "./publicar";
 
 /** A partir de quantas buscas vazias seguidas o alvo é dado como esgotado.
  *  Mesmo limiar que o funil já usa para trocar de estratégia (`nextGate`). */
@@ -174,14 +173,7 @@ export function scoresDeOfertaContradizParcela(o: {
 /** Publica no trace ATIVO. No-op sem credencial — alerta nunca derruba turno. */
 function publicar(scores: Score[], contexto: string): void {
 	if (scores.length === 0) return;
-	const client = getLangfuseClient();
-	if (!client) return;
-	try {
-		const environment = ambienteLangfuse();
-		for (const score of scores) client.score.activeTrace({ ...score, environment });
-	} catch (err) {
-		console.error(`[langfuse] ${contexto} falhou (ignorado):`, err);
-	}
+	publicarScores(scores, contexto);
 }
 
 export function registrarBuscaDespachada(b: BuscaDespachada): void {

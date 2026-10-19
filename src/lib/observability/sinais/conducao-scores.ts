@@ -21,9 +21,8 @@ import {
 	turnoEntregouConducao,
 } from "@/lib/agent/conducao";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
-import { getLangfuseClient } from "./client";
-import { ambienteLangfuse } from "./env";
 import type { Score } from "./funil-scores";
+import { publicarScores } from "./publicar";
 
 export type CondicaoDeConducao = FlagsDeConducao & {
 	eventos: readonly TurnEvent[];
@@ -82,14 +81,7 @@ export function scoresDeToolRecusada(tools: string[]): Score[] {
  * credencial é no-op, e qualquer erro é engolido com log. */
 function publicar(scores: Score[], onde: string): void {
 	if (scores.length === 0) return;
-	const client = getLangfuseClient();
-	if (!client) return;
-	try {
-		const environment = ambienteLangfuse();
-		for (const score of scores) client.score.activeTrace({ ...score, environment });
-	} catch (err) {
-		console.error(`[langfuse] ${onde} falhou (ignorado):`, err);
-	}
+	publicarScores(scores, onde);
 }
 
 export function registrarConducao(cond: CondicaoDeConducao): void {

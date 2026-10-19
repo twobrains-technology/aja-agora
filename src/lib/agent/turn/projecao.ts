@@ -1,6 +1,6 @@
 // PROJEÇÃO DO TURNO → `ConversationMetadata` e eventos de meta.
 //
-// Veio de `langgraph/emit.ts` (B2 da campanha 2026-10-19). O trabalho é o mesmo:
+// Extraído do runtime anterior (B2 da campanha 2026-10-19). O trabalho é o mesmo:
 // o estado do turno é a AUTORIDADE do fluxo, e no fim do turno ele é projetado de
 // volta pros campos do meta que a superfície compartilhada lê — sempre em MERGE
 // por cima do `baseMeta` completo, porque `persistMeta` substitui a coluna

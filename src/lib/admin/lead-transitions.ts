@@ -89,7 +89,7 @@ export async function transitionLeadStage(
 	// "fechou" ficar do lado da conversa que fechou. Nunca derruba a transição:
 	// o lead já mudou de raia no banco antes desta linha.
 	try {
-		const { registrarMarcoDeNegocio } = await import("@/lib/observability/langfuse/negocio");
+		const { registrarMarcoDeNegocio } = await import("@/lib/observability/sinais/negocio");
 		registrarMarcoDeNegocio({
 			conversationId: lead.conversationId ?? null,
 			estagio: toStage,

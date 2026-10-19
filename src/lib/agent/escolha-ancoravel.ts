@@ -3,7 +3,7 @@
 // ## Por que isto virou um módulo
 //
 // A regra existia em um lugar só — dentro do nó `converse`
-// (`langgraph/nodes/converse.ts`) — e a tool `escolher_cota`, que é quem FALA
+// (`pi/converse.ts`) — e a tool `escolher_cota`, que é quem FALA
 // com o modelo, não a consultava. O resultado era duas fontes de verdade para o
 // mesmo fato, e a que respondia ao modelo mentia:
 //

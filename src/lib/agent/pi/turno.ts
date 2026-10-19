@@ -15,7 +15,7 @@
 // anterior: nada pior, nada de I/O de sessão do harness.
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { conversations } from "@/db/schema";
+import { conversations, usoDeIa } from "@/db/schema";
 import { EphemeralTextFilter } from "@/lib/agent/orchestrator/sanitizer";
 import type { TurnEvent, TurnInput } from "@/lib/agent/orchestrator/types";
 import { buildConsorcioTools } from "@/lib/agent/tools/ai-sdk";
@@ -252,6 +252,20 @@ export function createRunTurnPi(deps?: {
 				modelAskedQuestion: perguntou,
 				pedidoDeNomeExplicito: perguntou && /(seu|teu)\s+(primeiro\s+)?nome/i.test(beat.texto),
 			});
+
+			// 6b. O LIVRO-CAIXA de tokens: gravado aqui para o painel de custo ter
+			// de onde ler sem serviço externo. Best-effort — nunca custa o turno.
+			if (beat.uso.input > 0 || beat.uso.output > 0) {
+				void db
+					.insert(usoDeIa)
+					.values({
+						conversationId: estado.conversationId,
+						modelo: process.env.AI_MODEL?.trim() || "qwen3.6-flash",
+						tokensInput: beat.uso.input,
+						tokensOutput: beat.uso.output,
+					})
+					.catch((erro: unknown) => console.error("[uso-de-ia] não registrado (ignorado):", erro));
+			}
 
 			// 7. cards determinísticos
 			estado = aplicar(estado, await emitCardNode(estado, emitir));

@@ -12,8 +12,8 @@ import type { EstadoDoTurno } from "@/lib/agent/turn/estado";
 import { funnelFromMeta } from "@/lib/agent/turn/estado";
 import { projectToMeta } from "@/lib/agent/turn/projecao";
 import { valorAncoradoNoTexto } from "@/lib/agent/valor-declarado";
-import { registrarAnalisadorIndisponivel } from "@/lib/observability/langfuse/analisador-scores";
-import { registrarValorRevertido } from "@/lib/observability/langfuse/funil-scores";
+import { registrarAnalisadorIndisponivel } from "@/lib/observability/sinais/analisador-scores";
+import { registrarValorRevertido } from "@/lib/observability/sinais/funil-scores";
 
 /** Assinatura da fronteira LLM do analyzer — o que `createAnalyzeNode` aceita
  * injetado. Igual à de `analyzeAndMerge` (que MUTA `meta`, e é assim que a

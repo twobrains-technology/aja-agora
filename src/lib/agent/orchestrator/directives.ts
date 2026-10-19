@@ -417,7 +417,7 @@ CONFRONTO DE FAIXA (FIX-33): o usuário pediu um bem de R$ ${q.creditClampedFrom
 	// Produção, WhatsApp, 2026-08-13. O directive dizia "FLUXO OBRIGATÓRIO ... 1.
 	// Chame search_groups", "3. chame recommend_groups ... present_recommendation_
 	// card", "5. chame present_comparison_table". Nenhuma das três está em
-	// `WHAT_IF_TOOL_NAMES` (langgraph/toolset.ts) — a descoberta é do nó
+	// `WHAT_IF_TOOL_NAMES` (turn/toolset.ts) — a descoberta é do nó
 	// `discovery`, determinística, e é ele quem emite `comparison_table` e
 	// `recommendation_card` server-side. O modelo obedecia, tomava
 	// `Error: Tool "search_groups" not found` e traduzia isso ao cliente:

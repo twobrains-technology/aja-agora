@@ -85,9 +85,9 @@ import { normalizePhoneBR } from "@/lib/leads/phone";
 import { registrarFalhaDoLlm } from "@/lib/llm/alerta-do-llm";
 import { COOKIE_MAX_AGE_SECONDS, COOKIE_NAME, generateCookieValue } from "@/lib/memory/identity";
 import { checkRateLimit } from "@/lib/middleware/rate-limit";
-import { registrarBotaoFantasma } from "@/lib/observability/langfuse/funil-scores";
-import { withLangfuseTurn } from "@/lib/observability/langfuse/turn";
-import { collectAgentText } from "@/lib/observability/langfuse/ui-writer";
+import { registrarBotaoFantasma } from "@/lib/observability/sinais/funil-scores";
+import { comTraceDoTurno } from "@/lib/observability/trace-local";
+import { collectAgentText } from "@/lib/observability/ui-writer";
 import { instrumentWriter, TurnTrace } from "@/lib/telemetry/turn-trace";
 import { isUuid } from "@/lib/utils/id";
 import { simulatorNow } from "@/lib/utils/simulator-clock";
@@ -540,7 +540,7 @@ export async function POST(req: NextRequest) {
 				// Trace Langfuse do turno — o consumo do stream inteiro acontece DENTRO
 				// do wrapper (mesmo requisito do simulator-clock): é o que mantém os
 				// spans do grafo/tools/analyzer no contexto do trace.
-				await withLangfuseTurn(
+				await comTraceDoTurno(
 					{
 						conversationId,
 						channel: "web",
@@ -1912,7 +1912,7 @@ export async function POST(req: NextRequest) {
 				channel: "web",
 				persona: meta.currentPersona ?? null,
 			});
-			await withLangfuseTurn(
+			await comTraceDoTurno(
 				{
 					conversationId,
 					channel: "web",

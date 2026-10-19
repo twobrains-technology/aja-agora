@@ -42,7 +42,7 @@
  *
  * A Metrics API v1 (`/api/public/metrics`) responde **404** no Langfuse v4
  * (`events_only`): a tela do custo ficou sem fonte em silêncio, e o sintoma nos
- * logs era `[custo-de-ia] leitura da fonte falhou: langfuse-metrics-404`. A
+ * logs era `[custo-de-ia] leitura da fonte falhou: metrics-404`. A
  * rota viva é `/api/public/v2/metrics`.
  *
  * A v2 cobra duas regras que a v1 não cobrava, e o desenho da leitura nasce
@@ -54,7 +54,7 @@
 
 import { and, eq, gte, lte } from "drizzle-orm";
 import { db } from "@/db";
-import { conversations } from "@/db/schema";
+import { conversations, usoDeIa } from "@/db/schema";
 import { CHAVE_DA_COTACAO, cotacaoDoCadastro, lerCustoDoCadastro } from "./custos-do-cadastro";
 import { diaComoData, diaDoNegocio, fimDoDia, inicioDoDia } from "./periodo";
 
@@ -222,242 +222,74 @@ export function somarCustoDeIA(args: {
 }
 // ─── A borda: a leitura da FONTE e o cruzamento com o Postgres ──────────────
 
-/** A rota da Metrics API do Langfuse v4 — a v1 responde 404. */
-export const ROTA_DAS_METRICAS_DO_LANGFUSE = "/api/public/v2/metrics";
-
 /**
- * O teto de linhas por consulta da v2 — a API recusa acima disso (1000 é o máximo
- * aceito). As dimensões `sessionId` + modelo cabem folgadas dentro de um dia.
- */
-const LIMITE_DE_LINHAS = 1000;
-
-/** Uma linha crua do payload da Metrics API. Tudo opcional: a forma é da fonte. */
-function texto(valor: unknown): string | null {
-	return typeof valor === "string" && valor.trim() !== "" ? valor.trim() : null;
-}
-
-/** A consulta pronta da Metrics API: a URL e a `query` serializada que a gerou. */
-export interface ConsultaDeMetricas {
-	url: string;
-	query: string;
-}
-
-/**
- * Monta a consulta da Metrics API **v2** para UMA janela de instantes — PURO, para
- * a rota e a forma da `query` serem provadas por teste sem tocar o Langfuse.
+ * A LEITURA DO CUSTO — agora LOCAL.
  *
- * Foi o endereço v1 gravado no código que quebrou a tela em silêncio (404); este
- * ponto é onde o teste trava a rota viva e a `query` que a v2 aceita: dimensões
- * `sessionId` + `providedModelName`, `config.row_limit` e `orderBy` por medida
- * (exigidos pela alta cardinalidade de `sessionId`), e **sem** `timeDimension`.
- */
-export function consultaDeMetricasDoLangfuse(
-	base: string,
-	de: Date,
-	ate: Date,
-): ConsultaDeMetricas {
-	const query = JSON.stringify({
-		view: "observations",
-		dimensions: [{ field: "sessionId" }, { field: "providedModelName" }],
-		metrics: [{ measure: "totalCost", aggregation: "sum" }],
-		filters: [],
-		config: { row_limit: LIMITE_DE_LINHAS },
-		orderBy: [{ field: "sum_totalCost", direction: "desc" }],
-		fromTimestamp: de.toISOString(),
-		toTimestamp: ate.toISOString(),
-	});
-	return {
-		url: `${base.replace(/\/$/, "")}${ROTA_DAS_METRICAS_DO_LANGFUSE}?query=${encodeURIComponent(query)}`,
-		query,
-	};
-}
-
-/**
- * Traduz o payload da Metrics API v2 (`view=observations`, dimensões `sessionId`
- * + `providedModelName`, métrica `totalCost`) para as linhas deste módulo — PURO,
- * para o payload ser provado por fixture sem tocar o Langfuse.
+ * Até 19/10/2026 este número vinha da Metrics API do serviço de observabilidade,
+ * por sessão/modelo/dia. Com ele fora, o turno passou a gravar o que consumiu na
+ * tabela `uso_de_ia` (tokens de entrada/saída por conversa e modelo), e é daqui
+ * que a tela lê.
  *
- * O custo volta em DÓLAR (`sum_totalCost`); aqui vira CENTAVOS. O dia, quando não
- * vem no payload (`timeDimension`, que a v2 não aceita junto de `sessionId`),
- * entra por `diaDoRecorte` — o dia que a consulta pediu. Linha sem sessão, sem
- * modelo ou sem dia é descartada: sem essas três chaves ela não cruza com o
- * Postgres e não pertence a nenhum dia — aceitá-la somaria custo órfão ao total.
+ * `custoUsdCents` sai NULO: não há tabela de preço versionada em código, e
+ * inventar preço por modelo seria pior que admitir a falta — a lei do módulo é
+ * "ausência de preço é não calculável, nunca R$ 0,00", e o consumidor já sabe
+ * dizer `modelo_sem_preco`. Quando houver preço cadastrado, ele entra aqui.
  */
-export function linhasDoMetricasDoLangfuse(
-	payload: unknown,
-	diaDoRecorte?: string,
-): LinhaDeCustoDoLangfuse[] {
-	const dados = (payload as { data?: unknown } | null | undefined)?.data;
-	if (!Array.isArray(dados)) return [];
-
-	const linhas: LinhaDeCustoDoLangfuse[] = [];
-	for (const bruto of dados) {
-		if (!bruto || typeof bruto !== "object") continue;
-		const linha = bruto as Record<string, unknown>;
-
-		const sessionId = texto(linha.sessionId ?? linha.session_id);
-		const modelo = texto(linha.providedModelName ?? linha.provided_model_name ?? linha.model);
-		// A v2 devolve o dia em `time_dimension` quando há `timeDimension`; sem ele
-		// (o caso de `sessionId`), o dia é o do RECORTE pedido — nunca inventado.
-		const dia =
-			texto(linha.time_dimension ?? linha.timeDimension ?? linha.day)?.slice(0, 10) ??
-			diaDoRecorte ??
-			null;
-		if (!sessionId || !modelo || !dia) continue;
-
-		const custoBruto = linha.sum_totalCost ?? linha.sum_total_cost ?? linha.totalCost ?? null;
-		const custoNumero = custoBruto === null ? null : Number(custoBruto);
-		const custoUsdCents =
-			custoNumero !== null && Number.isFinite(custoNumero) ? Math.round(custoNumero * 100) : null;
-
-		linhas.push({ sessionId, modelo, dia, custoUsdCents });
-	}
-	return linhas;
+export interface LinhaDeUsoLocal {
+	sessionId: string;
+	modelo: string;
+	dia: string;
+	custoUsdCents: number | null;
 }
 
-/**
- * Os dias do negócio que cobrem a janela `[de, ate]`, com os instantes de cada um.
- *
- * Existe porque a v2 da Metrics API **não aceita** `sessionId` junto de
- * `timeDimension`: a leitura toma o dia por dia. A âncora no meio-dia UTC (via
- * `diaComoData`) não escorrega de data em fuso nenhum e a soma de 24 h a partir
- * dela não cai no vizinho.
- */
-export function diasDaJanela(de: Date, ate: Date): { dia: string; de: Date; ate: Date }[] {
-	const UM_DIA_MS = 24 * 60 * 60 * 1000;
-	const dias: { dia: string; de: Date; ate: Date }[] = [];
-	const ultimo = diaComoData(diaDoNegocio(ate)).getTime();
-	let cursor = diaComoData(diaDoNegocio(de));
-	while (cursor.getTime() <= ultimo) {
-		const inicio = inicioDoDia(cursor);
-		const fim = fimDoDia(cursor);
-		// O dia carrega o RECORTE pedido, não as bordas do dia: quem lê de 15:00
-		// às 06:00 do dia seguinte não pode buscar o dia inteiro dos dois lados —
-		// somaria horas que não foram pedidas (e cobraria custo de fora da janela).
-		dias.push({
-			dia: diaDoNegocio(cursor),
-			de: de.getTime() > inicio.getTime() ? de : inicio,
-			ate: ate.getTime() < fim.getTime() ? ate : fim,
-		});
-		cursor = new Date(cursor.getTime() + UM_DIA_MS);
-	}
-	return dias;
+/** Lê o livro-caixa local e agrupa por conversa/modelo/dia. Server-only. */
+export async function lerCustoLocal(de: Date, ate: Date): Promise<LinhaDeCustoDoLangfuse[]> {
+	const linhas = await db
+		.select({
+			conversationId: usoDeIa.conversationId,
+			modelo: usoDeIa.modelo,
+			criadoEm: usoDeIa.criadoEm,
+			custoUsdCents: usoDeIa.custoUsdCents,
+		})
+		.from(usoDeIa)
+		.where(and(gte(usoDeIa.criadoEm, inicioDoDia(de)), lte(usoDeIa.criadoEm, fimDoDia(ate))));
+
+	return linhas
+		.filter((l): l is typeof l & { conversationId: string } => Boolean(l.conversationId))
+		.map((l) => ({
+			sessionId: l.conversationId,
+			modelo: l.modelo,
+			dia: diaDoNegocio(l.criadoEm),
+			custoUsdCents: l.custoUsdCents ?? null,
+		}));
 }
 
-/**
- * Executa `fn` sobre os itens com no máximo `limite` promessas em voo, na ordem
- * do array de entrada. Existe porque o `Promise.all` sobre 30 dias disparava 30
- * consultas simultâneas ao ClickHouse do Langfuse — o que toma 429/5xx e derruba
- * a leitura inteira por causa de um dia. O teto mantém a latência baixa sem
- * encostar no limite do provedor.
- */
-export async function mapComConcorrencia<T, R>(
-	itens: readonly T[],
-	limite: number,
-	fn: (item: T, indice: number) => Promise<R>,
-): Promise<R[]> {
-	const resultados = new Array<R>(itens.length);
-	let proximo = 0;
-	const trabalhadores = Array.from(
-		{ length: Math.min(Math.max(1, limite), itens.length) },
-		async () => {
-			while (true) {
-				const i = proximo;
-				proximo += 1;
-				if (i >= itens.length) return;
-				resultados[i] = await fn(itens[i] as T, i);
-			}
-		},
-	);
-	await Promise.all(trabalhadores);
-	return resultados;
-}
-
-/** O teto de consultas simultâneas ao Langfuse — medido contra o ClickHouse. */
-const CONCORRENCIA_DE_CONSULTAS = 4;
-
-/**
- * Lê o custo de IA do Langfuse (Metrics API **v2** — a v1 responde 404 no v4).
- *
- * Uma consulta por DIA: a v2 recusa `sessionId` junto de `timeDimension`, e o
- * vínculo com a conversa depende do `sessionId`. O dia de cada linha é o do
- * recorte desta consulta — a leitura roda com concorrência limitada. O dia que
- * responde erro vira AUSENTE (sem dado daquele dia): uma falha isolada não pode
- * apagar a tela inteira. Só quando TODOS os dias falham é que a fonte está fora,
- * e aí o erro sobe para `computeCustoDeIA` virar `fonte_indisponivel`.
- *
- * A credencial vive no ambiente (vault), nunca em log: só o STATUS do erro
- * aparece, jamais a chave.
- */
-export async function buscarMetricasDoLangfuse(
-	de: Date,
-	ate: Date,
-): Promise<LinhaDeCustoDoLangfuse[]> {
-	const base = process.env.LANGFUSE_BASE_URL?.trim();
-	const publicKey = process.env.LANGFUSE_PUBLIC_KEY?.trim();
-	const secretKey = process.env.LANGFUSE_SECRET_KEY?.trim();
-	if (!base || !publicKey || !secretKey) throw new Error("langfuse-nao-configurado");
-
-	const headers = {
-		Authorization: `Basic ${Buffer.from(`${publicKey}:${secretKey}`).toString("base64")}`,
-	};
-	const dias = diasDaJanela(de, ate);
-	const porDia = await mapComConcorrencia(
-		dias,
-		CONCORRENCIA_DE_CONSULTAS,
-		async ({ dia, de: inicio, ate: fim }) => {
-			try {
-				const { url } = consultaDeMetricasDoLangfuse(base, inicio, fim);
-				const resposta = await fetch(url, { headers, cache: "no-store" });
-				if (!resposta.ok) throw new Error(`langfuse-metrics-${resposta.status}`);
-				return linhasDoMetricasDoLangfuse(await resposta.json(), dia);
-			} catch (erro) {
-				return erro instanceof Error ? erro : new Error(String(erro));
-			}
-		},
-	);
-
-	const sucessos = porDia.filter((r): r is LinhaDeCustoDoLangfuse[] => Array.isArray(r));
-	const falhas = porDia.filter((r): r is Error => r instanceof Error);
-	// Nenhum dia respondeu (com um dia ao menos para consultar) → a FONTE caiu.
-	// Não é "sem dado": é `fonte_indisponivel`, e o erro sobe.
-	if (sucessos.length === 0 && falhas.length > 0) throw falhas[0];
-	return sucessos.flat();
-}
-
-/** O custo de IA do Langfuse, por sessão/modelo/dia. Server-only. */
-export async function lerCustoDoLangfuse(de: Date, ate: Date): Promise<LinhaDeCustoDoLangfuse[]> {
-	return buscarMetricasDoLangfuse(de, ate);
-}
-
-/**
- * As conversas do período — o lado que dá VÍNCULO e CANAL ao custo. Mesma janela
- * e mesmo filtro dos outros números: `created_at` no intervalo e `is_simulated
- * = false` (teste interno nunca entra no relatório).
- */
+/** As conversas do período — o lado do Postgres que dá VÍNCULO e CANAL. */
 export async function conversasDoPeriodo(de: Date, ate: Date): Promise<ConversaDoPostgres[]> {
 	const linhas = await db
 		.select({ conversationId: conversations.id, canal: conversations.channel })
 		.from(conversations)
 		.where(
 			and(
-				gte(conversations.createdAt, de),
-				lte(conversations.createdAt, ate),
-				eq(conversations.isSimulated, false),
+				gte(conversations.createdAt, inicioDoDia(de)),
+				lte(conversations.createdAt, fimDoDia(ate)),
 			),
 		);
-	return linhas;
+	return linhas.map((l) => ({
+		conversationId: l.conversationId,
+		canal: l.canal === "whatsapp" ? "whatsapp" : "web",
+	}));
 }
 
-/** As fontes do custo de IA — injetáveis para prover a costura sem rede nem banco. */
+/** As fontes do custo de IA — injetáveis para provar a costura sem banco. */
 export interface FontesDoCustoDeIA {
-	lerLangfuse(de: Date, ate: Date): Promise<LinhaDeCustoDoLangfuse[]>;
+	lerUso(de: Date, ate: Date): Promise<LinhaDeCustoDoLangfuse[]>;
 	lerConversas(de: Date, ate: Date): Promise<ConversaDoPostgres[]>;
 	lerCotacao(): Promise<number | null>;
 }
 
 const FONTES_REAIS: FontesDoCustoDeIA = {
-	lerLangfuse: lerCustoDoLangfuse,
+	lerUso: lerCustoLocal,
 	lerConversas: conversasDoPeriodo,
 	lerCotacao: () => lerCustoDoCadastro(CHAVE_DA_COTACAO).then(cotacaoDoCadastro),
 };
@@ -473,7 +305,7 @@ export async function computeCustoDeIA(
 ): Promise<ResultadoCustoDeIA> {
 	try {
 		const [linhas, conversas, cotacao] = await Promise.all([
-			fontes.lerLangfuse(args.de, args.ate),
+			fontes.lerUso(args.de, args.ate),
 			fontes.lerConversas(args.de, args.ate),
 			fontes.lerCotacao(),
 		]);

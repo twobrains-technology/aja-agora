@@ -54,7 +54,7 @@ if (!existsSync("/.dockerenv")) {
 	const gw = paraHost(process.env.LITELLM_BASE_URL);
 	if (gw) process.env.LITELLM_BASE_URL = gw;
 	// Mesmo caso do DB e do gateway: com o Langfuse LOCAL compartilhado
-	// (tb-langfuse-shared), o `.env.local` guarda o nome de serviço da
+	// (um serviço compartilhado de observabilidade, já desligado), o `.env.local` guarda o nome de serviço da
 	// tb-local-net, que não resolve do Mac. Sem esta tradução o
 	// `sync-prompts`/`eval` do host falha em ENOTFOUND — e como o SDK do
 	// Langfuse é no-op por design, a falha vira SILÊNCIO: o script termina

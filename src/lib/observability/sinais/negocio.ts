@@ -12,10 +12,10 @@
 // `fechado_ganho` — não emitia NADA: nem log de sucesso, nem métrica
 // (`lead-transitions.ts` só logava a falha do registro de mídia). Dava pra
 // contar contrato no Postgres, mas não pra cruzar com a conversa que o gerou.
-import { getLangfuseClient } from "./client";
 // O LangfuseClient não aceita `environment` no construtor — precisa ir score a
 // score, senão marco de negócio cai em "default" e some do filtro de produção.
-import { ambienteLangfuse } from "./env";
+
+import { publicarScores, type Score } from "./publicar";
 
 /** Estágio terminal de sucesso — a única transição que é dinheiro no bolso. */
 const ESTAGIO_GANHO = "fechado_ganho";
@@ -42,42 +42,34 @@ export type MarcoDeNegocio = {
 export function registrarMarcoDeNegocio(marco: MarcoDeNegocio): void {
 	if (marco.isSimulated) return;
 	if (!marco.conversationId) return;
-	const client = getLangfuseClient();
-	if (!client) return;
-
-	try {
-		client.score.create({
+	const scores: Score[] = [
+		{
 			name: "lead_estagio",
 			value: marco.estagio,
 			dataType: "CATEGORICAL",
 			sessionId: marco.conversationId,
-			environment: ambienteLangfuse(),
 			comment: `${marco.estagioAnterior} → ${marco.estagio}`,
+		},
+	];
+	// Booleano dedicado além do categórico: dá pra ler taxa de conversão como
+	// média direta, sem filtrar categoria por categoria.
+	if (marco.estagio === ESTAGIO_GANHO) {
+		scores.push({
+			name: "conversao",
+			value: 1,
+			dataType: "BOOLEAN",
+			sessionId: marco.conversationId,
 		});
-
-		// Booleano dedicado além do categórico: dá pra ler taxa de conversão como
-		// média direta (`avg`), sem precisar filtrar categoria por categoria.
-		if (marco.estagio === ESTAGIO_GANHO) {
-			client.score.create({
-				name: "conversao",
-				value: 1,
-				dataType: "BOOLEAN",
+		if (typeof marco.valor === "number" && Number.isFinite(marco.valor) && marco.valor > 0) {
+			scores.push({
+				name: "valor_contrato",
+				value: marco.valor,
+				dataType: "NUMERIC",
 				sessionId: marco.conversationId,
-				environment: ambienteLangfuse(),
 			});
-			if (typeof marco.valor === "number" && Number.isFinite(marco.valor) && marco.valor > 0) {
-				client.score.create({
-					name: "valor_contrato",
-					value: marco.valor,
-					dataType: "NUMERIC",
-					sessionId: marco.conversationId,
-					environment: ambienteLangfuse(),
-				});
-			}
 		}
-	} catch (err) {
-		console.error("[langfuse] marco de negócio falhou (ignorado):", err);
 	}
+	publicarScores(scores, "marco de negocio");
 }
 
 /**
@@ -105,27 +97,16 @@ export function registrarPrimeiraCarta(marco: {
 }): void {
 	if (marco.isSimulated) return;
 	if (!marco.conversationId) return;
-	const client = getLangfuseClient();
-	if (!client) return;
-
-	try {
-		client.score.create({
-			name: "carta_vista",
-			value: 1,
-			dataType: "BOOLEAN",
+	const scores: Score[] = [
+		{ name: "carta_vista", value: 1, dataType: "BOOLEAN", sessionId: marco.conversationId },
+	];
+	if (Number.isFinite(marco.turnosAteACarta) && marco.turnosAteACarta > 0) {
+		scores.push({
+			name: "turnos_ate_carta",
+			value: marco.turnosAteACarta,
+			dataType: "NUMERIC",
 			sessionId: marco.conversationId,
-			environment: ambienteLangfuse(),
 		});
-		if (Number.isFinite(marco.turnosAteACarta) && marco.turnosAteACarta > 0) {
-			client.score.create({
-				name: "turnos_ate_carta",
-				value: marco.turnosAteACarta,
-				dataType: "NUMERIC",
-				sessionId: marco.conversationId,
-				environment: ambienteLangfuse(),
-			});
-		}
-	} catch (err) {
-		console.error("[langfuse] marco da primeira carta falhou (ignorado):", err);
 	}
+	publicarScores(scores, "primeira carta");
 }

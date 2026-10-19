@@ -5,7 +5,7 @@ import { buscaDoMock } from "./testing/grupos-do-mock";
 /**
  * O CONTRATO DO SEAM, RODANDO NO MOTOR DO PI.
  *
- * É o mesmo contrato de `langgraph/seam.contrato.test.ts` — só muda quem executa
+ * É o mesmo contrato de `pi/seam.contrato.test.ts` — só muda quem executa
  * o turno. Ele existe para provar a troca de motor: as garantias que o produto
  * vende (gate que nasce no turno, card que sai do SERVIDOR, funil que persiste,
  * web × WhatsApp idênticos) não podem depender do framework.

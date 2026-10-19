@@ -1943,3 +1943,32 @@ export const caixaDePrompt = pgTable(
 		uniqueIndex("caixa_de_prompt_nome_label_versao_idx").on(table.nome, table.label, table.versao),
 	],
 );
+
+// USO DE IA POR TURNO — o livro-caixa local de tokens.
+//
+// Antes (até 19/10/2026) o custo de IA era LIDO de um serviço externo de
+// observabilidade, por sessão/modelo/dia. Com o Langfuse fora, esse número
+// deixaria de existir — e custo não é métrica de vitrine: é o CPC que o cliente
+// fecha. Então o turno grava o que ele mesmo consumiu.
+//
+// `custo_usd_cents` fica NULO de propósito quando não há preço cadastrado para o
+// modelo: ausência de preço é "não calculável", nunca "R$ 0,00" — a mesma lei
+// que `admin/custo-de-ia.ts` carrega.
+export const usoDeIa = pgTable(
+	"uso_de_ia",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		conversationId: uuid("conversation_id").references(() => conversations.id, {
+			onDelete: "cascade",
+		}),
+		modelo: text().notNull(),
+		tokensInput: integer("tokens_input").default(0).notNull(),
+		tokensOutput: integer("tokens_output").default(0).notNull(),
+		custoUsdCents: integer("custo_usd_cents"),
+		criadoEm: timestamp("criado_em", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [
+		index("uso_de_ia_criado_em_idx").on(table.criadoEm),
+		index("uso_de_ia_conversation_id_idx").on(table.conversationId),
+	],
+);

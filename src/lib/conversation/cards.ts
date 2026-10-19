@@ -8,7 +8,7 @@
 // `[card: tipo]` o turno some do histórico: quem revisa vê o cliente clicar e o
 // agente não responder nada.
 //
-// O fluxo do grafo já fazia isso (`langgraph/nodes/persist.ts`). Os handlers de
+// O fluxo do grafo já fazia isso (`turn/persist.ts`). Os handlers de
 // clique do WhatsApp (`whatsapp/interactive-handlers.ts`) não faziam — mandavam
 // o card pela API da Meta e seguiam. Em 16/08/2026 isso custou caro: revisando
 // a conversa `fd76e393`, o "Ver outras opções" aparecia como um texto solto

@@ -91,7 +91,7 @@ function limiteHoras(env = process.env): number {
 
 /** Destinatários. Vazio = não envia.
  *
- *  Mesma regra da rota de alerta do Langfuse (`alerta-langfuse/route.ts`):
+ *  Mesma regra da rota de alerta do LLM (`llm/alerta-do-llm.ts`):
  *  default vazio + parâmetro explícito. E-mail cravado em código é como alerta
  *  de um domínio termina na caixa de outro numa cópia de arquivo. */
 function destinatarios(env = process.env): string[] {

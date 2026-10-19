@@ -13,7 +13,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
-import { getLangfuseClient } from "@/lib/observability/langfuse/client";
+import { publicarScores } from "@/lib/observability/sinais/publicar";
 import { isSimulatorEnabled } from "@/lib/utils/env";
 
 const bodySchema = z.object({
@@ -47,24 +47,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 	});
 	if (!conv) return new NextResponse("Not Found", { status: 404 });
 
-	const langfuse = getLangfuseClient();
-	if (!langfuse) {
-		return NextResponse.json({ ok: false, reason: "langfuse-disabled" });
-	}
-
-	const { value, traceId, comment } = parsed.data;
-	try {
-		await langfuse.score.create({
-			name: "user_feedback",
-			value: value === "up" ? 1 : 0,
-			dataType: "BOOLEAN",
-			...(comment ? { comment } : {}),
-			...(traceId ? { traceId } : { sessionId: id }),
-		});
-	} catch (err) {
-		console.error("[langfuse] score user_feedback falhou (ignorado):", err);
-		return NextResponse.json({ ok: false, reason: "langfuse-error" });
-	}
+	const { value, comment } = parsed.data;
+	// Feedback do operador sobre uma sessão SIMULADA: vira sinal local, com a
+	// conversa como sessão. Sem SDK no caminho — é linha estruturada.
+	publicarScores(
+		[
+			{
+				name: "user_feedback",
+				value: value === "up" ? 1 : 0,
+				dataType: "BOOLEAN",
+				...(comment ? { comment } : {}),
+				sessionId: id,
+			},
+		],
+		"feedback do simulador",
+	);
 
 	return NextResponse.json({ ok: true });
 }

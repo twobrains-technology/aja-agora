@@ -1,72 +1,61 @@
 /**
- * "O agente em produção está rodando o prompt que está no repo?"
+ * "O agente está rodando a caixa que o repo conhece?"
  *
- * Compara o texto do CÓDIGO com a versão de label `production` no Langfuse e
- * FALHA (exit 1) se divergirem. É o sinal que não existia em 2026-08-15, quando
- * o `aja-turn-analyzer` estava publicado na v1 de 07/08 enquanto o código, desde
- * 14/08, já tinha os exemplos que separam parcela de valor do bem — e ninguém
- * tinha como saber, porque o runtime lê o Langfuse e só usa o código como
- * fallback (ver `src/lib/observability/langfuse/prompts.ts`).
+ * Compara o texto do CÓDIGO (`SYSTEM_PROMPT`) com a versão publicada na tabela
+ * `caixa_de_prompt` para a label do ambiente e FALHA (exit 1) quando a
+ * publicada não existe — ou avisa quando ela DIVERGE do código.
+ *
+ * Por que o sinal existe: em 15/08/2026 o prompt do analyzer estava publicado
+ * numa versão de 07/08 enquanto o código, desde 14/08, já tinha os exemplos que
+ * separam parcela de valor do bem. Ninguém tinha como saber, porque o runtime
+ * lia o serviço e o código era só fallback. Desde 19/10/2026 a caixa mora no
+ * banco (`box/caixa.ts`), então a comparação é local — sem rede de terceiro.
+ *
+ * Divergência NÃO é erro por si só: publicar na caixa é justamente o caminho
+ * para mudar a conduta sem deploy. O exit 1 é só para "não há versão publicada"
+ * (aí o agente está rodando o código e é bom saber).
  *
  * Uso:
  *   pnpm prompts:check
- *
- * A lógica de comparação é pura e testada em `prompt-drift.test.ts`; aqui só
- * entra a busca (rede) e a saída.
- *
- * ⚠️ A instância importa: o `.env.local` costuma apontar para a LOCAL. Checar a
- * instância errada dá verde sem significar nada — por isso a URL é sempre
- * impressa antes do veredito.
  */
 import "./_env-host";
+import { labelDaCaixa, lerCaixa, limparCacheDaCaixa } from "@/lib/agent/box/caixa";
 import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
-import { BASE_SYSTEM_INSTRUCTION } from "@/lib/agent/turn-analyzer";
-import { getLangfuseClient } from "@/lib/observability/langfuse/client";
-import {
-	compararPromptPublicado,
-	type PromptDrift,
-	resumoDeDrift,
-} from "@/lib/observability/langfuse/prompt-drift";
-import { PROMPT_NAMES } from "@/lib/observability/langfuse/prompts";
 
 async function main(): Promise<void> {
-	const client = getLangfuseClient();
-	if (!client) {
-		console.error("✗ LANGFUSE_* ausentes no ambiente — sem elas não há o que comparar.");
+	limparCacheDaCaixa();
+	const label = labelDaCaixa();
+	const caixa = await lerCaixa({ label });
+
+	console.log(`Label verificada: ${label}`);
+	console.log(`Origem da caixa em uso: ${caixa.origem} (versão ${caixa.versao})`);
+
+	if (caixa.origem === "codigo") {
+		console.error(
+			`✗ não há versão publicada para a label "${label}" — o agente está rodando o texto do código.`,
+		);
 		process.exit(1);
 	}
 
-	console.log(
-		`Instância verificada: ${process.env.LANGFUSE_BASE_URL ?? "(LANGFUSE_BASE_URL vazio)"}`,
-	);
-
-	const alvos: Array<{ name: string; text: string }> = [
-		{ name: PROMPT_NAMES.system, text: SYSTEM_PROMPT },
-		{ name: PROMPT_NAMES.analyzer, text: BASE_SYSTEM_INSTRUCTION },
-	];
-
-	const drifts: PromptDrift[] = [];
-	for (const { name, text } of alvos) {
-		let publicado: { text: string; version: number } | null = null;
-		try {
-			const atual = await client.prompt.get(name, {
-				label: "production",
-				cacheTtlSeconds: 0,
-				type: "text",
-			});
-			// `isFallback` = o SDK devolveu o texto que passamos como fallback, não o
-			// publicado. Aqui não passamos fallback, mas a guarda mantém o contrato
-			// explícito: sem publicação, `publicado` fica null.
-			if (!atual.isFallback) publicado = { text: atual.prompt, version: atual.version };
-		} catch {
-			// Prompt inexistente ou label vazia — é o caso "nao-publicado".
-		}
-		drifts.push(compararPromptPublicado({ name, textoDoCodigo: text, publicado }));
+	if (caixa.texto.trim() === SYSTEM_PROMPT.trim()) {
+		console.log(`✅ caixa v${caixa.versao} é idêntica ao texto do código.`);
+		process.exit(0);
 	}
 
-	const { ok, texto } = resumoDeDrift(drifts);
-	console.log(texto);
-	process.exit(ok ? 0 : 1);
+	// Divergência é informação, não veredito: quem publicou quis mudar a conduta.
+	const publicado = caixa.texto.trim();
+	const codigo = SYSTEM_PROMPT.trim();
+	let i = 0;
+	while (i < publicado.length && i < codigo.length && publicado[i] === codigo[i]) i++;
+	console.log(
+		`ℹ️  a caixa v${caixa.versao} DIFERE do código a partir do caractere ${i} (${publicado.length} vs ${codigo.length}).`,
+	);
+	console.log(`   publicado: ${JSON.stringify(publicado.slice(i, i + 120))}`);
+	console.log(`   código:    ${JSON.stringify(codigo.slice(i, i + 120))}`);
+	process.exit(0);
 }
 
-main();
+main().catch((err) => {
+	console.error("✗ prompts:check falhou:", err);
+	process.exit(1);
+});

@@ -17,8 +17,8 @@ import { vitrineDisponivel } from "@/lib/bevi/identidade-vitrine";
 import { EMPTY_TURN_FALLBACK } from "@/lib/chat/empty-turn-guard";
 import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
-import { registrarEntregaDoGate } from "@/lib/observability/langfuse/funil-scores";
-import { withLangfuseTurn } from "@/lib/observability/langfuse/turn";
+import { registrarEntregaDoGate } from "@/lib/observability/sinais/funil-scores";
+import { comTraceDoTurno } from "@/lib/observability/trace-local";
 import { traceTurnEvents } from "@/lib/telemetry/turn-trace";
 import { sendInteractiveMessage, sendTextMessage } from "./api";
 import {
@@ -305,7 +305,7 @@ async function consumeEvents(
 		}
 	}
 
-	await withLangfuseTurn(
+	await comTraceDoTurno(
 		{
 			conversationId,
 			channel: "whatsapp",

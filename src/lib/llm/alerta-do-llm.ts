@@ -6,7 +6,7 @@
 // dedupe de 1 h por tipo.
 //
 // O destinatário é o JÁ CONFIGURADO no projeto (`ALERTA_OBSERVABILIDADE_TO`,
-// o mesmo da rota `api/observability/alerta-langfuse`) — nenhum endereço novo
+// o mesmo da rota de alerta do LLM (`llm/alerta-do-llm.ts`)) — nenhum endereço novo
 // entra no código. Sem a env, o alerta NÃO é enviado e isso vira log de erro,
 // nunca silêncio.
 //

@@ -33,6 +33,8 @@ export type BeatResultado = {
 	texto: string;
 	chamadas: ChamadaDeTool[];
 	resultados: ResultadoDeTool[];
+	/** Tokens consumidos neste beat (o livro-caixa local de custo). */
+	uso: { input: number; output: number };
 };
 
 export async function executarBeat(args: BeatArgs): Promise<BeatResultado> {
@@ -78,5 +80,15 @@ export async function executarBeat(args: BeatArgs): Promise<BeatResultado> {
 	});
 
 	await session.prompt(args.turnMessage);
-	return { texto, chamadas, resultados };
+
+	// Uso da sessão: é o único lugar que sabe quantos tokens o turno gastou.
+	let uso = { input: 0, output: 0 };
+	try {
+		const stats = session.getSessionStats();
+		uso = { input: stats.tokens?.input ?? 0, output: stats.tokens?.output ?? 0 };
+	} catch {
+		// observabilidade nunca custa o turno
+	}
+
+	return { texto, chamadas, resultados, uso };
 }

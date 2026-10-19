@@ -27,7 +27,7 @@ export function looksLikeIdentityResendComplaint(text: string): boolean {
  * etapa. Gate ausente/desconhecido (usuário desviou, `decideShowGate` suprimiu)
  * → null: o modelo conversa livre.
  *
- * Morava em `langgraph/nodes/converse.ts` como função local; subiu pra cá
+ * Morava em `pi/converse.ts` como função local; subiu pra cá
  * (FIX-393) porque a única dependência dela é o `GATE_INTENT` logo abaixo — e
  * porque um contexto que decide o que o cliente lê merece teste próprio. */
 /**
@@ -139,7 +139,7 @@ export const GATE_INTENT: Record<string, string> = {
 	// Duas autoridades se contradizendo é o que produziu o CPF pedido três vezes
 	// em `fd76e393` (16/08/2026): o modelo seguiu a mais específica da tarefa, que
 	// era a do canal errado. A mecânica de cada canal mora no bloco de canal
-	// (`langgraph/nodes/converse.ts`); aqui fica só o que vale nos dois.
+	// (`pi/converse.ts`); aqui fica só o que vale nos dois.
 	contract:
 		"nada — a decisão JÁ foi tomada e o plano JÁ está escolhido. É PROIBIDO perguntar de novo qual opção ele quer ou pedir que ele confirme a escolha: isso já aconteceu. Sua fala aqui é curta e conduz ao pré-cadastro: diga que vai preparar o cadastro dele e que ele não paga nada agora (o pagamento só começa depois, quando nossa equipe enviar as instruções por e-mail). O sistema cuida de coletar e confirmar os dados logo depois da sua fala — você não pede nada disso por conta própria, e nunca diz que a cota está reservada",
 };

@@ -1,7 +1,7 @@
 import type { UserIntent } from "@/lib/agent/qualify-state";
 
 // Sim/não em texto livre — módulo NEUTRO de propósito: é usado pelos dois
-// runtimes (orchestrator/index.ts e langgraph/nodes/advance.ts) e não pode
+// runtimes (orchestrator/index.ts e turn/advance.ts) e não pode
 // arrastar nenhuma dependência pesada. Quando morava no `index.ts`, importá-lo
 // do grafo criava ciclo (index → runner → builder → …) e o Turbopack quebrava
 // com "CJS module can't be async".

@@ -2,7 +2,7 @@
 //
 // Este módulo é a parte do estado que NÃO depende de LangGraph: os tipos do funil
 // (`FunnelState`, `FunnelQualifyAnswers`), o mapa de chaves e `funnelFromMeta`.
-// Ele nasceu da extração de `langgraph/state.ts` (B2 da campanha 2026-10-19) por
+// Ele nasceu da extração do estado do runtime anterior (B2 da campanha 2026-10-19) por
 // um motivo só: com o pi como runtime, o estado do turno é um OBJETO comum
 // montado e devolvido por funções, não um canal de `Annotation` com reducer.
 //
