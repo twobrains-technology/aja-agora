@@ -38,7 +38,6 @@ export type TurnOutcome = {
 import type { AnalyzeResult } from "@/lib/agent/orchestrator/analyze";
 import type { Channel, TurnEvent } from "@/lib/agent/orchestrator/types";
 import type { ConversationMetadata } from "@/lib/agent/personas";
-import type { UserIntent } from "@/lib/agent/qualify-state";
 import type { BuscaGrupos } from "@/lib/agent/turn/discovery";
 import { encryptIdentity } from "@/lib/conversation/identity";
 import { createRunTurnPi } from "../turno";

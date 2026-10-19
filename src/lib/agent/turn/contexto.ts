@@ -185,7 +185,7 @@ export type ContextoDoTurno = {
 export type SystemDoTurno = Awaited<ReturnType<typeof montarContextoDoTurno>>;
 
 export async function montarContextoDoTurno(ctx: ContextoDoTurno) {
-	const { state, desbloqueio, desbloqueioPendente } = ctx;
+	const { state, desbloqueioPendente } = ctx;
 	const gateAtivo = state.gate ?? state.answeredGate;
 	// Beat do MOTIVO — turno próprio, logo depois do bem. Sem isto o gate
 	// `desire` pedia bem + motivo no mesmo balão e o cliente respondia só um.

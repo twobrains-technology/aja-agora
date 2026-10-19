@@ -52,11 +52,11 @@
  * consulta um dia por vez; o dia vem do recorte pedido, não do payload.
  */
 
-import { and, eq, gte, lte } from "drizzle-orm";
+import { and, gte, lte } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations, usoDeIa } from "@/db/schema";
 import { CHAVE_DA_COTACAO, cotacaoDoCadastro, lerCustoDoCadastro } from "./custos-do-cadastro";
-import { diaComoData, diaDoNegocio, fimDoDia, inicioDoDia } from "./periodo";
+import { diaDoNegocio, fimDoDia, inicioDoDia } from "./periodo";
 
 /** Os dois canais do produto — o mesmo enum de `conversations.channel`. */
 export type CanalDeIA = "web" | "whatsapp";

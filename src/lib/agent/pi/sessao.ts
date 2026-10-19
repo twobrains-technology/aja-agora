@@ -14,19 +14,29 @@ import dns from "node:dns/promises";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-	createAgentSession,
-	DefaultResourceLoader,
-	type ExtensionAPI,
-	ModelRuntime,
-	SessionManager,
-	SettingsManager,
-} from "@earendil-works/pi-coding-agent";
+// O PACOTE DO PI É ESM-ONLY e entra por `import()` DINÂMICO, de propósito.
+//
+// Num bundle CJS (o server do Next) um `require()` dele estoura com
+// `ERR_PACKAGE_PATH_NOT_EXPORTED`, porque o `exports` do pacote só declara a
+// condição `import`. O `import()` mantém o carregamento em ESM nos dois mundos:
+// no vitest (ESM nativo) e no bundle do Next, que preserva `import()` para
+// módulo ESM marcado como externo.
+import type * as PiPacote from "@earendil-works/pi-coding-agent";
 import type { MensagemDaConversa } from "@/lib/agent/turn/estado";
 import type { PiToolDefinition } from "./tools";
 
-/** Modelo do agente — mesma regra do resto do app (`?.trim() ||`, porque o
- * compose materializa a var vazia). */
+type PiModule = typeof PiPacote;
+
+let piPromessa: Promise<PiModule> | null = null;
+
+async function carregarPi(): Promise<PiModule> {
+	piPromessa ??= import("@earendil-works/pi-coding-agent").catch((erro: unknown) => {
+		piPromessa = null; // próxima chamada tenta de novo
+		throw erro;
+	}) as Promise<PiModule>;
+	return piPromessa;
+}
+
 export function modeloDoAgente(): string {
 	return process.env.AI_MODEL?.trim() || "qwen3.6-flash";
 }
@@ -43,7 +53,20 @@ export async function hostDoGateway(): Promise<string> {
 		const direto = process.env.LITELLM_BASE_URL?.trim();
 		if (direto) {
 			try {
-				return new URL(direto).host;
+				const u = new URL(direto);
+				const porta = u.port || "4000";
+				// Resolve por `lookup` (getaddrinfo), NÃO por `resolve4`: os hosts
+				// `.orb.local` do Mac não têm registro A em DNS — só respondem pelo
+				// resolvedor do sistema, e `resolve4` devolve erro (medido 19/10/2026).
+				// Fixando IPv4 aqui, o fetch do pi não cai no endereço IPv6 do OrbStack,
+				// que é inalcançável e aparecia como "Connection error." no turno.
+				try {
+					const { address } = await dns.lookup(u.hostname, { family: 4 });
+					if (address) return `${address}:${porta}`;
+				} catch {
+					// sem endereço: usa o hostname como veio
+				}
+				return `${u.hostname}:${porta}`;
 			} catch {
 				// cai no default abaixo
 			}
@@ -69,7 +92,7 @@ export function resetHostDoGateway(): void {
 }
 
 export type SessaoAberta = {
-	session: Awaited<ReturnType<typeof createAgentSession>>["session"];
+	session: Awaited<ReturnType<PiModule["createAgentSession"]>>["session"];
 	/** Diretório descartável da sessão — some com o processo. */
 	agentDir: string;
 	cwd: string;
@@ -111,14 +134,23 @@ export async function abrirSessao(args: {
 	);
 	writeFileSync(join(agentDir, "auth.json"), JSON.stringify({}));
 
+	const pi = await carregarPi();
+	const {
+		createAgentSession,
+		DefaultResourceLoader,
+		ModelRuntime,
+		SessionManager,
+		SettingsManager,
+	} = pi;
+
 	const loader = new DefaultResourceLoader({
 		cwd,
 		agentDir,
 		noSkills: true,
 		systemPrompt: args.system,
 		extensionFactories: [
-			(pi: ExtensionAPI) => {
-				for (const tool of args.tools) pi.registerTool(tool as never);
+			(api: PiPacote.ExtensionAPI) => {
+				for (const tool of args.tools) api.registerTool(tool as never);
 			},
 		],
 	});
