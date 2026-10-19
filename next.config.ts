@@ -5,13 +5,19 @@ const nextConfig: NextConfig = {
 	// @react-pdf/renderer (geração da proposta em PDF, server-side) é ESM-only e
 	// carrega deps nativas/WASM (yoga-layout, fontkit). Deixar como externo evita
 	// que o bundler (Turbopack/webpack) tente empacotá-lo e quebre no build.
-	// OTel/Langfuse: mesmo motivo do PostgresSaver (checkpointer.ts) — o SDK usa
-	// APIs de node que o Turbopack empacota mal; externo resolve.
+	// O PI entra aqui pelo mesmo motivo: o pacote do harness é ESM-only, lê o
+	// disco (models.json/auth.json) e arrasta `quickjs-wasi` (do codemode) — que
+	// carrega um `.wasm` com imports `wasi_snapshot_preview1`. Empacotado, o
+	// webpack tenta resolver esses imports e o build morre com "Module not
+	// found: wasi_snapshot_preview1" (medido em 19/10/2026). Externo, ele é
+	// `require` em runtime e o ESM é resolvido pelo Node do container.
 	serverExternalPackages: [
 		"@react-pdf/renderer",
-		"@langfuse/otel",
-		"@langfuse/tracing",
-		"@opentelemetry/sdk-trace-node",
+		"@earendil-works/pi-coding-agent",
+		"@earendil-works/pi-agent-core",
+		"@earendil-works/pi-ai",
+		"@earendil-works/pi-codemode",
+		"quickjs-wasi",
 	],
 	allowedDevOrigins: [
 		"aja-agora.twobrainstechnology.com",
