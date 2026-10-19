@@ -21,7 +21,11 @@
 //
 // Lei da casa: observabilidade NUNCA derruba o turno. Tudo aqui é try/catch e
 // no-op sem credencial.
-import type { FalhaDeTool } from "@/lib/agent/langgraph/tool-falha";
+/** Falha de tool, como o turno classifica (`pi/tools.ts`). Declarado aqui
+ * porque este módulo de score MORRE junto com o Langfuse (B6) — não vale criar
+ * dependência nova para ele. */
+type FalhaDeTool = { tool: string; tipo: string; mensagem?: string; errorText?: string };
+
 import type { TurnTraceRecord } from "@/lib/telemetry/turn-trace";
 import { getLangfuseClient } from "./client";
 import { ambienteLangfuse } from "./env";

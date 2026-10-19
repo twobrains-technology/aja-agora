@@ -1,4 +1,4 @@
-import { WHAT_IF_TOOL_NAMES } from "@/lib/agent/langgraph/toolset";
+import { WHAT_IF_TOOL_NAMES } from "@/lib/agent/turn/toolset";
 import { isValidCpf, maskCpf } from "@/lib/conversation/identity";
 import { normalizeAdministradora } from "./choose-offer";
 

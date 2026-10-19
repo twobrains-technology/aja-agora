@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from "vitest";
-import { buscaDoMock } from "@/lib/agent/langgraph/testing/grupos-do-mock";
 import { limparCenarioPi, runScenarioPi } from "./testing/cenario";
+import { buscaDoMock } from "./testing/grupos-do-mock";
 
 /**
  * O CONTRATO DO SEAM, RODANDO NO MOTOR DO PI.

@@ -20,9 +20,8 @@ import { afterAll, describe, expect, it } from "vitest";
 process.env.LANGFUSE_PUBLIC_KEY = "";
 process.env.LANGFUSE_SECRET_KEY = "";
 
-import { buscaDoMock } from "@/lib/agent/langgraph/testing/grupos-do-mock";
-import { limparCenario, runScenario } from "@/lib/agent/langgraph/testing/scenario";
-import { modelosRoteirizados } from "@/lib/agent/langgraph/testing/scripted-model";
+import { limparCenarioPi, runScenarioPi } from "@/lib/agent/pi/testing/cenario";
+import { buscaDoMock } from "@/lib/agent/pi/testing/grupos-do-mock";
 import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { blocoDeSituacoes, fatoDeReveal, SITUACAO_KEYS } from "./situacoes";
 
@@ -49,8 +48,9 @@ const RAIZ = new URL("../../../../", import.meta.url).pathname;
 /** Onde o CÓDIGO do turno vive hoje: o nó e o módulo de contexto que a extração
  * de 17/10/2026 separou dele. A conduta não pode voltar em NENHUM dos dois. */
 const ARQUIVOS_DO_TURNO = [
-	`${RAIZ}src/lib/agent/langgraph/nodes/converse.ts`,
-	`${RAIZ}src/lib/agent/langgraph/nodes/turn-context.ts`,
+	`${RAIZ}src/lib/agent/turn/contexto.ts`,
+	`${RAIZ}src/lib/agent/pi/turno.ts`,
+	`${RAIZ}src/lib/agent/pi/converse.ts`,
 ];
 
 /** Frases de CONDUTA que saíram de `converse.ts` e agora só existem na caixa.
@@ -89,23 +89,8 @@ describe("caixa — a conduta saiu do código", () => {
 // ── Os dois turnos que o mandato nomeia ──
 const criadas: string[] = [];
 afterAll(async () => {
-	for (const id of criadas) await limparCenario(id);
+	for (const id of criadas) await limparCenarioPi(id);
 });
-
-/** O texto que o modelo recebeu na última chamada, achatado (as mensagens de
- * sistema vão em blocos `{type:"text"}`). */
-function systemRecebidoPeloModelo(): string {
-	const modelo = modelosRoteirizados.at(-1);
-	const chamadas = modelo?.mensagensRecebidas ?? [];
-	const ultima = chamadas.at(-1) ?? [];
-	const sistema = ultima.find((m) => m._getType() === "system");
-	if (!sistema) return "";
-	const conteudo = sistema.content;
-	if (typeof conteudo === "string") return conteudo;
-	return conteudo
-		.map((b) => (typeof b === "object" && b !== null && "text" in b ? String(b.text) : ""))
-		.join("\n");
-}
 
 describe("caixa — o turno de REVEAL recebe só o FATO, e a conduta vem dela", () => {
 	// O turno de apresentação (`converse.ts`, ramo de `turnoDeApresentacao`) NÃO
@@ -127,7 +112,7 @@ describe("caixa — o turno de REVEAL recebe só o FATO, e a conduta vem dela", 
 	it("o ramo de apresentação passa pelo fato e não escreve conduta", () => {
 		// Depois da extração de 17/10/2026, quem monta o system prompt do turno é
 		// `turn-context.ts` — o guard segue a fonte, não o nome antigo do arquivo.
-		const contexto = readFileSync(`${RAIZ}src/lib/agent/langgraph/nodes/turn-context.ts`, "utf8");
+		const contexto = readFileSync(`${RAIZ}src/lib/agent/turn/contexto.ts`, "utf8");
 		expect(contexto).toContain("fatoDeReveal(");
 		expect(contexto).toContain("fatoDeFechamento(");
 	});
@@ -135,7 +120,7 @@ describe("caixa — o turno de REVEAL recebe só o FATO, e a conduta vem dela", 
 
 describe("caixa — o turno de FECHAMENTO é governado por ela", () => {
 	it("o sistema leva o FATO do fecho e a CONDUTA escrita na caixa", async () => {
-		const r = await runScenario({
+		const r = await runScenarioPi({
 			turns: [{ user: "e agora?", beats: [{ text: "Tá tudo certo por aqui." }] }],
 			metaInicial: {
 				contractClosed: true,
@@ -149,7 +134,7 @@ describe("caixa — o turno de FECHAMENTO é governado por ela", () => {
 		});
 		criadas.push(r.conversationId);
 
-		const sistema = systemRecebidoPeloModelo();
+		const sistema = r.sistema;
 		expect(sistema).toContain("[situação: fechamento]");
 		expect(sistema).toContain(
 			"Nunca prometa prazo de contemplação nem diga que a cota está reservada",

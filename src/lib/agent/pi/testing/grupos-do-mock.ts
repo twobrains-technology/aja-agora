@@ -2,7 +2,7 @@
 // `G120`/`G171`/`G90`). Usados como fixture da busca nos cenários de jornada —
 // assim o que o teste vê é o mesmo conjunto que o mock desenha, e uma
 // divergência de ordem/card não fica escondida atrás de dado inventado.
-import type { BuscaGrupos } from "../nodes/discovery";
+import type { BuscaGrupos } from "@/lib/agent/turn/discovery";
 
 type GrupoMock = { n: string; carta: number; p: number; l: number };
 

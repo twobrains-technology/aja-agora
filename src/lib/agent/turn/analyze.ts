@@ -265,7 +265,7 @@ export function createAnalyzeNode(analyze: AnalyzeFn = analyzeAndMerge) {
 				});
 			}
 			console.log(
-				`[langgraph] roteou pra categoria=${rota.toCategory} persona=${meta.currentPersona}${rota.usedFallback ? " (fallback por keyword)" : ""}`,
+				`[turn] roteou pra categoria=${rota.toCategory} persona=${meta.currentPersona}${rota.usedFallback ? " (fallback por keyword)" : ""}`,
 			);
 		}
 

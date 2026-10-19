@@ -1,15 +1,17 @@
-import { runTurnLangGraph } from "@/lib/agent/langgraph/run-turn";
+import { runTurnPi } from "@/lib/agent/pi/turno";
 import { getOrCreateConversation } from "@/lib/whatsapp/session";
 import type { TurnEvent, TurnInput } from "./types";
 
 export type { TurnEvent, TurnInput } from "./types";
 
-/** Ponto de entrada único do turno — web e WhatsApp consomem por aqui.
- * LangGraph é o ÚNICO runtime (o runtime Vercel AI SDK foi removido por
- * completo; a campanha `.processo/loop/2026-07-20-1948-langgraph-runtime.md`
- * encerrou com o LangGraph substituindo o antigo motor). */
+/** Ponto de entrada único do turno — web, WhatsApp e os workers consomem por aqui.
+ *
+ * O motor é o PI (campanha 2026-10-19): o turno é `capture → analyze → route →
+ * advance → discovery → fala → emit-card → persist`, conduzido por
+ * `src/lib/agent/pi/turno.ts`. O LangGraph saiu por inteiro — o produto não tem
+ * mais runtime de framework de agente, só o harness do pi. */
 export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
-	yield* runTurnLangGraph(input);
+	yield* runTurnPi(input);
 }
 
 export async function runTurnFromText(args: {

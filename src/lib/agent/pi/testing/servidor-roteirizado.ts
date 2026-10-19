@@ -10,10 +10,16 @@
 // sem estourar nada (equivalente ao `fallback` do ScriptedChatModel).
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { ScriptedBeat } from "@/lib/agent/langgraph/testing/scripted-model";
+/** Um beat do roteiro: ou texto, ou uma rodada de tool-calls. */
+export type ScriptedBeat = {
+	text?: string;
+	toolCalls?: Array<{ name: string; args: Record<string, unknown>; id?: string }>;
+};
 
 export type ServidorRoteirizado = {
 	url: string;
+	/** O system que o MODELO recebeu na última ida (texto achatado). */
+	ultimoSistema: () => string;
 	/** Quantas chamadas o harness já fez (útil em asserção de "não chamou"). */
 	chamadas: () => number;
 	fechar: () => Promise<void>;
@@ -23,6 +29,7 @@ export async function subirServidorRoteirizado(
 	beats: readonly ScriptedBeat[],
 ): Promise<ServidorRoteirizado> {
 	let i = 0;
+	let ultimoSistema = "";
 	const server: Server = createServer((req, res) => {
 		let corpo = "";
 		req.on("data", (c) => {
@@ -31,8 +38,24 @@ export async function subirServidorRoteirizado(
 		req.on("end", () => {
 			const beat = beats[i] ?? { text: "" };
 			i += 1;
-			// Consome o corpo para o socket não travar em request seguinte.
-			void corpo;
+			// Guarda o system que o modelo recebeu — é o que prova que a CAIXA
+			// governa o turno (o teste da caixa lê isto, não o objeto do modelo).
+			try {
+				const pedido = JSON.parse(corpo || "{}") as {
+					messages?: Array<{ role?: string; content?: unknown }>;
+				};
+				const sistema = pedido.messages?.find((m) => m.role === "system")?.content;
+				ultimoSistema =
+					typeof sistema === "string"
+						? sistema
+						: Array.isArray(sistema)
+							? sistema
+									.map((b) => (b && typeof b === "object" && "text" in b ? String(b.text) : ""))
+									.join("\n")
+							: "";
+			} catch {
+				// corpo estranho não derruba o cenário
+			}
 			res.writeHead(200, { "Content-Type": "text/event-stream" });
 			const envia = (o: unknown) => res.write(`data: ${JSON.stringify(o)}\n\n`);
 			const base = {
@@ -77,6 +100,7 @@ export async function subirServidorRoteirizado(
 	const porta = (server.address() as AddressInfo).port;
 	return {
 		url: `http://127.0.0.1:${porta}`,
+		ultimoSistema: () => ultimoSistema,
 		chamadas: () => i,
 		fechar: () =>
 			new Promise<void>((ok) => {

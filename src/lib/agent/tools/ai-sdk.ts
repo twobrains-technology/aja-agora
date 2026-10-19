@@ -1841,6 +1841,32 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 	// uma. O invariante que continua sendo CÓDIGO é o que dá pra verificar: a
 	// cota tem que ser uma das REALMENTE exibidas nesta conversa. Grupo que o
 	// modelo inventar não ancora nada.
+	// O MODELO REGISTRA O QUE O CLIENTE PEDIU (17/10/2026).
+	//
+	// Antes, um classificador SEPARADO (o analyzer, uma segunda chamada de LLM por
+	// turno) lia a frase e extraía categoria/valor/parcela. Ele falhava no gateway
+	// (timeout, "não bateu com o schema") e, quando caía, o funil parava de andar
+	// sem nenhum erro visível. Quem entende a frase já é o agente que está
+	// conversando — então é ele quem registra, por tool, e o servidor só confere
+	// que o número saiu da fala do cliente (ver `converse.ts`, `registrar_pedido`).
+	const registrar_pedido = tool({
+		description:
+			"Registre o que o cliente PEDIU, assim que ele disser: o tipo de bem (carro, moto, imóvel ou serviços), o valor do bem e/ou a parcela que cabe no bolso dele. Chame toda vez que aparecer informação nova — é isto que faz o sistema saber em que ponto da conversa vocês estão. Passe SÓ o que o cliente disse com clareza; nunca invente nem arredonde. Valor em reais, número inteiro (ex.: 80000).",
+		inputSchema: z.object({
+			categoria: z
+				.enum(["auto", "imovel", "moto", "servicos"])
+				.optional()
+				.describe("auto = carro/utilitário; imovel = casa/apartamento/terreno; moto; servicos."),
+			valorDoBem: z.number().positive().optional().describe("Preço do bem, em reais."),
+			parcelaDesejada: z
+				.number()
+				.positive()
+				.optional()
+				.describe("Parcela mensal que o cliente disse caber no bolso, em reais."),
+		}),
+		execute: async () => "[Pedido registrado]",
+	});
+
 	const escolher_cota = tool({
 		description:
 			"Chame SEMPRE que o cliente escolher uma das cotas que você mostrou — seja pelo nome da administradora, por característica ('a de menor parcela', 'a de prazo mais longo') ou por referência ('essa mesma', 'a primeira'). Passe o groupId da cota escolhida. É isto que faz a contratação sair com a cota certa: sem esta chamada, o sistema segue ancorado na cota anterior e o contrato fecha errado. Nunca invente groupId — use um dos que apareceram nos cards.",
@@ -2000,5 +2026,7 @@ export function buildConsorcioTools(ctx: ConsorcioToolsContext) {
 		// O cliente escolheu uma cota — quem entende qual é o modelo, quem confere
 		// que ela existe é o código.
 		escolher_cota,
+		// O modelo registra o que o cliente pediu (substitui o analyzer).
+		registrar_pedido,
 	};
 }

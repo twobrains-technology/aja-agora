@@ -10,7 +10,31 @@
 import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { artifacts, conversations, messages } from "@/db/schema";
-import type { ScenarioTurn, TurnOutcome } from "@/lib/agent/langgraph/testing/scenario";
+import type { UserIntent as _Intent } from "@/lib/agent/qualify-state";
+
+/** Um turno do cenário: o que o cliente diz, o que o analyzer extrai e o que o
+ * modelo responde. */
+export type ScenarioTurn = {
+	user: string;
+	/** Beats do modelo NESTE turno (um por ida ao provedor). */
+	beats: ScriptedBeat[];
+	/** O que o analyzer "extraiu" — muta o meta, como `analyzeAndMerge` faz. */
+	extrai?: (meta: ConversationMetadata) => void;
+	/** Intent classificado do turno. Default: "neutral". */
+	intent?: _Intent;
+	/** `false` = turno de SERVIDOR (directive), não fala do cliente. */
+	isUserTurn?: boolean;
+};
+
+export type TurnOutcome = {
+	user: string;
+	events: TurnEvent[];
+	/** Só os tipos de artifact, na ordem — a asserção mais usada. */
+	artifacts: string[];
+	/** A trajetória legível: artifacts e gates na ordem em que o cliente os vê. */
+	trilha: string[];
+};
+
 import type { AnalyzeResult } from "@/lib/agent/orchestrator/analyze";
 import type { Channel, TurnEvent } from "@/lib/agent/orchestrator/types";
 import type { ConversationMetadata } from "@/lib/agent/personas";
@@ -18,7 +42,7 @@ import type { UserIntent } from "@/lib/agent/qualify-state";
 import type { BuscaGrupos } from "@/lib/agent/turn/discovery";
 import { encryptIdentity } from "@/lib/conversation/identity";
 import { createRunTurnPi } from "../turno";
-import { subirServidorRoteirizado } from "./servidor-roteirizado";
+import { type ScriptedBeat, subirServidorRoteirizado } from "./servidor-roteirizado";
 
 /** CPF falso para a identidade semeada — PII de teste, nunca de gente real. */
 const CPF_FALSO_DO_CENARIO = "52998224725";
@@ -29,6 +53,8 @@ export type ScenarioResultPi = {
 	meta: ConversationMetadata;
 	/** Quantas idas ao "modelo" o turno fez. */
 	chamadasAoModelo: number;
+	/** O system que o modelo recebeu no último turno (texto achatado). */
+	sistema: string;
 };
 
 function analyzerDoRoteiro(turnos: ScenarioTurn[], cursor: { i: number }) {
@@ -133,6 +159,7 @@ export async function runScenarioPi(opts: {
 			turns,
 			meta: (final?.metadata ?? {}) as ConversationMetadata,
 			chamadasAoModelo: servidor.chamadas(),
+			sistema: servidor.ultimoSistema(),
 		};
 	} finally {
 		await servidor.fechar();
