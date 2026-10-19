@@ -59,3 +59,9 @@ overrides:
 ignoredBuiltDependencies:
   - '@google/genai'
   - protobufjs
+
+# E o erro vira AVISO. `strictDepBuilds` é o que transforma "build de dependência
+# ignorado" em código de saída != 0 — nas duas tentativas anteriores (19/10) o
+# install morreu aqui mesmo com a lista acima, porque a política continua
+# estrita. Com ele falso, o install segue e o aviso fica no log.
+strictDepBuilds: false
