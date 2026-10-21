@@ -7,12 +7,22 @@ const CPF = "11144477735";
 const CPF_MASCARADO = "111.444.777-35";
 
 describe("capturarIdentidadeDoTexto", () => {
-	it("CPF sozinho: guarda o número e tira ele do texto; sem celular não vira identidade", () => {
+	it("CPF sozinho: guarda o número na hora (celular pode vir depois) e tira do texto", () => {
 		const r = capturarIdentidadeDoTexto(`meu cpf é ${CPF_MASCARADO}`, null);
 		expect(r.recebeuCpf).toBe(true);
-		expect(r.identidade).toBeNull();
+		// CPF parcial VALE e é persistido: o celular chega na mensagem seguinte e o
+		// servidor precisa lembrar do CPF entre turnos.
+		expect(r.identidade).toEqual({ cpf: CPF, celular: "" });
 		expect(r.textoLimpo).not.toContain("444");
 		expect(r.textoLimpo).toContain("[CPF recebido e guardado]");
+	});
+
+	it("celular solto de 11 dígitos NÃO é confundido com CPF", () => {
+		const r = capturarIdentidadeDoTexto("meu numero é 11987654321", null);
+		expect(r.recebeuCpf).toBe(false);
+		expect(r.recebeuCelular).toBe(true);
+		expect(r.identidade).toBeNull();
+		expect(r.textoLimpo).not.toContain("987654321");
 	});
 
 	it("CPF + celular: devolve a identidade completa e some com os dois números", () => {

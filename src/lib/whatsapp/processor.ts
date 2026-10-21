@@ -201,12 +201,12 @@ async function processTextMessageSerialized(
 					// handleHandoffDecline). Só revela se a qualificação já estava
 					// completa (o funil antigo=search). O tripwire de identidade do reveal
 					// agora sempre passa, pois a identidade já foi coletada cedo.
-					// Sem funil, o CPF guardado só destrava a proposta: confirma e devolve a
-					// conversa ao vendedor, que retoma com as palavras dele.
+					// O CPF foi guardado. NÃO se inventa fala do cliente: "pode seguir" era
+					// gravado como se ELE tivesse dito — e é exatamente o "sim" que a skill
+					// de proposta espera depois do aviso de LGPD. Consentimento fabricado
+					// pelo código é incidente, não atalho (parecer do Opus, 20/10/2026).
+					// Aqui só se confirma o recebimento; o vendedor retoma no próximo turno.
 					await sendTextMessage(from, IDENTIFY_CONFIRMED_REPLY);
-					await withSimulatorClockIfNeeded(conv, () =>
-						processWithOrchestrator(from, "pode seguir", conv.contactName ?? undefined),
-					);
 				}
 				return;
 			}

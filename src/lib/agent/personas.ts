@@ -343,6 +343,10 @@ export type ConversationMetadata = {
 	 * as heurísticas de linguagem continuam imperfeitas, mas o pior desfecho delas
 	 * passa a ser uma conversa errada, não um contrato errado. */
 	contractOffer?: ConversationMetadata["recommendedOffer"];
+	/** Quando e em que fala o cliente aceitou o aviso da LGPD antes da proposta.
+	 * Gravado pelo SERVIDOR no momento do `fazer_proposta` — o modelo não pode
+	 * afirmar consentimento que ninguém registrou. */
+	lgpdAceite?: { em: string; fala: string };
 	/** FIX-68 — valor-alvo (creditMax) usado na ÚLTIMA descoberta que produziu o
 	 * reveal. Baseline pra distinguir "trocar de faixa de valor" (re-buscar é
 	 * legítimo) de "re-revelar a MESMA faixa em loop" (BUG-REVEAL-LOOP, que NÃO

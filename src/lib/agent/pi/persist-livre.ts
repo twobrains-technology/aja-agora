@@ -19,7 +19,7 @@ import { projectToMeta } from "@/lib/agent/turn/projecao";
 import { sincronizarNomeDoContato } from "@/lib/contacts/sincronizar-nome";
 import { registrarCardEnviado } from "@/lib/conversation/cards";
 import { saveMessage } from "@/lib/conversation/messages";
-import { persistMeta } from "@/lib/conversation/meta";
+import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 
 /** Fala do cliente que não é digitada por ele (diretiva de servidor). */
 function pareceDirectiveDeServidor(texto: string): boolean {
@@ -33,6 +33,7 @@ export async function persistirTurnoLivre(args: {
 }): Promise<void> {
 	const { estado, persona = null } = args;
 	const { conversationId, channel, isUserTurn, userText, events } = estado;
+	const baseMeta = estado.baseMeta;
 
 	// 1. Fala do cliente — nunca um prompt de servidor no lugar dela.
 	if (isUserTurn && userText && !pareceDirectiveDeServidor(userText)) {
@@ -55,7 +56,17 @@ export async function persistirTurnoLivre(args: {
 	}
 
 	// 3. Meta ANTES dos cards (o adapter relê do banco ao abrir o artifact).
-	const meta = projectToMeta(estado);
+	//
+	// `persistMeta` SUBSTITUI a coluna inteira. Se o turno lê a meta no começo,
+	// grava identidade no meio (storeIdentity) e persiste o snapshot velho no
+	// fim, o CPF que acabou de chegar é APAGADO — e a proposta passa a ser
+	// impossível. Medido pelo parecer do Opus em 20/10/2026, e é o defeito que
+	// derrubava o fechamento inteiro.
+	//
+	// Conserto: reler a meta do banco e aplicar SÓ os campos que este turno de
+	// fato mudou (diff contra o `baseMeta` de entrada). Campo que a tool gravou
+	// no meio do turno sobrevive.
+	const meta = await metaDoTurnoSemApagar(baseMeta, estado);
 	await persistMeta(conversationId, meta);
 
 	if (estado.contactName) {
@@ -77,6 +88,29 @@ export async function persistirTurnoLivre(args: {
 			personaId: persona,
 		});
 	}
+}
+
+/**
+ * A meta do fim do turno SEM apagar o que foi gravado DURANTE ele.
+ *
+ * `projectToMeta` faz merge por cima do `baseMeta` lido no INÍCIO do turno —
+ * então tudo o que outra escrita gravou no meio (identidade cifrada, aceite de
+ * LGPD, `contractClosed`) volta ao valor velho e desaparece. Aqui a base é a
+ * meta FRESCA do banco, e só os campos que este turno realmente mudou entram
+ * por cima.
+ */
+export async function metaDoTurnoSemApagar(
+	baseMeta: EstadoDoTurno["baseMeta"],
+	estado: EstadoDoTurno,
+): Promise<EstadoDoTurno["baseMeta"]> {
+	const projetado = projectToMeta(estado);
+	const fresca = await reloadMeta(estado.conversationId).catch(() => baseMeta);
+	const mudados: Record<string, unknown> = {};
+	for (const [chave, valor] of Object.entries(projetado)) {
+		const antes = (baseMeta as Record<string, unknown>)[chave];
+		if (JSON.stringify(valor) !== JSON.stringify(antes)) mudados[chave] = valor;
+	}
+	return { ...fresca, ...mudados } as EstadoDoTurno["baseMeta"];
 }
 
 /** Drena os eventos não-streamados (artifact/handoff) depois da persistência. */

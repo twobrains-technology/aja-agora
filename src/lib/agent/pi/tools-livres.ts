@@ -25,13 +25,18 @@ import {
 } from "@/lib/agent/orchestrator/recommendation-payload";
 import type { Category } from "@/lib/agent/personas";
 import { realOfferPresentation } from "@/lib/bevi/closing-presentation";
-import { buildStartContractInput } from "@/lib/bevi/contract-input";
+import {
+	administradoraConflictsWithRegisteredProposal,
+	buildStartContractInput,
+} from "@/lib/bevi/contract-input";
 import { prefsFromMeta } from "@/lib/bevi/discovery-session";
 import { startContract } from "@/lib/bevi/fulfillment";
 import { identidadeDeVitrine, vitrineDisponivel } from "@/lib/bevi/identidade-vitrine";
+import { getLatestBeviProposal } from "@/lib/bevi/proposal-repo";
 import { loadAdministradoraLogoMap } from "@/lib/consorcio/administradora-logo-repo";
 import { loadIdentity } from "@/lib/conversation/identity";
-import { reloadMeta } from "@/lib/conversation/meta";
+import { loadConversationHistory } from "@/lib/conversation/messages";
+import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { saveContactName } from "@/lib/leads/contact-capture";
 
 export type CartaLivre = {
@@ -57,6 +62,10 @@ export type ContextoDasTools = {
 	cards: CardLivre[];
 	/** Texto do fecho (copy de produção) que acompanha o card. */
 	falasDoFecho: string[];
+	/** Cartas que foram para o CARD neste turno (não as 12 da busca crua). É
+	 * contra elas que a proposta é ancorada — o modelo só pode escolher o que o
+	 * cliente está vendo. */
+	cartasNaTela: CartaLivre[];
 	/** Setado por `falar_com_humano`. */
 	pediuHumano: boolean;
 	/** Setado por `buscar_cartas` — o driver grava na meta. */
@@ -178,13 +187,23 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 			}
 
 			const logos = await loadAdministradoraLogoMap();
+			// O card corta em até 4 opções (`limitarOpcoesDaComparacao`). O modelo
+			// recebia as 12 da busca e recomendava carta que o cliente NÃO estava
+			// vendo — e `fazer_proposta` recusava depois. A verdade é o card.
+			const payloadDoCard = buildComparisonTableFromRevealGroups(index, logos) as {
+				groups?: Array<{ id?: string }>;
+			};
+			const idsNoCard = new Set(
+				(payloadDoCard.groups ?? [])
+					.map((g) => g?.id)
+					.filter((id): id is string => typeof id === "string"),
+			);
+			const cartasNoCard = cartas.filter((c) => idsNoCard.has(c.groupId));
 			ctx.cards.push({
 				type: "comparison_table",
-				payload: buildComparisonTableFromRevealGroups(index, logos) as unknown as Record<
-					string,
-					unknown
-				>,
+				payload: payloadDoCard as unknown as Record<string, unknown>,
 			});
+			ctx.cartasNaTela = cartasNoCard;
 			ctx.estadoDepoisDaBusca = {
 				categoria,
 				creditMax,
@@ -195,7 +214,7 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 			};
 
 			return JSON.stringify({
-				cartas,
+				cartas: cartasNoCard,
 				obs: args.usaraLanceEmbutido
 					? `Busca feita com lance embutido de ${pct}%: a carta é maior que o bem de propósito (o embutido consome parte dela).`
 					: "Cartas reais, sem lance embutido.",
@@ -219,22 +238,75 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 			if (args.aceiteLgpd !== true) {
 				return "Proposta NÃO gerada: falta o aceite da LGPD. Dê o aviso e só siga depois do sim do cliente.";
 			}
+			const doTurno = ctx.cartasNaTela.find((c) => c.groupId === args.groupId);
 			const exibidas = await listShownOffersForConversation(ctx.conversationId).catch(() => []);
-			const escolhida = exibidas.find((o) => o.groupId === args.groupId);
+			const escolhida = doTurno
+				? {
+						groupId: doTurno.groupId,
+						administradora: doTurno.administradora,
+						creditValue: doTurno.carta,
+						termMonths: doTurno.prazoMeses,
+					}
+				: exibidas.find((o) => o.groupId === args.groupId);
 			if (!escolhida) {
 				return `Proposta NÃO gerada: o id "${args.groupId}" não está entre as cartas que o cliente viu nesta conversa. Busque de novo ou peça para ele escolher uma das que estão na tela.`;
 			}
 
 			const identity = await loadIdentity(ctx.conversationId);
-			const vitrine = identidadeDeVitrine();
 			if (!identity) {
-				return "Proposta NÃO gerada: não tenho o CPF e o celular do cliente guardados nesta conversa. Peça os dois, explique que a administradora consulta o CPF nos birôs de crédito, e só então chame de novo.";
+				return "Proposta NÃO gerada: não tenho o CPF do cliente guardado nesta conversa. Peça o CPF, explique que a administradora consulta os birôs de crédito, e só então chame de novo.";
 			}
-			if (vitrine && identity.cpf === vitrine.cpf) {
-				return "Proposta NÃO gerada: o CPF guardado é o da casa (usado só para mostrar as cartas). Peça o CPF e o celular do próprio cliente.";
+			if (!identity.celular) {
+				return `Proposta NÃO gerada: falta o celular do cliente (o CPF ${identity.cpf.slice(0, 3)}… já está guardado). Peça o celular com DDD e chame de novo.`;
 			}
 
+			// O AVISO DA LGPD TEM QUE TER SIDO DITO, e o servidor confere em vez de
+			// acreditar no booleano que o modelo mandou. Sem esta checagem, o
+			// `aceiteLgpd: true` era uma afirmação do próprio modelo sobre um
+			// consentimento que ninguém registrou — e `startContract` já dispara
+			// consulta de bureau com `termoLgpd: true`.
+			const historico = await loadConversationHistory(ctx.conversationId).catch(() => []);
+			const ultimaFalaDoAgente =
+				[...historico].reverse().find((m) => m.role === "assistant" && m.content.trim().length > 0)
+					?.content ?? "";
+			const avisoDado = /bir[oô]s?\s+de\s+cr[eé]dito|conforme a\s+LGPD/i.test(ultimaFalaDoAgente);
+			if (!avisoDado) {
+				return "Proposta NÃO gerada: o cliente ainda não recebeu o aviso da LGPD. Diga com suas palavras que a administradora consulta o CPF nos birôs de crédito e usa os dados só para isso, e só chame de novo depois do sim dele.";
+			}
+
+			// QUEM RECUSA IDENTIDADE DA CASA É O FULFILLMENT (`startContract`), que
+			// compara com a identidade DIGITADA — não a tool. Duplicar aqui barrava
+			// até o teste de homologação, onde o "cliente" é a conta da casa.
 			const meta = await reloadMeta(ctx.conversationId);
+
+			// UMA proposta por conversa: segunda proposta em OUTRA administradora
+			// dispara nova consulta de bureau no CPF da pessoa.
+			const anterior = await getLatestBeviProposal(ctx.conversationId).catch(() => null);
+			if (
+				administradoraConflictsWithRegisteredProposal(
+					anterior?.administradora,
+					escolhida.administradora ?? null,
+				)
+			) {
+				return `Proposta NÃO gerada: já existe uma proposta com a ${anterior?.administradora} nesta conversa. Ofereça conferir o status dela em vez de abrir outra.`;
+			}
+
+			// A CARTA ESCOLHIDA VIRA A ÂNCORA DO CONTRATO.
+			// Sem isto, `buildStartContractInput` usava o teto do funil e o cliente
+			// via 92.902 em 120x enquanto a Bevi recebia "uns 80 mil" — troca
+			// silenciosa de cota (o FIX-73 de volta).
+			await persistMeta(ctx.conversationId, {
+				...meta,
+				contractOffer: {
+					administradora: escolhida.administradora ?? null,
+					creditValue: escolhida.creditValue ?? null,
+					termMonths: escolhida.termMonths ?? null,
+				} as never,
+				lgpdAceite: {
+					em: new Date().toISOString(),
+					fala: (ctx.userText ?? "").slice(0, 200),
+				} as never,
+			});
 			let result: Awaited<ReturnType<typeof startContract>>;
 			try {
 				result = await startContract(

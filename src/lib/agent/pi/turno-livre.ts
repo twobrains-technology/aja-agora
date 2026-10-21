@@ -41,6 +41,12 @@ import { metaOf } from "@/lib/conversation/meta";
 /** Identidade que o cliente digitou nesta fala — capturada no SERVIDOR, nunca
  * pelo modelo. Devolve o texto sem os números, que é o que vai para o banco, para
  * o provedor do modelo e para o admin. */
+/** DDDs válidos no Brasil (11–99, sem 20–29 reservados). */
+function dddValido(ddd: string): boolean {
+	const n = Number(ddd);
+	return n >= 11 && n <= 99 && !(n >= 20 && n <= 29);
+}
+
 export function capturarIdentidadeDoTexto(
 	texto: string,
 	atual: StoredIdentity | null,
@@ -52,51 +58,67 @@ export function capturarIdentidadeDoTexto(
 } {
 	let recebeuCpf = false;
 	let recebeuCelular = false;
-	const cpfAtual = atual?.cpf ?? null;
-	const celularAtual = atual?.celular ?? null;
+	let cpf = atual?.cpf ?? null;
+	let celular = atual?.celular ?? null;
+	let textoLimpo = texto;
 
-	const cpfCandidato = texto.match(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/)?.[0] ?? null;
-	let cpf = cpfAtual;
+	// ── CPF ────────────────────────────────────────────────────────────────
+	// Só entra CPF FORMATADO (`111.444.777-35`) ou 11 dígitos que PASSAM no
+	// dígito verificador. Um número solto de 11 dígitos é, na maioria das vezes,
+	// celular — tratá-lo como CPF apagava o telefone que o cliente acabou de
+	// digitar (o regex antigo levava "11987654321" embora como CPF inválido).
+	const formatado = textoLimpo.match(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/)?.[0] ?? null;
+	const candidatos = [...textoLimpo.matchAll(/\b\d{11}\b/g)].map((m) => m[0]);
+	const cpfSolto = candidatos.find((c) => isValidCpf(c)) ?? null;
+	const cpfCandidato = formatado ?? cpfSolto;
+
 	if (cpfCandidato) {
 		const digitos = cpfCandidato.replace(/\D/g, "");
 		if (isValidCpf(digitos)) {
 			cpf = digitos;
 			recebeuCpf = true;
+			textoLimpo = textoLimpo.replace(cpfCandidato, "[CPF recebido e guardado]");
+		} else if (formatado) {
+			textoLimpo = textoLimpo.replace(cpfCandidato, "[CPF não reconhecido]");
 		}
 	}
 
-	let textoLimpo = texto;
-	if (recebeuCpf && cpf) {
-		textoLimpo = textoLimpo.replace(cpfCandidato as string, "[CPF recebido e guardado]");
-	} else if (cpfCandidato) {
-		// CPF inválido digitado (dígito trocado) — ainda é dado pessoal: sai do
-		// texto, mas NÃO vira identidade (proposta com número errado é pior).
-		textoLimpo = textoLimpo.replace(cpfCandidato, "[CPF não reconhecido]");
-	}
-
-	// O TELEFONE É PROCURADO DEPOIS DE O CPF SAIR DO TEXTO.
-	//
-	// Com a busca no texto original, o telefone casava com os próprios dígitos do
-	// CPF ("11144477735" virava "1144477735") e a identidade saía com um celular
-	// inventado — a proposta iria para o par errado. Medido em 20/10/2026.
-	let celular = celularAtual;
-	const telefoneCandidato =
+	// ── CELULAR ────────────────────────────────────────────────────────────
+	// Procurado DEPOIS de o CPF sair do texto (senão casa com os dígitos dele).
+	const formatadoTel =
 		textoLimpo.match(/(?:\+?55\s?)?\(?\d{2}\)?\s?9?\d{4}[-.\s]?\d{4}\b/)?.[0] ?? null;
-	if (telefoneCandidato) {
-		const digitos = telefoneCandidato.replace(/\D/g, "");
+	const soltos = [...textoLimpo.matchAll(/\b\d{10,11}\b/g)].map((m) => m[0]);
+	const telSolto =
+		soltos.find((t) => {
+			const n = t.length === 11 ? t : null;
+			return n !== null && n[2] === "9" && dddValido(n.slice(0, 2)) && !isValidCpf(n);
+		}) ??
+		soltos.find((t) => t.length === 10 && dddValido(t.slice(0, 2)) && !isValidCpf(t)) ??
+		null;
+	const teleCandidato = formatadoTel ?? telSolto;
+
+	if (teleCandidato) {
+		const digitos = teleCandidato.replace(/\D/g, "");
 		const semDdi = digitos.length === 13 && digitos.startsWith("55") ? digitos.slice(2) : digitos;
-		if ((semDdi.length === 10 || semDdi.length === 11) && !isValidCpf(semDdi)) {
+		// Telefone com separador é telefone, mesmo que os dígitos passem no DV do
+		// CPF por coincidência (~1% dos números). A rejeição por CPF só vale para
+		// sequência SOLTA de dígitos, onde a ambiguidade é real.
+		const ambiguoComCpf = !formatadoTel && isValidCpf(semDdi);
+		if (
+			(semDdi.length === 10 || semDdi.length === 11) &&
+			dddValido(semDdi.slice(0, 2)) &&
+			!ambiguoComCpf
+		) {
 			celular = semDdi;
 			recebeuCelular = true;
+			textoLimpo = textoLimpo.replace(teleCandidato, "[telefone recebido e guardado]");
 		}
 	}
-	if (recebeuCelular && celular && telefoneCandidato) {
-		textoLimpo = textoLimpo.replace(telefoneCandidato, "[telefone recebido e guardado]");
-	} else if (telefoneCandidato) {
-		textoLimpo = textoLimpo.replace(telefoneCandidato, "[telefone recebido]");
-	}
 
-	const identidade = cpf && celular ? { cpf, celular } : null;
+	// CPF parcial VALE: o celular pode chegar na mensagem seguinte, e o servidor
+	// precisa lembrar do CPF entre turnos (antes, CPF sozinho era descartado e a
+	// mensagem dizia "guardado" sem ter guardado nada).
+	const identidade = cpf ? { cpf, celular: celular ?? "" } : null;
 	return { identidade, textoLimpo, recebeuCpf, recebeuCelular };
 }
 
@@ -173,6 +195,7 @@ export function createRunTurnLivre(deps?: {
 			channel,
 			userText: isUserTurn ? captura.textoLimpo : null,
 			cards: [],
+			cartasNaTela: [],
 			falasDoFecho: [],
 			pediuHumano: false,
 			estadoDepoisDaBusca: null,
