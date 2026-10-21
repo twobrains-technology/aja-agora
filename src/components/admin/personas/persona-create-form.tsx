@@ -38,17 +38,9 @@ const CATEGORY_LABEL: Record<string, string> = {
 	auto: "Automóvel",
 };
 
-const DEFAULT_TOOLS = [
-	"search_groups",
-	"simulate_quota",
-	"get_rates",
-	"get_group_details",
-	"recommend_groups",
-	"present_group_card",
-	"present_comparison_table",
-	"present_simulation_result",
-	"present_recommendation_card",
-];
+// As tools que existem hoje. A persona não escolhe mais card nem funil: o
+// conjunto vem daqui e o vendedor livre usa o que a conversa pedir.
+const DEFAULT_TOOLS = ["buscar_cartas", "fazer_proposta", "falar_com_humano", "salvar_nome"];
 
 type FormValues = {
 	displayName: string;

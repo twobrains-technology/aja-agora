@@ -27,7 +27,7 @@ export type { ValuePickerField, ValuePickerPayload };
 // razão original do FIX-107 é o que sustenta o selo: número de administradora
 // sai de tool, e o que está na tela aqui é premissa de mercado documentada.
 //
-// TODO(bloco-jornada-entrada): o agente para de emitir present_value_picker na
+// TODO(bloco-jornada-entrada): o agente para de emitir card de apresentação na
 // entrada (valor por conversa, FIX-104). Quando o shape final do que o backend
 // emitir estabilizar, alinhar o id/label do campo de valor lido aqui.
 

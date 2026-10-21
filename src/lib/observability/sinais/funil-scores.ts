@@ -32,7 +32,7 @@ import { publicarScores } from "./publicar";
 /**
  * Régua de profundidade do funil, para a métrica "quão longe a conversa foi".
  *
- * A ORDEM canônica de execução é do código (`nextGate`, qualify-state.ts) —
+ * A ORDEM canônica de execução é do código (`o funil antigo`, qualify-state.ts) —
  * este mapa não compete com ela, é a tradução daquela cascata numa escala
  * numérica para conseguir `max(value) por sessão` = ponto mais fundo que o
  * cliente alcançou. Sem escala não existe gráfico de conversão.
@@ -190,7 +190,7 @@ export function scoresDoTurno(record: TurnTraceRecord): Score[] {
 	//
 	// FIX-431 — mudo de VERDADE × card sem fala. No trace `71191c00` (produção,
 	// WhatsApp, sessão `04fda013`) o modelo chamou `simulate_quota` e
-	// `present_simulation_result`, o card saiu, e nenhuma letra foi escrita. São
+	// `card de apresentação`, o card saiu, e nenhuma letra foi escrita. São
 	// dois defeitos com conserto em lugares diferentes:
 	//   • sem fala e sem artifact → o turno não entregou NADA;
 	//   • sem fala COM artifact  → o servidor podou a fala (sanitizer) e sobrou

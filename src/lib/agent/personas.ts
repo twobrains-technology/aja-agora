@@ -36,7 +36,7 @@ export type QualifyAnswers = {
 	objetivo?: Objetivo;
 	/** FIX-233 (handoff agente-vendas-consorcio, 2026-07-09): 3ª saída do gate
 	 * `lance` — "não quero comprometer nada além da parcela". Pula lance-value/
-	 * lance-embutido/simulator-offer (dial); o agente chama `present_two_paths`
+	 * lance-embutido/simulator-offer (dial); o agente chama `card de apresentação`
 	 * (tool do bloco-cards-ui) e devolve a decisão ao usuário. */
 	hasLance?: "yes" | "maybe" | "no" | "so_parcela";
 	/** Valor aproximado do lance que o usuário pretende ofertar (em reais).
@@ -112,7 +112,7 @@ export type ConversationMetadata = {
 	 * Pop em detectBackIntent. Cap em NAV_STACK_CAP estados (descarta o mais antigo). */
 	navigationStack?: NavState[];
 	/** FIX-233 — gate `desire` já foi disparado nesta conversa (não bloqueante:
-	 * uma vez marcado, `nextGate` nunca mais o emite, respondido ou não). Mesmo
+	 * uma vez marcado, `o funil antigo` nunca mais o emite, respondido ou não). Mesmo
 	 * padrão de `consentOffered`/`simulatorOfferDispatched`. */
 	desireAsked?: boolean;
 	/** FIX-274 — o beat do MOTIVO ("por que agora", 2ª pergunta do gate desire) já
@@ -149,7 +149,7 @@ export type ConversationMetadata = {
 	 * (mesmo padrão de `recoConsentDispatched`/`simulatorOfferDispatched`),
 	 * disparada SERVER-SIDE (`emitServerCard`) no ponto pós-`experience` quando
 	 * `experiencePrev === "doubts"` — nunca mais dependente do LLM chamar
-	 * `present_topic_picker` (0 emissões medidas em 2 dossiês limpos, r10). */
+	 * `card de apresentação` (0 emissões medidas em 2 dossiês limpos, r10). */
 	topicPickerDispatched?: boolean;
 	/** O gate `experience` já foi PERGUNTADO. Qualificação opcional pergunta uma
 	 * vez; sem resposta, o funil segue (o dado ajuda a vender, não é
@@ -186,7 +186,7 @@ export type ConversationMetadata = {
 	 *
 	 *  É o escape do gate `name` na posição nova (depois do valor do bem). Sem
 	 *  ele, o cliente que responde algo que `extractName` recusa — "prefiro não
-	 *  dizer", "depois" — trava para sempre: `nextGate` devolve `name` a cada
+	 *  dizer", "depois" — trava para sempre: `o funil antigo` devolve `name` a cada
 	 *  turno e o funil nunca chega ao `identify`. Justamente com quem já
 	 *  informou o valor, que a medição de 30/08/2026 mostra ser o segmento em
 	 *  que 86% entrega o CPF.
@@ -207,7 +207,7 @@ export type ConversationMetadata = {
 	 * serializa trivialmente no jsonb (nunca Date, pra não repetir o quebra-meta). */
 	pendingGateSince?: number;
 	/** FIX-207 — rótulo do gate que ficou pendente quando pendingGateSince foi
-	 * marcado. O worker RE-CALCULA nextGate no disparo (frescor); este é só o
+	 * marcado. O worker RE-CALCULA o funil antigo no disparo (frescor); este é só o
 	 * indicador do que estava aberto. */
 	pendingGate?: Gate;
 	/** Retomadas já disparadas neste período de silêncio (ver
@@ -237,7 +237,7 @@ export type ConversationMetadata = {
 	gateAttempts?: Partial<Record<Gate, number>>;
 	/** FIX-305 — contador de turnos de USUÁRIO consecutivos em que o MESMO gate
 	 * (`STUCK_ESCAPE_GATES`, qualify-state.ts: timeframe/lance/lance-value/
-	 * lance-embutido) não avançou (nextGate() devolveu o mesmo gate antes e
+	 * lance-embutido) não avançou (o funil devolveu o mesmo gate antes e
 	 * depois do merge do turno). DISTINTO de `gateAttempts` (escalada por
 	 * INATIVIDADE/desvio, termina em oferta de especialista) — este mede "sem
 	 * progresso NA MESMA conversa ativa" e, no teto, ASSUME um default e segue
@@ -275,7 +275,7 @@ export type ConversationMetadata = {
 	 * afirmativo/neutro dentro da mesma janela pré-decision. Espelha
 	 * decisionDispatched/consentOffered (mesmo padrão). */
 	simulatorOfferAnswered?: boolean;
-	/** Idempotency guard do card de decisão (present_decision_prompt). Espelha
+	/** Idempotency guard do card de decisão (card de apresentação). Espelha
 	 * searchDispatched: o orquestrador dirige o card UMA vez, depois o passo 5
 	 * (contratar) é conversacional. Sem isso o agent re-disparava o reveal em
 	 * loop (BUG-REVEAL-LOOP, 2026-06-02). */
@@ -290,7 +290,7 @@ export type ConversationMetadata = {
 	 * idempotência do card `scarcity`, DESACOPLADA de `decisionDispatched` — o
 	 * card de escassez precisa de uma chance de aparecer mesmo quando o gate
 	 * `decision` nunca dispara (cliente decidido cedo, `escolha` ancorada por
-	 * "afirmação" antes do gate `decision` rodar, `nextGate` pula ele
+	 * "afirmação" antes do gate `decision` rodar, `o funil antigo` pula ele
 	 * silenciosamente — ver `qualify-state.ts:421`). Sem este flag, a única
 	 * forma de mostrar escassez dependia de o cliente NÃO ter decidido ainda —
 	 * exatamente o perfil de cliente que MENOS precisa do empurrão de urgência,
@@ -299,7 +299,7 @@ export type ConversationMetadata = {
 	/** FIX-297 (rodada 10, 2026-07-12) — gate `reco-consent` ("Posso te mostrar
 	 * a opção que eu recomendo?") já foi disparado nesta conversa. Mesmo padrão
 	 * de `simulatorOfferDispatched`: marcado na EMISSÃO, não na resposta —
-	 * torna o gate não-bloqueante (nextGate nunca mais o re-emite depois de
+	 * torna o gate não-bloqueante (o funil antigo nunca mais o re-emite depois de
 	 * dispatched, respondido ou não). */
 	recoConsentDispatched?: boolean;
 	/** FIX-297 — resposta AFIRMATIVA por TEXTO LIVRE ao gate reco-consent já foi
@@ -437,7 +437,7 @@ export type ConversationMetadata = {
 	 * 'documentos'). Pós-Parabéns o agente não re-apresenta contract_form
 	 * (BUG-POS-FECHAMENTO-NAO-TERMINAL, E2E real 2026-06-04). */
 	contractClosed?: boolean;
-	/** FIX-244 (rodada 2, Fable r1, gap #9): marca que `present_contract_form`
+	/** FIX-244 (rodada 2, Fable r1, gap #9): marca que `card de apresentação`
 	 * JÁ apareceu nesta conversa (runner.ts, no mesmo padrão hardening do
 	 * `decisionDispatched`). O handler `contract-submit` (route.ts) EXIGE essa
 	 * flag antes de criar proposta real — sem isso, o servidor aceitava o
@@ -451,7 +451,7 @@ export type ConversationMetadata = {
 	/** Snapshot de qualifyAnswers por categoria visitada. Preservado em transição
 	 * pra eval medir discovery agregado quando a conversa passa por múltiplas categorias. */
 	qualifyAnswersByCategory?: Partial<Record<Category, QualifyAnswers>>;
-	/** Active when the agent has triggered `present_lead_form` and we're collecting
+	/** Active when the agent has triggered `card de apresentação` and we're collecting
 	 * name → phone → email deterministically from the user's free-text replies.
 	 * Cleared after `capture_lead` lands and confirmation goes out. */
 	leadCollection?: {
@@ -478,7 +478,7 @@ export type ConversationMetadata = {
 	 * Uma vez por conversa — ver `converse.ts`, blocoNovato. */
 	explicouComoFunciona?: boolean;
 	/** Marca que o card WhatsApp opt-in foi mostrado nesta conversa.
-	 * Impede o agent de chamar present_whatsapp_optin de novo. */
+	 * Impede o agent de chamar card de apresentação de novo. */
 	whatsappOptinShown?: boolean;
 	/** Marca que o user clicou "Agora não" no card WhatsApp opt-in.
 	 * Usado pra métrica de funil (decline rate). */

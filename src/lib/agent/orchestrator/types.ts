@@ -89,7 +89,7 @@ export type TurnInput = {
 	 * FIX-253/254 (rodada 4) — o handler CHAMADOR (route.ts) já vai emitir o
 	 * "gate" (card + pergunta) explicitamente logo em seguida a este turno de
 	 * directive (ex.: embedded_bid no clique do gate lance). Sem isso, o
-	 * disparo automático de `nextGateToFire` DENTRO deste turno (mayEvaluateGates
+	 * disparo automático de `o funil antigoToFire` DENTRO deste turno (mayEvaluateGates
 	 * do runner) emite o MESMO gate de novo — double-dispatch (educação+chips
 	 * duplicados, achado N-C do veredito Fable FINAL). Suprime só o EVENTO
 	 * "gate" (e o card server-side que o acompanha); o bookkeeping de meta
@@ -101,7 +101,7 @@ export type TurnInput = {
 	 * FIX-319 (rodada 10, onda 4 — veredito Sonnet, P0 confirmado): sub-turnos
 	 * de directive PURAMENTE NARRATIVOS (ex.: scarcity/decision_prompt em
 	 * `pipeClosingCeremony`, route.ts) dependiam só de texto de prompt ("NÃO
-	 * chame nenhuma tool") pra impedir o modelo de chamar `present_contract_form`
+	 * chame nenhuma tool") pra impedir o modelo de chamar `card de apresentação`
 	 * — que continua na allowlist da fase "closing" o turno INTEIRO. Achado ao
 	 * vivo: o modelo chamava a tool cedo demais nesses sub-turnos, duplicando
 	 * `contract_form` no mesmo turno HTTP. `forceToolChoice: "none"` faz o AI

@@ -133,7 +133,7 @@ export async function resolveChosenOffer(
 
 // FIX-251 (P0, veredito Fable FINAL §N-A, 2026-07-10): "nunca aja sobre
 // entidade não-ancorada" no ponto mais caro da jornada — o fechamento
-// (present_contract_form) confiava cegamente em meta.recommendedOffer mesmo
+// (card de apresentação) confiava cegamente em meta.recommendedOffer mesmo
 // quando um what-if REJEITADO tinha deixado o snapshot ancorado noutra
 // administradora. Re-resolve pela administradora que o PRÓPRIO turno de
 // fechamento anuncia, contra os grupos REALMENTE exibidos no reveal
@@ -198,7 +198,7 @@ export function findOfferByAdministradora(
 }
 
 /** Resolve o groupId a partir dos artifacts persistidos + a administradora
- * anunciada pelo turno de fechamento (present_contract_form). */
+ * anunciada pelo turno de fechamento (card de apresentação). */
 export async function resolveOfferForAdministradora(
 	conversationId: string,
 	administradora: string,
@@ -848,7 +848,7 @@ export function resolveEscolhaOfertada(
 /**
  * O ATALHO QUE ESCOLHE COTA PASSA A CARREGAR A COTA.
  *
- * `present_quick_reply` manda TEXTO por design (`quick-reply.tsx`), e é isso
+ * `card de apresentação` manda TEXTO por design (`quick-reply.tsx`), e é isso
  * que mantinha a regra de ouro do FIX-406 de pé: cota, escolha e contrato só
  * por ação estruturada. Só que o modelo usa esses atalhos justamente para a
  * pergunta que mais decide a venda — "qual das duas você prefere?" — e aí o

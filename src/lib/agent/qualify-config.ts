@@ -5,19 +5,19 @@ import type { Category, Objetivo } from "@/lib/agent/personas";
 // ----------------------------------------------------------------------------
 // Os blocos irmãos (web-valor-agulha, whatsapp-apresentacao) dependem deste:
 //
-//  1. O agente PARA de emitir `present_value_picker` NA ENTRADA — o valor do bem
+//  1. O agente PARA de emitir `card de apresentação` NA ENTRADA — o valor do bem
 //     vira CONVERSA (texto livre, normalizado). A tool segue existindo; a WEB a
 //     troca por um slider simples (1k em 1k, FIX-115), o WhatsApp não manda mais a
 //     lista de faixas — pergunta o valor por TEXTO (FIX-120, wiring do adapter
 //     feito). (FIX-104)
 //  2. O gate `timeframe` (prazo de contemplação) SAIU da qualificação —
-//     `nextGate` (qualify-state.ts) nunca mais o emite. "timeframe" segue no
+//     `o funil antigo` (qualify-state.ts) nunca mais o emite. "timeframe" segue no
 //     union `Gate` e `TIMEFRAME_OPTIONS`/`objetivoForPrazo`/`prazoMesesForIntent`
 //     ficam aqui como LEGADO (web/whatsapp ainda importam; blocos irmãos limpam).
 //     (FIX-103)
 //  3. O simulador de contemplação é conduzido em LOOP conversacional pelo agente
 //     (tool `simulate_contemplation` em tools/ai-sdk.ts). A WEB mantém a agulha
-//     arrastável (`present_contemplation_dial`). (FIX-106)
+//     arrastável (`card de apresentação`). (FIX-106)
 // ============================================================================
 
 /**
@@ -115,7 +115,7 @@ export function clampCreditToCategory(credit: number, category: Category): Credi
 /**
  * FIX-104 — normalizador DETERMINÍSTICO do valor do bem dito em texto livre.
  *
- * A entrada deixa de usar o `present_value_picker`: o usuário FALA o valor do bem
+ * A entrada deixa de usar o `card de apresentação`: o usuário FALA o valor do bem
  * ("um carro de uns 80 mil", "80k", "R$ 80.000"). O turn-analyzer (LLM) é o
  * extrator de runtime — entende inclusive por extenso ("oitenta mil"). Este
  * helper é o CONTRATO determinístico + backstop, fonte única de parsing pros
@@ -355,7 +355,7 @@ export function prazoMesesForIntent(intent: PlanIntent): number {
 // ---- Timeframe (LEGADO — FIX-103) ----
 //
 // ⚠️ LEGADO. O gate `timeframe` SAIU da qualificação (FIX-103, 2026-06-28):
-// `nextGate` (qualify-state.ts) nunca mais o emite. Estas opções permanecem só
+// `o funil antigo` (qualify-state.ts) nunca mais o emite. Estas opções permanecem só
 // por compat com consumidores fora do escopo deste bloco (web/adapter.ts,
 // whatsapp/formatter.ts) que os blocos irmãos (web-valor-agulha,
 // whatsapp-apresentacao) vão limpar. NÃO use em caminho novo de runtime.

@@ -3,7 +3,6 @@
 import {
 	BarChart3,
 	Calculator,
-	ClipboardList,
 	FileText,
 	type LucideIcon,
 	Search,
@@ -20,7 +19,7 @@ type ToolLabelStage = { afterMs: number; text: string; icon: LucideIcon };
 // simulate_quota/get_rates) tocam a Bevi e podem levar 15-64s (latências reais
 // do dossiê, veredito-r9pos2-sonnet.md §1/§3) — ganham estágios progressivos
 // de copy pra sinalizar que o processo AVANÇA internamente, evitando a
-// sensação de tela travada. As demais tools (present_*, capture_lead etc.) são
+// sensação de tela travada. As demais tools (cards do funil, capture_lead etc.) são
 // server-side determinísticas e rápidas (Lei 1/4) — 1 único texto basta, nunca
 // chegam ao 2º estágio na prática (decisão registrada em
 // docs/decisoes/blocos/2026-07-12-bloco-r9-3-latencia-percebida.md).
@@ -46,13 +45,11 @@ const TOOL_LABEL_STAGES: Record<string, ToolLabelStage[]> = {
 		{ afterMs: 18_000, text: "Quase lá, finalizando a consulta", icon: BarChart3 },
 	],
 	get_group_details: [{ afterMs: 0, text: "Carregando detalhes", icon: FileText }],
-	present_group_card: [{ afterMs: 0, text: "Preparando opções", icon: Sparkles }],
-	present_comparison_table: [{ afterMs: 0, text: "Montando comparativo", icon: Table }],
-	present_simulation_result: [{ afterMs: 0, text: "Calculando simulação", icon: Calculator }],
-	present_recommendation_card: [{ afterMs: 0, text: "Selecionando recomendação", icon: Sparkles }],
-	present_lead_form: [{ afterMs: 0, text: "Preparando formulário", icon: ClipboardList }],
-	present_value_picker: [{ afterMs: 0, text: "Preparando opções", icon: Sparkles }],
-	suggest_handoff: [{ afterMs: 0, text: "Avaliando próximo passo", icon: UserCheck }],
+	// As tools do vendedor livre (2026-10-20). As `cards do funil` morreram com o funil.
+	buscar_cartas: [{ afterMs: 0, text: "Buscando cartas reais", icon: Table }],
+	fazer_proposta: [{ afterMs: 0, text: "Gerando sua proposta", icon: Calculator }],
+	falar_com_humano: [{ afterMs: 0, text: "Chamando um especialista", icon: UserCheck }],
+	salvar_nome: [{ afterMs: 0, text: "Salvando seu nome", icon: UserCheck }],
 	capture_lead: [{ afterMs: 0, text: "Salvando dados", icon: UserCheck }],
 };
 

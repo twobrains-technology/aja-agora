@@ -1,4 +1,4 @@
-// FIX-16 (Kairo, 2026-06-11) — inteligência do ValuePicker (present_value_picker):
+// FIX-16 (Kairo, 2026-06-11) — inteligência do ValuePicker (card de apresentação):
 // os sliders deixam de ser independentes e passam a respeitar a relação de
 // consórcio usada no plan-estimate (FIX-3):
 //

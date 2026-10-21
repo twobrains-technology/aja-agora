@@ -1,6 +1,6 @@
 // TIPOS DO FUNIL QUE SOBREVIVERAM AO CORTE.
 //
-// O motor do funil (nextGate, decideShowGate, a cascata de perguntas) foi
+// O motor do funil (o funil antigo, o funil antigo, a cascata de perguntas) foi
 // apagado em 20/10/2026. Estes dois tipos ficaram porque são VOCABULÁRIO de
 // dado já gravado no banco e lido por telas: o `Gate` ainda rotula turnos
 // antigos em `metadata`, e o `UserIntent` é o rótulo do analyzer que alimenta

@@ -23,7 +23,7 @@ import type { FunnelState } from "./estado";
  *   `gatePartData`/`gateQuestion` (web/adapter.ts) leem `creditMax` pro
  *   slider e pro texto da pergunta; `desiredItem`/`motivation` alimentam o
  *   prompt (system-context.ts).
- * - `identityCollected` — guarda de rota (`nextGate`, I1: nunca discovery
+ * - `identityCollected` — guarda de rota (`o funil antigo`, I1: nunca discovery
  *   sem identidade) + `tool-policy.ts` (search_groups só libera com isto).
  * - `searchDispatched`/`revealCompleted` — idempotência do nó `discovery`
  *   (nunca re-busca a Bevi no mesmo turno/faixa) + guarda de rota pós-reveal.

@@ -297,7 +297,7 @@ export function gateQuestion(
 		case "doubts-wait":
 		case "search":
 		case "decision":
-			// "decision" não é uma pergunta de chip — é o card present_decision_prompt
+			// "decision" não é uma pergunta de chip — é o card card de apresentação
 			// ("Esse plano faz sentido?"), dirigido pelo orquestrador no fim do passo 4.
 			return null;
 		case "contract":

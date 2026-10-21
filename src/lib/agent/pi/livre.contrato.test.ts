@@ -3,7 +3,7 @@
 // Prova, sem Bevi e sem modelo de verdade, o que o mandato exige:
 //  · o turno fala (o texto chega AO VIVO no stream);
 //  · NENHUM evento `gate` existe — funil fora;
-//  · o card nasce do RESULTADO da tool, não de uma `present_*`;
+//  · o card nasce do RESULTADO da tool, não de uma `cards do funil`;
 //  · a busca grava categoria e reveal na meta;
 //  · a fala do cliente é persistida em `messages`.
 import { eq } from "drizzle-orm";
@@ -120,6 +120,49 @@ describe("motor livre — vendedor sem funil", () => {
 				true,
 			);
 			expect(msgs.some((m) => m.role === "assistant" && m.content.includes("Achei"))).toBe(true);
+		} finally {
+			await servidor.fechar();
+		}
+	});
+
+	it("WhatsApp produz a MESMA trilha: texto + card, zero gate", async () => {
+		const [conv] = await db
+			.insert(conversations)
+			.values({ channel: "whatsapp", status: "active", isSimulated: true, contactName: null })
+			.returning({ id: conversations.id });
+		criadas.push(conv.id);
+		const servidor = await subirServidorRoteirizado([
+			{ toolCalls: [{ name: "buscar_cartas", args: { categoria: "auto", valorDoBem: 80_000 } }] },
+			{ text: "Olha o que achei pro seu caso." },
+		]);
+		try {
+			const run = createRunTurnLivre({
+				provider: { id: "litellm", baseUrl: servidor.url, apiKey: "teste", model: "roteirizado" },
+				busca: async () => cartas,
+			});
+			const eventos: TurnEvent[] = [];
+			for await (const ev of run({
+				channel: "whatsapp",
+				conversationId: conv.id,
+				userText: "quero um carro de 80 mil",
+				isUserTurn: true,
+				contactName: null,
+			}))
+				eventos.push(ev);
+
+			expect(eventos.filter((e) => e.type === "gate")).toHaveLength(0);
+			expect(
+				eventos.filter(
+					(e) =>
+						e.type === "artifact" &&
+						(e as { artifactType: string }).artifactType === "comparison_table",
+				),
+			).toHaveLength(1);
+			const meta = await db
+				.select({ metadata: conversations.metadata })
+				.from(conversations)
+				.where(eq(conversations.id, conv.id));
+			expect(((meta[0]?.metadata ?? {}) as Record<string, unknown>).currentCategory).toBe("auto");
 		} finally {
 			await servidor.fechar();
 		}

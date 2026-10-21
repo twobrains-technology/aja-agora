@@ -76,9 +76,9 @@ export function pickEmptyTurnFallback(alreadyUsedBefore: boolean): string {
 //    interno (dado pro modelo); o que o usuário vê é o chip transitório "Buscando
 //    grupos" + o artifact/texto que a descoberta LEVA a produzir — já contado em
 //    artifactCount/textChars. Tratar a descoberta como "visível" era o falso-
-//    negativo da PENDURA (FIX-189): turno que só buscou (sem present_*, sem texto)
+//    negativo da PENDURA (FIX-189): turno que só buscou (sem cards do funil, sem texto)
 //    fechava não-vazio → nenhum fallback → o reveal não chegava e o usuário tinha
-//    de cutucar ("travou?"). Só present_* e texto/artifact contam como visível.
+//    de cutucar ("travou?"). Só cards do funil e texto/artifact contam como visível.
 const NON_VISIBLE_TOOLS = new Set([
 	"save_contact_name",
 	"save_contact_whatsapp",

@@ -154,7 +154,7 @@ export type IdentifyCaptureResult =
  * E a AÇÃO já estava blindada em código, sem depender deste regex: `tool-policy.ts`
  * só coloca `search_groups` e os cards do reveal no toolset quando
  * `identityCollected === true`. Sem CPF o modelo NÃO TEM a ferramenta de busca —
- * não é uma regra que ele possa desobedecer. O gate segue pendente (`nextGate`) e é
+ * não é uma regra que ele possa desobedecer. O gate segue pendente (`o funil antigo`) e é
  * recobrado no turno seguinte. */
 export async function captureIdentifyText(
 	from: string,

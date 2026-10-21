@@ -2,7 +2,7 @@
 //
 // Fonte de verdade (2026-07-20): o mockup + handoff em
 // docs/design/specs/2026-07-09-handoff-agente-vendas-consorcio/ e a ordem REAL do
-// código (`nextGate`, qualify-state.ts). O `jornada.docx` foi REVOGADO em
+// código (`o funil antigo`, qualify-state.ts). O `jornada.docx` foi REVOGADO em
 // 2026-07-13 por ter engessado o agente — esta rubric parou de medir aderência
 // literal ao roteiro e passou a medir o que importa: a conversa é competente e
 // soa humana? (Um juiz que premia recitar roteiro produz o agente bitolado que a

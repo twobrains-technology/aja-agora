@@ -296,7 +296,7 @@ export function recordTurnEvent(trace: TurnTrace, ev: TurnEvent): void {
 /** Mapeia uma UI part escrita no writer → mutações no trace (fonte: web SSE).
  *  Defensivo: parts malformadas são ignoradas, nunca lançam (não pode quebrar o
  *  stream do usuário). As chaves espelham o que `pipeOrchestratorToWriter` e os
- *  handlers do route escrevem (data-tool/data-artifact/data-gate/…). */
+ *  handlers do route escrevem (data-tool/data-artifact/card de funil/…). */
 export function recordUIPart(
 	trace: TurnTrace,
 	part: { type?: string; [k: string]: unknown },
@@ -317,11 +317,6 @@ export function recordUIPart(
 		case "data-artifact": {
 			const artifactType = (part as { data?: { type?: unknown } }).data?.type;
 			if (typeof artifactType === "string") trace.addArtifact(artifactType);
-			return;
-		}
-		case "data-gate": {
-			const gate = (part as { data?: { gate?: unknown } }).data?.gate;
-			if (typeof gate === "string") trace.setGate(gate);
 			return;
 		}
 		case "data-transition": {

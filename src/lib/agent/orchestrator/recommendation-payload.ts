@@ -228,7 +228,7 @@ export function coerceRecommendationPayload(
 // legítimo): quando o guard de tool-error (FIX-262) interrompe o turno DEPOIS
 // de `recommend_groups` já ter retornado grupos reais (ranqueados
 // server-side por `rankGroups`, nunca a LLM), o grupo de `rank` 0 É a mesma
-// recomendação que `present_recommendation_card` teria mostrado — a escolha
+// recomendação que `card de apresentação` teria mostrado — a escolha
 // não depende de nenhum julgamento adicional do modelo. Considera só
 // entradas com `rank` definido (só `recommend_groups` o preenche;
 // `search_groups` sozinho não basta pra materializar o hero, ver

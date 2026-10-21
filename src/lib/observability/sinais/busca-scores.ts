@@ -27,7 +27,7 @@ import type { Score } from "./funil-scores";
 import { publicarScores } from "./publicar";
 
 /** A partir de quantas buscas vazias seguidas o alvo é dado como esgotado.
- *  Mesmo limiar que o funil já usa para trocar de estratégia (`nextGate`). */
+ *  Mesmo limiar que o funil já usa para trocar de estratégia (`o funil antigo`). */
 const STREAK_ESGOTADO = 2;
 
 /** Quantas vezes a parcela da oferta pode passar da pedida antes de virar

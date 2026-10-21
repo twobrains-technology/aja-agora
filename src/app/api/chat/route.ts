@@ -788,11 +788,11 @@ export async function POST(req: NextRequest) {
 								// reusa `kind: "interest"` com `administradora: "topic-picker"`
 								// (topic-picker.tsx) — SEM este branch, caía no handler genérico
 								// abaixo (avanço ao fechamento), disparando decisionDispatched +
-								// present_contract_form + WhatsApp opt-in NO MEIO de uma pergunta de
+								// card de apresentação + WhatsApp opt-in NO MEIO de uma pergunta de
 								// dúvida (achado real: texto com "Posso te mostrar a opção que eu
 								// recomendo?" repetido 3-4x colado, contract_form disparando cedo
 								// demais). Este branch responde SÓ a dúvida específica — a cascata
-								// de reco-consent segue pelo caminho normal de `nextGateToFire`
+								// de reco-consent segue pelo caminho normal de `o funil antigoToFire`
 								// (idempotente, já disparado no turno anterior).
 								if (
 									body.action?.kind === "interest" &&
@@ -816,7 +816,7 @@ export async function POST(req: NextRequest) {
 								// funil canônico (contratação self-service), NUNCA captura de lead
 								// pra consultor humano. O clique é o sinal EXPLÍCITO de avanço — JÁ
 								// é a decisão —, então segue direto pro passo 5
-								// (present_contract_form). FIX-311 (r10-4, investigação de
+								// (card de apresentação). FIX-311 (r10-4, investigação de
 								// causa-raiz): REVERTE a suposição do FIX-38 de que o avanço
 								// dispensa a cerimônia — "aceitar de cara" não é dispensa de
 								// cuidado, é só um caminho mais curto até a mesma decisão; quem
@@ -825,7 +825,7 @@ export async function POST(req: NextRequest) {
 								// os 2 dossiês limpos investigados nunca mostravam scarcity/
 								// decision_prompt porque este fast-path pulava direto pro fecho).
 								// Marca decisionDispatched ANTES de dirigir o avanço: a tool-policy
-								// só libera present_contract_form na fase "closing"
+								// só libera card de apresentação na fase "closing"
 								// (decisionDispatched===true) — sem a marca o avanço cairia na fase
 								// "reveal" e a tool seria filtrada. Idempotência: quem já viu a
 								// cerimônia por outro caminho (ex.: gate simulator-offer) não a vê
@@ -983,7 +983,7 @@ export async function POST(req: NextRequest) {
 													} as typeof fresh.contractOffer,
 												}
 											: {}),
-										// Libera present_contract_form na fase closing da tool-policy
+										// Libera card de apresentação na fase closing da tool-policy
 										// (mesma marca do clique "Tenho interesse", FIX-38).
 										decisionDispatched: true,
 									});
@@ -1020,7 +1020,7 @@ export async function POST(req: NextRequest) {
 								// D7 — "Ver cenários de contemplação". Este handler não existia: a
 								// ação caía no `adjust-value` e o directive dizia ao modelo que o
 								// cliente queria mudar o valor do bem. As tools do cálculo
-								// (`compute_scenarios` + `present_scenarios`) já estavam no toolset
+								// (`compute_scenarios` + `card de apresentação`) já estavam no toolset
 								// do grafo; era só o clique nunca chegar até lá.
 								if (body.action?.kind === "view-scenarios") {
 									await pipeDirectiveTurn({
@@ -1104,7 +1104,7 @@ export async function POST(req: NextRequest) {
 										return;
 									}
 									// FIX-244 (rodada 2, Fable r1, gap #9): defesa em profundidade
-									// GÊMEA da acima — sem o present_contract_form ter aparecido
+									// GÊMEA da acima — sem o card de apresentação ter aparecido
 									// nesta conversa, contract-submit NÃO pode criar proposta real
 									// (CPF + consulta de bureau não pode ficar a um POST cru de
 									// distância). Achado ao vivo: o Fable fechou uma proposta

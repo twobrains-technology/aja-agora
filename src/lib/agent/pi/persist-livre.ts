@@ -24,7 +24,7 @@ import { persistMeta } from "@/lib/conversation/meta";
 /** Fala do cliente que não é digitada por ele (diretiva de servidor). */
 function pareceDirectiveDeServidor(texto: string): boolean {
 	if (texto.length < 400) return false;
-	return /\bFLUXO\b|\bFIX-\d+|present_[a-z_]+|NÃO chame|tool-call/i.test(texto);
+	return /\bFLUXO\b|\bFIX-\d+|NÃO chame|tool-call/i.test(texto);
 }
 
 export async function persistirTurnoLivre(args: {

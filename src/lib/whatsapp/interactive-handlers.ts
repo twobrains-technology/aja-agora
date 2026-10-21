@@ -149,7 +149,7 @@ async function handleContractCancel(ctx: Ctx): Promise<boolean> {
 	const cleared = { ...meta };
 	delete cleared.contractCollection;
 	// O funil precisa VOLTAR a um estado alcançável. Apagar a coleta e deixar
-	// `contractFormDispatched = true` fazia `nextGate` (qualify-state.ts:567)
+	// `contractFormDispatched = true` fazia `o funil antigo` (qualify-state.ts:567)
 	// devolver o terminal `"search"`: sem card, sem pergunta canônica, e ninguém
 	// mais re-emitindo o formulário — o fecho ficava inalcançável para sempre.
 	//
@@ -878,10 +878,10 @@ async function handleInterest(ctx: Ctx): Promise<boolean> {
 
 	// FIX-117 (paridade FIX-38, route.ts:485-499 — "whatsapp precisa ser
 	// exatamente igual a web"): "Tenho interesse" pós-reveal é AVANÇO DIRETO ao
-	// passo 5 (present_contract_form). O clique JÁ é a decisão — sem intercalar o
+	// passo 5 (card de apresentação). O clique JÁ é a decisão — sem intercalar o
 	// card "Esse plano faz sentido?" (dupla confirmação que o FIX-38 removeu no
 	// web: "ta pedindo confirmacao demais"). Marca decisionDispatched ANTES de
-	// dirigir o avanço: a tool-policy só libera present_contract_form na fase
+	// dirigir o avanço: a tool-policy só libera card de apresentação na fase
 	// "closing" (decisionDispatched===true) — sem a marca o avanço cairia na fase
 	// "reveal" e a tool seria filtrada. NUNCA handoff pra consultor por sinal de
 	// interesse — o handoff humano fica SÓ no pedido explícito. O card de decisão
@@ -893,7 +893,7 @@ async function handleInterest(ctx: Ctx): Promise<boolean> {
 	// P0-1 (dossiê 2026-08-15) — o clique de aceite tem que ESCREVER o aceite.
 	//
 	// Marcar `decisionDispatched` libera a tool-policy, mas não é aceite: o
-	// `nextGate` (qualify-state.ts:559, FIX-386 — "contratar exige um sim") pede
+	// `o funil antigo` (qualify-state.ts:559, FIX-386 — "contratar exige um sim") pede
 	// `escolha` ancorada OU `decisionAccepted`. Sem isso o funil voltava a
 	// `decision` em todo turno seguinte, o `contract_form` nunca era emitido, e a
 	// conversa `9b9f9aab` terminou com o agente anunciando um pré-cadastro que não

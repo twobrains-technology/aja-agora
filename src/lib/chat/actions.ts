@@ -109,7 +109,7 @@ export type ChatAction =
 	// D7 (19/08/2026) — "Ver cenários de contemplação". O botão existia no card e
 	// não tinha handler: caía no `adjust-value`, e o cliente que perguntava QUANDO
 	// seria contemplado ouvia "qual valor você quer simular?". As tools do cálculo
-	// (`compute_scenarios` + `present_scenarios`) já estavam no toolset — faltava o
+	// (`compute_scenarios` + `card de apresentação`) já estavam no toolset — faltava o
 	// clique chegar ao grafo.
 	| {
 			kind: "view-scenarios";
@@ -119,7 +119,7 @@ export type ChatAction =
 			intent?: SimulationActionIntent;
 	  }
 	// D7 — "Comparar com financiamento": mesma família, handler próprio
-	// (`compare_with_financing` + `present_financing_comparison`).
+	// (`compare_with_financing` + `card de apresentação`).
 	| {
 			kind: "compare-financing";
 			administradora: string;

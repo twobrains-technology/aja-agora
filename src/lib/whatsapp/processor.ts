@@ -199,7 +199,7 @@ async function processTextMessageSerialized(
 					// FIX-53: identidade vem ANTES do valor. NÃO revela aqui — segue a
 					// qualificação despachando o próximo gate (mesmo padrão do
 					// handleHandoffDecline). Só revela se a qualificação já estava
-					// completa (nextGate=search). O tripwire de identidade do reveal
+					// completa (o funil antigo=search). O tripwire de identidade do reveal
 					// agora sempre passa, pois a identidade já foi coletada cedo.
 					// Sem funil, o CPF guardado só destrava a proposta: confirma e devolve a
 					// conversa ao vendedor, que retoma com as palavras dele.

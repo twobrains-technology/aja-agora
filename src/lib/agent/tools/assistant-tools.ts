@@ -28,7 +28,7 @@ type AssistantToolsContext = {
 
 /**
  * Tópicos canônicos do funil que NÃO podem virar forbiddenTopic.
- * HARD_RULES.md sec 4.3 — bloquear esses quebra o produto.
+ * as regras antigas sec 4.3 — bloquear esses quebra o produto.
  */
 const CANONICAL_FUNNEL_TOPICS = [
 	"consórcio",
@@ -45,7 +45,7 @@ const CANONICAL_FUNNEL_TOPICS = [
 
 /**
  * Palavras-chave fracas/ambíguas que não podem disparar handoff sozinhas.
- * HARD_RULES.md sec 4.4 — só pedido EXPLÍCITO de humano vira handoff.
+ * as regras antigas sec 4.4 — só pedido EXPLÍCITO de humano vira handoff.
  */
 const WEAK_HANDOFF_KEYWORDS = ["ajuda", "dúvida", "duvida"] as const;
 
@@ -76,8 +76,8 @@ const CATEGORY_FORBIDDEN_TERMS: Record<string, RegExp> = {
 };
 
 /**
- * Lista canônica de frases proibidas — sincronizada com HARD_RULES.md e
- * tests/regression/agent-trajectory.test.ts via HARD_RULES.test.ts.
+ * Lista canônica de frases proibidas — sincronizada com as regras antigas e
+ * tests/regression/agent-trajectory.test.ts via as regras antigas.test.ts.
  *
  * Adicionar/remover daqui = adicionar/remover do doc + cassettes no mesmo PR.
  */

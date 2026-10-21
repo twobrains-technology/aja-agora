@@ -3,7 +3,7 @@
  *
  * ## Por que existe
  *
- * `nextGate` (qualify-state.ts, FIX-386) exige `escolha` ancorada OU
+ * `o funil antigo` (qualify-state.ts, FIX-386) exige `escolha` ancorada OU
  * `decisionAccepted` para sair do gate `decision`. Quem escrevia isso era só a
  * web (`route.ts`); no WhatsApp o clique de aceite gravava apenas
  * `decisionDispatched`, e o funil ficava preso em `decision` para sempre — o

@@ -1,7 +1,7 @@
 // AS TOOLS DO VENDEDOR LIVRE — três ações e nada mais.
 //
 // O desenho é o oposto do funil: aqui não existe tool de APRESENTAÇÃO
-// (`present_*`). O modelo decide QUANDO buscar e QUANDO fechar; o card aparece
+// (`cards do funil`). O modelo decide QUANDO buscar e QUANDO fechar; o card aparece
 // porque a tool rodou, montado pelo resultado dela — nunca porque o modelo
 // escolheu um tipo de card.
 //

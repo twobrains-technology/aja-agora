@@ -84,7 +84,7 @@ const _DESIRE_MOTIVE_OPTIONS: Partial<Record<Category, GatePartOption[]>> = {
 
 /** FIX-246 (rodada 3, Fable r2 — causa-raiz do veredito 4/10): emite um card
  * SERVER-SIDE determinístico direto no stream — sem depender de o LLM chamar
- * `present_X` (0 emissões ao vivo no veredito, a tool nem existe mais no
+ * `card do funil` (0 emissões ao vivo no veredito, a tool nem existe mais no
  * toolset). Espelha `pipeGatePrompt` (texto opcional + escrita direta), mas
  * persiste como artifact vinculado a uma mensagem do assistente (mesmo padrão
  * de `pipeAndSaveClosingItems` em route.ts) pra sobreviver no histórico/admin. */
@@ -356,7 +356,7 @@ export async function pipeDirectiveTurn(args: {
 	/** FIX-254 (rodada 4, veredito Fable FINAL §N-C): quando o CHAMADOR já vai
 	 * emitir o gate (card + pergunta) explicitamente logo em seguida (ex.:
 	 * embedded_bid no clique do gate lance), suprime o disparo AUTOMÁTICO de
-	 * `nextGateToFire` deste turno de directive — sem isso, os dois caminhos
+	 * `o funil antigoToFire` deste turno de directive — sem isso, os dois caminhos
 	 * emitem a MESMA educação+chips (double-dispatch: route.ts:1058-1072). */
 	suppressGate?: boolean;
 	/** FIX-319 (rodada 10, onda 4 — veredito Sonnet, P0): directive PURAMENTE

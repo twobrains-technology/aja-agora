@@ -21,9 +21,7 @@ async function turno(conversationId: string, texto: string): Promise<string> {
 		headers: { "content-type": "application/json" },
 		body: JSON.stringify({
 			conversationId,
-			messages: [
-				{ id: randomUUID(), role: "user", parts: [{ type: "text", text: texto }] },
-			],
+			messages: [{ id: randomUUID(), role: "user", parts: [{ type: "text", text: texto }] }],
 		}),
 	});
 	const corpo = await r.text();
@@ -58,7 +56,11 @@ async function main(): Promise<void> {
 			.from(conversations)
 			.where(eq(conversations.id, conversationId));
 		const m = (meta1?.metadata ?? {}) as Record<string, unknown>;
-		ok(m.currentCategory === "auto" && m.revealCompleted === true, "banco: categoria e reveal gravados", `currentCategory=${String(m.currentCategory)}`);
+		ok(
+			m.currentCategory === "auto" && m.revealCompleted === true,
+			"banco: categoria e reveal gravados",
+			`currentCategory=${String(m.currentCategory)}`,
+		);
 
 		const t3 = await turno(conversationId, "gostei da primeira, pode fazer a proposta");
 		ok(!t3.includes("real_offer"), "sem CPF, a proposta NÃO é gerada", `${t3.length} bytes`);
@@ -75,7 +77,12 @@ async function main(): Promise<void> {
 			.from(messages)
 			.where(eq(messages.conversationId, conversationId));
 		if (msgs.length > 0) {
-			await db.delete(artifacts).where(inArray(artifacts.messageId, msgs.map((x) => x.id)));
+			await db.delete(artifacts).where(
+				inArray(
+					artifacts.messageId,
+					msgs.map((x) => x.id),
+				),
+			);
 		}
 		await db.delete(messages).where(eq(messages.conversationId, conversationId));
 		await db.delete(conversations).where(eq(conversations.id, conversationId));

@@ -158,7 +158,7 @@ export type FunnelState = {
 	 *
 	 *  É o escape do gate `name` na posição nova (depois do valor do bem). Sem
 	 *  ele, o cliente que responde algo que `extractName` recusa — "prefiro não
-	 *  dizer", "depois" — trava para sempre: `nextGate` devolve `name` a cada
+	 *  dizer", "depois" — trava para sempre: `o funil antigo` devolve `name` a cada
 	 *  turno e o funil nunca chega ao `identify`. Justamente com quem já
 	 *  informou o valor, que a medição de 30/08/2026 mostra ser o segmento em
 	 *  que 86% entrega o CPF.

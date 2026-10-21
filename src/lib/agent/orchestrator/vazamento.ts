@@ -20,7 +20,7 @@ export function scrubCpf(text: string): string {
 
 /** Nomes de tool que o cliente nunca deve ler na fala do agente. */
 const NOMES_DE_TOOL = ["buscar_cartas", "fazer_proposta", "falar_com_humano", "salvar_nome"];
-const TOOL_LEAK = new RegExp(`\\b(present_[a-z_]+|${NOMES_DE_TOOL.join("|")})\\b`, "i");
+const TOOL_LEAK = new RegExp(`\\b(${NOMES_DE_TOOL.join("|")})\\b`, "i");
 
 const JSON_KV_LINE = /^\s*"[a-z][a-z0-9_-]*"\s*:\s*.+?,?\s*$/i;
 const JSON_BRACE_LINE = /^\s*[{}[\]]\s*,?\s*$/;

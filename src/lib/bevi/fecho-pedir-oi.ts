@@ -2,7 +2,7 @@
 // WhatsApp: pedir o "oi" (abre a janela de 24h) + acionar a mesa (especialista
 // em cadastros) NA HORA.
 //
-// O self-service (present_contract_form → offer-confirm) continua criando a
+// O self-service (card de apresentação → offer-confirm) continua criando a
 // proposta real na Bevi normalmente — isto NÃO muda. Esta é uma camada
 // ADICIONAL, disparada no mesmo momento que `sendContractSummary`: a mensagem
 // que pede o "oi" é um TEMPLATE HSM (a janela de 24h costuma estar fechada

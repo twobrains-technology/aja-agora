@@ -303,7 +303,7 @@ export function recommendationToWhatsApp(payload: Record<string, unknown>): What
 
 // Invariante I4 (docs/jornada/decisoes-do-cliente.md): NUNCA prometer reserva
 // antes da contratação real. Esta copy dizia "Para reservar essa opção" e o
-// `present_lead_form` está liberado na fase PRÉ-reveal (tool-policy.ts) — ou
+// `card de apresentação` está liberado na fase PRÉ-reveal (tool-policy.ts) — ou
 // seja, o cliente lia uma promessa de reserva ainda na qualificação, sem CPF e
 // sem busca feita. O guard de sanitização (PREMATURE_RESERVATION_PATTERNS) não
 // pegava: casa o particípio ("reservado/reservada"), não o infinitivo — e texto

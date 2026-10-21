@@ -277,7 +277,7 @@ export async function analyzeTurn(
 	 * extração errada (FIX-74/236/279/296/306/310). Ancorar na pergunta real é o
 	 * conserto na causa; os guards são o sintoma. */
 	turnAnchor?: {
-		/** Gate ativo no início do turno (`nextGate(meta)`). */
+		/** Gate ativo no início do turno (`o funil antigo(meta)`). */
 		activeGate?: string | null;
 		/** Última fala do assistente — a pergunta a que o usuário está respondendo. */
 		lastAssistantText?: string | null;
