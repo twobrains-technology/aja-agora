@@ -129,6 +129,12 @@ export function createRunTurnLivre(deps?: {
 			content: m.content,
 		}));
 
+		// Rastro de entrada: sem isto, um turno que "fala mas não busca" não tem
+		// como ser diagnosticado do lado do servidor (foi o caso do e2e de 20/10).
+		console.log(
+			`[pi-livre] entrada conv=${conversationId} canal=${channel} isUserTurn=${isUserTurn} texto="${(userText ?? "").slice(0, 60)}"`,
+		);
+
 		// 1. IDENTIDADE — capturada aqui, antes do modelo ver qualquer coisa.
 		const identidadeAtual = await loadIdentity(conversationId).catch(() => null);
 		const captura = capturarIdentidadeDoTexto(userText ?? "", identidadeAtual);
@@ -274,6 +280,10 @@ export function createRunTurnLivre(deps?: {
 					funnel: { ...estado.funnel, handoffSuggested: true },
 				};
 			}
+
+			console.log(
+				`[pi-livre] saida conv=${conversationId} texto=${beat.texto.length} chamadas=${beat.chamadas.map((c) => c.nome).join(",") || "-"} cards=${ctx.cards.length} erro=${beat.uso.input === 0 && beat.texto.length === 0 ? "sem-tokens" : "ok"}`,
+			);
 
 			// 6. Custo do turno (livro-caixa local).
 			if (beat.uso.input > 0 || beat.uso.output > 0) {

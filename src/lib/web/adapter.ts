@@ -11,7 +11,6 @@ import {
 	CREDIT_BOUNDS,
 	TIMEFRAME_OPTIONS as TIMEFRAME_CONFIG,
 } from "@/lib/agent/qualify-config";
-import { CARDS_QUE_REVELAM_OFERTA } from "@/lib/chat/desbloqueio-do-telefone";
 import { EMPTY_TURN_FALLBACK } from "@/lib/chat/empty-turn-guard";
 import {
 	type LeituraDoDesbloqueio,
@@ -142,8 +141,8 @@ export async function pipeOrchestratorToWriter(
 	// de reveal chega — no caso comum (sem teste ativo, ou telefone já conhecido)
 	// sequer toca o banco.
 	let estadoDoTurno: LeituraDoDesbloqueio | null | undefined;
-	let cardDoTelefoneEmitido = false;
-	const desbloqueioLazy = async (): Promise<LeituraDoDesbloqueio | null> => {
+	const _cardDoTelefoneEmitido = false;
+	const _desbloqueioLazy = async (): Promise<LeituraDoDesbloqueio | null> => {
 		if (estadoDoTurno === undefined) {
 			estadoDoTurno = await leituraDoDesbloqueio(conversationId).catch((err) => {
 				// Best-effort, como toda a atribuição: o teste nunca derruba a venda.
@@ -214,47 +213,10 @@ export async function pipeOrchestratorToWriter(
 				case "artifact": {
 					closeTextIfOpen();
 					emittedVisible = true;
-
-					// ── bloco-telefone-ab (FIX-395/396/397 · FIX-433) ──────────────────────
-					//
-					// O teste A/B do telefone vive no ponto em que a pessoa VÊ a oferta.
-					// A variante é da VISITA (decidida no servidor na criação da conversa,
-					// FIX-394) e o desfecho é lido aqui. A trava vale para TODO card que
-					// revela número de oferta (`CARDS_QUE_REVELAM_OFERTA`) — a MESMA lista
-					// que o cliente lê para esconder (A) ou embaçar (B):
-					//
-					//  • `pede-antes` (A): o reveal NÃO vai pra tela — o card do telefone
-					//    ocupa o lugar e o telefone libera. Os cards já foram persistidos
-					//    pelo nó `persist`; quando o telefone chega, a rota os RE-EMITE a
-					//    partir do banco (`comparacaoGuardadaDaConversa`), sem re-buscar na
-					//    Bevi.
-					//  • `borrado` (B): o reveal vai pra tela (o cliente embaça com
-					//    `comDesbloqueioDoTelefone`) e o card do telefone sai JUNTO do
-					//    PRIMEIRO card de oferta — sem ele, a oferta fica legível até o fim
-					//    do turno (FIX-433, D3).
-					//  • `livre`: nada muda — quem já deu o telefone vê tudo.
-					const estado = await desbloqueioLazy();
-					if (
-						estado &&
-						estado.estado !== "livre" &&
-						CARDS_QUE_REVELAM_OFERTA.has(ev.artifactType)
-					) {
-						if (!cardDoTelefoneEmitido) {
-							await pipeServerArtifact({
-								conversationId,
-								artifactType: "telefone_do_desbloqueio",
-								payload: { variante: estado.variante, estado: estado.estado },
-								persona: (await reloadMeta(conversationId)).currentPersona ?? null,
-								writer,
-							});
-							cardDoTelefoneEmitido = true;
-						}
-						if (estado.estado === "pede-antes") {
-							// SEGURA o reveal: a comparação não aparece antes do telefone.
-							break;
-						}
-					}
-
+					// A TRAVA A/B DO TELEFONE SAIU (2026-10-20). Ela segurava o card da
+					// prateleira até o cliente dar o número — experimento de funil, e o
+					// vendedor livre mostra a carta antes de pedir qualquer dado. O
+					// desbloqueio (`telefone_do_desbloqueio`) morre junto.
 					writer.write({
 						type: "data-artifact",
 						id: ev.toolCallId,

@@ -50,6 +50,16 @@ export async function executarBeat(args: BeatArgs): Promise<BeatResultado> {
 	const resultados: ResultadoDeTool[] = [];
 
 	session.subscribe((ev: { type: string } & Record<string, unknown>) => {
+		// FALHA SILENCIOSA DO PROVEDOR É O PIOR DEFEITO DESTE TURNO: o pi engole o
+		// erro num `message_end` com `stopReason: "error"`, o texto sai vazio e o
+		// cliente recebe o fallback "me perdi" sem que nada apareça no log. Já
+		// custou um smoke inteiro em 19/10. Aqui o erro é GRITADO.
+		if (ev.type === "message_end") {
+			const msg = ev.message as { stopReason?: string; errorMessage?: string } | undefined;
+			if (msg?.stopReason === "error") {
+				console.error(`[pi] provedor falhou: ${msg.errorMessage ?? "sem mensagem"}`);
+			}
+		}
 		if (ev.type === "message_update") {
 			const interno = ev.assistantMessageEvent as { type?: string; delta?: string } | undefined;
 			if (interno?.type === "text_delta" && interno.delta) {
