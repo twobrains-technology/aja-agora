@@ -1,5 +1,4 @@
 import { requireRole } from "@/lib/admin/require-role";
-import { invalidateAgentCache } from "@/lib/agent/agents";
 import {
 	getPersonaForAdmin,
 	PersonaVersionConflictError,
@@ -43,7 +42,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
 	try {
 		const updated = await updatePersona(id, parsed.data);
-		invalidateAgentCache();
 		return Response.json({ id: updated.id, version: updated.version });
 	} catch (err) {
 		if (err instanceof PersonaVersionConflictError) {

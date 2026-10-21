@@ -11,7 +11,6 @@ import { artifacts as artifactsTable, conversations, leads } from "@/db/schema";
 import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors";
 import { getLeadIdForConversation } from "@/lib/admin/lead-stage-tracker";
 import { aplicarAceiteEstruturado } from "@/lib/agent/aceite";
-import { reengageQuestionForGate } from "@/lib/agent/gate-reengage";
 import {
 	resolveChosenOffer,
 	resolveOfferForAdministradora,
@@ -23,7 +22,6 @@ import {
 	buildChooseOfferDirective,
 	buildCompareFinancingDirective,
 	buildGroupSelectedDirective,
-	buildNameCapturedDirective,
 	buildToolErrorRecoveryResolvedFallback,
 	buildTopicPickerAnswerDirective,
 	buildTopicPickerBackDirective,
@@ -31,12 +29,6 @@ import {
 } from "@/lib/agent/orchestrator/directives";
 import { detectBackIntent, popNavState, pushNavState } from "@/lib/agent/orchestrator/navigation";
 import { type ConversationMetadata, type Persona, ROUTABLE_CATEGORIES } from "@/lib/agent/personas";
-import {
-	objetivoForIntent,
-	objetivoForPrazo,
-	prazoMesesForIntent,
-} from "@/lib/agent/qualify-config";
-import { nextGate } from "@/lib/agent/qualify-state";
 import { quemRespondePara } from "@/lib/agent/quem-responde";
 import { VISIT_COOKIE } from "@/lib/attribution/visit-cookie";
 import { resolveVisitIdFromCookie } from "@/lib/attribution/visit-store";
@@ -72,12 +64,7 @@ import {
 	varianteDaConversa,
 	varianteForcada,
 } from "@/lib/chat/variante-da-visita";
-import {
-	isValidCpf,
-	loadIdentity,
-	maskPhoneForDisplay,
-	storeIdentity,
-} from "@/lib/conversation/identity";
+import { loadIdentity, maskPhoneForDisplay, storeIdentity } from "@/lib/conversation/identity";
 import { loadConversationHistory, saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { bracoDaFila } from "@/lib/experimentos/fila";
@@ -95,12 +82,7 @@ import {
 	persistSimulatorCookieKey,
 	withSimulatorClockIfNeeded,
 } from "@/lib/utils/simulator-clock-wrap";
-import {
-	pipeDirectiveTurn,
-	pipeGatePrompt,
-	pipeTransitionTurn,
-	pipeUserTurn,
-} from "@/lib/web/adapter";
+import { pipeDirectiveTurn, pipeTransitionTurn, pipeUserTurn } from "@/lib/web/adapter";
 import { relayWebUserToAgent } from "@/lib/whatsapp/proxy";
 
 export const maxDuration = 60;
@@ -522,7 +504,7 @@ export async function POST(req: NextRequest) {
 		// então, é o próprio turno (`persist`), não esta linha. Salvar aqui
 		// duplicaria a mensagem no histórico. O branch do gate `name` grava no
 		// caminho feliz, onde nenhum turno de usuário roda.
-		const falaPersistidaNoBranch = body.action.kind === "gate" && body.action.gate === "name";
+		const falaPersistidaNoBranch = false;
 		if (actionLabel && !falaPersistidaNoBranch) {
 			await saveMessage(conversationId, "user", actionLabel, "web");
 		}
@@ -1119,11 +1101,6 @@ export async function POST(req: NextRequest) {
 											meta.currentPersona ?? null,
 											"Calma, a gente tá quase lá! Antes de seguir eu te mostro as opções reais das administradoras — vamos só concluir essa etapa primeiro:",
 										);
-										await pipeGatePrompt({
-											conversationId,
-											gate: nextGate(freshMeta, { hasContactName: Boolean(contactName) }),
-											writer,
-										});
 										return;
 									}
 									// FIX-244 (rodada 2, Fable r1, gap #9): defesa em profundidade
@@ -1494,354 +1471,10 @@ export async function POST(req: NextRequest) {
 									return;
 								}
 
-								if (body.action?.kind !== "gate") return;
-								const action = body.action;
-
-								// FIX-17: nome enviado pelo card focado (passo 1). Persiste DIRETO
-								// (sem tool) e saúda — o caminho texto-livre (save_contact_name
-								// forçado no orchestrator) segue valendo em paralelo. Os dois
-								// convergem em conversations.contactName.
-								if (action.gate === "name") {
-									const { saveContactName } = await import("@/lib/leads/contact-capture");
-									const res = await saveContactName(conversationId, action.value.name);
-									if (!res.ok) {
-										// D1 — O NOME NUNCA É PEDIDO NO VÁCUO.
-										//
-										// Aqui o servidor respondia sozinho, sem passar pelo modelo:
-										// "Pode me dizer como prefere ser chamado(a)?". Em produção
-										// (19/08/2026) isso saiu logo depois de a cliente responder,
-										// no campo do nome, à pergunta que o AGENTE tinha feito sobre
-										// o tipo do imóvel — "Casa em condomínio". A frase fixa não
-										// dizia uma palavra sobre o que ela acabou de contar, o
-										// "em condomínio" morreu ali, e o tipo do imóvel foi
-										// perguntado três vezes na mesma conversa.
-										//
-										// Escrever uma frase melhor no servidor não resolve: o
-										// servidor não sabe o que ela disse antes. Quem sabe é o
-										// modelo, e o caminho de entrada dele é o turno. Então o
-										// conteúdo REENTRA como fala do cliente — passa pelo
-										// analyzer (que extrai bem/valor/o que houver), o funil
-										// recalcula o gate (segue `name`, o nome não veio) e o
-										// modelo reage ao conteúdo antes de perguntar de novo, com
-										// as palavras dele. O card do nome volta pelo caminho normal.
-										// Campo vazio não vira turno de cliente: o modelo receberia um
-										// turno sem nada a responder e o cliente ficaria diante do
-										// silêncio. Aí sim vale a pergunta canônica do gate — ela é a
-										// rede, não a resposta padrão.
-										const conteudo = action.value.name.trim();
-										if (!conteudo) {
-											await pipeGatePrompt({ conversationId, gate: "name", writer });
-											return;
-										}
-										await pipeUserTurn({
-											conversationId,
-											userText: conteudo,
-											contactName,
-											writer,
-											userKey,
-										});
-										return;
-									}
-									if (actionLabel) {
-										await saveMessage(conversationId, "user", actionLabel, "web");
-									}
-									const fresh = await db.query.conversations.findFirst({
-										where: eq(conversations.id, conversationId),
-										columns: { contactName: true },
-									});
-									const savedName = fresh?.contactName ?? action.value.name;
-									await pipeDirectiveTurn({
-										conversationId,
-										directive: buildNameCapturedDirective(savedName),
-										contactName: savedName,
-										writer,
-										userKey,
-									});
-									return;
-								}
-
-								if (action.gate === "experience") {
-									const choice = action.value;
-									await persistMeta(conversationId, {
-										...meta,
-										experiencePrev: choice,
-										doubtsAddressed: choice === "doubts" ? false : meta.doubtsAddressed,
-									});
-									// LANGGRAPH: o dado do clique já está persistido acima; daqui pra
-									// frente quem conduz é o GRAFO. Um turno de servidor faz o grafo
-									// recalcular o gate, emitir o card certo e o modelo FALAR sobre o
-									// que o cliente acabou de escolher. O rótulo do clique já foi
-									// salvo como fala do usuário (linha ~484), por isso aqui é
-									// directive e não `pipeUserTurn` — senão duplicaria.
-									await pipeDirectiveTurn({
-										conversationId,
-										directive: `O cliente respondeu "${action.label ?? "—"}" no passo "${action.gate}". Reaja ao que ele escolheu e conduza o próximo passo, com as suas palavras.`,
-										contactName,
-										writer,
-										userKey,
-									});
-									return;
-								}
-
-								if (action.gate === "credit") {
-									const credit = action.value.credit;
-									const creditMin = Math.round((credit * 0.85) / 1000) * 1000;
-									// "Planeje sua conquista" (re-UX guiada por intenção): o picker entrega
-									// valor + prazo + a INTENÇÃO ("o que mais importa") e, conforme ela,
-									// mês-alvo OU lance. A parcela (monthlyBudget) é o RESULTADO calculado.
-									// Esses campos preenchem os gates seguintes e o funil pula o que já veio.
-									// O `objetivo` da Bevi sai da intenção (fallback: do mês-alvo, p/ o
-									// caminho de texto livre que não tem intenção).
-									const v = action.value;
-									// Prazo de contemplação: o mês-alvo escolhido (intenção "receber
-									// rápido") OU o implícito da intenção — preenche prazoMeses pro funil
-									// PULAR o gate timeframe (sem re-perguntar o que a intenção já disse).
-									const prazoMeses =
-										typeof v.targetMonth === "number"
-											? v.targetMonth
-											: v.intent != null
-												? prazoMesesForIntent(v.intent)
-												: undefined;
-									const objetivo =
-										v.intent != null
-											? objetivoForIntent(v.intent)
-											: typeof v.targetMonth === "number"
-												? objetivoForPrazo(v.targetMonth)
-												: undefined;
-									const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
-										...(meta.qualifyAnswers ?? {}),
-										creditMin,
-										creditMax: credit,
-										monthlyBudget: v.monthlyBudget,
-										...(prazoMeses != null ? { prazoMeses } : {}),
-										...(objetivo ? { objetivo } : {}),
-										...(typeof v.lanceValue === "number"
-											? v.lanceValue > 0
-												? { hasLance: "yes" as const, lanceValue: v.lanceValue }
-												: { hasLance: "no" as const }
-											: {}),
-										...(typeof v.lanceEmbutido === "boolean"
-											? { lanceEmbutido: v.lanceEmbutido }
-											: {}),
-									};
-									await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
-									// LANGGRAPH: valor guardado, o grafo conduz.
-									await pipeDirectiveTurn({
-										conversationId,
-										directive: `O cliente informou o valor do bem (${action.label ?? "valor enviado no card"}). Reaja e siga o próximo passo, com as suas palavras.`,
-										contactName,
-										writer,
-										userKey,
-									});
-									return;
-								}
-
-								if (action.gate === "timeframe") {
-									const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
-										...(meta.qualifyAnswers ?? {}),
-										prazoMeses: action.value.prazoMeses,
-										objetivo: objetivoForPrazo(action.value.prazoMeses),
-									};
-									await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
-									if (!meta.currentCategory) return;
-									// LANGGRAPH: o dado do clique já está persistido acima; daqui pra
-									// frente quem conduz é o GRAFO. Um turno de servidor faz o grafo
-									// recalcular o gate, emitir o card certo e o modelo FALAR sobre o
-									// que o cliente acabou de escolher. O rótulo do clique já foi
-									// salvo como fala do usuário (linha ~484), por isso aqui é
-									// directive e não `pipeUserTurn` — senão duplicaria.
-									await pipeDirectiveTurn({
-										conversationId,
-										directive: `O cliente respondeu "${action.label ?? "—"}" no passo "${action.gate}". Reaja ao que ele escolheu e conduza o próximo passo, com as suas palavras.`,
-										contactName,
-										writer,
-										userKey,
-									});
-									return;
-								}
-
-								if (action.gate === "lance") {
-									const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
-										...(meta.qualifyAnswers ?? {}),
-										hasLance: action.value,
-									};
-									await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
-									if (!meta.currentCategory) return;
-									// LANGGRAPH: o dado do clique já está persistido acima; daqui pra
-									// frente quem conduz é o GRAFO. Um turno de servidor faz o grafo
-									// recalcular o gate, emitir o card certo e o modelo FALAR sobre o
-									// que o cliente acabou de escolher. O rótulo do clique já foi
-									// salvo como fala do usuário (linha ~484), por isso aqui é
-									// directive e não `pipeUserTurn` — senão duplicaria.
-									await pipeDirectiveTurn({
-										conversationId,
-										directive: `O cliente respondeu "${action.label ?? "—"}" no passo "${action.gate}". Reaja ao que ele escolheu e conduza o próximo passo, com as suas palavras.`,
-										contactName,
-										writer,
-										userKey,
-									});
-									return;
-								}
-
-								// docx passo 4: resposta à oferta do simulador (conceito do Bernardo).
-								// "yes" → directive do dial + cerimônia scarcity→decision_prompt no
-								// MESMO turno (FIX-311, ver nota abaixo); "no" → cerimônia direto
-								// ("Esse plano faz sentido?").
-								if (action.gate === "simulator-offer") {
-									// FIX-265 (menor #4, veredito Fable r5, N4): o clique JÁ É a
-									// resposta ao simulator-offer — marca simulatorOfferAnswered
-									// aqui (não só no texto afirmativo subsequente, index.ts) pra
-									// não re-emitir o dial no 1º "sim" do turno seguinte.
-									const refreshed = {
-										...meta,
-										simulatorOfferDispatched: true,
-										simulatorOfferAnswered: true,
-									};
-									await persistMeta(conversationId, refreshed);
-									// LANGGRAPH: o dado do clique já está persistido acima; daqui pra
-									// frente quem conduz é o GRAFO. Um turno de servidor faz o grafo
-									// recalcular o gate, emitir o card certo e o modelo FALAR sobre o
-									// que o cliente acabou de escolher. O rótulo do clique já foi
-									// salvo como fala do usuário (linha ~484), por isso aqui é
-									// directive e não `pipeUserTurn` — senão duplicaria.
-									await pipeDirectiveTurn({
-										conversationId,
-										directive: `O cliente respondeu "${action.label ?? "—"}" no passo "${action.gate}". Reaja ao que ele escolheu e conduza o próximo passo, com as suas palavras.`,
-										contactName,
-										writer,
-										userKey,
-									});
-									return;
-								}
-
-								// Gate "identify" (D1): valida server-side, persiste CIFRADO e libera a
-								// busca real. A Bevi não simula sem CPF+celular+LGPD — sem isso, o
-								// pipeSearchSummaryTurn re-emite este gate (tripwire).
-								if (action.gate === "identify") {
-									const { cpf, celular, lgpd } = action.value;
-									// FIX-172: normaliza o DDI ("55" opcional) igual ao canal WhatsApp
-									// (waIdToCelular) — sem isso, um celular digitado COM "55" (formato
-									// plausível, é como o WhatsApp exibe o próprio número) é cifrado
-									// cru e a Bevi rejeita no contract-submit ("CELULAR inválido").
-									const celularDigits = normalizePhoneBR(celular ?? "") ?? "";
-									if (!lgpd || !isValidCpf(cpf) || celularDigits.length < 10) {
-										await writeAndSaveText(
-											writer,
-											conversationId,
-											meta.currentPersona ?? null,
-											!isValidCpf(cpf)
-												? "Esse CPF não confere — dá uma olhadinha nos números?"
-												: "Preciso do celular completo (com DDD) e do aceite pra seguir, tá?",
-										);
-										await pipeGatePrompt({ conversationId, gate: "identify", writer });
-										return;
-									}
-									// Falha ao PERSISTIR identidade não pode morrer calada. Sem o
-									// catch, um `IDENTITY_ENC_KEY` ausente/inválido derruba o turno no
-									// meio: o stream fecha vazio, o cliente não vê nada e no turno
-									// seguinte o gate `identify` re-dispara — do lado dele, é preencher
-									// o CPF e "não sair do lugar" pra sempre, que foi como o defeito
-									// chegou pelo WhatsApp. Reproduzido em 09/08/2026 com a chave vazia.
-									// O erro precisa aparecer no log (é config de infra, não do cliente)
-									// e o cliente precisa de uma saída — não de um turno mudo.
-									try {
-										await storeIdentity(conversationId, { cpf, celular: celularDigits });
-									} catch (err) {
-										console.error(
-											"[identify] storeIdentity FALHOU — identidade não persistida:",
-											err,
-										);
-										await writeAndSaveText(
-											writer,
-											conversationId,
-											meta.currentPersona ?? null,
-											"Tive um problema pra registrar seus dados agora. Já estou avisando o time — pode tentar de novo em instantes?",
-										);
-										return;
-									}
-									// Celular vira contato do lead (mesma régua do whatsapp_optin).
-									const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
-									await saveContactWhatsapp(conversationId, celularDigits).catch(() => {});
-									// FIX-53: identidade vem ANTES do valor. NÃO revela aqui — segue a
-									// qualificação despachando o próximo gate (credit/value picker). O
-									// reveal continua sendo disparado por pipeSearchSummaryTurn no fim da
-									// qualificação (o tripwire de identidade agora sempre passa). Se a
-									// qualificação já estava completa (dados volunteered), nextGate=search
-									// e revelamos direto.
-									// LANGGRAPH: identidade guardada, o grafo assume. Ele já dispara a
-									// descoberta sozinho quando identidade + valor estão prontos
-									// (`readyForDiscovery`), emite o status de busca AO VIVO e
-									// apresenta as ofertas em dois tempos.
-									await pipeDirectiveTurn({
-										conversationId,
-										directive:
-											"O cliente acabou de enviar CPF e celular com o aceite de LGPD. " +
-											"Siga o próximo passo do funil com as suas palavras.",
-										contactName,
-										writer,
-										userKey,
-									});
-									return;
-								}
-
-								// docx passo 2: "Qual valor aproximado?" — o valor do lance vem do
-								// USUÁRIO (gate lance-value), nunca derivado silencioso (auditoria
-								// 2026-06-04). Persiste e dispara o próximo gate (lance-embutido).
-								if (action.gate === "lance-value") {
-									const merged: NonNullable<ConversationMetadata["qualifyAnswers"]> = {
-										...(meta.qualifyAnswers ?? {}),
-										lanceValue: action.value.lanceValue,
-									};
-									await persistMeta(conversationId, { ...meta, qualifyAnswers: merged });
-									// LANGGRAPH: o dado do clique já está persistido acima; daqui pra
-									// frente quem conduz é o GRAFO. Um turno de servidor faz o grafo
-									// recalcular o gate, emitir o card certo e o modelo FALAR sobre o
-									// que o cliente acabou de escolher. O rótulo do clique já foi
-									// salvo como fala do usuário (linha ~484), por isso aqui é
-									// directive e não `pipeUserTurn` — senão duplicaria.
-									await pipeDirectiveTurn({
-										conversationId,
-										directive: `O cliente respondeu "${action.label ?? "—"}" no passo "${action.gate}". Reaja ao que ele escolheu e conduza o próximo passo, com as suas palavras.`,
-										contactName,
-										writer,
-										userKey,
-									});
-									return;
-								}
-
-								if (action.gate === "lance-embutido") {
-									// FIX-272 (rodada 8, veredito Fable r7, achado novo D3): dup-click
-									// (clique repetido antes do botão desabilitar) reprocessava um
-									// gate JÁ respondido — o estado já tinha avançado (ex.:
-									// simulatorOfferDispatched=true do click #1), então nextGate
-									// recomputava "decision", que pipeGatePrompt não sabe renderizar
-									// (gatePartData/gateQuestion retornam null) → turno 100% vazio,
-									// ar morto (não passa pelo guard de empty-turn, que só roda no
-									// turno de TEXTO-livre). O click #1 já emitiu a resposta certa —
-									// o replay não tem nada NOVO a fazer.
-									if (meta.qualifyAnswers?.lanceEmbutido !== undefined) {
-										console.log(
-											`[dup-click-guard] gate=lance-embutido ignorado (já respondido, conv=${conversationId})`,
-										);
-										return;
-									}
-									// LANGGRAPH: o clique vira TURNO DE USUÁRIO e o grafo conduz — inclui
-									// o nó `advance`, onde mora a regra de que aceitar o embutido MUDA
-									// O ALVO DA BUSCA (carta maior), e o `readyForDiscovery`, que
-									// re-dispara a descoberta sozinho pra apresentar os grupos da faixa
-									// nova.
-									await pipeUserTurn({
-										conversationId,
-										userText:
-											action.value === "yes"
-												? "Sim, considerar lance embutido"
-												: "Não, prefiro sem lance embutido",
-										contactName,
-										writer,
-										userKey,
-									});
-									return;
-								}
+								// O HANDLER DE GATE SAIU (2026-10-20): não existe mais card de gate
+								// para responder. O cliente nunca recebe `gate`, então este caminho
+								// ficou inalcançável e morreu junto com o funil.
+								return;
 							});
 							// FIX-269 (rodada 7, veredito Fable r6): só aplica o default "ok"
 							// quando NENHUM finishReason real chegou do orquestrador (ex.: um
@@ -1947,20 +1580,9 @@ export async function POST(req: NextRequest) {
 						// (persistido) pra nunca deixar o turno mudo. Diferente dos handlers de
 						// action, aqui o agente SEMPRE deveria responder algo.
 						if (isTurnEmpty(trace.toRecord())) {
-							// FIX-208 (rede final): se o turno de texto fecharia mudo com um gate de
-							// qualify PENDENTE (ex.: o gate de VALOR — usuário digitou "200" e nada
-							// visível saiu), re-emite a PERGUNTA do gate em vez do "me perdi". Nunca
-							// deixa a coleta muda. Paridade com o guard do WhatsApp (adapter.ts).
-							const freshMeta = await reloadMeta(conversationId);
-							const gate = nextGate(freshMeta, { hasContactName: Boolean(contactName) });
-							// FIX-245: carta real (pós-reveal) no lugar do exemplo genérico.
-							const reengage = reengageQuestionForGate(
-								gate,
-								freshMeta.currentCategory,
-								undefined,
-								freshMeta.recommendedOffer?.creditValue,
-								freshMeta.qualifyAnswers?.creditMentionedAtDesire,
-							);
+							// Turno mudo. Não existe mais reengajamento por gate (o funil
+							// saiu em 20/10): cai no fallback normal, que já tenta resolver
+							// uma oferta mencionada antes de pedir de novo.
 							// FIX-271 (rodada 8, veredito Fable r7, mesma família do FIX-266): sem
 							// gate pendente pra reengajar, o fallback enlatado pedia "manda de
 							// novo" mesmo quando o usuário JÁ tinha nomeado uma oferta exibida no
@@ -1968,9 +1590,10 @@ export async function POST(req: NextRequest) {
 							// contenção sem resolução. Roda o MESMO resolver do FIX-266 (contra os
 							// grupos já exibidos) antes de desistir; quando resolve, reafirma os
 							// dados da oferta em vez de pedir de novo.
-							const mentionedOffer = reengage
-								? null
-								: await resolveOfferMentionForConversation(conversationId, userText);
+							const mentionedOffer = await resolveOfferMentionForConversation(
+								conversationId,
+								userText,
+							);
 							// FIX-347: rede final antes do "Acho que me perdi" — se ele JÁ
 							// apareceu antes nesta conversa, a mesma frase 2x soa quebrado
 							// (mesma classe do FIX-266/332, que já resolveu isso pro fallback
@@ -1978,32 +1601,23 @@ export async function POST(req: NextRequest) {
 							// último turno (mesmo motivo do FIX-332: dois turnos vazios não
 							// precisam ser consecutivos pra repetir a frase).
 							const emptyFallbackAlreadyUsed =
-								!reengage &&
 								!mentionedOffer &&
 								(await loadConversationHistory(conversationId)).some(
 									(m) => m.role === "assistant" && m.content === EMPTY_TURN_FALLBACK,
 								);
-							const fallbackText = reengage
-								? reengage
-								: mentionedOffer
-									? buildToolErrorRecoveryResolvedFallback({
-											name: contactName,
-											offer: mentionedOffer,
-										})
-									: pickEmptyTurnFallback(emptyFallbackAlreadyUsed);
+							const fallbackText = mentionedOffer
+								? buildToolErrorRecoveryResolvedFallback({
+										name: contactName,
+										offer: mentionedOffer,
+									})
+								: pickEmptyTurnFallback(emptyFallbackAlreadyUsed);
 							await writeAndSaveText(
 								writer,
 								conversationId,
 								meta.currentPersona ?? null,
 								fallbackText,
 							);
-							trace.setFinish(
-								reengage
-									? "empty-turn-reengage"
-									: mentionedOffer
-										? "empty-turn-resolved"
-										: "empty-turn-fallback",
-							);
+							trace.setFinish(mentionedOffer ? "empty-turn-resolved" : "empty-turn-fallback");
 							// FIX-269 (rodada 7, veredito Fable r6): só aplica o default "ok"
 							// quando NENHUM finishReason real chegou do orquestrador (ex.: um
 							// turno CONTIDO por tool-error já setou "tool-error-recovered" via

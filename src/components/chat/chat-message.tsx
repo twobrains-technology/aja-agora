@@ -11,7 +11,6 @@ import type { Artifact } from "@/lib/chat/types";
 import type {
 	AjaUIMessage,
 	ArtifactPartData,
-	GatePartData,
 	HandoffPartData,
 	ToolStatusPartData,
 	TransitionPartData,
@@ -20,7 +19,6 @@ import type {
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import { useSmoothText } from "@/lib/hooks/use-smooth-text";
 import { ArtifactRenderer } from "./artifact-renderer";
-import { GateRenderer } from "./artifacts/gate-renderer";
 import { WelcomeCategories } from "./artifacts/welcome-categories";
 import { OfertaEmbacada } from "./oferta-embacada";
 import { RevealSelectionProvider } from "./reveal-selection";
@@ -47,7 +45,6 @@ export type RenderablePart =
 	| { kind: "text"; id: string; text: string }
 	| { kind: "transition"; id: string; data: TransitionPartData }
 	| { kind: "artifact"; id: string; artifact: Artifact; embacada?: boolean }
-	| { kind: "gate"; id: string; data: GatePartData }
 	| { kind: "welcome"; id: string; data: WelcomePartData }
 	| { kind: "handoff"; id: string; data: HandoffPartData };
 
@@ -71,10 +68,6 @@ function classifyParts(message: AjaUIMessage): RenderablePart[] {
 				id: partId,
 				artifact: { id: partId, ...data } as Artifact,
 			});
-			continue;
-		}
-		if (part.type === "data-gate") {
-			out.push({ kind: "gate", id: partId, data: part.data as GatePartData });
 			continue;
 		}
 		if (part.type === "data-welcome") {
@@ -143,11 +136,7 @@ function latestToolName(message: AjaUIMessage): string | undefined {
 			return (part.data as ToolStatusPartData).tool;
 		}
 		if (part.type === "text" && part.text.trim().length > 0) return undefined;
-		if (
-			part.type === "data-artifact" ||
-			part.type === "data-gate" ||
-			part.type === "data-welcome"
-		) {
+		if (part.type === "data-artifact" || part.type === "data-welcome") {
 			return undefined;
 		}
 	}
@@ -388,20 +377,6 @@ export function ChatMessage({
 												) : (
 													<ArtifactRenderer artifact={segment.artifact} active={isInteractive} />
 												)}
-											</motion.div>
-										);
-									}
-									if (segment.kind === "gate") {
-										return (
-											<motion.div
-												key={segment.id}
-												layout={!prefersReduced}
-												initial={prefersReduced ? false : { opacity: 0, y: 6 }}
-												animate={{ opacity: 1, y: 0 }}
-												transition={{ duration: 0.2 }}
-												className="w-full"
-											>
-												<GateRenderer payload={segment.data} active={isInteractive} />
 											</motion.div>
 										);
 									}

@@ -2,22 +2,15 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
 import { recordStageReached } from "@/lib/admin/lead-stage-tracker";
-import {
-	isConversationPausedOrTerminal,
-	isMandatoryCollectionGate,
-	reengageQuestionForGate,
-} from "@/lib/agent/gate-reengage";
+import type { Gate } from "@/lib/agent/funil-tipos";
 import { runTurn, type TurnEvent } from "@/lib/agent/orchestrator";
 import { buildSearchSummaryDirective } from "@/lib/agent/orchestrator/directives";
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { planTransition } from "@/lib/agent/orchestrator/transition";
 import type { Category, ConversationMetadata, Persona } from "@/lib/agent/personas";
-import { type Gate, nextGate } from "@/lib/agent/qualify-state";
 import { vitrineDisponivel } from "@/lib/bevi/identidade-vitrine";
 import { EMPTY_TURN_FALLBACK } from "@/lib/chat/empty-turn-guard";
-import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
-import { registrarEntregaDoGate } from "@/lib/observability/sinais/funil-scores";
 import { comTraceDoTurno } from "@/lib/observability/trace-local";
 import { traceTurnEvents } from "@/lib/telemetry/turn-trace";
 import { sendInteractiveMessage, sendTextMessage } from "./api";
@@ -96,7 +89,7 @@ type PendingArtifact = { type: string; payload: Record<string, unknown> };
 /** Troca o corpo do interactive por um rótulo neutro — usado quando o MODELO já
  * fez a pergunta em texto e o botão não deve repeti-la. Preserva a estrutura
  * (action/botões); mexe só no `body.text`. */
-function withNeutralBody(interactive: Record<string, unknown>): Record<string, unknown> {
+function _withNeutralBody(interactive: Record<string, unknown>): Record<string, unknown> {
 	const body = interactive.body as { text?: string } | undefined;
 	if (!body || typeof body.text !== "string") return interactive;
 	return { ...interactive, body: { ...body, text: "Escolha uma opção:" } };
@@ -351,7 +344,7 @@ async function consumeEventsInner(
 	let avisouDaBusca = false;
 	// FIX-211: um gate FOI entregue neste turno? Se sim, o usuário acabou de ver o
 	// pedido — não conta como "desvio" (não re-cobra ao fim do turno).
-	let gateFiredThisTurn = false;
+	const _gateFiredThisTurn = false;
 
 	const pauseBeforeNext = () =>
 		sleep(lastWasInteractive ? POST_INTERACTIVE_PAUSE_MS : ARTIFACT_PAUSE_MS);
@@ -536,128 +529,6 @@ async function consumeEventsInner(
 				}
 				break;
 			}
-			case "gate": {
-				// FIX-210 — cadência 2-tempos: contexto num balão, pedido em outro. Antes,
-				// quando o gate carregava prefix, o adapter DESCARTAVA o texto ou o COLAVA
-				// na pergunta → uma bolha só (o atrito que o Kairo viu no consent→identify).
-				// É decisão de RENDER do WhatsApp (channel-aware C5) — não toca a web.
-				//
-				// Gates com CONTEXTO fixo (gateContextBeat: identify tem gancho docx + LGPD,
-				// lance-embutido tem a educação): o beat de contexto é determinístico.
-				//
-				// 2026-07-20 — a FALA DO MODELO NUNCA É APAGADA. Até aqui este ramo fazia
-				// `textBuffer = ""` e mandava o beat fixo no lugar: o cliente perguntava
-				// "por que você precisa do meu CPF?", o modelo escrevia a explicação, e o
-				// canal JOGAVA FORA a explicação pra colar os mesmos dois balões enlatados
-				// — byte a byte iguais toda vez que o gate reaparecia. É o agente bitolado
-				// que o CLAUDE.md proíbe, ressuscitado na camada de canal.
-				//
-				// O invariante REAL é de ESTADO, não de fala: o cliente precisa ter visto o
-				// aviso (LGPD no identify; a educação do embutido) antes do pedido — UMA
-				// vez. Isso virou `claimContextBeat` (idempotência determinística por
-				// conversa+gate, src/lib/whatsapp/once.ts). A partir daí quem conduz é o
-				// modelo, com as palavras dele. A não-duplicação do PEDIDO continua no
-				// `ev.modelAsked` mais abaixo, como já era.
-				const contextBeat = await gateContextBeat(ev.gate, conversationId);
-				await flushText();
-				await flushArtifacts();
-				// Se o MODELO já fez o pedido com as palavras dele, o beat fixo vira um
-				// segundo balão dizendo a mesma coisa — foi o que apareceu ao vivo:
-				// "preciso confirmar seu CPF e celular — pode ser?" seguido de "preciso
-				// confirmar quem é você". O aviso (LGPD) entra na fala do modelo pelo
-				// contexto do gate; o beat fica como rede pra quando ele não pedir.
-				if (!ev.modelAsked && contextBeat && (await claimContextBeat(conversationId, ev.gate))) {
-					if (hasSent) await pauseBeforeNext();
-					const ok = await sendText(from, contextBeat);
-					lastWasInteractive = false;
-					hasSent = hasSent || ok;
-				}
-				const interactive = await gateInteractive(ev.gate, conversationId, undefined);
-				if (interactive) {
-					if (hasSent) await pauseBeforeNext();
-					// DESAMARRA (2026-07-13): o modelo já fez a pergunta com as palavras
-					// dele (`ev.modelAsked`) — o corpo do botão não repete a canônica,
-					// vira só o rótulo do input. Sem isso o usuário lia a pergunta duas
-					// vezes (a humana e a enlatada) no mesmo balão.
-					const ok = await sendInteractive(
-						from,
-						ev.modelAsked ? withNeutralBody(interactive) : interactive,
-					);
-					lastWasInteractive = true;
-					hasSent = hasSent || ok;
-					console.log(`[gate-delivery] conv=${conversationId} gate=${ev.gate} via=interactive`);
-					registrarEntregaDoGate(ev.gate, "interactive");
-				} else {
-					// FIX-120: gates conversacionais (credit/identify) saem como TEXTO — a
-					// pergunta viajava no body da lista; sem a lista, mandamos em texto.
-					// DESAMARRA: se o modelo já perguntou, não repetimos a canônica.
-					//
-					// FIX-349 (P1.2, veredito rodada 4): `ev.modelAsked` vem de uma
-					// heurística CEGA (`EphemeralTextFilter.hasHeldQuestion()` — "a ÚLTIMA
-					// sentença do modelo terminou em ALGUMA pergunta", sem checar se ela
-					// tem qualquer relação com o gate corrente). Pra gates com interactive
-					// (acima), um falso positivo é inofensivo — o card ainda aparece com
-					// corpo neutro. Mas um gate SEM interactive nenhum não tem fallback: se
-					// o `modelAsked` apagar o textPrompt aqui, o gate inteiro AFUNDA —
-					// nem card, nem texto (achado ao vivo: `reco-consent` nunca apareceu na
-					// conversa inteira em `servicos-whatsapp`, rodada 4, porque o modelo
-					// fechou o turno anterior com uma pergunta genérica — "Bora ver essas
-					// opções?" — sem relação nenhuma com o consentimento). Gates nesta lista
-					// nunca deixam o `modelAsked` apagar a única entrega possível.
-					const textPrompt = WHATSAPP_GATES_WITHOUT_FALLBACK.has(ev.gate)
-						? await gateTextPrompt(ev.gate, conversationId, undefined)
-						: ev.modelAsked
-							? null
-							: await gateTextPrompt(ev.gate, conversationId, undefined);
-					if (textPrompt) {
-						if (hasSent) await pauseBeforeNext();
-						const ok = await sendText(from, textPrompt);
-						lastWasInteractive = false;
-						hasSent = hasSent || ok;
-						// O que o canal manda ao cliente É fala da conversa, e precisa
-						// existir para o modelo. Em 13/08 esta linha entregou "Uns
-						// R$ 1.500.000 então, é isso?" numa conversa sobre uma moto de
-						// R$ 20 mil, sem persistir: o cliente respondeu "ta maluco 1.5m numa
-						// moto?" no turno seguinte e o modelo, cego à pergunta que o sistema
-						// fez em seu nome, assumiu a culpa por um valor que ele nunca disse.
-						if (ok) {
-							await saveMessage(conversationId, "assistant", textPrompt, "whatsapp").catch(
-								(err) => {
-									// Persistir é para o histórico; falhar aqui não pode derrubar
-									// a entrega, que já aconteceu.
-									console.error(`[gate-delivery] persistência falhou (ignorado):`, err);
-								},
-							);
-						}
-						console.log(`[gate-delivery] conv=${conversationId} gate=${ev.gate} via=text`);
-						registrarEntregaDoGate(ev.gate, "text");
-					} else {
-						// Nenhuma entrega pro gate no WhatsApp → o turno pode fechar MUDO.
-						// Alerta ALTO pra caçar buracos de entrega de gate (o do identify,
-						// 2026-07-02). Se você vê isto, um gate disparou sem forma de enviar.
-						console.error(
-							`[gate-undelivered] conv=${conversationId} gate=${ev.gate} — SEM entrega no WhatsApp (nem interactive nem texto); turno pode fechar mudo`,
-						);
-						// O `console.error` acima é invisível fora do CloudWatch: foram 8
-						// afundamentos em 4 dias sem ninguém ver. Como score, isto vira
-						// taxa, gráfico e alerta — ver `scoreDeEntregaDoGate`.
-						//
-						// Só pontua o gate cuja entrega é RESPONSABILIDADE DESTE CANAL.
-						// `decision` e `contract` caem aqui por DESIGN — a pergunta deles é
-						// um card do orquestrador (`present_decision_prompt`,
-						// `contract_form`) e `gateQuestion` devolve null de propósito
-						// (gate-questions.ts:239). Eles respondem por 2 dos 8
-						// `[gate-undelivered]` dos últimos 4 dias; pontuá-los encheria a
-						// métrica de falso positivo, e alerta que grita à toa é alerta que
-						// ninguém olha.
-						if (WHATSAPP_TEXT_GATES.has(ev.gate) || WHATSAPP_INTERACTIVE_GATES.has(ev.gate)) {
-							registrarEntregaDoGate(ev.gate, "none");
-						}
-					}
-				}
-				gateFiredThisTurn = true; // FIX-211: o gate saiu — não é desvio.
-				break;
-			}
 			case "finish":
 				await flushText();
 				await flushArtifacts();
@@ -668,67 +539,13 @@ async function consumeEventsInner(
 	// Cobrança de gate ao FIM do turno de usuário (só user-turn: guardEmptyTurn).
 	// `dropped` (handoff) tem seu card silencioso próprio.
 	if (opts?.guardEmptyTurn && !dropped) {
-		const guardMeta = await reloadMeta(conversationId);
-		// `nextGate` sem hasContactName é o padrão do WhatsApp (o nome vem do pushName,
-		// não força o gate "name"; ver processor.ts).
-		const ng = nextGate(guardMeta);
-		const mandatory = isMandatoryCollectionGate(ng);
-		const paused = isConversationPausedOrTerminal(guardMeta);
-
+		// Sem funil, não há gate a re-cobrar: turno mudo do modelo cai no fallback
+		// honesto, uma vez, e a conversa segue com o vendedor.
 		if (!hasSent) {
-			// FIX-172/208 — turno MUDO: nada visível saiu (ex.: loop de save_contact_name
-			// até stepCountIs, ou o valor respondido e nada emitido). Re-cobra o gate de
-			// coleta pendente (escalado, FIX-211) em vez do "me perdi"; demais gates caem
-			// no fallback honesto. Nunca deixa o usuário no silêncio.
-			const attempt =
-				mandatory && !paused ? await bumpGateAttempt(conversationId, guardMeta, ng) : 1;
-			// FIX-245: carta real (pós-reveal) no lugar do exemplo genérico.
-			const reengage = reengageQuestionForGate(
-				ng,
-				guardMeta.currentCategory,
-				attempt,
-				guardMeta.recommendedOffer?.creditValue,
-				guardMeta.qualifyAnswers?.creditMentionedAtDesire,
-			);
-			console.warn(
-				`[empty-turn-guard] conv=${conversationId} DISPAROU (turno fechou mudo) nextGate=${ng} tentativa=${attempt} ação=${reengage ? "re-pergunta-do-gate" : "fallback-honesto(me-perdi)"}`,
-			);
-			await sendText(from, reengage ?? EMPTY_TURN_FALLBACK);
-		} else if (mandatory && !gateFiredThisTurn && !paused) {
-			// O usuário DESVIOU: o turno FALOU (o modelo respondeu a dúvida dele) e o
-			// gate de coleta segue pendente.
-			//
-			// 2026-07-20 — este ramo COLAVA uma cobrança enlatada escalonada no fim de
-			// um turno que já tinha falado ("Só falta isso pra eu seguir — é rapidinho."
-			// / "É seguro e sem compromisso."). O cliente perguntava "consórcio tem
-			// juros?", o modelo explicava bem, e logo abaixo chegava um balão de
-			// formulário cobrando. A web NUNCA fez isso (lá o fallback só existe pra
-			// turno vazio) e a mesma conversa flui natural.
-			//
-			// Retomar o assunto pendente é do CÉREBRO, não do canal: o `systemContext`
-			// já informa o gate pendente como INTENÇÃO (não frase pronta) e o modelo
-			// retoma com as palavras dele no próprio turno seguinte; se o cliente sumir,
-			// o watchdog de inatividade continua cobrindo. Aqui fica só o rastro.
-			console.warn(
-				`[gate-collect-desvio] conv=${conversationId} gate=${ng} segue pendente após turno que FALOU — retomada é do modelo (systemContext), sem cobrança enlatada`,
-			);
+			console.warn(`[empty-turn-guard] conv=${conversationId} turno mudo — fallback honesto`);
+			await sendText(from, EMPTY_TURN_FALLBACK);
 		}
 	}
-}
-
-/** FIX-211 — incrementa o contador de cobranças do gate e persiste. Retorna o novo
- * valor (1-based). Por-gate no meta (gateAttempts), sem vazar entre gates. */
-async function bumpGateAttempt(
-	conversationId: string,
-	meta: ConversationMetadata,
-	gate: Gate,
-): Promise<number> {
-	const attempt = (meta.gateAttempts?.[gate] ?? 0) + 1;
-	await persistMeta(conversationId, {
-		...meta,
-		gateAttempts: { ...meta.gateAttempts, [gate]: attempt },
-	});
-	return attempt;
 }
 
 export async function processWithOrchestrator(

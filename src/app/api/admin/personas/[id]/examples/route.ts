@@ -1,7 +1,6 @@
 import { z } from "zod";
 import type { PersonaExample } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
-import { invalidateAgentCache } from "@/lib/agent/agents";
 import { getPersonaForAdmin, updatePersona } from "@/lib/agent/personas-repo";
 import { personaExampleSchema } from "@/lib/validations/persona";
 
@@ -52,7 +51,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 		await updatePersona(personaId, {
 			examples: [...persona.examples, newExample],
 		});
-		invalidateAgentCache();
 		return Response.json({ example: newExample }, { status: 201 });
 	} catch (err) {
 		console.error("[admin/personas/examples POST]", err);

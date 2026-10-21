@@ -15,6 +15,7 @@ import { conversations, usoDeIa } from "@/db/schema";
 import { caixaDoCodigo, labelDaCaixa, lerCaixa } from "@/lib/agent/box/caixa";
 import { listShownOffersForConversation } from "@/lib/agent/orchestrator/choose-offer";
 import type { TurnEvent, TurnInput } from "@/lib/agent/orchestrator/types";
+import { scrubCpf } from "@/lib/agent/orchestrator/vazamento";
 import { executarBeat } from "@/lib/agent/pi/converse";
 import { persistirTurnoLivre } from "@/lib/agent/pi/persist-livre";
 import { skillsParaPrompt } from "@/lib/agent/pi/skills";
@@ -22,6 +23,7 @@ import { toPiTools } from "@/lib/agent/pi/tools";
 import {
 	buildToolsLivres,
 	type ContextoDasTools,
+	type DepsDasToolsLivres,
 	NOMES_DAS_TOOLS_LIVRES,
 } from "@/lib/agent/pi/tools-livres";
 import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
@@ -111,6 +113,8 @@ function linhaDeFato(args: {
 
 export function createRunTurnLivre(deps?: {
 	provider?: { id: string; baseUrl: string; apiKey: string; model: string };
+	/** Fronteira da busca — roteiro nos testes, Bevi real em produção. */
+	busca?: DepsDasToolsLivres["buscarGrupos"];
 }): (input: TurnInput) => AsyncGenerator<TurnEvent> {
 	return async function* runTurnLivreImpl(input: TurnInput): AsyncGenerator<TurnEvent> {
 		const { conversationId, channel, userText, isUserTurn, contactName } = input;
@@ -193,13 +197,16 @@ export function createRunTurnLivre(deps?: {
 				system,
 				turnMessage: (captura.textoLimpo || "(sem fala)") + naTela,
 				historico,
-				tools: toPiTools(buildToolsLivres(ctx) as never, {
+				tools: toPiTools(buildToolsLivres(ctx, { buscarGrupos: deps?.busca }) as never, {
 					conversationId,
 					so: [...NOMES_DAS_TOOLS_LIVRES],
 				}),
 				aoDelta: (delta) => {
-					estado = { ...estado, events: [...estado.events, { type: "text-delta", text: delta }] };
-					emitir({ type: "text-delta", text: delta });
+					// CPF mascarado JÁ na saída: o número que o cliente digitou não pode
+					// voltar para ele por eco do modelo.
+					const limpo = scrubCpf(delta);
+					estado = { ...estado, events: [...estado.events, { type: "text-delta", text: limpo }] };
+					emitir({ type: "text-delta", text: limpo });
 				},
 				aoToolCall: (chamada) => {
 					const evento = {

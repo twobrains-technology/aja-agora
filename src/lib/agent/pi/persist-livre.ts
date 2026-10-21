@@ -13,6 +13,7 @@
 // tudo isso é instrumento do funil que este motor não tem mais.
 
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
+import { passaFinal } from "@/lib/agent/orchestrator/vazamento";
 import type { EstadoDoTurno } from "@/lib/agent/turn/estado";
 import { projectToMeta } from "@/lib/agent/turn/projecao";
 import { sincronizarNomeDoContato } from "@/lib/contacts/sincronizar-nome";
@@ -46,8 +47,10 @@ export async function persistirTurnoLivre(args: {
 		else if (ev.type === "text-delta") baloes[baloes.length - 1] += ev.text;
 	}
 	for (const texto of baloes) {
-		if (texto.trim().length > 0) {
-			await saveMessage(conversationId, "assistant", texto, channel, persona);
+		// Último passe: máquina (JSON de argumento, nome de tool) não vira balão.
+		const limpo = passaFinal(texto);
+		if (limpo.trim().length > 0) {
+			await saveMessage(conversationId, "assistant", limpo, channel, persona);
 		}
 	}
 

@@ -18,8 +18,8 @@ import {
 	uuid,
 	varchar,
 } from "drizzle-orm/pg-core";
+import type { UserIntent } from "@/lib/agent/funil-tipos";
 import type { Category, ExpertiseLevel } from "@/lib/agent/personas";
-import type { UserIntent } from "@/lib/agent/qualify-state";
 import type { HumanMemoryBlock } from "@/lib/memory/types";
 
 // ─── Enums ───────────────────────────────────────────────────────────────────

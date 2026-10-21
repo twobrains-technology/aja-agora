@@ -17,9 +17,9 @@
 // conhecida, um número NU vira valor: quem responde "200" pra um carro quer
 // R$ 200 mil. Só nesse contexto; fora dele o número nu segue null.
 
+import type { Gate } from "@/lib/agent/funil-tipos";
 import type { Category } from "@/lib/agent/personas";
 import { CREDIT_BOUNDS, clampCreditToCategory } from "@/lib/agent/qualify-config";
-import type { Gate } from "@/lib/agent/qualify-state";
 
 /** Contexto do funil pra desambiguar número nu (FIX-208). Só o gate `credit`
  * com categoria conhecida habilita a leitura de número nu como valor do bem. */

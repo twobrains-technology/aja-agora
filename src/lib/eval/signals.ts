@@ -1,5 +1,5 @@
+import type { Gate } from "@/lib/agent/funil-tipos";
 import type { Category, ConversationMetadata, QualifyAnswers } from "@/lib/agent/personas";
-import { type Gate, nextGate } from "@/lib/agent/qualify-state";
 import { scoresDeReconciliacao } from "@/lib/observability/reconciliacao-fala-estado";
 
 export type LeadStage =
@@ -310,14 +310,11 @@ function extractContext(content: string, matchIndex: number): string {
 	return content.slice(start, end).replace(/\s+/g, " ").trim();
 }
 
-function computeDropOffGate(metadata: ConversationMetadata | null): Gate | null {
-	if (!metadata) return null;
-	if (!metadata.currentCategory) return null;
-	try {
-		return nextGate(metadata);
-	} catch {
-		return null;
-	}
+function computeDropOffGate(_metadata: ConversationMetadata | null): Gate | null {
+	// O funil saiu em 20/10/2026: não existe mais "próximo gate" a calcular.
+	// O sinal fica no contrato (campo presente) para não quebrar o painel, e
+	// nasce `null` — ausência de dado, não zero inventado.
+	return null;
 }
 
 /**

@@ -1,5 +1,5 @@
+import type { Gate, UserIntent } from "@/lib/agent/funil-tipos";
 import type { Category, ConversationMetadata, Persona } from "@/lib/agent/personas";
-import type { Gate, UserIntent } from "@/lib/agent/qualify-state";
 import type { ArtifactType } from "@/lib/chat/types";
 
 export type Channel = "web" | "whatsapp";

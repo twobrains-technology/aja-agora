@@ -2,7 +2,6 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { personas } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
-import { invalidateAgentCache } from "@/lib/agent/agents";
 import { createPersona, listPersonas } from "@/lib/agent/personas-repo";
 import { createPersonaSchema, slugifyDisplayName } from "@/lib/validations/persona";
 
@@ -52,7 +51,6 @@ export async function POST(req: Request) {
 			activeTools: parsed.data.activeTools,
 			isActive: parsed.data.isActive,
 		});
-		invalidateAgentCache();
 		return Response.json({ persona: created }, { status: 201 });
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : "unknown error";

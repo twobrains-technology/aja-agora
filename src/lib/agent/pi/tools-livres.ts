@@ -16,6 +16,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import { BeviSelfContractAdapter } from "@/lib/adapters/bevi/bevi-self-contract-adapter";
 import { BeviSelfContractClient } from "@/lib/adapters/bevi/self-contract-client";
+import type { GroupSummary } from "@/lib/adapters/types";
 import { listShownOffersForConversation } from "@/lib/agent/orchestrator/choose-offer";
 import {
 	buildComparisonTableFromRevealGroups,
@@ -74,7 +75,17 @@ const EMBUTIDO_DEFAULT_PERCENT = 30;
 
 const CATEGORIAS = ["auto", "moto", "imovel", "servicos"] as const;
 
-export function buildToolsLivres(ctx: ContextoDasTools) {
+export type DepsDasToolsLivres = {
+	/** Fronteira da busca — injetável nos testes (Bevi real em produção). */
+	buscarGrupos?: (args: {
+		category: Category;
+		creditMin?: number;
+		creditMax?: number;
+		parcelaAlvo?: number;
+	}) => Promise<GroupSummary[]>;
+};
+
+export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres = {}) {
 	const buscar_cartas = tool({
 		description:
 			"Busca cartas de consórcio REAIS na administradora, no tipo de bem e na faixa que o cliente disse, e mostra as opções na tela. Usa a identidade da própria Aja Agora: NÃO peça CPF nem telefone para isto. Devolve o resumo de cada carta (id, administradora, carta, parcela, prazo).",
@@ -98,7 +109,9 @@ export function buildToolsLivres(ctx: ContextoDasTools) {
 				.describe("true só se o cliente quiser usar parte da própria carta como lance"),
 		}),
 		execute: async (args) => {
-			if (!vitrineDisponivel()) {
+			// O guard da vitrine vale para a busca REAL (que abre proposta com o par
+			// da casa). Com a fronteira injetada (teste), não há identidade envolvida.
+			if (!deps.buscarGrupos && !vitrineDisponivel()) {
 				return "Busca rápida indisponível: a identidade da casa não está configurada (VITRINE_CPF/VITRINE_CELULAR). Não peça CPF ao cliente para contornar — diga que a busca está fora do ar agora.";
 			}
 			const categoria = args.categoria as Category;
@@ -116,17 +129,22 @@ export function buildToolsLivres(ctx: ContextoDasTools) {
 					? Math.round(alvoComEmbutido * PISO_DO_EMBUTIDO)
 					: undefined;
 
-			const adapter = new BeviSelfContractAdapter(new BeviSelfContractClient(), {
-				getIdentity: async () => identidadeDeVitrine(),
-				getSimulationPrefs: async () => prefsFromMeta(await reloadMeta(ctx.conversationId)),
-			});
+			const params = {
+				category: categoria,
+				...(args.parcelaMensal ? { parcelaAlvo: args.parcelaMensal } : { creditMin, creditMax }),
+			};
 
-			let grupos: Awaited<ReturnType<typeof adapter.searchGroups>>;
+			let grupos: GroupSummary[];
 			try {
-				grupos = await adapter.searchGroups({
-					category: categoria,
-					...(args.parcelaMensal ? { parcelaAlvo: args.parcelaMensal } : { creditMin, creditMax }),
-				});
+				if (deps.buscarGrupos) {
+					grupos = await deps.buscarGrupos(params);
+				} else {
+					const adapter = new BeviSelfContractAdapter(new BeviSelfContractClient(), {
+						getIdentity: async () => identidadeDeVitrine(),
+						getSimulationPrefs: async () => prefsFromMeta(await reloadMeta(ctx.conversationId)),
+					});
+					grupos = await adapter.searchGroups(params);
+				}
 			} catch (erro) {
 				console.error("[buscar_cartas] falha na Bevi:", erro);
 				return `Busca falhou agora (${erro instanceof Error ? erro.message : String(erro)}). Diga ao cliente que a busca não voltou e proponha tentar de novo — nunca invente número.`;

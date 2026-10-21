@@ -17,8 +17,8 @@
 //   ao admin controle determinístico.
 
 import type { PersonaExample } from "@/db/schema";
+import type { UserIntent } from "@/lib/agent/funil-tipos";
 import type { Category, ExpertiseLevel } from "./personas";
-import type { UserIntent } from "./qualify-state";
 
 export type ExampleContext = {
 	expertise?: ExpertiseLevel;

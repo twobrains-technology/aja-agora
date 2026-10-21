@@ -1,7 +1,9 @@
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import type { PlanIntent } from "@/lib/agent/qualify-config";
 import type { ChosenOffer } from "./choose-offer";
-import type { EphemeralDropReason } from "./sanitizer";
+
+/** Motivo de queda do texto (o sanitizer saiu em 20/10; fica o rótulo). */
+type EphemeralDropReason = string;
 
 /** Quem desenha o formulário de contratação: o nó `emitCard` (gate `contract`,
  * determinístico — `present_contract_form` nem existe no toolset) — o modelo

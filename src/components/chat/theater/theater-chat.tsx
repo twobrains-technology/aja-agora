@@ -85,7 +85,6 @@ function comGatePendente(conv: ResumePayload, msgs: AjaUIMessage[]): AjaUIMessag
 		{
 			id: `${conv.conversationId}-gate-retomada`,
 			role: "assistant",
-			parts: [{ type: "data-gate", id: `${conv.conversationId}-gate`, data: conv.gate }],
 			metadata: { resumed: true },
 		} as unknown as AjaUIMessage,
 	];

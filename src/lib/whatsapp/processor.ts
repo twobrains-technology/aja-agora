@@ -3,7 +3,6 @@ import { db } from "@/db";
 import { contacts, conversations, remarketingTouches } from "@/db/schema";
 import { detectBackIntent, popNavState } from "@/lib/agent/orchestrator/navigation";
 import type { ConversationMetadata } from "@/lib/agent/personas";
-import { nextGate } from "@/lib/agent/qualify-state";
 import { metaOf, persistMeta } from "@/lib/conversation/meta";
 import { registrarFalhaDoLlm } from "@/lib/llm/alerta-do-llm";
 import { withSimulatorClockIfNeeded } from "@/lib/utils/simulator-clock-wrap";
@@ -185,12 +184,8 @@ async function processTextMessageSerialized(
 		// Gate "identify" (D1): funil aguardando CPF → captura textual determinística
 		// (valida DV, persiste cifrado, celular = waId) sem turno de agente.
 		{
-			const {
-				captureIdentifyText,
-				IDENTIFY_CONFIRMED_REPLY,
-				IDENTIFY_CONTINUE_REPLY,
-				IDENTIFY_INVALID_CPF_REPLY,
-			} = await import("./identify-capture");
+			const { captureIdentifyText, IDENTIFY_CONFIRMED_REPLY, IDENTIFY_INVALID_CPF_REPLY } =
+				await import("./identify-capture");
 			const capture = await captureIdentifyText(from, text);
 			if (capture.handled) {
 				if (capture.outcome === "invalid") {
@@ -206,18 +201,12 @@ async function processTextMessageSerialized(
 					// handleHandoffDecline). Só revela se a qualificação já estava
 					// completa (nextGate=search). O tripwire de identidade do reveal
 					// agora sempre passa, pois a identidade já foi coletada cedo.
-					const cMeta = metaOf(conv);
-					const nextG = nextGate(cMeta);
-					const { runSearchSummaryWithOrchestrator, fireGate } = await import("./adapter");
-					if (nextG === "search") {
-						await sendTextMessage(from, IDENTIFY_CONFIRMED_REPLY);
-						await withSimulatorClockIfNeeded(conv, () =>
-							runSearchSummaryWithOrchestrator({ from, conversationId: conv.id }),
-						);
-					} else {
-						await sendTextMessage(from, IDENTIFY_CONTINUE_REPLY);
-						await withSimulatorClockIfNeeded(conv, () => fireGate(from, conv.id, nextG, cMeta));
-					}
+					// Sem funil, o CPF guardado só destrava a proposta: confirma e devolve a
+					// conversa ao vendedor, que retoma com as palavras dele.
+					await sendTextMessage(from, IDENTIFY_CONFIRMED_REPLY);
+					await withSimulatorClockIfNeeded(conv, () =>
+						processWithOrchestrator(from, "pode seguir", conv.contactName ?? undefined),
+					);
 				}
 				return;
 			}

@@ -1,5 +1,5 @@
+import type { Gate } from "@/lib/agent/funil-tipos";
 import type { Category, QualifyAnswers } from "@/lib/agent/personas";
-import type { Gate } from "@/lib/agent/qualify-state";
 import { vitrineDisponivel } from "@/lib/bevi/identidade-vitrine";
 
 // REMOVIDO em 2026-07-13 (ADR revoga-jornada-soberana): `CLARIFY_LEAD_IN`

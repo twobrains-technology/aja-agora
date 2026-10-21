@@ -9,7 +9,6 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
-import { nextGate } from "@/lib/agent/qualify-state";
 import { vitrineDisponivel } from "@/lib/bevi/identidade-vitrine";
 import { isValidCpf, storeIdentity } from "@/lib/conversation/identity";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
@@ -179,7 +178,9 @@ export async function captureIdentifyText(
 	// administradora exige para simular: aceitá-lo nunca atrapalha o funil, e o
 	// gate se recomputa sozinho no turno seguinte. A porta continua estreita —
 	// só CPF válido entra; qualquer outra coisa segue para o modelo (abaixo).
-	const noGateDeIdentidade = nextGate(meta) === "identify";
+	// Com o vendedor livre não existe gate de identidade: o CPF do cliente vale
+	// sempre que ele mesmo o digitar (é dado dele, e a proposta exige).
+	const noGateDeIdentidade = true;
 
 	// FORA do gate, um número de 11 dígitos que PARECE CELULAR não é capturado.
 	//

@@ -24,7 +24,12 @@ import { conversations } from "@/db/schema";
 import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors";
 import { getLeadIdForConversation } from "@/lib/admin/lead-stage-tracker";
 import type { ConversationMetadata } from "@/lib/agent/personas";
-import { querAntecipar } from "@/lib/agent/qualify-state";
+
+/** O cliente sinalizou lance? (o mesmo predicado que morava no qualify-state) */
+function querAntecipar(q: { hasLance?: string | null; lanceEmbutido?: boolean }): boolean {
+	return q.hasLance === "yes" || q.hasLance === "maybe" || q.lanceEmbutido === true;
+}
+
 import {
 	administradoraConflictsWithRegisteredProposal,
 	ancorarOfertaReal,

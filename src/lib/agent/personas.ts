@@ -96,8 +96,8 @@ export type QualifyAnswers = {
 	creditMentionedAtDesire?: number;
 };
 
+import type { Gate } from "@/lib/agent/funil-tipos";
 import type { NavState } from "./orchestrator/navigation";
-import type { Gate } from "./qualify-state";
 
 export type ConversationMetadata = {
 	currentPersona?: Persona;

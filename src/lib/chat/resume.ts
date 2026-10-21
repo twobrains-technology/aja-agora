@@ -9,11 +9,8 @@
 import { and, desc, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
-import type { ConversationMetadata } from "@/lib/agent/personas";
-import { nextGate } from "@/lib/agent/qualify-state";
 import type { GatePartData } from "@/lib/chat/ui-message";
 import { ehMarcadorDeCard } from "@/lib/conversation/messages";
-import { gatePartData } from "@/lib/web/adapter";
 
 export interface ResumableMessage {
 	id: string;
@@ -118,18 +115,13 @@ export async function getResumableConversation(
 		maxStageReached?: string;
 		contractClosed?: boolean;
 	};
-	// O CARD DO GATE PENDENTE volta na retomada. Cards de input (valor, CPF,
-	// chips) não são artifacts persistidos — só os de dado —, então ao reabrir o
-	// agente repetia a pergunta e nenhum componente aparecia. O gate é derivado
-	// do estado, não do histórico: recalcula e devolve montado.
-	const metaCompleta = (conv.metadata ?? {}) as ConversationMetadata;
-	const gatePendente = nextGate(metaCompleta, { hasContactName: Boolean(conv.contactName) });
-	const gate = gatePartData(gatePendente, metaCompleta);
-
+	// Sem gate não há card de input a remontar: quem conduz é o vendedor, e o
+	// que existe na tela são os artifacts de verdade (comparativo, proposta),
+	// que voltam pelo histórico.
 	return {
 		conversationId: conv.id,
 		messages: visiveis,
-		gate,
+		gate: null,
 		messageCount: visiveis.length,
 		lastActivityAt: (conv.updatedAt ?? conv.createdAt ?? new Date()).toISOString(),
 		meaningfulProgress: hasMeaningfulProgress(messages.length, meta),

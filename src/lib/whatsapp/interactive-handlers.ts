@@ -6,17 +6,11 @@ import { getLeadIdForConversation } from "@/lib/admin/lead-stage-tracker";
 import type { Category, ConversationMetadata, ExperiencePrev, Persona } from "@/lib/agent/personas";
 import { ROUTABLE_CATEGORIES } from "@/lib/agent/personas";
 import { LANCE_EMBUTIDO_DEFAULT_PERCENT, objetivoForPrazo } from "@/lib/agent/qualify-config";
-import { nextGate } from "@/lib/agent/qualify-state";
 import { confirmOffer } from "@/lib/bevi/fulfillment";
 import { registrarCardEnviado } from "@/lib/conversation/cards";
 import { saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta } from "@/lib/conversation/meta";
-import {
-	fireGate,
-	runDirectiveWithOrchestrator,
-	runSearchSummaryWithOrchestrator,
-	runTransitionWithOrchestrator,
-} from "./adapter";
+import { fireGate, runDirectiveWithOrchestrator, runTransitionWithOrchestrator } from "./adapter";
 import { sendInteractiveMessage, sendTextMessage } from "./api";
 import {
 	buildDetailDirective,
@@ -353,21 +347,17 @@ async function handleHandoffDecline(ctx: Ctx): Promise<boolean> {
 	const { from, conversationId } = ctx;
 	const meta = await loadMeta(conversationId);
 	await recordUserClick(ctx);
-	const cleared: ConversationMetadata = {
+	await persistMeta(conversationId, {
 		...meta,
 		handoffSuggested: false,
 		handoffReason: undefined,
-	};
-	await persistMeta(conversationId, cleared);
-	// Resume the funnel — fire the next gate that was pending when handoff fired.
-	const gate = nextGate(cleared);
-	if (gate === "search") {
-		await runSearchSummaryWithOrchestrator({ from, conversationId });
-	} else if (gate !== "doubts-wait") {
-		await fireGate(from, conversationId, gate, cleared);
-	} else {
-		await sendTextMessage(from, "Beleza, vamos seguir então. O que você quer saber?");
-	}
+	});
+	// Sem funil não há "próximo gate" a disparar: devolve a conversa ao vendedor.
+	await runAgentDirective(
+		from,
+		conversationId,
+		"O cliente recusou falar com um especialista agora. Retome a conversa de onde parou, com as suas palavras, e siga ajudando.",
+	);
 	return true;
 }
 
@@ -496,27 +486,10 @@ async function handleSimulatorOffer(ctx: Ctx): Promise<boolean> {
 		return true;
 	}
 	if (!updated.decisionDispatched) {
+		// O card de decisão era emissão server-side do funil. Com o vendedor livre
+		// quem decide é o modelo, então o clique aqui só rende uma fala.
 		await persistMeta(conversationId, { ...updated, decisionDispatched: true });
-		// FIX-253 (rodada 4, veredito Fable FINAL §3): o directive SÓ narra — o
-		// card de decisão é emissão SERVER-SIDE determinística (nunca mais
-		// tool-call do LLM, present_decision_prompt saiu do toolset em
-		// tool-policy.ts). Emite explícito aqui — mesma paridade do web
-		// (route.ts, ramo simulator-offer).
 		await runAgentDirective(from, conversationId, buildDecisionPromptDirective());
-		const { buildDecisionPromptCard } = await import("@/lib/agent/orchestrator/server-cards");
-		const payload = buildDecisionPromptCard(updated).payload;
-		const wa = artifactToWhatsApp("decision_prompt", payload);
-		if (wa?.type === "interactive" && wa.interactive) {
-			await sendInteractiveMessage(from, wa.interactive);
-			// Mesmo motivo do `handleDecisionOutras`: card entregue e não
-			// registrado deixa o histórico do admin sem o turno inteiro.
-			await registrarCardEnviado({
-				conversationId,
-				tipo: "decision_prompt",
-				payload,
-				channel: "whatsapp",
-			});
-		}
 	}
 	return true;
 }
@@ -561,28 +534,12 @@ async function handleLanceEmbutido(ctx: Ctx): Promise<boolean> {
 
 	if (!meta.currentCategory) return true;
 
-	// FIX-215 (Ata 2026-07-04): lance agora é PÓS-reveal — a busca JÁ ocorreu
-	// (é o pré-requisito pra este gate existir, ver qualify-state.ts). Despacha
-	// o próximo passo REAL (simulator-offer/decision), nunca re-dispara a busca.
-	const gate = nextGate(updated);
-	if (gate === "search") {
-		await runSearchSummaryWithOrchestrator({ from, conversationId });
-	} else if (gate === "simulator-offer" || gate === "decision") {
-		// Idempotência (FIX-215): despachando o gate por AQUI (e não via index.ts),
-		// marca o dispatch — senão, se o usuário responder o card por TEXTO,
-		// nextGate recomputaria o MESMO gate com a flag ainda false e o card sairia
-		// 2× (o "sim" do usuário não seria honrado). Vale pros dois gates que este
-		// ramo pode alcançar: quem topa antecipar cai no simulador; quem recusou o
-		// lance vai direto pra decisão.
-		const dispatched =
-			gate === "simulator-offer"
-				? { ...updated, simulatorOfferDispatched: true }
-				: { ...updated, decisionDispatched: true };
-		await persistMeta(conversationId, dispatched);
-		await fireGate(from, conversationId, gate, dispatched);
-	} else {
-		await fireGate(from, conversationId, gate, updated);
-	}
+	// Sem gate: o lance registrado volta ao vendedor, que decide o próximo passo.
+	await runAgentDirective(
+		from,
+		conversationId,
+		"O cliente respondeu sobre o lance. Reaja ao que ele disse e siga a conversa com as suas palavras.",
+	);
 	return true;
 }
 

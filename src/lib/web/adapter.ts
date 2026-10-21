@@ -4,18 +4,13 @@ import { artifacts as artifactsTable } from "@/db/schema";
 import { recordStageReached } from "@/lib/admin/lead-stage-tracker";
 import { runTurn, type TurnEvent } from "@/lib/agent/orchestrator";
 import { buildSearchSummaryDirective } from "@/lib/agent/orchestrator/directives";
-import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import { planTransition } from "@/lib/agent/orchestrator/transition";
-import type { Category, ConversationMetadata, Persona } from "@/lib/agent/personas";
+import type { Category, Persona } from "@/lib/agent/personas";
 import {
 	type Bounds,
 	CREDIT_BOUNDS,
-	LANCE_EMBUTIDO_OPTIONS,
-	lanceValueOptions,
 	TIMEFRAME_OPTIONS as TIMEFRAME_CONFIG,
 } from "@/lib/agent/qualify-config";
-import { type Gate, shouldAskMotive } from "@/lib/agent/qualify-state";
-import { vitrineDisponivel } from "@/lib/bevi/identidade-vitrine";
 import { CARDS_QUE_REVELAM_OFERTA } from "@/lib/chat/desbloqueio-do-telefone";
 import { EMPTY_TURN_FALLBACK } from "@/lib/chat/empty-turn-guard";
 import {
@@ -26,11 +21,9 @@ import type { ArtifactType } from "@/lib/chat/types";
 import type {
 	AjaUIMessage,
 	ArtifactPartData,
-	GatePartData,
 	GatePartOption,
 	SliderField,
 	ToolStatusPartData,
-	TransitionPartData,
 } from "@/lib/chat/ui-message";
 import { WELCOME_OPTIONS } from "@/lib/chat/welcome-options";
 import { saveMessage } from "@/lib/conversation/messages";
@@ -40,7 +33,7 @@ import { simulatorNow } from "@/lib/utils/simulator-clock";
 
 type Writer = UIMessageStreamWriter<AjaUIMessage>;
 
-const creditSlider = (category: Category, valorJaDito?: number): SliderField => {
+const _creditSlider = (category: Category, valorJaDito?: number): SliderField => {
 	const b: Bounds = CREDIT_BOUNDS[category];
 	// A agulha nasce ANCORADA no valor que o cliente já disse ("quero um carro de
 	// 260 mil"). Antes vinha sempre no default da categoria (R$ 80 mil pra auto):
@@ -60,7 +53,7 @@ const creditSlider = (category: Category, valorJaDito?: number): SliderField => 
 // agulha simples do valor (kind "slider") não coleta prazo/parcela. O componente
 // por intenção ("Planeje sua conquista") foi aposentado pela jornada canônica.
 
-const TIMEFRAME_OPTIONS: GatePartOption[] = TIMEFRAME_CONFIG.map((t) => ({
+const _TIMEFRAME_OPTIONS: GatePartOption[] = TIMEFRAME_CONFIG.map((t) => ({
 	value: t.token,
 	label: t.title,
 }));
@@ -69,7 +62,7 @@ const TIMEFRAME_OPTIONS: GatePartOption[] = TIMEFRAME_CONFIG.map((t) => ({
  * um formulário: o campo de texto segue aberto e quem quiser contar a história
  * inteira digita. O clique manda o rótulo como mensagem normal — o motivo entra
  * pelo mesmo caminho de sempre (analyzer sobre texto livre). */
-const DESIRE_MOTIVE_OPTIONS: Partial<Record<Category, GatePartOption[]>> = {
+const _DESIRE_MOTIVE_OPTIONS: Partial<Record<Category, GatePartOption[]>> = {
 	auto: [
 		{ value: "primeiro", label: "É meu primeiro carro" },
 		{ value: "troca", label: "Vou trocar o que tenho" },
@@ -89,213 +82,6 @@ const DESIRE_MOTIVE_OPTIONS: Partial<Record<Category, GatePartOption[]>> = {
 		{ value: "familia", label: "A família cresceu" },
 	],
 };
-
-/** Monta o card de um gate a partir do meta da conversa. PURO (exportado pra
- * Camada 1 validar a copy do docx sem DB). */
-export function gatePartData(gate: Gate, meta: ConversationMetadata): GatePartData | null {
-	switch (gate) {
-		case "name":
-			// FIX-17: card do nome com input focado (passo 1). A pergunta já saiu no
-			// texto do agente (gateQuestion('name')=null), o card só complementa.
-			return { kind: "name", gate: "name" };
-		case "desire": {
-			// Gate FANTASMA até 2026-07-21: devolvia `null` e o `desire` ficava sem
-			// nenhum pixel na tela. Toda pergunta do funil oferece resposta em um
-			// toque — o motivo ("por que agora") são os atalhos mais comuns por
-			// categoria; quem quiser contar a história inteira continua digitando.
-			// O chip manda o rótulo como TEXTO comum (o analyzer extrai `motivation`
-			// do texto livre, igual a digitar) — nenhum handler novo no servidor.
-			// Os atalhos são do MOTIVO ("por que agora"), não do bem — só aparecem no
-			// turno em que o agente pergunta o motivo. No turno do bem ("qual carro?")
-			// não há card: a resposta é aberta.
-			if (!shouldAskMotive(meta)) return null;
-			const opcoes = DESIRE_MOTIVE_OPTIONS[meta.currentCategory ?? "auto"];
-			if (!opcoes) return null;
-			return { kind: "chips", gate: "desire", options: opcoes };
-		}
-		case "experience":
-			return {
-				kind: "chips",
-				gate: "experience",
-				options: [
-					{ value: "first", label: "É a primeira vez" },
-					{ value: "returning", label: "Já conheço" },
-					{ value: "doubts", label: "Tenho dúvidas" },
-				],
-			};
-		case "credit": {
-			const category = meta.currentCategory;
-			if (!category) return null;
-			// FIX-115 (Kairo, PROD 2026-06-30): AGULHA SIMPLES do valor do bem — um
-			// único slider de R$ 1.000 em R$ 1.000. Substitui o picker complexo por
-			// intenção ("Planeje sua conquista"), que a jornada canônica aposentou na
-			// revisão FIX-104 ("componente COMPLEXO saiu; na web um slider simples
-			// pode apoiar"). O valor segue por CONVERSA: a agulha, sem onSubmit, manda
-			// o valor como TEXTO no chat (parseAssetValue faz o backstop no funil).
-			// Prazo/parcela saíram da entrada (FIX-103/104) — a agulha não os coleta.
-			return {
-				kind: "slider",
-				gate: "credit",
-				category,
-				fields: [
-					creditSlider(
-						category,
-						meta.qualifyAnswers?.creditMax ?? meta.qualifyAnswers?.creditMentionedAtDesire,
-					),
-				],
-			};
-		}
-		case "timeframe": {
-			const category = meta.currentCategory;
-			if (!category) return null;
-			return {
-				kind: "chips",
-				gate: "timeframe",
-				options: TIMEFRAME_OPTIONS,
-			};
-		}
-		case "lance":
-			return {
-				kind: "chips",
-				gate: "lance",
-				options: [
-					// FIX-268 (rodada 7, veredito Fable r6, residual D4): "reserva"
-					// varrido — mesma disciplina do FIX-234/FIX-256.
-					{ value: "yes", label: "Sim, tenho como dar" },
-					{ value: "maybe", label: "Talvez, depende" },
-					{ value: "no", label: "Por enquanto não" },
-					// FIX-236 (Fable r1, P0): 3ª saída — quem não quer comprometer nada além
-					// da parcela vai direto pro card `two_paths` (dois caminhos), pulando a
-					// educação de embutido/agulha (rota em route.ts + orchestrator/index.ts).
-					{ value: "so_parcela", label: "Só a parcela, sem lance" },
-				],
-			};
-		case "lance-value": {
-			// docx passo 2: "Qual valor aproximado?" — faixas relativas ao crédito.
-			const creditMax = meta.qualifyAnswers?.creditMax;
-			if (!creditMax) return null;
-			return {
-				kind: "chips",
-				gate: "lance-value",
-				options: lanceValueOptions(creditMax).map((o) => ({
-					value: o.token,
-					label: o.title,
-					desc: o.desc,
-				})),
-			};
-		}
-		case "lance-embutido":
-			return {
-				kind: "chips",
-				gate: "lance-embutido",
-				options: LANCE_EMBUTIDO_OPTIONS.map((o) => ({ value: o.token, label: o.title })),
-			};
-		case "identify":
-			// A Bevi exige CPF+celular para abrir proposta. Com a vitrine, quem
-			// satisfaz essa exigência na busca é a identidade da casa, e este form
-			// desce para o fecho — a copy acompanha (ver `momento`).
-			return {
-				kind: "identity",
-				gate: "identify",
-				prefilledPhone: null,
-				momento: vitrineDisponivel() ? "fecho" : "pre-busca",
-			};
-		case "simulator-offer":
-			// docx passo 4: oferta do simulador na sequência do reveal.
-			return {
-				kind: "chips",
-				gate: "simulator-offer",
-				options: [
-					{ value: "yes", label: "Quero ver!" },
-					{ value: "no", label: "Agora não" },
-				],
-			};
-		case "reco-consent":
-			// Micro-compromisso mais importante do funil — e até 2026-07-21 era o
-			// ÚNICO sim/não sem botão de "sim": o cliente tinha que DIGITAR pra
-			// aceitar ver a recomendação. Atrito puro. Os chips mandam o rótulo como
-			// texto normal (mesmo caminho de sempre, `detectYesNoText` resolve).
-			return {
-				kind: "chips",
-				gate: "reco-consent",
-				options: [
-					{ value: "sim", label: "Sim, quero ver" },
-					{ value: "nao", label: "Agora não" },
-				],
-			};
-		case "doubts-wait":
-		case "search":
-		case "decision":
-		// O passo 5 não tem card de GATE: quem desenha o formulário de
-		// contratação é o artifact `contract_form` (payload com a identidade já
-		// mascarada), emitido pelo grafo no mesmo turno.
-		case "contract":
-			return null;
-	}
-}
-
-/** Emite a pergunta + card de um gate DIRETO no stream (sem turno de LLM).
- * Usado pelos handlers determinísticos do route (ex.: pós-lance → identify). */
-export async function pipeGatePrompt(args: {
-	conversationId: string;
-	gate: Gate;
-	writer: Writer;
-	/** O modelo já fez esta pergunta com as palavras dele → o card só mostra o
-	 * input, sem repetir a pergunta canônica. */
-	modelAsked?: boolean;
-}): Promise<void> {
-	const { conversationId, gate, writer, modelAsked } = args;
-	const meta = await reloadMeta(conversationId);
-	const data = gatePartData(gate, meta);
-	// FIX-245: creditValue (carta real, pós-reveal) substitui o exemplo genérico
-	// de "R$ 100 mil" na educação de lance embutido.
-	// FIX-255 (rodada 4, veredito Fable FINAL §N-D): copy por canal — "web" pra
-	// não herdar a frase "eu já pego aqui do WhatsApp" (gate identify).
-	//
-	// DESAMARRA (2026-07-13): quando o MODELO já perguntou (`modelAsked`), o card
-	// NÃO repete a pergunta canônica — emite só o input. Antes, a pergunta do
-	// modelo era descartada pra esta aqui sair sempre igual; era a origem do "o
-	// agente responde sempre a mesma coisa".
-	const question = modelAsked
-		? null
-		: gateQuestion(
-				gate,
-				meta.currentCategory,
-				meta.recommendedOffer?.creditValue,
-				"web",
-				meta.qualifyAnswers?.creditMentionedAtDesire,
-				meta.qualifyAnswers?.desiredItem,
-			);
-	// FIX-238 (Fable r1, gap P1 #5): a pergunta e o card são INDEPENDENTES —
-	// gates não-bloqueantes sem card (ex.: "desire", FIX-233) ainda têm pergunta a
-	// emitir. Antes, `if (!data) return` matava a pergunta junto com o card ausente,
-	// virando turno morto ("Prazer, Madalena!" e nada mais).
-	// Gate sem card E sem pergunta canônica = nada a mostrar. Sair aqui deixava o
-	// turno MUDO: o cliente respondia e recebia zero (`textChars: 0`,
-	// `durationMs: 8` no trace, visto ao vivo no fim do funil). Quem não tem card
-	// tem conversa — devolve o turno pro modelo, que fala com o que sabe.
-	if (!data && !question) {
-		await pipeDirectiveTurn({
-			conversationId,
-			directive:
-				"Não há card nem próximo passo estruturado agora. Converse: retome o que ficou " +
-				"pendente com este cliente, responda o que ele acabou de dizer e conduza para o " +
-				"próximo passo com as suas palavras. Nunca termine sem um próximo passo.",
-			contactName: null,
-			writer,
-		});
-		return;
-	}
-	if (question) {
-		const id = crypto.randomUUID();
-		writer.write({ type: "text-start", id });
-		writer.write({ type: "text-delta", id, delta: question });
-		writer.write({ type: "text-end", id });
-	}
-	if (data) {
-		writer.write({ type: "data-gate", id: crypto.randomUUID(), data });
-	}
-}
 
 /** FIX-246 (rodada 3, Fable r2 — causa-raiz do veredito 4/10): emite um card
  * SERVER-SIDE determinístico direto no stream — sem depender de o LLM chamar
@@ -473,64 +259,6 @@ export async function pipeOrchestratorToWriter(
 						type: "data-artifact",
 						id: ev.toolCallId,
 						data: { type: ev.artifactType, payload: ev.payload } as unknown as ArtifactPartData,
-					});
-					break;
-				}
-
-				case "gate": {
-					closeTextIfOpen();
-					const meta = await reloadMeta(conversationId);
-					const data = gatePartData(ev.gate, meta);
-					// FIX-245: carta real (pós-reveal) no lugar do exemplo genérico "R$ 100 mil".
-					// FIX-255: copy por canal (web nunca herda a frase do WhatsApp).
-					//
-					// DESAMARRA (2026-07-13): se o MODELO já perguntou (`ev.modelAsked`), o
-					// card cala a pergunta canônica e mostra só o input. Antes era o
-					// contrário — a pergunta do modelo era descartada pra esta sair sempre
-					// idêntica, o que fazia o agente repetir a mesma frase pra sempre.
-					const question = ev.modelAsked
-						? null
-						: gateQuestion(
-								ev.gate,
-								meta.currentCategory,
-								meta.recommendedOffer?.creditValue,
-								"web",
-								meta.qualifyAnswers?.creditMentionedAtDesire,
-								meta.qualifyAnswers?.desiredItem,
-							);
-					// FIX-238: idem pipeGatePrompt — pergunta e card são independentes.
-					if (data || question) {
-						emittedVisible = true;
-						if (question) {
-							const id = crypto.randomUUID();
-							writer.write({ type: "text-start", id });
-							writer.write({ type: "text-delta", id, delta: question });
-							writer.write({ type: "text-end", id });
-						}
-						if (data) {
-							writer.write({
-								type: "data-gate",
-								id: crypto.randomUUID(),
-								data,
-							});
-						}
-					}
-					break;
-				}
-
-				case "transition": {
-					closeTextIfOpen();
-					emittedVisible = true;
-					const data: TransitionPartData = {
-						toPersona: ev.toPersona,
-						toPersonaName: ev.toPersonaName,
-						toCategory: ev.toCategory,
-						bridgeText: ev.bridgeText,
-					};
-					writer.write({
-						type: "data-transition",
-						id: crypto.randomUUID(),
-						data,
 					});
 					break;
 				}
@@ -744,12 +472,10 @@ export async function pipeSearchSummaryTurn(args: {
 	const { conversationId, contactName, writer, userKey } = args;
 	const refreshed = await reloadMeta(conversationId);
 	if (refreshed.searchDispatched) return;
-	// Tripwire D1: a busca real exige identidade (a Bevi não simula sem CPF).
-	// Sem identityCollected, o caminho certo é o gate "identify" — nunca buscar.
-	if (!refreshed.identityCollected) {
-		await pipeGatePrompt({ conversationId, gate: "identify", writer });
-		return;
-	}
+	// Sem categoria não há o que resumir. O tripwire de identidade morreu junto
+	// com o gate `identify`: a busca rápida usa a identidade da casa, então o
+	// cliente nunca precisa dar CPF para ver carta.
+
 	const category = refreshed.currentCategory;
 	if (!category) return;
 	const directive = buildSearchSummaryDirective({ category, meta: refreshed });

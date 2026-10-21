@@ -4,7 +4,6 @@
 //
 //   npm run worker:proposal
 
-import { startGateReengageWorker } from "@/lib/workers/gate-reengage-poll";
 import { startMetaAdsSyncWorker } from "@/lib/workers/meta-ads-sync-cycle";
 import { startProposalStatusWorker } from "@/lib/workers/proposal-status-poll";
 import { startRemarketingWorker } from "@/lib/workers/remarketing-cycle";
@@ -17,7 +16,6 @@ async function main() {
 	await startProposalStatusWorker();
 	// FIX-207: watchdog de re-engajamento do funil no MESMO processo/container.
 	// Degrada com log se REDIS_URL ausente (não derruba o worker de proposta).
-	await startGateReengageWorker();
 	// Régua de remarketing (Remarketing_WhatsApp_V3.pdf): job repetível de 30 s
 	// com `jobId` fixo — o MESMO padrão do watchdog, pelo mesmo motivo (duas
 	// réplicas do ECS; `setInterval` no app dispararia duas vezes). É também o

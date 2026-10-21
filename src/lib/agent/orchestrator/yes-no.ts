@@ -1,4 +1,4 @@
-import type { UserIntent } from "@/lib/agent/qualify-state";
+import type { UserIntent } from "@/lib/agent/funil-tipos";
 
 // Sim/não em texto livre — módulo NEUTRO de propósito: é usado pelos dois
 // runtimes (orchestrator/index.ts e turn/advance.ts) e não pode

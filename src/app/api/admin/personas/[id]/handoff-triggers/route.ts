@@ -1,6 +1,5 @@
 import type { PersonaHandoffTrigger } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
-import { invalidateAgentCache } from "@/lib/agent/agents";
 import { getPersonaForAdmin, updatePersona } from "@/lib/agent/personas-repo";
 import { personaHandoffTriggerSchema } from "@/lib/validations/persona";
 
@@ -47,7 +46,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 		await updatePersona(personaId, {
 			handoffTriggers: [...persona.handoffTriggers, newTrigger],
 		});
-		invalidateAgentCache();
 		return Response.json({ handoffTrigger: newTrigger }, { status: 201 });
 	} catch (err) {
 		console.error("[admin/personas/handoff-triggers POST]", err);

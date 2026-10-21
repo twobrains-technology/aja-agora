@@ -1,6 +1,5 @@
 import type { PersonaForbiddenTopic } from "@/db/schema";
 import { requireRole } from "@/lib/admin/require-role";
-import { invalidateAgentCache } from "@/lib/agent/agents";
 import { getPersonaForAdmin, updatePersona } from "@/lib/agent/personas-repo";
 import { personaForbiddenTopicSchema } from "@/lib/validations/persona";
 
@@ -47,7 +46,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 		await updatePersona(personaId, {
 			forbiddenTopics: [...persona.forbiddenTopics, newTopic],
 		});
-		invalidateAgentCache();
 		return Response.json({ forbiddenTopic: newTopic }, { status: 201 });
 	} catch (err) {
 		console.error("[admin/personas/forbidden-topics POST]", err);

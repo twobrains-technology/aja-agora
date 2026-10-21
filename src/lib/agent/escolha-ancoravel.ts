@@ -27,6 +27,7 @@
 // não é uma escolha. E, mesmo com aceite, a marca não pode ter sido excluída na
 // mesma fala (FIX-414: "qualquer uma menos a Rodobens, quero fechar").
 
+import type { UserIntent } from "@/lib/agent/funil-tipos";
 import type { ChosenOffer } from "@/lib/agent/orchestrator/choose-offer";
 import {
 	administradoraFoiRecusada,
@@ -34,7 +35,6 @@ import {
 	resolveEscolhaOfertada,
 } from "@/lib/agent/orchestrator/choose-offer";
 import { detectYesNoText } from "@/lib/agent/orchestrator/yes-no";
-import type { UserIntent } from "@/lib/agent/qualify-state";
 
 export type VetoDeEscolha =
 	/** O cliente não deu sinal positivo de aceite neste turno. */

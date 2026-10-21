@@ -8,9 +8,10 @@
 //
 // Regra que continua valendo: o estado guarda FATO (posição no funil, oferta
 // ancorada, o que está na tela). Como o agente FALA vem da caixa.
+
+import type { Gate, UserIntent } from "@/lib/agent/funil-tipos";
 import type { Channel, TurnEvent, TurnInput } from "@/lib/agent/orchestrator/types";
 import type { Category, ConversationMetadata, ExperiencePrev, Persona } from "@/lib/agent/personas";
-import type { Gate, UserIntent } from "@/lib/agent/qualify-state";
 
 /** O contrato que `runTurnLangGraph` cumpre — mesma assinatura de
  * `runTurnVercel` (orchestrator/index.ts), o que faz do dispatcher (FIX-355)

@@ -1,29 +1,23 @@
-import { runTurnPi } from "@/lib/agent/pi/turno";
 import { runTurnLivre } from "@/lib/agent/pi/turno-livre";
 import { getOrCreateConversation } from "@/lib/whatsapp/session";
 import type { TurnEvent, TurnInput } from "./types";
 
 export type { TurnEvent, TurnInput } from "./types";
 
-/** O motor livre está ligado? (flag de ambiente — desligar é remover a variável) */
-export const AGENTE_LIVRE_ATIVO =
-	process.env.AGENTE_LIVRE === "1" || process.env.AGENTE_LIVRE === "true";
+/** O motor livre é o único motor. A flag fica como registro histórico do corte;
+ * o turno não tem mais caminho alternativo. */
+export const AGENTE_LIVRE_ATIVO = true;
 
 /** Ponto de entrada único do turno — web, WhatsApp e os workers consomem por aqui.
  *
- * O motor é o PI (campanha 2026-10-19): o turno é `capture → analyze → route →
- * advance → discovery → fala → emit-card → persist`, conduzido por
- * `src/lib/agent/pi/turno.ts`. O LangGraph saiu por inteiro — o produto não tem
- * mais runtime de framework de agente, só o harness do pi. */
+ * O motor é o VENDEDOR LIVRE (campanha 2026-10-20): um prompt, duas skills da
+ * Bevi e três tools. Não existe gate, fila de perguntas nem card escolhido pelo
+ * modelo — quem conduz a venda é o modelo, e o código só garante fato
+ * (identidade cifrada, carta real, proposta real) e persistência.
+ *
+ * O LangGraph saiu em 19/10; o funil dirigido por código saiu em 20/10. */
 export async function* runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
-	// O MOTOR LIVRE (2026-10-20): um prompt de vendedor + duas skills + três tools.
-	// Entra por variável de ambiente para o motor antigo continuar de pé até o
-	// corte final (B3) — desligar é remover a variável, não reverter commit.
-	if (AGENTE_LIVRE_ATIVO) {
-		yield* runTurnLivre(input);
-		return;
-	}
-	yield* runTurnPi(input);
+	yield* runTurnLivre(input);
 }
 
 export async function runTurnFromText(args: {
