@@ -1,0 +1,335 @@
+// O TURNO DO VENDEDOR LIVRE — o motor que substitui o funil.
+//
+//   captura de identidade (servidor) → caixa + skills → beat do pi → cards por
+//   resultado → persistência
+//
+// Não existe `route`, `advance`, `capture`, `emit-card` nem gate: quem decide o
+// que dizer, quando buscar e quando fechar é o MODELO, a partir do prompt do
+// vendedor e das duas skills. O código só garante FATO — identidade cifrada,
+// carta real, proposta real, persistência — e protege o que não pode vazar.
+//
+// Liga com `AGENTE_LIVRE=1` (ver `orchestrator/index.ts`).
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { conversations, usoDeIa } from "@/db/schema";
+import { caixaDoCodigo, labelDaCaixa, lerCaixa } from "@/lib/agent/box/caixa";
+import { listShownOffersForConversation } from "@/lib/agent/orchestrator/choose-offer";
+import type { TurnEvent, TurnInput } from "@/lib/agent/orchestrator/types";
+import { executarBeat } from "@/lib/agent/pi/converse";
+import { persistirTurnoLivre } from "@/lib/agent/pi/persist-livre";
+import { skillsParaPrompt } from "@/lib/agent/pi/skills";
+import { toPiTools } from "@/lib/agent/pi/tools";
+import {
+	buildToolsLivres,
+	type ContextoDasTools,
+	NOMES_DAS_TOOLS_LIVRES,
+} from "@/lib/agent/pi/tools-livres";
+import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
+import { estadoInicialDoTurno } from "@/lib/agent/turn/estado";
+import { projectToMeta } from "@/lib/agent/turn/projecao";
+import {
+	isValidCpf,
+	loadIdentity,
+	type StoredIdentity,
+	storeIdentity,
+} from "@/lib/conversation/identity";
+import { loadConversationHistory } from "@/lib/conversation/messages";
+import { metaOf } from "@/lib/conversation/meta";
+
+/** Identidade que o cliente digitou nesta fala — capturada no SERVIDOR, nunca
+ * pelo modelo. Devolve o texto sem os números, que é o que vai para o banco, para
+ * o provedor do modelo e para o admin. */
+export function capturarIdentidadeDoTexto(
+	texto: string,
+	atual: StoredIdentity | null,
+): {
+	identidade: StoredIdentity | null;
+	textoLimpo: string;
+	recebeuCpf: boolean;
+	recebeuCelular: boolean;
+} {
+	let recebeuCpf = false;
+	let recebeuCelular = false;
+	const cpfAtual = atual?.cpf ?? null;
+	const celularAtual = atual?.celular ?? null;
+
+	const cpfCandidato = texto.match(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/)?.[0] ?? null;
+	let cpf = cpfAtual;
+	if (cpfCandidato) {
+		const digitos = cpfCandidato.replace(/\D/g, "");
+		if (isValidCpf(digitos)) {
+			cpf = digitos;
+			recebeuCpf = true;
+		}
+	}
+
+	let textoLimpo = texto;
+	if (recebeuCpf && cpf) {
+		textoLimpo = textoLimpo.replace(cpfCandidato as string, "[CPF recebido e guardado]");
+	} else if (cpfCandidato) {
+		// CPF inválido digitado (dígito trocado) — ainda é dado pessoal: sai do
+		// texto, mas NÃO vira identidade (proposta com número errado é pior).
+		textoLimpo = textoLimpo.replace(cpfCandidato, "[CPF não reconhecido]");
+	}
+
+	// O TELEFONE É PROCURADO DEPOIS DE O CPF SAIR DO TEXTO.
+	//
+	// Com a busca no texto original, o telefone casava com os próprios dígitos do
+	// CPF ("11144477735" virava "1144477735") e a identidade saía com um celular
+	// inventado — a proposta iria para o par errado. Medido em 20/10/2026.
+	let celular = celularAtual;
+	const telefoneCandidato =
+		textoLimpo.match(/(?:\+?55\s?)?\(?\d{2}\)?\s?9?\d{4}[-.\s]?\d{4}\b/)?.[0] ?? null;
+	if (telefoneCandidato) {
+		const digitos = telefoneCandidato.replace(/\D/g, "");
+		const semDdi = digitos.length === 13 && digitos.startsWith("55") ? digitos.slice(2) : digitos;
+		if ((semDdi.length === 10 || semDdi.length === 11) && !isValidCpf(semDdi)) {
+			celular = semDdi;
+			recebeuCelular = true;
+		}
+	}
+	if (recebeuCelular && celular && telefoneCandidato) {
+		textoLimpo = textoLimpo.replace(telefoneCandidato, "[telefone recebido e guardado]");
+	} else if (telefoneCandidato) {
+		textoLimpo = textoLimpo.replace(telefoneCandidato, "[telefone recebido]");
+	}
+
+	const identidade = cpf && celular ? { cpf, celular } : null;
+	return { identidade, textoLimpo, recebeuCpf, recebeuCelular };
+}
+
+function linhaDeFato(args: {
+	channel: "web" | "whatsapp";
+	contactName: string | null;
+	identidade: StoredIdentity | null;
+}): string {
+	const nome = args.contactName?.trim() || "desconhecido";
+	const cpf = args.identidade ? "recebido e guardado" : "ainda não informado";
+	const celular = args.identidade?.celular ? "recebido e guardado" : "ainda não informado";
+	return `\n\n# Fato deste atendimento\n\nCanal: ${args.channel === "web" ? "site" : "WhatsApp"}. Nome do cliente: ${nome}. CPF: ${cpf}. Celular: ${celular}.`;
+}
+
+export function createRunTurnLivre(deps?: {
+	provider?: { id: string; baseUrl: string; apiKey: string; model: string };
+}): (input: TurnInput) => AsyncGenerator<TurnEvent> {
+	return async function* runTurnLivreImpl(input: TurnInput): AsyncGenerator<TurnEvent> {
+		const { conversationId, channel, userText, isUserTurn, contactName } = input;
+		if (!conversationId) throw new Error("[pi-livre] conversationId is required");
+
+		const conv = await db.query.conversations.findFirst({
+			where: eq(conversations.id, conversationId),
+		});
+		const baseMeta = metaOf(conv);
+		const historico = (await loadConversationHistory(conversationId)).map((m) => ({
+			role: m.role,
+			content: m.content,
+		}));
+
+		// 1. IDENTIDADE — capturada aqui, antes do modelo ver qualquer coisa.
+		const identidadeAtual = await loadIdentity(conversationId).catch(() => null);
+		const captura = capturarIdentidadeDoTexto(userText ?? "", identidadeAtual);
+		if (captura.identidade && (captura.recebeuCpf || captura.recebeuCelular)) {
+			await storeIdentity(conversationId, captura.identidade).catch((erro: unknown) => {
+				console.error("[pi-livre] identidade não gravada (ignorado):", erro);
+			});
+		}
+
+		let estado = estadoInicialDoTurno({
+			conversationId,
+			channel,
+			contactName: contactName ?? conv?.contactName ?? null,
+			isUserTurn,
+			userText: captura.textoLimpo,
+			isResumeGreeting: input.isResumeGreeting,
+			baseMeta,
+			historico,
+		});
+
+		// 2. O SYSTEM — caixa (prompt do vendedor) + skills + linha de fato.
+		const caixa = await lerCaixa().catch(() => caixaDoCodigo(labelDaCaixa()));
+		const promptDoVendedor = caixa.texto?.trim() ? caixa.texto : SYSTEM_PROMPT;
+		const system =
+			promptDoVendedor +
+			skillsParaPrompt() +
+			linhaDeFato({
+				channel,
+				contactName: estado.contactName,
+				identidade: captura.identidade ?? identidadeAtual,
+			});
+
+		// 3. As tools e o beat.
+		const ctx: ContextoDasTools = {
+			conversationId,
+			channel,
+			userText: isUserTurn ? captura.textoLimpo : null,
+			cards: [],
+			falasDoFecho: [],
+			pediuHumano: false,
+			estadoDepoisDaBusca: null,
+		};
+
+		// "O que está na tela" — o modelo precisa dos ids para fechar a proposta.
+		const exibidas = await listShownOffersForConversation(conversationId).catch(() => []);
+		const naTela = exibidas.length
+			? `\n\nCartas na tela desta conversa:\n${exibidas
+					.map(
+						(o) =>
+							`- [na tela: ${o.administradora ?? "administradora"} · carta R$ ${o.creditValue?.toLocaleString("pt-BR") ?? "?"} · id ${o.groupId}]`,
+					)
+					.join("\n")}`
+			: "";
+
+		// Fila de eventos: o beat empurra o texto AO VIVO, o generator drena.
+		const fila: TurnEvent[] = [];
+		let acordar: (() => void) | null = null;
+		const emitir = (evento: TurnEvent) => {
+			fila.push(evento);
+			acordar?.();
+			acordar = null;
+		};
+
+		const executar = async () => {
+			const beat = await executarBeat({
+				system,
+				turnMessage: (captura.textoLimpo || "(sem fala)") + naTela,
+				historico,
+				tools: toPiTools(buildToolsLivres(ctx) as never, {
+					conversationId,
+					so: [...NOMES_DAS_TOOLS_LIVRES],
+				}),
+				aoDelta: (delta) => {
+					estado = { ...estado, events: [...estado.events, { type: "text-delta", text: delta }] };
+					emitir({ type: "text-delta", text: delta });
+				},
+				aoToolCall: (chamada) => {
+					const evento = {
+						type: "tool-call" as const,
+						toolName: chamada.nome,
+						input: (chamada.input ?? {}) as Record<string, unknown>,
+						toolCallId: chamada.toolCallId,
+					};
+					estado = { ...estado, events: [...estado.events, evento] };
+					emitir(evento);
+				},
+				provider: deps?.provider,
+			});
+
+			// 4. O que a busca gravou no estado.
+			if (ctx.estadoDepoisDaBusca) {
+				const b = ctx.estadoDepoisDaBusca;
+				estado = {
+					...estado,
+					funnel: {
+						...estado.funnel,
+						currentCategory: b.categoria ?? estado.funnel.currentCategory,
+						revealCompleted: true,
+						qualifyAnswers: {
+							...estado.funnel.qualifyAnswers,
+							...(b.creditMax ? { creditMax: b.creditMax } : {}),
+							...(b.creditMin ? { creditMin: b.creditMin } : {}),
+							...(b.parcelaAlvo ? { parcelaAlvo: b.parcelaAlvo } : {}),
+							...(b.valorDoBemAlvo ? { valorDoBemAlvo: b.valorDoBemAlvo } : {}),
+							...(b.lanceEmbutido !== undefined ? { lanceEmbutido: b.lanceEmbutido } : {}),
+						},
+					},
+				};
+			}
+
+			// 5. Cards por RESULTADO — o modelo não escolhe tipo de card.
+			for (const texto of ctx.falasDoFecho) {
+				estado = {
+					...estado,
+					events: [
+						...estado.events,
+						{ type: "text-boundary" },
+						{ type: "text-delta", text: texto },
+					],
+				};
+			}
+			for (const card of ctx.cards) {
+				estado = {
+					...estado,
+					events: [
+						...estado.events,
+						{
+							type: "artifact",
+							artifactType: card.type as never,
+							payload: card.payload as never,
+							toolCallId: crypto.randomUUID(),
+						},
+					],
+				};
+			}
+			if (ctx.pediuHumano) {
+				estado = {
+					...estado,
+					events: [...estado.events, { type: "handoff", reason: "pedido do cliente" } as never],
+					funnel: { ...estado.funnel, handoffSuggested: true },
+				};
+			}
+
+			// 6. Custo do turno (livro-caixa local).
+			if (beat.uso.input > 0 || beat.uso.output > 0) {
+				void db
+					.insert(usoDeIa)
+					.values({
+						conversationId,
+						modelo: process.env.AI_MODEL?.trim() || "qwen3.6-flash",
+						tokensInput: beat.uso.input,
+						tokensOutput: beat.uso.output,
+					})
+					.catch((erro: unknown) => console.error("[uso-de-ia] não registrado (ignorado):", erro));
+			}
+
+			// 7. Persistência. Cards saem DEPOIS de gravar a meta.
+			await persistirTurnoLivre({ estado });
+			for (const ev of estado.events) {
+				if (ev.type === "tool-call" || ev.type === "text-delta") continue;
+				emitir(ev);
+			}
+
+			// Modelo sem nada a dizer não pode virar turno mudo no canal.
+			const falou = estado.events.some(
+				(ev) => ev.type === "text-delta" && ev.text.trim().length > 0,
+			);
+			if (!falou) {
+				emitir({
+					type: "text-delta",
+					text:
+						ctx.cards.length > 0
+							? "Achei essas opções pra você. Alguma te interessa?"
+							: "Desculpa, me perdi aqui. Pode me contar de novo o que você quer?",
+				});
+			}
+
+			void projectToMeta(estado);
+		};
+
+		let fechado = false;
+		let erro: unknown = null;
+		void executar()
+			.catch((e) => {
+				erro = e;
+			})
+			.finally(() => {
+				fechado = true;
+				acordar?.();
+				acordar = null;
+			});
+
+		while (!fechado || fila.length > 0) {
+			if (fila.length === 0) {
+				await new Promise<void>((ok) => {
+					acordar = ok;
+				});
+				continue;
+			}
+			yield fila.shift() as TurnEvent;
+		}
+
+		if (erro) throw erro;
+		yield { type: "finish", reason: "complete" };
+	};
+}
+
+export const runTurnLivre = createRunTurnLivre();

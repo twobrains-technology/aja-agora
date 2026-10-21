@@ -11,6 +11,13 @@ const nextConfig: NextConfig = {
 	// webpack tenta resolver esses imports e o build morre com "Module not
 	// found: wasi_snapshot_preview1" (medido em 19/10/2026). Externo, ele é
 	// `require` em runtime e o ESM é resolvido pelo Node do container.
+	// As SKILL.md do vendedor são lidas do disco em runtime (`pi/skills`). Sem
+	// esta linha elas não entram na imagem standalone e o vendedor perde o
+	// conhecimento da Bevi EM SILÊNCIO — o turno funciona e responde pior.
+	outputFileTracingIncludes: {
+		"/api/**": ["src/lib/agent/pi/skills/**/*.md"],
+		"/**": ["src/lib/agent/pi/skills/**/*.md"],
+	},
 	serverExternalPackages: [
 		"@react-pdf/renderer",
 		"@earendil-works/pi-coding-agent",
