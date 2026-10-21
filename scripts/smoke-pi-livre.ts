@@ -20,7 +20,7 @@ import { execFileSync } from "node:child_process";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { artifacts, conversations, messages } from "@/db/schema";
-import { AGENTE_LIVRE_ATIVO, runTurn } from "@/lib/agent/orchestrator";
+import { runTurn } from "@/lib/agent/orchestrator";
 
 type Passo = { ok: boolean; oQue: string; detalhe: string };
 
@@ -43,10 +43,6 @@ async function main(): Promise<void> {
 		console.log(`${ok ? "✅" : "❌"} ${oQue} — ${detalhe}`);
 	};
 
-	if (!AGENTE_LIVRE_ATIVO) {
-		console.log("ligue AGENTE_LIVRE=1 para rodar este smoke");
-		process.exit(2);
-	}
 	const doCofre = (chave: string, alvo = "aja-agora") =>
 		process.env[chave]?.trim() ||
 		execFileSync(`${process.env.HOME}/.local/bin/secrets.sh`, ["get-key", alvo, chave], {

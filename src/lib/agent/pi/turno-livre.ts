@@ -8,7 +8,7 @@
 // vendedor e das duas skills. O código só garante FATO — identidade cifrada,
 // carta real, proposta real, persistência — e protege o que não pode vazar.
 //
-// Liga com `AGENTE_LIVRE=1` (ver `orchestrator/index.ts`).
+// É o único motor: `runTurn` chama daqui direto, sem flag.
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations, usoDeIa } from "@/db/schema";
