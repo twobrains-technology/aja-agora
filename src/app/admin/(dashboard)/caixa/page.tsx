@@ -23,7 +23,10 @@ import { labelDaCaixa, lerCaixa, listarVersoes, NOME_DA_CAIXA } from "@/lib/agen
  */
 export default async function CaixaPage() {
 	const label = labelDaCaixa();
-	const vivo = await lerCaixa({ label });
+	// `semCache`: a tela administrativa mostra o que está no banco agora, não o que
+	// este processo leu há até 60 s — cache velho aqui fazia o editor reescrever o
+	// texto que a Bruna acabou de publicar.
+	const vivo = await lerCaixa({ label, semCache: true });
 
 	let historico: VersaoNaTela[] = [];
 	let erroDoHistorico: string | null = null;

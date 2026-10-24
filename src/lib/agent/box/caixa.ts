@@ -13,7 +13,7 @@
 //
 // O que NÃO muda: os blocos de FATO (gate, trava do telefone, cards,
 // persistência) continuam código. Só a CONDUTA vem daqui.
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { caixaDePrompt } from "@/db/schema";
 import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
@@ -80,16 +80,25 @@ export function decidirCaixa(linhas: readonly LinhaDaCaixa[], label = labelDaCai
 }
 
 /** Lê a caixa do banco. Nunca lança: qualquer falha (tabela ausente, banco fora)
- * devolve a versão do código. */
+ * devolve a versão do código.
+ *
+ * O cache é POR PROCESSO, então quem publica só invalida o próprio. Por isso
+ * existe `semCache`: a leitura administrativa (a tela e a rota do admin) tem de
+ * ver o que está no banco AGORA — publicar e reler pelo cache do processo vizinho
+ * devolvia o texto velho, e o editor o tomava como o texto em vigor. O turno do
+ * cliente continua usando o cache: 60 s lá é economia, não defeito. */
 export async function lerCaixa(opts?: {
 	label?: string;
+	/** `true` desliga o cache desta chamada — nem lê nem grava. */
+	semCache?: boolean;
 	/** Injetável para teste — por padrão consulta o banco. */
 	buscarLinhas?: (nome: string, label: string) => Promise<LinhaDaCaixa[]>;
 	agora?: number;
 }): Promise<Caixa> {
 	const label = opts?.label ?? labelDaCaixa();
 	const agora = opts?.agora ?? Date.now();
-	if (cache && cache.valor.label === label && agora - cache.quando < TTL_MS) {
+	const semCache = opts?.semCache === true;
+	if (!semCache && cache && cache.valor.label === label && agora - cache.quando < TTL_MS) {
 		return cache.valor;
 	}
 
@@ -106,7 +115,7 @@ export async function lerCaixa(opts?: {
 	}
 
 	const valor = decidirCaixa(linhas, label);
-	cache = { valor, quando: agora };
+	if (!semCache) cache = { valor, quando: agora };
 	return valor;
 }
 
@@ -161,8 +170,20 @@ async function buscarLinhasNoBanco(nome: string, label: string): Promise<LinhaDa
 	return linhas;
 }
 
-/** Publica uma versão nova. A versão é a próxima da label — nunca há update de
- * texto, o que torna a auditoria trivial: cada linha é o que foi publicado um dia. */
+/**
+ * Publica uma versão nova. A versão é a próxima da label — nunca há update de
+ * texto, o que torna a auditoria trivial: cada linha é o que foi publicado um dia.
+ *
+ * O número da versão sai de UMA instrução (`INSERT ... SELECT max+1`), não de um
+ * `SELECT` seguido de `INSERT`: com dois POST simultâneos (duas abas, duplo
+ * clique) a janela entre ler e escrever dava a MESMA versão aos dois, e o segundo
+ * estourava no índice único `(nome, label, versao)` — 500 na tela da Bruna.
+ *
+ * A instrução sozinha ainda enxerga o mesmo `max` nos dois statements concorrentes
+ * (no READ COMMITTED cada um lê o snapshot do início da própria instrução), então
+ * a violação de unicidade continua possível — e é tratada como "perdi a corrida":
+ * tenta de novo, e a segunda tentativa já enxerga a versão publicada pela outra.
+ */
 export async function publicarCaixa(args: {
 	texto: string;
 	label?: string;
@@ -171,22 +192,35 @@ export async function publicarCaixa(args: {
 	const label = args.label ?? labelDaCaixa();
 	const texto = args.texto?.trim();
 	if (!texto) throw new Error("[caixa] texto vazio não é publicado");
-	const [ultima] = await db
-		.select({ versao: caixaDePrompt.versao })
-		.from(caixaDePrompt)
-		.where(and(eq(caixaDePrompt.nome, NOME_DA_CAIXA), eq(caixaDePrompt.label, label)))
-		.orderBy(desc(caixaDePrompt.versao))
-		.limit(1);
-	const versao = (ultima?.versao ?? 0) + 1;
-	await db.insert(caixaDePrompt).values({
-		nome: NOME_DA_CAIXA,
-		label,
-		versao,
-		texto,
-		publicadoPor: args.publicadoPor ?? null,
-	});
-	limparCacheDaCaixa();
-	return { versao, label };
+
+	const TENTATIVAS = 5;
+	for (let tentativa = 1; ; tentativa++) {
+		try {
+			const { rows } = await db.execute<{ versao: number }>(sql`
+				INSERT INTO caixa_de_prompt (nome, label, versao, texto, publicado_por)
+				SELECT ${NOME_DA_CAIXA}, ${label}, coalesce(max(versao), 0) + 1, ${texto}, ${
+					args.publicadoPor ?? null
+				}
+				FROM caixa_de_prompt
+				WHERE nome = ${NOME_DA_CAIXA} AND label = ${label}
+				RETURNING versao
+			`);
+			const versao = rows[0]?.versao;
+			if (versao === undefined) throw new Error("[caixa] o banco não devolveu a versão publicada");
+			limparCacheDaCaixa();
+			return { versao, label };
+		} catch (erro) {
+			if (tentativa >= TENTATIVAS || !ehViolacaoDeUnicidade(erro)) throw erro;
+		}
+	}
+}
+
+/** `23505` = unique_violation. Duas publicações concorrentes disputaram a mesma
+ * `versao`: a outra ganhou, e a próxima tentativa calcula o número de novo. */
+function ehViolacaoDeUnicidade(erro: unknown): boolean {
+	const codigo = (erro as { code?: string; cause?: { code?: string } } | null)?.code;
+	const codigoDaCausa = (erro as { cause?: { code?: string } } | null)?.cause?.code;
+	return codigo === "23505" || codigoDaCausa === "23505";
 }
 
 /** Só para teste e para o caminho de publicação. */

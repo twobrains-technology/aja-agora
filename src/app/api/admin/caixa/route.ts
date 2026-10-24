@@ -49,7 +49,10 @@ export async function GET() {
 	const label = labelDaCaixa();
 
 	try {
-		const viva = await lerCaixa({ label });
+		// `semCache`: esta rota é a que o editor relê depois de publicar. Com o cache
+		// de 60 s do processo ela podia devolver o texto ANTERIOR, e o editor o
+		// tomava como a versão em vigor — sobrescrevendo o texto recém-publicado.
+		const viva = await lerCaixa({ label, semCache: true });
 		const historico = await listarVersoes(NOME_DA_CAIXA, label);
 
 		return Response.json({
