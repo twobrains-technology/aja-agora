@@ -110,6 +110,48 @@ export async function lerCaixa(opts?: {
 	return valor;
 }
 
+/** Uma versão publicada, com autor e data — o que a tela do admin mostra. */
+export type VersaoDaCaixa = {
+	versao: number;
+	texto: string;
+	publicadoPor: string | null;
+	criadoEm: Date;
+};
+
+/**
+ * O histórico da label, da MAIOR versão para a menor.
+ *
+ * Sempre a label pedida — nunca "a última de todas": o histórico de dev não pode
+ * se misturar com o de produção (foi assim que se publicou em prod sem querer em
+ * 17/10). Não corta aqui: quantas versões a resposta carrega é decisão da rota.
+ */
+export async function listarVersoes(
+	nome: string,
+	label: string,
+	opts?: {
+		/** Injetável para teste — por padrão consulta o banco. */
+		buscarLinhas?: (nome: string, label: string) => Promise<VersaoDaCaixa[]>;
+	},
+): Promise<VersaoDaCaixa[]> {
+	const buscar = opts?.buscarLinhas ?? buscarVersoesNoBanco;
+	const linhas = await buscar(nome, label);
+	return [...linhas].sort((a, b) => b.versao - a.versao);
+}
+
+async function buscarVersoesNoBanco(nome: string, label: string): Promise<VersaoDaCaixa[]> {
+	const linhas = await db
+		.select({
+			versao: caixaDePrompt.versao,
+			texto: caixaDePrompt.texto,
+			publicadoPor: caixaDePrompt.publicadoPor,
+			criadoEm: caixaDePrompt.criadoEm,
+		})
+		.from(caixaDePrompt)
+		.where(and(eq(caixaDePrompt.nome, nome), eq(caixaDePrompt.label, label)))
+		.orderBy(desc(caixaDePrompt.versao));
+	return linhas;
+}
+
 async function buscarLinhasNoBanco(nome: string, label: string): Promise<LinhaDaCaixa[]> {
 	const linhas = await db
 		.select({ versao: caixaDePrompt.versao, texto: caixaDePrompt.texto })

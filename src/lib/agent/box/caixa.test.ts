@@ -1,4 +1,7 @@
+import { and, eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
+import { db } from "@/db";
+import { caixaDePrompt } from "@/db/schema";
 import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import {
 	caixaDoCodigo,
@@ -7,6 +10,9 @@ import {
 	labelDaCaixa,
 	lerCaixa,
 	limparCacheDaCaixa,
+	listarVersoes,
+	NOME_DA_CAIXA,
+	publicarCaixa,
 } from "./caixa";
 
 afterEach(() => limparCacheDaCaixa());
@@ -82,5 +88,48 @@ describe("caixa — a leitura não derruba o turno", () => {
 		expect(dev.texto).toBe("conduta de dev");
 		expect(dev.label).toBe("dev");
 		expect(chamadas).toEqual(["production", "dev"]);
+	});
+});
+
+describe("caixa — o histórico da label", () => {
+	it("devolve da MAIOR versão para a menor, mesmo que o banco venha fora de ordem", async () => {
+		const versoes = await listarVersoes(NOME_DA_CAIXA, "production", {
+			buscarLinhas: async () => [
+				{ versao: 2, texto: "segunda", publicadoPor: "bruna@aja.com", criadoEm: new Date(2) },
+				{ versao: 9, texto: "nona", publicadoPor: null, criadoEm: new Date(9) },
+				{ versao: 5, texto: "quinta", publicadoPor: "kairo@aja.com", criadoEm: new Date(5) },
+			],
+		});
+
+		expect(versoes.map((v) => v.versao)).toEqual([9, 5, 2]);
+		expect(versoes[0].publicadoPor).toBeNull();
+		expect(versoes[1].texto).toBe("quinta");
+	});
+
+	it("publicar duas versões cria histórico, com autor e data — e nada é editado", async () => {
+		// Label isolada: o teste NUNCA escreve na label de produção do ambiente.
+		const label = `teste-b1-${crypto.randomUUID()}`;
+		try {
+			await publicarCaixa({ texto: "primeira conduta", label, publicadoPor: "bruna@aja.com" });
+			const segunda = await publicarCaixa({
+				texto: "segunda conduta",
+				label,
+				publicadoPor: "kairo@aja.com",
+			});
+			expect(segunda.versao).toBe(2);
+
+			const versoes = await listarVersoes(NOME_DA_CAIXA, label);
+			expect(versoes.map((v) => v.versao)).toEqual([2, 1]);
+			expect(versoes[0].texto).toBe("segunda conduta");
+			expect(versoes[0].publicadoPor).toBe("kairo@aja.com");
+			expect(versoes[0].criadoEm).toBeInstanceOf(Date);
+			// A versão 1 continua lá, intacta: publicar é criar, nunca sobrescrever.
+			expect(versoes[1].texto).toBe("primeira conduta");
+		} finally {
+			await db
+				.delete(caixaDePrompt)
+				.where(and(eq(caixaDePrompt.nome, NOME_DA_CAIXA), eq(caixaDePrompt.label, label)));
+			limparCacheDaCaixa();
+		}
 	});
 });

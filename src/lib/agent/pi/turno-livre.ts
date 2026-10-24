@@ -12,13 +12,12 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations, usoDeIa } from "@/db/schema";
-import { caixaDoCodigo, labelDaCaixa, lerCaixa } from "@/lib/agent/box/caixa";
 import { listShownOffersForConversation } from "@/lib/agent/orchestrator/choose-offer";
 import type { TurnEvent, TurnInput } from "@/lib/agent/orchestrator/types";
 import { scrubCpf } from "@/lib/agent/orchestrator/vazamento";
 import { executarBeat } from "@/lib/agent/pi/converse";
 import { persistirTurnoLivre } from "@/lib/agent/pi/persist-livre";
-import { skillsParaPrompt } from "@/lib/agent/pi/skills";
+import { montarSystemDoVendedor } from "@/lib/agent/pi/system-do-vendedor";
 import { toPiTools } from "@/lib/agent/pi/tools";
 import {
 	buildToolsLivres,
@@ -26,7 +25,6 @@ import {
 	type DepsDasToolsLivres,
 	NOMES_DAS_TOOLS_LIVRES,
 } from "@/lib/agent/pi/tools-livres";
-import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { estadoInicialDoTurno } from "@/lib/agent/turn/estado";
 import { projectToMeta } from "@/lib/agent/turn/projecao";
 import {
@@ -122,17 +120,6 @@ export function capturarIdentidadeDoTexto(
 	return { identidade, textoLimpo, recebeuCpf, recebeuCelular };
 }
 
-function linhaDeFato(args: {
-	channel: "web" | "whatsapp";
-	contactName: string | null;
-	identidade: StoredIdentity | null;
-}): string {
-	const nome = args.contactName?.trim() || "desconhecido";
-	const cpf = args.identidade ? "recebido e guardado" : "ainda não informado";
-	const celular = args.identidade?.celular ? "recebido e guardado" : "ainda não informado";
-	return `\n\n# Fato deste atendimento\n\nCanal: ${args.channel === "web" ? "site" : "WhatsApp"}. Nome do cliente: ${nome}. CPF: ${cpf}. Celular: ${celular}.`;
-}
-
 export function createRunTurnLivre(deps?: {
 	provider?: { id: string; baseUrl: string; apiKey: string; model: string };
 	/** Fronteira da busca — roteiro nos testes, Bevi real em produção. */
@@ -177,17 +164,12 @@ export function createRunTurnLivre(deps?: {
 			historico,
 		});
 
-		// 2. O SYSTEM — caixa (prompt do vendedor) + skills + linha de fato.
-		const caixa = await lerCaixa().catch(() => caixaDoCodigo(labelDaCaixa()));
-		const promptDoVendedor = caixa.texto?.trim() ? caixa.texto : SYSTEM_PROMPT;
-		const system =
-			promptDoVendedor +
-			skillsParaPrompt() +
-			linhaDeFato({
-				channel,
-				contactName: estado.contactName,
-				identidade: captura.identidade ?? identidadeAtual,
-			});
+		// 2. O SYSTEM — conduta (caixa) + skills + linha de fato, num lugar só.
+		const { system } = await montarSystemDoVendedor({
+			channel,
+			contactName: estado.contactName,
+			identidade: captura.identidade ?? identidadeAtual,
+		});
 
 		// 3. As tools e o beat.
 		const ctx: ContextoDasTools = {
