@@ -1,9 +1,13 @@
-// AS TOOLS DO VENDEDOR LIVRE — três ações e nada mais.
+// AS TOOLS DO VENDEDOR LIVRE — quatro ações e uma porta de card.
 //
-// O desenho é o oposto do funil: aqui não existe tool de APRESENTAÇÃO
-// (`cards do funil`). O modelo decide QUANDO buscar e QUANDO fechar; o card aparece
-// porque a tool rodou, montado pelo resultado dela — nunca porque o modelo
-// escolheu um tipo de card.
+// O desenho continua o oposto do funil: não existe tool que monta card de
+// OFERTA. O modelo decide QUANDO buscar, QUANDO perguntar e QUANDO fechar; o
+// card de número aparece porque a tool rodou, montado pelo resultado dela.
+//
+// A única exceção é `mostrar_card`, e ela é estreita de propósito: só passa
+// card de ESCOLHA (pergunta + opções que o modelo escreveu, validadas em
+// `cards-livres.ts`). Card com número pedido pelo modelo é recusado com texto —
+// número vem de tool, nunca da cabeça dele.
 //
 //  · `buscar_cartas` usa SÓ a identidade da casa (vitrine). Buscar no nome do
 //    cliente abriria proposta real na loja compartilhada antes de ele decidir.
@@ -11,6 +15,8 @@
 //    CPF nunca chega ao modelo: ele vê `[CPF recebido e guardado]`.
 //  · `falar_com_humano` emite o evento `handoff` (o funil só ligava uma flag, e
 //    o botão "Sim, conectar" do WhatsApp nunca aparecia).
+//  · `mostrar_card` apresenta a pergunta com opções clicáveis; qualquer tipo
+//    fora dos três de escolha é recusado (ver `cards-livres.ts`).
 
 import { tool } from "ai";
 import { z } from "zod";
@@ -24,7 +30,8 @@ import {
 	type RevealGroupIndex,
 } from "@/lib/agent/orchestrator/recommendation-payload";
 import type { Category } from "@/lib/agent/personas";
-import { realOfferPresentation } from "@/lib/bevi/closing-presentation";
+import { cardDeEscolha } from "@/lib/agent/pi/cards-livres";
+import { type ClosingItem, realOfferPresentation } from "@/lib/bevi/closing-presentation";
 import {
 	administradoraConflictsWithRegisteredProposal,
 	buildStartContractInput,
@@ -33,6 +40,7 @@ import { prefsFromMeta } from "@/lib/bevi/discovery-session";
 import { startContract } from "@/lib/bevi/fulfillment";
 import { identidadeDeVitrine, vitrineDisponivel } from "@/lib/bevi/identidade-vitrine";
 import { getLatestBeviProposal } from "@/lib/bevi/proposal-repo";
+import type { ArtifactType } from "@/lib/chat/types";
 import { loadAdministradoraLogoMap } from "@/lib/consorcio/administradora-logo-repo";
 import { loadIdentity } from "@/lib/conversation/identity";
 import { loadConversationHistory } from "@/lib/conversation/messages";
@@ -49,7 +57,7 @@ export type CartaLivre = {
 };
 
 export type CardLivre = {
-	type: "comparison_table" | "real_offer";
+	type: ArtifactType;
 	payload: Record<string, unknown>;
 };
 
@@ -322,15 +330,7 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				return `Proposta NÃO gerada (${erro instanceof Error ? erro.message : String(erro)}). Diga ao cliente que houve um problema ao falar com a administradora e ofereça um especialista humano.`;
 			}
 
-			const itens = realOfferPresentation(result);
-			for (const item of itens) {
-				if (item.kind === "text") ctx.falasDoFecho.push(item.text);
-				else
-					ctx.cards.push({
-						type: item.type === "real_offer" ? "real_offer" : "real_offer",
-						payload: item.payload,
-					});
-			}
+			aplicarItensDoFecho(ctx, realOfferPresentation(result));
 
 			if (result.noOffer || !result.offer) {
 				return "A administradora não devolveu carta para esse valor. Explique ao cliente e proponha outro valor.";
@@ -345,6 +345,27 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				administradoraMudou: result.administradoraChanged === true,
 				obs: "O card de confirmação está na tela. Ele só vira contrato quando o cliente confirmar.",
 			});
+		},
+	});
+
+	const mostrar_card = tool({
+		description:
+			"Mostra na tela um card de ESCOLHA: a pergunta com as opções clicáveis que você escreveu. Use antes de simular, quando quiser perguntar sobre o bem, o valor ou o que a pessoa quer saber. Tipos aceitos: `quick_reply` (payload { options: [{ label }] }, até 4 atalhos de resposta), `value_picker` (payload { category: imovel|auto|moto, fields: [{ id, label, min, max, default }] }, faixas de valor do bem) e `topic_picker` (payload { topics: [...], includeBackButton }). Card com NÚMERO de oferta (comparison_table, real_offer, simulation_result…) não sai daqui: ele aparece sozinho quando buscar_cartas ou fazer_proposta rodam.",
+		inputSchema: z.object({
+			tipo: z
+				.string()
+				.describe("quick_reply, value_picker ou topic_picker — os três cards de escolha"),
+			payload: z
+				.record(z.string(), z.unknown())
+				.describe("Conteúdo do card, no shape do tipo escolhido"),
+		}),
+		execute: async (args) => {
+			const resultado = cardDeEscolha(args.tipo, args.payload);
+			// Recusa é TEXTO, nunca exceção: é essa fala que ensina o modelo a
+			// pedir o card certo ou a usar a tool de dado.
+			if (!resultado.ok) return resultado.erro;
+			ctx.cards.push(resultado.card);
+			return `[Card ${resultado.card.type} na tela. Ele aparece para o cliente agora — não repita as opções na sua fala.]`;
 		},
 	});
 
@@ -369,12 +390,23 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 		},
 	});
 
-	return { buscar_cartas, fazer_proposta, falar_com_humano, salvar_nome };
+	return { buscar_cartas, fazer_proposta, mostrar_card, falar_com_humano, salvar_nome };
+}
+
+/** Itens do fecho de `fazer_proposta` → cards e falas do turno. O `type` do item
+ * é respeitado: o fecho sabe devolver `signature_handoff`.
+ * (`document_upload`/`atendimento_handoff` saem por fora do turno.) */
+export function aplicarItensDoFecho(ctx: ContextoDasTools, itens: ClosingItem[]): void {
+	for (const item of itens) {
+		if (item.kind === "text") ctx.falasDoFecho.push(item.text);
+		else ctx.cards.push({ type: item.type, payload: item.payload });
+	}
 }
 
 export const NOMES_DAS_TOOLS_LIVRES = [
 	"buscar_cartas",
 	"fazer_proposta",
+	"mostrar_card",
 	"falar_com_humano",
 	"salvar_nome",
 ] as const;

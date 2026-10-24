@@ -271,7 +271,8 @@ export function createRunTurnLivre(deps?: {
 				};
 			}
 
-			// 5. Cards por RESULTADO — o modelo não escolhe tipo de card.
+			// 5. Cards por RESULTADO — o card de NÚMERO nunca é escolha do modelo;
+			// o de ESCOLHA (pergunta + opções) é, e foi validado em `mostrar_card`.
 			for (const texto of ctx.falasDoFecho) {
 				estado = {
 					...estado,
@@ -289,7 +290,7 @@ export function createRunTurnLivre(deps?: {
 						...estado.events,
 						{
 							type: "artifact",
-							artifactType: card.type as never,
+							artifactType: card.type,
 							payload: card.payload as never,
 							toolCallId: crypto.randomUUID(),
 						},
