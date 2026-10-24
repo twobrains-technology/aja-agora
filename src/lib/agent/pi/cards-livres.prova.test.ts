@@ -20,7 +20,7 @@ import {
 	type TipoDeFato,
 	type TipoEmitivel,
 } from "./cards-livres";
-import { buildToolsLivres, type ContextoDasTools } from "./tools-livres";
+import { buildToolsLivres, type ContextoDasTools, type DepsDasToolsLivres } from "./tools-livres";
 
 /** A carta REAL do turno — o teste injeta, ninguém chama a Bevi. */
 const CARTA: GroupSummary = {
@@ -79,6 +79,20 @@ function ctxComCarta(over: Partial<ContextoDasTools> = {}): ContextoDasTools {
 
 type ToolChamavel = { execute: (input: unknown, opts: unknown) => Promise<unknown> };
 
+/** Chama `buscar_cartas` do jeito que o pi chama, com a Bevi injetada. */
+async function buscarCartas(
+	ctx: ContextoDasTools,
+	buscarGrupos: DepsDasToolsLivres["buscarGrupos"],
+	args: Record<string, unknown>,
+): Promise<string> {
+	const tools = buildToolsLivres(ctx, {
+		buscarGrupos,
+		carregarLogos: async () => LOGOS,
+	}) as unknown as Record<string, ToolChamavel>;
+	const saida = await tools.buscar_cartas.execute(args, { toolCallId: "call-busca", messages: [] });
+	return typeof saida === "string" ? saida : JSON.stringify(saida);
+}
+
 /** Chama `mostrar_card` do jeito que o pi chama. */
 async function mostrarCard(
 	ctx: ContextoDasTools,
@@ -97,6 +111,20 @@ async function mostrarCard(
 }
 
 type Payload = Record<string, unknown>;
+
+/** Um payload VÁLIDO por tipo de escolha. A prova exige `ok: true` com ele: se o
+ * validador do tipo sumir, `recusaDeTipo` devolve `ok: false` e o assert morde
+ * (com payload vazio os dois caminhos devolviam `false` — nada ficava vermelho). */
+const PAYLOAD_VALIDO_DE_ESCOLHA: Record<string, Payload> = {
+	quick_reply: { options: [{ label: "Sim, quero" }] },
+	value_picker: {
+		category: "auto",
+		fields: [
+			{ id: "valor-do-bem", label: "Até 80 mil", min: 10_000, max: 80_000, default: 50_000 },
+		],
+	},
+	topic_picker: { topics: ["Prazo"], includeBackButton: true },
+};
 
 function payloadDoCard(ctx: ContextoDasTools, indice = 0): Payload {
 	const card = ctx.cards[indice];
@@ -146,8 +174,15 @@ describe("os 22 tipos têm destino, e cada destino tem como ser cumprido", () =>
 				continue;
 			}
 			expect(TIPOS_DE_ESCOLHA as readonly string[], `${tipo} não é de escolha`).toContain(tipo);
-			// E o validador do caminho existe de verdade para ele.
-			expect(cardDeEscolha(tipo, {}).ok, `${tipo} aceitou payload vazio`).toBe(false);
+			// E o validador do caminho existe de verdade para ele: um payload VÁLIDO
+			// tem que passar. Sem isto, sumir com o validador do tipo caía em
+			// `recusaDeTipo` e o assert antigo (payload vazio → `false`) seguia verde.
+			const payloadValido = PAYLOAD_VALIDO_DE_ESCOLHA[tipo];
+			expect(payloadValido, `${tipo} sem payload válido na prova`).toBeDefined();
+			expect(
+				cardDeEscolha(tipo, payloadValido).ok,
+				`${tipo} recusou um payload válido (o validador do tipo sumiu?)`,
+			).toBe(true);
 		}
 	});
 });
@@ -162,6 +197,16 @@ describe("o card de FATO sai com o número da CARTA REAL", () => {
 		expect(payload.creditValue).toBe(CARTA.creditValue);
 		expect(payload.monthlyPayment).toBe(CARTA.monthlyPayment);
 		expect(payload.termMonths).toBe(CARTA.termMonths);
+	});
+
+	it("group_card: a categoria é a do GRUPO injetado (imóvel não vira selo de automóvel)", async () => {
+		const imovel: GroupSummary = { ...CARTA, id: "grupo-real-imovel", category: "imovel" };
+		const ctx = ctxComCarta({ gruposRevelados: new Map([[imovel.id, imovel]]) });
+		await mostrarCard(ctx, "group_card", { groupId: imovel.id });
+
+		const payload = payloadDoCard(ctx);
+		expect(payload.category).toBe("imovel");
+		expect(payload.category).not.toBe(CARTA.category);
 	});
 
 	it("recommendation_card: idem, mais o logo cadastrado da administradora", async () => {
@@ -220,6 +265,16 @@ describe("o card de FATO sai com o número da CARTA REAL", () => {
 		expect(payload.cartaNecessaria).toBe(Math.round(80_000 / (1 - 0.3)));
 	});
 
+	it("embedded_bid: lancePercent absurdo (99) cai no teto de sanidade, não em 99% da carta", async () => {
+		const ctx = ctxComCarta();
+		await mostrarCard(ctx, "embedded_bid", { groupId: CARTA.id, lancePercent: 99 });
+
+		const payload = payloadDoCard(ctx);
+		expect(payload.maxEmbutidoPct).toBe(30);
+		expect(payload.embeddedBidValue).toBe(24_000);
+		expect(payload.netCredit).toBe(56_000);
+	});
+
 	it("contemplation_dial: carta/parcela/prazo da oferta, mês-alvo dentro do prazo real", async () => {
 		const ctx = ctxComCarta();
 		await mostrarCard(ctx, "contemplation_dial", {
@@ -233,6 +288,16 @@ describe("o card de FATO sai com o número da CARTA REAL", () => {
 		expect(payload.termMonths).toBe(CARTA.termMonths);
 		// 500 é what-if absurdo: o dial nunca passa do prazo REAL da carta.
 		expect(payload.initialTargetMonth).toBe(CARTA.termMonths);
+	});
+
+	it("contemplation_dial: o prazo e o lance DECLARADOS na qualificação são o default", async () => {
+		const ctx = ctxComCarta({ perfilDeclarado: { prazoMeses: 48, lanceValue: 5_000 } });
+		await mostrarCard(ctx, "contemplation_dial", { groupId: CARTA.id });
+
+		const payload = payloadDoCard(ctx);
+		// Sem o perfil declarado o dial caía no fallback de 6 meses e o lance sumia.
+		expect(payload.initialTargetMonth).toBe(48);
+		expect(payload.declaredLanceValue).toBe(5_000);
 	});
 
 	it("financing_comparison: consórcio com a parcela da carta e taxa de DEFAULT_FINANCING_RATES", async () => {
@@ -374,31 +439,65 @@ describe("número do modelo não vaza para o card", () => {
 	});
 });
 
+describe("duas buscas no mesmo turno não apagam a primeira", () => {
+	it("o id da PRIMEIRA busca continua valendo para os cards de FATO", async () => {
+		const outra: GroupSummary = {
+			...CARTA,
+			id: "grupo-real-2",
+			creditValue: 150_000,
+			monthlyPayment: 2_100,
+		};
+		const ctx = ctxComCarta({ gruposRevelados: new Map(), estadoDepoisDaBusca: null, cards: [] });
+
+		await buscarCartas(ctx, async () => [CARTA], { categoria: "auto" });
+		await buscarCartas(ctx, async () => [outra], { categoria: "auto", valorDoBem: 150_000 });
+
+		// O índice SOMA: a primeira tabela comparativa continua na tela do cliente.
+		expect([...ctx.gruposRevelados.keys()].sort()).toEqual([CARTA.id, outra.id].sort());
+
+		const antes = ctx.cards.length;
+		const texto = await mostrarCard(ctx, "group_card", { groupId: CARTA.id });
+
+		expect(texto).not.toContain("NÃO");
+		expect(ctx.cards).toHaveLength(antes + 1);
+		expect(ctx.cards[antes]?.type).toBe("group_card");
+		expect(ctx.cards[antes]?.payload.creditValue).toBe(CARTA.creditValue);
+	});
+});
+
 describe("CARDS_QUE_REVELAM_OFERTA — todo card com número de oferta está no set", () => {
-	/** Lista EXPLÍCITA: quem carrega carta/parcela/prazo/taxa/lance é segurado no
-	 * braço A do experimento do telefone e embaçado no braço B. Um tipo novo aqui
-	 * sem entrada no set é oferta legível antes do telefone. */
-	const CARREGAM_NUMERO_DE_OFERTA: ArtifactType[] = [
-		"group_card",
-		"recommendation_card",
-		"comparison_table",
-		"simulation_result",
-		"financing_comparison",
-		"contemplation_dial",
-		"embedded_bid",
-		"two_paths",
-		"scarcity",
-		"real_offer",
+	/** Os de ESTADO não revelam oferta: são formulário/decisão, e em nenhum deles
+	 * há carta, parcela, prazo ou lance para embaçar. */
+	const CARDS_DE_ESTADO: ArtifactType[] = [
+		"lead_form",
+		"contract_form",
+		"whatsapp_optin",
+		"decision_prompt",
 	];
+
+	/** Derivado do PRÓPRIO mapa de destinos (todo emitível de FATO menos os de
+	 * estado) — lista à mão deixava um card novo com número de oferta passar no
+	 * teste sem estar no set que o experimento do telefone usa. */
+	const CARREGAM_NUMERO_DE_OFERTA: ArtifactType[] = (
+		Object.keys(DESTINO_DOS_CARDS) as ArtifactType[]
+	).filter((tipo) => {
+		const destino = DESTINO_DOS_CARDS[tipo];
+		if (destino.classe !== "emitivel" || destino.origem !== "fato") return false;
+		return !CARDS_DE_ESTADO.includes(tipo);
+	});
 
 	it.each(CARREGAM_NUMERO_DE_OFERTA)("%s está em CARDS_QUE_REVELAM_OFERTA", (tipo) => {
 		expect(CARDS_QUE_REVELAM_OFERTA.has(tipo)).toBe(true);
 	});
 
-	it("são todos emitíveis (ou já emitidos pelo fecho) — não sobra card de número sem dono", () => {
-		for (const tipo of CARREGAM_NUMERO_DE_OFERTA) {
-			const destino = DESTINO_DOS_CARDS[tipo];
-			expect(destino.classe, `${tipo} deveria ser emitível`).toBe("emitivel");
+	it("o set do experimento não tem card sem número de oferta", () => {
+		// `scenarios` está no set e não sai do motor (card fora-do-motor, mas com
+		// número de oferta) — é a ÚNICA exceção conhecida.
+		const comNumeroDeOferta = new Set<string>([...CARREGAM_NUMERO_DE_OFERTA, "scenarios"]);
+		for (const tipo of CARDS_QUE_REVELAM_OFERTA) {
+			expect(comNumeroDeOferta.has(tipo), `${tipo} está no set sem carregar número de oferta`).toBe(
+				true,
+			);
 		}
 	});
 

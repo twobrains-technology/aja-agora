@@ -333,6 +333,11 @@ export type RefDeCard = {
 	initialTargetMonth?: number;
 };
 
+/** O que o cliente DECLAROU na qualificação — prazo desejado e lance que ele tem.
+ * É o perfil que o `contemplation_dial` usa como default (FIX-C5): sem ele o
+ * mês-alvo cai no fallback de 6 e o lance declarado some do card. */
+export type PerfilDeclarado = { prazoMeses?: number; lanceValue?: number };
+
 /** Tudo que um card de fato pode consultar. Quem monta é o servidor; o modelo
  * nunca escreve aqui. */
 export type ContextoDeFato = {
@@ -351,6 +356,8 @@ export type ContextoDeFato = {
 	/** O que o cliente precisa RECEBER (preço do bem) — é a conta do
 	 * `embedded_bid`: a carta tem que ser MAIOR que o bem. */
 	valorDoBem?: number;
+	/** Perfil declarado na qualificação (prazo e lance do cliente). */
+	perfilDeclarado?: PerfilDeclarado;
 	/** Logos das administradoras (fallback gracioso quando ausente). */
 	logos?: ReadonlyMap<string, string>;
 	/** Simulação da carta em foco. Preenchida por `montarCardDeFato` antes de
@@ -380,6 +387,11 @@ const EMBEDDED_BID_DISCLAIMER =
 /** Teto de embutido quando a oferta em foco não traz o dela (a Bevi aceita
  * 30% e 50%; 30 é o que o adapter assume). */
 const DEFAULT_MAX_EMBUTIDO_PCT = 30;
+
+/** Teto de SANIDADE do embutido: o produto negocia 30% e 50%, e acima de 70% a
+ * conta perde sentido (`cartaNecessaria` vira quase 100× o bem porque o embutido
+ * já comeu quase toda a carta). Acima disto, vale o default. */
+const MAX_EMBUTIDO_PCT = 70;
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -437,7 +449,7 @@ function resolverGrupo(ctx: ContextoDeFato, ref: RefDeCard): GrupoResolvido {
 
 function pctDoEmbutido(bruto: number | undefined): number {
 	if (typeof bruto !== "number" || !Number.isFinite(bruto)) return DEFAULT_MAX_EMBUTIDO_PCT;
-	if (bruto <= 0 || bruto >= 100) return DEFAULT_MAX_EMBUTIDO_PCT;
+	if (bruto <= 0 || bruto > MAX_EMBUTIDO_PCT) return DEFAULT_MAX_EMBUTIDO_PCT;
 	return round2(bruto);
 }
 
@@ -455,7 +467,14 @@ export const MONTADORES_DE_CARD: Record<TipoDeFato, MontadorDeCard> = {
 			ok: true,
 			card: {
 				type: "group_card",
-				payload: coerceRevealCota({ id: r.grupo.id }, r.grupo, ctx.logos),
+				// A categoria vai junto no input porque `coerceRevealCota` só a copia
+				// de lá, e `GroupCardPayload.category` é obrigatório: sem ela o card
+				// de imóvel renderizava o selo "Automóvel" (CATEGORY_STYLES[undefined]).
+				payload: coerceRevealCota(
+					{ id: r.grupo.id, category: r.grupo.category },
+					r.grupo,
+					ctx.logos,
+				),
 			},
 		};
 	},
@@ -600,7 +619,12 @@ export const MONTADORES_DE_CARD: Record<TipoDeFato, MontadorDeCard> = {
 		}
 		return {
 			ok: true,
-			card: { type: "contemplation_dial", payload: coerceDialPayload(entrada, snapshot) },
+			card: {
+				type: "contemplation_dial",
+				// 3º argumento é o perfil DECLARADO (FIX-C5): sem ele o dial ignora o
+				// prazo e o lance que o cliente já contou na qualificação.
+				payload: coerceDialPayload(entrada, snapshot, ctx.perfilDeclarado),
+			},
 		};
 	},
 

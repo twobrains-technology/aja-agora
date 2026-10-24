@@ -36,6 +36,7 @@ import {
 	cardDeEscolha,
 	destinoDoCard,
 	montarCardDeFato,
+	type PerfilDeclarado,
 	type RefDeCard,
 } from "@/lib/agent/pi/cards-livres";
 import { type ClosingItem, realOfferPresentation } from "@/lib/bevi/closing-presentation";
@@ -90,6 +91,9 @@ export type ContextoDasTools = {
 	/** Grupos REAIS que `buscar_cartas` pôs na tela neste turno, por id — a fonte
 	 * única dos cards de FATO. Vazio enquanto a busca não roda. */
 	gruposRevelados: Map<string, GroupSummary>;
+	/** Perfil que o cliente DECLAROU na qualificação (prazo e lance) — default do
+	 * `contemplation_dial`. Preenchido pelo turno com `qualifyAnswers`. */
+	perfilDeclarado?: PerfilDeclarado;
 	/** Setado por `falar_com_humano`. */
 	pediuHumano: boolean;
 	/** Setado por `buscar_cartas` — o driver grava na meta. */
@@ -278,9 +282,12 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 			);
 			const cartasNoCard = cartas.filter((c) => idsNoCard.has(c.groupId));
 			// A fonte dos cards de FATO é o que está NA TELA — não as 12 da busca.
-			ctx.gruposRevelados = new Map(
-				grupos.filter((g) => idsNoCard.has(g.id)).map((g) => [g.id, g] as const),
-			);
+			// SOMA ao índice em vez de substituir: duas buscas no mesmo turno (outra
+			// categoria, refino de faixa) deixam a primeira `comparison_table` na tela,
+			// e os ids dela continuam válidos para os cards de FATO.
+			for (const g of grupos) {
+				if (idsNoCard.has(g.id)) ctx.gruposRevelados.set(g.id, g);
+			}
 			ctx.cards.push({
 				type: "comparison_table",
 				payload: payloadDoCard as unknown as Record<string, unknown>,
@@ -339,7 +346,7 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				return "Proposta NÃO gerada: não tenho o CPF do cliente guardado nesta conversa. Peça o CPF, explique que a administradora consulta os birôs de crédito, e só então chame de novo.";
 			}
 			if (!identity.celular) {
-				return `Proposta NÃO gerada: falta o celular do cliente (o CPF ${identity.cpf.slice(0, 3)}… já está guardado). Peça o celular com DDD e chame de novo.`;
+				return "Proposta NÃO gerada: falta o celular do cliente — o CPF já está guardado nesta conversa. Peça o celular com DDD e chame de novo.";
 			}
 
 			// O AVISO DA LGPD TEM QUE TER SIDO DITO, e o servidor confere em vez de
@@ -445,6 +452,13 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 			// Recusa é TEXTO, nunca exceção: é essa fala que ensina o modelo a pedir
 			// o card certo ou a usar a tool de dado.
 			if (destino?.classe === "emitivel" && destino.origem === "escolha") {
+				// FIX-109 (decisão do Kairo, 28/06/2026): no WhatsApp o `valuePickerToWhatsApp`
+				// degrada o card DE PROPÓSITO — lá o valor do bem é CONVERSA (o cliente
+				// digita "uns 80 mil"). Emitir o card aqui some com as faixas e ainda manda
+				// o modelo não repeti-las. Não "consertar" isto de volta.
+				if (args.tipo === "value_picker" && ctx.channel === "whatsapp") {
+					return 'Card NÃO mostrado: no WhatsApp as faixas de valor não aparecem na tela — aqui o valor do bem é conversa. Pergunte o valor em texto ("quanto você pensa em gastar?") e siga.';
+				}
 				const escolha = cardDeEscolha(args.tipo, payload);
 				if (!escolha.ok) return escolha.erro;
 				ctx.cards.push(escolha.card);
@@ -461,6 +475,7 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 					telefoneMascarado: ctx.telefoneMascarado ?? null,
 					cpfMascarado: ctx.cpfMascarado ?? null,
 					...valoresPedidos(ctx),
+					...(ctx.perfilDeclarado ? { perfilDeclarado: ctx.perfilDeclarado } : {}),
 				},
 				refDoPayload(payload),
 				{ simularCota: deps.simularCota ?? simularCotaReal, logos: await logosDoTurno() },

@@ -185,6 +185,12 @@ export function createRunTurnLivre(deps?: {
 				? maskPhoneForDisplay(identidadeVisivel.celular) || null
 				: null,
 			cpfMascarado: identidadeVisivel?.cpf ? maskCpfForDisplay(identidadeVisivel.cpf) : null,
+			// O perfil DECLARADO na qualificação (prazo e lance) é o default do dial
+			// (FIX-C5): vem do estado do turno, nunca do que o modelo disse agora.
+			perfilDeclarado: {
+				prazoMeses: estado.funnel.qualifyAnswers.prazoMeses,
+				lanceValue: estado.funnel.qualifyAnswers.lanceValue,
+			},
 			cards: [],
 			cartasNaTela: [],
 			gruposRevelados: new Map(),

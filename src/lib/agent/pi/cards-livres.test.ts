@@ -1,8 +1,16 @@
 // O card de ESCOLHA é payload que o modelo escreve — então é payload que o
 // servidor confere. Estes testes mordem: cada recusa some se a validação
 // correspondente sair, e o card de fato (número) só sai de tool.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ClosingItem } from "@/lib/bevi/closing-presentation";
+
+// Identidade FIXA com CPF em claro: o que este arquivo prova é que o número não
+// volta para o modelo em nenhuma fala das tools.
+vi.mock("@/lib/conversation/identity", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@/lib/conversation/identity")>()),
+	loadIdentity: async () => ({ cpf: "52998224725", celular: "" }),
+}));
+
 import {
 	cardDeEscolha,
 	DESTINO_DOS_CARDS,
@@ -203,6 +211,70 @@ describe("mostrar_card — a escolha entra na tela, o fato não", () => {
 			expect(texto).toContain("NÃO");
 		},
 	);
+});
+
+describe("mostrar_card no WhatsApp — FIX-109, o value_picker não sai", () => {
+	const faixas = [
+		{ id: "valor-do-bem", label: "Até 80 mil", min: 10_000, max: 80_000, default: 50_000 },
+	];
+
+	it("no WhatsApp o value_picker é RECUSADO e nenhum card aparece", async () => {
+		const ctx = { ...ctxVazio(), channel: "whatsapp" as const };
+
+		const texto = await mostrarCard(ctx, "value_picker", { category: "auto", fields: faixas });
+
+		expect(ctx.cards).toHaveLength(0);
+		expect(texto).toContain("NÃO");
+		// A recusa ENSINA o caminho: lá o valor do bem é conversa.
+		expect(texto).toContain("conversa");
+		expect(texto).toContain("Pergunte");
+	});
+
+	it("no web o mesmo value_picker sai", async () => {
+		const ctx = ctxVazio();
+
+		const texto = await mostrarCard(ctx, "value_picker", { category: "auto", fields: faixas });
+
+		expect(ctx.cards).toHaveLength(1);
+		expect(ctx.cards[0].type).toBe("value_picker");
+		expect(texto).not.toContain("NÃO");
+	});
+
+	it("quick_reply e topic_picker continuam valendo no WhatsApp (o formatter renderiza)", async () => {
+		const ctx = { ...ctxVazio(), channel: "whatsapp" as const };
+
+		await mostrarCard(ctx, "quick_reply", { options: [{ label: "Sim" }] });
+		await mostrarCard(ctx, "topic_picker", { topics: ["Prazo"], includeBackButton: true });
+
+		expect(ctx.cards.map((c) => c.type)).toEqual(["quick_reply", "topic_picker"]);
+	});
+});
+
+describe("fazer_proposta — o CPF nunca chega ao modelo", () => {
+	it("a fala do celular faltando fala do CPF sem dígito nenhum", async () => {
+		const ctx = ctxVazio();
+		ctx.cartasNaTela = [
+			{
+				groupId: "grupo-na-tela",
+				administradora: "Canopus",
+				carta: 80_000,
+				parcela: 1_200,
+				prazoMeses: 96,
+			},
+		];
+		const tools = buildToolsLivres(ctx) as unknown as Record<string, ToolChamavel>;
+
+		const saida = await tools.fazer_proposta.execute(
+			{ groupId: "grupo-na-tela", aceiteLgpd: true },
+			{ toolCallId: "call-1", messages: [] },
+		);
+		const fala = typeof saida === "string" ? saida : JSON.stringify(saida);
+
+		expect(fala).toContain("CPF");
+		expect(fala).toContain("guardado");
+		// Nem um dígito do CPF na fala (antes ia `529…` e o logToolIO gravava).
+		expect(fala).not.toMatch(/\d/);
+	});
 });
 
 describe("DESTINO_DOS_CARDS — os 22 tipos têm destino declarado", () => {
