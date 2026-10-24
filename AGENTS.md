@@ -4,6 +4,40 @@ Este arquivo é curto de propósito. O contexto do projeto (domínio, arquitetur
 onde as coisas estão) vive em **`CLAUDE.md`** — leia-o antes de trabalhar aqui. O que está
 abaixo é o que muda o *jeito* de trabalhar.
 
+## Dúvida sobre o que o cliente pediu, reclamou ou combinou — vai no acervo, não no chute
+
+Antes de decidir produto, ler uma preferência do cliente ou "achar" por que o agente respondeu
+alguma coisa, a resposta está no acervo desta máquina — em **segundos**, não em achismo:
+
+```bash
+contexto-perfeito -m pessoa "Bruna" -d 30        # o chat inteiro, as calls, os e-mails, as sessões
+contexto-perfeito -m tudo "<assunto>" -d 30      # tudo sobre um assunto, em linha do tempo
+contexto-perfeito -m onde "o que ficou pendente com X" -d 30
+```
+
+Ele cruza zap (privado e grupo), call, e-mail, sessão de agente e resumo de projeto, e devolve a
+fala **literal** com data e chave. Fonte sem dado no período é **lacuna**, não ausência — diga isso
+em vez de inventar. Nunca trate resumo como prova: o fato vem do trecho literal.
+
+Achou um trecho e precisa do diálogo em volta ou do documento inteiro? A skill
+`consultar-contexto-completo` tem o comando de aprofundamento por `chave` (`F:`, `T:`, `E:`, `S:`).
+
+## O motor é o Pi, e o funil morreu — não ressuscite nenhum dos dois conceitos do passado
+
+Desde 2026-10-21 o agente é um **vendedor livre** (`src/lib/agent/pi/turno-livre.ts`): quem escolhe
+como perguntar, em que ordem e qual card usar é o **modelo**, com duas skills de Bevi em
+`pi/skills/`. Não existe `nextGate`, não existe `knowledge-state`, não existe gate em código. O que
+continua em código são só as **coisas de FATO** — e elas não podem sumir:
+
+- os **cards**: `ArtifactType` em `src/lib/chat/types.ts` (22 tipos) com componente em
+  `src/components/chat/artifacts/` — o motor livre precisa continuar **renderizando** todos os que
+  a conversa pede (card escolhido pelo modelo, payload montado no servidor);
+- number vem de tool, nunca da cabeça do modelo (`buscar_cartas`, `fazer_proposta`);
+- CPF e identidade nunca chegam ao modelo; persistência, handoff para a mesa e rate limit.
+
+Se a conversa sair ruim, a primeira hipótese é **prompt/contexto ruim ou trava demais** — não "falta
+uma trava". Ver no `CLAUDE.md` a regra "invariante verificável vira código, conversa é do modelo".
+
 ## Testes: pontual e específico, sempre
 
 A suíte de testes foi removida em 16/10/2026 (commit `d67ea102`: 741 arquivos, 101.660
