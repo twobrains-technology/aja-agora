@@ -13,6 +13,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations, usoDeIa } from "@/db/schema";
 import { listShownOffersForConversation } from "@/lib/agent/orchestrator/choose-offer";
+import { maskCpfForDisplay } from "@/lib/agent/orchestrator/contract-form-prefill";
 import type { TurnEvent, TurnInput } from "@/lib/agent/orchestrator/types";
 import { scrubCpf } from "@/lib/agent/orchestrator/vazamento";
 import { executarBeat } from "@/lib/agent/pi/converse";
@@ -30,6 +31,7 @@ import { projectToMeta } from "@/lib/agent/turn/projecao";
 import {
 	isValidCpf,
 	loadIdentity,
+	maskPhoneForDisplay,
 	type StoredIdentity,
 	storeIdentity,
 } from "@/lib/conversation/identity";
@@ -172,12 +174,20 @@ export function createRunTurnLivre(deps?: {
 		});
 
 		// 3. As tools e o beat.
+		const identidadeVisivel = captura.identidade ?? identidadeAtual;
 		const ctx: ContextoDasTools = {
 			conversationId,
 			channel,
 			userText: isUserTurn ? captura.textoLimpo : null,
+			nomeDoCliente: estado.contactName ?? null,
+			// Só MÁSCARA: o número em claro não passa pelos cards nem pelo modelo.
+			telefoneMascarado: identidadeVisivel?.celular
+				? maskPhoneForDisplay(identidadeVisivel.celular) || null
+				: null,
+			cpfMascarado: identidadeVisivel?.cpf ? maskCpfForDisplay(identidadeVisivel.cpf) : null,
 			cards: [],
 			cartasNaTela: [],
+			gruposRevelados: new Map(),
 			falasDoFecho: [],
 			pediuHumano: false,
 			estadoDepoisDaBusca: null,

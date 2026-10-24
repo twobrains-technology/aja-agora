@@ -16,9 +16,11 @@ function ctxVazio(): ContextoDasTools {
 		conversationId: "conv-teste",
 		channel: "web",
 		userText: null,
+		nomeDoCliente: null,
 		cards: [],
 		falasDoFecho: [],
 		cartasNaTela: [],
+		gruposRevelados: new Map(),
 		pediuHumano: false,
 		estadoDepoisDaBusca: null,
 	};
@@ -192,13 +194,13 @@ describe("mostrar_card — a escolha entra na tela, o fato não", () => {
 	});
 
 	it.each(["real_offer", "comparison_table", "scarcity"])(
-		"card de FATO (%s) é recusado com texto que manda usar a tool de dado",
+		"card de FATO (%s) numa conversa sem busca é recusado com texto, sem card",
 		async (tipo) => {
 			const ctx = ctxVazio();
 			const texto = await mostrarCard(ctx, tipo, {});
 
 			expect(ctx.cards).toHaveLength(0);
-			expect(texto).toContain("dado de tool");
+			expect(texto).toContain("NÃO");
 		},
 	);
 });
