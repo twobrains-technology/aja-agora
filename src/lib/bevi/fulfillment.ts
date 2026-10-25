@@ -140,6 +140,29 @@ export class ContratacaoComIdentidadeDeVitrineError extends Error {
 	}
 }
 
+/**
+ * O fechamento desta conversa JÁ foi concluído?
+ *
+ * Duas marcas, e as duas custam uma consulta de bureau no CPF do cliente se
+ * ignoradas: `contractClosed` é o término do fechamento depois do
+ * `confirmOffer`; `proposalStatus` diferente de `simulacao` significa que a
+ * proposta saiu da simulação e já está com a administradora (`documentos`,
+ * `proposta_enviada`, `em_assinatura`, `assinada`, `recusada` — o vocabulário
+ * que este módulo grava em `bevi_proposals`).
+ *
+ * Vive aqui porque é este módulo que decide quando uma proposta NOVA nasce
+ * (`reusing` logo abaixo) — o fecho do vendedor livre consulta a mesma regra em
+ * vez de inventar uma paralela.
+ */
+export function fechoJaConcluido(args: {
+	contractClosed?: boolean | null;
+	proposalStatus?: string | null;
+}): boolean {
+	if (args.contractClosed === true) return true;
+	const status = (args.proposalStatus ?? "").trim();
+	return status.length > 0 && status !== "simulacao";
+}
+
 /** Passo 5.1 — cria a proposta real e já simula, devolvendo a oferta a confirmar. */
 export async function startContract(
 	conversationId: string,

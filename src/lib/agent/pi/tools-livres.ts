@@ -21,17 +21,21 @@
 //    (escassez, dial, comparativo…) montados das cartas reais do turno.
 
 import { tool } from "ai";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { db } from "@/db";
+import { leads } from "@/db/schema";
 import { BeviSelfContractAdapter } from "@/lib/adapters/bevi/bevi-self-contract-adapter";
 import { BeviSelfContractClient } from "@/lib/adapters/bevi/self-contract-client";
 import type { GroupSummary, QuotaSimulation } from "@/lib/adapters/types";
+import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
 import { listShownOffersForConversation } from "@/lib/agent/orchestrator/choose-offer";
 import {
 	buildComparisonTableFromRevealGroups,
 	indexRevealGroups,
 	type RevealGroupIndex,
 } from "@/lib/agent/orchestrator/recommendation-payload";
-import type { Category } from "@/lib/agent/personas";
+import type { Category, ConversationMetadata } from "@/lib/agent/personas";
 import {
 	cardDeEscolha,
 	destinoDoCard,
@@ -45,14 +49,16 @@ import { pisoPadraoPara } from "@/lib/agent/qualify-answers";
 import { type ClosingItem, realOfferPresentation } from "@/lib/bevi/closing-presentation";
 import {
 	administradoraConflictsWithRegisteredProposal,
+	ancorarOfertaReal,
 	buildStartContractInput,
 } from "@/lib/bevi/contract-input";
 import { prefsFromMeta } from "@/lib/bevi/discovery-session";
-import { startContract } from "@/lib/bevi/fulfillment";
+import { fechoJaConcluido, type StartContractInput, startContract } from "@/lib/bevi/fulfillment";
 import { identidadeDeVitrine, vitrineDisponivel } from "@/lib/bevi/identidade-vitrine";
 import { getLatestBeviProposal } from "@/lib/bevi/proposal-repo";
 import type { ArtifactType } from "@/lib/chat/types";
 import { loadAdministradoraLogoMap } from "@/lib/consorcio/administradora-logo-repo";
+import { attachContact } from "@/lib/contacts";
 import { loadIdentity } from "@/lib/conversation/identity";
 import { loadConversationHistory } from "@/lib/conversation/messages";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
@@ -152,6 +158,193 @@ export type ContextoDasTools = {
 
 const PISO_DO_EMBUTIDO = 0.9;
 const EMBUTIDO_DEFAULT_PERCENT = 30;
+
+/** A carta que o cliente ESCOLHEU — do turno atual ou do que já foi mostrado
+ * nesta conversa (`listShownOffersForConversation`). */
+export type OfertaDoFecho = {
+	groupId: string;
+	administradora?: string | null;
+	creditValue?: number | null;
+	termMonths?: number | null;
+};
+
+/** A meta que o builder do contrato vai ler: a cota ESCOLHIDA AGORA vira
+ * `contractOffer`, junto do aceite da LGPD.
+ *
+ * O `contractOffer` é a âncora do contrato (`buildStartContractInput`: `valor`,
+ * `administradoraPreferida`, `prazoPreferido`) — persistir a carta escolhida e
+ * depois montar o input com a meta ANTERIOR mandava à Bevi o crédito/prazo da
+ * seleção velha. */
+export function metaDoFecho(args: {
+	meta: ConversationMetadata;
+	escolhida: OfertaDoFecho;
+	falaDoCliente: string | null;
+}): ConversationMetadata {
+	return {
+		...args.meta,
+		contractOffer: {
+			administradora: args.escolhida.administradora ?? null,
+			creditValue: args.escolhida.creditValue ?? null,
+			termMonths: args.escolhida.termMonths ?? null,
+		} as ConversationMetadata["contractOffer"],
+		lgpdAceite:
+			args.meta.lgpdAceite ??
+			({
+				em: new Date().toISOString(),
+				fala: (args.falaDoCliente ?? "").slice(0, 200),
+			} as ConversationMetadata["lgpdAceite"]),
+	};
+}
+
+/** O input do `startContract` do fecho livre.
+ *
+ * O celular é o que o `celularDeFechamento` VALIDOU/normalizou — nunca o
+ * `identity.celular` cru (no simulador ele é um hash; no WhatsApp vem com DDI e
+ * formatação). */
+export function inputDoFecho(args: {
+	meta: ConversationMetadata;
+	cpf: string;
+	celular: string;
+	leadId: string | null;
+	registeredAdministradora: string | null;
+}): StartContractInput {
+	return buildStartContractInput(
+		args.meta,
+		{ cpf: args.cpf, celular: args.celular, lgpd: true },
+		{ leadId: args.leadId, registeredAdministradora: args.registeredAdministradora },
+	);
+}
+
+/** A meta DEPOIS de a proposta real existir: a cota REAL vira o
+ * `recommendedOffer` — é o snapshot que a retomada lê
+ * (`workers/retomada.ts:56`); sem ele a retomada diz que o cliente "ainda não
+ * viu nenhuma oferta" e puxa a conversa pelo lugar errado.
+ *
+ * No WhatsApp arma também o estágio `offer-confirm`: é o que faz a confirmação
+ * por TEXTO ("sim, pode fechar") finalizar em `confirmOffer`, como o botão do
+ * `real_offer` já fazia. */
+export function metaDepoisDaProposta(args: {
+	meta: ConversationMetadata;
+	channel: "web" | "whatsapp";
+	offer: Parameters<typeof ancorarOfertaReal>[1];
+}): ConversationMetadata {
+	return {
+		...args.meta,
+		...ancorarOfertaReal(args.meta, args.offer),
+		...(args.channel === "whatsapp"
+			? { contractCollection: { stage: "offer-confirm" as const } }
+			: {}),
+	};
+}
+
+/** O lead da conversa, como os dados que ele precisa carregar. */
+export type LeadDoFecho = { id: string; phone: string | null; name: string | null };
+
+export type DepsDoLeadDoFecho = {
+	lerLead?: (conversationId: string) => Promise<LeadDoFecho | null>;
+	gravarTelefone?: (args: {
+		leadId: string;
+		conversationId: string;
+		phone: string;
+		nome: string | null;
+	}) => Promise<void>;
+	criarLead?: (args: {
+		conversationId: string;
+		name: string | null;
+		phone: string;
+	}) => Promise<string>;
+};
+
+async function lerLeadDaConversa(conversationId: string): Promise<LeadDoFecho | null> {
+	const lead = await db.query.leads.findFirst({
+		where: eq(leads.conversationId, conversationId),
+		columns: { id: true, phone: true, name: true },
+	});
+	return lead ?? null;
+}
+
+async function gravarTelefoneDoLead(args: {
+	leadId: string;
+	conversationId: string;
+	phone: string;
+	nome: string | null;
+}): Promise<void> {
+	await db
+		.update(leads)
+		.set({ phone: args.phone, updatedAt: new Date() })
+		.where(eq(leads.id, args.leadId));
+	// FIX-42: religa o cliente unificado pelo telefone. Não bloqueia o fecho.
+	await attachContact({
+		conversationId: args.conversationId,
+		leadId: args.leadId,
+		input: { phone: args.phone, name: args.nome },
+	}).catch(() => undefined);
+}
+
+async function criarLeadDaConversa(args: {
+	conversationId: string;
+	name: string | null;
+	phone: string;
+}): Promise<string> {
+	const { leadId } = await createLeadFromConversation({ ...args, email: null });
+	return leadId;
+}
+
+/** O telefone do lead já é o da identidade? Comparação por DÍGITOS (sem DDI):
+ * o lead guarda o que veio do canal (`+55 11 98765-4321`) e o fecho traz o
+ * normalizado (`11987654321`) — regravar a cada fecho não muda nada e sujam o
+ * registro. */
+function digitosDoTelefone(valor: string | null): string {
+	const digitos = (valor ?? "").replace(/\D/g, "");
+	return digitos.length > 11 && digitos.startsWith("55") ? digitos.slice(2) : digitos;
+}
+
+function mesmoTelefone(a: string | null, b: string | null): boolean {
+	return digitosDoTelefone(a) === digitosDoTelefone(b);
+}
+
+/** O lead da conversa COM o telefone da identidade, criado se ainda não existir.
+ *
+ * `createBeviProposal` só move a raia (`qualificado`→`proposta_enviada`) quando
+ * recebe `leadId`; sem lead a proposta nasce ÓRFÃ — medido no dev: 6/6
+ * `bevi_proposals` das últimas 24 h sem `lead_id`, e o poll não promove CRM,
+ * Purchase nem transbordo.
+ *
+ * `conversations.waId` NÃO é tocado de propósito (é o que `saveContactWhatsapp`
+ * faz): no simulador ele é `SIM-<uuid>` e trocá-lo pelo celular de fechamento
+ * quebraria a própria sessão. */
+export async function garantirLeadDoFecho(
+	args: { conversationId: string; celular: string; nome: string | null },
+	deps: DepsDoLeadDoFecho = {},
+): Promise<string | null> {
+	const lerLead = deps.lerLead ?? lerLeadDaConversa;
+	const gravarTelefone = deps.gravarTelefone ?? gravarTelefoneDoLead;
+	const criarLead = deps.criarLead ?? criarLeadDaConversa;
+	try {
+		const lead = await lerLead(args.conversationId);
+		if (lead) {
+			if (!mesmoTelefone(lead.phone, args.celular)) {
+				await gravarTelefone({
+					leadId: lead.id,
+					conversationId: args.conversationId,
+					phone: args.celular,
+					nome: lead.name ?? args.nome,
+				});
+			}
+			return lead.id;
+		}
+		return await criarLead({
+			conversationId: args.conversationId,
+			name: args.nome,
+			phone: args.celular,
+		});
+	} catch (erro) {
+		// Sem lead a proposta ainda vale (é o cliente fechando); o que se perde é a
+		// raia. Logado para não virar defeito silencioso.
+		console.error("[fazer_proposta] lead da conversa não resolvido:", erro);
+		return null;
+	}
+}
 
 const CATEGORIAS = ["auto", "moto", "imovel", "servicos"] as const;
 
@@ -431,6 +624,18 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 			// UMA proposta por conversa: segunda proposta em OUTRA administradora
 			// dispara nova consulta de bureau no CPF da pessoa.
 			const anterior = await getLatestBeviProposal(ctx.conversationId).catch(() => null);
+			// FECHO JÁ CONCLUÍDO NÃO ABRE OUTRA PROPOSTA. Depois do aceite, a
+			// proposta saiu da simulação (`documentos` e além) ou a conversa
+			// fechou de vez — reabrir aqui é uma SEGUNDA proposta real com nova
+			// consulta de bureau no mesmo CPF.
+			if (
+				fechoJaConcluido({
+					contractClosed: meta.contractClosed,
+					proposalStatus: anterior?.proposalStatus,
+				})
+			) {
+				return "Proposta NÃO gerada: o fechamento desta conversa já foi concluído. Não abra outra — ofereça acompanhar o andamento da proposta que já existe.";
+			}
 			if (
 				administradoraConflictsWithRegisteredProposal(
 					anterior?.administradora,
@@ -440,37 +645,55 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				return `Proposta NÃO gerada: já existe uma proposta com a ${anterior?.administradora} nesta conversa. Ofereça conferir o status dela em vez de abrir outra.`;
 			}
 
-			// A CARTA ESCOLHIDA VIRA A ÂNCORA DO CONTRATO.
+			// A CARTA ESCOLHIDA VIRA A ÂNCORA DO CONTRATO — e é ELA, não a meta
+			// anterior, que o builder do `startContract` lê (`contractOffer`).
 			// Sem isto, `buildStartContractInput` usava o teto do funil e o cliente
 			// via 92.902 em 120x enquanto a Bevi recebia "uns 80 mil" — troca
 			// silenciosa de cota (o FIX-73 de volta).
-			await persistMeta(ctx.conversationId, {
-				...meta,
-				contractOffer: {
-					administradora: escolhida.administradora ?? null,
-					creditValue: escolhida.creditValue ?? null,
-					termMonths: escolhida.termMonths ?? null,
-				} as never,
-				lgpdAceite:
-					meta.lgpdAceite ??
-					({
-						em: new Date().toISOString(),
-						fala: (ctx.userText ?? "").slice(0, 200),
-					} as never),
+			const metaDaProposta = metaDoFecho({
+				meta,
+				escolhida,
+				falaDoCliente: ctx.userText,
 			});
+			await persistMeta(ctx.conversationId, metaDaProposta);
+
+			// A proposta nasce VINCULADA ao lead da conversa, com o telefone da
+			// identidade — é o que move a raia e o que o poll/mesa encontram.
+			const leadId = await garantirLeadDoFecho({
+				conversationId: ctx.conversationId,
+				celular: celularDoFecho.celular,
+				nome: ctx.nomeDoCliente,
+			});
+
 			let result: Awaited<ReturnType<typeof startContract>>;
 			try {
 				result = await startContract(
 					ctx.conversationId,
-					buildStartContractInput(
-						meta,
-						{ cpf: identity.cpf, celular: identity.celular, lgpd: true },
-						{ registeredAdministradora: escolhida.administradora ?? null },
-					),
+					inputDoFecho({
+						meta: metaDaProposta,
+						cpf: identity.cpf,
+						celular: celularDoFecho.celular,
+						leadId,
+						registeredAdministradora: anterior?.administradora ?? null,
+					}),
 				);
 			} catch (erro) {
 				console.error("[fazer_proposta] falha no fechamento:", erro);
 				return `Proposta NÃO gerada (${erro instanceof Error ? erro.message : String(erro)}). Diga ao cliente que houve um problema ao falar com a administradora e ofereça um especialista humano.`;
+			}
+
+			// Depois do fecho, a cota REAL é a âncora do estado — é o snapshot que
+			// a retomada lê — e, no WhatsApp, o aceite por TEXTO passa a poder
+			// finalizar (`offer-confirm`).
+			if (result.offer) {
+				await persistMeta(
+					ctx.conversationId,
+					metaDepoisDaProposta({
+						meta: await reloadMeta(ctx.conversationId).catch(() => metaDaProposta),
+						channel: ctx.channel,
+						offer: result.offer,
+					}),
+				);
 			}
 
 			aplicarItensDoFecho(ctx, realOfferPresentation(result));
