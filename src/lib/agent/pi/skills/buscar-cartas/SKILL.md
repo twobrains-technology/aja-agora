@@ -4,7 +4,7 @@ description: Mostra cartas de consórcio reais da Bevi para o cliente, sem pedir
 ---
 Chame a ferramenta `buscar_cartas` com:
 - `categoria`: auto, moto, imovel ou servicos;
-- `valorDoBem` OU `parcelaMensal`, em reais, do jeito que o cliente disse;
+- `valorDoBem` quando o cliente disse o valor do bem; `parcelaMensal` só quando ele falou só em parcela. Se disse os dois, mande os dois: a busca é pelo valor e a parcela serve para você comparar com a de cada carta;
 - `usaraLanceEmbutido: true` só se o cliente quiser usar parte da carta como lance.
 
 A busca usa uma identidade da própria Aja Agora. Não peça CPF, telefone ou

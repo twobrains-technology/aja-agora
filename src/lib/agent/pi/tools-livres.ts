@@ -32,6 +32,7 @@ import {
 	type RevealGroupIndex,
 } from "@/lib/agent/orchestrator/recommendation-payload";
 import type { Category } from "@/lib/agent/personas";
+import { pisoPadraoPara } from "@/lib/agent/qualify-answers";
 import {
 	cardDeEscolha,
 	destinoDoCard,
@@ -54,6 +55,36 @@ import { loadIdentity } from "@/lib/conversation/identity";
 import { loadConversationHistory } from "@/lib/conversation/messages";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { saveContactName } from "@/lib/leads/contact-capture";
+
+/** Os parâmetros da busca na Bevi. Regra herdada da main (`alvoDeBusca`, FIX-382):
+ * havendo VALOR do bem, a busca é por valor; parcela só entra quando o cliente
+ * falou só em parcela. Com os dois, a parcela NÃO vence — ela vai para o resumo
+ * para o modelo comparar com a carta. Embutido: a carta tem que ser MAIOR que o
+ * bem, senão o cliente contempla com 70% do valor e falta dinheiro. */
+export function paramsDaBusca(args: {
+	categoria: Category;
+	valorDoBem?: number;
+	parcelaMensal?: number;
+	usaraLanceEmbutido?: boolean;
+}): {
+	params: { category: Category; parcelaAlvo?: number; creditMin?: number; creditMax?: number };
+	creditMax?: number;
+	creditMin?: number;
+} {
+	const bem = args.valorDoBem;
+	if (!bem && args.parcelaMensal) {
+		return { params: { category: args.categoria, parcelaAlvo: args.parcelaMensal } };
+	}
+	const alvoComEmbutido =
+		args.usaraLanceEmbutido && bem ? Math.round(bem / (1 - EMBUTIDO_DEFAULT_PERCENT / 100)) : undefined;
+	const creditMax = alvoComEmbutido ?? bem;
+	const creditMin = alvoComEmbutido
+		? Math.round(alvoComEmbutido * PISO_DO_EMBUTIDO)
+		: creditMax
+			? pisoPadraoPara(creditMax)
+			: undefined;
+	return { params: { category: args.categoria, creditMin, creditMax }, creditMax, creditMin };
+}
 
 export type CartaLivre = {
 	groupId: string;
@@ -210,24 +241,14 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				return "Busca rápida indisponível: a identidade da casa não está configurada (VITRINE_CPF/VITRINE_CELULAR). Não peça CPF ao cliente para contornar — diga que a busca está fora do ar agora.";
 			}
 			const categoria = args.categoria as Category;
-			// Embutido: a carta tem que ser MAIOR que o bem, senão o cliente
-			// contempla com 70% do valor e falta dinheiro para comprar. A conta é
-			// invariante de dinheiro — fica aqui, não na fala.
 			const pct = EMBUTIDO_DEFAULT_PERCENT;
+			const { params, creditMax, creditMin } = paramsDaBusca({
+				categoria,
+				valorDoBem: args.valorDoBem,
+				parcelaMensal: args.parcelaMensal,
+				usaraLanceEmbutido: args.usaraLanceEmbutido,
+			});
 			const bem = args.valorDoBem;
-			const alvoComEmbutido =
-				args.usaraLanceEmbutido && bem ? Math.round(bem / (1 - pct / 100)) : undefined;
-			const creditMax = alvoComEmbutido ?? bem;
-			const creditMin = args.parcelaMensal
-				? undefined
-				: alvoComEmbutido
-					? Math.round(alvoComEmbutido * PISO_DO_EMBUTIDO)
-					: undefined;
-
-			const params = {
-				category: categoria,
-				...(args.parcelaMensal ? { parcelaAlvo: args.parcelaMensal } : { creditMin, creditMax }),
-			};
 
 			let grupos: GroupSummary[];
 			try {
@@ -307,6 +328,13 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				obs: args.usaraLanceEmbutido
 					? `Busca feita com lance embutido de ${pct}%: a carta é maior que o bem de propósito (o embutido consome parte dela).`
 					: "Cartas reais, sem lance embutido.",
+				...(args.parcelaMensal && args.valorDoBem
+					? {
+							parcelaDoCliente: args.parcelaMensal,
+							aviso:
+								"A busca foi pelo VALOR do bem. Compare a parcela de cada carta com a parcela que o cliente disse e fale com honestidade se passar dela.",
+						}
+					: {}),
 			});
 		},
 	});

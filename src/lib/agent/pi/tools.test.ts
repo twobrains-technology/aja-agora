@@ -64,3 +64,20 @@ describe("pi/tools — a tool de negócio roda a MESMA implementação", () => {
 		expect(defs.map((d) => d.name)).toEqual(["a"]);
 	});
 });
+
+import { paramsDaBusca } from "./tools-livres";
+
+describe("buscar_cartas — valor do bem vence a parcela (paridade com a main, FIX-382)", () => {
+	it("com valor E parcela, a busca sai por valor em torno de 60 mil", () => {
+		const { params } = paramsDaBusca({ categoria: "auto", valorDoBem: 60_000, parcelaMensal: 900 });
+		expect(params.creditMax).toBe(60_000);
+		expect(params.creditMin).toBeGreaterThan(0);
+		expect(params.creditMin as number).toBeLessThanOrEqual(60_000);
+		expect(params).not.toHaveProperty("parcelaAlvo");
+	});
+	it("só parcela: busca por parcela", () => {
+		const { params } = paramsDaBusca({ categoria: "auto", parcelaMensal: 900 });
+		expect(params.parcelaAlvo).toBe(900);
+		expect(params.creditMax).toBeUndefined();
+	});
+});
