@@ -455,7 +455,16 @@ async function consumeEventsInner(
 				textBuffer += ev.text;
 				break;
 			case "artifact":
+				// P157 (metade do canal): o vendedor livre emite o card no RESULTADO da
+				// ferramenta, no meio do stream — texto antes da ferramenta, card, texto
+				// depois. Segurar o card até o `finish` invertia isso na conversa do
+				// cliente (texto → texto → card): ele lia a fala que COMENTA a tabela
+				// antes de ver a tabela. Aqui o card sai na ordem em que chegou — a fala
+				// pendente primeiro, o card depois —, como o canal web faz
+				// (web/adapter.ts, `case "artifact"`: fecha o balão e escreve o card).
+				await flushText();
 				pendingArtifacts.push({ type: ev.artifactType, payload: ev.payload });
+				await flushArtifacts();
 				break;
 			case "lead-stage":
 				await recordStageReached(
