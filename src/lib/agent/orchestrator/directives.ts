@@ -512,13 +512,18 @@ export function buildRecoConsentAcceptedDirective(): string {
 
 export function buildSimulatorDialDirective(args: {
 	administradora?: string;
+	/** A carta que o cliente escolheu. Sem ela a diretiva só podia pedir "o groupId
+	 * da carta que ele escolheu" e deixar a escolha pro modelo — e o botão "Testar
+	 * outro prazo" (P170) reabria o dial em cima de outra cota. O handler do
+	 * WhatsApp tem o id em `meta.recommendedOffer` e passa aqui. */
+	groupId?: string;
 	/** FIX-241 (âncora de dinheiro, spec 03): quando o usuário declarou
 	 * poupança mensal, o mês em que o BOLSO cobre o lance (anchorMonth,
 	 * dial-payload.ts:computeMoneyAnchor) — mesmo cálculo que ancora o
 	 * initialTargetMonth do card. "Cálculo único, duas apresentações". */
 	moneyAnchor?: { monthlySavings: number; anchoredMonth: number };
 }): string {
-	const { administradora, moneyAnchor } = args;
+	const { administradora, groupId, moneyAnchor } = args;
 	const adminCtx = administradora
 		? ` Use o grupo do plano recomendado (administradora "${administradora}") — os MESMOS dados reais que o usuário já viu.`
 		: " Use o grupo do plano recomendado — os MESMOS dados reais que o usuário já viu.";
@@ -548,7 +553,7 @@ export function buildSimulatorDialDirective(args: {
 	// chamada que o modelo tem como cumprir, e é a única que a diretiva agora pede.
 	return `O usuário ACEITOU ver o simulador de contemplação. FLUXO OBRIGATÓRIO neste turno:
 1. Escreva UMA frase curta NO SEU TOM introduzindo o simulador (ex: "Olha só, dá pra ver bem aqui quando você consegue ser contemplado."). NÃO descreva o gesto físico do controle da UI; fale do que a pessoa vai DESCOBRIR (quando contempla), não de como manuseia a tela.${anchorInstruction}
-2. Chame mostrar_card com tipo "contemplation_dial" e o groupId da carta que ele escolheu — é assim que os números da contemplação chegam à tela.${adminCtx} Os números têm que ser os que voltaram no card: nenhum mês, nenhum valor de lance sai da sua cabeça.
+2. ${groupId ? chamadaDeCardDeFato("contemplation_dial", groupId) : 'chame mostrar_card com tipo "contemplation_dial" e o groupId da carta que ele escolheu'} — é assim que os números da contemplação chegam à tela.${adminCtx} Os números têm que ser os que voltaram no card: nenhum mês, nenhum valor de lance sai da sua cabeça.
 
 PROIBIDO neste turno: chamar buscar_cartas ou re-apresentar o card que ele já viu (group_card, recommendation_card, comparison_table, simulation_result) — re-apresentar = loop. Depois que o usuário explorar o simulador e sinalizar que está satisfeito, quem dirige o card de decisão ("Esse plano faz sentido?") é você.`;
 }

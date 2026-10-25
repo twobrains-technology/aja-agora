@@ -45,9 +45,9 @@ const CLIQUES: Array<{
 	},
 	{
 		diretiva: "buildSimulatorDialDirective",
-		texto: () => buildSimulatorDialDirective({ administradora: "Canopus" }),
+		texto: () => buildSimulatorDialDirective({ administradora: "Canopus", groupId: GROUP_ID }),
 		tipo: "contemplation_dial",
-		groupId: null,
+		groupId: GROUP_ID,
 	},
 	{
 		diretiva: "buildCompareFinancingDirective",
@@ -87,6 +87,13 @@ describe("cliques dos cards de cálculo pedem a tool do vendedor livre (L16)", (
 		const texto = buildViewScenariosDirective({ administradora: "Canopus", groupId: GROUP_ID });
 		expect(texto).toContain("contemplation_dial");
 		expect(texto).not.toContain(`"scenarios"`);
+	});
+
+	it("sem groupId o dial continua pedindo o id da carta — não inventa um grupo", () => {
+		const texto = buildSimulatorDialDirective({ administradora: "Canopus" });
+		expect(texto).toContain("contemplation_dial");
+		expect(texto).toContain("o groupId da carta que ele escolheu");
+		expect(texto).not.toMatch(/payload \{"groupId"/);
 	});
 
 	it("comparar com financiamento não manda calcular no texto: o número vem do card", () => {

@@ -136,8 +136,34 @@ export async function dispatchInteractiveReply(input: DispatchInput): Promise<bo
 }
 
 // ── Passo 5 "Contratar" (FIX-25) — botões do contract_form (fechamento Bevi) ──
+
+/** R5.7 — o clique mais caro da jornada não pode ficar em silêncio.
+ *
+ * Depois do clique em "Confirmar" o WhatsApp ia direto para `fireContract`
+ * (`startContract` na Bevi: consulta de bureau + criação da proposta) e só falava
+ * quando a proposta voltava — 14 s de nada na tela no clique que fecha dinheiro
+ * (medido no web, mesma chamada; print `fecho4-07.png`). A mensagem curta sai
+ * ANTES do trabalho pesado e é o que o cliente vê no primeiro segundo. */
+async function avisarQueEstouFechando(
+	from: string,
+	conversationId: string,
+	texto: string,
+): Promise<void> {
+	await sendTextMessage(from, texto);
+	// A mensagem que o cliente RECEBEU entra no histórico: sem isso o log do admin
+	// mostra o fecho sem o aviso que o cliente viu.
+	await saveMessage(conversationId, "assistant", texto, "whatsapp");
+}
+
+export const ACK_CONFIRMACAO_CONTRATO =
+	"Boa, recebi sua confirmação! Já estou preparando sua proposta — em instantes te trago os detalhes.";
+
+export const ACK_CONFIRMACAO_OFERTA =
+	"Perfeito, recebi! Estou finalizando sua proposta agora — já te mando o link por aqui.";
+
 async function handleContractConfirm(ctx: Ctx): Promise<boolean> {
 	await recordUserClick(ctx);
+	await avisarQueEstouFechando(ctx.from, ctx.conversationId, ACK_CONFIRMACAO_CONTRATO);
 	const { fireContract } = await import("./contract-capture");
 	await fireContract(ctx.from, ctx.conversationId);
 	return true;
@@ -178,6 +204,7 @@ async function handleContractCancel(ctx: Ctx): Promise<boolean> {
 // (closing-presentation.ts, copy única produção+eval) → resumo por WhatsApp.
 async function handleOfferConfirm(ctx: Ctx): Promise<boolean> {
 	await recordUserClick(ctx);
+	await avisarQueEstouFechando(ctx.from, ctx.conversationId, ACK_CONFIRMACAO_OFERTA);
 	await finalizarOfertaReal(ctx.from, ctx.conversationId);
 	return true;
 }
@@ -484,7 +511,13 @@ async function handleSimulatorOffer(ctx: Ctx): Promise<boolean> {
 		await runAgentDirective(
 			from,
 			conversationId,
-			buildSimulatorDialDirective({ administradora: meta.recommendedAdministradora, moneyAnchor }),
+			buildSimulatorDialDirective({
+				administradora: meta.recommendedAdministradora,
+				// A carta em foco na conversa — o dial abre nela, não numa que o modelo
+				// escolha de memória (P170: "Testar outro prazo" repetia a mesma cota).
+				groupId: meta.recommendedOffer?.groupId,
+				moneyAnchor,
+			}),
 		);
 		return true;
 	}

@@ -1,5 +1,6 @@
 import { gateQuestion, LANCE_EMBUTIDO_ASK } from "@/lib/agent/orchestrator/gate-questions";
 import { DECISION_PROMPT_OPTIONS, DECISION_PROMPT_QUESTION } from "@/lib/chat/types";
+import { computeContemplationDial } from "@/lib/consorcio/contemplation-dial";
 import { isValidCpf, maskCpf } from "@/lib/conversation/identity";
 import { idDoAtalho, type PayloadDeAtalho } from "./quick-reply-tap";
 
@@ -1231,7 +1232,7 @@ const SIMULATOR_ACTIONS = [
  *     parcela atual, mostramos o de-para; quando não traz, o texto degrada pro
  *     valor sozinho em vez de inventar comparação.
  */
-function simulatorScenarioToWhatsApp(s: DialScenarioView): WhatsAppResponse {
+function simulatorScenarioToWhatsApp(s: DialScenarioView, convite?: string): WhatsAppResponse {
 	const monthLabel = `${s.targetMonth} ${s.targetMonth === 1 ? "mês" : "meses"}`;
 	const lines: string[] = [`*Contemplação em ${monthLabel}*`, ""];
 
@@ -1257,6 +1258,7 @@ function simulatorScenarioToWhatsApp(s: DialScenarioView): WhatsAppResponse {
 		else if (recebe) lines.push(`${recebe} de crédito.`);
 		else if (parcela) lines.push(`${parcela[0].toUpperCase()}${parcela.slice(1)}.`);
 	}
+	if (convite) lines.push("", convite);
 	lines.push("", SIMULATOR_DISCLAIMER);
 	return {
 		type: "interactive",
@@ -1271,17 +1273,71 @@ function simulatorScenarioToWhatsApp(s: DialScenarioView): WhatsAppResponse {
 	};
 }
 
+/** O convite que fecha a iteração do loop no WhatsApp. Sem ele, o cenário
+ * calculado saía sem pergunta e o botão "Testar outro prazo" reabria a MESMA carta
+ * no MESMO mês — o cliente pedia outro prazo e recebia o número anterior. */
+const CONVITE_PROXIMO_PRAZO =
+	"Quer ver outro prazo? Me diz em quantos meses você quer ser contemplado que eu recalculo na hora.";
+
+/** O cenário do dial calculado A PARTIR DO SNAPSHOT da carta.
+ *
+ * No web quem calcula é o componente, no cliente (`contemplation-dial.tsx`:
+ * `computeContemplationDial` com os inputs do payload). No WhatsApp o card chega
+ * já formatado, e o payload do `contemplation_dial` carrega **inputs**
+ * (`coerceDialPayload`): carta, prazo, parcela, lance médio e o mês-alvo inicial.
+ * Sem esta conta o mapper caía no convite ao loop e "Testar outro prazo" repetia
+ * o pedido em vez de mostrar resultado (L16/P148/P170).
+ *
+ * Mesma função pura e MESMOS parâmetros do componente: nenhum número aqui é
+ * inventado. Sem carta/prazo/mês-alvo não há cenário — devolve null e o chamador
+ * degrada pro convite. */
+function scenarioFromCardSnapshot(payload: Record<string, unknown>): DialScenarioView | null {
+	const num = (v: unknown): number | undefined =>
+		typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined;
+	const creditValue = num(payload.creditValue);
+	const termMonths = num(payload.termMonths);
+	const targetMonth = num(payload.initialTargetMonth);
+	if (creditValue === undefined || termMonths === undefined || targetMonth === undefined)
+		return null;
+	const monthlyPayment = num(payload.monthlyPayment);
+	const r = computeContemplationDial({
+		creditValue,
+		termMonths,
+		targetMonth,
+		averageBid: num(payload.avgBidValue),
+		historicalWinningBidPct: num(payload.historicalWinningBidPct),
+		referenceMonth: num(payload.referenceMonth),
+		monthlyPayment,
+		maxEmbutidoPct: num(payload.maxEmbutidoPct),
+	});
+	return {
+		targetMonth: r.targetMonth,
+		mode: r.mode,
+		requiredLancePct: r.requiredLancePct,
+		requiredLanceValue: r.requiredLanceValue,
+		receivedCredit: r.receivedCredit,
+		paymentAfterContemplation: r.paymentAfterContemplation,
+		paymentBeforeContemplation: monthlyPayment,
+	};
+}
+
 export function contemplationDialToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
 	// Iteração do loop: o agente já calculou o cenário do mês-alvo → formata.
-	const scenario = readDialScenario(payload);
-	if (scenario) return simulatorScenarioToWhatsApp(scenario);
-	// Abertura do simulador (só os inputs do plano): sem slider no WhatsApp, o balão
-	// tem de DIZER o plano e convidar o loop — o usuário responde o mês-alvo e o
-	// agente calcula.
+	const doAgente = readDialScenario(payload);
+	if (doAgente) return simulatorScenarioToWhatsApp(doAgente);
+	// O card chegou com os INPUTS da carta (o caso comum: o servidor monta o
+	// payload a partir do snapshot). Calcula aqui, como o componente web faz, e
+	// convida o próximo prazo — o botão "Testar outro prazo" só faz sentido se o
+	// balão já mostrou um resultado.
+	const doSnapshot = scenarioFromCardSnapshot(payload);
+	if (doSnapshot) return simulatorScenarioToWhatsApp(doSnapshot, CONVITE_PROXIMO_PRAZO);
+	// Sem os números não há o que calcular: sem slider no WhatsApp, o balão tem de
+	// DIZER o plano e convidar o loop — o usuário responde o mês-alvo e o agente
+	// calcula.
 	return { type: "text", text: dialPlanToText(payload) };
 }
 
-/** O PLANO do dial em texto, quando o payload traz só os inputs (abertura).
+/** O PLANO do dial em texto, quando o payload não traz os números do cenário.
  *
  * No web o dial abre com slider, carta, parcela e prazo desenhados ao lado da
  * agulha. No WhatsApp não há slider: a abertura saía com a pergunta solta ("em
