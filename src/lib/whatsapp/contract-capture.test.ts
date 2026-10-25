@@ -66,6 +66,20 @@ describe("o estágio do CPF aplica a regra ÚNICA de 'tentativa de CPF'", () => 
 		expect(decideCpfStage("111.444.777-36")).toEqual({ handled: true, outcome: "invalid-cpf" });
 	});
 
+	it("quem RECUSA o CPF e dita o telefone não dispara a proposta nem ouve 'não confere'", async () => {
+		const { decideCpfStage } = await import("./contract-capture");
+		// `11900000083` é celular de SP E passa no DV do CPF. Dito como telefone na
+		// mesma fala que nega o CPF, ele não é o CPF da proposta: fica `handled: false`
+		// (o modelo responde), em vez de `fire` (proposta com o telefone como CPF) ou
+		// `invalid-cpf` (manda "confere os números" pra quem não mandou número nenhum).
+		expect(decideCpfStage("não tenho cpf, meu telefone é 11900000083")).toEqual({
+			handled: false,
+		});
+		expect(decideCpfStage("não tenho CPF. meu celular é 11 90000-0083")).toEqual({
+			handled: false,
+		});
+	});
+
 	it("o que não tem cara de CPF segue pro modelo", async () => {
 		const { decideCpfStage } = await import("./contract-capture");
 		expect(decideCpfStage("vocês atendem em Curitiba?")).toEqual({ handled: false });

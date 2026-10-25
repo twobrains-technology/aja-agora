@@ -40,10 +40,10 @@ import { getLatestBeviProposal } from "@/lib/bevi/proposal-repo";
 import { loadIdentity, storeIdentity } from "@/lib/conversation/identity";
 import { saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
-import { looksLikeCpfAttempt } from "@/lib/conversation/telefone-ou-cpf";
+import { decidirCpfDoTexto } from "@/lib/conversation/telefone-ou-cpf";
 import { sendInteractiveMessage, sendTextMessage } from "./api";
 import { realOfferToWhatsApp } from "./formatter";
-import { extractCpf, waIdToCelular } from "./identify-capture";
+import { waIdToCelular } from "./identify-capture";
 
 const brl = (n: number) =>
 	n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
@@ -155,9 +155,9 @@ const AFFIRM_RE =
  *
  * O estágio `cpf` SÓ existe porque o agente acabou de pedir o CPF: é o contexto
  * que a regra única de `telefone-ou-cpf.ts` chama de `pedidoDeCpf`. Por isso o
- * número ambíguo (`11900000083` é celular de SP E passa no DV do CPF) é lido
- * como CPF aqui — sem isso, o fechamento trataria o telefone que o cliente
- * acabou de ditar como identidade dele.
+ * número sem rótulo nenhum (`11900000083` é celular de SP E passa no DV do CPF)
+ * é lido como CPF aqui — sem isso, o fechamento trataria o telefone que o
+ * cliente acabou de ditar como identidade dele.
  *
  * Duas respostas fixas saem daqui; nenhuma delas é fala do vendedor (`handled:
  * false` manda o texto pro modelo):
@@ -165,16 +165,25 @@ const AFFIRM_RE =
  *    veio no passo 5);
  *  - tentativa de CPF com DV errado → `invalid-cpf`, o "confere os números" do
  *    `CONTRACT_INVALID_CPF_REPLY`.
- *  Sem cara de CPF (pergunta, objeção) → o modelo responde e o gate não cai. */
+ *  Sem cara de CPF (pergunta, objeção), ou número dito como TELEFONE, → o modelo
+ *  responde e o gate não cai.
+ *
+ * Quem decide o que o número É não é este estágio: é a regra única, chamada com
+ * `pedidoDeCpf: true`. A diferença que isso faz: quem responde ao pedido
+ * recusando o dado e ditando o telefone ("não tenho cpf, meu telefone é
+ * 11900000083") não tem o celular gravado como CPF (`fire`) nem ouve "confere os
+ * números" (`invalid-cpf`). */
 export type CpfStageDecision =
 	| { handled: false }
 	| { handled: true; outcome: "fire"; cpf: string }
 	| { handled: true; outcome: "invalid-cpf" };
 
 export function decideCpfStage(text: string): CpfStageDecision {
-	const cpf = extractCpf(text);
-	if (cpf) return { handled: true, outcome: "fire", cpf };
-	if (looksLikeCpfAttempt(text)) return { handled: true, outcome: "invalid-cpf" };
+	const decisao = decidirCpfDoTexto(text, { pedidoDeCpf: true });
+	if (decisao.outcome === "captured") {
+		return { handled: true, outcome: "fire", cpf: decisao.cpf };
+	}
+	if (decisao.outcome === "invalid") return { handled: true, outcome: "invalid-cpf" };
 	return { handled: false };
 }
 
