@@ -33,4 +33,10 @@ describe("skills do vendedor", () => {
 		expect(() => parseSkillBruto("---\nname: x\n---\ncorpo")).toThrow();
 		expect(() => parseSkillBruto("sem frontmatter")).toThrow();
 	});
+
+	it("buscar-cartas manda comentar só a recomendada, sem relistar o card", () => {
+		const texto = skillsParaPrompt();
+		expect(texto).toMatch(/JÁ\s+ESTÃO NA TELA/);
+		expect(texto).toMatch(/2 a\s+3 frases/);
+	});
 });

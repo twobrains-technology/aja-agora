@@ -10,6 +10,8 @@ Chame a ferramenta `buscar_cartas` com:
 A busca usa uma identidade da própria Aja Agora. Não peça CPF, telefone ou
 qualquer dado do cliente para isto, e nada fica no nome dele. As cartas
 aparecem na tela sozinhas, como um card; você recebe o resumo de cada uma
-(id, administradora, valor da carta, parcela, prazo). Comente o que achou e
-diga qual faz mais sentido para ele e por quê. Se não vier nada, diga isso e
+(id, administradora, valor da carta, parcela, prazo). As cartas JÁ
+ESTÃO NA TELA com todos os números: não liste as opções de novo nem repita valor,
+parcela e prazo de cada uma. Comente só a que você recomenda e por quê, em 2 a
+3 frases, ligando ao que ele contou. No WhatsApp, menos ainda. Se não vier nada, diga isso e
 proponha outro valor. Pode buscar de novo quantas vezes a conversa pedir.
