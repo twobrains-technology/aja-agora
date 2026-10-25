@@ -190,11 +190,24 @@ export function celularEhTelefone(args: {
 	return !args.pedidoDeCpf;
 }
 
+/** Um número DITADO na fala, com os separadores que o cliente usa — inclusive
+ *  o DDD entre parênteses, `(11) 90000-0083`. O parêntese quebrava a leitura e
+ *  o telefone deixava de existir como número (era o que fazia a recusa do CPF
+ *  virar "CPF inválido" no fechamento do WhatsApp).
+ *
+ *  A forma é de 11 DÍGITOS e nada mais: é o único comprimento que pode ser CPF
+ *  (11 + DV) ou celular (DDD + 9 + 8 dígitos), e as bordas `(?<!\d)`/`(?!\d)`
+ *  impedem as duas leituras erradas de um número mais comprido — colar o CPF no
+ *  telefone ditado na sequência (`529.982.247-25 (11) 90000-0083` são dois
+ *  números, não um de 22 dígitos) e comer o dígito sobrando de um CPF digitado
+ *  errado (`529982247255` é tentativa inválida, não o CPF `529.982.247-25`). */
+const NUMERO_DITADO = /(?<!\d)\d(?:[.\-\s()]*\d){10}(?!\d)/g;
+
 /** Extrai um CPF VÁLIDO (11 dígitos + DV) do texto, com ou sem pontuação. Null
  *  se não houver. Não aplica o desempate telefone × CPF — quem decide é
  *  `decidirCpfDoTexto`/`celularEhTelefone`. */
 export function extractCpf(text: string): string | null {
-	const candidates = (text ?? "").match(/\d[\d.\-\s]{9,17}\d/g) ?? [];
+	const candidates = (text ?? "").match(NUMERO_DITADO) ?? [];
 	for (const c of candidates) {
 		const digits = c.replace(/\D/g, "");
 		if (digits.length === 11 && isValidCpf(digits)) return digits;
@@ -241,7 +254,7 @@ export function decidirCpfDoTexto(
 	text: string,
 	args: { pedidoDeCpf: boolean },
 ): DecisaoDoCpfDoTexto {
-	const candidates = (text ?? "").match(/\d[\d.\-\s]{9,17}\d/g) ?? [];
+	const candidates = (text ?? "").match(NUMERO_DITADO) ?? [];
 	let algumTelefone = false;
 	for (const c of candidates) {
 		const digitos = c.replace(/\D/g, "");

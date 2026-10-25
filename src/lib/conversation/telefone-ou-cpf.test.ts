@@ -106,6 +106,36 @@ describe("telefone × CPF — a mesma regra nos dois capturadores", () => {
 		});
 	});
 
+	it("DDD entre parênteses não vira 'CPF inválido' para quem recusou o CPF", () => {
+		// Pendência do bloco CCAP2: o ")" quebrava o candidato, o número não
+		// existia como número e a fala caía em `looksLikeCpfAttempt` — quem tinha
+		// recusado o CPF e ditado o celular ouvia "confere os números".
+		const comParenteses = "não tenho CPF. meu celular é (11) 90000-0083";
+		for (const pedidoDeCpf of [false, true]) {
+			expect(decidirCpfDoTexto(comParenteses, { pedidoDeCpf })).toEqual({ outcome: "none" });
+		}
+		// A mesma fala sem os parênteses responde o mesmo: a pontuação é do
+		// cliente, não do número.
+		expect(
+			decidirCpfDoTexto("não tenho CPF. meu celular é 11 90000-0083", { pedidoDeCpf: true }),
+		).toEqual({ outcome: "none" });
+		// Número sozinho depois do pedido é resposta ao pedido, com ou sem
+		// parênteses: o desempate não depende de como ele foi digitado.
+		expect(decidirCpfDoTexto("(11) 90000-0083", { pedidoDeCpf: true })).toEqual(
+			decidirCpfDoTexto(AMBIGUO, { pedidoDeCpf: true }),
+		);
+		// O CPF declarado ANTES de um telefone entre parênteses continua sendo o
+		// dado capturado: o parêntese não pode colar os dois números.
+		expect(
+			decidirCpfDoTexto(`meu cpf é 529.982.247-25 (11) 90000-0083`, { pedidoDeCpf: true }),
+		).toEqual({ outcome: "captured", cpf: CPF });
+		// E o CPF formatado declarado é lido com a pontuação que o cliente usa.
+		expect(decidirCpfDoTexto("meu cpf é 529.982.247-25", { pedidoDeCpf: true })).toEqual({
+			outcome: "captured",
+			cpf: CPF,
+		});
+	});
+
 	it("só o pedido de CPF na última fala do agente abre o contexto", () => {
 		expect(pedidoDeCpfNoUltimoBalao({ role: "assistant", content: "qual seu CPF?" })).toBe(true);
 		expect(pedidoDeCpfNoUltimoBalao({ role: "assistant", content: "qual valor você quer?" })).toBe(
