@@ -15,7 +15,6 @@ import {
 	buildRecoConsentAcceptedDirective,
 	buildScarcityDirective,
 	buildSimulateDirective,
-	buildSimulationInterestDirective,
 	buildSimulatorDialDirective,
 	buildTopicPickerAnswerDirective,
 	buildTopicPickerBackDirective,
@@ -162,10 +161,6 @@ const DIRETIVAS_DE_FECHAMENTO: Array<{
 		texto: () =>
 			buildChooseOfferDirective({ administradora: "Canopus", identidadeJaColetada: true }),
 	},
-	{
-		diretiva: "buildSimulationInterestDirective",
-		texto: () => buildSimulationInterestDirective("Canopus"),
-	},
 ];
 
 describe("o clique de fechamento pede o formulário, não espera que o sistema o abra (P143)", () => {
@@ -236,10 +231,6 @@ describe("o fecho leva o groupId da carta quando o chamador o tem", () => {
 		{
 			diretiva: "buildChooseOfferDirective",
 			texto: () => buildChooseOfferDirective({ administradora: "Canopus", groupId: GROUP_ID }),
-		},
-		{
-			diretiva: "buildSimulationInterestDirective",
-			texto: () => buildSimulationInterestDirective("Canopus", GROUP_ID),
 		},
 	];
 

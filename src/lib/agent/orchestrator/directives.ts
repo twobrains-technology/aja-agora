@@ -453,13 +453,6 @@ export function buildChooseOfferDirective(args: {
 	return `O usuário ESCOLHEU uma cota específica no seletor do reveal e quer SEGUIR com ela — a decisão JÁ está tomada e o grupo JÁ está resolvido pelo sistema (o groupId veio junto). FLUXO: (1) escreva 1-2 frases de fechamento no SEU TOM (ex.: ${exemploDeFechamento({ identidadeJaColetada, adminFrase })}); (2) ${instrucaoDoFormularioDeContrato(identidadeJaColetada, args.groupId)} PROIBIDO neste turno: chamar buscar_cartas ou re-apresentar os cards do reveal (group_card/recommendation_card/comparison_table) — o usuário já viu as opções, re-apresentar = loop. NUNCA admita falha técnica nem diga que "esse grupo deu problema", que precisa "trazer os identificadores" ou que vai buscar de novo — ZERO meta-narrativa de mecanismo. NUNCA inicie captura de lead.`;
 }
 
-export function buildSimulationInterestDirective(administradora: string, groupId?: string): string {
-	// P112/P143: mesma correção do `instrucaoDoFormularioDeContrato`. O exemplo
-	// antigo ainda dizia "confirmar sua reserva" — termo que a própria diretiva
-	// proíbe antes da contratação (FIX-256) e que o modelo copia à risca.
-	return `Usuário clicou "Tenho interesse" no card de simulação do grupo "${administradora}". FLUXO: (1) escreva 1-2 frases de confirmação no SEU TOM (ex.: ${exemploDeFechamento({})}) — proibido fazer pergunta nesta frase; PROIBIDO prometer "reservar" a opção antecipadamente sem os dados, ou atendente humano (a reserva é self-service na plataforma); (2) ${instrucaoDoFormularioDeContrato(false, groupId)}`;
-}
-
 export function buildDetailDirective(groupId: string): string {
 	return `O usuário quer detalhes da carta ${groupId}. FLUXO: ${chamadaDeCardDeFato("group_card", groupId)} — o card mostra os dados reais dessa carta (administradora, crédito, parcela, prazo). NÃO mencione IDs na resposta e não invente número fora do card.`;
 }
@@ -612,13 +605,12 @@ export function buildSimulatorDialDirective(args: {
 	// resposta.
 	//
 	// L16/P148/P170: o encadeamento prescrito depois disso (`compute_scenarios` →
-	// card) também não existe mais — `compute_scenarios`, `simulate_contemplation`
-	// e o card `scenarios` saíram do vendedor livre (`cards-livres.ts` recusa
-	// `scenarios`: projeção de prazo sem fonte real). Quem entrega a resposta na
-	// tela é `mostrar_card` de tipo `contemplation_dial`, com o `groupId` da carta —
-	// o payload (meses de contemplação, lance necessário) é montado no servidor a
-	// partir da carta real (`MONTADORES_DE_CARD.contemplation_dial`). É essa a
-	// chamada que o modelo tem como cumprir, e é a única que a diretiva agora pede.
+	// card) também não existe mais — `compute_scenarios` e `simulate_contemplation`
+	// saíram do toolset. Quem entrega a resposta na tela é `mostrar_card` de tipo
+	// `contemplation_dial`, com o `groupId` da carta — o payload (meses de
+	// contemplação, lance necessário) é montado no servidor a partir da carta real
+	// (`MONTADORES_DE_CARD.contemplation_dial`). É essa a chamada que o modelo tem
+	// como cumprir, e é a única que a diretiva agora pede.
 	return `O usuário ACEITOU ver o simulador de contemplação. FLUXO OBRIGATÓRIO neste turno:
 1. Escreva UMA frase curta NO SEU TOM introduzindo o simulador (ex: "Olha só, dá pra ver bem aqui quando você consegue ser contemplado."). NÃO descreva o gesto físico do controle da UI; fale do que a pessoa vai DESCOBRIR (quando contempla), não de como manuseia a tela.${anchorInstruction}
 2. ${groupId ? chamadaDeCardDeFato("contemplation_dial", groupId) : 'chame mostrar_card com tipo "contemplation_dial" e o groupId da carta que ele escolheu'} — é assim que os números da contemplação chegam à tela.${adminCtx} Os números têm que ser os que voltaram no card: nenhum mês, nenhum valor de lance sai da sua cabeça.
