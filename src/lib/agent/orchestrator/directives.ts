@@ -51,12 +51,16 @@ export function buildTransitionFirstContactDirective(
 	nameHint: string,
 ): string {
 	// PF-08 (descoberto pelo QA E2E P0-01): sem este reforço explicito, o agent
-	// antecipa o gate de experience e nunca pergunta o nome. Quando nameHint
-	// vazio, o directive agora obriga o agent a pedir nome via save_contact_name
-	// ANTES de qualquer outra coisa.
+	// antecipava o gate de experience e nunca perguntava o nome. Quando nameHint
+	// vazio, o directive agora obriga o agent a pedir o nome ANTES de qualquer
+	// outra coisa.
+	//
+	// L16: a tool que grava o nome se chama `salvar_nome` no vendedor livre —
+	// `save_contact_name` saiu do toolset junto com o runtime anterior, e o modelo
+	// obeyecia ao nome antigo tomando `Tool not found` justo no primeiro turno.
 	const nameInstruction = nameHint
 		? ` ${nameHint}`
-		: " IMPORTANTE sobre o nome: PRIMEIRO cheque se o usuário JÁ disse o próprio nome NESTA mensagem (ex.: 'sou o <nome>', 'me chamo <nome>', 'aqui é o <nome>'). SE JÁ DISSE: chame save_contact_name com esse nome e cumprimente por ele (ex.: 'Boa, <nome>!') — NÃO pergunte o nome de novo (perguntar o que ele acabou de dizer é burrice). SE NÃO DISSE: reaja em 1 frase curta ao objetivo dele E em SEGUIDA pergunte como pode chamá-lo (ex: 'Show, carro novo abre portas! Antes de eu te ajudar, como posso te chamar?'), e quando ele responder chame save_contact_name imediatamente. Em qualquer caso: NÃO pergunte sobre experiência prévia nem antecipe outros gates — só o nome (usar o que veio, ou pedir).";
+		: " IMPORTANTE sobre o nome: PRIMEIRO cheque se o usuário JÁ disse o próprio nome NESTA mensagem (ex.: 'sou o <nome>', 'me chamo <nome>', 'aqui é o <nome>'). SE JÁ DISSE: chame salvar_nome com esse nome e cumprimente por ele (ex.: 'Boa, <nome>!') — NÃO pergunte o nome de novo (perguntar o que ele acabou de dizer é burrice). SE NÃO DISSE: reaja em 1 frase curta ao objetivo dele E em SEGUIDA pergunte como pode chamá-lo (ex: 'Show, carro novo abre portas! Antes de eu te ajudar, como posso te chamar?'), e quando ele responder chame salvar_nome imediatamente. Em qualquer caso: NÃO pergunte sobre experiência prévia e não fique antecipando etapas — só o nome (usar o que veio, ou pedir).";
 	// docx passo 1 (linha 14): a ponte literal pro passo 2 — dita o texto que o
 	// agente usa logo após saber o nome, antes da pergunta de experiência.
 	// A ponte do passo 1 era uma FRASE PRONTA ("Precisamos fazer mais algumas
@@ -93,7 +97,7 @@ export function buildTransitionCrossSpecialistDirective(): string {
  * turno morria em "Prazer, Kairo!" e a venda acabava ali. Directive não manda
  * o modelo calar — quem conduz é a fala dele. */
 export function buildNameCapturedDirective(name: string): string {
-	return `O usuário informou que se chama "${name}" (pelo card de nome). O nome JÁ está salvo — NÃO chame save_contact_name, NÃO pergunte o nome de novo. Cumprimente pelo nome e emende no próximo passo do funil na MESMA mensagem — nunca termine só na saudação.`;
+	return `O usuário informou que se chama "${name}" (pelo card de nome). O nome JÁ está salvo — NÃO chame salvar_nome, NÃO pergunte o nome de novo. Cumprimente pelo nome e emende no próximo passo na MESMA mensagem — nunca termine só na saudação.`;
 }
 
 // ---- Experience choices ----
@@ -178,7 +182,7 @@ export const TWO_PATHS_FOLLOWUP_TEXT =
  * seguida (`buildTwoPathsCard`) — e o convite pra decidir é o texto FIXO
  * `TWO_PATHS_FOLLOWUP_TEXT`, nunca a critério do modelo. */
 export function buildLanceSoParcelaDirective(): string {
-	return `Usuário disse que não quer comprometer nada além da parcela — recusa explícita de qualquer conversa de lance. FLUXO: escreva 1-2 frases respeitando a escolha (ex.: "Perfeito, respeito total. Então deixa eu ser bem transparente e te mostrar os dois caminhos possíveis."). NÃO explique lance embutido, NÃO chame simulate_quota, NÃO mostre o card nem NENHUMA tool neste turno — o sistema mostra o card dos dois caminhos e a pergunta de decisão automaticamente, logo em seguida.`;
+	return `Usuário disse que não quer comprometer nada além da parcela — recusa explícita de qualquer conversa de lance. FLUXO: escreva 1-2 frases respeitando a escolha (ex.: "Perfeito, respeito total. Então deixa eu ser bem transparente e te mostrar os dois caminhos possíveis."). NÃO explique lance embutido, NÃO chame NENHUMA tool neste turno — o sistema mostra o card dos dois caminhos e a pergunta de decisão automaticamente, logo em seguida.`;
 }
 
 /** FIX-237 (Fable r1, D2.1 gap #3) — card `embedded_bid` (docs/02-cards-novos.md
@@ -239,13 +243,29 @@ export function buildWhatsappOptinDirective(stage: "open" | "confirm"): string {
 
 // ---- Group actions ----
 
+/** O vendedor livre põe número na tela por UM caminho: `mostrar_card` com um tipo
+ * de FATO e o `groupId` LITERAL da carta — o payload é montado no servidor
+ * (`cards-livres.ts`, `MONTADORES_DE_CARD`) a partir da carta real, nunca de
+ * número escrito pelo modelo.
+ *
+ * Os nomes das tools antigas (`simulate_quota`, `compute_scenarios`,
+ * `compare_with_financing`, `get_group_details`) saíram do toolset no mandato do
+ * vendedor livre (`docs/design/2026-10-20-mandato-vendedor-livre.md`, seção 4).
+ * Diretiva que os cite é obedecida ao pé da letra: o modelo toma `Tool not found`
+ * e traduz isso ao cliente como "tive um problema" — foi o que queimou as
+ * sessões `a68b1945` (FIX-431) e o dial do WhatsApp (P148/P170). Por isso a
+ * chamada mora aqui, num lugar só: quem mexer no toolset muda uma linha. */
+function chamadaDeCardDeFato(tipo: string, groupId: string): string {
+	return `chame mostrar_card com tipo "${tipo}" e payload {"groupId":"${groupId}"}`;
+}
+
 export function buildGroupSelectedDirective(
 	administradora: string,
 	groupId: string,
 	creditValue: number,
 	termMonths: number,
 ): string {
-	return `Usuário selecionou o grupo "${administradora}" (creditValue=${creditValue}, prazo=${termMonths}m). FLUXO: (1) escreva 1-2 frases de introdução no SEU TOM tipo "Beleza, essa é a simulação da ${administradora}." — proibido "vou simular", "deixa eu calcular"; também proibido descrever números (parcela/taxa) em texto, isso é o trabalho do card. (2) chame simulate_quota com groupId="${groupId}" E creditValue=${creditValue}; (3) mostre o card com o retorno da tool. NÃO chame recommend_groups. NÃO chame simulate_quota mais de uma vez. O card já tem botões "Tenho interesse!" e "Ajustar valor".`;
+	return `Usuário selecionou o grupo "${administradora}" (creditValue=${creditValue}, prazo=${termMonths}m). FLUXO: (1) escreva 1-2 frases de introdução no SEU TOM tipo "Beleza, essa é a simulação da ${administradora}." — proibido "vou simular", "deixa eu calcular"; também proibido descrever números (parcela/taxa) em texto, isso é o trabalho do card. (2) ${chamadaDeCardDeFato("simulation_result", groupId)} — o servidor simula a carta real e monta o card. (3) UM card só: não repita o mesmo card neste turno. O card já tem botões "Tenho interesse!" e "Ajustar valor".`;
 }
 
 export function buildSimulateDirective(
@@ -253,7 +273,7 @@ export function buildSimulateDirective(
 	groupId: string,
 	creditValue: number,
 ): string {
-	return `Usuário quer simular o grupo "${administradora}" (creditValue=${creditValue}). FLUXO: (1) escreva 1-2 frases de introdução no SEU TOM tipo "Show, é este aqui." ou "Olha só o que saiu." — proibido "vou simular", proibido afirmar que o resultado JÁ está na tela ("aqui tá a simulação", "aqui estao os números") ANTES de simulate_quota retornar, e proibido descrever números em texto. (2) chame simulate_quota com groupId="${groupId}" E creditValue=${creditValue}; (3) mostre o card. O card já tem botões "Tenho interesse!" e "Ajustar valor". NÃO simule de novo o mesmo grupo.`;
+	return `Usuário quer simular o grupo "${administradora}" (creditValue=${creditValue}). FLUXO: (1) escreva 1-2 frases de introdução no SEU TOM tipo "Show, é este aqui." ou "Olha só o que saiu." — proibido "vou simular", proibido afirmar que o resultado JÁ está na tela ("aqui tá a simulação", "aqui estao os números") ANTES de o card voltar, e proibido descrever números em texto. (2) ${chamadaDeCardDeFato("simulation_result", groupId)} — o servidor simula a carta real e monta o card. (3) O card já tem botões "Tenho interesse!" e "Ajustar valor". NÃO simule de novo o mesmo grupo.`;
 }
 
 export function buildWhatIfDirective(administradora: string, currentCreditValue: number): string {
@@ -278,19 +298,29 @@ export function buildAdjustValueDirective(args: {
 /** D7 (19/08/2026) — clique em "Ver cenários de contemplação" no card de
  * simulação. O botão existia, e o clique caía no handler de "Ajustar valor":
  * quem perguntava QUANDO seria contemplado ouvia "qual valor você quer
- * simular?", com a simulação na tela. As tools do cálculo já estavam no
- * toolset; o clique é que não chegava ao grafo. */
+ * simular?", com a simulação na tela.
+ *
+ * O card `scenarios` (as 3 projeções conservador/provável/acelerado) NÃO tem
+ * produtor no vendedor livre: `cards-livres.ts` recusa emití-lo porque a projeção
+ * de prazo não tem fonte real. O que existe — e responde a mesma pergunta — é o
+ * `contemplation_dial`, que mostra em que mês a contemplação chega e quanto de
+ * lance cada caminho pede, com os números da carta real. */
 export function buildViewScenariosDirective(args: {
 	administradora: string;
 	groupId?: string;
 }): string {
 	const { administradora, groupId } = args;
 	const id = groupId ? ` (groupId="${groupId}")` : "";
-	return `O cliente clicou "Ver cenários de contemplação" no card de simulação da "${administradora}"${id}. Ele quer saber QUANDO consegue ser contemplado e o que cada caminho exige. FLUXO: (1) uma frase curta no SEU TOM anunciando que vai mostrar os caminhos — proibido descrever números em texto, isso é o trabalho do card; (2) chame \`compute_scenarios\`; (3) chame \`o card\` com o retorno dela. Todos os números vêm da tool — NUNCA invente lance, prazo ou percentual. É estimativa, não garantia: diga isso em UMA ressalva discreta. PROIBIDO neste turno: perguntar de novo o valor, reabrir a simulação ou tratar isto como recusa.`;
+	const chamada = groupId
+		? chamadaDeCardDeFato("contemplation_dial", groupId)
+		: 'chame mostrar_card com tipo "contemplation_dial" e o groupId da carta que o cliente está olhando';
+	return `O cliente clicou "Ver cenários de contemplação" no card de simulação da "${administradora}"${id}. Ele quer saber QUANDO consegue ser contemplado e o que cada caminho exige. FLUXO: (1) uma frase curta no SEU TOM anunciando que vai mostrar os caminhos — proibido descrever números em texto, isso é o trabalho do card; (2) ${chamada} — o simulador de contemplação, com os números da carta real. NUNCA invente lance, prazo ou percentual. É estimativa, não garantia: diga isso em UMA ressalva discreta. PROIBIDO neste turno: perguntar de novo o valor, reabrir a simulação ou tratar isto como recusa.`;
 }
 
 /** D7 — clique em "Comparar com financiamento" no card de simulação. Mesma
- * família do anterior: intenção que existia no botão e não tinha handler. */
+ * família do anterior: intenção que existia no botão e não tinha handler. A
+ * comparação é calculada no servidor (`compareWithFinancing`, `finance/pmt.ts`) e
+ * chega à tela pelo `financing_comparison` — o modelo só aponta a carta. */
 export function buildCompareFinancingDirective(args: {
 	administradora: string;
 	currentCreditValue?: number;
@@ -300,7 +330,7 @@ export function buildCompareFinancingDirective(args: {
 		typeof currentCreditValue === "number" && currentCreditValue > 0
 			? ` (carta de R$ ${currentCreditValue.toLocaleString("pt-BR")})`
 			: "";
-	return `O cliente clicou "Comparar com financiamento" no card de simulação da "${administradora}"${valorCtx}. FLUXO: (1) uma frase curta no SEU TOM; (2) chame \`compare_with_financing\`; (3) chame \`o card\` com o retorno dela. Os números da comparação vêm da tool, e a premissa (taxa estimada) tem que ser dita — é comparação de estimativa, não promessa. PROIBIDO neste turno: perguntar o valor do bem de novo ou iniciar fechamento.`;
+	return `O cliente clicou "Comparar com financiamento" no card de simulação da "${administradora}"${valorCtx}. FLUXO: (1) uma frase curta no SEU TOM; (2) chame mostrar_card com tipo "financing_comparison" e o groupId da carta que ele está olhando — o servidor calcula o financiamento equivalente daquela carta. Os números vêm do card, e a premissa (taxa estimada) tem que ser dita — é comparação de estimativa, não promessa. PROIBIDO neste turno: perguntar o valor do bem de novo ou iniciar fechamento.`;
 }
 
 /** FIX-313 (rodada 10, onda 4 — achado na Rodada A.3 de verificação): clique
@@ -311,15 +341,22 @@ export function buildCompareFinancingDirective(args: {
  * responder a dúvida. Resultado real observado: texto com a pergunta de
  * reco-consent REPETIDA 3-4x colada, WhatsApp opt-in prematuro, contract_form
  * disparando no meio de uma pergunta de dúvida. Esta directive faz o agente
- * responder SÓ a dúvida específica — o resto da cascata (reco-consent
- * idempotente) segue pelo caminho normal de `o funil antigoToFire`. */
+ * responder SÓ a dúvida específica.
+ *
+ * L18/P138: a versão anterior proibia tool E pergunta e prometia que "o sistema
+ * encaminha o próximo passo automaticamente" — promessa do funil antigo, onde um
+ * gate puxava a etapa seguinte. No vendedor livre não há gate: ninguém encaminha
+ * nada e a conversa morria na resposta da dúvida. Quem conduz é o modelo
+ * (`2026-10-20-mandato-vendedor-livre.md`, seção 3 — "quem escolhe como
+ * perguntar, em que ordem e qual card usar é o modelo"), então a diretiva
+ * devolve a condução a ele em vez de prometer um passo que não existe. */
 export function buildTopicPickerAnswerDirective(topicLabel: string): string {
-	return `Usuário clicou no chip de dúvida "${topicLabel}" (menu topic_picker, oferecido logo após a explicação de consórcio pro novato). IMPORTANTE: o sistema JÁ te apresentou antes — NÃO se apresente de novo, NÃO mencione "anos de experiência/mercado". FLUXO: responda a dúvida específica em 2-3 frases, direto e didático, sem jargão técnico não explicado (nunca "cota"/"lance livre"/"fundo de reserva" sem contexto). NÃO chame nenhuma tool, NÃO reabra o menu de tópicos, NÃO repita a explicação geral de consórcio que você já deu. NÃO faça nenhuma pergunta ao final — o sistema encaminha o próximo passo automaticamente.`;
+	return `Usuário clicou no chip de dúvida "${topicLabel}" (menu topic_picker, oferecido logo após a explicação de consórcio pro novato). IMPORTANTE: o sistema JÁ te apresentou antes — NÃO se apresente de novo, NÃO mencione "anos de experiência/mercado". FLUXO: responda a dúvida específica em 2-3 frases, direto e didático, sem jargão técnico não explicado (nunca "cota"/"lance livre"/"fundo de reserva" sem contexto). Depois de responder, SIGA a venda você mesmo na MESMA mensagem — emende a próxima pergunta ou o card que fizer sentido pro momento dele: nada é automático aqui, a condução é sua. NÃO reabra o menu de tópicos e NÃO repita a explicação geral de consórcio que você já deu.`;
 }
 
 /** FIX-313 — usuário clicou "Voltar" no menu de dúvidas (topic_picker). */
 export function buildTopicPickerBackDirective(): string {
-	return `Usuário clicou em "Voltar" no menu de dúvidas (topic_picker), sem escolher nenhum tópico. FLUXO: reconheça brevemente em UMA frase curta (algo como "Sem problema, seguimos daqui.") e NÃO repita a explicação de consórcio, NÃO chame tools, NÃO reabra o menu. O sistema encaminha o próximo passo em seguida.`;
+	return `Usuário clicou em "Voltar" no menu de dúvidas (topic_picker), sem escolher nenhum tópico. FLUXO: reconheça brevemente em UMA frase curta (algo como "Sem problema, seguimos daqui.") e retome você mesmo a conversa no ponto em que ela estava — nada acontece sozinho aqui. NÃO repita a explicação de consórcio, NÃO reabra o menu.`;
 }
 
 /** FIX-29 — usuário JÁ viu o card de decisão e reafirmou avanco ("Tenho
@@ -335,7 +372,7 @@ export function buildAdvanceToContractDirective(args: {
 	// contratação real, borderline com a linha "nunca 'reservado' antes da
 	// contratação". Trocado por "garantir seu lugar" + "pré-cadastro" — nem
 	// "contratar/fechar" (FIX-216), nem "reserva" (este fix).
-	return `O usuário já viu o card de decisão e reafirmou que quer seguir. FLUXO: escreva 1-2 frases de fechamento no SEU TOM (${exemploDeFechamento({ identidadeJaColetada: args.identidadeJaColetada })}) ${instrucaoDoFormularioDeContrato(args.identidadeJaColetada)} NUNCA inicie captura de lead. NÃO re-apresente search_groups/recommend_groups nem os cards do reveal.`;
+	return `O usuário já viu o card de decisão e reafirmou que quer seguir. FLUXO: escreva 1-2 frases de fechamento no SEU TOM (${exemploDeFechamento({ identidadeJaColetada: args.identidadeJaColetada })}) ${instrucaoDoFormularioDeContrato(args.identidadeJaColetada)} NUNCA inicie captura de lead. NÃO chame buscar_cartas nem re-apresente os cards do reveal (group_card/recommendation_card/comparison_table).`;
 }
 
 /** FIX-195 (P0) — o usuário ESCOLHEU uma cota no seletor do reveal e clicou
@@ -352,7 +389,7 @@ export function buildChooseOfferDirective(args: {
 	const adminFrase = administradora ? ` com a ${administradora}` : "";
 	// FIX-256 (rodada 4, veredito Fable FINAL §N-I) — mesma troca de terminologia
 	// do buildAdvanceToContractDirective: nunca "reserva" pré-contratação.
-	return `O usuário ESCOLHEU uma cota específica no seletor do reveal e quer SEGUIR com ela — a decisão JÁ está tomada e o grupo JÁ está resolvido pelo sistema (o groupId veio junto). FLUXO: escreva 1-2 frases de fechamento no SEU TOM (ex.: ${exemploDeFechamento({ identidadeJaColetada, adminFrase })}) ${instrucaoDoFormularioDeContrato(identidadeJaColetada)} PROIBIDO neste turno: chamar search_groups, recommend_groups ou simulate_quota; re-apresentar os cards do reveal (o card/o card/o card); ou "re-resolver"/"re-buscar" o grupo — o groupId já veio resolvido, você NÃO precisa de ferramenta pra isso. NUNCA admita falha técnica nem diga que "esse grupo deu problema", que precisa "trazer os identificadores", que vai buscar de novo ou usar a ferramenta — ZERO meta-narrativa de mecanismo. NUNCA inicie captura de lead.`;
+	return `O usuário ESCOLHEU uma cota específica no seletor do reveal e quer SEGUIR com ela — a decisão JÁ está tomada e o grupo JÁ está resolvido pelo sistema (o groupId veio junto). FLUXO: escreva 1-2 frases de fechamento no SEU TOM (ex.: ${exemploDeFechamento({ identidadeJaColetada, adminFrase })}) ${instrucaoDoFormularioDeContrato(identidadeJaColetada)} PROIBIDO neste turno: chamar buscar_cartas ou fazer_proposta; re-apresentar os cards do reveal (group_card/recommendation_card/comparison_table); ou "re-resolver"/"re-buscar" o grupo — o groupId já veio resolvido, você NÃO precisa de ferramenta pra isso. NUNCA admita falha técnica nem diga que "esse grupo deu problema", que precisa "trazer os identificadores", que vai buscar de novo ou usar a ferramenta — ZERO meta-narrativa de mecanismo. NUNCA inicie captura de lead.`;
 }
 
 export function buildSimulationInterestDirective(administradora: string): string {
@@ -360,7 +397,7 @@ export function buildSimulationInterestDirective(administradora: string): string
 }
 
 export function buildDetailDirective(groupId: string): string {
-	return `O usuário quer detalhes do grupo ${groupId}. Use get_group_details com esse groupId. NÃO mencione IDs na resposta.`;
+	return `O usuário quer detalhes da carta ${groupId}. FLUXO: ${chamadaDeCardDeFato("group_card", groupId)} — o card mostra os dados reais dessa carta (administradora, crédito, parcela, prazo). NÃO mencione IDs na resposta e não invente número fora do card.`;
 }
 
 export function buildRangePickerDirective(
@@ -368,7 +405,7 @@ export function buildRangePickerDirective(
 	filtros: string,
 	budgetFmt: string,
 ): string {
-	return `Usuário escolheu via slider a faixa de ${categoryLabel} (${filtros}, orçamento mensal R$ ${budgetFmt}). FLUXO OBRIGATÓRIO: (1) escreva 1-2 frases de introdução no SEU TOM — uma TRANSIÇÃO honesta que NÃO afirma resultado, tipo "Bora ver o que encaixa na sua faixa." ou "Olha só o que a gente consegue na sua faixa.". PROIBIDO afirmar achado ("encontrei", "achei", "aqui estao", "essas são") ANTES de search_groups retornar — a busca pode demorar ou falhar e a frase vira mentira visível. PROIBIDO também narrar mecânica ("vou buscar"). NÃO descreva números específicos dos grupos em texto, isso é o trabalho do card. (2) a busca é do SISTEMA e já roda com esses filtros — você não a chama; (3) quando os grupos aparecerem, se for 1 use o card, se forem 2 ou mais use o card com TODOS eles. NUNCA descreva os grupos em texto corrido — o componente visual e obrigatório. NÃO chame recommend_groups.`;
+	return `Usuário escolheu via slider a faixa de ${categoryLabel} (${filtros}, orçamento mensal R$ ${budgetFmt}). FLUXO OBRIGATÓRIO: (1) escreva 1-2 frases de introdução no SEU TOM — uma TRANSIÇÃO honesta que NÃO afirma resultado, tipo "Bora ver o que encaixa na sua faixa." ou "Olha só o que a gente consegue na sua faixa.". PROIBIDO afirmar achado ("encontrei", "achei", "aqui estao", "essas são") ANTES de a busca voltar — ela pode demorar ou falhar e a frase vira mentira visível. PROIBIDO também narrar mecânica ("vou buscar"). NÃO descreva números específicos dos grupos em texto, isso é o trabalho do card. (2) a busca é do SISTEMA e já roda com esses filtros — você não a chama; (3) quando as cartas aparecerem, chame mostrar_card com tipo "comparison_table" — o servidor monta a tabela com as cartas na tela — ou, se ele pedir uma só, tipo "group_card" com o groupId dela. NUNCA descreva os grupos em texto corrido — o componente visual e obrigatório.`;
 }
 
 // ---- Search summary (composed) ----
@@ -431,9 +468,9 @@ CONFRONTO DE FAIXA (FIX-33): o usuário pediu um bem de R$ ${q.creditClampedFrom
 	// prompt sem saber que o código já tinha feito. O texto é herança do runtime
 	// Vercel anterior, onde `tool-policy.ts` governava o toolset.
 	//
-	// Sobrou para o modelo o que é dele: a FALA, e a simulação
-	// (`simulate_quota`/`card de apresentação` existem no toolset, e o
-	// `discovery` não as executa). Os cards já estão na tela quando este turno
+	// Sobrou para o modelo o que é dele: a FALA, e a simulação (o
+	// `mostrar_card` de tipo `simulation_result` existe no toolset e simula a carta
+	// real; a descoberta não a executa). Os cards já estão na tela quando este turno
 	// começa — por isso "olhe o que JÁ apareceu", nunca "vou buscar".
 	return `O usuário completou as 4 perguntas de qualificação:
 - experiência=${meta.experiencePrev}
@@ -441,11 +478,11 @@ CONFRONTO DE FAIXA (FIX-33): o usuário pediu um bem de R$ ${q.creditClampedFrom
 - prazo=${q.prazoMeses ?? "?"} meses
 - lance=${q.hasLance}
 
-A BUSCA JÁ FOI FEITA e os cards das opções JÁ ESTÃO NA TELA do cliente — o sistema fez isso antes de te chamar. Você NÃO tem ferramenta de busca: search_groups e recommend_groups não são suas, não tente chamá-las. NÃO diga que "vai buscar", que "está buscando", nem que houve qualquer problema técnico — não houve.
+A BUSCA JÁ FOI FEITA e os cards das opções JÁ ESTÃO NA TELA do cliente — o sistema fez isso antes de te chamar. Você NÃO tem ferramenta de busca e não tente buscar: a descoberta é do sistema. NÃO diga que "vai buscar", que "está buscando", nem que houve qualquer problema técnico — não houve.
 
 O QUE VOCÊ FAZ NESTE TURNO:
 1. Anuncie conforme o RESULTADO REAL que está na tela (honestidade > template — FIX-7): 3 ou mais opções, algo como "Encontrei ótimas opções na sua faixa!" (número real); 2 opções, anuncie 2; apenas 1, diga que encontrou UMA opção forte — NÃO use plural nem prometa comparação que não existe. Em 1-2 frases curtas NO SEU TOM. NÃO use bullets nem checkbox, NÃO descreva em texto os números que o card já mostra (parcela, taxa, carta), e NÃO anuncie o próximo passo ("vou te apresentar", "vou detalhar", "separei as melhores") — isso soa como log de execução, não como gente vendendo (FIX-335/FIX-348).
-2. Chame simulate_quota com o groupId e o creditValue NOMINAL da opção recomendada e, em seguida, o card. OBRIGATÓRIO copiar do retorno do simulate_quota os campos lanceScenario e embeddedBid. Isso é PREPARAÇÃO do cenário que aparece DEPOIS — NÃO descreva esse cenário (lance, contemplação, sorteio, quantos meses pra contemplar, correção) em texto agora.
+2. Chame mostrar_card com tipo "simulation_result" e o groupId da opção recomendada — o servidor simula a carta real e é dele que sai, depois, o cenário de lance. Isso é PREPARAÇÃO do cenário que aparece DEPOIS — NÃO descreva esse cenário (lance, contemplação, sorteio, quantos meses pra contemplar, correção) em texto agora.
 3. SE as opções na faixa dele estiverem limitadas, diga isso com transparência em UMA frase — NUNCA esconda a escassez nem invente abundância.
 
 SEU TEXTO NESTE TURNO: as tools acima rodam em silêncio (o cliente vê os cards). Todo o seu texto são 2-3 frases curtas, no seu tom, nesta forma: [convite pra olhar carta e parcela] + [a pergunta de familiaridade que fecha]. Ex.: "Encontrei ótimas opções na sua faixa! Repara na carta e na parcela de cada uma. E me conta: você já fez consórcio antes?". NÃO narre o que você "vai/precisa" fazer (apresentar, montar, mostrar, simular, detalhar, buscar) nem escreva "agora você vê/veja a recomendação e a tabela"; NÃO cite lance, meses pra contemplar, sorteio, nem qual é a melhor opção — isso vem só depois que ele responder a familiaridade.
@@ -501,18 +538,19 @@ export function buildSimulatorDialDirective(args: {
 	// roupa: o modelo continua sem como cumprir o turno, e o cliente fica sem
 	// resposta.
 	//
-	// O que EXISTE no toolset para este turno é `compute_scenarios` +
-	// `card de apresentação`. A dupla importa: o schema de `card de apresentação`
-	// exige literalmente o "Output de compute_scenarios" (`ai-sdk.ts`, campo
-	// `scenarios` com conservador/provavel/acelerado), e `simulate_contemplation`
-	// devolve outro shape (`ContemplationDialResult`). Mandar encadear as duas
-	// seria prescrever uma cadeia que não fecha — o mesmo defeito de novo, só que
-	// com tools que existem. Achado por auditoria antes de ir para produção.
+	// L16/P148/P170: o encadeamento prescrito depois disso (`compute_scenarios` →
+	// card) também não existe mais — `compute_scenarios`, `simulate_contemplation`
+	// e o card `scenarios` saíram do vendedor livre (`cards-livres.ts` recusa
+	// `scenarios`: projeção de prazo sem fonte real). Quem entrega a resposta na
+	// tela é `mostrar_card` de tipo `contemplation_dial`, com o `groupId` da carta —
+	// o payload (meses de contemplação, lance necessário) é montado no servidor a
+	// partir da carta real (`MONTADORES_DE_CARD.contemplation_dial`). É essa a
+	// chamada que o modelo tem como cumprir, e é a única que a diretiva agora pede.
 	return `O usuário ACEITOU ver o simulador de contemplação. FLUXO OBRIGATÓRIO neste turno:
 1. Escreva UMA frase curta NO SEU TOM introduzindo o simulador (ex: "Olha só, dá pra ver bem aqui quando você consegue ser contemplado."). NÃO descreva o gesto físico do controle da UI; fale do que a pessoa vai DESCOBRIR (quando contempla), não de como manuseia a tela.${anchorInstruction}
-2. Chame compute_scenarios e, com o retorno dele, o card — é assim que os cenários de contemplação chegam à tela (o o card recebe exatamente o que o compute_scenarios devolveu).${adminCtx} Nos marcos, destaque 3, 6 e 12 meses (a pergunta do docx). Os números têm que ser os que a ferramenta devolveu: nenhum mês, nenhum valor de lance sai da sua cabeça.
+2. Chame mostrar_card com tipo "contemplation_dial" e o groupId da carta que ele escolheu — é assim que os números da contemplação chegam à tela.${adminCtx} Os números têm que ser os que voltaram no card: nenhum mês, nenhum valor de lance sai da sua cabeça.
 
-PROIBIDO neste turno: chamar search_groups, recommend_groups, simulate_quota, o card, o card ou o card de novo — o usuário JÁ VIU tudo isso (re-apresentar = loop). Depois que o usuário explorar o simulador e sinalizar que está satisfeito, o sistema dirige o card de decisão ("Esse plano faz sentido?").`;
+PROIBIDO neste turno: chamar buscar_cartas ou re-apresentar o card que ele já viu (group_card, recommendation_card, comparison_table, simulation_result) — re-apresentar = loop. Depois que o usuário explorar o simulador e sinalizar que está satisfeito, quem dirige o card de decisão ("Esse plano faz sentido?") é você.`;
 }
 
 // ---- Descoberta falhada (FIX-186) — fallback humano determinístico ----
@@ -815,5 +853,5 @@ export function buildToolErrorRecoveryFallbackRepeat(args: {
 export function buildDecisionPromptDirective(): string {
 	return `O usuário já viu o plano recomendado + a simulação completa e sinalizou que quer seguir. FLUXO OBRIGATÓRIO neste turno: escreva 1-2 frases NO SEU TOM fechando a avaliação (ex: "Boa! Então deixa eu confirmar isso com você." ou "Show, esse plano encaixa bem no que você pediu."). NÃO descreva números de novo, NÃO repita a simulação. NÃO mostre o card nem NENHUMA outra tool neste turno — o sistema mostra o card de decisão automaticamente em seguida.
 
-PROIBIDO neste turno: chamar search_groups, recommend_groups, simulate_quota, o card, o card ou o card de novo — o usuário JÁ VIU tudo isso. Re-apresentar = loop que quebra a experiência.`;
+PROIBIDO neste turno: buscar cartas de novo ou re-apresentar os cards que ele já viu (group_card, recommendation_card, comparison_table, simulation_result) — o usuário JÁ VIU tudo isso. Re-apresentar = loop que quebra a experiência.`;
 }
