@@ -134,6 +134,25 @@ function looksLikeCpfAttempt(text: string): boolean {
 	return digits.length >= 9 && digits.length <= 14;
 }
 
+/**
+ * O que responder a um CPF capturado. Com o vendedor livre, a resposta é NADA e o
+ * turno do agente continua: as cartas já estão na tela e o cliente acabou de dar o
+ * dado que a proposta exige — ele espera a proposta, não um "recebido".
+ *
+ * A frase fixa (`IDENTIFY_CONFIRMED_REPLY`) era do funil, onde o CPF vinha ANTES da
+ * busca e "já vou buscar as melhores opções" era verdade. Na branch ela mente e deixa
+ * o cliente parado até mandar outra mensagem. Medido no dev, conversa 26dd148d
+ * (25/10/2026): "pode usar meus dados, meu cpf é 529.982.247-25" respondia com a
+ * frase fixa e o card de proposta só saía no turno seguinte.
+ *
+ * Só a tentativa de CPF inválida tem resposta própria.
+ */
+export function respostaDoCaptureDeCpf(capture: IdentifyCaptureResult): string | null {
+	if (!capture.handled) return null;
+	if (capture.outcome === "invalid") return IDENTIFY_INVALID_CPF_REPLY;
+	return null;
+}
+
 export type IdentifyCaptureResult =
 	| { handled: false }
 	| { handled: true; outcome: "captured" | "invalid" };

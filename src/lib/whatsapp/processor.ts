@@ -184,31 +184,20 @@ async function processTextMessageSerialized(
 		// Gate "identify" (D1): funil aguardando CPF → captura textual determinística
 		// (valida DV, persiste cifrado, celular = waId) sem turno de agente.
 		{
-			const { captureIdentifyText, IDENTIFY_CONFIRMED_REPLY, IDENTIFY_INVALID_CPF_REPLY } =
+			const { captureIdentifyText, IDENTIFY_INVALID_CPF_REPLY, respostaDoCaptureDeCpf } =
 				await import("./identify-capture");
 			const capture = await captureIdentifyText(from, text);
 			if (capture.handled) {
-				if (capture.outcome === "invalid") {
-					await sendTextMessage(from, IDENTIFY_INVALID_CPF_REPLY);
+				const resposta = respostaDoCaptureDeCpf(capture);
+				if (resposta) {
+					await sendTextMessage(from, resposta);
 					return;
 				}
-				const conv = await db.query.conversations.findFirst({
-					where: eq(conversations.waId, from),
-				});
-				if (conv) {
-					// FIX-53: identidade vem ANTES do valor. NÃO revela aqui — segue a
-					// qualificação despachando o próximo gate (mesmo padrão do
-					// handleHandoffDecline). Só revela se a qualificação já estava
-					// completa (o funil antigo=search). O tripwire de identidade do reveal
-					// agora sempre passa, pois a identidade já foi coletada cedo.
-					// O CPF foi guardado. NÃO se inventa fala do cliente: "pode seguir" era
-					// gravado como se ELE tivesse dito — e é exatamente o "sim" que a skill
-					// de proposta espera depois do aviso de LGPD. Consentimento fabricado
-					// pelo código é incidente, não atalho (parecer do Opus, 20/10/2026).
-					// Aqui só se confirma o recebimento; o vendedor retoma no próximo turno.
-					await sendTextMessage(from, IDENTIFY_CONFIRMED_REPLY);
-				}
-				return;
+				// CPF guardado, SEM resposta fixa e sem pular o turno: no vendedor livre
+				// as cartas já estão na tela, e o cliente que manda o CPF depois do aviso
+				// da LGPD espera a proposta no MESMO turno. O dado continua capturado aqui
+				// (valida DV, cifra, celular = waId) e o texto que vai pro modelo é o mesmo
+				// que o turno máscara depois.
 			}
 		}
 
