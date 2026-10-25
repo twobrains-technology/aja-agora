@@ -823,6 +823,12 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				aceiteJaGravado: meta.lgpdAceite ?? null,
 			});
 			if (!aceite.ok) {
+				// REVOGAÇÃO NÃO É SILÊNCIO: o cliente já disse "não autorizo", então a fala
+				// de retorno não pode mandar pedir o aceite de novo — isso é insistir contra
+				// a autorização que ele acabou de tirar.
+				if (aceite.motivo === "aceite-revogado") {
+					return "Proposta NÃO gerada: o cliente REVOGOU a autorização do uso dos dados dele nesta conversa. Não insista no aceite nem repita o aviso — ofereça falar com um humano e siga sem proposta.";
+				}
 				return aceite.motivo === "aviso-nao-dado"
 					? "Proposta NÃO gerada: o aviso da LGPD ainda não foi dado nesta conversa. Dê o aviso com suas palavras (a administradora consulta o CPF nos birôs de crédito e usa os dados só para isso) e só chame de novo depois do sim do cliente."
 					: "Proposta NÃO gerada: o cliente ainda não respondeu o aviso que você já deu. Peça o aceite em uma frase, sem repetir o aviso, e só siga depois do sim dele.";
