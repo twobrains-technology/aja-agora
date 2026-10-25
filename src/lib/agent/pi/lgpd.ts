@@ -122,19 +122,46 @@ export function clienteAceitouLgpd(texto: string): boolean {
 	return aceitou;
 }
 
+/* A REVOGAÇÃO É UMA FALA SOBRE A AUTORIZAÇÃO, NÃO SOBRE A OFERTA.
+ *
+ * Na main a recusa tem prioridade sobre o aceite (`contract-capture.ts:87`), e é por isso
+ * que um "não autorizo" depois do "sim" derruba a autorização inteira. Mas a recusa que
+ * revoga é a que fala do USO DO DADO: "não aceito o prazo de 80 meses" é recusa da oferta
+ * — se ela revogasse o consentimento, toda negociação de prazo e parcela travaria a
+ * proposta de um cliente que já autorizou.
+ */
+const REVOGA_RE =
+	/\b(?:revogo|revogar|n[ãa]o\s+(?:autorizo|autorizei|aceito|concordo|permito)|n[ãa]o\s+(?:pode|podem|podes)\s+(?:usar|usem|consultar|consultem|guardar|guardem|compartilhar|compartilhem)|n[ãa]o\s+quero\s+(?:mais|que\s+(?:voc[êe]s\s+)?(?:usem|usar|consultem|consultar|guardem|guardar)))\b/i;
+
+/** "não aceito o prazo de 80 meses": o objeto da recusa é a OFERTA, não a autorização. */
+const RECUSA_DA_OFERTA_RE =
+	/\bn[ãa]o\s+(?:aceito|autorizo|concordo|permito|quero)\s+(?:mais\s+)?(?:o|a|esse|essa|este|esta|aquele|aquela|um|uma)\s+(?:prazo|parcela|carta|plano|lance|valor|m[eê]s|meses|simula[cç][aã]o|oferta|op[cç][aã]o|administradora|embutido)\b/i;
+
+/** O cliente revogou o consentimento que já tinha dado? Pergunta não revoga. */
+function revogaConsentimento(texto: string): boolean {
+	const frases = texto.split(/(?<=[.!?;])\s+|\n+/).filter((f) => f.trim());
+	return frases.some((f) => !ehPergunta(f) && REVOGA_RE.test(f) && !RECUSA_DA_OFERTA_RE.test(f));
+}
+
 export type FalaDeLgpd = { role: "user" | "assistant"; content: string };
 
 export type ResultadoDoAceite = {
 	ok: boolean;
-	/** `aceite-ja-registrado` | `aceite-do-cliente` | `aviso-nao-dado` | `falta-o-aceite` */
+	/** `aceite-ja-registrado` | `aceite-do-cliente` | `aceite-revogado` | `aviso-nao-dado` | `falta-o-aceite` */
 	motivo: string;
 };
 
 /**
- * O servidor resolve o aceite olhando a CONVERSAA, não a última fala.
+ * O servidor resolve o aceite olhando a CONVERSA INTEIRA, não a última fala.
  *
  * `falaDoCliente` e `textoDoTurno` são o turno em curso (ainda não persistido):
  * o aviso dado nesta mesma fala conta, e a fala do cliente deste turno também.
+ *
+ * O consentimento é resolvido EM ORDEM CRONOLÓGICA: cada fala do cliente depois do
+ * aviso pode dar ou tirar o aceite, e a ÚLTIMA que fala disso decide. Ler o primeiro
+ * "sim" e parar ali autorizava a consulta de bureau mesmo depois de um "não autorizo"
+ * (P262) — e o registro gravado, aceito sem conferir o que veio depois, escondia a
+ * mesma revogação.
  */
 export function resolverAceiteLgpd(args: {
 	falas: readonly FalaDeLgpd[];
@@ -142,8 +169,6 @@ export function resolverAceiteLgpd(args: {
 	textoDoTurno?: string;
 	aceiteJaGravado?: { em: string; fala: string } | null;
 }): ResultadoDoAceite {
-	if (args.aceiteJaGravado) return { ok: true, motivo: "aceite-ja-registrado" };
-
 	const linha: FalaDeLgpd[] = [...args.falas];
 	if (args.falaDoCliente) linha.push({ role: "user", content: args.falaDoCliente });
 	if (args.textoDoTurno) linha.push({ role: "assistant", content: args.textoDoTurno });
@@ -156,12 +181,31 @@ export function resolverAceiteLgpd(args: {
 		if (avisoEm >= 0) break;
 		if (linha[i].role === "assistant" && AVISO_LGPD_RE.test(linha[i].content)) avisoEm = i;
 	}
-	if (avisoEm < 0) return { ok: false, motivo: "aviso-nao-dado" };
 
-	for (let i = avisoEm; i < linha.length; i++) {
-		if (linha[i].role === "user" && clienteAceitouLgpd(linha[i].content)) {
-			return { ok: true, motivo: "aceite-do-cliente" };
+	// O aceite gravado entra na linha do tempo como o primeiro "sim" conhecido — ele vale
+	// até uma fala posterior do cliente revogá-lo.
+	let consentiu: boolean | null = args.aceiteJaGravado ? true : null;
+	let aceiteDaConversa = false;
+	for (let i = 0; i < linha.length; i++) {
+		const fala = linha[i];
+		if (fala.role !== "user") continue;
+		// Recusa tem prioridade sobre o aceite na MESMA fala ("não autorizo, sim" revoga).
+		if (consentiu === true && revogaConsentimento(fala.content)) {
+			consentiu = false;
+			aceiteDaConversa = false;
+			continue;
+		}
+		// Sem aviso na conversa, o "sim" não é aceite — é resposta a outra coisa.
+		if (avisoEm >= 0 && i >= avisoEm && clienteAceitouLgpd(fala.content)) {
+			consentiu = true;
+			aceiteDaConversa = true;
 		}
 	}
+
+	if (consentiu === true) {
+		return { ok: true, motivo: aceiteDaConversa ? "aceite-do-cliente" : "aceite-ja-registrado" };
+	}
+	if (consentiu === false) return { ok: false, motivo: "aceite-revogado" };
+	if (avisoEm < 0) return { ok: false, motivo: "aviso-nao-dado" };
 	return { ok: false, motivo: "falta-o-aceite" };
 }

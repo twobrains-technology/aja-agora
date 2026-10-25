@@ -219,3 +219,104 @@ describe("L08 — pergunta e recusa não viram aceite; aviso novo não apaga ace
 		expect(r.motivo).toBe("aceite-do-cliente");
 	});
 });
+
+// P262 da re-auditoria: na main a recusa tem prioridade sobre o aceite
+// (`src/lib/whatsapp/contract-capture.ts:87`). Aqui o consentimento é resolvido na
+// ORDEM da conversa, e uma recusa posterior revoga o sim anterior.
+describe("P262 — o consentimento é cronológico: recusa posterior revoga o sim", () => {
+	const aviso = { role: "assistant" as const, content: AVISO };
+
+	it("aviso → sim → não autorizo: sem autorização", () => {
+		const r = resolverAceiteLgpd({
+			falas: [aviso, { role: "user", content: "sim, pode usar" }],
+			falaDoCliente: "não autorizo",
+		});
+		expect(r.ok).toBe(false);
+		expect(r.motivo).toBe("aceite-revogado");
+	});
+
+	it("aviso → sim → não autorizo, tudo no histórico: sem autorização", () => {
+		const r = resolverAceiteLgpd({
+			falas: [
+				aviso,
+				{ role: "user", content: "sim, pode usar" },
+				{ role: "assistant", content: "Qual prazo te serve, 48 ou 80 meses?" },
+				{ role: "user", content: "não autorizo" },
+			],
+		});
+		expect(r.ok).toBe(false);
+		expect(r.motivo).toBe("aceite-revogado");
+	});
+
+	it("aviso → não autorizo → sim: o cliente voltou atrás e autorizou", () => {
+		const r = resolverAceiteLgpd({
+			falas: [aviso, { role: "user", content: "não autorizo" }],
+			falaDoCliente: "pode usar meus dados",
+		});
+		expect(r.ok).toBe(true);
+		expect(r.motivo).toBe("aceite-do-cliente");
+	});
+
+	it("revogação depois de novo sim: o sim mais recente vale outra vez", () => {
+		const r = resolverAceiteLgpd({
+			falas: [
+				aviso,
+				{ role: "user", content: "sim, pode usar" },
+				{ role: "user", content: "não autorizo mais" },
+				{ role: "user", content: "pensando bem, pode usar" },
+			],
+		});
+		expect(r.ok).toBe(true);
+		expect(r.motivo).toBe("aceite-do-cliente");
+	});
+
+	it("o aceite GRAVADO também é revogado por uma recusa posterior", () => {
+		const r = resolverAceiteLgpd({
+			falas: [aviso, { role: "user", content: "sim" }, { role: "user", content: "não autorizo" }],
+			aceiteJaGravado: { em: "2026-10-25T00:00:00Z", fala: "sim" },
+		});
+		expect(r.ok).toBe(false);
+		expect(r.motivo).toBe("aceite-revogado");
+	});
+
+	it("o aceite gravado continua valendo quando ninguém revogou", () => {
+		const r = resolverAceiteLgpd({
+			falas: [aviso, { role: "user", content: "sim" }, { role: "user", content: "48 meses" }],
+			aceiteJaGravado: { em: "2026-10-25T00:00:00Z", fala: "sim" },
+		});
+		expect(r.ok).toBe(true);
+	});
+
+	// Revogar é falar da AUTORIZAÇÃO. Recusar um detalhe da oferta depois do sim não
+	// pode travar a proposta — senão toda negociação de prazo revogaria o consentimento.
+	it("recusar um detalhe da oferta depois do sim não revoga o consentimento", () => {
+		for (const fala of [
+			"não aceito o prazo de 80 meses, prefiro 48",
+			"não quero mais essa carta, me mostra outra",
+			"não quero a parcela de 900",
+		]) {
+			const r = resolverAceiteLgpd({
+				falas: [aviso, { role: "user", content: "sim, pode usar" }],
+				falaDoCliente: fala,
+			});
+			expect(r.motivo, fala).toBe("aceite-do-cliente");
+		}
+	});
+
+	it("perguntar sobre a revogação não é revogar", () => {
+		const r = resolverAceiteLgpd({
+			falas: [aviso, { role: "user", content: "sim, pode usar" }],
+			falaDoCliente: "posso revogar isso depois?",
+		});
+		expect(r.ok).toBe(true);
+		expect(r.motivo).toBe("aceite-do-cliente");
+	});
+
+	it("recusa antes de qualquer sim é falta de aceite, não revogação", () => {
+		const r = resolverAceiteLgpd({
+			falas: [aviso, { role: "user", content: "não autorizo" }],
+		});
+		expect(r.ok).toBe(false);
+		expect(r.motivo).toBe("falta-o-aceite");
+	});
+});
