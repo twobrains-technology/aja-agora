@@ -929,8 +929,19 @@ export function buildToolErrorRecoveryFallbackRepeat(args: {
  * emissão automática deixava o clique "Agora não" do simulador
  * (`interactive-handlers.ts`, `handleSimulatorOffer`) sem card nenhum: o modelo
  * escrevia o fechamento, não chamava tool, e a conversa morria ali. */
-export function buildDecisionPromptDirective(): string {
-	return `O usuário já viu o plano recomendado + a simulação completa e sinalizou que quer seguir. FLUXO OBRIGATÓRIO neste turno: escreva 1-2 frases NO SEU TOM fechando a avaliação (ex: "Boa! Então deixa eu confirmar isso com você." ou "Show, esse plano encaixa bem no que você pediu."). NÃO descreva números de novo, NÃO repita a simulação. Depois chame mostrar_card com tipo "decision_prompt" e o groupId da carta que está na tela — é esse card que faz a pergunta "Esse plano faz sentido?"; sem ele o cliente não tem o que decidir.
+export function buildDecisionPromptDirective(
+	args: {
+		/** A carta em foco na conversa, quando o handler a tem (P112/P179/P181) —
+		 * `decision_prompt` resolve a carta pelo id, e o padrão é o mesmo das três
+		 * diretivas de fecho: com o id, a chamada vai LITERAL; sem ele, a instrução
+		 * pede "a carta que está na tela" e a escolha fica com o modelo. */
+		groupId?: string;
+	} = {},
+): string {
+	const chamada = args.groupId
+		? chamadaDeCardDeFato("decision_prompt", args.groupId)
+		: 'chame mostrar_card com tipo "decision_prompt" e o groupId da carta que está na tela';
+	return `O usuário já viu o plano recomendado + a simulação completa e sinalizou que quer seguir. FLUXO OBRIGATÓRIO neste turno: escreva 1-2 frases NO SEU TOM fechando a avaliação (ex: "Boa! Então deixa eu confirmar isso com você." ou "Show, esse plano encaixa bem no que você pediu."). NÃO descreva números de novo, NÃO repita a simulação. Depois ${chamada} — é esse card que faz a pergunta "Esse plano faz sentido?"; sem ele o cliente não tem o que decidir.
 
 PROIBIDO neste turno: buscar cartas de novo ou re-apresentar os cards que ele já viu (group_card, recommendation_card, comparison_table, simulation_result) — o usuário JÁ VIU tudo isso. Re-apresentar = loop que quebra a experiência.`;
 }

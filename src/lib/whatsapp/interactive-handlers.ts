@@ -525,7 +525,14 @@ async function handleSimulatorOffer(ctx: Ctx): Promise<boolean> {
 		// O card de decisão era emissão server-side do funil. Com o vendedor livre
 		// quem decide é o modelo, então o clique aqui só rende uma fala.
 		await persistMeta(conversationId, { ...updated, decisionDispatched: true });
-		await runAgentDirective(from, conversationId, buildDecisionPromptDirective());
+		// P112/P179/P181 — a carta em foco vai na diretiva pelo `groupId`:
+		// `decision_prompt` resolve a carta pelo id (montador em `cards-livres.ts`),
+		// e sem ele o modelo precisa adivinhar qual das cotas na tela é a do card.
+		await runAgentDirective(
+			from,
+			conversationId,
+			buildDecisionPromptDirective({ groupId: updated.recommendedOffer?.groupId }),
+		);
 	}
 	return true;
 }
@@ -749,6 +756,10 @@ async function handleQuickReplyTap(ctx: Ctx): Promise<boolean> {
 		buildChooseOfferDirective({
 			administradora: metaComAceite.recommendedAdministradora,
 			identidadeJaColetada: meta.identityCollected === true,
+			// O id que o card do atalho entregou e o servidor conferiu
+			// (`coerceEscolhaNosAtalhos` + `cotaDoTapDeAtalho`) — vai LITERAL na
+			// diretiva, para o `contract_form` sair com a administradora da carta.
+			groupId,
 		}),
 	);
 	return true;
@@ -1002,6 +1013,12 @@ async function handleInterest(ctx: Ctx): Promise<boolean> {
 			// O exemplo de fechamento não pode mandar pedir dado que o sistema já
 			// tem — foi assim que `fd76e393` pediu CPF a quem já o tinha mandado.
 			identidadeJaColetada: meta.identityCollected === true,
+			// P112/P179/P181 — a cota que o aceite ANCOROU (`interest_<groupId>`
+			// conferido contra as ofertas exibidas) ou, no "sim" sem cota nomeada
+			// (`decision_contratar`), a carta em foco na conversa. Sem o id o
+			// `contract_form` sai sem administradora e o `fazer_proposta` volta a
+			// depender de o modelo copiá-lo do histórico.
+			groupId: metaComAceite.escolha?.groupId ?? meta.recommendedOffer?.groupId,
 		}),
 	);
 	return true;

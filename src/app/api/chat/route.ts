@@ -323,6 +323,23 @@ export function formularioDeContratoFoiEnviado(
 	return meta.contractFormDispatched === true;
 }
 
+/** O `groupId` que o clique ESTRUTURADO entrega à diretiva de fecho
+ * (P112/P161/P179/P181).
+ *
+ * Com o id na instrução, o `contract_form` sai com a `administradora` da carta
+ * (o montador resolve pelo id, `cards-livres.ts`) e o caminho curto
+ * `fazer_proposta` usa o mesmo id — sem depender de o modelo copiá-lo do
+ * histórico da busca. A fonte preferida é a cota RESOLVIDA contra os artifacts
+ * exibidos (`resolveChosenOffer`); quando o resolvedor não acha, vale o id que
+ * veio no card tocado, que o próprio servidor emitiu. Sem nenhum dos dois a
+ * diretiva pede "a carta que está na tela" e a escolha fica com o modelo. */
+export function groupIdDaCartaDoClique(
+	cotaResolvida: { groupId?: string } | null | undefined,
+	idDoClique: string | undefined,
+): string | undefined {
+	return cotaResolvida?.groupId ?? idDoClique;
+}
+
 export async function POST(req: NextRequest) {
 	const ip =
 		req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
@@ -981,6 +998,11 @@ export async function POST(req: NextRequest) {
 										directive: buildAdvanceToContractDirective({
 											administradora,
 											identidadeJaColetada: meta.identityCollected === true,
+											// P112/P161/P179/P181 — o id da carta do clique vai LITERAL na
+											// diretiva (ver `groupIdDaCartaDoClique`): é ele que faz o
+											// `contract_form` sair com a administradora e que o modelo usa
+											// no caminho curto `fazer_proposta`, sem copiar id do histórico.
+											groupId: groupIdDaCartaDoClique(cotaExibida, idDoCard),
 										}),
 										contactName,
 										writer,
@@ -1048,6 +1070,10 @@ export async function POST(req: NextRequest) {
 										directive: buildChooseOfferDirective({
 											administradora,
 											identidadeJaColetada: meta.identityCollected === true,
+											// O id da cota ESCOLHIDA (resolvido por `resolveChosenOffer`
+											// contra os artifacts exibidos) — ver
+											// `groupIdDaCartaDoClique`.
+											groupId: groupIdDaCartaDoClique(chosen, groupId),
 										}),
 										contactName,
 										writer,

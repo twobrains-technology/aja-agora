@@ -260,6 +260,16 @@ describe("o fecho leva o groupId da carta quando o chamador o tem", () => {
 		expect(texto).toContain(`fazer_proposta com o groupId ${GROUP_ID}`);
 	});
 
+	it("o card de decisão também aceita o id da carta em foco", () => {
+		const comId = buildDecisionPromptDirective({ groupId: GROUP_ID });
+		expect(comId).toContain('"decision_prompt"');
+		expect(comId).toContain(`payload {"groupId":"${GROUP_ID}"}`);
+		// Sem o id o handler diz o que o card tem de resolver — e a escolha é do modelo.
+		const semId = buildDecisionPromptDirective();
+		expect(semId).toContain("o groupId da carta que está na tela");
+		expect(semId).not.toMatch(/payload \{"groupId"/);
+	});
+
 	it("sem o id, a instrução pede a carta na tela — e o card sai com a administradora dela", async () => {
 		const texto = buildAdvanceToContractDirective({ administradora: "Canopus" });
 		expect(texto).toContain("o groupId da carta que está na tela");

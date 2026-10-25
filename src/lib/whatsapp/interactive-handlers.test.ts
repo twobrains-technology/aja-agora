@@ -20,6 +20,9 @@ vi.mock("@/db", () => ({
 					{ artifacts: [{ type: "comparison_table", payload: { groups: [CARTA_NO_CARD] } }] },
 				]),
 			},
+			conversations: {
+				findFirst: vi.fn(async () => ({ metadata: metaDaConversa.atual })),
+			},
 		},
 	},
 }));
@@ -45,21 +48,6 @@ const metaDaConversa = vi.hoisted(() => ({
 	atual: {} as Record<string, unknown>,
 }));
 
-vi.mock("@/db", () => ({
-	db: {
-		query: {
-			messages: {
-				findMany: vi.fn(async () => [
-					{ artifacts: [{ type: "comparison_table", payload: { groups: [CARTA_NO_CARD] } }] },
-				]),
-			},
-			conversations: {
-				findFirst: vi.fn(async () => ({ metadata: metaDaConversa.atual })),
-			},
-		},
-	},
-}));
-
 vi.mock("./session", () => ({
 	getOrCreateConversation: vi.fn(async () => ({ id: "conv-1", isNew: false })),
 }));
@@ -78,10 +66,24 @@ vi.mock("./proxy", () => ({
 	startInterestHandoff: vi.fn(async () => {}),
 }));
 vi.mock("@/lib/agent/aceite", () => ({
-	aplicarAceiteEstruturado: vi.fn(async ({ meta }: { meta: Record<string, unknown> }) => ({
-		meta,
-		efeito: "escolha-ancorada",
-	})),
+	// O contrato REAL do escritor único do aceite: cota conferida contra as
+	// ofertas exibidas vira `escolha` no meta. Os testes de fecho leem daí o id
+	// que a diretiva tem de citar — e o caminho `interest_<groupId>` depende
+	// dele quando o meta não tem carta em foco.
+	aplicarAceiteEstruturado: vi.fn(
+		async ({
+			meta,
+			aceite,
+		}: {
+			meta: Record<string, unknown>;
+			aceite: { groupId?: string | null };
+		}) => ({
+			meta: aceite.groupId
+				? { ...meta, escolha: { groupId: aceite.groupId, origem: "afirmacao" } }
+				: meta,
+			efeito: "escolha-ancorada",
+		}),
+	),
 }));
 vi.mock("@/lib/conversation/cards", () => ({
 	ultimoQuickReply: vi.fn(async () => ({ options: [{ groupId: "grp-canopus-1" }] })),
@@ -194,5 +196,58 @@ describe("o clique de fechamento pede o formulário ao vendedor livre", () => {
 		expect(diretiva).toContain("ESCOLHEU uma cota");
 		expect(diretiva).toContain("mostrar_card");
 		expect(diretiva).toContain('"contract_form"');
+	});
+});
+
+// P112/P179/P181 — o clique de fecho tem a CARTA em mãos: o id vai LITERAL na
+// diretiva. Sem ele o `contract_form` sai sem `administradora` (o montador
+// resolve a carta pelo id, `cards-livres.ts`) e o caminho curto `fazer_proposta`
+// fica dependendo de o modelo copiar o id do histórico da busca.
+describe("o fecho do WhatsApp leva o groupId da carta que o clique trouxe", () => {
+	beforeEach(() => {
+		despacho.diretivas.length = 0;
+	});
+
+	const ID_LITERAL = 'payload {"groupId":"grp-canopus-1"}';
+
+	for (const replyId of ["decision_contratar", "interest_grp-canopus-1", "qr_0"]) {
+		it(`${replyId}: a diretiva cita o id da carta`, async () => {
+			const { diretiva } = await clique(replyId, {});
+			expect(diretiva).toContain(ID_LITERAL);
+		});
+	}
+
+	it("interest_<groupId>: o id do CLIQUE vale mesmo sem carta em foco no meta", async () => {
+		// O aceite ancora a cota conferida contra as ofertas exibidas — é dela que
+		// sai o id quando `recommendedOffer` não carrega nenhum.
+		const { diretiva } = await clique("interest_grp-canopus-1", {
+			recommendedOffer: {
+				administradora: "Canopus",
+				creditValue: 80000,
+				termMonths: 120,
+				monthlyPayment: 700,
+			},
+		});
+		expect(diretiva).toContain(ID_LITERAL);
+	});
+
+	it("sem carta nenhuma, a diretiva não inventa id — pede a que está na tela", async () => {
+		const { diretiva } = await clique("decision_contratar", {
+			recommendedOffer: {
+				administradora: "Canopus",
+				creditValue: 80000,
+				termMonths: 120,
+				monthlyPayment: 700,
+			},
+		});
+		expect(diretiva).toContain("o groupId da carta que está na tela");
+		expect(diretiva).not.toContain(ID_LITERAL);
+	});
+
+	it('simoffer_no ("Agora não" do simulador): o card de decisão cita a carta em foco', async () => {
+		const { tratado, diretiva } = await clique("simoffer_no", {});
+		expect(tratado).toBe(true);
+		expect(diretiva).toContain('"decision_prompt"');
+		expect(diretiva).toContain(ID_LITERAL);
 	});
 });

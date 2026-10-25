@@ -1,8 +1,10 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { TEXTO_ERRO_DO_CHAT } from "@/lib/chat/stream-error";
 import {
 	chaveDoLimiteDeMensagens,
 	formularioDeContratoFoiEnviado,
+	groupIdDaCartaDoClique,
 	respostaDeLimiteDeMensagens,
 } from "./route";
 
@@ -57,5 +59,39 @@ describe("L02 — o submit do formulário de contrato exige que o formulário te
 
 	it("com a marca do card, o submit segue para a proposta real", () => {
 		expect(formularioDeContratoFoiEnviado({ contractFormDispatched: true })).toBe(true);
+	});
+});
+
+/** P112/P161/P179/P181 — o clique de fecho da web tem a CARTA em mãos e a
+ * diretiva precisa do id LITERAL: é ele que faz o `contract_form` sair com a
+ * `administradora` (o montador resolve a carta pelo id) e que o caminho curto
+ * `fazer_proposta` usa, sem depender de o modelo copiar o id do histórico. */
+describe("o clique de fecho da web leva o id da carta", () => {
+	it("vale a cota RESOLVIDA contra os artifacts exibidos", () => {
+		expect(groupIdDaCartaDoClique({ groupId: "grp-resolvido" }, "grp-do-card")).toBe(
+			"grp-resolvido",
+		);
+	});
+
+	it("sem cota resolvida, vale o id que o próprio card entregou", () => {
+		expect(groupIdDaCartaDoClique(null, "grp-do-card")).toBe("grp-do-card");
+	});
+
+	it("sem nenhum dos dois, a diretiva pede a carta que está na tela", () => {
+		expect(groupIdDaCartaDoClique(undefined, undefined)).toBeUndefined();
+	});
+
+	// A rota é um handler Next (banco, adapters, stream): não há harness de POST
+	// aqui, então o que o teste prova em código é a LIGAÇÃO — que as duas
+	// diretivas de fecho da rota recebem o id do clique.
+	it("as duas diretivas de fecho da rota recebem o id", () => {
+		const fonte = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
+		const chamadas = [
+			...fonte.matchAll(/build(?:ChooseOffer|AdvanceToContract)Directive\(\{[\s\S]*?\}\)/g),
+		].map((m) => m[0]);
+		expect(chamadas).toHaveLength(2);
+		for (const chamada of chamadas) {
+			expect(chamada).toContain("groupId: groupIdDaCartaDoClique(");
+		}
 	});
 });
