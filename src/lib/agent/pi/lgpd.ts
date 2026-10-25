@@ -11,6 +11,43 @@
 
 export const AVISO_LGPD_RE = /bir[oô]s?\s+de\s+cr[eé]dito|conforme a\s+lgpd/i;
 
+/** As palavras canônicas do aviso (mesma texto da skill `proposta-com-dados-do-cliente`). */
+export const AVISO_LGPD =
+	"Para gerar a sua proposta, a administradora consulta seu CPF nos birôs de crédito e usa seus dados só para isso, conforme a LGPD. Posso seguir?";
+
+/** O pedido de dado pessoal — CPF ou celular — que NÃO pode vir antes do aviso. */
+export const PEDE_DADO_RE = /\b(cpf|celular|telefone|whatsapp)\b/i;
+
+export type ResultadoDoAviso = {
+	/** O texto que sai no balão: o aviso vem ANTES do pedido de dado. */
+	texto: string;
+	/** true quando o aviso foi acrescentado pelo harness (não pelo modelo). */
+	avisoAdicionado: boolean;
+	/** O pedido de dado da fala é adiado pro turno seguinte — o aceite vem primeiro. */
+	pedidoAdiado: boolean;
+};
+
+/**
+ * O AVISO VEM ANTES DO PEDIDO DE DADO — decidido no HARNESS, não no prompt.
+ *
+ * Se o aviso ainda não foi dado na conversa e a fala pede CPF ou celular, o aviso
+ * ocupa a mensagem e o pedido de dado fica para depois do aceite. Frases que não
+ * são o pedido continuam (acolhimento, explicação) — não se joga a fala fora.
+ */
+export function garanteAvisoLgpd(args: { texto: string; avisoJaDado: boolean }): ResultadoDoAviso {
+	const texto = args.texto.trim();
+	if (args.avisoJaDado) return { texto, avisoAdicionado: false, pedidoAdiado: false };
+	if (!PEDE_DADO_RE.test(texto)) return { texto, avisoAdicionado: false, pedidoAdiado: false };
+
+	const frases = texto.split(/(?<=[.!?])\s+|\n+/).filter(Boolean);
+	const resto = frases
+		.filter((f) => !PEDE_DADO_RE.test(f))
+		.join(" ")
+		.trim();
+	const saida = resto ? `${resto}\n\n${AVISO_LGPD}` : AVISO_LGPD;
+	return { texto: saida, avisoAdicionado: true, pedidoAdiado: true };
+}
+
 /** Resposta afirmativa do cliente. Negativa não vale ("não pode", "não autorizo"). */
 export function clienteAceitouLgpd(texto: string): boolean {
 	const re =

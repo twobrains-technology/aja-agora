@@ -17,6 +17,7 @@ import { maskCpfForDisplay } from "@/lib/agent/orchestrator/contract-form-prefil
 import type { TurnEvent, TurnInput } from "@/lib/agent/orchestrator/types";
 import { scrubCpf } from "@/lib/agent/orchestrator/vazamento";
 import { executarBeat } from "@/lib/agent/pi/converse";
+import { AVISO_LGPD_RE, garanteAvisoLgpd, PEDE_DADO_RE } from "@/lib/agent/pi/lgpd";
 import { persistirTurnoLivre } from "@/lib/agent/pi/persist-livre";
 import { montarSystemDoVendedor } from "@/lib/agent/pi/system-do-vendedor";
 import { toPiTools } from "@/lib/agent/pi/tools";
@@ -126,6 +127,28 @@ export function capturarIdentidadeDoTexto(
 	// mensagem dizia "guardado" sem ter guardado nada).
 	const identidade = cpf ? { cpf, celular: celular ?? "" } : null;
 	return { identidade, textoLimpo, recebeuCpf, recebeuCelular };
+}
+
+/** O texto que sai no balão: CPF mascarado, aviso da LGPD antes do pedido de dado,
+ * e uma pergunta por trecho. Exportado para ser testado sem banco. */
+export function montarTrechoDeSaida(args: { texto: string; avisoDado: boolean }): {
+	texto: string;
+	avisoAplicado: boolean;
+} {
+	const bruto = scrubCpf(args.texto);
+	let texto = bruto;
+	let avisoAplicado = false;
+	if (!args.avisoDado && PEDE_DADO_RE.test(bruto)) {
+		if (AVISO_LGPD_RE.test(bruto)) {
+			avisoAplicado = true;
+		} else {
+			texto = garanteAvisoLgpd({ texto: bruto, avisoJaDado: false }).texto;
+			avisoAplicado = true;
+		}
+	}
+	// O aviso é a pergunta do turno: o verificador de "uma pergunta por mensagem" roda
+	// DEPOIS dele, senão o aviso é cortado como pergunta extra.
+	return { texto: manterUmaPergunta(texto), avisoAplicado };
 }
 
 /** Texto antes e depois de uma tool é fala DIFERENTE: sem separador o stream
@@ -273,13 +296,20 @@ export function createRunTurnLivre(deps?: {
 
 		const trechos = criarSeparadorDeTrechos();
 		let pendente = "";
+		// O aviso da LGPD é FATO DO HARNESS: se ele ainda não foi dado na conversa e a
+		// fala pede CPF ou celular, o aviso entra ANTES do pedido e o pedido fica pro
+		// turno depois do aceite. Não é conselho de prompt — é o verificador do texto.
+		let avisoDado = historico.some((f) => f.role === "assistant" && AVISO_LGPD_RE.test(f.content));
 		// CPF mascarado JÁ na saída (o número digitado não volta por eco do modelo)
 		// e uma pergunta por trecho de fala.
+		// CPF mascarado, aviso da LGPD antes do pedido de dado e uma pergunta por
+		// trecho — tudo em `montarTrechoDeSaida`, que é testável sem banco.
 		const soltarTrecho = () => {
 			if (!pendente) return;
-			const limpo = manterUmaPergunta(scrubCpf(pendente));
+			const saida = montarTrechoDeSaida({ texto: pendente, avisoDado });
+			avisoDado ||= saida.avisoAplicado;
 			pendente = "";
-			for (const ev of trechos.aoDelta(limpo)) {
+			for (const ev of trechos.aoDelta(saida.texto)) {
 				estado = { ...estado, events: [...estado.events, ev] };
 				emitir(ev);
 			}
