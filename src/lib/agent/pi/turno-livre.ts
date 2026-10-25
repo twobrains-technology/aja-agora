@@ -17,6 +17,7 @@ import { maskCpfForDisplay } from "@/lib/agent/orchestrator/contract-form-prefil
 import type { TurnEvent, TurnInput } from "@/lib/agent/orchestrator/types";
 import { scrubCpf } from "@/lib/agent/orchestrator/vazamento";
 import { executarBeat } from "@/lib/agent/pi/converse";
+import { manterUmaPergunta } from "@/lib/agent/pi/uma-pergunta";
 import { persistirTurnoLivre } from "@/lib/agent/pi/persist-livre";
 import { montarSystemDoVendedor } from "@/lib/agent/pi/system-do-vendedor";
 import { toPiTools } from "@/lib/agent/pi/tools";
@@ -245,6 +246,18 @@ export function createRunTurnLivre(deps?: {
 		};
 
 		const trechos = criarSeparadorDeTrechos();
+		let pendente = "";
+		// CPF mascarado JÁ na saída (o número digitado não volta por eco do modelo)
+		// e uma pergunta por trecho de fala.
+		const soltarTrecho = () => {
+			if (!pendente) return;
+			const limpo = manterUmaPergunta(scrubCpf(pendente));
+			pendente = "";
+			for (const ev of trechos.aoDelta(limpo)) {
+				estado = { ...estado, events: [...estado.events, ev] };
+				emitir(ev);
+			}
+		};
 		const executar = async () => {
 			const beat = await executarBeat({
 				system,
@@ -255,15 +268,12 @@ export function createRunTurnLivre(deps?: {
 					so: [...NOMES_DAS_TOOLS_LIVRES],
 				}),
 				aoDelta: (delta) => {
-					// CPF mascarado JÁ na saída: o número que o cliente digitou não pode
-					// voltar para ele por eco do modelo.
-					const limpo = scrubCpf(delta);
-					for (const ev of trechos.aoDelta(limpo)) {
-						estado = { ...estado, events: [...estado.events, ev] };
-						emitir(ev);
-					}
+					// O trecho é SEGURADO até acabar (tool ou fim do beat): o verificador
+					// de "uma pergunta por mensagem" precisa do texto pronto.
+					pendente += delta;
 				},
 				aoToolCall: (chamada) => {
+					soltarTrecho();
 					trechos.aoToolCall();
 					const evento = {
 						type: "tool-call" as const,
@@ -276,6 +286,8 @@ export function createRunTurnLivre(deps?: {
 				},
 				provider: deps?.provider,
 			});
+
+			soltarTrecho();
 
 			// 4. O que a busca gravou no estado.
 			if (ctx.estadoDepoisDaBusca) {
