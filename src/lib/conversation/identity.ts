@@ -92,29 +92,68 @@ export function decryptIdentity(blob: string): StoredIdentity {
 	return JSON.parse(dec.toString("utf8")) as StoredIdentity;
 }
 
-/** Persiste a identidade cifrada no meta da conversa + liga identityCollected. */
+/** Persiste a identidade cifrada no meta da conversa + liga identityCollected
+ * quando o par está COMPLETO. */
 export async function storeIdentity(
 	conversationId: string,
 	identity: StoredIdentity,
 ): Promise<void> {
 	const meta = await reloadMeta(conversationId);
+	// A identidade chega em PEDAÇOS: o cliente dita o CPF num turno e o celular no
+	// seguinte (ou o contrário). O que já estava guardado entra na conta — gravar
+	// só o pedaço novo apagava o outro e a identidade nunca fechava.
+	const completa = juntarIdentidade(identity, identidadeGuardada(meta));
 	await persistMeta(conversationId, {
 		...meta,
-		identityCollected: true,
-		identityEnc: encryptIdentity(identity),
+		// `identityCollected` NÃO é "guardei algum dado", é o FATO de o cliente ter
+		// dado CPF **e** celular — era o que a `main` marcava no gate `identify` e o
+		// que qualifica o lead (`persist.ts:374` na a2bc3024). Marcar com metade do
+		// par promovia a `qualificado` quem só tinha digitado o CPF.
+		identityCollected: isCompleteIdentity(completa),
+		identityEnc: encryptIdentity(completa),
 	});
 	// FIX-42: identidade capturada (CPF + celular) → resolve o cliente unificado
 	// e religa a conversa. attachContact nunca lança nem loga o CPF.
 	await attachContact({
 		conversationId,
-		input: { cpf: identity.cpf, phone: identity.celular },
+		input: { cpf: completa.cpf, phone: completa.celular },
 	});
-	await vincularCelularAoLead(conversationId, identity.celular).catch((erro: unknown) => {
+	await vincularCelularAoLead(conversationId, completa.celular).catch((erro: unknown) => {
 		// O telefone do LEAD é o que faz a pessoa contar como identificada no
 		// painel — mas não é o que fecha a venda: falhar aqui não pode derrubar o
 		// turno que acabou de capturar a identidade.
 		console.error("[identity] celular não chegou ao lead (ignorado):", erro);
 	});
+}
+
+/** O par que a Bevi exige (e que a `main` chamava de identidade coletada): CPF
+ * com DV válido **e** celular com DDD. */
+export function isCompleteIdentity(identity: Partial<StoredIdentity> | null | undefined): boolean {
+	return isValidCpf(identity?.cpf ?? "") && normalizePhoneBR(identity?.celular ?? "") !== null;
+}
+
+/** O pedaço que já estava guardado, ou null se não há (ou não abre). */
+function identidadeGuardada(meta: { identityEnc?: string }): StoredIdentity | null {
+	if (!meta.identityEnc) return null;
+	try {
+		return decryptIdentity(meta.identityEnc);
+	} catch (erro) {
+		// Blob de outra chave/ambiente: o pedaço novo ainda vale, e o turno não cai.
+		console.error("[identity] identidade guardada ilegível (ignorada):", erro);
+		return null;
+	}
+}
+
+/** O dado NOVO vence o guardado, campo a campo — o cliente pode corrigir o CPF
+ * sem perder o celular que já tinha ditado. */
+function juntarIdentidade(
+	identity: StoredIdentity,
+	guardada: StoredIdentity | null,
+): StoredIdentity {
+	return {
+		cpf: onlyDigits(identity?.cpf ?? "") || guardada?.cpf || "",
+		celular: onlyDigits(identity?.celular ?? "") || guardada?.celular || "",
+	};
 }
 
 /**

@@ -14,7 +14,9 @@ import type { ConversationMetadata } from "@/lib/agent/personas";
 import { estadoInicialDoTurno } from "@/lib/agent/turn/estado";
 import type { ResumeRow } from "@/lib/chat/resume";
 import { buildResumableMessages } from "@/lib/chat/resume";
+import { storeIdentity } from "@/lib/conversation/identity";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
+import { BACKOFF_RETOMADA_MS, MAX_RETOMADAS, podeRetomar } from "@/lib/workers/retomada";
 import { estagioComercialDoTurno, persistirTurnoLivre } from "./persist-livre";
 
 const criadas: string[] = [];
@@ -183,6 +185,74 @@ describe("estágio comercial do lead — L04", () => {
 
 		await persistirTurnoLivre({ estado: turno({ conversationId, baseMeta: meta }) });
 		expect((await reloadMeta(conversationId)).maxStageReached).toBe("em_negociacao");
+	});
+});
+
+describe("P272/P226 — identidade PARCIAL não qualifica", () => {
+	it("só o CPF no meio do turno NÃO promove o lead; com o celular, promove", async () => {
+		const conversationId = await novaConversa();
+		const lead = await novoLead(conversationId);
+
+		// Turno em que só o CPF chegou: `storeIdentity` o guarda, mas a identidade
+		// que a Bevi exige tem duas metades.
+		await storeIdentity(conversationId, { cpf: "52998224725", celular: "" });
+		await persistirTurnoLivre({ estado: turno({ conversationId, baseMeta: {} }) });
+
+		const parcial = await reloadMeta(conversationId);
+		expect(parcial.identityCollected).not.toBe(true);
+		expect(parcial.maxStageReached ?? null).not.toBe("qualificado");
+		expect((await db.query.leads.findFirst({ where: eq(leads.id, lead.id) }))?.stage).toBe("novo");
+
+		// Turno seguinte: o celular completa o par.
+		await storeIdentity(conversationId, { cpf: "52998224725", celular: "11987654321" });
+		await persistirTurnoLivre({ estado: turno({ conversationId, baseMeta: {} }) });
+
+		const completo = await reloadMeta(conversationId);
+		expect(completo.identityCollected).toBe(true);
+		expect(completo.maxStageReached).toBe("qualificado");
+		expect((await db.query.leads.findFirst({ where: eq(leads.id, lead.id) }))?.stage).toBe(
+			"qualificado",
+		);
+	});
+});
+
+describe("P248/P269 — o cliente que volta zera o contador de retomadas", () => {
+	/** Duas retomadas já gastas nesta conversa. */
+	function metaComTeto(tentativas = MAX_RETOMADAS): ConversationMetadata {
+		return {
+			currentCategory: "auto",
+			retomada: { attempts: tentativas, lastAt: Date.now() - BACKOFF_RETOMADA_MS * 10 },
+		};
+	}
+
+	it("cliente volta depois de 2 tentativas: o contador zera e a próxima janela agenda de novo", async () => {
+		const conversationId = await novaConversa();
+		const meta = metaComTeto();
+		await persistMeta(conversationId, meta);
+
+		// Antes: o teto bloqueia — é o defeito do contador que nunca volta.
+		expect(podeRetomar(meta, Date.now())).toBe(false);
+
+		await persistirTurnoLivre({
+			estado: turno({ conversationId, baseMeta: meta, userText: "voltei, e agora?" }),
+		});
+
+		const depois = await reloadMeta(conversationId);
+		expect(depois.retomada).toBeUndefined();
+		// Nov período de silêncio: o watchdog volta a poder puxar a conversa.
+		expect(podeRetomar(depois, Date.now())).toBe(true);
+	});
+
+	it("turno de SERVIDOR não perdoa a própria tentativa", async () => {
+		const conversationId = await novaConversa();
+		const meta = metaComTeto(1);
+		await persistMeta(conversationId, meta);
+
+		await persistirTurnoLivre({
+			estado: turno({ conversationId, baseMeta: meta, isUserTurn: false, userText: undefined }),
+		});
+
+		expect((await reloadMeta(conversationId)).retomada).toEqual(meta.retomada);
 	});
 });
 

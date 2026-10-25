@@ -78,6 +78,14 @@ export async function persistirTurnoLivre(args: {
 	// fato mudou (projeção do estado contra a projeção do estado de ENTRADA).
 	// Campo que a tool gravou no meio do turno sobrevive.
 	const meta = await metaDoTurnoSemApagar(baseMeta, estado);
+	// O CLIENTE VOLTOU A FALAR → o contador de retomadas zera.
+	//
+	// Sem isto o teto (`MAX_RETOMADAS`) vale por CONVERSA, não por período de
+	// silêncio: quem sumiu duas vezes no começo nunca mais seria puxado de volta,
+	// mesmo travando na véspera de assinar (`persist.ts:297` na a2bc3024). Só
+	// turno REAL do cliente conta — a retomada em si é `isUserTurn: false` e não
+	// se auto-perdoa.
+	if (estado.isUserTurn && estado.userText) delete meta.retomada;
 	await persistMeta(conversationId, meta);
 
 	// 3. O estágio comercial que este turno PROVOU. Depois do `persistMeta` de
@@ -150,8 +158,9 @@ export async function persistirTurnoLivre(args: {
  *   Na `main` era `desireAsked || currentCategory`; sem gate `desire`, a
  *   categoria é a âncora que sobra — e é mais forte, porque só existe quando a
  *   busca levou o assunto a sério;
- * · `qualificado` — identidade capturada (`identityCollected`, ligado por
- *   `storeIdentity` quando CPF + celular chegam);
+ * · `qualificado` — identidade COMPLETA (`identityCollected`, ligado por
+ *   `storeIdentity` só com CPF **e** celular, como no gate `identify` da `main`);
+ *   CPF sozinho continua guardado, mas não qualifica;
  * · `em_negociacao` — viu as ofertas reais (`revealCompleted`) e voltou a falar:
  *   exige turno do CLIENTE depois do reveal, como na `main` — só receber os
  *   cards não é negociar.

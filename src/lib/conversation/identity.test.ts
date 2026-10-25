@@ -2,7 +2,8 @@ import { eq } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { conversations, leads } from "@/db/schema";
-import { storeIdentity } from "./identity";
+import { loadIdentity, storeIdentity } from "./identity";
+import { reloadMeta } from "./meta";
 
 // L05 — o celular capturado no WEB tem que virar `leads.phone`: é o que faz a
 // pessoa contar como identificada no painel (`performance-queries.ts` lê
@@ -87,5 +88,37 @@ describe("L05 — a identidade cifrada do web abastece o lead", () => {
 			where: eq(leads.conversationId, conversationId),
 		});
 		expect(lead?.phone ?? null).toBeNull();
+	});
+});
+
+describe("P272 — parcial é GUARDADO, completo é o que conta como identidade coletada", () => {
+	it("só CPF fica cifrado e recuperável, e identityCollected NÃO é marcado", async () => {
+		const conversationId = await conversaDeTeste("web");
+
+		await storeIdentity(conversationId, { cpf: CPF_VALIDO, celular: "" });
+
+		// O dado não se perde: é o que o pedido do celular no turno seguinte consome.
+		expect(await loadIdentity(conversationId)).toEqual({ cpf: CPF_VALIDO, celular: "" });
+		// E não prova identidade: a `main` só marcava o fato com o par CPF+celular.
+		expect((await reloadMeta(conversationId)).identityCollected).not.toBe(true);
+	});
+
+	it("CPF + celular marca identityCollected", async () => {
+		const conversationId = await conversaDeTeste("web");
+
+		await storeIdentity(conversationId, { cpf: CPF_VALIDO, celular: celularInedito() });
+
+		expect((await reloadMeta(conversationId)).identityCollected).toBe(true);
+	});
+
+	it("o pedaço que chegou antes não se perde quando o outro chega depois", async () => {
+		const conversationId = await conversaDeTeste("web");
+		const celular = celularInedito();
+
+		await storeIdentity(conversationId, { cpf: CPF_VALIDO, celular: "" });
+		await storeIdentity(conversationId, { cpf: "", celular });
+
+		expect(await loadIdentity(conversationId)).toEqual({ cpf: CPF_VALIDO, celular });
+		expect((await reloadMeta(conversationId)).identityCollected).toBe(true);
 	});
 });
