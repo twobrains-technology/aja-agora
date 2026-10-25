@@ -20,6 +20,7 @@ import { type ChipGerado, garantirChip } from "@/lib/agent/pi/chips";
 import { executarBeat } from "@/lib/agent/pi/converse";
 import { AVISO_LGPD_RE, garanteAvisoLgpd, PEDE_DADO_RE } from "@/lib/agent/pi/lgpd";
 import { persistirTurnoLivre } from "@/lib/agent/pi/persist-livre";
+import { custoDoTurnoCents } from "@/lib/agent/pi/precos";
 import { montarSystemDoVendedor } from "@/lib/agent/pi/system-do-vendedor";
 import { toPiTools } from "@/lib/agent/pi/tools";
 import {
@@ -423,15 +424,22 @@ export function createRunTurnLivre(deps?: {
 				`[pi-livre] saida conv=${conversationId} texto=${beat.texto.length} chamadas=${beat.chamadas.map((c) => c.nome).join(",") || "-"} cards=${ctx.cards.length} erro=${beat.uso.input === 0 && beat.texto.length === 0 ? "sem-tokens" : "ok"}`,
 			);
 
-			// 6. Custo do turno (livro-caixa local).
+			// 6. Custo do turno (livro-caixa local). O preço é CONHECIDO ou o campo fica
+			// `null` — nunca zero por ausência de preço (mesma disciplina de `custo-de-ia`).
 			if (beat.uso.input > 0 || beat.uso.output > 0) {
+				const modelo = process.env.AI_MODEL?.trim() || "qwen3.6-flash";
 				void db
 					.insert(usoDeIa)
 					.values({
 						conversationId,
-						modelo: process.env.AI_MODEL?.trim() || "qwen3.6-flash",
+						modelo,
 						tokensInput: beat.uso.input,
 						tokensOutput: beat.uso.output,
+						custoUsdCents: custoDoTurnoCents({
+							modelo,
+							tokensInput: beat.uso.input,
+							tokensOutput: beat.uso.output,
+						}),
 					})
 					.catch((erro: unknown) => console.error("[uso-de-ia] não registrado (ignorado):", erro));
 			}
