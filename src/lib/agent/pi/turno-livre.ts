@@ -11,7 +11,7 @@
 // É o único motor: `runTurn` chama daqui direto, sem flag.
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { conversations, usoDeIa } from "@/db/schema";
+import { conversations } from "@/db/schema";
 import { listShownOffersForConversation } from "@/lib/agent/orchestrator/choose-offer";
 import { maskCpfForDisplay } from "@/lib/agent/orchestrator/contract-form-prefill";
 import type { TurnEvent, TurnInput } from "@/lib/agent/orchestrator/types";
@@ -47,6 +47,7 @@ import {
 import { loadConversationHistory } from "@/lib/conversation/messages";
 import { metaOf } from "@/lib/conversation/meta";
 import { marcarPrimeiraCarta } from "@/lib/observability/sinais/marcar-primeira-carta";
+import { registrarUsoDeIa } from "@/lib/observability/sinais/publicar";
 import {
 	type ArtefatoDaConversa,
 	lerCartasDaConversa,
@@ -161,6 +162,22 @@ export function capturarIdentidadeDoTexto(
 	let celular = atual?.celular ?? null;
 	let textoLimpo = texto;
 
+	// ── Quem é quem: TELEFONE × CPF ────────────────────────────────────────
+	// `11900000083` é celular de São Paulo (DDD 11 + 9º dígito) E passa no DV do
+	// CPF por coincidência — como ~1% dos celulares. O Pi levava o número como
+	// CPF (este passo roda antes do telefone), e o cliente ficava sem o telefone
+	// que acabou de ditar e com um CPF que não é dele (L11/P188/P263).
+	//
+	// A classificação é a do capturador do WhatsApp (`identify-capture.ts` →
+	// `decidirCpfDoTexto`), que o canal já usa: sequência com cara de CELULAR é
+	// telefone; o que a torna resposta ao pedido de CPF é o cliente DECLARAR o
+	// dado — a palavra "cpf" no texto ou o CPF formatado, que é inequívoco.
+	const declaraCpf = /\bcpf\b/i.test(texto);
+	const pareceCelular = (digitos: string) =>
+		digitos.length === 11 && digitos[2] === "9" && dddValido(digitos.slice(0, 2));
+	/** Celular que também passaria no DV do CPF — e que o cliente NÃO declarou CPF. */
+	const celularAmbiguo = (digitos: string) => pareceCelular(digitos) && !declaraCpf;
+
 	// ── CPF ────────────────────────────────────────────────────────────────
 	// Só entra CPF FORMATADO (`111.444.777-35`) ou 11 dígitos que PASSAM no
 	// dígito verificador. Um número solto de 11 dígitos é, na maioria das vezes,
@@ -168,7 +185,7 @@ export function capturarIdentidadeDoTexto(
 	// digitar (o regex antigo levava "11987654321" embora como CPF inválido).
 	const formatado = textoLimpo.match(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/)?.[0] ?? null;
 	const candidatos = [...textoLimpo.matchAll(/\b\d{11}\b/g)].map((m) => m[0]);
-	const cpfSolto = candidatos.find((c) => isValidCpf(c)) ?? null;
+	const cpfSolto = candidatos.find((c) => isValidCpf(c) && !celularAmbiguo(c)) ?? null;
 	const cpfCandidato = formatado ?? cpfSolto;
 
 	if (cpfCandidato) {
@@ -187,27 +204,19 @@ export function capturarIdentidadeDoTexto(
 	const formatadoTel =
 		textoLimpo.match(/(?:\+?55\s?)?\(?\d{2}\)?\s?9?\d{4}[-.\s]?\d{4}\b/)?.[0] ?? null;
 	const soltos = [...textoLimpo.matchAll(/\b\d{10,11}\b/g)].map((m) => m[0]);
+	// O celular vale mesmo quando passaria no DV do CPF: se o passo anterior não o
+	// tomou como CPF (só o faz quando o cliente DECLAROU o dado), este é o número
+	// que ele ditou.
 	const telSolto =
-		soltos.find((t) => {
-			const n = t.length === 11 ? t : null;
-			return n !== null && n[2] === "9" && dddValido(n.slice(0, 2)) && !isValidCpf(n);
-		}) ??
-		soltos.find((t) => t.length === 10 && dddValido(t.slice(0, 2)) && !isValidCpf(t)) ??
+		soltos.find((t) => pareceCelular(t)) ??
+		soltos.find((t) => t.length === 10 && dddValido(t.slice(0, 2))) ??
 		null;
 	const teleCandidato = formatadoTel ?? telSolto;
 
 	if (teleCandidato) {
 		const digitos = teleCandidato.replace(/\D/g, "");
 		const semDdi = digitos.length === 13 && digitos.startsWith("55") ? digitos.slice(2) : digitos;
-		// Telefone com separador é telefone, mesmo que os dígitos passem no DV do
-		// CPF por coincidência (~1% dos números). A rejeição por CPF só vale para
-		// sequência SOLTA de dígitos, onde a ambiguidade é real.
-		const ambiguoComCpf = !formatadoTel && isValidCpf(semDdi);
-		if (
-			(semDdi.length === 10 || semDdi.length === 11) &&
-			dddValido(semDdi.slice(0, 2)) &&
-			!ambiguoComCpf
-		) {
+		if ((semDdi.length === 10 || semDdi.length === 11) && dddValido(semDdi.slice(0, 2))) {
 			celular = semDdi;
 			recebeuCelular = true;
 			textoLimpo = mascararTodas(textoLimpo, teleCandidato, "[telefone recebido e guardado]");
@@ -402,8 +411,15 @@ export function declaracaoDoTurno(texto: string | null | undefined): {
 	};
 }
 
-/** Um beat do turno, já com o preço do modelo resolvido. */
-export type UsoDoBeat = { modelo: string; tokensInput: number; tokensOutput: number };
+/** Um beat do turno, já com o preço do modelo resolvido. `cacheRead`/`cacheWrite`
+ * são o recorte de CACHE do prompt que o provedor reportou (0 = não reportou). */
+export type UsoDoBeat = {
+	modelo: string;
+	tokensInput: number;
+	tokensOutput: number;
+	cacheRead?: number;
+	cacheWrite?: number;
+};
 
 /** O custo do TURNO — a soma EXATA dos beats, arredondada UMA vez (N09/P217).
  *
@@ -419,15 +435,21 @@ export type UsoDoBeat = { modelo: string; tokensInput: number; tokensOutput: num
 export function somarUsoDosBeats(beats: readonly UsoDoBeat[]): {
 	tokensInput: number;
 	tokensOutput: number;
+	cacheRead: number;
+	cacheWrite: number;
 	custoUsdCents: number | null;
 } {
 	let tokensInput = 0;
 	let tokensOutput = 0;
+	let cacheRead = 0;
+	let cacheWrite = 0;
 	let centavosExatos = 0;
 	let semPreco = false;
 	for (const beat of beats) {
 		tokensInput += beat.tokensInput;
 		tokensOutput += beat.tokensOutput;
+		cacheRead += beat.cacheRead ?? 0;
+		cacheWrite += beat.cacheWrite ?? 0;
 		const centavos = custoDoTurnoCentsExatos(beat);
 		if (centavos === null) semPreco = true;
 		else centavosExatos += centavos;
@@ -435,6 +457,8 @@ export function somarUsoDosBeats(beats: readonly UsoDoBeat[]): {
 	return {
 		tokensInput,
 		tokensOutput,
+		cacheRead,
+		cacheWrite,
 		custoUsdCents: semPreco ? null : Math.round(centavosExatos),
 	};
 }
@@ -684,6 +708,60 @@ export function createRunTurnLivre(deps?: {
 		};
 		// O mesmo `toolCallId` duas vezes não vira dois eventos de tool.
 		const chamadasEmitidas = new Set<string>();
+		// O mesmo card não sai duas vezes: payload idêntico é a mesma carta na tela
+		// (L41/P301) — repetir a busca não pode empilhar a tabela. O conjunto vale
+		// para o turno inteiro porque o card pode sair no MEIO dele.
+		const cardsJaEmitidos = new Set<string>();
+		// As falas do fecho já entregues ao canal (a tool as empilha no resultado).
+		let falasEmitidas = 0;
+
+		// As falas do fecho são o aviso de divergência que a tool de proposta gera
+		// (valor da administradora diferente do que foi falado). Saem AO VIVO, ANTES
+		// do card que a mesma tool produziu — antes iam só para a persistência, e o
+		// cliente só descobria a diferença recarregando a página.
+		const emitirFalasNovas = () => {
+			const novas = ctx.falasDoFecho.slice(falasEmitidas);
+			falasEmitidas = ctx.falasDoFecho.length;
+			for (const ev of eventosDasFalasDoFecho(novas)) {
+				estado = { ...estado, events: [...estado.events, ev] };
+				emitir(ev);
+			}
+		};
+
+		// O CARD SAI NO RESULTADO DA FERRAMENTA, NA ORDEM DO STREAM (P157).
+		//
+		// Na `main` o card nascia no handler do resultado (`converse.ts:1693`:
+		// `text-boundary` + `artifact` escritos ali), então a fala que vinha DEPOIS da
+		// ferramenta chegava depois do card. Aqui ele era acrescentado só no fim do
+		// beat, quando todas as falas já tinham ido ao ar — o cliente lia
+		// texto → texto → card, e a tabela caía embaixo da pergunta que ela deveria
+		// responder. Agora sai onde nasceu, uma vez (dedupe por payload).
+		const emitirCardsNovos = () => {
+			// A marca que a emissão PROVA (L02/P259) entra no estado ANTES do artifact:
+			// é o que a persistência grava antes de registrar o card.
+			estado = aplicarMetaDaEmissao(estado, ctx.metaDaEmissao);
+			for (const card of ctx.cards) {
+				const chave = `${card.type}:${JSON.stringify(card.payload)}`;
+				if (cardsJaEmitidos.has(chave)) continue;
+				cardsJaEmitidos.add(chave);
+				// O card não GRUDA na fala que o anunciou (R5.1): cada artifact abre um
+				// balão novo, como na `main` (`fechaBalao` antes do card). Sem o boundary,
+				// "deixa eu te mostrar…" e o card chegavam no MESMO balão.
+				const fronteira: TurnEvent = { type: "text-boundary" };
+				const artifact: TurnEvent = {
+					type: "artifact",
+					artifactType: card.type,
+					payload: card.payload as never,
+					toolCallId: crypto.randomUUID(),
+				};
+				estado = { ...estado, events: [...estado.events, fronteira, artifact] };
+				emitir(fronteira);
+				emitir(artifact);
+				// O card fala por si: o anúncio suspenso estava colado a ele e cai.
+				narracaoDoTurno.mostrouCard();
+			}
+		};
+
 		// Os beats do turno — o custo é somado no fim, exato (N09/P217).
 		const usosDoTurno: UsoDoBeat[] = [];
 		const executar = async () => {
@@ -721,6 +799,13 @@ export function createRunTurnLivre(deps?: {
 					estado = { ...estado, events: [...estado.events, evento] };
 					emitir(evento);
 				},
+				// O RESULTADO da ferramenta é onde o card nasce: a tool já escreveu em
+				// `ctx.cards` quando o harness entrega o evento, e daqui ele vai ao canal na
+				// ordem do stream, antes da fala que o modelo fizer depois (P157).
+				aoResultado: () => {
+					emitirFalasNovas();
+					emitirCardsNovos();
+				},
 				provider: deps?.provider,
 			});
 
@@ -754,57 +839,24 @@ export function createRunTurnLivre(deps?: {
 			// marca por conta própria; no WhatsApp nenhuma flag era escrita e o
 			// `contract_confirm` recusava.
 			//
-			// O campo é do `ContextoDasTools` do bloco FECHO-B (mesma onda): a leitura
-			// opcional aqui não depende da ordem em que as duas metades entram.
-			const metaDaEmissao = (ctx as ContextoDasTools & { metaDaEmissao?: MetaDaEmissao })
-				.metaDaEmissao;
-			estado = aplicarMetaDaEmissao(estado, metaDaEmissao);
+			// `emitirCardsNovos` já aplica a marca quando o card sai no meio do beat;
+			// aqui ela é aplicada de novo para o caso de a tool escrevê-la sem card
+			// (idempotente: só a direção `true` entra).
+			estado = aplicarMetaDaEmissao(estado, ctx.metaDaEmissao);
 
 			// 5. Cards por RESULTADO — o card de NÚMERO nunca é escolha do modelo;
 			// o de ESCOLHA (pergunta + opções) é, e foi validado em `mostrar_card`.
 			//
-			// As falas do fecho vêm ANTES: são o aviso de divergência que a tool de
-			// proposta gera (valor da administradora diferente do que foi falado).
-			// Elas entram AO VIVO no stream — antes só iam para a persistência, e o
-			// cliente só descobria a diferença recarregando a página.
-			for (const ev of eventosDasFalasDoFecho(ctx.falasDoFecho)) {
-				estado = { ...estado, events: [...estado.events, ev] };
-				emitir(ev);
-			}
-			// O card fala por si (R5.1): o anúncio suspenso estava colado a ele e
-			// cai. Sem card no turno, o anúncio é a fala da vez e sai como qualquer
-			// outra — fala legítima não se perde.
-			let narracaoDescartada = false;
-			if (ctx.cards.length > 0) {
-				narracaoDescartada = narracaoDoTurno.mostrouCard();
-			} else {
+			// O que sobrou aqui é o card que a tool NÃO produziu: o `quick_reply` que o
+			// verificador de perguntas tirou da fala. Os cards de tool já foram ao canal
+			// no resultado dela (P157) e o dedupe impede que saiam de novo.
+			emitirFalasNovas();
+			emitirCardsNovos();
+			// O card fala por si (R5.1): o anúncio suspenso estava colado a ele e cai
+			// (quem o descarta é `emitirCardsNovos`). Sem card no turno, o anúncio é a
+			// fala da vez e sai como qualquer outra — fala legítima não se perde.
+			if (ctx.cards.length === 0) {
 				for (const texto of narracaoDoTurno.fimDoTurno()) emitirFala(texto);
-			}
-			// O card não GRUDA na fala que o anunciou (R5.1): cada artifact abre um
-			// balão novo, como na `main` (`fechaBalao` antes do card). Sem o boundary,
-			// "deixa eu te mostrar…" e o card chegavam no MESMO balão, com o card
-			// embaixo de dois parágrafos de prosa.
-			//
-			// E o MESMO card não sai duas vezes: payload idêntico é a mesma carta na
-			// tela (L41/P301) — repetir a busca não pode empilhar a tabela.
-			const cardsJaEmitidos = new Set<string>();
-			for (const card of ctx.cards) {
-				const chave = `${card.type}:${JSON.stringify(card.payload)}`;
-				if (cardsJaEmitidos.has(chave)) continue;
-				cardsJaEmitidos.add(chave);
-				estado = {
-					...estado,
-					events: [
-						...estado.events,
-						{ type: "text-boundary" },
-						{
-							type: "artifact",
-							artifactType: card.type,
-							payload: card.payload as never,
-							toolCallId: crypto.randomUUID(),
-						},
-					],
-				};
 			}
 			// O MARCO DA PRIMEIRA CARTA (L29/P281) — sinal de SESSÃO, uma vez por
 			// conversa. Na `main` quem chamava era o nó de descoberta; com o Pi ninguém
@@ -827,16 +879,25 @@ export function createRunTurnLivre(deps?: {
 				`[pi-livre] saida conv=${conversationId} texto=${beat.texto.length} chamadas=${beat.chamadas.map((c) => c.nome).join(",") || "-"} cards=${ctx.cards.length} erro=${beat.uso.input === 0 && beat.texto.length === 0 ? "sem-tokens" : "ok"}`,
 			);
 
-			// 6. Custo do turno (livro-caixa local). O preço é CONHECIDO ou o campo fica
-			// `null` — nunca zero por ausência de preço (mesma disciplina de `custo-de-ia`).
-			// UMA linha por turno, com a soma EXATA dos beats arredondada no fim
-			// (N09/P217): o turno de hoje tem um beat, mas quem arredondava por beat
-			// perdia a fração de centavo de cada um — ver `somarUsoDosBeats`.
+			// 6. O LIVRO-CAIXA DO TURNO. Uma linha por turno, com as quatro parcelas
+			// somadas dos beats — e o custo calculado UMA vez sobre essa soma, na borda
+			// de gravação (N09/P217). Quem grava é o livro-caixa comum
+			// (`registrarUsoDeIa`), o mesmo das chamadas fora do vendedor: a coluna de
+			// custo, o preço desconhecido virando `null` (nunca zero) e o cache numa
+			// tabela só.
+			//
+			// O cache entra porque o input do provedor chega LÍQUIDO dele: 12.000
+			// tokens de prompt são 1.500 de entrada + 10.000 lidos do cache + 500
+			// escritos (`converse.test.ts`). Gravar só entrada e saída subestimava o
+			// gasto de IA — é a parcela que decide o custo real de um turno que repete
+			// a mesma caixa a cada beat (P217/P273).
 			const modelo = process.env.AI_MODEL?.trim() || "qwen3.6-flash";
 			usosDoTurno.push({
 				modelo,
 				tokensInput: beat.uso.input,
 				tokensOutput: beat.uso.output,
+				cacheRead: beat.uso.cacheRead,
+				cacheWrite: beat.uso.cacheWrite,
 			});
 
 			// O USO DE CACHE DO PROVEDOR NO STREAM (L29/P281). O beat já recebe o
@@ -861,23 +922,38 @@ export function createRunTurnLivre(deps?: {
 			}
 
 			const usoDoTurno = somarUsoDosBeats(usosDoTurno);
-			if (usoDoTurno.tokensInput > 0 || usoDoTurno.tokensOutput > 0) {
-				void db
-					.insert(usoDeIa)
-					.values({
-						conversationId,
-						modelo,
-						tokensInput: usoDoTurno.tokensInput,
-						tokensOutput: usoDoTurno.tokensOutput,
-						custoUsdCents: usoDoTurno.custoUsdCents,
-					})
-					.catch((erro: unknown) => console.error("[uso-de-ia] não registrado (ignorado):", erro));
-			}
+			// O custo do turno no log é o MESMO número que o livro-caixa grava (a soma é
+			// linear nos tokens e o preço é um só por turno): quem investiga um CPC que
+			// não fecha vê entrada, saída, cache e custo sem consultar o banco.
+			console.log(
+				`[pi-livre] uso conv=${conversationId} modelo=${modelo} input=${usoDoTurno.tokensInput} output=${usoDoTurno.tokensOutput} cacheRead=${usoDoTurno.cacheRead} cacheWrite=${usoDoTurno.cacheWrite} custoUsdCents=${usoDoTurno.custoUsdCents}`,
+			);
+			// `cacheRead`/`cacheWrite` só vão à coluna quando o provedor de fato
+			// reportou: o parser do pi resolve ausência para zero, então zero aqui é
+			// "não medido" — e a coluna nula é a mesma disciplina do trace.
+			await registrarUsoDeIa({
+				conversationId,
+				modelo,
+				tokensInput: usoDoTurno.tokensInput,
+				tokensOutput: usoDoTurno.tokensOutput,
+				cacheRead: usoDoTurno.cacheRead > 0 ? usoDoTurno.cacheRead : null,
+				cacheWrite: usoDoTurno.cacheWrite > 0 ? usoDoTurno.cacheWrite : null,
+			});
 
-			// 7. Persistência. Cards saem DEPOIS de gravar a meta.
+			// 7. Persistência. A meta vai ao banco ANTES dos cards (o adapter relê a
+			// meta fresca no handler do artifact), e as falas e os cards já foram ao
+			// canal na ordem do stream. Esta entrega é só o que NUNCA passou por ele:
+			// o `turno-do-cliente`, o `usage` e o `handoff` — reentregar a fala, a
+			// fronteira ou o card que já saíram duplicaria o balão na tela.
 			await persistirTurnoLivre({ estado });
 			for (const ev of estado.events) {
-				if (ev.type === "tool-call" || ev.type === "text-delta") continue;
+				if (
+					ev.type === "tool-call" ||
+					ev.type === "text-delta" ||
+					ev.type === "text-boundary" ||
+					ev.type === "artifact"
+				)
+					continue;
 				emitir(ev);
 			}
 
@@ -885,7 +961,7 @@ export function createRunTurnLivre(deps?: {
 			// anúncio caiu não é mudo: o card é a fala dele (R5.1) — e uma linha de
 			// preenchimento ali seria só outra narração.
 			const falou =
-				narracaoDescartada ||
+				cardsJaEmitidos.size > 0 ||
 				estado.events.some((ev) => ev.type === "text-delta" && ev.text.trim().length > 0);
 			if (!falou) {
 				emitir({
