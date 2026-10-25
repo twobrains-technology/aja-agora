@@ -12,6 +12,11 @@ describe("semente do vendedor — o que a dona do produto cobrou em 14 e 15/10",
 		expect(PROMPT_DO_VENDEDOR).toMatch(/opções na tela/i);
 	});
 
+	it("exige uma pergunta por mensagem e opção na tela, não no texto", () => {
+		expect(PROMPT_DO_VENDEDOR).toMatch(/uma pergunta por mensagem/i);
+		expect(PROMPT_DO_VENDEDOR).toMatch(/sem listar as alternativas em texto/i);
+	});
+
 	it("não é lista de frase proibida: conduta não vira trava de fala", () => {
 		const proibidas = [/nunca diga/i, /não use a palavra/i, /proibido dizer/i];
 		for (const padrao of proibidas) {
