@@ -268,7 +268,22 @@ export function leadComContato(lead: SQL = sql`l`): SQL {
  *
  * A regra é a do dono (23/09/2026), por CANAL: conversa de WhatsApp (`waId`
  * presente) conta sempre; conversa de web conta quando conseguimos coletar o
- * contato (telefone ou e-mail no lead, com `is_simulated = false`).
+ * contato.
+ *
+ * **Onde a coleta da web fica gravada** (todos os caminhos contam, e nenhum
+ * deles é a busca):
+ *
+ *  - `leads.phone` / `leads.email` — o caminho antigo (`saveContactWhatsapp`, o
+ *    formulário de lead);
+ *  - `conversations.contact_id` — o cliente unificado: a identidade capturada
+ *    (CPF + celular) passa por `attachContact` e resolve/religa o contato
+ *    (`src/lib/conversation/identity.ts`), e o desbloqueio do telefone faz o
+ *    mesmo. **`attachContact` NÃO escreve `leads.phone`**, então sem esta linha
+ *    toda conversa que se identificou pelo vendedor livre contava como não
+ *    identificada e o degrau caía para quase zero (L05);
+ *  - `metadata.identityCollected` — o FATO de o cliente ter dado CPF e celular,
+ *    gravado por `storeIdentity` antes de o contato ser resolvido. Conta mesmo
+ *    quando o `resolveContact` não achou/gravou o contato.
  *
  * O `EXISTS` (e não um `JOIN`) é o que mantém a conversa na lista quando ela não
  * tem linha em `leads` — que é o caso de quase metade das conversas de WhatsApp
@@ -277,6 +292,8 @@ export function leadComContato(lead: SQL = sql`l`): SQL {
 export function conversaIdentificada(conversa: SQL = sql`c`): SQL {
 	return sql`(
     ${conversaDeWhatsapp(conversa)}
+    OR ${conversa}.contact_id IS NOT NULL
+    OR COALESCE(${conversa}.metadata ->> 'identityCollected', 'false') = 'true'
     OR EXISTS (SELECT 1 FROM leads li
       WHERE li.conversation_id = ${conversa}.id
         AND li.is_simulated = false
@@ -504,11 +521,27 @@ export const PADRAO_SQL_DE_OFERTA = ARTIFACTS_DE_OFERTA.map((tipo) => `'${tipo}'
  * O predicado é `NOT` desta função dentro de `viuOferta`, e mora aqui, junto da lista
  * de artifacts: é a MESMA pergunta, feita pelo funil, pelo Percurso, pela exportação e
  * pela régua.
+ *
+ * **A TRAVA MORREU (2026-10-20) E A CONVERSA NOVA CONTINUA ROTULADA A/B.** O vendedor
+ * livre mostra a carta antes de pedir qualquer dado e o adapter não retém nem embaça
+ * nada (`src/lib/web/adapter.ts`) — mas a fila do experimento continua sorteando o
+ * braço no metadata de toda conversa web nova. Sem uma âncora, o guard apagava do
+ * funil justamente as ofertas legíveis do motor novo (N01).
+ *
+ * A âncora é o CARD DO TELEFONE: enquanto a trava esteve de pé, cada card que
+ * revelava oferta saía acompanhado de `telefone_do_desbloqueio` (era ele que segurava
+ * ou embaçava o reveal) e ele é persistido junto. Sem esse card na conversa, nada foi
+ * retido — não há o que descontar. É fato da própria conversa, e não um corte por
+ * data: conversa antiga sem card também nunca teve reveal retido.
  */
 export function ofertaRetidaPeloTelefone(conversa: SQL = sql`c`): SQL {
 	return sql`(${conversa}.channel = 'web'
     AND COALESCE(${conversa}.metadata -> ${CHAVE_DO_TESTE_NO_METADATA} ->> 'variante', '') IN ('A', 'B')
-    AND (${conversa}.metadata -> ${CHAVE_DO_TESTE_NO_METADATA} ->> 'desbloqueadoEm') IS NULL)`;
+    AND (${conversa}.metadata -> ${CHAVE_DO_TESTE_NO_METADATA} ->> 'desbloqueadoEm') IS NULL
+    AND EXISTS (SELECT 1 FROM messages mt
+      JOIN artifacts at ON at.message_id = mt.id
+      WHERE mt.conversation_id = ${conversa}.id
+        AND at.type = 'telefone_do_desbloqueio'))`;
 }
 
 export function viuOferta(conversa: SQL = sql`c`): SQL {

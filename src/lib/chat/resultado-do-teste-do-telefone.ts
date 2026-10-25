@@ -25,7 +25,7 @@
 
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
-import { ARTIFACTS_DE_OFERTA_SQL, conversaIdentificada } from "@/lib/admin/sinais-do-funil";
+import { conversaIdentificada, viuOferta } from "@/lib/admin/sinais-do-funil";
 import {
 	CHAVE_DO_TESTE_NO_METADATA,
 	lerVariante,
@@ -155,12 +155,11 @@ export async function resultadoDoTesteDoTelefone(
       v.id::text AS visit_id,
       max(${variante}) AS variante,
       bool_or(${conversaIdentificada(sql`c`)}) AS telefone,
-      bool_or(EXISTS (
-        SELECT 1 FROM messages m
-        JOIN artifacts a ON a.message_id = m.id
-        WHERE m.conversation_id = c.id
-          AND a.type IN (${ARTIFACTS_DE_OFERTA_SQL})
-      )) AS comparacao
+      -- "chegou a ver número de oferta" é a MESMA pergunta do funil, do
+      -- Percurso e da exportação (o viuOferta de sinais-do-funil, fonte única):
+      -- com um EXISTS próprio aqui, a oferta retida pela trava contava nesta
+      -- leitura e não contava nas outras telas — dois números para o mesmo fato.
+      bool_or(${viuOferta(sql`c`)}) AS comparacao
     FROM visits v
     JOIN conversations c
       ON c.visit_id = v.id
