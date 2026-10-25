@@ -5,6 +5,7 @@ import { leadInsights, leads } from "@/db/schema";
 import { buildInsightPrompt, INSIGHTS_SYSTEM_PROMPT } from "@/lib/admin/insights-prompt";
 import { requireRole } from "@/lib/admin/require-role";
 import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
+import { registrarUsoDeIa } from "@/lib/observability/sinais/publicar";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -83,10 +84,19 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 	let parsed: InsightsPayload;
 
 	try {
-		const { text } = await generateText({
+		const { text, usage } = await generateText({
 			model: anthropic("claude-haiku-4-5"),
 			system: INSIGHTS_SYSTEM_PROMPT,
 			prompt: buildInsightPrompt(lead.conversation.messages),
+		});
+
+		// Livro-caixa local (P314): a chamada gastou dinheiro e o Langfuse saiu. A
+		// conversa do lead é o vínculo disponível aqui.
+		await registrarUsoDeIa({
+			conversationId: lead.conversation.id,
+			modelo: "claude-haiku-4-5",
+			tokensInput: usage.inputTokens ?? 0,
+			tokensOutput: usage.outputTokens ?? 0,
 		});
 
 		// Strip accidental markdown fences

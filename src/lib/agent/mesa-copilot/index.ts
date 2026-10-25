@@ -12,6 +12,7 @@
 
 import { type LanguageModel, type ModelMessage, type SystemModelMessage, streamText } from "ai";
 import { modeloAiSdkDoGateway, modeloDoAgente } from "@/lib/llm/model-provider";
+import { registrarUsoDeIa } from "@/lib/observability/sinais/publicar";
 import { buildMesaCopilotPrompt, type MesaCopilotCaso } from "./system-prompt";
 
 export interface MesaCopilotTurn {
@@ -43,18 +44,35 @@ export function ensureLeadingUserTurn(messages: ModelMessage[]): ModelMessage[] 
 }
 
 /**
+ * O nome do modelo pra linha de `uso_de_ia`. `LanguageModel` no AI SDK 6 pode ser
+ * um id em texto ou um objeto de provider, e só o objeto carrega `modelId`.
+ */
+function nomeDoModelo(model: LanguageModel): string {
+	if (typeof model === "string") return model;
+	const modelId = (model as { modelId?: unknown }).modelId;
+	return typeof modelId === "string" ? modelId : modeloDoAgente();
+}
+
+/**
  * Gera a resposta do copiloto para o turno atual.
  *
  * @param caso     Dossiê do caso (administradora + docs + cota + cliente).
  * @param history  Histórico copiloto↔atendente, em ordem cronológica, JÁ
  *                 incluindo a última mensagem do atendente como item final.
  * @param model    Injetável para testes (MockLanguageModelV3). Default: Anthropic.
+ * @param conversationId  Conversa de origem — só pro livro-caixa de `uso_de_ia`.
  * @returns        Texto da orientação, pronto pra enviar por WhatsApp.
  */
 export async function generateMesaCopilotReply(input: {
 	caso: MesaCopilotCaso;
 	history: MesaCopilotTurn[];
 	model?: LanguageModel;
+	/**
+	 * A conversa de origem do caso — só serve pro livro-caixa de `uso_de_ia`: o custo
+	 * do copiloto é chamada de LLM em produção e tem que entrar no CPC como as outras
+	 * (P314). Opcional de propósito: a consulta avulsa de manual não tem conversa.
+	 */
+	conversationId?: string | null;
 }): Promise<string> {
 	const { stable, dynamic } = buildMesaCopilotPrompt(input.caso);
 
@@ -78,10 +96,11 @@ export async function generateMesaCopilotReply(input: {
 		})),
 	);
 
+	const modeloUsado = input.model ?? modeloAiSdkDoGateway(modeloDoAgente());
 	const result = streamText({
 		// B15: mesma fábrica única do agente. O `?? "claude-sonnet-5"` daqui não
 		// caía no default com `AI_MODEL=""` (compose materializa a var vazia).
-		model: input.model ?? modeloAiSdkDoGateway(modeloDoAgente()),
+		model: modeloUsado,
 		system,
 		messages,
 		// FIX-209 — Sonnet 5 liga adaptive thinking por default; desligamos explícito
@@ -94,6 +113,18 @@ export async function generateMesaCopilotReply(input: {
 
 	let text = "";
 	for await (const chunk of result.textStream) text += chunk;
+
+	// Livro-caixa local da chamada (P314). `modelId` mantém o nome do modelo certo
+	// também quando um modelo injetado é usado. Gravação que falha não derruba a
+	// orientação — o atendente já está esperando por ela.
+	const uso = await result.usage;
+	await registrarUsoDeIa({
+		conversationId: input.conversationId ?? null,
+		modelo: nomeDoModelo(modeloUsado),
+		tokensInput: uso.inputTokens ?? 0,
+		tokensOutput: uso.outputTokens ?? 0,
+	});
+
 	return text.trim();
 }
 

@@ -1,6 +1,7 @@
 import { generateObject } from "ai";
 import { z } from "zod";
 import { modeloAiSdkDoGateway, modeloDoAnalisador } from "@/lib/llm/model-provider";
+import { registrarUsoDeIa } from "@/lib/observability/sinais/publicar";
 import type { Category, ConversationMetadata } from "./personas";
 import { listExpertisesByCategory } from "./personas-repo";
 
@@ -282,6 +283,8 @@ export async function analyzeTurn(
 		/** Última fala do assistente — a pergunta a que o usuário está respondendo. */
 		lastAssistantText?: string | null;
 	},
+	/** A conversa dona da chamada — só serve pro livro-caixa de `uso_de_ia`. */
+	conversationId?: string | null,
 ): Promise<TurnAnalysis> {
 	const q = meta.qualifyAnswers ?? {};
 	const allFilled =
@@ -374,6 +377,15 @@ Analise conforme o schema. Use null em campos sem sinal claro.`,
 		});
 
 		const elapsed = Date.now() - start;
+		// Livro-caixa local: o analyzer é chamada de LLM em produção e gastava sem
+		// deixar rastro depois que o Langfuse saiu (P314). Grava e segue — falha aqui
+		// não derruba a classificação.
+		await registrarUsoDeIa({
+			conversationId: conversationId ?? null,
+			modelo: modeloDoAnalisador(),
+			tokensInput: result.usage?.inputTokens ?? 0,
+			tokensOutput: result.usage?.outputTokens ?? 0,
+		});
 		const o = result.object;
 		console.log(
 			`[analyzer] ${elapsed}ms | cat=${o.detectedCategory} sub=${o.detectedSubTopic} switch=${o.isExplicitSwitch} exp=${o.expertiseLevel}/${o.experiencePrev} credit=${o.creditMin}-${o.creditMax} prazo=${o.prazoMeses} lance=${o.hasLance} intent=${o.userIntent} | ${o.reasoning}`,

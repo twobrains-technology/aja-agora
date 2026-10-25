@@ -1,11 +1,15 @@
 /**
  * POST — feedback humano (👍/👎) de uma conversa do SIMULADOR → score
- * `user_feedback` (BOOLEAN 1/0) no Langfuse, no trace do turno quando a UI
- * mandar `traceId` (data-part `data-trace`), senão na session (= conversa).
+ * `user_feedback` (BOOLEAN 1/0), no TURNO quando a UI mandar `traceId` (data-part
+ * `data-trace`), senão na session (= conversa).
  *
- * Leis: Langfuse desligado/fora do ar NUNCA vira 500 — responde
- * `{ ok:false, reason }` e a vida segue (observabilidade não quebra o app).
- * Dev-only: 404 em produção via `isSimulatorEnabled()`.
+ * Onde isso mora hoje: sinal local em stdout (`publicarScores`), com o `traceId` do
+ * turno carimbado na linha — antes ele era enviado pelo cliente e DESCARTADO aqui.
+ * A persistência do score em tabela própria não existe (não há tabela de sinais em
+ * `src/db/schema.ts`); a proposta está em `.orientacao/pendencia-ADMIN-ROTAS.md`.
+ *
+ * Leis: sinal fora do ar NUNCA vira 500 — responde `{ ok:true }` e a vida segue
+ * (observabilidade não quebra o app). Dev-only: 404 em produção via `isSimulatorEnabled()`.
  */
 import { and, eq } from "drizzle-orm";
 import { type NextRequest, NextResponse } from "next/server";
@@ -47,9 +51,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 	});
 	if (!conv) return new NextResponse("Not Found", { status: 404 });
 
-	const { value, comment } = parsed.data;
+	const { value, comment, traceId } = parsed.data;
 	// Feedback do operador sobre uma sessão SIMULADA: vira sinal local, com a
-	// conversa como sessão. Sem SDK no caminho — é linha estruturada.
+	// conversa como sessão e o turno (`traceId`) quando a UI mandar um. Sem SDK no
+	// caminho — é linha estruturada.
 	publicarScores(
 		[
 			{
@@ -58,6 +63,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 				dataType: "BOOLEAN",
 				...(comment ? { comment } : {}),
 				sessionId: id,
+				...(traceId ? { traceId } : {}),
 			},
 		],
 		"feedback do simulador",

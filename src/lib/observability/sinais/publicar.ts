@@ -13,6 +13,16 @@
 //
 // REGRA QUE NÃO MUDA: observabilidade NUNCA derruba o turno. Tudo aqui é try/catch
 // e sempre devolve void.
+//
+// A partir de 2026-10-21 este módulo também guarda o LIVRO-CAIXA local das chamadas
+// de LLM que não passam pelo vendedor (`registrarUsoDeIa`). O preço do turno já é
+// gravado no próprio turno (`pi/turno-livre.ts`); analyzer, copiloto da mesa e
+// insights do admin gastam dinheiro em produção e ficavam fora da conta depois que o
+// Langfuse saiu (P314) — o custo do CPC tem que fechar por qualquer chamada.
+import { db } from "@/db";
+import { usoDeIa } from "@/db/schema";
+import { custoDoTurnoCents } from "@/lib/agent/pi/precos";
+
 export type Score = {
 	name: string;
 	value: number | string;
@@ -20,6 +30,8 @@ export type Score = {
 	comment?: string;
 	/** Quando o score é de SESSÃO (não do turno) — id da conversa. */
 	sessionId?: string;
+	/** Quando o score é de UM TURNO — o id do trace que a UI mandou junto. */
+	traceId?: string;
 };
 
 /** O ambiente vai carimbado em cada linha. `CAIXA_LABEL` é a mesma fonte que a
@@ -41,10 +53,50 @@ export function publicarScores(scores: readonly Score[], onde: string): void {
 					...(s.dataType ? { dataType: s.dataType } : {}),
 					...(s.comment ? { comment: s.comment } : {}),
 					...(s.sessionId ? { sessionId: s.sessionId } : {}),
+					...(s.traceId ? { traceId: s.traceId } : {}),
 				})),
 			)}`,
 		);
 	} catch {
 		// Sinal é observabilidade: nunca pode custar o turno do cliente.
+	}
+}
+
+/**
+ * O que uma chamada de LLM gastou — o mínimo pra linha de `uso_de_ia`.
+ * `conversationId` é opcional porque nem toda chamada nasce de uma conversa (o
+ * insight de lead só tem o lead).
+ */
+export type UsoDeIaDaChamada = {
+	conversationId?: string | null;
+	modelo: string;
+	tokensInput: number;
+	tokensOutput: number;
+};
+
+/**
+ * Grava a linha de `uso_de_ia` de UMA chamada de LLM fora do turno do vendedor.
+ *
+ * `custoUsdCents` segue a mesma disciplina de `pi/turno-livre.ts` e de
+ * `admin/custo-de-ia.ts`: preço desconhecido vira `null` (não calculável), nunca
+ * `0`. Chamada sem token nenhum não gera linha. Nunca lança: livro-caixa não pode
+ * derrubar a resposta de quem chamou.
+ */
+export async function registrarUsoDeIa(uso: UsoDeIaDaChamada): Promise<void> {
+	if (uso.tokensInput <= 0 && uso.tokensOutput <= 0) return;
+	try {
+		await db.insert(usoDeIa).values({
+			conversationId: uso.conversationId ?? null,
+			modelo: uso.modelo,
+			tokensInput: uso.tokensInput,
+			tokensOutput: uso.tokensOutput,
+			custoUsdCents: custoDoTurnoCents({
+				modelo: uso.modelo,
+				tokensInput: uso.tokensInput,
+				tokensOutput: uso.tokensOutput,
+			}),
+		});
+	} catch (erro) {
+		console.error("[uso-de-ia] chamada fora do turno não registrada (ignorado):", erro);
 	}
 }
