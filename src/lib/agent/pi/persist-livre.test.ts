@@ -6,12 +6,14 @@
 //  · L40 — o último passe anti-JSON/tool leak continua na persistência: máquina
 //    não vira balão na conversa do cliente.
 import { eq } from "drizzle-orm";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { conversations, leadEvents, leads, messages } from "@/db/schema";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { estadoInicialDoTurno } from "@/lib/agent/turn/estado";
+import type { ResumeRow } from "@/lib/chat/resume";
+import { buildResumableMessages } from "@/lib/chat/resume";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { estagioComercialDoTurno, persistirTurnoLivre } from "./persist-livre";
 
@@ -181,6 +183,91 @@ describe("estágio comercial do lead — L04", () => {
 
 		await persistirTurnoLivre({ estado: turno({ conversationId, baseMeta: meta }) });
 		expect((await reloadMeta(conversationId)).maxStageReached).toBe("em_negociacao");
+	});
+});
+
+describe("as linhas do turno na ORDEM DOS EVENTOS — o card não fecha o turno", () => {
+	it("texto → card → texto sai nessa ordem, com created_at crescente, e a retomada devolve [texto, card, texto]", async () => {
+		const conversationId = await novaConversa();
+
+		// Relógio parado (só `Date`; o driver não perde os timers): sem isso o
+		// intervalo entre duas linhas é o tempo do round-trip ao Postgres e a
+		// exigência de `created_at` crescente passaria por acaso. Parado, o passo
+		// de 1 ms de `relogioDoTurno` é a ÚNICA fonte do avanço.
+		vi.useFakeTimers({ toFake: ["Date"] });
+		try {
+			await persistirTurnoLivre({
+				estado: turno({
+					conversationId,
+					baseMeta: {},
+					isUserTurn: false,
+					eventos: [
+						{ type: "text-delta", text: "Achei estas opções pra você:" },
+						{ type: "text-boundary" },
+						{
+							type: "artifact",
+							artifactType: "comparison_table",
+							payload: { cartas: [{ administradora: "ITAÚ" }] },
+							toolCallId: "chamada-do-teste",
+						},
+						{ type: "text-boundary" },
+						{ type: "text-delta", text: "Qual delas te agrada mais?" },
+					],
+				}),
+			});
+		} finally {
+			vi.useRealTimers();
+		}
+
+		// A MESMA ordem que a retomada lê: `created_at` e, no empate, o `id`.
+		const linhas = await db.query.messages.findMany({
+			where: eq(messages.conversationId, conversationId),
+			orderBy: (m, { asc }) => [asc(m.createdAt), asc(m.id)],
+			with: { artifacts: true },
+		});
+
+		expect(linhas.map((l) => l.content)).toEqual([
+			"Achei estas opções pra você:",
+			"[card: comparison_table]",
+			"Qual delas te agrada mais?",
+		]);
+
+		// Estritamente crescente: no empate de milissegundo o desempate é o uuid
+		// aleatório, e o card cairia antes da fala que o anuncia.
+		const tempos = linhas.map((l) => l.createdAt.getTime());
+		for (let i = 1; i < tempos.length; i++) {
+			expect(tempos[i]).toBeGreaterThan(tempos[i - 1] as number);
+		}
+
+		const retomada = buildResumableMessages(
+			linhas.map(
+				(l): ResumeRow => ({
+					id: l.id,
+					role: l.role as string,
+					content: l.content,
+					artifacts: (l.artifacts ?? []).map((a) => ({
+						type: a.type as string,
+						payload: a.payload,
+					})),
+				}),
+			),
+		);
+
+		expect(retomada).toEqual([
+			{
+				id: expect.any(String),
+				role: "assistant",
+				parts: [
+					{ type: "text", text: "Achei estas opções pra você:" },
+					{
+						type: "artifact",
+						artifactType: "comparison_table",
+						payload: { cartas: [{ administradora: "ITAÚ" }] },
+					},
+					{ type: "text", text: "Qual delas te agrada mais?" },
+				],
+			},
+		]);
 	});
 });
 

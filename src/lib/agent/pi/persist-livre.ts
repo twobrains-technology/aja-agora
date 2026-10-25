@@ -2,6 +2,8 @@
 //
 // O que sobrevive (e por quê):
 //  · mensagens: é a conversa no admin, na retomada e no histórico do próximo turno;
+//    gravadas na ORDEM DOS EVENTOS (fala → card → fala), porque é por ela que a
+//    retomada remonta a tela;
 //  · marcador de card (`registrarCardEnviado`): prova que a cota foi mostrada —
 //    sem ele a escolha do cliente não é validável depois;
 //  · `persistMeta` ANTES do artifact sair: o adapter relê a meta fresca do banco
@@ -25,6 +27,24 @@ import { sincronizarNomeDoContato } from "@/lib/contacts/sincronizar-nome";
 import { registrarCardEnviado } from "@/lib/conversation/cards";
 import { saveMessage } from "@/lib/conversation/messages";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
+import { getCurrentClockOffset, runWithSimulatorClock } from "@/lib/utils/simulator-clock";
+
+/**
+ * O relógio do TURNO: cada linha gravada sai pelo menos 1 ms depois da anterior.
+ *
+ * A retomada (`chat/resume.ts`) lê as linhas na ordem de criação e desempata por
+ * `id` — uuid ALEATÓRIO. Dois `saveMessage` seguidos caem na mesma volta do
+ * relógio com facilidade, e aí quem decide a posição do card é o sorteio do
+ * uuid: ao recarregar a página o card apareceria antes da fala que o anuncia.
+ * O passo de 1 ms tira o empate; o offset do simulador (conversa simulada) é
+ * somado, nunca perdido.
+ */
+function relogioDoTurno(conversationId: string) {
+	const base = getCurrentClockOffset();
+	let passo = 0;
+	return <T>(linha: () => Promise<T>): Promise<T> =>
+		runWithSimulatorClock({ offsetMs: base + passo++, conversationId }, linha);
+}
 
 /** Fala do cliente que não é digitada por ele (diretiva de servidor). */
 function pareceDirectiveDeServidor(texto: string): boolean {
@@ -39,28 +59,14 @@ export async function persistirTurnoLivre(args: {
 	const { estado, persona = null } = args;
 	const { conversationId, channel, isUserTurn, userText, events } = estado;
 	const baseMeta = estado.baseMeta;
+	const gravar = relogioDoTurno(conversationId);
 
 	// 1. Fala do cliente — nunca um prompt de servidor no lugar dela.
 	if (isUserTurn && userText && !pareceDirectiveDeServidor(userText)) {
-		await saveMessage(conversationId, "user", userText, channel);
+		await gravar(() => saveMessage(conversationId, "user", userText, channel));
 	}
 
-	// 2. A fala do modelo, um balão por `text-boundary` (o turno pode ter mais de
-	// um: fala → card → fala).
-	const baloes: string[] = [""];
-	for (const ev of events) {
-		if (ev.type === "text-boundary") baloes.push("");
-		else if (ev.type === "text-delta") baloes[baloes.length - 1] += ev.text;
-	}
-	for (const texto of baloes) {
-		// Último passe: máquina (JSON de argumento, nome de tool) não vira balão.
-		const limpo = passaFinal(texto);
-		if (limpo.trim().length > 0) {
-			await saveMessage(conversationId, "assistant", limpo, channel, persona);
-		}
-	}
-
-	// 3. Meta ANTES dos cards (o adapter relê do banco ao abrir o artifact).
+	// 2. Meta ANTES dos cards (o adapter relê do banco ao abrir o artifact).
 	//
 	// `persistMeta` SUBSTITUI a coluna inteira. Se o turno lê a meta no começo,
 	// grava identidade no meio (storeIdentity) e persiste o snapshot velho no
@@ -74,7 +80,7 @@ export async function persistirTurnoLivre(args: {
 	const meta = await metaDoTurnoSemApagar(baseMeta, estado);
 	await persistMeta(conversationId, meta);
 
-	// 3b. O estágio comercial que este turno PROVOU. Depois do `persistMeta` de
+	// 3. O estágio comercial que este turno PROVOU. Depois do `persistMeta` de
 	// propósito: a identidade capturada neste turno é gravada por `storeIdentity`
 	// no MEIO dele, então a verdade está na meta FRESCA que acabou de ir ao banco,
 	// não no `baseMeta` de entrada. `recordStageReached` é forward-only e
@@ -91,17 +97,48 @@ export async function persistirTurnoLivre(args: {
 		);
 	}
 
-	// 4. Cada artifact vira marcador — e só depois sai para o chamador.
+	// 4. As linhas do turno na ORDEM DOS EVENTOS — fala → card → fala.
+	//
+	// Antes esta função gravava TODOS os balões e só depois os marcadores de
+	// card: o card fechava o turno no banco e, ao recarregar a página, voltava
+	// no fim da conversa — ao vivo ele sai no meio, porque o stream manda as
+	// partes na ordem dos eventos. A retomada (`chat/resume.ts`) reconstrói a
+	// tela pela ordem de criação, então quem tem de gravar na ordem é este laço.
+	//
+	// Um balão por `text-boundary`, como antes. O card abre e fecha balão (R5.1):
+	// se algum produtor emitir artifact sem boundary antes, o texto é fechado
+	// ali mesmo e continua em balão novo — o card nunca fica dentro da fala.
+	let balao = "";
+	const fecharBalao = async () => {
+		const texto = balao;
+		balao = "";
+		// Último passe: máquina (JSON de argumento, nome de tool) não vira balão.
+		const limpo = passaFinal(texto);
+		if (limpo.trim().length === 0) return;
+		await gravar(() => saveMessage(conversationId, "assistant", limpo, channel, persona));
+	};
+
 	for (const ev of events) {
-		if (ev.type !== "artifact") continue;
-		await registrarCardEnviado({
-			conversationId,
-			tipo: ev.artifactType,
-			payload: ev.payload,
-			channel,
-			personaId: persona,
-		});
+		if (ev.type === "text-delta") {
+			balao += ev.text;
+			continue;
+		}
+		if (ev.type === "artifact") {
+			await fecharBalao();
+			await gravar(() =>
+				registrarCardEnviado({
+					conversationId,
+					tipo: ev.artifactType,
+					payload: ev.payload,
+					channel,
+					personaId: persona,
+				}),
+			);
+			continue;
+		}
+		if (ev.type === "text-boundary") await fecharBalao();
 	}
+	await fecharBalao();
 }
 
 /**
