@@ -838,6 +838,28 @@ export function createRunTurnLivre(deps?: {
 				tokensInput: beat.uso.input,
 				tokensOutput: beat.uso.output,
 			});
+
+			// O USO DE CACHE DO PROVEDOR NO STREAM (L29/P281). O beat já recebe o
+			// recorte de cache do bloco `usage` final, mas sem este evento ninguém o
+			// via: `TurnTraceRecord.cacheRead`/`cacheWrite` ficavam `null` para sempre,
+			// e é o cache do prompt que decide o custo real da IA (a caixa do vendedor
+			// se repete a cada beat). Telemétrico como o `turno-do-cliente` acima: entra
+			// no estado, é emitido UMA vez no fim do turno e os dois adapters o tratam
+			// como no-op.
+			//
+			// Só sai quando o provedor de fato reportou cache: `null` no trace significa
+			// "não medido", e um evento com 0/0 diria que foi medido e deu zero — a
+			// mesma disciplina de preço desconhecido em `uso_de_ia`.
+			if (beat.uso.cacheRead > 0 || beat.uso.cacheWrite > 0) {
+				estado = {
+					...estado,
+					events: [
+						...estado.events,
+						{ type: "usage", cacheRead: beat.uso.cacheRead, cacheWrite: beat.uso.cacheWrite },
+					],
+				};
+			}
+
 			const usoDoTurno = somarUsoDosBeats(usosDoTurno);
 			if (usoDoTurno.tokensInput > 0 || usoDoTurno.tokensOutput > 0) {
 				void db
