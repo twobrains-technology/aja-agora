@@ -14,7 +14,7 @@ import { createMesaHandoff } from "@/lib/mesa/handoff";
 
 /** Palavras que prometem o que o agente não pode garantir. */
 export const RE_DE_PROMESSA =
-	/(a caminho|em instantes|em breve|em até|vou chamar|vamos chamar|vamos ver se dá|já está falando)/i;
+	/(a caminho|em instantes|em breve|em até|vou chamar|vamos chamar|vou abrir|vamos abrir|vamos ver se dá|já está falando)/i;
 
 /** A linha que honra o pedido — sem prazo, sem "a caminho". */
 export function linhaDeHandoff(args: { nome: string | null; clientePediu: boolean }): string {
@@ -34,7 +34,16 @@ export function linhaFinalDoHandoff(args: {
 	texto: string;
 	nome: string | null;
 	clientePediu: boolean;
+	casoAberto: boolean;
 }): string {
+	// Sem lead não há caso na mesa: a linha honesta é a que pede o nome, não "abri o caso".
+	if (!args.casoAberto) {
+		const pergunta = args.texto
+			.split(/\n+/)
+			.map((l) => l.trim())
+			.find((l) => /[?!]$/.test(l));
+		return pergunta ?? "Qual é o seu nome, pra eu abrir o caso na nossa mesa?";
+	}
 	const linha = linhaDeHandoff({ nome: args.nome, clientePediu: args.clientePediu });
 	const pergunta = args.texto
 		.split(/\n+/)

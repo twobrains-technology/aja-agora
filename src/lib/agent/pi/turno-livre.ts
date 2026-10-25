@@ -18,7 +18,7 @@ import type { TurnEvent, TurnInput } from "@/lib/agent/orchestrator/types";
 import { scrubCpf } from "@/lib/agent/orchestrator/vazamento";
 import { type ChipGerado, garantirChip } from "@/lib/agent/pi/chips";
 import { executarBeat } from "@/lib/agent/pi/converse";
-import { linhaFinalDoHandoff } from "@/lib/agent/pi/handoff";
+import { linhaFinalDoHandoff, RE_DE_PROMESSA } from "@/lib/agent/pi/handoff";
 import { AVISO_LGPD_RE, garanteAvisoLgpd, PEDE_DADO_RE } from "@/lib/agent/pi/lgpd";
 import { persistirTurnoLivre } from "@/lib/agent/pi/persist-livre";
 import { custoDoTurnoCents } from "@/lib/agent/pi/precos";
@@ -138,7 +138,7 @@ export function montarTrechoDeSaida(args: {
 	texto: string;
 	avisoDado: boolean;
 	cardsDoTurno?: readonly { type: string }[];
-	handoff?: { nome: string | null; clientePediu: boolean };
+	handoff?: { nome: string | null; clientePediu: boolean; casoAberto: boolean };
 }): { texto: string; avisoAplicado: boolean; chip: ChipGerado | null } {
 	const bruto = scrubCpf(args.texto);
 	let texto = bruto;
@@ -157,6 +157,7 @@ export function montarTrechoDeSaida(args: {
 			texto: bruto,
 			nome: args.handoff.nome,
 			clientePediu: args.handoff.clientePediu,
+			casoAberto: args.handoff.casoAberto,
 		});
 		return { texto: linha, avisoAplicado: false, chip: null };
 	}
@@ -328,19 +329,31 @@ export function createRunTurnLivre(deps?: {
 		let avisoDado = historico.some((f) => f.role === "assistant" && AVISO_LGPD_RE.test(f.content));
 		// O caso aberto NESTE turno define o balão: uma linha, sem promessa.
 		let casoAberto = false;
+		// Uma linha por turno: se a linha da casa já saiu, o segundo trecho de prosa de handoff
+		// não vira segunda mensagem.
+		let linhaDeHandoffEmitida = false;
 		// CPF mascarado JÁ na saída (o número digitado não volta por eco do modelo)
 		// e uma pergunta por trecho de fala.
 		// CPF mascarado, aviso da LGPD antes do pedido de dado e uma pergunta por
 		// trecho — tudo em `montarTrechoDeSaida`, que é testável sem banco.
 		const soltarTrecho = () => {
 			if (!pendente) return;
+			const ehHandoff = casoAberto || RE_DE_PROMESSA.test(pendente);
+			if (ehHandoff && linhaDeHandoffEmitida) {
+				pendente = "";
+				return;
+			}
 			const saida = montarTrechoDeSaida({
 				texto: pendente,
 				avisoDado,
 				cardsDoTurno: ctx.cards,
-				handoff: casoAberto ? { nome: ctx.nomeDoCliente, clientePediu: true } : undefined,
+				handoff:
+					casoAberto || RE_DE_PROMESSA.test(pendente)
+						? { nome: ctx.nomeDoCliente, clientePediu: true, casoAberto }
+						: undefined,
 			});
 			avisoDado ||= saida.avisoAplicado;
+			if (ehHandoff) linhaDeHandoffEmitida = true;
 			pendente = "";
 			for (const ev of trechos.aoDelta(saida.texto)) {
 				estado = { ...estado, events: [...estado.events, ev] };

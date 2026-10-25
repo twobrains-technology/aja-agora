@@ -29,16 +29,20 @@ describe("o pedido de humano honra o pedido, sem promessa", () => {
 				"Entendido! Vou abrir a conversa com um especialista para você agora.\n\nCaso aberto! Um especialista vai entrar em contato com você em breve.",
 			nome: "Marcos",
 			clientePediu: true,
+			casoAberto: true,
 		});
 		expect(balao.split("\n").length).toBeLessThanOrEqual(2);
 		expect(semPromessa(balao)).toBe(true);
 		expect(balao).toContain("abri o caso pra nossa mesa");
 		// Com o nome faltando, a pergunta do nome (o que destrava o caso) continua.
+		// Sem lead não há caso: a linha honesta pede o nome, não afirma que abriu.
 		const semNome = linhaFinalDoHandoff({
 			texto: "Vou abrir o caso.\nQual é o seu nome?",
 			nome: null,
 			clientePediu: true,
+			casoAberto: false,
 		});
+		expect(semNome).toBe("Qual é o seu nome?");
 		expect(semNome).toContain("Qual é o seu nome?");
 		expect(semPromessa(semNome)).toBe(true);
 	});
@@ -59,10 +63,12 @@ describe("o pedido de humano honra o pedido, sem promessa", () => {
 	// Botão de confirmação depois de o cliente já ter pedido é burocracia.
 	it("o turno escreve a LINHA do handoff, não a prosa do modelo", () => {
 		const turno = readFileSync(new URL("./turno-livre.ts", import.meta.url).pathname, "utf8");
-		expect(turno).toMatch(/linhaFinalDoHandoff\(\{[^}]*texto: bruto/s);
-		expect(turno).toMatch(
-			/handoff: casoAberto \? \{ nome: ctx\.nomeDoCliente, clientePediu: true \}/,
-		);
+		expect(turno).toMatch(/linhaFinalDoHandoff\(\{[^}]*texto: bruto[\s\S]*?casoAberto/);
+		// O balão sai pela linha da casa tanto quando o caso foi aberto quanto quando o modelo
+		// escreve prosa de promessa antes de abrir.
+		expect(turno).toMatch(/handoff:[\s\S]*?RE_DE_PROMESSA\.test\(pendente\)/);
+		// Uma linha por turno: a segunda prosa de handoff não vira segunda mensagem.
+		expect(turno).toMatch(/linhaDeHandoffEmitida/);
 
 		const tools = readFileSync(new URL("./tools-livres.ts", import.meta.url).pathname, "utf8");
 		expect(tools).toMatch(/ctx\.casoAbertoNesteTurno\?\.\(\);/);
