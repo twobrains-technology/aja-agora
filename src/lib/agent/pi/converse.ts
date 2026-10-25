@@ -34,8 +34,13 @@ export type BeatResultado = {
 	texto: string;
 	chamadas: ChamadaDeTool[];
 	resultados: ResultadoDeTool[];
-	/** Tokens consumidos neste beat (o livro-caixa local de custo). */
-	uso: { input: number; output: number };
+	/** Tokens consumidos neste beat (o livro-caixa local de custo).
+	 *  `cacheRead`/`cacheWrite` são o recorte de CACHE do prompt que o provedor
+	 *  reportou no `usage` — é daqui que sai o evento `usage` do turno (L29/P281).
+	 *  Provedor que não reporta cache dá `0`, não `null`: o parser do pi
+	 *  (`parseChunkUsage`) já resolve ausência para zero, e existe `0` medido
+	 *  (nenhum token veio do cache) sem que se possa distinguir de "não medido". */
+	uso: { input: number; output: number; cacheRead: number; cacheWrite: number };
 };
 
 /** O pi entrega a falha do provedor como TEXTO (`"<status>: <corpo>"`, formato
@@ -109,11 +114,18 @@ export async function executarBeat(args: BeatArgs): Promise<BeatResultado> {
 
 	await session.prompt(args.turnMessage);
 
-	// Uso da sessão: é o único lugar que sabe quantos tokens o turno gastou.
-	let uso = { input: 0, output: 0 };
+	// Uso da sessão: é o único lugar que sabe quantos tokens o turno gastou — e
+	// quantos deles vieram do cache do prompt (`getSessionStats().tokens` soma as
+	// quatro categorias das mensagens do beat).
+	let uso = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 	try {
 		const stats = session.getSessionStats();
-		uso = { input: stats.tokens?.input ?? 0, output: stats.tokens?.output ?? 0 };
+		uso = {
+			input: stats.tokens?.input ?? 0,
+			output: stats.tokens?.output ?? 0,
+			cacheRead: stats.tokens?.cacheRead ?? 0,
+			cacheWrite: stats.tokens?.cacheWrite ?? 0,
+		};
 	} catch {
 		// observabilidade nunca custa o turno
 	}
