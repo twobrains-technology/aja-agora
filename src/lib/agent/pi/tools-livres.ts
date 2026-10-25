@@ -1,9 +1,15 @@
-// AS TOOLS DO VENDEDOR LIVRE — três ações e nada mais.
+// AS TOOLS DO VENDEDOR LIVRE — quatro ações e uma porta de card.
 //
-// O desenho é o oposto do funil: aqui não existe tool de APRESENTAÇÃO
-// (`cards do funil`). O modelo decide QUANDO buscar e QUANDO fechar; o card aparece
-// porque a tool rodou, montado pelo resultado dela — nunca porque o modelo
-// escolheu um tipo de card.
+// O desenho continua o oposto do funil: não existe tool que monta card de
+// OFERTA. O modelo decide QUANDO buscar, QUANDO perguntar e QUANDO fechar; o
+// card de número aparece porque a tool rodou, montado pelo resultado dela.
+//
+// A única exceção é `mostrar_card`, e ela tem duas portas: card de ESCOLHA
+// (pergunta + opções que o modelo escreveu, validadas em `cards-livres.ts`) e
+// card de FATO, cujo payload é montado no SERVIDOR a partir das cartas reais que
+// `buscar_cartas` trouxe (`montarCardDeFato`). Número de oferta pedido pelo
+// modelo continua impossível: do payload dele só se lê `groupId`, `lancePercent`
+// e `initialTargetMonth`.
 //
 //  · `buscar_cartas` usa SÓ a identidade da casa (vitrine). Buscar no nome do
 //    cliente abriria proposta real na loja compartilhada antes de ele decidir.
@@ -11,12 +17,14 @@
 //    CPF nunca chega ao modelo: ele vê `[CPF recebido e guardado]`.
 //  · `falar_com_humano` emite o evento `handoff` (o funil só ligava uma flag, e
 //    o botão "Sim, conectar" do WhatsApp nunca aparecia).
+//  · `mostrar_card` apresenta a pergunta com opções clicáveis e os cards de FATO
+//    (escassez, dial, comparativo…) montados das cartas reais do turno.
 
 import { tool } from "ai";
 import { z } from "zod";
 import { BeviSelfContractAdapter } from "@/lib/adapters/bevi/bevi-self-contract-adapter";
 import { BeviSelfContractClient } from "@/lib/adapters/bevi/self-contract-client";
-import type { GroupSummary } from "@/lib/adapters/types";
+import type { GroupSummary, QuotaSimulation } from "@/lib/adapters/types";
 import { listShownOffersForConversation } from "@/lib/agent/orchestrator/choose-offer";
 import {
 	buildComparisonTableFromRevealGroups,
@@ -24,7 +32,14 @@ import {
 	type RevealGroupIndex,
 } from "@/lib/agent/orchestrator/recommendation-payload";
 import type { Category } from "@/lib/agent/personas";
-import { realOfferPresentation } from "@/lib/bevi/closing-presentation";
+import {
+	cardDeEscolha,
+	destinoDoCard,
+	montarCardDeFato,
+	type PerfilDeclarado,
+	type RefDeCard,
+} from "@/lib/agent/pi/cards-livres";
+import { type ClosingItem, realOfferPresentation } from "@/lib/bevi/closing-presentation";
 import {
 	administradoraConflictsWithRegisteredProposal,
 	buildStartContractInput,
@@ -33,6 +48,7 @@ import { prefsFromMeta } from "@/lib/bevi/discovery-session";
 import { startContract } from "@/lib/bevi/fulfillment";
 import { identidadeDeVitrine, vitrineDisponivel } from "@/lib/bevi/identidade-vitrine";
 import { getLatestBeviProposal } from "@/lib/bevi/proposal-repo";
+import type { ArtifactType } from "@/lib/chat/types";
 import { loadAdministradoraLogoMap } from "@/lib/consorcio/administradora-logo-repo";
 import { loadIdentity } from "@/lib/conversation/identity";
 import { loadConversationHistory } from "@/lib/conversation/messages";
@@ -49,7 +65,7 @@ export type CartaLivre = {
 };
 
 export type CardLivre = {
-	type: "comparison_table" | "real_offer";
+	type: ArtifactType;
 	payload: Record<string, unknown>;
 };
 
@@ -58,6 +74,12 @@ export type ContextoDasTools = {
 	channel: "web" | "whatsapp";
 	/** Fala do cliente neste turno (o nome só se grava se foi dito nela). */
 	userText: string | null;
+	/** Nome que a conversa já tem — pré-preenche o formulário de lead. */
+	nomeDoCliente: string | null;
+	/** Telefone e CPF MASCARADOS (nunca em claro) — os cards de estado só levam
+	 * a máscara; o submit resolve a identidade cifrada no servidor. */
+	telefoneMascarado?: string | null;
+	cpfMascarado?: string | null;
 	/** Onde a tool põe o card que o driver vai emitir depois de persistir. */
 	cards: CardLivre[];
 	/** Texto do fecho (copy de produção) que acompanha o card. */
@@ -66,6 +88,12 @@ export type ContextoDasTools = {
 	 * contra elas que a proposta é ancorada — o modelo só pode escolher o que o
 	 * cliente está vendo. */
 	cartasNaTela: CartaLivre[];
+	/** Grupos REAIS que `buscar_cartas` pôs na tela neste turno, por id — a fonte
+	 * única dos cards de FATO. Vazio enquanto a busca não roda. */
+	gruposRevelados: Map<string, GroupSummary>;
+	/** Perfil que o cliente DECLAROU na qualificação (prazo e lance) — default do
+	 * `contemplation_dial`. Preenchido pelo turno com `qualifyAnswers`. */
+	perfilDeclarado?: PerfilDeclarado;
 	/** Setado por `falar_com_humano`. */
 	pediuHumano: boolean;
 	/** Setado por `buscar_cartas` — o driver grava na meta. */
@@ -92,9 +120,67 @@ export type DepsDasToolsLivres = {
 		creditMax?: number;
 		parcelaAlvo?: number;
 	}) => Promise<GroupSummary[]>;
+	/** Fronteira da simulação — injetável nos testes (Bevi real em produção). */
+	simularCota?: (params: { groupId: string; creditValue: number }) => Promise<QuotaSimulation>;
+	/** Logos das administradoras — injetável nos testes. */
+	carregarLogos?: () => Promise<ReadonlyMap<string, string>>;
 };
 
+/** O que o cliente PEDIU nesta busca: o teto de crédito alimenta o aviso de
+ * ajuste do hero, e o valor do bem é a conta do lance embutido. Fora do turno da
+ * busca fica vazio — o card então degrada (sem aviso, sem `cartaNecessaria`). */
+function valoresPedidos(ctx: ContextoDasTools): { valorPedido?: number; valorDoBem?: number } {
+	const busca = ctx.estadoDepoisDaBusca;
+	if (!busca) return {};
+	const pedido = busca.creditMax ?? busca.valorDoBemAlvo;
+	const bem = busca.valorDoBemAlvo;
+	return {
+		...(typeof pedido === "number" && pedido > 0 ? { valorPedido: pedido } : {}),
+		...(typeof bem === "number" && bem > 0 ? { valorDoBem: bem } : {}),
+	};
+}
+
+/** Do payload do modelo, só estas três chaves são lidas (ver `RefDeCard`). */
+function refDoPayload(payload: Record<string, unknown>): RefDeCard {
+	const ref: RefDeCard = {};
+	if (typeof payload.groupId === "string" && payload.groupId.length > 0) {
+		ref.groupId = payload.groupId;
+	}
+	if (typeof payload.lancePercent === "number" && Number.isFinite(payload.lancePercent)) {
+		ref.lancePercent = payload.lancePercent;
+	}
+	if (
+		typeof payload.initialTargetMonth === "number" &&
+		Number.isFinite(payload.initialTargetMonth)
+	) {
+		ref.initialTargetMonth = payload.initialTargetMonth;
+	}
+	return ref;
+}
+
 export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres = {}) {
+	// UM adapter por turno: `simulateQuota` lê o índice de ofertas que a busca
+	// populou dentro da MESMA instância — com um adapter novo por chamada, a
+	// simulação nunca acharia a carta (`GroupNotInDiscoveryError`).
+	let adapterDaVenda: BeviSelfContractAdapter | null = null;
+	const adapterReal = (): BeviSelfContractAdapter => {
+		adapterDaVenda ??= new BeviSelfContractAdapter(new BeviSelfContractClient(), {
+			getIdentity: async () => identidadeDeVitrine(),
+			getSimulationPrefs: async () => prefsFromMeta(await reloadMeta(ctx.conversationId)),
+		});
+		return adapterDaVenda;
+	};
+	const logosDoTurno = async (): Promise<ReadonlyMap<string, string> | undefined> => {
+		if (deps.carregarLogos) return deps.carregarLogos();
+		return loadAdministradoraLogoMap().catch(() => undefined);
+	};
+	const simularCotaReal = async (params: { groupId: string; creditValue: number }) => {
+		if (!vitrineDisponivel()) {
+			throw new Error("A identidade da casa (VITRINE_CPF/VITRINE_CELULAR) não está configurada.");
+		}
+		return adapterReal().simulateQuota(params);
+	};
+
 	const buscar_cartas = tool({
 		description:
 			"Busca cartas de consórcio REAIS na administradora, no tipo de bem e na faixa que o cliente disse, e mostra as opções na tela. Usa a identidade da própria Aja Agora: NÃO peça CPF nem telefone para isto. Devolve o resumo de cada carta (id, administradora, carta, parcela, prazo).",
@@ -148,11 +234,7 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				if (deps.buscarGrupos) {
 					grupos = await deps.buscarGrupos(params);
 				} else {
-					const adapter = new BeviSelfContractAdapter(new BeviSelfContractClient(), {
-						getIdentity: async () => identidadeDeVitrine(),
-						getSimulationPrefs: async () => prefsFromMeta(await reloadMeta(ctx.conversationId)),
-					});
-					grupos = await adapter.searchGroups(params);
+					grupos = await adapterReal().searchGroups(params);
 				}
 			} catch (erro) {
 				console.error("[buscar_cartas] falha na Bevi:", erro);
@@ -186,7 +268,7 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				return "A busca voltou sem nenhuma carta nessa faixa. Diga isso ao cliente com naturalidade e proponha outro valor ou outra parcela.";
 			}
 
-			const logos = await loadAdministradoraLogoMap();
+			const logos = await logosDoTurno();
 			// O card corta em até 4 opções (`limitarOpcoesDaComparacao`). O modelo
 			// recebia as 12 da busca e recomendava carta que o cliente NÃO estava
 			// vendo — e `fazer_proposta` recusava depois. A verdade é o card.
@@ -199,6 +281,13 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 					.filter((id): id is string => typeof id === "string"),
 			);
 			const cartasNoCard = cartas.filter((c) => idsNoCard.has(c.groupId));
+			// A fonte dos cards de FATO é o que está NA TELA — não as 12 da busca.
+			// SOMA ao índice em vez de substituir: duas buscas no mesmo turno (outra
+			// categoria, refino de faixa) deixam a primeira `comparison_table` na tela,
+			// e os ids dela continuam válidos para os cards de FATO.
+			for (const g of grupos) {
+				if (idsNoCard.has(g.id)) ctx.gruposRevelados.set(g.id, g);
+			}
 			ctx.cards.push({
 				type: "comparison_table",
 				payload: payloadDoCard as unknown as Record<string, unknown>,
@@ -257,7 +346,7 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				return "Proposta NÃO gerada: não tenho o CPF do cliente guardado nesta conversa. Peça o CPF, explique que a administradora consulta os birôs de crédito, e só então chame de novo.";
 			}
 			if (!identity.celular) {
-				return `Proposta NÃO gerada: falta o celular do cliente (o CPF ${identity.cpf.slice(0, 3)}… já está guardado). Peça o celular com DDD e chame de novo.`;
+				return "Proposta NÃO gerada: falta o celular do cliente — o CPF já está guardado nesta conversa. Peça o celular com DDD e chame de novo.";
 			}
 
 			// O AVISO DA LGPD TEM QUE TER SIDO DITO, e o servidor confere em vez de
@@ -322,15 +411,7 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				return `Proposta NÃO gerada (${erro instanceof Error ? erro.message : String(erro)}). Diga ao cliente que houve um problema ao falar com a administradora e ofereça um especialista humano.`;
 			}
 
-			const itens = realOfferPresentation(result);
-			for (const item of itens) {
-				if (item.kind === "text") ctx.falasDoFecho.push(item.text);
-				else
-					ctx.cards.push({
-						type: item.type === "real_offer" ? "real_offer" : "real_offer",
-						payload: item.payload,
-					});
-			}
+			aplicarItensDoFecho(ctx, realOfferPresentation(result));
 
 			if (result.noOffer || !result.offer) {
 				return "A administradora não devolveu carta para esse valor. Explique ao cliente e proponha outro valor.";
@@ -345,6 +426,63 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				administradoraMudou: result.administradoraChanged === true,
 				obs: "O card de confirmação está na tela. Ele só vira contrato quando o cliente confirmar.",
 			});
+		},
+	});
+
+	const mostrar_card = tool({
+		description:
+			"Mostra na tela um card. Há dois caminhos, e nenhum aceita número de oferta seu.\n\n" +
+			"1) Card de ESCOLHA (o payload é seu): `quick_reply` (payload { options: [{ label }] }, até 4 atalhos de resposta), `value_picker` (payload { category: imovel|auto|moto, fields: [{ id, label, min, max, default }] }, faixas de valor do bem) e `topic_picker` (payload { topics: [...], includeBackButton }).\n\n" +
+			"2) Card de FATO (o payload é do servidor; você só diz QUAL carta e, se for o caso, o cenário): `group_card`, `recommendation_card`, `comparison_table`, `simulation_result`, `financing_comparison`, `contemplation_dial`, `embedded_bid`, `two_paths`, `scarcity`, `decision_prompt` (todos precisam de `groupId` copiado de buscar_cartas), e os de estado `lead_form`, `contract_form`, `whatsapp_optin`. Payload do fato: { groupId, lancePercent?, initialTargetMonth? } — qualquer outro número que você mandar é ignorado, porque o valor vem da carta real.",
+		inputSchema: z.object({
+			tipo: z
+				.string()
+				.describe(
+					"quick_reply, value_picker, topic_picker, group_card, recommendation_card, comparison_table, simulation_result, financing_comparison, contemplation_dial, embedded_bid, two_paths, scarcity, lead_form, contract_form, whatsapp_optin ou decision_prompt",
+				),
+			payload: z
+				.record(z.string(), z.unknown())
+				.optional()
+				.describe("Conteúdo do card, no shape do tipo escolhido"),
+		}),
+		execute: async (args) => {
+			const payload = args.payload ?? {};
+			const destino = destinoDoCard(args.tipo);
+
+			// Recusa é TEXTO, nunca exceção: é essa fala que ensina o modelo a pedir
+			// o card certo ou a usar a tool de dado.
+			if (destino?.classe === "emitivel" && destino.origem === "escolha") {
+				// FIX-109 (decisão do Kairo, 28/06/2026): no WhatsApp o `valuePickerToWhatsApp`
+				// degrada o card DE PROPÓSITO — lá o valor do bem é CONVERSA (o cliente
+				// digita "uns 80 mil"). Emitir o card aqui some com as faixas e ainda manda
+				// o modelo não repeti-las. Não "consertar" isto de volta.
+				if (args.tipo === "value_picker" && ctx.channel === "whatsapp") {
+					return 'Card NÃO mostrado: no WhatsApp as faixas de valor não aparecem na tela — aqui o valor do bem é conversa. Pergunte o valor em texto ("quanto você pensa em gastar?") e siga.';
+				}
+				const escolha = cardDeEscolha(args.tipo, payload);
+				if (!escolha.ok) return escolha.erro;
+				ctx.cards.push(escolha.card);
+				return `[Card ${escolha.card.type} na tela. Ele aparece para o cliente agora — não repita as opções na sua fala.]`;
+			}
+
+			const card = await montarCardDeFato(
+				args.tipo,
+				{
+					conversationId: ctx.conversationId,
+					channel: ctx.channel,
+					nomeDoCliente: ctx.nomeDoCliente,
+					grupos: ctx.gruposRevelados,
+					telefoneMascarado: ctx.telefoneMascarado ?? null,
+					cpfMascarado: ctx.cpfMascarado ?? null,
+					...valoresPedidos(ctx),
+					...(ctx.perfilDeclarado ? { perfilDeclarado: ctx.perfilDeclarado } : {}),
+				},
+				refDoPayload(payload),
+				{ simularCota: deps.simularCota ?? simularCotaReal, logos: await logosDoTurno() },
+			);
+			if (!card.ok) return card.erro;
+			ctx.cards.push(card.card);
+			return `[Card ${card.card.type} na tela. Ele aparece para o cliente agora — os números vieram da carta real, não os repita com outros valores.]`;
 		},
 	});
 
@@ -369,12 +507,23 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 		},
 	});
 
-	return { buscar_cartas, fazer_proposta, falar_com_humano, salvar_nome };
+	return { buscar_cartas, fazer_proposta, mostrar_card, falar_com_humano, salvar_nome };
+}
+
+/** Itens do fecho de `fazer_proposta` → cards e falas do turno. O `type` do item
+ * é respeitado: o fecho sabe devolver `signature_handoff`.
+ * (`document_upload`/`atendimento_handoff` saem por fora do turno.) */
+export function aplicarItensDoFecho(ctx: ContextoDasTools, itens: ClosingItem[]): void {
+	for (const item of itens) {
+		if (item.kind === "text") ctx.falasDoFecho.push(item.text);
+		else ctx.cards.push({ type: item.type, payload: item.payload });
+	}
 }
 
 export const NOMES_DAS_TOOLS_LIVRES = [
 	"buscar_cartas",
 	"fazer_proposta",
+	"mostrar_card",
 	"falar_com_humano",
 	"salvar_nome",
 ] as const;

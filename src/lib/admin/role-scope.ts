@@ -89,10 +89,14 @@ const ROTAS_POR_ROLE: Record<Role, readonly string[] | typeof TODAS_AS_ROTAS> = 
  * foto, descrição do negócio) usando o token da Meta. Ler o funil não é mandato
  * pra trocar a cara da empresa.
  *
+ * A conduta do agente (`/admin/caixa`) entra pela mesma razão: é decisão de
+ * produto, muda o que o cliente lê em toda conversa. Ler o funil não é mandato
+ * pra reescrever a instrução do vendedor.
+ *
  * Lista curta e explícita, e não uma role `owner` nova: papel novo é migração de
  * banco e revisão de tudo que já existe; a exclusividade aqui é de TELA.
  */
-const ROTAS_SO_DE_ADMIN = ["/admin/whatsapp/configuracao"] as const;
+const ROTAS_SO_DE_ADMIN = ["/admin/whatsapp/configuracao", "/admin/caixa"] as const;
 
 /** A rota é exata ou filha de alguma das exclusivas? */
 function ehRotaSoDeAdmin(pathname: string): boolean {

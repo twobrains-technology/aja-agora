@@ -3,7 +3,7 @@
 // Por que não usar o `loadSkillsFromDir` do próprio pi: ele vive no pacote ESM do
 // harness, que neste server CJS só entra por `import()` dinâmico (o `require`
 // estoura `ERR_PACKAGE_PATH_NOT_EXPORTED`, já custou um turno mudo em 19/10).
-// Aqui os dois `.md` são versionados no repo, lidos com `node:fs` e o frontmatter
+// Aqui os `.md` são versionados no repo, lidos com `node:fs` e o frontmatter
 // é parseado localmente — o texto que chega ao modelo é o mesmo que o SDK
 // produziria (`## <name>\n<description>\n<body>`), sem uma dependência a mais no
 // caminho quente.
@@ -23,7 +23,11 @@ export type Skill = {
 	body: string;
 };
 
-const ORDEM: readonly string[] = ["buscar-cartas", "proposta-com-dados-do-cliente"];
+const ORDEM: readonly string[] = [
+	"buscar-cartas",
+	"proposta-com-dados-do-cliente",
+	"perguntar-com-opcoes",
+];
 
 function diretoriosCandidatos(): string[] {
 	const base = process.env.SKILLS_DIR?.trim();
@@ -90,7 +94,7 @@ export function skillsParaPrompt(skills = carregarSkills()): string {
 				`<skill name="${s.name}">\n<description>${s.description}</description>\n\n${s.body}\n</skill>`,
 		)
 		.join("\n\n");
-	return `\n\n# Ferramentas de venda\n\nSuas ferramentas de busca e de proposta têm instruções próprias. Use a que a conversa pedir.\n\n${corpo}`;
+	return `\n\n# Ferramentas de venda\n\nSuas ferramentas de busca, de proposta e os cards da tela têm instruções próprias. Use a que a conversa pedir.\n\n${corpo}`;
 }
 
 export function limparCacheDeSkills(): void {

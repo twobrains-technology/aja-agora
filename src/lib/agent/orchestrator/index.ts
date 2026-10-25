@@ -4,10 +4,6 @@ import type { TurnEvent, TurnInput } from "./types";
 
 export type { TurnEvent, TurnInput } from "./types";
 
-/** O motor livre é o único motor. A flag fica como registro histórico do corte;
- * o turno não tem mais caminho alternativo. */
-export const AGENTE_LIVRE_ATIVO = true;
-
 /** Ponto de entrada único do turno — web, WhatsApp e os workers consomem por aqui.
  *
  * O motor é o VENDEDOR LIVRE (campanha 2026-10-20): um prompt, duas skills da

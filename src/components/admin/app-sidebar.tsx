@@ -4,6 +4,7 @@ import {
 	ActivityIcon,
 	BadgeCheckIcon,
 	BotIcon,
+	BrainCircuitIcon,
 	BuildingIcon,
 	ChartPieIcon,
 	DownloadIcon,
@@ -43,6 +44,10 @@ const settingsItems = [
 	// (`ROTAS_SO_DE_ADMIN` em `role-scope.ts`), a mesma política que o `proxy.ts`
 	// aplica na navegação.
 	{ title: "WhatsApp", href: "/admin/whatsapp/configuracao", icon: BadgeCheckIcon },
+	// A conduta do vendedor também é só do admin, e pelo mesmo motivo: o texto
+	// governa o que o cliente lê em toda conversa. Antes de 23/10 só mudava por
+	// script na máquina do Kairo — esta é a porta para a dona do produto.
+	{ title: "Conduta do agente", href: "/admin/caixa", icon: BrainCircuitIcon },
 ];
 
 /**
