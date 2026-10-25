@@ -52,6 +52,20 @@ export function linhaFinalDoHandoff(args: {
 	return pergunta ? `${linha}\n\n${pergunta}` : linha;
 }
 
+/**
+ * O nome dito na fala do cliente. Não é chute do modelo: é o que ele escreveu, e sem nome não
+ * há caso na mesa — então o caminho é capturar, não pedir de novo.
+ */
+export function nomeNaFala(texto: string | null): string | null {
+	if (!texto) return null;
+	const m = texto.match(
+		/\b(?:meu nome é|me chamo|chamo|o nome é|sou a|sou o)\s+([A-Za-zÀ-ž'’]{2,30})/i,
+	);
+	if (!m) return null;
+	const nome = m[1].trim();
+	return nome.length >= 2 ? nome : null;
+}
+
 export function semPromessa(texto: string): boolean {
 	return !RE_DE_PROMESSA.test(texto);
 }

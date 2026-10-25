@@ -39,7 +39,7 @@ import {
 	type PerfilDeclarado,
 	type RefDeCard,
 } from "@/lib/agent/pi/cards-livres";
-import { abrirCasoNaMesa } from "@/lib/agent/pi/handoff";
+import { abrirCasoNaMesa, nomeNaFala } from "@/lib/agent/pi/handoff";
 import { resolverAceiteLgpd } from "@/lib/agent/pi/lgpd";
 import { pisoPadraoPara } from "@/lib/agent/qualify-answers";
 import { type ClosingItem, realOfferPresentation } from "@/lib/bevi/closing-presentation";
@@ -562,9 +562,15 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 		}),
 		execute: async ({ motivo }) => {
 			ctx.pediuHumano = true;
+			// O nome que o cliente já disse na fala é FATO, não interpretação do modelo. Sem
+			// nome não há caso na mesa — capturar é mais honesto que pedir de novo.
+			const nome = ctx.nomeDoCliente ?? nomeNaFala(ctx.userText);
+			if (nome && !ctx.nomeDoCliente) {
+				await saveContactName(ctx.conversationId, nome, { ancorarEm: ctx.userText });
+			}
 			const caso = await abrirCasoNaMesa({
 				conversationId: ctx.conversationId,
-				nome: ctx.nomeDoCliente,
+				nome,
 				motivo,
 			});
 			if (!caso.ok) {

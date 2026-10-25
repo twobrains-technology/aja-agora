@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { linhaDeHandoff, linhaFinalDoHandoff, semPromessa } from "./handoff";
+import { linhaDeHandoff, linhaFinalDoHandoff, nomeNaFala, semPromessa } from "./handoff";
 
 describe("o pedido de humano honra o pedido, sem promessa", () => {
 	it("o caso medido (6d647263): as palavras prometidas não passam", () => {
@@ -23,6 +23,16 @@ describe("o pedido de humano honra o pedido, sem promessa", () => {
 	});
 
 	// O tool não pode voltar a ser só uma flag + frase de promessa: ela abre o caso.
+	it("o nome dito na fala é FATO: não se pede de novo o que o cliente já disse", () => {
+		expect(nomeNaFala("meu nome é Marcos")).toBe("Marcos");
+		expect(nomeNaFala("me chamo Ana Clara")).toBe("Ana");
+		expect(nomeNaFala("quero falar com uma pessoa")).toBeNull();
+
+		// O tool usa o nome da fala antes de abrir o caso — capturar, não perguntar de novo.
+		const tools = readFileSync(new URL("./tools-livres.ts", import.meta.url).pathname, "utf8");
+		expect(tools).toMatch(/ctx\.nomeDoCliente \?\? nomeNaFala\(ctx\.userText\)/);
+	});
+
 	it("o balão do handoff é UMA linha — a confirmação com prazo não sai", () => {
 		const balao = linhaFinalDoHandoff({
 			texto:
