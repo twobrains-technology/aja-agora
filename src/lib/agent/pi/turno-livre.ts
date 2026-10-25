@@ -122,6 +122,31 @@ export function capturarIdentidadeDoTexto(
 	return { identidade, textoLimpo, recebeuCpf, recebeuCelular };
 }
 
+/** Texto antes e depois de uma tool é fala DIFERENTE: sem separador o stream
+ * cola "…você, Marcos!Então…". A primeira fala depois de uma tool abre um
+ * `text-boundary` (web: balão novo; WhatsApp: mensagem nova; persistência: um
+ * balão por boundary). */
+export function criarSeparadorDeTrechos() {
+	let falou = false;
+	let toolDesdeAFala = false;
+	return {
+		aoToolCall() {
+			if (falou) toolDesdeAFala = true;
+		},
+		/** Eventos a emitir para este delta, na ordem. */
+		aoDelta(texto: string): TurnEvent[] {
+			const eventos: TurnEvent[] = [];
+			if (toolDesdeAFala && texto.trim().length > 0) {
+				eventos.push({ type: "text-boundary" });
+				toolDesdeAFala = false;
+			}
+			if (texto.trim().length > 0) falou = true;
+			eventos.push({ type: "text-delta", text: texto });
+			return eventos;
+		},
+	};
+}
+
 export function createRunTurnLivre(deps?: {
 	provider?: { id: string; baseUrl: string; apiKey: string; model: string };
 	/** Fronteira da busca — roteiro nos testes, Bevi real em produção. */
@@ -219,6 +244,7 @@ export function createRunTurnLivre(deps?: {
 			acordar = null;
 		};
 
+		const trechos = criarSeparadorDeTrechos();
 		const executar = async () => {
 			const beat = await executarBeat({
 				system,
@@ -232,10 +258,13 @@ export function createRunTurnLivre(deps?: {
 					// CPF mascarado JÁ na saída: o número que o cliente digitou não pode
 					// voltar para ele por eco do modelo.
 					const limpo = scrubCpf(delta);
-					estado = { ...estado, events: [...estado.events, { type: "text-delta", text: limpo }] };
-					emitir({ type: "text-delta", text: limpo });
+					for (const ev of trechos.aoDelta(limpo)) {
+						estado = { ...estado, events: [...estado.events, ev] };
+						emitir(ev);
+					}
 				},
 				aoToolCall: (chamada) => {
+					trechos.aoToolCall();
 					const evento = {
 						type: "tool-call" as const,
 						toolName: chamada.nome,
