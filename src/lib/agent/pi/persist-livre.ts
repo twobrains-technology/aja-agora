@@ -78,14 +78,19 @@ export async function persistirTurnoLivre(args: {
 	// fato mudou (projeção do estado contra a projeção do estado de ENTRADA).
 	// Campo que a tool gravou no meio do turno sobrevive.
 	const meta = await metaDoTurnoSemApagar(baseMeta, estado);
-	// O CLIENTE VOLTOU A FALAR → o contador de retomadas zera.
+	// O CLIENTE VOLTOU → o contador de retomadas zera.
 	//
 	// Sem isto o teto (`MAX_RETOMADAS`) vale por CONVERSA, não por período de
 	// silêncio: quem sumiu duas vezes no começo nunca mais seria puxado de volta,
-	// mesmo travando na véspera de assinar (`persist.ts:297` na a2bc3024). Só
-	// turno REAL do cliente conta — a retomada em si é `isUserTurn: false` e não
-	// se auto-perdoa.
-	if (estado.isUserTurn && estado.userText) delete meta.retomada;
+	// mesmo travando na véspera de assinar (`persist.ts:297` na a2bc3024).
+	//
+	// Quem conta é o TURNO do cliente, não o texto dele: um turno do cliente sem
+	// texto — mídia, áudio sem transcrição, anexo sem legenda — é a mesma prova de
+	// que ele voltou, e exigir `userText` aqui deixaria justamente quem responde
+	// por foto preso ao teto do período anterior. O turno de SERVIDOR continua não
+	// se auto-perdoando: directive, retomada e acolhida entram com
+	// `isUserTurn: false`, e é esse o discriminador.
+	if (estado.isUserTurn) delete meta.retomada;
 	await persistMeta(conversationId, meta);
 
 	// 3. O estágio comercial que este turno PROVOU. Depois do `persistMeta` de

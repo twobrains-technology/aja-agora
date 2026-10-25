@@ -254,6 +254,30 @@ describe("P248/P269 — o cliente que volta zera o contador de retomadas", () =>
 
 		expect((await reloadMeta(conversationId)).retomada).toEqual(meta.retomada);
 	});
+
+	it("cliente volta SEM TEXTO (foto, áudio sem transcrição): também zera o contador", async () => {
+		const conversationId = await novaConversa();
+		const meta = metaComTeto();
+		await persistMeta(conversationId, meta);
+		expect(podeRetomar(meta, Date.now())).toBe(false);
+
+		// O turno existe e é do cliente, mas não trouxe uma palavra: mídia sem
+		// legenda, áudio que não pôde ser transcrito. Ele voltou — o teto não pode
+		// continuar gasto por um período de silêncio que já terminou.
+		await persistirTurnoLivre({
+			estado: turno({ conversationId, baseMeta: meta, userText: "" }),
+		});
+
+		const depois = await reloadMeta(conversationId);
+		expect(depois.retomada).toBeUndefined();
+		expect(podeRetomar(depois, Date.now())).toBe(true);
+
+		// E nada de balão vazio na conversa: turno de cliente sem texto não grava
+		// fala nenhuma.
+		expect(
+			await db.query.messages.findMany({ where: eq(messages.conversationId, conversationId) }),
+		).toEqual([]);
+	});
 });
 
 describe("as linhas do turno na ORDEM DOS EVENTOS — o card não fecha o turno", () => {
