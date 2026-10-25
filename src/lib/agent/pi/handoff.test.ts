@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { linhaDeHandoff, semPromessa } from "./handoff";
+import { linhaDeHandoff, linhaFinalDoHandoff, semPromessa } from "./handoff";
 
 describe("o pedido de humano honra o pedido, sem promessa", () => {
 	it("o caso medido (6d647263): as palavras prometidas não passam", () => {
@@ -23,6 +23,26 @@ describe("o pedido de humano honra o pedido, sem promessa", () => {
 	});
 
 	// O tool não pode voltar a ser só uma flag + frase de promessa: ela abre o caso.
+	it("o balão do handoff é UMA linha — a confirmação com prazo não sai", () => {
+		const balao = linhaFinalDoHandoff({
+			texto:
+				"Entendido! Vou abrir a conversa com um especialista para você agora.\n\nCaso aberto! Um especialista vai entrar em contato com você em breve.",
+			nome: "Marcos",
+			clientePediu: true,
+		});
+		expect(balao.split("\n").length).toBeLessThanOrEqual(2);
+		expect(semPromessa(balao)).toBe(true);
+		expect(balao).toContain("abri o caso pra nossa mesa");
+		// Com o nome faltando, a pergunta do nome (o que destrava o caso) continua.
+		const semNome = linhaFinalDoHandoff({
+			texto: "Vou abrir o caso.\nQual é o seu nome?",
+			nome: null,
+			clientePediu: true,
+		});
+		expect(semNome).toContain("Qual é o seu nome?");
+		expect(semPromessa(semNome)).toBe(true);
+	});
+
 	it("`falar_com_humano` abre o caso, e o caso marca handed_off", () => {
 		const tool = readFileSync(new URL("./tools-livres.ts", import.meta.url).pathname, "utf8");
 		const corpo = tool.slice(
@@ -37,6 +57,19 @@ describe("o pedido de humano honra o pedido, sem promessa", () => {
 	});
 
 	// Botão de confirmação depois de o cliente já ter pedido é burocracia.
+	it("o turno escreve a LINHA do handoff, não a prosa do modelo", () => {
+		const turno = readFileSync(new URL("./turno-livre.ts", import.meta.url).pathname, "utf8");
+		expect(turno).toMatch(/linhaFinalDoHandoff\(\{[^}]*texto: bruto/s);
+		expect(turno).toMatch(
+			/handoff: casoAberto \? \{ nome: ctx\.nomeDoCliente, clientePediu: true \}/,
+		);
+
+		const tools = readFileSync(new URL("./tools-livres.ts", import.meta.url).pathname, "utf8");
+		expect(tools).toMatch(/ctx\.casoAbertoNesteTurno\?\.\(\);/);
+		// O aviso de "caso aberto" que sai no balão é o da casa, não a frase do modelo.
+		expect(turno).not.toMatch(/Caso aberto!/);
+	});
+
 	it("no WhatsApp, pedido do cliente não ganha botão de confirmação", () => {
 		const adapter = readFileSync(
 			new URL("../../whatsapp/adapter.ts", import.meta.url).pathname,

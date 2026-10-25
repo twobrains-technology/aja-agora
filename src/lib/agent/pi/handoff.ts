@@ -24,6 +24,25 @@ export function linhaDeHandoff(args: { nome: string | null; clientePediu: boolea
 	return "Pra esse caso, recomendo conversar direto com nosso consultor humano.";
 }
 
+/**
+ * O BALÃO DO HANDOFF: uma linha, sem promessa. O modelo escrevia duas — a linha certa e uma
+ * confirmação extra com prazo ("Caso aberto! Um especialista vai entrar em contato em breve")
+ * — e o cliente recebia o mesmo aviso duas vezes, uma com promessa que nada sustenta.
+ * A pergunta do nome (o que destrava o caso) continua: é o próximo passo real.
+ */
+export function linhaFinalDoHandoff(args: {
+	texto: string;
+	nome: string | null;
+	clientePediu: boolean;
+}): string {
+	const linha = linhaDeHandoff({ nome: args.nome, clientePediu: args.clientePediu });
+	const pergunta = args.texto
+		.split(/\n+/)
+		.map((l) => l.trim())
+		.find((l) => /[?!]$/.test(l) && !RE_DE_PROMESSA.test(l));
+	return pergunta ? `${linha}\n\n${pergunta}` : linha;
+}
+
 export function semPromessa(texto: string): boolean {
 	return !RE_DE_PROMESSA.test(texto);
 }

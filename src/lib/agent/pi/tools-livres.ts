@@ -137,6 +137,8 @@ export type ContextoDasTools = {
 	perfilDeclarado?: PerfilDeclarado;
 	/** Setado por `falar_com_humano`. */
 	pediuHumano: boolean;
+	/** O caso FOI aberto neste turno — o balão que sai é a linha do handoff, não a prosa do modelo. */
+	casoAbertoNesteTurno?: () => void;
 	/** Setado por `buscar_cartas` — o driver grava na meta. */
 	estadoDepoisDaBusca: {
 		categoria?: Category;
@@ -568,6 +570,7 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 			if (!caso.ok) {
 				return "Caso NÃO aberto: falta o nome do cliente. Capture o nome em uma linha, sem prometer especialista.";
 			}
+			ctx.casoAbertoNesteTurno?.();
 			return `Caso aberto na mesa${caso.handoffId ? ` (id ${caso.handoffId})` : ""}. Avise em UMA linha, sem prometer prazo, e pare de responder nesta conversa — a mesa assume.`;
 		},
 	});

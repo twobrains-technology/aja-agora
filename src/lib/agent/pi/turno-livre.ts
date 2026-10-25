@@ -18,6 +18,7 @@ import type { TurnEvent, TurnInput } from "@/lib/agent/orchestrator/types";
 import { scrubCpf } from "@/lib/agent/orchestrator/vazamento";
 import { type ChipGerado, garantirChip } from "@/lib/agent/pi/chips";
 import { executarBeat } from "@/lib/agent/pi/converse";
+import { linhaFinalDoHandoff } from "@/lib/agent/pi/handoff";
 import { AVISO_LGPD_RE, garanteAvisoLgpd, PEDE_DADO_RE } from "@/lib/agent/pi/lgpd";
 import { persistirTurnoLivre } from "@/lib/agent/pi/persist-livre";
 import { custoDoTurnoCents } from "@/lib/agent/pi/precos";
@@ -137,6 +138,7 @@ export function montarTrechoDeSaida(args: {
 	texto: string;
 	avisoDado: boolean;
 	cardsDoTurno?: readonly { type: string }[];
+	handoff?: { nome: string | null; clientePediu: boolean };
 }): { texto: string; avisoAplicado: boolean; chip: ChipGerado | null } {
 	const bruto = scrubCpf(args.texto);
 	let texto = bruto;
@@ -147,6 +149,18 @@ export function montarTrechoDeSaida(args: {
 		texto = garanteAvisoLgpd({ texto: bruto, avisoJaDado: false }).texto;
 		avisoAplicado = true;
 	}
+	if (args.handoff) {
+		// O balão do handoff é UMA linha sem promessa. O modelo acrescentava uma confirmação
+		// com prazo ("um especialista vai entrar em contato em breve") — duas vozes, uma delas
+		// prometendo o que nada sustenta.
+		const linha = linhaFinalDoHandoff({
+			texto: bruto,
+			nome: args.handoff.nome,
+			clientePediu: args.handoff.clientePediu,
+		});
+		return { texto: linha, avisoAplicado: false, chip: null };
+	}
+
 	// O aviso é a pergunta do turno: o verificador de "uma pergunta por mensagem" roda
 	// DEPOIS dele, senão o aviso é cortado como pergunta extra.
 	const final = manterUmaPergunta(texto);
@@ -280,6 +294,9 @@ export function createRunTurnLivre(deps?: {
 			gruposRevelados: cartasRestauradas.grupos,
 			falasDoFecho: [],
 			pediuHumano: false,
+			casoAbertoNesteTurno: () => {
+				casoAberto = true;
+			},
 			estadoDepoisDaBusca: null,
 		};
 
@@ -309,6 +326,8 @@ export function createRunTurnLivre(deps?: {
 		// fala pede CPF ou celular, o aviso entra ANTES do pedido e o pedido fica pro
 		// turno depois do aceite. Não é conselho de prompt — é o verificador do texto.
 		let avisoDado = historico.some((f) => f.role === "assistant" && AVISO_LGPD_RE.test(f.content));
+		// O caso aberto NESTE turno define o balão: uma linha, sem promessa.
+		let casoAberto = false;
 		// CPF mascarado JÁ na saída (o número digitado não volta por eco do modelo)
 		// e uma pergunta por trecho de fala.
 		// CPF mascarado, aviso da LGPD antes do pedido de dado e uma pergunta por
@@ -319,6 +338,7 @@ export function createRunTurnLivre(deps?: {
 				texto: pendente,
 				avisoDado,
 				cardsDoTurno: ctx.cards,
+				handoff: casoAberto ? { nome: ctx.nomeDoCliente, clientePediu: true } : undefined,
 			});
 			avisoDado ||= saida.avisoAplicado;
 			pendente = "";
