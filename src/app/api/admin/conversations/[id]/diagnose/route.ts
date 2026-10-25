@@ -123,6 +123,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 	try {
 		const out = await diagnoseConversation({
 			transcript,
+			// A conversa é a chave do livro-caixa local: sem ela o custo desta chamada
+			// não aparece em lugar nenhum (P314).
+			conversationId,
 			evaluation: {
 				overallScore: evaluation.overallScore !== null ? Number(evaluation.overallScore) : null,
 				dimensions: evaluation.dimensions,

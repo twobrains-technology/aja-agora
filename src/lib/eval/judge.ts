@@ -1,5 +1,6 @@
 import { generateObject } from "ai";
 import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
+import { registrarUsoDeIa } from "@/lib/observability/sinais/publicar";
 import {
 	buildJudgePrompt,
 	type JudgeResult,
@@ -31,6 +32,9 @@ export type JudgeArgs = {
 	transcript: string;
 	personas: PersonaContext[];
 	signals: DeterministicSignals;
+	/** A conversa julgada — a linha do livro-caixa é por conversa, e o admin
+	 * descarta custo sem conversa. Ausente só na calibração offline (fixtures). */
+	conversationId?: string | null;
 };
 
 type GenerateObjectFn = typeof generateObject;
@@ -93,10 +97,23 @@ export async function judgeConversation(args: JudgeArgs): Promise<JudgeResponse>
 				  }
 				| undefined;
 
+			const tokensInput = usage?.inputTokens ?? usage?.promptTokens ?? 0;
+			const tokensOutput = usage?.outputTokens ?? usage?.completionTokens ?? 0;
+
+			// Livro-caixa local (P314): o juiz é chamada de LLM em produção e, com o
+			// Langfuse fora, os tokens voltavam para o caller e não deixavam rastro.
+			// Grava e segue — falha aqui nunca derruba o julgamento.
+			await registrarUsoDeIa({
+				conversationId: args.conversationId ?? null,
+				modelo: JUDGE_MODEL,
+				tokensInput,
+				tokensOutput,
+			});
+
 			return {
 				result: result.object,
-				tokensInput: usage?.inputTokens ?? usage?.promptTokens ?? 0,
-				tokensOutput: usage?.outputTokens ?? usage?.completionTokens ?? 0,
+				tokensInput,
+				tokensOutput,
 				durationMs: Date.now() - start,
 			};
 		} catch (err) {

@@ -4,6 +4,7 @@
 import { generateObject } from "ai";
 import { sanitizeUnicode } from "@/lib/eval/judge";
 import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
+import { registrarUsoDeIa } from "@/lib/observability/sinais/publicar";
 import {
 	buildDiagnosisPrompt,
 	type ConversationContext,
@@ -36,6 +37,8 @@ export type DiagnosisArgs = {
 	evaluation: EvalSnapshot;
 	persona: PersonaSnapshot;
 	context: ConversationContext;
+	/** A conversa diagnosticada — a linha do livro-caixa é por conversa. */
+	conversationId?: string | null;
 };
 
 type GenerateObjectFn = typeof generateObject;
@@ -84,6 +87,19 @@ export async function diagnoseConversation(args: DiagnosisArgs): Promise<Diagnos
 				  }
 				| undefined;
 
+			const tokensInput = usage?.inputTokens ?? usage?.promptTokens ?? 0;
+			const tokensOutput = usage?.outputTokens ?? usage?.completionTokens ?? 0;
+
+			// Livro-caixa local (P314): diagnóstico é Sonnet com o transcript inteiro —
+			// a chamada mais cara do fluxo de admin. Grava e segue; falha aqui não
+			// derruba o diagnóstico.
+			await registrarUsoDeIa({
+				conversationId: args.conversationId ?? null,
+				modelo: DIAGNOSIS_MODEL,
+				tokensInput,
+				tokensOutput,
+			});
+
 			// Defesa pós-LLM: os `.min(N)` do schema Zod são silenciosamente
 			// perdidos quando o AI SDK 6 traduz Zod → JSON Schema (viram só
 			// `description`). O modelo pode emitir arrays vazios ou strings
@@ -108,8 +124,8 @@ export async function diagnoseConversation(args: DiagnosisArgs): Promise<Diagnos
 
 			return {
 				result: sanitized,
-				tokensInput: usage?.inputTokens ?? usage?.promptTokens ?? 0,
-				tokensOutput: usage?.outputTokens ?? usage?.completionTokens ?? 0,
+				tokensInput,
+				tokensOutput,
 				durationMs: Date.now() - start,
 			};
 		} catch (err) {

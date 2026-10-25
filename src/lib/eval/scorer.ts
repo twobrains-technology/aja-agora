@@ -119,6 +119,8 @@ export async function scoreConversation(
 			metadata,
 			propostas: Number(propostas ?? 0),
 			contratoFechado: metadata?.contractClosed === true,
+			// A conversa vai junto: o juiz registra o próprio gasto no livro-caixa (P314).
+			conversationId,
 		},
 		judgeImpl,
 	);
