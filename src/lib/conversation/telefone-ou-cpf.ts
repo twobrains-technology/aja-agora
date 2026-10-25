@@ -137,8 +137,14 @@ export function extractCpf(text: string): string | null {
 }
 
 /** Parece uma tentativa de CPF (número longo) mesmo sem validar? Usado pra
- * responder "CPF inválido" em vez de mandar o número pro agente conversar. */
-function looksLikeCpfAttempt(text: string): boolean {
+ * responder "CPF inválido" em vez de mandar o número pro agente conversar.
+ *
+ * Exportada porque o fechamento do WhatsApp (`contract-capture.ts`) aplica a
+ * MESMA regra quando o estágio é o pedido de CPF: uma tentativa sem DV válido é
+ * resposta ao pedido ("confere os números"), não fala pra mandar ao modelo. A
+ * cópia que ele tinha era idêntica — e uma regra com duas cópias só é corrigida
+ * pela metade. */
+export function looksLikeCpfAttempt(text: string): boolean {
 	const digits = (text ?? "").replace(/\D/g, "");
 	return digits.length >= 9 && digits.length <= 14;
 }

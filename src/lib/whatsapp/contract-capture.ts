@@ -40,6 +40,7 @@ import { getLatestBeviProposal } from "@/lib/bevi/proposal-repo";
 import { loadIdentity, storeIdentity } from "@/lib/conversation/identity";
 import { saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
+import { looksLikeCpfAttempt } from "@/lib/conversation/telefone-ou-cpf";
 import { sendInteractiveMessage, sendTextMessage } from "./api";
 import { realOfferToWhatsApp } from "./formatter";
 import { extractCpf, waIdToCelular } from "./identify-capture";
@@ -149,9 +150,32 @@ const CANCEL_RE =
 const AFFIRM_RE =
 	/\b(sim|quero|confirm\w*|bora|partiu|pode|vamos|fecha\w*|isso|claro|aceito|com certeza|ok|beleza|t[áa] bom|positivo)\b/i;
 
-function looksLikeCpfAttempt(text: string): boolean {
-	const digits = (text ?? "").replace(/\D/g, "");
-	return digits.length >= 9 && digits.length <= 14;
+/** A DECISÃO do estágio `cpf`, isolada da I/O pra ser testável — irmã de
+ * `decideConfirmStage` e `decideOfferConfirmStage`.
+ *
+ * O estágio `cpf` SÓ existe porque o agente acabou de pedir o CPF: é o contexto
+ * que a regra única de `telefone-ou-cpf.ts` chama de `pedidoDeCpf`. Por isso o
+ * número ambíguo (`11900000083` é celular de SP E passa no DV do CPF) é lido
+ * como CPF aqui — sem isso, o fechamento trataria o telefone que o cliente
+ * acabou de ditar como identidade dele.
+ *
+ * Duas respostas fixas saem daqui; nenhuma delas é fala do vendedor (`handled:
+ * false` manda o texto pro modelo):
+ *  - CPF com DV válido → `fire` (a proposta faz consulta de bureau, o aceite já
+ *    veio no passo 5);
+ *  - tentativa de CPF com DV errado → `invalid-cpf`, o "confere os números" do
+ *    `CONTRACT_INVALID_CPF_REPLY`.
+ *  Sem cara de CPF (pergunta, objeção) → o modelo responde e o gate não cai. */
+export type CpfStageDecision =
+	| { handled: false }
+	| { handled: true; outcome: "fire"; cpf: string }
+	| { handled: true; outcome: "invalid-cpf" };
+
+export function decideCpfStage(text: string): CpfStageDecision {
+	const cpf = extractCpf(text);
+	if (cpf) return { handled: true, outcome: "fire", cpf };
+	if (looksLikeCpfAttempt(text)) return { handled: true, outcome: "invalid-cpf" };
+	return { handled: false };
 }
 
 /** Abre a máquina de estado do fechamento. Chamada pelo adapter quando o
@@ -193,13 +217,14 @@ export async function captureContractText(
 	}
 
 	if (cc.stage === "cpf") {
-		const cpf = extractCpf(text);
-		if (cpf) {
+		// A decisão vive em `decideCpfStage` (pura, testável).
+		const decisao = decideCpfStage(text);
+		if (decisao.handled && decisao.outcome === "fire") {
 			// storeIdentity cifra antes de persistir — CPF nunca em claro no meta.
-			await storeIdentity(conv.id, { cpf, celular: waIdToCelular(from) });
+			await storeIdentity(conv.id, { cpf: decisao.cpf, celular: waIdToCelular(from) });
 			return { handled: true, outcome: "fire" };
 		}
-		if (looksLikeCpfAttempt(text)) return { handled: true, outcome: "invalid-cpf" };
+		if (decisao.handled) return decisao;
 		// Sem cara de CPF (uma pergunta, uma objeção) → o MODELO responde. O gate não
 		// cai: sem CPF, `fireContract` não cria proposta nenhuma.
 		return { handled: false };
