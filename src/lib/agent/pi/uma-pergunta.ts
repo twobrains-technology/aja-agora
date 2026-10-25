@@ -29,7 +29,11 @@ export function manterUmaPergunta(texto: string): string {
 		if (m[0].length === 0) {
 			re.lastIndex += 1;
 		} else {
-			trechos.push({ ini: m.index, fim: m.index + m[0].length, pergunta: /\?+\s*$/.test(m[0].trim()) });
+			trechos.push({
+				ini: m.index,
+				fim: m.index + m[0].length,
+				pergunta: /\?+\s*$/.test(m[0].trim()),
+			});
 		}
 		m = re.exec(limpo);
 	}
@@ -39,5 +43,8 @@ export function manterUmaPergunta(texto: string): string {
 		.filter((t, i) => !t.pergunta || i === ultima)
 		.map((t) => texto.slice(t.ini, t.fim))
 		.join("");
-	return saida.replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+	return saida
+		.replace(/[ \t]{2,}/g, " ")
+		.replace(/\n{3,}/g, "\n\n")
+		.trim();
 }

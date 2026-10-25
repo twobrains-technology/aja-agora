@@ -199,7 +199,11 @@ export async function abrirSessao(args: {
 							stopReason: "stop" as const,
 							timestamp: quando,
 						}
-					: { role: "user" as const, content: [{ type: "text" as const, text: m.content }], timestamp: quando },
+					: {
+							role: "user" as const,
+							content: [{ type: "text" as const, text: m.content }],
+							timestamp: quando,
+						},
 		};
 		anterior = id;
 		return entry;

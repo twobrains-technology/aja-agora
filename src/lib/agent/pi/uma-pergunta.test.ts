@@ -3,7 +3,9 @@ import { contarPerguntas, manterUmaPergunta } from "./uma-pergunta";
 
 describe("uma pergunta por mensagem", () => {
 	it("conta pergunta fora de aspas", () => {
-		expect(contarPerguntas("Você quer trocar o carro, ou é a primeira compra? E para quando?")).toBe(2);
+		expect(
+			contarPerguntas("Você quer trocar o carro, ou é a primeira compra? E para quando?"),
+		).toBe(2);
 		expect(contarPerguntas('Muita gente pergunta "será que consigo?" e eu explico.')).toBe(0);
 		expect(contarPerguntas("Ótimo, Marcos!")).toBe(0);
 	});
