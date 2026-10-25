@@ -46,6 +46,12 @@ import {
 } from "@/lib/conversation/identity";
 import { loadConversationHistory } from "@/lib/conversation/messages";
 import { metaOf } from "@/lib/conversation/meta";
+import {
+	celularEhTelefone,
+	dddValido,
+	ehCelularBR,
+	pedidoDeCpfNoUltimoBalao,
+} from "@/lib/conversation/telefone-ou-cpf";
 import { marcarPrimeiraCarta } from "@/lib/observability/sinais/marcar-primeira-carta";
 import { registrarUsoDeIa } from "@/lib/observability/sinais/publicar";
 import {
@@ -53,86 +59,6 @@ import {
 	lerCartasDaConversa,
 	restaurarCartasDaConversa,
 } from "./cartas-da-conversa";
-
-/** Identidade que o cliente digitou nesta fala — capturada no SERVIDOR, nunca
- * pelo modelo. Devolve o texto sem os números, que é o que vai para o banco, para
- * o provedor do modelo e para o admin. */
-/** DDDs em uso no Brasil — LISTA FECHADA (ANATEL), não faixa. A faixa antiga
- * rejeitava 21/22/24/27/28 (RJ e ES, DDDs reais) e aceitava 26/30/36/39, que
- * não existem. */
-const DDDS_VALIDOS = new Set([
-	"11",
-	"12",
-	"13",
-	"14",
-	"15",
-	"16",
-	"17",
-	"18",
-	"19",
-	"21",
-	"22",
-	"24",
-	"27",
-	"28",
-	"31",
-	"32",
-	"33",
-	"34",
-	"35",
-	"37",
-	"38",
-	"41",
-	"42",
-	"43",
-	"44",
-	"45",
-	"46",
-	"47",
-	"48",
-	"49",
-	"51",
-	"53",
-	"54",
-	"55",
-	"61",
-	"62",
-	"63",
-	"64",
-	"65",
-	"66",
-	"67",
-	"68",
-	"69",
-	"71",
-	"73",
-	"74",
-	"75",
-	"77",
-	"79",
-	"81",
-	"82",
-	"83",
-	"84",
-	"85",
-	"86",
-	"87",
-	"88",
-	"89",
-	"91",
-	"92",
-	"93",
-	"94",
-	"95",
-	"96",
-	"97",
-	"98",
-	"99",
-]);
-
-function dddValido(ddd: string): boolean {
-	return DDDS_VALIDOS.has(ddd);
-}
 
 /** Troca TODAS as ocorrências do número — `String.replace` com string troca só a
  * primeira, e quem repete o CPF na mesma mensagem deixava o número em claro no
@@ -147,9 +73,13 @@ function identidadeDeCpf(identidade: StoredIdentity | null): StoredIdentity | nu
 	return identidade?.cpf ? identidade : null;
 }
 
+/** Identidade que o cliente digitou nesta fala — capturada no SERVIDOR, nunca
+ * pelo modelo. Devolve o texto sem os números, que é o que vai para o banco, para
+ * o provedor do modelo e para o admin. */
 export function capturarIdentidadeDoTexto(
 	texto: string,
 	atual: StoredIdentity | null,
+	contexto: { pedidoDeCpf: boolean } = { pedidoDeCpf: false },
 ): {
 	identidade: StoredIdentity | null;
 	textoLimpo: string;
@@ -168,15 +98,13 @@ export function capturarIdentidadeDoTexto(
 	// CPF (este passo roda antes do telefone), e o cliente ficava sem o telefone
 	// que acabou de ditar e com um CPF que não é dele (L11/P188/P263).
 	//
-	// A classificação é a do capturador do WhatsApp (`identify-capture.ts` →
-	// `decidirCpfDoTexto`), que o canal já usa: sequência com cara de CELULAR é
-	// telefone; o que a torna resposta ao pedido de CPF é o cliente DECLARAR o
-	// dado — a palavra "cpf" no texto ou o CPF formatado, que é inequívoco.
-	const declaraCpf = /\bcpf\b/i.test(texto);
-	const pareceCelular = (digitos: string) =>
-		digitos.length === 11 && digitos[2] === "9" && dddValido(digitos.slice(0, 2));
-	/** Celular que também passaria no DV do CPF — e que o cliente NÃO declarou CPF. */
-	const celularAmbiguo = (digitos: string) => pareceCelular(digitos) && !declaraCpf;
+	// O desempate é a regra ÚNICA do projeto
+	// (`@/lib/conversation/telefone-ou-cpf`), a mesma que o capturador do
+	// WhatsApp usa: número com cara de celular só é CPF quando o cliente DECLARA
+	// o dado (a palavra "cpf" no texto, ou o CPF formatado) ou quando o agente
+	// acabou de pedir o CPF — `contexto.pedidoDeCpf`, que é fato do histórico.
+	const ehTelefone = (digitos: string) =>
+		celularEhTelefone({ digitos, texto, pedidoDeCpf: contexto.pedidoDeCpf });
 
 	// ── CPF ────────────────────────────────────────────────────────────────
 	// Só entra CPF FORMATADO (`111.444.777-35`) ou 11 dígitos que PASSAM no
@@ -185,7 +113,7 @@ export function capturarIdentidadeDoTexto(
 	// digitar (o regex antigo levava "11987654321" embora como CPF inválido).
 	const formatado = textoLimpo.match(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/)?.[0] ?? null;
 	const candidatos = [...textoLimpo.matchAll(/\b\d{11}\b/g)].map((m) => m[0]);
-	const cpfSolto = candidatos.find((c) => isValidCpf(c) && !celularAmbiguo(c)) ?? null;
+	const cpfSolto = candidatos.find((c) => isValidCpf(c) && !ehTelefone(c)) ?? null;
 	const cpfCandidato = formatado ?? cpfSolto;
 
 	if (cpfCandidato) {
@@ -205,10 +133,10 @@ export function capturarIdentidadeDoTexto(
 		textoLimpo.match(/(?:\+?55\s?)?\(?\d{2}\)?\s?9?\d{4}[-.\s]?\d{4}\b/)?.[0] ?? null;
 	const soltos = [...textoLimpo.matchAll(/\b\d{10,11}\b/g)].map((m) => m[0]);
 	// O celular vale mesmo quando passaria no DV do CPF: se o passo anterior não o
-	// tomou como CPF (só o faz quando o cliente DECLAROU o dado), este é o número
-	// que ele ditou.
+	// tomou como CPF (só o faz quando o cliente DECLAROU o dado ou o CPF foi
+	// pedido), este é o número que ele ditou.
 	const telSolto =
-		soltos.find((t) => pareceCelular(t)) ??
+		soltos.find((t) => ehCelularBR(t)) ??
 		soltos.find((t) => t.length === 10 && dddValido(t.slice(0, 2))) ??
 		null;
 	const teleCandidato = formatadoTel ?? telSolto;
@@ -504,8 +432,14 @@ export function createRunTurnLivre(deps?: {
 		// 1. IDENTIDADE — capturada aqui, antes do modelo ver qualquer coisa, e antes
 		// de qualquer log: o texto que chega bruto tem CPF e celular, e o rastro de
 		// entrada já escreveu isso no log do servidor (N07).
+		//
+		// O CONTEXTO vem do histórico: se o último balão do agente pediu o CPF, o
+		// número com cara de celular que chega agora é resposta a esse pedido e vale
+		// como CPF — mesma regra do capturador do WhatsApp. Sem o pedido, é telefone.
 		const identidadeAtual = await loadIdentity(conversationId).catch(() => null);
-		const captura = capturarIdentidadeDoTexto(userText ?? "", identidadeAtual);
+		const captura = capturarIdentidadeDoTexto(userText ?? "", identidadeAtual, {
+			pedidoDeCpf: pedidoDeCpfNoUltimoBalao(historico.at(-1)),
+		});
 		if (captura.identidade && (captura.recebeuCpf || captura.recebeuCelular)) {
 			await storeIdentity(conversationId, captura.identidade).catch((erro: unknown) => {
 				console.error("[pi-livre] identidade não gravada (ignorado):", erro);

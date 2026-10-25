@@ -199,8 +199,9 @@ export function ehNarracaoDeFerramenta(texto: string): boolean {
  * de ir para o canal, e o card avisa quando aparece.
  *
  * A ORDEM DOS FATOS é a do harness (`turno-livre.ts`): o balão fica pronto
- * quando a tool é chamada ou quando o beat acaba, e os cards saem no FIM do
- * turno. Por isso o anúncio fica SUSPENSO até o turno dizer se veio card — é a
+ * quando a tool é chamada ou quando o beat acaba, e o card sai no RESULTADO da
+ * ferramenta — o artifact é emitido ali, antes da fala que vem depois dela. Por
+ * isso o anúncio fica SUSPENSO até o turno dizer se veio card — é a
  * única hora em que dá para saber se ele estava colado a um. Guardar é o que
  * impede a guarda de comer fala legítima de um turno sem card. */
 export function criarNarracaoDoTurno() {

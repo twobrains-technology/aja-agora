@@ -96,6 +96,21 @@ describe("capturarIdentidadeDoTexto", () => {
 		expect(r.recebeuCpf).toBe(false);
 		expect(r.identidade).toBeNull();
 	});
+
+	// Celular que também passa no DV do CPF: quem desempata é o CONTEXTO do
+	// pedido, a mesma regra do capturador do WhatsApp (L11/P188/P263).
+	it("número ambíguo sem pedido de CPF é telefone; com o pedido, é CPF", () => {
+		const AMBIGUO = "11900000083";
+
+		const telefone = capturarIdentidadeDoTexto(AMBIGUO, null, { pedidoDeCpf: false });
+		expect(telefone.recebeuCpf).toBe(false);
+		expect(telefone.identidade).toEqual({ cpf: "", celular: AMBIGUO });
+
+		const cpf = capturarIdentidadeDoTexto(AMBIGUO, null, { pedidoDeCpf: true });
+		expect(cpf.recebeuCpf).toBe(true);
+		expect(cpf.recebeuCelular).toBe(false);
+		expect(cpf.identidade).toEqual({ cpf: AMBIGUO, celular: "" });
+	});
 });
 
 /** CPF com dígito trocado: continua PII, então tem que sair do texto — mas não

@@ -64,6 +64,23 @@ describe("telefone e número comprido não são CPF", () => {
 		expect(decidirCpfDoTexto("111.444.777-36", { pedidoDeCpf: true }).outcome).toBe("invalid");
 	});
 
+	it("logo depois do pedido, o número ambíguo é lido como CPF — como na `main`", async () => {
+		const { decidirCpfDoTexto } = await import("./identify-capture");
+		// `11900000083` é celular E passa no DV. Depois de "qual seu CPF?", o que o
+		// cliente manda é resposta a essa pergunta: o número vira CPF (é o que a
+		// `main` fazia dentro do gate identify).
+		expect(decidirCpfDoTexto("11900000083", { pedidoDeCpf: true })).toEqual({
+			outcome: "captured",
+			cpf: "11900000083",
+		});
+		// Fora do pedido, continua telefone (o teste acima). E a declaração do dado
+		// vence a cara de celular em qualquer contexto.
+		expect(decidirCpfDoTexto("meu cpf é 11900000083", { pedidoDeCpf: false })).toEqual({
+			outcome: "captured",
+			cpf: "11900000083",
+		});
+	});
+
 	it("o pedido de CPF é a ÚLTIMA fala do agente, sem turno do cliente no meio", async () => {
 		const { pedidoDeCpfNoUltimoBalao } = await import("./identify-capture");
 		expect(pedidoDeCpfNoUltimoBalao({ role: "assistant", content: "me manda seu CPF?" })).toBe(

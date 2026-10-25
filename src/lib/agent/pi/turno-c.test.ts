@@ -4,7 +4,8 @@
 // teste, pelo caminho real do turno (stream + banco), não pela expressão:
 //
 //  · P188/P263 (L11) — o número que serve como telefone E passa no DV do CPF não
-//    é consumido como CPF fora do contexto em que o CPF foi pedido;
+//    é consumido como CPF fora do contexto em que o CPF foi pedido, e É CPF
+//    depois do pedido — igual nos dois capturadores (WhatsApp e Pi);
 //  · P157 — o card sai no RESULTADO da ferramenta, entre as duas falas;
 //  · P217/P273 (N09) — o livro-caixa grava o cache do prompt e o custo das
 //    quatro parcelas, numa linha por turno.
@@ -84,14 +85,25 @@ async function rodarTurno(args: {
 const AMBIGUO = "11900000083";
 
 describe("P188/P263 — número ambíguo é TELEFONE, não CPF", () => {
-	it("os dois capturadores classificam o mesmo número do mesmo jeito", () => {
+	it("os dois capturadores dão a mesma resposta nos dois contextos", () => {
+		// Sem o pedido do CPF: o número é TELEFONE nos dois canais.
 		expect(decidirCpfDoTexto(AMBIGUO, { pedidoDeCpf: false })).toEqual({ outcome: "none" });
+		const piSemPedido = capturarIdentidadeDoTexto(AMBIGUO, null, { pedidoDeCpf: false });
+		expect(piSemPedido.recebeuCpf).toBe(false);
+		expect(piSemPedido.recebeuCelular).toBe(true);
+		expect(piSemPedido.identidade).toEqual({ cpf: "", celular: AMBIGUO });
+		expect(piSemPedido.textoLimpo).not.toContain(AMBIGUO);
 
-		const pi = capturarIdentidadeDoTexto(AMBIGUO, null);
-		expect(pi.recebeuCpf).toBe(false);
-		expect(pi.recebeuCelular).toBe(true);
-		expect(pi.identidade).toEqual({ cpf: "", celular: AMBIGUO });
-		expect(pi.textoLimpo).not.toContain(AMBIGUO);
+		// Logo depois de o agente pedir o CPF: o número é CPF nos dois canais — o
+		// comportamento da `main` dentro do gate identify.
+		expect(decidirCpfDoTexto(AMBIGUO, { pedidoDeCpf: true })).toEqual({
+			outcome: "captured",
+			cpf: AMBIGUO,
+		});
+		const piComPedido = capturarIdentidadeDoTexto(AMBIGUO, null, { pedidoDeCpf: true });
+		expect(piComPedido.recebeuCpf).toBe(true);
+		expect(piComPedido.recebeuCelular).toBe(false);
+		expect(piComPedido.identidade).toEqual({ cpf: AMBIGUO, celular: "" });
 	});
 
 	it("dito com separador de telefone continua telefone", () => {
@@ -131,6 +143,36 @@ describe("P188/P263 — número ambíguo é TELEFONE, não CPF", () => {
 			.where(eq(messages.conversationId, conversationId));
 		expect(linha?.content).not.toContain(AMBIGUO);
 		expect(linha?.content).toContain("[telefone recebido e guardado]");
+	});
+
+	it("o turno inteiro lê o número como CPF depois de o agente pedir o CPF", async () => {
+		const conversationId = await novaConversa();
+		// O pedido é FATO DO HISTÓRICO: é a última fala do agente antes do número.
+		await db.insert(messages).values({
+			conversationId,
+			role: "assistant",
+			content: "Pra seguir, me manda seu CPF?",
+			channel: "web",
+		});
+
+		const turno = await rodarTurno({
+			conversationId,
+			userText: AMBIGUO,
+			beats: [{ text: "Perfeito, recebido!" }],
+		});
+		await turno.fechar();
+
+		const identidade = await loadIdentity(conversationId);
+		expect(identidade?.cpf).toBe(AMBIGUO);
+		expect(identidade?.celular).toBe("");
+
+		const linhas = await db
+			.select({ content: messages.content })
+			.from(messages)
+			.where(eq(messages.conversationId, conversationId));
+		const historico = linhas.map((l) => l.content).join("\n");
+		expect(historico).not.toContain(AMBIGUO);
+		expect(historico).toContain("[CPF recebido e guardado]");
 	});
 });
 

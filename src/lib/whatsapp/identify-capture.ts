@@ -14,9 +14,20 @@ import {
 	identidadeDeVitrine,
 	vitrineDisponivel,
 } from "@/lib/bevi/identidade-vitrine";
-import { isValidCpf, storeIdentity } from "@/lib/conversation/identity";
+import { storeIdentity } from "@/lib/conversation/identity";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
+import { decidirCpfDoTexto, pedidoDeCpfNoUltimoBalao } from "@/lib/conversation/telefone-ou-cpf";
 import { isSimulatedWaId } from "./simulator-bus";
+
+// A classificação telefone × CPF mora num módulo só
+// (`@/lib/conversation/telefone-ou-cpf`), importada daqui e pelo Pi. Reexportada
+// porque `contract-capture.ts` já a importa deste arquivo.
+export {
+	type DecisaoDoCpfDoTexto,
+	decidirCpfDoTexto,
+	extractCpf,
+	pedidoDeCpfNoUltimoBalao,
+} from "@/lib/conversation/telefone-ou-cpf";
 
 /** Beat 1 (CONTEXTO) da cadência 2-tempos do identify (FIX-210). Carrega o gancho
  * literal do docx — "analisar várias administradoras" + "aderentes ao seu perfil"
@@ -63,16 +74,6 @@ export const IDENTIFY_CONFIRMED_REPLY = "Perfeito, recebido! Já vou buscar as m
 /** FIX-53: identidade vem ANTES do valor — após o CPF a qualificação CONTINUA
  * (valor/prazo/lance), então a confirmação não promete busca ainda. */
 export const IDENTIFY_CONTINUE_REPLY = "Perfeito, recebido!";
-
-/** Extrai um CPF VÁLIDO (11 dígitos + DV) do texto livre. Null se não houver. */
-export function extractCpf(text: string): string | null {
-	const candidates = (text ?? "").match(/\d[\d.\-\s]{9,17}\d/g) ?? [];
-	for (const c of candidates) {
-		const digits = c.replace(/\D/g, "");
-		if (digits.length === 11 && isValidCpf(digits)) return digits;
-	}
-	return null;
-}
 
 /** waId vem com DDI (ex: 5562999887766) — a Bevi espera DDD+número (62999887766). */
 // Normaliza um número BR pro formato que a Bevi espera: DDD + 9 + 8 = 11 dígitos.
@@ -146,72 +147,6 @@ export function waIdToCelular(waId: string): string {
 		return testCelular ? normalizeCelularBR(testCelular) : syntheticCelularFromSimulatedWaId(waId);
 	}
 	return normalizeCelularBR(waId);
-}
-
-/** DDDs realmente atribuídos no Brasil (Anatel). Fora desta lista, 11 dígitos
- *  não são telefone — e é o que separa o CPF `028…` da sessão `a68b1945` de um
- *  celular ditado. */
-const DDD_VALIDOS = new Set([
-	11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 24, 27, 28, 31, 32, 33, 34, 35, 37, 38, 41, 42, 43,
-	44, 45, 46, 47, 48, 49, 51, 53, 54, 55, 61, 62, 63, 64, 65, 66, 67, 68, 69, 71, 73, 74, 75, 77,
-	79, 81, 82, 83, 84, 85, 86, 87, 88, 89, 91, 92, 93, 94, 95, 96, 97, 98, 99,
-]);
-
-/** O texto traz um número que tem cara de CELULAR (DDD válido + 9 + 8 dígitos)? */
-function pareceCelularBR(text: string): boolean {
-	for (const m of (text ?? "").matchAll(/\d{11}/g)) {
-		const d = m[0];
-		if (DDD_VALIDOS.has(Number(d.slice(0, 2))) && d[2] === "9") return true;
-	}
-	return false;
-}
-
-/** Parece uma tentativa de CPF (número longo) mesmo sem validar? Usado pra
- * responder "CPF inválido" em vez de mandar o número pro agente conversar. */
-function looksLikeCpfAttempt(text: string): boolean {
-	const digits = (text ?? "").replace(/\D/g, "");
-	return digits.length >= 9 && digits.length <= 14;
-}
-
-export type DecisaoDoCpfDoTexto =
-	| { outcome: "captured"; cpf: string }
-	| { outcome: "invalid" }
-	| { outcome: "none" };
-
-/** A DECISÃO do capture de CPF, isolada da I/O pra ser testável.
- *
- * Telefone e número comprido NÃO são "CPF inválido". A regra anterior tratava
- * qualquer sequência de 9–14 dígitos como tentativa de CPF e respondia "esse CPF
- * não confere" — inclusive para o celular que o cliente acabou de ditar. Ele
- * ouvia que o PRÓPRIO CPF estava errado sem ter mandado CPF nenhum.
- *
- * CPF é uma coisa só: 11 dígitos que PASSAM no dígito verificador. A exceção é o
- * turno em que o pedido de CPF acabou de sair (`pedidoDeCpf`): ali o número
- * comprido é resposta à pergunta que o agente fez, e a resposta útil é "confere
- * os números" em vez de mandar o telefone pro modelo conversar.
- *
- * O celular dito por extenso continua protegido: 11 dígitos com DDD válido + 9
- * não viram identidade nem quando passam no DV por coincidência (~1% deles) —
- * salvo se o cliente escreveu "CPF" junto, que é declaração explícita do dado. */
-export function decidirCpfDoTexto(
-	text: string,
-	args: { pedidoDeCpf: boolean },
-): DecisaoDoCpfDoTexto {
-	const pareceTelefone = pareceCelularBR(text) && !/\bcpf\b/i.test(text);
-	const cpf = pareceTelefone ? null : extractCpf(text);
-	if (cpf) return { outcome: "captured", cpf };
-	if (args.pedidoDeCpf && looksLikeCpfAttempt(text)) return { outcome: "invalid" };
-	return { outcome: "none" };
-}
-
-/** O pedido de CPF é a ÚLTIMA coisa que o agente disse — sem turno do cliente no
- * meio. `null`/vazio quando a última fala é do cliente (aí o número comprido dele
- * não é resposta a pedido nenhum) ou a conversa não tem histórico. */
-export function pedidoDeCpfNoUltimoBalao(
-	ultima: { role: string; content: string } | null | undefined,
-): boolean {
-	if (!ultima || ultima.role !== "assistant") return false;
-	return /\bcpf\b/i.test(ultima.content ?? "");
 }
 
 /**
