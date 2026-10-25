@@ -7,6 +7,7 @@
 import { startMetaAdsSyncWorker } from "@/lib/workers/meta-ads-sync-cycle";
 import { startProposalStatusWorker } from "@/lib/workers/proposal-status-poll";
 import { startRemarketingWorker } from "@/lib/workers/remarketing-cycle";
+import { startWatchdogDaConversaWorker } from "@/lib/workers/watchdog-da-conversa";
 
 async function main() {
 	if (!process.env.DATABASE_URL) {
@@ -14,8 +15,12 @@ async function main() {
 		process.exit(1);
 	}
 	await startProposalStatusWorker();
-	// FIX-207: watchdog de re-engajamento do funil no MESMO processo/container.
-	// Degrada com log se REDIS_URL ausente (não derruba o worker de proposta).
+	// O watchdog da CONVERSA no MESMO processo/container: retomada de quem falou e
+	// não teve resposta, acolhida N1 de quem voltou a escrever com a mesa, e a
+	// reconciliação fala × estado (tick de 30 s), mais a campainha diária do SLA
+	// da mesa. Degrada com log se REDIS_URL ausente (não derruba o worker de
+	// proposta).
+	await startWatchdogDaConversaWorker();
 	// Régua de remarketing (Remarketing_WhatsApp_V3.pdf): job repetível de 30 s
 	// com `jobId` fixo — o MESMO padrão do watchdog, pelo mesmo motivo (duas
 	// réplicas do ECS; `setInterval` no app dispararia duas vezes). É também o
