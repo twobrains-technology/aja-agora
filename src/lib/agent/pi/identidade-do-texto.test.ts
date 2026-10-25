@@ -17,12 +17,60 @@ describe("capturarIdentidadeDoTexto", () => {
 		expect(r.textoLimpo).toContain("[CPF recebido e guardado]");
 	});
 
-	it("celular solto de 11 dígitos NÃO é confundido com CPF", () => {
+	it("celular solto de 11 dígitos NÃO é confundido com CPF — e fica retido", () => {
 		const r = capturarIdentidadeDoTexto("meu numero é 11987654321", null);
 		expect(r.recebeuCpf).toBe(false);
 		expect(r.recebeuCelular).toBe(true);
-		expect(r.identidade).toBeNull();
+		// Número dito ANTES do CPF não se perde: fica guardado com `cpf` vazio até o
+		// CPF chegar no turno seguinte.
+		expect(r.identidade).toEqual({ cpf: "", celular: "11987654321" });
 		expect(r.textoLimpo).not.toContain("987654321");
+	});
+
+	it("DDD do RJ e do ES (21, 22, 24, 27, 28) é telefone válido", () => {
+		for (const ddd of ["21", "22", "24", "27", "28"]) {
+			const r = capturarIdentidadeDoTexto(`meu número é (${ddd}) 98888-7777`, {
+				cpf: CPF,
+				celular: "",
+			});
+			expect(r.recebeuCelular).toBe(true);
+			expect(r.identidade).toEqual({ cpf: CPF, celular: `${ddd}988887777` });
+		}
+	});
+
+	it("DDD que não existe (20, 26, 30, 36) não vira telefone", () => {
+		for (const ddd of ["20", "26", "30", "36"]) {
+			const r = capturarIdentidadeDoTexto(`meu número é (${ddd}) 98888-7777`, null);
+			expect(r.recebeuCelular).toBe(false);
+			expect(r.identidade).toBeNull();
+		}
+	});
+
+	it("um SEGUNDO CPF diferente também sai do texto", () => {
+		const r = capturarIdentidadeDoTexto(
+			`meu cpf é ${CPF_MASCARADO} e o da minha esposa é 529.982.247-25`,
+			null,
+		);
+		expect(r.identidade).toEqual({ cpf: CPF, celular: "" });
+		expect(r.textoLimpo).not.toContain("444");
+		expect(r.textoLimpo).not.toContain("529");
+	});
+
+	it("celular dito ANTES do CPF fica retido na identidade", () => {
+		const primeiro = capturarIdentidadeDoTexto("meu número é (11) 97777-6666", null);
+		expect(primeiro.identidade).toEqual({ cpf: "", celular: "11977776666" });
+		const depois = capturarIdentidadeDoTexto(`e meu cpf é ${CPF_MASCARADO}`, primeiro.identidade);
+		expect(depois.identidade).toEqual({ cpf: CPF, celular: "11977776666" });
+	});
+
+	it("TODO número repetido sai do texto, não só o primeiro", () => {
+		const r = capturarIdentidadeDoTexto(
+			`cpf ${CPF_MASCARADO}, repetindo ${CPF_MASCARADO}, tel (11) 97777-6666 e de novo (11) 97777-6666`,
+			null,
+		);
+		expect(r.identidade).toEqual({ cpf: CPF, celular: "11977776666" });
+		expect(r.textoLimpo).not.toContain("444");
+		expect(r.textoLimpo).not.toContain("97777");
 	});
 
 	it("CPF + celular: devolve a identidade completa e some com os dois números", () => {

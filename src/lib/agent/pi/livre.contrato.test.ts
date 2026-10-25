@@ -6,14 +6,15 @@
 //  · o card nasce do RESULTADO da tool, não de uma `cards do funil`;
 //  · a busca grava categoria e reveal na meta;
 //  · a fala do cliente é persistida em `messages`.
+import { readFileSync } from "node:fs";
 import { eq } from "drizzle-orm";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { conversations, messages } from "@/db/schema";
 import type { GroupSummary } from "@/lib/adapters/types";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { subirServidorRoteirizado } from "./testing/servidor-roteirizado";
-import { createRunTurnLivre } from "./turno-livre";
+import { createRunTurnLivre, eventosDasFalasDoFecho } from "./turno-livre";
 
 const criadas: string[] = [];
 afterEach(async () => {
@@ -168,7 +169,7 @@ describe("motor livre — vendedor sem funil", () => {
 		}
 	});
 
-	it("sem busca, o vendedor ainda responde — e nenhum card aparece", async () => {
+	it("sem busca, o vendedor ainda responde — e nenhum card de OFERTA aparece", async () => {
 		const conversationId = await novaConversa();
 		const servidor = await subirServidorRoteirizado([
 			{ text: "Que bom! Me conta: carro, moto, imóvel ou serviços?" },
@@ -188,10 +189,143 @@ describe("motor livre — vendedor sem funil", () => {
 			}))
 				eventos.push(ev);
 
-			expect(eventos.filter((e) => e.type === "artifact")).toHaveLength(0);
+			// O CHIP de pergunta fechada não é card de oferta: ele é o botão da pergunta.
+			const artefatos = eventos
+				.filter((e) => e.type === "artifact")
+				.map((e) => (e as { artifactType: string }).artifactType);
+			expect(artefatos.filter((t) => t !== "quick_reply")).toHaveLength(0);
 			expect(eventos.some((e) => e.type === "text-delta")).toBe(true);
 		} finally {
 			await servidor.fechar();
 		}
+	});
+
+	it("pergunta fechada vira chip e a lista sai do balão", async () => {
+		const conversationId = await novaConversa();
+		const servidor = await subirServidorRoteirizado([
+			{ text: "Qual combina com você?\n1) Carro\n2) Moto" },
+		]);
+		try {
+			const run = createRunTurnLivre({
+				provider: { id: "litellm", baseUrl: servidor.url, apiKey: "teste", model: "roteirizado" },
+				busca: async () => [],
+			});
+			const eventos: TurnEvent[] = [];
+			for await (const ev of run({
+				channel: "web",
+				conversationId,
+				userText: "oi",
+				isUserTurn: true,
+				contactName: null,
+			}))
+				eventos.push(ev);
+
+			const texto = eventos
+				.filter((e) => e.type === "text-delta")
+				.map((e) => (e as { text: string }).text)
+				.join("\n");
+			// A pergunta fica no balão; a lista vira botão — não se lê duas vezes.
+			expect(texto).toContain("Qual combina com você?");
+			expect(texto).not.toContain("1) Carro");
+
+			const chip = eventos.find((e) => e.type === "artifact") as
+				| { artifactType: string; payload: { options: { label: string }[] } }
+				| undefined;
+			expect(chip?.artifactType).toBe("quick_reply");
+			expect(chip?.payload.options.map((o) => o.label)).toEqual(["Carro", "Moto"]);
+		} finally {
+			await servidor.fechar();
+		}
+	});
+
+	it("vazamento de máquina não chega ao canal AO VIVO", async () => {
+		const conversationId = await novaConversa();
+		const servidor = await subirServidorRoteirizado([
+			{ text: '{"categoria": "auto", "valorDoBem": 80000}' },
+		]);
+		try {
+			const run = createRunTurnLivre({
+				provider: { id: "litellm", baseUrl: servidor.url, apiKey: "teste", model: "roteirizado" },
+				busca: async () => [],
+			});
+			const eventos: TurnEvent[] = [];
+			for await (const ev of run({
+				channel: "web",
+				conversationId,
+				userText: "oi",
+				isUserTurn: true,
+				contactName: null,
+			}))
+				eventos.push(ev);
+
+			const texto = eventos
+				.filter((e) => e.type === "text-delta")
+				.map((e) => (e as { text: string }).text)
+				.join("\n");
+			expect(texto).not.toContain("valorDoBem");
+			expect(texto.trim().length).toBeGreaterThan(0);
+		} finally {
+			await servidor.fechar();
+		}
+	});
+
+	it("CPF e celular não chegam ao log do servidor", async () => {
+		const conversationId = await novaConversa();
+		const servidor = await subirServidorRoteirizado([{ text: "Anotado!" }]);
+		const logs: string[] = [];
+		const espiar = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+			logs.push(args.map((a) => String(a)).join(" "));
+		});
+		try {
+			const run = createRunTurnLivre({
+				provider: { id: "litellm", baseUrl: servidor.url, apiKey: "teste", model: "roteirizado" },
+				busca: async () => [],
+			});
+			for await (const _ev of run({
+				channel: "web",
+				conversationId,
+				userText: "meu cpf é 111.444.777-35 e meu celular é (11) 98888-7777",
+				isUserTurn: true,
+				contactName: null,
+			})) {
+				// drena o turno inteiro
+			}
+		} finally {
+			espiar.mockRestore();
+			await servidor.fechar();
+		}
+
+		const tudo = logs.join("\n");
+		expect(tudo.length).toBeGreaterThan(0);
+		for (const pedaco of ["111.444.777-35", "11144477735", "98888-7777", "11988887777"]) {
+			expect(tudo).not.toContain(pedaco);
+		}
+	});
+});
+
+describe("falas do fecho", () => {
+	it("viram fala AO VIVO, uma por balão, com o último passe aplicado", () => {
+		const eventos = eventosDasFalasDoFecho([
+			"O valor da administradora ficou um pouco acima do que falamos.",
+			"{",
+		]);
+		expect(eventos).toEqual([
+			{ type: "text-boundary" },
+			{
+				type: "text-delta",
+				text: "O valor da administradora ficou um pouco acima do que falamos.",
+			},
+		]);
+	});
+
+	// A fala do fecho nasce DEPOIS do beat, dentro de `executar`: se o turno voltar a
+	// só empurrar para `estado.events`, o aviso de divergência nunca chega ao canal.
+	it("o turno emite as falas do fecho no stream", () => {
+		const fonte = readFileSync(new URL("./turno-livre.ts", import.meta.url).pathname, "utf8");
+		const ini = fonte.indexOf("for (const ev of eventosDasFalasDoFecho");
+		const corpo = fonte.slice(ini, fonte.indexOf("for (const card of ctx.cards)", ini));
+		expect(ini).toBeGreaterThan(0);
+		expect(corpo).toContain("emitir(ev)");
+		expect(corpo).toContain("...estado.events, ev");
 	});
 });

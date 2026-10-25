@@ -15,7 +15,7 @@ import { conversations, usoDeIa } from "@/db/schema";
 import { listShownOffersForConversation } from "@/lib/agent/orchestrator/choose-offer";
 import { maskCpfForDisplay } from "@/lib/agent/orchestrator/contract-form-prefill";
 import type { TurnEvent, TurnInput } from "@/lib/agent/orchestrator/types";
-import { scrubCpf } from "@/lib/agent/orchestrator/vazamento";
+import { passaFinal } from "@/lib/agent/orchestrator/vazamento";
 import { type ChipGerado, garantirChip } from "@/lib/agent/pi/chips";
 import { executarBeat } from "@/lib/agent/pi/converse";
 import { linhaFinalDoHandoff, RE_DE_PROMESSA } from "@/lib/agent/pi/handoff";
@@ -51,10 +51,94 @@ import {
 /** Identidade que o cliente digitou nesta fala — capturada no SERVIDOR, nunca
  * pelo modelo. Devolve o texto sem os números, que é o que vai para o banco, para
  * o provedor do modelo e para o admin. */
-/** DDDs válidos no Brasil (11–99, sem 20–29 reservados). */
+/** DDDs em uso no Brasil — LISTA FECHADA (ANATEL), não faixa. A faixa antiga
+ * rejeitava 21/22/24/27/28 (RJ e ES, DDDs reais) e aceitava 26/30/36/39, que
+ * não existem. */
+const DDDS_VALIDOS = new Set([
+	"11",
+	"12",
+	"13",
+	"14",
+	"15",
+	"16",
+	"17",
+	"18",
+	"19",
+	"21",
+	"22",
+	"24",
+	"27",
+	"28",
+	"31",
+	"32",
+	"33",
+	"34",
+	"35",
+	"37",
+	"38",
+	"41",
+	"42",
+	"43",
+	"44",
+	"45",
+	"46",
+	"47",
+	"48",
+	"49",
+	"51",
+	"53",
+	"54",
+	"55",
+	"61",
+	"62",
+	"63",
+	"64",
+	"65",
+	"66",
+	"67",
+	"68",
+	"69",
+	"71",
+	"73",
+	"74",
+	"75",
+	"77",
+	"79",
+	"81",
+	"82",
+	"83",
+	"84",
+	"85",
+	"86",
+	"87",
+	"88",
+	"89",
+	"91",
+	"92",
+	"93",
+	"94",
+	"95",
+	"96",
+	"97",
+	"98",
+	"99",
+]);
+
 function dddValido(ddd: string): boolean {
-	const n = Number(ddd);
-	return n >= 11 && n <= 99 && !(n >= 20 && n <= 29);
+	return DDDS_VALIDOS.has(ddd);
+}
+
+/** Troca TODAS as ocorrências do número — `String.replace` com string troca só a
+ * primeira, e quem repete o CPF na mesma mensagem deixava o número em claro no
+ * log, no histórico e no prompt. */
+function mascararTodas(texto: string, alvo: string, marcador: string): string {
+	return alvo ? texto.split(alvo).join(marcador) : texto;
+}
+
+/** Identidade para o PROMPT: sem CPF não há identidade, ainda que o celular já
+ * tenha chegado. Os dígitos nunca vão ao modelo — só o marcador. */
+function identidadeDeCpf(identidade: StoredIdentity | null): StoredIdentity | null {
+	return identidade?.cpf ? identidade : null;
 }
 
 export function capturarIdentidadeDoTexto(
@@ -87,9 +171,9 @@ export function capturarIdentidadeDoTexto(
 		if (isValidCpf(digitos)) {
 			cpf = digitos;
 			recebeuCpf = true;
-			textoLimpo = textoLimpo.replace(cpfCandidato, "[CPF recebido e guardado]");
+			textoLimpo = mascararTodas(textoLimpo, cpfCandidato, "[CPF recebido e guardado]");
 		} else if (formatado) {
-			textoLimpo = textoLimpo.replace(cpfCandidato, "[CPF não reconhecido]");
+			textoLimpo = mascararTodas(textoLimpo, cpfCandidato, "[CPF não reconhecido]");
 		}
 	}
 
@@ -121,14 +205,32 @@ export function capturarIdentidadeDoTexto(
 		) {
 			celular = semDdi;
 			recebeuCelular = true;
-			textoLimpo = textoLimpo.replace(teleCandidato, "[telefone recebido e guardado]");
+			textoLimpo = mascararTodas(textoLimpo, teleCandidato, "[telefone recebido e guardado]");
 		}
 	}
 
 	// CPF parcial VALE: o celular pode chegar na mensagem seguinte, e o servidor
 	// precisa lembrar do CPF entre turnos (antes, CPF sozinho era descartado e a
 	// mensagem dizia "guardado" sem ter guardado nada).
-	const identidade = cpf ? { cpf, celular: celular ?? "" } : null;
+	//
+	// Celular SEM CPF também VALE: ele é dito antes do CPF com frequência ("meu
+	// número é (21) 9…, depois eu passo o CPF"). Devolver `null` aqui jogava o
+	// número fora no mesmo turno em que ele chegou — o cliente via "guardado" e o
+	// número não existia em lugar nenhum. O `cpf` fica vazio até ele chegar.
+	const identidade = cpf || celular ? { cpf: cpf ?? "", celular: celular ?? "" } : null;
+
+	// Varredura final: TODO CPF válido sai do texto, inclusive um SEGUNDO CPF
+	// diferente no mesmo recado ("o meu é X, o da minha esposa é Y"). O formatado
+	// é inequívoco; a sequência solta de 11 dígitos só conta se não for o celular
+	// recém-guardado (celular é DDD válido + 9, e ~1% passa no DV do CPF).
+	textoLimpo = textoLimpo
+		.replace(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/g, (m) =>
+			isValidCpf(m) ? "[CPF recebido e guardado]" : m,
+		)
+		.replace(/\b\d{11}\b/g, (m) =>
+			isValidCpf(m) && m !== celular ? "[CPF recebido e guardado]" : m,
+		);
+
 	return { identidade, textoLimpo, recebeuCpf, recebeuCelular };
 }
 
@@ -140,7 +242,10 @@ export function montarTrechoDeSaida(args: {
 	cardsDoTurno?: readonly { type: string }[];
 	handoff?: { nome: string | null; clientePediu: boolean; casoAberto: boolean };
 }): { texto: string; avisoAplicado: boolean; chip: ChipGerado | null } {
-	const bruto = scrubCpf(args.texto);
+	// O ÚLTIMO PASSE roda AQUI, no texto que vai AO VIVO para o canal — não só na
+	// persistência: máscara de CPF e o corte de vazamento de máquina (JSON de
+	// argumento, nome de tool) têm de valer para o cliente, não só para o banco.
+	const bruto = passaFinal(args.texto);
 	let texto = bruto;
 	let avisoAplicado = false;
 	if (!args.avisoDado && PEDE_DADO_RE.test(bruto)) {
@@ -166,12 +271,10 @@ export function montarTrechoDeSaida(args: {
 	// DEPOIS dele, senão o aviso é cortado como pergunta extra.
 	const final = manterUmaPergunta(texto);
 	// Pergunta fechada sem card de escolha no turno ⇒ o chip sai do texto. O balão
-	// guarda a pergunta; a opção vira botão.
-	return {
-		texto: final,
-		avisoAplicado,
-		chip: garantirChip({ texto: final, cardsDoTurno: args.cardsDoTurno ?? [] }).chip,
-	};
+	// guarda a pergunta; a opção vira botão — e a LISTA que virou botão sai do
+	// balão (`.texto`), senão o cliente lê duas vezes a mesma escolha.
+	const chipado = garantirChip({ texto: final, cardsDoTurno: args.cardsDoTurno ?? [] });
+	return { texto: chipado.texto, avisoAplicado, chip: chipado.chip };
 }
 
 /** Texto antes e depois de uma tool é fala DIFERENTE: sem separador o stream
@@ -208,6 +311,20 @@ export function criarSeparadorDeTrechos() {
 	};
 }
 
+/** As falas do fecho (avisos de divergência da proposta gerados pela tool) são
+ * fala NOVA do turno: um balão por fala, com o último passe anti-vazamento já
+ * aplicado — o mesmo texto que vai para o banco vai para o canal. Exportada para
+ * ser testada sem Bevi e sem banco. */
+export function eventosDasFalasDoFecho(falas: readonly string[]): TurnEvent[] {
+	const eventos: TurnEvent[] = [];
+	for (const fala of falas) {
+		const limpo = passaFinal(fala);
+		if (!limpo.trim()) continue;
+		eventos.push({ type: "text-boundary" }, { type: "text-delta", text: limpo });
+	}
+	return eventos;
+}
+
 export function createRunTurnLivre(deps?: {
 	provider?: { id: string; baseUrl: string; apiKey: string; model: string };
 	/** Fronteira da busca — roteiro nos testes, Bevi real em produção. */
@@ -228,13 +345,9 @@ export function createRunTurnLivre(deps?: {
 			content: m.content,
 		}));
 
-		// Rastro de entrada: sem isto, um turno que "fala mas não busca" não tem
-		// como ser diagnosticado do lado do servidor (foi o caso do e2e de 20/10).
-		console.log(
-			`[pi-livre] entrada conv=${conversationId} canal=${channel} isUserTurn=${isUserTurn} texto="${(userText ?? "").slice(0, 60)}"`,
-		);
-
-		// 1. IDENTIDADE — capturada aqui, antes do modelo ver qualquer coisa.
+		// 1. IDENTIDADE — capturada aqui, antes do modelo ver qualquer coisa, e antes
+		// de qualquer log: o texto que chega bruto tem CPF e celular, e o rastro de
+		// entrada já escreveu isso no log do servidor (N07).
 		const identidadeAtual = await loadIdentity(conversationId).catch(() => null);
 		const captura = capturarIdentidadeDoTexto(userText ?? "", identidadeAtual);
 		if (captura.identidade && (captura.recebeuCpf || captura.recebeuCelular)) {
@@ -242,6 +355,13 @@ export function createRunTurnLivre(deps?: {
 				console.error("[pi-livre] identidade não gravada (ignorado):", erro);
 			});
 		}
+
+		// Rastro de entrada: sem isto, um turno que "fala mas não busca" não tem
+		// como ser diagnosticado do lado do servidor (foi o caso do e2e de 20/10).
+		// Sai o texto JÁ mascarado — `textoLimpo`, nunca o do cliente.
+		console.log(
+			`[pi-livre] entrada conv=${conversationId} canal=${channel} isUserTurn=${isUserTurn} texto="${captura.textoLimpo.slice(0, 60)}"`,
+		);
 
 		// O ÍNDICE DE CARTAS DO TURNO nasce do que a conversa já mostrou. Antes ele
 		// era vazio fora do turno da busca: o cliente dizia "quero a da Canopus" no
@@ -264,10 +384,14 @@ export function createRunTurnLivre(deps?: {
 		});
 
 		// 2. O SYSTEM — conduta (caixa) + skills + linha de fato, num lugar só.
+		// O prompt só vê identidade quando existe CPF: celular sem CPF é CONTATO, não
+		// identidade — anunciar "CPF: recebido e guardado" sem CPF faria o vendedor
+		// parar de pedir o dado que a administradora exige.
+		const identidadeDoPrompt = identidadeDeCpf(captura.identidade ?? identidadeAtual);
 		const { system } = await montarSystemDoVendedor({
 			channel,
 			contactName: estado.contactName,
-			identidade: captura.identidade ?? identidadeAtual,
+			identidade: identidadeDoPrompt,
 		});
 
 		// 3. As tools e o beat.
@@ -419,15 +543,14 @@ export function createRunTurnLivre(deps?: {
 
 			// 5. Cards por RESULTADO — o card de NÚMERO nunca é escolha do modelo;
 			// o de ESCOLHA (pergunta + opções) é, e foi validado em `mostrar_card`.
-			for (const texto of ctx.falasDoFecho) {
-				estado = {
-					...estado,
-					events: [
-						...estado.events,
-						{ type: "text-boundary" },
-						{ type: "text-delta", text: texto },
-					],
-				};
+			//
+			// As falas do fecho vêm ANTES: são o aviso de divergência que a tool de
+			// proposta gera (valor da administradora diferente do que foi falado).
+			// Elas entram AO VIVO no stream — antes só iam para a persistência, e o
+			// cliente só descobria a diferença recarregando a página.
+			for (const ev of eventosDasFalasDoFecho(ctx.falasDoFecho)) {
+				estado = { ...estado, events: [...estado.events, ev] };
+				emitir(ev);
 			}
 			for (const card of ctx.cards) {
 				estado = {
