@@ -26,7 +26,16 @@ function linhaDeFato(args: {
 }): string {
 	const nome = args.contactName?.trim();
 	const cpf = args.identidade ? "recebido e guardado" : "ainda não informado";
-	const celular = args.identidade?.celular ? "recebido e guardado" : "ainda não informado";
+	// No WhatsApp o celular É o número da conversa: não se pede, não se pergunta. Na
+	// web ele pode ser pedido UMA vez, no momento da proposta.
+	const celular =
+		args.channel === "whatsapp"
+			? args.identidade?.celular
+				? "o número da conversa (já guardado) — não pergunte"
+				: "o número da conversa, já conhecido — não pergunte"
+			: args.identidade?.celular
+				? "recebido e guardado"
+				: "ainda não informado (peça uma vez, só na proposta)";
 	return `\n\n# Fato deste atendimento\n\nCanal: ${args.channel === "web" ? "site" : "WhatsApp"}.${nome ? ` Nome do cliente: ${nome}.` : ""} CPF: ${cpf}. Celular: ${celular}.`;
 }
 

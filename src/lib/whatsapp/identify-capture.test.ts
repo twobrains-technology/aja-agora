@@ -24,3 +24,50 @@ describe("o CPF capturado no WhatsApp não responde com frase fixa", () => {
 		expect(respostaDoCaptureDeCpf({ handled: false })).toBeNull();
 	});
 });
+
+describe("o celular do fechamento nunca é um número inventado", () => {
+	it("conversa real: o celular é o número da conversa", async () => {
+		const { celularDeFechamento } = await import("./identify-capture");
+		const r = celularDeFechamento({
+			waId: "5511987654321",
+			cpf: "11144477735",
+			celular: "11987654321",
+		});
+		expect(r.ok).toBe(true);
+		if (r.ok) expect(r.origem).toBe("conversa");
+	});
+
+	it("simulador sem par de teste no ambiente: RECUSA, não manda hash pra Bevi", async () => {
+		const { celularDeFechamento } = await import("./identify-capture");
+		const r = celularDeFechamento({
+			waId: "SIM-be27b2e8-3b1d-4702-92c1-87832589bfa9",
+			cpf: "11144477735",
+			celular: "62908872753",
+		});
+		expect(r.ok).toBe(false);
+		if (!r.ok) expect(r.motivo).toBe("falta-o-par-de-teste");
+	});
+
+	it("simulador com o par da casa: usa o PAR, não o hash", async () => {
+		const { celularDeFechamento } = await import("./identify-capture");
+		const vitrine = await import("@/lib/bevi/identidade-vitrine");
+		const par = vitrine.identidadeDeVitrine();
+		if (!par) {
+			// Sem PII no ambiente de teste, a recusa é o comportamento esperado.
+			const r = celularDeFechamento({
+				waId: "SIM-abc",
+				cpf: "11144477735",
+				celular: "62908872753",
+			});
+			expect(r.ok).toBe(false);
+			return;
+		}
+		const r = celularDeFechamento({ waId: "SIM-abc", cpf: par.cpf, celular: "62908872753" });
+		expect(r.ok).toBe(true);
+		if (r.ok) {
+			expect(r.origem).toBe("par-de-teste");
+			expect(r.celular).toBe(par.celular);
+			expect(r.celular).not.toBe("62908872753");
+		}
+	});
+});

@@ -265,6 +265,7 @@ export function createRunTurnLivre(deps?: {
 				prazoMeses: estado.funnel.qualifyAnswers.prazoMeses,
 				lanceValue: estado.funnel.qualifyAnswers.lanceValue,
 			},
+			waId: conv?.waId ?? null,
 			cards: [],
 			textoDoTurno: "",
 			cartasNaTela: cartasRestauradas.cartas,

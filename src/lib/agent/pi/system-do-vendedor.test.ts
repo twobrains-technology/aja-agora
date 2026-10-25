@@ -88,3 +88,29 @@ describe("system do vendedor — canal e nome", () => {
 		expect(semNome.system).not.toContain("Nome do cliente");
 	});
 });
+
+describe("no WhatsApp o celular é o número da conversa — não se pede", () => {
+	it("fato do WhatsApp: celular conhecido, não pergunte", async () => {
+		const r = await montarSystemDoVendedor({
+			channel: "whatsapp",
+			contactName: "Marcos",
+			identidade: { cpf: "11144477735", celular: "11987654321" },
+			caixa: caixaPublicada,
+			skills: "",
+		});
+		expect(r.partes.fato).toContain("número da conversa");
+		expect(r.partes.fato).toContain("não pergunte");
+		expect(r.partes.fato).not.toMatch(/celular: ainda não informado/);
+	});
+
+	it("fato da web: pode pedir uma vez, na proposta", async () => {
+		const r = await montarSystemDoVendedor({
+			channel: "web",
+			contactName: null,
+			identidade: null,
+			caixa: caixaPublicada,
+			skills: "",
+		});
+		expect(r.partes.fato).toMatch(/Celular: ainda não informado \(peça uma vez/);
+	});
+});

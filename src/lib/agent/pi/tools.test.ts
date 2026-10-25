@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type { Tool as AiSdkTool } from "ai";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -79,5 +80,21 @@ describe("buscar_cartas — valor do bem vence a parcela (paridade com a main, F
 		const { params } = paramsDaBusca({ categoria: "auto", parcelaMensal: 900 });
 		expect(params.parcelaAlvo).toBe(900);
 		expect(params.creditMax).toBeUndefined();
+	});
+});
+
+describe("o fechamento usa o celular de fechamento, nunca o hash do simulador", () => {
+	it("`fazer_proposta` resolve o celular ANTES de chamar a Bevi", () => {
+		const fonte = readFileSync(new URL("./tools-livres.ts", import.meta.url).pathname, "utf8");
+		const resolve = fonte.indexOf("celularDeFechamento({");
+		const chama = fonte.indexOf("startContract(");
+		expect(resolve).toBeGreaterThan(-1);
+		expect(chama).toBeGreaterThan(resolve);
+		expect(fonte).toMatch(/waId: ctx\.waId \?\? null/);
+	});
+
+	it("o turno entrega o waId no contexto das tools", () => {
+		const fonte = readFileSync(new URL("./turno-livre.ts", import.meta.url).pathname, "utf8");
+		expect(fonte).toMatch(/waId: conv\?\.waId \?\? null/);
 	});
 });

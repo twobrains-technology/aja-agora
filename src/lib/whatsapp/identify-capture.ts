@@ -9,7 +9,11 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
-import { vitrineDisponivel } from "@/lib/bevi/identidade-vitrine";
+import {
+	ehIdentidadeDeVitrine,
+	identidadeDeVitrine,
+	vitrineDisponivel,
+} from "@/lib/bevi/identidade-vitrine";
 import { isValidCpf, storeIdentity } from "@/lib/conversation/identity";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { isSimulatedWaId } from "./simulator-bus";
@@ -96,6 +100,41 @@ function syntheticCelularFromSimulatedWaId(waId: string): string {
 	return `629${String(hash).padStart(8, "0")}`;
 }
 
+/**
+ * O CELULAR DO FECHAMENTO — nunca um número inventado.
+ *
+ * No WhatsApp o celular É o número da conversa; o modelo não precisa pedí-lo. No
+ * simulador (waId `SIM-<uuid>`) o número é sintético, e a Bevi valida celular × CPF:
+ * um hash não fecha (medido em 25/10/2026, `BeviApiError: Dados inválidos`). Então o
+ * fechamento de uma conversa simulada usa o par de teste do ambiente — nunca o hash.
+ * Sem par de teste, o fechamento é recusado: `fala como teste`, não fabrica número.
+ */
+export type CelularDeFechamento =
+	| { ok: true; celular: string; origem: "conversa" | "par-de-teste" }
+	| { ok: false; motivo: "falta-o-par-de-teste" };
+
+export function celularDeFechamento(args: {
+	waId: string | null;
+	cpf: string | null;
+	celular: string | null;
+}): CelularDeFechamento {
+	if (!args.waId || !isSimulatedWaId(args.waId)) {
+		if (!args.celular) return { ok: false, motivo: "falta-o-par-de-teste" };
+		return { ok: true, celular: normalizeCelularBR(args.celular), origem: "conversa" };
+	}
+
+	const parDeTeste = identidadeDeVitrine();
+	if (parDeTeste && ehIdentidadeDeVitrine(args.cpf)) {
+		return { ok: true, celular: parDeTeste.celular, origem: "par-de-teste" };
+	}
+
+	const testCelular = process.env.SIMULATOR_TEST_CELULAR?.trim();
+	if (testCelular)
+		return { ok: true, celular: normalizeCelularBR(testCelular), origem: "par-de-teste" };
+
+	return { ok: false, motivo: "falta-o-par-de-teste" };
+}
+
 export function waIdToCelular(waId: string): string {
 	// Simulador (SIM-<uuid>, src/app/api/admin/simulator/sessions/route.ts): a Bevi
 	// VALIDA o celular (contra o CPF), então um número sintético não fecha — precisa
@@ -103,7 +142,7 @@ export function waIdToCelular(waId: string): string {
 	// NUNCA hardcoded — regra do projeto). Sem o env, cai no sintético só pra não
 	// quebrar o formato. Pareie com o CPF da MESMA conta de teste (ex.: Kairo).
 	if (isSimulatedWaId(waId)) {
-		const testCelular = process.env.SIMULATOR_TEST_CELULAR;
+		const testCelular = process.env.SIMULATOR_TEST_CELULAR?.trim();
 		return testCelular ? normalizeCelularBR(testCelular) : syntheticCelularFromSimulatedWaId(waId);
 	}
 	return normalizeCelularBR(waId);

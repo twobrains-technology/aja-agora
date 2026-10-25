@@ -56,6 +56,7 @@ import { loadIdentity } from "@/lib/conversation/identity";
 import { loadConversationHistory } from "@/lib/conversation/messages";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { saveContactName } from "@/lib/leads/contact-capture";
+import { celularDeFechamento } from "@/lib/whatsapp/identify-capture";
 
 /** Os parâmetros da busca na Bevi. Regra herdada da main (`alvoDeBusca`, FIX-382):
  * havendo VALOR do bem, a busca é por valor; parcela só entra quando o cliente
@@ -106,6 +107,8 @@ export type CardLivre = {
 export type ContextoDasTools = {
 	conversationId: string;
 	channel: "web" | "whatsapp";
+	/** waId da conversa — no simulador é `SIM-<uuid>`, e isso muda o celular do fechamento. */
+	waId?: string | null;
 	/** Fala do cliente neste turno (o nome só se grava se foi dito nela). */
 	userText: string | null;
 	/** Nome que a conversa já tem — pré-preenche o formulário de lead. */
@@ -380,7 +383,20 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				return "Proposta NÃO gerada: não tenho o CPF do cliente guardado nesta conversa. Peça o CPF, explique que a administradora consulta os birôs de crédito, e só então chame de novo.";
 			}
 			if (!identity.celular) {
-				return "Proposta NÃO gerada: falta o celular do cliente — o CPF já está guardado nesta conversa. Peça o celular com DDD e chame de novo.";
+				return "Proposta NÃO gerada: falta o celular do cliente — o CPF já está guardado nesta conversa. No WhatsApp o celular é o número da conversa, não peça: use o que já existe. Na web, peça uma vez e chame de novo.";
+			}
+
+			// CONVERSA DE TESTE não fecha com número inventado. O hash do simulador
+			// (`SIM-<uuid>`) não é telefone: a Bevi valida celular × CPF e recusou
+			// (`BeviApiError: Dados inválidos`, 25/10/2026). Sem par de teste no
+			// ambiente, o fechamento para — não se fabrica um número.
+			const celularDoFecho = celularDeFechamento({
+				waId: ctx.waId ?? null,
+				cpf: identity.cpf,
+				celular: identity.celular,
+			});
+			if (!celularDoFecho.ok) {
+				return "Proposta NÃO gerada: esta conversa é de teste e o ambiente não tem par de teste. Não invente número — diga que o fechamento aqui é de teste e siga.";
 			}
 
 			// O AVISO E O ACEITE SÃO FATO CONFERIDOS NA CONVERSA INTEIRA, não na última
