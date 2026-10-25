@@ -431,6 +431,7 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 
 	const mostrar_card = tool({
 		description:
+			"Quando fizer UMA pergunta com respostas curtas e previsíveis, chame esta tool antes de escrever a pergunta. As alternativas vão somente no card; não escreva lista ou menu equivalente na fala. Espere a resposta antes de fazer outra pergunta. " +
 			"Mostra na tela um card. Há dois caminhos, e nenhum aceita número de oferta seu.\n\n" +
 			"1) Card de ESCOLHA (o payload é seu): `quick_reply` (payload { options: [{ label }] }, até 4 atalhos de resposta), `value_picker` (payload { category: imovel|auto|moto, fields: [{ id, label, min, max, default }] }, faixas de valor do bem) e `topic_picker` (payload { topics: [...], includeBackButton }).\n\n" +
 			"2) Card de FATO (o payload é do servidor; você só diz QUAL carta e, se for o caso, o cenário): `group_card`, `recommendation_card`, `comparison_table`, `simulation_result`, `financing_comparison`, `contemplation_dial`, `embedded_bid`, `two_paths`, `scarcity`, `decision_prompt` (todos precisam de `groupId` copiado de buscar_cartas), e os de estado `lead_form`, `contract_form`, `whatsapp_optin`. Payload do fato: { groupId, lancePercent?, initialTargetMonth? } — qualquer outro número que você mandar é ignorado, porque o valor vem da carta real.",
@@ -452,6 +453,9 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 			// Recusa é TEXTO, nunca exceção: é essa fala que ensina o modelo a pedir
 			// o card certo ou a usar a tool de dado.
 			if (destino?.classe === "emitivel" && destino.origem === "escolha") {
+				if (ctx.cards.some((c) => ["quick_reply", "value_picker", "topic_picker"].includes(c.type))) {
+					return "Já há uma pergunta interativa neste turno. Use o card existente e espere a resposta; não faça outra pergunta.";
+				}
 				// FIX-109 (decisão do Kairo, 28/06/2026): no WhatsApp o `valuePickerToWhatsApp`
 				// degrada o card DE PROPÓSITO — lá o valor do bem é CONVERSA (o cliente
 				// digita "uns 80 mil"). Emitir o card aqui some com as faixas e ainda manda

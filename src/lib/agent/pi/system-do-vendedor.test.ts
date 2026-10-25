@@ -80,11 +80,11 @@ describe("system do vendedor — canal e nome", () => {
 		expect(zap.system).toContain("Canal: WhatsApp.");
 	});
 
-	it("o nome do contato entra na linha de fato; sem nome, 'desconhecido'", async () => {
+	it("o nome do contato entra na linha de fato; sem nome, a linha não menciona nome", async () => {
 		const comNome = await montar({ contactName: "Bruna" });
 		expect(comNome.system).toContain("Nome do cliente: Bruna.");
 
 		const semNome = await montar({ contactName: null });
-		expect(semNome.system).toContain("Nome do cliente: desconhecido.");
+		expect(semNome.system).not.toContain("Nome do cliente");
 	});
 });

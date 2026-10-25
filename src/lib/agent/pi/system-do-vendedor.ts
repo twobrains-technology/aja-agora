@@ -24,10 +24,10 @@ function linhaDeFato(args: {
 	contactName: string | null;
 	identidade: IdentidadeDoCliente | null;
 }): string {
-	const nome = args.contactName?.trim() || "desconhecido";
+	const nome = args.contactName?.trim();
 	const cpf = args.identidade ? "recebido e guardado" : "ainda não informado";
 	const celular = args.identidade?.celular ? "recebido e guardado" : "ainda não informado";
-	return `\n\n# Fato deste atendimento\n\nCanal: ${args.channel === "web" ? "site" : "WhatsApp"}. Nome do cliente: ${nome}. CPF: ${cpf}. Celular: ${celular}.`;
+	return `\n\n# Fato deste atendimento\n\nCanal: ${args.channel === "web" ? "site" : "WhatsApp"}.${nome ? ` Nome do cliente: ${nome}.` : ""} CPF: ${cpf}. Celular: ${celular}.`;
 }
 
 /**
