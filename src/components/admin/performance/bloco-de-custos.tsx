@@ -33,7 +33,7 @@
 import { inteiro, reais } from "@/components/admin/campanhas/formato";
 import { FRASE_CUSTO_NAO_APLICAVEL } from "@/components/admin/dashboard/filtro-ab";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { ResultadoCustoDeIA } from "@/lib/admin/custo-de-ia";
+import type { LinhasSemPreco, ResultadoCustoDeIA } from "@/lib/admin/custo-de-ia";
 import type { CustosDoCpc } from "@/lib/admin/performance-types";
 import { calcularCpc } from "./custos-do-cpc";
 
@@ -41,12 +41,20 @@ function Linha({
 	titulo,
 	valor,
 	nota,
+	aviso,
+	avisoTestId,
 	fonte,
 	alerta,
 }: {
 	titulo: string;
 	valor: string;
 	nota?: string;
+	/**
+	 * O aviso de que o número NÃO é o total do período. Em âmbar e abaixo da nota,
+	 * porque nota explica o número e aviso o desmente em parte.
+	 */
+	aviso?: string;
+	avisoTestId?: string;
 	fonte: string;
 	alerta?: boolean;
 }) {
@@ -59,6 +67,11 @@ function Linha({
 				</span>
 			</div>
 			{nota && <span className="text-xs text-muted-foreground">{nota}</span>}
+			{aviso && (
+				<span data-testid={avisoTestId} className="text-xs font-medium text-amber-600">
+					{aviso}
+				</span>
+			)}
 			<span className="text-[11px] text-muted-foreground/70">fonte: {fonte}</span>
 		</div>
 	);
@@ -81,6 +94,32 @@ function notaDoCustoDeIA(custo: ResultadoCustoDeIA): string | undefined {
 
 	const quantas = chamadas === 1 ? "chamada sem conversa" : "chamadas sem conversa";
 	return `Inclui ${inteiro(chamadas)} ${quantas} (juiz, diagnóstico e insights) — ${reais(brlCents)}`;
+}
+
+/**
+ * A frase da PARCIALIDADE: quais linhas ficaram fora do total, por modelo.
+ *
+ * O total do custo de IA é a soma do que se CONHECE (ver `admin/custo-de-ia.ts`), então ele
+ * é menor que o gasto do período quando algum modelo não tem preço cadastrado. Quem lê o
+ * bloco tem de ver isso: um número parcial sem marca se lê como o custo cheio, e é sobre
+ * esse número que se decide verba. A frase nomeia o modelo e conta as linhas — é o que diz
+ * a quem opera o que cadastrar.
+ *
+ * `undefined` quando nenhuma linha ficou de fora: marca de parcialidade em período cheio é
+ * ruído, e ruído ensina a ignorar a marca.
+ */
+function fraseDaParcialidade(semPreco: readonly LinhasSemPreco[]): string | undefined {
+	if (semPreco.length === 0) return undefined;
+
+	const partes = semPreco.map(
+		({ modelo, linhas }) =>
+			`${inteiro(linhas)} ${linhas === 1 ? "chamada" : "chamadas"} de ${modelo} sem preço`,
+	);
+	const lista =
+		partes.length === 1
+			? partes.join("")
+			: `${partes.slice(0, -1).join(", ")} e ${partes.slice(-1).join("")}`;
+	return `Parcial: ${lista}`;
 }
 
 /**
@@ -136,6 +175,12 @@ export function BlocoDeCustos({ custos }: { custos: CustosDoCpc }) {
 			? reais(custos.custoDeMensagem.custo.centavos)
 			: "sem preço cadastrado";
 
+	// A MESMA frase nos dois lugares: a linha do custo de IA (de onde o buraco vem) e o CPC
+	// (o número que se leva para a reunião). Uma delas calada já basta para o parcial passar
+	// por cheio.
+	const parcial =
+		custos.custoDeIA.tipo === "valor" ? fraseDaParcialidade(custos.custoDeIA.semPreco) : undefined;
+
 	return (
 		<Card className="shadow-sm">
 			<CardHeader>
@@ -155,6 +200,8 @@ export function BlocoDeCustos({ custos }: { custos: CustosDoCpc }) {
 							titulo="Custo de IA"
 							valor={ia}
 							nota={notaDoCustoDeIA(custos.custoDeIA)}
+							aviso={parcial}
+							avisoTestId="custos-ia-parcial"
 							fonte={custos.fontes.custoDeIA}
 							alerta={custos.custoDeIA.tipo !== "valor"}
 						/>
@@ -182,7 +229,17 @@ export function BlocoDeCustos({ custos }: { custos: CustosDoCpc }) {
 						<div data-testid="custos-cpc" className="rounded-lg border bg-muted/30 p-4">
 							<p className="text-sm text-muted-foreground">CPC do período</p>
 							{cpc.tipo === "valor" ? (
-								<p className="text-2xl font-bold tabular-nums">{reais(cpc.centavos)}</p>
+								<>
+									<p className="text-2xl font-bold tabular-nums">
+										{reais(cpc.centavos)}
+										{cpc.parcial && (
+											<span className="ml-2 align-middle text-xs font-semibold uppercase text-amber-600">
+												parcial
+											</span>
+										)}
+									</p>
+									{parcial && <p className="mt-1 text-xs text-amber-600">{parcial}</p>}
+								</>
 							) : (
 								<>
 									<p className="text-2xl font-bold text-amber-600">não calculável</p>

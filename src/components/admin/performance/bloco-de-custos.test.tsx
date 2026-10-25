@@ -63,6 +63,14 @@ function custosDoPeriodo(linhas: LinhaDeCustoDeIA[]): CustosDoCpc {
 	};
 }
 
+/** O juiz: gastou IA, e o modelo dele não tem preço cadastrado na tabela. */
+const SEM_PRECO: LinhaDeCustoDeIA = {
+	sessionId: "conversa-1",
+	modelo: "claude-sonnet-4-6",
+	dia: "2026-10-20",
+	custoUsdCents: null,
+};
+
 describe("BlocoDeCustos — a linha das chamadas sem conversa", () => {
 	it("diz quantas chamadas avulsas o total inclui e quanto elas custaram", () => {
 		render(
@@ -127,5 +135,60 @@ describe("BlocoDeCustos — a linha das chamadas sem conversa", () => {
 
 		expect(screen.getAllByText("não calculável").length).toBeGreaterThanOrEqual(1);
 		expect(screen.queryByText(/chamada sem conversa/i)).toBeNull();
+	});
+});
+
+/**
+ * O total PARCIAL tem de se ANUNCIAR — na linha do custo de IA e no CPC.
+ *
+ * Uma linha de modelo sem preço sai do total (ela não vira zero: zero é custo medido), então
+ * o número na tela é MENOR que o gasto do período. Sem a marca, o operador lê um CPC
+ * incompleto como se fosse o custo cheio — exatamente a mentira que este bloco existe para
+ * impedir. A marca nomeia o modelo e conta as linhas, que é a ação de quem opera: cadastrar
+ * o preço.
+ */
+describe("BlocoDeCustos — a marca de PARCIAL", () => {
+	it("declara, por modelo, as linhas que ficaram fora do total — na linha do custo e no CPC", () => {
+		render(
+			<BlocoDeCustos custos={custosDoPeriodo([DA_CONVERSA, SEM_PRECO, SEM_PRECO, SEM_PRECO])} />,
+		);
+
+		// O total continua sendo o que se CONHECE: as três linhas sem preço não o apagam.
+		expect(screen.getByText("R$ 50,00")).toBeTruthy();
+
+		const frase = /3 chamadas de claude-sonnet-4-6 sem preço/;
+		const naLinhaDoCusto = texto(screen.getByTestId("custos-ia-parcial"));
+		expect(naLinhaDoCusto).toMatch(/^Parcial:/);
+		expect(naLinhaDoCusto).toMatch(frase);
+
+		const noCpc = texto(screen.getByTestId("custos-cpc"));
+		// A marca ao lado do número — sem ela, o CPC parcial se lê como cheio.
+		expect(noCpc.toLowerCase()).toContain("parcial");
+		expect(noCpc).toMatch(frase);
+	});
+
+	it("com dois modelos sem preço, nomeia os dois — e o singular não vira plural", () => {
+		render(
+			<BlocoDeCustos
+				custos={custosDoPeriodo([
+					DA_CONVERSA,
+					SEM_PRECO,
+					SEM_PRECO,
+					SEM_PRECO,
+					{ ...SEM_PRECO, modelo: "gpt-5-mini", custoUsdCents: null },
+				])}
+			/>,
+		);
+
+		const nota = texto(screen.getByTestId("custos-ia-parcial"));
+		expect(nota).toContain("3 chamadas de claude-sonnet-4-6 sem preço");
+		expect(nota).toContain("1 chamada de gpt-5-mini sem preço");
+	});
+
+	it("período inteiramente precificado: nenhuma marca de parcial", () => {
+		render(<BlocoDeCustos custos={custosDoPeriodo([DA_CONVERSA])} />);
+
+		expect(screen.queryByTestId("custos-ia-parcial")).toBeNull();
+		expect(texto(screen.getByTestId("custos-cpc"))).not.toMatch(/parcial/i);
 	});
 });
