@@ -5,6 +5,7 @@ import { useCallback, useState } from "react";
 import { EmptyStateCard } from "@/components/admin/empty-state-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
 import type {
 	DiagnosisResult,
 	SuggestedExample,
@@ -19,7 +20,7 @@ type Props = {
 
 type DiagnosisResponse = {
 	diagnosis: DiagnosisResult;
-	meta: { personaId: string; evaluationId: string };
+	meta: { personaId: string | null; evaluationId: string };
 };
 
 type ApplyState = "idle" | "applying" | "applied" | "error";
@@ -59,7 +60,8 @@ export function DiagnosisPanel({ conversationId, canDiagnose }: Props) {
 
 	const applyItem = useCallback(
 		async (key: string, endpoint: string, payload: Record<string, unknown>) => {
-			if (!data) return;
+			// Sem persona não há onde aplicar — a tela nem oferece o botão (ver `copyText` no card).
+			if (!data?.meta.personaId) return;
 			setApplyStates((s) => ({ ...s, [key]: "applying" }));
 			try {
 				const res = await fetch(`/api/admin/personas/${data.meta.personaId}/${endpoint}`, {
@@ -136,6 +138,9 @@ export function DiagnosisPanel({ conversationId, canDiagnose }: Props) {
 	if (!data) return null;
 
 	const { diagnosis, meta } = data;
+	// Vendedor livre: a conversa não tem persona, então não existe destino pro "Aplicar" —
+	// a sugestão vira texto pra colar na conduta do agente (`/admin/caixa`).
+	const noPersona = meta.personaId === null;
 	const totalSuggestions =
 		diagnosis.suggestedExamples.length +
 		diagnosis.suggestedForbiddenTopics.length +
@@ -154,8 +159,20 @@ export function DiagnosisPanel({ conversationId, canDiagnose }: Props) {
 						<p className="text-xs text-muted-foreground mt-2">
 							{totalSuggestions === 0
 								? "Sem correções acionáveis sugeridas."
-								: `${totalSuggestions} sugestão(ões) — aplique as que fazem sentido.`}
+								: noPersona
+									? `${totalSuggestions} sugestão(ões) — copie e cole na conduta do agente.`
+									: `${totalSuggestions} sugestão(ões) — aplique as que fazem sentido.`}
 						</p>
+						{noPersona && (
+							<p className="text-xs text-muted-foreground mt-1">
+								Esta conversa não tem persona: não há onde aplicar. Copie o texto de cada sugestão e
+								cole na{" "}
+								<a className="text-link underline" href="/admin/caixa">
+									conduta do agente
+								</a>
+								.
+							</p>
+						)}
 					</div>
 				</CardContent>
 			</Card>
@@ -171,6 +188,11 @@ export function DiagnosisPanel({ conversationId, canDiagnose }: Props) {
 						iconBg="bg-blue-100 dark:bg-blue-900/30"
 						label="Exemplo"
 						state={applyStates[key] ?? "idle"}
+						copyText={
+							noPersona
+								? `Quando o cliente disser: "${ex.userMessage}"\n→ Responder: "${ex.assistantResponse}"`
+								: null
+						}
 						onApply={() =>
 							applyItem(key, "examples", {
 								whenExpertise: ex.whenExpertise,
@@ -201,6 +223,11 @@ export function DiagnosisPanel({ conversationId, canDiagnose }: Props) {
 						iconBg="bg-amber-100 dark:bg-amber-900/30"
 						label="Tópico proibido"
 						state={applyStates[key] ?? "idle"}
+						copyText={
+							noPersona
+								? `Nunca tocar no tema: ${t.topic}\nSe o cliente perguntar: ${t.responseWhenAsked}`
+								: null
+						}
 						onApply={() =>
 							applyItem(key, "forbidden-topics", {
 								topic: t.topic,
@@ -225,6 +252,7 @@ export function DiagnosisPanel({ conversationId, canDiagnose }: Props) {
 						iconBg="bg-purple-100 dark:bg-purple-900/30"
 						label="Trigger de handoff"
 						state={applyStates[key] ?? "idle"}
+						copyText={noPersona ? `Transbordar pra mesa quando: ${trig.condition}` : null}
 						onApply={() => applyItem(key, "handoff-triggers", { condition: trig.condition })}
 						onDismiss={() => dismiss(key)}
 					>
@@ -234,7 +262,7 @@ export function DiagnosisPanel({ conversationId, canDiagnose }: Props) {
 			})}
 
 			<div className="flex items-center justify-between pt-1 text-xs text-muted-foreground">
-				<span>Persona: {meta.personaId}</span>
+				<span>Persona: {meta.personaId ?? "sem persona"}</span>
 				<Button size="sm" variant="ghost" onClick={runDiagnosis}>
 					<Sparkles className="size-3.5" />
 					Diagnosticar de novo
@@ -250,6 +278,7 @@ function SuggestionCard({
 	iconBg,
 	label,
 	state,
+	copyText,
 	onApply,
 	onDismiss,
 	children,
@@ -259,6 +288,11 @@ function SuggestionCard({
 	iconBg: string;
 	label: string;
 	state: ApplyState;
+	/**
+	 * Sem persona (conversa do vendedor livre) não há onde aplicar: em vez do botão
+	 * "Aplicar", o card mostra a sugestão pronta pra colar na caixa (`/admin/caixa`).
+	 */
+	copyText?: string | null;
 	onApply: () => void;
 	onDismiss: () => void;
 	children: React.ReactNode;
@@ -282,9 +316,11 @@ function SuggestionCard({
 									<span className="text-success text-xs">✓ Aplicado</span>
 								) : (
 									<>
-										<Button size="sm" disabled={applying} onClick={onApply}>
-											{applying ? "Aplicando..." : "Aplicar"}
-										</Button>
+										{copyText ? null : (
+											<Button size="sm" disabled={applying} onClick={onApply}>
+												{applying ? "Aplicando..." : "Aplicar"}
+											</Button>
+										)}
 										<Button
 											size="icon-sm"
 											variant="ghost"
@@ -298,6 +334,19 @@ function SuggestionCard({
 							</div>
 						</div>
 						<div className="mt-2">{children}</div>
+						{copyText && (
+							<div className="mt-2 space-y-1">
+								<Textarea
+									readOnly
+									aria-label="Sugestão para copiar"
+									value={copyText}
+									className="min-h-16 font-mono text-xs"
+								/>
+								<a className="text-xs text-link underline" href="/admin/caixa">
+									Abrir a conduta do agente
+								</a>
+							</div>
+						)}
 					</div>
 				</div>
 			</CardContent>
