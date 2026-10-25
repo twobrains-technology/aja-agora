@@ -55,6 +55,7 @@
 import { and, gte, lte } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations, usoDeIa } from "@/db/schema";
+import { custoDoTurnoCentsExatos } from "@/lib/agent/pi/precos";
 import { CHAVE_DA_COTACAO, cotacaoDoCadastro, lerCustoDoCadastro } from "./custos-do-cadastro";
 import { diaDoNegocio, fimDoDia, inicioDoDia } from "./periodo";
 
@@ -73,7 +74,10 @@ export interface LinhaDeCustoDoLangfuse {
 	modelo: string;
 	/** Dia do negócio (`YYYY-MM-DD`), no fuso da operação. */
 	dia: string;
-	/** Custo em centavos de DÓLAR; `null` = a fonte não tem preço deste modelo. */
+	/**
+	 * Custo em centavos de DÓLAR — pode ter FRAÇÃO de centavo (é valor exato de token, não
+	 * arredondado por linha); `null` = a fonte não tem preço deste modelo.
+	 */
 	custoUsdCents: number | null;
 }
 
@@ -230,16 +234,52 @@ export function somarCustoDeIA(args: {
  * tabela `uso_de_ia` (tokens de entrada/saída por conversa e modelo), e é daqui
  * que a tela lê.
  *
- * `custoUsdCents` sai NULO: não há tabela de preço versionada em código, e
- * inventar preço por modelo seria pior que admitir a falta — a lei do módulo é
- * "ausência de preço é não calculável, nunca R$ 0,00", e o consumidor já sabe
- * dizer `modelo_sem_preco`. Quando houver preço cadastrado, ele entra aqui.
+ * O custo é RECALCULADO dos TOKENS (`pi/precos.ts`), não lido da coluna
+ * `custo_usd_cents`: aquela coluna é INTEIRA em centavos e cada beat do turno
+ * arredonda o seu antes de gravar, então vários beats de fração de centavo viram
+ * zero ANTES de somar — com o modelo default do vendedor (Qwen, US$ 0,05/M) quase
+ * todo beat é subcentavo e o total saía zerado. Somando os valores EXATOS e
+ * arredondando uma vez, no fim (`somarCustoDeIA`), o número bate com o consumo.
+ *
+ * Modelo sem preço continua NULO: a lei do módulo é "ausência de preço é não
+ * calculável, nunca R$ 0,00", e o consumidor já sabe dizer `modelo_sem_preco`.
  */
 export interface LinhaDeUsoLocal {
 	sessionId: string;
 	modelo: string;
 	dia: string;
 	custoUsdCents: number | null;
+}
+
+/** Uma linha CRUA do livro-caixa local (`uso_de_ia`), como sai do banco. */
+export interface UsoDeIaGravado {
+	conversationId: string | null;
+	modelo: string;
+	tokensInput: number;
+	tokensOutput: number;
+	criadoEm: Date;
+}
+
+/**
+ * Converte o livro-caixa gravado em linha de custo, recalculando o valor dos tokens.
+ *
+ * A coluna `custo_usd_cents` NÃO é lida de propósito: ela é inteira e arredondada por
+ * beat, e é essa soma de arredondamentos que zerava o custo do modelo barato. O valor
+ * daqui é EXATO (fração de centavo); quem arredonda é a exibição/agregação.
+ */
+export function linhasDoLivroLocal(linhas: readonly UsoDeIaGravado[]): LinhaDeCustoDoLangfuse[] {
+	return linhas
+		.filter((l): l is UsoDeIaGravado & { conversationId: string } => Boolean(l.conversationId))
+		.map((l) => ({
+			sessionId: l.conversationId,
+			modelo: l.modelo,
+			dia: diaDoNegocio(l.criadoEm),
+			custoUsdCents: custoDoTurnoCentsExatos({
+				modelo: l.modelo,
+				tokensInput: l.tokensInput,
+				tokensOutput: l.tokensOutput,
+			}),
+		}));
 }
 
 /** Lê o livro-caixa local e agrupa por conversa/modelo/dia. Server-only. */
@@ -249,19 +289,13 @@ export async function lerCustoLocal(de: Date, ate: Date): Promise<LinhaDeCustoDo
 			conversationId: usoDeIa.conversationId,
 			modelo: usoDeIa.modelo,
 			criadoEm: usoDeIa.criadoEm,
-			custoUsdCents: usoDeIa.custoUsdCents,
+			tokensInput: usoDeIa.tokensInput,
+			tokensOutput: usoDeIa.tokensOutput,
 		})
 		.from(usoDeIa)
 		.where(and(gte(usoDeIa.criadoEm, inicioDoDia(de)), lte(usoDeIa.criadoEm, fimDoDia(ate))));
 
-	return linhas
-		.filter((l): l is typeof l & { conversationId: string } => Boolean(l.conversationId))
-		.map((l) => ({
-			sessionId: l.conversationId,
-			modelo: l.modelo,
-			dia: diaDoNegocio(l.criadoEm),
-			custoUsdCents: l.custoUsdCents ?? null,
-		}));
+	return linhasDoLivroLocal(linhas);
 }
 
 /** As conversas do período — o lado do Postgres que dá VÍNCULO e CANAL. */
