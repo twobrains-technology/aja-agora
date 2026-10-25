@@ -65,13 +65,20 @@ export function publicarScores(scores: readonly Score[], onde: string): void {
 /**
  * O que uma chamada de LLM gastou — o mínimo pra linha de `uso_de_ia`.
  * `conversationId` é opcional porque nem toda chamada nasce de uma conversa (o
- * insight de lead só tem o lead).
+ * insight de lead só tem o lead) — e essas chamadas AVULSAS continuam entrando no
+ * total do custo de IA, numa linha própria (`admin/custo-de-ia.ts`), em vez de
+ * desaparecerem por não ter conversa a quem atribuir.
+ *
+ * `cacheRead`/`cacheWrite` são o recorte de cache do prompt, quando o provedor o
+ * reporta. Ausente = não medido (a coluna fica `null`), que não é o mesmo que zero.
  */
 export type UsoDeIaDaChamada = {
 	conversationId?: string | null;
 	modelo: string;
 	tokensInput: number;
 	tokensOutput: number;
+	cacheRead?: number | null;
+	cacheWrite?: number | null;
 };
 
 /**
@@ -79,21 +86,37 @@ export type UsoDeIaDaChamada = {
  *
  * `custoUsdCents` segue a mesma disciplina de `pi/turno-livre.ts` e de
  * `admin/custo-de-ia.ts`: preço desconhecido vira `null` (não calculável), nunca
- * `0`. Chamada sem token nenhum não gera linha. Nunca lança: livro-caixa não pode
+ * `0` — e isso vale para o preço do CACHE também: chamada com cache reportado num
+ * modelo sem preço de cache tem custo desconhecido.
+ *
+ * Chamada sem token nenhum não gera linha. Nunca lança: livro-caixa não pode
  * derrubar a resposta de quem chamou.
  */
 export async function registrarUsoDeIa(uso: UsoDeIaDaChamada): Promise<void> {
-	if (uso.tokensInput <= 0 && uso.tokensOutput <= 0) return;
+	const cacheRead = uso.cacheRead ?? null;
+	const cacheWrite = uso.cacheWrite ?? null;
+	if (
+		uso.tokensInput <= 0 &&
+		uso.tokensOutput <= 0 &&
+		(cacheRead ?? 0) <= 0 &&
+		(cacheWrite ?? 0) <= 0
+	) {
+		return;
+	}
 	try {
 		await db.insert(usoDeIa).values({
 			conversationId: uso.conversationId ?? null,
 			modelo: uso.modelo,
 			tokensInput: uso.tokensInput,
 			tokensOutput: uso.tokensOutput,
+			tokensCacheRead: cacheRead,
+			tokensCacheWrite: cacheWrite,
 			custoUsdCents: custoDoTurnoCents({
 				modelo: uso.modelo,
 				tokensInput: uso.tokensInput,
 				tokensOutput: uso.tokensOutput,
+				cacheRead: cacheRead ?? undefined,
+				cacheWrite: cacheWrite ?? undefined,
 			}),
 		});
 	} catch (erro) {

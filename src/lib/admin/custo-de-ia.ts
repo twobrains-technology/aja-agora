@@ -4,52 +4,46 @@
  * Bruna, 22/09: *"ver o custo de IA e das mensagens de remarketing … para a
  * gente calcular o CPC depois"*. Este módulo é a metade "custo de IA".
  *
- * ── A decisão do dono, e ela não se reabre aqui (ROTA B) ────────────────────
+ * ── A fonte do número é o livro-caixa LOCAL ─────────────────────────────────
  *
- * O custo de LLM **já existe na fonte atual** (o Langfuse): cada geração sai de
- * lá com o custo em dólar, por modelo e por dia. Nada de tabela de preço
- * versionada em código, nada de gravar tokens do turno no banco — o spec de
- * 28/09 lista as duas coisas em "Fora de escopo (YAGNI)". O que este módulo
- * faz é LER essa fonte e cruzar com o Postgres pelo `sessionId` do Langfuse,
- * que é o MESMO `conversationId` do Postgres (é o que `withLangfuseTurn` grava:
- * `sessionId: ctx.conversationId`).
+ * O custo de LLM vinha da Metrics API do serviço de observabilidade (Langfuse) até
+ * 19/10/2026. Com ele fora, quem grava o consumo é a tabela `uso_de_ia` do Postgres — uma
+ * linha por turno do vendedor e uma por chamada fora dele (`registrarUsoDeIa`) — e é dela
+ * que a tela lê (`lerCustoLocal`). Não existe mais serviço externo a consultar: declarar
+ * "Langfuse" aqui era atribuir o número a algo que não é mais lido (L43/P220).
+ *
+ * O valor é RECALCULADO dos tokens por `agent/pi/precos.ts`, não lido da coluna
+ * `custo_usd_cents`: aquela coluna é inteira em centavos e cada linha arredonda o seu, então
+ * somar os inteiros perde o consumo subcentavo do modelo barato (N09/L36).
  *
  * ── A lei que atravessa o módulo ────────────────────────────────────────────
  *
  * **Ausência de preço é "não calculável", nunca "R$ 0,00".** E o motivo é
  * NOMEADO, porque cada um pede uma ação diferente de quem opera:
  *
- *   - `sem_dado`         — a fonte não devolveu custo no período (sync/fonte parada);
+ *   - `sem_dado`         — o livro-caixa não tem linha no período;
  *   - `sem_vinculo`      — o custo existe, mas não casa com conversa do Postgres
- *                          (o cruzamento por `sessionId` não fechou);
- *   - `modelo_sem_preco` — a fonte conheceu a geração e não o preço do modelo;
+ *                          (o cruzamento por `conversation_id` não fechou);
+ *   - `modelo_sem_preco` — há uso de um modelo sem preço de entrada/saída/cache;
  *   - `sem_cotacao`      — há custo em dólar e não há cotação cadastrada para
  *                          trazê-lo ao real do CPC;
- *   - `fonte_indisponivel` — a leitura da fonte FALHOU (não é "não tem dado").
+ *   - `fonte_indisponivel` — a leitura do livro-caixa FALHOU (não é "não tem dado").
  *
  * Um total PARCIAL somado por cima de um modelo sem preço é a mentira que este
  * módulo existe para impedir: ele subestimaria o custo e ninguém veria.
  *
+ * ── Chamada AVULSA entra no total, numa linha própria ───────────────────────
+ *
+ * Juiz de avaliação, diagnóstico e insight de lead gastam IA sem ter conversa a quem
+ * atribuir. Antes elas eram descartadas do livro-caixa e o total da tela mentia para menos
+ * (P314): agora entram na soma e aparecem separadas em `semConversa`.
+ *
  * ── Por que este arquivo é puro e a leitura mora na borda ───────────────────
  *
- * `somarCustoDeIA` não faz I/O: recebe os dois lados já lidos (as linhas do
- * Langfuse e as conversas do Postgres) e devolve o número ou o motivo. É o que
- * permite provar os cinco casos sem tocar o Langfuse de verdade — e o que
- * impede um teste de gravar custo de teste na fonte. Quem lê de fato é
- * `lerCustoDoLangfuse` (a borda) e `conversasDoPeriodo` (o Postgres).
- *
- * ── A rota da fonte: `v2/metrics`, e por que a v1 não volta ─────────────────
- *
- * A Metrics API v1 (`/api/public/metrics`) responde **404** no Langfuse v4
- * (`events_only`): a tela do custo ficou sem fonte em silêncio, e o sintoma nos
- * logs era `[custo-de-ia] leitura da fonte falhou: metrics-404`. A
- * rota viva é `/api/public/v2/metrics`.
- *
- * A v2 cobra duas regras que a v1 não cobrava, e o desenho da leitura nasce
- * delas: `sessionId` é dimensão de alta cardinalidade — exige `config.row_limit`
- * e `orderBy` por medida, e **proíbe** `timeDimension` junto dela. Como o vínculo
- * com a conversa é justamente o `sessionId`, a leitura fatia a janela em DIAS e
- * consulta um dia por vez; o dia vem do recorte pedido, não do payload.
+ * `somarCustoDeIA` não faz I/O: recebe os dois lados já lidos (as linhas do livro-caixa e as
+ * conversas do Postgres) e devolve o número ou o motivo. É o que permite provar os casos sem
+ * banco — e o que impede um teste de gravar custo de teste na fonte. Quem lê de fato é
+ * `lerCustoLocal` (o livro-caixa) e `conversasDoPeriodo` (o cruzamento).
  */
 
 import { and, gte, lte } from "drizzle-orm";
@@ -63,22 +57,35 @@ import { diaDoNegocio, fimDoDia, inicioDoDia } from "./periodo";
 export type CanalDeIA = "web" | "whatsapp";
 
 /**
- * Uma linha de custo como a FONTE (Langfuse) devolve: por sessão, modelo e dia.
+ * UMA linha de custo: por conversa, modelo e dia.
  *
- * `sessionId` é o `conversationId` do Postgres — é esta igualdade que dá o
- * cruzamento. `custoUsdCents` é `null` (e não zero) quando a fonte não tem preço
- * do modelo: zero é um custo medido, `null` é um preço que não se sabe.
+ * `sessionId` é o `conversationId` do Postgres — é esta igualdade que dá VÍNCULO ao custo.
+ * É `null` na chamada AVULSA: a que não nasceu de conversa (juiz, diagnóstico, insight de
+ * lead) e por isso não tem a quem ser atribuída — ela entra no total numa linha própria
+ * (`semConversa`), nunca é descartada (P314).
+ *
+ * `custoUsdCents` é `null` (e não zero) quando o preço não é conhecido: zero é um custo
+ * medido, `null` é um preço que não se sabe.
  */
-export interface LinhaDeCustoDoLangfuse {
-	sessionId: string;
+export interface LinhaDeCustoDeIA {
+	sessionId: string | null;
 	modelo: string;
 	/** Dia do negócio (`YYYY-MM-DD`), no fuso da operação. */
 	dia: string;
 	/**
 	 * Custo em centavos de DÓLAR — pode ter FRAÇÃO de centavo (é valor exato de token, não
-	 * arredondado por linha); `null` = a fonte não tem preço deste modelo.
+	 * arredondado por linha); `null` = não há preço conhecido deste modelo (entrada, saída
+	 * ou cache).
 	 */
 	custoUsdCents: number | null;
+}
+
+/** O recorte do custo das chamadas AVULSAS (sem conversa) dentro do total. */
+export interface CustoDasChamadasAvulsas {
+	/** Quantas linhas de `uso_de_ia` entraram no total sem conversa. */
+	chamadas: number;
+	usdCents: number;
+	brlCents: number;
 }
 
 /** A conversa do Postgres — o lado que dá VÍNCULO e CANAL ao custo. */
@@ -111,6 +118,11 @@ export type ResultadoCustoDeIA =
 			conversas: number;
 			porModelo: CustoAgrupado[];
 			porDia: CustoAgrupado[];
+			/**
+			 * A linha própria das chamadas que não têm conversa a quem atribuir: elas ESTÃO
+			 * somadas em `usdCents`/`brlCents` acima, e aqui aparece a fatia delas.
+			 */
+			semConversa: CustoDasChamadasAvulsas;
 	  }
 	| {
 			tipo: "motivo";
@@ -122,11 +134,11 @@ export type ResultadoCustoDeIA =
 	  };
 
 const EXPLICACAO: Record<MotivoSemCustoDeIA, string> = {
-	sem_dado: "A fonte de custo não reportou nada neste período.",
-	sem_vinculo: "Há custo na fonte, mas nenhuma conversa do período corresponde a ele.",
-	modelo_sem_preco: "A fonte registrou uso de um modelo sem preço cadastrado nela.",
+	sem_dado: "O livro-caixa de uso de IA não tem nenhuma linha neste período.",
+	sem_vinculo: "Há custo registrado, mas nenhuma conversa do período corresponde a ele.",
+	modelo_sem_preco: "Há uso de um modelo sem preço cadastrado (entrada, saída ou cache).",
 	sem_cotacao: "Há custo em dólar e não há cotação cadastrada para trazer ao real.",
-	fonte_indisponivel: "A fonte de custo não respondeu (Langfuse indisponível ou não configurado).",
+	fonte_indisponivel: "A leitura do livro-caixa de IA (uso_de_ia, no Postgres) falhou.",
 };
 
 /** Converte centavos de dólar em centavos de real pela cotação cadastrada. */
@@ -136,8 +148,8 @@ function paraReal(usdCents: number, cotacaoUsdBrl: number): number {
 
 /** Soma por chave e devolve ordenado pela chave — determinístico para a tela. */
 function agrupar(
-	linhas: readonly LinhaDeCustoDoLangfuse[],
-	chaveDe: (linha: LinhaDeCustoDoLangfuse) => string,
+	linhas: readonly LinhaDeCustoDeIA[],
+	chaveDe: (linha: LinhaDeCustoDeIA) => string,
 	cotacao: number,
 ): CustoAgrupado[] {
 	const porChave = new Map<string, number>();
@@ -158,12 +170,18 @@ function agrupar(
 /**
  * O custo de IA do período/canal, ou o motivo nomeado pelo qual ele não existe.
  *
+ * Três populações de linha saem do livro-caixa, e a diferença importa:
+ *   - COM conversa que casa com uma conversa do período → entra no total e tem vínculo;
+ *   - COM conversa que não casa → não entra (é o custo de outro recorte, quando o filtro de
+ *     canal está ativo);
+ *   - SEM conversa (avulsa) → entra no total, na linha própria `semConversa`.
+ *
  * A ordem das guardas não é arbitrária — é a mesma lógica de `custoPor`
  * (campanhas-queries.ts): **falta de vínculo antes de falta de dado**, porque um
  * cruzamento que não fecha diz "olhe a atribuição", não "olhe a operação".
  */
 export function somarCustoDeIA(args: {
-	linhas: readonly LinhaDeCustoDoLangfuse[];
+	linhas: readonly LinhaDeCustoDeIA[];
 	conversas: readonly ConversaDoPostgres[];
 	cotacaoUsdBrl: number | null;
 	/** Recorte opcional por canal — sem ele, os dois canais entram. */
@@ -173,13 +191,19 @@ export function somarCustoDeIA(args: {
 		? args.conversas.filter((conversa) => conversa.canal === args.canal)
 		: [...args.conversas];
 
-	// O CRUZAMENTO: só a linha de custo cuja sessão é uma conversa conhecida do
-	// período. É aqui que `sessionId` (Langfuse) vira `conversationId` (Postgres).
+	// O CRUZAMENTO: só a linha de custo cuja conversa é uma conversa conhecida do período.
 	const ids = new Set(conversas.map((conversa) => conversa.conversationId));
-	const comVinculo = args.linhas.filter((linha) => ids.has(linha.sessionId));
+	const comConversa = args.linhas.filter(
+		(linha): linha is LinhaDeCustoDeIA & { sessionId: string } => linha.sessionId !== null,
+	);
+	const comVinculo = comConversa.filter((linha) => ids.has(linha.sessionId));
+	// As avulsas não têm vínculo a procurar: elas nunca tiveram conversa.
+	const avulsas = args.linhas.filter((linha) => linha.sessionId === null);
 
-	// Sem conversa não há a quem atribuir o custo — mesmo que a fonte tenha dado.
-	if (conversas.length === 0 || (args.linhas.length > 0 && comVinculo.length === 0)) {
+	// Há custo de conversa e NENHUMA conversa do recorte corresponde a ele: o
+	// cruzamento não fechou — mesmo que existam avulsas, dizer um total aqui seria
+	// esconder que a maior parte do custo ficou sem atribuição.
+	if (comConversa.length > 0 && comVinculo.length === 0) {
 		return {
 			tipo: "motivo",
 			motivo: "sem_vinculo",
@@ -187,16 +211,18 @@ export function somarCustoDeIA(args: {
 		};
 	}
 
-	if (comVinculo.length === 0) {
+	// Livro-caixa vazio no período: nem com conversa, nem avulso.
+	if (comVinculo.length === 0 && avulsas.length === 0) {
 		return { tipo: "motivo", motivo: "sem_dado", explicacao: EXPLICACAO.sem_dado };
 	}
 
-	// Modelo sem preço na fonte: o total não pode ser calculado, porque a soma
-	// parcial omitiria justamente a parcela que não se conhece.
+	// O total GERAL — a conversa e a avulsa somam juntas: as duas são gasto de IA do período.
+	const somadas = [...comVinculo, ...avulsas];
+
+	// Modelo sem preço (de entrada/saída ou de cache): o total não pode ser calculado,
+	// porque a soma parcial omitiria justamente a parcela que não se conhece.
 	const semPreco = [
-		...new Set(
-			comVinculo.filter((linha) => linha.custoUsdCents === null).map((linha) => linha.modelo),
-		),
+		...new Set(somadas.filter((l) => l.custoUsdCents === null).map((l) => l.modelo)),
 	].sort();
 	if (semPreco.length > 0) {
 		return {
@@ -207,7 +233,7 @@ export function somarCustoDeIA(args: {
 		};
 	}
 
-	const usdCents = comVinculo.reduce((total, linha) => total + (linha.custoUsdCents ?? 0), 0);
+	const usdCents = somadas.reduce((total, linha) => total + (linha.custoUsdCents ?? 0), 0);
 
 	// Sem cotação só é problema quando há custo: zero real continua sendo zero.
 	if (args.cotacaoUsdBrl === null && usdCents > 0) {
@@ -215,41 +241,22 @@ export function somarCustoDeIA(args: {
 	}
 
 	const cotacao = args.cotacaoUsdBrl ?? 0;
+	const usdAvulsas = avulsas.reduce((total, linha) => total + (linha.custoUsdCents ?? 0), 0);
 	return {
 		tipo: "valor",
 		usdCents,
 		brlCents: paraReal(usdCents, cotacao),
 		conversas: conversas.length,
-		porModelo: agrupar(comVinculo, (linha) => linha.modelo, cotacao),
-		porDia: agrupar(comVinculo, (linha) => linha.dia, cotacao),
+		porModelo: agrupar(somadas, (linha) => linha.modelo, cotacao),
+		porDia: agrupar(somadas, (linha) => linha.dia, cotacao),
+		semConversa: {
+			chamadas: avulsas.length,
+			usdCents: usdAvulsas,
+			brlCents: paraReal(usdAvulsas, cotacao),
+		},
 	};
 }
-// ─── A borda: a leitura da FONTE e o cruzamento com o Postgres ──────────────
-
-/**
- * A LEITURA DO CUSTO — agora LOCAL.
- *
- * Até 19/10/2026 este número vinha da Metrics API do serviço de observabilidade,
- * por sessão/modelo/dia. Com ele fora, o turno passou a gravar o que consumiu na
- * tabela `uso_de_ia` (tokens de entrada/saída por conversa e modelo), e é daqui
- * que a tela lê.
- *
- * O custo é RECALCULADO dos TOKENS (`pi/precos.ts`), não lido da coluna
- * `custo_usd_cents`: aquela coluna é INTEIRA em centavos e cada beat do turno
- * arredonda o seu antes de gravar, então vários beats de fração de centavo viram
- * zero ANTES de somar — com o modelo default do vendedor (Qwen, US$ 0,05/M) quase
- * todo beat é subcentavo e o total saía zerado. Somando os valores EXATOS e
- * arredondando uma vez, no fim (`somarCustoDeIA`), o número bate com o consumo.
- *
- * Modelo sem preço continua NULO: a lei do módulo é "ausência de preço é não
- * calculável, nunca R$ 0,00", e o consumidor já sabe dizer `modelo_sem_preco`.
- */
-export interface LinhaDeUsoLocal {
-	sessionId: string;
-	modelo: string;
-	dia: string;
-	custoUsdCents: number | null;
-}
+// ─── A borda: a leitura do LIVRO-CAIXA e o cruzamento com o Postgres ────────
 
 /** Uma linha CRUA do livro-caixa local (`uso_de_ia`), como sai do banco. */
 export interface UsoDeIaGravado {
@@ -257,6 +264,9 @@ export interface UsoDeIaGravado {
 	modelo: string;
 	tokensInput: number;
 	tokensOutput: number;
+	/** `null` = o provedor não reportou cache nesta linha (não medido, não é zero). */
+	tokensCacheRead: number | null;
+	tokensCacheWrite: number | null;
 	criadoEm: Date;
 }
 
@@ -266,24 +276,32 @@ export interface UsoDeIaGravado {
  * A coluna `custo_usd_cents` NÃO é lida de propósito: ela é inteira e arredondada por
  * beat, e é essa soma de arredondamentos que zerava o custo do modelo barato. O valor
  * daqui é EXATO (fração de centavo); quem arredonda é a exibição/agregação.
+ *
+ * O cache do prompt entra na conta junto com entrada e saída (P217/P273): é a parcela que
+ * decide o custo de um turno que repete a mesma caixa de prompt. Linha com cache reportado
+ * e modelo sem preço de cache sai com `custoUsdCents` `null` — desconhecido, nunca zero.
+ *
+ * Linha SEM conversa não é descartada: vira `sessionId: null` e o total é somado numa linha
+ * própria (P314). Antes ela sumia, e o custo que juiz/diagnóstico/insight gastam era gasto
+ * invisível.
  */
-export function linhasDoLivroLocal(linhas: readonly UsoDeIaGravado[]): LinhaDeCustoDoLangfuse[] {
-	return linhas
-		.filter((l): l is UsoDeIaGravado & { conversationId: string } => Boolean(l.conversationId))
-		.map((l) => ({
-			sessionId: l.conversationId,
+export function linhasDoLivroLocal(linhas: readonly UsoDeIaGravado[]): LinhaDeCustoDeIA[] {
+	return linhas.map((l) => ({
+		sessionId: l.conversationId,
+		modelo: l.modelo,
+		dia: diaDoNegocio(l.criadoEm),
+		custoUsdCents: custoDoTurnoCentsExatos({
 			modelo: l.modelo,
-			dia: diaDoNegocio(l.criadoEm),
-			custoUsdCents: custoDoTurnoCentsExatos({
-				modelo: l.modelo,
-				tokensInput: l.tokensInput,
-				tokensOutput: l.tokensOutput,
-			}),
-		}));
+			tokensInput: l.tokensInput,
+			tokensOutput: l.tokensOutput,
+			cacheRead: l.tokensCacheRead ?? undefined,
+			cacheWrite: l.tokensCacheWrite ?? undefined,
+		}),
+	}));
 }
 
-/** Lê o livro-caixa local e agrupa por conversa/modelo/dia. Server-only. */
-export async function lerCustoLocal(de: Date, ate: Date): Promise<LinhaDeCustoDoLangfuse[]> {
+/** Lê o livro-caixa local do período. Server-only. */
+export async function lerCustoLocal(de: Date, ate: Date): Promise<LinhaDeCustoDeIA[]> {
 	const linhas = await db
 		.select({
 			conversationId: usoDeIa.conversationId,
@@ -291,6 +309,8 @@ export async function lerCustoLocal(de: Date, ate: Date): Promise<LinhaDeCustoDo
 			criadoEm: usoDeIa.criadoEm,
 			tokensInput: usoDeIa.tokensInput,
 			tokensOutput: usoDeIa.tokensOutput,
+			tokensCacheRead: usoDeIa.tokensCacheRead,
+			tokensCacheWrite: usoDeIa.tokensCacheWrite,
 		})
 		.from(usoDeIa)
 		.where(and(gte(usoDeIa.criadoEm, inicioDoDia(de)), lte(usoDeIa.criadoEm, fimDoDia(ate))));
@@ -317,7 +337,7 @@ export async function conversasDoPeriodo(de: Date, ate: Date): Promise<ConversaD
 
 /** As fontes do custo de IA — injetáveis para provar a costura sem banco. */
 export interface FontesDoCustoDeIA {
-	lerUso(de: Date, ate: Date): Promise<LinhaDeCustoDoLangfuse[]>;
+	lerUso(de: Date, ate: Date): Promise<LinhaDeCustoDeIA[]>;
 	lerConversas(de: Date, ate: Date): Promise<ConversaDoPostgres[]>;
 	lerCotacao(): Promise<number | null>;
 }
@@ -346,8 +366,10 @@ export async function computeCustoDeIA(
 		return somarCustoDeIA({ linhas, conversas, cotacaoUsdBrl: cotacao, canal: args.canal });
 	} catch (erro) {
 		// O erro não sobe: o bloco inteiro da tela não pode cair porque o custo
-		// não carregou. O motivo NOMEADO conta o que aconteceu.
-		console.error("[custo-de-ia] leitura da fonte falhou:", erro);
+		// não carregou. O motivo NOMEADO conta o que aconteceu — e ele aponta para o
+		// Postgres (`uso_de_ia`), que é a fonte de verdade do número desde 19/10/2026
+		// (L43/P220).
+		console.error("[custo-de-ia] leitura do livro-caixa (uso_de_ia) falhou:", erro);
 		return {
 			tipo: "motivo",
 			motivo: "fonte_indisponivel",

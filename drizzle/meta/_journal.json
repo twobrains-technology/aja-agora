@@ -477,6 +477,13 @@
       "when": 1792958451985,
       "tag": "0067_sturdy_sabretooth",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1792966065979,
+      "tag": "0068_concerned_scorpion",
+      "breakpoints": true
     }
   ]
 }

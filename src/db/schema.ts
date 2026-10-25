@@ -1964,6 +1964,12 @@ export const usoDeIa = pgTable(
 		modelo: text().notNull(),
 		tokensInput: integer("tokens_input").default(0).notNull(),
 		tokensOutput: integer("tokens_output").default(0).notNull(),
+		// O CACHE DO PROMPT, que decide o custo real de um turno que repete a mesma caixa de
+		// prompt a cada beat. `null` = o provedor não reportou (não medido), que NÃO é o mesmo
+		// que 0 medido — a mesma disciplina de `custo_usd_cents`. Anuláveis e aditivas de
+		// propósito: linha antiga não tem essa medição e não pode afirmar zero.
+		tokensCacheRead: integer("tokens_cache_read"),
+		tokensCacheWrite: integer("tokens_cache_write"),
 		custoUsdCents: integer("custo_usd_cents"),
 		criadoEm: timestamp("criado_em", { withTimezone: true }).defaultNow().notNull(),
 	},
