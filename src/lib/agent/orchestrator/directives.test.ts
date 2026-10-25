@@ -1,23 +1,44 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { DESTINO_DOS_CARDS, montarCardDeFato } from "@/lib/agent/pi/cards-livres";
+import type { GroupSummary } from "@/lib/adapters/types";
+import { DESTINO_DOS_CARDS, montarCardDeFato, type TipoDeFato } from "@/lib/agent/pi/cards-livres";
 import { NOMES_DAS_TOOLS_LIVRES } from "@/lib/agent/pi/tools-livres";
 import {
 	buildAdvanceToContractDirective,
 	buildChooseOfferDirective,
 	buildCompareFinancingDirective,
+	buildDecisionPromptDirective,
 	buildDetailDirective,
+	buildEmbeddedBidDirective,
 	buildGroupSelectedDirective,
+	buildLanceSoParcelaDirective,
+	buildRecoConsentAcceptedDirective,
+	buildScarcityDirective,
 	buildSimulateDirective,
 	buildSimulationInterestDirective,
 	buildSimulatorDialDirective,
 	buildTopicPickerAnswerDirective,
 	buildTopicPickerBackDirective,
 	buildViewScenariosDirective,
+	buildWhatsappOptinDirective,
 } from "./directives";
 
 /** Uma carta real, do tamanho das que a busca devolve. */
 const GROUP_ID = "6abfaeca-0000-0000-0000-0000000074cc";
+
+/** A carta que o cliente está vendo — o que `mostrar_card` precisa para montar
+ * qualquer card de FATO que não seja de estado. */
+const CARTA_NA_TELA: GroupSummary = {
+	id: GROUP_ID,
+	administradora: "Canopus",
+	category: "auto",
+	creditValue: 60_000,
+	monthlyPayment: 640,
+	adminFeePercent: 18,
+	termMonths: 120,
+	totalParticipants: 900,
+	availableSlots: 5,
+};
 
 /** Os cliques dos cards de cálculo (L16/P275, P140, P148, P170, P176): o que
  * cada botão antigo pede agora. `tipo` é o card de FATO que leva o número à tela
@@ -197,6 +218,156 @@ describe("o clique de fechamento pede o formulário, não espera que o sistema o
 			expect(r.metaDoTurno).toEqual({ contractFormDispatched: true });
 		}
 	});
+});
+
+/** P112/P161/P179/P181 — o `groupId` da carta que o handler tem em mãos vai
+ * LITERAL na diretiva.
+ *
+ * Sem ele a instrução só podia dizer "a carta que está na tela": o `contract_form`
+ * saía sem `administradora` (o montador resolve a carta pelo id) e o caminho
+ * curto `fazer_proposta` dependia de o modelo copiar o id do histórico da busca. */
+describe("o fecho leva o groupId da carta quando o chamador o tem", () => {
+	const comId = [
+		{
+			diretiva: "buildAdvanceToContractDirective",
+			texto: () =>
+				buildAdvanceToContractDirective({ administradora: "Canopus", groupId: GROUP_ID }),
+		},
+		{
+			diretiva: "buildChooseOfferDirective",
+			texto: () => buildChooseOfferDirective({ administradora: "Canopus", groupId: GROUP_ID }),
+		},
+		{
+			diretiva: "buildSimulationInterestDirective",
+			texto: () => buildSimulationInterestDirective("Canopus", GROUP_ID),
+		},
+	];
+
+	for (const caso of comId) {
+		it(`${caso.diretiva}: o payload do contract_form cita o id literal`, () => {
+			const texto = caso.texto();
+			expect(texto).toContain('"contract_form"');
+			expect(texto).toContain(`payload {"groupId":"${GROUP_ID}"}`);
+		});
+	}
+
+	it("com a identidade no sistema, o caminho curto usa o MESMO id", () => {
+		const texto = buildChooseOfferDirective({
+			administradora: "Canopus",
+			identidadeJaColetada: true,
+			groupId: GROUP_ID,
+		});
+		expect(texto).toContain(`fazer_proposta com o groupId ${GROUP_ID}`);
+	});
+
+	it("sem o id, a instrução pede a carta na tela — e o card sai com a administradora dela", async () => {
+		const texto = buildAdvanceToContractDirective({ administradora: "Canopus" });
+		expect(texto).toContain("o groupId da carta que está na tela");
+		const r = await montarCardDeFato(
+			"contract_form",
+			{
+				conversationId: "conv-1",
+				channel: "web",
+				nomeDoCliente: null,
+				grupos: new Map([[CARTA_NA_TELA.id, CARTA_NA_TELA]]),
+				cpfMascarado: null,
+			},
+			{ groupId: GROUP_ID },
+		);
+		expect(r.ok).toBe(true);
+		if (r.ok) expect(r.card.payload.administradora).toBe("Canopus");
+	});
+});
+
+/** P143 (onda 7) — os cards que a main punha na tela POR FORA do modelo.
+ *
+ * `decision_prompt` (clique "Agora não" do simulador, chamador VIVO em
+ * `interactive-handlers.ts`) e os cinco que hoje estão sem chamador
+ * (`embedded_bid`, `scarcity`, `whatsapp_optin`, `recommendation_card`,
+ * `two_paths`) ainda diziam "o sistema mostra o card automaticamente em
+ * seguida" e mandavam o modelo NÃO chamar tool. Esse produtor automático
+ * morreu com o funil: no vendedor livre o card só chega à tela pelo
+ * `mostrar_card` que o modelo chama. */
+const PEDE_CARD_DE_FATO: Array<{
+	diretiva: string;
+	texto: () => string;
+	tipo: TipoDeFato;
+	cartas: Map<string, GroupSummary>;
+}> = [
+	{
+		diretiva: "buildDecisionPromptDirective",
+		texto: () => buildDecisionPromptDirective(),
+		tipo: "decision_prompt",
+		cartas: new Map([[CARTA_NA_TELA.id, CARTA_NA_TELA]]),
+	},
+	{
+		diretiva: "buildEmbeddedBidDirective",
+		texto: () => buildEmbeddedBidDirective(),
+		tipo: "embedded_bid",
+		cartas: new Map([[CARTA_NA_TELA.id, CARTA_NA_TELA]]),
+	},
+	{
+		diretiva: "buildScarcityDirective",
+		texto: () => buildScarcityDirective(),
+		tipo: "scarcity",
+		cartas: new Map([[CARTA_NA_TELA.id, CARTA_NA_TELA]]),
+	},
+	{
+		diretiva: 'buildWhatsappOptinDirective("open")',
+		texto: () => buildWhatsappOptinDirective("open"),
+		tipo: "whatsapp_optin",
+		cartas: new Map(),
+	},
+	{
+		diretiva: 'buildWhatsappOptinDirective("confirm")',
+		texto: () => buildWhatsappOptinDirective("confirm"),
+		tipo: "whatsapp_optin",
+		cartas: new Map(),
+	},
+	{
+		diretiva: "buildRecoConsentAcceptedDirective",
+		texto: () => buildRecoConsentAcceptedDirective(),
+		tipo: "recommendation_card",
+		cartas: new Map([[CARTA_NA_TELA.id, CARTA_NA_TELA]]),
+	},
+	{
+		diretiva: "buildLanceSoParcelaDirective",
+		texto: () => buildLanceSoParcelaDirective(),
+		tipo: "two_paths",
+		cartas: new Map([[CARTA_NA_TELA.id, CARTA_NA_TELA]]),
+	},
+];
+
+describe("P143 — quem prometia emissão automática agora PEDE o card", () => {
+	for (const caso of PEDE_CARD_DE_FATO) {
+		it(`${caso.diretiva}: pede mostrar_card "${caso.tipo}"`, () => {
+			const texto = caso.texto();
+			expect(texto).toContain("mostrar_card");
+			expect(texto).toContain(`"${caso.tipo}"`);
+		});
+
+		it(`${caso.diretiva}: não promete produtor automático nem proíbe a ferramenta`, () => {
+			const texto = caso.texto();
+			expect(texto).not.toMatch(/automaticamente/i);
+			expect(texto).not.toMatch(/N[ÃA]O (mostre|chame)/i);
+		});
+
+		it(`${caso.diretiva}: "${caso.tipo}" tem produtor — a instrução é cumprível`, async () => {
+			expect(DESTINO_DOS_CARDS[caso.tipo]).toEqual({ classe: "emitivel", origem: "fato" });
+			const r = await montarCardDeFato(
+				caso.tipo,
+				{
+					conversationId: "conv-1",
+					channel: "web",
+					nomeDoCliente: null,
+					grupos: caso.cartas,
+					cpfMascarado: null,
+				},
+				{ groupId: GROUP_ID },
+			);
+			expect(r.ok).toBe(true);
+		});
+	}
 });
 
 describe("L18 — a diretiva de tópico não espera mais o próximo gate", () => {

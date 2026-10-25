@@ -1075,9 +1075,10 @@ export async function POST(req: NextRequest) {
 
 								// D7 — "Ver cenários de contemplação". Este handler não existia: a
 								// ação caía no `adjust-value` e o directive dizia ao modelo que o
-								// cliente queria mudar o valor do bem. As tools do cálculo
-								// (`compute_scenarios` + `card de apresentação`) já estavam no toolset
-								// do grafo; era só o clique nunca chegar até lá.
+								// cliente queria mudar o valor do bem. O cálculo e o card são do
+								// vendedor livre: `mostrar_card` de tipo `scenarios` monta as três
+								// projeções no servidor a partir da carta real (o directive diz isso
+								// ao modelo); não existe mais tool de cálculo no toolset.
 								if (body.action?.kind === "view-scenarios") {
 									await pipeDirectiveTurn({
 										conversationId,

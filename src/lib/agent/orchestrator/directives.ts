@@ -24,12 +24,24 @@ type EphemeralDropReason = string;
  *
  * Com a identidade já no sistema o card sai como CONFIRMAÇÃO de 1 clique (CPF
  * mascarado); sem ela, é o card que coleta CPF e celular. Em ambos os casos a
- * ação é a mesma — mostrar —, porque é ela que autoriza a proposta real. */
-function instrucaoDoFormularioDeContrato(identidadeJaColetada = false): string {
+ * ação é a mesma — mostrar —, porque é ela que autoriza a proposta real.
+ *
+ * O `groupId`, quando o chamador o tem (P112/P161/P179/P181), vai LITERAL na
+ * instrução: é ele que faz o `contract_form` sair com a `administradora` da
+ * carta (o montador resolve pelo id, `cards-livres.ts`) e é ele que o caminho
+ * curto `fazer_proposta` usa. Sem o id, a diretiva pede "a carta que está na
+ * tela" e a escolha volta a depender de o modelo copiar o id do histórico. */
+function instrucaoDoFormularioDeContrato(identidadeJaColetada = false, groupId?: string): string {
+	const chamada = groupId
+		? chamadaDeCardDeFato("contract_form", groupId)
+		: 'chame mostrar_card com tipo "contract_form" e o groupId da carta que está na tela';
 	if (identidadeJaColetada) {
-		return `O fechamento é SEU, não do sistema: chame mostrar_card com tipo "contract_form". Os dados dele (CPF e celular) JÁ estão no sistema desta conversa, então o card sai como CONFIRMAÇÃO de 1 clique, com o CPF mascarado — é ele que autoriza o pré-cadastro. Se ele já confirmou este plano num turno anterior e você tem o groupId da carta na tela, o caminho curto é fazer_proposta com esse groupId. Em qualquer dos dois: NUNCA peça CPF por texto, não peça nenhum dado que ele já passou e não descreva a interface ("na tela", "no card") — só conduza até o sim.`;
+		const atalho = groupId
+			? `Se ele já confirmou este plano num turno anterior, o caminho curto é fazer_proposta com o groupId ${groupId}.`
+			: "Se ele já confirmou este plano num turno anterior e você tem o groupId da carta na tela, o caminho curto é fazer_proposta com esse groupId.";
+		return `O fechamento é SEU, não do sistema: ${chamada}. Os dados dele (CPF e celular) JÁ estão no sistema desta conversa, então o card sai como CONFIRMAÇÃO de 1 clique, com o CPF mascarado — é ele que autoriza o pré-cadastro. ${atalho} Em qualquer dos dois: NUNCA peça CPF por texto, não peça nenhum dado que ele já passou e não descreva a interface ("na tela", "no card") — só conduza até o sim.`;
 	}
-	return `O fechamento é SEU, não do sistema: chame mostrar_card com tipo "contract_form" — é esse card que coleta os dados dele (CPF e celular) e cria o pré-cadastro. NUNCA peça CPF por texto e não descreva a interface ("na tela", "no card") — só conduza.`;
+	return `O fechamento é SEU, não do sistema: ${chamada} — é esse card que coleta os dados dele (CPF e celular) e cria o pré-cadastro. NUNCA peça CPF por texto e não descreva a interface ("na tela", "no card") — só conduza.`;
 }
 
 /**
@@ -183,8 +195,13 @@ export function buildLanceReactionDirective(rangeTitle: string): string {
 /** FIX-246 (rodada 3, Fable r2 — causa-raiz do veredito 4/10): o convite pra
  * decidir entre os dois caminhos é sempre a MESMA frase neutra — nunca gerada
  * pelo LLM (que podia "recomendar" um caminho por conta própria, cutucando o
- * compliance do card). Emitida DIRETO ao usuário depois do card, sem passar
- * pelo modelo (Lei 1 — mesmo padrão do `buildDiscoveryFailedFallback`). */
+ * compliance do card).
+ *
+ * P143 (onda 7): na main quem a emitia DIRETO ao usuário, sem passar pelo
+ * modelo, era o mesmo handler que emitia o card (Lei 1). Esse emissor morreu
+ * junto com o funil — o card hoje sai pelo `mostrar_card` que
+ * `buildLanceSoParcelaDirective` pede, e esta constante segue como a copy de
+ * referência do convite. */
 export const TWO_PATHS_FOLLOWUP_TEXT =
 	"Não tem certo ou errado — depende de você ter pressa ou não. Qual dos dois combina mais com você?";
 
@@ -197,9 +214,15 @@ export const TWO_PATHS_FOLLOWUP_TEXT =
  * 1/4). Agora o directive só escreve a frase de introdução; o handler
  * (route.ts/index.ts) emite o card SERVER-SIDE determinístico logo em
  * seguida (`buildTwoPathsCard`) — e o convite pra decidir é o texto FIXO
- * `TWO_PATHS_FOLLOWUP_TEXT`, nunca a critério do modelo. */
+ * `TWO_PATHS_FOLLOWUP_TEXT`, nunca a critério do modelo.
+ *
+ * P143 (onda 7): esse emissor automático também morreu com o funil.
+ * `two_paths` é `emitivel`/`fato` e só chega à tela pelo `mostrar_card` que o
+ * MODELO chama (montador em `cards-livres.ts`), então a diretiva PEDE o card
+ * — a promessa de emissão automática deixava o turno sem card nenhum. Hoje
+ * está sem chamador: ver `.orientacao/pendencia-DIR3.md`. */
 export function buildLanceSoParcelaDirective(): string {
-	return `Usuário disse que não quer comprometer nada além da parcela — recusa explícita de qualquer conversa de lance. FLUXO: escreva 1-2 frases respeitando a escolha (ex.: "Perfeito, respeito total. Então deixa eu ser bem transparente e te mostrar os dois caminhos possíveis."). NÃO explique lance embutido, NÃO chame NENHUMA tool neste turno — o sistema mostra o card dos dois caminhos e a pergunta de decisão automaticamente, logo em seguida.`;
+	return `Usuário disse que não quer comprometer nada além da parcela — recusa explícita de qualquer conversa de lance. FLUXO: escreva 1-2 frases respeitando a escolha (ex.: "Perfeito, respeito total. Então deixa eu ser bem transparente e te mostrar os dois caminhos possíveis."). NÃO explique lance embutido. Depois chame mostrar_card com tipo "two_paths" e o groupId da carta que está na tela: é esse card que põe os dois caminhos na tela (a pergunta de decisão vem depois, na sua fala).`;
 }
 
 /** FIX-237 (Fable r1, D2.1 gap #3) — card `embedded_bid` (docs/02-cards-novos.md
@@ -221,9 +244,13 @@ export function buildLanceSoParcelaDirective(): string {
 // que dispara LOGO EM SEGUIDA (gate-questions.ts, lanceEmbutidoEdu) explica o
 // MESMO conceito de novo, com os números reais. Resultado: a mesma definição
 // saía 2× seguidas, em 2 balões. Agora o directive é SÓ transição (igual ao
-// buildScarcityDirective) — a educação tem UMA fonte só, o gate determinístico.
+// buildScarcityDirective) — a educação tem UMA fonte só: o card do embutido.
+//
+// P143 (onda 7): o emissor automático morreu com o funil — `embedded_bid` é
+// `emitivel`/`fato` e só chega à tela pelo `mostrar_card` do MODELO. A diretiva
+// pede o card; sem chamador hoje (ver `.orientacao/pendencia-DIR3.md`).
 export function buildEmbeddedBidDirective(): string {
-	return `Escreva 1-2 frases de transição NO SEU TOM (ex.: "Baseado no que você me contou, tenho uma ideia que pode acelerar sua contemplação."). NÃO explique o que é lance embutido aqui — o sistema já traz a educação completa logo em seguida; explicar de novo duplica a mesma ideia no turno. NÃO invente o percentual do embutido nem o valor líquido em texto — isso é o trabalho do card, que o sistema mostra automaticamente em seguida com os números REAIS da oferta. NÃO mostre o card nem NENHUMA outra tool neste turno.`;
+	return `Escreva 1-2 frases de transição NO SEU TOM (ex.: "Baseado no que você me contou, tenho uma ideia que pode acelerar sua contemplação."). NÃO explique o que é lance embutido aqui — o card mostra o que muda no crédito recebido; explicar de novo duplica a mesma ideia no turno. NÃO invente o percentual do embutido nem o valor líquido em texto: o servidor monta o card com os números REAIS da oferta. Depois chame mostrar_card com tipo "embedded_bid" e o groupId da carta na tela.`;
 }
 
 /** FIX-237 (Fable r1, D2.1 gap #3) — card `scarcity` (docs/02-cards-novos.md
@@ -237,9 +264,13 @@ export function buildEmbeddedBidDirective(): string {
  * lance resolvida, ANTES da proposta final — imediatamente antes do card de
  * decisão ("Esse plano faz sentido?"). NÃO dispara no caminho "só a parcela"
  * (two_paths) — a proposta ali segue direto pro fecho, sem o gancho de
- * escassez (spec `04-copy-fluxos.md` Fluxo B). */
+ * escassez (spec `04-copy-fluxos.md` Fluxo B).
+ *
+ * P143 (onda 7): `scarcity` também só chega à tela pelo `mostrar_card` do
+ * modelo — o emissor automático morreu com o funil. A diretiva pede o card;
+ * sem chamador hoje (ver `.orientacao/pendencia-DIR3.md`). */
 export function buildScarcityDirective(): string {
-	return `Escreva 1-2 frases de transição NO SEU TOM (ex.: "Ah, e tem um detalhe sobre esse grupo que vale você saber."). NÃO invente o número de vagas nem mencione o total de cotas do grupo — o sistema mostra o card de escassez automaticamente em seguida, com o número REAL calculado a partir do grupo. NÃO mostre o card nem NENHUMA outra tool neste turno.`;
+	return `Escreva 1-2 frases de transição NO SEU TOM (ex.: "Ah, e tem um detalhe sobre esse grupo que vale você saber."). NÃO invente o número de vagas nem mencione o total de cotas do grupo — o servidor calcula esse número a partir do grupo. Depois chame mostrar_card com tipo "scarcity" e o groupId da carta na tela.`;
 }
 
 /** FIX-280 (loop r9, baseline Sonnet 3/10, G4): `card de apresentação` saiu
@@ -250,12 +281,17 @@ export function buildScarcityDirective(): string {
  * (`buildWhatsappOptinCard`) — nunca mais depende de o LLM "decidir" chamar
  * a tool. `stage` espelha `deriveWhatsappOptinStage`: "open" (número ainda
  * não coletado) pede o WhatsApp; "confirm" (número já conhecido — lead
- * form/identify) só confirma o canal, sem re-coletar. */
+ * form/identify) só confirma o canal, sem re-coletar.
+ *
+ * P143 (onda 7): o emissor automático morreu com o funil — `whatsapp_optin` é
+ * `emitivel`/`fato` e só chega à tela pelo `mostrar_card` do MODELO (o montador
+ * não precisa de carta: é card de ESTADO). A diretiva pede o card; sem chamador
+ * hoje (ver `.orientacao/pendencia-DIR3.md`). */
 export function buildWhatsappOptinDirective(stage: "open" | "confirm"): string {
 	if (stage === "confirm") {
-		return `O usuário JÁ informou o WhatsApp dele nesta conversa (lead form / identificação do fechamento). Escreva 1-2 frases confirmando o canal, SEM repetir o número por extenso (o card já mostra) — ex.: "Posso te chamar no seu WhatsApp se precisar?" ou "Confirma que sigo seu atendimento pelo WhatsApp se cair a conexão?". NÃO peça o número de novo. NÃO mostre o card nem NENHUMA outra tool neste turno — o sistema mostra o card de confirmação de 1 clique automaticamente em seguida.`;
+		return `O usuário JÁ informou o WhatsApp dele nesta conversa (lead form / identificação do fechamento). Escreva 1-2 frases confirmando o canal, SEM repetir o número por extenso (o card já mostra) — ex.: "Posso te chamar no seu WhatsApp se precisar?" ou "Confirma que sigo seu atendimento pelo WhatsApp se cair a conexão?". NÃO peça o número de novo. Depois chame mostrar_card com tipo "whatsapp_optin" — é o card que confirma o canal em 1 clique.`;
 	}
-	return `Escreva 1-2 frases contextualizando um pedido de WhatsApp, com narrativa de segurança/continuidade do atendimento NO SEU TOM (ex.: "Pra não perder seu atendimento se cair a internet, me compartilha seu WhatsApp? Se acontecer algo aqui, continuamos por lá."). NÃO mostre o card nem NENHUMA outra tool neste turno — o sistema mostra o card automaticamente em seguida, com input mascarado + botões "Quero receber"/"Agora não".`;
+	return `Escreva 1-2 frases contextualizando um pedido de WhatsApp, com narrativa de segurança/continuidade do atendimento NO SEU TOM (ex.: "Pra não perder seu atendimento se cair a internet, me compartilha seu WhatsApp? Se acontecer algo aqui, continuamos por lá."). Depois chame mostrar_card com tipo "whatsapp_optin" — o card traz o input mascarado + os botões "Quero receber"/"Agora não".`;
 }
 
 // ---- Group actions ----
@@ -385,13 +421,16 @@ export function buildAdvanceToContractDirective(args: {
 	/** O CPF e o celular já estão no sistema desta conversa. Muda o exemplo de
 	 * fechamento: com os dados on file, pedir de novo é o defeito de `fd76e393`. */
 	identidadeJaColetada?: boolean;
+	/** A carta da tela, quando o handler a tem (P112/P179/P181). Sem ela a
+	 * diretiva pede o id "da carta na tela" e a escolha fica com o modelo. */
+	groupId?: string;
 }): string {
 	// FIX-256 (rodada 4, veredito Fable FINAL §N-I) — SUPERSEDE o FIX-216:
 	// "reserva"/"pré-reserva" ainda implica compromisso fechado antes da
 	// contratação real, borderline com a linha "nunca 'reservado' antes da
 	// contratação". Trocado por "garantir seu lugar" + "pré-cadastro" — nem
 	// "contratar/fechar" (FIX-216), nem "reserva" (este fix).
-	return `O usuário já viu o card de decisão e reafirmou que quer seguir. FLUXO: (1) escreva 1-2 frases de fechamento no SEU TOM (${exemploDeFechamento({ identidadeJaColetada: args.identidadeJaColetada })}); (2) ${instrucaoDoFormularioDeContrato(args.identidadeJaColetada)} NUNCA inicie captura de lead. NÃO chame buscar_cartas nem re-apresente os cards do reveal (group_card/recommendation_card/comparison_table) — o usuário já viu o plano, re-apresentar = loop.`;
+	return `O usuário já viu o card de decisão e reafirmou que quer seguir. FLUXO: (1) escreva 1-2 frases de fechamento no SEU TOM (${exemploDeFechamento({ identidadeJaColetada: args.identidadeJaColetada })}); (2) ${instrucaoDoFormularioDeContrato(args.identidadeJaColetada, args.groupId)} NUNCA inicie captura de lead. NÃO chame buscar_cartas nem re-apresente os cards do reveal (group_card/recommendation_card/comparison_table) — o usuário já viu o plano, re-apresentar = loop.`;
 }
 
 /** FIX-195 (P0) — o usuário ESCOLHEU uma cota no seletor do reveal e clicou
@@ -403,19 +442,22 @@ export function buildChooseOfferDirective(args: {
 	administradora?: string;
 	/** Ver `buildAdvanceToContractDirective`. */
 	identidadeJaColetada?: boolean;
+	/** Ver `buildAdvanceToContractDirective`. Aqui o id é o da cota que o
+	 * cliente escolheu no seletor do reveal — resolvido no servidor. */
+	groupId?: string;
 }): string {
 	const { administradora, identidadeJaColetada } = args;
 	const adminFrase = administradora ? ` com a ${administradora}` : "";
 	// FIX-256 (rodada 4, veredito Fable FINAL §N-I) — mesma troca de terminologia
 	// do buildAdvanceToContractDirective: nunca "reserva" pré-contratação.
-	return `O usuário ESCOLHEU uma cota específica no seletor do reveal e quer SEGUIR com ela — a decisão JÁ está tomada e o grupo JÁ está resolvido pelo sistema (o groupId veio junto). FLUXO: (1) escreva 1-2 frases de fechamento no SEU TOM (ex.: ${exemploDeFechamento({ identidadeJaColetada, adminFrase })}); (2) ${instrucaoDoFormularioDeContrato(identidadeJaColetada)} PROIBIDO neste turno: chamar buscar_cartas ou re-apresentar os cards do reveal (group_card/recommendation_card/comparison_table) — o usuário já viu as opções, re-apresentar = loop. NUNCA admita falha técnica nem diga que "esse grupo deu problema", que precisa "trazer os identificadores" ou que vai buscar de novo — ZERO meta-narrativa de mecanismo. NUNCA inicie captura de lead.`;
+	return `O usuário ESCOLHEU uma cota específica no seletor do reveal e quer SEGUIR com ela — a decisão JÁ está tomada e o grupo JÁ está resolvido pelo sistema (o groupId veio junto). FLUXO: (1) escreva 1-2 frases de fechamento no SEU TOM (ex.: ${exemploDeFechamento({ identidadeJaColetada, adminFrase })}); (2) ${instrucaoDoFormularioDeContrato(identidadeJaColetada, args.groupId)} PROIBIDO neste turno: chamar buscar_cartas ou re-apresentar os cards do reveal (group_card/recommendation_card/comparison_table) — o usuário já viu as opções, re-apresentar = loop. NUNCA admita falha técnica nem diga que "esse grupo deu problema", que precisa "trazer os identificadores" ou que vai buscar de novo — ZERO meta-narrativa de mecanismo. NUNCA inicie captura de lead.`;
 }
 
-export function buildSimulationInterestDirective(administradora: string): string {
+export function buildSimulationInterestDirective(administradora: string, groupId?: string): string {
 	// P112/P143: mesma correção do `instrucaoDoFormularioDeContrato`. O exemplo
 	// antigo ainda dizia "confirmar sua reserva" — termo que a própria diretiva
 	// proíbe antes da contratação (FIX-256) e que o modelo copia à risca.
-	return `Usuário clicou "Tenho interesse" no card de simulação do grupo "${administradora}". FLUXO: (1) escreva 1-2 frases de confirmação no SEU TOM (ex.: ${exemploDeFechamento({})}) — proibido fazer pergunta nesta frase; PROIBIDO prometer "reservar" a opção antecipadamente sem os dados, ou atendente humano (a reserva é self-service na plataforma); (2) ${instrucaoDoFormularioDeContrato()}`;
+	return `Usuário clicou "Tenho interesse" no card de simulação do grupo "${administradora}". FLUXO: (1) escreva 1-2 frases de confirmação no SEU TOM (ex.: ${exemploDeFechamento({})}) — proibido fazer pergunta nesta frase; PROIBIDO prometer "reservar" a opção antecipadamente sem os dados, ou atendente humano (a reserva é self-service na plataforma); (2) ${instrucaoDoFormularioDeContrato(false, groupId)}`;
 }
 
 export function buildDetailDirective(groupId: string): string {
@@ -520,14 +562,18 @@ FIX-333: o hero (recommendation_card) só é REVELADO depois que o usuário cons
 
 /**
  * FIX-297 (rodada 10, 2026-07-12) — o usuário respondeu SIM ao gate
- * `reco-consent` ("Posso te mostrar a opção que eu recomendo?"). O hero
- * (`recommendation_card`) já foi computado no turno da busca original e é
- * emitido SERVER-SIDE logo em seguida (`emitServerCard`, nunca depende de o
- * LLM chamar tool) — o directive só escreve a frase de introdução, mesmo
- * padrão de `buildScarcityDirective`/`buildEmbeddedBidDirective`.
+ * `reco-consent` ("Posso te mostrar a opção que eu recomendo?"). Na main o hero
+ * (`recommendation_card`) era emitido SERVER-SIDE logo em seguida
+ * (`emitServerCard`), e o directive só escrevia a frase de introdução.
+ *
+ * P143 (onda 7): esse emissor morreu com o funil. `recommendation_card` é
+ * `emitivel`/`fato` e só chega à tela pelo `mostrar_card` do MODELO — com a
+ * promessa no texto, o consentimento terminava em fala e card nenhum. A
+ * diretiva agora pede o hero; sem chamador hoje (ver
+ * `.orientacao/pendencia-DIR3.md`).
  */
 export function buildRecoConsentAcceptedDirective(): string {
-	return `Escreva 1-2 frases introduzindo a recomendação NO SEU TOM (ex.: "Essa é a que eu indicaria — a que melhor equilibra parcela, prazo e chance de contemplação pro seu caso."). NÃO afirme que é "a mais barata" nem "a de menor parcela" — a recomendação vem de um SCORE combinado (prazo/parcela/contemplação), NÃO necessariamente tem a menor parcela; cravar isso pode ser falso. NÃO descreva números (parcela/valor/lance) em texto — isso é o trabalho do card, que o sistema mostra automaticamente em seguida com os dados REAIS. NÃO mostre o card nem NENHUMA outra tool neste turno.`;
+	return `Escreva 1-2 frases introduzindo a recomendação NO SEU TOM (ex.: "Essa é a que eu indicaria — a que melhor equilibra parcela, prazo e chance de contemplação pro seu caso."). NÃO afirme que é "a mais barata" nem "a de menor parcela" — a recomendação vem de um SCORE combinado (prazo/parcela/contemplação), NÃO necessariamente tem a menor parcela; cravar isso pode ser falso. NÃO descreva números (parcela/valor/lance) em texto — o servidor monta o card com os dados REAIS da carta. Depois chame mostrar_card com tipo "recommendation_card" e o groupId da carta recomendada que está na tela.`;
 }
 
 // ---- Simulador de contemplação (docx passo 4, linha 34-36) ----
@@ -873,12 +919,18 @@ export function buildToolErrorRecoveryFallbackRepeat(args: {
  * closing), o LLM a chamava DIRETO num turno de usuário comum, bypassando o
  * ramo do orchestrator (`o funil antigoToFire === "decision"`, index.ts) que
  * dispara o scarcity server-side ANTES da decisão — mesma lei violada que o
- * FIX-246 fechou pra embedded_bid/two_paths/scarcity. Agora o directive só
- * escreve a frase de fechamento; o card ("Esse plano faz sentido?") é
- * emissão SERVER-SIDE determinística (`buildDecisionPromptCard`,
- * server-cards.ts) — o LLM nunca mais chama tool nenhuma. */
+ * FIX-246 fechou pra embedded_bid/two_paths/scarcity. Na main o directive só
+ * escrevia a frase de fechamento e o card ("Esse plano faz sentido?") saía
+ * SERVER-SIDE determinístico (`buildDecisionPromptCard`, server-cards.ts).
+ *
+ * P143 (onda 7): esse produtor automático morreu com o funil — `decision_prompt`
+ * é `emitivel`/`fato` e só chega à tela pelo `mostrar_card` do MODELO (montador
+ * em `cards-livres.ts`, que resolve a carta pelo `groupId`). A promessa de
+ * emissão automática deixava o clique "Agora não" do simulador
+ * (`interactive-handlers.ts`, `handleSimulatorOffer`) sem card nenhum: o modelo
+ * escrevia o fechamento, não chamava tool, e a conversa morria ali. */
 export function buildDecisionPromptDirective(): string {
-	return `O usuário já viu o plano recomendado + a simulação completa e sinalizou que quer seguir. FLUXO OBRIGATÓRIO neste turno: escreva 1-2 frases NO SEU TOM fechando a avaliação (ex: "Boa! Então deixa eu confirmar isso com você." ou "Show, esse plano encaixa bem no que você pediu."). NÃO descreva números de novo, NÃO repita a simulação. NÃO mostre o card nem NENHUMA outra tool neste turno — o sistema mostra o card de decisão automaticamente em seguida.
+	return `O usuário já viu o plano recomendado + a simulação completa e sinalizou que quer seguir. FLUXO OBRIGATÓRIO neste turno: escreva 1-2 frases NO SEU TOM fechando a avaliação (ex: "Boa! Então deixa eu confirmar isso com você." ou "Show, esse plano encaixa bem no que você pediu."). NÃO descreva números de novo, NÃO repita a simulação. Depois chame mostrar_card com tipo "decision_prompt" e o groupId da carta que está na tela — é esse card que faz a pergunta "Esse plano faz sentido?"; sem ele o cliente não tem o que decidir.
 
 PROIBIDO neste turno: buscar cartas de novo ou re-apresentar os cards que ele já viu (group_card, recommendation_card, comparison_table, simulation_result) — o usuário JÁ VIU tudo isso. Re-apresentar = loop que quebra a experiência.`;
 }
