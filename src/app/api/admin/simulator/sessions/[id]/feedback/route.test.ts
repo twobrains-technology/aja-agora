@@ -1,7 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/admin/require-role", () => ({ requireRole: async () => ({ error: null }) }));
+vi.mock("@/lib/admin/require-role", () => ({
+	requireRole: async () => ({
+		error: null,
+		role: "admin",
+		session: { user: { id: "user-op-1", email: "operador@aja.test" } },
+	}),
+}));
 vi.mock("@/lib/utils/env", () => ({ isSimulatorEnabled: () => true }));
+
+const gravadas: Record<string, unknown>[] = [];
 vi.mock("@/db", () => ({
 	db: {
 		query: {
@@ -12,6 +20,11 @@ vi.mock("@/db", () => ({
 				}),
 			},
 		},
+		insert: () => ({
+			values: async (linha: Record<string, unknown>) => {
+				gravadas.push(linha);
+			},
+		}),
 	},
 }));
 
@@ -33,6 +46,7 @@ describe("L42/P313 — o feedback do simulador não perde o turno avaliado", () 
 
 	beforeEach(() => {
 		linhas = [];
+		gravadas.length = 0;
 		log = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
 			linhas.push(args.map(String).join(" "));
 		});
@@ -60,6 +74,29 @@ describe("L42/P313 — o feedback do simulador não perde o turno avaliado", () 
 		const linha = linhas.find((l) => l.includes("[sinal]"));
 		expect(linha).toContain('"value":1');
 		expect(linha).not.toContain("traceId");
+		log.mockRestore();
+	});
+
+	it("a avaliação vira LINHA persistida — o stdout é só o espelho", async () => {
+		await pedido({ value: "down", traceId: "trace-9", comment: "enrolou" });
+
+		expect(gravadas).toHaveLength(1);
+		expect(gravadas[0]).toMatchObject({
+			conversationId: "11111111-1111-4111-8111-111111111111",
+			traceId: "trace-9",
+			origem: "simulador",
+			nome: "user_feedback",
+			valor: 0,
+			comentario: "enrolou",
+			criadoPor: "operador@aja.test",
+		});
+		log.mockRestore();
+	});
+
+	it("sem comentário/turno, a linha grava `null` em vez de sumir com o campo", async () => {
+		await pedido({ value: "up" });
+
+		expect(gravadas[0]).toMatchObject({ valor: 1, traceId: null, comentario: null });
 		log.mockRestore();
 	});
 });

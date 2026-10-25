@@ -1972,3 +1972,36 @@ export const usoDeIa = pgTable(
 		index("uso_de_ia_conversation_id_idx").on(table.conversationId),
 	],
 );
+
+// SINAIS DE CONVERSA — onde o score que antes ia para o Langfuse passa a morar.
+//
+// O feedback do operador no simulador (👍/👎 sobre uma conversa) era um score
+// enviado ao Langfuse; com o serviço fora, ele sobrava como uma linha de stdout
+// (L42/P313): o operador avaliou, nada ficou guardado, nada dava para consultar
+// depois. `conversation_evaluations` NÃO serve de destino — aquela tabela é a
+// nota do JUIZ e a lista do admin a lê como "a nota da conversa"; escrever
+// feedback humano ali apagaria a avaliação do juiz na tela.
+//
+// O desenho é o de SINAL, não o de avaliação: um nome (`user_feedback`), um
+// valor numérico, um comentário livre, opcionalmente o TURNO avaliado
+// (`trace_id`) e quem avaliou. Múltiplas linhas por conversa — a série é o dado.
+export const sinaisDeConversa = pgTable(
+	"sinais_de_conversa",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		conversationId: uuid("conversation_id")
+			.notNull()
+			.references(() => conversations.id, { onDelete: "cascade" }),
+		/** O turno avaliado, quando o sinal é de um turno e não da conversa inteira. */
+		traceId: text("trace_id"),
+		/** De onde o sinal veio (`simulador`, `juiz`, …) — o que gerou a linha. */
+		origem: text().notNull(),
+		nome: text().notNull(),
+		valor: real(),
+		comentario: text(),
+		/** Quem avaliou (e-mail do operador) — auditoria de quem deu a nota. */
+		criadoPor: text("criado_por"),
+		criadoEm: timestamp("criado_em", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [index("sinais_de_conversa_conversation_id_idx").on(table.conversationId)],
+);
