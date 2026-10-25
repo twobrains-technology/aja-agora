@@ -58,7 +58,7 @@ export function opcoesDePerguntaFechada(texto: string): string[] {
 	// entregou um botão com "ê recebe o dinheiro) vem por sorteio". Primeira sentença que
 	// termina em "?", parênteses fora, rótulo depois dos dois pontos.
 	const frase = texto
-		.split(/(?<=[?!.)])\s+/)
+		.split(/(?<=[?.!])\s+/)
 		.map((s) => s.trim())
 		.find((s) => s.endsWith("?"));
 	if (!frase) return [];

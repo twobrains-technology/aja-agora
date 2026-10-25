@@ -60,6 +60,14 @@ describe("pergunta fechada vira chip, não lista escrita no texto", () => {
 		]);
 	});
 
+	it("parêntese dentro da pergunta não entra no botão", () => {
+		const r = garantirChip({
+			texto: "Prefere o lance (que entra com dinheiro agora) ou a sorteio?",
+			cardsDoTurno: [],
+		});
+		expect(r.chip?.payload.options.map((o) => o.label)).toEqual(["Prefere o lance", "a sorteio"]);
+	});
+
 	it("pergunta aberta não vira chip", () => {
 		const r = garantirChip({
 			texto: "Como você está vendo isso hoje?",
