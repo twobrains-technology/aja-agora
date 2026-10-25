@@ -1,12 +1,13 @@
 "use client";
 
-import { BadgeCheck, Check, Info, ShieldCheck } from "lucide-react";
+import { BadgeCheck, Info, ShieldCheck } from "lucide-react";
 import { SunMark } from "@/components/brand/sun-mark";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useChatContext } from "@/lib/chat/provider";
 import type { RealOfferPayload } from "@/lib/chat/types";
 import { AdministradoraLogo } from "./administradora-logo";
+import { BotaoConfirmarContratar } from "./botao-confirmar-contratar";
 
 const brl = (n: number) =>
 	n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
@@ -126,18 +127,7 @@ export function RealOffer({ payload }: { payload: RealOfferPayload }) {
 
 				{/* CTAs */}
 				<div className="flex flex-col gap-2 pt-0.5">
-					<Button
-						type="button"
-						className="w-full min-h-[44px] rounded-full gap-2"
-						onClick={() =>
-							!isStreaming && void sendAction({ kind: "offer-confirm" }, "Confirmo essa carta")
-						}
-						disabled={isStreaming}
-						data-testid="offer-confirm"
-					>
-						<Check className="size-4" />
-						Confirmar e contratar
-					</Button>
+					<BotaoConfirmarContratar disabled={isStreaming} />
 					<Button
 						type="button"
 						variant="ghost"

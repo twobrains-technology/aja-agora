@@ -14,9 +14,30 @@ interface ChatInputProps {
 }
 
 export function ChatInput({ isStreaming, variant = "default" }: ChatInputProps) {
-	const { sendUserMessage, resetAll } = useChatContext();
+	const { sendUserMessage, resetAll, status } = useChatContext();
 	const [value, setValue] = useState("");
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
+	// R5.6 — 429 DO /api/chat: A FALA DO CLIENTE NÃO SE PERDE.
+	//
+	// O turno sai daqui antes de o servidor responder, então o campo é limpo no
+	// envio. Quando o servidor recusa o turno (o rate limit devolve o código
+	// `llm_rate_limit` em `respostaDeLimiteDeMensagens`), o que o cliente tinha
+	// escrito era perdido e ele tinha de digitar tudo de novo — depois de já ter
+	// levado "Muitas mensagens ao mesmo tempo". Aqui a última fala enviada volta
+	// pro campo quando o turno falha, e o botão de enviar fica pronto pro
+	// reenvio.
+	const ultimaFalaEnviada = useRef<string | null>(null);
+
+	useEffect(() => {
+		if (status !== "error") return;
+		const devolver = ultimaFalaEnviada.current;
+		if (!devolver) return;
+		ultimaFalaEnviada.current = null;
+		// Se o cliente já começou a escrever outra coisa, o campo é dele.
+		if (value.trim().length > 0) return;
+		setValue(devolver);
+		requestAnimationFrame(() => textareaRef.current?.focus());
+	}, [status, value]);
 
 	// Devolve o foco ao input assim que o agente TERMINA de responder (streaming
 	// vira false) — pra o usuário digitar a próxima mensagem sem precisar clicar
@@ -54,6 +75,7 @@ export function ChatInput({ isStreaming, variant = "default" }: ChatInputProps) 
 		if (trimmed.toLowerCase() === "/reset") {
 			void resetAll();
 		} else {
+			ultimaFalaEnviada.current = trimmed;
 			void sendUserMessage(trimmed);
 		}
 		setValue("");

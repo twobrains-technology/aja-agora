@@ -2,7 +2,7 @@
 
 import { ArrowRight, Check } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -52,12 +52,35 @@ export function ValuePicker({
 	onSubmit?: (values: Record<string, number>) => void;
 	active?: boolean;
 }) {
-	const { sendUserMessage, status } = useChatContext();
+	const { sendUserMessage, status, messages } = useChatContext();
 	const isStreaming = status === "submitted" || status === "streaming";
 	const field = pickAssetField(payload.fields);
 
 	const [value, setValue] = useState(field.default);
 	const [submitted, setSubmitted] = useState(false);
+
+	// R5.5 — O CARD RECOLHE QUANDO O CLIENTE RESPONDE PELA CONVERSA.
+	//
+	// O value_picker não é o único caminho do valor: quem digita "uns 60 mil"
+	// no campo de texto está respondendo a mesma pergunta. Antes o card ficava
+	// na tela com o valor default (40.000) do lado da fala real do cliente —
+	// dois números diferentes para a mesma pergunta. Agora, qualquer fala nova
+	// do cliente depois que o card apareceu recolhe o card.
+	//
+	// A régua é "chegou fala nova", não "clicou": o clique já se resolvia
+	// sozinho em `submitted`. O snapshot do mount separa o histórico (que já
+	// existia quando o card montou) do que o cliente mandou DEPOIS dele.
+	const idsDeUsuarioAoMontar = useRef<string[] | null>(null);
+	const [respondidoNaConversa, setRespondidoNaConversa] = useState(false);
+	useEffect(() => {
+		const idsDeUsuario = messages.filter((m) => m.role === "user").map((m) => m.id);
+		if (idsDeUsuarioAoMontar.current === null) {
+			idsDeUsuarioAoMontar.current = idsDeUsuario;
+			return;
+		}
+		const conhecidos = idsDeUsuarioAoMontar.current;
+		if (idsDeUsuario.some((id) => !conhecidos.includes(id))) setRespondidoNaConversa(true);
+	}, [messages]);
 
 	// FIX-107/FIX-115: o slider (arraste) segue limitado à faixa da categoria —
 	// é o range real de grupos que o produto costuma oferecer.
@@ -104,7 +127,7 @@ export function ValuePicker({
 		void sendUserMessage(`${field.label}: R$ ${value.toLocaleString("pt-BR")}`);
 	};
 
-	if (submitted || !active) return null;
+	if (submitted || !active || respondidoNaConversa) return null;
 
 	return (
 		<motion.div
