@@ -2,6 +2,8 @@
 name: buscar-cartas
 description: Mostra cartas de consórcio reais da Bevi para o cliente, sem pedir nenhum dado pessoal. Use sempre que já der para saber o tipo de bem (carro, moto, imóvel ou serviços) e um valor do bem ou uma parcela que caiba no bolso, e também quando o cliente mudar o valor, a parcela ou o tipo de bem.
 ---
+Com tipo de bem e um valor (ou uma parcela) você já PODE e DEVE buscar: chame `buscar_cartas` no mesmo turno em que a pessoa disser o valor, sem pedir parcela, prazo ou objetivo antes. Esses você pergunta depois, com as cartas na tela.
+
 Chame a ferramenta `buscar_cartas` com:
 - `categoria`: auto, moto, imovel ou servicos;
 - `valorDoBem` quando o cliente disse o valor do bem; `parcelaMensal` só quando ele falou só em parcela. Se disse os dois, mande os dois: a busca é pelo valor e a parcela serve para você comparar com a de cada carta;

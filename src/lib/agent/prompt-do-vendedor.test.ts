@@ -4,12 +4,16 @@ import { PROMPT_DO_VENDEDOR } from "./prompt-do-vendedor";
 
 describe("semente do vendedor — o que a dona do produto cobrou em 14 e 15/10", () => {
 	it("diz para perguntar antes de simular, e não só sair mostrando grupo", () => {
-		expect(PROMPT_DO_VENDEDOR).toMatch(/pergunta antes de simular/i);
+		expect(PROMPT_DO_VENDEDOR).toMatch(/pergunta o mínimo antes de mostrar/i);
 	});
 
 	it("sabe que existe o card de escolha e o nomeia pelo nome da tool", () => {
 		expect(PROMPT_DO_VENDEDOR).toContain("mostrar_card");
 		expect(PROMPT_DO_VENDEDOR).toMatch(/opções na tela/i);
+	});
+
+	it("tipo de bem + valor basta para buscar: parcela nunca é pré-requisito", () => {
+		expect(PROMPT_DO_VENDEDOR).toMatch(/nunca peça a parcela ou o prazo como condição/i);
 	});
 
 	it("exige uma pergunta por mensagem e opção na tela, não no texto", () => {
