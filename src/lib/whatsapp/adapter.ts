@@ -84,6 +84,18 @@ const ARTIFACT_PAUSE_MS = 500;
 const POST_INTERACTIVE_PAUSE_MS = 1800;
 const TRANSITION_PAUSE_MS = 1200;
 
+/** A tool do turno é uma BUSCA na administradora? No vendedor livre quem busca é
+ * `buscar_cartas`; `recommend_groups`/`search_groups` são os nomes antigos, e o
+ * card pode chegar de um turno anterior a esta branch. Sem o nome novo, o único
+ * sinal de "estou buscando" que o WhatsApp tem (não existe chip de progresso no
+ * canal) simplesmente não saía no caminho vivo — o cliente mandava o CPF e ficava
+ * olhando para uma tela parada enquanto a Bevi respondia. */
+export function ehBuscaDeCartas(toolName: string): boolean {
+	return (
+		toolName === "buscar_cartas" || toolName === "recommend_groups" || toolName === "search_groups"
+	);
+}
+
 type PendingArtifact = { type: string; payload: Record<string, unknown> };
 
 /** Troca o corpo do interactive por um rótulo neutro — usado quando o MODELO já
@@ -458,10 +470,7 @@ async function consumeEventsInner(
 				// (determinística, sem promessa e sem número) faz o papel do
 				// indicador que a web desenha. Só na busca; nas outras tools o turno
 				// responde rápido e uma linha dessas viraria ruído.
-				if (
-					!avisouDaBusca &&
-					(ev.toolName === "recommend_groups" || ev.toolName === "search_groups")
-				) {
+				if (!avisouDaBusca && ehBuscaDeCartas(ev.toolName)) {
 					// UMA vez por turno. A descoberta pode rodar em duas tentativas (faixa
 					// alvo + vizinha) e o cliente recebia "Consultando as administradoras
 					// agora — só um instante." duplicado, colado.

@@ -721,11 +721,53 @@ async function handleQuickReplyTap(ctx: Ctx): Promise<boolean> {
 	return true;
 }
 
+/** O mínimo que os handlers de carta usam — qualquer fonte que o entregue serve. */
+type CartaDoClique = {
+	administradora: string;
+	category?: Category;
+	creditValue: number;
+	termMonths: number;
+	monthlyPayment: number;
+};
+
+/** A carta do BOTÃO, lida do que a CONVERSA guardou.
+ *
+ * O `group_`/`simulate_`/`whatif_` nascem de um card que o servidor montou a
+ * partir de uma busca. Aquela busca não é do `getDiscoveryAdapter` deste módulo:
+ * no vendedor livre quem busca é `buscar_cartas`, com o adapter do turno, e o
+ * índice de cotas mora no card PERSISTIDO (`artifacts`), não numa instância viva
+ * de adapter. Resolver o clique pelo adapter daqui era consultar outro índice —
+ * o `getGroupDetails` não achava o grupo e o cliente ouvia "tive um problema ao
+ * localizar esse grupo" depois de tocar na carta que estava na tela dele.
+ *
+ * A fonte certa é a mesma do turno: o payload que o cliente VIU (números reais,
+ * gravados no ato da busca). Busca nova poderia devolver outra carta — e aí o
+ * clique ancoraria uma cota que ninguém mostrou. */
+export async function cartaDaConversa(
+	conversationId: string,
+	groupId: string,
+): Promise<CartaDoClique | null> {
+	const { lerCartasDaConversa, restaurarCartasDaConversa } = await import(
+		"@/lib/agent/pi/cartas-da-conversa"
+	);
+	const { grupos } = restaurarCartasDaConversa(await lerCartasDaConversa(conversationId));
+	return grupos.get(groupId) ?? null;
+}
+
+/** A carta do clique com o fallback do adapter: botão antigo (de um card emitido
+ * antes do índice persistido) ainda precisa responder. O adapter só entra
+ * quando a conversa não tem a carta — nunca no lugar dela. */
+async function detalhesDoGrupo(conversationId: string, groupId: string): Promise<CartaDoClique> {
+	const daConversa = await cartaDaConversa(conversationId, groupId);
+	if (daConversa) return daConversa;
+	return getDiscoveryAdapter(conversationId).getGroupDetails({ groupId });
+}
+
 async function handleGroupSelected(ctx: Ctx): Promise<boolean> {
 	const { from, replyId, conversationId } = ctx;
 	const groupId = replyId.replace("group_", "");
 	try {
-		const details = await getDiscoveryAdapter(conversationId).getGroupDetails({ groupId });
+		const details = await detalhesDoGrupo(conversationId, groupId);
 		await recordUserClick(ctx);
 		await anchorRecommendedOffer(conversationId, details, groupId, true);
 		await runAgentDirective(
@@ -752,7 +794,7 @@ async function handleSimulate(ctx: Ctx): Promise<boolean> {
 	const { from, replyId, conversationId } = ctx;
 	const groupId = replyId.replace("simulate_", "");
 	try {
-		const details = await getDiscoveryAdapter(conversationId).getGroupDetails({ groupId });
+		const details = await detalhesDoGrupo(conversationId, groupId);
 		await recordUserClick(ctx);
 		// FIX-340(c): mesma âncora determinística de handleGroupSelected — este
 		// botão ("Simular") também é clique real, não what-if hipotético.
@@ -774,7 +816,7 @@ async function handleWhatIf(ctx: Ctx): Promise<boolean> {
 	const { from, replyId, conversationId } = ctx;
 	const groupId = replyId.replace("whatif_", "");
 	try {
-		const details = await getDiscoveryAdapter(conversationId).getGroupDetails({ groupId });
+		const details = await detalhesDoGrupo(conversationId, groupId);
 		await recordUserClick(ctx);
 		await runAgentDirective(
 			from,

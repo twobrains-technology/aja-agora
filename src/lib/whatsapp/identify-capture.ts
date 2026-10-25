@@ -7,7 +7,7 @@
 
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { conversations } from "@/db/schema";
+import { conversations, messages } from "@/db/schema";
 import { gateQuestion } from "@/lib/agent/orchestrator/gate-questions";
 import {
 	ehIdentidadeDeVitrine,
@@ -173,6 +173,47 @@ function looksLikeCpfAttempt(text: string): boolean {
 	return digits.length >= 9 && digits.length <= 14;
 }
 
+export type DecisaoDoCpfDoTexto =
+	| { outcome: "captured"; cpf: string }
+	| { outcome: "invalid" }
+	| { outcome: "none" };
+
+/** A DECISÃO do capture de CPF, isolada da I/O pra ser testável.
+ *
+ * Telefone e número comprido NÃO são "CPF inválido". A regra anterior tratava
+ * qualquer sequência de 9–14 dígitos como tentativa de CPF e respondia "esse CPF
+ * não confere" — inclusive para o celular que o cliente acabou de ditar. Ele
+ * ouvia que o PRÓPRIO CPF estava errado sem ter mandado CPF nenhum.
+ *
+ * CPF é uma coisa só: 11 dígitos que PASSAM no dígito verificador. A exceção é o
+ * turno em que o pedido de CPF acabou de sair (`pedidoDeCpf`): ali o número
+ * comprido é resposta à pergunta que o agente fez, e a resposta útil é "confere
+ * os números" em vez de mandar o telefone pro modelo conversar.
+ *
+ * O celular dito por extenso continua protegido: 11 dígitos com DDD válido + 9
+ * não viram identidade nem quando passam no DV por coincidência (~1% deles) —
+ * salvo se o cliente escreveu "CPF" junto, que é declaração explícita do dado. */
+export function decidirCpfDoTexto(
+	text: string,
+	args: { pedidoDeCpf: boolean },
+): DecisaoDoCpfDoTexto {
+	const pareceTelefone = pareceCelularBR(text) && !/\bcpf\b/i.test(text);
+	const cpf = pareceTelefone ? null : extractCpf(text);
+	if (cpf) return { outcome: "captured", cpf };
+	if (args.pedidoDeCpf && looksLikeCpfAttempt(text)) return { outcome: "invalid" };
+	return { outcome: "none" };
+}
+
+/** O pedido de CPF é a ÚLTIMA coisa que o agente disse — sem turno do cliente no
+ * meio. `null`/vazio quando a última fala é do cliente (aí o número comprido dele
+ * não é resposta a pedido nenhum) ou a conversa não tem histórico. */
+export function pedidoDeCpfNoUltimoBalao(
+	ultima: { role: string; content: string } | null | undefined,
+): boolean {
+	if (!ultima || ultima.role !== "assistant") return false;
+	return /\bcpf\b/i.test(ultima.content ?? "");
+}
+
 /**
  * O que responder a um CPF capturado. Com o vendedor livre, a resposta é NADA e o
  * turno do agente continua: as cartas já estão na tela e o cliente acabou de dar o
@@ -237,29 +278,19 @@ export async function captureIdentifyText(
 	// gate se recomputa sozinho no turno seguinte. A porta continua estreita —
 	// só CPF válido entra; qualquer outra coisa segue para o modelo (abaixo).
 	// Com o vendedor livre não existe gate de identidade: o CPF do cliente vale
-	// sempre que ele mesmo o digitar (é dado dele, e a proposta exige).
-	const noGateDeIdentidade = true;
+	// sempre que ele mesmo o digitar (é dado dele, e a proposta exige). O que NÃO
+	// vale é ler telefone ou número comprido como CPF — ver `decidirCpfDoTexto`.
+	//
+	// O "acabou de pedir" é o balão ANTERIOR do agente: a pergunta que ele fez é
+	// fato de servidor (como `nameCardExibido`), não algo que se deduza do texto.
+	const ultima = await db.query.messages.findFirst({
+		where: eq(messages.conversationId, conv.id),
+		orderBy: (m, { desc }) => [desc(m.createdAt)],
+	});
 
-	// FORA do gate, um número de 11 dígitos que PARECE CELULAR não é capturado.
-	//
-	// ~1% dos números de 11 dígitos passam no dígito verificador por acaso, e o
-	// mais provável deles na conversa é um telefone ditado — viraria identidade
-	// persistida em silêncio, com a administradora reprovando só no fechamento.
-	//
-	// Exigir a palavra "CPF" seria fácil e ERRADO: na sessão `a68b1945` o cliente
-	// digitou o CPF sozinho, sem escrever nada em volta ("02134567880"), depois
-	// de perguntar se era isso que faltava. É exatamente esse caso que a
-	// fechadura existe para pegar.
-	//
-	// A distinção é estrutural: celular brasileiro é DDD válido + 9 + 8 dígitos.
-	// O CPF daquela sessão começa em "02", que não é DDD de lugar nenhum.
-	if (!noGateDeIdentidade && pareceCelularBR(text) && !/\bcpf\b/i.test(text)) {
-		return { handled: false };
-	}
-
-	const cpf = extractCpf(text);
-	if (cpf) {
-		await storeIdentity(conv.id, { cpf, celular: waIdToCelular(from) });
+	const decisao = decidirCpfDoTexto(text, { pedidoDeCpf: pedidoDeCpfNoUltimoBalao(ultima) });
+	if (decisao.outcome === "captured") {
+		await storeIdentity(conv.id, { cpf: decisao.cpf, celular: waIdToCelular(from) });
 		// FIX-211: dado capturado → zera o contador de cobranças do identify (sobre o
 		// meta JÁ atualizado por storeIdentity, sem sobrescrever identityCollected).
 		const after = await reloadMeta(conv.id);
@@ -269,15 +300,8 @@ export async function captureIdentifyText(
 		}
 		return { handled: true, outcome: "captured" };
 	}
-	// Tentativa MALFORMADA de CPF só é interceptada quando o gate é o de
-	// identidade — fora dele, um número comprido pode ser qualquer coisa (valor,
-	// telefone, ano) e sequestrar o turno seria pior que deixar o modelo
-	// responder.
-	if (noGateDeIdentidade && looksLikeCpfAttempt(text)) {
-		return { handled: true, outcome: "invalid" };
-	}
-	if (!noGateDeIdentidade) return { handled: false };
-	// Não é CPF nem tentativa de CPF → não é uma resposta a este gate. É OUTRA COISA,
-	// e quem responde outra coisa é o modelo.
+	if (decisao.outcome === "invalid") return { handled: true, outcome: "invalid" };
+	// Não é CPF nem resposta a um pedido de CPF → não é uma resposta a este gate.
+	// É OUTRA COISA, e quem responde outra coisa é o modelo.
 	return { handled: false };
 }

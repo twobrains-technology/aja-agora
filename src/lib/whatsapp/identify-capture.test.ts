@@ -25,6 +25,62 @@ describe("o CPF capturado no WhatsApp não responde com frase fixa", () => {
 	});
 });
 
+describe("telefone e número comprido não são CPF", () => {
+	it("CPF com DV válido é capturado, com ou sem pontuação", async () => {
+		const { decidirCpfDoTexto } = await import("./identify-capture");
+		expect(decidirCpfDoTexto("meu cpf é 529.982.247-25", { pedidoDeCpf: false })).toEqual({
+			outcome: "captured",
+			cpf: "52998224725",
+		});
+		expect(decidirCpfDoTexto("52998224725", { pedidoDeCpf: false })).toEqual({
+			outcome: "captured",
+			cpf: "52998224725",
+		});
+	});
+
+	it("celular ditado NÃO vira CPF nem identidade persistida", async () => {
+		const { decidirCpfDoTexto } = await import("./identify-capture");
+		expect(decidirCpfDoTexto("meu celular é 11 98765-4321", { pedidoDeCpf: false }).outcome).toBe(
+			"none",
+		);
+		// 11900000083 passa no dígito verificador por coincidência: mesmo assim é
+		// CELULAR (DDD válido + 9), e identidade não se grava com telefone.
+		expect(decidirCpfDoTexto("11900000083", { pedidoDeCpf: false }).outcome).toBe("none");
+	});
+
+	it("número comprido fora de um pedido de CPF segue pro modelo", async () => {
+		const { decidirCpfDoTexto } = await import("./identify-capture");
+		expect(decidirCpfDoTexto("meu número é 5511987654321", { pedidoDeCpf: false }).outcome).toBe(
+			"none",
+		);
+		expect(decidirCpfDoTexto("quero um carro de 80 mil", { pedidoDeCpf: false }).outcome).toBe(
+			"none",
+		);
+	});
+
+	it("só quando o CPF acabou de ser pedido o número errado vira 'CPF não confere'", async () => {
+		const { decidirCpfDoTexto } = await import("./identify-capture");
+		expect(decidirCpfDoTexto("11987654321", { pedidoDeCpf: true }).outcome).toBe("invalid");
+		expect(decidirCpfDoTexto("111.444.777-36", { pedidoDeCpf: true }).outcome).toBe("invalid");
+	});
+
+	it("o pedido de CPF é a ÚLTIMA fala do agente, sem turno do cliente no meio", async () => {
+		const { pedidoDeCpfNoUltimoBalao } = await import("./identify-capture");
+		expect(pedidoDeCpfNoUltimoBalao({ role: "assistant", content: "me manda seu CPF?" })).toBe(
+			true,
+		);
+		expect(pedidoDeCpfNoUltimoBalao({ role: "assistant", content: "qual valor você quer?" })).toBe(
+			false,
+		);
+		// A última fala foi do cliente: o número que ele manda agora não responde a
+		// pedido nenhum.
+		expect(pedidoDeCpfNoUltimoBalao({ role: "user", content: "meu cpf é 52998224725" })).toBe(
+			false,
+		);
+		expect(pedidoDeCpfNoUltimoBalao(null)).toBe(false);
+	});
+});
+
 describe("o celular do fechamento nunca é um número inventado", () => {
 	it("conversa real: o celular é o número da conversa", async () => {
 		const { celularDeFechamento } = await import("./identify-capture");

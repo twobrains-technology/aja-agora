@@ -1275,12 +1275,43 @@ export function contemplationDialToWhatsApp(payload: Record<string, unknown>): W
 	// Iteração do loop: o agente já calculou o cenário do mês-alvo → formata.
 	const scenario = readDialScenario(payload);
 	if (scenario) return simulatorScenarioToWhatsApp(scenario);
-	// Abertura do simulador (só inputs do plano): sem slider, convidamos o loop —
-	// o usuário diz o mês-alvo e o agente itera (recalcula a cada resposta).
-	return {
-		type: "text",
-		text: "Em quantos meses você quer ser contemplado? Me diz um número que eu te mostro o lance necessário e quanto você recebe.",
-	};
+	// Abertura do simulador (só os inputs do plano): sem slider no WhatsApp, o balão
+	// tem de DIZER o plano e convidar o loop — o usuário responde o mês-alvo e o
+	// agente calcula.
+	return { type: "text", text: dialPlanToText(payload) };
+}
+
+/** O PLANO do dial em texto, quando o payload traz só os inputs (abertura).
+ *
+ * No web o dial abre com slider, carta, parcela e prazo desenhados ao lado da
+ * agulha. No WhatsApp não há slider: a abertura saía com a pergunta solta ("em
+ * quantos meses você quer ser contemplado?") e nenhum número — o cliente não
+ * sabia sobre qual carta estava falando, e o balão do dial ficava vazio de
+ * resultado justamente no card que existe para mostrar número. Os números aqui
+ * são do payload (`coerceDialPayload` gravou os da oferta real), nunca inventados;
+ * campo ausente sai da frase em vez de virar zero. */
+function dialPlanToText(payload: Record<string, unknown>): string {
+	const num = (v: unknown): number | undefined =>
+		typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined;
+	const creditValue = num(payload.creditValue);
+	const monthlyPayment = num(payload.monthlyPayment);
+	const termMonths = num(payload.termMonths);
+	const lanceMedio = num(payload.avgBidValue);
+
+	const plano: string[] = [];
+	if (creditValue !== undefined) {
+		const parcela = monthlyPayment !== undefined ? `, parcela de ${brlWa(monthlyPayment)}/mês` : "";
+		const prazo = termMonths !== undefined ? ` em ${termMonths} meses` : "";
+		plano.push(`*Sua carta:* ${brlWa(creditValue)}${prazo}${parcela}.`);
+	} else if (monthlyPayment !== undefined) {
+		plano.push(`*Sua parcela:* ${brlWa(monthlyPayment)}/mês.`);
+	}
+	if (lanceMedio !== undefined) plano.push(`Lance médio do grupo: ${brlWa(lanceMedio)}.`);
+
+	return [
+		...plano,
+		"Em quantos meses você quer ser contemplado? Me diz um número que eu te mostro o lance necessário e quanto você recebe.",
+	].join("\n\n");
 }
 
 // FIX-228 (docs/02-cards-novos.md CARD 1 — embedded_bid). Regra dura: SEMPRE

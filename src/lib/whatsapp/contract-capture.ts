@@ -74,6 +74,24 @@ export type ContractCaptureResult =
 	| { handled: false }
 	| { handled: true; outcome: ContractCaptureOutcome };
 
+/** A DECISÃO do estágio `offer-confirm`, isolada da I/O pra ser testável —
+ * irmã de `decideConfirmStage`.
+ *
+ * Aqui a carta REAL já está com o cliente (proposta criada, consulta de bureau
+ * feita) e o que falta é o aceite. O botão do `real_offer` sempre fechou; quem
+ * responde por TEXTO — "sim", "pode fechar", "confirmo" — é a maioria no
+ * WhatsApp, e sem esta decisão o turno não tinha o que entregar: `confirmOffer`
+ * não rodava, `contractClosed` não virava true e o modelo improvisava um fecho
+ * que não tinha acontecido.
+ *
+ * Mesmo discriminador conservador do estágio `confirm`: pergunta e dúvida vão
+ * pro MODELO, e o passo continua pendente. Só aceite explícito finaliza. */
+export function decideOfferConfirmStage(text: string): ContractCaptureResult {
+	const decisao = decideConfirmStage(text);
+	if (!decisao.handled || decisao.outcome !== "fire") return decisao;
+	return { handled: true, outcome: "finalize" };
+}
+
 /** FIX-357 — a DECISÃO do estágio "confirm", isolada da I/O pra ser testável.
  *
  * Regra: só aceite EXPLÍCITO dispara a proposta (que faz consulta de bureau).
@@ -191,13 +209,8 @@ export async function captureContractText(
 	// O botão do `real_offer` sempre funcionou; o texto não existia, então quem
 	// respondia "confirmado, pode seguir" (o normal no WhatsApp) ficava preso: o
 	// turno não tinha o que entregar e o modelo improvisava um fechamento que não
-	// tinha acontecido. Mesmo discriminador conservador do `confirm`: pergunta e
-	// dúvida vão pro modelo, só aceite explícito finaliza.
-	if (cc.stage === "offer-confirm") {
-		const decisao = decideConfirmStage(text);
-		if (!decisao.handled || decisao.outcome !== "fire") return decisao;
-		return { handled: true, outcome: "finalize" };
-	}
+	// tinha acontecido. A decisão vive em `decideOfferConfirmStage`.
+	if (cc.stage === "offer-confirm") return decideOfferConfirmStage(text);
 
 	// stage "confirm" — a decisão vive em decideConfirmStage (pura, testável).
 	// Só aceite EXPLÍCITO dispara a proposta (que faz consulta de bureau); pergunta
