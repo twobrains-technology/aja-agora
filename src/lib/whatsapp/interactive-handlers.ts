@@ -182,6 +182,18 @@ async function handleOfferConfirm(ctx: Ctx): Promise<boolean> {
 	return true;
 }
 
+/**
+ * O ÚNICO envio da proposta no fecho: o link estável da Aja Agora
+ * (`/api/proposta/<id>`). A URL assinada do S3 não vai pro cliente — ela expira em
+ * 5 minutos (`X-Amz-Expires=300`) e quem abre depois disso vê AccessDenied.
+ */
+export function urlDeEnvioDaProposta(
+	proposta: { url: string; urlAssinada: string } | null,
+): string | null {
+	if (!proposta) return null;
+	return proposta.url;
+}
+
 /** O TERMINAL do fechamento: confirma a cota na administradora, marca o estado
  * terminal e entrega o fecho (Parabéns, proposta em PDF, resumo, pedido de oi).
  *
@@ -224,7 +236,7 @@ export async function finalizarOfertaReal(from: string, conversationId: string):
 		// mensagem nova nenhuma, é o mesmo canal). Some só nesse canal.
 		for (const item of closingPresentation(res, {
 			channel: "whatsapp",
-			propostaUrl: proposta?.url ?? null,
+			propostaUrl: urlDeEnvioDaProposta(proposta),
 		})) {
 			let wa: ReturnType<typeof signatureHandoffToWhatsApp> | null = null;
 			let usageKey = "confirmacao_contratacao";
@@ -265,22 +277,13 @@ export async function finalizarOfertaReal(from: string, conversationId: string):
 		// "você vai receber um email com os detalhes" e nada chegava no canal em que
 		// a conversa aconteceu. Best-effort: falhou, o fecho segue e o log registra
 		// — nunca se diz que enviou sem ter enviado.
-		try {
-			if (proposta) {
-				const { sendDocumentMessage } = await import("./api");
-				await sendDocumentMessage(
-					from,
-					// A Meta baixa o arquivo NA HORA — aqui vale a URL assinada direta
-					// (o link curto redireciona, e o fetch da Meta não segue 302).
-					proposta.urlAssinada,
-					proposta.nomeArquivo,
-					"Sua proposta, com a carta, a parcela e o prazo que combinamos.",
-				);
-				await saveMessage(conversationId, "assistant", "[proposta enviada em PDF]", "whatsapp");
-			}
-		} catch (err) {
-			console.error(`[offer-confirm] envio da proposta PDF falhou (conv=${conversationId})`, err);
-		}
+		// UM ENVIO SÓ. Medido no dev, conversa 26dd148d (25/10/2026): a proposta saía
+		// DUAS vezes — o beat "Sua proposta está pronta" com o link
+		// `/api/proposta/<id>` e o anexo com a URL assinada do S3 (`X-Amz-Expires=300`).
+		// O cliente abre o anexo cinco minutos depois e cai em AccessDenied, e o fecho
+		// aparece duplicado no canal. Fica o link estável, que é o mesmo que o back
+		// office abre e não expira; a peça continua no cofre do back office. O anexo
+		// saiu da jornada.
 		// FIX-235 (D8): fecho — aciona a mesa (especialista em cadastros) NA HORA.
 		// Best-effort, nunca quebra o fechamento.
 		//
