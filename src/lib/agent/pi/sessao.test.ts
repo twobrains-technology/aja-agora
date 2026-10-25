@@ -120,4 +120,26 @@ describe("pi/sessao — a sessão do turno é montada em controle total", () => 
 		// duas idas ao provedor: a que pede a tool e a que conclui
 		expect(falso.pedidos.length).toBeGreaterThanOrEqual(2);
 	}, 60_000);
+
+	it("o histórico inteiro chega ao provedor, não só a última mensagem", async () => {
+		const falso = await servidorFalso([]);
+		abertas.push(falso.fechar);
+		const { session } = await abrirSessao({
+			system: "Você é o consultor.",
+			tools: [],
+			historico: [
+				{ role: "user", content: "Quero comprar um carro." },
+				{ role: "assistant", content: "Qual o valor?" },
+				{ role: "user", content: "50 mil reais" },
+				{ role: "assistant", content: "Para quando?" },
+			],
+			provider: { id: "fake", baseUrl: `${falso.url}/v1`, apiKey: "x", model: "fake" },
+		});
+		await session.prompt("300 por mês");
+		const enviado = JSON.stringify(falso.pedidos[0]?.messages ?? []);
+		expect(enviado).toContain("Quero comprar um carro.");
+		expect(enviado).toContain("50 mil reais");
+		expect(enviado).toContain("Para quando?");
+		expect(enviado).toContain("300 por mês");
+	}, 60_000);
 });
