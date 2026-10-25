@@ -39,6 +39,7 @@ import {
 	type PerfilDeclarado,
 	type RefDeCard,
 } from "@/lib/agent/pi/cards-livres";
+import { abrirCasoNaMesa } from "@/lib/agent/pi/handoff";
 import { resolverAceiteLgpd } from "@/lib/agent/pi/lgpd";
 import { pisoPadraoPara } from "@/lib/agent/qualify-answers";
 import { type ClosingItem, realOfferPresentation } from "@/lib/bevi/closing-presentation";
@@ -553,13 +554,21 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 
 	const falar_com_humano = tool({
 		description:
-			"Chama um especialista humano para assumir a conversa. Use quando o cliente pedir para falar com uma pessoa, estiver insatisfeito, ou o assunto fugir do que você resolve.",
+			"Abre o caso na mesa. Use quando o cliente pedir para falar com uma pessoa, estiver insatisfeito, ou o assunto fugir do que você resolve. Não prometa prazo nem 'está a caminho': avise em uma linha que o caso foi aberto.",
 		inputSchema: z.object({
 			motivo: z.string().min(3).describe("Por que está chamando o especialista"),
 		}),
-		execute: async () => {
+		execute: async ({ motivo }) => {
 			ctx.pediuHumano = true;
-			return "Especialista chamado. Avise o cliente em uma frase e siga conversando até ele entrar.";
+			const caso = await abrirCasoNaMesa({
+				conversationId: ctx.conversationId,
+				nome: ctx.nomeDoCliente,
+				motivo,
+			});
+			if (!caso.ok) {
+				return "Caso NÃO aberto: falta o nome do cliente. Capture o nome em uma linha, sem prometer especialista.";
+			}
+			return `Caso aberto na mesa${caso.handoffId ? ` (id ${caso.handoffId})` : ""}. Avise em UMA linha, sem prometer prazo, e pare de responder nesta conversa — a mesa assume.`;
 		},
 	});
 

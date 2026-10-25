@@ -509,6 +509,12 @@ async function consumeEventsInner(
 				break;
 			}
 			case "handoff": {
+				// O CLIENTE JÁ PEDIU: confirmar de novo é burocracia. A linha do agente
+				// sai, e o caso fica aberto na mesa (`handed_off`), sem botão.
+				if (ev.reason === "pedido do cliente") {
+					await flushText();
+					break;
+				}
 				textBuffer = "";
 				pendingArtifacts = [];
 				dropped = true;
