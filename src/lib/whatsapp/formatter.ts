@@ -1179,6 +1179,13 @@ interface DialScenarioView {
 	/** Parcela ATUAL do plano — a referência que dá sentido à queda. Vem do
 	 * `monthlyPayment` do payload da oferta; ausente em cenários antigos. */
 	paymentBeforeContemplation?: number;
+	/** BUG-LANCE-ACIMA-DO-MEDIO (`contemplation-dial.ts`): o mês pedido exigiria
+	 * lance ACIMA do médio observado no grupo, então `requiredLanceValue` é o TETO
+	 * do que já se viu vencer — nunca estimativa pra aquele mês. */
+	beyondEvidence?: boolean;
+	/** Primeiro mês em que o histórico do grupo sustenta projeção. Só existe junto
+	 * com `beyondEvidence` — é a resposta honesta ao "então quando dá?" */
+	earliestSupportedMonth?: number;
 }
 
 /** Extrai o cenário JÁ calculado pelo agente. Aceita tanto `payload.scenario`
@@ -1207,6 +1214,8 @@ function readDialScenario(payload: Record<string, unknown>): DialScenarioView | 
 			num(raw.paymentBeforeContemplation) ??
 			num(raw.monthlyPayment) ??
 			num((payload as Record<string, unknown>).monthlyPayment),
+		beyondEvidence: raw.beyondEvidence === true ? true : undefined,
+		earliestSupportedMonth: num(raw.earliestSupportedMonth),
 	};
 }
 
@@ -1217,6 +1226,45 @@ const SIMULATOR_ACTIONS = [
 	{ id: "simoffer_yes", title: "Testar outro prazo" },
 	{ id: "decision_contratar", title: "Quero esse plano" },
 ];
+
+/** O de-para crédito/parcela do cenário, sem maiúscula inicial nem ponto final:
+ * quem chama completa a frase conforme o número signifique estimativa ou teto
+ * observado. Campo ausente sai da frase em vez de virar zero. */
+function creditAndInstallmentToText(s: DialScenarioView): string | undefined {
+	const recebe = s.receivedCredit !== undefined ? `você recebe *${brlWa(s.receivedCredit)}*` : "";
+	const parcela =
+		s.paymentAfterContemplation !== undefined
+			? s.paymentBeforeContemplation !== undefined
+				? `a parcela cai de ${brlWa(s.paymentBeforeContemplation)} pra ~*${brlWa(s.paymentAfterContemplation)}*/mês`
+				: `a parcela fica em ~*${brlWa(s.paymentAfterContemplation)}*/mês`
+			: "";
+	if (recebe && parcela) return `${recebe}, e ${parcela}.`;
+	if (recebe) return `${recebe} de crédito.`;
+	if (parcela) return `${parcela}.`;
+	return undefined;
+}
+
+/** Ressalva de BUG-LANCE-ACIMA-DO-MEDIO quando o mês pedido passa da evidência
+ * do grupo: acima do lance médio observado não há estimativa — o número é o TETO
+ * do que a administradora sustenta. Na main a tool `simulate_contemplation`
+ * (`ai-sdk.ts`) obrigava o agente a narrar exatamente assim; no WhatsApp quem
+ * escreve o balão é este formatador, então a ressalva é fato do texto, não
+ * escolha do modelo. Mesma informação do componente web (`contemplation-dial.tsx`). */
+function beyondEvidenceToText(s: DialScenarioView): string {
+	const parts = [
+		"Pra esse prazo o lance teria que passar do que costuma vencer neste grupo — aí não dá pra estimar.",
+	];
+	if (s.requiredLanceValue !== undefined) {
+		const pct = s.requiredLancePct !== undefined ? ` (${s.requiredLancePct}% da carta)` : "";
+		parts.push(`O teto que já se viu vencer aqui é *${brlWa(s.requiredLanceValue)}*${pct}.`);
+	}
+	if (s.earliestSupportedMonth !== undefined) {
+		parts.push(
+			`A partir do mês ${s.earliestSupportedMonth} o histórico do grupo sustenta uma projeção.`,
+		);
+	}
+	return parts.join(" ");
+}
 
 /** Formata UMA iteração do simulador conversacional (o cenário recalculado pelo
  * agente). Só apresentação — o cálculo vem de computeContemplationDial.
@@ -1239,6 +1287,13 @@ function simulatorScenarioToWhatsApp(s: DialScenarioView, convite?: string): Wha
 	const isSorteio = s.mode === "sorteio" || (s.requiredLancePct ?? 0) <= 0;
 	if (isSorteio) {
 		lines.push("Nesse prazo dá pra contar mais com o sorteio — lance opcional e parcela menor.");
+	} else if (s.beyondEvidence) {
+		// P148/P170: o mês pedido passa da evidência do grupo. O número é o teto
+		// observado — o balão diz primeiro o que ele NÃO é, e só então o efeito
+		// dele no crédito/parcela.
+		lines.push(beyondEvidenceToText(s), "");
+		const noTeto = creditAndInstallmentToText(s);
+		if (noTeto) lines.push(`Se o lance chegasse nesse teto, ${noTeto}`);
 	} else {
 		const pct = s.requiredLancePct !== undefined ? ` — ${s.requiredLancePct}% da carta` : "";
 		const lanceStr =
@@ -1247,16 +1302,8 @@ function simulatorScenarioToWhatsApp(s: DialScenarioView, convite?: string): Wha
 				: `*${s.requiredLancePct}%* da carta`;
 		lines.push(`Pra chegar lá, o lance fica em torno de ${lanceStr}.`, "");
 
-		const recebe = s.receivedCredit !== undefined ? `Você recebe *${brlWa(s.receivedCredit)}*` : "";
-		const parcela =
-			s.paymentAfterContemplation !== undefined
-				? s.paymentBeforeContemplation !== undefined
-					? `a parcela cai de ${brlWa(s.paymentBeforeContemplation)} pra ~*${brlWa(s.paymentAfterContemplation)}*/mês`
-					: `a parcela fica em ~*${brlWa(s.paymentAfterContemplation)}*/mês`
-				: "";
-		if (recebe && parcela) lines.push(`${recebe}, e ${parcela}.`);
-		else if (recebe) lines.push(`${recebe} de crédito.`);
-		else if (parcela) lines.push(`${parcela[0].toUpperCase()}${parcela.slice(1)}.`);
+		const resumo = creditAndInstallmentToText(s);
+		if (resumo) lines.push(`${resumo[0].toUpperCase()}${resumo.slice(1)}`);
 	}
 	if (convite) lines.push("", convite);
 	lines.push("", SIMULATOR_DISCLAIMER);
@@ -1294,6 +1341,11 @@ const CONVITE_PROXIMO_PRAZO =
 function scenarioFromCardSnapshot(payload: Record<string, unknown>): DialScenarioView | null {
 	const num = (v: unknown): number | undefined =>
 		typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined;
+	// ZERO é valor, não ausência: `maxEmbutidoPct: 0` é a RECUSA ao lance embutido
+	// (`plan-estimate.ts` grava 0 quando o cliente não opta) — lido como ausente
+	// virava o teto padrão de 30% e o embutido comia a carta de quem disse não.
+	const zeroOuMais = (v: unknown): number | undefined =>
+		typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : undefined;
 	const creditValue = num(payload.creditValue);
 	const termMonths = num(payload.termMonths);
 	const targetMonth = num(payload.initialTargetMonth);
@@ -1308,7 +1360,7 @@ function scenarioFromCardSnapshot(payload: Record<string, unknown>): DialScenari
 		historicalWinningBidPct: num(payload.historicalWinningBidPct),
 		referenceMonth: num(payload.referenceMonth),
 		monthlyPayment,
-		maxEmbutidoPct: num(payload.maxEmbutidoPct),
+		maxEmbutidoPct: zeroOuMais(payload.maxEmbutidoPct),
 	});
 	return {
 		targetMonth: r.targetMonth,
@@ -1318,6 +1370,8 @@ function scenarioFromCardSnapshot(payload: Record<string, unknown>): DialScenari
 		receivedCredit: r.receivedCredit,
 		paymentAfterContemplation: r.paymentAfterContemplation,
 		paymentBeforeContemplation: monthlyPayment,
+		beyondEvidence: r.beyondEvidence,
+		earliestSupportedMonth: r.earliestSupportedMonth,
 	};
 }
 
