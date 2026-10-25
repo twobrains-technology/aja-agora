@@ -184,8 +184,7 @@ async function processTextMessageSerialized(
 		// Gate "identify" (D1): funil aguardando CPF → captura textual determinística
 		// (valida DV, persiste cifrado, celular = waId) sem turno de agente.
 		{
-			const { captureIdentifyText, IDENTIFY_INVALID_CPF_REPLY, respostaDoCaptureDeCpf } =
-				await import("./identify-capture");
+			const { captureIdentifyText, respostaDoCaptureDeCpf } = await import("./identify-capture");
 			const capture = await captureIdentifyText(from, text);
 			if (capture.handled) {
 				const resposta = respostaDoCaptureDeCpf(capture);
