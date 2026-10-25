@@ -212,13 +212,79 @@ const PISO_DO_EMBUTIDO = 0.9;
 const EMBUTIDO_DEFAULT_PERCENT = 30;
 
 /** A carta que o cliente ESCOLHEU — do turno atual ou do que já foi mostrado
- * nesta conversa (`listShownOffersForConversation`). */
+ * nesta conversa (`listShownOffersForConversation`).
+ *
+ * `monthlyPayment` é a PARCELA que ele viu na comparação: é o número que ele
+ * teve na frente ao dizer sim, e a única âncora possível para avisar que a
+ * carta real voltou com outra (P268). */
 export type OfertaDoFecho = {
 	groupId: string;
 	administradora?: string | null;
 	creditValue?: number | null;
 	termMonths?: number | null;
+	monthlyPayment?: number | null;
 };
+
+/** O segundo argumento de `realOfferPresentation` — o que o cliente VIU e
+ * DECLAROU antes de fechar (P144/P268, L14).
+ *
+ * Na `main` esses dados vinham de `meta.recommendedOffer` + `qualifyAnswers` no
+ * route (`src/app/api/chat/route.ts:1286` de a2bc3024). O vendedor livre passou
+ * a chamar a apresentação SEM eles, e três coisas pararam de existir no card: o
+ * aviso de que a carta real trouxe outra parcela/prazo (o cliente aprovava 1.180
+ * e recebia 1.450 em silêncio), a frase de posição factual do lance declarado
+ * contra o lance médio do grupo (FIX-40) e a marca de carta maior por embutido. */
+export type OpcoesDaApresentacaoDoFecho = {
+	ofertaVista?: { monthlyPayment?: number; termMonths?: number } | null;
+	declaredLanceValue?: number;
+	cartaMaiorPorEmbutido?: boolean;
+};
+
+/** Os números de uma cota que podem servir de referência do que foi visto —
+ * só os finitos e positivos (D11: nada de número sem fonte). */
+function numerosDaVista(
+	origem: { monthlyPayment?: number | null; termMonths?: number | null } | null | undefined,
+): { monthlyPayment?: number; termMonths?: number } | null {
+	if (!origem) return null;
+	const parcela = origem.monthlyPayment;
+	const prazo = origem.termMonths;
+	const vale = (n: number | null | undefined): n is number =>
+		typeof n === "number" && Number.isFinite(n) && n > 0;
+	if (!vale(parcela) && !vale(prazo)) return null;
+	return {
+		...(vale(parcela) ? { monthlyPayment: parcela } : {}),
+		...(vale(prazo) ? { termMonths: prazo } : {}),
+	};
+}
+
+/** Monta o `opts` da apresentação do fecho a partir do estado da conversa.
+ *
+ * A oferta VISTA é a CARTA ESCOLHIDA — é ela que estava na tela quando o
+ * cliente decidiu. `meta.recommendedOffer` é só o fallback (conversa que veio da
+ * `main`, ou proposta já ancorada); no motor livre `buscar_cartas` não escreve
+ * esse snapshot.
+ *
+ * O lance declarado e o embutido vêm da qualificação (`qualifyAnswers`), e o
+ * embutido pode vir também da BUSCA deste turno: o turno só persiste a meta no
+ * fim, então `buscar_cartas` com `usaraLanceEmbutido` não aparece em
+ * `meta.qualifyAnswers` na hora em que o fecho roda. */
+export function opcoesDaApresentacaoDoFecho(args: {
+	escolhida: OfertaDoFecho;
+	meta: ConversationMetadata;
+	buscaDoTurno?: ContextoDasTools["estadoDepoisDaBusca"];
+}): OpcoesDaApresentacaoDoFecho {
+	const vista = numerosDaVista(args.escolhida) ?? numerosDaVista(args.meta.recommendedOffer);
+	const lance = args.meta.qualifyAnswers?.lanceValue;
+	const embutido =
+		args.buscaDoTurno?.lanceEmbutido ?? args.meta.qualifyAnswers?.lanceEmbutido === true;
+	return {
+		...(typeof lance === "number" && Number.isFinite(lance) && lance > 0
+			? { declaredLanceValue: lance }
+			: {}),
+		...(embutido ? { cartaMaiorPorEmbutido: true } : {}),
+		...(vista ? { ofertaVista: vista } : {}),
+	};
+}
 
 /** A meta que o builder do contrato vai ler: a cota ESCOLHIDA AGORA vira
  * `contractOffer`, junto do aceite da LGPD.
@@ -709,6 +775,7 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 						administradora: doTurno.administradora,
 						creditValue: doTurno.carta,
 						termMonths: doTurno.prazoMeses,
+						monthlyPayment: doTurno.parcela,
 					}
 				: exibidas.find((o) => o.groupId === args.groupId);
 			if (!escolhida) {
@@ -837,7 +904,17 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				);
 			}
 
-			aplicarItensDoFecho(ctx, realOfferPresentation(result));
+			aplicarItensDoFecho(
+				ctx,
+				realOfferPresentation(
+					result,
+					opcoesDaApresentacaoDoFecho({
+						escolhida,
+						meta: metaDaProposta,
+						buscaDoTurno: ctx.estadoDepoisDaBusca,
+					}),
+				),
+			);
 
 			if (result.noOffer || !result.offer) {
 				return "A administradora não devolveu carta para esse valor. Explique ao cliente e proponha outro valor.";
