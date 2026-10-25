@@ -18,7 +18,7 @@ vi.mock("@/db", () => ({
 }));
 
 import { usoDeIa } from "@/db/schema";
-import { generateMesaCopilotReply } from "./index";
+import { generateMesaCopilotOpening, generateMesaCopilotReply } from "./index";
 
 const modeloDeTeste = { modelId: "modelo-de-teste" } as unknown as LanguageModel;
 
@@ -63,5 +63,17 @@ describe("L25/P314 — o copiloto da mesa grava o que gastou em `uso_de_ia`", ()
 
 		expect(inserts).toHaveLength(1);
 		expect(inserts[0].values.conversationId).toBeNull();
+	});
+
+	it("a orientação INICIAL (claim) repassa a conversa do caso pro livro-caixa", async () => {
+		const texto = await generateMesaCopilotOpening({
+			caso: { administradoraNome: "Consórcio X", docs: [] },
+			model: modeloDeTeste,
+			conversationId: "conv-claim",
+		});
+
+		expect(texto).toBe("1. Abra o sistema da administradora. 2. Cadastre o cliente.");
+		expect(inserts).toHaveLength(1);
+		expect(inserts[0].values).toMatchObject({ conversationId: "conv-claim" });
 	});
 });

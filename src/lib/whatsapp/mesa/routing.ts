@@ -317,7 +317,12 @@ async function pushOpeningOrientation(handoffId: string, attendantPhone: string)
 		if (!handoff) return;
 
 		const caso = await buildCaso(handoff);
-		const opening = await generateMesaCopilotOpening({ caso });
+		// A conversa de origem vai junto (P314) — mesma linha de custo do Q&A: a chamada de
+		// LLM que orienta o atendente no claim tem que entrar no CPC da conversa.
+		const opening = await generateMesaCopilotOpening({
+			caso,
+			conversationId: handoff.conversationId,
+		});
 		if (!opening?.trim()) return;
 
 		await db

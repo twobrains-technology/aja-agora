@@ -18,11 +18,15 @@ const estado = vi.hoisted(() => ({
 vi.mock("@/db", () => {
 	/**
 	 * Resultado de query encadeável: uma Promise de verdade (dá pra `await`) que ainda carrega
-	 * os elos que o módulo chama depois do `where` (`.orderBy()`).
+	 * os elos que o módulo chama depois do `where` (`.orderBy()`, `.limit()`).
 	 */
 	function resultado(linhas: () => unknown[]) {
 		class Consulta extends Promise<unknown[]> {
 			orderBy() {
+				return resultado(linhas);
+			}
+
+			limit() {
 				return resultado(linhas);
 			}
 		}
@@ -70,7 +74,8 @@ vi.mock("../formatter", () => ({
 	splitMessage: (texto: string) => [texto],
 }));
 
-import { handleMesaCopilot, invalidateMesaAttendantCache } from "./routing";
+import { type ClaimMesaHandoffResult, claimMesaHandoff } from "@/lib/mesa/handoff";
+import { handleMesaClaim, handleMesaCopilot, invalidateMesaAttendantCache } from "./routing";
 
 const TELEFONE_DA_MESA = "5511900000000";
 
@@ -89,6 +94,7 @@ beforeEach(() => {
 	invalidateMesaAttendantCache();
 	vi.mocked(generateMesaCopilotReply).mockClear();
 	vi.mocked(generateMesaCopilotOpening).mockClear();
+	vi.mocked(claimMesaHandoff).mockReset();
 });
 
 describe("handleMesaCopilot — livro-caixa ligado à conversa de origem", () => {
@@ -112,6 +118,41 @@ describe("handleMesaCopilot — livro-caixa ligado à conversa de origem", () =>
 		expect(input.conversationId).toBeNull();
 		expect(estado.inserted).toContainEqual(
 			expect.objectContaining({ role: "assistant", content: "orientação do copiloto" }),
+		);
+	});
+});
+
+describe("handleMesaClaim — a orientação INICIAL também entra no livro-caixa", () => {
+	it("manda o conversationId do handoff assumido pro copiloto de abertura", async () => {
+		vi.mocked(claimMesaHandoff).mockResolvedValue({
+			ok: true,
+			handoff: { id: "handoff-1", leadId: "lead-1", conversationId: "conv-1" },
+		} as unknown as ClaimMesaHandoffResult);
+
+		await handleMesaClaim(TELEFONE_DA_MESA, "mesa_claim:handoff-1");
+
+		expect(claimMesaHandoff).toHaveBeenCalledWith("handoff-1", "att-1");
+		expect(generateMesaCopilotOpening).toHaveBeenCalledTimes(1);
+		const input = vi.mocked(generateMesaCopilotOpening).mock.calls[0][0];
+		expect(input.conversationId).toBe("conv-1");
+		// O dossiê continua indo inteiro pra orientação proativa.
+		expect(input.caso.clienteNome).toBe("Maria");
+		expect(input.caso.administradoraNome).toBe("Consórcio X");
+	});
+
+	it("handoff antigo sem conversa vinculada manda null e ainda orienta o atendente", async () => {
+		estado.handoff = { ...estado.handoff, conversationId: null };
+		vi.mocked(claimMesaHandoff).mockResolvedValue({
+			ok: true,
+			handoff: { id: "handoff-1", leadId: "lead-1", conversationId: null },
+		} as unknown as ClaimMesaHandoffResult);
+
+		await handleMesaClaim(TELEFONE_DA_MESA, "mesa_claim:handoff-1");
+
+		const input = vi.mocked(generateMesaCopilotOpening).mock.calls[0][0];
+		expect(input.conversationId).toBeNull();
+		expect(estado.inserted).toContainEqual(
+			expect.objectContaining({ role: "assistant", content: "abertura do copiloto" }),
 		);
 	});
 });

@@ -137,11 +137,18 @@ export async function generateMesaCopilotReply(input: {
 export async function generateMesaCopilotOpening(input: {
 	caso: MesaCopilotCaso;
 	model?: LanguageModel;
+	/**
+	 * A conversa de origem do caso — mesmo livro-caixa de `uso_de_ia` do Q&A (P314). Sem
+	 * isto, a chamada feita no instante em que o atendente assume o caso saía com
+	 * `conversation_id` NULL e ficava fora do custo por conversa. Opcional de propósito.
+	 */
+	conversationId?: string | null;
 }): Promise<string> {
 	return generateMesaCopilotReply({
 		caso: input.caso,
 		history: [{ role: "attendant", content: MESA_COPILOT_KICKOFF }],
 		model: input.model,
+		conversationId: input.conversationId,
 	});
 }
 
