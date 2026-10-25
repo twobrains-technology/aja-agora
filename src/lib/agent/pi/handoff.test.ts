@@ -1,6 +1,17 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
-import { linhaDeHandoff, linhaFinalDoHandoff, nomeNaFala, semPromessa } from "./handoff";
+import { eq } from "drizzle-orm";
+import { afterEach, describe, expect, it } from "vitest";
+import { db } from "@/db";
+import { conversations, leads, mesaHandoffs } from "@/db/schema";
+import type { AnunciarCasoNaMesaArgs } from "@/lib/mesa/dispatch";
+import {
+	abrirCasoNaMesa,
+	linhaDeHandoff,
+	linhaFinalDoHandoff,
+	nomeNaFala,
+	RE_DE_PROMESSA,
+	semPromessa,
+} from "./handoff";
 
 describe("o pedido de humano honra o pedido, sem promessa", () => {
 	it("o caso medido (6d647263): as palavras prometidas não passam", () => {
@@ -97,5 +108,154 @@ describe("o pedido de humano honra o pedido, sem promessa", () => {
 		);
 		expect(caso).toContain('ev.reason === "pedido do cliente"');
 		expect(caso).toContain("flushText()");
+	});
+});
+
+// L31/N03 — prazo financeiro não é pedido de humano. A regex antiga era só a lista de
+// frases: "em até" numa explicação de parcela virava handoff e a fala de cota morria.
+describe("promessa de humano exige contexto de humano", () => {
+	it("prazo de cota ('em até N meses') não é promessa de atendimento", () => {
+		expect(semPromessa("Temos parcelas em até 200 meses, com contemplação em até 12 meses.")).toBe(
+			true,
+		);
+		expect(semPromessa("A contemplação em até 12 meses é uma estimativa, não garantia.")).toBe(
+			true,
+		);
+		// Falar de cota CITANDO o consultor também não é prometer atendimento.
+		expect(semPromessa("O consultor te explica melhor: parcelas em até 200 meses.")).toBe(true);
+		expect(RE_DE_PROMESSA.test("Cartas de até R$ 80 mil, parcelas em até 200 meses.")).toBe(false);
+	});
+
+	it("a promessa de ATENDIMENTO continua barrada", () => {
+		expect(RE_DE_PROMESSA.test("Em até 30 minutos um especialista te chama.")).toBe(true);
+		expect(RE_DE_PROMESSA.test("Um especialista vai entrar em contato em breve.")).toBe(true);
+		expect(RE_DE_PROMESSA.test("Nosso atendente já está falando com você.")).toBe(true);
+		// Frase de promessa sem gente nenhuma não é promessa de humano.
+		expect(RE_DE_PROMESSA.test("Vamos ver se dá pra reduzir o prazo.")).toBe(false);
+	});
+});
+
+// L30/N02 — o caso aberto tem que SER VISTO: raia da mesa + dossiê com "Vou atender".
+describe("abrirCasoNaMesa anuncia o caso na mesa", () => {
+	const conversasCriadas: string[] = [];
+
+	afterEach(async () => {
+		for (const id of conversasCriadas.splice(0)) {
+			await db.delete(mesaHandoffs).where(eq(mesaHandoffs.conversationId, id));
+			await db.delete(leads).where(eq(leads.conversationId, id));
+			await db.delete(conversations).where(eq(conversations.id, id));
+		}
+	});
+
+	async function conversaComLead(args: { nome: string | null; telefone?: string | null }) {
+		const [conv] = await db
+			.insert(conversations)
+			.values({ channel: "web", status: "active", isSimulated: true })
+			.returning({ id: conversations.id });
+		conversasCriadas.push(conv.id);
+		const [lead] = await db
+			.insert(leads)
+			.values({
+				conversationId: conv.id,
+				name: args.nome,
+				phone: args.telefone ?? null,
+				isSimulated: true,
+			})
+			.returning({ id: leads.id });
+		return { conversationId: conv.id, leadId: lead.id };
+	}
+
+	it("o caso criado é anunciado com o dossiê (e a conversa cala o agente)", async () => {
+		const { conversationId, leadId } = await conversaComLead({
+			nome: "Marcos",
+			telefone: "5511987654321",
+		});
+
+		const anuncios: AnunciarCasoNaMesaArgs[] = [];
+		const r = await abrirCasoNaMesa(
+			{ conversationId, nome: "Marcos", motivo: "cliente pediu uma pessoa" },
+			{
+				anunciar: async (args) => {
+					anuncios.push(args);
+				},
+			},
+		);
+
+		expect(r.ok).toBe(true);
+		expect(r.motivo).toBe("caso-aberto");
+		expect(r.handoffId).toBeTruthy();
+		expect(anuncios).toHaveLength(1);
+		expect(anuncios[0].handoffId).toBe(r.handoffId);
+		expect(anuncios[0].leadId).toBe(leadId);
+		expect(anuncios[0].lead).toMatchObject({ name: "Marcos", phone: "5511987654321" });
+
+		const handoff = await db.query.mesaHandoffs.findFirst({
+			where: eq(mesaHandoffs.id, r.handoffId as string),
+		});
+		expect(handoff?.status).toBe("aberto");
+		const [conv] = await db
+			.select({ status: conversations.status })
+			.from(conversations)
+			.where(eq(conversations.id, conversationId));
+		expect(conv.status).toBe("handed_off");
+	});
+
+	it("sem injeção o anúncio REAL roda: o lead cai na raia da mesa", async () => {
+		const { conversationId, leadId } = await conversaComLead({ nome: "Ana" });
+
+		const r = await abrirCasoNaMesa({
+			conversationId,
+			nome: "Ana",
+			motivo: "cliente pediu uma pessoa",
+		});
+
+		expect(r.ok).toBe(true);
+		const [lead] = await db.select({ stage: leads.stage }).from(leads).where(eq(leads.id, leadId));
+		expect(lead.stage).toBe("na_administradora");
+	});
+
+	it("sem lead não há caso, e a mesa não é chamada à toa", async () => {
+		const [conv] = await db
+			.insert(conversations)
+			.values({ channel: "web", status: "active", isSimulated: true })
+			.returning({ id: conversations.id });
+		conversasCriadas.push(conv.id);
+
+		const anuncios: AnunciarCasoNaMesaArgs[] = [];
+		const r = await abrirCasoNaMesa(
+			{ conversationId: conv.id, nome: null, motivo: "cliente pediu uma pessoa" },
+			{
+				anunciar: async (args) => {
+					anuncios.push(args);
+				},
+			},
+		);
+
+		expect(r.ok).toBe(false);
+		expect(r.motivo).toBe("sem-lead");
+		expect(anuncios).toHaveLength(0);
+	});
+
+	it("o caso que já está na mesa não é anunciado de novo", async () => {
+		const { conversationId } = await conversaComLead({ nome: "Marcos" });
+		const anuncios: AnunciarCasoNaMesaArgs[] = [];
+		const deps = {
+			anunciar: async (args: AnunciarCasoNaMesaArgs) => {
+				anuncios.push(args);
+			},
+		};
+
+		const primeiro = await abrirCasoNaMesa(
+			{ conversationId, nome: "Marcos", motivo: "pediu humano" },
+			deps,
+		);
+		const segundo = await abrirCasoNaMesa(
+			{ conversationId, nome: "Marcos", motivo: "insistiu" },
+			deps,
+		);
+
+		expect(segundo.ok).toBe(true);
+		expect(segundo.handoffId).toBe(primeiro.handoffId);
+		expect(anuncios).toHaveLength(1);
 	});
 });

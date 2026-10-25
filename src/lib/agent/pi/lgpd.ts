@@ -15,8 +15,28 @@ export const AVISO_LGPD_RE = /bir[oô]s?\s+de\s+cr[eé]dito|conforme a\s+lgpd/i;
 export const AVISO_LGPD =
 	"Para gerar a sua proposta, a administradora consulta seu CPF nos birôs de crédito e usa seus dados só para isso, conforme a LGPD. Posso seguir?";
 
+// O pedido de dado é um ATO: o verbo de pedir junto do dado, ou a pergunta pelo dado.
+// Só a presença da palavra não basta — "atendemos pelo WhatsApp" ou "seu celular
+// cadastrado" falam do dado, não pedem nada, e não podem ser trocados pelo aviso de
+// consentimento (N04: o cliente que perguntou do canal recebia "Posso seguir?" sobre CPF).
+const ATO_DE_PEDIR = String.raw`(?:me\s+)?(?:pass(?:a|e|ar|em|aria)|inform(?:a|e|ar|em|aria)|envi(?:a|e|ar|em|aria)|mand(?:a|e|ar|em|aria)|d[ií]g(?:a|am|o|z)|confirma(?:r|m|ria)?|precis(?:o|amos|a|am|ava|aria)|solicit(?:o|amos|a|am|ou)|compartilh(?:a|e|ar|em|aria)|cadastr(?:a|e|ar|em|aria)|ped(?:ir|imos)|pe[cç]o|pe[çc]a)`;
+const DADO = String.raw`(?:cpf|celular|telefone|whats\s?app|n[uú]mero(?:\s+(?:do|da|de|seu|sua|teu|tua)){0,3}\s+(?:celular|telefone|whats\s?app))`;
+// Na terceira pessoa o verbo descreve, não pede: "o contrato informa o telefone da
+// administradora" não é coleta de dado. Sujeito na frente do verbo = descrição.
+const SUJEITO = String.raw`(?<![oa]s?\s|ele\s|ela\s|eles\s|elas\s|que\s|isso\s|isto\s|voc[êe]s\s|contrato\s|proposta\s|sistema\s|banco\s|administradora\s|empresa\s)`;
+
 /** O pedido de dado pessoal — CPF ou celular — que NÃO pode vir antes do aviso. */
-export const PEDE_DADO_RE = /\b(cpf|celular|telefone|whatsapp)\b/i;
+export const PEDE_DADO_RE = new RegExp(
+	[
+		// "me passa seu CPF", "preciso do celular", "envie o número do WhatsApp"
+		String.raw`\b${SUJEITO}${ATO_DE_PEDIR}\b[^.?!\n]{0,40}?\b${DADO}\b`,
+		// "seu CPF, por favor", "o celular pra mim"
+		String.raw`\b${DADO}\b[^.?!\n]{0,20}?\b(?:por\s+favor|pra\s+mim|para\s+mim|me\s+(?:passa|envia|manda|informa|diz))\b`,
+		// pergunta pelo dado: "qual o seu CPF?", "qual é o seu celular com DDD?"
+		String.raw`\b(?:qual|quais|como)\b[^.?!\n]{0,25}?\b${DADO}\b`,
+	].join("|"),
+	"i",
+);
 
 export type ResultadoDoAviso = {
 	/** O texto que sai no balão: o aviso vem ANTES do pedido de dado. */
@@ -55,16 +75,51 @@ export function garanteAvisoLgpd(args: { texto: string; avisoJaDado: boolean }):
 	return { texto: saida, avisoAdicionado: true, pedidoAdiado: pediu };
 }
 
-/** Resposta afirmativa do cliente. Negativa não vale ("não pode", "não autorizo"). */
+const AFIRMATIVA_RE =
+	/\b(sim|pode|podes|podem|posso|aceito|autorizo|autorizado|confirmo|claro|ok|beleza|de acordo)\b/gi;
+
+/** Recusa explícita: "não", "não aceito", "prefiro não", "melhor não, obrigado". */
+function ehRecusa(frase: string): boolean {
+	const f = frase.toLowerCase().trim();
+	// O "não" que acompanha um problema é aceite disfarçado: "não tem problema, pode usar".
+	const problema = /^n[ãa]o\s+(?:tem|h[áa]|e\s+problema|me\s+importo|tenho\s+d[uú]vidas)\b/.test(f);
+	if (!problema && /^(n[ãa]o|nunca|jamais|negativo|dispenso)\b/.test(f)) return true;
+	return /\b(?:n[ãa]o\s+(?:aceito|autorizo|concordo|quero|pode|podes|prefiro|obrigad[oa]|vou|preciso)|prefiro\s+n[ãa]o|melhor\s+n[ãa]o|dispenso)\b/.test(
+		f,
+	);
+}
+
+/**
+ * Pergunta não é aceite: "pode explicar?", "posso saber pra que vocês querem meu CPF?",
+ * "o que é LGPD?". O "pode/posso" da pergunta não é o "pode" do sim.
+ */
+function ehPergunta(frase: string): boolean {
+	const f = frase.trim();
+	if (/\?\s*$/.test(f)) return true;
+	return /^(?:o\s+que|que\s+(?:é|e|s[ãa]o)|qual|quais|quando|onde|como|por\s*que|porqu[êe]|pra\s+que|para\s+que|quem|quanto|posso\s+saber|pode(?:m)?\s+(?:me\s+)?(?:explicar|esclarecer|detalhar|dizer|falar)|voc[êe]s?\s+podem\s+(?:me\s+)?(?:explicar|esclarecer|detalhar))\b/i.test(
+		f,
+	);
+}
+
+/**
+ * Resposta afirmativa do cliente. Negativa não vale ("não pode", "não autorizo") e
+ * pergunta não vale ("pode explicar?"): aceite é o cliente DIZENDO sim.
+ */
 export function clienteAceitouLgpd(texto: string): boolean {
-	const re =
-		/\b(sim|pode|podes|podem|posso|aceito|autorizo|autorizado|confirmo|claro|ok|beleza|de acordo)\b/gi;
-	for (const m of texto.matchAll(re)) {
-		const antes = texto.slice(Math.max(0, m.index - 24), m.index).toLowerCase();
-		if (/(n[ãa]o|negativo|jamais)\s*$/.test(antes)) continue;
-		return true;
+	const frases = texto.split(/(?<=[.!?;])\s+|\n+/).filter((f) => f.trim());
+	let aceitou = false;
+	for (const frase of frases) {
+		// A recusa derruba a mensagem inteira: "sim, mas não aceito" não é aceite.
+		if (ehRecusa(frase)) return false;
+		if (ehPergunta(frase)) continue;
+		for (const m of frase.matchAll(AFIRMATIVA_RE)) {
+			const antes = frase.slice(Math.max(0, m.index - 24), m.index).toLowerCase();
+			// "não" dentro da mesma frase também anula o sim ("não, pode" é recusa).
+			if (/(n[ãa]o|negativo|jamais)\s*$/.test(antes)) continue;
+			aceitou = true;
+		}
 	}
-	return false;
+	return aceitou;
 }
 
 export type FalaDeLgpd = { role: "user" | "assistant"; content: string };
@@ -93,8 +148,12 @@ export function resolverAceiteLgpd(args: {
 	if (args.falaDoCliente) linha.push({ role: "user", content: args.falaDoCliente });
 	if (args.textoDoTurno) linha.push({ role: "assistant", content: args.textoDoTurno });
 
+	// O PRIMEIRO aviso é o que conta. O último já não servia: o modelo repete o aviso no
+	// turno em curso (era o que ele fazia quando a tool recusava), e o aviso novo apagava
+	// o sim que o cliente tinha dado antes dele.
 	let avisoEm = -1;
 	for (let i = 0; i < linha.length; i++) {
+		if (avisoEm >= 0) break;
 		if (linha[i].role === "assistant" && AVISO_LGPD_RE.test(linha[i].content)) avisoEm = i;
 	}
 	if (avisoEm < 0) return { ok: false, motivo: "aviso-nao-dado" };

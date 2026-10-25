@@ -1,6 +1,12 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { AVISO_LGPD, clienteAceitouLgpd, garanteAvisoLgpd, resolverAceiteLgpd } from "./lgpd";
+import {
+	AVISO_LGPD,
+	clienteAceitouLgpd,
+	garanteAvisoLgpd,
+	PEDE_DADO_RE,
+	resolverAceiteLgpd,
+} from "./lgpd";
 import { montarTrechoDeSaida } from "./turno-livre";
 
 const AVISO =
@@ -131,5 +137,85 @@ describe("o aviso vem antes do pedido de dado — decidido no harness, não no p
 		);
 		const norm = (t: string) => t.replace(/\s+/g, " ").trim();
 		expect(norm(skill)).toContain(norm(AVISO_LGPD));
+	});
+});
+
+describe("L32/N04 — só é pedido de dado quando há ato de pedir", () => {
+	it("mencionar o canal ou o cadastro não é pedir dado", () => {
+		for (const fala of [
+			"Atendemos pelo WhatsApp, de segunda a sexta.",
+			"Seu celular cadastrado recebe o contrato por WhatsApp.",
+			"O telefone da administradora aparece no contrato.",
+			"O contrato informa o telefone da administradora.",
+		]) {
+			expect(PEDE_DADO_RE.test(fala), fala).toBe(false);
+			const r = garanteAvisoLgpd({ texto: fala, avisoJaDado: false });
+			expect(r.avisoAdicionado, fala).toBe(false);
+			expect(r.texto, fala).toBe(fala);
+		}
+	});
+
+	it("o pedido de dado de verdade continua sendo pedido", () => {
+		for (const fala of [
+			"Me passa seu CPF pra eu gerar a proposta.",
+			"Qual é o seu celular com DDD?",
+			"Preciso do seu CPF para simular.",
+			"Envie o número do seu WhatsApp, por favor.",
+			"Pode me passar seu CPF?",
+		]) {
+			expect(PEDE_DADO_RE.test(fala), fala).toBe(true);
+		}
+	});
+
+	it("o balão não troca a fala sobre o canal por um aviso de consentimento", () => {
+		const r = montarTrechoDeSaida({
+			texto:
+				"Atendemos pelo WhatsApp, de segunda a sexta. Seu celular cadastrado recebe o contrato por lá.",
+			avisoDado: false,
+		});
+		expect(r.avisoAplicado).toBe(false);
+		expect(r.texto).not.toContain("conforme a LGPD");
+	});
+});
+
+describe("L08 — pergunta e recusa não viram aceite; aviso novo não apaga aceite dado", () => {
+	it("pergunta sobre a LGPD ou sobre o dado não é aceite", () => {
+		expect(clienteAceitouLgpd("o que é LGPD?")).toBe(false);
+		expect(clienteAceitouLgpd("pra que vocês querem meu CPF?")).toBe(false);
+		expect(clienteAceitouLgpd("posso saber pra que vocês usam meu CPF?")).toBe(false);
+		expect(clienteAceitouLgpd("pode explicar melhor?")).toBe(false);
+	});
+
+	it("recusa não é aceite", () => {
+		expect(clienteAceitouLgpd("não")).toBe(false);
+		expect(clienteAceitouLgpd("não aceito")).toBe(false);
+		expect(clienteAceitouLgpd("prefiro não")).toBe(false);
+		expect(clienteAceitouLgpd("não, obrigado")).toBe(false);
+	});
+
+	it("afirmação de verdade continua sendo aceite", () => {
+		expect(clienteAceitouLgpd("sim, pode usar")).toBe(true);
+		expect(clienteAceitouLgpd("Pode usar. E qual é o prazo?")).toBe(true);
+	});
+
+	it("a pergunta do cliente depois do aviso não fecha o aceite", () => {
+		const r = resolverAceiteLgpd({
+			falas: [{ role: "assistant", content: AVISO }],
+			falaDoCliente: "pode explicar o que vocês fazem com meu CPF?",
+		});
+		expect(r.ok).toBe(false);
+		expect(r.motivo).toBe("falta-o-aceite");
+	});
+
+	it("um aviso novo no turno não apaga o sim já dado", () => {
+		const r = resolverAceiteLgpd({
+			falas: [
+				{ role: "assistant", content: AVISO },
+				{ role: "user", content: "sim, pode usar" },
+			],
+			textoDoTurno: `${AVISO} Só confirmando: posso seguir?`,
+		});
+		expect(r.ok).toBe(true);
+		expect(r.motivo).toBe("aceite-do-cliente");
 	});
 });
