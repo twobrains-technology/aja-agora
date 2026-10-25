@@ -50,6 +50,7 @@ const TOOL_LABEL_STAGES: Record<string, ToolLabelStage[]> = {
 	fazer_proposta: [{ afterMs: 0, text: "Gerando sua proposta", icon: Calculator }],
 	falar_com_humano: [{ afterMs: 0, text: "Chamando um especialista", icon: UserCheck }],
 	salvar_nome: [{ afterMs: 0, text: "Salvando seu nome", icon: UserCheck }],
+	status_da_proposta: [{ afterMs: 0, text: "Consultando sua proposta", icon: FileText }],
 	capture_lead: [{ afterMs: 0, text: "Salvando dados", icon: UserCheck }],
 };
 

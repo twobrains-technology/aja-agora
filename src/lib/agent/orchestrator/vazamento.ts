@@ -18,8 +18,19 @@ export function scrubCpf(text: string): string {
 	return text.replace(CPF_CANDIDATO, (m) => (isValidCpf(m) ? maskCpf(m) : m));
 }
 
-/** Nomes de tool que o cliente nunca deve ler na fala do agente. */
-const NOMES_DE_TOOL = ["buscar_cartas", "fazer_proposta", "falar_com_humano", "salvar_nome"];
+/** Nomes de tool que o cliente nunca deve ler na fala do agente.
+ *
+ * Tem que espelhar `NOMES_DAS_TOOLS_LIVRES` (tools-livres.ts) — tool nova sem
+ * entrada aqui é vazamento silencioso (L19/P274: `status_da_proposta` ficou de
+ * fora). O teste ao lado compara as duas listas. */
+const NOMES_DE_TOOL = [
+	"buscar_cartas",
+	"fazer_proposta",
+	"mostrar_card",
+	"falar_com_humano",
+	"status_da_proposta",
+	"salvar_nome",
+];
 const TOOL_LEAK = new RegExp(`\\b(${NOMES_DE_TOOL.join("|")})\\b`, "i");
 
 const JSON_KV_LINE = /^\s*"[a-z][a-z0-9_-]*"\s*:\s*.+?,?\s*$/i;
