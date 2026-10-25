@@ -1,17 +1,13 @@
-import { describe, expect, it } from "vitest";
-
 // O turno importa o banco; aqui só interessa a função pura.
-import { vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
 vi.mock("@/db", () => ({ db: {} }));
 
 describe("texto antes e depois de uma tool não cola", () => {
 	it("abre text-boundary na primeira fala depois da tool, e só ali", async () => {
 		const { criarSeparadorDeTrechos } = await import("./turno-livre");
 		const sep = criarSeparadorDeTrechos();
-		const saida = [
-			...sep.aoDelta("Ótimo conhecer você, Marcos!"),
-			...sep.aoDelta(" Vamos lá."),
-		];
+		const saida = [...sep.aoDelta("Ótimo conhecer você, Marcos!"), ...sep.aoDelta(" Vamos lá.")];
 		sep.aoToolCall();
 		saida.push(...sep.aoDelta("Então Marcos"), ...sep.aoDelta(", achei 4."));
 		expect(saida.map((e) => e.type)).toEqual([
@@ -28,5 +24,15 @@ describe("texto antes e depois de uma tool não cola", () => {
 		const sep = criarSeparadorDeTrechos();
 		sep.aoToolCall();
 		expect(sep.aoDelta("Achei 4.").map((e) => e.type)).toEqual(["text-delta"]);
+	});
+
+	it("trecho idêntico a um já solto neste turno não sai duas vezes", async () => {
+		const { criarSeparadorDeTrechos } = await import("./turno-livre");
+		const sep = criarSeparadorDeTrechos();
+		const saida = [...sep.aoDelta("Ótimo! Vou gerar sua proposta agora na Canopus.")];
+		sep.aoToolCall();
+		// A tool recusou o aceite e o modelo repetiu a mesma frase — na tela saía duplicada.
+		saida.push(...sep.aoDelta("Ótimo! Vou gerar sua proposta agora na Canopus."));
+		expect(saida.map((e) => e.type)).toEqual(["text-delta", "text-boundary"]);
 	});
 });

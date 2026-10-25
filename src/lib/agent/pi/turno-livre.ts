@@ -17,7 +17,6 @@ import { maskCpfForDisplay } from "@/lib/agent/orchestrator/contract-form-prefil
 import type { TurnEvent, TurnInput } from "@/lib/agent/orchestrator/types";
 import { scrubCpf } from "@/lib/agent/orchestrator/vazamento";
 import { executarBeat } from "@/lib/agent/pi/converse";
-import { manterUmaPergunta } from "@/lib/agent/pi/uma-pergunta";
 import { persistirTurnoLivre } from "@/lib/agent/pi/persist-livre";
 import { montarSystemDoVendedor } from "@/lib/agent/pi/system-do-vendedor";
 import { toPiTools } from "@/lib/agent/pi/tools";
@@ -27,6 +26,7 @@ import {
 	type DepsDasToolsLivres,
 	NOMES_DAS_TOOLS_LIVRES,
 } from "@/lib/agent/pi/tools-livres";
+import { manterUmaPergunta } from "@/lib/agent/pi/uma-pergunta";
 import { estadoInicialDoTurno } from "@/lib/agent/turn/estado";
 import { projectToMeta } from "@/lib/agent/turn/projecao";
 import {
@@ -130,18 +130,27 @@ export function capturarIdentidadeDoTexto(
 export function criarSeparadorDeTrechos() {
 	let falou = false;
 	let toolDesdeAFala = false;
+	const jáSoltos = new Set<string>();
+	const normalizar = (t: string) => t.toLowerCase().replace(/\s+/g, " ").trim();
 	return {
 		aoToolCall() {
 			if (falou) toolDesdeAFala = true;
 		},
-		/** Eventos a emitir para este delta, na ordem. */
+		/** Eventos a emitir para este delta, na ordem. Um trecho IDÊNTICO a um já solto
+		 * neste turno não sai: foi assim que "Ótimo! Vou gerar sua proposta agora na
+		 * Canopus." apareceu duas vezes na tela, depois de a tool recusar o aceite. */
 		aoDelta(texto: string): TurnEvent[] {
 			const eventos: TurnEvent[] = [];
 			if (toolDesdeAFala && texto.trim().length > 0) {
 				eventos.push({ type: "text-boundary" });
 				toolDesdeAFala = false;
 			}
-			if (texto.trim().length > 0) falou = true;
+			if (texto.trim().length > 0) {
+				const chave = normalizar(texto);
+				if (jáSoltos.has(chave)) return eventos;
+				jáSoltos.add(chave);
+				falou = true;
+			}
 			eventos.push({ type: "text-delta", text: texto });
 			return eventos;
 		},
@@ -218,6 +227,7 @@ export function createRunTurnLivre(deps?: {
 				lanceValue: estado.funnel.qualifyAnswers.lanceValue,
 			},
 			cards: [],
+			textoDoTurno: "",
 			cartasNaTela: [],
 			gruposRevelados: new Map(),
 			falasDoFecho: [],
@@ -271,6 +281,9 @@ export function createRunTurnLivre(deps?: {
 					// O trecho é SEGURADO até acabar (tool ou fim do beat): o verificador
 					// de "uma pergunta por mensagem" precisa do texto pronto.
 					pendente += delta;
+					// O que já foi dito neste turno — a tool de fechamento confere aqui o
+					// aviso da LGPD dado na mesma fala.
+					ctx.textoDoTurno += delta;
 				},
 				aoToolCall: (chamada) => {
 					soltarTrecho();

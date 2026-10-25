@@ -34,6 +34,12 @@ describe("skills do vendedor", () => {
 		expect(() => parseSkillBruto("sem frontmatter")).toThrow();
 	});
 
+	it("o aviso da LGPD é dito UMA vez: a skill manda não repetir", () => {
+		limparCacheDeSkills();
+		expect(skillsParaPrompt()).toMatch(/dito UMA vez na conversa/);
+		expect(skillsParaPrompt()).toMatch(/não repita/);
+	});
+
 	it("buscar-cartas manda comentar só a recomendada, sem relistar o card", () => {
 		const texto = skillsParaPrompt();
 		expect(texto).toMatch(/JÁ\s+ESTÃO NA TELA/);

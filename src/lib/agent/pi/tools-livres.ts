@@ -32,7 +32,6 @@ import {
 	type RevealGroupIndex,
 } from "@/lib/agent/orchestrator/recommendation-payload";
 import type { Category } from "@/lib/agent/personas";
-import { pisoPadraoPara } from "@/lib/agent/qualify-answers";
 import {
 	cardDeEscolha,
 	destinoDoCard,
@@ -40,6 +39,8 @@ import {
 	type PerfilDeclarado,
 	type RefDeCard,
 } from "@/lib/agent/pi/cards-livres";
+import { resolverAceiteLgpd } from "@/lib/agent/pi/lgpd";
+import { pisoPadraoPara } from "@/lib/agent/qualify-answers";
 import { type ClosingItem, realOfferPresentation } from "@/lib/bevi/closing-presentation";
 import {
 	administradoraConflictsWithRegisteredProposal,
@@ -76,7 +77,9 @@ export function paramsDaBusca(args: {
 		return { params: { category: args.categoria, parcelaAlvo: args.parcelaMensal } };
 	}
 	const alvoComEmbutido =
-		args.usaraLanceEmbutido && bem ? Math.round(bem / (1 - EMBUTIDO_DEFAULT_PERCENT / 100)) : undefined;
+		args.usaraLanceEmbutido && bem
+			? Math.round(bem / (1 - EMBUTIDO_DEFAULT_PERCENT / 100))
+			: undefined;
 	const creditMax = alvoComEmbutido ?? bem;
 	const creditMin = alvoComEmbutido
 		? Math.round(alvoComEmbutido * PISO_DO_EMBUTIDO)
@@ -111,6 +114,9 @@ export type ContextoDasTools = {
 	 * a máscara; o submit resolve a identidade cifrada no servidor. */
 	telefoneMascarado?: string | null;
 	cpfMascarado?: string | null;
+	/** Fala que o agente já escreveu NESTE turno, antes da tool: o aceite da LGPD é
+	 * conferido nela também, porque o aviso pode ser dado no mesmo turno do fechamento. */
+	textoDoTurno?: string;
 	/** Onde a tool põe o card que o driver vai emitir depois de persistir. */
 	cards: CardLivre[];
 	/** Texto do fecho (copy de produção) que acompanha o card. */
@@ -377,24 +383,31 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				return "Proposta NÃO gerada: falta o celular do cliente — o CPF já está guardado nesta conversa. Peça o celular com DDD e chame de novo.";
 			}
 
-			// O AVISO DA LGPD TEM QUE TER SIDO DITO, e o servidor confere em vez de
-			// acreditar no booleano que o modelo mandou. Sem esta checagem, o
-			// `aceiteLgpd: true` era uma afirmação do próprio modelo sobre um
-			// consentimento que ninguém registrou — e `startContract` já dispara
-			// consulta de bureau com `termoLgpd: true`.
+			// O AVISO E O ACEITE SÃO FATO CONFERIDOS NA CONVERSA INTEIRA, não na última
+			// fala do agente — o `aceiteLgpd: true` do modelo não é prova de nada, e
+			// `startContract` já dispara consulta de bureau com `termoLgpd: true`.
+			// Medido em 92dfa1ba: aviso dado dois turnos antes, no meio o agente pediu o
+			// celular; o check antigo (só a última fala) não achava o aviso, recusava, e
+			// o modelo repetia o aviso — texto duplicado na tela. Agora o aviso vale em
+			// qualquer fala do agente, um "pode" do cliente depois dele é aceite, e o
+			// aceite registrado uma vez não se pede de novo.
+			const meta = await reloadMeta(ctx.conversationId);
 			const historico = await loadConversationHistory(ctx.conversationId).catch(() => []);
-			const ultimaFalaDoAgente =
-				[...historico].reverse().find((m) => m.role === "assistant" && m.content.trim().length > 0)
-					?.content ?? "";
-			const avisoDado = /bir[oô]s?\s+de\s+cr[eé]dito|conforme a\s+LGPD/i.test(ultimaFalaDoAgente);
-			if (!avisoDado) {
-				return "Proposta NÃO gerada: o cliente ainda não recebeu o aviso da LGPD. Diga com suas palavras que a administradora consulta o CPF nos birôs de crédito e usa os dados só para isso, e só chame de novo depois do sim dele.";
+			const aceite = resolverAceiteLgpd({
+				falas: historico.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+				falaDoCliente: ctx.userText,
+				textoDoTurno: ctx.textoDoTurno ?? "",
+				aceiteJaGravado: meta.lgpdAceite ?? null,
+			});
+			if (!aceite.ok) {
+				return aceite.motivo === "aviso-nao-dado"
+					? "Proposta NÃO gerada: o aviso da LGPD ainda não foi dado nesta conversa. Dê o aviso com suas palavras (a administradora consulta o CPF nos birôs de crédito e usa os dados só para isso) e só chame de novo depois do sim do cliente."
+					: "Proposta NÃO gerada: o cliente ainda não respondeu o aviso que você já deu. Peça o aceite em uma frase, sem repetir o aviso, e só siga depois do sim dele.";
 			}
 
 			// QUEM RECUSA IDENTIDADE DA CASA É O FULFILLMENT (`startContract`), que
 			// compara com a identidade DIGITADA — não a tool. Duplicar aqui barrava
 			// até o teste de homologação, onde o "cliente" é a conta da casa.
-			const meta = await reloadMeta(ctx.conversationId);
 
 			// UMA proposta por conversa: segunda proposta em OUTRA administradora
 			// dispara nova consulta de bureau no CPF da pessoa.
@@ -419,10 +432,12 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 					creditValue: escolhida.creditValue ?? null,
 					termMonths: escolhida.termMonths ?? null,
 				} as never,
-				lgpdAceite: {
-					em: new Date().toISOString(),
-					fala: (ctx.userText ?? "").slice(0, 200),
-				} as never,
+				lgpdAceite:
+					meta.lgpdAceite ??
+					({
+						em: new Date().toISOString(),
+						fala: (ctx.userText ?? "").slice(0, 200),
+					} as never),
 			});
 			let result: Awaited<ReturnType<typeof startContract>>;
 			try {
@@ -481,7 +496,9 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 			// Recusa é TEXTO, nunca exceção: é essa fala que ensina o modelo a pedir
 			// o card certo ou a usar a tool de dado.
 			if (destino?.classe === "emitivel" && destino.origem === "escolha") {
-				if (ctx.cards.some((c) => ["quick_reply", "value_picker", "topic_picker"].includes(c.type))) {
+				if (
+					ctx.cards.some((c) => ["quick_reply", "value_picker", "topic_picker"].includes(c.type))
+				) {
 					return "Já há uma pergunta interativa neste turno. Use o card existente e espere a resposta; não faça outra pergunta.";
 				}
 				// FIX-109 (decisão do Kairo, 28/06/2026): no WhatsApp o `valuePickerToWhatsApp`
