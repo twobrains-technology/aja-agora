@@ -38,6 +38,28 @@ describe("pergunta fechada vira chip, não lista escrita no texto", () => {
 		expect(r.chip).toBeNull();
 	});
 
+	it("a sentença afirmativa antes da pergunta não vira botão (medido no dev)", () => {
+		const r = garantirChip({
+			texto:
+				"Tem mais alguma dúvida antes de a gente prosseguir com a proposta, ou quer seguir em frente?",
+			cardsDoTurno: [],
+		});
+		expect(r.chip?.payload.options.map((o) => o.label)).toEqual([
+			"Tem mais alguma dúvida",
+			"quer seguir em frente",
+		]);
+
+		const comParentese = garantirChip({
+			texto:
+				"A contemplação (quando você recebe o dinheiro) vem por sorteio. Tem dúvida, ou quer seguir?",
+			cardsDoTurno: [],
+		});
+		expect(comParentese.chip?.payload.options.map((o) => o.label)).toEqual([
+			"Tem dúvida",
+			"quer seguir",
+		]);
+	});
+
 	it("pergunta aberta não vira chip", () => {
 		const r = garantirChip({
 			texto: "Como você está vendo isso hoje?",

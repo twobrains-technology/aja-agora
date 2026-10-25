@@ -24,6 +24,14 @@ function rotulo(bruto: string): string {
 		.replace(/[?.!:;,]+$/, "");
 }
 
+/** Rótulo comprido demais para botão: corta no conector, não no meio da palavra. */
+function encurta(bruto: string): string {
+	const curto = bruto
+		.split(/\s+(?:antes de|depois de|mesmo que|pra|para|durante|enquanto)\b/)[0]
+		.trim();
+	return curto.length >= 3 ? curto : bruto.slice(0, MAXIMO_DE_ROTULO).trim();
+}
+
 /**
  * As opções de uma pergunta fechada, no texto final.
  *
@@ -45,9 +53,16 @@ export function opcoesDePerguntaFechada(texto: string): string[] {
 	// "Qual dessas faz mais sentido pra você: parcela menor por mais tempo, ou prazo mais curto?"
 	// O rótulo é o que vem DEPOIS da introdução da pergunta — senão o chip sairia com a
 	// pergunta inteira como botão.
-	const frase = texto.match(/\b([^?]{3,140}?)\?/);
+	// A PERGUNTA, não o texto todo: no dev o detector pegou uma frase afirmativa antes da
+	// pergunta ("a contemplação (quando você recebe o dinheiro) vem por sorteio ou lance") e
+	// entregou um botão com "ê recebe o dinheiro) vem por sorteio". Primeira sentença que
+	// termina em "?", parênteses fora, rótulo depois dos dois pontos.
+	const frase = texto
+		.split(/(?<=[?!.)])\s+/)
+		.map((s) => s.trim())
+		.find((s) => s.endsWith("?"));
 	if (!frase) return [];
-	let corpo = frase[1];
+	let corpo = frase.replace(/\([^)]*\)/g, "").replace(/\?$/, "");
 	if (corpo.includes(":")) corpo = corpo.slice(corpo.lastIndexOf(":") + 1);
 	const opcoesDaFrase = corpo
 		.split(/\s+ou\s+/)
@@ -57,6 +72,7 @@ export function opcoesDePerguntaFechada(texto: string): string[] {
 				"",
 			),
 		)
+		.map((o) => (o.length <= MAXIMO_DE_ROTULO ? o : encurta(o)))
 		.filter((o) => o.length >= 3 && o.length <= MAXIMO_DE_ROTULO_DE_FRASE);
 	// Uma pergunta sem "ou" não é fechada entre dois caminhos — não vira chip.
 	if (opcoesDaFrase.length < 2) return [];
