@@ -16,6 +16,7 @@ import { listShownOffersForConversation } from "@/lib/agent/orchestrator/choose-
 import { maskCpfForDisplay } from "@/lib/agent/orchestrator/contract-form-prefill";
 import type { TurnEvent, TurnInput } from "@/lib/agent/orchestrator/types";
 import { scrubCpf } from "@/lib/agent/orchestrator/vazamento";
+import { type ChipGerado, garantirChip } from "@/lib/agent/pi/chips";
 import { executarBeat } from "@/lib/agent/pi/converse";
 import { AVISO_LGPD_RE, garanteAvisoLgpd, PEDE_DADO_RE } from "@/lib/agent/pi/lgpd";
 import { persistirTurnoLivre } from "@/lib/agent/pi/persist-livre";
@@ -131,10 +132,11 @@ export function capturarIdentidadeDoTexto(
 
 /** O texto que sai no balão: CPF mascarado, aviso da LGPD antes do pedido de dado,
  * e uma pergunta por trecho. Exportado para ser testado sem banco. */
-export function montarTrechoDeSaida(args: { texto: string; avisoDado: boolean }): {
+export function montarTrechoDeSaida(args: {
 	texto: string;
-	avisoAplicado: boolean;
-} {
+	avisoDado: boolean;
+	cardsDoTurno?: readonly { type: string }[];
+}): { texto: string; avisoAplicado: boolean; chip: ChipGerado | null } {
 	const bruto = scrubCpf(args.texto);
 	let texto = bruto;
 	let avisoAplicado = false;
@@ -148,7 +150,14 @@ export function montarTrechoDeSaida(args: { texto: string; avisoDado: boolean })
 	}
 	// O aviso é a pergunta do turno: o verificador de "uma pergunta por mensagem" roda
 	// DEPOIS dele, senão o aviso é cortado como pergunta extra.
-	return { texto: manterUmaPergunta(texto), avisoAplicado };
+	const final = manterUmaPergunta(texto);
+	// Pergunta fechada sem card de escolha no turno ⇒ o chip sai do texto. O balão
+	// guarda a pergunta; a opção vira botão.
+	return {
+		texto: final,
+		avisoAplicado,
+		chip: garantirChip({ texto: final, cardsDoTurno: args.cardsDoTurno ?? [] }).chip,
+	};
 }
 
 /** Texto antes e depois de uma tool é fala DIFERENTE: sem separador o stream
@@ -307,13 +316,19 @@ export function createRunTurnLivre(deps?: {
 		// trecho — tudo em `montarTrechoDeSaida`, que é testável sem banco.
 		const soltarTrecho = () => {
 			if (!pendente) return;
-			const saida = montarTrechoDeSaida({ texto: pendente, avisoDado });
+			const saida = montarTrechoDeSaida({
+				texto: pendente,
+				avisoDado,
+				cardsDoTurno: ctx.cards,
+			});
 			avisoDado ||= saida.avisoAplicado;
 			pendente = "";
 			for (const ev of trechos.aoDelta(saida.texto)) {
 				estado = { ...estado, events: [...estado.events, ev] };
 				emitir(ev);
 			}
+			// O chip entra DEPOIS da pergunta: o cliente lê e toca, não lê a lista.
+			if (saida.chip) ctx.cards.push(saida.chip as never);
 		};
 		const executar = async () => {
 			const beat = await executarBeat({
