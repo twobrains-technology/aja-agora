@@ -9,8 +9,12 @@
 // Sem a chave → falha alto, sem fallback silencioso.
 
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { conversations } from "@/db/schema";
 import { attachContact } from "@/lib/contacts";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
+import { normalizePhoneBR } from "@/lib/leads/phone";
 
 export interface StoredIdentity {
 	cpf: string; // só dígitos
@@ -105,6 +109,39 @@ export async function storeIdentity(
 		conversationId,
 		input: { cpf: identity.cpf, phone: identity.celular },
 	});
+	await vincularCelularAoLead(conversationId, identity.celular).catch((erro: unknown) => {
+		// O telefone do LEAD é o que faz a pessoa contar como identificada no
+		// painel — mas não é o que fecha a venda: falhar aqui não pode derrubar o
+		// turno que acabou de capturar a identidade.
+		console.error("[identity] celular não chegou ao lead (ignorado):", erro);
+	});
+}
+
+/**
+ * O celular capturado no WEB também é o telefone do LEAD.
+ *
+ * Na `main` quem fazia esta ligação era o handler do gate `identify`
+ * (route.ts, `saveContactWhatsapp` logo depois de `storeIdentity`). Com o funil
+ * fora, a captura do CPF/celular passou a acontecer AQUI — e `leads.phone`
+ * ficava vazio. O painel mede exatamente isso: a métrica de identificados lê
+ * `leads.phone`/`email` (performance-queries.ts), então quem digitou o celular
+ * no chat não contava como identificado.
+ *
+ * Só no canal WEB. No WhatsApp o telefone JÁ é a conversa (`conversations.waId`,
+ * de onde a captura tirou o número) e no simulador o `waId` é o hash `SIM-…`
+ * que o fechamento usa para achar o par de teste da vitrine — sobrescrevê-lo
+ * mandaria o contrato para outro telefone.
+ */
+async function vincularCelularAoLead(conversationId: string, celular: string): Promise<void> {
+	const phone = normalizePhoneBR(celular ?? "");
+	if (!phone) return;
+	const conversa = await db.query.conversations.findFirst({
+		where: eq(conversations.id, conversationId),
+		columns: { channel: true },
+	});
+	if (conversa?.channel !== "web") return;
+	const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
+	await saveContactWhatsapp(conversationId, phone);
 }
 
 /** Carrega a identidade da conversa — null quando ainda não coletada. */
