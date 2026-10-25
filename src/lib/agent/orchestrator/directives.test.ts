@@ -1,12 +1,15 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { DESTINO_DOS_CARDS } from "@/lib/agent/pi/cards-livres";
+import { DESTINO_DOS_CARDS, montarCardDeFato } from "@/lib/agent/pi/cards-livres";
 import { NOMES_DAS_TOOLS_LIVRES } from "@/lib/agent/pi/tools-livres";
 import {
+	buildAdvanceToContractDirective,
+	buildChooseOfferDirective,
 	buildCompareFinancingDirective,
 	buildDetailDirective,
 	buildGroupSelectedDirective,
 	buildSimulateDirective,
+	buildSimulationInterestDirective,
 	buildSimulatorDialDirective,
 	buildTopicPickerAnswerDirective,
 	buildTopicPickerBackDirective,
@@ -40,7 +43,7 @@ const CLIQUES: Array<{
 	{
 		diretiva: "buildViewScenariosDirective",
 		texto: () => buildViewScenariosDirective({ administradora: "Canopus", groupId: GROUP_ID }),
-		tipo: "contemplation_dial",
+		tipo: "scenarios",
 		groupId: GROUP_ID,
 	},
 	{
@@ -83,10 +86,10 @@ describe("cliques dos cards de cálculo pedem a tool do vendedor livre (L16)", (
 		});
 	}
 
-	it("o clique de cenários não promete o card `scenarios` (sem produtor): usa o simulador de contemplação", () => {
+	it("o clique de cenários pede o card `scenarios` — o produtor determinístico existe — e não o dial", () => {
 		const texto = buildViewScenariosDirective({ administradora: "Canopus", groupId: GROUP_ID });
-		expect(texto).toContain("contemplation_dial");
-		expect(texto).not.toContain(`"scenarios"`);
+		expect(texto).toContain(`"scenarios"`);
+		expect(texto).not.toContain("contemplation_dial");
 	});
 
 	it("sem groupId o dial continua pedindo o id da carta — não inventa um grupo", () => {
@@ -103,6 +106,96 @@ describe("cliques dos cards de cálculo pedem a tool do vendedor livre (L16)", (
 		});
 		expect(texto).toContain("financing_comparison");
 		expect(texto).toContain("taxa estimada");
+	});
+});
+
+/** P143/P112/P161/P179/P181 — o clique de fechamento tem de PEDIR o formulário.
+ *
+ * Na main quem punha o `contract_form` na tela era o nó `emitCard`
+ * (`nodes/emit-card.ts:510`); no vendedor livre o card só sai do `mostrar_card`
+ * que o modelo chama. Enquanto a diretiva dizia "o sistema pede os dados logo
+ * depois da sua fala" e proibia ferramenta, o fechamento não saía do lugar: o
+ * modelo escrevia o texto do fecho e formulário nenhum aparecia.
+ *
+ * Identidade já coletada não muda a ação (o card sai como confirmação de 1
+ * clique, com o CPF mascarado) — o que a completa é `fazer_proposta`. */
+const DIRETIVAS_DE_FECHAMENTO: Array<{
+	diretiva: string;
+	texto: () => string;
+}> = [
+	{
+		diretiva: "buildAdvanceToContractDirective",
+		texto: () => buildAdvanceToContractDirective({ administradora: "Canopus" }),
+	},
+	{
+		diretiva: "buildAdvanceToContractDirective (identidade on file)",
+		texto: () =>
+			buildAdvanceToContractDirective({ administradora: "Canopus", identidadeJaColetada: true }),
+	},
+	{
+		diretiva: "buildChooseOfferDirective",
+		texto: () => buildChooseOfferDirective({ administradora: "Canopus" }),
+	},
+	{
+		diretiva: "buildChooseOfferDirective (identidade on file)",
+		texto: () =>
+			buildChooseOfferDirective({ administradora: "Canopus", identidadeJaColetada: true }),
+	},
+	{
+		diretiva: "buildSimulationInterestDirective",
+		texto: () => buildSimulationInterestDirective("Canopus"),
+	},
+];
+
+describe("o clique de fechamento pede o formulário, não espera que o sistema o abra (P143)", () => {
+	for (const fecho of DIRETIVAS_DE_FECHAMENTO) {
+		it(`${fecho.diretiva}: manda MOSTRAR o card contract_form`, () => {
+			const texto = fecho.texto();
+			expect(texto).toContain("mostrar_card");
+			expect(texto).toContain(`"contract_form"`);
+		});
+
+		it(`${fecho.diretiva}: não promete emissão automática nem proíbe a ferramenta de fechar`, () => {
+			const texto = fecho.texto();
+			expect(texto).not.toMatch(/automaticamente/i);
+			expect(texto).not.toMatch(/O sistema pede os dados/i);
+			expect(texto).not.toMatch(/N[ÃA]O chame NENHUMA tool/i);
+			expect(texto).not.toMatch(/PROIBIDO[^.]*fazer_proposta/i);
+		});
+	}
+
+	it("com a identidade já coletada, a diretiva aponta o caminho curto da proposta real", () => {
+		const texto = buildChooseOfferDirective({
+			administradora: "Canopus",
+			identidadeJaColetada: true,
+		});
+		expect(texto).toContain("fazer_proposta");
+		expect(texto).toContain("JÁ estão no sistema desta conversa");
+	});
+
+	it("sem identidade, o formulário é o que coleta os dados — e CPF nunca é pedido por texto", () => {
+		const texto = buildAdvanceToContractDirective({ administradora: "Canopus" });
+		expect(texto).toContain("coleta os dados dele");
+		expect(texto).toContain("NUNCA peça CPF por texto");
+		expect(texto).not.toContain("fazer_proposta com esse groupId");
+	});
+
+	/** A diretiva não pode pedir um card que a porta única recusa: o `contract_form`
+	 * tem de sair do montador — com a marca que autoriza o `contract-submit`. */
+	it("a instrução tem produtor: o contract_form é emitível e sai com a marca do despacho", async () => {
+		expect(DESTINO_DOS_CARDS.contract_form).toEqual({ classe: "emitivel", origem: "fato" });
+		const r = await montarCardDeFato("contract_form", {
+			conversationId: "conv-1",
+			channel: "web",
+			nomeDoCliente: null,
+			grupos: new Map(),
+			cpfMascarado: null,
+		});
+		expect(r.ok).toBe(true);
+		if (r.ok) {
+			expect(r.card.type).toBe("contract_form");
+			expect(r.metaDoTurno).toEqual({ contractFormDispatched: true });
+		}
 	});
 });
 

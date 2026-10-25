@@ -5,14 +5,31 @@ import type { ChosenOffer } from "./choose-offer";
 /** Motivo de queda do texto (o sanitizer saiu em 20/10; fica o rótulo). */
 type EphemeralDropReason = string;
 
-/** Quem desenha o formulário de contratação: o nó `emitCard` (gate `contract`,
- * determinístico — `card de apresentação` nem existe no toolset) — o modelo
- * não chama ferramenta nenhuma pra isso. */
+/** Quem põe o formulário de contratação na tela é o MODELO, pelo `mostrar_card`.
+ *
+ * L16/P143/P112: este texto dizia "o sistema pede os dados logo depois da sua
+ * fala" e proibia ferramenta. Esse produtor automático era o nó `emitCard` do
+ * runtime LangGraph (main, `nodes/emit-card.ts:510`), que morreu com o funil —
+ * no vendedor livre o card só chega à tela pelo que a tool empilha em
+ * `ctx.cards` (`pi/turno-livre.ts`), e nada mais. Com a promessa no texto, o
+ * modelo escrevia o fechamento e formulário nenhum aparecia: a conversa morria
+ * em "só preciso de uns dados rápidos".
+ *
+ * O card `contract_form` é `emitivel`/`fato` e tem montador próprio
+ * (`cards-livres.ts`, `MONTADORES_DE_CARD.contract_form`, sem exigir carta); na
+ * web ele é o que autoriza o `contract-submit` (`web/adapter.ts`,
+ * `marcarFormularioDeContratoEnviado`) e no WhatsApp é o que abre a máquina de
+ * captura do fecho (`beginContractCollection`). Sem ele, nenhum dos dois lados
+ * fecha.
+ *
+ * Com a identidade já no sistema o card sai como CONFIRMAÇÃO de 1 clique (CPF
+ * mascarado); sem ela, é o card que coleta CPF e celular. Em ambos os casos a
+ * ação é a mesma — mostrar —, porque é ela que autoriza a proposta real. */
 function instrucaoDoFormularioDeContrato(identidadeJaColetada = false): string {
 	if (identidadeJaColetada) {
-		return `Os dados dele (CPF e celular) JÁ estão no sistema desta conversa — o que falta é só a confirmação dele pra criar o pré-cadastro, e o sistema pede essa confirmação logo depois da sua fala. Você NÃO chama ferramenta nenhuma pra isso, NUNCA pede CPF por texto e NÃO pede nenhum dado que ele já passou. Não descreva a interface ("na tela", "no card"): só conduza até o sim.`;
+		return `O fechamento é SEU, não do sistema: chame mostrar_card com tipo "contract_form". Os dados dele (CPF e celular) JÁ estão no sistema desta conversa, então o card sai como CONFIRMAÇÃO de 1 clique, com o CPF mascarado — é ele que autoriza o pré-cadastro. Se ele já confirmou este plano num turno anterior e você tem o groupId da carta na tela, o caminho curto é fazer_proposta com esse groupId. Em qualquer dos dois: NUNCA peça CPF por texto, não peça nenhum dado que ele já passou e não descreva a interface ("na tela", "no card") — só conduza até o sim.`;
 	}
-	return `O sistema pede os dados logo depois da sua fala (formulário na web, mensagem no WhatsApp) — você NÃO chama ferramenta nenhuma pra isso e NUNCA pede CPF por texto. Não descreva a interface ("na tela", "no card"): só conduza.`;
+	return `O fechamento é SEU, não do sistema: chame mostrar_card com tipo "contract_form" — é esse card que coleta os dados dele (CPF e celular) e cria o pré-cadastro. NUNCA peça CPF por texto e não descreva a interface ("na tela", "no card") — só conduza.`;
 }
 
 /**
@@ -300,11 +317,13 @@ export function buildAdjustValueDirective(args: {
  * quem perguntava QUANDO seria contemplado ouvia "qual valor você quer
  * simular?", com a simulação na tela.
  *
- * O card `scenarios` (as 3 projeções conservador/provável/acelerado) NÃO tem
- * produtor no vendedor livre: `cards-livres.ts` recusa emití-lo porque a projeção
- * de prazo não tem fonte real. O que existe — e responde a mesma pergunta — é o
- * `contemplation_dial`, que mostra em que mês a contemplação chega e quanto de
- * lance cada caminho pede, com os números da carta real. */
+ * P139/P275/L17: o card `scenarios` (as 3 projeções conservador/provável/
+ * acelerado) tem produtor determinístico de volta — `DESTINO_DOS_CARDS.scenarios`
+ * é `emitivel`/`fato` e o montador (`cards-livres.ts`, `cenariosDaCarta` em
+ * `cenarios.ts`) calcula as três projeções da carta real. A diretiva, então, pede
+ * ESSE card: enquanto ela pedia o `contemplation_dial`, o botão que promete três
+ * cenários entregava outro card (o dial de um mês-alvo) e o produtor novo ficava
+ * órfão. */
 export function buildViewScenariosDirective(args: {
 	administradora: string;
 	groupId?: string;
@@ -312,9 +331,9 @@ export function buildViewScenariosDirective(args: {
 	const { administradora, groupId } = args;
 	const id = groupId ? ` (groupId="${groupId}")` : "";
 	const chamada = groupId
-		? chamadaDeCardDeFato("contemplation_dial", groupId)
-		: 'chame mostrar_card com tipo "contemplation_dial" e o groupId da carta que o cliente está olhando';
-	return `O cliente clicou "Ver cenários de contemplação" no card de simulação da "${administradora}"${id}. Ele quer saber QUANDO consegue ser contemplado e o que cada caminho exige. FLUXO: (1) uma frase curta no SEU TOM anunciando que vai mostrar os caminhos — proibido descrever números em texto, isso é o trabalho do card; (2) ${chamada} — o simulador de contemplação, com os números da carta real. NUNCA invente lance, prazo ou percentual. É estimativa, não garantia: diga isso em UMA ressalva discreta. PROIBIDO neste turno: perguntar de novo o valor, reabrir a simulação ou tratar isto como recusa.`;
+		? chamadaDeCardDeFato("scenarios", groupId)
+		: 'chame mostrar_card com tipo "scenarios" e o groupId da carta que o cliente está olhando';
+	return `O cliente clicou "Ver cenários de contemplação" no card de simulação da "${administradora}"${id}. Ele quer ver os três cenários (conservador, provável e acelerado) da carta dele. FLUXO: (1) uma frase curta no SEU TOM anunciando os cenários — proibido descrever números em texto, isso é o trabalho do card; (2) ${chamada} — o servidor calcula as três projeções a partir da carta real. NUNCA invente lance, prazo ou percentual. É estimativa, não garantia: diga isso em UMA ressalva discreta. PROIBIDO neste turno: perguntar de novo o valor, reabrir a simulação ou tratar isto como recusa.`;
 }
 
 /** D7 — clique em "Comparar com financiamento" no card de simulação. Mesma
@@ -372,7 +391,7 @@ export function buildAdvanceToContractDirective(args: {
 	// contratação real, borderline com a linha "nunca 'reservado' antes da
 	// contratação". Trocado por "garantir seu lugar" + "pré-cadastro" — nem
 	// "contratar/fechar" (FIX-216), nem "reserva" (este fix).
-	return `O usuário já viu o card de decisão e reafirmou que quer seguir. FLUXO: escreva 1-2 frases de fechamento no SEU TOM (${exemploDeFechamento({ identidadeJaColetada: args.identidadeJaColetada })}) ${instrucaoDoFormularioDeContrato(args.identidadeJaColetada)} NUNCA inicie captura de lead. NÃO chame buscar_cartas nem re-apresente os cards do reveal (group_card/recommendation_card/comparison_table).`;
+	return `O usuário já viu o card de decisão e reafirmou que quer seguir. FLUXO: (1) escreva 1-2 frases de fechamento no SEU TOM (${exemploDeFechamento({ identidadeJaColetada: args.identidadeJaColetada })}); (2) ${instrucaoDoFormularioDeContrato(args.identidadeJaColetada)} NUNCA inicie captura de lead. NÃO chame buscar_cartas nem re-apresente os cards do reveal (group_card/recommendation_card/comparison_table) — o usuário já viu o plano, re-apresentar = loop.`;
 }
 
 /** FIX-195 (P0) — o usuário ESCOLHEU uma cota no seletor do reveal e clicou
@@ -389,11 +408,14 @@ export function buildChooseOfferDirective(args: {
 	const adminFrase = administradora ? ` com a ${administradora}` : "";
 	// FIX-256 (rodada 4, veredito Fable FINAL §N-I) — mesma troca de terminologia
 	// do buildAdvanceToContractDirective: nunca "reserva" pré-contratação.
-	return `O usuário ESCOLHEU uma cota específica no seletor do reveal e quer SEGUIR com ela — a decisão JÁ está tomada e o grupo JÁ está resolvido pelo sistema (o groupId veio junto). FLUXO: escreva 1-2 frases de fechamento no SEU TOM (ex.: ${exemploDeFechamento({ identidadeJaColetada, adminFrase })}) ${instrucaoDoFormularioDeContrato(identidadeJaColetada)} PROIBIDO neste turno: chamar buscar_cartas ou fazer_proposta; re-apresentar os cards do reveal (group_card/recommendation_card/comparison_table); ou "re-resolver"/"re-buscar" o grupo — o groupId já veio resolvido, você NÃO precisa de ferramenta pra isso. NUNCA admita falha técnica nem diga que "esse grupo deu problema", que precisa "trazer os identificadores", que vai buscar de novo ou usar a ferramenta — ZERO meta-narrativa de mecanismo. NUNCA inicie captura de lead.`;
+	return `O usuário ESCOLHEU uma cota específica no seletor do reveal e quer SEGUIR com ela — a decisão JÁ está tomada e o grupo JÁ está resolvido pelo sistema (o groupId veio junto). FLUXO: (1) escreva 1-2 frases de fechamento no SEU TOM (ex.: ${exemploDeFechamento({ identidadeJaColetada, adminFrase })}); (2) ${instrucaoDoFormularioDeContrato(identidadeJaColetada)} PROIBIDO neste turno: chamar buscar_cartas ou re-apresentar os cards do reveal (group_card/recommendation_card/comparison_table) — o usuário já viu as opções, re-apresentar = loop. NUNCA admita falha técnica nem diga que "esse grupo deu problema", que precisa "trazer os identificadores" ou que vai buscar de novo — ZERO meta-narrativa de mecanismo. NUNCA inicie captura de lead.`;
 }
 
 export function buildSimulationInterestDirective(administradora: string): string {
-	return `Usuário clicou "Tenho interesse" no card de simulação do grupo "${administradora}". FLUXO: (1) escreva 1-2 frases de confirmação no SEU TOM tipo "Boa, bora seguir então. Só preciso de uns dados rápidos para confirmar sua reserva." — proibido fazer pergunta nesta frase; PROIBIDO prometer "reservar" a opção antecipadamente sem os dados, ou atendente humano (a reserva é self-service na plataforma). (2) o SISTEMA abre o formulário de contato em seguida — você não chama ferramenta nenhuma para isso. NÃO chame outras tools.`;
+	// P112/P143: mesma correção do `instrucaoDoFormularioDeContrato`. O exemplo
+	// antigo ainda dizia "confirmar sua reserva" — termo que a própria diretiva
+	// proíbe antes da contratação (FIX-256) e que o modelo copia à risca.
+	return `Usuário clicou "Tenho interesse" no card de simulação do grupo "${administradora}". FLUXO: (1) escreva 1-2 frases de confirmação no SEU TOM (ex.: ${exemploDeFechamento({})}) — proibido fazer pergunta nesta frase; PROIBIDO prometer "reservar" a opção antecipadamente sem os dados, ou atendente humano (a reserva é self-service na plataforma); (2) ${instrucaoDoFormularioDeContrato()}`;
 }
 
 export function buildDetailDirective(groupId: string): string {
