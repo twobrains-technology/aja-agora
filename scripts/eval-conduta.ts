@@ -20,8 +20,11 @@ import {
 type ConversaDoSet = { id: string; turnos: TurnoDeConversa[] };
 
 function doSetFixo(): ConversaDoSet[] {
-	const bruto = readFileSync(new URL("./eval/golden-conduta.json", import.meta.url), "utf8");
-	return JSON.parse(bruto) as ConversaDoSet[];
+	const bruto = readFileSync(new URL("./eval/golden-conduta.jsonl", import.meta.url), "utf8");
+	return bruto
+		.split("\n")
+		.filter(Boolean)
+		.map((l) => JSON.parse(l) as ConversaDoSet);
 }
 
 function idsDoArg(): string[] {
@@ -31,6 +34,11 @@ function idsDoArg(): string[] {
 		.split(",")
 		.map((s) => s.trim())
 		.filter(Boolean);
+}
+
+function extraiNumeros(payload: unknown): string[] {
+	const bruto = JSON.stringify(payload ?? "");
+	return [...new Set(bruto.match(/\d+(?:[.,]\d+)?/g) ?? [])];
 }
 
 async function doBanco(): Promise<ConversaDoSet[]> {
@@ -58,6 +66,7 @@ async function doBanco(): Promise<ConversaDoSet[]> {
 				role: m.role as "user" | "assistant",
 				content: m.content,
 				cards: (m.artifacts ?? []).map((a) => a.type),
+				valores: (m.artifacts ?? []).flatMap((a) => extraiNumeros(a.payload)),
 			})),
 		});
 	}
@@ -71,7 +80,7 @@ async function main() {
 	if (process.argv.includes("--gravar")) {
 		writeFileSync(
 			new URL("./eval/golden-conduta.jsonl", import.meta.url),
-			set.map((c) => JSON.stringify(c)).join("\n") + "\n",
+			`${set.map((c) => JSON.stringify(c)).join("\n")}\n`,
 		);
 	}
 

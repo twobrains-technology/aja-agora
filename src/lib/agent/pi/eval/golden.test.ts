@@ -60,6 +60,34 @@ describe("o jogo de regra do conduta, rodado na transcription", () => {
 		expect(comCard.some((a) => a.regra === "contexto-nao-dito")).toBe(false);
 	});
 
+	it("número que um card já mostrou é dado real, não invenção", () => {
+		const mostrada = avaliarConversa([
+			{ role: "user", content: "quero um carro", cards: [] },
+			{
+				role: "assistant",
+				content: "Achei as cartas, a menor parcela é 787,64.",
+				cards: ["comparison_table"],
+				valores: ["787.64"],
+			},
+			{ role: "user", content: "quero a da canopus", cards: [] },
+			{ role: "assistant", content: "A Canopus fica em R$ 787.", cards: [], valores: [] },
+		]);
+		expect(mostrada.filter((a) => a.regra === "contexto-nao-dito")).toEqual([]);
+
+		const inventada = avaliarConversa([
+			{ role: "user", content: "quero um carro", cards: [] },
+			{
+				role: "assistant",
+				content: "Achei as cartas.",
+				cards: ["comparison_table"],
+				valores: ["787.64"],
+			},
+			{ role: "user", content: "quero a da canopus", cards: [] },
+			{ role: "assistant", content: "A Canopus fica em R$ 890.", cards: [], valores: [] },
+		]);
+		expect(inventada.some((a) => a.regra === "contexto-nao-dito")).toBe(true);
+	});
+
 	it("card relistado em texto", () => {
 		const achados = avaliarConversa([
 			{
