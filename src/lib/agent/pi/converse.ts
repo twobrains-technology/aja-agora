@@ -8,6 +8,7 @@
 //  · o evento `tool-call` que a UI usa para mostrar o que está acontecendo;
 //  · a lista de chamadas e resultados, para o turno decidir o que virar card.
 import type { MensagemDaConversa } from "@/lib/agent/turn/estado";
+import { registrarFalhaDoLlm } from "@/lib/llm/alerta-do-llm";
 import { abrirSessao } from "./sessao";
 import type { PiToolDefinition } from "./tools";
 
@@ -37,6 +38,17 @@ export type BeatResultado = {
 	uso: { input: number; output: number };
 };
 
+/** O pi entrega a falha do provedor como TEXTO (`"<status>: <corpo>"`, formato
+ *  de `formatProviderError` do pacote). A classificação da borda lê status HTTP
+ *  e texto, então o status é reconstruído aqui — sem ele, um 429 sem a palavra
+ *  "rate limit" no corpo passaria como falha genérica. */
+function erroDoProvedor(errorMessage: string): Error & { statusCode?: number } {
+	const erro = new Error(errorMessage) as Error & { statusCode?: number };
+	const status = /^(\d{3}):\s/.exec(errorMessage);
+	if (status) erro.statusCode = Number(status[1]);
+	return erro;
+}
+
 export async function executarBeat(args: BeatArgs): Promise<BeatResultado> {
 	const { session } = await abrirSessao({
 		system: args.system,
@@ -57,7 +69,13 @@ export async function executarBeat(args: BeatArgs): Promise<BeatResultado> {
 		if (ev.type === "message_end") {
 			const msg = ev.message as { stopReason?: string; errorMessage?: string } | undefined;
 			if (msg?.stopReason === "error") {
-				console.error(`[pi] provedor falhou: ${msg.errorMessage ?? "sem mensagem"}`);
+				const mensagem = msg.errorMessage ?? "sem mensagem";
+				console.error(`[pi] provedor falhou: ${mensagem}`);
+				// O ALERTA OPERACIONAL, como na main (`chat/route.ts` → `onErrorDoStream`):
+				// log estruturado sempre e, na falha de billing, e-mail + ocorrência no
+				// Cortex com dedupe de 1 h. Não bloqueia o beat — o cliente recebe o
+				// fallback do canal de qualquer jeito, e alerta não derruba turno.
+				void registrarFalhaDoLlm(erroDoProvedor(mensagem), { origem: "pi/beat" });
 			}
 		}
 		if (ev.type === "message_update") {
