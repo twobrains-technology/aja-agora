@@ -64,6 +64,48 @@ describe("telefone × CPF — a mesma regra nos dois capturadores", () => {
 		});
 	});
 
+	it("a negação do CPF não declara o número — ele continua TELEFONE", () => {
+		// Achado 4 da pré-auditoria: o cliente RECUSA o CPF e dita o telefone na
+		// mesma fala. A palavra "cpf" mora na oração anterior, negada, e não diz
+		// nada sobre o número que vem depois dela.
+		const negacao = "não tenho cpf, meu telefone é (11) 90000-0083";
+		expect(celularEhTelefone({ digitos: AMBIGUO, texto: negacao, pedidoDeCpf: false })).toBe(true);
+		// Nem logo depois do pedido de CPF: ele está recusando o dado, e o número
+		// que ele deu é o telefone — lido como CPF, o telefone se perde e a
+		// administradora recebe um CPF que não é dele.
+		expect(celularEhTelefone({ digitos: AMBIGUO, texto: negacao, pedidoDeCpf: true })).toBe(true);
+		for (const pedidoDeCpf of [false, true]) {
+			expect(
+				decidirCpfDoTexto("não tenho cpf, meu telefone é 11900000083", { pedidoDeCpf }),
+			).toEqual({ outcome: "none" });
+			// A negação conta mesmo sem a vírgula que separa as orações.
+			expect(
+				celularEhTelefone({ digitos: AMBIGUO, texto: `não tenho cpf ${AMBIGUO}`, pedidoDeCpf }),
+			).toBe(true);
+		}
+	});
+
+	it("a declaração de CPF vale LIGADA ao número, não no texto todo", () => {
+		// A declaração colada no número vale nos dois contextos.
+		for (const pedidoDeCpf of [false, true]) {
+			expect(celularEhTelefone({ digitos: AMBIGUO, texto: `cpf: ${AMBIGUO}`, pedidoDeCpf })).toBe(
+				false,
+			);
+			expect(decidirCpfDoTexto(`meu cpf é ${AMBIGUO}`, { pedidoDeCpf })).toEqual({
+				outcome: "captured",
+				cpf: AMBIGUO,
+			});
+		}
+		// Duas identidades na MESMA fala: o "cpf" da primeira oração não declara o
+		// número da segunda, que vem anunciado como telefone.
+		const duas = `meu cpf é ${CPF}, meu telefone é ${AMBIGUO}`;
+		expect(celularEhTelefone({ digitos: AMBIGUO, texto: duas, pedidoDeCpf: false })).toBe(true);
+		expect(decidirCpfDoTexto(duas, { pedidoDeCpf: false })).toEqual({
+			outcome: "captured",
+			cpf: CPF,
+		});
+	});
+
 	it("só o pedido de CPF na última fala do agente abre o contexto", () => {
 		expect(pedidoDeCpfNoUltimoBalao({ role: "assistant", content: "qual seu CPF?" })).toBe(true);
 		expect(pedidoDeCpfNoUltimoBalao({ role: "assistant", content: "qual valor você quer?" })).toBe(

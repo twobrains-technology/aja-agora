@@ -101,19 +101,82 @@ export function ehCelularBR(digitos: string): boolean {
 	return digitos.length === 11 && digitos[2] === "9" && dddValido(digitos.slice(0, 2));
 }
 
-/** O cliente DECLAROU o dado nesta fala. CPF formatado (`111.444.777-35`)
- *  também é declaração, mas não aparece aqui: ele é reconhecido pela forma, não
- *  pela palavra. */
-function declaraCpf(text: string): boolean {
-	return /\bcpf\b/i.test(text ?? "");
+/** Palavras que NEGAM o dado logo antes da palavra "cpf": "não tenho cpf",
+ *  "sem cpf", "não sei meu cpf". Sem elas, "não tenho cpf" seria lido como
+ *  declaração e o telefone ditado na sequência viraria CPF (achado 4 da
+ *  pré-auditoria da rodada 3). */
+const NEGACAO_ANTES_DE_CPF = /\b(?:n[ãa]o|sem|nenhum|nenhuma|nunca)\b[^,.;!?\n]{0,24}$/i;
+
+/** O que a fala diz sobre o CPF: `declara` quando a palavra "cpf" aparece sem
+ *  negação (é o cliente oferecendo o dado); `nega` quando aparece negada ("não
+ *  tenho cpf", "sem cpf"). CPF formatado (`111.444.777-35`) também é
+ *  declaração, mas não passa por aqui: ele é reconhecido pela forma. */
+function ditoSobreCpf(text: string): { declara: boolean; nega: boolean } {
+	const t = text ?? "";
+	let declara = false;
+	let nega = false;
+	for (const ocorrencia of t.matchAll(/\bcpf\b/gi)) {
+		const index = ocorrencia.index ?? 0;
+		const antes = t.slice(Math.max(0, index - 40), index);
+		if (NEGACAO_ANTES_DE_CPF.test(antes)) nega = true;
+		else declara = true;
+	}
+	return { declara, nega };
+}
+
+/** O número dito como TELEFONE na mesma oração: "meu telefone é X", "meu
+ *  celular é X". `número` fica de fora de propósito — "o número do cpf é X" é
+ *  fala comum, e a declaração de CPF já vence este sinal. */
+const DECLARA_TELEFONE = /\b(?:telefone|tel|celular|whatsapp|whats|zap)\b/i;
+
+/** As orações da fala que vêm ANTES de cada passagem deste número. É o que
+ *  amarra a palavra "cpf" ao número: em "não tenho cpf, meu telefone é X" a
+ *  oração que anuncia o X é "meu telefone é", e o "cpf" negado fica para trás.
+ *  Array vazio quando o número não aparece no texto — aí não há como amarrar
+ *  nada, e quem chama decide o que fazer. */
+function oracoesAntesDoNumero(text: string, digitos: string): string[] {
+	// O número pode vir formatado ("(11) 90000-0083"): os separadores que o
+	// cliente usa entram entre os dígitos para achá-lo como ele escreveu.
+	const padrao = new RegExp(digitos.split("").join("[\\s.\\-()]*"), "g");
+	const oracoes: string[] = [];
+	for (const ocorrencia of (text ?? "").matchAll(padrao)) {
+		const antes = (text ?? "").slice(0, ocorrencia.index ?? 0);
+		const corte = Math.max(
+			...[".", ",", ";", "?", "!", "\n"].map((separador) => antes.lastIndexOf(separador)),
+		);
+		oracoes.push(antes.slice(corte + 1));
+	}
+	return oracoes;
+}
+
+/** O que a fala diz sobre ESTE número: `cpf` quando a declaração está na oração
+ *  que o anuncia, `telefone` quando é o contrário (dito como telefone, ou com o
+ *  CPF negado na mesma oração), `nenhum` quando ele não é anunciado por nada.
+ *  Número que não aparece no texto (ou aparece de um jeito que os separadores
+ *  acima não reconhecem) cai no texto TODO — é o comportamento anterior, e é o
+ *  lado que não apaga o CPF que o cliente declarou. */
+function declaracaoDoNumero(text: string, digitos: string): "cpf" | "telefone" | "nenhum" {
+	const oracoes = oracoesAntesDoNumero(text, digitos);
+	const anuncios = (oracoes.length > 0 ? oracoes : [text ?? ""]).map(ditoSobreCpf);
+	if (anuncios.some((dito) => dito.declara)) return "cpf";
+	const ditoComoTelefone = oracoes.some((oracao) => DECLARA_TELEFONE.test(oracao));
+	if (ditoComoTelefone || anuncios.some((dito) => dito.nega)) return "telefone";
+	return "nenhum";
 }
 
 /**
  * Este número pertence ao TELEFONE, e não ao CPF?
  *
  * Sim quando ele tem cara de celular e nada na fala nem no momento diz que é
- * CPF: sem a palavra "cpf" e sem o pedido do CPF ter acabado de sair. Passar no
- * dígito verificador não desempata — é coincidência em ~1% dos celulares.
+ * CPF: sem a palavra "cpf" LIGADA a ele e sem o pedido do CPF ter acabado de
+ * sair. Passar no dígito verificador não desempata — é coincidência em ~1% dos
+ * celulares.
+ *
+ * Duas coisas vencem o pedido de CPF, porque dizem o que o número é: a
+ * declaração colada nele ("meu cpf é X", "cpf: X" → CPF, mesmo sem pedido) e a
+ * fala que o anuncia como telefone ("não tenho cpf, meu telefone é X" →
+ * telefone, mesmo logo depois do pedido). Quem responde "não tenho cpf" a um
+ * pedido está recusando o dado, não mandando o telefone como CPF.
  */
 export function celularEhTelefone(args: {
 	digitos: string;
@@ -121,7 +184,10 @@ export function celularEhTelefone(args: {
 	pedidoDeCpf: boolean;
 }): boolean {
 	if (!ehCelularBR(args.digitos)) return false;
-	return !declaraCpf(args.texto) && !args.pedidoDeCpf;
+	const declaracao = declaracaoDoNumero(args.texto, args.digitos);
+	if (declaracao === "cpf") return false;
+	if (declaracao === "telefone") return true;
+	return !args.pedidoDeCpf;
 }
 
 /** Extrai um CPF VÁLIDO (11 dígitos + DV) do texto, com ou sem pontuação. Null
@@ -166,18 +232,27 @@ export type DecisaoDoCpfDoTexto =
  * cliente declarou o dado ou quando o pedido de CPF acabou de sair
  * (`pedidoDeCpf`). Nesse segundo caso, um número comprido que não fecha passa a
  * ser resposta à pergunta: "confere os números" é mais útil que mandar o
- * telefone pro modelo conversar. */
+ * telefone pro modelo conversar.
+ *
+ * Exceção: quando o número era TELEFONE, não houve tentativa de CPF — responder
+ * "esse CPF não confere" a quem acabou de recusar o CPF e ditar o telefone é
+ * acusar de errado um dado que ele nem mandou. */
 export function decidirCpfDoTexto(
 	text: string,
 	args: { pedidoDeCpf: boolean },
 ): DecisaoDoCpfDoTexto {
 	const candidates = (text ?? "").match(/\d[\d.\-\s]{9,17}\d/g) ?? [];
+	let algumTelefone = false;
 	for (const c of candidates) {
 		const digitos = c.replace(/\D/g, "");
 		if (!isValidCpf(digitos)) continue;
-		if (celularEhTelefone({ digitos, texto: text, pedidoDeCpf: args.pedidoDeCpf })) continue;
+		if (celularEhTelefone({ digitos, texto: text, pedidoDeCpf: args.pedidoDeCpf })) {
+			algumTelefone = true;
+			continue;
+		}
 		return { outcome: "captured", cpf: digitos };
 	}
+	if (algumTelefone) return { outcome: "none" };
 	if (args.pedidoDeCpf && looksLikeCpfAttempt(text)) return { outcome: "invalid" };
 	return { outcome: "none" };
 }
@@ -189,5 +264,5 @@ export function pedidoDeCpfNoUltimoBalao(
 	ultima: { role: string; content: string } | null | undefined,
 ): boolean {
 	if (!ultima || ultima.role !== "assistant") return false;
-	return declaraCpf(ultima.content ?? "");
+	return ditoSobreCpf(ultima.content ?? "").declara;
 }
