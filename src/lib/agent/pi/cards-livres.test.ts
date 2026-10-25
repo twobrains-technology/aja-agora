@@ -492,13 +492,17 @@ describe("cenários de contemplação (L17/P139) — card de FATO, calculado da 
 		expect(JSON.stringify(card.payload)).not.toContain("999999");
 	});
 
-	it("o perfil declarado chega ao cálculo: dinheiro do cliente e recusa ao embutido (L17/P139)", async () => {
-		// Caminho real: `mostrar_card` → perfil do turno → montador → `cenariosDaCarta`.
+	it("o modelo diz que o cliente recusou o embutido: nenhum cenário usa a carta como lance (L17/P139)", async () => {
+		// Caminho real: `mostrar_card` → payload do modelo → montador → `cenariosDaCarta`.
+		// É o modelo que passa `false` na recusa explícita, como a `compute_scenarios` da main.
 		const ctx = ctxVazio();
 		ctx.gruposRevelados.set(CARTA_DA_TELA.id, CARTA_DA_TELA);
-		ctx.perfilDeclarado = { lanceValue: 20_000, lanceEmbutido: false };
+		ctx.perfilDeclarado = { lanceValue: 20_000 };
 
-		await mostrarCard(ctx, "scenarios", { groupId: CARTA_DA_TELA.id });
+		await mostrarCard(ctx, "scenarios", {
+			groupId: CARTA_DA_TELA.id,
+			usarLanceEmbutido: false,
+		});
 
 		const card = ctx.cards[0];
 		expect(card?.type).toBe("scenarios");
@@ -515,10 +519,10 @@ describe("cenários de contemplação (L17/P139) — card de FATO, calculado da 
 		expect(cenarios.acelerado.ownResourcesValue).toBe(cenarios.acelerado.lanceValue);
 	});
 
-	it("sem recusa declarada o cenário continua usando o embutido", async () => {
+	it("sem o argumento o cenário é o de hoje: o dinheiro declarado entra e o embutido cobre o resto", async () => {
 		const ctx = ctxVazio();
 		ctx.gruposRevelados.set(CARTA_DA_TELA.id, CARTA_DA_TELA);
-		ctx.perfilDeclarado = { lanceValue: 5_000, lanceEmbutido: true };
+		ctx.perfilDeclarado = { lanceValue: 5_000 };
 
 		await mostrarCard(ctx, "scenarios", { groupId: CARTA_DA_TELA.id });
 
@@ -531,6 +535,46 @@ describe("cenários de contemplação (L17/P139) — card de FATO, calculado da 
 		// O dinheiro declarado entra no lance; o embutido cobre o que falta.
 		expect(provavel.ownResourcesValue).toBe(5_000);
 		expect(provavel.ownResourcesValue).toBeLessThan(provavel.lanceValue);
+	});
+
+	it("sem dinheiro declarado e com a recusa, o lance sai todo do bolso do cliente", async () => {
+		// O argumento basta sozinho: sem perfil nenhum, `false` zera o embutido nos três.
+		const ctx = ctxVazio();
+		ctx.gruposRevelados.set(CARTA_DA_TELA.id, CARTA_DA_TELA);
+
+		await mostrarCard(ctx, "scenarios", {
+			groupId: CARTA_DA_TELA.id,
+			usarLanceEmbutido: false,
+		});
+
+		const card = ctx.cards[0];
+		if (card?.type !== "scenarios") return;
+		expect(card.payload).toEqual(cenariosDaCarta(CARTA_DA_TELA, { recusouEmbutido: true }));
+		const cenarios = card.payload.scenarios as Record<
+			"conservador" | "provavel" | "acelerado",
+			{ lanceValue: number; ownResourcesValue: number }
+		>;
+		for (const cenario of Object.values(cenarios)) {
+			expect(cenario.ownResourcesValue).toBe(cenario.lanceValue);
+		}
+	});
+
+	it("só o argumento do modelo zera o embutido — a chave da qualificação não é lida", async () => {
+		// Decisão da onda 7: `qualifyAnswers.lanceEmbutido` diz "a busca foi feita sem
+		// embutido", não "o cliente recusou"; derivar dali cortaria o embutido da
+		// maioria das conversas. O nome do argumento é o da main: `usarLanceEmbutido`.
+		const ctx = ctxVazio();
+		ctx.gruposRevelados.set(CARTA_DA_TELA.id, CARTA_DA_TELA);
+		ctx.perfilDeclarado = { lanceValue: 5_000 };
+
+		await mostrarCard(ctx, "scenarios", {
+			groupId: CARTA_DA_TELA.id,
+			lanceEmbutido: false,
+		});
+
+		const card = ctx.cards[0];
+		if (card?.type !== "scenarios") return;
+		expect(card.payload).toEqual(cenariosDaCarta(CARTA_DA_TELA, { lanceDeclarado: 5_000 }));
 	});
 
 	it("sem carta conhecida o card recusa e manda buscar primeiro", async () => {

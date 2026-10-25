@@ -545,7 +545,7 @@ function descricaoDoMostrarCard(channel: "web" | "whatsapp"): string {
 		`1) Card de ESCOLHA (o payload é seu): ${escolha.map((tipo) => SHAPE_DO_CARD_DE_ESCOLHA[tipo]).join(", ")}.` +
 		semFaixasDeValor +
 		"\n\n" +
-		`2) Card de FATO (o payload é do servidor; você só diz QUAL carta e, se for o caso, o cenário): ${comCarta.join(", ")} (todos precisam de \`groupId\` copiado de buscar_cartas), e os de estado ${deEstado.join(", ")}. Payload do fato: { groupId, lancePercent?, initialTargetMonth? } — qualquer outro número que você mandar é ignorado, porque o valor vem da carta real.`
+		`2) Card de FATO (o payload é do servidor; você só diz QUAL carta e, se for o caso, o cenário): ${comCarta.join(", ")} (todos precisam de \`groupId\` copiado de buscar_cartas), e os de estado ${deEstado.join(", ")}. Payload do fato: { groupId, lancePercent?, initialTargetMonth?, usarLanceEmbutido? } — \`usarLanceEmbutido: false\` quando o cliente recusou lance embutido; qualquer outro número que você mandar é ignorado, porque o valor vem da carta real.`
 	);
 }
 
@@ -577,7 +577,7 @@ function valoresPedidos(ctx: ContextoDasTools): { valorPedido?: number; valorDoB
 	};
 }
 
-/** Do payload do modelo, só estas três chaves são lidas (ver `RefDeCard`). */
+/** Do payload do modelo, só estas quatro chaves são lidas (ver `RefDeCard`). */
 function refDoPayload(payload: Record<string, unknown>): RefDeCard {
 	const ref: RefDeCard = {};
 	if (typeof payload.groupId === "string" && payload.groupId.length > 0) {
@@ -591,6 +591,9 @@ function refDoPayload(payload: Record<string, unknown>): RefDeCard {
 		Number.isFinite(payload.initialTargetMonth)
 	) {
 		ref.initialTargetMonth = payload.initialTargetMonth;
+	}
+	if (typeof payload.usarLanceEmbutido === "boolean") {
+		ref.usarLanceEmbutido = payload.usarLanceEmbutido;
 	}
 	return ref;
 }

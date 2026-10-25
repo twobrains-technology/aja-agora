@@ -374,12 +374,17 @@ export type TipoDeFato = Exclude<TipoEmitivel, TipoDeEscolha>;
 
 /** O que o modelo pode pedir ALÉM do tipo. `groupId` é cópia literal do id que
  * `buscar_cartas` devolveu; `lancePercent`/`initialTargetMonth` são parâmetros
- * de CENÁRIO (a mesma classe de pergunta do dial: "e se eu der 30%?"), não
- * número de oferta. Nada mais é lido do payload do modelo. */
+ * de CENÁRIO (a mesma classe de pergunta do dial: "e se eu der 30%?");
+ * `usarLanceEmbutido` é FATO da fala do cliente ("não quero usar a carta como
+ * lance") — nunca número de oferta. Nada mais é lido do payload do modelo. */
 export type RefDeCard = {
 	groupId?: string;
 	lancePercent?: number;
 	initialTargetMonth?: number;
+	/** `false` quando o cliente recusou o lance embutido: é o MODELO que ouve a
+	 * recusa e passa `false` (mesmo argumento da `compute_scenarios` da main).
+	 * Ausente = comportamento de sempre, a carta cobre parte do lance. */
+	usarLanceEmbutido?: boolean;
 };
 
 /** O que o cliente DECLAROU na qualificação — prazo desejado e lance que ele tem.
@@ -388,10 +393,6 @@ export type RefDeCard = {
 export type PerfilDeclarado = {
 	prazoMeses?: number;
 	lanceValue?: number;
-	/** Resposta do cliente sobre usar parte da carta como lance. `false` é
-	 * RECUSA ao embutido: os cenários então não usam a carta como lance
-	 * (L17/P139 — `qualifyAnswers.lanceEmbutido`, gravado pela busca). */
-	lanceEmbutido?: boolean;
 };
 
 /** Tudo que um card de fato pode consultar. Quem monta é o servidor; o modelo
@@ -812,10 +813,11 @@ export const MONTADORES_DE_CARD: Record<TipoDeFato, MontadorDeCard> = {
 	},
 
 	// Os 3 cenários de contemplação são CALCULADOS da carta real (`cenarios.ts`,
-	// mesmo motor da main): do modelo vem só QUAL carta, nunca lance ou prazo. As
-	// duas opções FACTUAIS vêm do perfil declarado na qualificação — dinheiro que o
-	// cliente tem e recusa ao embutido (L17/P139) —, como a tool da main recebia
-	// `ownCashAvailable`/`usarLanceEmbutido`.
+	// mesmo motor da main): do modelo vem só QUAL carta, nunca lance ou prazo. O
+	// dinheiro que o cliente tem vem do perfil declarado na qualificação; a RECUSA
+	// ao embutido vem do argumento `usarLanceEmbutido` da tool (L17/P139), porque
+	// `qualifyAnswers.lanceEmbutido` significa "a busca foi feita sem embutido" —
+	// derivar dali cortaria o embutido da maioria das conversas.
 	scenarios: (ctx, ref) => {
 		const r = resolverGrupo(ctx, ref);
 		if (!r.ok) return r;
@@ -826,7 +828,7 @@ export const MONTADORES_DE_CARD: Record<TipoDeFato, MontadorDeCard> = {
 				payload: {
 					...cenariosDaCarta(r.grupo, {
 						lanceDeclarado: ctx.perfilDeclarado?.lanceValue,
-						recusouEmbutido: ctx.perfilDeclarado?.lanceEmbutido === false,
+						recusouEmbutido: ref.usarLanceEmbutido === false,
 					}),
 				},
 			},
