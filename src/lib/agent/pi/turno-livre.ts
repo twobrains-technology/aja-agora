@@ -23,6 +23,7 @@ import { type ChipGerado, garantirChip } from "@/lib/agent/pi/chips";
 import { executarBeat } from "@/lib/agent/pi/converse";
 import { linhaFinalDoHandoff, RE_DE_PROMESSA } from "@/lib/agent/pi/handoff";
 import { AVISO_LGPD_RE, garanteAvisoLgpd, PEDE_DADO_RE } from "@/lib/agent/pi/lgpd";
+import { criarNarracaoDoTurno } from "@/lib/agent/pi/narracao";
 import { persistirTurnoLivre } from "@/lib/agent/pi/persist-livre";
 import { custoDoTurnoCentsExatos } from "@/lib/agent/pi/precos";
 import { montarSystemDoVendedor } from "@/lib/agent/pi/system-do-vendedor";
@@ -630,6 +631,10 @@ export function createRunTurnLivre(deps?: {
 		};
 
 		const trechos = criarSeparadorDeTrechos();
+		// A GUARDA DA NARRAÇÃO (R5.1): o balão que só anuncia a ferramenta fica
+		// suspenso até o turno dizer se veio card — colado a um card ele cai, sem
+		// card ele é a fala da vez. Ver `narracao.ts`.
+		const narracaoDoTurno = criarNarracaoDoTurno();
 		let pendente = "";
 		// O aviso da LGPD é FATO DO HARNESS: se ele ainda não foi dado na conversa e a
 		// fala pede CPF ou celular, o aviso entra ANTES do pedido e o pedido fica pro
@@ -644,6 +649,13 @@ export function createRunTurnLivre(deps?: {
 		// e uma pergunta por trecho de fala.
 		// CPF mascarado, aviso da LGPD antes do pedido de dado e uma pergunta por
 		// trecho — tudo em `montarTrechoDeSaida`, que é testável sem banco.
+		/** Um balão pronto no canal: fronteira (se mudou de fala) + delta. */
+		const emitirFala = (texto: string) => {
+			for (const ev of trechos.aoDelta(texto)) {
+				estado = { ...estado, events: [...estado.events, ev] };
+				emitir(ev);
+			}
+		};
 		const soltarTrecho = () => {
 			if (!pendente) return;
 			const ehHandoff = casoAberto || RE_DE_PROMESSA.test(pendente);
@@ -663,10 +675,10 @@ export function createRunTurnLivre(deps?: {
 			avisoDado ||= saida.avisoAplicado;
 			if (ehHandoff) linhaDeHandoffEmitida = true;
 			pendente = "";
-			for (const ev of trechos.aoDelta(saida.texto)) {
-				estado = { ...estado, events: [...estado.events, ev] };
-				emitir(ev);
-			}
+			// O anúncio da ferramenta não vira balão quando o card fala por si: o
+			// que estava suspenso sai antes deste balão, e este fica suspenso
+			// (R5.1).
+			for (const texto of narracaoDoTurno.aoTexto(saida.texto)) emitirFala(texto);
 			// O chip entra DEPOIS da pergunta: o cliente lê e toca, não lê a lista.
 			if (saida.chip) ctx.cards.push(saida.chip as never);
 		};
@@ -759,6 +771,15 @@ export function createRunTurnLivre(deps?: {
 				estado = { ...estado, events: [...estado.events, ev] };
 				emitir(ev);
 			}
+			// O card fala por si (R5.1): o anúncio suspenso estava colado a ele e
+			// cai. Sem card no turno, o anúncio é a fala da vez e sai como qualquer
+			// outra — fala legítima não se perde.
+			let narracaoDescartada = false;
+			if (ctx.cards.length > 0) {
+				narracaoDescartada = narracaoDoTurno.mostrouCard();
+			} else {
+				for (const texto of narracaoDoTurno.fimDoTurno()) emitirFala(texto);
+			}
 			// O card não GRUDA na fala que o anunciou (R5.1): cada artifact abre um
 			// balão novo, como na `main` (`fechaBalao` antes do card). Sem o boundary,
 			// "deixa eu te mostrar…" e o card chegavam no MESMO balão, com o card
@@ -838,10 +859,12 @@ export function createRunTurnLivre(deps?: {
 				emitir(ev);
 			}
 
-			// Modelo sem nada a dizer não pode virar turno mudo no canal.
-			const falou = estado.events.some(
-				(ev) => ev.type === "text-delta" && ev.text.trim().length > 0,
-			);
+			// Modelo sem nada a dizer não pode virar turno mudo no canal. Turno cujo
+			// anúncio caiu não é mudo: o card é a fala dele (R5.1) — e uma linha de
+			// preenchimento ali seria só outra narração.
+			const falou =
+				narracaoDescartada ||
+				estado.events.some((ev) => ev.type === "text-delta" && ev.text.trim().length > 0);
 			if (!falou) {
 				emitir({
 					type: "text-delta",
