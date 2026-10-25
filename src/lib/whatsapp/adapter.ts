@@ -195,7 +195,11 @@ export const WHATSAPP_TEXT_GATES = new Set<Gate>([
 // `credit`/`desire` não são bloqueantes da mesma forma que `reco-consent`
 // (que trava a cascata inteira até responder — qualify-state.ts). Escopo
 // deliberadamente restrito ao gate com bug PROVADO (achado ao vivo,
-// `servicos-whatsapp`) — ver `consumeEvents` (case "gate").
+// `servicos-whatsapp`) — o `case "gate"` do `consumeEvents` foi retirado com o funil
+// (25/10/2026): o vendedor livre não emite gate, então o canal nunca mais decide
+// entrega por gate. O tipo `Gate` sobra para os handlers de clique do funil antigo,
+// que ainda recebem `replyId` por prefixo (`category_`, `lance_`, `simoffer_`) —
+// o motor livre não produz esses prefixos, e isso é limpeza da rodada seguinte.
 // VAZIO desde 2026-07-21. A exceção existia porque `modelAsked` era uma
 // heurística fraca ("o modelo terminou com ALGUMA pergunta"). Agora ele é o
 // sinal REAL do sanitizer (`hasHeldQuestion`), então manter `reco-consent` aqui
