@@ -38,6 +38,11 @@ import {
 } from "@/lib/conversation/identity";
 import { loadConversationHistory } from "@/lib/conversation/messages";
 import { metaOf } from "@/lib/conversation/meta";
+import {
+	type ArtefatoDaConversa,
+	lerCartasDaConversa,
+	restaurarCartasDaConversa,
+} from "./cartas-da-conversa";
 
 /** Identidade que o cliente digitou nesta fala — capturada no SERVIDOR, nunca
  * pelo modelo. Devolve o texto sem os números, que é o que vai para o banco, para
@@ -161,6 +166,8 @@ export function createRunTurnLivre(deps?: {
 	provider?: { id: string; baseUrl: string; apiKey: string; model: string };
 	/** Fronteira da busca — roteiro nos testes, Bevi real em produção. */
 	busca?: DepsDasToolsLivres["buscarGrupos"];
+	/** Os cards já mostrados na conversa — teste injeta, produção lê do banco. */
+	lerCartas?: (conversationId: string) => Promise<ArtefatoDaConversa[]>;
 }): (input: TurnInput) => AsyncGenerator<TurnEvent> {
 	return async function* runTurnLivreImpl(input: TurnInput): AsyncGenerator<TurnEvent> {
 		const { conversationId, channel, userText, isUserTurn, contactName } = input;
@@ -189,6 +196,15 @@ export function createRunTurnLivre(deps?: {
 				console.error("[pi-livre] identidade não gravada (ignorado):", erro);
 			});
 		}
+
+		// O ÍNDICE DE CARTAS DO TURNO nasce do que a conversa já mostrou. Antes ele
+		// era vazio fora do turno da busca: o cliente dizia "quero a da Canopus" no
+		// turno 4 e `mostrar_card` recusava ("preciso de uma carta já buscada nesta
+		// conversa"), obrigando o agente a rebuscar — o cliente via a mesma tabela de
+		// novo, e a proposta ficava ancorada numa busca refeita. Medido em 25/10/2026
+		// no dev, com navegador real (conversas 4a1af177 e 361be4f5).
+		const lerCartas = deps?.lerCartas ?? lerCartasDaConversa;
+		const cartasRestauradas = await restaurarCartasDaConversa(await lerCartas(conversationId));
 
 		let estado = estadoInicialDoTurno({
 			conversationId,
@@ -228,8 +244,8 @@ export function createRunTurnLivre(deps?: {
 			},
 			cards: [],
 			textoDoTurno: "",
-			cartasNaTela: [],
-			gruposRevelados: new Map(),
+			cartasNaTela: cartasRestauradas.cartas,
+			gruposRevelados: cartasRestauradas.grupos,
 			falasDoFecho: [],
 			pediuHumano: false,
 			estadoDepoisDaBusca: null,
