@@ -25,9 +25,12 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
-import { BeviSelfContractAdapter } from "@/lib/adapters/bevi/bevi-self-contract-adapter";
+import {
+	BeviSelfContractAdapter,
+	GroupNotInDiscoveryError,
+} from "@/lib/adapters/bevi/bevi-self-contract-adapter";
 import { BeviSelfContractClient } from "@/lib/adapters/bevi/self-contract-client";
-import type { GroupSummary, QuotaSimulation } from "@/lib/adapters/types";
+import type { AdministradoraAdapter, GroupSummary, QuotaSimulation } from "@/lib/adapters/types";
 import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
 import { listShownOffersForConversation } from "@/lib/agent/orchestrator/choose-offer";
 import {
@@ -38,10 +41,15 @@ import {
 import type { Category, ConversationMetadata } from "@/lib/agent/personas";
 import {
 	cardDeEscolha,
+	DESTINO_DOS_CARDS,
 	destinoDoCard,
+	type MetaDaEmissao,
 	montarCardDeFato,
 	type PerfilDeclarado,
 	type RefDeCard,
+	TIPOS_DE_ESCOLHA,
+	type TipoDeEscolha,
+	type TipoDeFato,
 } from "@/lib/agent/pi/cards-livres";
 import { abrirCasoNaMesa, nomeNaFala } from "@/lib/agent/pi/handoff";
 import { resolverAceiteLgpd } from "@/lib/agent/pi/lgpd";
@@ -55,7 +63,9 @@ import {
 import { prefsFromMeta } from "@/lib/bevi/discovery-session";
 import { fechoJaConcluido, type StartContractInput, startContract } from "@/lib/bevi/fulfillment";
 import { identidadeDeVitrine, vitrineDisponivel } from "@/lib/bevi/identidade-vitrine";
+import { pessoaDaConversa, ultimaPropostaDaPessoa } from "@/lib/bevi/pessoa";
 import { getLatestBeviProposal } from "@/lib/bevi/proposal-repo";
+import { checkProposalStatus, type ProposalStatusReport } from "@/lib/bevi/proposal-status";
 import type { ArtifactType } from "@/lib/chat/types";
 import { loadAdministradoraLogoMap } from "@/lib/consorcio/administradora-logo-repo";
 import { attachContact } from "@/lib/contacts";
@@ -95,6 +105,43 @@ export function paramsDaBusca(args: {
 			? pisoPadraoPara(creditMax)
 			: undefined;
 	return { params: { category: args.categoria, creditMin, creditMax }, creditMax, creditMin };
+}
+
+/** A simulação de uma carta que o adapter da venda ainda não conhece (L15/P133).
+ *
+ * `BeviSelfContractAdapter.simulateQuota` resolve a oferta pelo `offerIndex`,
+ * que só tem o que UMA busca populou naquela instância — e o turno cria um
+ * adapter novo. A carta que o cliente está vendo e que veio RESTAURADA do turno
+ * anterior (ou de antes de um deploy) chega então como
+ * `GroupNotInDiscoveryError` e o `simulation_result` não saía: o `mostrar_card`
+ * respondia "a simulação não voltou", e o cliente ouvia isso sobre uma carta na
+ * tela.
+ *
+ * A main não tinha o problema porque o adapter era POR CONVERSA. Aqui a carta
+ * restaurada carrega o que falta para repor o índice — a CATEGORIA e o valor
+ * NOMINAL da carta (`restaurarCartasDaConversa`) —, então a saída é uma busca
+ * real por esse valor, na mesma carta, e a simulação de novo. O número continua
+ * vindo da administradora; nada é estimado localmente. Se a oferta tiver
+ * expirado na Bevi, o erro sobe e o card recusa falando a verdade.
+ */
+export async function simularCotaDaCarta(args: {
+	adapter: Pick<AdministradoraAdapter, "searchGroups" | "simulateQuota">;
+	params: { groupId: string; creditValue: number };
+	/** A carta restaurada/revelada deste id — ausente, não há como repor o índice. */
+	grupo?: GroupSummary;
+}): Promise<QuotaSimulation> {
+	try {
+		return await args.adapter.simulateQuota(args.params);
+	} catch (erro) {
+		if (!(erro instanceof GroupNotInDiscoveryError) || !args.grupo) throw erro;
+		// Mesmo recorte da busca original (`paramsDaBusca`): valor do bem da carta.
+		await args.adapter.searchGroups({
+			category: args.grupo.category,
+			creditMax: args.grupo.creditValue,
+			creditMin: pisoPadraoPara(args.grupo.creditValue),
+		});
+		return await args.adapter.simulateQuota(args.params);
+	}
 }
 
 export type CartaLivre = {
@@ -141,6 +188,11 @@ export type ContextoDasTools = {
 	/** Perfil que o cliente DECLAROU na qualificação (prazo e lance) — default do
 	 * `contemplation_dial`. Preenchido pelo turno com `qualifyAnswers`. */
 	perfilDeclarado?: PerfilDeclarado;
+	/** Fato de ESTADO que a emissão de um card PROVA (ver `MetaDaEmissao`):
+	 * `contract_form` na tela autoriza o `contract-submit`. O turno lê este campo
+	 * depois do beat e grava no `estado.funnel` — sem isso o formulário aparece e
+	 * o submit é recusado (L02/P259). */
+	metaDaEmissao?: MetaDaEmissao;
 	/** Setado por `falar_com_humano`. */
 	pediuHumano: boolean;
 	/** O caso FOI aberto neste turno — o balão que sai é a linha do handoff, não a prosa do modelo. */
@@ -235,6 +287,29 @@ export function metaDepoisDaProposta(args: {
 			? { contractCollection: { stage: "offer-confirm" as const } }
 			: {}),
 	};
+}
+
+/** O status REAL da proposta — da PESSOA, não da conversa (L19/P274).
+ *
+ * Faltava no vendedor livre a resposta para a pergunta mais óbvia depois do
+ * fecho: "e a minha proposta?". As funções de status continuavam no repo, mas
+ * nenhuma tool as alcançava.
+ *
+ * A consulta é da PESSOA porque a proposta pode estar em OUTRA conversa do mesmo
+ * telefone (web `a1b2c3d4` × WhatsApp `e5f6a7b8` × a conversa onde a proposta
+ * realmente nasceu — medido em 21/09/2026). Com contato resolvido, o registro
+ * procurado é o da pessoa; sem contato, cai no da conversa, que é o certo para
+ * quem ainda não tem pessoa unificada. Quem fala com a administradora é
+ * `checkProposalStatus`: a frase pronta vem de lá, nunca do modelo.
+ */
+export async function statusDaPropostaDaPessoa(
+	conversationId: string,
+): Promise<ProposalStatusReport> {
+	const pessoa = await pessoaDaConversa(conversationId).catch(() => null);
+	const getProposalImpl = pessoa?.contactId
+		? async () => ultimaPropostaDaPessoa(pessoa.contactId)
+		: undefined;
+	return checkProposalStatus(conversationId, getProposalImpl ? { getProposalImpl } : {});
 }
 
 /** O lead da conversa, como os dados que ele precisa carregar. */
@@ -348,6 +423,66 @@ export async function garantirLeadDoFecho(
 
 const CATEGORIAS = ["auto", "moto", "imovel", "servicos"] as const;
 
+/** Os cards de ESCOLHA, com o shape do payload de cada um — o que o modelo lê. */
+const SHAPE_DO_CARD_DE_ESCOLHA: Record<TipoDeEscolha, string> = {
+	quick_reply: "`quick_reply` (payload { options: [{ label }] }, até 4 atalhos de resposta)",
+	value_picker:
+		"`value_picker` (payload { category: imovel|auto|moto, fields: [{ id, label, min, max, default }] }, faixas de valor do bem)",
+	topic_picker: "`topic_picker` (payload { topics: [...], includeBackButton })",
+};
+
+/** Os tipos de card que ESTE canal renderiza (R5.4).
+ *
+ * No WhatsApp o `value_picker` não existe: o mapeador degrada o card DE PROPÓSITO
+ * (o valor do bem é conversa — FIX-109). Oferecê-lo ao modelo ali era chamada
+ * perdida em quase toda conversa do zap: ele pedia, a tool recusava.
+ *
+ * As listas saem de `DESTINO_DOS_CARDS` (fonte única dos 22 tipos): tipo novo
+ * lá aparece aqui sozinho, e tipo que muda de classe acompanha.
+ */
+export function tiposDeCardDoCanal(channel: "web" | "whatsapp"): {
+	escolha: TipoDeEscolha[];
+	fato: TipoDeFato[];
+} {
+	const escolha = TIPOS_DE_ESCOLHA.filter(
+		(tipo) => !(channel === "whatsapp" && tipo === "value_picker"),
+	);
+	const fato = (Object.keys(DESTINO_DOS_CARDS) as Array<keyof typeof DESTINO_DOS_CARDS>).filter(
+		(tipo): tipo is TipoDeFato => {
+			const destino = DESTINO_DOS_CARDS[tipo];
+			return destino.classe === "emitivel" && destino.origem === "fato";
+		},
+	);
+	return { escolha: [...escolha], fato };
+}
+
+/** Os cards de FATO que NÃO precisam de carta: eles provam o estado da conversa. */
+const CARDS_DE_ESTADO = ["lead_form", "contract_form", "whatsapp_optin"] as const;
+
+/** A descrição do `mostrar_card` NO CANAL: a lista de tipos oferecida ao modelo é
+ * a que o canal renderiza (R5.4), e o resto da instrução é a mesma. */
+function descricaoDoMostrarCard(channel: "web" | "whatsapp"): string {
+	const { escolha, fato } = tiposDeCardDoCanal(channel);
+	const comCarta = fato.filter(
+		(tipo) => !CARDS_DE_ESTADO.includes(tipo as (typeof CARDS_DE_ESTADO)[number]),
+	);
+	const deEstado = fato.filter((tipo) =>
+		CARDS_DE_ESTADO.includes(tipo as (typeof CARDS_DE_ESTADO)[number]),
+	);
+	const semFaixasDeValor =
+		channel === "whatsapp"
+			? ' Aqui NÃO há card de faixas de valor: o valor do bem é conversa — pergunte em texto ("quanto você pensa em gastar?").'
+			: "";
+	return (
+		"Quando fizer UMA pergunta com respostas curtas e previsíveis, chame esta tool antes de escrever a pergunta. As alternativas vão somente no card; não escreva lista ou menu equivalente na fala. Espere a resposta antes de fazer outra pergunta. " +
+		"Mostra na tela um card. Há dois caminhos, e nenhum aceita número de oferta seu.\n\n" +
+		`1) Card de ESCOLHA (o payload é seu): ${escolha.map((tipo) => SHAPE_DO_CARD_DE_ESCOLHA[tipo]).join(", ")}.` +
+		semFaixasDeValor +
+		"\n\n" +
+		`2) Card de FATO (o payload é do servidor; você só diz QUAL carta e, se for o caso, o cenário): ${comCarta.join(", ")} (todos precisam de \`groupId\` copiado de buscar_cartas), e os de estado ${deEstado.join(", ")}. Payload do fato: { groupId, lancePercent?, initialTargetMonth? } — qualquer outro número que você mandar é ignorado, porque o valor vem da carta real.`
+	);
+}
+
 export type DepsDasToolsLivres = {
 	/** Fronteira da busca — injetável nos testes (Bevi real em produção). */
 	buscarGrupos?: (args: {
@@ -414,7 +549,13 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 		if (!vitrineDisponivel()) {
 			throw new Error("A identidade da casa (VITRINE_CPF/VITRINE_CELULAR) não está configurada.");
 		}
-		return adapterReal().simulateQuota(params);
+		return simularCotaDaCarta({
+			adapter: adapterReal(),
+			params,
+			// A carta restaurada é o que repõe o índice do adapter (L15): ela tem a
+			// categoria e o valor nominal que a busca precisa refazer.
+			grupo: ctx.gruposRevelados.get(params.groupId),
+		});
 	};
 
 	const buscar_cartas = tool({
@@ -714,18 +855,11 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 		},
 	});
 
+	const cardTypesDoCanal = tiposDeCardDoCanal(ctx.channel);
 	const mostrar_card = tool({
-		description:
-			"Quando fizer UMA pergunta com respostas curtas e previsíveis, chame esta tool antes de escrever a pergunta. As alternativas vão somente no card; não escreva lista ou menu equivalente na fala. Espere a resposta antes de fazer outra pergunta. " +
-			"Mostra na tela um card. Há dois caminhos, e nenhum aceita número de oferta seu.\n\n" +
-			"1) Card de ESCOLHA (o payload é seu): `quick_reply` (payload { options: [{ label }] }, até 4 atalhos de resposta), `value_picker` (payload { category: imovel|auto|moto, fields: [{ id, label, min, max, default }] }, faixas de valor do bem) e `topic_picker` (payload { topics: [...], includeBackButton }).\n\n" +
-			"2) Card de FATO (o payload é do servidor; você só diz QUAL carta e, se for o caso, o cenário): `group_card`, `recommendation_card`, `comparison_table`, `simulation_result`, `financing_comparison`, `contemplation_dial`, `embedded_bid`, `two_paths`, `scarcity`, `decision_prompt` (todos precisam de `groupId` copiado de buscar_cartas), e os de estado `lead_form`, `contract_form`, `whatsapp_optin`. Payload do fato: { groupId, lancePercent?, initialTargetMonth? } — qualquer outro número que você mandar é ignorado, porque o valor vem da carta real.",
+		description: descricaoDoMostrarCard(ctx.channel),
 		inputSchema: z.object({
-			tipo: z
-				.string()
-				.describe(
-					"quick_reply, value_picker, topic_picker, group_card, recommendation_card, comparison_table, simulation_result, financing_comparison, contemplation_dial, embedded_bid, two_paths, scarcity, lead_form, contract_form, whatsapp_optin ou decision_prompt",
-				),
+			tipo: z.string().describe([...cardTypesDoCanal.escolha, ...cardTypesDoCanal.fato].join(", ")),
 			payload: z
 				.record(z.string(), z.unknown())
 				.optional()
@@ -750,7 +884,10 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				if (args.tipo === "value_picker" && ctx.channel === "whatsapp") {
 					return 'Card NÃO mostrado: no WhatsApp as faixas de valor não aparecem na tela — aqui o valor do bem é conversa. Pergunte o valor em texto ("quanto você pensa em gastar?") e siga.';
 				}
-				const escolha = cardDeEscolha(args.tipo, payload);
+				// O `groupId` declarado pelo modelo é conferido contra as cartas que o
+				// cliente está vendo (fail-closed): id inventado cai, e o atalho leva a
+				// cota escolhida — é o que faz o clique virar escolha no WhatsApp.
+				const escolha = cardDeEscolha(args.tipo, payload, ctx.gruposRevelados);
 				if (!escolha.ok) return escolha.erro;
 				ctx.cards.push(escolha.card);
 				return `[Card ${escolha.card.type} na tela. Ele aparece para o cliente agora — não repita as opções na sua fala.]`;
@@ -772,6 +909,9 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				{ simularCota: deps.simularCota ?? simularCotaReal, logos: await logosDoTurno() },
 			);
 			if (!card.ok) return card.erro;
+			// O card na tela é FATO do turno: `contract_form` prova que o formulário foi
+			// despachado (é o que autoriza o `contract-submit`). O turno lê este campo.
+			if (card.metaDoTurno) ctx.metaDaEmissao = { ...ctx.metaDaEmissao, ...card.metaDoTurno };
 			ctx.cards.push(card.card);
 			return `[Card ${card.card.type} na tela. Ele aparece para o cliente agora — os números vieram da carta real, não os repita com outros valores.]`;
 		},
@@ -804,6 +944,13 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 		},
 	});
 
+	const status_da_proposta = tool({
+		description:
+			"Consulta o andamento REAL da proposta do cliente na administradora e devolve a frase pronta para você dizer. Use quando ele perguntar pela proposta ('e a minha proposta?', 'já saiu?', 'foi aprovada?'). A consulta é da PESSOA, pelo telefone — a proposta pode estar em outra conversa dele. Nunca diga status que esta tool não trouxe.",
+		inputSchema: z.object({}),
+		execute: async () => JSON.stringify(await statusDaPropostaDaPessoa(ctx.conversationId)),
+	});
+
 	const salvar_nome = tool({
 		description: "Salva o primeiro nome do cliente. Chame assim que ele disser o nome, uma vez só.",
 		inputSchema: z.object({ nome: z.string().min(2).max(30) }),
@@ -813,7 +960,14 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 		},
 	});
 
-	return { buscar_cartas, fazer_proposta, mostrar_card, falar_com_humano, salvar_nome };
+	return {
+		buscar_cartas,
+		fazer_proposta,
+		mostrar_card,
+		falar_com_humano,
+		status_da_proposta,
+		salvar_nome,
+	};
 }
 
 /** Itens do fecho de `fazer_proposta` → cards e falas do turno. O `type` do item
@@ -831,5 +985,6 @@ export const NOMES_DAS_TOOLS_LIVRES = [
 	"fazer_proposta",
 	"mostrar_card",
 	"falar_com_humano",
+	"status_da_proposta",
 	"salvar_nome",
 ] as const;
