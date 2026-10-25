@@ -492,6 +492,47 @@ describe("cenários de contemplação (L17/P139) — card de FATO, calculado da 
 		expect(JSON.stringify(card.payload)).not.toContain("999999");
 	});
 
+	it("o perfil declarado chega ao cálculo: dinheiro do cliente e recusa ao embutido (L17/P139)", async () => {
+		// Caminho real: `mostrar_card` → perfil do turno → montador → `cenariosDaCarta`.
+		const ctx = ctxVazio();
+		ctx.gruposRevelados.set(CARTA_DA_TELA.id, CARTA_DA_TELA);
+		ctx.perfilDeclarado = { lanceValue: 20_000, lanceEmbutido: false };
+
+		await mostrarCard(ctx, "scenarios", { groupId: CARTA_DA_TELA.id });
+
+		const card = ctx.cards[0];
+		expect(card?.type).toBe("scenarios");
+		if (card?.type !== "scenarios") return;
+		expect(card.payload).toEqual(
+			cenariosDaCarta(CARTA_DA_TELA, { lanceDeclarado: 20_000, recusouEmbutido: true }),
+		);
+		// O embutido zerado morde: em nenhum cenário a carta cobre parte do lance.
+		const cenarios = card.payload.scenarios as Record<
+			"provavel" | "acelerado",
+			{ lanceValue: number; ownResourcesValue: number }
+		>;
+		expect(cenarios.provavel.ownResourcesValue).toBe(cenarios.provavel.lanceValue);
+		expect(cenarios.acelerado.ownResourcesValue).toBe(cenarios.acelerado.lanceValue);
+	});
+
+	it("sem recusa declarada o cenário continua usando o embutido", async () => {
+		const ctx = ctxVazio();
+		ctx.gruposRevelados.set(CARTA_DA_TELA.id, CARTA_DA_TELA);
+		ctx.perfilDeclarado = { lanceValue: 5_000, lanceEmbutido: true };
+
+		await mostrarCard(ctx, "scenarios", { groupId: CARTA_DA_TELA.id });
+
+		const card = ctx.cards[0];
+		if (card?.type !== "scenarios") return;
+		expect(card.payload).toEqual(cenariosDaCarta(CARTA_DA_TELA, { lanceDeclarado: 5_000 }));
+		const provavel = (
+			card.payload.scenarios as { provavel: { lanceValue: number; ownResourcesValue: number } }
+		).provavel;
+		// O dinheiro declarado entra no lance; o embutido cobre o que falta.
+		expect(provavel.ownResourcesValue).toBe(5_000);
+		expect(provavel.ownResourcesValue).toBeLessThan(provavel.lanceValue);
+	});
+
 	it("sem carta conhecida o card recusa e manda buscar primeiro", async () => {
 		const r = await montarCardDeFato("scenarios", ctxDeFato());
 

@@ -87,7 +87,7 @@ describe("cenariosDaCarta — o mesmo cálculo da main, sobre a carta da convers
 
 	it("o lance que o cliente declarou entra como dinheiro do bolso, não como embutido", () => {
 		const semLance = cenariosDaCarta(CARTA);
-		const comLance = cenariosDaCarta(CARTA, 20_000);
+		const comLance = cenariosDaCarta(CARTA, { lanceDeclarado: 20_000 });
 
 		const esperado = computeScenarios({
 			creditValue: CARTA.creditValue,
@@ -106,6 +106,60 @@ describe("cenariosDaCarta — o mesmo cálculo da main, sobre a carta da convers
 		expect(comLance.scenarios.provavel.ownResourcesValue).not.toBe(
 			semLance.scenarios.provavel.ownResourcesValue,
 		);
+	});
+
+	it("cliente recusou o embutido: nenhum cenário usa a carta como lance (L17/P139)", () => {
+		// Comportamento da main: `usarLanceEmbutido: false` ⇒ `maxEmbutidoPct: 0`.
+		const recusou = cenariosDaCarta(CARTA, { recusouEmbutido: true });
+
+		const esperado = computeScenarios({
+			creditValue: CARTA.creditValue,
+			termMonths: CARTA.termMonths,
+			monthlyPayment: CARTA.monthlyPayment,
+			averageBid: 12_000,
+			maxEmbutidoPct: 0,
+		});
+
+		expect(recusou.scenarios).toEqual({
+			conservador: esperado.conservador,
+			provavel: esperado.provavel,
+			acelerado: esperado.acelerado,
+		});
+		// O embutido é o que cobre o lance SEM dinheiro do cliente. Zerado, tudo
+		// que o lance pede sai do bolso dele — em nenhum cenário a carta entra.
+		for (const bloco of ["provavel", "acelerado"] as const) {
+			expect(recusou.scenarios[bloco].ownResourcesValue).toBe(recusou.scenarios[bloco].lanceValue);
+		}
+	});
+
+	it("sem a recusa o embutido continua cobrindo parte do lance", () => {
+		// Controle do teste acima: é a RECUSA que zera o embutido, não o motor.
+		const semRecusa = cenariosDaCarta(CARTA, { recusouEmbutido: false });
+
+		expect(semRecusa.scenarios).toEqual(cenariosDaCarta(CARTA).scenarios);
+		expect(semRecusa.scenarios.provavel.ownResourcesValue).toBeLessThan(
+			semRecusa.scenarios.provavel.lanceValue,
+		);
+	});
+
+	it("dinheiro declarado e recusa ao embutido juntos: o lance é todo do bolso dele", () => {
+		const payload = cenariosDaCarta(CARTA, { lanceDeclarado: 20_000, recusouEmbutido: true });
+
+		const esperado = computeScenarios({
+			creditValue: CARTA.creditValue,
+			termMonths: CARTA.termMonths,
+			monthlyPayment: CARTA.monthlyPayment,
+			averageBid: 12_000,
+			ownCashAvailable: 20_000,
+			maxEmbutidoPct: 0,
+		});
+
+		expect(payload.scenarios.provavel).toEqual(esperado.provavel);
+		expect(payload.scenarios.acelerado).toEqual(esperado.acelerado);
+		expect(payload.scenarios.acelerado.ownResourcesValue).toBe(
+			payload.scenarios.acelerado.lanceValue,
+		);
+		expect(payload.scenarios.acelerado.lanceValue).toBeGreaterThan(0);
 	});
 
 	it("carta sem lance médio não inventa lance médio (D11)", () => {

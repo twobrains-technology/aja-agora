@@ -385,7 +385,14 @@ export type RefDeCard = {
 /** O que o cliente DECLAROU na qualificação — prazo desejado e lance que ele tem.
  * É o perfil que o `contemplation_dial` usa como default (FIX-C5): sem ele o
  * mês-alvo cai no fallback de 6 e o lance declarado some do card. */
-export type PerfilDeclarado = { prazoMeses?: number; lanceValue?: number };
+export type PerfilDeclarado = {
+	prazoMeses?: number;
+	lanceValue?: number;
+	/** Resposta do cliente sobre usar parte da carta como lance. `false` é
+	 * RECUSA ao embutido: os cenários então não usam a carta como lance
+	 * (L17/P139 — `qualifyAnswers.lanceEmbutido`, gravado pela busca). */
+	lanceEmbutido?: boolean;
+};
 
 /** Tudo que um card de fato pode consultar. Quem monta é o servidor; o modelo
  * nunca escreve aqui. */
@@ -805,7 +812,10 @@ export const MONTADORES_DE_CARD: Record<TipoDeFato, MontadorDeCard> = {
 	},
 
 	// Os 3 cenários de contemplação são CALCULADOS da carta real (`cenarios.ts`,
-	// mesmo motor da main): do modelo vem só QUAL carta, nunca lance ou prazo.
+	// mesmo motor da main): do modelo vem só QUAL carta, nunca lance ou prazo. As
+	// duas opções FACTUAIS vêm do perfil declarado na qualificação — dinheiro que o
+	// cliente tem e recusa ao embutido (L17/P139) —, como a tool da main recebia
+	// `ownCashAvailable`/`usarLanceEmbutido`.
 	scenarios: (ctx, ref) => {
 		const r = resolverGrupo(ctx, ref);
 		if (!r.ok) return r;
@@ -813,7 +823,12 @@ export const MONTADORES_DE_CARD: Record<TipoDeFato, MontadorDeCard> = {
 			ok: true,
 			card: {
 				type: "scenarios",
-				payload: { ...cenariosDaCarta(r.grupo, ctx.perfilDeclarado?.lanceValue) },
+				payload: {
+					...cenariosDaCarta(r.grupo, {
+						lanceDeclarado: ctx.perfilDeclarado?.lanceValue,
+						recusouEmbutido: ctx.perfilDeclarado?.lanceEmbutido === false,
+					}),
+				},
 			},
 		};
 	},

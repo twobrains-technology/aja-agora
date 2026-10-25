@@ -16,17 +16,28 @@ import { computeScenarios } from "@/lib/agent/scenarios";
 import type { ScenariosPayload } from "@/lib/chat/types";
 
 /**
- * O payload de `scenarios` para uma carta REAL da conversa.
- *
- * `lanceDeclarado` é o dinheiro que o cliente já disse ter (qualificação): ele
- * entra como recursos do próprio bolso e o embutido cobre só o que faltar —
- * mesma entrada que a tool da main passava como `ownCashAvailable`. Sem ele, o
- * motor calcula o lance inteiro pelo embutido.
+ * As opções FACTUAIS da conversa que a conta respeita. Vêm do ESTADO do turno
+ * (o que o cliente declarou), nunca do payload do modelo — é a mesma dupla que a
+ * tool `compute_scenarios` da main montava: `ownCashAvailable` + `maxEmbutidoPct`.
  */
+export type OpcoesDosCenarios = {
+	/** Dinheiro que o cliente já disse ter (qualificação). Ele entra como
+	 * recursos do próprio bolso e o embutido cobre só o que faltar; sem ele o
+	 * motor calcula o lance inteiro pelo embutido. */
+	lanceDeclarado?: number | null;
+	/** O cliente recusou o lance embutido: a carta não é fonte de lance em
+	 * NENHUM dos três cenários e o lance inteiro sai do bolso dele — na main,
+	 * `usarLanceEmbutido: false` virava `maxEmbutidoPct: 0`
+	 * (`src/lib/agent/tools/ai-sdk.ts:1946`). */
+	recusouEmbutido?: boolean;
+};
+
+/** O payload de `scenarios` para uma carta REAL da conversa. */
 export function cenariosDaCarta(
 	grupo: GroupSummary,
-	lanceDeclarado?: number | null,
+	opcoes: OpcoesDosCenarios = {},
 ): ScenariosPayload {
+	const { lanceDeclarado, recusouEmbutido } = opcoes;
 	const cenarios = computeScenarios({
 		creditValue: grupo.creditValue,
 		termMonths: grupo.termMonths,
@@ -35,6 +46,7 @@ export function cenariosDaCarta(
 		...(typeof lanceDeclarado === "number" && lanceDeclarado > 0
 			? { ownCashAvailable: lanceDeclarado }
 			: {}),
+		...(recusouEmbutido === true ? { maxEmbutidoPct: 0 } : {}),
 	});
 	return {
 		groupId: grupo.id,
