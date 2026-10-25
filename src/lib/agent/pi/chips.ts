@@ -13,6 +13,7 @@ export type ChipGerado = { type: "quick_reply"; payload: { options: { label: str
 
 const TETO_DE_OPÇÕES = 4;
 const MAXIMO_DE_ROTULO = 40;
+const MAXIMO_DE_ROTULO_DE_FRASE = 60;
 
 /** Rótulo limpo: numeração, travessão de lista e pontuação de fim fora. */
 function rotulo(bruto: string): string {
@@ -20,7 +21,7 @@ function rotulo(bruto: string): string {
 		.replace(/^\s*(?:\d+[).:]|[-*–—•])\s*/, "")
 		.replace(/\s+/g, " ")
 		.trim()
-		.replace(/[?.!:;]+$/, "");
+		.replace(/[?.!:;,]+$/, "");
 }
 
 /**
@@ -40,15 +41,25 @@ export function opcoesDePerguntaFechada(texto: string): string[] {
 		);
 	if (lista.length >= 2) return lista.slice(0, TETO_DE_OPÇÕES);
 
-	const frase = texto.match(/\b([^?]{3,40}?)\s+ou\s+([^?]{3,40}?)\?/);
+	// A forma real medida no dev é a alternativa dentro da pergunta, com pontuação:
+	// "Qual dessas faz mais sentido pra você: parcela menor por mais tempo, ou prazo mais curto?"
+	// O rótulo é o que vem DEPOIS da introdução da pergunta — senão o chip sairia com a
+	// pergunta inteira como botão.
+	const frase = texto.match(/\b([^?]{3,140}?)\?/);
 	if (!frase) return [];
-	const opcoesDaFrase = [frase[1], frase[2]].map((parte) =>
-		rotulo(parte).replace(
-			/^(?:você|vc|ele|ela)\s+(?:prefere|preferir|quer|escolhe|opta|pensa|vai|foi)\s+/i,
-			"",
-		),
-	);
-	if (opcoesDaFrase.some((o) => o.length < 3)) return [];
+	let corpo = frase[1];
+	if (corpo.includes(":")) corpo = corpo.slice(corpo.lastIndexOf(":") + 1);
+	const opcoesDaFrase = corpo
+		.split(/\s+ou\s+/)
+		.map((parte) =>
+			rotulo(parte).replace(
+				/^(?:você|vc|ele|ela)\s+(?:prefere|preferir|quer|escolhe|opta|pensa|vai|foi)\s+/i,
+				"",
+			),
+		)
+		.filter((o) => o.length >= 3 && o.length <= MAXIMO_DE_ROTULO_DE_FRASE);
+	// Uma pergunta sem "ou" não é fechada entre dois caminhos — não vira chip.
+	if (opcoesDaFrase.length < 2) return [];
 	return opcoesDaFrase;
 }
 

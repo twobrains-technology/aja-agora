@@ -22,6 +22,14 @@ describe("pergunta fechada vira chip, não lista escrita no texto", () => {
 		expect(r.chip?.payload.options[0]?.label).toBe("parcela menor");
 	});
 
+	it("a vírgula antes do «ou» não cega o detector (forma real medida no dev)", () => {
+		const texto =
+			"Qual dessas faz mais sentido pra você: parcela menor por mais tempo, ou prazo mais curto mesmo que a parcela suba?";
+		const r = garantirChip({ texto, cardsDoTurno: [] });
+		expect(r.chip?.payload.options).toHaveLength(2);
+		expect(r.chip?.payload.options[0]?.label).toBe("parcela menor por mais tempo");
+	});
+
 	it("card de escolha já mostrado no turno: nada se duplica", () => {
 		const r = garantirChip({
 			texto: "Para quando você está pensando? 1) Agora 2) Depois",

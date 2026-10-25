@@ -38,6 +38,28 @@ describe("o jogo de regra do conduta, rodado na transcription", () => {
 		expect(achados.some((a) => a.regra === "pergunta-fechada-sem-chip")).toBe(true);
 	});
 
+	it("pergunta fechada com card clicável na tela é resposta possível, não lista escrita", () => {
+		const comTabela = avaliarConversa([
+			{
+				role: "assistant",
+				content:
+					"Qual dessas faz mais sentido pra você: parcela menor por mais tempo, ou prazo mais curto mesmo que a parcela suba?",
+				cards: ["comparison_table"],
+			},
+		]);
+		expect(comTabela.filter((a) => a.regra === "pergunta-fechada-sem-chip")).toEqual([]);
+
+		const soTexto = avaliarConversa([
+			{
+				role: "assistant",
+				content:
+					"Qual dessas faz mais sentido pra você: parcela menor por mais tempo, ou prazo mais curto mesmo que a parcela suba?",
+				cards: [],
+			},
+		]);
+		expect(soTexto.some((a) => a.regra === "pergunta-fechada-sem-chip")).toBe(true);
+	});
+
 	it("dado pedido antes do aviso", () => {
 		const achados = avaliarConversa([
 			{ role: "assistant", content: "Me passa seu CPF?", cards: [] },

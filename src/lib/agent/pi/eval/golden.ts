@@ -34,7 +34,20 @@ export type Achado = {
 	evidencia: string;
 };
 
-const CARD_DE_ESCOLHA = ["quick_reply", "value_picker", "topic_picker"];
+// O que põe a ESCOLHA na tela como algo clicável. Não é só quick_reply: a comparison_table e a
+// group_card têm botão em cada linha — o cliente responde ali. A regra pergunta: a pergunta
+// fechada teve AFORDANÇA de resposta na tela, não "saiu quick_reply".
+export const CARTAO_CLICAVEL = [
+	"quick_reply",
+	"value_picker",
+	"topic_picker",
+	"comparison_table",
+	"group_card",
+	"decision_prompt",
+	"two_paths",
+	"recommendation_card",
+	"welcome_categories",
+];
 
 function normalizarPergunta(texto: string): string {
 	return texto.toLowerCase().replace(/\s+/g, " ").trim();
@@ -128,7 +141,7 @@ export function avaliarConversa(turnos: TurnoDeConversa[]): Achado[] {
 		// 2. pergunta fechada sem chip
 		if (
 			opcoesDePerguntaFechada(turno.content).length >= 2 &&
-			!turno.cards.some((c) => CARD_DE_ESCOLHA.includes(c))
+			!turno.cards.some((c) => CARTAO_CLICAVEL.includes(c))
 		) {
 			achados.push({
 				regra: "pergunta-fechada-sem-chip",

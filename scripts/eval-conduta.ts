@@ -10,9 +10,11 @@
 // conferência no dev. Saída: achado por regra + placar, pronto para colar no relatório.
 
 import { readFileSync, writeFileSync } from "node:fs";
+import { opcoesDePerguntaFechada } from "@/lib/agent/pi/chips";
 import {
 	agruparEmTurnos,
 	avaliarConversa,
+	CARTAO_CLICAVEL,
 	placar,
 	type TurnoDeConversa,
 } from "@/lib/agent/pi/eval/golden";
@@ -85,8 +87,17 @@ async function main() {
 	}
 
 	const total = placar([]);
+	let fechadas = 0;
+	let comAfordança = 0;
 	for (const c of set) {
-		const achados = avaliarConversa(agruparEmTurnos(c.turnos));
+		const turnos = agruparEmTurnos(c.turnos);
+		for (const t of turnos) {
+			if (t.role !== "assistant") continue;
+			if (opcoesDePerguntaFechada(t.content).length < 2) continue;
+			fechadas++;
+			if (t.cards.some((card) => CARTAO_CLICAVEL.includes(card))) comAfordança++;
+		}
+		const achados = avaliarConversa(turnos);
 		for (const a of achados) total[a.regra] = (total[a.regra] ?? 0) + 1;
 		if (achados.length) {
 			console.log(`\n${c.id} (${c.turnos.length} turnos)`);
@@ -96,6 +107,9 @@ async function main() {
 		}
 	}
 
+	console.log(
+		`\n=== perguntas fechadas: ${fechadas} · com afordança na tela: ${comAfordança} · só texto: ${fechadas - comAfordança} ===`,
+	);
 	console.log("\n=== placar ===");
 	for (const [regra, n] of Object.entries(total)) console.log(`${regra}: ${n}`);
 }
