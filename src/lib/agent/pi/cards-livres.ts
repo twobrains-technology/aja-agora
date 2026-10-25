@@ -15,6 +15,7 @@
 //    A/B; emitir no turno duplicaria o beat ou quebraria a medição.
 
 import type { GroupSummary, QuotaSimulation } from "@/lib/adapters/types";
+import { type ChosenOffer, coerceEscolhaNosAtalhos } from "@/lib/agent/orchestrator/choose-offer";
 import {
 	coerceDialPayload,
 	offerSnapshotFromArtifact,
@@ -141,7 +142,41 @@ function recusaDeTipo(tipo: string): ResultadoDaValidacao {
 	);
 }
 
-function validarQuickReply(payload: unknown): ResultadoDaValidacao {
+/** As cartas que o turno revelou, no shape que o conferidor de atalhos
+ * (`coerceEscolhaNosAtalhos`) entende. */
+function cotasParaAncorar(grupos: ReadonlyMap<string, GroupSummary>): ChosenOffer[] {
+	return [...grupos.values()].map((grupo) => ({
+		groupId: grupo.id,
+		...(grupo.administradora ? { administradora: grupo.administradora } : {}),
+		creditValue: grupo.creditValue,
+		termMonths: grupo.termMonths,
+		monthlyPayment: grupo.monthlyPayment,
+		...(typeof grupo.avgBidValue === "number" ? { avgBidValue: grupo.avgBidValue } : {}),
+		availableSlots: grupo.availableSlots,
+	}));
+}
+
+/**
+ * O atalho que ESCOLHE cota passa a carregar a cota (L26/P277/P161) — do mesmo
+ * jeito que a main fazia.
+ *
+ * O MODELO declara de qual cota está falando (`groupId` na opção) e o SERVIDOR
+ * confere contra as cartas REALMENTE exibidas: id inventado cai, e rótulo que
+ * aponta para outra cota cai também (`coerceEscolhaNosAtalhos`, fail-closed).
+ * Sem cartas para conferir, nada é adivinhado: o atalho volta a ser texto puro.
+ */
+function ancorarAtalhos(
+	declaradas: Array<{ label: string; groupId?: string }>,
+	grupos: ReadonlyMap<string, GroupSummary> | undefined,
+): Array<{ label: string; groupId?: string }> {
+	if (!grupos || grupos.size === 0) return declaradas.map(({ label }) => ({ label }));
+	return coerceEscolhaNosAtalhos(declaradas, cotasParaAncorar(grupos));
+}
+
+function validarQuickReply(
+	payload: unknown,
+	grupos?: ReadonlyMap<string, GroupSummary>,
+): ResultadoDaValidacao {
 	if (!ehObjeto(payload)) {
 		return recusa("Card NÃO mostrado: quick_reply precisa de payload { options: [...] }.");
 	}
@@ -156,7 +191,8 @@ function validarQuickReply(payload: unknown): ResultadoDaValidacao {
 			`Card NÃO mostrado: quick_reply aceita no máximo ${MAX_OPCOES_NO_CARD} opções — card é decisão, não menu. Ofereça as demais na conversa.`,
 		);
 	}
-	const options: Array<Record<string, unknown>> = [];
+	const declaradas: Array<{ label: string; groupId?: string }> = [];
+	const rotulos: Array<{ value?: string; emoji?: string }> = [];
 	for (const [indice, opcao] of bruto.entries()) {
 		if (!ehObjeto(opcao)) {
 			return recusa(`Card NÃO mostrado: a opção ${indice + 1} de quick_reply não é um objeto.`);
@@ -167,13 +203,22 @@ function validarQuickReply(payload: unknown): ResultadoDaValidacao {
 				`Card NÃO mostrado: a opção ${indice + 1} de quick_reply está sem \`label\` — é ele que vira o botão.`,
 			);
 		}
-		const normalizada: Record<string, unknown> = { label };
+		const groupId = textoUtil(opcao.groupId);
+		declaradas.push({ label, ...(groupId ? { groupId } : {}) });
 		const value = textoUtil(opcao.value);
-		if (value) normalizada.value = value;
 		const emoji = textoUtil(opcao.emoji);
-		if (emoji) normalizada.emoji = emoji;
-		options.push(normalizada);
+		rotulos.push({ ...(value ? { value } : {}), ...(emoji ? { emoji } : {}) });
 	}
+	// `groupId` só sobrevive à conferência; `replyId` é SEMPRE do servidor e é
+	// por ele que o clique é consumido (`click:<conversationId>:<replyId>`), então
+	// o botão some depois de usado e não volta no reload (L26/L4).
+	const conferidas = ancorarAtalhos(declaradas, grupos);
+	const options: Array<Record<string, unknown>> = conferidas.map((opcao, indice) => ({
+		label: opcao.label,
+		...rotulos[indice],
+		...(opcao.groupId ? { groupId: opcao.groupId } : {}),
+		replyId: crypto.randomUUID(),
+	}));
 	return { ok: true, payload: { options } };
 }
 
@@ -278,11 +323,17 @@ function validarTopicPicker(payload: unknown): ResultadoDaValidacao {
 }
 
 /** Valida o payload de UM card de escolha e devolve o payload já normalizado
- * (só as chaves que o componente lê — `groupId`/`replyId` são do servidor). */
-export function validarCardDeEscolha(tipo: string, payload: unknown): ResultadoDaValidacao {
+ * (só as chaves que o componente lê — `groupId`/`replyId` são conferidos e
+ * gerados AQUI, nunca no modelo). `grupos` é o que o turno revelou: sem ele, o
+ * atalho não carrega cota nenhuma. */
+export function validarCardDeEscolha(
+	tipo: string,
+	payload: unknown,
+	grupos?: ReadonlyMap<string, GroupSummary>,
+): ResultadoDaValidacao {
 	switch (tipo) {
 		case "quick_reply":
-			return validarQuickReply(payload);
+			return validarQuickReply(payload, grupos);
 		case "value_picker":
 			return validarValuePicker(payload);
 		case "topic_picker":
@@ -297,10 +348,11 @@ export function validarCardDeEscolha(tipo: string, payload: unknown): ResultadoD
 export function cardDeEscolha(
 	tipo: string,
 	payload: unknown,
+	grupos?: ReadonlyMap<string, GroupSummary>,
 ):
 	| { ok: true; card: { type: ArtifactType; payload: Record<string, unknown> } }
 	| { ok: false; erro: string } {
-	const validado = validarCardDeEscolha(tipo, payload);
+	const validado = validarCardDeEscolha(tipo, payload, grupos);
 	if (!validado.ok) return validado;
 	return { ok: true, card: { type: tipo as ArtifactType, payload: validado.payload } };
 }
@@ -365,8 +417,19 @@ export type ContextoDeFato = {
 	simulacao?: QuotaSimulation | null;
 };
 
+/** Fato de ESTADO que a EMISSÃO de certos cards prova — e que quem persiste o
+ * turno aplica na meta. `contract_form` é o caso (L02): o POST de
+ * `contract-submit` só cria proposta com `contractFormDispatched === true`
+ * (`src/app/api/chat/route.ts:1112`), e essa flag nasce quando o formulário
+ * aparece na tela, não quando o modelo diz que apareceu. */
+export type MetaDaEmissao = { contractFormDispatched?: true };
+
 export type ResultadoDoMontador =
-	| { ok: true; card: { type: ArtifactType; payload: Record<string, unknown> } }
+	| {
+			ok: true;
+			card: { type: ArtifactType; payload: Record<string, unknown> };
+			metaDoTurno?: MetaDaEmissao;
+	  }
 	| { ok: false; motivo: string };
 
 type MontadorDeCard = (ctx: ContextoDeFato, ref: RefDeCard) => ResultadoDoMontador;
@@ -715,6 +778,9 @@ export const MONTADORES_DE_CARD: Record<TipoDeFato, MontadorDeCard> = {
 					...(ctx.cpfMascarado ? { prefilledCpfMasked: ctx.cpfMascarado } : {}),
 				},
 			},
+			// O formulário ESTÁ na tela: é isto que autoriza o `contract-submit` a
+			// criar proposta real (FIX-244).
+			metaDoTurno: { contractFormDispatched: true },
 		};
 	},
 
@@ -768,7 +834,11 @@ export async function montarCardDeFato(
 	ref: RefDeCard = {},
 	deps: DepsDoCardDeFato = {},
 ): Promise<
-	| { ok: true; card: { type: ArtifactType; payload: Record<string, unknown> } }
+	| {
+			ok: true;
+			card: { type: ArtifactType; payload: Record<string, unknown> };
+			metaDoTurno?: MetaDaEmissao;
+	  }
 	| { ok: false; erro: string }
 > {
 	const destino = destinoDoCard(tipo);

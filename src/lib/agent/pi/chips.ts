@@ -6,14 +6,34 @@
 // detector roda no TEXTO FINAL de cada trecho: pergunta fechada com opções ⇒ chip.
 // Se o turno já mostrou um card de escolha, nada muda. Se as opções estão no texto,
 // elas viram `quick_reply` e o texto fica só com a pergunta.
+//
+// Duas fronteiras aprendidas na main e que aqui valem igual (L26, L33, N05):
+//  · OPÇÃO TEM MARCADOR. Lista de verdade abre cada linha com `1)`, `a)`, `-` ou
+//    `•`; duas linhas curtas em sequência são PROSA ("Fica tranquilo" / "Eu te
+//    ajudo com isso"), não menu. Sem marcador, o detector exige a alternativa
+//    escrita ("A ou B") para tratar como pergunta fechada.
+//  · O ATALHO TEM IDENTIDADE. Cada opção nasce com `replyId` gerado aqui (o
+//    servidor, nunca o modelo): é o que `quick-reply.tsx` reivindica em
+//    `/api/chat/quick-reply` (`click:<conversationId>:<replyId>`) para o botão
+//    sumir depois de usado e não voltar no reload. `groupId` — a cota que o
+//    atalho escolhe — só existe quando o MODELO declarou a cota, e é conferido
+//    contra as cartas reais em `cards-livres.ts` (fail-closed da main).
 
 const CARD_DE_ESCOLHA = ["quick_reply", "value_picker", "topic_picker"];
 
-export type ChipGerado = { type: "quick_reply"; payload: { options: { label: string }[] } };
+/** A identidade PERSISTIDA do atalho (`QuickReplyOption.replyId`, L4): gerada a
+ * cada emissão de propósito — um card repetido em outro turno recebe id novo e
+ * não nasce "já consumido". */
+export type OpcaoDeChip = { label: string; replyId: string; groupId?: string };
+
+export type ChipGerado = { type: "quick_reply"; payload: { options: OpcaoDeChip[] } };
 
 const TETO_DE_OPÇÕES = 4;
 const MAXIMO_DE_ROTULO = 40;
 const MAXIMO_DE_ROTULO_DE_FRASE = 60;
+
+/** O que faz de uma linha uma OPÇÃO: o marcador de lista, sempre no começo. */
+const MARCADOR_DE_LISTA = /^(?:\d+[).:]|[a-zA-Z][).]|[-*–—•])\s+/;
 
 /** Rótulo limpo: numeração, travessão de lista e pontuação de fim fora. */
 function rotulo(bruto: string): string {
@@ -33,21 +53,50 @@ function encurta(bruto: string): string {
 }
 
 /**
+ * A lista MARCADA do texto — e o texto sem ela.
+ *
+ * Duas linhas curtas sem marcador não chegam aqui: `null`, e o detector segue
+ * para a alternativa escrita na frase. Quando a lista vem numa linha só
+ * ("1) Agora 2) Nos próximos meses"), o pedaço sem marcador (a pergunta) volta
+ * para o balão.
+ */
+function listaDeOpcoes(texto: string): { opcoes: string[]; textoLimpo: string } | null {
+	const marcadas: string[] = [];
+	const restante: string[] = [];
+	for (const linha of texto.split(/\n+/)) {
+		const limpa = linha.trim();
+		if (!limpa) continue;
+		const partes = limpa.split(/\s+(?=\d+[).:]\s)/).map((p) => p.trim());
+		const daLista = partes.filter((p) => MARCADOR_DE_LISTA.test(p) && !p.includes("?"));
+		const foraDaLista = partes.filter((p) => !daLista.includes(p));
+		marcadas.push(...daLista);
+		if (foraDaLista.length > 0) restante.push(foraDaLista.join(" "));
+	}
+	if (marcadas.length < 2) return null;
+	const opcoes = marcadas
+		.map((m) => rotulo(m))
+		.filter((r) => r.length > 0 && r.length <= MAXIMO_DE_ROTULO)
+		.slice(0, TETO_DE_OPÇÕES);
+	if (opcoes.length < 2) return null;
+	return { opcoes, textoLimpo: restante.join("\n").trim() || texto.trim() };
+}
+
+/**
  * As opções de uma pergunta fechada, no texto final.
  *
- * Dois formatos medidos: lista (uma opção por linha ou `1) …`) e a alternativa
- * escrita na frase (`Agora ou Nos próximos meses?`). Lista manda quando existe.
+ * Dois formatos medidos: lista MARCADA (uma opção por linha ou `1) …`) e a
+ * alternativa escrita na frase (`Agora ou Nos próximos meses?`). Lista manda
+ * quando existe.
  */
 export function opcoesDePerguntaFechada(texto: string): string[] {
-	if (!texto.includes("?")) return [];
+	return detectarOpcoes(texto).opcoes;
+}
 
-	const lista = texto
-		.split(/\n+/)
-		.map((linha) => rotulo(linha))
-		.filter(
-			(linha) => linha.length > 0 && linha.length <= MAXIMO_DE_ROTULO && !linha.includes("?"),
-		);
-	if (lista.length >= 2) return lista.slice(0, TETO_DE_OPÇÕES);
+function detectarOpcoes(texto: string): { opcoes: string[]; textoLimpo: string } {
+	if (!texto.includes("?")) return { opcoes: [], textoLimpo: texto };
+
+	const daLista = listaDeOpcoes(texto);
+	if (daLista) return daLista;
 
 	// A forma real medida no dev é a alternativa dentro da pergunta, com pontuação:
 	// "Qual dessas faz mais sentido pra você: parcela menor por mais tempo, ou prazo mais curto?"
@@ -61,7 +110,7 @@ export function opcoesDePerguntaFechada(texto: string): string[] {
 		.split(/(?<=[?.!])\s+/)
 		.map((s) => s.trim())
 		.find((s) => s.endsWith("?"));
-	if (!frase) return [];
+	if (!frase) return { opcoes: [], textoLimpo: texto };
 	let corpo = frase.replace(/\([^)]*\)/g, "").replace(/\?$/, "");
 	if (corpo.includes(":")) corpo = corpo.slice(corpo.lastIndexOf(":") + 1);
 	const opcoesDaFrase = corpo
@@ -75,15 +124,17 @@ export function opcoesDePerguntaFechada(texto: string): string[] {
 		.map((o) => (o.length <= MAXIMO_DE_ROTULO ? o : encurta(o)))
 		.filter((o) => o.length >= 3 && o.length <= MAXIMO_DE_ROTULO_DE_FRASE);
 	// Uma pergunta sem "ou" não é fechada entre dois caminhos — não vira chip.
-	if (opcoesDaFrase.length < 2) return [];
-	return opcoesDaFrase;
+	if (opcoesDaFrase.length < 2) return { opcoes: [], textoLimpo: texto };
+	// A alternativa estava DENTRO da pergunta: o balão continua inteiro.
+	return { opcoes: opcoesDaFrase, textoLimpo: texto };
 }
 
 /**
  * O trecho que sai no balão e o chip que o acompanha.
  *
  * `cardsDoTurno` é o que o modelo já mostrou neste turno: se havia card de escolha,
- * o texto não é uma lista — não se duplica o chip.
+ * o texto não é uma lista — não se duplica o chip. `texto` é o balão SEM a lista
+ * que virou botão (N05): o cliente não lê a mesma opção duas vezes.
  */
 export function garantirChip(args: { texto: string; cardsDoTurno: readonly { type: string }[] }): {
 	texto: string;
@@ -93,19 +144,18 @@ export function garantirChip(args: { texto: string; cardsDoTurno: readonly { typ
 		return { texto: args.texto, chip: null };
 	}
 
-	const opcoes = opcoesDePerguntaFechada(args.texto);
+	const { opcoes, textoLimpo } = detectarOpcoes(args.texto);
 	if (opcoes.length < 2) return { texto: args.texto, chip: null };
 
-	// O texto guarda a PERGUNTA; as opções viram botão. Assim o balão não repete o
-	// que o cliente vai tocar.
-	const pergunta = args.texto
-		.split(/\n+/)
-		.filter((linha) => linha.includes("?"))
-		.join("\n")
-		.trim();
-
 	return {
-		texto: pergunta || args.texto,
-		chip: { type: "quick_reply", payload: { options: opcoes.map((label) => ({ label })) } },
+		texto: textoLimpo,
+		chip: {
+			type: "quick_reply",
+			payload: {
+				// `crypto.randomUUID` é global no runtime do servidor (mesmo id que a
+				// main gerava em `converse.ts`) — o id é do SERVIDOR, nunca do modelo.
+				options: opcoes.map((label) => ({ label, replyId: crypto.randomUUID() })),
+			},
+		},
 	};
 }

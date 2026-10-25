@@ -68,6 +68,39 @@ describe("pergunta fechada vira chip, não lista escrita no texto", () => {
 		expect(r.chip?.payload.options.map((o) => o.label)).toEqual(["Prefere o lance", "a sorteio"]);
 	});
 
+	it("prosa curta com uma pergunta no fim não vira menu (N05/L33)", () => {
+		// Duas linhas curtas são FRASES, não opções: sem marcador de lista, o que
+		// existe é uma fala seguida de pergunta aberta.
+		const r = garantirChip({
+			texto: "Claro, Marcos!\nVou te explicar como funciona a contemplação\nFaz sentido pra você?",
+			cardsDoTurno: [],
+		});
+		expect(r.chip).toBeNull();
+		expect(opcoesDePerguntaFechada("Claro!\nFaz sentido pra você?")).toEqual([]);
+	});
+
+	it("a lista marcada sai do balão, o resto da fala fica (N05)", () => {
+		const r = garantirChip({
+			texto: "Ótimo, Marcos!\nPara quando você está pensando?\n1) Agora\n2) Nos próximos meses",
+			cardsDoTurno: [],
+		});
+		expect(r.chip?.payload.options.map((o) => o.label)).toEqual(["Agora", "Nos próximos meses"]);
+		// O texto guarda a FALA; a lista virou botão.
+		expect(r.texto).toBe("Ótimo, Marcos!\nPara quando você está pensando?");
+	});
+
+	it("cada opção nasce com replyId — é por ele que o clique é consumido (L26)", () => {
+		const r = garantirChip({
+			texto: "Para quando?\n- Agora\n- Nos próximos meses",
+			cardsDoTurno: [],
+		});
+		const ids = r.chip?.payload.options.map((o) => o.replyId) ?? [];
+		expect(ids).toHaveLength(2);
+		for (const id of ids) expect(id).toMatch(/^[0-9a-f-]{36}$/);
+		// Um id por opção: dois botões nunca disputam a mesma chave de consumo.
+		expect(new Set(ids).size).toBe(2);
+	});
+
 	it("pergunta aberta não vira chip", () => {
 		const r = garantirChip({
 			texto: "Como você está vendo isso hoje?",

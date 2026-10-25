@@ -2,6 +2,7 @@
 // servidor confere. Estes testes mordem: cada recusa some se a validação
 // correspondente sair, e o card de fato (número) só sai de tool.
 import { describe, expect, it, vi } from "vitest";
+import type { GroupSummary } from "@/lib/adapters/types";
 import type { ClosingItem } from "@/lib/bevi/closing-presentation";
 
 // Identidade FIXA com CPF em claro: o que este arquivo prova é que o número não
@@ -12,9 +13,12 @@ vi.mock("@/lib/conversation/identity", async (importOriginal) => ({
 }));
 
 import {
+	type ContextoDeFato,
 	cardDeEscolha,
 	DESTINO_DOS_CARDS,
+	destinoDoCard,
 	MAX_OPCOES_NO_CARD,
+	montarCardDeFato,
 	TIPOS_DE_ESCOLHA,
 } from "./cards-livres";
 import { aplicarItensDoFecho, buildToolsLivres, type ContextoDasTools } from "./tools-livres";
@@ -61,7 +65,107 @@ describe("cardDeEscolha — quick_reply", () => {
 		expect(r.ok).toBe(true);
 		if (!r.ok) return;
 		expect(r.card.type).toBe("quick_reply");
-		expect(r.card.payload.options).toEqual([{ label: "Até 80 mil" }, { label: "Até 120 mil" }]);
+		const options = r.card.payload.options as Array<{ label: string; replyId: string }>;
+		expect(options.map((o) => o.label)).toEqual(["Até 80 mil", "Até 120 mil"]);
+	});
+
+	it("cada atalho nasce com replyId do servidor — é por ele que o clique é consumido (L26)", () => {
+		const r = cardDeEscolha("quick_reply", {
+			options: [{ label: "Sim, quero" }, { label: "Ainda não" }],
+		});
+
+		expect(r.ok).toBe(true);
+		if (!r.ok) return;
+		const ids = (r.card.payload.options as Array<{ replyId: string }>).map((o) => o.replyId);
+		expect(ids).toHaveLength(2);
+		for (const id of ids) expect(id).toMatch(/^[0-9a-f-]{36}$/);
+		expect(new Set(ids).size).toBe(2);
+	});
+
+	it("groupId do modelo só sobrevive conferido contra as cartas REAIS da tela (L26)", () => {
+		const grupos = new Map<string, GroupSummary>([
+			[
+				"cota-1",
+				{
+					id: "cota-1",
+					administradora: "Canopus",
+					category: "auto",
+					creditValue: 80_000,
+					monthlyPayment: 1_100,
+					adminFeePercent: 17,
+					termMonths: 96,
+					totalParticipants: 1_200,
+					availableSlots: 9,
+				},
+			],
+			[
+				"cota-2",
+				{
+					id: "cota-2",
+					administradora: "Canopus",
+					category: "auto",
+					creditValue: 80_000,
+					monthlyPayment: 1_400,
+					adminFeePercent: 17,
+					termMonths: 84,
+					totalParticipants: 900,
+					availableSlots: 4,
+				},
+			],
+		]);
+		const options = (r: { card: { payload: Record<string, unknown> } }) =>
+			r.card.payload.options as Array<{ label: string; groupId?: string }>;
+
+		// O rótulo BATE com a cota declarada: o id viaja e o clique vira escolha.
+		const conferido = cardDeEscolha(
+			"quick_reply",
+			{
+				options: [
+					{ label: "a de menor parcela", groupId: "cota-1" },
+					{ label: "a de prazo mais curto", groupId: "cota-2" },
+				],
+			},
+			grupos,
+		);
+		expect(conferido.ok).toBe(true);
+		if (!conferido.ok) return;
+		expect(options(conferido).map((o) => o.groupId)).toEqual(["cota-1", "cota-2"]);
+
+		// O rótulo aponta para OUTRA cota: o id cai (fail-closed da main).
+		const trocado = cardDeEscolha(
+			"quick_reply",
+			{
+				options: [
+					{ label: "a de menor parcela", groupId: "cota-2" },
+					{ label: "a de prazo mais curto", groupId: "cota-1" },
+				],
+			},
+			grupos,
+		);
+		expect(trocado.ok).toBe(true);
+		if (!trocado.ok) return;
+		expect(options(trocado).map((o) => o.groupId)).toEqual([undefined, undefined]);
+
+		// Grupo inventado, cota não exibida: id nenhum no payload.
+		const inventado = cardDeEscolha(
+			"quick_reply",
+			{ options: [{ label: "A primeira", groupId: "cota-fantasma" }, { label: "A segunda" }] },
+			grupos,
+		);
+		expect(inventado.ok).toBe(true);
+		if (!inventado.ok) return;
+		expect(options(inventado).map((o) => o.groupId)).toEqual([undefined, undefined]);
+
+		// Sem cartas no turno, nada é adivinhado.
+		const semCartas = cardDeEscolha("quick_reply", {
+			options: [
+				{ label: "a de menor parcela", groupId: "cota-1" },
+				{ label: "a de prazo mais curto", groupId: "cota-2" },
+			],
+		});
+		expect(semCartas.ok).toBe(true);
+		if (!semCartas.ok) return;
+		expect(options(semCartas).map((o) => o.groupId)).toEqual([undefined, undefined]);
 	});
 
 	it("lista vazia de opções é recusada e não produz card", () => {
@@ -241,12 +345,19 @@ describe("mostrar_card no WhatsApp — FIX-109, o value_picker não sai", () => 
 	});
 
 	it("quick_reply e topic_picker continuam valendo no WhatsApp (o formatter renderiza)", async () => {
-		const ctx = { ...ctxVazio(), channel: "whatsapp" as const };
+		const doWhatsApp = () => ({ ...ctxVazio(), channel: "whatsapp" as const });
 
-		await mostrarCard(ctx, "quick_reply", { options: [{ label: "Sim" }] });
-		await mostrarCard(ctx, "topic_picker", { topics: ["Prazo"], includeBackButton: true });
+		// Um card interativo por turno (o segundo é recusado de propósito), então
+		// cada tipo é provado no seu turno.
+		const atalhos = doWhatsApp();
+		await mostrarCard(atalhos, "quick_reply", { options: [{ label: "Sim" }] });
+		const topicos = doWhatsApp();
+		await mostrarCard(topicos, "topic_picker", { topics: ["Prazo"], includeBackButton: true });
 
-		expect(ctx.cards.map((c) => c.type)).toEqual(["quick_reply", "topic_picker"]);
+		expect([...atalhos.cards, ...topicos.cards].map((c) => c.type)).toEqual([
+			"quick_reply",
+			"topic_picker",
+		]);
 	});
 });
 
@@ -310,5 +421,78 @@ describe("fecho do fazer_proposta — o tipo do item é respeitado", () => {
 		expect(ctx.cards).toEqual([
 			{ type: "signature_handoff", payload: { proposalUrl: "https://x" } },
 		]);
+	});
+});
+
+const CARTA_DA_TELA: GroupSummary = {
+	id: "cota-1",
+	administradora: "Canopus",
+	category: "auto",
+	creditValue: 80_000,
+	monthlyPayment: 1_234.56,
+	adminFeePercent: 17,
+	termMonths: 96,
+	totalParticipants: 1_200,
+	availableSlots: 9,
+	grupo: "70035",
+};
+
+function ctxDeFato(over: Partial<ContextoDeFato> = {}): ContextoDeFato {
+	return {
+		conversationId: "conv-fato",
+		channel: "web",
+		nomeDoCliente: "Marina",
+		grupos: new Map(),
+		cpfMascarado: null,
+		...over,
+	};
+}
+
+describe("contract_form — a flag que autoriza o contract-submit (L02)", () => {
+	it("o card de formulário carrega contractFormDispatched para a persistência", async () => {
+		const r = await montarCardDeFato("contract_form", ctxDeFato());
+
+		expect(r.ok).toBe(true);
+		if (!r.ok) return;
+		expect(r.card.type).toBe("contract_form");
+		// Sem esta flag, `src/app/api/chat/route.ts:1112` recusa o submit — e a
+		// proposta real nunca nasce.
+		expect(r.metaDoTurno).toEqual({ contractFormDispatched: true });
+	});
+
+	it("os outros cards de fato não mexem na meta do turno", async () => {
+		const r = await montarCardDeFato("lead_form", ctxDeFato());
+
+		expect(r.ok).toBe(true);
+		if (!r.ok) return;
+		expect(r.metaDoTurno).toBeUndefined();
+	});
+});
+
+describe("cenários de contemplação (L17) — o caminho é o dial, não um card de premissa", () => {
+	it("scenarios segue fora do motor, com o motivo escrito", () => {
+		// Os 3 cenários da main (0% / 20% / 30% de lance) são PREMISSA fixa de
+		// mercado, não número de fonte real. Emitir isso seria o modelo inventando
+		// lance — a mesma linha que separa consultoria de venda enganosa.
+		const destino = destinoDoCard("scenarios");
+
+		expect(destino?.classe).toBe("fora-do-motor");
+		if (destino?.classe !== "fora-do-motor") return;
+		expect(destino.motivo).toContain("projeção de prazo");
+	});
+
+	it("a pergunta que o card respondia ('quando contemplo e o que cada caminho exige') sai do dial", async () => {
+		const r = await montarCardDeFato(
+			"contemplation_dial",
+			ctxDeFato({ grupos: new Map([[CARTA_DA_TELA.id, CARTA_DA_TELA]]) }),
+			{ initialTargetMonth: 12 },
+		);
+
+		expect(r.ok).toBe(true);
+		if (!r.ok) return;
+		// Os números são os da CARTA REAL; o mês-alvo é o que o cliente pediu.
+		expect(r.card.payload.creditValue).toBe(80_000);
+		expect(r.card.payload.termMonths).toBe(96);
+		expect(r.card.payload.initialTargetMonth).toBe(12);
 	});
 });
