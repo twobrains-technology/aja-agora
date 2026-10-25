@@ -38,11 +38,20 @@ export function restaurarCartasDaConversa(artefatos: readonly ArtefatoDaConversa
 			const cart = numero(linha.creditValue);
 			const parcela = numero(linha.monthlyPayment);
 			const prazo = numero(linha.termMonths);
+			if (cart == null || parcela == null || prazo == null) continue;
 			// Um card sem número real não restaura nada: é o mesmo contrato de
 			// `isUsableGroup` — linha fabricada não entra na tela nem na proposta.
 			if (!(cart > 0 && parcela > 0 && prazo > 0)) continue;
 			const administradora = texto(linha.administradora);
 			if (!administradora) continue;
+
+			const ofertaId = texto(linha.ofertaId);
+			// O lance médio é fato OPCIONAL do grupo: o card do hero e o dial o exibem
+			// (recommendation-card.tsx, contemplation-dial.tsx). Se ele estava no
+			// payload que o cliente viu, tem de sobreviver à restauração — senão o card
+			// do turno seguinte mostra a mesma carta SEM a âncora de lance. Ausente no
+			// payload → ausente aqui (nunca fabricar lance).
+			const avgBidValue = numero(linha.avgBidValue);
 
 			grupos.set(id, {
 				id,
@@ -50,10 +59,15 @@ export function restaurarCartasDaConversa(artefatos: readonly ArtefatoDaConversa
 				category: (texto(linha.category) as GroupSummary["category"]) ?? "auto",
 				creditValue: cart,
 				monthlyPayment: parcela,
-				adminFeePercent: numero(linha.adminFeePercent),
+				adminFeePercent: numero(linha.adminFeePercent) ?? 0,
 				termMonths: prazo,
-				totalParticipants: numero(linha.totalParticipants),
-				availableSlots: numero(linha.contempladosMes) ?? numero(linha.availableSlots),
+				totalParticipants: numero(linha.totalParticipants) ?? 0,
+				// `contempladosMes` é o nome que o card usa; `availableSlots` é o campo
+				// cru do reveal. O fallback só funciona com `numero` devolvendo undefined
+				// quando o campo não veio — com zero ele nunca acontece.
+				availableSlots: numero(linha.contempladosMes) ?? numero(linha.availableSlots) ?? 0,
+				...(ofertaId ? { ofertaId } : {}),
+				...(avgBidValue != null ? { avgBidValue } : {}),
 			});
 		}
 	}
@@ -82,7 +96,10 @@ function linhasDoArtefato(payload: Record<string, unknown>): Record<string, unkn
 
 const texto = (v: unknown): string | undefined =>
 	typeof v === "string" && v.length > 0 ? v : undefined;
-const numero = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+/** Número REAL do payload — `undefined` quando o campo não veio (nunca zero no
+ * lugar de ausente: é o que permite o fallback entre campos). */
+const numero = (v: unknown): number | undefined =>
+	typeof v === "number" && Number.isFinite(v) ? v : undefined;
 
 /** Lê os artifacts da conversa (join com messages) e devolve o que restaura o índice. */
 export async function lerCartasDaConversa(conversationId: string): Promise<ArtefatoDaConversa[]> {

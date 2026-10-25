@@ -9,6 +9,8 @@ import { buildToolsLivres, type ContextoDasTools } from "./tools-livres";
  * O cast é só para o teste chamar do jeito que o harness chama. */
 type ExecutarTool = (input: { tipo: string; payload?: Record<string, unknown> }) => Promise<string>;
 
+const CANOPUS = "6abfaeca-0000-0000-0000-0000000074cc";
+
 /** O que o turno 2 deixou no banco: a tabela que o cliente viu, com os números REAIS. */
 const ARTEFATO_DO_TURNO_2 = {
 	type: "comparison_table",
@@ -40,7 +42,37 @@ const ARTEFATO_DO_TURNO_2 = {
 	},
 };
 
-const CANOPUS = "6abfaeca-0000-0000-0000-0000000074cc";
+/** O dial do turno 3: a carta da Canopus COM a âncora de lance médio real. */
+const ARTEFATO_DO_DIAL = {
+	type: "contemplation_dial",
+	payload: {
+		groupId: CANOPUS,
+		administradora: "Canopus",
+		category: "auto",
+		creditValue: 60000,
+		monthlyPayment: 910,
+		termMonths: 48,
+		availableSlots: 15,
+		avgBidValue: 21000,
+		ofertaId: "oferta-canopus-sessao",
+		initialTargetMonth: 12,
+	},
+};
+
+/** Payload que só traz `availableSlots` (sem `contempladosMes`): a contagem real
+ * não pode virar zero no caminho de restauração. */
+const ARTEFATO_SO_COM_AVAILABLE_SLOTS = {
+	type: "group_card",
+	payload: {
+		id: CANOPUS,
+		administradora: "Canopus",
+		category: "auto",
+		creditValue: 60000,
+		monthlyPayment: 910,
+		termMonths: 48,
+		availableSlots: 15,
+	},
+};
 
 function ctxComCartas(cartas: { grupos: Map<string, GroupSummary>; cartas: CartaLivre[] }) {
 	return {
@@ -101,6 +133,53 @@ describe("cartas da conversa — o que o cliente já viu continua na tela no tur
 			payload: { groupId: CANOPUS },
 		});
 		expect(String(r)).toContain("Card NÃO mostrado");
+	});
+
+	it("preserva o lance médio real da carta que o cliente já viu", () => {
+		const { grupos, cartas } = restaurarCartasDaConversa([ARTEFATO_DO_DIAL]);
+		expect(grupos.get(CANOPUS)?.avgBidValue).toBe(21000);
+		// Identidade da oferta é campo do card reemitido (coerceRevealCota) — idem.
+		expect(grupos.get(CANOPUS)?.ofertaId).toBe("oferta-canopus-sessao");
+		expect(cartas[0]).toMatchObject({ groupId: CANOPUS, contempladosMes: 15 });
+	});
+
+	it("o card seguinte mostra o mesmo lance médio — hero e dial não perdem a âncora", async () => {
+		const ctx = ctxComCartas(restaurarCartasDaConversa([ARTEFATO_DO_DIAL]));
+		const tools = buildToolsLivres(ctx, { carregarLogos: async () => new Map() });
+
+		await (tools.mostrar_card.execute as ExecutarTool)({
+			tipo: "recommendation_card",
+			payload: { groupId: CANOPUS },
+		});
+		expect(ctx.cards[0]?.payload).toMatchObject({
+			avgBidValue: 21000,
+			ofertaId: "oferta-canopus-sessao",
+		});
+
+		await (tools.mostrar_card.execute as ExecutarTool)({
+			tipo: "contemplation_dial",
+			payload: { groupId: CANOPUS },
+		});
+		expect(ctx.cards[1]?.payload).toMatchObject({ avgBidValue: 21000 });
+		// A âncora de lance não pode deslocar o número da carta já mostrado.
+		expect(ctx.cards[1]?.payload).toMatchObject({ creditValue: 60000, monthlyPayment: 910 });
+	});
+
+	it("payload só com availableSlots não vira zero: contempladosMes volta do fallback", () => {
+		const { grupos, cartas } = restaurarCartasDaConversa([ARTEFATO_SO_COM_AVAILABLE_SLOTS]);
+		expect(grupos.get(CANOPUS)?.availableSlots).toBe(15);
+		expect(cartas[0]?.contempladosMes).toBe(15);
+	});
+
+	it("sem contagem e sem lance, não fabrica nenhum dos dois", () => {
+		const { grupos, cartas } = restaurarCartasDaConversa([ARTEFATO_DO_TURNO_2]);
+		// A Bresser veio sem `availableSlots` nem `avgBidValue`.
+		expect(grupos.get("outra-carta")?.availableSlots).toBe(0);
+		expect(grupos.get("outra-carta")?.avgBidValue).toBeUndefined();
+		// Canopus trouxe `availableSlots` e não trouxe lance — o valor não é inventado.
+		expect(grupos.get(CANOPUS)?.availableSlots).toBe(15);
+		expect(grupos.get(CANOPUS)?.avgBidValue).toBeUndefined();
+		expect(cartas.find((c) => c.groupId === "outra-carta")?.contempladosMes).toBeUndefined();
 	});
 
 	// A função pura não vale de nada se o turno não a chama: o índice é preenchido no
