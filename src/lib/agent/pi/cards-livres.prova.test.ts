@@ -150,8 +150,8 @@ describe("os 22 tipos têm destino, e cada destino tem como ser cumprido", () =>
 			`prova de card: ${tipos.length} tipos · ${emitiveis.length} emitíveis · ${foraDoMotor.length} fora-do-motor`,
 		);
 		expect(tipos).toHaveLength(22);
-		expect(emitiveis).toHaveLength(17);
-		expect(foraDoMotor).toHaveLength(5);
+		expect(emitiveis).toHaveLength(18);
+		expect(foraDoMotor).toHaveLength(4);
 	});
 
 	it("todo tipo tem destino declarado, e fora-do-motor explica o motivo (20+ caracteres)", () => {
@@ -491,13 +491,11 @@ describe("CARDS_QUE_REVELAM_OFERTA — todo card com número de oferta está no 
 	});
 
 	it("o set do experimento não tem card sem número de oferta", () => {
-		// `scenarios` está no set e não sai do motor (card fora-do-motor, mas com
-		// número de oferta) — é a ÚNICA exceção conhecida.
-		const comNumeroDeOferta = new Set<string>([...CARREGAM_NUMERO_DE_OFERTA, "scenarios"]);
 		for (const tipo of CARDS_QUE_REVELAM_OFERTA) {
-			expect(comNumeroDeOferta.has(tipo), `${tipo} está no set sem carregar número de oferta`).toBe(
-				true,
-			);
+			expect(
+				CARREGAM_NUMERO_DE_OFERTA,
+				`${tipo} está no set sem carregar número de oferta`,
+			).toContain(tipo);
 		}
 	});
 
@@ -509,6 +507,6 @@ describe("CARDS_QUE_REVELAM_OFERTA — todo card com número de oferta está no 
 		expect([...Object.keys(MONTADORES_DE_CARD)].sort()).toEqual([...deFato].sort());
 		// E o tipo derivado do mapa não mente sobre o tamanho.
 		const emitiveis: TipoEmitivel[] = deFato as TipoEmitivel[];
-		expect(emitiveis).toHaveLength(14);
+		expect(emitiveis).toHaveLength(15);
 	});
 });

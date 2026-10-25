@@ -21,6 +21,7 @@ import {
 	montarCardDeFato,
 	TIPOS_DE_ESCOLHA,
 } from "./cards-livres";
+import { cenariosDaCarta } from "./cenarios";
 import { aplicarItensDoFecho, buildToolsLivres, type ContextoDasTools } from "./tools-livres";
 
 function ctxVazio(): ContextoDasTools {
@@ -469,16 +470,34 @@ describe("contract_form — a flag que autoriza o contract-submit (L02)", () => 
 	});
 });
 
-describe("cenários de contemplação (L17) — o caminho é o dial, não um card de premissa", () => {
-	it("scenarios segue fora do motor, com o motivo escrito", () => {
-		// Os 3 cenários da main (0% / 20% / 30% de lance) são PREMISSA fixa de
-		// mercado, não número de fonte real. Emitir isso seria o modelo inventando
-		// lance — a mesma linha que separa consultoria de venda enganosa.
-		const destino = destinoDoCard("scenarios");
+describe("cenários de contemplação (L17/P139) — card de FATO, calculado da carta", () => {
+	it("scenarios é card de FATO: sai da carta da conversa, não do payload do modelo", async () => {
+		// Na main o card vinha de `compute_scenarios`; o que se recupera aqui é o
+		// COMPORTAMENTO (3 cenários com número calculado), não a tool do funil.
+		expect(destinoDoCard("scenarios")?.classe).toBe("emitivel");
 
-		expect(destino?.classe).toBe("fora-do-motor");
-		if (destino?.classe !== "fora-do-motor") return;
-		expect(destino.motivo).toContain("projeção de prazo");
+		const ctx = ctxVazio();
+		ctx.gruposRevelados.set(CARTA_DA_TELA.id, CARTA_DA_TELA);
+		// O modelo manda número de oferta no payload: nada disso entra no card.
+		await mostrarCard(ctx, "scenarios", {
+			groupId: CARTA_DA_TELA.id,
+			creditValue: 999_999,
+			scenarios: { provavel: { lancePercent: 99 } },
+		});
+
+		const card = ctx.cards[0];
+		expect(card?.type).toBe("scenarios");
+		if (card?.type !== "scenarios") return;
+		expect(card.payload).toEqual(cenariosDaCarta(CARTA_DA_TELA));
+		expect(JSON.stringify(card.payload)).not.toContain("999999");
+	});
+
+	it("sem carta conhecida o card recusa e manda buscar primeiro", async () => {
+		const r = await montarCardDeFato("scenarios", ctxDeFato());
+
+		expect(r.ok).toBe(false);
+		if (r.ok) return;
+		expect(r.erro).toContain("buscar_cartas");
 	});
 
 	it("a pergunta que o card respondia ('quando contemplo e o que cada caminho exige') sai do dial", async () => {

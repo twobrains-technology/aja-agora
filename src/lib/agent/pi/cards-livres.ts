@@ -7,11 +7,11 @@
 //  · ESCOLHA (`quick_reply`, `value_picker`, `topic_picker`) — o payload é a
 //    PERGUNTA e as opções, escritas pelo modelo e validadas aqui. Número neste
 //    caminho é faixa de intenção ("até 80 mil"), nunca oferta.
-//  · FATO (os outros 14 emitíveis) — o payload sai de dado real (carta,
+//  · FATO (os outros 15 emitíveis) — o payload sai de dado real (carta,
 //    proposta, estado da conversa), montado AQUI (`MONTADORES_DE_CARD`). Do
 //    modelo vem só a ESCOLHA de qual carta (`groupId`) e, quando é cenário, o
 //    mês-alvo/percentual — nunca um número de oferta.
-//  · FORA DO MOTOR (5) — nascem do handler de confirmação ou de um experimento
+//  · FORA DO MOTOR (4) — nascem do handler de confirmação ou de um experimento
 //    A/B; emitir no turno duplicaria o beat ou quebraria a medição.
 
 import type { GroupSummary, QuotaSimulation } from "@/lib/adapters/types";
@@ -28,6 +28,7 @@ import {
 } from "@/lib/agent/orchestrator/recommendation-payload";
 import type { ArtifactType } from "@/lib/chat/types";
 import { compareWithFinancing } from "@/lib/finance/pmt";
+import { cenariosDaCarta } from "./cenarios";
 
 export type DestinoDoCard =
 	| { classe: "emitivel"; origem: "escolha" | "fato" }
@@ -75,11 +76,7 @@ export const DESTINO_DOS_CARDS = {
 		motivo:
 			"Retirado do fecho por decisão de 21/07/2026: quem pede documento é o atendente da adesão.",
 	},
-	scenarios: {
-		classe: "fora-do-motor",
-		motivo:
-			"Os 3 cenários exigem projeção de prazo sem fonte real; fabricar o número violaria a regra de que número só sai de tool.",
-	},
+	scenarios: { classe: "emitivel", origem: "fato" },
 } as const satisfies Record<ArtifactType, DestinoDoCard>;
 
 export const TIPOS_DE_ESCOLHA = ["quick_reply", "value_picker", "topic_picker"] as const;
@@ -371,7 +368,7 @@ export type TipoEmitivel = {
 		: never;
 }[keyof typeof DESTINO_DOS_CARDS];
 
-/** Os 14 de FATO: têm montador. Os 3 de ESCOLHA não têm — o payload deles é a
+/** Os 15 de FATO: têm montador. Os 3 de ESCOLHA não têm — o payload deles é a
  * pergunta escrita pelo modelo, validada em `cardDeEscolha`. */
 export type TipoDeFato = Exclude<TipoEmitivel, TipoDeEscolha>;
 
@@ -517,7 +514,7 @@ function pctDoEmbutido(bruto: number | undefined): number {
 }
 
 /**
- * OS 14 MONTADORES. Cada um: resolve a carta real, monta o payload por
+ * OS 15 MONTADORES. Cada um: resolve a carta real, monta o payload por
  * ALLOWLIST (nada de spread do que o modelo mandou) e devolve `ok: false` com
  * motivo em pt-BR quando falta fonte. Nunca lança — o modelo lê o motivo e
  * reage, que é o ponto.
@@ -803,6 +800,20 @@ export const MONTADORES_DE_CARD: Record<TipoDeFato, MontadorDeCard> = {
 			card: {
 				type: "decision_prompt",
 				payload: { administradora: r.grupo.administradora },
+			},
+		};
+	},
+
+	// Os 3 cenários de contemplação são CALCULADOS da carta real (`cenarios.ts`,
+	// mesmo motor da main): do modelo vem só QUAL carta, nunca lance ou prazo.
+	scenarios: (ctx, ref) => {
+		const r = resolverGrupo(ctx, ref);
+		if (!r.ok) return r;
+		return {
+			ok: true,
+			card: {
+				type: "scenarios",
+				payload: { ...cenariosDaCarta(r.grupo, ctx.perfilDeclarado?.lanceValue) },
 			},
 		};
 	},
