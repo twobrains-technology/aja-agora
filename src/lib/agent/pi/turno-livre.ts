@@ -26,6 +26,7 @@ import { AVISO_LGPD_RE, garanteAvisoLgpd, PEDE_DADO_RE } from "@/lib/agent/pi/lg
 import { criarNarracaoDoTurno } from "@/lib/agent/pi/narracao";
 import { persistirTurnoLivre } from "@/lib/agent/pi/persist-livre";
 import { custoDoTurnoCentsExatos } from "@/lib/agent/pi/precos";
+import { modeloDoAgente } from "@/lib/agent/pi/sessao";
 import { montarSystemDoVendedor } from "@/lib/agent/pi/system-do-vendedor";
 import { type PiToolDefinition, toPiTools } from "@/lib/agent/pi/tools";
 import {
@@ -307,6 +308,59 @@ const PALAVRAS_DE_CATEGORIA: ReadonlyArray<{ categoria: Category; re: RegExp }> 
 	},
 ];
 
+/** As palavras que põem o dinheiro ao lado no contexto de LANCE — o que o
+ * cliente vai OFERECER, não o preço do bem nem a parcela. É a versão na fala dos
+ * cards `lance-value`/`lance-embutido` da `main`. Lista fechada, como a das
+ * categorias: palavra desconhecida ao lado do número é ambígua e não vira lance. */
+const PALAVRAS_DE_LANCE = "lance|entrada|[áa]gio";
+const MARCADOR_DE_LANCE = new RegExp(`\\b(${PALAVRAS_DE_LANCE})\\b`, "i");
+const MARCADORES_DE_LANCE = new RegExp(`\\b(${PALAVRAS_DE_LANCE})\\b`, "gi");
+
+/** O que pode ficar ENTRE o dinheiro e a palavra do lance sem desfazer o par:
+ * preposições, artigos e possessivos. É o que separa "tenho 30 mil pro lance"
+ * (declaração) de "quero um de 80 mil, qual o lance?" (pergunta sobre o lance,
+ * onde o número ao lado é o valor do bem). */
+const LIGACOES_DO_LANCE = new Set([
+	"",
+	"a",
+	"o",
+	"as",
+	"os",
+	"de",
+	"do",
+	"da",
+	"dos",
+	"das",
+	"em",
+	"no",
+	"na",
+	"nos",
+	"nas",
+	"com",
+	"como",
+	"e",
+	"ou",
+	"pra",
+	"para",
+	"pro",
+	"pelo",
+	"pela",
+	"um",
+	"uma",
+	"uns",
+	"umas",
+	"meu",
+	"minha",
+	"seria",
+	"ser",
+	"ate",
+	"cerca",
+	"torno",
+	"volta",
+	"reais",
+	"real",
+]);
+
 /** O que o cliente DECLAROU neste turno — categoria e valor do bem —, sem
  * esperar a busca (L44/P212).
  *
@@ -320,7 +374,8 @@ const PALAVRAS_DE_CATEGORIA: ReadonlyArray<{ categoria: Category; re: RegExp }> 
  * "80 mil", "R$ 80.000", "1,5 milhão" e recusa o que ambiguaria — número nu
  * fora do gate ("CG 160"), orçamento mensal ("850 por mês") e CPF. Lance não é
  * preço do bem e `parseAssetValue` não conhece a distinção, então o recado que
- * fala de LANCE não vira valor (o lance tem campo próprio).
+ * fala de LANCE não vira valor — o lance tem produtor próprio
+ * (`lanceEPrazoDoTurno`, abaixo).
  *
  * Categoria: só quando o recado nomeia UMA. "carro ou moto" é comparação, não
  * declaração, e escolher uma das duas por conta própria envenenaria o filtro do
@@ -332,10 +387,113 @@ export function declaracaoDoTurno(texto: string | null | undefined): {
 	if (!texto) return {};
 	const nomeadas = PALAVRAS_DE_CATEGORIA.filter((p) => (texto.match(p.re) ?? []).length > 0);
 	const categoria = nomeadas.length === 1 ? nomeadas[0]?.categoria : undefined;
-	const valorDoBem = /\blance\b/i.test(texto) ? undefined : (parseAssetValue(texto) ?? undefined);
+	const valorDoBem = MARCADOR_DE_LANCE.test(texto)
+		? undefined
+		: (parseAssetValue(texto) ?? undefined);
 	return {
 		...(categoria ? { categoria } : {}),
 		...(valorDoBem ? { valorDoBem } : {}),
+	};
+}
+
+/** Um TOKEN de dinheiro: o número com a magnitude que o acompanha ("30 mil",
+ * "R$ 20.000", "1,5 milhão", "20k"). O VALOR sai de `parseAssetValue` sobre o
+ * token — mesmo parser do valor do bem. A frase inteira não serve: o parser
+ * aplica as regras por PRIORIDADE, não por posição, e em "80 mil no lance de 30
+ * mil" ele devolveria 80 mil.
+ *
+ * Conservador de propósito: número nu sem marcador ("tenho 30 pro lance") não
+ * tem como ser lido sem o contexto do funil, e segue de fora — como no valor do
+ * bem. */
+const TOKEN_DE_DINHEIRO = /(?:\br\$\s*)?\d[\d.,]*(?:\s*(?:mil(?:h[ãa]o|h[õo]es)?|mi|k)\b)?/gi;
+
+/** O prazo que o cliente declarou, em MESES (a unidade da qualificação). Precisa
+ * de uma PISTA de tempo junto do número ("em 60 meses", "prazo de 120 meses",
+ * "daqui a 2 anos", "60x"): "meu filho tem 12 anos" não é prazo desejado.
+ *
+ * Cadência de PAGAMENTO também não é prazo: em "800 por mês" o número vem antes
+ * do "por", e a unidade colada ao número é o que este parser exige (a mesma
+ * separação que `parseAssetValue` faz com `MONTHLY_MARKER`). */
+const PRAZO_COM_PISTA =
+	/(?:\bem|\bdaqui\s+a|\bprazo\s+de|\bdurante|\bpara|\bpor|\bquero|\bprefiro|\bescolho)\s+(\d{1,3})\s*(meses\b|m[êe]s\b|anos?\b)|(\d{1,3})\s*x\b/i;
+
+function semAcento(palavra: string): string {
+	return palavra.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+/** O vão entre o dinheiro e o marcador é só de ligação? Fora da allowlist — ou
+ * com mais de quatro palavras — o par não vale. */
+function somenteLigacoes(vao: string): boolean {
+	const palavras = vao.trim().split(/\s+/).filter(Boolean);
+	if (palavras.length > 4) return false;
+	return palavras.every((p) => LIGACOES_DO_LANCE.has(semAcento(p).replace(/[^\p{L}]/gu, "")));
+}
+
+/** O valor de LANCE dito na fala, ou `undefined`.
+ *
+ * O par é dinheiro + palavra de lance, em qualquer ordem ("tenho 30 mil pro
+ * lance", "meu lance é de 30 mil"); havendo mais de um par, vence o de vão
+ * menor — é o número que está colado ao marcador. */
+function lanceDaFala(texto: string): number | undefined {
+	const marcadores = [...texto.matchAll(MARCADORES_DE_LANCE)].map((m) => ({
+		inicio: m.index ?? 0,
+		fim: (m.index ?? 0) + m[0].length,
+	}));
+	if (marcadores.length === 0) return undefined;
+	let melhor: { valor: number; vao: number } | null = null;
+	for (const token of texto.matchAll(TOKEN_DE_DINHEIRO)) {
+		const valor = parseAssetValue(token[0]);
+		if (valor === null) continue;
+		const inicio = token.index ?? 0;
+		const fim = inicio + token[0].length;
+		for (const marcador of marcadores) {
+			const vao =
+				fim <= marcador.inicio
+					? texto.slice(fim, marcador.inicio)
+					: inicio >= marcador.fim
+						? texto.slice(marcador.fim, inicio)
+						: null;
+			if (vao === null || !somenteLigacoes(vao)) continue;
+			if (!melhor || vao.trim().length < melhor.vao) melhor = { valor, vao: vao.trim().length };
+		}
+	}
+	return melhor?.valor;
+}
+
+function prazoDaFala(texto: string): number | undefined {
+	const m = texto.match(PRAZO_COM_PISTA);
+	if (!m) return undefined;
+	const numero = Number.parseInt(m[1] ?? m[3] ?? "", 10);
+	if (!Number.isFinite(numero) || numero <= 0) return undefined;
+	const unidade = semAcento((m[2] ?? "x").toLowerCase());
+	const meses = unidade.startsWith("ano") ? numero * 12 : numero;
+	// Fora da faixa de consórcio é conversa, não prazo desejado.
+	return meses >= 1 && meses <= 480 ? meses : undefined;
+}
+
+/** O DINHEIRO DO LANCE e o PRAZO DESEJADO que o cliente disse na fala (P139).
+ *
+ * Na `main` esses dois fatos vinham dos cards `lance-value` e `prazo`
+ * (`interactive-handlers.ts`): o cliente respondia e a chave entrava em
+ * `qualifyAnswers`. No vendedor livre não há card de qualificação — quem conta é
+ * a conversa —, e sem eles `cards-livres.ts` calculava os três cenários como se
+ * o lance embutido cobrisse TODO o lance, e o `contemplation_dial` caía no mês 6.
+ *
+ * O que se grava é só o que o cliente DECLAROU: nenhum número deduzido do bem,
+ * da parcela ou da carta. O valor do bem continua sendo do `declaracaoDoTurno`. */
+export function lanceEPrazoDoTurno(texto: string | null | undefined): {
+	lanceValue?: number;
+	prazoMeses?: number;
+} {
+	if (!texto) return {};
+	// CPF NÃO É DINHEIRO — mesma limpeza do `parseAssetValue`: no padrão brasileiro
+	// "529.982.247-25" passa pelo formato de milhar e viraria lance de milhões.
+	const limpo = texto.replace(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g, " ");
+	const lanceValue = lanceDaFala(limpo);
+	const prazoMeses = prazoDaFala(limpo);
+	return {
+		...(lanceValue !== undefined ? { lanceValue } : {}),
+		...(prazoMeses !== undefined ? { prazoMeses } : {}),
 	};
 }
 
@@ -503,10 +661,17 @@ export function createRunTurnLivre(deps?: {
 		// de propósito: a conversa em que o modelo nunca busca ("quero um de 80 mil"
 		// e o cliente para) não teria nenhuma dessas chaves no metadata, e o painel a
 		// contaria como "valor não informado". O que a busca gravar depois (passo 4)
-		// sobrescreve — ela é a verdade de fato.
+		// sobrescreve — ela é a verdade de fato —, mas não o lance nem o prazo: eles
+		// só existem na fala (P139).
 		if (isUserTurn) {
 			const declaracao = declaracaoDoTurno(captura.textoLimpo);
-			if (declaracao.categoria || declaracao.valorDoBem) {
+			const dinheiro = lanceEPrazoDoTurno(captura.textoLimpo);
+			if (
+				declaracao.categoria ||
+				declaracao.valorDoBem ||
+				dinheiro.lanceValue ||
+				dinheiro.prazoMeses
+			) {
 				estado = {
 					...estado,
 					funnel: {
@@ -520,6 +685,9 @@ export function createRunTurnLivre(deps?: {
 										valorDoBemAlvo: declaracao.valorDoBem,
 									}
 								: {}),
+							// O dinheiro e o prazo que `perfilDeclarado` lê (cenários e dial).
+							...(dinheiro.lanceValue ? { lanceValue: dinheiro.lanceValue } : {}),
+							...(dinheiro.prazoMeses ? { prazoMeses: dinheiro.prazoMeses } : {}),
 						},
 					},
 				};
@@ -825,7 +993,10 @@ export function createRunTurnLivre(deps?: {
 			// escritos (`converse.test.ts`). Gravar só entrada e saída subestimava o
 			// gasto de IA — é a parcela que decide o custo real de um turno que repete
 			// a mesma caixa a cada beat (P217/P273).
-			const modelo = process.env.AI_MODEL?.trim() || "qwen3.6-flash";
+			// O modelo do livro-caixa é o MESMO que a sessão abriu (`modeloDoAgente`):
+			// repetir a expressão aqui gravava custo com um nome que podia divergir da
+			// seleção real no dia em que ela mudasse.
+			const modelo = modeloDoAgente();
 			usosDoTurno.push({
 				modelo,
 				tokensInput: beat.uso.input,
