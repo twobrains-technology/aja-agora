@@ -10,12 +10,13 @@
 import { type SQL, sql } from "drizzle-orm";
 import { PADRAO_ROBO_SQL } from "@/lib/attribution/user-agent-robo";
 import type { ArtifactType } from "@/lib/chat/types";
-import type { EtapaDoFunil, RecorteAB } from "@/lib/experimentos/registro";
 // O ciclo com `filtro-variante` é de CHAMADA, não de inicialização: os dois
 // módulos só usam o outro dentro de função (nenhum `const` de topo depende do
 // outro). Existe porque o FATO da etapa mora aqui (fonte única do funil) e o
 // FRAGMENTO que o lê mora lá — separar os dois exigiria um terceiro módulo, e
 // duplicar o fato é o defeito que este arquivo existe para impedir.
+import { CHAVE_DO_TESTE_NO_METADATA } from "@/lib/chat/variante-da-visita";
+import type { EtapaDoFunil, RecorteAB } from "@/lib/experimentos/registro";
 import { condicaoDeBracoDaPessoa } from "./filtro-variante";
 import { ESTAGIOS_QUALIFICADOS } from "./lead-stages";
 
@@ -485,11 +486,37 @@ export const PADRAO_SQL_DE_OFERTA = ARTIFACTS_DE_OFERTA.map((tipo) => `'${tipo}'
  * fragmentos (`c` nas telas de hoje) — amarrar ao alias faria o fragmento
  * compilar num lugar e explodir no outro.
  */
+/**
+ * A OFERTA PREVENIDA E NÃO ENTREGUE NÃO CONTA COMO "VIU OFERTA".
+ *
+ * Portado da main (a2bc3024, 06/10/2026), medido em produção: 9 conversas contavam
+ * como "viu oferta" sem o cliente ter lido número nenhum. No braço A do teste do
+ * telefone o reveal é RETIDO no adapter até o telefone chegar; no B os cards vão à
+ * tela EMBACADOS. Nos dois o nó persist grava os artifacts assim mesmo (a gravação
+ * acontece antes de o adapter reter/borrar — é o banco que guarda a comparação para
+ * re-emitir quando o telefone chega). Contar o artifact ali era afirmar que a pessoa
+ * viu número que ela nunca leu.
+ *
+ * A regra é a do dono: sem telefone, não conta que viu. WhatsApp é exceção — ali o
+ * telefone é o próprio waId, não existe card e a comparação chega legível. Por isso o
+ * canal entra na condição: sem ele, o guard apagaria do funil toda conversa de WhatsApp.
+ *
+ * O predicado é `NOT` desta função dentro de `viuOferta`, e mora aqui, junto da lista
+ * de artifacts: é a MESMA pergunta, feita pelo funil, pelo Percurso, pela exportação e
+ * pela régua.
+ */
+export function ofertaRetidaPeloTelefone(conversa: SQL = sql`c`): SQL {
+	return sql`(${conversa}.channel = 'web'
+    AND COALESCE(${conversa}.metadata -> ${CHAVE_DO_TESTE_NO_METADATA} ->> 'variante', '') IN ('A', 'B')
+    AND (${conversa}.metadata -> ${CHAVE_DO_TESTE_NO_METADATA} ->> 'desbloqueadoEm') IS NULL)`;
+}
+
 export function viuOferta(conversa: SQL = sql`c`): SQL {
 	return sql`EXISTS (SELECT 1 FROM messages m
     JOIN artifacts a ON a.message_id = m.id
     WHERE m.conversation_id = ${conversa}.id
-      AND a.type IN (${ARTIFACTS_DE_OFERTA_SQL}))`;
+      AND a.type IN (${ARTIFACTS_DE_OFERTA_SQL}))
+    AND NOT ${ofertaRetidaPeloTelefone(conversa)}`;
 }
 
 /**
