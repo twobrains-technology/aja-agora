@@ -40,12 +40,19 @@ export function garanteAvisoLgpd(args: { texto: string; avisoJaDado: boolean }):
 	if (!PEDE_DADO_RE.test(texto)) return { texto, avisoAdicionado: false, pedidoAdiado: false };
 
 	const frases = texto.split(/(?<=[.!?])\s+|\n+/).filter(Boolean);
+	const pediu = frases.some((f) => PEDE_DADO_RE.test(f));
+	// O `resto` é só o que NÃO é pedido e NÃO é pergunta: se a pergunta sobrevive, o balão
+	// sai com duas perguntas (a do aviso e a que o modelo escreveu), e o cliente responde a
+	// errada.
 	const resto = frases
-		.filter((f) => !PEDE_DADO_RE.test(f))
+		.filter((f) => !PEDE_DADO_RE.test(f) && !/[?!]\s*$/.test(f))
 		.join(" ")
 		.trim();
-	const saida = resto ? `${resto}\n\n${AVISO_LGPD}` : AVISO_LGPD;
-	return { texto: saida, avisoAdicionado: true, pedidoAdiado: true };
+	// O aviso vem ANTES do resto: no dev o modelo escrevia "preciso do seu CPF. Para gerar
+	// sua proposta, ... conforme a LGPD. Posso seguir?" — o pedido vinha na frente do aviso,
+	// e o cliente respondia o pedido sem ter aceite nada.
+	const saida = resto ? `${AVISO_LGPD}\n\n${resto}` : AVISO_LGPD;
+	return { texto: saida, avisoAdicionado: true, pedidoAdiado: pediu };
 }
 
 /** Resposta afirmativa do cliente. Negativa não vale ("não pode", "não autorizo"). */

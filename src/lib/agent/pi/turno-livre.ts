@@ -142,12 +142,10 @@ export function montarTrechoDeSaida(args: {
 	let texto = bruto;
 	let avisoAplicado = false;
 	if (!args.avisoDado && PEDE_DADO_RE.test(bruto)) {
-		if (AVISO_LGPD_RE.test(bruto)) {
-			avisoAplicado = true;
-		} else {
-			texto = garanteAvisoLgpd({ texto: bruto, avisoJaDado: false }).texto;
-			avisoAplicado = true;
-		}
+		// Mesmo quando o modelo escreveu o aviso na mesma mensagem, o aviso ocupa o primeiro
+		// bloco e o pedido de dado fica para o turno seguinte — o aceite vem antes.
+		texto = garanteAvisoLgpd({ texto: bruto, avisoJaDado: false }).texto;
+		avisoAplicado = true;
 	}
 	// O aviso é a pergunta do turno: o verificador de "uma pergunta por mensagem" roda
 	// DEPOIS dele, senão o aviso é cortado como pergunta extra.

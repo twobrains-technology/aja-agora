@@ -95,7 +95,10 @@ describe("o aviso vem antes do pedido de dado — decidido no harness, não no p
 			texto: "Você escolheu a Canopus. Me passa seu CPF, por favor, conforme a LGPD. Posso seguir?",
 			avisoDado: false,
 		});
-		expect(r.texto).toContain("conforme a LGPD. Posso seguir?");
+		expect(r.texto.startsWith("Para gerar a sua proposta")).toBe(true);
+		expect(r.texto).toContain("Você escolheu a Canopus");
+		// Uma pergunta por mensagem: a pergunta do balão é a do aviso.
+		expect((r.texto.match(/\?/g) ?? []).length).toBe(1);
 	});
 
 	it("o trecho que sai no balão aplica o aviso antes do pedido de dado", () => {
@@ -116,7 +119,7 @@ describe("o aviso vem antes do pedido de dado — decidido no harness, não no p
 	it("o turno aplica a guarda em cada trecho que sai no balão", () => {
 		const fonte = readFileSync(new URL("./turno-livre.ts", import.meta.url).pathname, "utf8");
 		const corpo = fonte.slice(fonte.indexOf("const soltarTrecho"), fonte.indexOf("const executar"));
-		expect(corpo).toContain("montarTrechoDeSaida({ texto: pendente, avisoDado })");
+		expect(corpo).toMatch(/montarTrechoDeSaida\(\{[^}]*texto:\s*pendente[^}]*avisoDado/);
 		expect(corpo).not.toContain("manterUmaPergunta(scrubCpf(");
 		expect(fonte).toMatch(/avisoDado = historico\.some/);
 	});
