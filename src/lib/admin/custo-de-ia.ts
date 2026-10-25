@@ -29,8 +29,22 @@
  *                          trazê-lo ao real do CPC;
  *   - `fonte_indisponivel` — a leitura do livro-caixa FALHOU (não é "não tem dado").
  *
- * Um total PARCIAL somado por cima de um modelo sem preço é a mentira que este
- * módulo existe para impedir: ele subestimaria o custo e ninguém veria.
+ * ── Linha sem preço não apaga o período: o total sai PARCIAL ─────────────────
+ *
+ * Uma linha de modelo sem preço (o juiz e o diagnóstico rodam um modelo que não está
+ * em `agent/pi/precos.ts`) não pode zerar o custo do período INTEIRO: basta um
+ * julgamento no dia para o bloco de custo e o CPC virarem "não calculável" — e o CPC é
+ * a capacidade que a cliente pediu.
+ *
+ * Então o total é a soma das linhas que TÊM preço, marcado `parcial: true` e com a
+ * contagem das linhas que ficaram de fora **por modelo** — que é como o total da main
+ * (Langfuse) se comportava: somava o que conhecia. A marca não é decoração: sem ela, o
+ * número pareceria o custo completo do período quando não é.
+ *
+ * O que a linha sem preço NUNCA vira é zero (zero é custo medido): ela fica `null`,
+ * conta em `semPreco` e não entra em `porModelo`/`porDia`. E quando NENHUMA linha do
+ * período tem preço não há total nenhum — aí volta o motivo `modelo_sem_preco`, com os
+ * modelos nomeados, porque aí não existe soma parcial a oferecer.
  *
  * ── Chamada AVULSA entra no total, numa linha própria ───────────────────────
  *
@@ -80,12 +94,25 @@ export interface LinhaDeCustoDeIA {
 	custoUsdCents: number | null;
 }
 
-/** O recorte do custo das chamadas AVULSAS (sem conversa) dentro do total. */
+/**
+ * O recorte do custo das chamadas AVULSAS (sem conversa) dentro do total.
+ *
+ * `chamadas` conta as LINHAS avulsas do período; `usdCents`/`brlCents` somam só as que
+ * têm preço — quando alguma não tem, o total do período sai `parcial` (ver
+ * `somarCustoDeIA`).
+ */
 export interface CustoDasChamadasAvulsas {
 	/** Quantas linhas de `uso_de_ia` entraram no total sem conversa. */
 	chamadas: number;
 	usdCents: number;
 	brlCents: number;
+}
+
+/** As linhas de um modelo que ficaram FORA do total por não ter preço conhecido. */
+export interface LinhasSemPreco {
+	modelo: string;
+	/** Quantas linhas do livro-caixa desse modelo estão no recorte. */
+	linhas: number;
 }
 
 /** A conversa do Postgres — o lado que dá VÍNCULO e CANAL ao custo. */
@@ -123,6 +150,13 @@ export type ResultadoCustoDeIA =
 			 * somadas em `usdCents`/`brlCents` acima, e aqui aparece a fatia delas.
 			 */
 			semConversa: CustoDasChamadasAvulsas;
+			/**
+			 * `true` quando alguma linha do período ficou fora da soma por não ter preço:
+			 * `usdCents`/`brlCents` são a soma do que se CONHECE, não o custo completo.
+			 */
+			parcial: boolean;
+			/** As linhas que ficaram fora da soma, contadas por modelo (ordenado). */
+			semPreco: LinhasSemPreco[];
 	  }
 	| {
 			tipo: "motivo";
@@ -136,7 +170,8 @@ export type ResultadoCustoDeIA =
 const EXPLICACAO: Record<MotivoSemCustoDeIA, string> = {
 	sem_dado: "O livro-caixa de uso de IA não tem nenhuma linha neste período.",
 	sem_vinculo: "Há custo registrado, mas nenhuma conversa do período corresponde a ele.",
-	modelo_sem_preco: "Há uso de um modelo sem preço cadastrado (entrada, saída ou cache).",
+	modelo_sem_preco:
+		"Nenhuma linha do período tem preço calculável: há uso de modelo sem preço cadastrado (entrada, saída ou cache).",
 	sem_cotacao: "Há custo em dólar e não há cotação cadastrada para trazer ao real.",
 	fonte_indisponivel: "A leitura do livro-caixa de IA (uso_de_ia, no Postgres) falhou.",
 };
@@ -168,6 +203,22 @@ function agrupar(
 }
 
 /**
+ * As linhas SEM preço do recorte, contadas por modelo e ordenadas — é o que o total
+ * parcial precisa DECLARAR para a tela dizer de onde vem o buraco.
+ */
+function contarLinhasSemPreco(linhas: readonly LinhaDeCustoDeIA[]): LinhasSemPreco[] {
+	const porModelo = new Map<string, number>();
+	for (const linha of linhas) {
+		if (linha.custoUsdCents !== null) continue;
+		porModelo.set(linha.modelo, (porModelo.get(linha.modelo) ?? 0) + 1);
+	}
+
+	return [...porModelo.entries()]
+		.map(([modelo, linhas]) => ({ modelo, linhas }))
+		.sort((a, b) => (a.modelo < b.modelo ? -1 : a.modelo > b.modelo ? 1 : 0));
+}
+
+/**
  * O custo de IA do período/canal, ou o motivo nomeado pelo qual ele não existe.
  *
  * Três populações de linha saem do livro-caixa, e a diferença importa:
@@ -179,6 +230,10 @@ function agrupar(
  * A ordem das guardas não é arbitrária — é a mesma lógica de `custoPor`
  * (campanhas-queries.ts): **falta de vínculo antes de falta de dado**, porque um
  * cruzamento que não fecha diz "olhe a atribuição", não "olhe a operação".
+ *
+ * Sobre as linhas das duas populações que entram: as que TÊM preço somam, as que não têm
+ * ficam de fora e marcam o resultado como `parcial`, com a contagem por modelo. Um
+ * período em que NENHUMA linha tem preço é o único sem total.
  */
 export function somarCustoDeIA(args: {
 	linhas: readonly LinhaDeCustoDeIA[];
@@ -219,21 +274,25 @@ export function somarCustoDeIA(args: {
 	// O total GERAL — a conversa e a avulsa somam juntas: as duas são gasto de IA do período.
 	const somadas = [...comVinculo, ...avulsas];
 
-	// Modelo sem preço (de entrada/saída ou de cache): o total não pode ser calculado,
-	// porque a soma parcial omitiria justamente a parcela que não se conhece.
-	const semPreco = [
-		...new Set(somadas.filter((l) => l.custoUsdCents === null).map((l) => l.modelo)),
-	].sort();
-	if (semPreco.length > 0) {
+	// O que dá para somar: as linhas com preço conhecido. Modelo sem preço (de
+	// entrada/saída ou de cache) não vira zero — fica de fora, e o total sai PARCIAL.
+	const comPreco = somadas.filter(
+		(linha): linha is LinhaDeCustoDeIA & { custoUsdCents: number } => linha.custoUsdCents !== null,
+	);
+	const semPreco = contarLinhasSemPreco(somadas);
+
+	// NENHUMA linha tem preço: aí não há soma parcial a oferecer — o motivo nomeia os
+	// modelos, porque é o cadastro deles que falta.
+	if (comPreco.length === 0) {
 		return {
 			tipo: "motivo",
 			motivo: "modelo_sem_preco",
 			explicacao: EXPLICACAO.modelo_sem_preco,
-			modelosSemPreco: semPreco,
+			modelosSemPreco: semPreco.map((linha) => linha.modelo),
 		};
 	}
 
-	const usdCents = somadas.reduce((total, linha) => total + (linha.custoUsdCents ?? 0), 0);
+	const usdCents = comPreco.reduce((total, linha) => total + linha.custoUsdCents, 0);
 
 	// Sem cotação só é problema quando há custo: zero real continua sendo zero.
 	if (args.cotacaoUsdBrl === null && usdCents > 0) {
@@ -241,19 +300,23 @@ export function somarCustoDeIA(args: {
 	}
 
 	const cotacao = args.cotacaoUsdBrl ?? 0;
-	const usdAvulsas = avulsas.reduce((total, linha) => total + (linha.custoUsdCents ?? 0), 0);
+	const usdAvulsas = comPreco
+		.filter((linha) => linha.sessionId === null)
+		.reduce((total, linha) => total + linha.custoUsdCents, 0);
 	return {
 		tipo: "valor",
 		usdCents,
 		brlCents: paraReal(usdCents, cotacao),
 		conversas: conversas.length,
-		porModelo: agrupar(somadas, (linha) => linha.modelo, cotacao),
-		porDia: agrupar(somadas, (linha) => linha.dia, cotacao),
+		porModelo: agrupar(comPreco, (linha) => linha.modelo, cotacao),
+		porDia: agrupar(comPreco, (linha) => linha.dia, cotacao),
 		semConversa: {
 			chamadas: avulsas.length,
 			usdCents: usdAvulsas,
 			brlCents: paraReal(usdAvulsas, cotacao),
 		},
+		parcial: semPreco.length > 0,
+		semPreco,
 	};
 }
 // ─── A borda: a leitura do LIVRO-CAIXA e o cruzamento com o Postgres ────────

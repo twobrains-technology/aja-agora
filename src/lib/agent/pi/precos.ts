@@ -56,6 +56,14 @@ export const PRECO_USD_POR_MILHAO: Record<string, PrecoDoModelo> = {
 	// não publica preço de CACHE para este modelo — então ele fica de fora, e turno com
 	// cache reportado por ele tem custo DESCONHECIDO (nunca inventado).
 	"qwen3.6-flash": { entrada: 0.05, saida: 0.4 },
+	// FALTA: `claude-sonnet-4-6`, o modelo do juiz de avaliação (`eval/judge.ts`,
+	// `JUDGE_MODEL`), do diagnóstico (`diagnose/diagnose.ts`, `DIAGNOSIS_MODEL`) e do juiz
+	// de jornada (`eval/jornada-judge.ts`). Ele NÃO entra aqui porque não há preço
+	// conferido na tabela pública do provedor para este id — e preço adivinhado com cara
+	// de "tabela do provedor" é pior que ausência. O efeito está contido: as linhas dele
+	// ficam `null` e o total do período sai PARCIAL, nomeando o modelo, sem derrubar o
+	// CPC (`admin/custo-de-ia.ts`). Quem confirmar o preço por milhão (entrada, saída e
+	// cache) cadastra a linha aqui e o total do período passa a ser cheio.
 };
 
 /** Os modelos que já foram avisados como "sem preço" — o log avisa uma vez, não por beat. */

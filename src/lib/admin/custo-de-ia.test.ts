@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { JUDGE_MODEL } from "@/lib/eval/judge";
 import {
 	computeCustoDeIA,
 	linhasDoLivroLocal,
@@ -72,13 +73,14 @@ describe("L36 — o custo da tela soma os valores exatos, arredondando só no fi
 	});
 });
 
-describe("L24 — modelo sem preço continua nomeado, nunca custo 0", () => {
-	it("o modelo do default é calculável; o desconhecido sai nomeado", () => {
+describe("L24 — modelo sem preço continua nomeado, nunca custo 0, e não apaga o período", () => {
+	it("uma linha sem preço ao lado de uma calculável: total PARCIAL, com a contagem por modelo", () => {
 		const linhas = linhasDoLivroLocal([
 			beatDoVendedor(),
 			beatDoVendedor({ modelo: "modelo-sem-preco-de-teste" }),
 		]);
 
+		// A linha sem preço continua `null` — desconhecido, nunca zero.
 		expect(linhas[1]?.custoUsdCents).toBeNull();
 
 		const r = somarCustoDeIA({
@@ -87,10 +89,64 @@ describe("L24 — modelo sem preço continua nomeado, nunca custo 0", () => {
 			cotacaoUsdBrl: 5.5,
 		});
 
+		expect(r.tipo).toBe("valor");
+		if (r.tipo !== "valor") return;
+		// O total é a soma do que se CONHECE: 0,4 centavo do beat calculável.
+		expect(r.usdCents).toBeCloseTo(0.4, 10);
+		expect(r.parcial).toBe(true);
+		expect(r.semPreco).toEqual([{ modelo: "modelo-sem-preco-de-teste", linhas: 1 }]);
+		// A linha sem preço não pode entrar como custo 0 no agrupado por modelo.
+		expect(r.porModelo.map((m) => m.chave)).toEqual(["qwen3.6-flash"]);
+	});
+
+	it("todas as linhas sem preço: não há total nenhum, e os modelos são nomeados", () => {
+		const r = somarCustoDeIA({
+			linhas: linhasDoLivroLocal([
+				beatDoVendedor({ modelo: "modelo-sem-preco-de-teste" }),
+				beatDoVendedor({ modelo: "outro-modelo-sem-preco" }),
+			]),
+			conversas: [{ conversationId: CONVERSA, canal: "web" }],
+			cotacaoUsdBrl: 5.5,
+		});
+
 		expect(r.tipo).toBe("motivo");
 		if (r.tipo !== "motivo") return;
 		expect(r.motivo).toBe("modelo_sem_preco");
-		expect(r.modelosSemPreco).toEqual(["modelo-sem-preco-de-teste"]);
+		expect(r.modelosSemPreco).toEqual(["modelo-sem-preco-de-teste", "outro-modelo-sem-preco"]);
+	});
+
+	it("o modelo do juiz e do diagnóstico, sem preço cadastrado, deixa o período PARCIAL", () => {
+		// É o caso real: `JUDGE_MODEL`/`DIAGNOSIS_MODEL` gravam linha em `uso_de_ia` a cada
+		// avaliação. Uma delas no dia não pode custar o custo do dia inteiro.
+		const linhas = linhasDoLivroLocal([
+			beatDoVendedor(),
+			beatDoVendedor({ modelo: JUDGE_MODEL, tokensInput: 120_000, tokensOutput: 20_000 }),
+		]);
+
+		const r = somarCustoDeIA({
+			linhas,
+			conversas: [{ conversationId: CONVERSA, canal: "web" }],
+			cotacaoUsdBrl: 5.5,
+		});
+
+		expect(r.tipo).toBe("valor");
+		if (r.tipo !== "valor") return;
+		expect(r.parcial).toBe(true);
+		expect(r.semPreco).toEqual([{ modelo: JUDGE_MODEL, linhas: 1 }]);
+		expect(r.usdCents).toBeCloseTo(0.4, 10); // só a linha do vendedor tem preço
+	});
+
+	it("período inteiro calculável não é marcado como parcial", () => {
+		const r = somarCustoDeIA({
+			linhas: linhasDoLivroLocal([beatDoVendedor()]),
+			conversas: [{ conversationId: CONVERSA, canal: "web" }],
+			cotacaoUsdBrl: 5.5,
+		});
+
+		expect(r.tipo).toBe("valor");
+		if (r.tipo !== "valor") return;
+		expect(r.parcial).toBe(false);
+		expect(r.semPreco).toEqual([]);
 	});
 });
 
@@ -151,7 +207,25 @@ describe("P217/P273 — o cache do prompt entra no custo do livro-caixa", () => 
 		expect(r.usdCents).toBeCloseTo(0.7125, 10);
 	});
 
-	it("modelo sem preço de cache com cache reportado: total não calculável, modelo nomeado", () => {
+	it("o cache sem preço do default deixa o total PARCIAL, não o apaga", () => {
+		const r = somarCustoDeIA({
+			linhas: linhasDoLivroLocal([
+				beatComCache(),
+				// O qwen não publica preço de cache: esta linha é desconhecida, não 0.
+				beatDoVendedor({ tokensCacheRead: 10_000 }),
+			]),
+			conversas: [{ conversationId: CONVERSA, canal: "web" }],
+			cotacaoUsdBrl: 1,
+		});
+
+		expect(r.tipo).toBe("valor");
+		if (r.tipo !== "valor") return;
+		expect(r.usdCents).toBeCloseTo(0.7125, 10);
+		expect(r.parcial).toBe(true);
+		expect(r.semPreco).toEqual([{ modelo: "qwen3.6-flash", linhas: 1 }]);
+	});
+
+	it("modelo sem preço de cache com cache reportado, sozinho no período: não calculável, modelo nomeado", () => {
 		const r = somarCustoDeIA({
 			linhas: linhasDoLivroLocal([beatDoVendedor({ tokensCacheRead: 10_000 })]),
 			conversas: [{ conversationId: CONVERSA, canal: "web" }],
