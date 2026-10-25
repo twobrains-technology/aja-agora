@@ -16,14 +16,17 @@ import { listShownOffersForConversation } from "@/lib/agent/orchestrator/choose-
 import { maskCpfForDisplay } from "@/lib/agent/orchestrator/contract-form-prefill";
 import type { TurnEvent, TurnInput } from "@/lib/agent/orchestrator/types";
 import { passaFinal } from "@/lib/agent/orchestrator/vazamento";
+import { parseAssetValue } from "@/lib/agent/parse-asset-value";
+import type { Category } from "@/lib/agent/personas";
+import type { MetaDaEmissao } from "@/lib/agent/pi/cards-livres";
 import { type ChipGerado, garantirChip } from "@/lib/agent/pi/chips";
 import { executarBeat } from "@/lib/agent/pi/converse";
 import { linhaFinalDoHandoff, RE_DE_PROMESSA } from "@/lib/agent/pi/handoff";
 import { AVISO_LGPD_RE, garanteAvisoLgpd, PEDE_DADO_RE } from "@/lib/agent/pi/lgpd";
 import { persistirTurnoLivre } from "@/lib/agent/pi/persist-livre";
-import { custoDoTurnoCents } from "@/lib/agent/pi/precos";
+import { custoDoTurnoCentsExatos } from "@/lib/agent/pi/precos";
 import { montarSystemDoVendedor } from "@/lib/agent/pi/system-do-vendedor";
-import { toPiTools } from "@/lib/agent/pi/tools";
+import { type PiToolDefinition, toPiTools } from "@/lib/agent/pi/tools";
 import {
 	buildToolsLivres,
 	type ContextoDasTools,
@@ -31,7 +34,7 @@ import {
 	NOMES_DAS_TOOLS_LIVRES,
 } from "@/lib/agent/pi/tools-livres";
 import { manterUmaPergunta } from "@/lib/agent/pi/uma-pergunta";
-import { estadoInicialDoTurno } from "@/lib/agent/turn/estado";
+import { type EstadoDoTurno, estadoInicialDoTurno } from "@/lib/agent/turn/estado";
 import { projectToMeta } from "@/lib/agent/turn/projecao";
 import {
 	isValidCpf,
@@ -42,6 +45,7 @@ import {
 } from "@/lib/conversation/identity";
 import { loadConversationHistory } from "@/lib/conversation/messages";
 import { metaOf } from "@/lib/conversation/meta";
+import { marcarPrimeiraCarta } from "@/lib/observability/sinais/marcar-primeira-carta";
 import {
 	type ArtefatoDaConversa,
 	lerCartasDaConversa,
@@ -325,6 +329,133 @@ export function eventosDasFalasDoFecho(falas: readonly string[]): TurnEvent[] {
 	return eventos;
 }
 
+/** A MESMA chamada de tool — mesmo `toolCallId` — não pode gerar EFEITO duas
+ * vezes no turno (L41/P301).
+ *
+ * Na `main` o card de cada tool nascia com o `toolCallId` da chamada
+ * (`converse.ts:1699`), e era o `ToolNode` quem garantia uma execução por id. No
+ * pi quem executa é o harness: um replay do mesmo `toolCallId` (retry do
+ * provedor, chamada repetida na mesma rodada do modelo) chamava o `execute` de
+ * novo — busca na Bevi de novo, card repetido na tela, evento duplicado. Aqui a
+ * PRIMEIRA execução é memoizada; as seguintes leem o mesmo resultado, sem tocar
+ * a fronteira de novo. Guarda a promessa, não o valor: duas chamadas do mesmo id
+ * em paralelo também executam uma vez só. */
+export function semRepetirChamada(tools: readonly PiToolDefinition[]): PiToolDefinition[] {
+	const feitas = new Map<string, ReturnType<PiToolDefinition["execute"]>>();
+	return tools.map((tool) => ({
+		...tool,
+		execute: (toolCallId, params) => {
+			const chave = `${tool.name}:${toolCallId}`;
+			const jaFeita = feitas.get(chave);
+			if (jaFeita) return jaFeita;
+			const executando = tool.execute(toolCallId, params);
+			feitas.set(chave, executando);
+			return executando;
+		},
+	}));
+}
+
+/** Palavras que DECLARAM o bem — lista fechada, como a das muletas de preço de
+ * `parse-asset-value.ts`. É o que o cliente nomeia, não o que ele compara. */
+const PALAVRAS_DE_CATEGORIA: ReadonlyArray<{ categoria: Category; re: RegExp }> = [
+	{
+		categoria: "auto",
+		re: /\b(carro|carros|autom[óo]vel|suv|caminhonete|picape|van|ve[íi]culo)\b/gi,
+	},
+	{ categoria: "moto", re: /\b(moto|motos|motocicleta|motoneta|scooter)\b/gi },
+	{
+		categoria: "imovel",
+		re: /\b(im[óo]vel|im[óo]veis|apartamento|casa|terreno|ch[áa]cara|s[íi]tio|reforma)\b/gi,
+	},
+];
+
+/** O que o cliente DECLAROU neste turno — categoria e valor do bem —, sem
+ * esperar a busca (L44/P212).
+ *
+ * Até aqui só `buscar_cartas` abastecia `currentCategory` e
+ * `qualifyAnswers.creditMax`/`valorDoBemAlvo`. A conversa em que o cliente diz
+ * "quero um de 80 mil" e o modelo NUNCA busca ficava sem nenhuma das três
+ * chaves, e o painel (Performance · quem chegou) a contava como "valor não
+ * informado" e sem bem.
+ *
+ * A extração é a que já existe e está testada: `parseAssetValue` (FIX-115) lê
+ * "80 mil", "R$ 80.000", "1,5 milhão" e recusa o que ambiguaria — número nu
+ * fora do gate ("CG 160"), orçamento mensal ("850 por mês") e CPF. Lance não é
+ * preço do bem e `parseAssetValue` não conhece a distinção, então o recado que
+ * fala de LANCE não vira valor (o lance tem campo próprio).
+ *
+ * Categoria: só quando o recado nomeia UMA. "carro ou moto" é comparação, não
+ * declaração, e escolher uma das duas por conta própria envenenaria o filtro do
+ * painel e o estágio do lead. */
+export function declaracaoDoTurno(texto: string | null | undefined): {
+	categoria?: Category;
+	valorDoBem?: number;
+} {
+	if (!texto) return {};
+	const nomeadas = PALAVRAS_DE_CATEGORIA.filter((p) => (texto.match(p.re) ?? []).length > 0);
+	const categoria = nomeadas.length === 1 ? nomeadas[0]?.categoria : undefined;
+	const valorDoBem = /\blance\b/i.test(texto) ? undefined : (parseAssetValue(texto) ?? undefined);
+	return {
+		...(categoria ? { categoria } : {}),
+		...(valorDoBem ? { valorDoBem } : {}),
+	};
+}
+
+/** Um beat do turno, já com o preço do modelo resolvido. */
+export type UsoDoBeat = { modelo: string; tokensInput: number; tokensOutput: number };
+
+/** O custo do TURNO — a soma EXATA dos beats, arredondada UMA vez (N09/P217).
+ *
+ * `uso_de_ia.custo_usd_cents` é inteiro em centavos, e o turno arredondava ANTES
+ * de gravar cada beat: com o modelo default do vendedor (`qwen3.6-flash`, US$
+ * 0,05 por milhão de entrada) um beat de 80 mil tokens custa 0,4 centavo, e três
+ * beats desses somam 1,2 centavo — gravado como `0 + 0 + 0`. A fração sobrevive
+ * até a borda de gravação, que é o único lugar onde `Math.round` roda.
+ *
+ * Preço desconhecido continua sendo `null`, nunca zero: um beat sem preço no
+ * meio do turno torna o total do turno desconhecido (somar só o que se sabe
+ * seria um número inventado, com cara de medição). */
+export function somarUsoDosBeats(beats: readonly UsoDoBeat[]): {
+	tokensInput: number;
+	tokensOutput: number;
+	custoUsdCents: number | null;
+} {
+	let tokensInput = 0;
+	let tokensOutput = 0;
+	let centavosExatos = 0;
+	let semPreco = false;
+	for (const beat of beats) {
+		tokensInput += beat.tokensInput;
+		tokensOutput += beat.tokensOutput;
+		const centavos = custoDoTurnoCentsExatos(beat);
+		if (centavos === null) semPreco = true;
+		else centavosExatos += centavos;
+	}
+	return {
+		tokensInput,
+		tokensOutput,
+		custoUsdCents: semPreco ? null : Math.round(centavosExatos),
+	};
+}
+
+/** O que a EMISSÃO de um card prova sobre o estado do turno — aplicado na meta
+ * (L02/P259). Hoje só uma coisa: `contract_form` na tela autoriza o
+ * `contract-submit` a criar proposta real.
+ *
+ * Só o DIFF entra, e só na direção `true`: `metaDoTurnoSemApagar` grava por cima
+ * da meta FRESCA do banco apenas o que o turno mudou, então devolver o estado
+ * intacto quando não há marca é o que preserva o que `storeIdentity` escreveu no
+ * meio do turno.
+ */
+export function aplicarMetaDaEmissao(
+	estado: EstadoDoTurno,
+	metaDaEmissao: MetaDaEmissao | undefined,
+): EstadoDoTurno {
+	if (!metaDaEmissao?.contractFormDispatched) return estado;
+	if (estado.funnel.contractFormDispatched === true) return estado;
+	return { ...estado, funnel: { ...estado.funnel, contractFormDispatched: true } };
+}
+
 export function createRunTurnLivre(deps?: {
 	provider?: { id: string; baseUrl: string; apiKey: string; model: string };
 	/** Fronteira da busca — roteiro nos testes, Bevi real em produção. */
@@ -382,6 +513,59 @@ export function createRunTurnLivre(deps?: {
 			baseMeta,
 			historico,
 		});
+
+		// QUAL TURNO É ESTE — a posição, não o conteúdo (L29/P281).
+		//
+		// O score `primeira_resposta_com_numero` (e o `turnoDoCliente` do trace) só
+		// existe se o turno souber seu ÍNDICE: na `main` isso saía do nó de
+		// persistência como evento `turno-do-cliente` + `turnosDoCliente` na meta.
+		// Com o Pi os dois produtores sumiram, e o adapter — que lê o evento nos dois
+		// canais — ficou sem insumo: o score nunca era emitido, e `turnosDoCliente`
+		// nunca era escrito.
+		//
+		// A semente é o próprio contador gravado; quando ele não existe (conversa
+		// anterior ao campo, ou retomada de thread antiga), é o número de falas do
+		// CLIENTE no histórico. `historico` é lido ANTES de a fala corrente ser
+		// gravada (`persistirTurnoLivre`), então o tamanho dele JÁ É o índice do
+		// turno — diferente da `main`, que subtraía 1 porque lá a fala corrente já
+		// estava na lista. Só turno de cliente conta: directive e retomada não são
+		// fala dele e gastariam o índice 0.
+		const turnosPersistidos =
+			estado.funnel.turnosDoCliente ?? historico.filter((m) => m.role === "user").length;
+		if (isUserTurn) {
+			estado = {
+				...estado,
+				funnel: { ...estado.funnel, turnosDoCliente: turnosPersistidos + 1 },
+				events: [...estado.events, { type: "turno-do-cliente", indice: turnosPersistidos }],
+			};
+		}
+
+		// O QUE O CLIENTE DECLAROU, SEM ESPERAR A BUSCA (L44/P212). Roda antes do beat
+		// de propósito: a conversa em que o modelo nunca busca ("quero um de 80 mil"
+		// e o cliente para) não teria nenhuma dessas chaves no metadata, e o painel a
+		// contaria como "valor não informado". O que a busca gravar depois (passo 4)
+		// sobrescreve — ela é a verdade de fato.
+		if (isUserTurn) {
+			const declaracao = declaracaoDoTurno(captura.textoLimpo);
+			if (declaracao.categoria || declaracao.valorDoBem) {
+				estado = {
+					...estado,
+					funnel: {
+						...estado.funnel,
+						...(declaracao.categoria ? { currentCategory: declaracao.categoria } : {}),
+						qualifyAnswers: {
+							...estado.funnel.qualifyAnswers,
+							...(declaracao.valorDoBem
+								? {
+										creditMax: declaracao.valorDoBem,
+										valorDoBemAlvo: declaracao.valorDoBem,
+									}
+								: {}),
+						},
+					},
+				};
+			}
+		}
 
 		// 2. O SYSTEM — conduta (caixa) + skills + linha de fato, num lugar só.
 		// O prompt só vê identidade quando existe CPF: celular sem CPF é CONTATO, não
@@ -486,15 +670,21 @@ export function createRunTurnLivre(deps?: {
 			// O chip entra DEPOIS da pergunta: o cliente lê e toca, não lê a lista.
 			if (saida.chip) ctx.cards.push(saida.chip as never);
 		};
+		// O mesmo `toolCallId` duas vezes não vira dois eventos de tool.
+		const chamadasEmitidas = new Set<string>();
+		// Os beats do turno — o custo é somado no fim, exato (N09/P217).
+		const usosDoTurno: UsoDoBeat[] = [];
 		const executar = async () => {
 			const beat = await executarBeat({
 				system,
 				turnMessage: (captura.textoLimpo || "(sem fala)") + naTela,
 				historico,
-				tools: toPiTools(buildToolsLivres(ctx, { buscarGrupos: deps?.busca }) as never, {
-					conversationId,
-					so: [...NOMES_DAS_TOOLS_LIVRES],
-				}),
+				tools: semRepetirChamada(
+					toPiTools(buildToolsLivres(ctx, { buscarGrupos: deps?.busca }) as never, {
+						conversationId,
+						so: [...NOMES_DAS_TOOLS_LIVRES],
+					}),
+				),
 				aoDelta: (delta) => {
 					// O trecho é SEGURADO até acabar (tool ou fim do beat): o verificador
 					// de "uma pergunta por mensagem" precisa do texto pronto.
@@ -506,6 +696,10 @@ export function createRunTurnLivre(deps?: {
 				aoToolCall: (chamada) => {
 					soltarTrecho();
 					trechos.aoToolCall();
+					// A fala antes da tool fecha o balão aqui; o EVENTO da mesma chamada
+					// reentregue não sai duas vezes (L41/P301).
+					if (chamada.toolCallId && chamadasEmitidas.has(chamada.toolCallId)) return;
+					if (chamada.toolCallId) chamadasEmitidas.add(chamada.toolCallId);
 					const evento = {
 						type: "tool-call" as const,
 						toolName: chamada.nome,
@@ -541,6 +735,19 @@ export function createRunTurnLivre(deps?: {
 				};
 			}
 
+			// 4b. O FATO QUE A EMISSÃO DO CARD PROVOU (L02/P259, contrato com o bloco
+			// FECHO-B). `mostrar_card` de `contract_form` anota em `ctx.metaDaEmissao`
+			// que o formulário apareceu na tela — é essa marca, e não a fala do modelo,
+			// que autoriza o `contract-submit` a criar proposta real. Na web o adapter
+			// marca por conta própria; no WhatsApp nenhuma flag era escrita e o
+			// `contract_confirm` recusava.
+			//
+			// O campo é do `ContextoDasTools` do bloco FECHO-B (mesma onda): a leitura
+			// opcional aqui não depende da ordem em que as duas metades entram.
+			const metaDaEmissao = (ctx as ContextoDasTools & { metaDaEmissao?: MetaDaEmissao })
+				.metaDaEmissao;
+			estado = aplicarMetaDaEmissao(estado, metaDaEmissao);
+
 			// 5. Cards por RESULTADO — o card de NÚMERO nunca é escolha do modelo;
 			// o de ESCOLHA (pergunta + opções) é, e foi validado em `mostrar_card`.
 			//
@@ -552,11 +759,23 @@ export function createRunTurnLivre(deps?: {
 				estado = { ...estado, events: [...estado.events, ev] };
 				emitir(ev);
 			}
+			// O card não GRUDA na fala que o anunciou (R5.1): cada artifact abre um
+			// balão novo, como na `main` (`fechaBalao` antes do card). Sem o boundary,
+			// "deixa eu te mostrar…" e o card chegavam no MESMO balão, com o card
+			// embaixo de dois parágrafos de prosa.
+			//
+			// E o MESMO card não sai duas vezes: payload idêntico é a mesma carta na
+			// tela (L41/P301) — repetir a busca não pode empilhar a tabela.
+			const cardsJaEmitidos = new Set<string>();
 			for (const card of ctx.cards) {
+				const chave = `${card.type}:${JSON.stringify(card.payload)}`;
+				if (cardsJaEmitidos.has(chave)) continue;
+				cardsJaEmitidos.add(chave);
 				estado = {
 					...estado,
 					events: [
 						...estado.events,
+						{ type: "text-boundary" },
 						{
 							type: "artifact",
 							artifactType: card.type,
@@ -565,6 +784,15 @@ export function createRunTurnLivre(deps?: {
 						},
 					],
 				};
+			}
+			// O MARCO DA PRIMEIRA CARTA (L29/P281) — sinal de SESSÃO, uma vez por
+			// conversa. Na `main` quem chamava era o nó de descoberta; com o Pi ninguém
+			// chamava, e o `carta_vista`/`turnos_ate_carta` (a métrica que disse se a
+			// vitrine funcionou) ficou sem produtor. `revealCompleted` ainda é o de
+			// ENTRADA aqui — re-descoberta por troca de faixa não reemite. Só o card de
+			// oferta conta: é o momento em que a conversa deixa de ser promessa.
+			if (!baseMeta.revealCompleted && ctx.cards.some((c) => c.type === "comparison_table")) {
+				void marcarPrimeiraCarta(conversationId, !isUserTurn);
 			}
 			if (ctx.pediuHumano) {
 				estado = {
@@ -580,20 +808,25 @@ export function createRunTurnLivre(deps?: {
 
 			// 6. Custo do turno (livro-caixa local). O preço é CONHECIDO ou o campo fica
 			// `null` — nunca zero por ausência de preço (mesma disciplina de `custo-de-ia`).
-			if (beat.uso.input > 0 || beat.uso.output > 0) {
-				const modelo = process.env.AI_MODEL?.trim() || "qwen3.6-flash";
+			// UMA linha por turno, com a soma EXATA dos beats arredondada no fim
+			// (N09/P217): o turno de hoje tem um beat, mas quem arredondava por beat
+			// perdia a fração de centavo de cada um — ver `somarUsoDosBeats`.
+			const modelo = process.env.AI_MODEL?.trim() || "qwen3.6-flash";
+			usosDoTurno.push({
+				modelo,
+				tokensInput: beat.uso.input,
+				tokensOutput: beat.uso.output,
+			});
+			const usoDoTurno = somarUsoDosBeats(usosDoTurno);
+			if (usoDoTurno.tokensInput > 0 || usoDoTurno.tokensOutput > 0) {
 				void db
 					.insert(usoDeIa)
 					.values({
 						conversationId,
 						modelo,
-						tokensInput: beat.uso.input,
-						tokensOutput: beat.uso.output,
-						custoUsdCents: custoDoTurnoCents({
-							modelo,
-							tokensInput: beat.uso.input,
-							tokensOutput: beat.uso.output,
-						}),
+						tokensInput: usoDoTurno.tokensInput,
+						tokensOutput: usoDoTurno.tokensOutput,
+						custoUsdCents: usoDoTurno.custoUsdCents,
 					})
 					.catch((erro: unknown) => console.error("[uso-de-ia] não registrado (ignorado):", erro));
 			}

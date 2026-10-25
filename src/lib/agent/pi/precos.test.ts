@@ -52,7 +52,13 @@ describe("o custo do turno é calculado do usage, e ausência de preço não é 
 	// O livro-caixa não pode voltar a gravar tokens sem custo calculável.
 	it("o turno grava o custo calculado", () => {
 		const fonte = readFileSync(new URL("./turno-livre.ts", import.meta.url).pathname, "utf8");
-		expect(fonte).toMatch(/custoUsdCents: custoDoTurnoCents\(\{/);
+		// A coluna sai do custo do TURNO, somado pelos beats em
+		// `somarUsoDosBeats` (que usa `custoDoTurnoCentsExatos`). A forma antiga —
+		// `custoUsdCents: custoDoTurnoCents({...})` por beat — arredondava antes de
+		// somar e zerava o consumo de modelo barato (N09/P217); por isso a asserção
+		// deixou de aceitar aquela chamada direta nesta linha.
+		expect(fonte).toMatch(/custoUsdCents: usoDoTurno\.custoUsdCents/);
+		expect(fonte).toMatch(/somarUsoDosBeats\(/);
 	});
 
 	it("o preço cadastrado é o que a conta da casa usa", () => {
