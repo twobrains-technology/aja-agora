@@ -29,7 +29,6 @@ import { type CreatePersonaInput, createPersonaSchema } from "@/lib/validations/
 import { ForbiddenTopicListSection } from "./forbidden-topic-list-section";
 import { HandoffTriggerListSection } from "./handoff-trigger-list-section";
 import { PersonaExamplesSection } from "./persona-examples-section";
-import { PersonaPreviewPanel } from "./persona-preview-panel";
 
 const VOICE_TONE_MAX = 2000;
 
@@ -124,8 +123,8 @@ export function PersonaCreateForm() {
 					</div>
 				)}
 
-				<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-					<div className="space-y-6 lg:col-span-2">
+				<div className="grid grid-cols-1 gap-6">
+					<div className="space-y-6">
 						<Card>
 							<CardHeader>
 								<CardTitle>Identidade</CardTitle>
@@ -230,10 +229,6 @@ export function PersonaCreateForm() {
 						<PersonaExamplesSection />
 						<HandoffTriggerListSection />
 						<ForbiddenTopicListSection />
-					</div>
-
-					<div className="lg:sticky lg:top-4 lg:self-start lg:col-span-1">
-						<PersonaPreviewPanel />
 					</div>
 				</div>
 			</form>
