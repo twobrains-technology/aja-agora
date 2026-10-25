@@ -16,15 +16,24 @@
  *
  * ── Cada número declara de ONDE veio ────────────────────────────────────────
  *
- * Investimento é o reportado pela Meta; custo de IA é o Langfuse; custo de
- * mensagem é o volume do Postgres com o preço do cadastro. Sem declarar a
- * fonte, os três apareceriam lado a lado como se fossem a mesma coisa, medida
- * do mesmo jeito.
+ * Investimento é o reportado pela Meta; custo de IA é o livro-caixa do Postgres
+ * (`uso_de_ia`, lido por `lerCustoLocal`); custo de mensagem é o volume do
+ * Postgres com o preço do cadastro. Sem declarar a fonte, os três apareceriam
+ * lado a lado como se fossem a mesma coisa, medida do mesmo jeito — e atribuir
+ * o custo de IA ao Langfuse seria apontar um serviço que não é mais lido (L43).
+ *
+ * ── O total do custo de IA se EXPLICA ──────────────────────────────────────
+ *
+ * Juiz de avaliação, diagnóstico e insight gastam IA sem conversa a quem
+ * atribuir. Elas entram na soma (P314) — e a linha declara a fatia delas: um
+ * total que carrega uma parcela invisível é um número que o operador não
+ * consegue fechar na leitura, que é para o que este bloco existe.
  */
 
 import { inteiro, reais } from "@/components/admin/campanhas/formato";
 import { FRASE_CUSTO_NAO_APLICAVEL } from "@/components/admin/dashboard/filtro-ab";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { ResultadoCustoDeIA } from "@/lib/admin/custo-de-ia";
 import type { CustosDoCpc } from "@/lib/admin/performance-types";
 import { calcularCpc } from "./custos-do-cpc";
 
@@ -53,6 +62,25 @@ function Linha({
 			<span className="text-[11px] text-muted-foreground/70">fonte: {fonte}</span>
 		</div>
 	);
+}
+
+/**
+ * A nota do custo de IA: o motivo de ele não existir, ou a fatia das chamadas
+ * sem conversa que ele inclui.
+ *
+ * As duas coisas não podem virar uma só regra: quando há número, o que falta na
+ * tela é a fatia avulsa (sem ela o total não bate com nada que se possa
+ * explicar); quando não há número, o que falta é o motivo nomeado. `undefined`
+ * quando não há avulsa nenhuma — nota sobre fatia zero é ruído.
+ */
+function notaDoCustoDeIA(custo: ResultadoCustoDeIA): string | undefined {
+	if (custo.tipo !== "valor") return custo.explicacao;
+
+	const { chamadas, brlCents } = custo.semConversa;
+	if (chamadas === 0) return undefined;
+
+	const quantas = chamadas === 1 ? "chamada sem conversa" : "chamadas sem conversa";
+	return `Inclui ${inteiro(chamadas)} ${quantas} (juiz, diagnóstico e insights) — ${reais(brlCents)}`;
 }
 
 /**
@@ -126,7 +154,7 @@ export function BlocoDeCustos({ custos }: { custos: CustosDoCpc }) {
 						<Linha
 							titulo="Custo de IA"
 							valor={ia}
-							nota={custos.custoDeIA.tipo === "valor" ? undefined : custos.custoDeIA.explicacao}
+							nota={notaDoCustoDeIA(custos.custoDeIA)}
 							fonte={custos.fontes.custoDeIA}
 							alerta={custos.custoDeIA.tipo !== "valor"}
 						/>
