@@ -120,6 +120,32 @@ describe("telefone e número comprido não são CPF", () => {
 		expect(pedidoDeCpfNoUltimoBalao(null)).toBe(false);
 	});
 
+	// P188 (rodada 7): o verbo de pedido na frase não bastava. "Vou te informar como
+	// funciona a consulta de CPF." fala de uma ação do AGENTE, não pede o dado — e
+	// `informar` casava o verbo de pedido, abrindo o contexto de identidade. O
+	// celular ambíguo que o cliente manda em resposta era capturado como CPF.
+	it("explicação do agente com 'informar' não é pedido: o número segue TELEFONE", async () => {
+		const { decidirCpfDoTexto: decidirNoWhatsApp, pedidoDeCpfNoUltimoBalao: pedidoNoWhatsApp } =
+			await import("./identify-capture");
+		const pedidoDeCpf = pedidoNoWhatsApp({
+			role: "assistant",
+			content: "Vou te informar como funciona a consulta de CPF.",
+		});
+		expect(pedidoDeCpf).toBe(false);
+		expect(decidirNoWhatsApp("11900000083", { pedidoDeCpf })).toEqual({ outcome: "none" });
+		// O mesmo verbo dentro do molde, dirigido ao cliente, continua pedido:
+		// aí o número que responde ao pedido é CPF.
+		const pedidoDeVerdade = pedidoNoWhatsApp({
+			role: "assistant",
+			content: "Pode me informar seu CPF?",
+		});
+		expect(pedidoDeVerdade).toBe(true);
+		expect(decidirNoWhatsApp("11900000083", { pedidoDeCpf: pedidoDeVerdade })).toEqual({
+			outcome: "captured",
+			cpf: "11900000083",
+		});
+	});
+
 	// P188 (rodada 5): "Seu CPF já está cadastrado." era lido como pedido — o
 	// prefixo `cadastra` de "cadastrado" casava o verbo de pedido — e o celular
 	// que o cliente mandava depois podia ser gravado como identidade.

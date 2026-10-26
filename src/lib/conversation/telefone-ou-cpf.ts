@@ -17,7 +17,7 @@
 //
 // O PEDIDO do agente é um PERMISSÃO, não um bloqueio (rodada 6 da auditoria):
 // ele só existe quando o balão casa uma forma POSITIVA estreita — a última frase
-// que fala do dado tem um ATO de pedido E o balão inteiro passa nas travas
+// que fala do dado CASA UM DOS MOLDES do pedido E o balão inteiro passa nas travas
 // gerais (negação, outro contato, constatação, adiamento). Qualquer outra coisa
 // cai no lado seguro: o número fica telefone e o modelo pede o CPF de novo no
 // turno seguinte. O detalhe das duas condições está em
@@ -294,9 +294,9 @@ export function decidirCpfDoTexto(
 // CPF agora" — `preciso` casava o verbo e a negação passava batido. Enumeração
 // de bloqueio nunca fecha. Invertida, a resposta exige uma forma POSITIVA
 // estreita sobre o balão:
-//   1. a ÚLTIMA frase que fala do dado (`cpf` como palavra) tem um ATO de
-//      pedido: um verbo de pedido nela, uma pergunta que busca o valor
-//      ("qual o cpf?"), ou o dado sozinho ("CPF?", "SEU CPF, POR FAVOR");
+//   1. a ÚLTIMA frase que fala do dado (`cpf` como palavra) casa um dos MOLDES do
+//      pedido (rodada 7), na frase normalizada: um verbo de pedido IMPERATIVO
+//      dirigido ao cliente, a pergunta pelo valor, ou o dado sozinho;
 //   2. o balão INTEIRO passa nas TRAVAS gerais abaixo — negação, menção a outro
 //      contato, constatação de que o CPF já existe, adiamento.
 // As duas juntas. Faltando uma, não é pedido de CPF.
@@ -343,12 +343,6 @@ const VERBO_DE_PEDIDO = palavra(
 	].join("|"),
 );
 
-/** Pergunta que pede o VALOR do dado ("qual o cpf?", "cadê o cpf?"). É o único
- *  tipo de pergunta que conta como pedido: "como funciona a consulta do CPF?" é
- *  explicação e abria o contexto do CPF para quem tinha pedido o celular
- *  (P188, rodada 4). */
-const PALAVRA_QUE_PEDE_VALOR = palavra("qual|quais|cad[êe]");
-
 /** Outro dado/contato que o balão menciona. Se ele fala do celular, o número
  *  que chega sozinho é o CELULAR: "Já recebi seu CPF. Qual é seu celular?" não é
  *  pedido de CPF. Trava do balão INTEIRO, inclusive quando a menção é permissão
@@ -373,6 +367,17 @@ const TRAVA_NEGACAO = palavra("n[ãa]o|nem|nunca|jamais|sem");
  *  `depois` já cobre "pra depois", e a trava de negação cobre "agora não". */
 const TRAVA_ADIAMENTO = palavra("depois|mais\\s+tarde|por\\s+enquanto");
 
+/** O dado que uma frase PEDE, além do contato. Vale só para a frase POSTERIOR ao
+ *  pedido (`frasePosteriorPediuOutroDado`), e não para a trava do balão inteiro: ali
+ *  "documento" é onde o dado está, não o dado que se pede, e "Me envia o CPF que está
+ *  no seu documento." continua pedido. LISTA FECHADA e piso: cada palavra é um dado que
+ *  o vendedor pede; nomeado depois do CPF, ele deixa o número que chega sozinho como
+ *  telefone. O preço de um piso é o caso que fica de fora — e o empate cai para "não
+ *  houve pedido". */
+const OUTRO_DADO_PEDIDO_NA_FRASE = palavra(
+	"comprovante|documento|foto|selfie|renda|sal[áa]rio|valor|faixa|endere[çc]o|nascimento|profiss[ãa]o|carteira",
+);
+
 /** As travas gerais, uma por motivo de derrubar o pedido. Basta uma delas
  *  aparecer no balão para a resposta ser "não houve pedido". */
 const TRAVAS: readonly RegExp[] = [
@@ -382,45 +387,85 @@ const TRAVAS: readonly RegExp[] = [
 	TRAVA_ADIAMENTO,
 ];
 
-/** O dado SOZINHO na frase é um pedido: "CPF?", "SEU CPF, POR FAVOR". */
-const CPF_SOZINHO = /^(?:(?:e|o|a|seu|sua)\s+)*cpf(?:\s+(?:por\s+favor|pra\s+mim|para\s+mim))?$/i;
+/** Os MOLDES do pedido (rodada 7). O pedido é verdadeiro só se a última frase do
+ *  balão que tem `cpf` casar um destes cinco, na frase normalizada (sem acento, em
+ *  minúsculas). `cpf` é `\bcpf\b`, e X é `(?:\S+\s+){0,3}?` — no máximo três
+ *  palavras entre o molde e o dado, folgado para o caso exato. O ESPAÇO que o molde
+ *  mostra antes de `X` entra como `\s*`, e o que mostra depois entra como `\s*` também:
+ *  `X` é opcional, e quando casa já levou o espaço do fim da palavra.
+ *
+ *  O verbo do molde é IMPERATIVO, dirigido ao cliente: `informar`, `vou te
+ *  informar` e `posso informar` não entram — o molde 3 só aceita o verbo no
+ *  infinitivo depois de `pode`/`poderia`/`consegue`, que é a forma de pedido.
+ */
+const X = "(?:(?:\\S+\\s+){0,3})?\\s*";
+const MOLDES_DO_PEDIDO: readonly RegExp[] = [
+	new RegExp(`\\bqual\\b\\s*${X}(?:e\\s+)?(?:o\\s+)?(?:seu\\s+|teu\\s+)?cpf\\b`, "u"),
+	new RegExp(
+		`\\b(?:me\\s+)?(?:passa|passe|manda|mande|envia|envie|informe|digita|diga)\\s+${X}(?:o\\s+)?(?:seu\\s+|teu\\s+)?cpf\\b`,
+		"u",
+	),
+	new RegExp(
+		`\\b(?:pode|poderia|consegue)\\s+(?:me\\s+)?(?:passar|mandar|enviar|informar|digitar)\\s+${X}(?:o\\s+)?(?:seu\\s+|teu\\s+)?cpf\\b`,
+		"u",
+	),
+	/\bpreciso\s+d[oa]\s+(?:seu\s+|teu\s+)?cpf\b/u,
+	/^(?:e\s+)?(?:o\s+)?(?:seu\s+)?cpf\s*\??$/u,
+];
 
 /** As frases do balão, cortadas por `. ! ? \n`. A pontuação que fecha a frase
- *  vai junto, porque é ela que diz se a frase é interrogativa; a vírgula não
- *  corta ("pode informar o CPF, por favor?" é um pedido só) e as frases nunca
+ *  vai junto, porque o molde 5 compara a FRASE INTEIRA; a vírgula não corta
+ *  ("pode informar o CPF, por favor?" é um pedido só) e as frases nunca
  *  são juntadas — foi a união de orações que criou a associação falsa da
  *  rodada 4. */
 const FRASES = /[^.!?\n]+[.!?]*/g;
 
-/** Troca símbolo (emoji) e pontuação por espaço, para comparar palavras. */
+/** A frase para os moldes: sem acento, em minúsculas, com símbolo (emoji) e
+ *  pontuação trocados por espaço. As TRAVAS comparam o texto cru, não este. */
 function normalizar(texto: string): string {
 	return (texto ?? "")
+		.normalize("NFD")
+		.replace(/\p{M}/gu, "")
+		.toLowerCase()
 		.replace(/[^\p{L}\p{N}\s]/gu, " ")
 		.replace(/\s+/g, " ")
 		.trim();
 }
 
-type Frase = { texto: string; interrogativa: boolean };
-
-function frasesDoBalao(balao: string): Frase[] {
-	return [...(balao ?? "").matchAll(FRASES)].map((achado) => ({
-		texto: achado[0],
-		interrogativa: achado[0].includes("?"),
-	}));
+function frasesDoBalao(balao: string): string[] {
+	return [...(balao ?? "").matchAll(FRASES)].map((achado) => achado[0]);
 }
 
-/** A frase TEM um ato de pedido: o dado sozinho, um verbo de pedido, ou uma
- *  pergunta que busca um valor. Pergunta que não busca valor ("como funciona a
- *  consulta do CPF?") é explicação, não pedido. */
-function frasePede(frase: Frase): boolean {
-	if (CPF_SOZINHO.test(normalizar(frase.texto))) return true;
-	if (VERBO_DE_PEDIDO.test(frase.texto)) return true;
-	return frase.interrogativa && PALAVRA_QUE_PEDE_VALOR.test(frase.texto);
+/** A frase PEDE o dado: ela casa um dos moldes. A presença de um verbo de pedido
+ *  não basta — "Vou te informar como funciona a consulta de CPF" tem `informar`,
+ *  mas é o agente falando de uma ação dele, não um pedido ao cliente (P188). */
+function fraseCasaMolde(frase: string): boolean {
+	return MOLDES_DO_PEDIDO.some((molde) => molde.test(normalizar(frase)));
+}
+
+/** Nenhuma frase POSTERIOR à que casa o molde pede OUTRO dado: "Qual é seu CPF?
+ *  Envie só os números." e "Qual é seu CPF? Digita aí." continuam pedido — o verbo
+ *  sozinho não nomeia dado nenhum — mas "Me passa seu celular?" e "Me manda o
+ *  comprovante." não são: o número que chega sozinho é o celular, não o CPF.
+ *
+ *  É a trava de outro dado aplicada frase a frase, na frase depois do pedido: contato
+ *  (`TRAVA_OUTRO_CONTATO`, que já vale para o balão INTEIRO) ou o dado nomeado na frase
+ *  (`OUTRO_DADO_PEDIDO_NA_FRASE`). Compara o texto cru, como as outras travas. */
+function frasePosteriorPediuOutroDado(posteriores: string[]): boolean {
+	return posteriores.some(
+		(frase) =>
+			VERBO_DE_PEDIDO.test(frase) &&
+			(TRAVA_OUTRO_CONTATO.test(frase) || OUTRO_DADO_PEDIDO_NA_FRASE.test(frase)),
+	);
 }
 
 /** O pedido de CPF é o que o ÚLTIMO balão do agente pede — sem turno do cliente
  *  no meio. `false` quando a última fala é do cliente (aí o número comprido dele
  *  não é resposta a pedido nenhum) ou a conversa não tem histórico.
+ *
+ *  As duas condições, juntas: a última frase do balão QUE TEM `cpf` casa um dos
+ *  `MOLDES_DO_PEDIDO` (na frase normalizada, sem acento e em minúsculas), e nenhuma
+ *  frase posterior pede outro dado. As `TRAVAS` valem no balão INTEIRO.
  *
  *  Qualquer dúvida devolve `false`: na dúvida, quem pergunta é o modelo. */
 export function pedidoDeCpfNoUltimoBalao(
@@ -429,11 +474,12 @@ export function pedidoDeCpfNoUltimoBalao(
 	if (!ultima || ultima.role !== "assistant") return false;
 	const balao = ultima.content ?? "";
 	if (TRAVAS.some((trava) => trava.test(balao))) return false;
-	// A última frase que fala do dado é a que pode pedi-lo: uma menção anterior a
-	// ela ("já expliquei como funciona a consulta do CPF") não vale como pedido.
-	const pedido = frasesDoBalao(balao)
-		.filter((frase) => MENCIONA_CPF.test(frase.texto))
-		.pop();
-	if (!pedido) return false;
-	return frasePede(pedido);
+	const frases = frasesDoBalao(balao);
+	// A última frase QUE TEM `cpf` é a que pode pedi-lo: uma menção anterior a ela
+	// ("já expliquei como funciona a consulta do CPF") não vale como pedido.
+	const indice = frases.map((frase) => MENCIONA_CPF.test(frase)).lastIndexOf(true);
+	if (indice < 0) return false;
+	const pedido = frases[indice];
+	if (!fraseCasaMolde(pedido)) return false;
+	return !frasePosteriorPediuOutroDado(frases.slice(indice + 1));
 }

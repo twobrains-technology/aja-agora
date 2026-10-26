@@ -290,8 +290,16 @@ describe("o pedido de CPF é o ATO do balão, não a menção ao dado", () => {
 			pede: true,
 			porque: "precisar + dado, sem pontuação",
 		},
-		{ fala: "SEU CPF, POR FAVOR", pede: true, porque: "caixa alta, sem pergunta" },
-		{ fala: "Me diz seu CPF!", pede: true, porque: "exclamação, sem interrogação" },
+		{
+			fala: "SEU CPF, POR FAVOR",
+			pede: false,
+			porque: "fora dos moldes: o molde 5 é a FRASE INTEIRA, e 'por favor' acrescenta palavras",
+		},
+		{
+			fala: "Me diz seu CPF!",
+			pede: false,
+			porque: "fora dos moldes: `diga` entra, `diz` não",
+		},
 		{ fala: "Qual o CPF do titular?", pede: true, porque: "pergunta pelo dado de quem responde" },
 		{ fala: "Informe o CPF: é rapidinho", pede: true, porque: "imperativo antes dos dois-pontos" },
 		{
@@ -422,7 +430,7 @@ describe("o pedido de CPF é o ATO do balão, não a menção ao dado", () => {
 		{
 			fala: "Qual é seu CPF? Envie só os números.",
 			pede: true,
-			porque: "pedido do dado + instrução de formato (P263)",
+			porque: "vale a última frase COM cpf, e a frase posterior não pede outro dado (P263)",
 		},
 		// Rodada 6: a trava geral vale para o BALÃO INTEIRO, e a negação `sem`
 		// derruba o pedido mesmo quando ela não nega o dado ("sem pontos" é o
@@ -513,6 +521,71 @@ describe("o pedido de CPF é o ATO do balão, não a menção ao dado", () => {
 			pede: false,
 			porque: "negação com 'nem'",
 		},
+		// ── rodada 7 (P188): os MOLDES EXATOS do pedido ─────────────────────────
+		// O verbo de pedido na frase não basta: tem de casar um molde, dirigido ao
+		// cliente. "Vou te informar como funciona a consulta de CPF." fala de uma
+		// ação do próprio agente, e o celular ambíguo que o cliente dita em seguida
+		// era gravado como identidade (P188). Este caso MORDE contra a trava de
+		// explicação: sem ela, `informar` sozinho abre o contexto do CPF.
+		{
+			fala: "Vou te informar como funciona a consulta de CPF.",
+			pede: false,
+			porque: "explicação do agente — `informar` fora do molde não é pedido",
+		},
+		{
+			fala: "Pode me informar seu CPF?",
+			pede: true,
+			porque: "molde 3: modal + verbo de pedido dirigido ao cliente",
+		},
+		{
+			fala: "Posso informar o CPF?",
+			pede: false,
+			porque: "molde 2 exige o verbo no imperativo: `posso informar` é o agente falando de si",
+		},
+		{
+			fala: "Cadê o CPF?",
+			pede: false,
+			porque: "fora dos moldes: `cadê` não está na lista — cai para o lado seguro",
+		},
+		// O molde está na frase do dado, mas a frase de trás pede OUTRO dado. Como
+		// essa trava vale para o balão INTEIRO, ela derruba o pedido pelos dois
+		// caminhos: o contato (aqui) e qualquer outro dado nomeado na frase
+		// ("Me manda o comprovante."), que é a forma frase a frase da mesma trava.
+		{
+			fala: "Qual é seu CPF? Me passa seu celular?",
+			pede: false,
+			porque: "molde na frase do dado, mas a frase posterior pede outro dado",
+		},
+		{
+			fala: "Qual é seu CPF? Me manda o comprovante.",
+			pede: false,
+			porque: "a frase posterior pede outro dado (COMPROVANTE), não o CPF",
+		},
+		{
+			fala: "qual SEU CPF",
+			pede: true,
+			porque: "molde 5 na frase normalizada (caixa alta, sem ponto)",
+		},
+		{
+			fala: "Qual as duas linhas do seu CPF?",
+			pede: false,
+			porque: "são 4 palavras entre `qual` e o dado, e `X` aceita no máximo 3",
+		},
+		{
+			fala: "Qual CPF de vocês?",
+			pede: true,
+			porque: "molde 1 com `X` vazio",
+		},
+		{
+			fala: "Qual o número do seu CPF?",
+			pede: true,
+			porque: "`X` casa as 2 palavras (`número do`) antes do dado",
+		},
+		{
+			fala: "CPF, por favor.",
+			pede: false,
+			porque: "fora dos moldes: o molde 5 exige a frase inteira, sem cortesia depois",
+		},
 		// ── mais dez, cada um atacando uma trava ou o ato de pedido ───────────
 		{
 			fala: "Qual é seu CPF? Depois a gente acerta os detalhes.",
@@ -579,16 +652,6 @@ describe("o pedido de CPF é o ATO do balão, não a menção ao dado", () => {
 			fala: "Me envia o CPF que está no seu documento.",
 			pede: true,
 			porque: "imperativo + complemento qualquer",
-		},
-		{
-			fala: "Cadê o CPF?",
-			pede: true,
-			porque: "'cadê' pergunta pelo valor do dado",
-		},
-		{
-			fala: "CPF, por favor.",
-			pede: true,
-			porque: "o dado sozinho com cortesia",
 		},
 	];
 

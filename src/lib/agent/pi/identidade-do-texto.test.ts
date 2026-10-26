@@ -178,6 +178,33 @@ describe("capturarIdentidadeDoTexto", () => {
 		expect(r.identidade).toEqual({ cpf: AMBIGUO, celular: "" });
 	});
 
+	// P188/P263 (rodada 7): a explicação do agente com `informar` — "Vou te informar
+	// como funciona a consulta de CPF." — não é pedido de CPF. O número ambíguo que
+	// o cliente manda em resposta era escolhido como CPF, SUBSTITUÍA o CPF guardado
+	// e saía do texto antes da captura telefônica: o telefone se perdia.
+	it("CPF guardado + explicação do agente com 'informar': CPF preservado, celular capturado", () => {
+		const AMBIGUO = "11900000083";
+		const pedidoDeCpf = pedidoDeCpfNoUltimoBalao({
+			role: "assistant",
+			content: "Vou te informar como funciona a consulta de CPF.",
+		});
+		expect(pedidoDeCpf).toBe(false);
+
+		const r = capturarIdentidadeDoTexto(AMBIGUO, { cpf: CPF, celular: "" }, { pedidoDeCpf });
+		expect(r.recebeuCpf).toBe(false);
+		expect(r.recebeuCelular).toBe(true);
+		expect(r.identidade).toEqual({ cpf: CPF, celular: AMBIGUO });
+	});
+
+	// A regra da `main` continua no Pi: se o CLIENTE escreveu `cpf`, o dado é dele —
+	// moldes nenhum entram aqui, quem declara é o cliente.
+	it("o cliente declara o dado com a palavra cpf: é CPF mesmo sem pedido", () => {
+		const AMBIGUO = "11900000083";
+		const r = capturarIdentidadeDoTexto(`meu cpf é ${AMBIGUO}`, null, { pedidoDeCpf: false });
+		expect(r.recebeuCpf).toBe(true);
+		expect(r.identidade).toEqual({ cpf: AMBIGUO, celular: "" });
+	});
+
 	// P188 (rodada 5): a constatação cadastral ISOLADA. "Seu CPF já está
 	// cadastrado." era lida como pedido por causa do prefixo `cadastra`, e o
 	// celular ambíguo que o cliente mandava em seguida sobrescrevia o CPF guardado.
