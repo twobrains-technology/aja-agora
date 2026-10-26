@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { AVISO_LGPD_RE } from "@/lib/agent/pi/lgpd";
+import { metaDoFecho } from "@/lib/agent/pi/tools-livres";
+import {
+	decryptIdentity,
+	maskCpf,
+	type StoredIdentity,
+	storeIdentity,
+} from "@/lib/conversation/identity";
 import { decidirCpfDoTexto } from "@/lib/conversation/telefone-ou-cpf";
 
 // O módulo importa o banco; o mock dele está mais abaixo, junto do estado que o
@@ -112,6 +119,15 @@ const estado = vi.hoisted(() => ({
 	chamadasStartContract: [] as string[],
 }));
 
+/** P288 — o aceite é o comprovante, não o número. O único lugar onde o CPF pode
+ * existir persistido é `identityEnc` (cifrado): uma segunda cópia em claro no meta
+ * derrotaria a criptografia. O teste fecha as duas formas do mesmo número — com
+ * pontuação e só dígitos — sobre o objeto que `persistMeta` recebe. */
+const CPF_EM_CLARO = "52998224725";
+function semCpfEmClaro(objeto: unknown): void {
+	expect(JSON.stringify(objeto) ?? "").not.toContain(CPF_EM_CLARO);
+}
+
 vi.mock("@/db", () => ({
 	db: {
 		query: {
@@ -132,11 +148,29 @@ vi.mock("@/lib/conversation/meta", () => ({
 vi.mock("@/lib/conversation/messages", () => ({ saveMessage: vi.fn(async () => "msg-1") }));
 // Só a I/O de identidade é trocada: `isValidCpf` (o DV) continua o real, porque é
 // ele que decide se o número é CPF no stage `cpf`.
-vi.mock("@/lib/conversation/identity", async (importOriginal) => ({
-	...(await importOriginal<typeof import("@/lib/conversation/identity")>()),
-	storeIdentity: vi.fn(async () => {}),
-	loadIdentity: vi.fn(async () => ({ cpf: "52998224725", celular: "5511987654321" })),
-}));
+//
+// O dublê de `storeIdentity` NÃO pode ser no-op (R12-2): ele escreve `identityEnc` e
+// `identityCollected` por `persistMeta`, e é justamente aí que o snapshot anterior à
+// captura pode apagá-los (P187). Um no-op escondia a perda, e `loadIdentity` sempre
+// devolvendo identidade escondia o outro lado — sem `identityEnc` o disparo volta a
+// pedir CPF e não chama a Bevi. Os dois continuam os reais, lidos pelo mesmo meta em
+// memória que o mock de `persistMeta` escreve.
+vi.mock("@/lib/conversation/identity", async (importOriginal) => {
+	const real = await importOriginal<typeof import("@/lib/conversation/identity")>();
+	const metaModule = await import("@/lib/conversation/meta");
+	return {
+		...real,
+		storeIdentity: vi.fn(async (convId: string, identity: StoredIdentity) => {
+			// `attachContact` é I/O de fora deste teste; o que importa é a escrita no meta.
+			const fresca = await metaModule.reloadMeta(convId);
+			await metaModule.persistMeta(convId, {
+				...fresca,
+				identityCollected: real.isCompleteIdentity(identity),
+				identityEnc: real.encryptIdentity(identity),
+			});
+		}),
+	};
+});
 vi.mock("./api", () => ({
 	sendTextMessage: vi.fn(async (_to: string, texto: string) => {
 		estado.textos.push(texto);
@@ -189,7 +223,10 @@ describe("o aviso de LGPD é gravado antes de o CPF valer como proposta", () => 
 		const resultado = await captureContractText("5511987654321", "529.982.247-25");
 		expect(resultado).toEqual({ handled: true, outcome: "fire" });
 		expect(estado.meta.lgpdAceite).toBeTruthy();
-		expect(estado.meta.lgpdAceite?.fala).toBe("529.982.247-25");
+		// P288: o registro continua sendo a fala do cliente, mas mascarada — nenhum CPF
+		// completo no meta, com ou sem pontuação. O que o atendente lê é `***.***.247-25`.
+		expect(estado.meta.lgpdAceite?.fala).toBe(maskCpf("529.982.247-25"));
+		semCpfEmClaro(estado.meta);
 	});
 
 	it("no stage confirm, o aceite explícito registra o lgpdAceite", async () => {
@@ -229,6 +266,9 @@ describe("o aviso de LGPD é gravado antes de o CPF valer como proposta", () => 
 			...metaBase,
 			contractCollection: { stage: "confirm", avisoLgpdEm: "2026-10-25T12:00:00.000Z" },
 		};
+		// A identidade on file é fato de conversa, não concessão do mock: entra pelo
+		// mesmo `storeIdentity` fiel (P187) — era ele que o dublê no-op escondia.
+		await storeIdentity("conv-1", { cpf: CPF_EM_CLARO, celular: "5511987654321" });
 		const { fireContract } = await import("./contract-capture");
 		await fireContract("5511987654321", "conv-1");
 		expect(estado.chamadasStartContract).toEqual(["conv-1"]);
@@ -240,6 +280,7 @@ describe("o aviso de LGPD é gravado antes de o CPF valer como proposta", () => 
 			lgpdAceite: { em: "2026-10-25T11:00:00.000Z", fala: "pode usar meus dados" },
 			contractCollection: { stage: "confirm" },
 		};
+		await storeIdentity("conv-1", { cpf: CPF_EM_CLARO, celular: "5511987654321" });
 		const { fireContract } = await import("./contract-capture");
 		await fireContract("5511987654321", "conv-1");
 		expect(estado.chamadasStartContract).toEqual(["conv-1"]);
@@ -256,7 +297,11 @@ describe("o aviso de LGPD é gravado antes de o CPF valer como proposta", () => 
 		};
 		expect(meta.contractCollection?.avisoLgpdEm).toBe("2026-10-25T12:00:00.000Z");
 		const { aceiteDoDisparo } = await import("./contract-capture");
-		expect(aceiteDoDisparo(meta, "529.982.247-25")?.fala).toBe("529.982.247-25");
+		// P288: a fala é comprovante mascarado, não o número. O mesmo `scrubCpf` que
+		// protege a fala do cliente protege o registro.
+		const aceite = aceiteDoDisparo(meta, "meu cpf é 529.982.247-25");
+		expect(aceite?.fala).toBe(`meu cpf é ${maskCpf("529.982.247-25")}`);
+		semCpfEmClaro(aceite);
 	});
 
 	it("sem aviso gravado, o CPF que chega não fabrica aceite — o registro é do aviso", async () => {
@@ -267,5 +312,86 @@ describe("o aviso de LGPD é gravado antes de o CPF valer como proposta", () => 
 		const resultado = await captureContractText("5511987654321", "529.982.247-25");
 		expect(resultado).toEqual({ handled: true, outcome: "fire" });
 		expect(estado.meta.lgpdAceite).toBeUndefined();
+	});
+});
+
+// P288 — os dois pontos que escrevem `lgpdAceite.fala` (o `aceiteDoDisparo` do
+// WhatsApp e o `metaDoFecho` do vendedor livre) gravam comprovante, não número.
+// Este é o teste que morde a garantia: tirar `scrubCpf` dos dois vermelha.
+describe("P288 — o aceite persistido nunca leva CPF em claro", () => {
+	beforeEach(() => {
+		estado.meta = {};
+	});
+
+	it("`metaDoFecho` (o vendedor livre) mascara a fala que contém o CPF", () => {
+		const meta = metaDoFecho({
+			meta: metaBase,
+			escolhida: {
+				groupId: "grupo-1",
+				administradora: "ITAÚ",
+				creditValue: 92_902,
+				termMonths: 100,
+			},
+			falaDoCliente: "meu cpf é 529.982.247-25, pode usar meus dados",
+		});
+		expect(meta.lgpdAceite?.fala).toBe(
+			`meu cpf é ${maskCpf("529.982.247-25")}, pode usar meus dados`,
+		);
+		semCpfEmClaro(meta);
+	});
+
+	it("a fala longa é cortada em 200 chars depois de mascarar, e continua sem CPF", async () => {
+		const { aceiteDoDisparo } = await import("./contract-capture");
+		const fala = `529.982.247-25 ${"a".repeat(250)}`;
+		const aceite = aceiteDoDisparo(
+			{
+				...metaBase,
+				contractCollection: { stage: "cpf", avisoLgpdEm: "2026-10-25T12:00:00.000Z" },
+			},
+			fala,
+		);
+		expect(aceite?.fala).toHaveLength(200);
+		semCpfEmClaro(aceite);
+	});
+});
+
+// P187 — a captura no estágio `cpf` grava a identidade cifrada e o aceite na MESMA
+// sequência de turnos. `persistMeta` substitui a coluna inteira: repersistir o
+// snapshot anterior à captura apagava `identityEnc`/`identityCollected`, e o disparo
+// voltava a pedir CPF em vez de criar a proposta. Este teste usa o `storeIdentity`
+// fiel (dublê que escreve no meta) — com o no-op antigo ele não morde nada.
+describe("P187 — o registro do aceite não apaga a identidade recém-capturada", () => {
+	beforeEach(() => {
+		estado.meta = {};
+		estado.textos.length = 0;
+		estado.chamadasStartContract.length = 0;
+	});
+
+	function identidadeGuardada(): StoredIdentity | null {
+		if (!estado.meta.identityEnc) return null;
+		return decryptIdentity(estado.meta.identityEnc);
+	}
+
+	it("captura seguida de `fireContract`: a identidade continua e a proposta é criada", async () => {
+		// O contraexemplo da auditoria: conversa SEM identidade on file (por isso o
+		// `contract_form` abriu o estágio `cpf` com aviso), e o cliente responde o CPF.
+		estado.meta = {
+			...metaBase,
+			contractCollection: { stage: "cpf", avisoLgpdEm: "2026-10-25T12:00:00.000Z" },
+		};
+		const { captureContractText, fireContract } = await import("./contract-capture");
+		const resultado = await captureContractText("5511987654321", "529.982.247-25");
+		expect(resultado).toEqual({ handled: true, outcome: "fire" });
+
+		// A identidade que `storeIdentity` acabou de cifrar não pode sumir na escrita
+		// seguinte (o aceite), que era o snapshot ANTERIOR à captura.
+		expect(estado.meta.identityCollected).toBe(true);
+		expect(identidadeGuardada()?.cpf).toBe(CPF_EM_CLARO);
+
+		await fireContract("5511987654321", "conv-1");
+		// Sem identidade o disparo cai no `CONTRACT_CPF_PROMPT` e nunca chama a Bevi —
+		// é o sinal de que o aceite apagou a identidade.
+		expect(estado.chamadasStartContract).toEqual(["conv-1"]);
+		expect(identidadeGuardada()?.cpf).toBe(CPF_EM_CLARO);
 	});
 });

@@ -38,6 +38,7 @@ import {
 	indexRevealGroups,
 	type RevealGroupIndex,
 } from "@/lib/agent/orchestrator/recommendation-payload";
+import { scrubCpf } from "@/lib/agent/orchestrator/vazamento";
 import type { Category, ConversationMetadata } from "@/lib/agent/personas";
 import {
 	cardDeEscolha,
@@ -325,7 +326,10 @@ export function metaDoFecho(args: {
 			args.meta.lgpdAceite ??
 			({
 				em: new Date().toISOString(),
-				fala: (args.falaDoCliente ?? "").slice(0, 200),
+				// P288: comprovante mascarado, não o número — o mesmo `scrubCpf` que
+				// protege a fala do cliente protege o registro persistido. O CPF cifrado em
+				// `identityEnc` é a única cópia que o banco guarda.
+				fala: scrubCpf(args.falaDoCliente ?? "").slice(0, 200),
 			} as ConversationMetadata["lgpdAceite"]),
 	};
 }
