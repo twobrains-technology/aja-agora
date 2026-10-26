@@ -148,13 +148,27 @@ export class GroupNotInDiscoveryError extends Error {
 	}
 }
 
+/** Chave que distingue as variantes do MESMO grupo físico: a variante de embutido
+ * (marcador sintético do adapter) + a carta. É o que impede a segunda variante de
+ * sobrescrever a primeira no índice. */
+function varianteDaOferta(offer: BeviOffer): string {
+	return `${offer.embeddedVariant ?? "none"}:${offer.finalValue}`;
+}
+
 export class BeviSelfContractAdapter implements AdministradoraAdapter {
 	private proposalReady = false;
 	private currentSegment: string | null = null;
 	/** Cache por `${segmento}:${valor}` — ofertas da última simulação. */
 	private readonly offerCache = new Map<string, BeviOffer[]>();
-	/** Índice quotaId → oferta, pra simulateQuota/getGroupDetails O(1). */
-	private readonly offerIndex = new Map<string, BeviOffer>();
+	/** Índice quotaId → VARIANTES da oferta, na ordem em que chegaram, pra
+	 * simulateQuota/getGroupDetails O(1).
+	 *
+	 * Um grupo físico pode aparecer com mais de uma variante do MESMO `quotaId` (sem e
+	 * com lance embutido — `offersForValue`). Antes este índice guardava UMA oferta por
+	 * quotaId e a última variante sobrescrevia a primeira: o cliente clicava na linha da
+	 * tabela (a primeira, sem embutido) e o `simulation_result` mostrava a carta da outra
+	 * variante. Achado F2 do testador no dev (2026-10-27), conversas 518a3818/dfd69823. */
+	private readonly offerIndex = new Map<string, BeviOffer[]>();
 	private readonly sweepConfig: SweepConfig;
 
 	constructor(
@@ -212,14 +226,16 @@ export class BeviSelfContractAdapter implements AdministradoraAdapter {
 	}
 
 	async simulateQuota(params: SimulateQuotaParams): Promise<QuotaSimulation> {
-		const offer = this.offerIndex.get(params.groupId);
+		// A variante do valor que a tool recebeu — a mesma carta que o cliente viu.
+		const offer = this.ofertaDoGrupo(params.groupId, params.creditValue);
 		// FIX-72: id fora do conjunto real → erro TIPADO (re-busca), nunca Error cru.
 		if (!offer) throw new GroupNotInDiscoveryError(params.groupId);
 		return beviOfferToQuotaSimulation(offer);
 	}
 
 	async getGroupDetails(params: GetGroupDetailsParams): Promise<GroupDetails> {
-		const offer = this.offerIndex.get(params.groupId);
+		// Sem valor pra casar: a primeira variante, a que a lista da busca mostra.
+		const offer = this.ofertaDoGrupo(params.groupId);
 		// FIX-72: detalhar id fora do conjunto também sinaliza re-busca (era Error cru).
 		if (!offer) throw new GroupNotInDiscoveryError(params.groupId);
 		return {
@@ -245,7 +261,10 @@ export class BeviSelfContractAdapter implements AdministradoraAdapter {
 
 	async getRates(params: GetRatesParams): Promise<RateInfo[]> {
 		const seen = new Map<string, RateInfo>();
-		for (const offer of this.offerIndex.values()) {
+		// Uma linha por grupo, pela PRIMEIRA variante — a que a lista mostra.
+		for (const variantes of this.offerIndex.values()) {
+			const offer = variantes[0];
+			if (!offer) continue;
 			const administradora = normalizeAdministradoraName(offer.bankLabel ?? offer.bank);
 			const category = beviSegmentToCategory(offer.productType ?? "");
 			if (params.category && category !== params.category) continue;
@@ -306,7 +325,7 @@ export class BeviSelfContractAdapter implements AdministradoraAdapter {
 		});
 
 		this.offerCache.set(key, offers);
-		for (const offer of offers) this.offerIndex.set(offer.quotaId, offer);
+		for (const offer of offers) this.registrarOferta(offer);
 		return offers;
 	}
 
@@ -361,6 +380,30 @@ export class BeviSelfContractAdapter implements AdministradoraAdapter {
 		}
 
 		return collected;
+	}
+
+	/** Registra a variante do grupo na ordem de chegada, sem duplicar a mesma variante
+	 * (mesmo `quotaId` + mesma variante de embutido + mesma carta) — o cache devolve o
+	 * mesmo array e o sweep reencontra o grupo em outra faixa. */
+	private registrarOferta(offer: BeviOffer): void {
+		const variantes = this.offerIndex.get(offer.quotaId) ?? [];
+		if (!variantes.some((v) => varianteDaOferta(v) === varianteDaOferta(offer))) {
+			variantes.push(offer);
+			this.offerIndex.set(offer.quotaId, variantes);
+		}
+	}
+
+	/** A variante de um grupo: a carta cujo `finalValue` é o `creditValue` pedido; sem
+	 * valor (ou quando nenhum casa), a PRIMEIRA variante — a mesma que a lista da busca
+	 * mostra. Com uma variante só, é exatamente o comportamento de sempre. */
+	private ofertaDoGrupo(groupId: string, creditValue?: number): BeviOffer | undefined {
+		const variantes = this.offerIndex.get(groupId);
+		if (!variantes?.length) return undefined;
+		if (creditValue !== undefined) {
+			const casamento = variantes.find((o) => o.finalValue === creditValue);
+			if (casamento) return casamento;
+		}
+		return variantes[0];
 	}
 
 	/** FIX-70 — sweep sequencial multi-faixa. Varre alvo + vizinhas (1 proposta
