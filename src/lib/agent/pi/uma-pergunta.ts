@@ -22,8 +22,11 @@ export function manterUmaPergunta(texto: string): string {
 	if (contarPerguntas(texto) <= 1) return texto;
 	const limpo = semCitacoes(texto);
 	// Frases: do fim da anterior até o `?`/`.`/`!`/quebra de linha dupla.
+	// Ponto, vírgula e ponto e vírgula DENTRO de um número não fecham frase: em "R$ 1.010"
+	// o ponto é separador de milhar, e a frase inteira se perdia (achado F3 no dev). É o
+	// mesmo critério de `trechosDe` em `turno-livre.ts`, replicado aqui para não criar ciclo.
 	const trechos: Array<{ ini: number; fim: number; pergunta: boolean }> = [];
-	const re = /[^.!?\n]*(?:[.!?]+(?=\s|$|[*_)\]])|\n+|$)/g;
+	const re = /(?:(?:[^.!?\n]|(?<=\d)[.;](?=\d))*)(?:[.!?]+(?=\s|$|[*_)\]])|\n+|$)/g;
 	let m: RegExpExecArray | null = re.exec(limpo);
 	while (m !== null) {
 		if (m[0].length === 0) {

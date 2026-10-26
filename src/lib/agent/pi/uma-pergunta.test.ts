@@ -32,4 +32,25 @@ describe("uma pergunta por mensagem", () => {
 		const citada = 'Muita gente diz "será que dá?" — dá sim. Quando você quer começar?';
 		expect(manterUmaPergunta(citada)).toBe(citada);
 	});
+
+	it("ponto de milhar não quebra a frase: o número sai íntegro (achado F3 do dev)", () => {
+		const entrada =
+			"Achei 4 opções! Eu escolheria a primeira, parcela de R$ 733. Prefere essa? Se preferir pagar antes, a terceira faz isso em 75 meses (parcela de R$ 1.010). Qual delas você quer?";
+		expect(manterUmaPergunta(entrada)).toBe(
+			"Achei 4 opções! Eu escolheria a primeira, parcela de R$ 733. Se preferir pagar antes, a terceira faz isso em 75 meses (parcela de R$ 1.010). Qual delas você quer?",
+		);
+	});
+
+	it("milhar e decimal dentro de frase preservada não quebram nada", () => {
+		for (const intacta of [
+			"O teto é de R$ 60.000. Posso simular pra você?",
+			"A parcela ficou em 1.038,61. Faz sentido pra você?",
+			"12.5% é o coeficiente. Posso simular?",
+		]) {
+			expect(manterUmaPergunta(intacta)).toBe(intacta);
+		}
+		// A frase com o número fica; só a pergunta do meio é cortada.
+		const comDuas = "O teto é de R$ 60.000, certo? A parcela ficaria em 1.038,61. Posso simular?";
+		expect(manterUmaPergunta(comDuas)).toBe("A parcela ficaria em 1.038,61. Posso simular?");
+	});
 });
