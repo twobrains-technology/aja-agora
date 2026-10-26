@@ -4,6 +4,13 @@ Este arquivo é curto de propósito. O contexto do projeto (domínio, arquitetur
 onde as coisas estão) vive em **`CLAUDE.md`** — leia-o antes de trabalhar aqui. O que está
 abaixo é o que muda o *jeito* de trabalhar.
 
+## Decisão do dono vence hard-rule de arquivo
+
+`HARD_RULES.md`, ADR e `docs/` dizem **o que o código faz hoje**; a decisão do Kairo diz **o que o
+produto deve fazer**. Quando as duas divergirem, a decisão vence e o arquivo é que se corrige. As
+decisões vigentes, com data e se são definitivas ou paliativas, ficam na seção **“Decisões vigentes
+do dono”** do `CLAUDE.md` — leia antes de tratar uma `HARD_RULES.md` como lei.
+
 ## Testes: pontual e específico, sempre
 
 A suíte de testes foi removida em 16/10/2026 (commit `d67ea102`: 741 arquivos, 101.660

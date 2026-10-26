@@ -62,6 +62,30 @@ costuma girar mais rápido. Estimar, comparar e sugerir é o trabalho dele. O qu
 O agente já foi engessado uma vez e virou um robô que respondia sempre a mesma coisa. Se a conversa
 sair ruim, a primeira hipótese é **prompt/contexto ruim ou trava demais** — não "falta uma trava".
 
+## Decisões vigentes do dono
+
+**Decisão do Kairo vence hard-rule de arquivo.** Quando uma `HARD_RULES.md`, um ADR ou um `docs/`
+disser o contrário do que está aqui, o **arquivo está desatualizado**: corrija o arquivo, não a
+decisão. Decisão registrada aqui tem data e diz se é definitiva ou paliativa.
+
+### CPF provisório na simulação — paliativa, em vigor (26/10/2026)
+
+A Bevi exige um CPF na chamada para simular. Para mostrar a **carta antes do CPF do lead**, o código
+manda um **CPF provisório** (hoje, o do Kairo) no lugar do CPF do lead — isso já existe no código e
+está em produção. É **paliativa**, não é o desenho final: a pendência é pedir oficialmente à Bevi
+(Bruna ou alguém do time dela) qual CPF deve ser usado, para formalizar o que já roda.
+
+O que isso muda em quem lê a regra: “a Bevi exige CPF antes de simular” é verdade sobre a **chamada**,
+não sobre o **lead**. Não trate “CPF do lead antes de qualquer carta” como invariante — essa já não é
+a decisão vigente.
+
+### Produção (`main`) é a referência de comportamento (26/10/2026)
+
+Relato de cliente vem de **produção (`main`)**: a Bruna e o time dela só acessam produção; `develop`
+é só nossa. Quando `develop` divergir de `main` num comportamento que o cliente já vê, **`develop` se
+alinha a `main`**, não o contrário. O que é proposital na `develop` (o motor mais dinâmico) continua,
+desde que o que o cliente vê não mude sem decisão.
+
 ## Português correto
 
 Todo texto que o cliente vê (agente, UI, botão, erro, e-mail, template) em português com acento,
