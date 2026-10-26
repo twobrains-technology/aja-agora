@@ -387,30 +387,48 @@ const TRAVAS: readonly RegExp[] = [
 	TRAVA_ADIAMENTO,
 ];
 
-/** Os MOLDES do pedido (rodada 7). O pedido é verdadeiro só se a última frase do
- *  balão que tem `cpf` casar um destes cinco, na frase normalizada (sem acento, em
- *  minúsculas). `cpf` é `\bcpf\b`, e X é `(?:\S+\s+){0,3}?` — no máximo três
- *  palavras entre o molde e o dado, folgado para o caso exato. O ESPAÇO que o molde
- *  mostra antes de `X` entra como `\s*`, e o que mostra depois entra como `\s*` também:
- *  `X` é opcional, e quando casa já levou o espaço do fim da palavra.
+/** Os MOLDES do pedido (rodada 7, ANCORADOS na rodada 8). O pedido é verdadeiro só
+ *  se a última frase do balão que tem `cpf` casar um destes cinco, na frase
+ *  normalizada (sem acento, em minúsculas, `trim`): o molde casa na ENTRADA da frase.
+ *
+ *  Entre o verbo do molde e `cpf` só cabe `ALVO`: LISTA FECHADA na ordem em que ele
+ *  nomeia (`me` + `o` + `seu` + `numero do` + `seu` — é como o cliente fala: "Qual o
+ *  número do seu CPF?"). Não existe mais o `X` de até 3 palavras: ele deixava a
+ *  EXPLICAÇÃO passar como pedido (P188, rodada 8) — "Vou explicar qual a função do CPF
+ *  na análise." casava `qual` no meio da frase com "a função do" como X, e o celular
+ *  ambíguo que o cliente ditou em resposta foi gravado como identidade. Ancorado,
+ *  "a função do" não cabe no ALVO e a explicação cai para o lado seguro: o número
+ *  continua telefone e o modelo pede o dado de novo no turno seguinte. Cada grupo de
+ *  `ALVO` já leva o espaço do fim da palavra; quando ele fica vazio, o espaço vem do
+ *  `\s+` do molde.
+ *
+ *  `PRE` é o preâmbulo ANCORADO no começo da frase: até 30 caracteres sem pontuação
+ *  terminados em vírgula. Ele mantém o pedido que começa com cortesia ("Pra seguir, me
+ *  manda seu CPF?") e não salvou a explicação da rodada 8, que não tem vírgula antes
+ *  do `qual`.
+ *
+ *  Moldes 1 e 3 vão até o FIM da frase (`.*$`) sem exigir `?`: o ponto de interrogação
+ *  não é o que faz um balão pedir — "Pode digitar o CPF, por favor." pede igual.
  *
  *  O verbo do molde é IMPERATIVO, dirigido ao cliente: `informar`, `vou te
  *  informar` e `posso informar` não entram — o molde 3 só aceita o verbo no
  *  infinitivo depois de `pode`/`poderia`/`consegue`, que é a forma de pedido.
  */
-const X = "(?:(?:\\S+\\s+){0,3})?\\s*";
+const ALVO =
+	"(?:me\\s+)?(?:o\\s+)?(?:seu\\s+|teu\\s+)?(?:numero\\s+d[oe]\\s+)?(?:seu\\s+|teu\\s+)?";
+const PRE = "^(?:[^,.?!]{1,30},\\s*)?";
 const MOLDES_DO_PEDIDO: readonly RegExp[] = [
-	new RegExp(`\\bqual\\b\\s*${X}(?:e\\s+)?(?:o\\s+)?(?:seu\\s+|teu\\s+)?cpf\\b`, "u"),
+	new RegExp(`${PRE}qual\\s+(?:e\\s+)?${ALVO}cpf\\b.*$`, "u"),
 	new RegExp(
-		`\\b(?:me\\s+)?(?:passa|passe|manda|mande|envia|envie|informe|digita|diga)\\s+${X}(?:o\\s+)?(?:seu\\s+|teu\\s+)?cpf\\b`,
+		`${PRE}(?:me\\s+)?(?:passa|passe|manda|mande|envia|envie|informe|digita|diga)\\s+${ALVO}cpf\\b`,
 		"u",
 	),
 	new RegExp(
-		`\\b(?:pode|poderia|consegue)\\s+(?:me\\s+)?(?:passar|mandar|enviar|informar|digitar)\\s+${X}(?:o\\s+)?(?:seu\\s+|teu\\s+)?cpf\\b`,
+		`${PRE}(?:voce\\s+)?(?:pode|poderia|consegue)\\s+(?:me\\s+)?(?:passar|mandar|enviar|informar|digitar)\\s+${ALVO}cpf\\b.*$`,
 		"u",
 	),
-	/\bpreciso\s+d[oa]\s+(?:seu\s+|teu\s+)?cpf\b/u,
-	/^(?:e\s+)?(?:o\s+)?(?:seu\s+)?cpf\s*\??$/u,
+	new RegExp(`${PRE}(?:agora\\s+)?preciso\\s+d[oa]\\s+(?:seu\\s+|teu\\s+)?cpf\\b`, "u"),
+	new RegExp(`${PRE}(?:e\\s+)?(?:o\\s+)?(?:seu\\s+)?cpf\\s*\\??$`, "u"),
 ];
 
 /** As frases do balão, cortadas por `. ! ? \n`. A pontuação que fecha a frase
@@ -421,13 +439,15 @@ const MOLDES_DO_PEDIDO: readonly RegExp[] = [
 const FRASES = /[^.!?\n]+[.!?]*/g;
 
 /** A frase para os moldes: sem acento, em minúsculas, com símbolo (emoji) e
- *  pontuação trocados por espaço. As TRAVAS comparam o texto cru, não este. */
+ *  pontuação trocados por espaço, `trim`. A vírgula e o `?` ficam, porque `PRE`
+ *  precisa distinguir o preâmbulo do verbo do pedido ("Pra seguir, me manda seu CPF?").
+ *  As TRAVAS comparam o texto cru, não este. */
 function normalizar(texto: string): string {
 	return (texto ?? "")
 		.normalize("NFD")
 		.replace(/\p{M}/gu, "")
 		.toLowerCase()
-		.replace(/[^\p{L}\p{N}\s]/gu, " ")
+		.replace(/[^\p{L}\p{N}\s?,.?!]/gu, " ")
 		.replace(/\s+/g, " ")
 		.trim();
 }

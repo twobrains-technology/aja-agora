@@ -146,6 +146,40 @@ describe("telefone e número comprido não são CPF", () => {
 		});
 	});
 
+	// P188 (rodada 8): o molde 1 é ANCORADO — `qual` tem de ser a primeira palavra da
+	// frase, e entre ele e o dado só cabe `ALVO`. Com o antigo `X` de até 3 palavras,
+	// "Vou explicar qual a função do CPF na análise." casava `qual` no meio da frase,
+	// "a função do" entrava como X e o balão abria o contexto do CPF: o celular
+	// ambíguo que o cliente ditou em resposta foi gravado como identidade, em cima de
+	// um CPF que já estava guardado. Ancorado, a explicação não é pedido.
+	it("explicação sobre a FUNÇÃO do CPF não é pedido: o número segue TELEFONE", async () => {
+		const { decidirCpfDoTexto: decidirNoWhatsApp, pedidoDeCpfNoUltimoBalao: pedidoNoWhatsApp } =
+			await import("./identify-capture");
+		for (const fala of [
+			"Vou explicar qual a função do CPF na análise.",
+			"Qual a função do CPF?",
+			"Você sabe qual a função do CPF?",
+		]) {
+			const pedidoDeCpf = pedidoNoWhatsApp({ role: "assistant", content: fala });
+			expect(pedidoDeCpf).toBe(false);
+			expect(decidirNoWhatsApp("11900000083", { pedidoDeCpf })).toEqual({ outcome: "none" });
+		}
+		// E o pedido PELO VALOR do dado continua dentro do molde ancorado: aí o número
+		// que responde é CPF, pelo mesmo caminho.
+		for (const fala of [
+			"Qual é o seu CPF?",
+			"Me passa seu CPF, por favor.",
+			"Pode me informar seu CPF?",
+		]) {
+			const pedidoDeCpf = pedidoNoWhatsApp({ role: "assistant", content: fala });
+			expect(pedidoDeCpf).toBe(true);
+			expect(decidirNoWhatsApp("11900000083", { pedidoDeCpf })).toEqual({
+				outcome: "captured",
+				cpf: "11900000083",
+			});
+		}
+	});
+
 	// P188 (rodada 5): "Seu CPF já está cadastrado." era lido como pedido — o
 	// prefixo `cadastra` de "cadastrado" casava o verbo de pedido — e o celular
 	// que o cliente mandava depois podia ser gravado como identidade.

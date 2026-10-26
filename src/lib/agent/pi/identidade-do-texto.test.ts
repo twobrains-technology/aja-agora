@@ -196,6 +196,30 @@ describe("capturarIdentidadeDoTexto", () => {
 		expect(r.identidade).toEqual({ cpf: CPF, celular: AMBIGUO });
 	});
 
+	// P188/P263 (rodada 8): a explicação com `qual` — "Vou explicar qual a função do
+	// CPF na análise." — casava o molde 1 porque o `X` de até 3 palavras aceitava "a
+	// função do". Com o CPF JÁ GUARDADO e o celular vazio, isso fazia `pedidoDeCpf`
+	// ser verdadeiro no turno do Pi: o número ambíguo que o cliente ditou em resposta
+	// era escolhido como CPF, SUBSTITUÍA o CPF guardado e saía do texto antes da
+	// captura telefônica — o telefone se perdia. Ancorado, o molde não casa a
+	// explicação: o CPF fica e o número é capturado como celular.
+	it("CPF guardado + explicação sobre a FUNÇÃO do CPF: CPF preservado, celular capturado", () => {
+		const AMBIGUO = "11900000083";
+		for (const fala of [
+			"Vou explicar qual a função do CPF na análise.",
+			"Qual a função do CPF?",
+			"Você sabe qual a função do CPF?",
+		]) {
+			const pedidoDeCpf = pedidoDeCpfNoUltimoBalao({ role: "assistant", content: fala });
+			expect(pedidoDeCpf).toBe(false);
+
+			const r = capturarIdentidadeDoTexto(AMBIGUO, { cpf: CPF, celular: "" }, { pedidoDeCpf });
+			expect(r.recebeuCpf).toBe(false);
+			expect(r.recebeuCelular).toBe(true);
+			expect(r.identidade).toEqual({ cpf: CPF, celular: AMBIGUO });
+		}
+	});
+
 	// A regra da `main` continua no Pi: se o CLIENTE escreveu `cpf`, o dado é dele —
 	// moldes nenhum entram aqui, quem declara é o cliente.
 	it("o cliente declara o dado com a palavra cpf: é CPF mesmo sem pedido", () => {

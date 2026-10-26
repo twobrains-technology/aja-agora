@@ -569,7 +569,8 @@ describe("o pedido de CPF é o ATO do balão, não a menção ao dado", () => {
 		{
 			fala: "Qual as duas linhas do seu CPF?",
 			pede: false,
-			porque: "são 4 palavras entre `qual` e o dado, e `X` aceita no máximo 3",
+			porque:
+				"molde 1 ancorado: entre `qual` e o dado só cabe ALVO, e `as duas linhas do` não entra",
 		},
 		{
 			fala: "Qual CPF de vocês?",
@@ -579,7 +580,7 @@ describe("o pedido de CPF é o ATO do balão, não a menção ao dado", () => {
 		{
 			fala: "Qual o número do seu CPF?",
 			pede: true,
-			porque: "`X` casa as 2 palavras (`número do`) antes do dado",
+			porque: "molde 1 ancorado: ALVO aceita `o` + `numero do` + `seu`, na ordem da fala",
 		},
 		{
 			fala: "CPF, por favor.",
@@ -652,6 +653,74 @@ describe("o pedido de CPF é o ATO do balão, não a menção ao dado", () => {
 			fala: "Me envia o CPF que está no seu documento.",
 			pede: true,
 			porque: "imperativo + complemento qualquer",
+		},
+		// ── rodada 8 (P188/P263): os MOLDES ANCORADOS ─────────────────────────
+		// O `X` de até 3 palavras não distinguia PEDIDO de EXPLICAÇÃO: em "Vou explicar
+		// qual a função do CPF na análise." o `qual` era achado no meio da frase, "a
+		// função do" entrava como X e o balão abria o contexto do CPF — o celular
+		// ambíguo que o cliente ditava em resposta era gravado como identidade (P188).
+		// Ancorado, o molde começa na palavra do pedido e entre ela e o dado só cabe
+		// `ALVO`; "a função do" não existe mais. A explicação cai para o lado seguro.
+		{
+			fala: "Vou explicar qual a função do CPF na análise.",
+			pede: false,
+			porque: "molde 1 ancorado: a frase não começa com `qual` (P188, rodada 8)",
+		},
+		{
+			fala: "Qual a função do CPF?",
+			pede: false,
+			porque: "molde 1 ancorado: `a função do` não é ALVO, e o `X` de 3 palavras não existe mais",
+		},
+		{
+			fala: "Você sabe qual a função do CPF?",
+			pede: false,
+			porque: "molde 1 ancorado: `voce sabe` na frente do `qual`",
+		},
+		{
+			fala: "Qual é o seu CPF?",
+			pede: true,
+			porque: "molde 1 ancorado, com ALVO `o seu` — o pedido pelo valor continua pedido",
+		},
+		{
+			fala: "Me passa seu CPF, por favor.",
+			pede: true,
+			porque: "molde 2 ancorado no imperativo, com complemento depois do dado",
+		},
+		{
+			fala: "Qual é o número do CPF?",
+			pede: true,
+			porque: "ALVO na ordem em que ele nomeia: `o` + `numero do` + cpf",
+		},
+		{
+			fala: "Pra seguir, me manda seu CPF?",
+			pede: true,
+			porque: "PRE: até 30 caracteres sem pontuação e vírgula antes do verbo do pedido",
+		},
+		{
+			fala: "Qual número do CPF?",
+			pede: true,
+			porque: "ALVO na ordem direta, sem `seu`",
+		},
+		{
+			fala: "Qual linha do seu CPF?",
+			pede: false,
+			porque: "pergunta sobre o DADO, não pelo valor dele: `linha` não é ALVO",
+		},
+		{
+			fala: "qual SEU CPF",
+			pede: true,
+			porque:
+				"molde 1 ancorado na frase normalizada (caixa alta, sem ponto): `qual` + ALVO `seu` + dado",
+		},
+		{
+			fala: "Pode digitar o CPF, por favor.",
+			pede: true,
+			porque: "molde 3 ancorado: `pode` + `digitar` + ALVO `o` + dado, com cortesia depois",
+		},
+		{
+			fala: "Pode digitar o CPF, por favor?",
+			pede: true,
+			porque: "molde 3 ancorado, com cortesia antes do `?`",
 		},
 	];
 
