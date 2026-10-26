@@ -76,7 +76,7 @@ export function garanteAvisoLgpd(args: { texto: string; avisoJaDado: boolean }):
 }
 
 const AFIRMATIVA_RE =
-	/\b(sim|pode|podes|podem|posso|aceito|autorizo|autorizado|confirmo|claro|ok|beleza|de acordo)\b/gi;
+	/\b(sim|pode|podes|podem|posso|aceito|autorizo|autorizado|confirmo|claro|ok|beleza|de acordo)\b/i;
 
 /** Recusa explícita: "não", "não aceito", "prefiro não", "melhor não, obrigado". */
 function ehRecusa(frase: string): boolean {
@@ -89,123 +89,112 @@ function ehRecusa(frase: string): boolean {
 	);
 }
 
-/* A DECISÃO É POR ORAÇÃO, NÃO PELA FRASE INTEIRA.
+/* O LADO PERIGOSO É O ACEITE FALSO — e é ele que manda no desenho.
  *
- * "Não autorizo consultar meu CPF, podemos seguir sem isso?" é UMA frase com DUAS
- * orações: a primeira revoga, a segunda pergunta. Descartar a frase porque termina em
- * "?" deixava o aceite anterior de pé — e a consulta de bureau ia em frente depois de
- * uma revogação explícita (P262, re-auditoria 310e rodada 4).
+ * Um aceite lido errado libera a consulta de bureau no CPF de quem só fez uma dúvida.
+ * O erro contrário — não ver um aceite que existia — custa um turno: o modelo pergunta
+ * de novo e o cliente responde "sim". É o princípio do `isQuestion` da main
+ * (`src/lib/whatsapp/contract-capture.ts`, a2bc3024), conservador nos DOIS sentidos:
+ * na dúvida, ninguém decide por regex — quem responde é o modelo.
+ *
+ * Três regras simples sobre a FRASE (a pontuação original fica; oração não se separa):
+ *   1. a frase tem "?" .......................... não é aceite
+ *   2. a frase abre/contém interrogativa ......... não é aceite
+ *   3. a frase tem recusa ........................ não é aceite
+ * Aceite é a frase que passa pelas três e casa o padrão afirmativo.
+ *
+ * Por que não se separa oração: a rodada 5 mostrou que atribuir o "?" só à última
+ * parte de "Vocês podem consultar meu CPF e vender meus dados?" deixava o "podem" da
+ * primeira parte virar autorização (P262).
  */
-type Oracao = {
-	texto: string;
-	/** A oração é PERGUNTA: não aceita e não revoga nada. */
-	interrogativa: boolean;
-};
 
-/** Fim de frase — a quebra de linha também separa falas no chat. */
-const FIM_DE_FRASE_RE = /([.!?;…]+|\n+)/;
+/** A fala em FRASES, com a pontuação original no fim de cada uma. */
+const FIM_DE_FRASE_RE = /(?<=[.!?…])\s+|\n+/;
 
-/** Conectivo que emenda duas orações na mesma frase. */
-const ORACAO_SEP_RE = /[,:]|[—–]|\s+(?:e|mas|por[ée]m|contudo|todavia|nem)\s+/i;
+function frasesDe(texto: string): string[] {
+	return texto
+		.split(FIM_DE_FRASE_RE)
+		.map((frase) => frase.trim())
+		.filter(Boolean);
+}
 
-/** A oração que ABRE com palavra interrogativa é pergunta mesmo sem "?". */
+/** A interrogativa que ABRE a frase — é o `isQuestion` da main, com duas adições
+ * medidas aqui: `podem` e `vocês`. Quem abre falando com a empresa ("podem consultar
+ * meu CPF", "vocês consultam meu CPF") está perguntando, e no WhatsApp a pergunta
+ * costuma vir sem "?"; o aceite do cliente abre com "pode", "sim", "ok" — e
+ * "sim, podem usar" continua aceite, porque a regra é ancorada no COMEÇO da frase. */
 const ABRE_COMO_PERGUNTA_RE =
-	/^(?:o\s+que|que\s+(?:é|e|s[ãa]o)|qual|quais|quando|onde|como|por\s*que|porqu[êe]|pra\s+que|para\s+que|quem|quanto|posso\s+saber|pode(?:m)?\s+(?:me\s+)?(?:explicar|esclarecer|detalhar|dizer|falar)|voc[êe]s?\s+podem\s+(?:me\s+)?(?:explicar|esclarecer|detalhar))\b/i;
+	/^(?:o\s+que|que\s+(?:é|e|s[ãa]o)|por\s?que|porqu[êe]|pq|qual|quais|quanto|quantos|quando|como|onde|quem|tem\s|teria|e\s+se|ser[áa]|seria|d[áa]\s+pra|posso\s+saber|pode(?:m)?\s+(?:me\s+)?(?:explicar|esclarecer|detalhar|dizer|falar)|podem\b|voc[êe]s\b)\b/i;
 
-/**
- * Separa a fala em ORAÇÕES — o pedaço que carrega UMA decisão.
- *
- * O "?" pertence à oração que ele fecha, não à frase inteira: em "não autorizo…,
- * podemos seguir sem isso?" a pergunta é só a segunda. É isto que permite revogar e
- * perguntar na mesma fala sem que uma coisa engula a outra.
- */
-function separarOracoes(texto: string): Oracao[] {
-	const pedacos = texto.split(FIM_DE_FRASE_RE);
-	const oracoes: Oracao[] = [];
-	for (let i = 0; i < pedacos.length; i += 2) {
-		const corpo = pedacos[i].trim();
-		if (!corpo) continue;
-		const interrogativa = (pedacos[i + 1] ?? "").includes("?");
-		const partes = corpo
-			.split(ORACAO_SEP_RE)
-			.map((p) => p.trim())
-			.filter(Boolean);
-		const ultima = partes.length - 1;
-		partes.forEach((parte, indice) => {
-			oracoes.push({
-				texto: parte,
-				interrogativa:
-					(indice === ultima && interrogativa) ||
-					(indice === 0 && ABRE_COMO_PERGUNTA_RE.test(parte)),
-			});
-		});
-	}
-	return oracoes;
+/** A interrogativa no MEIO da frase também é pergunta: "… e QUANTO precisaria de
+ * lance?" virou aceite na main (2026-07-21) porque só se olhava o começo. */
+const INTERROGATIVA_NO_MEIO_RE =
+	/\b(quanto|quantos|qual|quais|como\s+fica|e\s+se|ser[áa]\s+que|seria)\b/i;
+
+/** Pedido de PAUSA: quem diz "pera" está freando, não aceitando. */
+const PEDIDO_DE_PAUSA_RE = /\b(pera[ií]?|espera|calma|antes\s+de|só\s+um|aguenta|segura)\b/i;
+
+/** Esta frase é uma PERGUNTA? Na dúvida, sim — pergunta não aceita nada. */
+function ehPergunta(frase: string): boolean {
+	const s = frase.trim();
+	if (s.includes("?")) return true;
+	if (ABRE_COMO_PERGUNTA_RE.test(s)) return true;
+	if (INTERROGATIVA_NO_MEIO_RE.test(s)) return true;
+	return PEDIDO_DE_PAUSA_RE.test(s);
 }
 
 /**
  * Resposta afirmativa do cliente. Negativa não vale ("não pode", "não autorizo") e
- * pergunta não vale ("pode explicar?"): aceite é o cliente DIZENDO sim.
+ * pergunta não vale ("pode explicar?"): aceite é o cliente DIZENDO sim — numa frase
+ * que não pergunta nada.
  */
 export function clienteAceitouLgpd(texto: string): boolean {
-	const oracoes = separarOracoes(texto);
 	// A revogação derruba o aceite da fala inteira: "sim, mas revogo a autorização"
 	// não autoriza nada.
-	if (oracoes.some(oracaoRevoga)) return false;
-	let aceitou = false;
-	for (const oracao of oracoes) {
-		// A recusa derruba a mensagem inteira: "sim, mas não aceito" não é aceite.
-		if (ehRecusa(oracao.texto)) return false;
-		// A pergunta não aceita nada — o "pode" de "podemos seguir?" não é o sim.
-		if (oracao.interrogativa) continue;
-		for (const m of oracao.texto.matchAll(AFIRMATIVA_RE)) {
-			const antes = oracao.texto.slice(Math.max(0, m.index - 24), m.index).toLowerCase();
-			// "não" dentro da mesma oração também anula o sim ("não, pode" é recusa).
-			if (/(n[ãa]o|negativo|jamais)\s*$/.test(antes)) continue;
-			aceitou = true;
-		}
-	}
-	return aceitou;
+	if (revogaConsentimento(texto)) return false;
+	const frases = frasesDe(texto);
+	// A recusa derruba a mensagem inteira: "sim, mas não aceito" não é aceite.
+	if (frases.some(ehRecusa)) return false;
+	return frases.some((frase) => !ehPergunta(frase) && AFIRMATIVA_RE.test(frase));
 }
 
-/* A REVOGAÇÃO É UMA FALA SOBRE A AUTORIZAÇÃO, NÃO SOBRE A OFERTA.
+/* A REVOGAÇÃO É O LADO SEGURO — e por isso é o único que atravessa a pergunta.
  *
- * Na main a recusa tem prioridade sobre o aceite (`contract-capture.ts:87`), e é por isso
- * que um "não autorizo" depois do "sim" derruba a autorização inteira. Mas a recusa que
- * revoga é a que fala do USO DO DADO: "não aceito o prazo de 80 meses" é recusa da oferta
- * — se ela revogasse o consentimento, toda negociação de prazo e parcela travaria a
- * proposta de um cliente que já autorizou.
+ * "Não autorizo consultar meu CPF, podemos seguir sem isso?" é uma fala com uma
+ * revogação e uma pergunta: se a pergunta apagasse a revogação, a consulta de bureau ia
+ * em frente depois de um "não autorizo" explícito (P262, rodadas 4 e 5). Aqui, uma
+ * declaração de revogação derruba o consentimento em qualquer lugar da fala.
+ *
+ * O que a revogação NÃO pode é nascer de uma recusa da OFERTA: na main a recusa tem
+ * prioridade sobre o aceite (`contract-capture.ts:87`), mas "não aceito o prazo de 80
+ * meses" fala da carta, não do uso do dado — e travaria toda negociação de prazo de um
+ * cliente que já autorizou. A fronteira é o OBJETO da negação, não a oração: recusar
+ * prazo/parcela/carta não revoga; negar o uso do dado revoga, mesmo ao lado da recusa.
+ *
+ * E o verbo vale só na PRIMEIRA PESSOA do presente, a forma de quem declara: o
+ * infinitivo é dúvida ("posso revogar isso depois?") e o subjuntivo é hipótese ("se eu
+ * não autorizar a consulta, o que acontece?"). Hipótese não revoga.
  */
-const REVOGA_CORPO = String.raw`(?:revogo|revogar|n[ãa]o\s+(?:autorizo|autorizei|aceito|concordo|permito)|n[ãa]o\s+(?:pode|podem|podes)\s+(?:usar|usem|consultar|consultem|guardar|guardem|compartilhar|compartilhem)|n[ãa]o\s+quero\s+(?:mais|que\s+(?:voc[êe]s\s+)?(?:usem|usar|consultem|consultar|guardem|guardar))|n[ãa]o\s+vou\s+(?:mais\s+)?(?:autorizar|permitir|deixar\s+(?:voc[êe]s\s+)?(?:usar|consultar)))`;
+const REVOGA_OS_DADOS: readonly RegExp[] = [
+	// "revogo a autorização", "revogamos o consentimento"
+	/\brevogo\b|\brevogamos\b/i,
+	// "não autorizo", "não autorizei", "não autorizamos"
+	/\bn[ãa]o\s+(?:autorizo|autorizei|autorizamos)\b/i,
+	/\bn[ãa]o\s+permito\b/i,
+	/\bn[ãa]o\s+concordo\s+com\s+(?:o|a)\s+(?:uso|consulta|compartilhamento)\b/i,
+	// "não pode usar meu CPF", "não podem consultar", "não podes guardar"
+	/\bn[ãa]o\s+(?:pode|podem|podes)\s+(?:mais\s+)?(?:usar|usem|consultar|consultem|guardar|guardem|compartilhar|compartilhem)\b/i,
+	// "não quero mais que vocês consultem", "não quero guardar meus dados"
+	/\bn[ãa]o\s+quero\s+(?:mais\s+)?(?:que\s+(?:voc[êe]s\s+)?)?(?:usem|usar|consultem|consultar|guardem|guardar|compartilhem|compartilhar)\b/i,
+	// "não vou autorizar", "não vou mais permitir"
+	/\bn[ãa]o\s+(?:vou|vamos)\s+(?:mais\s+)?(?:autorizar|permitir|deixar)\b/i,
+	// "não aceito que consultem", "não aceito a consulta do meu CPF"
+	/\bn[ãa]o\s+aceito\s+(?:que\s+|a\s+|o\s+|as\s+|os\s+)?(?:consult\w+|us\w+|guard\w+|compartilh\w+|autoriza\w+)\b/i,
+];
 
-const REVOGA_RE = new RegExp(String.raw`\b${REVOGA_CORPO}\b`, "i");
-
-/** A mesma revogação ABRINDO a oração — ver `oracaoRevoga`. */
-const REVOGA_NO_INICIO_RE = new RegExp(String.raw`^${REVOGA_CORPO}\b`, "i");
-
-/** "não aceito o prazo de 80 meses": o objeto da recusa é a OFERTA, não a autorização. */
-const RECUSA_DA_OFERTA_RE =
-	/\bn[ãa]o\s+(?:aceito|autorizo|concordo|permito|quero)\s+(?:mais\s+)?(?:o|a|esse|essa|este|esta|aquele|aquela|um|uma)\s+(?:prazo|parcela|carta|plano|lance|valor|m[eê]s|meses|simula[cç][aã]o|oferta|op[cç][aã]o|administradora|embutido)\b/i;
-
-// A frase pode juntar duas orações: "não aceito o prazo, não autorizo consultar meu
-// CPF" recusa a oferta numa e revoga a autorização na outra. A exceção da oferta vale
-// para a ORAÇÃO em que ela está — não para a frase inteira.
-
-/** Esta oração revoga a autorização? */
-function oracaoRevoga(oracao: Oracao): boolean {
-	if (RECUSA_DA_OFERTA_RE.test(oracao.texto)) return false;
-	// Oração afirmativa: a revogação vale em qualquer posição dela.
-	if (!oracao.interrogativa) return REVOGA_RE.test(oracao.texto);
-	// Oração interrogativa não revoga — "posso revogar isso depois?" é dúvida. Mas a
-	// negação que ABRE a oração é declaração, não pergunta: "não autorizo consultar meu
-	// CPF podemos seguir sem isso?" (sem pontuação entre as duas) continua revogando.
-	const semRuido = oracao.texto.replace(/^[^\p{L}]+/u, "");
-	return REVOGA_NO_INICIO_RE.test(semRuido);
-}
-
-/** O cliente revogou o consentimento que já tinha dado? Pergunta não revoga. */
+/** O cliente revogou o consentimento que já tinha dado? Basta UMA declaração. */
 function revogaConsentimento(texto: string): boolean {
-	return separarOracoes(texto).some(oracaoRevoga);
+	return REVOGA_OS_DADOS.some((re) => re.test(texto));
 }
 
 export type FalaDeLgpd = { role: "user" | "assistant"; content: string };

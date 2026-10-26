@@ -347,81 +347,113 @@ describe("P262 — o consentimento é cronológico: recusa posterior revoga o si
 	});
 });
 
-// P262, re-auditoria 310e rodada 4: a decisão é POR ORAÇÃO.
+// P262, re-auditoria 310e rodadas 3, 4 e 5: cada heurística consertada criava um
+// contraexemplo novo. A saída é o princípio da main (`isQuestion` em
+// `src/lib/whatsapp/contract-capture.ts`, a2bc3024): conservador nos DOIS sentidos, e
+// na dúvida quem responde é o modelo.
 //
-// "Não autorizo consultar meu CPF, podemos seguir sem isso?" é UMA frase com DUAS
-// orações — a revogação e a pergunta. Descartar a frase porque termina em "?" fazia
-// o aceite anterior sobreviver a uma revogação explícita, e a consulta de bureau
-// podia acontecer mesmo assim.
-describe("P262 — revogação e aceite se decidem por ORAÇÃO, não pela frase inteira", () => {
+// Lado PERIGOSO: aceite falso — libera a consulta de bureau no CPF de quem só fez uma
+// pergunta. Lado seguro: revogação, que derruba o consentimento mesmo ao lado de uma
+// pergunta. Quando a fala não é nem uma coisa nem outra (`nada`), a regra preferiu NÃO
+// capturar: o modelo pergunta de novo e o cliente responde "sim" no turno seguinte.
+describe("P262 — na dúvida não se captura: aceite é conservador, revogação é o lado seguro", () => {
 	const aviso = { role: "assistant" as const, content: AVISO };
 	const aceite = { role: "user" as const, content: "sim, pode usar" };
 
-	// Tabela adversarial: fala real de cliente brasileiro, depois do aviso e do sim.
-	// `revoga` = a revogação vale e o consentimento anterior cai.
-	const FALAS: Array<[string, boolean]> = [
-		// A frase citada pelo auditor, e variações de pontuação dela.
-		["Não autorizo consultar meu CPF, podemos seguir sem isso?", true],
-		["Não autorizo consultar meu CPF. Podemos seguir sem isso?", true],
-		["Não autorizo consultar meu CPF: podemos seguir sem isso?", true],
-		["Não autorizo consultar meu CPF! Podemos seguir sem isso?", true],
-		["Não autorizo consultar meu CPF, podemos seguir sem isso", true],
-		["NÃO AUTORIZO CONSULTAR MEU CPF, PODEMOS SEGUIR SEM ISSO?", true],
-		// Sem pontuação nenhuma entre as orações, e com emoji no meio e na frente.
-		["não autorizo consultar meu cpf podemos seguir sem isso?", true],
-		["não autorizo consultar meu CPF 😠 podemos seguir sem isso?", true],
-		["😠 não autorizo consultar meu CPF, podemos seguir sem isso?", true],
-		// Ordem invertida: a pergunta vem antes da revogação.
-		["Podemos seguir sem consultar meu CPF? Não autorizo.", true],
-		["Podemos seguir sem consultar meu CPF, mas não autorizo.", true],
-		// A revogação escrita com outras palavras.
-		["Não quero mais que vocês consultem meu CPF, tá bom?", true],
-		["Não vou autorizar a consulta do meu CPF, podemos seguir sem isso?", true],
-		["Revogo a autorização, e aí posso falar com um atendente?", true],
-		["Não autorizo o uso dos meus dados, mas pode me explicar como funciona?", true],
-		// NÃO são revogação: dúvida, explicação, recusa da oferta e aceite com pergunta.
-		["posso revogar isso depois?", false],
-		["Não entendi, pode explicar de novo?", false],
-		["E se eu não autorizar a consulta, dá pra seguir mesmo assim?", false],
-		["Vocês consultam meu CPF sem minha autorização?", false],
-		["Não aceito o prazo de 80 meses, prefiro 48. Podemos seguir?", false],
-		["Pode usar meus dados, obrigado 😊 Qual é o prazo?", false],
+	/** `aceita` = fecha o aceite sozinha; `revoga` = derruba um aceite anterior;
+	 * `nada` = nem aceita nem revoga. */
+	type Direcao = "aceita" | "revoga" | "nada";
+
+	const TABELA: Array<[string, Direcao]> = [
+		// ——— rodada 5: a pergunta coordenada que virava aceite pelo "podem" ———
+		["Vocês podem consultar meu CPF e vender meus dados?", "nada"],
+		// ——— rodada 4: a revogação ao lado da pergunta (não pode ser descartada) ———
+		["Não autorizo consultar meu CPF, podemos seguir sem isso?", "revoga"],
+		["Não autorizo consultar meu CPF. Podemos seguir sem isso?", "revoga"],
+		["Não autorizo consultar meu CPF: podemos seguir sem isso?", "revoga"],
+		["Não autorizo consultar meu CPF! Podemos seguir sem isso?", "revoga"],
+		["Não autorizo consultar meu CPF, podemos seguir sem isso", "revoga"],
+		["NÃO AUTORIZO CONSULTAR MEU CPF, PODEMOS SEGUIR SEM ISSO?", "revoga"],
+		["não autorizo consultar meu cpf podemos seguir sem isso?", "revoga"],
+		["não autorizo consultar meu CPF 😠 podemos seguir sem isso?", "revoga"],
+		["😠 não autorizo consultar meu CPF, podemos seguir sem isso?", "revoga"],
+		// ——— rodada 3: a recusa da oferta ao lado da revogação ———
+		["Não aceito o prazo, não autorizo consultar meu CPF.", "revoga"],
+		["Não aceito o prazo e não autorizo consultar meu CPF.", "revoga"],
+		["Não aceito a parcela, mas não quero mais que vocês consultem meu CPF.", "revoga"],
+		// ... e a recusa da oferta SOZINHA não revoga (senão toda negociação trava).
+		["Não aceito o prazo.", "nada"],
+		["Não aceito o prazo de 80 meses, prefiro 48. Podemos seguir?", "nada"],
+		// ——— revogação escrita com outras palavras ———
+		["Não quero mais que vocês consultem meu CPF, tá bom?", "revoga"],
+		["Não vou autorizar a consulta do meu CPF, podemos seguir sem isso?", "revoga"],
+		["Revogo a autorização, e aí posso falar com um atendente?", "revoga"],
+		["Não autorizo o uso dos meus dados, mas pode me explicar como funciona?", "revoga"],
+		["Não autorizo a consulta do meu CPF", "revoga"],
+		["Não autorizo. Pode explicar por quê?", "revoga"],
+		["Podemos seguir sem consultar meu CPF? Não autorizo.", "revoga"],
+		// ——— dúvida e hipótese NÃO revogam ———
+		["posso revogar isso depois?", "nada"],
+		["Não entendi, pode explicar de novo?", "nada"],
+		["E se eu não autorizar a consulta, dá pra seguir mesmo assim?", "nada"],
+		["Vocês consultam meu CPF sem minha autorização?", "nada"],
+		["Quero entender como vocês usam meu CPF", "nada"],
+		["o que posso fazer com meu CPF", "nada"],
+		["Tem como eu revogar isso depois", "nada"],
+		["Sim, mas antes quero saber quanto fica a parcela", "nada"],
+		["Deixa eu pensar, te falo depois", "nada"],
+		["Não, obrigado", "nada"],
+		// ——— aceite de verdade, e as formas de perguntar sem "?" ———
+		["pode usar", "aceita"],
+		["sim, pode usar", "aceita"],
+		["sim, podem usar", "aceita"],
+		["Pode usar. E qual é o prazo?", "aceita"],
+		["Pode consultar meu CPF e usar meus dados para a proposta.", "aceita"],
+		// A pergunta na MESMA frase (sem ponto entre as duas) não se separa: a fala
+		// inteira pergunta, então não se captura. Com o ponto, a primeira frase é
+		// declaração e vale.
+		["Pode usar meus dados, obrigado 😊 Qual é o prazo?", "nada"],
+		["Pode usar meus dados, obrigado 😊. Qual é o prazo?", "aceita"],
+		["Ok, autorizo — qual o prazo?", "nada"],
+		["não tem problema, pode usar", "aceita"],
+		["claro, pode", "aceita"],
+		["sim: pode usar, obrigado", "aceita"],
+		["Vocês podem consultar meu CPF e vender meus dados", "nada"],
+		["Vocês podem consultar meu CPF, e depois vender meus dados?", "nada"],
+		["Podem consultar meu CPF e vender meus dados?", "nada"],
+		["Podem usar meus dados", "nada"],
+		["não, pode", "nada"],
+		["não pode, obrigado", "nada"],
 	];
 
-	it.each(FALAS)("“%s” — revoga: %s", (fala, revoga) => {
-		const r = resolverAceiteLgpd({ falas: [aviso, aceite], falaDoCliente: fala });
-		if (revoga) {
-			expect(r.ok, fala).toBe(false);
-			expect(r.motivo, fala).toBe("aceite-revogado");
+	it.each(TABELA)("“%s” — %s", (fala, direcao) => {
+		const semAceiteAnterior = resolverAceiteLgpd({ falas: [aviso], falaDoCliente: fala });
+		if (direcao === "aceita") {
+			expect(semAceiteAnterior.ok, fala).toBe(true);
+			expect(semAceiteAnterior.motivo, fala).toBe("aceite-do-cliente");
 			return;
 		}
-		expect(r.ok, fala).toBe(true);
-		expect(r.motivo, fala).not.toBe("aceite-revogado");
+		expect(semAceiteAnterior.ok, fala).toBe(false);
+
+		// Com um aceite anterior, só a revogação pode derrubá-lo.
+		const comAceiteAnterior = resolverAceiteLgpd({
+			falas: [aviso, aceite],
+			falaDoCliente: fala,
+		});
+		const esperado = direcao === "revoga" ? "aceite-revogado" : "aceite-do-cliente";
+		expect(comAceiteAnterior.motivo, fala).toBe(esperado);
 	});
 
-	// O outro lado da mesma regra: uma ORAÇÃO interrogativa não aceita nada, e uma
-	// oração afirmativa de revogação derruba o aceite da fala inteira.
-	const ACEITES: Array<[string, boolean]> = [
-		["Não autorizo consultar meu CPF, podemos seguir sem isso?", false],
-		["Não autorizo consultar meu CPF: podemos seguir sem isso?", false],
-		["não autorizo consultar meu cpf podemos seguir sem isso?", false],
-		["Podemos seguir sem consultar meu CPF? Não autorizo.", false],
-		["Não quero mais que vocês consultem meus dados, certo?", false],
-		["posso revogar isso depois?", false],
-		["sim, pode usar", true],
-		["sim, pode consultar. Podemos seguir?", true],
-		["Pode usar. E qual é o prazo?", true],
-		["pode usar meus dados 😊", true],
-		["sim: pode usar, obrigado", true],
-		["Ok, autorizo — qual o prazo?", true],
-		["não tem problema, pode usar", true],
-		["não, pode", false],
-		["não pode, obrigado", false],
-		["claro, pode", true],
-		["beleza, autorizo", true],
-	];
-
-	it.each(ACEITES)("clienteAceitouLgpd(“%s”) = %s", (fala, aceitou) => {
-		expect(clienteAceitouLgpd(fala), fala).toBe(aceitou);
+	// A pergunta coordenada da rodada 5, isolada: é o "e" que não pode emendar duas
+	// orações e dar o "?" só para a última. O "podem" da primeira não autoriza nada.
+	it("pergunta coordenada depois do aviso não abre o aceite", () => {
+		for (const fala of [
+			"Vocês podem consultar meu CPF e vender meus dados?",
+			"Vocês podem consultar meu CPF e vender meus dados",
+			"Vocês podem consultar meu CPF, e vender meus dados?",
+			"Podem consultar meu CPF e vender meus dados?",
+		]) {
+			expect(clienteAceitouLgpd(fala), fala).toBe(false);
+		}
 	});
 });

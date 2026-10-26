@@ -223,6 +223,30 @@ describe("fazer_proposta — as três recusas de LGPD dizem coisas diferentes ao
 		}
 	});
 
+	// P262 da re-auditoria 310e rodada 5: pergunta COORDENADA não é aceite. Sem
+	// consentimento anterior, "Vocês podem consultar meu CPF e vender meus dados?" é
+	// dúvida sobre o tratamento dos dados — a consulta de bureau não pode sair.
+	it("pergunta coordenada sobre o uso dos dados não gera proposta", async () => {
+		for (const fala of [
+			"Vocês podem consultar meu CPF e vender meus dados?",
+			"Vocês podem consultar meu CPF e vender meus dados",
+			"Vocês podem consultar meu CPF, e depois vender meus dados?",
+		]) {
+			vi.clearAllMocks();
+			mocks.loadConversationHistory.mockResolvedValue([{ role: "assistant", content: AVISO_LGPD }]);
+			const ctx = ctxDoTurno({ userText: fala });
+			const retorno = await falarComAFerramenta(ctx);
+
+			expect(retorno, fala).toContain("Peça o aceite");
+			expect(retorno, fala).not.toContain("REVOGOU");
+			expect(mocks.startContract, fala).not.toHaveBeenCalled();
+			expect(
+				ctx.cards.some((c) => c.type === "real_offer"),
+				fala,
+			).toBe(false);
+		}
+	});
+
 	it("recusar o prazo sozinho não revoga: o fechamento segue", async () => {
 		mocks.loadConversationHistory.mockResolvedValue([
 			{ role: "assistant", content: AVISO_LGPD },
