@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // O módulo importa o banco; aqui só interessa a decisão de resposta.
 vi.mock("@/db", () => ({ db: {} }));
@@ -237,6 +237,17 @@ describe("telefone e número comprido não são CPF", () => {
 });
 
 describe("o celular do fechamento nunca é um número inventado", () => {
+	// O `.env.local` desta máquina define SIMULATOR_TEST_CELULAR, e o módulo usa esse
+	// número quando ele existe. Aqui o teste é sobre a ausência: sem par no ambiente,
+	// a recusa é o comportamento. Sem este stub o teste mede o `.env`, não o código.
+	beforeEach(() => {
+		vi.stubEnv("SIMULATOR_TEST_CELULAR", "");
+	});
+
+	afterEach(() => {
+		vi.unstubAllEnvs();
+	});
+
 	it("conversa real: o celular é o número da conversa", async () => {
 		const { celularDeFechamento } = await import("./identify-capture");
 		const r = celularDeFechamento({
@@ -273,6 +284,8 @@ describe("o celular do fechamento nunca é um número inventado", () => {
 			expect(r.ok).toBe(false);
 			return;
 		}
+		// Este é o caso COM par da casa: o stub de env sairia do caminho do par.
+		vi.stubEnv("SIMULATOR_TEST_CELULAR", "");
 		const r = celularDeFechamento({ waId: "SIM-abc", cpf: par.cpf, celular: "62908872753" });
 		expect(r.ok).toBe(true);
 		if (r.ok) {
