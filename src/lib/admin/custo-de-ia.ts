@@ -52,6 +52,22 @@
  * atribuir. Antes elas eram descartadas do livro-caixa e o total da tela mentia para menos
  * (P314): agora entram na soma e aparecem separadas em `semConversa`.
  *
+ * ── O custo é o da OPERAÇÃO: conversa do simulador fica de fora ──────────────
+ *
+ * O simulador do admin cria conversa de verdade e o Pi grava o consumo dela no livro-caixa
+ * como o de qualquer outra. O número desta tela é o da operação, então a conversa de teste
+ * não dá vínculo ao custo (`conversasDoPeriodo` filtra `is_simulated = false`, como a
+ * `main` fazia) — nem no total, nem no denominador do CPC (P217/P219). O consumo interno
+ * continua registrado na tabela; ele só não é custo de operação.
+ *
+ * ── Cache NÃO MEDIDO é custo desconhecido, não preço integral ────────────────
+ *
+ * A linha antiga do Pi guardou o input líquido e perdeu a medição do cache. Precificá-la
+ * como entrada + saída afirmaria um gasto de cache que ninguém viu — e o cache é a parcela
+ * que decide o custo de um turno que repete o prompt. Então `null` no cache vira `null` no
+ * custo (entra na marca PARCIAL), enquanto cache `0` — o provedor dizendo que não cobrou —
+ * custa o preço integral (P273).
+ *
  * ── Por que este arquivo é puro e a leitura mora na borda ───────────────────
  *
  * `somarCustoDeIA` não faz I/O: recebe os dois lados já lidos (as linhas do livro-caixa e as
@@ -60,7 +76,7 @@
  * `lerCustoLocal` (o livro-caixa) e `conversasDoPeriodo` (o cruzamento).
  */
 
-import { and, gte, lte } from "drizzle-orm";
+import { and, eq, gte, lte } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations, usoDeIa } from "@/db/schema";
 import { custoDoTurnoCentsExatos } from "@/lib/agent/pi/precos";
@@ -88,8 +104,8 @@ export interface LinhaDeCustoDeIA {
 	dia: string;
 	/**
 	 * Custo em centavos de DÓLAR — pode ter FRAÇÃO de centavo (é valor exato de token, não
-	 * arredondado por linha); `null` = não há preço conhecido deste modelo (entrada, saída
-	 * ou cache).
+	 * arredondado por linha); `null` = custo não calculável: o modelo não tem preço
+	 * (entrada, saída ou cache) ou a linha não tem a medição de cache.
 	 */
 	custoUsdCents: number | null;
 }
@@ -108,7 +124,7 @@ export interface CustoDasChamadasAvulsas {
 	brlCents: number;
 }
 
-/** As linhas de um modelo que ficaram FORA do total por não ter preço conhecido. */
+/** As linhas de um modelo que ficaram FORA do total por não terem custo calculável. */
 export interface LinhasSemPreco {
 	modelo: string;
 	/** Quantas linhas do livro-caixa desse modelo estão no recorte. */
@@ -171,7 +187,7 @@ const EXPLICACAO: Record<MotivoSemCustoDeIA, string> = {
 	sem_dado: "O livro-caixa de uso de IA não tem nenhuma linha neste período.",
 	sem_vinculo: "Há custo registrado, mas nenhuma conversa do período corresponde a ele.",
 	modelo_sem_preco:
-		"Nenhuma linha do período tem preço calculável: há uso de modelo sem preço cadastrado (entrada, saída ou cache).",
+		"Nenhuma linha do período tem custo calculável: há uso de modelo sem preço cadastrado (entrada, saída ou cache) ou de linha sem a medição de cache.",
 	sem_cotacao: "Há custo em dólar e não há cotação cadastrada para trazer ao real.",
 	fonte_indisponivel: "A leitura do livro-caixa de IA (uso_de_ia, no Postgres) falhou.",
 };
@@ -231,9 +247,10 @@ function contarLinhasSemPreco(linhas: readonly LinhaDeCustoDeIA[]): LinhasSemPre
  * (campanhas-queries.ts): **falta de vínculo antes de falta de dado**, porque um
  * cruzamento que não fecha diz "olhe a atribuição", não "olhe a operação".
  *
- * Sobre as linhas das duas populações que entram: as que TÊM preço somam, as que não têm
- * ficam de fora e marcam o resultado como `parcial`, com a contagem por modelo. Um
- * período em que NENHUMA linha tem preço é o único sem total.
+ * Sobre as linhas das duas populações que entram: as que TÊM custo calculável somam, as
+ * que não têm ficam de fora e marcam o resultado como `parcial`, com a contagem por modelo
+ * (modelo sem preço, ou linha sem a medição de cache). Um período em que NENHUMA linha tem
+ * custo calculável é o único sem total.
  */
 export function somarCustoDeIA(args: {
 	linhas: readonly LinhaDeCustoDeIA[];
@@ -327,7 +344,7 @@ export interface UsoDeIaGravado {
 	modelo: string;
 	tokensInput: number;
 	tokensOutput: number;
-	/** `null` = o provedor não reportou cache nesta linha (não medido, não é zero). */
+	/** `null` = a medição do cache NÃO EXISTE nesta linha (não medido, não é zero). */
 	tokensCacheRead: number | null;
 	tokensCacheWrite: number | null;
 	criadoEm: Date;
@@ -344,6 +361,12 @@ export interface UsoDeIaGravado {
  * decide o custo de um turno que repete a mesma caixa de prompt. Linha com cache reportado
  * e modelo sem preço de cache sai com `custoUsdCents` `null` — desconhecido, nunca zero.
  *
+ * O `null` do cache é REPASSADO como `null`, não como ausência de argumento: a linha
+ * antiga do Pi guardou o input líquido e perdeu a medição do cache, então o custo dela é
+ * desconhecido (P273). Tratá-la como zero a precificaria integralmente — um número com
+ * cara de medição sobre um gasto que ninguém viu. Cache `0` é o provedor dizendo que não
+ * cobrou cache, e aí o preço integral é o preço.
+ *
  * Linha SEM conversa não é descartada: vira `sessionId: null` e o total é somado numa linha
  * própria (P314). Antes ela sumia, e o custo que juiz/diagnóstico/insight gastam era gasto
  * invisível.
@@ -357,8 +380,8 @@ export function linhasDoLivroLocal(linhas: readonly UsoDeIaGravado[]): LinhaDeCu
 			modelo: l.modelo,
 			tokensInput: l.tokensInput,
 			tokensOutput: l.tokensOutput,
-			cacheRead: l.tokensCacheRead ?? undefined,
-			cacheWrite: l.tokensCacheWrite ?? undefined,
+			cacheRead: l.tokensCacheRead,
+			cacheWrite: l.tokensCacheWrite,
 		}),
 	}));
 }
@@ -381,7 +404,15 @@ export async function lerCustoLocal(de: Date, ate: Date): Promise<LinhaDeCustoDe
 	return linhasDoLivroLocal(linhas);
 }
 
-/** As conversas do período — o lado do Postgres que dá VÍNCULO e CANAL. */
+/**
+ * As conversas do período — o lado do Postgres que dá VÍNCULO e CANAL ao custo.
+ *
+ * Mesma janela e mesmo filtro dos outros números do painel: `created_at` no intervalo e
+ * `is_simulated = false`. A conversa do SIMULADOR é de verdade (`api/admin/simulator/
+ * sessions` cria uma) e o Pi grava o consumo dela em `uso_de_ia` como qualquer outra — sem
+ * este filtro, o gasto de teste entrava no custo operacional e no CPC (P217/P219). O
+ * consumo interno continua no livro-caixa: quem o lê separado é a limpeza/auditoria.
+ */
 export async function conversasDoPeriodo(de: Date, ate: Date): Promise<ConversaDoPostgres[]> {
 	const linhas = await db
 		.select({ conversationId: conversations.id, canal: conversations.channel })
@@ -390,6 +421,7 @@ export async function conversasDoPeriodo(de: Date, ate: Date): Promise<ConversaD
 			and(
 				gte(conversations.createdAt, inicioDoDia(de)),
 				lte(conversations.createdAt, fimDoDia(ate)),
+				eq(conversations.isSimulated, false),
 			),
 		);
 	return linhas.map((l) => ({

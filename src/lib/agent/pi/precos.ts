@@ -28,6 +28,11 @@
 // turno gastou cache e o modelo não tem o preço correspondente, o custo do turno é
 // DESCONHECIDO (`null`) — somar só entrada e saída seria um número inventado com cara de
 // medição.
+//
+// ── "NÃO GASTOU CACHE" ≠ "NINGUÉM MEDIU" ────────────────────────────────────
+//
+// Zero e `null` são coisas diferentes, e a diferença é o número que a tela mostra: cache
+// medido em zero custa o preço integral, cache não medido custa DESCONHECIDO (P273).
 
 /**
  * O preço de UM modelo, em DÓLAR por MILHÃO de tokens.
@@ -72,6 +77,9 @@ const MODELOS_SEM_PRECO_JA_AVISADOS = new Set<string>();
 /** Idem, para o preço de CACHE — o aviso é outro, e a ação de quem opera também. */
 const MODELOS_SEM_PRECO_DE_CACHE_JA_AVISADOS = new Set<string>();
 
+/** Idem, para a linha que perdeu a medição do cache (P273). */
+const MODELOS_COM_CACHE_NAO_MEDIDO_JA_AVISADOS = new Set<string>();
+
 /**
  * A chave de preço de um id de modelo: minúsculo, sem espaço e sem o sufixo de DATA que
  * o provedor carimba (`claude-haiku-4-5-20251001` é o mesmo modelo que `claude-haiku-4-5`).
@@ -108,33 +116,55 @@ function avisarModeloSemPrecoDeCache(modelo: string): void {
 	);
 }
 
+/** Avisa que a linha não tem a medição de cache. Uma vez por modelo, por processo. */
+function avisarCacheNaoMedido(modelo: string): void {
+	const chave = chaveDoModelo(modelo);
+	if (MODELOS_COM_CACHE_NAO_MEDIDO_JA_AVISADOS.has(chave)) return;
+	MODELOS_COM_CACHE_NAO_MEDIDO_JA_AVISADOS.add(chave);
+	console.warn(
+		`[precos] cache do prompt NÃO MEDIDO: "${modelo}" — a linha guardou só entrada e saída, e o gasto de cache dela é desconhecido, então o custo fica null (nunca o preço integral).`,
+	);
+}
+
 /**
  * O que UM turno (ou beat) consumiu do modelo.
  *
- * `cacheRead`/`cacheWrite` são o recorte de CACHE do prompt que o provedor reportou. Ausentes
- * ou zero = o provedor não cobrou cache — e não é o mesmo que "não medido": quem decide isso é
- * quem chama, que grava `null` na coluna em vez de 0.
+ * `cacheRead`/`cacheWrite` são o recorte de CACHE do prompt que o provedor reportou, e
+ * carregam TRÊS estados, não dois — é o que separa "não gastou cache" de "ninguém mediu":
+ *
+ *   - número (0 inclusive) = MEDIDO; 0 é o provedor dizendo que não cobrou cache;
+ *   - `null` = NÃO MEDIDO (linha antiga do Pi, que guardou o input líquido e perdeu a
+ *     medição) → o custo do turno é DESCONHECIDO, nunca o preço integral (P273);
+ *   - omitido = o chamador não rastreia cache (convenção antiga dos chamadores fora do
+ *     turno). O turno grava sempre o número medido, então quem omite não é ele.
  */
 export type ConsumoDoTurno = {
 	modelo: string;
 	tokensInput: number;
 	tokensOutput: number;
-	cacheRead?: number;
-	cacheWrite?: number;
+	cacheRead?: number | null;
+	cacheWrite?: number | null;
 };
 
 /**
  * O custo do turno em DÓLAR, EXATO (sem arredondar), ou `null` quando não é calculável.
  *
- * Não é calculável em dois casos, e os dois são a MESMA lei: `null`, nunca `0`.
+ * Não é calculável em três casos, e os três são a MESMA lei: `null`, nunca `0`.
  *   - o modelo não tem preço de entrada/saída cadastrado;
  *   - o turno gastou cache e o modelo não tem preço de cache — somar entrada e saída sem ele
- *     daria um número com cara de medição que omite justamente a parcela maior do custo.
+ *     daria um número com cara de medição que omite justamente a parcela maior do custo;
+ *   - o cache do turno NÃO FOI MEDIDO (`null`): o preço integral de entrada e saída é uma
+ *     afirmação sobre um gasto de cache que ninguém viu (P273).
  */
 export function custoDoTurnoUsd(args: ConsumoDoTurno): number | null {
 	const preco = precoDoModelo(args.modelo);
 	if (!preco) {
 		avisarModeloSemPreco(args.modelo);
+		return null;
+	}
+
+	if (args.cacheRead === null || args.cacheWrite === null) {
+		avisarCacheNaoMedido(args.modelo);
 		return null;
 	}
 

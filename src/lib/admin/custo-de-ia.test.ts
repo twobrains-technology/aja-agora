@@ -9,15 +9,18 @@ import {
 
 const CONVERSA = "11111111-1111-1111-1111-111111111111";
 
-/** Um beat do default do vendedor: 80.000 tokens de entrada × US$ 0,05/M = 0,4 centavo. */
+/** Um beat do default do vendedor: 80.000 tokens de entrada × US$ 0,05/M = 0,4 centavo.
+ *
+ * O cache nasce MEDIDO em zero: é o que o turno grava desde o contrato com `precos.ts`
+ * (0 = o provedor reportou zero; `null` = ninguém mediu — ver o bloco de P273). */
 function beatDoVendedor(over: Partial<UsoDeIaGravado> = {}): UsoDeIaGravado {
 	return {
 		conversationId: CONVERSA,
 		modelo: "qwen3.6-flash",
 		tokensInput: 80000,
 		tokensOutput: 0,
-		tokensCacheRead: null,
-		tokensCacheWrite: null,
+		tokensCacheRead: 0,
+		tokensCacheWrite: 0,
 		criadoEm: new Date("2026-10-20T15:00:00Z"),
 		...over,
 	};
@@ -187,7 +190,7 @@ describe("P217/P273 — o cache do prompt entra no custo do livro-caixa", () => 
 	it("a linha cobra o cache: o mesmo beat com cache custa mais que sem", () => {
 		const [comCache] = linhasDoLivroLocal([beatComCache()]);
 		const [semCache] = linhasDoLivroLocal([
-			beatComCache({ tokensCacheRead: null, tokensCacheWrite: null }),
+			beatComCache({ tokensCacheRead: 0, tokensCacheWrite: 0 }),
 		]);
 
 		// Entrada 0,15 + saída 0,40 = 0,55 centavo; com cache, +0,10 (lido) +0,0625 (escrito).
@@ -236,6 +239,48 @@ describe("P217/P273 — o cache do prompt entra no custo do livro-caixa", () => 
 		if (r.tipo !== "motivo") return;
 		expect(r.motivo).toBe("modelo_sem_preco");
 		expect(r.modelosSemPreco).toEqual(["qwen3.6-flash"]);
+	});
+});
+
+describe("P273 — cache não medido não vira custo cheio nem apaga o período", () => {
+	// A linha que o Pi gravou ANTES de medir o cache: input líquido, cache NULL. O gasto
+	// de cache dela é desconhecido — e desconhecido não é zero (a mesma lei do modelo sem
+	// preço), então ela fica fora da soma e o período sai PARCIAL.
+	it("linha antiga com cache NULL: custo desconhecido, e o total sai PARCIAL", () => {
+		const [antiga] = linhasDoLivroLocal([
+			beatDoVendedor({ tokensCacheRead: null, tokensCacheWrite: null }),
+		]);
+		expect(antiga?.custoUsdCents).toBeNull();
+
+		const r = somarCustoDeIA({
+			linhas: linhasDoLivroLocal([
+				beatDoVendedor(),
+				beatDoVendedor({ tokensCacheRead: null, tokensCacheWrite: null }),
+			]),
+			conversas: [{ conversationId: CONVERSA, canal: "web" }],
+			cotacaoUsdBrl: 5.5,
+		});
+
+		expect(r.tipo).toBe("valor");
+		if (r.tipo !== "valor") return;
+		// Só a linha MEDIDA entra: 0,4 centavo. A antiga não vira 0,4 nem 0.
+		expect(r.usdCents).toBeCloseTo(0.4, 10);
+		expect(r.parcial).toBe(true);
+		expect(r.semPreco).toEqual([{ modelo: "qwen3.6-flash", linhas: 1 }]);
+	});
+
+	it("cache medido em ZERO é custo cheio: o período não é parcial", () => {
+		const r = somarCustoDeIA({
+			linhas: linhasDoLivroLocal([beatDoVendedor({ tokensCacheRead: 0, tokensCacheWrite: 0 })]),
+			conversas: [{ conversationId: CONVERSA, canal: "web" }],
+			cotacaoUsdBrl: 5.5,
+		});
+
+		expect(r.tipo).toBe("valor");
+		if (r.tipo !== "valor") return;
+		expect(r.usdCents).toBeCloseTo(0.4, 10);
+		expect(r.parcial).toBe(false);
+		expect(r.semPreco).toEqual([]);
 	});
 });
 

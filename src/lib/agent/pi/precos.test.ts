@@ -117,6 +117,59 @@ describe("P217/P273 — o cache do prompt é custo, e entra na conta", () => {
 	});
 });
 
+describe("P273 — cache NÃO MEDIDO é custo desconhecido; cache 0 é medido", () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	// A linha antiga do Pi gravou o input líquido e não gravou o cache: o provedor pode
+	// ter cobrado leitura/escrita que ninguém mediu. Precificar só entrada e saída daria
+	// a essa linha cara de medição — e o cache é a parcela maior de um turno que repete
+	// a mesma caixa de prompt (P273).
+	it("cache NULL (não medido) deixa o custo DESCONHECIDO, nunca a soma de entrada e saída", () => {
+		const aviso = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+		const r = custoDoTurnoCentsExatos({
+			modelo: "qwen3.6-flash",
+			tokensInput: 80_000,
+			tokensOutput: 0,
+			cacheRead: null,
+			cacheWrite: null,
+		});
+
+		expect(r).toBeNull();
+		expect(String(aviso.mock.calls[0]?.[0])).toContain("NÃO MEDIDO");
+	});
+
+	it("um lado medido e o outro não: o turno continua desconhecido", () => {
+		const aviso = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+		const r = custoDoTurnoCents({
+			modelo: "claude-haiku-4-5",
+			tokensInput: 1_500,
+			tokensOutput: 800,
+			cacheRead: 10_000,
+			cacheWrite: null,
+		});
+
+		expect(r).toBeNull();
+		expect(aviso).toHaveBeenCalledTimes(1);
+	});
+
+	// O outro lado da mesma lei: o provedor reportou zero. Aí o preço integral é o preço.
+	it("cache medido em ZERO é custo calculável — o período não vira PARCIAL à toa", () => {
+		expect(
+			custoDoTurnoCentsExatos({
+				modelo: "qwen3.6-flash",
+				tokensInput: 80_000,
+				tokensOutput: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+			}),
+		).toBeCloseTo(0.4, 10);
+	});
+});
+
 describe("L24 — a tabela de preço cobre o modelo default do vendedor", () => {
 	it("o default de dev tem preço: o turno dele é calculável", () => {
 		const r = custoDoTurnoUsd({ modelo: "qwen3.6-flash", tokensInput: 20000, tokensOutput: 6000 });
