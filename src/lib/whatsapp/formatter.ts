@@ -1352,6 +1352,12 @@ function scenarioFromCardSnapshot(payload: Record<string, unknown>): DialScenari
 	if (creditValue === undefined || termMonths === undefined || targetMonth === undefined)
 		return null;
 	const monthlyPayment = num(payload.monthlyPayment);
+	// O dinheiro que o cliente DECLAROU ter guardado entra no cálculo antes de comer
+	// a carta (`declaredLanceValue` = `qualifyAnswers.lanceValue`, gravado por
+	// `coerceDialPayload`). Sem isto o embutido era sempre esgotado primeiro e o
+	// balão dizia que a carta encolhia para quem tinha o dinheiro na mão — a mesma
+	// conta da `simulate_contemplation` da main (`ai-sdk.ts:1755`).
+	const ownCashAvailable = num(payload.declaredLanceValue);
 	const r = computeContemplationDial({
 		creditValue,
 		termMonths,
@@ -1361,6 +1367,7 @@ function scenarioFromCardSnapshot(payload: Record<string, unknown>): DialScenari
 		referenceMonth: num(payload.referenceMonth),
 		monthlyPayment,
 		maxEmbutidoPct: zeroOuMais(payload.maxEmbutidoPct),
+		...(ownCashAvailable !== undefined ? { ownCashAvailable } : {}),
 	});
 	return {
 		targetMonth: r.targetMonth,

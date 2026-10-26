@@ -681,6 +681,10 @@ export const MONTADORES_DE_CARD: Record<TipoDeFato, MontadorDeCard> = {
 					"essa carta veio sem os três números da oferta (carta, parcela, prazo) — sem eles o simulador mentiria.",
 			};
 		}
+		// A RECUSA ao embutido é FATO da fala do cliente, como no `scenarios`: teto
+		// zero no snapshot (mesma regra da `simulate_contemplation` da main), senão o
+		// motor do dial cai no teto padrão de 30% e come a carta de quem disse não.
+		if (ref.usarLanceEmbutido === false) snapshot.maxEmbutidoPct = 0;
 		const entrada: Record<string, unknown> = {};
 		if (typeof ref.initialTargetMonth === "number") {
 			entrada.initialTargetMonth = ref.initialTargetMonth;
