@@ -101,10 +101,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 		return Response.json({ error: "Contact not found" }, { status: 404 });
 	}
 
-	const resultado = await marcarConversasComoTeste(
-		detail.conversationIds,
-		parsed.data.isSimulated,
-	);
+	const resultado = await marcarConversasComoTeste(detail.conversationIds, parsed.data.isSimulated);
 
 	return Response.json({
 		ok: true,

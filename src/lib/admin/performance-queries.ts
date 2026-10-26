@@ -218,10 +218,7 @@ export async function computeFunilMidia(
 
       (SELECT count(DISTINCT ${chave}) FROM conversations c
         JOIN visits v ON v.id = c.visit_id
-        WHERE ${comRecorte(
-					sql`${atribuida} AND ${viuOferta(sql`c`)}`,
-					filtro,
-				)}) AS viram_oferta,
+        WHERE ${comRecorte(sql`${atribuida} AND ${viuOferta(sql`c`)}`, filtro)}) AS viram_oferta,
 
       (SELECT count(DISTINCT ${chave}) FROM conversations c
         JOIN visits v ON v.id = c.visit_id
