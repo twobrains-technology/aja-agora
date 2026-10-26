@@ -247,6 +247,32 @@ describe("fazer_proposta — as três recusas de LGPD dizem coisas diferentes ao
 		}
 	});
 
+	// P262 da re-auditoria 310e rodada 6: a recusa pode não começar com "não" nem usar
+	// nenhum verbo enumerado. "Ainda não estou de acordo." contém "de acordo" — a forma
+	// positiva do aceite — e sem a trava geral de negação a consulta de bureau saía.
+	it("recusa escrita com as palavras do aceite não gera proposta", async () => {
+		for (const fala of [
+			"Ainda não estou de acordo.",
+			"Não estou de acordo com o uso dos meus dados.",
+			"Jamais autorizo a consulta do meu CPF.",
+			"Nem sei se quero isso agora",
+			"Deixa eu confirmar com a esposa",
+		]) {
+			mocks.startContract.mockClear();
+			mocks.loadConversationHistory.mockResolvedValue([{ role: "assistant", content: AVISO_LGPD }]);
+			const ctx = ctxDoTurno({ userText: fala });
+			const retorno = await falarComAFerramenta(ctx);
+
+			expect(retorno, fala).toContain("Peça o aceite");
+			expect(retorno, fala).not.toContain("REVOGOU");
+			expect(mocks.startContract, fala).not.toHaveBeenCalled();
+			expect(
+				ctx.cards.some((c) => c.type === "real_offer"),
+				fala,
+			).toBe(false);
+		}
+	});
+
 	it("recusar o prazo sozinho não revoga: o fechamento segue", async () => {
 		mocks.loadConversationHistory.mockResolvedValue([
 			{ role: "assistant", content: AVISO_LGPD },

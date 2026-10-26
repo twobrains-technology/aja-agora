@@ -195,7 +195,11 @@ describe("L08 — pergunta e recusa não viram aceite; aviso novo não apaga ace
 
 	it("afirmação de verdade continua sendo aceite", () => {
 		expect(clienteAceitouLgpd("sim, pode usar")).toBe(true);
-		expect(clienteAceitouLgpd("Pode usar. E qual é o prazo?")).toBe(true);
+		expect(clienteAceitouLgpd("Pode usar.")).toBe(true);
+		// A pergunta contamina a MENSAGEM INTEIRA — é assim na main (`isQuestion` lê o
+		// texto todo). "Pode usar. E qual é o prazo?" custa um turno; erro do lado
+		// contrário custa uma consulta de bureau no CPF de quem não autorizou.
+		expect(clienteAceitouLgpd("Pode usar. E qual é o prazo?")).toBe(false);
 	});
 
 	it("a pergunta do cliente depois do aviso não fecha o aceite", () => {
@@ -407,15 +411,19 @@ describe("P262 — na dúvida não se captura: aceite é conservador, revogaçã
 		["pode usar", "aceita"],
 		["sim, pode usar", "aceita"],
 		["sim, podem usar", "aceita"],
-		["Pode usar. E qual é o prazo?", "aceita"],
+		// Rodada 6: a pergunta trava a MENSAGEM INTEIRA (a main lê o texto todo). Antes
+		// desta rodada a mensagem era decidida frase a frase e o "Pode usar." valia.
+		["Pode usar. E qual é o prazo?", "nada"],
 		["Pode consultar meu CPF e usar meus dados para a proposta.", "aceita"],
 		// A pergunta na MESMA frase (sem ponto entre as duas) não se separa: a fala
 		// inteira pergunta, então não se captura. Com o ponto, a primeira frase é
 		// declaração e vale.
 		["Pode usar meus dados, obrigado 😊 Qual é o prazo?", "nada"],
-		["Pode usar meus dados, obrigado 😊. Qual é o prazo?", "aceita"],
+		["Pode usar meus dados, obrigado 😊. Qual é o prazo?", "nada"],
 		["Ok, autorizo — qual o prazo?", "nada"],
-		["não tem problema, pode usar", "aceita"],
+		// Rodada 6: a trava geral é de NEGAÇÃO NA MENSAGEM INTEIRA. "não tem problema,"
+		// é bom demais para ser lido por regex: cai no lado seguro e o modelo repergunta.
+		["não tem problema, pode usar", "nada"],
 		["claro, pode", "aceita"],
 		["sim: pode usar, obrigado", "aceita"],
 		["Vocês podem consultar meu CPF e vender meus dados", "nada"],
@@ -455,5 +463,69 @@ describe("P262 — na dúvida não se captura: aceite é conservador, revogaçã
 		]) {
 			expect(clienteAceitouLgpd(fala), fala).toBe(false);
 		}
+	});
+});
+
+// P262, re-auditoria 310e rodada 6: a onda 15 protegeu o lado perigoso com lista de
+// BLOQUEIO (negações enumeradas) e o auditor achou outra forma que escapava — "Ainda
+// não estou de acordo." casa "de acordo" e não casava nenhuma negação enumerada.
+// Bloqueio nunca fecha; a rodada 6 inverte o desenho para LISTA DE PERMISSÃO.
+//
+// Contrato conferido aqui: o aceite só acontece quando a mensagem INTEIRA passa por
+// todas as travas (não revoga, não pergunta, não nega, não recusa) e casa a forma
+// positiva estreita. Qualquer outra fala cai no lado seguro — o aceite fica pendente,
+// o modelo pergunta de novo e o cliente responde "sim" no turno seguinte.
+describe("P262 rodada 6 — lista de permissão: só a forma positiva estreita aceita", () => {
+	const aviso = { role: "assistant" as const, content: AVISO };
+
+	const TABELA: Array<[string, "aceita" | "nao-aceita"]> = [
+		// ——— o caso da rodada 6: recusa escrita com as palavras do aceite ———
+		["Ainda não estou de acordo.", "nao-aceita"],
+		["Ainda não estou de acordo", "nao-aceita"],
+		["Não estou de acordo com o uso dos meus dados.", "nao-aceita"],
+		// ——— a trava geral de negação pega a forma que ninguém enumerou ———
+		["Nem sei se quero isso", "nao-aceita"],
+		["Nem pensar, obrigado", "nao-aceita"],
+		["Jamais autorizo a consulta do meu CPF.", "nao-aceita"],
+		["Nunca autorizei ninguém a consultar meu CPF", "nao-aceita"],
+		["sim, mas só se vocês não venderem meus dados", "nao-aceita"],
+		["Ainda não decidi, amanhã eu falo", "nao-aceita"],
+		// ——— a forma positiva é ESTREITA: verbo de dúvida não é consentimento ———
+		["Quero entender como vocês usam meu CPF", "nao-aceita"],
+		["deixa eu confirmar com a esposa", "nao-aceita"],
+		["me explica o que é birô de crédito", "nao-aceita"],
+		["ok, mas antes me conta quanto tempo leva", "nao-aceita"],
+		// ——— e o aceite de verdade continua entrando ———
+		["Beleza, pode consultar meu CPF.", "aceita"],
+		["Sim, autorizo a consulta do meu CPF.", "aceita"],
+		["Confirmado, pode seguir.", "aceita"],
+		["pode usar meus dados", "aceita"],
+	];
+
+	it.each(TABELA)("“%s” — %s", (fala, esperado) => {
+		const semAceiteAnterior = resolverAceiteLgpd({ falas: [aviso], falaDoCliente: fala });
+		if (esperado === "aceita") {
+			expect(clienteAceitouLgpd(fala), fala).toBe(true);
+			expect(semAceiteAnterior.ok, fala).toBe(true);
+			expect(semAceiteAnterior.motivo, fala).toBe("aceite-do-cliente");
+			return;
+		}
+		expect(clienteAceitouLgpd(fala), fala).toBe(false);
+		expect(semAceiteAnterior.ok, fala).toBe(false);
+		expect(semAceiteAnterior.motivo, fala).toBe("falta-o-aceite");
+	});
+
+	// O exemplo do auditor, com o nome que ele usou: a fala contém a forma positiva
+	// ("de acordo") e nenhuma negação enumerada — a trava geral é o que a barra.
+	it("“Ainda não estou de acordo.” não vira aceite pelo “de acordo”", () => {
+		expect(clienteAceitouLgpd("Ainda não estou de acordo.")).toBe(false);
+	});
+
+	// A lista de permissão não reabre o que as rodadas 4 e 5 fecharam.
+	it("as travas das rodadas 4 e 5 continuam de pé", () => {
+		expect(clienteAceitouLgpd("Vocês podem consultar meu CPF e vender meus dados?")).toBe(false);
+		expect(clienteAceitouLgpd("Não autorizo consultar meu CPF, podemos seguir sem isso?")).toBe(
+			false,
+		);
 	});
 });
