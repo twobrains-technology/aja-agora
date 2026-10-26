@@ -2,7 +2,12 @@
 // importada pelo capturador do WhatsApp e pelo do Pi. O que se prova aqui é a
 // decisão; a passagem completa entre os dois canais está em
 // `src/lib/agent/pi/turno-c.test.ts`.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// O capturador do WhatsApp importa o banco no topo do módulo; aqui só interessa
+// a decisão que ele delega (nenhuma leitura de banco é feita).
+vi.mock("@/db", () => ({ db: {} }));
+
 import {
 	celularEhTelefone,
 	dddValido,
@@ -136,13 +141,59 @@ describe("telefone × CPF — a mesma regra nos dois capturadores", () => {
 		});
 	});
 
-	it("só o pedido de CPF na última fala do agente abre o contexto", () => {
+	it("só o PEDIDO de CPF na última fala do agente abre o contexto", () => {
 		expect(pedidoDeCpfNoUltimoBalao({ role: "assistant", content: "qual seu CPF?" })).toBe(true);
+		expect(pedidoDeCpfNoUltimoBalao({ role: "assistant", content: "me manda seu CPF?" })).toBe(
+			true,
+		);
+		expect(
+			pedidoDeCpfNoUltimoBalao({ role: "assistant", content: "preciso do seu CPF para simular" }),
+		).toBe(true);
 		expect(pedidoDeCpfNoUltimoBalao({ role: "assistant", content: "qual valor você quer?" })).toBe(
 			false,
 		);
+		// MENÇÃO não é PEDIDO: este balão fala do CPF que já recebeu e pede o
+		// CELULAR. Lido como pedido de CPF, o celular ambíguo que o cliente dita em
+		// resposta vira CPF — e o telefone dele se perde (P188).
+		expect(
+			pedidoDeCpfNoUltimoBalao({
+				role: "assistant",
+				content: "Já recebi seu CPF. Qual é seu celular?",
+			}),
+		).toBe(false);
+		// O aviso de LGPD também fala do CPF sem pedir nada.
+		expect(
+			pedidoDeCpfNoUltimoBalao({
+				role: "assistant",
+				content:
+					"Para gerar a sua proposta, a administradora consulta seu CPF nos birôs de crédito. Posso seguir?",
+			}),
+		).toBe(false);
 		expect(pedidoDeCpfNoUltimoBalao({ role: "user", content: "qual seu CPF?" })).toBe(false);
 		expect(pedidoDeCpfNoUltimoBalao(null)).toBe(false);
+	});
+
+	it("menção ao CPF + pedido de celular: o número ambíguo é TELEFONE no WhatsApp", async () => {
+		// O capturador do WhatsApp (`src/lib/whatsapp/identify-capture.ts:226`) faz
+		// exatamente estas duas chamadas: o pedido sai do ÚLTIMO balão do agente e é
+		// ele que decide a leitura do número que o cliente mandou.
+		const { decidirCpfDoTexto: decidirNoWhatsApp, pedidoDeCpfNoUltimoBalao: pedidoNoWhatsApp } =
+			await import("@/lib/whatsapp/identify-capture");
+
+		const pedidoDeCpf = pedidoNoWhatsApp({
+			role: "assistant",
+			content: "Já recebi seu CPF. Qual é seu celular?",
+		});
+		expect(pedidoDeCpf).toBe(false);
+		expect(decidirNoWhatsApp(AMBIGUO, { pedidoDeCpf })).toEqual({ outcome: "none" });
+		expect(celularEhTelefone({ digitos: AMBIGUO, texto: AMBIGUO, pedidoDeCpf })).toBe(true);
+
+		// O pedido de verdade continua abrindo o contexto, pelo mesmo caminho.
+		const pedidoDeVerdade = pedidoNoWhatsApp({ role: "assistant", content: "qual seu CPF?" });
+		expect(decidirNoWhatsApp(AMBIGUO, { pedidoDeCpf: pedidoDeVerdade })).toEqual({
+			outcome: "captured",
+			cpf: AMBIGUO,
+		});
 	});
 
 	it("exibição e DDD: lista fechada da Anatel, 11 dígitos + 9º dígito", () => {

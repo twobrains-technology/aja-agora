@@ -270,6 +270,23 @@ export function decidirCpfDoTexto(
 	return { outcome: "none" };
 }
 
+/** O ATO de PEDIR o CPF — verbo de pedido colado no dado ("me passa o cpf"),
+ *  pedido cortês ("seu cpf, por favor") ou a pergunta pelo dado ("qual seu
+ *  cpf?"). A palavra "cpf" sozinha é MENÇÃO. É a mesma distinção de
+ *  `PEDE_DADO_RE` em `src/lib/agent/pi/lgpd.ts` (N04), aqui só para o CPF. */
+const ATO_DE_PEDIR_CPF = String.raw`(?:me\s+)?(?:pass(?:a|e|ar|em|aria)|inform(?:a|e|ar|em|aria)|envi(?:a|e|ar|em|aria)|mand(?:a|e|ar|em|aria)|d[ií]g(?:a|am|o|z)|confirma(?:r|m|ria)?|precis(?:o|amos|a|am|ava|aria)|solicit(?:o|amos|a|am|ou)|compartilh(?:a|e|ar|em|aria)|cadastr(?:a|e|ar|em|aria)|preench(?:a|am|er)|ped(?:ir|imos)|pe[cç]o|pe[çc]a)`;
+const PEDE_CPF_RE = new RegExp(
+	[
+		// "me manda seu cpf", "preciso do cpf", "preencha o cpf no card"
+		String.raw`\b${ATO_DE_PEDIR_CPF}\b[^.?!\n]{0,40}?\bcpf\b`,
+		// "seu cpf, por favor", "o cpf pra mim"
+		String.raw`\bcpf\b[^.?!\n]{0,20}?\b(?:por\s+favor|pra\s+mim|para\s+mim)\b`,
+		// pergunta pelo dado: "qual seu cpf?", "qual é o cpf?"
+		String.raw`\b(?:qual|quais|como)\b[^.?!\n]{0,25}?\bcpf\b`,
+	].join("|"),
+	"i",
+);
+
 /** O pedido de CPF é a ÚLTIMA coisa que o agente disse — sem turno do cliente no
  * meio. `false` quando a última fala é do cliente (aí o número comprido dele não
  * é resposta a pedido nenhum) ou a conversa não tem histórico. */
@@ -277,5 +294,10 @@ export function pedidoDeCpfNoUltimoBalao(
 	ultima: { role: string; content: string } | null | undefined,
 ): boolean {
 	if (!ultima || ultima.role !== "assistant") return false;
-	return ditoSobreCpf(ultima.content ?? "").declara;
+	const fala = ultima.content ?? "";
+	// MENÇÃO não é PEDIDO. "Já recebi seu CPF. Qual é seu celular?" fala do CPF e
+	// pede o CELULAR: lido como pedido de CPF, o celular ambíguo que o cliente dita
+	// em resposta vira CPF — e o telefone se perde (P188/P263). A negação também
+	// não pede nada ("não preciso do seu cpf").
+	return ditoSobreCpf(fala).declara && PEDE_CPF_RE.test(fala);
 }

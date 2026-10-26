@@ -1,6 +1,7 @@
 // A captura de CPF/telefone é o que impede PII em claro no banco, no log e no
 // provedor do modelo. Estes testes mordem: sem a máscara, o número viaja.
 import { describe, expect, it } from "vitest";
+import { pedidoDeCpfNoUltimoBalao } from "@/lib/conversation/telefone-ou-cpf";
 import { capturarIdentidadeDoTexto } from "./turno-livre";
 
 const CPF = "11144477735";
@@ -110,6 +111,35 @@ describe("capturarIdentidadeDoTexto", () => {
 		expect(cpf.recebeuCpf).toBe(true);
 		expect(cpf.recebeuCelular).toBe(false);
 		expect(cpf.identidade).toEqual({ cpf: AMBIGUO, celular: "" });
+	});
+
+	// P263: o CPF já está guardado e o agente pede o CELULAR. O balão dele fala do
+	// CPF ("já recebi seu CPF") sem pedi-lo, e é esse balão que o Pi entrega como
+	// `contexto.pedidoDeCpf` (`turno-livre.ts:599`). Lido como pedido de CPF, o
+	// celular ambíguo sobrescreve o CPF guardado e o telefone se perde.
+	it("CPF guardado + agente pede o celular: o número ambíguo é o celular, não um novo CPF", () => {
+		const AMBIGUO = "11900000083";
+		const pedidoDeCpf = pedidoDeCpfNoUltimoBalao({
+			role: "assistant",
+			content: "Já recebi seu CPF. Qual é seu celular?",
+		});
+
+		const r = capturarIdentidadeDoTexto(AMBIGUO, { cpf: CPF, celular: "" }, { pedidoDeCpf });
+		expect(r.recebeuCpf).toBe(false);
+		expect(r.recebeuCelular).toBe(true);
+		expect(r.identidade).toEqual({ cpf: CPF, celular: AMBIGUO });
+	});
+
+	it("pedido de CPF de verdade: o mesmo número ambíguo é o CPF", () => {
+		const AMBIGUO = "11900000083";
+		const pedidoDeCpf = pedidoDeCpfNoUltimoBalao({
+			role: "assistant",
+			content: "qual seu CPF?",
+		});
+
+		const r = capturarIdentidadeDoTexto(AMBIGUO, { cpf: "", celular: "" }, { pedidoDeCpf });
+		expect(r.recebeuCpf).toBe(true);
+		expect(r.identidade).toEqual({ cpf: AMBIGUO, celular: "" });
 	});
 });
 
