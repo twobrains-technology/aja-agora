@@ -338,6 +338,66 @@ describe("L44/P212 — o valor declarado entra no estado antes da busca", () => 
 		expect(qualify.valorDoBemAlvo).toBe(80_000);
 		expect(qualify.lanceValue).toBe(20_000);
 	});
+
+	// O rótulo que liga PALAVRA a VALOR chega pelas quatro formas que o cliente
+	// usa no chat (`:`, `-`, `=`, "é de"). O `:` era o único que separava a
+	// oração: "Meu lance: R$ 30.000" deixava o dinheiro órfão e o `parseAssetValue`
+	// o lia como valor do BEM (regressão de `6edd54d4`, P212).
+	const rotulados: Array<{ fala: string; bem: Record<string, unknown>; lance?: number }> = [
+		{ fala: "carro: 80 mil", bem: { categoria: "auto", valorDoBem: 80_000 } },
+		{ fala: "quero um carro de 80 mil", bem: { categoria: "auto", valorDoBem: 80_000 } },
+		{
+			fala: "quero um carro de 80 mil, sem entrada",
+			bem: { categoria: "auto", valorDoBem: 80_000 },
+		},
+		{
+			fala: "quero um carro de 80 mil e dou 20 mil de entrada",
+			bem: { categoria: "auto", valorDoBem: 80_000 },
+			lance: 20_000,
+		},
+		{
+			fala: "dou 20 mil de entrada pra um carro de 80 mil",
+			bem: { categoria: "auto", valorDoBem: 80_000 },
+			lance: 20_000,
+		},
+		{
+			fala: "quero um imóvel de 300 mil e 50 mil de entrada",
+			bem: { categoria: "imovel", valorDoBem: 300_000 },
+			lance: 50_000,
+		},
+		{ fala: "Meu lance: R$ 30.000", bem: {}, lance: 30_000 },
+		{ fala: "minha casa vale 300 mil", bem: { categoria: "imovel", valorDoBem: 300_000 } },
+	];
+
+	it.each(rotulados)("«$fala» declara só o que é do bem", ({ fala, bem, lance }) => {
+		expect(declaracaoDoTurno(fala)).toEqual(bem);
+		expect(lanceEPrazoDoTurno(fala).lanceValue).toBe(lance);
+	});
+
+	it("lance com dois-pontos NÃO substitui o bem de um turno anterior, sem busca", async () => {
+		const conversationId = await novaConversa();
+		const primeiro = await rodarTurno({
+			conversationId,
+			userText: "quero um carro de 80 mil",
+			beats: [{ text: "Boa escolha! E de quanto seria o lance?" }],
+		});
+		await primeiro.fechar();
+		const segundo = await rodarTurno({
+			conversationId,
+			userText: "Meu lance: R$ 30.000",
+			beats: [{ text: "Perfeito, anotei 30 mil de lance." }],
+		});
+		await segundo.fechar();
+
+		const meta = await metaDa(conversationId);
+		const qualify = meta.qualifyAnswers as Record<string, unknown>;
+		// Morde: sem o par rótulo→valor, o 30 mil do LANCE sobrescrevia o bem de
+		// 80 mil e a distribuição por faixa contava o cliente na faixa errada.
+		expect(qualify.creditMax).toBe(80_000);
+		expect(qualify.valorDoBemAlvo).toBe(80_000);
+		expect(qualify.lanceValue).toBe(30_000);
+		expect(meta.currentCategory).toBe("auto");
+	});
 });
 
 describe("N09/P217 — o custo é somado exato e arredondado UMA vez", () => {

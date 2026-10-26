@@ -16,6 +16,7 @@ import { db } from "@/db";
 import { conversations, messages } from "@/db/schema";
 import type { GroupSummary } from "@/lib/adapters/types";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
+import type { Category } from "@/lib/agent/personas";
 import { cenariosDaCarta } from "./cenarios";
 import { subirServidorRoteirizado } from "./testing/servidor-roteirizado";
 import { createRunTurnLivre, declaracaoDoTurno, lanceEPrazoDoTurno } from "./turno-livre";
@@ -192,6 +193,128 @@ describe("P139 — pergunta e negativa NÃO são dinheiro disponível", () => {
 
 		const qualify = await qualifyDa(conversationId);
 		expect(qualify.lanceValue).toBeUndefined();
+	});
+
+	it("o turno com PERGUNTA de lance chega aos cenários SEM dinheiro do cliente", async () => {
+		const conversationId = await novaConversa();
+		const turno = await rodarTurno({
+			conversationId,
+			userText: "30 mil de lance?",
+			card: { tipo: "scenarios", payload: { groupId: CARTA.id } },
+		});
+		await turno.fechar();
+
+		// Morde: hoje o `?` se perde no corte da oração, a fala é lida como
+		// declaração e o `provavel` carrega 30 mil do bolso de quem só PERGUNTOU.
+		expect(cardDoTurno(turno.eventos, "scenarios")).toEqual(cenariosDaCarta(CARTA));
+		const provavel = (
+			cardDoTurno(turno.eventos, "scenarios")?.scenarios as {
+				provavel: { ownResourcesValue: number };
+			}
+		).provavel;
+		expect(provavel.ownResourcesValue).toBe(0);
+
+		const qualify = await qualifyDa(conversationId);
+		expect(qualify.lanceValue).toBeUndefined();
+	});
+});
+
+// TABELA ADVERSARIAL (P139 + P212): a decisão é por ORAÇÃO, não por frase. Cada
+// linha é uma fala real de cliente brasileiro e o que ela declara — o lance vai
+// para o lance, o bem para o bem, e a PONTUAÇÃO (`?`, `:`, `-`, `=`, `,`, `.`,
+// `!`, emoji, caixa alta) não muda a atribuição. O auditor achou um
+// contraexemplo novo a cada rodada; esta tabela é a rede que fecha a classe.
+describe("P139/P212 — a oração decide: pontuação e rótulo não trocam lance por bem", () => {
+	type Caso = {
+		fala: string;
+		lance: { lanceValue?: number };
+		bem: { categoria?: Category; valorDoBem?: number };
+	};
+
+	const casos: Caso[] = [
+		// Lance AFIRMATIVO — com preposição, rótulo e dois-pontos.
+		{ fala: "tenho 30 mil de lance", lance: { lanceValue: 30_000 }, bem: {} },
+		{ fala: "Meu lance: R$ 30.000", lance: { lanceValue: 30_000 }, bem: {} },
+		{ fala: "meu lance é de 30 mil", lance: { lanceValue: 30_000 }, bem: {} },
+		{ fala: "meu lance - 30 mil", lance: { lanceValue: 30_000 }, bem: {} },
+		{ fala: "meu lance = 30 mil", lance: { lanceValue: 30_000 }, bem: {} },
+		{ fala: "dou 20 mil de entrada", lance: { lanceValue: 20_000 }, bem: {} },
+		// Caixa alta e emoji: o cliente digita assim no WhatsApp.
+		{ fala: "MEU LANCE: 30 MIL", lance: { lanceValue: 30_000 }, bem: {} },
+		{ fala: "tenho 30 mil de lance 😉", lance: { lanceValue: 30_000 }, bem: {} },
+		{ fala: "o lance é 30 mil!", lance: { lanceValue: 30_000 }, bem: {} },
+		// Lance em PERGUNTA — o cliente quer saber, não declarou ter.
+		{ fala: "30 mil de lance?", lance: {}, bem: {} },
+		{ fala: "30 mil de lance???", lance: {}, bem: {} },
+		{ fala: "Quanto de lance? 30 mil?", lance: {}, bem: {} },
+		{ fala: "preciso ter 30 mil de lance?", lance: {}, bem: {} },
+		// Lance NEGADO — dizer que não tem não é ter.
+		{ fala: "não tenho 30 mil de lance", lance: {}, bem: {} },
+		{ fala: "NUNCA tive 30 mil de lance.", lance: {}, bem: {} },
+		// Bem sozinho, com e sem pontuação.
+		{ fala: "quero um carro de 80 mil", lance: {}, bem: { categoria: "auto", valorDoBem: 80_000 } },
+		{
+			fala: "QUERO UM CARRO DE 80 MIL!",
+			lance: {},
+			bem: { categoria: "auto", valorDoBem: 80_000 },
+		},
+		{ fala: "carro: 80 mil", lance: {}, bem: { categoria: "auto", valorDoBem: 80_000 } },
+		// Bem SEM entrada declarada.
+		{
+			fala: "quero um carro de 80 mil, sem entrada",
+			lance: {},
+			bem: { categoria: "auto", valorDoBem: 80_000 },
+		},
+		// Bem + lance na MESMA frase, nas duas ordens.
+		{
+			fala: "quero um carro de 80 mil e dou 20 mil de entrada",
+			lance: { lanceValue: 20_000 },
+			bem: { categoria: "auto", valorDoBem: 80_000 },
+		},
+		{
+			fala: "dou 20 mil de entrada pra um carro de 80 mil",
+			lance: { lanceValue: 20_000 },
+			bem: { categoria: "auto", valorDoBem: 80_000 },
+		},
+		{
+			fala: "meu lance: 30 mil, quero um carro de 80 mil",
+			lance: { lanceValue: 30_000 },
+			bem: { categoria: "auto", valorDoBem: 80_000 },
+		},
+		// Dois dinheiros de lance na MESMA frase: o segundo não pode sobrar para o
+		// parser do bem.
+		{
+			fala: "lance de 30 mil e entrada de 10 mil pra um carro de 80 mil",
+			lance: { lanceValue: 30_000 },
+			bem: { categoria: "auto", valorDoBem: 80_000 },
+		},
+		// `e`/`ou` ligam FRASES: cada marcador fica com o dinheiro que ele rotula.
+		{ fala: "tenho 30 mil pro lance e 20 mil de entrada", lance: { lanceValue: 30_000 }, bem: {} },
+		{ fala: "meu lance: 30mil, entrada: 10mil", lance: { lanceValue: 30_000 }, bem: {} },
+		{
+			fala: "meu lance é 30 mil e o carro é 80 mil",
+			lance: { lanceValue: 30_000 },
+			bem: { categoria: "auto", valorDoBem: 80_000 },
+		},
+		{
+			fala: "quero um carro de 80 mil com 20 mil de lance",
+			lance: { lanceValue: 20_000 },
+			bem: { categoria: "auto", valorDoBem: 80_000 },
+		},
+		{
+			fala: "80 mil de carro, 30 mil de lance",
+			lance: { lanceValue: 30_000 },
+			bem: { categoria: "auto", valorDoBem: 80_000 },
+		},
+		// O que o cliente diz sem pontuação nenhuma e o que ele só pergunta.
+		{ fala: "o lance seria de uns 30 mil", lance: { lanceValue: 30_000 }, bem: {} },
+		{ fala: "lance é 30 mil?", lance: {}, bem: {} },
+		{ fala: "será que com 30 mil de lance eu consigo?", lance: {}, bem: {} },
+	];
+
+	it.each(casos)("«$fala»", ({ fala, lance, bem }) => {
+		expect(lanceEPrazoDoTurno(fala)).toEqual(lance);
+		expect(declaracaoDoTurno(fala)).toEqual(bem);
 	});
 });
 
