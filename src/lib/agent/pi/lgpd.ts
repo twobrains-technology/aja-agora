@@ -172,7 +172,9 @@ export function clienteAceitouLgpd(texto: string): boolean {
 	// A revogação derruba a fala inteira: "sim, mas revogo a autorização" não autoriza.
 	if (revogaConsentimento(texto)) return false;
 	// O juiz é a função da main — nada em `lgpd.ts` decide o aceite.
-	if (decideConfirmStage(texto).outcome !== "fire") return false;
+	// O retorno é uma união: `outcome` só existe quando a main decidiu algo (`handled`).
+	const decisao = decideConfirmStage(texto);
+	if (!decisao.handled || decisao.outcome !== "fire") return false;
 	// A trava só tira aceite: nunca cria o lado perigoso.
 	return !TRAVA_DO_ACEITE_RE.test(texto);
 }
