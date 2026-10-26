@@ -59,20 +59,12 @@ export const CONTRACT_INVALID_CPF_REPLY =
 
 export const CONTRACT_CANCELLED_REPLY = "Tranquilo! Vou te mostrar outras opções então.";
 
-/** O estado do fechamento como ESTE módulo o lê e o escreve.
- *
- * `avisoLgpdEm` é o instante (ISO) em que o aviso canônico da LGPD foi dito — o
- * FATO que autoriza a consulta de bureau. O campo ainda não está na definição do
- * tipo em `personas.ts` (fora deste bloco), então este alias é o único ponto por
- * onde ele entra; quando o tipo o aceitar, passa a ser
- * `ConversationMetadata["contractCollection"]`. Pedido registrado em
- * `.orientacao/pendencia-LGPDZAP.md`. */
-type ContractCollectionState = NonNullable<ConversationMetadata["contractCollection"]> & {
-	avisoLgpdEm?: string;
-};
-
-function collectionState(meta: ConversationMetadata): ContractCollectionState | undefined {
-	return meta.contractCollection as ContractCollectionState | undefined;
+/** O estado do fechamento como este módulo o lê: o tipo compartilhado de
+ * `personas.ts`, direto, sem alias nem cast. `avisoLgpdEm` é o instante (ISO) em
+ * que o aviso canônico da LGPD foi dito — o FATO que autoriza a consulta de
+ * bureau, e o que `fireContract` confere antes de chamar a Bevi. */
+function collectionState(meta: ConversationMetadata): ConversationMetadata["contractCollection"] {
+	return meta.contractCollection;
 }
 
 /** O aceite gravado no DISPARO, no mesmo formato de `metaDoFecho`
@@ -239,7 +231,7 @@ export async function beginContractCollection(
 	// O stage nasce do card, e o card carrega o aviso — então o instante do aviso é
 	// FATO deste momento, não fala do modelo. É o que `fireContract` confere antes
 	// de abrir a consulta de bureau.
-	const state: ContractCollectionState = { stage, avisoLgpdEm: new Date().toISOString() };
+	const state = { stage, avisoLgpdEm: new Date().toISOString() };
 	await persistMeta(conversationId, { ...meta, contractCollection: state });
 	return stage;
 }
@@ -349,7 +341,7 @@ export async function fireContract(from: string, conversationId: string): Promis
 				...(marcaPretendida ? { administradora: marcaPretendida } : {}),
 				identityOnFile: false,
 			}).text ?? "";
-		const comAviso: ContractCollectionState = { ...cc, avisoLgpdEm: new Date().toISOString() };
+		const comAviso = { ...cc, avisoLgpdEm: new Date().toISOString() };
 		await persistMeta(conversationId, { ...meta, contractCollection: comAviso });
 		await sendTextMessage(from, aviso);
 		return;

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ConversationMetadata } from "@/lib/agent/personas";
 import { AVISO_LGPD_RE } from "@/lib/agent/pi/lgpd";
 import { decidirCpfDoTexto } from "@/lib/conversation/telefone-ou-cpf";
 
@@ -100,8 +101,13 @@ describe("o estágio do CPF aplica a regra ÚNICA de 'tentativa de CPF'", () => 
 // ou aceite registrado, e o aceite é gravado no mesmo formato de `metaDoFecho`
 // (`pi/tools-livres.ts:324`) — nunca sobrescrevendo um aceite já registrado.
 
+// O meta do mock é TIPADO pelo tipo compartilhado de `personas.ts`, não solto:
+// é assim que o teste morde o tipo. Se `avisoLgpdEm` não está na definição de
+// `contractCollection` em `personas.ts`, os casos abaixo não compilam — era o
+// único caminho escrever o campo por cast, e o tipo prometia menos do que o
+// código escrevia (pendência de LGPDZAP, item 1, bloco TIPOLGPD).
 const estado = vi.hoisted(() => ({
-	meta: {} as Record<string, unknown>,
+	meta: {} as ConversationMetadata,
 	textos: [] as string[],
 	chamadasStartContract: [] as string[],
 }));
@@ -117,8 +123,8 @@ vi.mock("@/db", () => ({
 }));
 vi.mock("@/lib/conversation/meta", () => ({
 	metaOf: (conv: { metadata: unknown } | null | undefined) =>
-		(conv?.metadata ?? {}) as Record<string, unknown>,
-	persistMeta: vi.fn(async (_convId: string, meta: Record<string, unknown>) => {
+		(conv?.metadata ?? {}) as ConversationMetadata,
+	persistMeta: vi.fn(async (_convId: string, meta: ConversationMetadata) => {
 		estado.meta = { ...meta };
 	}),
 	reloadMeta: vi.fn(async () => ({ ...estado.meta })),
@@ -151,7 +157,7 @@ vi.mock("@/lib/admin/lead-stage-tracker", () => ({
 	getLeadIdForConversation: vi.fn(async () => null),
 }));
 
-const metaBase = {
+const metaBase: ConversationMetadata = {
 	currentCategory: "auto",
 	revealCompleted: true,
 };
@@ -167,10 +173,11 @@ describe("o aviso de LGPD é gravado antes de o CPF valer como proposta", () => 
 		const { beginContractCollection } = await import("./contract-capture");
 		const stage = await beginContractCollection("conv-1", {});
 		expect(stage).toBe("cpf");
-		const aviso = (estado.meta.contractCollection as { avisoLgpdEm?: string })?.avisoLgpdEm;
-		expect(aviso).toBeTruthy();
+		// Lido PELO TIPO, sem cast: `avisoLgpdEm` é do tipo compartilhado.
+		const aviso = estado.meta.contractCollection?.avisoLgpdEm;
+		if (!aviso) throw new Error("o instante do aviso não está no tipo compartilhado");
 		// Instante, não data solta: o registro do aceite é `{ em, fala }`.
-		expect(new Date(aviso as string).toISOString()).toBe(aviso);
+		expect(new Date(aviso).toISOString()).toBe(aviso);
 	});
 
 	it("CPF válido no stage cpf dispara e o meta ganha lgpdAceite com a fala do cliente", async () => {
@@ -182,7 +189,7 @@ describe("o aviso de LGPD é gravado antes de o CPF valer como proposta", () => 
 		const resultado = await captureContractText("5511987654321", "529.982.247-25");
 		expect(resultado).toEqual({ handled: true, outcome: "fire" });
 		expect(estado.meta.lgpdAceite).toBeTruthy();
-		expect((estado.meta.lgpdAceite as { fala: string }).fala).toBe("529.982.247-25");
+		expect(estado.meta.lgpdAceite?.fala).toBe("529.982.247-25");
 	});
 
 	it("no stage confirm, o aceite explícito registra o lgpdAceite", async () => {
@@ -193,7 +200,7 @@ describe("o aviso de LGPD é gravado antes de o CPF valer como proposta", () => 
 		const { captureContractText } = await import("./contract-capture");
 		const resultado = await captureContractText("5511987654321", "pode criar, sim");
 		expect(resultado).toEqual({ handled: true, outcome: "fire" });
-		expect((estado.meta.lgpdAceite as { fala: string }).fala).toBe("pode criar, sim");
+		expect(estado.meta.lgpdAceite?.fala).toBe("pode criar, sim");
 	});
 
 	it("um lgpdAceite já gravado não é sobrescrito pelo disparo", async () => {
@@ -204,7 +211,7 @@ describe("o aviso de LGPD é gravado antes de o CPF valer como proposta", () => 
 		};
 		const { captureContractText } = await import("./contract-capture");
 		await captureContractText("5511987654321", "529.982.247-25");
-		expect((estado.meta.lgpdAceite as { fala: string }).fala).toBe("pode usar meus dados");
+		expect(estado.meta.lgpdAceite?.fala).toBe("pode usar meus dados");
 	});
 
 	it("sem aviso gravado e sem aceite, o disparo NÃO chama a Bevi — responde o aviso de novo", async () => {
@@ -236,6 +243,20 @@ describe("o aviso de LGPD é gravado antes de o CPF valer como proposta", () => 
 		const { fireContract } = await import("./contract-capture");
 		await fireContract("5511987654321", "conv-1");
 		expect(estado.chamadasStartContract).toEqual(["conv-1"]);
+	});
+
+	it("quem lê `contractCollection` pelo tipo compartilhado vê o instante do aviso", async () => {
+		// Prova de tipo, não só de comportamento: `ConversationMetadata` é o que os
+		// outros caminhos do fecho usam pra ler a coleta (`pi/tools-livres.ts`). Se
+		// `avisoLgpdEm` só vivia no alias local de `contract-capture.ts`, este teste
+		// não compilava (`pnpm -s typecheck`), e quem lê por fora não vê o FATO.
+		const meta: ConversationMetadata = {
+			...metaBase,
+			contractCollection: { stage: "cpf", avisoLgpdEm: "2026-10-25T12:00:00.000Z" },
+		};
+		expect(meta.contractCollection?.avisoLgpdEm).toBe("2026-10-25T12:00:00.000Z");
+		const { aceiteDoDisparo } = await import("./contract-capture");
+		expect(aceiteDoDisparo(meta, "529.982.247-25")?.fala).toBe("529.982.247-25");
 	});
 
 	it("sem aviso gravado, o CPF que chega não fabrica aceite — o registro é do aviso", async () => {
