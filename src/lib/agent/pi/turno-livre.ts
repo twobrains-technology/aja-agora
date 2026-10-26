@@ -337,6 +337,12 @@ const LIGACOES_DO_LANCE = new Set([
 	"nas",
 	"com",
 	"como",
+	// `não` liga rótulo e valor NEGADOS: "meu lance não é de 30 mil" nomeia o
+	// valor do LANCE e negado — sem esta ligação o 30 mil ficava órfão na oração
+	// e o `parseAssetValue` o lia como valor do BEM (P212). Um `sem` NÃO entra
+	// aqui: "quero um carro de 80 mil sem entrada" é o preço do bem, e o `sem`
+	// fala da entrada.
+	"nao",
 	"pra",
 	"para",
 	"pro",
@@ -384,10 +390,11 @@ export function declaracaoDoTurno(texto: string | null | undefined): {
 	if (!texto) return {};
 	const nomeadas = PALAVRAS_DE_CATEGORIA.filter((p) => (texto.match(p.re) ?? []).length > 0);
 	const categoria = nomeadas.length === 1 ? nomeadas[0]?.categoria : undefined;
-	// O DINHEIRO DO LANCE SAI DA FRASE, O RESTO FICA (P212): "quero um carro de 80
+	// O DINHEIRO DO LANCE SAI DA ORAÇÃO, O RESTO FICA (P212): "quero um carro de 80
 	// mil, sem entrada" declara o bem de 80 mil — a palavra "entrada" não apaga a
-	// frase inteira. Só o número que o cliente ligou ao lance é retirado; o que
-	// sobra (o preço do bem) vai ao mesmo `parseAssetValue` de sempre.
+	// frase inteira. Só o número PAR que o cliente ligou ao lance é retirado; o que
+	// sobra (o preço do bem) vai ao mesmo `parseAssetValue` de sempre. As perguntas
+	// saem ANTES e no lugar, sem emendar frases (P212/L44).
 	const valorDoBem = parseAssetValue(semODinheiroDoLance(semAsPerguntas(texto))) ?? undefined;
 	return {
 		...(categoria ? { categoria } : {}),
@@ -439,46 +446,76 @@ function somenteLigacoes(vao: string): boolean {
 	});
 }
 
-type OracaoDoTurno = { inicio: number; fim: number; interrogativa: boolean };
+/** Um TRECHO da fala: onde começa, onde termina e se a pontuação que o fecha é
+ * `?`. Os dois trechos que este arquivo usa são a ORAÇÃO (o par dinheiro↔marcador)
+ * e a FRASE (o que o cliente AFIRMA) — ver `trechosDe`. */
+type TrechoDoTurno = { inicio: number; fim: number; interrogativa: boolean };
 
-/** Quebra a fala em ORAÇÕES. A pontuação só separa quando NÃO está dentro de um
- * número: em "R$ 20.000" o ponto é separador de milhar, e em "1,5 milhão" a
- * vírgula é decimal — cortar ali partiria o dinheiro no meio.
- *
- * A oração é a unidade de quem DECLARA (P139): "quanto de lance eu preciso?" e
- * "tenho 30 mil" são orações diferentes, e só a segunda é dinheiro disponível.
- * Por isso cada oração guarda o seu CARÁTER: o `?` fecha a oração e a marca como
- * pergunta — perdê-lo fazia "30 mil de lance?" passar por declaração.
+/** O que separa ORAÇÕES — a unidade do PAR dinheiro↔marcador. A vírgula entra
+ * aqui de propósito: "quero um carro de 80 mil, lance de 30 mil" tem dois
+ * dinheiros de frases de valor diferentes, e deixar o par atravessar a vírgula
+ * fazia o 80 mil (o preço do BEM) virar o dinheiro do LANCE — o lado perigoso.
  *
  * O `:` NÃO separa: em português de chat ele liga RÓTULO a VALOR ("meu lance:
  * R$ 30.000", "carro: 80 mil"). Cortar ali deixava o dinheiro órfão do rótulo e
- * o `parseAssetValue` o lia como valor do BEM (P212).
- */
+ * o `parseAssetValue` o lia como valor do BEM (P212). */
 const SEPARADORES_DE_ORACAO = ",.;!?\n";
 
-function oracoesDe(texto: string): OracaoDoTurno[] {
-	const oracoes: OracaoDoTurno[] = [];
+/** O que separa FRASES — a unidade de quem AFIRMA. A vírgula fica de fora: "não
+ * tenho 30 mil de lance, mas tenho 10 mil" é UMA frase e a negação vale nela
+ * inteira, enquanto "quero um carro de 80 mil. Lance eu não tenho" são duas — e
+ * o ponto entre elas é a fronteira que a fala preserva (P212). */
+const SEPARADORES_DE_FRASE = ".;!?\n";
+
+/** Quebra a fala em trechos com a PONTUAÇÃO ORIGINAL preservada: cada trecho é
+ * uma fatia do próprio texto, e o separador não pertence a nenhum deles. Nada é
+ * juntado, nada é reescrito — é o que impede que duas afirmações separadas virem
+ * uma associação monetária que o cliente não fez (P212).
+ *
+ * A pontuação só separa quando NÃO está dentro de um número: em "R$ 20.000" o
+ * ponto é separador de milhar, e em "1,5 milhão" a vírgula é decimal — cortar
+ * ali partiria o dinheiro no meio. */
+function trechosDe(texto: string, separadores: string): TrechoDoTurno[] {
+	const trechos: TrechoDoTurno[] = [];
 	let inicio = 0;
 	for (let i = 0; i < texto.length; i++) {
 		const caractere = texto[i] ?? "";
-		if (!SEPARADORES_DE_ORACAO.includes(caractere)) continue;
+		if (!separadores.includes(caractere)) continue;
 		const anterior = texto[i - 1] ?? "";
 		const seguinte = texto[i + 1] ?? "";
-		// Separador DENTRO de um número (milhar/decimal) não fecha oração.
+		// Separador DENTRO de um número (milhar/decimal) não fecha trecho.
 		if (/\d/.test(anterior) && /\d/.test(seguinte)) continue;
-		oracoes.push({ inicio, fim: i, interrogativa: caractere === "?" });
+		trechos.push({ inicio, fim: i, interrogativa: caractere === "?" });
 		inicio = i + 1;
 	}
-	oracoes.push({ inicio, fim: texto.length, interrogativa: false });
-	return oracoes;
+	trechos.push({ inicio, fim: texto.length, interrogativa: false });
+	return trechos;
 }
 
-/** A fala SEM as orações interrogativas: PERGUNTA não declara o bem (P139).
+function oracoesDe(texto: string): TrechoDoTurno[] {
+	return trechosDe(texto, SEPARADORES_DE_ORACAO);
+}
+
+function frasesDe(texto: string): TrechoDoTurno[] {
+	return trechosDe(texto, SEPARADORES_DE_FRASE);
+}
+
+/** A fala SEM as FRASES interrogativas: PERGUNTA não declara o bem (P139).
  * "Quanto de lance? 30 mil?" quer saber o preço, não está dizendo quanto pode
- * gastar — e um número de pergunta no `creditMax` envenena a busca e o painel. */
+ * gastar — e um número de pergunta no `creditMax` envenena a busca e o painel.
+ *
+ * O apagamento é NO LUGAR: cada frase interrogativa vira espaço do mesmo
+ * tamanho. Juntar as frases que sobram com um espaço (o que se fazia aqui) colava
+ * o fim de uma afirmação no começo da outra e criava par dinheiro↔marcador entre
+ * elas (P212). */
 function semAsPerguntas(texto: string): string {
-	const oracoes = oracoesDe(texto).filter((oracao) => !oracao.interrogativa);
-	return oracoes.map((oracao) => texto.slice(oracao.inicio, oracao.fim)).join(" ");
+	let limpo = texto;
+	for (const frase of frasesDe(texto)) {
+		if (!frase.interrogativa) continue;
+		const vazio = " ".repeat(frase.fim - frase.inicio);
+		limpo = `${limpo.slice(0, frase.inicio)}${vazio}${limpo.slice(frase.fim)}`;
+	}
+	return limpo;
 }
 
 /** O dinheiro que a fala liga ao LANCE, com a posição: o token de dentro da
@@ -486,13 +523,20 @@ function semAsPerguntas(texto: string): string {
  *
  * Serve às duas perguntas do turno, e é por isso que ela devolve também a
  * posição: (a) o número é dinheiro DISPONÍVEL? — quem responde é
- * `dinheiroFoiDeclarado`, que lê a oração em volta; (b) o número é o valor do
+ * `dinheiroFoiDeclarado`, que lê a FRASE em volta; (b) o número é o valor do
  * BEM? — não: é do lance, e `semODinheiroDoLance` o retira da frase antes do
  * `parseAssetValue` (P212). */
-type DinheiroDoLance = { valor: number; inicio: number; fim: number; oracao: OracaoDoTurno };
+type DinheiroDoLance = {
+	valor: number;
+	inicio: number;
+	fim: number;
+	oracao: TrechoDoTurno;
+	frase: TrechoDoTurno;
+};
 
 function dinheirosDoLance(texto: string): DinheiroDoLance[] {
 	const oracoes = oracoesDe(texto);
+	const frases = frasesDe(texto);
 	const tokens = [...texto.matchAll(TOKEN_DE_DINHEIRO)].map((token) => ({
 		inicio: token.index ?? 0,
 		fim: (token.index ?? 0) + token[0].length,
@@ -533,37 +577,54 @@ function dinheirosDoLance(texto: string): DinheiroDoLance[] {
 			melhor = { token, valor: token.valor, distancia: vao.trim().length };
 		}
 		if (!melhor) continue;
+		// A FRASE do dinheiro: a oração nunca atravessa uma fronteira de frase, então
+		// a que contém a oração é a frase a que o valor pertence.
+		const frase = frases.find((f) => oracao.inicio >= f.inicio && oracao.fim <= f.fim);
+		if (!frase) continue;
 		jaAproveitados.add(melhor.token.inicio);
 		dinheiros.push({
 			valor: melhor.valor,
 			inicio: melhor.token.inicio,
 			fim: melhor.token.fim,
 			oracao,
+			frase,
 		});
 	}
 	// Na ordem da FALA: o primeiro dinheiro citado é o que o cliente declarou.
 	return dinheiros.sort((a, b) => a.inicio - b.inicio);
 }
 
-/** O que NEGA o dinheiro antes do número ("não tenho 30 mil para lance") e o que
- * TRANSFORMA a fala em pergunta ("preciso ter 30 mil de lance?"). */
-const NEGACAO_ANTES_DO_DINHEIRO = /\b(n[ãa]o|nunca|jamais|nem|sem)\b/i;
+/** O que NEGA a existência do dinheiro — em QUALQUER lugar da frase. A negação
+ * não vem só antes do número: "30 mil de lance eu NÃO tenho" nega DEPOIS dele, e
+ * olhar para trás apenas era o que gravava R$ 30 mil de quem disse não tê-los
+ * (P139). Palavra inteira dos dois lados: nada de prefixo solto. */
+const NEGACAO_NA_FRASE = /\b(n[ãa]o|nao|nem|nenhum[ao]?s?|nada|sem|nunca|zero)\b/i;
+
+/** O que TRANSFORMA a fala em pergunta mesmo sem o `?` ("quanto de lance eu
+ * consigo com 30 mil"). Vale no começo da frase, até o número. */
 const PERGUNTA_ANTES_DO_DINHEIRO =
 	/\b(quanto|quantos|quantas|qual|quais|quando|onde|como|preciso|precisaria|ser[áa]|tem como|d[áa] pra)\b/i;
 
 /** O cliente AFIRMOU ter esse dinheiro? (P139)
  *
- * Pergunta e negativa não viram dinheiro DISPONÍVEL: "preciso ter 30 mil de
- * lance?" e "não tenho 30 mil para lance" descrevem o que ele NÃO tem ou quer
- * saber — gravar como lance faria os três cenários usarem recurso que ele não
- * tem. A leitura é da oração: a negação vale quando vem ANTES do dinheiro, e a
- * pergunta quando a oração é interrogativa (fechada por `?`) ou é aberta por
- * palavra interrogativa antes do número. */
+ * PRINCÍPIO (o da `main`, em `contract-capture.ts:isQuestion`): é conservador de
+ * propósito, nos DOIS sentidos — na dúvida, quem responde é o modelo, e o fato
+ * continua pendente. Aqui o LADO PERIGOSO é gravar como LANCE um dinheiro que o
+ * cliente NÃO afirmou ter: os três cenários de `cards-livres.ts` passam a usar
+ * recurso dele que não existe, e a proposta sai com um valor que ele não tem. O
+ * lado seguro é NÃO gravar — o modelo pergunta de novo.
+ *
+ * Duas regras simples sobre a FRASE do valor (nunca sobre a fala inteira, nunca
+ * emendando frases):
+ *  1. negação em qualquer posição da frase — antes OU depois do número;
+ *  2. pergunta — a frase fechada por `?`, ou aberta por palavra interrogativa.
+ * Fora das duas, e com marcador de lance na mesma oração, é declaração. */
 function dinheiroFoiDeclarado(texto: string, dinheiro: DinheiroDoLance): boolean {
-	const antes = texto.slice(dinheiro.oracao.inicio, dinheiro.inicio);
-	if (NEGACAO_ANTES_DO_DINHEIRO.test(antes)) return false;
-	if (dinheiro.oracao.interrogativa) return false;
-	if (PERGUNTA_ANTES_DO_DINHEIRO.test(antes)) return false;
+	const frase = texto.slice(dinheiro.frase.inicio, dinheiro.frase.fim);
+	if (NEGACAO_NA_FRASE.test(frase)) return false;
+	if (dinheiro.frase.interrogativa) return false;
+	if (PERGUNTA_ANTES_DO_DINHEIRO.test(texto.slice(dinheiro.frase.inicio, dinheiro.inicio)))
+		return false;
 	return true;
 }
 

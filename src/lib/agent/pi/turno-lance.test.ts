@@ -172,6 +172,38 @@ describe("P139 — pergunta e negativa NÃO são dinheiro disponível", () => {
 		});
 	});
 
+	// RODADA 5 / P139 — a negação vem DEPOIS do número e o dinheiro era gravado
+	// assim mesmo: a leitura só olhava para trás.
+	it("'30 mil de lance eu não tenho' não é dinheiro do cliente", () => {
+		expect(lanceEPrazoDoTurno("30 mil de lance eu não tenho.")).toEqual({});
+		// E o número ligado à negativa do lance também não é o valor do bem.
+		expect(declaracaoDoTurno("30 mil de lance eu não tenho.")).toEqual({});
+	});
+
+	it("o turno com a negativa DEPOIS do número chega aos cenários sem dinheiro do cliente", async () => {
+		const conversationId = await novaConversa();
+		const turno = await rodarTurno({
+			conversationId,
+			userText: "30 mil de lance eu não tenho.",
+			card: { tipo: "scenarios", payload: { groupId: CARTA.id } },
+		});
+		await turno.fechar();
+
+		// Morde: com o dinheiro gravado, o `provavel` carregaria 30 mil do bolso de
+		// quem disse não tê-los. Sem ele, o cenário é o de sempre — o embutido cobre
+		// o lance — e nenhum recurso próprio é usado.
+		expect(cardDoTurno(turno.eventos, "scenarios")).toEqual(cenariosDaCarta(CARTA));
+		const provavel = (
+			cardDoTurno(turno.eventos, "scenarios")?.scenarios as {
+				provavel: { ownResourcesValue: number };
+			}
+		).provavel;
+		expect(provavel.ownResourcesValue).toBe(0);
+
+		const qualify = await qualifyDa(conversationId);
+		expect(qualify.lanceValue).toBeUndefined();
+	});
+
 	it("o turno com negativa chega aos cenários SEM dinheiro do cliente", async () => {
 		const conversationId = await novaConversa();
 		const turno = await rodarTurno({
@@ -219,12 +251,17 @@ describe("P139 — pergunta e negativa NÃO são dinheiro disponível", () => {
 	});
 });
 
-// TABELA ADVERSARIAL (P139 + P212): a decisão é por ORAÇÃO, não por frase. Cada
-// linha é uma fala real de cliente brasileiro e o que ela declara — o lance vai
-// para o lance, o bem para o bem, e a PONTUAÇÃO (`?`, `:`, `-`, `=`, `,`, `.`,
-// `!`, emoji, caixa alta) não muda a atribuição. O auditor achou um
-// contraexemplo novo a cada rodada; esta tabela é a rede que fecha a classe.
-describe("P139/P212 — a oração decide: pontuação e rótulo não trocam lance por bem", () => {
+// TABELA ADVERSARIAL (P139 + P212): a decisão é por FRASE, com a pontuação
+// original preservada. Cada linha é uma fala real de cliente brasileiro e o que
+// ela declara — o lance vai para o lance, o bem para o bem, e a PONTUAÇÃO (`?`,
+// `:`, `-`, `=`, `,`, `.`, `!`, emoji, caixa alta) não muda a atribuição. O
+// auditor achou um contraexemplo novo a cada rodada; esta tabela guarda os das
+// rodadas 3, 4 e 5 e é a rede que fecha a classe.
+//
+// A DIREÇÃO de cada linha é explícita: o lado perigoso do lance é gravar dinheiro
+// que o cliente NÃO afirmou ter; o do bem é perder o bem declarado ou tomar o
+// lance como bem. As linhas seguras valem "não captura".
+describe("P139/P212 — a frase decide: pontuação e rótulo não trocam lance por bem", () => {
 	type Caso = {
 		fala: string;
 		lance: { lanceValue?: number };
@@ -310,6 +347,68 @@ describe("P139/P212 — a oração decide: pontuação e rótulo não trocam lan
 		{ fala: "o lance seria de uns 30 mil", lance: { lanceValue: 30_000 }, bem: {} },
 		{ fala: "lance é 30 mil?", lance: {}, bem: {} },
 		{ fala: "será que com 30 mil de lance eu consigo?", lance: {}, bem: {} },
+
+		// RODADA 5 / P139 — a NEGAÇÃO DEPOIS do número. "30 mil de lance eu não
+		// tenho" é exatamente o recurso que o cliente disse NÃO ter.
+		{ fala: "30 mil de lance eu não tenho.", lance: {}, bem: {} },
+		{ fala: "30 mil de lance eu nao tenho", lance: {}, bem: {} },
+		{ fala: "30 mil de entrada não tenho não", lance: {}, bem: {} },
+		{ fala: "meu lance não é de 30 mil", lance: {}, bem: {} },
+		{ fala: "não, 30 mil de lance", lance: {}, bem: {} },
+		{ fala: "30 mil de lance, nenhuma entrada", lance: {}, bem: {} },
+		{ fala: "30 mil de lance até eu tenho, zero de reserva", lance: {}, bem: {} },
+		{ fala: "quanto de lance com 30 mil", lance: {}, bem: {} },
+
+		// RODADA 5 / P212 — FRASES diferentes NUNCA se juntam. O bem de 80 mil
+		// continua sendo o bem, e o "não tenho" da frase seguinte não vira lance.
+		{
+			fala: "Quero um carro de 80 mil. Lance eu não tenho.",
+			lance: {},
+			bem: { categoria: "auto", valorDoBem: 80_000 },
+		},
+		{
+			fala: "30 mil de lance eu não tenho. Quero um carro de 80 mil.",
+			lance: {},
+			bem: { categoria: "auto", valorDoBem: 80_000 },
+		},
+		{
+			fala: "Quero um carro de 80 mil. Quanto de lance eu preciso?",
+			lance: {},
+			bem: { categoria: "auto", valorDoBem: 80_000 },
+		},
+		{
+			fala: "Quero um carro de 80 mil. Sem entrada.",
+			lance: {},
+			bem: { categoria: "auto", valorDoBem: 80_000 },
+		},
+		{
+			fala: "Não tenho entrada. Quero um carro de 80 mil.",
+			lance: {},
+			bem: { categoria: "auto", valorDoBem: 80_000 },
+		},
+		// A vírgula fecha a ORAÇÃO do par: o 80 mil é o preço do carro, não o lance.
+		{
+			fala: "Quero um carro de 80 mil, lance de 30 mil",
+			lance: { lanceValue: 30_000 },
+			bem: { categoria: "auto", valorDoBem: 80_000 },
+		},
+		{
+			fala: "Consigo dar 20 mil de entrada, quero um carro de 80 mil",
+			lance: { lanceValue: 20_000 },
+			bem: { categoria: "auto", valorDoBem: 80_000 },
+		},
+		// `;` e `.` também são fronteira de frase.
+		{
+			fala: "meu lance: R$ 30.000; quero um carro de 80 mil",
+			lance: { lanceValue: 30_000 },
+			bem: { categoria: "auto", valorDoBem: 80_000 },
+		},
+		{
+			fala: "meu lance é 30 mil. quero um carro de 80 mil",
+			lance: { lanceValue: 30_000 },
+			bem: { categoria: "auto", valorDoBem: 80_000 },
+		},
+		{ fala: "80 mil de lance", lance: { lanceValue: 80_000 }, bem: {} },
 	];
 
 	it.each(casos)("«$fala»", ({ fala, lance, bem }) => {

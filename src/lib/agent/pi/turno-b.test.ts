@@ -374,6 +374,32 @@ describe("L44/P212 — o valor declarado entra no estado antes da busca", () => 
 		expect(lanceEPrazoDoTurno(fala).lanceValue).toBe(lance);
 	});
 
+	it("frases separadas NUNCA se juntam: o bem de 80 mil sobrevive ao 'lance eu não tenho'", async () => {
+		const fala = "Quero um carro de 80 mil. Lance eu não tenho.";
+		// No extrator: o 80 mil é o preço do BEM, e o "não tenho" da frase seguinte
+		// não vira recurso próprio.
+		expect(declaracaoDoTurno(fala)).toEqual({ categoria: "auto", valorDoBem: 80_000 });
+		expect(lanceEPrazoDoTurno(fala)).toEqual({});
+
+		const conversationId = await novaConversa();
+		const turno = await rodarTurno({
+			conversationId,
+			userText: fala,
+			beats: [{ text: "Entendi: carro de 80 mil, e o lance a gente vê depois." }],
+		});
+		await turno.fechar();
+
+		const meta = await metaDa(conversationId);
+		const qualify = meta.qualifyAnswers as Record<string, unknown>;
+		// Morde: emendando as duas frases o turno via "80 mil Lance" na mesma
+		// oração, tirava o 80 mil do bem e o gravava como lance — o cliente saía sem
+		// valor informado na distribuição por faixa e com dinheiro que não tem.
+		expect(qualify.creditMax).toBe(80_000);
+		expect(qualify.valorDoBemAlvo).toBe(80_000);
+		expect(qualify.lanceValue).toBeUndefined();
+		expect(meta.currentCategory).toBe("auto");
+	});
+
 	it("lance com dois-pontos NÃO substitui o bem de um turno anterior, sem busca", async () => {
 		const conversationId = await novaConversa();
 		const primeiro = await rodarTurno({
