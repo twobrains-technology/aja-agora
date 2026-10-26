@@ -4,38 +4,98 @@
 // a pessoa. Se o modelo ecoar o CPF que acabou de receber, ou despejar o JSON
 // dos argumentos de uma tool, quem lê é o cliente.
 //
-//  · `scrubCpf`          — mascara qualquer sequência que valide como CPF real;
+//  · `scrubCpf`           — mascara o que valida como CPF, por janela de 11 dígitos;
+//  · `comprovanteDeAceite` — o registro do aceite: a fala sem número de 8+ dígitos;
 //  · `isJsonFragmentLeak` — o segmento é um fragmento de JSON de argumentos;
 //  · `isInternalToolLeak` — o segmento cita o nome literal de uma tool.
 import { isValidCpf, maskCpf } from "@/lib/conversation/identity";
 
-/** CPF na forma CANÔNICA (3-3-3-2), com os separadores que o cliente usa, e
- * delimitado por não-dígito dos dois lados. É a 1ª passada de `scrubCpf`.
+/** Um TRECHO NUMÉRICO: a sequência MÁXIMA de dígitos e separadores `[.\-\s/]`, começando e
+ * terminando em dígito. É a unidade que o guarda lê, em vez de um molde de formato (3-3-3-2): as
+ * bordas de dígito impedem o trecho de começar ou terminar dentro do número vizinho.
  *
- * A passada antiga era GULOSA (`{9,17}` entre dois dígitos): num texto com CPF e
- * celular na mesma frase ela engolia os dois números, o candidato saía com 18
- * dígitos, o DV não fechava (`isValidCpf` exige 11) e o CPF era devolvido em claro
- * — P288, reauditoria 13. As bordas `(?<!\d)`/`(?!\d)` impedem o candidato de
- * começar ou terminar dentro do número vizinho, e o molde consome exatamente
- * 3+3+3+2 dígitos: não há como engolir o telefone. */
-const CPF_CANONICO = /(?<!\d)\d{3}[.\s]?\d{3}[.\s]?\d{3}[-.\s]?\d{2}(?!\d)/g;
-const CPF_CANDIDATO = /\d[\d.\-\s]{9,17}\d/g;
+ * P288 (reauditorias 13 e 14) — o remendo por formato parou. A passada gulosa juntava o CPF ao
+ * celular ditado na sequência (`529.982.247 - 25 11` = 13 dígitos) e devolvia o trecho em claro; o
+ * molde canônico não admitia o espaço em volta do traço. O que faz um número de 11 dígitos ser CPF
+ * não é a pontuação: é fechar no dígito verificador. Então o guarda decide por JANELA. */
+const TRECHO_NUMERICO = /(?<!\d)\d(?:[.\-\s/]*\d)*(?!\d)/g;
+const GRUPO_DE_DIGITOS = /\d+/g;
 
-/** Mascara CPF em texto livre. Só toca o que VALIDA no dígito verificador —
- * valor, data e telefone passam intactos.
- *
- * DUAS passadas, nesta ordem:
- *  1. a forma canônica, parada na borda do número (`CPF_CANONICO`) — o caso do CPF
- *     seguido de telefone, que a passada gulosa perdia;
- *  2. a passada antiga, sobre o resultado da 1ª, para os separadores que a forma
- *     canônica não alcança (espaço em volta do traço, pontuação misturada).
- * O que `maskCpf` produz não pode voltar a casar na 2ª passada: a máscara começa em
- * `*` e tem só 5 dígitos, menos dos 11 que `isValidCpf` exige — o comprovante já
- * mascarado não é remascado. */
+interface GrupoDeDigitos {
+	do: number;
+	ate: number;
+	digitos: string;
+}
+
+/** Os dígitos dos grupos de `de` até `ate`, sem os separadores: é o que `isValidCpf` lê, e o que
+ * decide se um trecho é grande demais pra entrar no comprovante. */
+function digitosDosGrupos(grupos: GrupoDeDigitos[], de: number, ate: number): string {
+	const fatia = grupos.slice(de, ate + 1);
+	return fatia.map((g) => g.digitos).join("");
+}
+
+/** Os grupos de dígitos de um trecho, separados por qualquer separador: `529.982.247 - 25` →
+ * `529|982|247|25`. Um grupo único de 11 dígitos (`52998224725`) é a janela de um grupo. */
+function gruposDoTrecho(trecho: string): GrupoDeDigitos[] {
+	return [...trecho.matchAll(GRUPO_DE_DIGITOS)].map((m) => ({
+		do: m.index,
+		ate: m.index + m[0].length,
+		digitos: m[0],
+	}));
+}
+
+/** O último grupo da janela que começa em `i` e soma EXATAMENTE 11 dígitos, se a janela fecha no
+ * DV. Se a conta passa de 11, a janela daquele grupo não é CPF e a conta recomeça no grupo
+ * seguinte — é o que impede um número longo de sair mascarado por uma janela deslocada. */
+function fimDaJanelaDeCpf(grupos: GrupoDeDigitos[], i: number): number | null {
+	let soma = 0;
+	for (let j = i; j < grupos.length; j++) {
+		soma += grupos[j].digitos.length;
+		if (soma > 11) break;
+		if (soma === 11 && isValidCpf(digitosDosGrupos(grupos, i, j))) return j;
+	}
+	return null;
+}
+
+/** Mascara CPF em texto livre, trecho por trecho. Só toca o que VALIDA no dígito verificador —
+ * telefone, valor e data passam intactos, e o texto fora das janelas não muda: o comprovante é o
+ * que o atendente lê depois. */
 export function scrubCpf(text: string): string {
 	if (!text) return text;
-	const canônico = text.replace(CPF_CANONICO, (m) => (isValidCpf(m) ? maskCpf(m) : m));
-	return canônico.replace(CPF_CANDIDATO, (m) => (isValidCpf(m) ? maskCpf(m) : m));
+	return text.replace(TRECHO_NUMERICO, (trecho) => {
+		const grupos = gruposDoTrecho(trecho);
+		let resultado = "";
+		let pos = 0;
+		let i = 0;
+		while (i < grupos.length) {
+			const fim = fimDaJanelaDeCpf(grupos, i);
+			if (fim === null) {
+				resultado += trecho.slice(pos, grupos[i].ate);
+				pos = grupos[i].ate;
+				i++;
+				continue;
+			}
+			resultado += trecho.slice(pos, grupos[i].do) + maskCpf(digitosDosGrupos(grupos, i, fim));
+			pos = grupos[fim].ate;
+			i = fim + 1;
+		}
+		return resultado;
+	});
+}
+
+/** O COMPROVANTE do aceite — o que entra em `lgpdAceite.fala` (`whatsapp/contract-capture.ts` e
+ * `pi/tools-livres.ts`). Não é o número: é a fala com o CPF mascarado e todo trecho numérico de
+ * 8+ dígitos substituído — telefone, valor e prazo não são o consentimento e não podem ficar
+ * persistidos fora da identidade cifrada. O corte de 200 chars vem DEPOIS de mascarar: `maskCpf` é
+ * curto, então o truncamento nunca perde o comprovante. */
+export function comprovanteDeAceite(texto: string): string {
+	return scrubCpf(texto)
+		.replace(TRECHO_NUMERICO, (trecho) => {
+			const grupos = gruposDoTrecho(trecho);
+			const digitos = digitosDosGrupos(grupos, 0, grupos.length - 1);
+			return digitos.length >= 8 ? "[número omitido]" : trecho;
+		})
+		.slice(0, 200);
 }
 
 /** Nomes de tool que o cliente nunca deve ler na fala do agente.

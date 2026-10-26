@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { NOMES_DAS_TOOLS_LIVRES } from "@/lib/agent/pi/tools-livres";
 import { maskCpf } from "@/lib/conversation/identity";
-import { isInternalToolLeak, passaFinal, scrubCpf } from "./vazamento";
+import { comprovanteDeAceite, isInternalToolLeak, passaFinal, scrubCpf } from "./vazamento";
 
 describe("vazamento — nome de tool na fala não chega ao cliente", () => {
 	// L19/P274 — `status_da_proposta` entrou no toolset do vendedor livre e ficou
@@ -25,12 +25,10 @@ describe("vazamento — nome de tool na fala não chega ao cliente", () => {
 	});
 });
 
-// P288 (reauditoria 13) — `scrubCpf` só mascara o que VALIDA como CPF. O candidato
-// antigo (`/\d[\d.\-\s]{9,17}\d/g`) era guloso: engolia o CPF E o telefone ditado na
-// sequência, virava um candidato de 18 dígitos, perdia o DV e o texto saía com o CPF
-// em claro — no WhatsApp é justamente o que `aceiteDoDisparo` persiste em
-// `lgpdAceite.fala`. O molde corrigido faz duas passadas: a forma canônica delimitada
-// por não-dígito, depois a antiga para separadores estranhos.
+// P288 (reauditorias 13 e 14) — `scrubCpf` só mascara o que VALIDA como CPF, e só o que é
+// uma janela de 11 dígitos. O candidato antigo era guloso: engolia o CPF E o telefone ditado na
+// sequência, perdia o DV e o texto saía com o CPF em claro — no WhatsApp é justamente o que
+// `aceiteDoDisparo` persiste em `lgpdAceite.fala`.
 //
 // Cada teste abaixo exige as DUAS formas do mesmo número ausentes do resultado (com
 // pontuação e só dígitos) e o telefone INTACTO — a garantia não é "tem asterisco", é
@@ -79,8 +77,7 @@ describe("P288 — scrubCpf não engole o telefone vizinho do CPF", () => {
 			semCpfEmClaro(resultado);
 			expect(resultado).toContain(telefone);
 			// Igualdade exata: prova que o resultado é o mascaramento do CPF e NADA mais
-			// mudou — inclusive que a saída de `maskCpf` não voltou a ser mascarada na 2ª
-			// passada, que é o outro lado do molde de duas passadas.
+			// mudou — inclusive que a saída de `maskCpf` não voltou a ser mascarada.
 			expect(resultado).toBe(esperado);
 		});
 	}
@@ -95,7 +92,7 @@ describe("P288 — scrubCpf não engole o telefone vizinho do CPF", () => {
 		expect(scrubCpf(fala)).toBe(fala);
 	});
 
-	it("a saída de maskCpf não casar de novo como CPF válido na 2ª passada", () => {
+	it("a saída de maskCpf não casar de novo como CPF válido", () => {
 		// Se o texto mascarado pudesse ser relido como candidato de 11 dígitos, o
 		// comprovante virava ***.***.***-** (maskCpf de um candidato que não valida).
 		const mascarado = scrubCpf("111.444.777-35 11 99999-9999");
@@ -103,21 +100,116 @@ describe("P288 — scrubCpf não engole o telefone vizinho do CPF", () => {
 		expect(scrubCpf(mascarado)).toBe(mascarado);
 	});
 
-	it("a borda esquerda da 1ª passada não começa dentro de outro número", () => {
-		// Sem `(?<!\d)`, a forma canônica pode começar no meio de um número longo: a janela
-		// deslocada `01234567890` bate no dígito verificador por acaso, e um número que não é
-		// CPF do cliente sai mascarado. Com a borda, só o CPF é tocado — telefone e valor
-		// continuam intactos.
+	it("a janela não começa dentro de outro número", () => {
+		// A janela sempre começa na fronteira de um grupo e consome exatamente 11 dígitos. Sem
+		// isso, a janela deslocada `01234567890` dentro de um número longo bate no DV por acaso e
+		// um número que não é CPF do cliente sai mascarado. Assim, só o CPF é tocado — telefone e
+		// valor continuam intactos.
 		expect(scrubCpf("12345678901234567890 111.444.777-35 11 99999-9999")).toBe(
 			"12345678901234567890 ***.***.777-35 11 99999-9999",
 		);
 	});
 
-	it("a 2ª passada continua cobrindo separadores estranhos, sem engolir o telefone", () => {
-		// O caso que a 1ª passada não alcança (espaço em volta do traço): a passada
-		// antiga é o que ainda mascara aqui.
+	it("os separadores estranhos continuam cobertos, sem engolir o telefone", () => {
+		// O caso que o molde por formato não alcançava (espaço em volta do traço): a conta por
+		// grupos é o que mascara aqui.
 		expect(scrubCpf("cpf 111.444.777 - 35 e cel 11 99999-9999")).toBe(
 			`cpf ${maskCpf("11144477735")} e cel 11 99999-9999`,
 		);
+	});
+});
+
+// P288 (reauditoria 14, rodada 14) — o remendo por formato parou. As duas passadas por regex
+// não fecham o caso: o molde canônico não admite espaço em volta do hífen, e a passada gulosa
+// junta o CPF ao telefone vizinho (`529.982.247 - 25 11` = 13 dígitos) e devolve o trecho em
+// claro. O molde agora é o FATO do número: o texto é cortado em TRECHOS NUMÉRICOS por fronteira
+// de dígito; dentro de cada trecho, a janela de grupos que soma exatamente 11 dígitos e valida
+// no DV é mascarada, e o resto do trecho fica intacto. Isso não depende de quais separadores
+// aparecem — telefone, valor e data continuam legíveis.
+describe("P288 (rodada 14) — scrubCpf por janela de 11 dígitos, por fronteira de grupo", () => {
+	const CPF = maskCpf("52998224725"); // ***.***.247-25
+
+	const casos: { fala: string; esperado: string }[] = [
+		{ fala: "529.982.247-25 11 98765-4321", esperado: `${CPF} 11 98765-4321` },
+		// O contraexemplo da rodada 14: espaço em volta do hífen, telefone na sequência.
+		{ fala: "529.982.247 - 25 11 98765-4321", esperado: `${CPF} 11 98765-4321` },
+		{ fala: "529 . 982 . 247 - 25 11987654321", esperado: `${CPF} 11987654321` },
+		{ fala: "52998224725 11987654321", esperado: `${CPF} 11987654321` },
+		// Telefone antes do CPF: a janela de 11 dígitos do telefone não valida no DV, então
+		// passa intacta — quem muda é só o CPF.
+		{ fala: "11 98765-4321 529.982.247-25", esperado: `11 98765-4321 ${CPF}` },
+		{ fala: "cpf 529/982/247-25", esperado: `cpf ${CPF}` },
+		// O que não é CPF passa intacto, incluindo o número colado: sem separador ele não é
+		// uma janela de grupo, e a borda de dígito é o que impede mascarar um número que não
+		// é o CPF do cliente (a mesma garantia da borda esquerda, acima).
+		{
+			fala: "R$ 60.000 em 114 meses, parcela 1.038,61",
+			esperado: "R$ 60.000 em 114 meses, parcela 1.038,61",
+		},
+		{ fala: "11 98765-4321", esperado: "11 98765-4321" },
+		{ fala: "26/10/2026", esperado: "26/10/2026" },
+		{ fala: "11987654321529.982.247-25", esperado: "11987654321529.982.247-25" },
+	];
+
+	for (const { fala, esperado } of casos) {
+		it(`mascara o CPF e mantém o resto em ${fala}`, () => {
+			expect(scrubCpf(fala)).toBe(esperado);
+		});
+	}
+});
+
+// P288 — o COMPROVANTE do aceite, não o número. O registro persistido (`lgpdAceite.fala`) é a
+// fala com o CPF mascarado e todo trecho numérico de 8+ dígitos fora: telefone, valor e prazo
+// não são o consentimento, e são justamente os dígitos que a janela de 11 não alcança. O corte
+// de 200 chars vem DEPOIS de mascarar, pra o truncamento nunca perder o comprovante.
+describe("P288 — comprovanteDeAceite não guarda número", () => {
+	// A garantia é POR TRECHO, não pelo total: `R$ 60.000 em 114 meses` tem 12 dígitos somados
+	// e nenhum trecho de 8+. Contar digitos soltos deixaria o teste vermelho pelo motivo errado.
+	function maiorTrechoNumérico(texto: string): number {
+		let max = 0;
+		for (const trecho of texto.match(/\d[\d.\-\s/]*\d|\d/g) ?? []) {
+			const digitos = [...trecho].filter((c) => c >= "0" && c <= "9").length;
+			if (digitos > max) max = digitos;
+		}
+		return max;
+	}
+
+	function semNumeroDe8MaisDigitos(comprovante: string): void {
+		expect(maiorTrechoNumérico(comprovante)).toBeLessThan(8);
+		expect(comprovante).not.toContain("52998224725");
+		expect(comprovante).not.toContain("529.982.247-25");
+		expect(comprovante).not.toContain("529.982.247 - 25");
+	}
+
+	for (const fala of [
+		"sim, 529.982.247 - 25 11 98765-4321",
+		"sim, meu CPF é 52998224725 11987654321",
+		"11987654321529.982.247-25",
+		"cpf 529/982/247-25",
+		"sim, 529 . 982 . 247 - 25, pode usar meus dados",
+	]) {
+		it(`comprovante sem número: ${fala}`, () => {
+			const comprovante = comprovanteDeAceite(fala);
+			// A fala continua legível — só o número sai.
+			expect(comprovante).not.toBe("");
+			semNumeroDe8MaisDigitos(comprovante);
+		});
+	}
+
+	it("mascara antes de cortar em 200 chars", () => {
+		const comprovante = comprovanteDeAceite(`sim, ${"a".repeat(250)}`);
+		expect(comprovante).toHaveLength(200);
+		expect(comprovante).toBe(`sim, ${"a".repeat(195)}`);
+	});
+
+	// O corte é DEPOIS do mascaramento, e o teste morde a ordem. Se cortasse antes, entraria o
+	// pedaço do número (`529.982.24` — 10 dígitos, não valida no DV) e ele seria mantido em
+	// claro, além de o comprovante passar dos 200 chars. mascarando antes, o que passa do corte
+	// é a máscara, ainda que o corte trunque a própria máscara.
+	it("o CPF que cai depois do corte de 200 chars continua mascarado", () => {
+		const comprovante = comprovanteDeAceite(`${"a".repeat(195)} 529.982.247-25`);
+		expect(comprovante).toHaveLength(200);
+		expect(comprovante).toBe(`${"a".repeat(195)} ***.`);
+		expect(comprovante).not.toContain("529.982.247-25");
 	});
 });

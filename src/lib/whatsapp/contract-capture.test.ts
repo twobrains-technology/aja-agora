@@ -353,8 +353,11 @@ describe("P288 — o aceite persistido nunca leva CPF em claro", () => {
 		const { captureContractText } = await import("./contract-capture");
 		const resultado = await captureContractText("5511987654321", fala);
 		expect(resultado).toEqual({ handled: true, outcome: "fire" });
-		// O telefone continua legível pra quem lê a conversa depois — só o CPF é mascarado.
-		expect(estado.meta.lgpdAceite?.fala).toBe(`${maskCpf(CPF_EM_CLARO)} 11 98765-4321`);
+		// P288 (rodada 14): o comprovante não guarda número. O telefone vizinho sai junto — a
+		// garantia do registro é a fala SEM número, não o número legível — e os 5 dígitos que
+		// `maskCpf` deixa visíveis somem com ele, porque formam um trecho de 16 dígitos com o
+		// celular na sequência. CPF sozinho continua `***.***.247-25` (teste acima).
+		expect(estado.meta.lgpdAceite?.fala).toBe("***.***.[número omitido]");
 		const gravado = JSON.stringify(estado.meta) ?? "";
 		semCpfEmClaro(gravado);
 		expect(gravado).not.toContain("529.982.247-25");
@@ -376,6 +379,81 @@ describe("P288 — o aceite persistido nunca leva CPF em claro", () => {
 		);
 		expect(aceite?.fala).toHaveLength(200);
 		semCpfEmClaro(aceite);
+	});
+});
+
+// P288 (rodada 14) — o comprovante gravado, conferido no OBJETO que `persistMeta` recebe.
+// As falas abaixo têm CPF com separadores que o molde por regex não alcança (espaço em volta
+// do hífen, barra) e número na sequência. A garantia é POR TRECHO numérico: nenhum com 8+ dígitos
+// — assim `R$ 60.000` continua legível e o telefone/CPF do cliente não ficam persistidos fora da
+// identidade cifrada. O teste morde: tirar `comprovanteDeAceite` e voltar para o `scrubCpf`
+// sozinho deixa `52998224725` no meta gravado.
+describe("P288 (rodada 14) — o aceite gravado não leva CPF nem número de 8+ dígitos", () => {
+	beforeEach(() => {
+		estado.meta = {};
+		estado.textos.length = 0;
+		estado.chamadasStartContract.length = 0;
+	});
+
+	// Contado por trecho, não pelo total: um meta com `R$ 60.000 em 114 meses` tem 12 dígitos
+	// somados e nenhum trecho de 8+.
+	function maiorTrechoNumérico(texto: string): number {
+		let max = 0;
+		for (const trecho of texto.match(/\d[\d.\-\s/]*\d|\d/g) ?? []) {
+			const digitos = [...trecho].filter((c) => c >= "0" && c <= "9").length;
+			if (digitos > max) max = digitos;
+		}
+		return max;
+	}
+
+	// O `identityEnc` não se confere por trecho numérico: é base64url e pode ter 11 dígitos por
+	// acaso — é a única cópia que deve existir, e está cifrada. O que não pode ter número em claro
+	// é o comprovante.
+	const falas = [
+		"sim, 529.982.247 - 25 11 98765-4321",
+		"sim, meu CPF é 52998224725 11987654321",
+		"sim, meu cpf é 529 . 982 . 247 - 25 11987654321",
+		"sim, meu cpf é 529/982/247-25, pode usar meus dados",
+		"sim, 11987654321529.982.247-25",
+		"sim, 11 98765-4321 é o telefone e 52998224725 é o cpf",
+		"sim, 529.982.247-25 11 98765-4321",
+	];
+
+	for (const fala of falas) {
+		it(`o meta gravado de "${fala}" não contém CPF nem número de 8+ dígitos`, async () => {
+			estado.meta = {
+				...metaBase,
+				contractCollection: { stage: "confirm", avisoLgpdEm: "2026-10-25T12:00:00.000Z" },
+			};
+			const { captureContractText } = await import("./contract-capture");
+			const resultado = await captureContractText("5511987654321", fala);
+			expect(resultado).toEqual({ handled: true, outcome: "fire" });
+			const gravado = JSON.stringify(estado.meta) ?? "";
+			semCpfEmClaro(gravado);
+			expect(gravado).not.toContain("529.982.247-25");
+			expect(gravado).not.toContain("529.982.247 - 25");
+			// O número se confere na FALA: `em` é o instante ISO do registro e tem 8 dígitos
+			// na data (`2026-10-25`) — não é o dado do cliente, e o comprovante não guarda número.
+			expect(maiorTrechoNumérico(estado.meta.lgpdAceite?.fala ?? "")).toBeLessThan(8);
+			// A fala do cliente continua registrada — o que sai é o número, não o aceite.
+			expect(estado.meta.lgpdAceite?.fala).toContain("sim");
+		});
+	}
+
+	// O outro ponto que escreve o comprovante: `metaDoFecho` do vendedor livre.
+	it("`metaDoFecho` (rodada 14) grava o comprovante sem número", () => {
+		const meta = metaDoFecho({
+			meta: metaBase,
+			escolhida: {
+				groupId: "grupo-1",
+				administradora: "ITAÚ",
+				creditValue: 92_902,
+				termMonths: 100,
+			},
+			falaDoCliente: "sim, 529.982.247 - 25 11 98765-4321",
+		});
+		expect(meta.lgpdAceite?.fala).toBe("sim, ***.***.[número omitido]");
+		expect(maiorTrechoNumérico(meta.lgpdAceite?.fala ?? "")).toBeLessThan(8);
 	});
 });
 

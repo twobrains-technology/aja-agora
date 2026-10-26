@@ -24,7 +24,7 @@ import { db } from "@/db";
 import { conversations } from "@/db/schema";
 import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors";
 import { getLeadIdForConversation } from "@/lib/admin/lead-stage-tracker";
-import { scrubCpf } from "@/lib/agent/orchestrator/vazamento";
+import { comprovanteDeAceite } from "@/lib/agent/orchestrator/vazamento";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 
 /** O cliente sinalizou lance? (o mesmo predicado que morava no qualify-state) */
@@ -76,10 +76,11 @@ function collectionState(meta: ConversationMetadata): ConversationMetadata["cont
  * CPF teriam vindo de uma mensagem que nunca disse o aviso, e registrar aceite ali
  * derrotar a trava de `fireContract`. Nunca sobrescreve um aceite já registrado.
  *
- * P288: a fala é o COMPROVANTE, não o número. O `scrubCpf` entra antes do corte —
- * `maskCpf` é curto (15 chars), então mascarar primeiro e cortar depois nunca perde
- * o comprovante por truncamento. O CPF cifrado em `identityEnc` é a única cópia
- * persistida: gravar a fala em claro era uma segunda cópia, fora da criptografia. */
+ * P288 (rodada 14): a fala é o COMPROVANTE, não o número. `comprovanteDeAceite` mascara o CPF
+ * pelo que fecha no DV (janela de 11 dígitos, qualquer separador) e tira todo trecho numérico de
+ * 8+ dígitos, e corta em 200 chars DEPOIS — `maskCpf` é curto, então mascarar antes nunca perde o
+ * comprovante por truncamento. O CPF cifrado em `identityEnc` é a única cópia persistida: gravar a
+ * fala em claro era uma segunda cópia, fora da criptografia. */
 export function aceiteDoDisparo(
 	meta: ConversationMetadata,
 	fala: string,
@@ -88,7 +89,7 @@ export function aceiteDoDisparo(
 	if (!collectionState(meta)?.avisoLgpdEm) return null;
 	return {
 		em: new Date().toISOString(),
-		fala: scrubCpf(fala ?? "").slice(0, 200),
+		fala: comprovanteDeAceite(fala ?? ""),
 	};
 }
 
