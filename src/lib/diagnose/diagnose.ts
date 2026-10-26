@@ -4,6 +4,8 @@
 import { generateObject } from "ai";
 import { sanitizeUnicode } from "@/lib/eval/judge";
 import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
+import { registrarUsoDeIa } from "@/lib/observability/sinais/publicar";
+import { normalizarUsoDoSdk } from "@/lib/observability/sinais/uso-do-sdk";
 import {
 	buildDiagnosisPrompt,
 	type ConversationContext,
@@ -36,6 +38,8 @@ export type DiagnosisArgs = {
 	evaluation: EvalSnapshot;
 	persona: PersonaSnapshot;
 	context: ConversationContext;
+	/** A conversa diagnosticada — a linha do livro-caixa é por conversa. */
+	conversationId?: string | null;
 };
 
 type GenerateObjectFn = typeof generateObject;
@@ -75,14 +79,21 @@ export async function diagnoseConversation(args: DiagnosisArgs): Promise<Diagnos
 				temperature: 0,
 			});
 
-			const usage = result.usage as
-				| {
-						inputTokens?: number;
-						outputTokens?: number;
-						promptTokens?: number;
-						completionTokens?: number;
-				  }
-				| undefined;
+			// O usage vem com o TOTAL de entrada do SDK; `normalizarUsoDoSdk` separa a
+			// entrada líquida das parcelas de cache que o provedor cobra à parte (P314).
+			const uso = normalizarUsoDoSdk(result.usage);
+
+			// Livro-caixa local (P314): diagnóstico é Sonnet com o transcript inteiro —
+			// a chamada mais cara do fluxo de admin. Grava e segue; falha aqui não
+			// derruba o diagnóstico.
+			await registrarUsoDeIa({
+				conversationId: args.conversationId ?? null,
+				modelo: DIAGNOSIS_MODEL,
+				tokensInput: uso.tokensInput,
+				tokensOutput: uso.tokensOutput,
+				cacheRead: uso.cacheRead,
+				cacheWrite: uso.cacheWrite,
+			});
 
 			// Defesa pós-LLM: os `.min(N)` do schema Zod são silenciosamente
 			// perdidos quando o AI SDK 6 traduz Zod → JSON Schema (viram só
@@ -108,8 +119,8 @@ export async function diagnoseConversation(args: DiagnosisArgs): Promise<Diagnos
 
 			return {
 				result: sanitized,
-				tokensInput: usage?.inputTokens ?? usage?.promptTokens ?? 0,
-				tokensOutput: usage?.outputTokens ?? usage?.completionTokens ?? 0,
+				tokensInput: uso.tokensInput,
+				tokensOutput: uso.tokensOutput,
 				durationMs: Date.now() - start,
 			};
 		} catch (err) {

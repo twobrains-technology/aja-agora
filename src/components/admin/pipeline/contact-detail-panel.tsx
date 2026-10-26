@@ -17,11 +17,6 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { AtendimentoWhatsAppDialog } from "@/components/admin/conversa/atendimento-whatsapp-dialog";
-import {
-	type ArtefatoDaMensagem,
-	ConteudoDaMensagem,
-	ordenarMensagens,
-} from "@/components/admin/conversa/conversa";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,6 +32,11 @@ import { rotuloDoEstagio } from "@/lib/admin/lead-stages";
 import { tituloDaOrigem } from "@/lib/admin/titulo-da-origem";
 import { notificarMensagem, tocarAviso } from "../conversa/alerta-de-mensagem";
 import { BotaoNotificacoes } from "../conversa/botao-notificacoes";
+import {
+	type ArtefatoDaMensagem,
+	ConteudoDaMensagem,
+	ordenarMensagens,
+} from "../conversa/conversa";
 import { useConversaAoVivo } from "../conversa/use-conversa-ao-vivo";
 import type { LeadActiveHandoff } from "./lead-card";
 import { MesaResponsavel } from "./mesa-responsavel";
@@ -109,6 +109,11 @@ interface ContactDetail {
 	channels: ("web" | "whatsapp")[];
 	currentStage: string | null;
 	conversationCount: number;
+	/** O contato INTEIRO está fora da contagem (`true` só com todas as conversas
+	 *  marcadas — é o contato que sai da lista, não o canal). */
+	isSimulated: boolean;
+	/** O que a marcação de teste leva de uma vez. */
+	conversationIds: string[];
 	currentProposalId: string | null;
 	/** De qual campanha o cliente veio. `null` = nenhuma conversa nasceu de visita medida. */
 	origem: {
@@ -122,11 +127,6 @@ interface ContactDetail {
 	timeline: TimelineMsg[];
 	proposals: Proposal[];
 	stageHistory: StageEvent[];
-	/** O contato INTEIRO está fora da contagem (`true` só com todas as conversas
-	 *  marcadas — é o contato que sai da lista, não o canal). */
-	isSimulated: boolean;
-	/** O que a marcação de teste leva de uma vez. */
-	conversationIds: string[];
 }
 
 function ChannelBadge({ channel }: { channel: "web" | "whatsapp" }) {
@@ -179,9 +179,9 @@ export function ContactDetailPanel({
 	/**
 	 * Marca/desmarca o contato INTEIRO como teste — todas as conversas dele.
 	 *
-	 * Vale o clique de confirmação: a marcação tira o cliente do funil, das
-	 * métricas de campanha e ainda segura a régua. É reversível aqui mesmo, mas o
-	 * custo de um clique errado é uma decisão de mídia tomada sobre número torto.
+	 * Vale o clique de confirmação: a marcação tira o cliente do funil, das métricas
+	 * de campanha e ainda segura a régua. É reversível aqui mesmo, mas o custo de um
+	 * clique errado é uma decisão de mídia tomada sobre número torto.
 	 */
 	async function alternarTeste() {
 		if (!contactId || !detail || marcando) return;
@@ -303,14 +303,12 @@ export function ContactDetailPanel({
 					<div className="mt-1 flex flex-wrap items-center gap-2">
 						<BotaoNotificacoes />
 						{/*
-						 * MARCAR COMO TESTE — no cabeçalho, e não dentro de uma aba.
-						 *
-						 * O cabeçalho do painel NÃO rola (só o corpo das abas rola), então aqui
-						 * o botão fica fixo: à vista em qualquer aba, em qualquer rolagem, sem
-						 * ninguém precisar procurar. Antes ele só existia na tela de Conversas
-						 * (e por conversa) — no painel do cliente não havia como desconsiderar
-						 * um teste, e a contagem do funil ficava errada por falta de acesso ao
-						 * controle. Medido em 06/10/2026.
+						 * MARCAR COMO TESTE — no cabeçalho, e não dentro de uma aba. O cabeçalho
+						 * do painel NÃO rola (só o corpo das abas rola), então o botão fica fixo:
+						 * à vista em qualquer aba, em qualquer rolagem. Antes ele só existia na
+						 * tela de Conversas (por conversa) — no painel do cliente não havia como
+						 * desconsiderar um teste, e a contagem do funil ficava errada por falta de
+						 * acesso ao controle. Medido em 06/10/2026.
 						 */}
 						{detail && !confirmandoTeste && (
 							<Button
@@ -404,7 +402,7 @@ export function ContactDetailPanel({
 
 					<TabsContent value="timeline" className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
 						{loading && <p className="text-sm text-muted-foreground">Carregando…</p>}
-						{detail && detail.timeline.length === 0 && (
+						{detail?.timeline.length === 0 && (
 							<p className="text-sm text-muted-foreground">Sem mensagens.</p>
 						)}
 						{ordenarMensagens(detail?.timeline ?? []).map((msg) => (
@@ -429,10 +427,10 @@ export function ContactDetailPanel({
 								{/* O corpo passa pelo visualizador ÚNICO (`ConteudoDaMensagem`). Era
 								    daqui que saía `[card: quick_reply]` literal na tela — medido em
 								    06/10/2026 com o painel do cliente aberto. Agora sai o card que o
-								    cliente viu (com os fatos do payload) ou o rótulo humano em PT.
-								    A ordem também é a canônica (`ordenarMensagens`): este era o
-								    ÚLTIMO lugar do admin que decidia sozinho como ordenar e como
-								    desenhar a mesma linha de `messages`. */}
+								    cliente viu (com os fatos do payload) ou o rótulo humano em PT. A
+								    ordem também é a canônica (`ordenarMensagens`): este era o ÚLTIMO
+								    lugar do admin que decidia sozinho como ordenar e como desenhar a
+								    mesma linha de `messages`. */}
 								<div className="whitespace-pre-wrap">
 									<ConteudoDaMensagem content={msg.content} artifacts={msg.artifacts} />
 								</div>

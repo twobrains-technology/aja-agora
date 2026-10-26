@@ -474,6 +474,12 @@ export type ConversationMetadata = {
 		 * Existia só como clique no botão do `real_offer`; quem respondia "pode
 		 * seguir" por texto — o normal no WhatsApp — não fechava contrato nenhum. */
 		stage: "confirm" | "cpf" | "offer-confirm";
+		/** Instante (ISO) em que o aviso canônico da LGPD foi dito — o FATO que
+		 * autoriza a consulta de bureau. Sem ele, o disparo é recusado
+		 * (`whatsapp/contract-capture.ts`). Está no tipo compartilhado pra que quem
+		 * escreve `contractCollection` por outro caminho (`pi/tools-livres.ts`) possa
+		 * ler o instante sem cast. */
+		avisoLgpdEm?: string;
 	};
 	/** Highest funnel stage reached during AI conversation phase (before lead row exists).
 	 * Applied to the lead at creation time so it lands in the correct kanban column. */

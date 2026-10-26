@@ -10,6 +10,38 @@ import { buildTranscript } from "@/lib/eval/transcript";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * O retrato da persona que vai no prompt do diagnóstico.
+ *
+ * Persona é opcional desde o vendedor livre (mandato 2026-10-20): conversa sem
+ * categoria clicada e sem persona no `metadata` existe e PRECISA ser diagnosticável —
+ * antes disto a rota respondia 422 e o operador não tinha o que corrigir. Sem persona,
+ * o snapshot vai com os campos vazios e o diagnóstico olha a conversa (nota, dimensões,
+ * flags) em vez de comparar com um estado de persona que não existe.
+ */
+export function snapshotDaPersona(
+	persona: Awaited<ReturnType<typeof getPersonaForAdmin>> | null,
+): PersonaSnapshot {
+	if (!persona) {
+		return {
+			id: "(sem persona)",
+			displayName: "(sem persona — conversa sem persona ativa)",
+			voiceTone: "(não definido)",
+			examples: [],
+			forbiddenTopics: [],
+			handoffTriggers: [],
+		};
+	}
+	return {
+		id: persona.id,
+		displayName: persona.displayName,
+		voiceTone: persona.voiceTone,
+		examples: persona.examples,
+		forbiddenTopics: persona.forbiddenTopics,
+		handoffTriggers: persona.handoffTriggers,
+	};
+}
+
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
 	// Diagnóstico aplica em persona (escrita) — admin-only é mais coerente que
 	// liberar pra atendente, mesmo que o endpoint só LEIA. Custa $0.01-0.02 por
@@ -54,21 +86,15 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 	const metadata = (conv.metadata ?? null) as ConversationMetadata | null;
 	const personaId = evaluation.personaId ?? metadata?.currentPersona ?? null;
 
-	if (!personaId) {
-		return Response.json(
-			{ error: "Sem persona ativa na conversa — não dá pra diagnosticar." },
-			{ status: 422 },
-		);
-	}
-
-	let personaRow: Awaited<ReturnType<typeof getPersonaForAdmin>>;
-	try {
-		personaRow = await getPersonaForAdmin(personaId);
-	} catch {
-		return Response.json(
-			{ error: `Persona "${personaId}" não encontrada — pode ter sido removida.` },
-			{ status: 422 },
-		);
+	let personaRow: Awaited<ReturnType<typeof getPersonaForAdmin>> | null = null;
+	if (personaId) {
+		try {
+			personaRow = await getPersonaForAdmin(personaId);
+		} catch {
+			// Persona removida depois da conversa (ou id legado): segue sem ela, como o
+			// eval já faz em `eval/scorer.ts`. O diagnóstico é da conversa, não da persona.
+			console.warn(`[diagnose] persona "${personaId}" não encontrada — diagnosticando sem ela`);
+		}
 	}
 
 	const transcript = buildTranscript({
@@ -92,18 +118,14 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 		),
 	});
 
-	const personaSnapshot: PersonaSnapshot = {
-		id: personaRow.id,
-		displayName: personaRow.displayName,
-		voiceTone: personaRow.voiceTone,
-		examples: personaRow.examples,
-		forbiddenTopics: personaRow.forbiddenTopics,
-		handoffTriggers: personaRow.handoffTriggers,
-	};
+	const personaSnapshot: PersonaSnapshot = snapshotDaPersona(personaRow);
 
 	try {
 		const out = await diagnoseConversation({
 			transcript,
+			// A conversa é a chave do livro-caixa local: sem ela o custo desta chamada
+			// não aparece em lugar nenhum (P314).
+			conversationId,
 			evaluation: {
 				overallScore: evaluation.overallScore !== null ? Number(evaluation.overallScore) : null,
 				dimensions: evaluation.dimensions,
@@ -127,7 +149,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 				tokensInput: out.tokensInput,
 				tokensOutput: out.tokensOutput,
 				durationMs: out.durationMs,
-				personaId: personaSnapshot.id,
+				personaId: personaRow?.id ?? null,
 				evaluationId: evaluation.id,
 			},
 		});

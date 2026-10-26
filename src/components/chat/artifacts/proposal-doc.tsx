@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Info } from "lucide-react";
+import { Info } from "lucide-react";
 import { useMemo } from "react";
 import { SunMark } from "@/components/brand/sun-mark";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { useChatContext } from "@/lib/chat/provider";
 import type { RealOfferPayload } from "@/lib/chat/types";
 import { compareWithFinancing } from "@/lib/finance/pmt";
 import { AdministradoraLogo } from "./administradora-logo";
+import { BotaoConfirmarContratar } from "./botao-confirmar-contratar";
 
 // ProposalDoc — substitui a APRESENTAÇÃO do real-offer pela proposta co-branded
 // (identidade Aja Agora + administradora), recriando o conteúdo do PDF de
@@ -353,18 +354,7 @@ export function ProposalDoc({ payload }: { payload: RealOfferPayload }) {
 
 			{/* ── CTAs (contrato de dados preservado: offer-confirm) ── */}
 			<div className="flex flex-col gap-2 border-t border-border px-5 py-4">
-				<Button
-					type="button"
-					className="min-h-[44px] w-full gap-2 rounded-full"
-					onClick={() =>
-						!isStreaming && void sendAction({ kind: "offer-confirm" }, "Confirmo essa carta")
-					}
-					disabled={isStreaming}
-					data-testid="offer-confirm"
-				>
-					<Check className="size-4" />
-					Confirmar e contratar
-				</Button>
+				<BotaoConfirmarContratar disabled={isStreaming} />
 				<Button
 					type="button"
 					variant="ghost"

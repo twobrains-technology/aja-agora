@@ -84,6 +84,18 @@ const ARTIFACT_PAUSE_MS = 500;
 const POST_INTERACTIVE_PAUSE_MS = 1800;
 const TRANSITION_PAUSE_MS = 1200;
 
+/** A tool do turno é uma BUSCA na administradora? No vendedor livre quem busca é
+ * `buscar_cartas`; `recommend_groups`/`search_groups` são os nomes antigos, e o
+ * card pode chegar de um turno anterior a esta branch. Sem o nome novo, o único
+ * sinal de "estou buscando" que o WhatsApp tem (não existe chip de progresso no
+ * canal) simplesmente não saía no caminho vivo — o cliente mandava o CPF e ficava
+ * olhando para uma tela parada enquanto a Bevi respondia. */
+export function ehBuscaDeCartas(toolName: string): boolean {
+	return (
+		toolName === "buscar_cartas" || toolName === "recommend_groups" || toolName === "search_groups"
+	);
+}
+
 type PendingArtifact = { type: string; payload: Record<string, unknown> };
 
 /** Troca o corpo do interactive por um rótulo neutro — usado quando o MODELO já
@@ -195,7 +207,11 @@ export const WHATSAPP_TEXT_GATES = new Set<Gate>([
 // `credit`/`desire` não são bloqueantes da mesma forma que `reco-consent`
 // (que trava a cascata inteira até responder — qualify-state.ts). Escopo
 // deliberadamente restrito ao gate com bug PROVADO (achado ao vivo,
-// `servicos-whatsapp`) — ver `consumeEvents` (case "gate").
+// `servicos-whatsapp`) — o `case "gate"` do `consumeEvents` foi retirado com o funil
+// (25/10/2026): o vendedor livre não emite gate, então o canal nunca mais decide
+// entrega por gate. O tipo `Gate` sobra para os handlers de clique do funil antigo,
+// que ainda recebem `replyId` por prefixo (`category_`, `lance_`, `simoffer_`) —
+// o motor livre não produz esses prefixos, e isso é limpeza da rodada seguinte.
 // VAZIO desde 2026-07-21. A exceção existia porque `modelAsked` era uma
 // heurística fraca ("o modelo terminou com ALGUMA pergunta"). Agora ele é o
 // sinal REAL do sanitizer (`hasHeldQuestion`), então manter `reco-consent` aqui
@@ -439,7 +455,16 @@ async function consumeEventsInner(
 				textBuffer += ev.text;
 				break;
 			case "artifact":
+				// P157 (metade do canal): o vendedor livre emite o card no RESULTADO da
+				// ferramenta, no meio do stream — texto antes da ferramenta, card, texto
+				// depois. Segurar o card até o `finish` invertia isso na conversa do
+				// cliente (texto → texto → card): ele lia a fala que COMENTA a tabela
+				// antes de ver a tabela. Aqui o card sai na ordem em que chegou — a fala
+				// pendente primeiro, o card depois —, como o canal web faz
+				// (web/adapter.ts, `case "artifact"`: fecha o balão e escreve o card).
+				await flushText();
 				pendingArtifacts.push({ type: ev.artifactType, payload: ev.payload });
+				await flushArtifacts();
 				break;
 			case "lead-stage":
 				await recordStageReached(
@@ -454,10 +479,7 @@ async function consumeEventsInner(
 				// (determinística, sem promessa e sem número) faz o papel do
 				// indicador que a web desenha. Só na busca; nas outras tools o turno
 				// responde rápido e uma linha dessas viraria ruído.
-				if (
-					!avisouDaBusca &&
-					(ev.toolName === "recommend_groups" || ev.toolName === "search_groups")
-				) {
+				if (!avisouDaBusca && ehBuscaDeCartas(ev.toolName)) {
 					// UMA vez por turno. A descoberta pode rodar em duas tentativas (faixa
 					// alvo + vizinha) e o cliente recebia "Consultando as administradoras
 					// agora — só um instante." duplicado, colado.
@@ -505,6 +527,12 @@ async function consumeEventsInner(
 				break;
 			}
 			case "handoff": {
+				// O CLIENTE JÁ PEDIU: confirmar de novo é burocracia. A linha do agente
+				// sai, e o caso fica aberto na mesa (`handed_off`), sem botão.
+				if (ev.reason === "pedido do cliente") {
+					await flushText();
+					break;
+				}
 				textBuffer = "";
 				pendingArtifacts = [];
 				dropped = true;

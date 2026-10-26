@@ -8,6 +8,7 @@
 //  · o evento `tool-call` que a UI usa para mostrar o que está acontecendo;
 //  · a lista de chamadas e resultados, para o turno decidir o que virar card.
 import type { MensagemDaConversa } from "@/lib/agent/turn/estado";
+import { registrarFalhaDoLlm } from "@/lib/llm/alerta-do-llm";
 import { abrirSessao } from "./sessao";
 import type { PiToolDefinition } from "./tools";
 
@@ -33,9 +34,25 @@ export type BeatResultado = {
 	texto: string;
 	chamadas: ChamadaDeTool[];
 	resultados: ResultadoDeTool[];
-	/** Tokens consumidos neste beat (o livro-caixa local de custo). */
-	uso: { input: number; output: number };
+	/** Tokens consumidos neste beat (o livro-caixa local de custo).
+	 *  `cacheRead`/`cacheWrite` são o recorte de CACHE do prompt que o provedor
+	 *  reportou no `usage` — é daqui que sai o evento `usage` do turno (L29/P281).
+	 *  Provedor que não reporta cache dá `0`, não `null`: o parser do pi
+	 *  (`parseChunkUsage`) já resolve ausência para zero, e existe `0` medido
+	 *  (nenhum token veio do cache) sem que se possa distinguir de "não medido". */
+	uso: { input: number; output: number; cacheRead: number; cacheWrite: number };
 };
+
+/** O pi entrega a falha do provedor como TEXTO (`"<status>: <corpo>"`, formato
+ *  de `formatProviderError` do pacote). A classificação da borda lê status HTTP
+ *  e texto, então o status é reconstruído aqui — sem ele, um 429 sem a palavra
+ *  "rate limit" no corpo passaria como falha genérica. */
+function erroDoProvedor(errorMessage: string): Error & { statusCode?: number } {
+	const erro = new Error(errorMessage) as Error & { statusCode?: number };
+	const status = /^(\d{3}):\s/.exec(errorMessage);
+	if (status) erro.statusCode = Number(status[1]);
+	return erro;
+}
 
 export async function executarBeat(args: BeatArgs): Promise<BeatResultado> {
 	const { session } = await abrirSessao({
@@ -57,7 +74,13 @@ export async function executarBeat(args: BeatArgs): Promise<BeatResultado> {
 		if (ev.type === "message_end") {
 			const msg = ev.message as { stopReason?: string; errorMessage?: string } | undefined;
 			if (msg?.stopReason === "error") {
-				console.error(`[pi] provedor falhou: ${msg.errorMessage ?? "sem mensagem"}`);
+				const mensagem = msg.errorMessage ?? "sem mensagem";
+				console.error(`[pi] provedor falhou: ${mensagem}`);
+				// O ALERTA OPERACIONAL, como na main (`chat/route.ts` → `onErrorDoStream`):
+				// log estruturado sempre e, na falha de billing, e-mail + ocorrência no
+				// Cortex com dedupe de 1 h. Não bloqueia o beat — o cliente recebe o
+				// fallback do canal de qualquer jeito, e alerta não derruba turno.
+				void registrarFalhaDoLlm(erroDoProvedor(mensagem), { origem: "pi/beat" });
 			}
 		}
 		if (ev.type === "message_update") {
@@ -91,11 +114,18 @@ export async function executarBeat(args: BeatArgs): Promise<BeatResultado> {
 
 	await session.prompt(args.turnMessage);
 
-	// Uso da sessão: é o único lugar que sabe quantos tokens o turno gastou.
-	let uso = { input: 0, output: 0 };
+	// Uso da sessão: é o único lugar que sabe quantos tokens o turno gastou — e
+	// quantos deles vieram do cache do prompt (`getSessionStats().tokens` soma as
+	// quatro categorias das mensagens do beat).
+	let uso = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 	try {
 		const stats = session.getSessionStats();
-		uso = { input: stats.tokens?.input ?? 0, output: stats.tokens?.output ?? 0 };
+		uso = {
+			input: stats.tokens?.input ?? 0,
+			output: stats.tokens?.output ?? 0,
+			cacheRead: stats.tokens?.cacheRead ?? 0,
+			cacheWrite: stats.tokens?.cacheWrite ?? 0,
+		};
 	} catch {
 		// observabilidade nunca custa o turno
 	}

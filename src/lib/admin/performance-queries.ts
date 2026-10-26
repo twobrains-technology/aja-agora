@@ -32,6 +32,7 @@ import {
 	ETAPAS_FUNIL_MIDIA,
 	ETAPAS_RAMIFICADAS,
 	type EtapaFunilMidia,
+	type FontesDoCusto,
 	type LinhaOrigem,
 	type PontoSerie,
 	type PortaDoFunil,
@@ -216,6 +217,10 @@ export async function computeFunilMidia(
 					filtro,
 				)}) AS identificados,
 
+      -- 'Viram oferta' lê o MESMO predicado da escada do Percurso e da
+      -- exportação (port de a2bc3024). Com JOIN direto na tabela de artifacts,
+      -- a oferta que o cliente não chegou a ver contava aqui e não contava lá —
+      -- e o total do funil discordava do degrau logo abaixo.
       (SELECT count(DISTINCT ${chave}) FROM conversations c
         JOIN visits v ON v.id = c.visit_id
         WHERE ${comRecorte(sql`${atribuida} AND ${viuOferta(sql`c`)}`, filtro)}) AS viram_oferta,
@@ -482,6 +487,42 @@ export async function computePorta(
 
 // ─── "Quem chegou" — o cheiro de perfil ────────────────────────────────
 
+/** O texto de um número declarado, em `jsonb` — a forma que o `::numeric` aceita. */
+const PADRAO_NUMERO_DECLARADO = "^[0-9]+([.][0-9]+)?$";
+
+/**
+ * O VALOR DECLARADO pela pessoa, do jeito que o vendedor o grava no metadata.
+ *
+ * Ler só `qualifyAnswers.creditMax` media um recorte do produto, não o que a
+ * pessoa disse: aquele campo é escrito pela BUSCA (o motor livre grava ali o
+ * teto que ele levou à Bevi, `turno-livre.ts`), então quem declarou um valor e
+ * não chegou a buscar — ou fechou uma carta de outro valor — caía em "valor
+ * não informado" no perfil.
+ *
+ * As três fontes, na ordem em que o dado é mais fiel ao que o cliente falou:
+ *  1. `qualifyAnswers.creditMax` — a busca/qualificação (o antigo e o novo);
+ *  2. `qualifyAnswers.valorDoBemAlvo` — o preço do bem que ele declarou, gravado
+ *     pelo mesmo turno da busca;
+ *  3. `contractOffer.creditValue` — a carta que ele escolheu no fecho
+ *     (`metaDoFecho`, o registro do vendedor livre).
+ *
+ * A conversão é guardada por regex em cada candidato: o `jsonb` é livre, e um
+ * `::numeric` direto derrubaria a tela inteira no dia em que alguém gravar
+ * "80 mil" ali.
+ */
+export function valorDeclaradoDaConversa(conversa: SQL = sql`c`): SQL {
+	const candidatos = [
+		sql`${conversa}.metadata -> 'qualifyAnswers' ->> 'creditMax'`,
+		sql`${conversa}.metadata -> 'qualifyAnswers' ->> 'valorDoBemAlvo'`,
+		sql`${conversa}.metadata -> 'contractOffer' ->> 'creditValue'`,
+	];
+	const numericos = candidatos.map(
+		(candidato) =>
+			sql`CASE WHEN ${candidato} ~ ${PADRAO_NUMERO_DECLARADO} THEN (${candidato})::numeric END`,
+	);
+	return sql`COALESCE(${sql.join(numericos, sql`, `)})`;
+}
+
 /**
  * A distribuição de QUEM INICIOU A CONVERSA, por bem e por faixa de valor.
  *
@@ -497,17 +538,14 @@ export async function computeQuemChegou(
 	// A distribuição é de CONVERSAS, e cada conversa pertence a uma pessoa só —
 	// o recorte da pessoa parte o perfil em baldes que somam o total.
 	const filtro = filtroDaPessoa(fromDate, toDate, recorte, visitanteDaConversaSql(sql`c`));
-	// O valor vem de `metadata.qualifyAnswers.creditMax` — o que a pessoa informou
-	// no gate de crédito. A conversão é guardada por regex: o `jsonb` é livre, e
-	// um `::numeric` direto derrubaria a tela inteira no dia em que alguém gravar
-	// "80 mil" ali.
+	// O BEM vem de `metadata.currentCategory` — a chave que o vendedor livre grava
+	// quando busca (`turno-livre.ts`) e que a lista de Conversas e o pipeline já
+	// leem. O VALOR vem de `valorDeclaradoDaConversa`, que junta as três gravações
+	// do metadata em vez de só a da busca.
 	const resultado = await db.execute<Record<string, unknown>>(sql`
     SELECT
       c.metadata->>'currentCategory' AS bem,
-      CASE
-        WHEN c.metadata->'qualifyAnswers'->>'creditMax' ~ '^[0-9]+(\.[0-9]+)?$'
-        THEN (c.metadata->'qualifyAnswers'->>'creditMax')::numeric
-      END AS valor,
+      ${valorDeclaradoDaConversa(sql`c`)} AS valor,
       count(*) AS total
     FROM conversations c
     WHERE ${comRecorte(
@@ -762,13 +800,32 @@ export async function computeCobertura(
 // ─── Custos do período (o CPC) ──────────────────────────────────────────────
 
 /**
+ * AS FONTES que a tela de custo DECLARA, uma por metade do bloco.
+ *
+ * Fonte única de texto e de fato: `computeCustosDoCpc` devolve exatamente esta
+ * lista, e é ela que a tela repete. O custo de IA vinha da Metrics API do
+ * Langfuse até 19/10/2026; desde então o turno grava o consumo em `uso_de_ia`
+ * (`src/lib/admin/custo-de-ia.ts`, `lerCustoLocal`) — declarar "Langfuse" aqui
+ * era atribuir o número a um serviço que não é mais lido (L43).
+ */
+export const FONTES_DOS_CUSTOS: FontesDoCusto = {
+	investimento: "Meta (reportado)",
+	custoDeIA: "Postgres (uso_de_ia)",
+	custoDeMensagem: "Postgres (volume) + cadastro de preço",
+	contagens: "Postgres",
+};
+
+/**
  * O bloco de custos da tela: os três custos do período, o denominador e as
  * fontes declaradas.
  *
  * Cada metade lê de onde é dona do fato — investimento em `meta_insights_diarios`
  * (nível `campaign`, senão os sub-níveis do mesmo gasto entrariam duas vezes),
- * custo de IA no Langfuse, custo de mensagem no Postgres + cadastro. Nenhuma é
- * derivada de tabela paralela nem de constante em código.
+ * custo de IA no livro-caixa local `uso_de_ia`, custo de mensagem no Postgres +
+ * cadastro. Nenhuma é derivada de tabela paralela nem de constante em código.
+ *
+ * As fontes DECLARADAS são `FONTES_DOS_CUSTOS`: a tela repete a lista, e dizer
+ * "Langfuse" ali era mentir sobre a origem do número desde 19/10/2026.
  *
  * Ausência de número é `null`/motivo, nunca zero: quem decide o que mostrar é o
  * componente (`calcularCpc`), com a mesma lei do resto da frente.
@@ -827,12 +884,7 @@ export async function computeCustosDoCpc(
 			identificados: num(linhaContagens.identificados),
 			qualificados: num(linhaContagens.qualificados),
 		},
-		fontes: {
-			investimento: "Meta (reportado)",
-			custoDeIA: "Langfuse",
-			custoDeMensagem: "Postgres (volume) + cadastro de preço",
-			contagens: "Postgres",
-		},
+		fontes: FONTES_DOS_CUSTOS,
 		custoNaoAplicavelAoRecorte,
 	};
 }

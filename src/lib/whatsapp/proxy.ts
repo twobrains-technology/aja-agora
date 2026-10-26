@@ -365,6 +365,12 @@ export async function handlePendingHandoffText(from: string, text: string): Prom
 			directive: buildAdvanceToContractDirective({
 				administradora: metaAncorado.recommendedAdministradora,
 				identidadeJaColetada: metaAncorado.identityCollected === true,
+				// P112/P179/P181 — a carta que o cliente NOMEOU nesta mesma frase
+				// (`escolhida`, conferida contra as ofertas já exibidas) ou, sem nome
+				// resolvido, a que já estava em foco. É o id que faz o
+				// `contract_form` sair com a administradora e serve ao caminho curto
+				// `fazer_proposta` — sem ele a escolha fica com o modelo.
+				groupId: escolhida?.groupId ?? metaAncorado.recommendedOffer?.groupId,
 			}),
 			guardEmptyTurn: true,
 		});

@@ -5,6 +5,8 @@ import { conversations, leadInsights } from "@/db/schema";
 import { buildInsightPrompt, INSIGHTS_SYSTEM_PROMPT } from "@/lib/admin/insights-prompt";
 import { requireRole } from "@/lib/admin/require-role";
 import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
+import { registrarUsoDeIa } from "@/lib/observability/sinais/publicar";
+import { normalizarUsoDoSdk } from "@/lib/observability/sinais/uso-do-sdk";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -78,10 +80,23 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 	let parsed: InsightsPayload;
 
 	try {
-		const { text } = await generateText({
+		const { text, usage } = await generateText({
 			model: anthropic("claude-haiku-4-5"),
 			system: INSIGHTS_SYSTEM_PROMPT,
 			prompt: buildInsightPrompt(conversation.messages),
+		});
+
+		// Livro-caixa local (P314): a chamada gastou dinheiro e o Langfuse saiu. As
+		// parcelas de cache saem separadas do total de entrada (`normalizarUsoDoSdk`) —
+		// o prompt de insights é o transcript inteiro, então é aqui que o cache pega.
+		const uso = normalizarUsoDoSdk(usage);
+		await registrarUsoDeIa({
+			conversationId,
+			modelo: "claude-haiku-4-5",
+			tokensInput: uso.tokensInput,
+			tokensOutput: uso.tokensOutput,
+			cacheRead: uso.cacheRead,
+			cacheWrite: uso.cacheWrite,
 		});
 
 		const cleaned = text

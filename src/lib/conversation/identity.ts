@@ -9,8 +9,12 @@
 // Sem a chave → falha alto, sem fallback silencioso.
 
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { conversations } from "@/db/schema";
 import { attachContact } from "@/lib/contacts";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
+import { normalizePhoneBR } from "@/lib/leads/phone";
 
 export interface StoredIdentity {
 	cpf: string; // só dígitos
@@ -88,23 +92,95 @@ export function decryptIdentity(blob: string): StoredIdentity {
 	return JSON.parse(dec.toString("utf8")) as StoredIdentity;
 }
 
-/** Persiste a identidade cifrada no meta da conversa + liga identityCollected. */
+/** Persiste a identidade cifrada no meta da conversa + liga identityCollected
+ * quando o par está COMPLETO. */
 export async function storeIdentity(
 	conversationId: string,
 	identity: StoredIdentity,
 ): Promise<void> {
 	const meta = await reloadMeta(conversationId);
+	// A identidade chega em PEDAÇOS: o cliente dita o CPF num turno e o celular no
+	// seguinte (ou o contrário). O que já estava guardado entra na conta — gravar
+	// só o pedaço novo apagava o outro e a identidade nunca fechava.
+	const completa = juntarIdentidade(identity, identidadeGuardada(meta));
 	await persistMeta(conversationId, {
 		...meta,
-		identityCollected: true,
-		identityEnc: encryptIdentity(identity),
+		// `identityCollected` NÃO é "guardei algum dado", é o FATO de o cliente ter
+		// dado CPF **e** celular — era o que a `main` marcava no gate `identify` e o
+		// que qualifica o lead (`persist.ts:374` na a2bc3024). Marcar com metade do
+		// par promovia a `qualificado` quem só tinha digitado o CPF.
+		identityCollected: isCompleteIdentity(completa),
+		identityEnc: encryptIdentity(completa),
 	});
 	// FIX-42: identidade capturada (CPF + celular) → resolve o cliente unificado
 	// e religa a conversa. attachContact nunca lança nem loga o CPF.
 	await attachContact({
 		conversationId,
-		input: { cpf: identity.cpf, phone: identity.celular },
+		input: { cpf: completa.cpf, phone: completa.celular },
 	});
+	await vincularCelularAoLead(conversationId, completa.celular).catch((erro: unknown) => {
+		// O telefone do LEAD é o que faz a pessoa contar como identificada no
+		// painel — mas não é o que fecha a venda: falhar aqui não pode derrubar o
+		// turno que acabou de capturar a identidade.
+		console.error("[identity] celular não chegou ao lead (ignorado):", erro);
+	});
+}
+
+/** O par que a Bevi exige (e que a `main` chamava de identidade coletada): CPF
+ * com DV válido **e** celular com DDD. */
+export function isCompleteIdentity(identity: Partial<StoredIdentity> | null | undefined): boolean {
+	return isValidCpf(identity?.cpf ?? "") && normalizePhoneBR(identity?.celular ?? "") !== null;
+}
+
+/** O pedaço que já estava guardado, ou null se não há (ou não abre). */
+function identidadeGuardada(meta: { identityEnc?: string }): StoredIdentity | null {
+	if (!meta.identityEnc) return null;
+	try {
+		return decryptIdentity(meta.identityEnc);
+	} catch (erro) {
+		// Blob de outra chave/ambiente: o pedaço novo ainda vale, e o turno não cai.
+		console.error("[identity] identidade guardada ilegível (ignorada):", erro);
+		return null;
+	}
+}
+
+/** O dado NOVO vence o guardado, campo a campo — o cliente pode corrigir o CPF
+ * sem perder o celular que já tinha ditado. */
+function juntarIdentidade(
+	identity: StoredIdentity,
+	guardada: StoredIdentity | null,
+): StoredIdentity {
+	return {
+		cpf: onlyDigits(identity?.cpf ?? "") || guardada?.cpf || "",
+		celular: onlyDigits(identity?.celular ?? "") || guardada?.celular || "",
+	};
+}
+
+/**
+ * O celular capturado no WEB também é o telefone do LEAD.
+ *
+ * Na `main` quem fazia esta ligação era o handler do gate `identify`
+ * (route.ts, `saveContactWhatsapp` logo depois de `storeIdentity`). Com o funil
+ * fora, a captura do CPF/celular passou a acontecer AQUI — e `leads.phone`
+ * ficava vazio. O painel mede exatamente isso: a métrica de identificados lê
+ * `leads.phone`/`email` (performance-queries.ts), então quem digitou o celular
+ * no chat não contava como identificado.
+ *
+ * Só no canal WEB. No WhatsApp o telefone JÁ é a conversa (`conversations.waId`,
+ * de onde a captura tirou o número) e no simulador o `waId` é o hash `SIM-…`
+ * que o fechamento usa para achar o par de teste da vitrine — sobrescrevê-lo
+ * mandaria o contrato para outro telefone.
+ */
+async function vincularCelularAoLead(conversationId: string, celular: string): Promise<void> {
+	const phone = normalizePhoneBR(celular ?? "");
+	if (!phone) return;
+	const conversa = await db.query.conversations.findFirst({
+		where: eq(conversations.id, conversationId),
+		columns: { channel: true },
+	});
+	if (conversa?.channel !== "web") return;
+	const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
+	await saveContactWhatsapp(conversationId, phone);
 }
 
 /** Carrega a identidade da conversa — null quando ainda não coletada. */

@@ -124,6 +124,25 @@ export async function pipeServerArtifact(args: {
 // pra manter a superfície pública do adapter (consumida por adapter.test.ts).
 export { WELCOME_OPTIONS };
 
+/** FIX-244 — o card do formulário de contrato é o que AUTORIZA o submit.
+ *
+ * `contract-submit` (route.ts) recusa criar proposta real sem
+ * `contractFormDispatched`: criar proposta na Bevi é CPF + consulta de bureau e
+ * não pode ficar a um POST de distância de quem nunca viu o formulário. Na
+ * `main` a marca era gravada pelo nó que montava o card (`emit-card.ts`). No
+ * vendedor livre o card chega ao cliente por AQUI — então a marca nasce aqui,
+ * no mesmo instante em que o formulário aparece na tela, e não depende de
+ * nenhum turno posterior lembrar de gravá-la.
+ *
+ * Best-effort: o card já saiu; falhar a escrita não pode derrubar o turno. O
+ * guard do route volta a recusar o submit, que é o lado seguro do erro.
+ */
+export async function marcarFormularioDeContratoEnviado(conversationId: string): Promise<void> {
+	const meta = await reloadMeta(conversationId);
+	if (meta.contractFormDispatched === true) return;
+	await persistMeta(conversationId, { ...meta, contractFormDispatched: true });
+}
+
 export async function pipeOrchestratorToWriter(
 	events: AsyncIterable<TurnEvent>,
 	writer: Writer,
@@ -222,6 +241,15 @@ export async function pipeOrchestratorToWriter(
 						id: ev.toolCallId,
 						data: { type: ev.artifactType, payload: ev.payload } as unknown as ArtifactPartData,
 					});
+					// O formulário apareceu: o submit deste card passa a ser aceito.
+					if (ev.artifactType === "contract_form") {
+						await marcarFormularioDeContratoEnviado(conversationId).catch((err) => {
+							console.error(
+								`[web] contract_form emitido sem a marca de despacho (conv=${conversationId}):`,
+								err,
+							);
+						});
+					}
 					break;
 				}
 

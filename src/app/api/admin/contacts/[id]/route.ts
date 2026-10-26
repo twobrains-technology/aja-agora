@@ -51,26 +51,26 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 	return Response.json(detail);
 }
 
-const marcacaoSchema = z.object({
+/** O corpo do PATCH de marcação. Exportado para o teste mordernho — a validação é o
+ * que impede `isSimulated` chegar como string ("true") e virar marcação silenciosa. */
+export const marcacaoSchema = z.object({
 	isSimulated: z.boolean(),
 });
 
 /**
  * Marca (ou desmarca) o CONTATO inteiro como teste — todas as conversas dele.
  *
- * **Por que no contato, e não na conversa.** Quem sai da lista de contagem é o
- * cliente, não o canal: o mesmo cliente que falou no site e voltou pelo WhatsApp
- * é UM contato com DUAS conversas. Marcar uma só deixaria a outra contando — e o
- * painel do contato é justamente a tela em que se olha o cliente inteiro. A
- * marcação por conversa continua existindo (tela de Conversas), para quem está
- * olhando uma conversa específica.
+ * Por que no contato, e não na conversa: quem sai da lista de contagem é o CLIENTE,
+ * não o canal. O mesmo cliente que falou no site e voltou pelo WhatsApp é UM contato
+ * com DUAS conversas. Marcar uma só deixaria a outra contando — e o painel do contato
+ * é justamente a tela em que se olha o cliente inteiro. A marcação por conversa
+ * continua existindo (tela de Conversas) para quem está olhando uma conversa específica.
  *
- * A operação em si vive em `marcarConversasComoTeste` (a MESMA usada pela rota de
- * conversa e pelo lote): ela leva as três tabelas — conversa, leads e régua. Uma
- * segunda implementação divergiria na primeira tabela nova.
+ * A operação vive em `marcarConversasComoTeste` (a MESMA da rota de conversa e do
+ * lote): ela leva as três tabelas — conversa, leads e régua. Uma segunda implementação
+ * divergiria na primeira tabela nova.
  *
- * **Desmarcar não religa a régua** — mesma decisão de produto da rota de
- * conversa; o motivo está documentado lá.
+ * Desmarcar não religa a régua — mesma decisão de produto da rota de conversa.
  */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
 	const { error } = await requireRole("admin");

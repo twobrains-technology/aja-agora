@@ -17,6 +17,7 @@ export type JudgeFn = (args: {
 	transcript: string;
 	personas: PersonaContext[];
 	signals: DeterministicSignals;
+	conversationId?: string | null;
 }) => Promise<JudgeResponse>;
 
 export type EvalInput = {
@@ -34,6 +35,8 @@ export type EvalInput = {
 	propostas: number;
 	/** O self-service concluiu o contrato (`metadata.contractClosed`). */
 	contratoFechado?: boolean;
+	/** A conversa avaliada — vai junto para o juiz registrar o uso da IA nela. */
+	conversationId?: string | null;
 };
 
 export type EvalComputedSuccess = {
@@ -85,7 +88,12 @@ export async function computeEvalFromData(input: EvalInput, judge: JudgeFn): Pro
 
 	let judgeResponse: JudgeResponse;
 	try {
-		judgeResponse = await judge({ transcript, personas: input.personas, signals });
+		judgeResponse = await judge({
+			transcript,
+			personas: input.personas,
+			signals,
+			conversationId: input.conversationId ?? null,
+		});
 	} catch (err) {
 		const message =
 			err instanceof JudgeError

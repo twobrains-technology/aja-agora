@@ -180,6 +180,26 @@ function isTimeoutError(err: unknown): boolean {
 	return err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError");
 }
 
+// ── "Duplicated Hash" memorizado por hash (R5.3) ───────────────────────────
+// A proposta do self-contract é do HASH da loja, não da conversa: criada uma vez,
+// toda busca seguinte batia no POST create-proposal só pra ouvir 400 "Duplicated
+// Hash" — 2–5 s por busca. O flag `proposalReady` do adapter não cobre isso porque
+// o adapter nasce por turno (tools-livres.ts).
+//
+// Que este hash+identidade JÁ TEM proposta ativa é fato do servidor e não muda
+// dentro da vida do processo: memorizamos a resposta observada e as próximas
+// chamadas iguais nem tocam a rede. O ERRO continua sendo DuplicatedProposalError,
+// nunca sucesso silencioso — quem fecha contrato (proposal-gateway) usa exatamente
+// esse sinal pra conferir de quem é a proposta corrente (PropostaDeOutroTitularError);
+// trocá-lo por sucesso adotaria a proposta da vitrine no nome do cliente.
+// Só o "duplicado" é memorizado: criação bem-sucedida, 5xx e timeout continuam
+// indo à rede na próxima chamada (cachear proposta nova mudaria o fechamento).
+const duplicatedProposals = new Map<string, string>();
+
+function duplicatedKey(storeHash: string, input: CreateSelfContractProposalInput): string {
+	return `${storeHash}:${onlyDigits(input.cpf)}:${onlyDigits(input.celular)}`;
+}
+
 export class BeviSelfContractClient {
 	private readonly config: SelfContractConfig;
 
@@ -353,18 +373,30 @@ export class BeviSelfContractClient {
 
 	/** POST /create-proposal/{hash} — cria a proposta de descoberta (cookbook §3).
 	 * 400 "Duplicated Hash" = já existe proposta ativa pro device → DuplicatedProposalError
-	 * (o chamador retoma; os update-steps continuam na proposta ativa server-side). */
+	 * (o chamador retoma; os update-steps continuam na proposta ativa server-side).
+	 * Duplicado já observado neste processo: resignalizado sem rede nem espera. */
 	async createProposal(input: CreateSelfContractProposalInput): Promise<unknown> {
-		return this.call<unknown>(`create-proposal/${this.config.storeHash}`, {
-			method: "POST",
-			body: {
-				cpf: onlyDigits(input.cpf),
-				celular: onlyDigits(input.celular),
-				lgpd: { aceite: input.lgpdAceite ?? true },
-				consultarDados: input.consultarDados ?? true,
-				ignoreOngoingProposals: input.ignoreOngoingProposals ?? true,
-			},
-		});
+		const key = duplicatedKey(this.config.storeHash, input);
+		const memorizado = duplicatedProposals.get(key);
+		if (memorizado !== undefined) throw new DuplicatedProposalError(memorizado);
+
+		try {
+			return await this.call<unknown>(`create-proposal/${this.config.storeHash}`, {
+				method: "POST",
+				body: {
+					cpf: onlyDigits(input.cpf),
+					celular: onlyDigits(input.celular),
+					lgpd: { aceite: input.lgpdAceite ?? true },
+					consultarDados: input.consultarDados ?? true,
+					ignoreOngoingProposals: input.ignoreOngoingProposals ?? true,
+				},
+			});
+		} catch (err) {
+			if (err instanceof DuplicatedProposalError) {
+				duplicatedProposals.set(key, err.message);
+			}
+			throw err;
+		}
 	}
 
 	/** PATCH step oQueVocePretendeAdquirir — grava o segmento (cookbook §4). */

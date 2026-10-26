@@ -110,7 +110,11 @@ import {
 } from "@/lib/remarketing/status-do-toque";
 import { chaveTelefoneBR } from "@/lib/whatsapp/mesmo-numero";
 import type { ResolveAndSendResult } from "@/lib/whatsapp/template-dispatch";
-import { buildRetomadaDirective } from "./retomada";
+import {
+	buildRetomadaDirective,
+	type OfertaDaRetomada,
+	resolverOfertaDaRetomada,
+} from "./retomada";
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 
@@ -1386,7 +1390,12 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 					conversationId: linha.conversationId,
 					channel: linha.channel,
 					waId: linha.waId,
-					directive: directiveDaRetomada(meta, linha, agora),
+					directive: directiveDaRetomada(
+						meta,
+						linha,
+						agora,
+						await resolverOfertaDaRetomada(linha.conversationId, meta),
+					),
 				});
 				// Sem bem conhecido, a arte NÃO sai: o turno de retomada fala o texto e
 				// para (`arteDoObjetivo` devolve `null`). Melhor um toque só de texto do
@@ -1408,7 +1417,12 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 						conversationId: linha.conversationId,
 						channel: linha.channel,
 						waId: linha.waId,
-						directive: directiveDaRetomada(meta, linha, agora),
+						directive: directiveDaRetomada(
+							meta,
+							linha,
+							agora,
+							await resolverOfertaDaRetomada(linha.conversationId, meta),
+						),
 					});
 				},
 			});
@@ -1481,10 +1495,16 @@ export async function runRemarketingCycle(deps: RemarketingDeps = {}): Promise<R
 	return { entradas, disparados, nada, seguradosDaEquipe, encerradosDeTeste, conversoes };
 }
 
-function directiveDaRetomada(meta: ConversationMetadata, linha: LinhaDaRegua, agora: Date): string {
+function directiveDaRetomada(
+	meta: ConversationMetadata,
+	linha: LinhaDaRegua,
+	agora: Date,
+	oferta: OfertaDaRetomada | null,
+): string {
 	return buildRetomadaDirective(meta, {
 		minutosParado: minutosDeSilencio(linha, agora),
 		channel: linha.channel,
+		oferta,
 	});
 }
 

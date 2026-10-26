@@ -136,9 +136,43 @@ export async function dispatchInteractiveReply(input: DispatchInput): Promise<bo
 }
 
 // ── Passo 5 "Contratar" (FIX-25) — botões do contract_form (fechamento Bevi) ──
+
+/** R5.7 — o clique mais caro da jornada não pode ficar em silêncio.
+ *
+ * Depois do clique em "Confirmar" o WhatsApp ia direto para `fireContract`
+ * (`startContract` na Bevi: consulta de bureau + criação da proposta) e só falava
+ * quando a proposta voltava — 14 s de nada na tela no clique que fecha dinheiro
+ * (medido no web, mesma chamada; print `fecho4-07.png`). A mensagem curta sai
+ * ANTES do trabalho pesado e é o que o cliente vê no primeiro segundo. */
+async function avisarQueEstouFechando(
+	from: string,
+	conversationId: string,
+	texto: string,
+): Promise<void> {
+	await sendTextMessage(from, texto);
+	// A mensagem que o cliente RECEBEU entra no histórico: sem isso o log do admin
+	// mostra o fecho sem o aviso que o cliente viu.
+	await saveMessage(conversationId, "assistant", texto, "whatsapp");
+}
+
+export const ACK_CONFIRMACAO_CONTRATO =
+	"Boa, recebi sua confirmação! Já estou preparando sua proposta — em instantes te trago os detalhes.";
+
+export const ACK_CONFIRMACAO_OFERTA =
+	"Perfeito, recebi! Estou finalizando sua proposta agora — já te mando o link por aqui.";
+
 async function handleContractConfirm(ctx: Ctx): Promise<boolean> {
 	await recordUserClick(ctx);
-	const { fireContract } = await import("./contract-capture");
+	const { aceiteDoDisparo, fireContract } = await import("./contract-capture");
+	// F4 — o clique É o aceite, e tinha de virar FATO no meta. Antes, `fireContract`
+	// ia à Bevi com `lgpd: true` fixo: o botão existe no corpo que carrega o aviso
+	// (e por isso responde a ele), mas nada registava o consentimento. Só registra se
+	// o aviso está gravado — o formato é o de `metaDoFecho`, e um aceite já gravado
+	// nunca é sobrescrito.
+	const meta = await loadMeta(ctx.conversationId);
+	const aceite = aceiteDoDisparo(meta, `botão: ${ctx.replyTitle}`);
+	if (aceite) await persistMeta(ctx.conversationId, { ...meta, lgpdAceite: aceite });
+	await avisarQueEstouFechando(ctx.from, ctx.conversationId, ACK_CONFIRMACAO_CONTRATO);
 	await fireContract(ctx.from, ctx.conversationId);
 	return true;
 }
@@ -178,8 +212,21 @@ async function handleContractCancel(ctx: Ctx): Promise<boolean> {
 // (closing-presentation.ts, copy única produção+eval) → resumo por WhatsApp.
 async function handleOfferConfirm(ctx: Ctx): Promise<boolean> {
 	await recordUserClick(ctx);
+	await avisarQueEstouFechando(ctx.from, ctx.conversationId, ACK_CONFIRMACAO_OFERTA);
 	await finalizarOfertaReal(ctx.from, ctx.conversationId);
 	return true;
+}
+
+/**
+ * O ÚNICO envio da proposta no fecho: o link estável da Aja Agora
+ * (`/api/proposta/<id>`). A URL assinada do S3 não vai pro cliente — ela expira em
+ * 5 minutos (`X-Amz-Expires=300`) e quem abre depois disso vê AccessDenied.
+ */
+export function urlDeEnvioDaProposta(
+	proposta: { url: string; urlAssinada: string } | null,
+): string | null {
+	if (!proposta) return null;
+	return proposta.url;
 }
 
 /** O TERMINAL do fechamento: confirma a cota na administradora, marca o estado
@@ -224,7 +271,7 @@ export async function finalizarOfertaReal(from: string, conversationId: string):
 		// mensagem nova nenhuma, é o mesmo canal). Some só nesse canal.
 		for (const item of closingPresentation(res, {
 			channel: "whatsapp",
-			propostaUrl: proposta?.url ?? null,
+			propostaUrl: urlDeEnvioDaProposta(proposta),
 		})) {
 			let wa: ReturnType<typeof signatureHandoffToWhatsApp> | null = null;
 			let usageKey = "confirmacao_contratacao";
@@ -265,22 +312,13 @@ export async function finalizarOfertaReal(from: string, conversationId: string):
 		// "você vai receber um email com os detalhes" e nada chegava no canal em que
 		// a conversa aconteceu. Best-effort: falhou, o fecho segue e o log registra
 		// — nunca se diz que enviou sem ter enviado.
-		try {
-			if (proposta) {
-				const { sendDocumentMessage } = await import("./api");
-				await sendDocumentMessage(
-					from,
-					// A Meta baixa o arquivo NA HORA — aqui vale a URL assinada direta
-					// (o link curto redireciona, e o fetch da Meta não segue 302).
-					proposta.urlAssinada,
-					proposta.nomeArquivo,
-					"Sua proposta, com a carta, a parcela e o prazo que combinamos.",
-				);
-				await saveMessage(conversationId, "assistant", "[proposta enviada em PDF]", "whatsapp");
-			}
-		} catch (err) {
-			console.error(`[offer-confirm] envio da proposta PDF falhou (conv=${conversationId})`, err);
-		}
+		// UM ENVIO SÓ. Medido no dev, conversa 26dd148d (25/10/2026): a proposta saía
+		// DUAS vezes — o beat "Sua proposta está pronta" com o link
+		// `/api/proposta/<id>` e o anexo com a URL assinada do S3 (`X-Amz-Expires=300`).
+		// O cliente abre o anexo cinco minutos depois e cai em AccessDenied, e o fecho
+		// aparece duplicado no canal. Fica o link estável, que é o mesmo que o back
+		// office abre e não expira; a peça continua no cofre do back office. O anexo
+		// saiu da jornada.
 		// FIX-235 (D8): fecho — aciona a mesa (especialista em cadastros) NA HORA.
 		// Best-effort, nunca quebra o fechamento.
 		//
@@ -481,7 +519,13 @@ async function handleSimulatorOffer(ctx: Ctx): Promise<boolean> {
 		await runAgentDirective(
 			from,
 			conversationId,
-			buildSimulatorDialDirective({ administradora: meta.recommendedAdministradora, moneyAnchor }),
+			buildSimulatorDialDirective({
+				administradora: meta.recommendedAdministradora,
+				// A carta em foco na conversa — o dial abre nela, não numa que o modelo
+				// escolha de memória (P170: "Testar outro prazo" repetia a mesma cota).
+				groupId: meta.recommendedOffer?.groupId,
+				moneyAnchor,
+			}),
 		);
 		return true;
 	}
@@ -489,7 +533,14 @@ async function handleSimulatorOffer(ctx: Ctx): Promise<boolean> {
 		// O card de decisão era emissão server-side do funil. Com o vendedor livre
 		// quem decide é o modelo, então o clique aqui só rende uma fala.
 		await persistMeta(conversationId, { ...updated, decisionDispatched: true });
-		await runAgentDirective(from, conversationId, buildDecisionPromptDirective());
+		// P112/P179/P181 — a carta em foco vai na diretiva pelo `groupId`:
+		// `decision_prompt` resolve a carta pelo id (montador em `cards-livres.ts`),
+		// e sem ele o modelo precisa adivinhar qual das cotas na tela é a do card.
+		await runAgentDirective(
+			from,
+			conversationId,
+			buildDecisionPromptDirective({ groupId: updated.recommendedOffer?.groupId }),
+		);
 	}
 	return true;
 }
@@ -713,16 +764,62 @@ async function handleQuickReplyTap(ctx: Ctx): Promise<boolean> {
 		buildChooseOfferDirective({
 			administradora: metaComAceite.recommendedAdministradora,
 			identidadeJaColetada: meta.identityCollected === true,
+			// O id que o card do atalho entregou e o servidor conferiu
+			// (`coerceEscolhaNosAtalhos` + `cotaDoTapDeAtalho`) — vai LITERAL na
+			// diretiva, para o `contract_form` sair com a administradora da carta.
+			groupId,
 		}),
 	);
 	return true;
+}
+
+/** O mínimo que os handlers de carta usam — qualquer fonte que o entregue serve. */
+type CartaDoClique = {
+	administradora: string;
+	category?: Category;
+	creditValue: number;
+	termMonths: number;
+	monthlyPayment: number;
+};
+
+/** A carta do BOTÃO, lida do que a CONVERSA guardou.
+ *
+ * O `group_`/`simulate_`/`whatif_` nascem de um card que o servidor montou a
+ * partir de uma busca. Aquela busca não é do `getDiscoveryAdapter` deste módulo:
+ * no vendedor livre quem busca é `buscar_cartas`, com o adapter do turno, e o
+ * índice de cotas mora no card PERSISTIDO (`artifacts`), não numa instância viva
+ * de adapter. Resolver o clique pelo adapter daqui era consultar outro índice —
+ * o `getGroupDetails` não achava o grupo e o cliente ouvia "tive um problema ao
+ * localizar esse grupo" depois de tocar na carta que estava na tela dele.
+ *
+ * A fonte certa é a mesma do turno: o payload que o cliente VIU (números reais,
+ * gravados no ato da busca). Busca nova poderia devolver outra carta — e aí o
+ * clique ancoraria uma cota que ninguém mostrou. */
+export async function cartaDaConversa(
+	conversationId: string,
+	groupId: string,
+): Promise<CartaDoClique | null> {
+	const { lerCartasDaConversa, restaurarCartasDaConversa } = await import(
+		"@/lib/agent/pi/cartas-da-conversa"
+	);
+	const { grupos } = restaurarCartasDaConversa(await lerCartasDaConversa(conversationId));
+	return grupos.get(groupId) ?? null;
+}
+
+/** A carta do clique com o fallback do adapter: botão antigo (de um card emitido
+ * antes do índice persistido) ainda precisa responder. O adapter só entra
+ * quando a conversa não tem a carta — nunca no lugar dela. */
+async function detalhesDoGrupo(conversationId: string, groupId: string): Promise<CartaDoClique> {
+	const daConversa = await cartaDaConversa(conversationId, groupId);
+	if (daConversa) return daConversa;
+	return getDiscoveryAdapter(conversationId).getGroupDetails({ groupId });
 }
 
 async function handleGroupSelected(ctx: Ctx): Promise<boolean> {
 	const { from, replyId, conversationId } = ctx;
 	const groupId = replyId.replace("group_", "");
 	try {
-		const details = await getDiscoveryAdapter(conversationId).getGroupDetails({ groupId });
+		const details = await detalhesDoGrupo(conversationId, groupId);
 		await recordUserClick(ctx);
 		await anchorRecommendedOffer(conversationId, details, groupId, true);
 		await runAgentDirective(
@@ -749,7 +846,7 @@ async function handleSimulate(ctx: Ctx): Promise<boolean> {
 	const { from, replyId, conversationId } = ctx;
 	const groupId = replyId.replace("simulate_", "");
 	try {
-		const details = await getDiscoveryAdapter(conversationId).getGroupDetails({ groupId });
+		const details = await detalhesDoGrupo(conversationId, groupId);
 		await recordUserClick(ctx);
 		// FIX-340(c): mesma âncora determinística de handleGroupSelected — este
 		// botão ("Simular") também é clique real, não what-if hipotético.
@@ -771,7 +868,7 @@ async function handleWhatIf(ctx: Ctx): Promise<boolean> {
 	const { from, replyId, conversationId } = ctx;
 	const groupId = replyId.replace("whatif_", "");
 	try {
-		const details = await getDiscoveryAdapter(conversationId).getGroupDetails({ groupId });
+		const details = await detalhesDoGrupo(conversationId, groupId);
 		await recordUserClick(ctx);
 		await runAgentDirective(
 			from,
@@ -924,6 +1021,12 @@ async function handleInterest(ctx: Ctx): Promise<boolean> {
 			// O exemplo de fechamento não pode mandar pedir dado que o sistema já
 			// tem — foi assim que `fd76e393` pediu CPF a quem já o tinha mandado.
 			identidadeJaColetada: meta.identityCollected === true,
+			// P112/P179/P181 — a cota que o aceite ANCOROU (`interest_<groupId>`
+			// conferido contra as ofertas exibidas) ou, no "sim" sem cota nomeada
+			// (`decision_contratar`), a carta em foco na conversa. Sem o id o
+			// `contract_form` sai sem administradora e o `fazer_proposta` volta a
+			// depender de o modelo copiá-lo do histórico.
+			groupId: metaComAceite.escolha?.groupId ?? meta.recommendedOffer?.groupId,
 		}),
 	);
 	return true;

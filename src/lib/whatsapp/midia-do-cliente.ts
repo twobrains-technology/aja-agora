@@ -22,6 +22,7 @@
 import { and, eq, gte } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations, messages } from "@/db/schema";
+import { capturarIdentidadeDoTexto } from "@/lib/agent/pi/turno-livre";
 import { quemRespondePara } from "@/lib/agent/quem-responde";
 import { publishMessage } from "@/lib/chat/message-bus";
 import { getClientDocsStorageConfig, getSignedDownloadUrl, putObject } from "@/lib/storage";
@@ -105,6 +106,19 @@ type TranscricaoDoAudio = TranscricaoResultado & { bytes: number; mimeType: stri
 
 function metadadosDaTranscricao(t: TranscricaoDoAudio): Record<string, unknown> {
 	return { modelo: t.modelo, duracaoMs: t.duracaoMs, bytes: t.bytes, mimeType: t.mimeType };
+}
+
+/** A transcrição é FALA DO CLIENTE: entra no histórico com o mesmo tratamento da
+ * fala digitada — CPF e celular viram marcador antes de qualquer escrita.
+ *
+ * Herança de antes do vendedor livre: no caminho do texto o mascaramento já
+ * acontecia no turno (`capturarIdentidadeDoTexto`), e o áudio entrava por fora,
+ * cru. O resultado era o pior dos dois mundos — o CPF do cliente guardado uma
+ * vez cifrado (identidade) e outra em claro (histórico, lido pelo admin, pelo
+ * modelo e por qualquer dump). É o MESMO mascarador do turno, importado: duas
+ * regras de máscara divergiriam no primeiro ajuste (PII não se duplica). */
+export function falaDoClienteMascarada(texto: string): string {
+	return capturarIdentidadeDoTexto(texto, null).textoLimpo;
 }
 
 /**
@@ -317,7 +331,7 @@ export async function receberMidiaDoCliente(
 			caption,
 			filename,
 			tipo,
-			conteudo: conteudoDeAudio,
+			conteudo: conteudoDeAudio === undefined ? undefined : falaDoClienteMascarada(conteudoDeAudio),
 			metadata: transcricao ? { transcricao: metadadosDaTranscricao(transcricao) } : undefined,
 		});
 	}
@@ -438,6 +452,13 @@ async function anexarAudioAFalaDoTurno(args: {
 }): Promise<void> {
 	const { convId, texto, desde, mediaKey, mimeType, filename, transcricao } = args;
 	const metadata = { transcricao: metadadosDaTranscricao(transcricao) };
+	// A linha do turno guarda a fala MASCARADA — é assim que o turno para o banco
+	// (`persist-livre` escreve `userText`, que já passou pelo mascarador). Comparar
+	// a linha com a transcrição CRUA fazia o casamento falhar sempre que havia
+	// CPF/celular na fala, e o fallback abaixo reinseria o texto bruto no
+	// histórico — o dado sensível voltava justamente pela porta que existe para
+	// guardar o anexo. Máscara dos DOIS lados: quem casa é o que foi escrito.
+	const conteudo = falaDoClienteMascarada(texto);
 	// Margem para trás porque a marca vem do relógio do APP e o `created_at` do
 	// relógio do BANCO — alguns ms de skew não podem fazer o áudio virar uma
 	// segunda linha. Para frente não há margem: a linha do turno é sempre mais
@@ -453,14 +474,14 @@ async function anexarAudioAFalaDoTurno(args: {
 			orderBy: (m, { desc }) => [desc(m.createdAt)],
 		});
 
-		if (!linha || linha.content !== texto) {
+		if (!linha || linha.content !== conteudo) {
 			await registrarNoHistorico({
 				conv: { id: convId },
 				key: mediaKey,
 				media: { mimeType },
 				tipo: "audio",
 				filename,
-				conteudo: texto,
+				conteudo,
 				metadata,
 			});
 			return;
@@ -483,7 +504,7 @@ async function anexarAudioAFalaDoTurno(args: {
 		publishMessage(convId, {
 			id: linha.id,
 			role: "user",
-			content: texto,
+			content: conteudo,
 			createdAt: linha.createdAt.toISOString(),
 		});
 	} catch (err) {

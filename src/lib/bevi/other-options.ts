@@ -5,7 +5,7 @@
 // copy e a MESMA seleção.
 
 import { getDiscoveryAdapter } from "@/lib/adapters";
-import type { GroupSummary } from "@/lib/adapters/types";
+import type { GroupSummary, SearchGroupsParams } from "@/lib/adapters/types";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 
 export interface OtherOptionsResult {
@@ -31,18 +31,34 @@ function equivKey(o: {
 	].join("|");
 }
 
+/** O recorte da busca que "outras opções" REPETE (L45/P177/P178/P185).
+ *
+ * Outras opções são as alternativas da busca que o cliente acabou de ver: mesmo
+ * tipo de bem, mesma faixa, mesmo alvo. Mandar só `creditMin`/`creditMax`
+ * refazia a busca por VALOR para quem tinha buscado por PARCELA (FIX-382) e o
+ * cliente comparava cartas de outro orçamento. `parcelaAlvo` é justamente o
+ * filtro da busca por parcela — o adapter ignora `parcelaAlvo` quando há
+ * `creditMax`, então os dois podem ir juntos sem trocar o recorte.
+ */
+export function paramsDasOutrasOpcoes(meta: ConversationMetadata): SearchGroupsParams {
+	const q = meta.qualifyAnswers ?? {};
+	const category = meta.currentCategory;
+	if (!category) throw new Error("sem categoria na conversa");
+	return {
+		category,
+		...(q.creditMin != null ? { creditMin: q.creditMin } : {}),
+		...(q.creditMax != null ? { creditMax: q.creditMax } : {}),
+		...(q.parcelaAlvo != null ? { parcelaAlvo: q.parcelaAlvo } : {}),
+	};
+}
+
 export async function buildOtherOptions(
 	conversationId: string,
 	meta: ConversationMetadata,
 ): Promise<OtherOptionsResult> {
-	const q = meta.qualifyAnswers ?? {};
-	const category = meta.currentCategory;
-	if (!category) throw new Error("sem categoria na conversa");
-	const groups = await getDiscoveryAdapter(conversationId).searchGroups({
-		category,
-		creditMin: q.creditMin,
-		creditMax: q.creditMax,
-	});
+	const groups = await getDiscoveryAdapter(conversationId).searchGroups(
+		paramsDasOutrasOpcoes(meta),
+	);
 
 	// FIX-28: "outras opções" mostrava cards IDÊNTICOS. Dois defeitos:
 	//  (1) zero dedupe — cotas equivalentes (mesma adm + valores, ids distintos)
@@ -53,6 +69,13 @@ export async function buildOtherOptions(
 	// Correção: dedupe + exclusão por chave de EQUIVALÊNCIA usando recommendedOffer
 	// (o meta não guarda groupId — confirmado no DB do dev: 0/10). Fallback por
 	// nome só quando não há recommendedOffer (conversas antigas).
+	//
+	// L45: a chave de equivalência sozinha não bastava no motor Pi — a carta em
+	// foco (a recomendada, ou a que o cliente acabou de recusar) voltava como
+	// "outra opção" sempre que os números do snapshot divergiam dela. Quando o
+	// `groupId` está gravado (`recommendedOffer.groupId`, escrito pelo clique no
+	// card e pelo fecho), ele é a identidade EXATA — vale mais que a chave.
+	const recommendedId = meta.recommendedOffer?.groupId ?? null;
 	const recommendedKey = meta.recommendedOffer
 		? equivKey({
 				administradora:
@@ -67,9 +90,11 @@ export async function buildOtherOptions(
 	const others: GroupSummary[] = [];
 	for (const g of groups) {
 		const key = equivKey(g);
-		const isRecommended = recommendedKey
-			? key === recommendedKey
-			: g.administradora === meta.recommendedAdministradora;
+		const isRecommended =
+			(recommendedId != null && g.id === recommendedId) ||
+			(recommendedKey
+				? key === recommendedKey
+				: g.administradora === meta.recommendedAdministradora);
 		if (isRecommended) continue;
 		if (seen.has(key)) continue; // dedupe
 		seen.add(key);

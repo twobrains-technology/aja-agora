@@ -125,6 +125,37 @@ export function ChatProvider({
 		[conversationId],
 	);
 
+	const refreshHandoff = useCallback(async () => {
+		try {
+			const res = await fetch(`/api/conversations/${conversationId}/status`);
+			if (!res.ok) return;
+			const data = (await res.json()) as HandoffState;
+			setHandoff(data);
+		} catch {
+			// Network blip — keep prior state.
+		}
+	}, [conversationId]);
+
+	// P276/P294 — A RECEPÇÃO HUMANA COMEÇA NO EVENTO, NÃO NO RELOAD.
+	//
+	// Na `main` quem virava a chave era o `refreshHandoff` do formulário de lead
+	// (`lead-form.tsx:93`), chamado logo depois do POST que abria o caso. No vendedor
+	// livre o caso nasce no MEIO do turno (`falar_com_humano` → `abrirCasoNaMesa` →
+	// `conversations.status = "handed_off"`), e o que chega ao cliente é o part
+	// `data-handoff` que o `web/adapter.ts` escreve. Sem tratá-lo, o estado local
+	// ficava em `active` para sempre: o SSE da recepção (`/api/chat/stream`) nunca
+	// abria e a resposta do atendente só aparecia depois de recarregar a página.
+	//
+	// A transição é otimista — quem acabou de pedir uma pessoa não pode esperar um
+	// round-trip para ver a conversa trocar de mãos — e o servidor reconcilia em
+	// seguida: `refreshHandoff()` traz o nome do atendente e, quando o caso NÃO foi
+	// aberto (sem nome não há caso na mesa, `handoff.ts`), devolve `active` e desfaz
+	// a transição. O servidor continua sendo a verdade; o evento só evita a espera.
+	const assumirRecepcaoHumana = useCallback(() => {
+		setHandoff((prev) => (prev.status === "handed_off" ? prev : { ...prev, status: "handed_off" }));
+		void refreshHandoff();
+	}, [refreshHandoff]);
+
 	// FIX-373: achado ao vivo (persona "carro", gate lance-embutido) — a busca
 	// dupla sem/com embutido + ranking levou 48-86s reais, acima do teto do
 	// watchdog abaixo, e o cliente matou o stream com "Tentar novamente" mesmo
@@ -151,8 +182,10 @@ export function ChatProvider({
 		onError: (err) => {
 			console.error("[chat] erro no stream:", err);
 		},
-		onData: () => {
+		onData: (part) => {
 			lastActivityRef.current = Date.now();
+			// O handoff chega como part do turno (ver `assumirRecepcaoHumana`).
+			if (part.type === "data-handoff") assumirRecepcaoHumana();
 		},
 	});
 
@@ -232,17 +265,6 @@ export function ChatProvider({
 		setConversationId(initialConversationId);
 		setHandoff({ status: "active", agentName: null });
 	}, [initialConversationId]);
-
-	const refreshHandoff = useCallback(async () => {
-		try {
-			const res = await fetch(`/api/conversations/${conversationId}/status`);
-			if (!res.ok) return;
-			const data = (await res.json()) as HandoffState;
-			setHandoff(data);
-		} catch {
-			// Network blip — keep prior state.
-		}
-	}, [conversationId]);
 
 	useEffect(() => {
 		void refreshHandoff();

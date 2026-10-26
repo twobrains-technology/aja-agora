@@ -1,5 +1,6 @@
 import { gateQuestion, LANCE_EMBUTIDO_ASK } from "@/lib/agent/orchestrator/gate-questions";
 import { DECISION_PROMPT_OPTIONS, DECISION_PROMPT_QUESTION } from "@/lib/chat/types";
+import { computeContemplationDial } from "@/lib/consorcio/contemplation-dial";
 import { isValidCpf, maskCpf } from "@/lib/conversation/identity";
 import { idDoAtalho, type PayloadDeAtalho } from "./quick-reply-tap";
 
@@ -984,7 +985,16 @@ const brlWa = (n: number) =>
  * (FIX-25). A identidade JÁ foi coletada no gate identify (FIX-9), então a 1ª
  * mensagem CONFIRMA os dados (CPF mascarado) com botões em vez de pedir CPF de
  * novo. Sem identidade on file (defensivo), pede o CPF por texto. O aceite do
- * botão/“sim” é o consentimento explícito que dispara a proposta real. */
+ * botão/“sim” é o consentimento explícito que dispara a proposta real.
+ *
+ * F4 (testador no dev, conversa dfd69823): os dois ramos diziam só "seus dados
+ * são tratados com segurança (LGPD)" — um aviso genérico, que não é o aviso. Na
+ * main ele vinha SEMPRE antes do pedido de CPF (`identify-capture.ts:23-42`,
+ * a2bc3024) e mandar o CPF depois dele era o consentimento por conduta. Aqui o
+ * caminho determinístico perdeu o aviso: o cliente mandava o CPF, `fireContract`
+ * criava a proposta e `metadata.lgpdAceite` nunca era gravado — consulta de
+ * bureau sem aceite registrado. Os dois textos abaixo CARREGAM o aviso canônico
+ * (casam `AVISO_LGPD_RE` de `pi/lgpd.ts`) antes de pedir o dado. */
 export function contractFormToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
 	const admin = payload.administradora as string | undefined;
 	const identityOnFile = payload.identityOnFile === true;
@@ -993,7 +1003,7 @@ export function contractFormToWhatsApp(payload: Record<string, unknown>): WhatsA
 	if (!identityOnFile) {
 		return {
 			type: "text",
-			text: `Boa! Pra eu criar sua proposta${admin ? ` na ${admin}` : ""}, me manda seu *CPF* aqui (só números). Seu WhatsApp já vale como contato e seus dados são tratados com segurança (LGPD).`,
+			text: `Boa! Pra eu criar sua proposta${admin ? ` na ${admin}` : ""}, a administradora consulta seu CPF nos birôs de crédito e usa seus dados só para isso, conforme a LGPD. Se estiver de acordo, me manda seu *CPF* (só números).`,
 		};
 	}
 
@@ -1003,7 +1013,7 @@ export function contractFormToWhatsApp(payload: Record<string, unknown>): WhatsA
 		interactive: {
 			type: "button",
 			body: {
-				text: `Boa! Já tenho seus dados${dados} aqui do nosso atendimento. Posso criar sua proposta real${admin ? ` na ${admin}` : ""}? Seus dados seguem protegidos (LGPD).`,
+				text: `Boa! Já tenho seus dados${dados}. Pra criar sua proposta real${admin ? ` na ${admin}` : ""}, a administradora consulta seu CPF nos birôs de crédito e usa seus dados só para isso, conforme a LGPD. Posso criar?`,
 			},
 			action: {
 				buttons: [
@@ -1178,6 +1188,13 @@ interface DialScenarioView {
 	/** Parcela ATUAL do plano — a referência que dá sentido à queda. Vem do
 	 * `monthlyPayment` do payload da oferta; ausente em cenários antigos. */
 	paymentBeforeContemplation?: number;
+	/** BUG-LANCE-ACIMA-DO-MEDIO (`contemplation-dial.ts`): o mês pedido exigiria
+	 * lance ACIMA do médio observado no grupo, então `requiredLanceValue` é o TETO
+	 * do que já se viu vencer — nunca estimativa pra aquele mês. */
+	beyondEvidence?: boolean;
+	/** Primeiro mês em que o histórico do grupo sustenta projeção. Só existe junto
+	 * com `beyondEvidence` — é a resposta honesta ao "então quando dá?" */
+	earliestSupportedMonth?: number;
 }
 
 /** Extrai o cenário JÁ calculado pelo agente. Aceita tanto `payload.scenario`
@@ -1206,6 +1223,8 @@ function readDialScenario(payload: Record<string, unknown>): DialScenarioView | 
 			num(raw.paymentBeforeContemplation) ??
 			num(raw.monthlyPayment) ??
 			num((payload as Record<string, unknown>).monthlyPayment),
+		beyondEvidence: raw.beyondEvidence === true ? true : undefined,
+		earliestSupportedMonth: num(raw.earliestSupportedMonth),
 	};
 }
 
@@ -1216,6 +1235,45 @@ const SIMULATOR_ACTIONS = [
 	{ id: "simoffer_yes", title: "Testar outro prazo" },
 	{ id: "decision_contratar", title: "Quero esse plano" },
 ];
+
+/** O de-para crédito/parcela do cenário, sem maiúscula inicial nem ponto final:
+ * quem chama completa a frase conforme o número signifique estimativa ou teto
+ * observado. Campo ausente sai da frase em vez de virar zero. */
+function creditAndInstallmentToText(s: DialScenarioView): string | undefined {
+	const recebe = s.receivedCredit !== undefined ? `você recebe *${brlWa(s.receivedCredit)}*` : "";
+	const parcela =
+		s.paymentAfterContemplation !== undefined
+			? s.paymentBeforeContemplation !== undefined
+				? `a parcela cai de ${brlWa(s.paymentBeforeContemplation)} pra ~*${brlWa(s.paymentAfterContemplation)}*/mês`
+				: `a parcela fica em ~*${brlWa(s.paymentAfterContemplation)}*/mês`
+			: "";
+	if (recebe && parcela) return `${recebe}, e ${parcela}.`;
+	if (recebe) return `${recebe} de crédito.`;
+	if (parcela) return `${parcela}.`;
+	return undefined;
+}
+
+/** Ressalva de BUG-LANCE-ACIMA-DO-MEDIO quando o mês pedido passa da evidência
+ * do grupo: acima do lance médio observado não há estimativa — o número é o TETO
+ * do que a administradora sustenta. Na main a tool `simulate_contemplation`
+ * (`ai-sdk.ts`) obrigava o agente a narrar exatamente assim; no WhatsApp quem
+ * escreve o balão é este formatador, então a ressalva é fato do texto, não
+ * escolha do modelo. Mesma informação do componente web (`contemplation-dial.tsx`). */
+function beyondEvidenceToText(s: DialScenarioView): string {
+	const parts = [
+		"Pra esse prazo o lance teria que passar do que costuma vencer neste grupo — aí não dá pra estimar.",
+	];
+	if (s.requiredLanceValue !== undefined) {
+		const pct = s.requiredLancePct !== undefined ? ` (${s.requiredLancePct}% da carta)` : "";
+		parts.push(`O teto que já se viu vencer aqui é *${brlWa(s.requiredLanceValue)}*${pct}.`);
+	}
+	if (s.earliestSupportedMonth !== undefined) {
+		parts.push(
+			`A partir do mês ${s.earliestSupportedMonth} o histórico do grupo sustenta uma projeção.`,
+		);
+	}
+	return parts.join(" ");
+}
 
 /** Formata UMA iteração do simulador conversacional (o cenário recalculado pelo
  * agente). Só apresentação — o cálculo vem de computeContemplationDial.
@@ -1231,13 +1289,20 @@ const SIMULATOR_ACTIONS = [
  *     parcela atual, mostramos o de-para; quando não traz, o texto degrada pro
  *     valor sozinho em vez de inventar comparação.
  */
-function simulatorScenarioToWhatsApp(s: DialScenarioView): WhatsAppResponse {
+function simulatorScenarioToWhatsApp(s: DialScenarioView, convite?: string): WhatsAppResponse {
 	const monthLabel = `${s.targetMonth} ${s.targetMonth === 1 ? "mês" : "meses"}`;
 	const lines: string[] = [`*Contemplação em ${monthLabel}*`, ""];
 
 	const isSorteio = s.mode === "sorteio" || (s.requiredLancePct ?? 0) <= 0;
 	if (isSorteio) {
 		lines.push("Nesse prazo dá pra contar mais com o sorteio — lance opcional e parcela menor.");
+	} else if (s.beyondEvidence) {
+		// P148/P170: o mês pedido passa da evidência do grupo. O número é o teto
+		// observado — o balão diz primeiro o que ele NÃO é, e só então o efeito
+		// dele no crédito/parcela.
+		lines.push(beyondEvidenceToText(s), "");
+		const noTeto = creditAndInstallmentToText(s);
+		if (noTeto) lines.push(`Se o lance chegasse nesse teto, ${noTeto}`);
 	} else {
 		const pct = s.requiredLancePct !== undefined ? ` — ${s.requiredLancePct}% da carta` : "";
 		const lanceStr =
@@ -1246,17 +1311,10 @@ function simulatorScenarioToWhatsApp(s: DialScenarioView): WhatsAppResponse {
 				: `*${s.requiredLancePct}%* da carta`;
 		lines.push(`Pra chegar lá, o lance fica em torno de ${lanceStr}.`, "");
 
-		const recebe = s.receivedCredit !== undefined ? `Você recebe *${brlWa(s.receivedCredit)}*` : "";
-		const parcela =
-			s.paymentAfterContemplation !== undefined
-				? s.paymentBeforeContemplation !== undefined
-					? `a parcela cai de ${brlWa(s.paymentBeforeContemplation)} pra ~*${brlWa(s.paymentAfterContemplation)}*/mês`
-					: `a parcela fica em ~*${brlWa(s.paymentAfterContemplation)}*/mês`
-				: "";
-		if (recebe && parcela) lines.push(`${recebe}, e ${parcela}.`);
-		else if (recebe) lines.push(`${recebe} de crédito.`);
-		else if (parcela) lines.push(`${parcela[0].toUpperCase()}${parcela.slice(1)}.`);
+		const resumo = creditAndInstallmentToText(s);
+		if (resumo) lines.push(`${resumo[0].toUpperCase()}${resumo.slice(1)}`);
 	}
+	if (convite) lines.push("", convite);
 	lines.push("", SIMULATOR_DISCLAIMER);
 	return {
 		type: "interactive",
@@ -1271,16 +1329,115 @@ function simulatorScenarioToWhatsApp(s: DialScenarioView): WhatsAppResponse {
 	};
 }
 
+/** O convite que fecha a iteração do loop no WhatsApp. Sem ele, o cenário
+ * calculado saía sem pergunta e o botão "Testar outro prazo" reabria a MESMA carta
+ * no MESMO mês — o cliente pedia outro prazo e recebia o número anterior. */
+const CONVITE_PROXIMO_PRAZO =
+	"Quer ver outro prazo? Me diz em quantos meses você quer ser contemplado que eu recalculo na hora.";
+
+/** O cenário do dial calculado A PARTIR DO SNAPSHOT da carta.
+ *
+ * No web quem calcula é o componente, no cliente (`contemplation-dial.tsx`:
+ * `computeContemplationDial` com os inputs do payload). No WhatsApp o card chega
+ * já formatado, e o payload do `contemplation_dial` carrega **inputs**
+ * (`coerceDialPayload`): carta, prazo, parcela, lance médio e o mês-alvo inicial.
+ * Sem esta conta o mapper caía no convite ao loop e "Testar outro prazo" repetia
+ * o pedido em vez de mostrar resultado (L16/P148/P170).
+ *
+ * Mesma função pura e MESMOS parâmetros do componente: nenhum número aqui é
+ * inventado. Sem carta/prazo/mês-alvo não há cenário — devolve null e o chamador
+ * degrada pro convite. */
+function scenarioFromCardSnapshot(payload: Record<string, unknown>): DialScenarioView | null {
+	const num = (v: unknown): number | undefined =>
+		typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined;
+	// ZERO é valor, não ausência: `maxEmbutidoPct: 0` é a RECUSA ao lance embutido
+	// (`plan-estimate.ts` grava 0 quando o cliente não opta) — lido como ausente
+	// virava o teto padrão de 30% e o embutido comia a carta de quem disse não.
+	const zeroOuMais = (v: unknown): number | undefined =>
+		typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : undefined;
+	const creditValue = num(payload.creditValue);
+	const termMonths = num(payload.termMonths);
+	const targetMonth = num(payload.initialTargetMonth);
+	if (creditValue === undefined || termMonths === undefined || targetMonth === undefined)
+		return null;
+	const monthlyPayment = num(payload.monthlyPayment);
+	// O dinheiro que o cliente DECLAROU ter guardado entra no cálculo antes de comer
+	// a carta (`declaredLanceValue` = `qualifyAnswers.lanceValue`, gravado por
+	// `coerceDialPayload`). Sem isto o embutido era sempre esgotado primeiro e o
+	// balão dizia que a carta encolhia para quem tinha o dinheiro na mão — a mesma
+	// conta da `simulate_contemplation` da main (`ai-sdk.ts:1755`).
+	const ownCashAvailable = num(payload.declaredLanceValue);
+	const r = computeContemplationDial({
+		creditValue,
+		termMonths,
+		targetMonth,
+		averageBid: num(payload.avgBidValue),
+		historicalWinningBidPct: num(payload.historicalWinningBidPct),
+		referenceMonth: num(payload.referenceMonth),
+		monthlyPayment,
+		maxEmbutidoPct: zeroOuMais(payload.maxEmbutidoPct),
+		...(ownCashAvailable !== undefined ? { ownCashAvailable } : {}),
+	});
+	return {
+		targetMonth: r.targetMonth,
+		mode: r.mode,
+		requiredLancePct: r.requiredLancePct,
+		requiredLanceValue: r.requiredLanceValue,
+		receivedCredit: r.receivedCredit,
+		paymentAfterContemplation: r.paymentAfterContemplation,
+		paymentBeforeContemplation: monthlyPayment,
+		beyondEvidence: r.beyondEvidence,
+		earliestSupportedMonth: r.earliestSupportedMonth,
+	};
+}
+
 export function contemplationDialToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
 	// Iteração do loop: o agente já calculou o cenário do mês-alvo → formata.
-	const scenario = readDialScenario(payload);
-	if (scenario) return simulatorScenarioToWhatsApp(scenario);
-	// Abertura do simulador (só inputs do plano): sem slider, convidamos o loop —
-	// o usuário diz o mês-alvo e o agente itera (recalcula a cada resposta).
-	return {
-		type: "text",
-		text: "Em quantos meses você quer ser contemplado? Me diz um número que eu te mostro o lance necessário e quanto você recebe.",
-	};
+	const doAgente = readDialScenario(payload);
+	if (doAgente) return simulatorScenarioToWhatsApp(doAgente);
+	// O card chegou com os INPUTS da carta (o caso comum: o servidor monta o
+	// payload a partir do snapshot). Calcula aqui, como o componente web faz, e
+	// convida o próximo prazo — o botão "Testar outro prazo" só faz sentido se o
+	// balão já mostrou um resultado.
+	const doSnapshot = scenarioFromCardSnapshot(payload);
+	if (doSnapshot) return simulatorScenarioToWhatsApp(doSnapshot, CONVITE_PROXIMO_PRAZO);
+	// Sem os números não há o que calcular: sem slider no WhatsApp, o balão tem de
+	// DIZER o plano e convidar o loop — o usuário responde o mês-alvo e o agente
+	// calcula.
+	return { type: "text", text: dialPlanToText(payload) };
+}
+
+/** O PLANO do dial em texto, quando o payload não traz os números do cenário.
+ *
+ * No web o dial abre com slider, carta, parcela e prazo desenhados ao lado da
+ * agulha. No WhatsApp não há slider: a abertura saía com a pergunta solta ("em
+ * quantos meses você quer ser contemplado?") e nenhum número — o cliente não
+ * sabia sobre qual carta estava falando, e o balão do dial ficava vazio de
+ * resultado justamente no card que existe para mostrar número. Os números aqui
+ * são do payload (`coerceDialPayload` gravou os da oferta real), nunca inventados;
+ * campo ausente sai da frase em vez de virar zero. */
+function dialPlanToText(payload: Record<string, unknown>): string {
+	const num = (v: unknown): number | undefined =>
+		typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined;
+	const creditValue = num(payload.creditValue);
+	const monthlyPayment = num(payload.monthlyPayment);
+	const termMonths = num(payload.termMonths);
+	const lanceMedio = num(payload.avgBidValue);
+
+	const plano: string[] = [];
+	if (creditValue !== undefined) {
+		const parcela = monthlyPayment !== undefined ? `, parcela de ${brlWa(monthlyPayment)}/mês` : "";
+		const prazo = termMonths !== undefined ? ` em ${termMonths} meses` : "";
+		plano.push(`*Sua carta:* ${brlWa(creditValue)}${prazo}${parcela}.`);
+	} else if (monthlyPayment !== undefined) {
+		plano.push(`*Sua parcela:* ${brlWa(monthlyPayment)}/mês.`);
+	}
+	if (lanceMedio !== undefined) plano.push(`Lance médio do grupo: ${brlWa(lanceMedio)}.`);
+
+	return [
+		...plano,
+		"Em quantos meses você quer ser contemplado? Me diz um número que eu te mostro o lance necessário e quanto você recebe.",
+	].join("\n\n");
 }
 
 // FIX-228 (docs/02-cards-novos.md CARD 1 — embedded_bid). Regra dura: SEMPRE

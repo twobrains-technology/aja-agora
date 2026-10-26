@@ -71,7 +71,7 @@ import { bracoDaFila } from "@/lib/experimentos/fila";
 import { normalizePhoneBR } from "@/lib/leads/phone";
 import { registrarFalhaDoLlm } from "@/lib/llm/alerta-do-llm";
 import { COOKIE_MAX_AGE_SECONDS, COOKIE_NAME, generateCookieValue } from "@/lib/memory/identity";
-import { checkRateLimit } from "@/lib/middleware/rate-limit";
+import { checkRateLimit, type RateLimitResult } from "@/lib/middleware/rate-limit";
 import { registrarBotaoFantasma } from "@/lib/observability/sinais/funil-scores";
 import { comTraceDoTurno } from "@/lib/observability/trace-local";
 import { collectAgentText } from "@/lib/observability/ui-writer";
@@ -273,26 +273,92 @@ async function pipeAndSaveClosingItems(
 	}
 }
 
+// ── R5.6 — LIMITE DE MENSAGENS DO CHAT ────────────────────────────────────────
+//
+// O balde era só por IP (10/min), e isso erra nas duas pontas: um escritório
+// inteiro atrás do mesmo NAT derrubava as conversas umas das outras, e quem
+// trocava de rede (celular → wi-fi) ganhava um limite novo e voltava a
+// metralhar o turno. A conta certa é por CONVERSA — é o turno dela que custa
+// LLM e consulta na Bevi — e o teto por IP fica como rede de proteção contra
+// quem inventa conversa nova a cada POST (a chave por conversa é escolhida
+// pelo cliente, então sozinha ela não limita ninguém mal-intencionado).
+const LIMITE_POR_CONVERSA = { maxTokens: 10, refillRate: 10, windowMs: 60_000 };
+const TETO_POR_IP = { maxTokens: 40, refillRate: 40, windowMs: 60_000 };
+
+/** A chave do limite: a conversa que está custando o turno; sem ela, o cookie
+ * `aja_uid` da pessoa; sem cookie, o IP (que já tem o teto acima). */
+export function chaveDoLimiteDeMensagens(args: {
+	conversationId: string | null;
+	cookieDoCliente: string | null;
+	ip: string;
+}): string {
+	if (args.conversationId) return `conversa:${args.conversationId}`;
+	if (args.cookieDoCliente) return `aja_uid:${args.cookieDoCliente}`;
+	return `ip:${args.ip}`;
+}
+
+/** O corpo do 429 é um CÓDIGO do conjunto fechado de `stream-error.ts`, nunca
+ * uma frase do servidor: o `useChat` transforma o corpo da resposta em
+ * `error.message`, e a UI só tem banner para os códigos que ela conhece
+ * (`theater-chat.tsx`) — texto livre ali não aparece para ninguém. Com o
+ * código, o cliente lê "Muitas mensagens ao mesmo tempo. Espere um instante…". */
+export function respostaDeLimiteDeMensagens(resultado: RateLimitResult): Response {
+	return new Response("llm_rate_limit", {
+		status: 429,
+		headers: {
+			"Content-Type": "text/plain; charset=utf-8",
+			"Retry-After": String(Math.ceil((resultado.retryAfterMs ?? 60_000) / 1000)),
+		},
+	});
+}
+
+/** FIX-244 — o submit do formulário de contrato só vale quando o formulário
+ * REALMENTE apareceu nesta conversa. A marca é escrita no instante em que o
+ * card sai para o cliente (`web/adapter.ts`, `marcarFormularioDeContratoEnviado`),
+ * não no turno seguinte: quem preencheu o formulário não pode receber
+ * "deixa eu te mostrar o formulário" por falta de bookkeeping. */
+export function formularioDeContratoFoiEnviado(
+	meta: Pick<ConversationMetadata, "contractFormDispatched">,
+): boolean {
+	return meta.contractFormDispatched === true;
+}
+
+/** O `groupId` que o clique ESTRUTURADO entrega à diretiva de fecho
+ * (P112/P161/P179/P181).
+ *
+ * Com o id na instrução, o `contract_form` sai com a `administradora` da carta
+ * (o montador resolve pelo id, `cards-livres.ts`) e o caminho curto
+ * `fazer_proposta` usa o mesmo id — sem depender de o modelo copiá-lo do
+ * histórico da busca. A fonte preferida é a cota RESOLVIDA contra os artifacts
+ * exibidos (`resolveChosenOffer`); quando o resolvedor não acha, vale o id que
+ * veio no card tocado, que o próprio servidor emitiu. Sem nenhum dos dois a
+ * diretiva pede "a carta que está na tela" e a escolha fica com o modelo. */
+export function groupIdDaCartaDoClique(
+	cotaResolvida: { groupId?: string } | null | undefined,
+	idDoClique: string | undefined,
+): string | undefined {
+	return cotaResolvida?.groupId ?? idDoClique;
+}
+
 export async function POST(req: NextRequest) {
 	const ip =
 		req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
 		req.headers.get("x-real-ip") ??
 		"unknown";
 
-	const rateLimitResult = checkRateLimit(ip);
-	if (!rateLimitResult.allowed) {
-		return new Response("Too many requests. Please wait a moment.", {
-			status: 429,
-			headers: {
-				"Retry-After": String(Math.ceil((rateLimitResult.retryAfterMs ?? 60000) / 1000)),
-			},
-		});
-	}
+	// Teto por IP ANTES de ler o corpo: é ele que protege o parse.
+	const tetoPorIp = checkRateLimit(`ip:${ip}`, TETO_POR_IP);
+	if (!tetoPorIp.allowed) return respostaDeLimiteDeMensagens(tetoPorIp);
 
 	// Cookie estável `aja_uid` pra mapear web anônimo → agent Letta (após
 	// engajamento >= 3 turnos). Lazy create — só geramos cookie quando o
 	// usuário interage. Ver ADR 2026-05-16.
-	let userKey = req.cookies.get(COOKIE_NAME)?.value ?? null;
+	//
+	// `cookieDoCliente` é o que veio do navegador (o de uma visita anterior);
+	// `userKey` inclui o recém-gerado. O limite por pessoa usa o primeiro: uma
+	// chave sorteada agora não identifica ninguém.
+	const cookieDoCliente = req.cookies.get(COOKIE_NAME)?.value ?? null;
+	let userKey = cookieDoCliente;
 	let setNewCookie = false;
 	if (!userKey) {
 		userKey = generateCookieValue();
@@ -301,6 +367,13 @@ export async function POST(req: NextRequest) {
 
 	const body = (await req.json()) as ChatRequestBody;
 	const providedId = body.conversationId ?? body.id ?? null;
+
+	// O limite que importa: o do turno desta conversa.
+	const limiteDaConversa = checkRateLimit(
+		chaveDoLimiteDeMensagens({ conversationId: providedId, cookieDoCliente, ip }),
+		LIMITE_POR_CONVERSA,
+	);
+	if (!limiteDaConversa.allowed) return respostaDeLimiteDeMensagens(limiteDaConversa);
 
 	// Guardrail: conversationId precisa ser UUID válido — coluna é UUID
 	// no Postgres e query com string inválida quebra com 22P02. Visto pelo
@@ -925,6 +998,11 @@ export async function POST(req: NextRequest) {
 										directive: buildAdvanceToContractDirective({
 											administradora,
 											identidadeJaColetada: meta.identityCollected === true,
+											// P112/P161/P179/P181 — o id da carta do clique vai LITERAL na
+											// diretiva (ver `groupIdDaCartaDoClique`): é ele que faz o
+											// `contract_form` sair com a administradora e que o modelo usa
+											// no caminho curto `fazer_proposta`, sem copiar id do histórico.
+											groupId: groupIdDaCartaDoClique(cotaExibida, idDoCard),
 										}),
 										contactName,
 										writer,
@@ -992,6 +1070,10 @@ export async function POST(req: NextRequest) {
 										directive: buildChooseOfferDirective({
 											administradora,
 											identidadeJaColetada: meta.identityCollected === true,
+											// O id da cota ESCOLHIDA (resolvido por `resolveChosenOffer`
+											// contra os artifacts exibidos) — ver
+											// `groupIdDaCartaDoClique`.
+											groupId: groupIdDaCartaDoClique(chosen, groupId),
 										}),
 										contactName,
 										writer,
@@ -1019,9 +1101,10 @@ export async function POST(req: NextRequest) {
 
 								// D7 — "Ver cenários de contemplação". Este handler não existia: a
 								// ação caía no `adjust-value` e o directive dizia ao modelo que o
-								// cliente queria mudar o valor do bem. As tools do cálculo
-								// (`compute_scenarios` + `card de apresentação`) já estavam no toolset
-								// do grafo; era só o clique nunca chegar até lá.
+								// cliente queria mudar o valor do bem. O cálculo e o card são do
+								// vendedor livre: `mostrar_card` de tipo `scenarios` monta as três
+								// projeções no servidor a partir da carta real (o directive diz isso
+								// ao modelo); não existe mais tool de cálculo no toolset.
 								if (body.action?.kind === "view-scenarios") {
 									await pipeDirectiveTurn({
 										conversationId,
@@ -1109,7 +1192,7 @@ export async function POST(req: NextRequest) {
 									// (CPF + consulta de bureau não pode ficar a um POST cru de
 									// distância). Achado ao vivo: o Fable fechou uma proposta
 									// atirando contract-submit numa conversa que nunca viu o form.
-									if (freshMeta.contractFormDispatched !== true) {
+									if (!formularioDeContratoFoiEnviado(freshMeta)) {
 										await writeAndSaveText(
 											writer,
 											conversationId,

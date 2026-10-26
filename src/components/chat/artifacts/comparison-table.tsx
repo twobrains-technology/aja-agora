@@ -65,8 +65,16 @@ export function ComparisonTable({ payload }: { payload: ComparisonTablePayload }
 
 	return (
 		<div
+			data-testid="carrossel-cartas"
 			className={cn(
 				"flex gap-[11px] w-full overflow-x-auto pb-1.5",
+				// O ÚLTIMO CARD NÃO PODE FICAR CORTADO NA BORDA DIREITA.
+				// Sem snap nem scroll-padding, o fim do gesto deixa o último chip
+				// atravessado na borda: o cliente vê meio cartão, sem carta nem
+				// parcela completas. `scroll-px-4` dá à rolagem a mesma margem que o
+				// balão tem, e `snap-start` assenta cada card inteiro na borda
+				// esquerda — o último assenta no fim do scroll, inteiro na tela.
+				"snap-x snap-mandatory scroll-px-4",
 				"[-webkit-overflow-scrolling:touch]",
 				isStreaming && "pointer-events-none opacity-60",
 			)}
@@ -78,10 +86,11 @@ export function ComparisonTable({ payload }: { payload: ComparisonTablePayload }
 						key={group.id}
 						type="button"
 						tabIndex={0}
+						data-testid={`cartao-grupo-${group.id}`}
 						aria-label={`Simular ${group.administradora}, parcela ${formatBRL2(group.monthlyPayment)} por mês`}
 						onClick={() => handleSelect(group)}
 						className={cn(
-							"shrink-0 w-[150px] rounded-[14px] p-[13px] text-left",
+							"shrink-0 snap-start w-[150px] rounded-[14px] p-[13px] text-left",
 							"flex flex-col gap-2 border bg-card cursor-pointer",
 							"transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
 							isBest
@@ -209,6 +218,8 @@ function QuotaSelector({ isStreaming }: { isStreaming: boolean }) {
 				aria-label="Escolha a cota"
 				className={cn(
 					"flex gap-[11px] w-full overflow-x-auto pb-1.5",
+					// Mesma régua do carrossel das cartas: card inteiro na borda.
+					"snap-x snap-mandatory scroll-px-4",
 					"[-webkit-overflow-scrolling:touch]",
 					isStreaming && "pointer-events-none opacity-60",
 				)}
@@ -249,7 +260,7 @@ function QuotaChip({
 			aria-label={`Selecionar ${cota.administradora}, parcela ${formatBRL2(cota.monthlyPayment)} por mês`}
 			onClick={onSelect}
 			className={cn(
-				"shrink-0 w-[150px] rounded-[14px] p-[13px] text-left",
+				"shrink-0 snap-start w-[150px] rounded-[14px] p-[13px] text-left",
 				"flex flex-col gap-2 border bg-card cursor-pointer",
 				"transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
 				selected

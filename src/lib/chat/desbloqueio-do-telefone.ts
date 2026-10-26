@@ -99,4 +99,11 @@ export const CARDS_QUE_REVELAM_OFERTA: ReadonlySet<ArtifactType> = new Set<Artif
 	"group_card",
 	"financing_comparison",
 	"scenarios",
+	// Os cards de oferta que voltaram ao motor no bloco A2 (vendedor livre): cada
+	// um carrega parcela, escassez ou lance da carta real.
+	"contemplation_dial",
+	"embedded_bid",
+	"scarcity",
+	"two_paths",
+	"real_offer",
 ]);

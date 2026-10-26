@@ -2,7 +2,7 @@
 
 import { AlertCircle, Bike, Car, Headset, Home, type LucideIcon, RotateCcw } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import { SunMark } from "@/components/brand/sun-mark";
 import { Button } from "@/components/ui/button";
@@ -44,6 +44,10 @@ const messageSpring = {
 export type RenderablePart =
 	| { kind: "text"; id: string; text: string }
 	| { kind: "transition"; id: string; data: TransitionPartData }
+	// `tool` é FRONTEIRA, não conteúdo: o status da ferramenta não desenha nada,
+	// mas ele existiu no meio do turno — o texto que veio antes não pode se juntar
+	// com o que veio depois num balão só (R5.1: a ordem do stream é a ordem da tela).
+	| { kind: "tool"; id: string }
 	| { kind: "artifact"; id: string; artifact: Artifact; embacada?: boolean }
 	| { kind: "welcome"; id: string; data: WelcomePartData }
 	| { kind: "handoff"; id: string; data: HandoffPartData };
@@ -59,6 +63,10 @@ function classifyParts(message: AjaUIMessage): RenderablePart[] {
 		}
 		if (part.type === "data-transition") {
 			out.push({ kind: "transition", id: partId, data: part.data as TransitionPartData });
+			continue;
+		}
+		if (part.type === "data-tool") {
+			out.push({ kind: "tool", id: partId });
 			continue;
 		}
 		if (part.type === "data-artifact") {
@@ -145,7 +153,7 @@ function latestToolName(message: AjaUIMessage): string | undefined {
 
 type RenderableSegment =
 	| { kind: "text-group"; id: string; text: string }
-	| Exclude<RenderablePart, { kind: "text" } | { kind: "transition" }>;
+	| Exclude<RenderablePart, { kind: "text" } | { kind: "transition" } | { kind: "tool" }>;
 
 /** FIX-184 — colapsa eco/degeneração da LLM ("Prazer, Mirella!Prazer, Mirella!")
  * no RENDER do cliente. O runner já aplica a MESMA guarda (`collapseEchoedSegments`)
@@ -188,7 +196,12 @@ function groupAdjacentText(parts: RenderablePart[]): RenderableSegment[] {
 	};
 
 	for (const part of parts) {
-		if (part.kind === "transition") continue;
+		// Transição e status de ferramenta são fronteiras invisíveis: fecham o
+		// balão corrente e não viram segmento próprio.
+		if (part.kind === "transition" || part.kind === "tool") {
+			flush();
+			continue;
+		}
 		if (part.kind === "text") {
 			buffer.push({ id: part.id, text: part.text });
 			continue;
@@ -231,15 +244,6 @@ export function ChatMessage({
 	const isResumed = message.metadata?.resumed === true;
 	const isInteractive = isLast;
 	void isResumed;
-	const [completedTextIds, setCompletedTextIds] = useState<Set<string>>(() => new Set());
-	const handleTextComplete = useCallback((id: string) => {
-		setCompletedTextIds((prev) => {
-			if (prev.has(id)) return prev;
-			const next = new Set(prev);
-			next.add(id);
-			return next;
-		});
-	}, []);
 
 	const animationProps =
 		isNew && !prefersReduced
@@ -271,12 +275,14 @@ export function ChatMessage({
 	const transitionParts = parts.filter(
 		(p): p is Extract<RenderablePart, { kind: "transition" }> => p.kind === "transition",
 	);
+	// `tool` fica na lista (é fronteira de agrupamento), mas não é conteúdo: não
+	// conta como "tem algo visual na tela" pro balão de "digitando".
 	const inlineSegments = parts.filter((p) => p.kind !== "transition");
 	const totalTextLength = inlineSegments.reduce(
 		(acc, s) => (s.kind === "text" ? acc + s.text.length : acc),
 		0,
 	);
-	const hasNonTextVisuals = inlineSegments.some((s) => s.kind !== "text");
+	const hasNonTextVisuals = inlineSegments.some((s) => s.kind !== "text" && s.kind !== "tool");
 	const isStreamingEmpty = isStreaming && isLast && totalTextLength === 0 && !hasNonTextVisuals;
 	const currentTool = latestToolName(message);
 	// O "DIGITANDO" SÓ EXISTE ANTES DA PRIMEIRA PALAVRA DO TURNO.
@@ -331,29 +337,17 @@ export function ChatMessage({
 									-1,
 								);
 								const isStreamingLast = isStreaming && isLast;
-								const allTextsBeforeReady = (idx: number): boolean => {
-									for (let j = 0; j < idx; j++) {
-										const s = segments[j];
-										if (s.kind === "text-group" && !completedTextIds.has(s.id)) return false;
-									}
-									return true;
-								};
 								return segments.map((segment, i) => {
 									if (segment.kind === "text-group") {
-										const isFinal = i < segments.length - 1 || !isStreamingLast;
 										return (
 											<TextBubble
 												key={segment.id}
-												id={segment.id}
 												text={segment.text}
 												reducedMotion={prefersReduced}
 												showCursor={isStreamingLast && i === lastTextIdx}
-												isFinal={isFinal}
-												onComplete={handleTextComplete}
 											/>
 										);
 									}
-									if (!allTextsBeforeReady(i)) return null;
 									if (segment.kind === "artifact") {
 										return (
 											<motion.div
@@ -527,32 +521,23 @@ function HandoffPrompt(_props: { data: HandoffPartData }) {
 }
 
 function TextBubble({
-	id,
 	text,
 	reducedMotion,
 	showCursor,
-	isFinal,
-	onComplete,
 }: {
-	id: string;
 	text: string;
 	reducedMotion: boolean;
 	showCursor: boolean;
-	isFinal: boolean;
-	onComplete?: (id: string) => void;
 }) {
 	const smoothed = useSmoothText(text, 110);
 	const stillTyping = smoothed.length < text.length;
 	const cursor = showCursor || stillTyping;
 
-	useEffect(() => {
-		if (!stillTyping && isFinal) onComplete?.(id);
-	}, [stillTyping, isFinal, onComplete, id]);
-
 	const proseClass =
 		"prose prose-sm max-w-none dark:prose-invert prose-p:my-0.5 prose-p:leading-snug prose-ul:my-0.5 prose-ol:my-0.5 prose-li:my-0 prose-strong:text-foreground prose-headings:text-foreground prose-headings:text-sm prose-headings:font-semibold prose-headings:my-1 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0";
 	return (
 		<motion.div
+			data-testid="balao-texto"
 			initial={reducedMotion ? false : { opacity: 0, y: 6 }}
 			animate={{ opacity: 1, y: 0 }}
 			transition={{ duration: 0.3, ease: "easeOut" }}

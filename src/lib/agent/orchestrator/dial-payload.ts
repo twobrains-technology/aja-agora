@@ -174,8 +174,13 @@ export function offerSnapshotFromArtifact(
 		lanceScenario?.expectedTermMonths && lanceScenario.expectedTermMonths > 0
 			? Math.round(lanceScenario.expectedTermMonths)
 			: undefined;
+	// Zero é VALOR, não ausência: `percent: 0` é a recusa ao lance embutido
+	// gravada pelo plano (plan-estimate.ts) e o dial tem que respeitá-la — se o
+	// zero sumir aqui, o motor cai no teto padrão de 30%.
 	const maxEmbutidoPct =
-		embeddedBid?.percent && embeddedBid.percent > 0 ? round2(embeddedBid.percent) : undefined;
+		typeof embeddedBid?.percent === "number" && embeddedBid.percent >= 0
+			? round2(embeddedBid.percent)
+			: undefined;
 
 	// FIX-40: lance médio do grupo (R$) quando o artifact o carrega — defensivo
 	// (>0); ausente → âncora não entra no snapshot (nunca inventa, regra D11).

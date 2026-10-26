@@ -26,8 +26,9 @@ type ResumePayload = {
 	messages: {
 		id: string;
 		role: "user" | "assistant";
-		content: string;
-		artifact?: { type: string; payload: unknown };
+		parts: Array<
+			{ type: "text"; text: string } | { type: "artifact"; artifactType: string; payload: unknown }
+		>;
 	}[];
 	messageCount: number;
 	gate?: { kind: string } | null;
@@ -46,28 +47,28 @@ type ResumeState =
 	  }
 	| { phase: "ready"; conversationId?: string; messages?: AjaUIMessage[] };
 
-/** Converte o payload do resume nas mensagens hidratadas (FIX-49: marca resumed). */
-function toResumedMessages(conv: ResumePayload): AjaUIMessage[] {
+/** Converte o payload do resume nas mensagens hidratadas (FIX-49: marca resumed).
+ *
+ * As partes vêm do servidor NA ORDEM persistida — texto → card → texto quando
+ * foi assim — e são remontadas nessa ordem. Antes o payload só trazia o texto e
+ * UM artifact por mensagem, então a reconstrução era sempre [texto, card] e o
+ * card voltava pro fim da tela a cada recarregada. */
+export function toResumedMessages(conv: ResumePayload): AjaUIMessage[] {
 	return conv.messages.map(
 		(m) =>
 			({
 				id: m.id,
 				role: m.role,
-				// Card volta como CARD. Antes tudo virava `text`, então ao retomar/dar
-				// refresh o cliente via a linha marcadora "[card: tipo]" em vez do
-				// componente.
-				parts: [
-					...(m.content ? [{ type: "text", text: m.content }] : []),
-					...(m.artifact
-						? [
-								{
-									type: "data-artifact",
-									id: `${m.id}-artifact`,
-									data: { type: m.artifact.type, payload: m.artifact.payload },
-								},
-							]
-						: []),
-				],
+				parts: m.parts.map((part, i) =>
+					part.type === "text"
+						? { type: "text", text: part.text }
+						: {
+								// Card volta como CARD, não como a linha marcadora "[card: tipo]".
+								type: "data-artifact",
+								id: `${m.id}-${i}`,
+								data: { type: part.artifactType, payload: part.payload },
+							},
+				),
 				// FIX-49: marca o histórico hidratado — a UI ancora o scroll, mostra a
 				// âncora "Você voltou" e sela artifacts/gates antigos.
 				metadata: { resumed: true },

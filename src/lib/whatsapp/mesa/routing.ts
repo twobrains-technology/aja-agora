@@ -120,7 +120,13 @@ export async function handleMesaCopilot(from: string, text: string): Promise<voi
 
 	const history = historyRows.map((r) => ({ role: r.role, content: r.content }));
 
-	const reply = await generateMesaCopilotReply({ caso, history });
+	// A conversa de origem vai junto: é ela que liga a linha de custo do copiloto
+	// (`uso_de_ia.conversation_id`) ao atendimento que o gerou (P314).
+	const reply = await generateMesaCopilotReply({
+		caso,
+		history,
+		conversationId: handoff.conversationId,
+	});
 
 	// Persiste o reply CRU (histórico = palavras reais do agente; formatação é só
 	// apresentação). Ao ENVIAR, formata pro WhatsApp e divide em chunks ≤ 4096 —
@@ -311,7 +317,12 @@ async function pushOpeningOrientation(handoffId: string, attendantPhone: string)
 		if (!handoff) return;
 
 		const caso = await buildCaso(handoff);
-		const opening = await generateMesaCopilotOpening({ caso });
+		// A conversa de origem vai junto (P314) — mesma linha de custo do Q&A: a chamada de
+		// LLM que orienta o atendente no claim tem que entrar no CPC da conversa.
+		const opening = await generateMesaCopilotOpening({
+			caso,
+			conversationId: handoff.conversationId,
+		});
 		if (!opening?.trim()) return;
 
 		await db

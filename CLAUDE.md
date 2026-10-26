@@ -95,41 +95,47 @@ cedilha e til. Acento faltando é defeito de entrega.
 
 | O quê | Onde |
 |---|---|
-| Runtime (único) | LangGraph — `src/lib/agent/langgraph/` — `graph.ts` é a topologia |
-| Directives/cards/tool-policy (compartilhado com o grafo) | `src/lib/agent/orchestrator/` |
-| Ordem do funil | `nextGate` em `src/lib/agent/qualify-state.ts` — **o código é a fonte** |
-| Tools por fase | `src/lib/agent/orchestrator/tool-policy.ts` |
-| Prompt | `src/lib/agent/system-prompt.ts` — **mas leia a seção abaixo antes de editar** |
+| Runtime (único) | motor Pi — `src/lib/agent/pi/turno-livre.ts` (LangGraph morreu em 2026-10-21: não existe `src/lib/agent/langgraph/`) |
+| Conduta do agente — o ÚNICO texto de conduta | `PROMPT_DO_VENDEDOR` em `src/lib/agent/prompt-do-vendedor.ts` é a **semente/fallback**; a versão viva está na tabela `caixa_de_prompt` (`src/lib/agent/box/caixa.ts`) |
+| Conhecimento da Bevi (2 skills, lidas do disco) | `src/lib/agent/pi/skills/*/SKILL.md` |
+| Tools do motor livre | `src/lib/agent/pi/tools-livres.ts` |
+| Cards — o que aparece na tela | `src/lib/chat/types.ts` → `ArtifactType` (22 tipos); componente em `src/components/chat/artifacts/` |
 | Sonda de variância de fala | `pnpm sonda:variancia` |
 
 Documentação em `docs/` é **histórico, não lei**. ADR antigo que não faz sentido hoje: ignore ou
 apague. O código manda.
 
+> **Correção de 2026-10-21.** Até 19–20/10 este projeto tinha funil em código (`nextGate`,
+> `qualify-state.ts`, `orchestrator/tool-policy.ts`, ~22 blocos de conduta montados em `converse.ts`)
+> e prompt gerenciado no Langfuse. **Nada disso existe mais** nesta branch: o funil foi morto no
+> commit `268e6d8a` ("mata o funil — gate, regras e cards escolhidos pelo modelo") e o Langfuse saiu
+> na fase 2 do motor Pi. Texto deste arquivo que ainda fale de funil, gate ou Langfuse é **histórico**.
+
 ## ⚠️ O prompt NÃO vive só no repositório
 
-Aqui o código **não** é a fonte da verdade em produção, e essa é a única exceção à frase acima.
+**Reescrito em 2026-10-21 — o Langfuse saiu, a caixa virou tabela no banco.** A conduta do agente
+vive em `caixa_de_prompt` (uma linha por VERSÃO). `lerCaixa()` (`src/lib/agent/box/caixa.ts`) pega
+a maior versão da label do ambiente, e o motor usa esse texto em `pi/turno-livre.ts:181-182`. O
+texto do código (`PROMPT_DO_VENDEDOR`, em `src/lib/agent/prompt-do-vendedor.ts`) é **semente e
+fallback** — banco fora do ar não derruba turno.
 
-`fetchManagedPrompt` (`src/lib/observability/langfuse/prompts.ts`) busca no Langfuse o prompt com
-label `production` e só usa a constante do código como **fallback** (Langfuse fora do ar). Dois
-textos passam por aí: `SYSTEM_PROMPT` (`src/lib/agent/system-prompt.ts`) e
-`BASE_SYSTEM_INSTRUCTION` (`src/lib/agent/turn-analyzer.ts`).
+**As duas consequências continuam as mesmas:**
 
-**As duas consequências, que são a mesma moeda:**
+- Editar o texto do código, commitar e **deployar NÃO muda o agente** quando há versão publicada na
+  caixa — a caixa vence.
+- Publicar uma versão nova na caixa muda a conduta **sem deploy e sem review**
+  (`scripts/publicar-prompt-do-vendedor.ts`).
 
-- Editar o prompt no código, commitar e **deployar NÃO muda o agente**. Enquanto ninguém publicar,
-  produção continua servindo a versão antiga.
-- Editar o texto na UI do Langfuse **muda o agente em produção em ≤60s**, sem deploy e sem review.
+**A regra, então: mexeu na conduta, o trabalho só acaba com a caixa publicada na label certa** — e
+confira a label que o script imprime, porque publicar na label errada muda o ambiente errado (foi
+assim que publicar em dev mexeu em produção em 17/10, com três versões publicadas e revertidas).
 
-**A regra, então: mexeu em `SYSTEM_PROMPT` ou `BASE_SYSTEM_INSTRUCTION`, o trabalho só acaba com
-`pnpm sync-prompts` rodado contra a instância certa.** O `.env.local` costuma apontar para a
-instância local, e o SDK é no-op por design — sincronizar a errada termina com "ok" sem ter escrito
-nada onde importa. Confira a URL que o script imprime.
-
-`pnpm prompts:check` responde "produção está rodando o que está no repo?" e falha (exit 1) listando
-as linhas divergentes. Rode antes de dar um defeito de fala por corrigido: **você pode estar
+`pnpm prompts:check` compara o texto do repo com a versão publicada na caixa e **falha (exit 1)**
+quando não há versão publicada — divergência é aviso, não erro (publicar é justamente o caminho para
+mudar conduta sem deploy). Rode antes de dar um defeito de fala por corrigido: **você pode estar
 depurando um texto que o modelo nunca recebeu.**
 
-Isto não é hipótese. Em 2026-08-15 o `aja-turn-analyzer` estava publicado na **v1 de 07/08**
+Isto não é hipótese (caso histórico, ainda vale como lição). Em 2026-08-15 o `aja-turn-analyzer` estava publicado na **v1 de 07/08**
 enquanto o código, desde 14/08 (`3deb8207`), já trazia os exemplos que separam "200 por mês"
 (parcela) de "200 mil" (valor do bem) — o fix do incidente que matou uma venda. Ninguém foi
 avisado, porque nenhum teste, log ou alerta olhava para isso.

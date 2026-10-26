@@ -10,12 +10,13 @@
 import { type SQL, sql } from "drizzle-orm";
 import { PADRAO_ROBO_SQL } from "@/lib/attribution/user-agent-robo";
 import type { ArtifactType } from "@/lib/chat/types";
-import type { EtapaDoFunil, RecorteAB } from "@/lib/experimentos/registro";
 // O ciclo com `filtro-variante` é de CHAMADA, não de inicialização: os dois
 // módulos só usam o outro dentro de função (nenhum `const` de topo depende do
 // outro). Existe porque o FATO da etapa mora aqui (fonte única do funil) e o
 // FRAGMENTO que o lê mora lá — separar os dois exigiria um terceiro módulo, e
 // duplicar o fato é o defeito que este arquivo existe para impedir.
+import { CHAVE_DO_TESTE_NO_METADATA } from "@/lib/chat/variante-da-visita";
+import type { EtapaDoFunil, RecorteAB } from "@/lib/experimentos/registro";
 import { condicaoDeBracoDaPessoa } from "./filtro-variante";
 import { ESTAGIOS_QUALIFICADOS } from "./lead-stages";
 
@@ -267,7 +268,25 @@ export function leadComContato(lead: SQL = sql`l`): SQL {
  *
  * A regra é a do dono (23/09/2026), por CANAL: conversa de WhatsApp (`waId`
  * presente) conta sempre; conversa de web conta quando conseguimos coletar o
- * contato (telefone ou e-mail no lead, com `is_simulated = false`).
+ * contato.
+ *
+ * **"Identificado" é contato ALCANÇÁVEL — telefone ou e-mail no LEAD.** É a
+ * definição da `main` (`a2bc3024`) e a única que o degrau pode ter: o time não
+ * chama quem só deixou o CPF.
+ *
+ * **O que NÃO entra, e por quê.** `conversations.contact_id` e
+ * `metadata.identityCollected` chegaram a ser aceitos aqui quando o vendedor
+ * livre passou a capturar identidade — a intenção era contar quem se
+ * identificou pelo motor novo, e o efeito foi contar quem deixou SÓ o CPF:
+ * `attachContact` cria o contato e `storeIdentity` liga a flag antes (ou sem)
+ * o celular chegar. CPF isolado não é contato alcançável, e o degrau inflava no
+ * filtro `?identificavel=true`, na Performance, nas Campanhas, no A/B e na
+ * Exportação (P048/P061/P206/L05).
+ *
+ * **O telefone do vendedor livre continua contando.** O celular capturado na
+ * web é gravado no LEAD por `vincularCelularAoLead`
+ * (`src/lib/conversation/identity.ts`) — é essa gravação que sustenta este
+ * predicado; sem ela o degrau cairia para perto de zero (L05).
  *
  * O `EXISTS` (e não um `JOIN`) é o que mantém a conversa na lista quando ela não
  * tem linha em `leads` — que é o caso de quase metade das conversas de WhatsApp
@@ -279,7 +298,7 @@ export function conversaIdentificada(conversa: SQL = sql`c`): SQL {
     OR EXISTS (SELECT 1 FROM leads li
       WHERE li.conversation_id = ${conversa}.id
         AND li.is_simulated = false
-        AND (li.phone IS NOT NULL OR li.email IS NOT NULL))
+        AND ${contatoInformadoPeloCliente(sql`li`)})
   )`;
 }
 
@@ -460,9 +479,6 @@ export const CLASSIFICACAO_DOS_ARTIFACTS: Record<ArtifactType, boolean> = {
  * FONTE ÚNICA: derivada de `CLASSIFICACAO_DOS_ARTIFACTS` acima — não existe
  * segunda lista. Usada pelo painel de Performance/Percurso e pelo endpoint do
  * teste do telefone. */
-/** A chave em `conversations.metadata` do estado do desbloqueio do telefone. */
-import { CHAVE_DO_TESTE_NO_METADATA } from "@/lib/chat/variante-da-visita";
-
 export const ARTIFACTS_DE_OFERTA: readonly ArtifactType[] = (
 	Object.keys(CLASSIFICACAO_DOS_ARTIFACTS) as ArtifactType[]
 ).filter((tipo) => CLASSIFICACAO_DOS_ARTIFACTS[tipo]);
@@ -478,58 +494,105 @@ export const ARTIFACTS_DE_OFERTA_SQL = sql.join(
 export const PADRAO_SQL_DE_OFERTA = ARTIFACTS_DE_OFERTA.map((tipo) => `'${tipo}'`).join(", ");
 
 /**
- * A OFERTA PREPARADA E NÃO ENTREGUE NÃO CONTA COMO "VIU OFERTA".
+ * A OFERTA PREVENIDA E NÃO ENTREGUE NÃO CONTA COMO "VIU OFERTA".
  *
- * O teste do telefone (29/09/2026) criou dois estados em que a comparação é
- * buscada mas o cliente NÃO lê número nenhum: `pede-antes` (A), em que o reveal
- * é RETIDO no adapter até o telefone chegar, e `borrado` (B), em que os cards vão
- * à tela EMBACADOS. Nos dois o nó `persist` grava os artifacts assim mesmo — a
- * gravação acontece antes de o adapter reter/borrar, e é o banco que guarda a
- * comparação para re-emitir quando o telefone chega.
+ * Portado da main (a2bc3024, 06/10/2026), medido em produção: 9 conversas contavam
+ * como "viu oferta" sem o cliente ter lido número nenhum. No braço A do teste do
+ * telefone o reveal é RETIDO no adapter até o telefone chegar; no B os cards vão à
+ * tela EMBACADOS. Nos dois o nó persist grava os artifacts assim mesmo (a gravação
+ * acontece antes de o adapter reter/borrar — é o banco que guarda a comparação para
+ * re-emitir quando o telefone chega). Contar o artifact ali era afirmar que a pessoa
+ * viu número que ela nunca leu.
  *
- * Consequência medida em produção em 06/10/2026: 9 conversas contavam como "viu
- * oferta" sem o cliente ter lido nada — no braço A não apareceu nada, no B
- * apareceu borrado. Quem NÃO deixou o telefone não viu a oferta; quem deixou viu
- * (o desbloqueio é o que libera a leitura, e fica gravado em `desbloqueadoEm`).
+ * A regra é a do dono: sem telefone, não conta que viu. WhatsApp é exceção — ali o
+ * telefone é o próprio waId, não existe card e a comparação chega legível. Por isso o
+ * canal entra na condição: sem ele, o guard apagaria do funil toda conversa de WhatsApp.
  *
- * **WhatsApp é exceção e não tem teste:** ali o telefone é o próprio `waId`,
- * não existe card e a comparação chega legível. Por isso o canal entra na
- * condição — sem ele, o guard apagaria do funil toda conversa de WhatsApp.
+ * O predicado é `NOT` desta função dentro de `viuOferta`, e mora aqui, junto da lista
+ * de artifacts: é a MESMA pergunta, feita pelo funil, pelo Percurso, pela exportação e
+ * pela régua.
  *
- * O predicado é `NOT` desta função no `viuOferta`, e mora aqui, junto da lista de
- * artifacts: é a MESMA pergunta ("este cliente viu número de oferta?") feita
- * pelo funil, pelo Percurso, pela exportação e pela régua.
+ * **A TRAVA MORREU (2026-10-20) E A CONVERSA NOVA CONTINUA ROTULADA A/B.** O vendedor
+ * livre mostra a carta antes de pedir qualquer dado e o adapter não retém nem embaça
+ * nada (`src/lib/web/adapter.ts`) — mas a fila do experimento continua sorteando o
+ * braço no metadata de toda conversa web nova. Sem uma âncora, o guard apagava do
+ * funil justamente as ofertas legíveis do motor novo (N01).
+ *
+ * A âncora é o CARD DO TELEFONE: enquanto a trava esteve de pé, cada card que
+ * revelava oferta saía acompanhado de `telefone_do_desbloqueio` (era ele que segurava
+ * ou embaçava o reveal) e ele é persistido junto. Sem esse card na conversa, nada foi
+ * retido — não há o que descontar. É fato da própria conversa, e não um corte por
+ * data: conversa antiga sem card também nunca teve reveal retido.
+ *
+ * **E A RETENÇÃO É DA OFERTA, NÃO DA CONVERSA (P208/P280/P322/L28/N01).** A âncora
+ * nasceu como um `EXISTS` global na conversa, e aí uma conversa que retomou no
+ * vendedor livre — antiga, com card de telefone retido e variante sorteada — ficava
+ * excluída para SEMPRE: a oferta legível emitida depois, que o cliente leu, não
+ * contava em tela nenhuma. Este predicado responde só o que é da CONVERSA (canal,
+ * braço sorteado, desbloqueio) e mora inteiro aqui; o recorte por OFERTA/TURNO está
+ * em `ofertaNoTurnoRetido`, que recebe a mensagem da oferta.
  */
 export function ofertaRetidaPeloTelefone(conversa: SQL = sql`c`): SQL {
-	return sql`(
-    ${conversa}.channel = 'web'
+	return sql`(${conversa}.channel = 'web'
     AND COALESCE(${conversa}.metadata -> ${CHAVE_DO_TESTE_NO_METADATA} ->> 'variante', '') IN ('A', 'B')
-    AND (${conversa}.metadata -> ${CHAVE_DO_TESTE_NO_METADATA} ->> 'desbloqueadoEm') IS NULL
-  )`;
+    AND (${conversa}.metadata -> ${CHAVE_DO_TESTE_NO_METADATA} ->> 'desbloqueadoEm') IS NULL)`;
 }
 
 /**
- * O CLIENTE VIU NÚMERO DE OFERTA — existe um artefato de oferta na conversa.
+ * ESTA oferta saiu no TURNO em que a trava estava de pé — e por isso não conta.
  *
- * É o degrau "Viram oferta" do funil de mídia, da escada do Percurso e da
- * exportação. Fonte única dos três: enquanto o `EXISTS` morava copiado em cada
- * consulta, uma correção valia para uma tela e não para a outra.
+ * O turno é a unidade, não a mensagem: o nó `persist` grava os artifacts da oferta
+ * quando o turno fecha e o adapter grava o `telefone_do_desbloqueio` logo depois, ao
+ * drenar o stream — as duas coisas caem em mensagens DIFERENTES, separadas por
+ * milissegundos. O que as liga é não haver fala do cliente entre elas: fala do
+ * cliente ABRE turno novo.
  *
- * **E não conta a oferta que o cliente não chegou a ver** (ver
- * `ofertaRetidaPeloTelefone`): no braço A o reveal é retido até o telefone, no B
- * ele sai embaçado — e nos dois o artifact fica gravado. Contar o artifact ali
- * era afirmar que a pessoa viu número que ela nunca leu.
+ * É o que separa dois fatos que o `EXISTS` global confundia:
+ *
+ *  · a oferta emitida sob a trava (mesmo turno do card) continua não contada, por
+ *    mais velha que seja a conversa;
+ *  · a oferta emitida DEPOIS — turno novo, com fala do cliente no meio — foi para a
+ *    tela legível (a trava não existe mais desde 2026-10-20) e conta.
+ *
+ * A comparação é simétrica de propósito (`LEAST`/`GREATEST`): o adapter grava o card
+ * DEPOIS dos cards de oferta do mesmo turno, então exigir "card antes da oferta"
+ * deixaria a oferta retida antiga contando — exatamente o número que a main não
+ * contava.
+ */
+export function ofertaNoTurnoRetido(conversa: SQL = sql`c`, mensagemDaOferta: SQL = sql`m`): SQL {
+	return sql`(${ofertaRetidaPeloTelefone(conversa)}
+    AND EXISTS (SELECT 1 FROM messages mt
+      JOIN artifacts at ON at.message_id = mt.id
+      WHERE mt.conversation_id = ${conversa}.id
+        AND at.type = 'telefone_do_desbloqueio'
+        AND NOT EXISTS (SELECT 1 FROM messages mu
+          WHERE mu.conversation_id = ${conversa}.id
+            AND mu.role = 'user'
+            AND mu.created_at > LEAST(mt.created_at, ${mensagemDaOferta}.created_at)
+            AND mu.created_at < GREATEST(mt.created_at, ${mensagemDaOferta}.created_at))))`;
+}
+
+/**
+ * O CLIENTE VIU NÚMERO DE OFERTA — existe uma oferta que ele pôde LER na tela.
+ *
+ * É o degrau "Viram oferta" do funil de mídia, da escada do Percurso, da
+ * exportação, do A/B e da macro-fase da régua. Fonte única de todos: enquanto o
+ * `EXISTS` morava copiado em cada consulta, uma correção valia para uma tela e não
+ * para a outra.
+ *
+ * A retenção é perguntada por OFERTA (`ofertaNoTurnoRetido`): uma conversa antiga
+ * pode ter uma oferta retida e outra legível, e a legível é a que o cliente leu.
  *
  * O alias da conversa entra por parâmetro pelo mesmo motivo dos outros
  * fragmentos (`c` nas telas de hoje) — amarrar ao alias faria o fragmento
  * compilar num lugar e explodir no outro.
  */
 export function viuOferta(conversa: SQL = sql`c`): SQL {
-	return sql`(EXISTS (SELECT 1 FROM messages m
+	return sql`EXISTS (SELECT 1 FROM messages m
     JOIN artifacts a ON a.message_id = m.id
     WHERE m.conversation_id = ${conversa}.id
-      AND a.type IN (${ARTIFACTS_DE_OFERTA_SQL}))
-    AND NOT ${ofertaRetidaPeloTelefone(conversa)})`;
+      AND a.type IN (${ARTIFACTS_DE_OFERTA_SQL})
+      AND NOT ${ofertaNoTurnoRetido(conversa, sql`m`)})`;
 }
 
 /**

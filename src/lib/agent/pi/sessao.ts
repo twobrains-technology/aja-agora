@@ -163,11 +163,51 @@ export async function abrirSessao(args: {
 	const modelo = runtime.getModel(provider.id, provider.model);
 	if (!modelo) throw new Error(`[pi/sessao] modelo ${provider.id}/${provider.model} não resolvido`);
 
-	// Histórico do banco → entries da sessão (papel + texto, nada de framework).
-	const entries = (args.historico ?? []).map((m) => ({
-		type: "message" as const,
-		message: { role: m.role, content: [{ type: "text" as const, text: m.content }] },
-	}));
+	// Histórico do banco → entries da sessão. Cada entry PRECISA de `id` e `parentId`
+	// encadeados: o SessionManager monta o contexto andando do leaf até a raiz pelos
+	// `parentId`. Sem eles só a ÚLTIMA mensagem sobrevive e o agente fica sem memória
+	// (medido em 25/10/2026: "50 mil" respondido como se a conversa tivesse acabado de
+	// abrir, de novo "oi, bem-vindo").
+	let anterior: string | null = null;
+	const base = Date.now() - (args.historico?.length ?? 0) * 1000;
+	const entries = (args.historico ?? []).map((m, i) => {
+		const id = `hist-${i}`;
+		const quando = base + i * 1000;
+		const entry = {
+			type: "message" as const,
+			id,
+			parentId: anterior,
+			timestamp: new Date(quando).toISOString(),
+			message:
+				m.role === "assistant"
+					? {
+							role: "assistant" as const,
+							content: [{ type: "text" as const, text: m.content }],
+							// O pi lê `usage` das falas do assistente ao estimar o contexto; sem ele
+							// o turno morre com "Cannot read properties of undefined (totalTokens)".
+							api: "openai-completions",
+							provider: provider.id,
+							model: provider.model,
+							usage: {
+								input: 0,
+								output: 0,
+								cacheRead: 0,
+								cacheWrite: 0,
+								totalTokens: 0,
+								cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+							},
+							stopReason: "stop" as const,
+							timestamp: quando,
+						}
+					: {
+							role: "user" as const,
+							content: [{ type: "text" as const, text: m.content }],
+							timestamp: quando,
+						},
+		};
+		anterior = id;
+		return entry;
+	});
 
 	const { session } = await createAgentSession({
 		cwd,

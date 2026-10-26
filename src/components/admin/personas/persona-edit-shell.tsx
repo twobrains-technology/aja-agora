@@ -1,13 +1,12 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { FormProvider, useForm } from "react-hook-form";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import type {
 	PersonaCampaign,
 	PersonaExample,
@@ -17,12 +16,10 @@ import type {
 import { getCategoryMeta } from "@/lib/agent/categories";
 import type { PersonaRow } from "@/lib/agent/system-prompt";
 import { type UpdatePersonaInput, updatePersonaSchema } from "@/lib/validations/persona";
-import { AIAssistantSidebar } from "./ai-assistant-sidebar";
 import { ForbiddenTopicListSection } from "./forbidden-topic-list-section";
 import { HandoffTriggerListSection } from "./handoff-trigger-list-section";
 import { PersonaExamplesSection } from "./persona-examples-section";
 import { PersonaIdentitySection } from "./persona-identity-section";
-import { PersonaPreviewPanel } from "./persona-preview-panel";
 
 type FormValues = {
 	displayName: string;
@@ -82,9 +79,12 @@ export function PersonaEditShell({ persona }: { persona: PersonaRow }) {
 
 	return (
 		<FormProvider {...form}>
-			{/* Layout em flex: em ≥lg (≥1024px, notebook 13" cabe), sidebar
-          persistente do lado direito com largura fixa (~400px). Em <lg,
-          sidebar vira Sheet toggleable via botão "AI Assistant" no header. */}
+			{/* UI MORTA REMOVIDA em 25/10/2026: o editor tinha uma sidebar de "AI
+			    Assistant" e um painel de preview que chamavam rotas que não existem
+			    (`/api/admin/admin/personas/[id]/assist`, `/api/admin/personas/[id]/preview`,
+			    `/api/admin/personas/preview`). Nenhum `route.ts` correspondia — as telas
+			    abriam, o botão aparecia e o request caía em 404. O preview de verdade mora
+			    em `/admin/caixa/previa`. */}
 			<div className="flex flex-col lg:flex-row lg:gap-6 lg:items-start">
 				<form
 					onSubmit={form.handleSubmit(onSubmit)}
@@ -110,21 +110,6 @@ export function PersonaEditShell({ persona }: { persona: PersonaRow }) {
 							{submitSuccess && !isDirty && (
 								<span className="text-sm text-muted-foreground">Salvo ✓</span>
 							)}
-							{/* Sheet toggleable apenas em <lg. Em ≥lg, sidebar persistente
-                  do lado direito é a fonte primária. */}
-							<Sheet>
-								<SheetTrigger
-									render={
-										<Button type="button" variant="outline" size="sm" className="lg:hidden">
-											<Sparkles className="size-3.5 text-primary" />
-											AI Assistant
-										</Button>
-									}
-								/>
-								<SheetContent side="right" className="w-full sm:max-w-[420px] p-0">
-									<AIAssistantSidebar personaId={persona.id} formMethods={form} />
-								</SheetContent>
-							</Sheet>
 							<Button type="submit" disabled={!isDirty || isSubmitting}>
 								{isSubmitting && <Loader2 className="size-3.5 animate-spin" />}
 								Salvar alterações
@@ -144,29 +129,15 @@ export function PersonaEditShell({ persona }: { persona: PersonaRow }) {
 						</div>
 					)}
 
-					<div className="grid grid-cols-1 2xl:grid-cols-3 gap-6">
-						<div className="space-y-6 2xl:col-span-2 min-w-0">
+					<div className="grid grid-cols-1 gap-6">
+						<div className="space-y-6 min-w-0">
 							<PersonaIdentitySection persona={persona} />
 							<PersonaExamplesSection />
 							<HandoffTriggerListSection />
 							<ForbiddenTopicListSection />
 						</div>
-						<div className="2xl:sticky 2xl:top-4 2xl:self-start 2xl:col-span-1">
-							<PersonaPreviewPanel personaId={persona.id} />
-						</div>
 					</div>
 				</form>
-
-				{/* Sidebar persistente em ≥lg. Em <lg fica oculta; o Sheet cobre. */}
-				<aside
-					className="hidden lg:block lg:w-[380px] xl:w-[420px] lg:shrink-0 lg:sticky lg:top-4 lg:self-start lg:h-[calc(100vh-2rem)]"
-					aria-label="AI Assistant"
-					data-testid="ai-assistant-persistent"
-				>
-					<div className="h-full rounded-xl border bg-card overflow-hidden shadow-sm">
-						<AIAssistantSidebar personaId={persona.id} formMethods={form} />
-					</div>
-				</aside>
 			</div>
 		</FormProvider>
 	);

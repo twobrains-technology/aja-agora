@@ -29,6 +29,41 @@ interface MessageListProps {
 	onRetry?: () => void;
 }
 
+/** A "assinatura" de uma fala pro dedupe: papel + o texto que aparece no balão.
+ * Card não entra — mensagem com card não é repetição de reconciliação. */
+function assinaturaDaFala(message: AjaUIMessage): string | null {
+	const temCard = message.parts.some((p) => p.type !== "text");
+	if (temCard) return null;
+	const texto = message.parts
+		.map((p) => (p.type === "text" ? p.text : ""))
+		.join("")
+		.trim();
+	if (texto.length === 0) return null;
+	return `${message.role}:${texto}`;
+}
+
+/** A MESMA PERGUNTA NÃO APARECE DUAS VEZES.
+ *
+ * A reconciliação do stream (e a volta do eco pelo bus, quando o id não casa)
+ * pode entregar a mesma fala duas vezes seguidas, com ids diferentes. Antes o
+ * cliente levava dois balões idênticos e lia a própria pergunta repetida —
+ * parecia que o bot não tinha escutado. Aqui a repetição ADJACENTE de mesmo
+ * papel e mesmo texto é mostrada uma vez só.
+ *
+ * Repetição separada por uma resposta do agente NÃO é duplicata: é o cliente
+ * falando de novo, e continua aparecendo. */
+export function semRepeticaoAdjacente(messages: AjaUIMessage[]): AjaUIMessage[] {
+	const out: AjaUIMessage[] = [];
+	let anterior: string | null = null;
+	for (const message of messages) {
+		const assinatura = assinaturaDaFala(message);
+		if (assinatura !== null && assinatura === anterior) continue;
+		anterior = assinatura;
+		out.push(message);
+	}
+	return out;
+}
+
 export function MessageList({ messages, isStreaming, hasError, onRetry }: MessageListProps) {
 	const scrollContainerRef = useRef<HTMLDivElement>(null);
 	const sentinelRef = useRef<HTMLDivElement>(null);
@@ -49,7 +84,8 @@ export function MessageList({ messages, isStreaming, hasError, onRetry }: Messag
 	const touchStartY = useRef<number | null>(null);
 	// FIX-49: âncora de retomada — índice da última mensagem hidratada (histórico).
 	// O divisor "Você voltou" entra logo depois dela (antes do 1º turno novo).
-	const lastResumedIndex = messages.reduce((acc, m, i) => (m.metadata?.resumed ? i : acc), -1);
+	const visiveis = semRepeticaoAdjacente(messages);
+	const lastResumedIndex = visiveis.reduce((acc, m, i) => (m.metadata?.resumed ? i : acc), -1);
 
 	const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
 		programmaticRef.current = true;
@@ -126,7 +162,7 @@ export function MessageList({ messages, isStreaming, hasError, onRetry }: Messag
 		scrollToBottom("smooth");
 	}, [scrollToBottom]);
 
-	const hasMessages = messages.length > 0;
+	const hasMessages = visiveis.length > 0;
 	const showPill = !stick && hasMessages && userScrolled;
 
 	return (
@@ -146,8 +182,8 @@ export function MessageList({ messages, isStreaming, hasError, onRetry }: Messag
 
 				{(() => {
 					let activeCategory: Category | null = null;
-					return messages.map((message, index) => {
-						const isLast = index === messages.length - 1;
+					return visiveis.map((message, index) => {
+						const isLast = index === visiveis.length - 1;
 						const showRetry = isLast && message.role === "assistant" && hasError && !!onRetry;
 						const transitionPart = message.parts.find((p) => p.type === "data-transition");
 						if (transitionPart) {
@@ -157,7 +193,7 @@ export function MessageList({ messages, isStreaming, hasError, onRetry }: Messag
 							<Fragment key={message.id}>
 								<ChatMessage
 									message={message}
-									isNew={index >= messages.length - 2}
+									isNew={index >= visiveis.length - 2}
 									onRetry={showRetry ? onRetry : undefined}
 									isStreaming={isStreaming}
 									isLast={isLast}
