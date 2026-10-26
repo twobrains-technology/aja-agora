@@ -443,6 +443,36 @@ describe("L44/P212 — o valor declarado entra no estado antes da busca", () => 
 		expect(meta.currentCategory).toBe("auto");
 	});
 
+	// RODADA 9 / P212 — o molde não atravessa a FRASE. Em duas linhas, o "De lance, não tenho
+	// nada." da frase seguinte não pode comer o preço do BEM da frase anterior: os moldes rodam
+	// frase a frase e a adjacência entre tokens é só horizontal (`[ \t]`). No TURNO COMPLETO, sem
+	// busca, o bem de 80 mil continua na qualificação.
+	// O lance desta fala fica de fora porque não há reserva anterior: sem reserva não há o que
+	// zeroar — a transição "30 mil → não tenho" ⇒ 0 está provada em `turno-lance.test.ts`.
+	it("«Quero um carro de 80 mil\nDe lance, não tenho nada.» não perde o bem de 80 mil", async () => {
+		const fala = "Quero um carro de 80 mil\nDe lance, não tenho nada.";
+		expect(declaracaoDoTurno(fala)).toEqual({ categoria: "auto", valorDoBem: 80_000 });
+		expect(lanceEPrazoDoTurno(fala)).toEqual({});
+
+		const conversationId = await novaConversa();
+		const turno = await rodarTurno({
+			conversationId,
+			userText: fala,
+			beats: [{ text: "Anotado: carro de 80 mil, sem lance." }],
+		});
+		await turno.fechar();
+
+		const meta = await metaDa(conversationId);
+		const qualify = meta.qualifyAnswers as Record<string, unknown>;
+		// Morde: com `\s+` entre os tokens do molde, o 80 mil da primeira linha era lido como
+		// dinheiro de LANCE e mascarado do bem — a `main` o capturava no texto original
+		// (`analyze.ts:230` → `parse-asset-value.ts:245`).
+		expect(qualify.creditMax).toBe(80_000);
+		expect(qualify.valorDoBemAlvo).toBe(80_000);
+		expect(qualify.lanceValue).toBeUndefined();
+		expect(meta.currentCategory).toBe("auto");
+	});
+
 	// O rótulo que liga PALAVRA a VALOR chega pelas quatro formas que o cliente
 	// usa no chat (`:`, `-`, `=`, "é de"). O `:` era o único que separava a
 	// oração: "Meu lance: R$ 30.000" deixava o dinheiro órfão e o `parseAssetValue`

@@ -415,8 +415,17 @@ export function declaracaoDoTurno(texto: string | null | undefined): {
  *
  * Conservador de propósito: número nu sem marcador ("tenho 30 pro lance") não
  * tem como ser lido sem o contexto do funil, e segue de fora — como no valor do
- * bem. */
-const TOKEN_DE_DINHEIRO = /(?:\br\$\s*)?\d[\d.,]*(?:\s*(?:mil(?:h[ãa]o|h[õo]es)?|mi|k)\b)?/gi;
+ * bem.
+ *
+ * RODADA 9 (P212): a adjacência dentro do token é só ESPAÇO HORIZONTAL. É a MESMA fonte
+ * que entra nos moldes — um molde não pode emendar o "mil" de uma linha com o número de
+ * outra, e "80 mil\n" não é mais um dinheiro só.
+ *
+ * D — o token em fonte, para entrar dentro dos moldes. O VALOR sai de `parseAssetValue`
+ * sobre o token, como sempre: em "R$ 20.000" o `.` é milhar e em "1,5 milhão" a `,` é
+ * decimal. */
+const FONTE_DO_D = "(?:\\br\\$[ \\t]*)?\\d[\\d.,]*(?:[ \\t]*(?:mil(?:h[ãa]o|h[õo]es)?|mi|k)\\b)?";
+const TOKEN_DE_DINHEIRO = new RegExp(FONTE_DO_D, "gi");
 
 /** O prazo que o cliente declarou, em MESES (a unidade da qualificação). Precisa
  * de uma PISTA de tempo junto do número ("em 60 meses", "prazo de 120 meses",
@@ -456,8 +465,8 @@ function somenteLigacoes(vao: string): boolean {
  * número ficava órfão na oração e o `parseAssetValue` o lia como valor do BEM. */
 const GOVERNO_DO_LANCE = /\b(exig\w*|precis\w*|falt\w*|obrigat\w*)\b/i;
 
-/** Um TRECHO da fala: onde começa e onde termina. O trecho que este arquivo usa é a
- * ORAÇÃO (o par dinheiro↔marcador da máscara) — ver `trechosDe`. */
+/** Um TRECHO da fala: onde começa e onde termina. Os dois trechos que este arquivo usa são a
+ * ORAÇÃO (o par dinheiro↔marcador da máscara) e a FRASE (o molde) — ver `trechosDe`. */
 type TrechoDoTurno = { inicio: number; fim: number };
 
 /** O que separa ORAÇÕES — a unidade do PAR dinheiro↔marcador. A vírgula entra
@@ -469,6 +478,13 @@ type TrechoDoTurno = { inicio: number; fim: number };
  * R$ 30.000", "carro: 80 mil"). Cortar ali deixava o dinheiro órfão do rótulo e
  * o `parseAssetValue` o lia como valor do BEM (P212). */
 const SEPARADORES_DE_ORACAO = ",.;!?\n";
+
+/** O que separa FRASES — a unidade dos MOLDES (rodada 9, P212). A vírgula NÃO entra aqui:
+ * o molde aceita vírgula dentro da frase ("meu lance: 30mil, entrada: 10mil" continua uma
+ * frase só), mas não pode emendar o que está em frases separadas por ponto, interrogação,
+ * ponto e vírgula ou QUEBRA DE LINHA — "Quero um carro de 80 mil\nDe lance, não tenho nada."
+ * é duas frases, e o 80 mil é o preço do BEM. */
+const SEPARADORES_DE_FRASE = ".!?;\n";
 
 /** Quebra a fala em trechos com a PONTUAÇÃO ORIGINAL preservada: cada trecho é
  * uma fatia do próprio texto, e o separador não pertence a nenhum deles. Nada é
@@ -497,6 +513,12 @@ function trechosDe(texto: string, separadores: string): TrechoDoTurno[] {
 
 function oracoesDe(texto: string): TrechoDoTurno[] {
 	return trechosDe(texto, SEPARADORES_DE_ORACAO);
+}
+
+/** As FRASES onde os moldes valem (rodada 9, P212): cada uma é uma fatia do próprio texto,
+ * com a pontuação preservada, e o molde não atravessa a fronteira entre elas. */
+function frasesDe(texto: string): TrechoDoTurno[] {
+	return trechosDe(texto, SEPARADORES_DE_FRASE);
 }
 
 /** O dinheiro que a fala liga ao LANCE, com a posição: o token de dentro da oração que
@@ -604,40 +626,45 @@ function dinheirosDoLance(texto: string): DinheiroDoLance[] {
 // negação, pergunta, obrigação/falta ou hipótese em QUALQUER ponto derrubam o lance,
 // inclusive um molde que fecha em outra frase — "não tenho 30 mil de lance. Meu lance é de
 // 10 mil" fica pendente.
-
-/** D — o token de dinheiro que o código já reconhece (`TOKEN_DE_DINHEIRO`), em fonte para
- * entrar dentro dos moldes. O VALOR sai de `parseAssetValue` sobre o token, como sempre:
- * em "R$ 20.000" o `.` é milhar e em "1,5 milhão" a `,` é decimal. */
-const FONTE_DO_D = TOKEN_DE_DINHEIRO.source;
+//
+// RODADA 9: duas coisas mudaram aqui. (1) A adjacência entre tokens dos moldes é só horizontal
+// (`[ \t]`) e o molde roda FRASE A FRASE — ele não atravessa quebra de linha (P212). (2) As duas
+// travas que falam do DINHEIRO DO CLIENTE (negação e embutido) não só derrubam a captura: sobre
+// uma reserva já gravada, elas ZERAM o que o cliente corrigiu ou retirou (P139).
 
 /** O ÚNICO qualificador aceito entre o dinheiro e o gancho na MÁSCARA (roda 8, P212): uma palavra
  * de uma lista FECHADA, nunca gordura qualquer. Sem ela, "tenho 30 mil guardados pro lance"
  * perdia o vínculo com a palavra `lance` e o dinheiro do lance virava preço do BEM. O verbo dos
  * moldes de captura não entra aqui. */
 const QUALIFICADOR_DA_MASCARA =
-	"guardad[oa]s?|reservad[oa]s?|separad[oa]s?|dispon[ií]ve(?:l|is)|em\\s+m[ãa]os|na\\s+m[ãa]o";
+	"guardad[oa]s?|reservad[oa]s?|separad[oa]s?|dispon[ií]ve(?:l|is)|em[ \\t]+m[ãa]os|na[ \\t]+m[ãa]o";
 
-/** As formas fixas dos moldes, na ordem em que o chefe as escreveu. */
-const MOLDE_VERBO = "tenho|juntei|guardei|disponho de|consigo dar|posso dar|vou dar|dou";
-const MOLDE_VERBO_SEM_FOLGA = "tenho|consigo dar|posso dar|dou";
-const MOLDE_FOLGA = "uns\\s+|cerca de\\s+|até\\s+";
-const MOLDE_GANCHO = "de|para o|pro|pra|como";
+/** As formas fixas dos moldes, na ordem em que o chefe as escreveu, com adjacência só de
+ * espaço horizontal (rodada 9, P212). */
+const MOLDE_VERBO =
+	"tenho|juntei|guardei|disponho[ \\t]de|consigo[ \\t]dar|posso[ \\t]dar|vou[ \\t]dar|dou";
+const MOLDE_VERBO_SEM_FOLGA = "tenho|consigo[ \\t]dar|posso[ \\t]dar|dou";
+const MOLDE_FOLGA = "uns[ \\t]+|cerca[ \\t]de[ \\t]+|até[ \\t]+";
+const MOLDE_GANCHO = "de|para[ \\t]o|pro|pra|como";
 const MOLDE_COPULA = "é|e|seria|fica";
 
 /** Os três moldes do LANCE. O último grupo de cada um é o dinheiro. O molde 3 é o do chefe
- * corrigido: `[:=\-]` aceita o traço ("meu lance - 30 mil") e o `\s*` aceita o sinal colado
- * em "lance" ("Meu lance: R$ 30.000"). */
+ * corrigido: `[:=\-]` aceita o traço ("meu lance - 30 mil") e o `[ \t]*` aceita o sinal colado
+ * em "lance" ("Meu lance: R$ 30.000").
+ *
+ * RODADA 9 (P212): toda adjacência entre tokens é `[ \t]` e o molde é aplicado FRASE A FRASE
+ * (ver `dinheirosPelosMoldes`) — ele não atravessa quebra de linha nem fim de frase. */
 const MOLDES_DO_LANCE: readonly RegExp[] = [
 	new RegExp(
-		`\\b(?:${MOLDE_VERBO})\\s+(?:${MOLDE_FOLGA})?(${FONTE_DO_D})\\s+(?:${MOLDE_GANCHO})\\s+lance\\b`,
+		`\\b(?:${MOLDE_VERBO})[ \\t]+(?:${MOLDE_FOLGA})?(${FONTE_DO_D})[ \\t]+(?:${MOLDE_GANCHO})[ \\t]+lance\\b`,
 		"gi",
 	),
 	new RegExp(
-		`\\b(?:${MOLDE_GANCHO})\\s+lance\\s+(?:eu\\s+)?(?:${MOLDE_VERBO_SEM_FOLGA})\\s+(?:${MOLDE_FOLGA})?(${FONTE_DO_D})`,
+		`\\b(?:${MOLDE_GANCHO})[ \\t]+lance[ \\t]+(?:eu[ \\t]+)?(?:${MOLDE_VERBO_SEM_FOLGA})[ \\t]+(?:${MOLDE_FOLGA})?(${FONTE_DO_D})`,
 		"gi",
 	),
 	new RegExp(
-		`\\bmeu lance\\s*(?:(?:${MOLDE_COPULA})\\s*)?(?:de\\s+)?[:=\\-]?\\s*(${FONTE_DO_D})`,
+		`\\bmeu lance[ \\t]*(?:(?:${MOLDE_COPULA})[ \\t]*)?(?:de[ \\t]+)?[:=\\-]?[ \\t]*(${FONTE_DO_D})`,
 		"gi",
 	),
 ];
@@ -653,10 +680,10 @@ const MOLDES_DO_LANCE: readonly RegExp[] = [
  * lance, e o número continua sendo o preço do bem. */
 const MOLDES_DA_MASCARA_DO_BEM: readonly RegExp[] = [
 	new RegExp(
-		`(${FONTE_DO_D})\\s+(?:(?:${QUALIFICADOR_DA_MASCARA})\\s+)?(?:${MOLDE_GANCHO})\\s+(?:lance|entrada)\\b`,
+		`(${FONTE_DO_D})[ \\t]+(?:(?:${QUALIFICADOR_DA_MASCARA})[ \\t]+)?(?:${MOLDE_GANCHO})[ \\t]+(?:lance|entrada)\\b`,
 		"gi",
 	),
-	new RegExp(`\\b(?:lance|entrada)\\s*(?:de|:|=|${MOLDE_COPULA})\\s*(${FONTE_DO_D})`, "gi"),
+	new RegExp(`\\b(?:lance|entrada)[ \\t]*(?:de|:|=|${MOLDE_COPULA})[ \\t]*(${FONTE_DO_D})`, "gi"),
 ];
 
 /** A trava geral da MENSAGEM: com qualquer uma destas formas em QUALQUER lugar da fala,
@@ -675,20 +702,50 @@ const MOLDES_DA_MASCARA_DO_BEM: readonly RegExp[] = [
 const TRAVA_DA_MENSAGEM =
 	/\?|\b(n[ãa]o|nem|nunca|jamais|sem|zero|tenho\s+que|tem\s+que|teria\s+que|precis\w*|falt\w*|exig\w*|obrigat\w*|embutid\w*|se\s+eu|caso|tivesse|teria|quanto|quantos|quantas|qual|quais|quando|onde|quem|cad[êe]|ser[áa])\b/i;
 
+/** As DUAS travas que ZERAM a reserva (rodada 9, P139), do conjunto da trava da mensagem:
+ * NEGAÇÃO e EMBUTIDO. As outras formas derrubam a CAPTURA, porque o número pode estar ao lado
+ * da palavra sem que o cliente diga que tem o dinheiro; a negação e o embutido falam do
+ * DINHEIRO DO CLIENTE, e por isso também sobrescrevem o que ele já tinha declarado.
+ *
+ * Elas só valem sobre uma mensagem que nomeia `lance`/`entrada`, e só zeram quando JÁ EXISTE
+ * reserva persistida: sem reserva anterior não há o que sobrescrever, e a fala isolada continua
+ * sem gravar lance. É como a tabela de P139 a lê — "quero um carro de 80 mil, sem entrada" é o
+ * preço do BEM perto da palavra, não uma retirada de lance. */
+const TRAVA_DA_NEGACAO = /\b(n[ãa]o|nem|nunca|jamais|sem|zero|nada)\b/i;
+const TRAVA_DO_EMBUTIDO = /\bembutid\w*/i;
+
+/** A fala NEGA ou EMBUTE o dinheiro do lance: marcador de lance/entrada na mensagem e uma das duas
+ * travas que zeram. É o que fecha a transição no turno, porque a retratação depende da reserva já
+ * gravada, não desta fala sozinha. */
+function negouOuEmbutiuOLance(texto: string | null | undefined): boolean {
+	if (!texto) return false;
+	if ((texto.match(MARCADORES_DE_LANCE) ?? []).length === 0) return false;
+	return TRAVA_DA_NEGACAO.test(texto) || TRAVA_DO_EMBUTIDO.test(texto);
+}
+
 /** O dinheiro que um molde casou: valor e posição na fala. */
 type DinheiroDoMolde = { valor: number; inicio: number; fim: number };
 
 /** Os dinheiros que os moldes casam, na ordem da fala. Na captura de LANCE o próprio molde
- * é a permissão: não há tabela de ligação nem verbo de posse na frase inteira. */
+ * é a permissão: não há tabela de ligação nem verbo de posse na frase inteira.
+ *
+ * RODADA 9 (P212): o molde roda FRASE A FRASE, não na mensagem inteira. É o que impede a
+ * máscara de atravessar a quebra de linha e apagar o preço do BEM: em "Quero um carro de 80
+ * mil\nDe lance, não tenho nada." o 80 mil está numa frase e o marcador em outra, e o bem
+ * continua nos números da qualificação. As posições continuam sendo as do TEXTO ORIGINAL,
+ * porque é sobre ele que `semODinheiroDoLance` corta. */
 function dinheirosPelosMoldes(texto: string, moldes: readonly RegExp[]): DinheiroDoMolde[] {
 	const dinheiros: DinheiroDoMolde[] = [];
-	for (const molde of moldes) {
-		for (const achado of texto.matchAll(molde)) {
-			const dinheiro = achado[achado.length - 1] ?? "";
-			const valor = parseAssetValue(dinheiro);
-			if (valor === null) continue;
-			const inicio = (achado.index ?? 0) + achado[0].indexOf(dinheiro);
-			dinheiros.push({ valor, inicio, fim: inicio + dinheiro.length });
+	for (const frase of frasesDe(texto)) {
+		const fatia = texto.slice(frase.inicio, frase.fim);
+		for (const molde of moldes) {
+			for (const achado of fatia.matchAll(molde)) {
+				const dinheiro = achado[achado.length - 1] ?? "";
+				const valor = parseAssetValue(dinheiro);
+				if (valor === null) continue;
+				const inicio = frase.inicio + (achado.index ?? 0) + achado[0].indexOf(dinheiro);
+				dinheiros.push({ valor, inicio, fim: inicio + dinheiro.length });
+			}
 		}
 	}
 	// Na ordem da FALA: o primeiro dinheiro citado é o que o cliente declarou.
@@ -949,10 +1006,24 @@ export function createRunTurnLivre(deps?: {
 		if (isUserTurn) {
 			const declaracao = declaracaoDoTurno(captura.textoLimpo);
 			const dinheiro = lanceEPrazoDoTurno(captura.textoLimpo);
+			// O LANCE DO TURNO (P139, rodada 9) tem três casos, e a palavra que separa os dois
+			// primeiros é PRESENÇA, não veracidade: "Meu lance: R$ 0" é o valor do cliente e entra
+			// como zero, como `qualify-state.ts:225` da `main` preserva.
+			//   1) capturou um valor (inclusive zero) → escreve e sobrescreve o anterior;
+			//   2) negou ou embutiu o lance e JÁ HÁ reserva persistida → zera o anterior;
+			//   3) as outras travas (pergunta, obrigação/falta, hipótese), ou fala isolada sem
+			//      reserva anterior → não mexe na reserva.
+			const reservaAnterior = estado.funnel.qualifyAnswers.lanceValue;
+			const lanceDoTurno =
+				dinheiro.lanceValue !== undefined
+					? dinheiro.lanceValue
+					: reservaAnterior !== undefined && negouOuEmbutiuOLance(captura.textoLimpo)
+						? 0
+						: undefined;
 			if (
 				declaracao.categoria ||
 				declaracao.valorDoBem ||
-				dinheiro.lanceValue ||
+				lanceDoTurno !== undefined ||
 				dinheiro.prazoMeses
 			) {
 				estado = {
@@ -968,8 +1039,10 @@ export function createRunTurnLivre(deps?: {
 										valorDoBemAlvo: declaracao.valorDoBem,
 									}
 								: {}),
-							// O dinheiro e o prazo que `perfilDeclarado` lê (cenários e dial).
-							...(dinheiro.lanceValue ? { lanceValue: dinheiro.lanceValue } : {}),
+							// O dinheiro e o prazo que `perfilDeclarado` lê (cenários e dial). A escrita
+							// é por PRESENÇA: o zero capturado é o valor do cliente e não pode ser
+							// descartado, e o zero da retratação é o que limpa `ownCashAvailable`.
+							...(lanceDoTurno !== undefined ? { lanceValue: lanceDoTurno } : {}),
 							...(dinheiro.prazoMeses ? { prazoMeses: dinheiro.prazoMeses } : {}),
 						},
 					},

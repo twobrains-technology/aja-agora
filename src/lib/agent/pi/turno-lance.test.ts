@@ -156,6 +156,9 @@ describe("P139 — o lance declarado na fala chega aos três cenários", () => {
 
 describe("P139 — pergunta e negativa NÃO são dinheiro disponível", () => {
 	it("'não tenho 30 mil para lance' não é dinheiro do cliente", () => {
+		// Sem reserva anterior não há o que zera: a negação derruba a CAPTURA (P139) e a
+		// tabela continua lendo assim. Com reserva persistida, a mesma fala ZERA a reserva —
+		// ver o describe da rodada 9, abaixo.
 		expect(lanceEPrazoDoTurno("não tenho 30 mil para lance")).toEqual({});
 		// E o número ligado à negativa do lance também não é o valor do bem.
 		expect(declaracaoDoTurno("não tenho 30 mil para lance")).toEqual({});
@@ -557,6 +560,94 @@ describe("P139/P212 — a frase decide: pontuação e rótulo não trocam lance 
 		expect(lanceEPrazoDoTurno(fala)).toEqual(lance);
 		expect(declaracaoDoTurno(fala)).toEqual(bem);
 	});
+});
+
+// RODADA 9 / P139 — a CORREÇÃO e a RETIRADA substituem a reserva antiga.
+//
+// Os testes de veracidade descartavam o zero, e a negativa e o embutido só derrubavam a
+// CAPTURA: os três cenários continuavam usando o dinheiro que o cliente corrigiu ou retirou.
+// Agora a trava de NEGAÇÃO e a do EMBUTIDO zeram a reserva — mas só quando já existe reserva
+// persistida. Falas isoladas, sem reserva anterior, continuam sem gravar lance: é como a tabela
+// acima a lê — "quero um carro de 80 mil, sem entrada" é o preço do BEM perto da palavra, não
+// uma retirada — e a asserção é sobre a TRANSIÇÃO.
+//
+// Os casos rodam dois turnos na MESMA conversa, até o card: `ownResourcesValue` do `provavel` é
+// o dinheiro que o cenário diria que o cliente tem, e `qualifyAnswers.lanceValue` é o estado.
+describe("P139 (rodada 9) — a transição zera a reserva anterior, até o card", () => {
+	type Transicao = {
+		antesCard: Record<string, unknown> | undefined;
+		depoisCard: Record<string, unknown> | undefined;
+		qualify: Record<string, unknown>;
+	};
+
+	function bolsoDoCard(payload: Record<string, unknown> | undefined): number {
+		return (payload?.scenarios as { provavel: { ownResourcesValue: number } }).provavel
+			.ownResourcesValue;
+	}
+
+	async function transicao(declara: string, depois: string): Promise<Transicao> {
+		const conversationId = await novaConversa();
+		const card = { tipo: "scenarios" as const, payload: { groupId: CARTA.id } };
+
+		const primeiro = await rodarTurno({ conversationId, userText: declara, card });
+		await primeiro.fechar();
+		const segundo = await rodarTurno({ conversationId, userText: depois, card });
+		await segundo.fechar();
+
+		return {
+			antesCard: cardDoTurno(primeiro.eventos, "scenarios"),
+			depoisCard: cardDoTurno(segundo.eventos, "scenarios"),
+			qualify: await qualifyDa(conversationId),
+		};
+	}
+
+	// (a) O zero capturado é escrito. Morde: com o teste de veracidade, o zero é descartado e
+	// os 30 mil anteriores permanecem — a `main` preserva o zero (`qualify-state.ts:225`).
+	it("«Meu lance: R$ 0» depois de «Tenho 30 mil de lance» é zero", async () => {
+		const t = await transicao("Tenho 30 mil de lance.", "Meu lance: R$ 0");
+		// O primeiro turno é o que sempre funcionou: o dinheiro declarado entra no card.
+		expect(t.antesCard).toEqual(cenariosDaCarta(CARTA, { lanceDeclarado: 30_000 }));
+		expect(t.qualify.lanceValue).toBe(0);
+		// O card do segundo turno é o de sempre: nenhum recurso próprio.
+		expect(t.depoisCard).toEqual(cenariosDaCarta(CARTA));
+		expect(bolsoDoCard(t.depoisCard)).toBe(0);
+	});
+
+	// (b) A negativa sobre o lance ZERA a reserva. A negação sozinha não capturava nada e a
+	// reserva de antes continuava viva; agora ela sobrescreve.
+	it("«30 mil de lance eu não tenho» zera a reserva de 30 mil", async () => {
+		const t = await transicao("Tenho 30 mil de lance.", "30 mil de lance eu não tenho.");
+		expect(t.qualify.lanceValue).toBe(0);
+		expect(bolsoDoCard(t.depoisCard)).toBe(0);
+	});
+
+	// Zerar não exige número na fala: o MARCADOR basta, porque é o marcador que diz de quem é o
+	// dinheiro que ele está negando.
+	it("«De lance, não tenho nada.» zera a reserva de 30 mil", async () => {
+		const t = await transicao("Tenho 30 mil de lance.", "De lance, não tenho nada.");
+		expect(t.qualify.lanceValue).toBe(0);
+		expect(bolsoDoCard(t.depoisCard)).toBe(0);
+	});
+
+	// O embutido é o outro lado da mesma trava: o dinheiro é da CARTA, não do bolso dele.
+	it("«Meu lance é 30 mil, tudo embutido» zera a reserva de 30 mil", async () => {
+		const t = await transicao("Tenho 30 mil de lance.", "Meu lance é 30 mil, tudo embutido.");
+		expect(t.qualify.lanceValue).toBe(0);
+		expect(bolsoDoCard(t.depoisCard)).toBe(0);
+	});
+
+	// (c) As outras travas (pergunta, obrigação/falta, hipótese) NÃO mexem na reserva: derrubam a
+	// captura, não o que já foi gravado.
+	it("«preciso ter 50 mil de lance?» não mexe na reserva de 30 mil", async () => {
+		const t = await transicao("Tenho 30 mil de lance.", "preciso ter 50 mil de lance?");
+		expect(t.qualify.lanceValue).toBe(30_000);
+		// O card continua o do turno anterior: a pergunta não mexe na reserva.
+		expect(t.depoisCard).toEqual(t.antesCard);
+		expect(bolsoDoCard(t.depoisCard)).toBeGreaterThan(0);
+	});
+
+	// Morde: sem a trava de negação/embutido, os cinco casos acima ficam com 30000; sem o teste
+	// de PRESENÇA, só o zero capturado volta a ser descartado.
 });
 
 describe("P139 — o prazo declarado na fala é o default do dial", () => {
