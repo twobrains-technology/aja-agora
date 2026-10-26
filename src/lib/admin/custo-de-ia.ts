@@ -56,9 +56,17 @@
  *
  * O simulador do admin cria conversa de verdade e o Pi grava o consumo dela no livro-caixa
  * como o de qualquer outra. O número desta tela é o da operação, então a conversa de teste
- * não dá vínculo ao custo (`conversasDoPeriodo` filtra `is_simulated = false`, como a
- * `main` fazia) — nem no total, nem no denominador do CPC (P217/P219). O consumo interno
+ * não dá vínculo ao custo nem entra no denominador do CPC (P217/P219). O consumo interno
  * continua registrado na tabela; ele só não é custo de operação.
+ *
+ * Reconhecer a conversa simulada é o que torna isso possível: `lerCustoLocal` traz, junto de
+ * cada linha do livro-caixa, se a conversa dela é do simulador (`conversaSimulada`, do join
+ * com `conversations`). Assim `somarCustoDeIA` tira a linha de teste do livro-caixa ANTES da
+ * checagem de vínculo, sem depender da JANELA de conversas — a sessão do simulador criada às
+ * 23h55 e usada à 00h05 continua sendo reconhecida. Filtrando só do lado das conversas, a
+ * linha do simulador continuava na população e caía como "sem vínculo", escondendo a chamada
+ * avulsa válida do período. Linha cuja conversa não existe no recorte (órfão real) NÃO é
+ * simulada e continua produzindo `sem_vinculo`.
  *
  * ── Cache NÃO MEDIDO é custo desconhecido, não preço integral ────────────────
  *
@@ -108,6 +116,12 @@ export interface LinhaDeCustoDeIA {
 	 * (entrada, saída ou cache) ou a linha não tem a medição de cache.
 	 */
 	custoUsdCents: number | null;
+	/**
+	 * `true` quando o `sessionId` aponta para conversa do SIMULADOR do admin: a linha é gasto
+	 * interno e sai do total da operação antes da checagem de vínculo (P217/P219). Ausente
+	 * vale `false` (operação).
+	 */
+	simulada?: boolean;
 }
 
 /**
@@ -238,10 +252,16 @@ function contarLinhasSemPreco(linhas: readonly LinhaDeCustoDeIA[]): LinhasSemPre
  * O custo de IA do período/canal, ou o motivo nomeado pelo qual ele não existe.
  *
  * Três populações de linha saem do livro-caixa, e a diferença importa:
- *   - COM conversa que casa com uma conversa do período → entra no total e tem vínculo;
+ *   - COM conversa que casa com uma conversa de OPERAÇÃO do período → entra no total e tem
+ *     vínculo;
  *   - COM conversa que não casa → não entra (é o custo de outro recorte, quando o filtro de
- *     canal está ativo);
+ *     canal está ativo — ou o gasto de uma conversa do SIMULADOR, que não é operação);
  *   - SEM conversa (avulsa) → entra no total, na linha própria `semConversa`.
+ *
+ * As linhas do simulador saem ANTES do cruzamento, não depois: se ficassem na população,
+ * o período em que só houve gasto de teste e avulsa sairia `sem_vinculo` e o gasto avulso
+ * válido desapareceria do total (P217/P219). O órfão REAL — linha cuja conversa não está
+ * no recorte — não é simulada e continua produzindo `sem_vinculo`.
  *
  * A ordem das guardas não é arbitrária — é a mesma lógica de `custoPor`
  * (campanhas-queries.ts): **falta de vínculo antes de falta de dado**, porque um
@@ -263,10 +283,14 @@ export function somarCustoDeIA(args: {
 		? args.conversas.filter((conversa) => conversa.canal === args.canal)
 		: [...args.conversas];
 
-	// O CRUZAMENTO: só a linha de custo cuja conversa é uma conversa conhecida do período.
+	// O CRUZAMENTO: a linha de custo cuja conversa é uma conversa conhecida do período — e
+	// de OPERAÇÃO. A linha de conversa do simulador já sai aqui, antes de qualquer guarda:
+	// ela não é gasto da operação, e deixá-la na população fazia o período virar
+	// `sem_vinculo`, escondendo a avulsa válida (P217/P219).
 	const ids = new Set(conversas.map((conversa) => conversa.conversationId));
 	const comConversa = args.linhas.filter(
-		(linha): linha is LinhaDeCustoDeIA & { sessionId: string } => linha.sessionId !== null,
+		(linha): linha is LinhaDeCustoDeIA & { sessionId: string } =>
+			linha.sessionId !== null && linha.simulada !== true,
 	);
 	const comVinculo = comConversa.filter((linha) => ids.has(linha.sessionId));
 	// As avulsas não têm vínculo a procurar: elas nunca tiveram conversa.
@@ -283,8 +307,23 @@ export function somarCustoDeIA(args: {
 		};
 	}
 
-	// Livro-caixa vazio no período: nem com conversa, nem avulso.
+	// Livro-caixa sem NENHUMA linha de operação no período: nem com conversa, nem avulsa.
 	if (comVinculo.length === 0 && avulsas.length === 0) {
+		// Havia linha e todas eram da conversa do simulador: a operação gastou ZERO — um
+		// zero MEDIDO (o livro-caixa tem linha e ela não é operação), não "sem dado".
+		if (args.linhas.length > 0) {
+			return {
+				tipo: "valor",
+				usdCents: 0,
+				brlCents: 0,
+				conversas: conversas.length,
+				porModelo: [],
+				porDia: [],
+				semConversa: { chamadas: 0, usdCents: 0, brlCents: 0 },
+				parcial: false,
+				semPreco: [],
+			};
+		}
 		return { tipo: "motivo", motivo: "sem_dado", explicacao: EXPLICACAO.sem_dado };
 	}
 
@@ -341,6 +380,11 @@ export function somarCustoDeIA(args: {
 /** Uma linha CRUA do livro-caixa local (`uso_de_ia`), como sai do banco. */
 export interface UsoDeIaGravado {
 	conversationId: string | null;
+	/**
+	 * Do join com `conversations`: a conversa da linha é do SIMULADOR do admin? `null` quando
+	 * não há conversa correspondente (chamada avulsa, ou conversa fora do banco).
+	 */
+	conversaSimulada: boolean | null;
 	modelo: string;
 	tokensInput: number;
 	tokensOutput: number;
@@ -383,6 +427,9 @@ export function linhasDoLivroLocal(linhas: readonly UsoDeIaGravado[]): LinhaDeCu
 			cacheRead: l.tokensCacheRead,
 			cacheWrite: l.tokensCacheWrite,
 		}),
+		// A marca do simulador vem da CONVERSA, não da linha: é o que permite retirar o gasto
+		// de teste do total da operação mesmo quando a sessão nasceu fora da janela lida.
+		simulada: l.conversaSimulada === true,
 	}));
 }
 
@@ -391,6 +438,9 @@ export async function lerCustoLocal(de: Date, ate: Date): Promise<LinhaDeCustoDe
 	const linhas = await db
 		.select({
 			conversationId: usoDeIa.conversationId,
+			// O join é o que dá à linha do livro-caixa a resposta "essa conversa é do
+			// simulador?" sem depender da janela de `conversasDoPeriodo`.
+			conversaSimulada: conversations.isSimulated,
 			modelo: usoDeIa.modelo,
 			criadoEm: usoDeIa.criadoEm,
 			tokensInput: usoDeIa.tokensInput,
@@ -399,6 +449,7 @@ export async function lerCustoLocal(de: Date, ate: Date): Promise<LinhaDeCustoDe
 			tokensCacheWrite: usoDeIa.tokensCacheWrite,
 		})
 		.from(usoDeIa)
+		.leftJoin(conversations, eq(usoDeIa.conversationId, conversations.id))
 		.where(and(gte(usoDeIa.criadoEm, inicioDoDia(de)), lte(usoDeIa.criadoEm, fimDoDia(ate))));
 
 	return linhasDoLivroLocal(linhas);
@@ -410,8 +461,9 @@ export async function lerCustoLocal(de: Date, ate: Date): Promise<LinhaDeCustoDe
  * Mesma janela e mesmo filtro dos outros números do painel: `created_at` no intervalo e
  * `is_simulated = false`. A conversa do SIMULADOR é de verdade (`api/admin/simulator/
  * sessions` cria uma) e o Pi grava o consumo dela em `uso_de_ia` como qualquer outra — sem
- * este filtro, o gasto de teste entrava no custo operacional e no CPC (P217/P219). O
- * consumo interno continua no livro-caixa: quem o lê separado é a limpeza/auditoria.
+ * este filtro, a conversa de teste daria vínculo e denominador ao CPC (P217/P219). A linha
+ * de custo dela é reconhecida do outro lado, no próprio livro-caixa (`lerCustoLocal`, pela
+ * marca `conversaSimulada`), que não depende desta janela.
  */
 export async function conversasDoPeriodo(de: Date, ate: Date): Promise<ConversaDoPostgres[]> {
 	const linhas = await db

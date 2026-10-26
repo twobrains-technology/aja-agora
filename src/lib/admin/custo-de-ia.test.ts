@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { JUDGE_MODEL } from "@/lib/eval/judge";
 import {
+	type ConversaDoPostgres,
 	computeCustoDeIA,
 	linhasDoLivroLocal,
+	type MotivoSemCustoDeIA,
 	somarCustoDeIA,
 	type UsoDeIaGravado,
 } from "./custo-de-ia";
@@ -16,6 +18,8 @@ const CONVERSA = "11111111-1111-1111-1111-111111111111";
 function beatDoVendedor(over: Partial<UsoDeIaGravado> = {}): UsoDeIaGravado {
 	return {
 		conversationId: CONVERSA,
+		// A conversa desta linha é de operação; `true` é só a do simulador do admin.
+		conversaSimulada: false,
 		modelo: "qwen3.6-flash",
 		tokensInput: 80000,
 		tokensOutput: 0,
@@ -356,5 +360,276 @@ describe("P220/L43 — a falha de leitura se explica pelo Postgres, não pelo La
 		expect(r.motivo).toBe("fonte_indisponivel");
 		expect(r.explicacao).toContain("uso_de_ia");
 		expect(r.explicacao.toLowerCase()).not.toContain("langfuse");
+	});
+});
+
+describe("P217/P219 — a população do custo: simulado fora, avulsa dentro, órfão real diagnosticado", () => {
+	// O filtro de simulados só do lado das CONVERSAS deixava a linha do simulador na
+	// população do livro-caixa: o cruzamento a lia como custo sem vínculo e a guarda de
+	// `sem_vinculo` escondia a avulsa válida do período. A tabela abaixo é a população em
+	// todas as combinações que interessam — porque o defeito voltou uma vez por rodada, cada
+	// variação (canal, preço, cache, cotação, órfão, conversa fora da janela) tem o seu caso.
+	//
+	// A marca do simulador vem DO LIVRO-CAIXA (`conversaSimulada`, do join com
+	// `conversations`), não da lista de conversas: por isso as conversas semeadas aqui são
+	// só as de operação, e a do simulador nem aparece na lista.
+	const SIMULADA = "22222222-2222-2222-2222-222222222222";
+	const ORFA = "33333333-3333-3333-3333-333333333333";
+	const COTACAO = 5.5;
+
+	const conversaReal: ConversaDoPostgres = { conversationId: CONVERSA, canal: "web" };
+	const conversaRealNoWhatsapp: ConversaDoPostgres = {
+		conversationId: "44444444-4444-4444-4444-444444444444",
+		canal: "whatsapp",
+	};
+
+	/** O turno da conversa de operação: 0,4 centavo de dólar. */
+	const usoReal = (over: Partial<UsoDeIaGravado> = {}): UsoDeIaGravado =>
+		beatDoVendedor({ conversaSimulada: false, ...over });
+	/** O turno do simulador: 100 centavos — um número só dele, para ver se vazou. */
+	const usoSimulado = (over: Partial<UsoDeIaGravado> = {}): UsoDeIaGravado =>
+		beatDoVendedor({
+			conversationId: SIMULADA,
+			conversaSimulada: true,
+			modelo: "claude-haiku-4-5",
+			tokensInput: 1_000_000,
+			...over,
+		});
+	/** A chamada avulsa (juiz, diagnóstico, insight): 30 centavos, sem conversa. */
+	const usoAvulsa = (over: Partial<UsoDeIaGravado> = {}): UsoDeIaGravado =>
+		beatDoVendedor({
+			conversationId: null,
+			conversaSimulada: null,
+			modelo: "claude-haiku-4-5",
+			tokensInput: 300_000,
+			...over,
+		});
+	/** A linha de conversa que NÃO está no recorte: órfã REAL, não simulada. */
+	const usoOrfao = (): UsoDeIaGravado =>
+		beatDoVendedor({ conversationId: ORFA, conversaSimulada: false });
+
+	type Esperado =
+		| {
+				tipo: "valor";
+				usdCents: number;
+				brlCents: number;
+				parcial: boolean;
+				avulsas: number;
+				conversas: number;
+		  }
+		| { tipo: "motivo"; motivo: MotivoSemCustoDeIA; modelosSemPreco?: string[] };
+
+	interface Cenario {
+		nome: string;
+		uso: UsoDeIaGravado[];
+		conversas: ConversaDoPostgres[];
+		canal?: "web" | "whatsapp";
+		cotacao?: number | null;
+		esperado: Esperado;
+	}
+
+	const CENARIOS: Cenario[] = [
+		{
+			nome: "conversa real, sem simulado no período: o turno real é o total",
+			uso: [usoReal()],
+			conversas: [conversaReal],
+			esperado: {
+				tipo: "valor",
+				usdCents: 0.4,
+				brlCents: 2,
+				parcial: false,
+				avulsas: 0,
+				conversas: 1,
+			},
+		},
+		{
+			nome: "só simulado, com a conversa fora da janela lida: zero medido, e não `sem_vinculo`",
+			uso: [usoSimulado()],
+			conversas: [],
+			esperado: {
+				tipo: "valor",
+				usdCents: 0,
+				brlCents: 0,
+				parcial: false,
+				avulsas: 0,
+				conversas: 0,
+			},
+		},
+		{
+			nome: "simulado + avulsa precificada, sem uso real: total = avulsa",
+			uso: [usoSimulado(), usoAvulsa()],
+			conversas: [],
+			esperado: {
+				tipo: "valor",
+				usdCents: 30,
+				brlCents: 165,
+				parcial: false,
+				avulsas: 1,
+				conversas: 0,
+			},
+		},
+		{
+			nome: "real + simulado: só o real soma",
+			uso: [usoReal(), usoSimulado()],
+			conversas: [conversaReal],
+			esperado: {
+				tipo: "valor",
+				usdCents: 0.4,
+				brlCents: 2,
+				parcial: false,
+				avulsas: 0,
+				conversas: 1,
+			},
+		},
+		{
+			nome: "real + simulado + avulsa: o total é real + avulsa",
+			uso: [usoReal(), usoSimulado(), usoAvulsa()],
+			conversas: [conversaReal],
+			esperado: {
+				tipo: "valor",
+				usdCents: 30.4,
+				brlCents: 167,
+				parcial: false,
+				avulsas: 1,
+				conversas: 1,
+			},
+		},
+		{
+			nome: "simulado de modelo sem preço não marca o período como PARCIAL",
+			uso: [usoSimulado({ modelo: "modelo-sem-preco-de-teste" })],
+			conversas: [],
+			esperado: {
+				tipo: "valor",
+				usdCents: 0,
+				brlCents: 0,
+				parcial: false,
+				avulsas: 0,
+				conversas: 0,
+			},
+		},
+		{
+			nome: "simulado com cache NULL não marca o período como PARCIAL",
+			uso: [usoReal(), usoSimulado({ tokensCacheRead: null, tokensCacheWrite: null })],
+			conversas: [conversaReal],
+			esperado: {
+				tipo: "valor",
+				usdCents: 0.4,
+				brlCents: 2,
+				parcial: false,
+				avulsas: 0,
+				conversas: 1,
+			},
+		},
+		{
+			nome: "órfão real sozinho: `sem_vinculo` continua",
+			uso: [usoOrfao()],
+			conversas: [],
+			esperado: { tipo: "motivo", motivo: "sem_vinculo" },
+		},
+		{
+			nome: "órfão real ao lado de simulado + avulsa: o diagnóstico não é engolido",
+			uso: [usoOrfao(), usoSimulado(), usoAvulsa()],
+			conversas: [],
+			esperado: { tipo: "motivo", motivo: "sem_vinculo" },
+		},
+		{
+			nome: "órfão real ao lado de vínculo real: soma o que tem vínculo",
+			uso: [usoOrfao(), usoReal()],
+			conversas: [conversaReal],
+			esperado: {
+				tipo: "valor",
+				usdCents: 0.4,
+				brlCents: 2,
+				parcial: false,
+				avulsas: 0,
+				conversas: 1,
+			},
+		},
+		{
+			nome: "recorte por canal com simulado no período: só o canal recortado, sem o simulado",
+			uso: [
+				usoSimulado(),
+				usoReal(),
+				usoReal({ conversationId: conversaRealNoWhatsapp.conversationId }),
+			],
+			conversas: [conversaReal, conversaRealNoWhatsapp],
+			canal: "web",
+			esperado: {
+				tipo: "valor",
+				usdCents: 0.4,
+				brlCents: 2,
+				parcial: false,
+				avulsas: 0,
+				conversas: 1,
+			},
+		},
+		{
+			nome: "avulsa sem preço ao lado de simulado: o modelo sem preço é nomeado",
+			uso: [usoSimulado(), usoAvulsa({ modelo: "modelo-sem-preco-de-teste" })],
+			conversas: [],
+			esperado: {
+				tipo: "motivo",
+				motivo: "modelo_sem_preco",
+				modelosSemPreco: ["modelo-sem-preco-de-teste"],
+			},
+		},
+		{
+			nome: "simulado + avulsa precificada sem cotação: `sem_cotacao`",
+			uso: [usoSimulado(), usoAvulsa()],
+			conversas: [],
+			cotacao: null,
+			esperado: { tipo: "motivo", motivo: "sem_cotacao" },
+		},
+		{
+			nome: "cotação ausente só com simulado: zero medido não pede cotação",
+			uso: [usoSimulado()],
+			conversas: [],
+			cotacao: null,
+			esperado: {
+				tipo: "valor",
+				usdCents: 0,
+				brlCents: 0,
+				parcial: false,
+				avulsas: 0,
+				conversas: 0,
+			},
+		},
+		{
+			nome: "livro-caixa vazio com conversa real no período: `sem_dado`",
+			uso: [],
+			conversas: [conversaReal],
+			esperado: { tipo: "motivo", motivo: "sem_dado" },
+		},
+		{
+			nome: "livro-caixa vazio e nenhuma conversa: `sem_dado`",
+			uso: [],
+			conversas: [],
+			esperado: { tipo: "motivo", motivo: "sem_dado" },
+		},
+	];
+
+	it.each(CENARIOS)("$nome", (cenario) => {
+		const r = somarCustoDeIA({
+			linhas: linhasDoLivroLocal(cenario.uso),
+			conversas: cenario.conversas,
+			cotacaoUsdBrl: cenario.cotacao === undefined ? COTACAO : cenario.cotacao,
+			canal: cenario.canal,
+		});
+
+		expect(r.tipo).toBe(cenario.esperado.tipo);
+		if (cenario.esperado.tipo === "motivo") {
+			if (r.tipo !== "motivo") return;
+			expect(r.motivo).toBe(cenario.esperado.motivo);
+			if (cenario.esperado.modelosSemPreco !== undefined) {
+				expect(r.modelosSemPreco).toEqual(cenario.esperado.modelosSemPreco);
+			}
+			return;
+		}
+		if (r.tipo !== "valor") return;
+		expect(r.usdCents).toBeCloseTo(cenario.esperado.usdCents, 10);
+		expect(r.brlCents).toBe(cenario.esperado.brlCents);
+		expect(r.parcial).toBe(cenario.esperado.parcial);
+		expect(r.semConversa.chamadas).toBe(cenario.esperado.avulsas);
+		expect(r.conversas).toBe(cenario.esperado.conversas);
 	});
 });

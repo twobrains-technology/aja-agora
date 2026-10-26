@@ -80,15 +80,16 @@ beforeEach(limpar);
 afterAll(limpar);
 
 /** Uma conversa do período — a de operação ou a do simulador. */
-async function semearConversa(dados: { simulado: boolean }): Promise<string> {
+async function semearConversa(dados: { simulado: boolean; criadaEm?: Date }): Promise<string> {
+	const criadaEm = dados.criadaEm ?? new Date(BASE);
 	const [linha] = await db
 		.insert(conversations)
 		.values({
 			channel: "web",
 			status: "active",
 			isSimulated: dados.simulado,
-			createdAt: new Date(BASE),
-			updatedAt: new Date(BASE),
+			createdAt: criadaEm,
+			updatedAt: criadaEm,
 		})
 		.returning({ id: conversations.id });
 	const id = linha?.id as string;
@@ -192,10 +193,10 @@ describeIfDb("P217 — o custo operacional exclui o gasto do simulador", () => {
 		expect(custo.conversas).toBe(1);
 	});
 
-	it("a chamada avulsa continua no total, mesmo sem conversa nenhuma", async () => {
-		const real = await semearConversa({ simulado: false });
-		await semearUso({ conversa: real, modelo: "qwen3.6-flash", tokensInput: 80_000, cache: 0 });
-
+	it("a chamada avulsa continua no total quando o período NÃO tem uso real nenhum", async () => {
+		// Só o simulador gastou em conversa neste período: nenhuma linha ligada a conversa
+		// de operação existe. A avulsa (juiz, diagnóstico, insight) continua contando
+		// (P314) — e o gasto de teste não pode fazer o período virar `sem_vinculo`.
 		const simulada = await semearConversa({ simulado: true });
 		await semearUso({
 			conversa: simulada,
@@ -204,17 +205,84 @@ describeIfDb("P217 — o custo operacional exclui o gasto do simulador", () => {
 			cache: 0,
 		});
 
-		// Juiz, diagnóstico e insight gastam sem conversa a quem atribuir: continuam
-		// contando (P314), com ou sem conversa simulada no período.
 		await semearUso({ conversa: null, modelo: "claude-haiku-4-5", tokensInput: 300_000, cache: 0 });
 
 		const custo = await computeCustoDeIA({ de: DE, ate: ATE }, FONTES);
 
 		expect(custo.tipo).toBe("valor");
 		if (custo.tipo !== "valor") return;
-		expect(custo.usdCents).toBeCloseTo(REAL_CENTS + AVULSA_CENTS, 10);
+		expect(custo.usdCents).toBeCloseTo(AVULSA_CENTS, 10);
+		expect(custo.brlCents).toBe(Math.round(AVULSA_CENTS * COTACAO));
 		expect(custo.semConversa.chamadas).toBe(1);
 		expect(custo.semConversa.usdCents).toBeCloseTo(AVULSA_CENTS, 10);
+		expect(custo.conversas).toBe(0);
+	});
+
+	it("só o simulador no período: a operação gastou zero, e não é `sem_vinculo`", async () => {
+		const simulada = await semearConversa({ simulado: true });
+		await semearUso({
+			conversa: simulada,
+			modelo: "claude-haiku-4-5",
+			tokensInput: 1_000_000,
+			cache: 0,
+		});
+
+		const custo = await computeCustoDeIA({ de: DE, ate: ATE }, FONTES);
+
+		expect(custo.tipo).toBe("valor");
+		if (custo.tipo !== "valor") return;
+		expect(custo.usdCents).toBe(0);
+		expect(custo.brlCents).toBe(0);
+		expect(custo.parcial).toBe(false);
+		expect(custo.conversas).toBe(0);
+	});
+
+	it("órfão real: a linha de conversa fora do recorte continua `sem_vinculo`", async () => {
+		// O diagnóstico de órfão real não pode ser engolido pelo filtro de simulados: a
+		// conversa existe, mas foi criada FORA do período, então a linha não é atribuível.
+		const foraDoPeriodo = await semearConversa({
+			simulado: false,
+			criadaEm: new Date("2032-05-01T12:00:00.000Z"),
+		});
+		await semearUso({
+			conversa: foraDoPeriodo,
+			modelo: "qwen3.6-flash",
+			tokensInput: 80_000,
+			cache: 0,
+		});
+		// E há avulsa no período: mesmo assim o total não é oferecido, porque o cruzamento
+		// não fechou.
+		await semearUso({ conversa: null, modelo: "claude-haiku-4-5", tokensInput: 300_000, cache: 0 });
+
+		const custo = await computeCustoDeIA({ de: DE, ate: ATE }, FONTES);
+
+		expect(custo.tipo).toBe("motivo");
+		if (custo.tipo !== "motivo") return;
+		expect(custo.motivo).toBe("sem_vinculo");
+	});
+
+	it("sessão do simulador criada FORA do período: a linha dela também não vira órfã", async () => {
+		// A sessão do simulador nasce minutos antes do uso, mas pode cruzar a virada do dia e
+		// cair fora da janela lida. Se o reconhecimento do simulado dependesse só da lista de
+		// conversas do período, esta linha viraria órfã e o período — que só tem gasto de
+		// teste — sairia `sem_vinculo`. A marca vem do próprio livro-caixa (join com
+		// `conversations`), então a janela não importa.
+		const simuladaForaDoPeriodo = await semearConversa({
+			simulado: true,
+			criadaEm: new Date("2032-05-31T23:55:00.000Z"),
+		});
+		await semearUso({
+			conversa: simuladaForaDoPeriodo,
+			modelo: "claude-haiku-4-5",
+			tokensInput: 1_000_000,
+			cache: 0,
+		});
+
+		const custo = await computeCustoDeIA({ de: DE, ate: ATE }, FONTES);
+
+		expect(custo.tipo).toBe("valor");
+		if (custo.tipo !== "valor") return;
+		expect(custo.usdCents).toBe(0);
 	});
 });
 
@@ -284,5 +352,44 @@ describeIfDb("P219 — o CPC combina custo real com denominador real", () => {
 		// (1.000 + 2 do custo de IA real) ÷ 1 qualificado real. Com o simulador no custo
 		// de IA daria 1.552; com ele no denominador, 501.
 		expect(cpc).toEqual({ tipo: "valor", centavos: 1_002, parcial: false });
+	});
+
+	it("qualificado real SEM linha de IA real: o CPC é calculável com a avulsa", async () => {
+		// O cenário que derrubava o CPC: o lead qualificado é real, mas o período não tem
+		// NENHUMA linha de IA ligada a conversa de operação — só o gasto do simulador e a
+		// chamada avulsa. Sem o filtro de simulados antes do cruzamento, o custo de IA
+		// virava `sem_vinculo` e o CPC ficava "não calculável" com um número à mão.
+		await semearPessoa({ sufixo: "qualificado-sem-ia", simulado: false, estagio: "qualificado" });
+
+		const simulada = await semearPessoa({
+			sufixo: "simulada-qualificada",
+			simulado: true,
+			estagio: "qualificado",
+		});
+		await semearUso({
+			conversa: simulada,
+			modelo: "claude-haiku-4-5",
+			tokensInput: 1_000_000,
+			cache: 0,
+		});
+		await semearUso({ conversa: null, modelo: "claude-haiku-4-5", tokensInput: 300_000, cache: 0 });
+
+		const custos = await computeCustosDoCpc(DE, ATE);
+		expect(custos.contagens.qualificados).toBe(1);
+
+		const custoIA = await computeCustoDeIA({ de: DE, ate: ATE }, FONTES);
+		expect(custoIA.tipo).toBe("valor");
+		if (custoIA.tipo !== "valor") return;
+		expect(custoIA.usdCents).toBeCloseTo(AVULSA_CENTS, 10);
+
+		const cpc = calcularCpc({
+			...custos,
+			investimentoMetaCents: 1_000,
+			custoDeIA: custoIA,
+			custoDeMensagem: SEM_MENSAGEM,
+		});
+
+		// (1.000 de mídia + 165 de IA avulsa) ÷ 1 qualificado real.
+		expect(cpc).toEqual({ tipo: "valor", centavos: 1_165, parcial: false });
 	});
 });
