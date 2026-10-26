@@ -163,8 +163,16 @@ export const ACK_CONFIRMACAO_OFERTA =
 
 async function handleContractConfirm(ctx: Ctx): Promise<boolean> {
 	await recordUserClick(ctx);
+	const { aceiteDoDisparo, fireContract } = await import("./contract-capture");
+	// F4 — o clique É o aceite, e tinha de virar FATO no meta. Antes, `fireContract`
+	// ia à Bevi com `lgpd: true` fixo: o botão existe no corpo que carrega o aviso
+	// (e por isso responde a ele), mas nada registava o consentimento. Só registra se
+	// o aviso está gravado — o formato é o de `metaDoFecho`, e um aceite já gravado
+	// nunca é sobrescrito.
+	const meta = await loadMeta(ctx.conversationId);
+	const aceite = aceiteDoDisparo(meta, `botão: ${ctx.replyTitle}`);
+	if (aceite) await persistMeta(ctx.conversationId, { ...meta, lgpdAceite: aceite });
 	await avisarQueEstouFechando(ctx.from, ctx.conversationId, ACK_CONFIRMACAO_CONTRATO);
-	const { fireContract } = await import("./contract-capture");
 	await fireContract(ctx.from, ctx.conversationId);
 	return true;
 }

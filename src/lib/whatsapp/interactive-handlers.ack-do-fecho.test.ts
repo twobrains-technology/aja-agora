@@ -28,9 +28,16 @@ vi.mock("./api", () => ({
 	}),
 	sendInteractiveMessage: vi.fn(async () => ({ messageId: "wamid-2" })),
 }));
-vi.mock("./contract-capture", () => ({
-	CONTRACT_CANCELLED_REPLY: "Tranquilo! Vou te mostrar outras opções então.",
-	// O fecho de verdade: demorado por natureza (Bevi). Aqui só registra a ordem.
+vi.mock("@/lib/conversation/meta", () => ({
+	metaOf: (conv: { metadata: unknown } | null | undefined) =>
+		(conv?.metadata ?? {}) as Record<string, unknown>,
+	persistMeta: vi.fn(async () => {}),
+}));
+// O fecho de verdade: demorado por natureza (Bevi). Aqui só registra a ordem. O
+// registro do aceite (`aceiteDoDisparo`) continua o real — este teste confere a
+// ORDEM da fala, não o aceite.
+vi.mock("./contract-capture", async (importOriginal) => ({
+	...(await importOriginal<typeof import("./contract-capture")>()),
 	fireContract: vi.fn(async () => {
 		ordem.push("fecho:fireContract");
 	}),

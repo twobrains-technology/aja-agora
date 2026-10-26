@@ -16,7 +16,8 @@
 //
 // LGPD: o CPF NUNCA é logado nem persistido em claro. A identidade vem cifrada do
 // identify (loadIdentity decifra em memória); o payload do contract_form só carrega
-// CPF mascarado; criar proposta (consulta de bureau) exige aceite EXPLÍCITO.
+// CPF mascarado; criar proposta (consulta de bureau) exige aceite EXPLÍCITO — e só
+// vale como resposta ao aviso, cujo instante fica gravado no stage (`avisoLgpdEm`).
 
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -42,7 +43,7 @@ import { saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { decidirCpfDoTexto } from "@/lib/conversation/telefone-ou-cpf";
 import { sendInteractiveMessage, sendTextMessage } from "./api";
-import { realOfferToWhatsApp } from "./formatter";
+import { contractFormToWhatsApp, realOfferToWhatsApp } from "./formatter";
 import { waIdToCelular } from "./identify-capture";
 
 const brl = (n: number) =>
@@ -57,6 +58,41 @@ export const CONTRACT_INVALID_CPF_REPLY =
 	"Hmm, esse CPF não confere — confere os números e me manda de novo?";
 
 export const CONTRACT_CANCELLED_REPLY = "Tranquilo! Vou te mostrar outras opções então.";
+
+/** O estado do fechamento como ESTE módulo o lê e o escreve.
+ *
+ * `avisoLgpdEm` é o instante (ISO) em que o aviso canônico da LGPD foi dito — o
+ * FATO que autoriza a consulta de bureau. O campo ainda não está na definição do
+ * tipo em `personas.ts` (fora deste bloco), então este alias é o único ponto por
+ * onde ele entra; quando o tipo o aceitar, passa a ser
+ * `ConversationMetadata["contractCollection"]`. Pedido registrado em
+ * `.orientacao/pendencia-LGPDZAP.md`. */
+type ContractCollectionState = NonNullable<ConversationMetadata["contractCollection"]> & {
+	avisoLgpdEm?: string;
+};
+
+function collectionState(meta: ConversationMetadata): ContractCollectionState | undefined {
+	return meta.contractCollection as ContractCollectionState | undefined;
+}
+
+/** O aceite gravado no DISPARO, no mesmo formato de `metaDoFecho`
+ * (`pi/tools-livres.ts:324`): `{ em, fala }`, fala cortada em 200 chars.
+ *
+ * O aceite é só o que é lido como RESPOSTA ao aviso: sem o instante do aviso
+ * gravado (ou um aceite anterior) não há consentimento a registrar — o "sim" ou o
+ * CPF teriam vindo de uma mensagem que nunca disse o aviso, e registrar aceite ali
+ * derrotar a trava de `fireContract`. Nunca sobrescreve um aceite já registrado. */
+export function aceiteDoDisparo(
+	meta: ConversationMetadata,
+	fala: string,
+): NonNullable<ConversationMetadata["lgpdAceite"]> | null {
+	if (meta.lgpdAceite) return meta.lgpdAceite;
+	if (!collectionState(meta)?.avisoLgpdEm) return null;
+	return {
+		em: new Date().toISOString(),
+		fala: (fala ?? "").slice(0, 200),
+	};
+}
 
 /** FIX-357 — `ask-confirm` e `ask-cpf` FORAM REMOVIDOS de propósito.
  *
@@ -195,12 +231,16 @@ export async function beginContractCollection(
 ): Promise<"confirm" | "cpf"> {
 	const meta = await reloadMeta(conversationId);
 	if (meta.contractClosed) {
-		const atual = meta.contractCollection?.stage;
+		const atual = collectionState(meta)?.stage;
 		return atual === "cpf" ? "cpf" : "confirm";
 	}
 	const hasIdentity = meta.identityCollected === true || payload.identityOnFile === true;
 	const stage: "confirm" | "cpf" = hasIdentity ? "confirm" : "cpf";
-	await persistMeta(conversationId, { ...meta, contractCollection: { stage } });
+	// O stage nasce do card, e o card carrega o aviso — então o instante do aviso é
+	// FATO deste momento, não fala do modelo. É o que `fireContract` confere antes
+	// de abrir a consulta de bureau.
+	const state: ContractCollectionState = { stage, avisoLgpdEm: new Date().toISOString() };
+	await persistMeta(conversationId, { ...meta, contractCollection: state });
 	return stage;
 }
 
@@ -231,6 +271,10 @@ export async function captureContractText(
 		if (decisao.handled && decisao.outcome === "fire") {
 			// storeIdentity cifra antes de persistir — CPF nunca em claro no meta.
 			await storeIdentity(conv.id, { cpf: decisao.cpf, celular: waIdToCelular(from) });
+			// O CPF mandado DEPOIS do aviso é o consentimento por conduta (a regra da
+			// main) — e é o registro que o atendente precisa poder ler depois.
+			const aceite = aceiteDoDisparo(meta, text);
+			if (aceite) await persistMeta(conv.id, { ...meta, lgpdAceite: aceite });
 			return { handled: true, outcome: "fire" };
 		}
 		if (decisao.handled) return decisao;
@@ -248,8 +292,14 @@ export async function captureContractText(
 
 	// stage "confirm" — a decisão vive em decideConfirmStage (pura, testável).
 	// Só aceite EXPLÍCITO dispara a proposta (que faz consulta de bureau); pergunta
-	// e dúvida vão pro MODELO.
-	return decideConfirmStage(text);
+	// e dúvida vão pro MODELO. O aceite explícito é também o registro: sem ele,
+	// `fireContract` cria a proposta sem nada que prove que o cliente consentiu.
+	const decisaoConfirm = decideConfirmStage(text);
+	if (decisaoConfirm.handled && decisaoConfirm.outcome === "fire") {
+		const aceite = aceiteDoDisparo(meta, text);
+		if (aceite) await persistMeta(conv.id, { ...meta, lgpdAceite: aceite });
+	}
+	return decisaoConfirm;
 }
 
 /** Disparo do fechamento: resolve identidade, cria a proposta real e apresenta a
@@ -258,14 +308,15 @@ export async function captureContractText(
 export async function fireContract(from: string, conversationId: string): Promise<void> {
 	const meta = await reloadMeta(conversationId);
 	if (meta.contractClosed) return; // terminal — já fechou
-	if (!meta.contractCollection) return; // nada pendente (idempotência)
+	const cc = collectionState(meta);
+	if (!cc) return; // nada pendente (idempotência)
 	// `offer-confirm` significa que a proposta JÁ foi criada e a carta real já
 	// está com o cliente aguardando aceite — não é um fechamento pendente. Sem
 	// esta guarda, o estágio que eu reabri pra aceitar a confirmação por texto
 	// fazia o segundo `fireContract` passar direto e criar uma proposta DUPLICADA
 	// na administradora (com nova consulta de bureau). Pego pelo teste de
 	// idempotência, não em produção.
-	if (meta.contractCollection.stage === "offer-confirm") return;
+	if (cc.stage === "offer-confirm") return;
 
 	// Defesa em profundidade (espelha FIX-12 web): sem reveal, NUNCA cria proposta.
 	if (meta.revealCompleted !== true) {
@@ -276,6 +327,31 @@ export async function fireContract(from: string, conversationId: string): Promis
 			from,
 			"Calma, a gente tá quase lá! Antes de fechar eu te mostro as opções reais — vamos concluir essa etapa primeiro.",
 		);
+		return;
+	}
+
+	// ── F4 (testador no dev, conversa dfd69823) — A TRAVA: o lado perigoso é
+	// disparar sem aviso. Criar a proposta é consulta de bureau no CPF de alguém.
+	// Na main o aviso canônico vinha SEMPRE antes do pedido de CPF
+	// (`identify-capture.ts:23-42`, a2bc3024) e o CPF mandado depois dele era o
+	// consentimento por conduta. Este caminho perdeu o aviso: o `contract_form`
+	// dizia só "seus dados são tratados com segurança (LGPD)", um texto genérico, e
+	// o disparo saía com `lgpd: true` — uma afirmação do código, não um fato da
+	// conversa. O disparo agora exige um dos dois FATOS registrados: o instante em
+	// que o aviso foi dito (gravado junto do stage por `beginContractCollection`) ou
+	// o aceite já gravado. Sem nenhum dos dois, não chama a Bevi: o cliente recebe o
+	// aviso e o pedido de novo, e o instante do aviso passa a estar registrado — a
+	// mesma resposta que `pi/lgpd.ts` dá no turno livre.
+	const marcaPretendida = meta.contractOffer?.administradora ?? meta.recommendedAdministradora;
+	if (!cc.avisoLgpdEm && !meta.lgpdAceite) {
+		const aviso =
+			contractFormToWhatsApp({
+				...(marcaPretendida ? { administradora: marcaPretendida } : {}),
+				identityOnFile: false,
+			}).text ?? "";
+		const comAviso: ContractCollectionState = { ...cc, avisoLgpdEm: new Date().toISOString() };
+		await persistMeta(conversationId, { ...meta, contractCollection: comAviso });
+		await sendTextMessage(from, aviso);
 		return;
 	}
 
@@ -314,7 +390,6 @@ export async function fireContract(from: string, conversationId: string): Promis
 		// A ironia que fica registrada: a mensagem do FIX-409 acusa o FIX-400 e o
 		// FIX-406 de "os dois esquecendo este canal", e eu repeti no FIX-415.
 		const propostaRegistrada = await getLatestBeviProposal(conversationId).catch(() => null);
-		const marcaPretendida = meta.contractOffer?.administradora ?? meta.recommendedAdministradora;
 		if (
 			administradoraConflictsWithRegisteredProposal(
 				propostaRegistrada?.administradora,

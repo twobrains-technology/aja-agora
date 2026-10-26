@@ -1,8 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AVISO_LGPD_RE } from "@/lib/agent/pi/lgpd";
 import { decidirCpfDoTexto } from "@/lib/conversation/telefone-ou-cpf";
 
-// O módulo importa o banco; aqui só interessam as decisões de estágio.
-vi.mock("@/db", () => ({ db: {} }));
+// O módulo importa o banco; o mock dele está mais abaixo, junto do estado que o
+// caminho determinístico do fechamento escreve.
 
 describe("o aceite da carta REAL por texto finaliza como o botão", () => {
 	it("'sim', 'pode fechar' e 'confirmo' finalizam", async () => {
@@ -84,5 +85,166 @@ describe("o estágio do CPF aplica a regra ÚNICA de 'tentativa de CPF'", () => 
 		const { decideCpfStage } = await import("./contract-capture");
 		expect(decideCpfStage("vocês atendem em Curitiba?")).toEqual({ handled: false });
 		expect(decideCpfStage("tá caro, quero um de 80 mil")).toEqual({ handled: false });
+	});
+});
+
+// F4 (testador no dev, conversa dfd69823): no WhatsApp o `contract_form` sem
+// identidade pedia o CPF com um "(LGPD)" genérico. O cliente mandava o CPF e o
+// caminho determinístico criava a proposta — consulta de bureau com `lgpd: true`
+// fixo, sem aviso canônico e sem `metadata.lgpdAceite`. Na main o aviso vinha
+// SEMPRE antes do pedido (`identify-capture.ts:23-42`, a2bc3024) e o CPF mandado
+// depois era o consentimento por conduta.
+//
+// Os testes abaixo exercitam o caminho real que o `processor.ts` chama: o stage
+// grava o INSTANTE do aviso junto dele, o disparo só acontece com aviso gravado
+// ou aceite registrado, e o aceite é gravado no mesmo formato de `metaDoFecho`
+// (`pi/tools-livres.ts:324`) — nunca sobrescrevendo um aceite já registrado.
+
+const estado = vi.hoisted(() => ({
+	meta: {} as Record<string, unknown>,
+	textos: [] as string[],
+	chamadasStartContract: [] as string[],
+}));
+
+vi.mock("@/db", () => ({
+	db: {
+		query: {
+			conversations: {
+				findFirst: vi.fn(async () => ({ id: "conv-1", metadata: estado.meta })),
+			},
+		},
+	},
+}));
+vi.mock("@/lib/conversation/meta", () => ({
+	metaOf: (conv: { metadata: unknown } | null | undefined) =>
+		(conv?.metadata ?? {}) as Record<string, unknown>,
+	persistMeta: vi.fn(async (_convId: string, meta: Record<string, unknown>) => {
+		estado.meta = { ...meta };
+	}),
+	reloadMeta: vi.fn(async () => ({ ...estado.meta })),
+}));
+vi.mock("@/lib/conversation/messages", () => ({ saveMessage: vi.fn(async () => "msg-1") }));
+// Só a I/O de identidade é trocada: `isValidCpf` (o DV) continua o real, porque é
+// ele que decide se o número é CPF no stage `cpf`.
+vi.mock("@/lib/conversation/identity", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@/lib/conversation/identity")>()),
+	storeIdentity: vi.fn(async () => {}),
+	loadIdentity: vi.fn(async () => ({ cpf: "52998224725", celular: "5511987654321" })),
+}));
+vi.mock("./api", () => ({
+	sendTextMessage: vi.fn(async (_to: string, texto: string) => {
+		estado.textos.push(texto);
+		return { messageId: "wamid-1" };
+	}),
+	sendInteractiveMessage: vi.fn(async () => ({ messageId: "wamid-2" })),
+}));
+vi.mock("@/lib/bevi/fulfillment", () => ({
+	startContract: vi.fn(async (convId: string) => {
+		estado.chamadasStartContract.push(convId);
+		return { proposalId: "p-1", offer: null, noOffer: true };
+	}),
+}));
+vi.mock("@/lib/bevi/proposal-repo", () => ({
+	getLatestBeviProposal: vi.fn(async () => null),
+}));
+vi.mock("@/lib/admin/lead-stage-tracker", () => ({
+	getLeadIdForConversation: vi.fn(async () => null),
+}));
+
+const metaBase = {
+	currentCategory: "auto",
+	revealCompleted: true,
+};
+
+describe("o aviso de LGPD é gravado antes de o CPF valer como proposta", () => {
+	beforeEach(() => {
+		estado.meta = {};
+		estado.textos.length = 0;
+		estado.chamadasStartContract.length = 0;
+	});
+
+	it("beginContractCollection grava o instante do aviso junto do stage", async () => {
+		const { beginContractCollection } = await import("./contract-capture");
+		const stage = await beginContractCollection("conv-1", {});
+		expect(stage).toBe("cpf");
+		const aviso = (estado.meta.contractCollection as { avisoLgpdEm?: string })?.avisoLgpdEm;
+		expect(aviso).toBeTruthy();
+		// Instante, não data solta: o registro do aceite é `{ em, fala }`.
+		expect(new Date(aviso as string).toISOString()).toBe(aviso);
+	});
+
+	it("CPF válido no stage cpf dispara e o meta ganha lgpdAceite com a fala do cliente", async () => {
+		estado.meta = {
+			...metaBase,
+			contractCollection: { stage: "cpf", avisoLgpdEm: "2026-10-25T12:00:00.000Z" },
+		};
+		const { captureContractText } = await import("./contract-capture");
+		const resultado = await captureContractText("5511987654321", "529.982.247-25");
+		expect(resultado).toEqual({ handled: true, outcome: "fire" });
+		expect(estado.meta.lgpdAceite).toBeTruthy();
+		expect((estado.meta.lgpdAceite as { fala: string }).fala).toBe("529.982.247-25");
+	});
+
+	it("no stage confirm, o aceite explícito registra o lgpdAceite", async () => {
+		estado.meta = {
+			...metaBase,
+			contractCollection: { stage: "confirm", avisoLgpdEm: "2026-10-25T12:00:00.000Z" },
+		};
+		const { captureContractText } = await import("./contract-capture");
+		const resultado = await captureContractText("5511987654321", "pode criar, sim");
+		expect(resultado).toEqual({ handled: true, outcome: "fire" });
+		expect((estado.meta.lgpdAceite as { fala: string }).fala).toBe("pode criar, sim");
+	});
+
+	it("um lgpdAceite já gravado não é sobrescrito pelo disparo", async () => {
+		estado.meta = {
+			...metaBase,
+			lgpdAceite: { em: "2026-10-25T11:00:00.000Z", fala: "pode usar meus dados" },
+			contractCollection: { stage: "cpf", avisoLgpdEm: "2026-10-25T12:00:00.000Z" },
+		};
+		const { captureContractText } = await import("./contract-capture");
+		await captureContractText("5511987654321", "529.982.247-25");
+		expect((estado.meta.lgpdAceite as { fala: string }).fala).toBe("pode usar meus dados");
+	});
+
+	it("sem aviso gravado e sem aceite, o disparo NÃO chama a Bevi — responde o aviso de novo", async () => {
+		estado.meta = { ...metaBase, contractCollection: { stage: "cpf" } };
+		const { fireContract } = await import("./contract-capture");
+		await fireContract("5511987654321", "conv-1");
+		expect(estado.chamadasStartContract).toEqual([]);
+		expect(estado.textos).toHaveLength(1);
+		expect(AVISO_LGPD_RE.test(estado.textos[0])).toBe(true);
+		expect(estado.textos[0]).toContain("CPF");
+	});
+
+	it("com o aviso gravado, o disparo segue criando a proposta (a trava não bloqueia o fecho)", async () => {
+		estado.meta = {
+			...metaBase,
+			contractCollection: { stage: "confirm", avisoLgpdEm: "2026-10-25T12:00:00.000Z" },
+		};
+		const { fireContract } = await import("./contract-capture");
+		await fireContract("5511987654321", "conv-1");
+		expect(estado.chamadasStartContract).toEqual(["conv-1"]);
+	});
+
+	it("com lgpdAceite já registrado, dispara mesmo sem o aviso nesta coleta", async () => {
+		estado.meta = {
+			...metaBase,
+			lgpdAceite: { em: "2026-10-25T11:00:00.000Z", fala: "pode usar meus dados" },
+			contractCollection: { stage: "confirm" },
+		};
+		const { fireContract } = await import("./contract-capture");
+		await fireContract("5511987654321", "conv-1");
+		expect(estado.chamadasStartContract).toEqual(["conv-1"]);
+	});
+
+	it("sem aviso gravado, o CPF que chega não fabrica aceite — o registro é do aviso", async () => {
+		// O lado perigoso: registrar aceite por um número que respondeu a uma
+		// mensagem que nunca disse o aviso derrotaria a trava do disparo.
+		estado.meta = { ...metaBase, contractCollection: { stage: "cpf" } };
+		const { captureContractText } = await import("./contract-capture");
+		const resultado = await captureContractText("5511987654321", "529.982.247-25");
+		expect(resultado).toEqual({ handled: true, outcome: "fire" });
+		expect(estado.meta.lgpdAceite).toBeUndefined();
 	});
 });
