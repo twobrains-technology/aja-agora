@@ -16,6 +16,18 @@ export type ContactCaptureResult =
 	| { ok: true; leadId: string; created: boolean }
 	| { ok: false; error: string };
 
+/** O resultado de `saveContactName` leva o nome CANÔNICO que ficou gravado.
+ *
+ * O chamador de dentro do turno (`salvar_nome`, `tools-livres.ts`) tem de saber
+ * o nome já normalizado para pôr no contexto do turno: a `fazer_proposta`
+ * seguinte monta o documento com `ctx.nomeDoCliente`, e antes isto se perdia —
+ * o cliente se apresentava e a proposta saía sem a linha "Cliente" (P144).
+ * Devolver o gravado (e não recalculá-lo em cada chamador) mantém UMA régua: a
+ * validação e a capitalização de `capitalizeName`. */
+export type ContactNameCaptureResult =
+	| { ok: true; leadId: string; created: boolean; name: string }
+	| { ok: false; error: string };
+
 // Stopwords PT-BR que aparecem antes do nome em respostas coloquiais
 // ("sou o Kairo", "me chamo Alan", "eu sou a Helena", "meu nome é Pedro").
 // Defensivo contra agent extrair tokens errados ao chamar save_contact_name
@@ -118,7 +130,7 @@ export async function saveContactName(
 		 */
 		ancorarEm?: string | null;
 	},
-): Promise<ContactCaptureResult> {
+): Promise<ContactNameCaptureResult> {
 	const trimmed = rawName.trim();
 	if (!trimmed) return { ok: false, error: "name_invalid" };
 
@@ -172,7 +184,7 @@ export async function saveContactName(
 		void import("@/lib/conversions/registry").then(({ registrarLeadIdentificado }) =>
 			registrarLeadIdentificado(conversationId),
 		);
-		return { ok: true, leadId: existing.id, created: false };
+		return { ok: true, leadId: existing.id, created: false, name: displayName };
 	}
 
 	const { leadId } = await createLeadFromConversation({
@@ -184,7 +196,7 @@ export async function saveContactName(
 	void import("@/lib/conversions/registry").then(({ registrarLeadIdentificado }) =>
 		registrarLeadIdentificado(conversationId),
 	);
-	return { ok: true, leadId, created: true };
+	return { ok: true, leadId, created: true, name: displayName };
 }
 
 /**

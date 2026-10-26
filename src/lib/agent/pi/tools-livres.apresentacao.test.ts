@@ -27,11 +27,18 @@ const mocks = vi.hoisted(() => ({
 	startContract: vi.fn(),
 	listShownOffers: vi.fn(),
 	leadFindFirst: vi.fn(),
+	/** As escritas de `saveContactName` (`conversations.contactName` e
+	 * `leads.name`) — o banco é dublado, a régua do nome é a de verdade. */
+	update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn(async () => undefined) })) })),
 }));
 
 vi.mock("@/db", () => ({
-	db: { query: { leads: { findFirst: mocks.leadFindFirst } } },
+	db: { update: mocks.update, query: { leads: { findFirst: mocks.leadFindFirst } } },
 }));
+vi.mock("@/lib/contacts/sincronizar-nome", () => ({
+	sincronizarNomeDoContato: vi.fn(async () => null),
+}));
+vi.mock("@/lib/conversions/registry", () => ({ registrarLeadIdentificado: vi.fn() }));
 vi.mock("@/lib/conversation/meta", () => ({
 	reloadMeta: mocks.reloadMeta,
 	persistMeta: mocks.persistMeta,
@@ -131,6 +138,15 @@ function fechar(ctx: ContextoDasTools): Promise<unknown> {
 			messages: [],
 		},
 	);
+}
+
+/** A tool do nome no MESMO contexto de tools do fechamento — é assim no turno
+ * real: `buildToolsLivres(ctx)` uma vez, e o modelo chama as duas em sequência. */
+function chamarSalvarNome(ctx: ContextoDasTools, nome: string): Promise<unknown> {
+	const tools = buildToolsLivres(ctx) as unknown as Record<string, ToolChamavel>;
+	const tool = tools.salvar_nome;
+	if (!tool) throw new Error("a tool salvar_nome não existe");
+	return tool.execute({ nome }, { toolCallId: "call-0", messages: [] });
 }
 
 function payloadDoRealOffer(ctx: ContextoDasTools): Record<string, unknown> {
@@ -287,6 +303,179 @@ describe("P144 — o nome factual do cliente chega ao documento da proposta", ()
 		expect(payloadDoRealOffer(ctx)).not.toHaveProperty("clientName");
 		expect(documentoDoRealOffer(ctx)).not.toContain("Cliente");
 	});
+});
+
+/** As SEQUÊNCIAS do turno que terminam no documento da proposta.
+ *
+ * A tabela é de sequências, não de frases soltas: o que se prova é o que o
+ * contexto das tools tem depois de cada `salvar_nome`, e o que o documento
+ * imprime em seguida. `salvar` vazio = o modelo não chamou a tool do nome. */
+type CasoDeSequencia = {
+	caso: string;
+	/** A fala do cliente NESTE turno (o nome só grava se estiver nela). */
+	fala: string;
+	/** O nome que a conversa já tinha antes das tools (`null` = nenhum). */
+	nomeConhecido: string | null;
+	/** As chamadas a `salvar_nome`, na ordem do turno, com o trecho que a tool
+	 * tem de responder (a resposta é o que ensina o modelo quando falha). */
+	salvar: { nome: string; resposta: string }[];
+	/** `ctx.nomeDoCliente` depois das tools — o que a próxima tool lê. */
+	contextoDepois: string | null;
+	/** O `clientName` que o documento tem de sair com (`null` = linha omitida). */
+	clientName: string | null;
+};
+
+const CASOS_DE_SEQUENCIA: CasoDeSequencia[] = [
+	{
+		caso: "ninguém se apresentou e o modelo não chamou a tool: documento sem linha Cliente",
+		fala: "pode fechar",
+		nomeConhecido: null,
+		salvar: [],
+		contextoDepois: null,
+		clientName: null,
+	},
+	{
+		caso: "nome já conhecido na entrada, sem tool do nome no turno",
+		fala: "pode fechar",
+		nomeConhecido: "Bruna",
+		salvar: [],
+		contextoDepois: "Bruna",
+		clientName: "Bruna",
+	},
+	{
+		caso: "nome salvo NO TURNO do fechamento (a sequência que a auditoria pediu)",
+		fala: "me chamo Bruna Souza, pode fechar",
+		nomeConhecido: null,
+		salvar: [{ nome: "Bruna Souza", resposta: "[Nome 'Bruna' salvo.]" }],
+		contextoDepois: "Bruna",
+		clientName: "Bruna",
+	},
+	{
+		caso: "nome conhecido repetido no turno não muda o documento",
+		fala: "sou a Bruna, pode fechar",
+		nomeConhecido: "Bruna",
+		salvar: [{ nome: "Bruna", resposta: "[Nome 'Bruna' salvo.]" }],
+		contextoDepois: "Bruna",
+		clientName: "Bruna",
+	},
+	{
+		caso: "nome em minúscula no turno sai em Title Case no documento",
+		fala: "sou a bruna, pode fechar",
+		nomeConhecido: null,
+		salvar: [{ nome: "bruna", resposta: "[Nome 'Bruna' salvo.]" }],
+		contextoDepois: "Bruna",
+		clientName: "Bruna",
+	},
+	{
+		caso: "caixa alta no turno vira Title Case",
+		fala: "SOU A BRUNA, PODE FECHAR",
+		nomeConhecido: null,
+		salvar: [{ nome: "BRUNA", resposta: "[Nome 'Bruna' salvo.]" }],
+		contextoDepois: "Bruna",
+		clientName: "Bruna",
+	},
+	{
+		caso: "acento é preservado no nome gravado",
+		fala: "aqui é o CÉSAR, pode fechar",
+		nomeConhecido: null,
+		salvar: [{ nome: "CÉSAR", resposta: "[Nome 'César' salvo.]" }],
+		contextoDepois: "César",
+		clientName: "César",
+	},
+	{
+		caso: "nome hifenizado mantém o hífen na capitalização",
+		fala: "sou jean-luc, pode fechar",
+		nomeConhecido: null,
+		salvar: [{ nome: "jean-luc", resposta: "[Nome 'Jean-Luc' salvo.]" }],
+		contextoDepois: "Jean-Luc",
+		clientName: "Jean-Luc",
+	},
+	{
+		caso: "nome TROCADO no turno vence o que já estava gravado",
+		fala: "na verdade é Ana, pode fechar",
+		nomeConhecido: "Bruna",
+		salvar: [{ nome: "Ana", resposta: "[Nome 'Ana' salvo.]" }],
+		contextoDepois: "Ana",
+		clientName: "Ana",
+	},
+	{
+		caso: "nome trocado em minúscula também é normalizado",
+		fala: "me chama de vitória, pode fechar",
+		nomeConhecido: "Bruna",
+		salvar: [{ nome: "vitória", resposta: "[Nome 'Vitória' salvo.]" }],
+		contextoDepois: "Vitória",
+		clientName: "Vitória",
+	},
+	{
+		caso: "salvar_nome que falha (nome inventado) NÃO muda o contexto vazio",
+		fala: "pode fechar",
+		nomeConhecido: null,
+		salvar: [{ nome: "Bruna", resposta: "[Nome NÃO gravado: nao_ancorado]" }],
+		contextoDepois: null,
+		clientName: null,
+	},
+	{
+		caso: "salvar_nome que falha depois de um nome gravado mantém o anterior",
+		fala: "sou a Bruna, pode fechar",
+		nomeConhecido: null,
+		salvar: [
+			{ nome: "Bruna", resposta: "[Nome 'Bruna' salvo.]" },
+			{ nome: "Ana", resposta: "[Nome NÃO gravado: nao_ancorado]" },
+		],
+		contextoDepois: "Bruna",
+		clientName: "Bruna",
+	},
+	{
+		caso: "salvar_nome que falha com nome já conhecido não troca o nome do documento",
+		fala: "pode fechar",
+		nomeConhecido: "Bruna",
+		salvar: [{ nome: "Ana", resposta: "[Nome NÃO gravado: nao_ancorado]" }],
+		contextoDepois: "Bruna",
+		clientName: "Bruna",
+	},
+	{
+		caso: 'palavra que não é nome de gente ("Voltei") não vira nome',
+		fala: "voltei",
+		nomeConhecido: null,
+		salvar: [{ nome: "Voltei", resposta: "[Nome NÃO gravado: name_invalid]" }],
+		contextoDepois: null,
+		clientName: null,
+	},
+	{
+		caso: "nome com dígito é recusado e o contexto fica vazio",
+		fala: "meu nome é B4, pode fechar",
+		nomeConhecido: null,
+		salvar: [{ nome: "B4", resposta: "[Nome NÃO gravado: name_invalid]" }],
+		contextoDepois: null,
+		clientName: null,
+	},
+];
+
+describe("P144 — `salvar_nome` e `fazer_proposta` no MESMO contexto de tools", () => {
+	it.each(CASOS_DE_SEQUENCIA)(
+		"$caso",
+		async ({ fala, nomeConhecido, salvar, contextoDepois, clientName }) => {
+			const ctx = ctxDoTurno({ userText: fala, nomeDoCliente: nomeConhecido });
+
+			for (const chamada of salvar) {
+				expect(String(await chamarSalvarNome(ctx, chamada.nome))).toContain(chamada.resposta);
+			}
+			// O contexto das tools é o que a próxima tool lê — não a meta do banco.
+			expect(ctx.nomeDoCliente).toBe(contextoDepois);
+
+			await fechar(ctx);
+
+			if (clientName) {
+				expect(payloadDoRealOffer(ctx).clientName).toBe(clientName);
+				const documento = documentoDoRealOffer(ctx);
+				expect(documento).toContain("Cliente");
+				expect(documento).toContain(clientName);
+			} else {
+				expect(payloadDoRealOffer(ctx)).not.toHaveProperty("clientName");
+				expect(documentoDoRealOffer(ctx)).not.toContain("Cliente");
+			}
+		},
+	);
 });
 
 describe("P268/L14 — o contexto do lance embutido chega ao card", () => {

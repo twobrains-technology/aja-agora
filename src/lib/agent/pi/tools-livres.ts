@@ -165,7 +165,10 @@ export type ContextoDasTools = {
 	waId?: string | null;
 	/** Fala do cliente neste turno (o nome só se grava se foi dito nela). */
 	userText: string | null;
-	/** Nome que a conversa já tem — pré-preenche o formulário de lead. */
+	/** Nome que a conversa já tem — pré-preenche o formulário de lead, o
+	 * `clientName` do documento da proposta e o caso na mesa. `salvar_nome`
+	 * ESCREVE aqui o nome canônico assim que grava (P144), então uma tool
+	 * seguinte no mesmo turno já o vê. */
 	nomeDoCliente: string | null;
 	/** Telefone e CPF MASCARADOS (nunca em claro) — os cards de estado só levam
 	 * a máscara; o submit resolve a identidade cifrada no servidor. */
@@ -281,7 +284,8 @@ export function opcoesDaApresentacaoDoFecho(args: {
 	/** O perfil que o cliente declarou NESTE turno (`ctx.perfilDeclarado`) — a
 	 * fonte do lance quando ele foi dito na fala que fecha. */
 	perfilDoTurno?: PerfilDeclarado;
-	/** O nome que a conversa já tem (`ctx.nomeDoCliente`). */
+	/** O nome que a conversa já tem (`ctx.nomeDoCliente`) — o `salvar_nome` do
+	 * turno pode tê-lo atualizado antes desta tool rodar. */
 	nomeDoCliente?: string | null;
 }): OpcoesDaApresentacaoDoFecho {
 	const vista = numerosDaVista(args.escolhida) ?? numerosDaVista(args.meta.recommendedOffer);
@@ -1056,7 +1060,14 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 		inputSchema: z.object({ nome: z.string().min(2).max(30) }),
 		execute: async ({ nome }) => {
 			const r = await saveContactName(ctx.conversationId, nome, { ancorarEm: ctx.userText });
-			return r.ok ? `[Nome '${nome}' salvo.]` : `[Nome NÃO gravado: ${r.error}]`;
+			if (!r.ok) return `[Nome NÃO gravado: ${r.error}]`;
+			// O nome GRAVADO (primeiro nome, Title Case) passa a valer no CONTEXTO
+			// deste turno: é dele que `fazer_proposta` tira o `clientName` do
+			// documento e que `falar_com_humano` abre o caso. Sem isto, o cliente
+			// se apresentava e a proposta seguinte saía sem a linha "Cliente" —
+			// a meta só é relida no turno seguinte (P144).
+			ctx.nomeDoCliente = r.name;
+			return `[Nome '${r.name}' salvo.]`;
 		},
 	});
 
