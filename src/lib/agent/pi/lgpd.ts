@@ -4,14 +4,18 @@
 // Um "sim / pode / pode usar" do cliente DEPOIS do aviso é o aceite, conferido no
 // histórico pelo servidor — não no `aceiteLgpd: true` que o modelo manda.
 //
-// O ACEITE É LISTA DE PERMISSÃO (rodada 6): só aceita a mensagem que passa por todas
-// as travas e casa a forma POSITIVA estreita. Tudo o mais é "ainda não" — nunca
-// "autorizado". O desenho e o porquê estão em `clienteAceitouLgpd`.
+// O ACEITE É A DECISÃO LITERAL DA MAIN (rodada 7): juiz = decideConfirmStage da main;
+// a trava só estreita (nunca cria aceite), então não pode produzir o lado perigoso. Em
+// `lgpd.ts` não há forma positiva própria — "de acordo", "concordo", "autorizo" como lista
+// de aceite eram juiz próprio, e é isso que abre o caso que o auditor mediu. O desenho e o
+// porquê estão em `clienteAceitouLgpd`.
 //
 // Medido na conversa 92dfa1ba (dev, 25/10/2026): aviso dado dois turnos antes, no
 // meio o agente pediu o celular. O check antigo olhava só a ÚLTIMA fala do agente,
 // não achava o aviso, a tool recusava, o modelo repetia o aviso e o texto do turno
 // saía duplicado. Este módulo é o que fecha isso.
+
+import { decideConfirmStage } from "@/lib/whatsapp/contract-capture";
 
 export const AVISO_LGPD_RE = /bir[oô]s?\s+de\s+cr[eé]dito|conforme a\s+lgpd/i;
 
@@ -85,66 +89,39 @@ export function garanteAvisoLgpd(args: { texto: string; avisoJaDado: boolean }):
  * uma recusa. O erro contrário — não ver um aceite que existia — custa um turno: o
  * modelo pergunta de novo e o cliente responde "sim".
  *
- * LISTA DE PERMISSÃO, não de bloqueio. As rodadas 4, 5 e 6 fecharam as negações UMA A
- * UMA e o auditor achou outra forma a cada rodada ("não estou de acordo", "não preciso
- * do seu CPF", "faltam 30 mil"): bloqueio nunca fecha, porque quem fala português
- * sempre arruma uma forma que ninguém enumerou. O lado perigoso só acontece quando a
- * mensagem inteira passa por todas as travas E casa a forma positiva, e essa forma é
- * estreita. Qualquer outra coisa cai no lado SEGURO: o aceite fica pendente, o modelo
- * pergunta de novo, e a consulta de bureau não sai.
- *
- * A decisão é a da main (`decideConfirmStage` em `src/lib/whatsapp/contract-capture.ts`,
- * a2bc3024), lida sobre a MENSAGEM INTEIRA — não se separa frase nem oração:
+ * O JUIZ É A MAIN, LITERAL. Rodadas 4, 5 e 6 fecharam as negações UMA A UMA e o auditor
+ * achou outra forma a cada rodada ("não estou de acordo", "não preciso do seu CPF",
+ * "faltam 30 mil"): lista de bloqueio nunca fecha, porque quem fala português sempre
+ * arruma uma forma que ninguém enumerou. Desde a rodada 7 o aceite é a decisão da main
+ * (`decideConfirmStage` em `src/lib/whatsapp/contract-capture.ts`, a2bc3024), lida sobre a
+ * MENSAGEM INTEIRA — não se separa frase nem oração:
  *   0. revogação do consentimento ....... não aceita (o lado seguro, que atravessa até
  *      a pergunta: "não autorizo, podemos seguir sem isso?")
- *   1. pergunta ......................... não aceita
- *   2. negação/recusa ................... não aceita
- *   3. forma positiva do aceite ......... aceita
+ *   1. pergunta ......................... não aceita (`isQuestion` da main)
+ *   2. negação/recusa ................... não aceita (`CANCEL_RE` da main)
+ *   3. forma afirmativa .................. aceita (`AFFIRM_RE` da main), se a TRAVA abaixo
+ *      não estreitar
  *   4. qualquer outra coisa ............. não aceita
+ *
+ * A TRAVA SÓ ESTREITA: ela tira aceite e nunca acrescenta — por isso não pode abrir o lado
+ * perigoso. O que ela fecha é o caso medido pelo auditor em P262, rodada 7, e as formas de
+ * dúvida que o `AFFIRM_RE` da main aceita: "Estou verificando se o termo está de acordo com
+ * a LGPD.", "Quero entender como vocês usam meu CPF", "Nem sei se quero isso", "deixa eu
+ * confirmar com a esposa". Na main essas três casam o afirmativo e viram proposta real por
+ * uma dúvida — o próprio comentário da main registra isso (`contract-capture.ts:137-142`);
+ * no domínio do dado, dúvida não é consentimento, e o erro para o lado seguro custa só um
+ * turno: o modelo repergunta.
  */
 
-/** A interrogativa que ABRE a mensagem — o `isQuestion` da main, com as duas adições
- * medidas nesta casa: `podem`/`vocês` abrindo a fala (quem abre falando com a empresa
- * está perguntando, e no WhatsApp a pergunta costuma vir sem "?") e o pedido de
- * explicação sem "?" ("pode me explicar como funciona"). As duas só AMPLIAM o que é
- * pergunta, e pergunta nunca aceita — não abrem o lado perigoso. */
-const ABRE_COMO_PERGUNTA_RE =
-	/^(?:o\s+que|que\s+(?:é|e|s[ãa]o)|por\s?que|porqu[êe]|pq|qual|quais|quanto|quantos|quando|como|onde|quem|tem\s|teria|e\s+se|ser[áa]|seria|d[áa]\s+pra|posso\s+saber|pode(?:m)?\s+(?:me\s+)?(?:explicar|esclarecer|detalhar|dizer|falar)|podem\b|voc[êe]s\b)\b/i;
-
-/** A interrogativa no MEIO da mensagem também é pergunta: "… e QUANTO precisaria de
- * lance?" virou aceite na main (2026-07-21) porque só se olhava o começo. */
-const INTERROGATIVA_NO_MEIO_RE =
-	/\b(quanto|quantos|qual|quais|como\s+fica|e\s+se|ser[áa]\s+que|seria)\b/i;
-
-/** Pedido de PAUSA: quem diz "pera" está freando, não aceitando. */
-const PEDIDO_DE_PAUSA_RE = /\b(pera[ií]?|espera|calma|antes\s+de|só\s+um|aguenta|segura)\b/i;
-
-/** A mensagem INTEIRA é uma pergunta? Na dúvida, sim — pergunta não aceita nada. */
-function ehPergunta(texto: string): boolean {
-	const s = (texto ?? "").trim();
-	if (s.includes("?")) return true;
-	if (ABRE_COMO_PERGUNTA_RE.test(s)) return true;
-	if (INTERROGATIVA_NO_MEIO_RE.test(s)) return true;
-	return PEDIDO_DE_PAUSA_RE.test(s);
-}
-
-/** A recusa da main (`CANCEL_RE` de `contract-capture.ts`, literal) — recusa tem
- * prioridade sobre o aceite: "quero ver outras" contém "quero". */
-const RECUSA_RE =
-	/\b(n[ãa]o|outras?|outra op|ver mais|mais op|compar|cancel|depois|espera|agora n[ãa]o|talvez)\b/i;
-
-/** A TRAVA GERAL, na mensagem inteira: qualquer negação, em qualquer lugar, impede o
- * aceite. É o que pega a forma que ninguém enumerou — "ainda não estou de acordo",
- * "nem sei", "jamais autorizo", "sim, mas só se não venderem meus dados". */
-const NEGACAO_NA_MENSAGEM_RE = /\b(n[ãa]o|nem|nunca|jamais)\b/i;
-
-/** A FORMA POSITIVA do aceite — estreita de propósito: só o que, dito pelo cliente,
- * autoriza a consulta de bureau. Ficam de fora os verbos que abrem dúvida no domínio do
- * dado, inclusive o `\bquero\b` e o `confirm\w*` do `AFFIRM_RE` da main, onde o
- * "quero" já criou proposta real por uma dúvida (`contract-capture.ts:137-142`):
- * "quero entender como vocês usam meu CPF", "deixa eu confirmar com a esposa". */
-const ACEITE_RE =
-	/\b(sim|pode|podes|podem|aceito|autorizo|autorizado|confirmo|confirmado|claro|ok|beleza|de acordo|com certeza|positivo)\b/i;
+/** A TRAVA DO ACEITE — SÓ ESTREITA. O juiz é `decideConfirmStage` da main; esta regex não
+ * cria aceite, ela tira aceite: negação em qualquer ponto da mensagem, e o verbo de
+ * dúvida/verificação — falar DO termo não é consentir a ele. É o que fecha o caso medido
+ * pelo auditor (P262, rodada 7): "Estou verificando se o termo está de acordo com a LGPD.",
+ * "Quero entender como vocês usam meu CPF", "Nem sei se quero isso", "deixa eu confirmar com
+ * a esposa". Uma trava só estreita nunca produz o lado perigoso.
+ */
+const TRAVA_DO_ACEITE_RE =
+	/\b(n[ãa]o|nem|nunca|jamais)\b|\b(entender|saber|como|deixa eu|vou ver|pensar|confirmar com|verificando|verificar)\b/i;
 
 /* A REVOGAÇÃO É O LADO SEGURO — e por isso é o único que atravessa a pergunta.
  *
@@ -186,19 +163,18 @@ function revogaConsentimento(texto: string): boolean {
 }
 
 /**
- * O cliente AUTORIZOU o uso dos dados? Só a mensagem que não revoga, não pergunta, não
- * nega, não recusa e casa a forma positiva estreita do aceite. Qualquer outra fala
- * responde `false` — e `false` aqui não é "recusou", é "ainda não": quem repergunta é
+ * O cliente AUTORIZOU o uso dos dados? O juiz é a decisão literal da main, lida sobre a
+ * mensagem inteira, e a `TRAVA_DO_ACEITE_RE` só estreita o que ela aceita. Qualquer outra
+ * fala responde `false` — e `false` aqui não é "recusou", é "ainda não": quem repergunta é
  * o modelo, no turno seguinte.
  */
 export function clienteAceitouLgpd(texto: string): boolean {
 	// A revogação derruba a fala inteira: "sim, mas revogo a autorização" não autoriza.
 	if (revogaConsentimento(texto)) return false;
-	if (ehPergunta(texto)) return false;
-	// A trava geral vem antes da recusa enumerada: ela é o que fecha o lado perigoso.
-	if (NEGACAO_NA_MENSAGEM_RE.test(texto)) return false;
-	if (RECUSA_RE.test(texto)) return false;
-	return ACEITE_RE.test(texto);
+	// O juiz é a função da main — nada em `lgpd.ts` decide o aceite.
+	if (decideConfirmStage(texto).outcome !== "fire") return false;
+	// A trava só tira aceite: nunca cria o lado perigoso.
+	return !TRAVA_DO_ACEITE_RE.test(texto);
 }
 
 export type FalaDeLgpd = { role: "user" | "assistant"; content: string };

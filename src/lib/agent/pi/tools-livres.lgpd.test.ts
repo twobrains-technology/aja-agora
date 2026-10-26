@@ -273,6 +273,41 @@ describe("fazer_proposta — as três recusas de LGPD dizem coisas diferentes ao
 		}
 	});
 
+	// P262, re-auditoria 310e rodada 7: o juiz do aceite é `decideConfirmStage` da main
+	// (`src/lib/whatsapp/contract-capture.ts`, a2bc3024) — em `lgpd.ts` não há padrão próprio
+	// de aceite. Comentar o termo não é consentimento: sem aceite, `startContract` não é
+	// chamado, e o modelo lê "peça o aceite". O controle positivo prova que a trava só
+	// estreita — ela não transforma o aceite em bloqueio permanente.
+	it("rodada 7: comentário sobre o termo não gera proposta; o aceite da main gera", async () => {
+		for (const fala of [
+			"Estou verificando se o termo está de acordo com a LGPD.",
+			"Ainda não estou de acordo.",
+			"Vocês podem consultar meu CPF e vender meus dados?",
+		]) {
+			vi.clearAllMocks();
+			mocks.loadConversationHistory.mockResolvedValue([{ role: "assistant", content: AVISO_LGPD }]);
+			const ctx = ctxDoTurno({ userText: fala });
+			const retorno = await falarComAFerramenta(ctx);
+
+			expect(retorno, fala).toContain("Peça o aceite");
+			expect(retorno, fala).not.toContain("REVOGOU");
+			expect(mocks.startContract, fala).not.toHaveBeenCalled();
+			expect(
+				ctx.cards.some((c) => c.type === "real_offer"),
+				fala,
+			).toBe(false);
+		}
+
+		for (const fala of ["sim", "pode consultar"]) {
+			vi.clearAllMocks();
+			mocks.loadConversationHistory.mockResolvedValue([{ role: "assistant", content: AVISO_LGPD }]);
+			const ctx = ctxDoTurno({ userText: fala });
+			await falarComAFerramenta(ctx);
+
+			expect(mocks.startContract, fala).toHaveBeenCalledTimes(1);
+		}
+	});
+
 	it("recusar o prazo sozinho não revoga: o fechamento segue", async () => {
 		mocks.loadConversationHistory.mockResolvedValue([
 			{ role: "assistant", content: AVISO_LGPD },

@@ -529,3 +529,33 @@ describe("P262 rodada 6 — lista de permissão: só a forma positiva estreita a
 		);
 	});
 });
+
+// P262, re-auditoria 310e rodada 7: o aceite é a decisão LITERAL da main
+// (`decideConfirmStage` em `src/lib/whatsapp/contract-capture.ts`, a2bc3024). Não existe
+// padrão próprio de aceite em `lgpd.ts` — "de acordo", "concordo", "autorizo" como forma
+// positiva eram juiz próprio, e aceitam o exemplo do auditor ("Estou verificando se o termo
+// está de acordo com a LGPD."). O único juiz é a função da main, e a trava do aceite só
+// ESTREITA: ela tira aceite, nunca cria — portanto não pode produzir o lado perigoso.
+// Os moldes, com o caso que o auditor mediu:
+describe("P262 rodada 7 — o juiz é `decideConfirmStage` da main; a trava só estreita", () => {
+	const aviso = { role: "assistant" as const, content: AVISO };
+	const TABELA: Array<[string, "aceita" | "nao-aceita"]> = [
+		["Estou verificando se o termo está de acordo com a LGPD.", "nao-aceita"],
+		// A mesma frase sem a verificação: em `lgpd.ts` não há lista própria de aceite, então
+		// “de acordo” sozinho não autoriza nada — é o `AFFIRM_RE` da main que decide, e ele não
+		// tem essa expressão.
+		["Estou de acordo com o uso dos meus dados.", "nao-aceita"],
+		["sim", "aceita"],
+		["pode consultar", "aceita"],
+		["Ainda não estou de acordo.", "nao-aceita"],
+		["Vocês podem consultar meu CPF e vender meus dados?", "nao-aceita"],
+	];
+
+	it.each(TABELA)("“%s” — %s", (fala, esperado) => {
+		const esperadoAceite = esperado === "aceita";
+		expect(clienteAceitouLgpd(fala), fala).toBe(esperadoAceite);
+		const r = resolverAceiteLgpd({ falas: [aviso], falaDoCliente: fala });
+		expect(r.ok, fala).toBe(esperadoAceite);
+		expect(r.motivo, fala).toBe(esperadoAceite ? "aceite-do-cliente" : "falta-o-aceite");
+	});
+});
