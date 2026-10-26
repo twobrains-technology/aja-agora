@@ -68,4 +68,40 @@ describe("L25/P314 — os insights da conversa gravam custo em `uso_de_ia`", () 
 			tokensOutput: 240,
 		});
 	});
+
+	// P314 — o prompt de insights é o transcript inteiro, e o provedor devolve o que veio
+	// do cache separado do resto da entrada. O total do SDK como `tokensInput` fazia a
+	// chamada parecer inteiramente de entrada cheia (custo para mais).
+	it("usage com cache separa entrada líquida e parcelas de cache", async () => {
+		generateTextMock.mockResolvedValue({
+			text: corpoDoModelo,
+			usage: {
+				inputTokens: 5_200_000,
+				outputTokens: 240_000,
+				inputTokenDetails: {
+					noCacheTokens: 3_200_000,
+					cacheReadTokens: 1_800_000,
+					cacheWriteTokens: 200_000,
+				},
+			},
+		});
+
+		const res = await POST(new Request("http://localhost/api", { method: "POST" }), {
+			params: Promise.resolve({ id: "11111111-1111-4111-8111-111111111111" }),
+		});
+
+		expect(res.status).toBe(200);
+		const linhaDeCusto = inserts.find((i) => i.table === usoDeIa);
+		expect(linhaDeCusto?.values).toMatchObject({
+			conversationId: "11111111-1111-4111-8111-111111111111",
+			modelo: "claude-haiku-4-5",
+			tokensInput: 3_200_000,
+			tokensOutput: 240_000,
+			tokensCacheRead: 1_800_000,
+			tokensCacheWrite: 200_000,
+		});
+		// 320 (entrada) + 120 (saída) + 18 (cache lido) + 25 (cache escrito) = 483;
+		// cobrando o total do SDK como entrada daria 640.
+		expect((linhaDeCusto?.values as { custoUsdCents: number }).custoUsdCents).toBe(483);
+	});
 });

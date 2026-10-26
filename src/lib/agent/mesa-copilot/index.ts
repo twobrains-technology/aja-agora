@@ -13,6 +13,7 @@
 import { type LanguageModel, type ModelMessage, type SystemModelMessage, streamText } from "ai";
 import { modeloAiSdkDoGateway, modeloDoAgente } from "@/lib/llm/model-provider";
 import { registrarUsoDeIa } from "@/lib/observability/sinais/publicar";
+import { normalizarUsoDoSdk } from "@/lib/observability/sinais/uso-do-sdk";
 import { buildMesaCopilotPrompt, type MesaCopilotCaso } from "./system-prompt";
 
 export interface MesaCopilotTurn {
@@ -116,13 +117,17 @@ export async function generateMesaCopilotReply(input: {
 
 	// Livro-caixa local da chamada (P314). `modelId` mantém o nome do modelo certo
 	// também quando um modelo injetado é usado. Gravação que falha não derruba a
-	// orientação — o atendente já está esperando por ela.
-	const uso = await result.usage;
+	// orientação — o atendente já está esperando por ela. O bloco STABLE pede cache de
+	// 1 h ao provedor, então as parcelas de cache vêm separadas do total de entrada
+	// (`normalizarUsoDoSdk`): sem isso o prompt cacheado era gravado como entrada cheia.
+	const uso = normalizarUsoDoSdk(await result.usage);
 	await registrarUsoDeIa({
 		conversationId: input.conversationId ?? null,
 		modelo: nomeDoModelo(modeloUsado),
-		tokensInput: uso.inputTokens ?? 0,
-		tokensOutput: uso.outputTokens ?? 0,
+		tokensInput: uso.tokensInput,
+		tokensOutput: uso.tokensOutput,
+		cacheRead: uso.cacheRead,
+		cacheWrite: uso.cacheWrite,
 	});
 
 	return text.trim();

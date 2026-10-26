@@ -76,4 +76,45 @@ describe("L25/P314 — o copiloto da mesa grava o que gastou em `uso_de_ia`", ()
 		expect(inserts).toHaveLength(1);
 		expect(inserts[0].values).toMatchObject({ conversationId: "conv-claim" });
 	});
+
+	// P314 — o bloco STABLE pede `cacheControl` de 1 h; o provedor devolve o prompt lido
+	// do cache separado do resto. Repassar o total do SDK como `tokensInput` gravava o
+	// prompt cacheado pelo preço de entrada cheio — o custo saía MAIOR do que o real.
+	it("usage com cache vira entrada líquida + parcelas de cache, no custo certo", async () => {
+		streamTextMock.mockReturnValue({
+			textStream: (async function* () {
+				yield "1. Abra o sistema da administradora.";
+			})(),
+			usage: Promise.resolve({
+				inputTokens: 5_200_000,
+				outputTokens: 240_000,
+				inputTokenDetails: {
+					noCacheTokens: 3_200_000,
+					cacheReadTokens: 1_800_000,
+					cacheWriteTokens: 200_000,
+				},
+			}),
+		});
+
+		await generateMesaCopilotReply({
+			caso: { administradoraNome: null, docs: [] },
+			history: [{ role: "attendant", content: "como cadastro?" }],
+			model: { modelId: "claude-haiku-4-5" } as unknown as LanguageModel,
+			conversationId: "conv-cache",
+		});
+
+		expect(inserts).toHaveLength(1);
+		expect(inserts[0].values).toMatchObject({
+			conversationId: "conv-cache",
+			modelo: "claude-haiku-4-5",
+			tokensInput: 3_200_000,
+			tokensOutput: 240_000,
+			tokensCacheRead: 1_800_000,
+			tokensCacheWrite: 200_000,
+		});
+		// 320 (entrada) + 120 (saída) + 18 (cache lido) + 25 (cache escrito) = 483. Pelo
+		// total do SDK como entrada, seriam 640 — a diferença é a prova de que o cache
+		// entrou na conta pela parcela certa.
+		expect(inserts[0].values.custoUsdCents).toBe(483);
+	});
 });

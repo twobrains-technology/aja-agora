@@ -119,4 +119,56 @@ describe("P314/L25 — o diagnóstico registra o uso da IA", () => {
 		expect(inserts).toHaveLength(1);
 		expect(inserts[0].values).toMatchObject({ modelo: DIAGNOSIS_MODEL, conversationId: null });
 	});
+
+	// P314 — o SDK reporta `inputTokens` como TOTAL do prompt, com o cache read/write já
+	// somados. O livro-caixa guarda a entrada LÍQUIDA e as parcelas em colunas próprias:
+	// sem isso a chamada com cache parecia inteiramente precificada como entrada.
+	it("usage com cache separa entrada líquida e parcelas de cache", async () => {
+		__setGenerateObjectImplForTests((async () => ({
+			object: diagnostico,
+			usage: {
+				inputTokens: 9_000,
+				outputTokens: 300,
+				inputTokenDetails: {
+					noCacheTokens: 6_000,
+					cacheReadTokens: 2_500,
+					cacheWriteTokens: 500,
+				},
+			},
+		})) as never);
+
+		const out = await diagnoseConversation({
+			transcript: "Usuário: quero um imóvel de 300 mil",
+			evaluation: {
+				overallScore: 0.62,
+				dimensions: null,
+				flags: null,
+				topIssues: ["não fechou"],
+				topStrengths: null,
+			},
+			persona: {
+				id: "(sem persona)",
+				displayName: "(sem persona — conversa sem persona ativa)",
+				voiceTone: "(não definido)",
+				examples: [],
+				forbiddenTopics: [],
+				handoffTriggers: [],
+			},
+			context: { expertise: null, category: null, channel: "web", intent: null },
+			conversationId: "22222222-2222-4222-8222-222222222222",
+		});
+
+		expect(inserts).toHaveLength(1);
+		expect(inserts[0].values).toMatchObject({
+			modelo: DIAGNOSIS_MODEL,
+			tokensInput: 6_000,
+			tokensOutput: 300,
+			tokensCacheRead: 2_500,
+			tokensCacheWrite: 500,
+		});
+		// O retorno acompanha o livro-caixa: entrada líquida, não o total do SDK.
+		expect(out.tokensInput).toBe(6_000);
+		// Soneto do diagnóstico sem preço conferido: custo DESCONHECIDO, nunca inventado.
+		expect(inserts[0].values.custoUsdCents).toBeNull();
+	});
 });

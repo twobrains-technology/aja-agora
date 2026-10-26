@@ -1,6 +1,7 @@
 import { generateObject } from "ai";
 import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
 import { registrarUsoDeIa } from "@/lib/observability/sinais/publicar";
+import { normalizarUsoDoSdk } from "@/lib/observability/sinais/uso-do-sdk";
 import {
 	buildJudgePrompt,
 	type JudgeResult,
@@ -88,17 +89,9 @@ export async function judgeConversation(args: JudgeArgs): Promise<JudgeResponse>
 				temperature: 0,
 			});
 
-			const usage = result.usage as
-				| {
-						inputTokens?: number;
-						outputTokens?: number;
-						promptTokens?: number;
-						completionTokens?: number;
-				  }
-				| undefined;
-
-			const tokensInput = usage?.inputTokens ?? usage?.promptTokens ?? 0;
-			const tokensOutput = usage?.outputTokens ?? usage?.completionTokens ?? 0;
+			// O usage vem com o TOTAL de entrada do SDK; `normalizarUsoDoSdk` separa a
+			// entrada líquida das parcelas de cache que o provedor cobra à parte (P314).
+			const uso = normalizarUsoDoSdk(result.usage);
 
 			// Livro-caixa local (P314): o juiz é chamada de LLM em produção e, com o
 			// Langfuse fora, os tokens voltavam para o caller e não deixavam rastro.
@@ -106,14 +99,16 @@ export async function judgeConversation(args: JudgeArgs): Promise<JudgeResponse>
 			await registrarUsoDeIa({
 				conversationId: args.conversationId ?? null,
 				modelo: JUDGE_MODEL,
-				tokensInput,
-				tokensOutput,
+				tokensInput: uso.tokensInput,
+				tokensOutput: uso.tokensOutput,
+				cacheRead: uso.cacheRead,
+				cacheWrite: uso.cacheWrite,
 			});
 
 			return {
 				result: result.object,
-				tokensInput,
-				tokensOutput,
+				tokensInput: uso.tokensInput,
+				tokensOutput: uso.tokensOutput,
 				durationMs: Date.now() - start,
 			};
 		} catch (err) {
