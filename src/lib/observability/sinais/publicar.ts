@@ -70,7 +70,9 @@ export function publicarScores(scores: readonly Score[], onde: string): void {
  * desaparecerem por não ter conversa a quem atribuir.
  *
  * `cacheRead`/`cacheWrite` são o recorte de cache do prompt, quando o provedor o
- * reporta. Ausente = não medido (a coluna fica `null`), que não é o mesmo que zero.
+ * reporta. Três estados: número (0 inclusive) = medido e precificado; `null` = o
+ * provedor não reportou, então o custo da linha é DESCONHECIDO (P273); ausente = o
+ * chamador não rastreia cache (convenção antiga) e paga o preço integral.
  */
 export type UsoDeIaDaChamada = {
 	conversationId?: string | null;
@@ -115,8 +117,11 @@ export async function registrarUsoDeIa(uso: UsoDeIaDaChamada): Promise<void> {
 				modelo: uso.modelo,
 				tokensInput: uso.tokensInput,
 				tokensOutput: uso.tokensOutput,
-				cacheRead: cacheRead ?? undefined,
-				cacheWrite: cacheWrite ?? undefined,
+				// Repasso DIRETO, sem `?? undefined`: `null` é cache não medido e o custo
+				// dessa linha é desconhecido (P273) — só a ausência do argumento é o
+				// chamador antigo, que paga o preço integral.
+				cacheRead: uso.cacheRead,
+				cacheWrite: uso.cacheWrite,
 			}),
 		});
 	} catch (erro) {

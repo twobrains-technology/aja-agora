@@ -89,6 +89,36 @@ describe("L25/P314 — o livro-caixa local cobre chamada de LLM fora do vendedor
 		expect(inserts[0].values.tokensCacheWrite).toBeNull();
 	});
 
+	// P273 — `null` (cache não medido) tem de atravessar até o preço: não é o mesmo que
+	// `undefined` (chamador antigo, que não rastreia cache e por isso paga o preço integral).
+	// Convertido em `undefined`, a linha gravava preço cheio enquanto o leitor do admin
+	// (`admin/custo-de-ia.ts`) marcava a mesma linha como não medida.
+	it("cache NÃO MEDIDO (`null`) deixa o custo desconhecido, não o preço integral", async () => {
+		await registrarUsoDeIa({
+			modelo: "claude-haiku-4-5",
+			tokensInput: 1_000_000,
+			tokensOutput: 0,
+			cacheRead: null,
+			cacheWrite: null,
+		});
+
+		expect(inserts[0].values.tokensCacheRead).toBeNull();
+		expect(inserts[0].values.custoUsdCents).toBeNull();
+	});
+
+	it("cache MEDIDO em zero custa o preço integral — zero não é não medido", async () => {
+		await registrarUsoDeIa({
+			modelo: "claude-haiku-4-5",
+			tokensInput: 1_000_000,
+			tokensOutput: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+		});
+
+		expect(inserts[0].values.tokensCacheRead).toBe(0);
+		expect(inserts[0].values.custoUsdCents).toBe(100);
+	});
+
 	it("cache em modelo sem preço de cache: custo desconhecido, cache ainda registrado", async () => {
 		await registrarUsoDeIa({
 			modelo: "qwen3.6-flash",

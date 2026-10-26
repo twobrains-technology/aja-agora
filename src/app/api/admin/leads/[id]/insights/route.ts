@@ -6,6 +6,7 @@ import { buildInsightPrompt, INSIGHTS_SYSTEM_PROMPT } from "@/lib/admin/insights
 import { requireRole } from "@/lib/admin/require-role";
 import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
 import { registrarUsoDeIa } from "@/lib/observability/sinais/publicar";
+import { normalizarUsoDoSdk } from "@/lib/observability/sinais/uso-do-sdk";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -91,12 +92,17 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 		});
 
 		// Livro-caixa local (P314): a chamada gastou dinheiro e o Langfuse saiu. A
-		// conversa do lead é o vínculo disponível aqui.
+		// conversa do lead é o vínculo disponível aqui. As parcelas de cache saem
+		// separadas do total de entrada (`normalizarUsoDoSdk`) — o prompt é o
+		// transcript inteiro, então é aqui que o cache pega.
+		const uso = normalizarUsoDoSdk(usage);
 		await registrarUsoDeIa({
 			conversationId: lead.conversation.id,
 			modelo: "claude-haiku-4-5",
-			tokensInput: usage.inputTokens ?? 0,
-			tokensOutput: usage.outputTokens ?? 0,
+			tokensInput: uso.tokensInput,
+			tokensOutput: uso.tokensOutput,
+			cacheRead: uso.cacheRead,
+			cacheWrite: uso.cacheWrite,
 		});
 
 		// Strip accidental markdown fences

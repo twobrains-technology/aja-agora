@@ -69,6 +69,43 @@ describe("L25/P314 — o analyzer grava o que gastou em `uso_de_ia`", () => {
 		expect(inserts[0].values.conversationId).toBeNull();
 	});
 
+	// P2/P314 — o `generateObject` do analyzer entrega `inputTokenDetails`; repassar só os
+	// totais grava o prompt cacheado como entrada de preço cheio e o custo do turno sai
+	// inconsistente com a linha do analyzer.
+	it("usage com cache grava a entrada líquida e cobra as parcelas de cache", async () => {
+		process.env.AI_ANALYZER_MODEL = "claude-haiku-4-5";
+		generateObjectMock.mockResolvedValue({
+			object: respostaDoModelo,
+			usage: {
+				inputTokens: 2_200_000,
+				outputTokens: 20_000,
+				inputTokenDetails: {
+					noCacheTokens: 1_000_000,
+					cacheReadTokens: 1_000_000,
+					cacheWriteTokens: 200_000,
+				},
+			},
+		});
+
+		try {
+			await analyzeTurn("quero um carro de 80 mil", "auto", {}, undefined, "conv-analyzer");
+		} finally {
+			delete process.env.AI_ANALYZER_MODEL;
+		}
+
+		expect(inserts).toHaveLength(1);
+		expect(inserts[0].values).toMatchObject({
+			modelo: "claude-haiku-4-5",
+			tokensInput: 1_000_000,
+			tokensOutput: 20_000,
+			tokensCacheRead: 1_000_000,
+			tokensCacheWrite: 200_000,
+			// 1,0 US$ de entrada + 0,10 de saída + 0,10 de cache lido + 0,25 de cache
+			// escrito = 1,45 US$ = 145 centavos.
+			custoUsdCents: 145,
+		});
+	});
+
 	it("o analyzer cai no fallback neutro sem gravar custo quando o provedor falha", async () => {
 		generateObjectMock.mockRejectedValueOnce(new Error("400 do gateway"));
 		const erro = vi.spyOn(console, "error").mockImplementation(() => {});

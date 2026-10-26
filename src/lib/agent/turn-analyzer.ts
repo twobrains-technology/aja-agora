@@ -2,6 +2,7 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import { modeloAiSdkDoGateway, modeloDoAnalisador } from "@/lib/llm/model-provider";
 import { registrarUsoDeIa } from "@/lib/observability/sinais/publicar";
+import { normalizarUsoDoSdk } from "@/lib/observability/sinais/uso-do-sdk";
 import type { Category, ConversationMetadata } from "./personas";
 import { listExpertisesByCategory } from "./personas-repo";
 
@@ -379,12 +380,17 @@ Analise conforme o schema. Use null em campos sem sinal claro.`,
 		const elapsed = Date.now() - start;
 		// Livro-caixa local: o analyzer é chamada de LLM em produção e gastava sem
 		// deixar rastro depois que o Langfuse saiu (P314). Grava e segue — falha aqui
-		// não derruba a classificação.
+		// não derruba a classificação. O usage do SDK traz o TOTAL de entrada; as
+		// parcelas de cache saem separadas (`normalizarUsoDoSdk`), senão o prompt
+		// cacheado é gravado como entrada de preço cheio.
+		const uso = normalizarUsoDoSdk(result.usage);
 		await registrarUsoDeIa({
 			conversationId: conversationId ?? null,
 			modelo: modeloDoAnalisador(),
-			tokensInput: result.usage?.inputTokens ?? 0,
-			tokensOutput: result.usage?.outputTokens ?? 0,
+			tokensInput: uso.tokensInput,
+			tokensOutput: uso.tokensOutput,
+			cacheRead: uso.cacheRead,
+			cacheWrite: uso.cacheWrite,
 		});
 		const o = result.object;
 		console.log(

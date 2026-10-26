@@ -71,4 +71,38 @@ describe("L25/P314 — os insights do lead gravam custo em `uso_de_ia`", () => {
 			tokensOutput: 210,
 		});
 	});
+
+	// P1/P314 — o prompt de insights é o transcript inteiro: quando o provedor reporta
+	// cache, o total de entrada do SDK não é a entrada cobrada a preço cheio. Sem separar
+	// as parcelas, a linha grava custo MAIOR que o real.
+	it("usage com cache grava a entrada líquida e cobra as parcelas de cache", async () => {
+		generateTextMock.mockResolvedValue({
+			text: corpoDoModelo,
+			usage: {
+				inputTokens: 2_200_000,
+				outputTokens: 20_000,
+				inputTokenDetails: {
+					noCacheTokens: 1_000_000,
+					cacheReadTokens: 1_000_000,
+					cacheWriteTokens: 200_000,
+				},
+			},
+		});
+
+		const res = await POST(new Request("http://localhost/api", { method: "POST" }), {
+			params: Promise.resolve({ id: "44444444-4444-4444-8444-444444444444" }),
+		});
+
+		expect(res.status).toBe(200);
+		const linhaDeCusto = inserts.find((i) => i.table === usoDeIa);
+		expect(linhaDeCusto?.values).toMatchObject({
+			tokensInput: 1_000_000,
+			tokensOutput: 20_000,
+			tokensCacheRead: 1_000_000,
+			tokensCacheWrite: 200_000,
+			// 1,0 US$ de entrada + 0,10 de saída + 0,10 de cache lido + 0,25 de cache
+			// escrito = 1,45 US$ = 145 centavos.
+			custoUsdCents: 145,
+		});
+	});
 });
