@@ -238,6 +238,9 @@ export type OpcoesDaApresentacaoDoFecho = {
 	ofertaVista?: { monthlyPayment?: number; termMonths?: number } | null;
 	declaredLanceValue?: number;
 	cartaMaiorPorEmbutido?: boolean;
+	/** O nome FACTUAL do cliente — o cabeçalho "Cliente" do documento da
+	 * proposta. Ausente, o documento omite a linha em vez de inventar nome. */
+	clientName?: string | null;
 };
 
 /** Os números de uma cota que podem servir de referência do que foi visto —
@@ -267,17 +270,26 @@ function numerosDaVista(
  * O lance declarado e o embutido vêm da qualificação (`qualifyAnswers`), e o
  * embutido pode vir também da BUSCA deste turno: o turno só persiste a meta no
  * fim, então `buscar_cartas` com `usaraLanceEmbutido` não aparece em
- * `meta.qualifyAnswers` na hora em que o fecho roda. */
+ * `meta.qualifyAnswers` na hora em que o fecho roda. O lance DESTE turno tem o
+ * mesmo problema e a mesma saída: ele já está no estado em memória
+ * (`ctx.perfilDeclarado`) quando o fecho roda, e a meta persistida só o recebe
+ * depois (P268). */
 export function opcoesDaApresentacaoDoFecho(args: {
 	escolhida: OfertaDoFecho;
 	meta: ConversationMetadata;
 	buscaDoTurno?: ContextoDasTools["estadoDepoisDaBusca"];
+	/** O perfil que o cliente declarou NESTE turno (`ctx.perfilDeclarado`) — a
+	 * fonte do lance quando ele foi dito na fala que fecha. */
+	perfilDoTurno?: PerfilDeclarado;
+	/** O nome que a conversa já tem (`ctx.nomeDoCliente`). */
+	nomeDoCliente?: string | null;
 }): OpcoesDaApresentacaoDoFecho {
 	const vista = numerosDaVista(args.escolhida) ?? numerosDaVista(args.meta.recommendedOffer);
-	const lance = args.meta.qualifyAnswers?.lanceValue;
+	const lance = args.perfilDoTurno?.lanceValue ?? args.meta.qualifyAnswers?.lanceValue;
 	const embutido =
 		args.buscaDoTurno?.lanceEmbutido ?? args.meta.qualifyAnswers?.lanceEmbutido === true;
 	return {
+		...(args.nomeDoCliente?.trim() ? { clientName: args.nomeDoCliente.trim() } : {}),
 		...(typeof lance === "number" && Number.isFinite(lance) && lance > 0
 			? { declaredLanceValue: lance }
 			: {}),
@@ -921,6 +933,8 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 						escolhida,
 						meta: metaDaProposta,
 						buscaDoTurno: ctx.estadoDepoisDaBusca,
+						perfilDoTurno: ctx.perfilDeclarado,
+						nomeDoCliente: ctx.nomeDoCliente,
 					}),
 				),
 			);

@@ -11,8 +11,11 @@
 // com as fronteiras externas dubladas: o que se prova é o PAYLOAD do card que
 // sai para o cliente, não a expressão que o montou.
 
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConversationMetadata } from "@/lib/agent/personas";
+import type { RealOfferPayload } from "@/lib/chat/types";
 
 const mocks = vi.hoisted(() => ({
 	reloadMeta: vi.fn(),
@@ -52,7 +55,14 @@ vi.mock("@/lib/agent/orchestrator/choose-offer", async (importOriginal) => ({
 	...(await importOriginal<typeof import("@/lib/agent/orchestrator/choose-offer")>()),
 	listShownOffersForConversation: mocks.listShownOffers,
 }));
+// O DOCUMENTO de verdade, não a expressão que o monta: `real_offer` chega ao
+// cliente por `artifact-renderer.tsx:82` → `ProposalDoc`. O contexto do chat só
+// existe na árvore React (os CTAs do documento); para o cabeçalho, basta ele.
+vi.mock("@/lib/chat/provider", () => ({
+	useChatContext: () => ({ sendAction: vi.fn(), status: "ready", messages: [] }),
+}));
 
+import { ProposalDoc } from "@/components/chat/artifacts/proposal-doc";
 import { buildToolsLivres, type ContextoDasTools } from "./tools-livres";
 
 const CPF = "11144477735";
@@ -127,6 +137,14 @@ function payloadDoRealOffer(ctx: ContextoDasTools): Record<string, unknown> {
 	const card = ctx.cards.find((c) => c.type === "real_offer");
 	if (!card) throw new Error("o card real_offer não foi emitido");
 	return card.payload;
+}
+
+/** O cabeçalho do documento que o cliente recebe (`ProposalDoc`) com o payload
+ * que a tool emitiu — o mesmo caminho do `artifact-renderer`. */
+function documentoDoRealOffer(ctx: ContextoDasTools): string {
+	return renderToStaticMarkup(
+		createElement(ProposalDoc, { payload: payloadDoRealOffer(ctx) as unknown as RealOfferPayload }),
+	);
 }
 
 beforeEach(() => {
@@ -214,6 +232,60 @@ describe("FIX-40 — a posição factual do lance declarado volta a ser dita", (
 		await fechar(ctx);
 
 		expect(ctx.falasDoFecho.join(" ")).not.toContain("Sobre o seu lance");
+	});
+});
+
+describe("P268 — o lance dito no MESMO turno do fechamento vira frase de posição", () => {
+	it("lance declarado na fala deste turno, ainda não persistido, é comparado no fecho", async () => {
+		// O turno grava o lance em `estado.funnel.qualifyAnswers` (turno-livre.ts:689)
+		// e só persiste no FIM do turno (:1053) — quando `fazer_proposta` roda, o
+		// metadata lido do banco ainda é o do turno anterior, sem lance nenhum.
+		mocks.startContract.mockResolvedValue({
+			proposalId: "proposta-1",
+			requestedCreditValue: CARTA_NA_TELA.carta,
+			offer: ofertaReal({ avgBidValue: 45_000 }),
+		});
+		const ctx = ctxDoTurno({ perfilDeclarado: { lanceValue: 30_000 } });
+		await fechar(ctx);
+
+		expect(ctx.falasDoFecho.join(" ")).toContain("abaixo do lance médio");
+	});
+
+	it("o lance deste turno vence o persistido (o cliente acabou de declarar outro)", async () => {
+		mocks.reloadMeta.mockImplementation(async () =>
+			metaDaConversa({ qualifyAnswers: { creditMax: 92_902, lanceValue: 50_000 } }),
+		);
+		mocks.startContract.mockResolvedValue({
+			proposalId: "proposta-1",
+			requestedCreditValue: CARTA_NA_TELA.carta,
+			offer: ofertaReal({ avgBidValue: 45_000 }),
+		});
+		const ctx = ctxDoTurno({ perfilDeclarado: { lanceValue: 30_000 } });
+		await fechar(ctx);
+
+		const falas = ctx.falasDoFecho.join(" ");
+		expect(falas).toContain("abaixo do lance médio");
+		expect(falas).not.toContain("acima do lance médio");
+	});
+});
+
+describe("P144 — o nome factual do cliente chega ao documento da proposta", () => {
+	it("nome conhecido na conversa vai no payload e imprime a linha Cliente", async () => {
+		const ctx = ctxDoTurno({ nomeDoCliente: "Bruna" });
+		await fechar(ctx);
+
+		expect(payloadDoRealOffer(ctx).clientName).toBe("Bruna");
+		const documento = documentoDoRealOffer(ctx);
+		expect(documento).toContain("Cliente");
+		expect(documento).toContain("Bruna");
+	});
+
+	it("sem nome conhecido o documento omite a linha Cliente, em vez de inventar", async () => {
+		const ctx = ctxDoTurno();
+		await fechar(ctx);
+
+		expect(payloadDoRealOffer(ctx)).not.toHaveProperty("clientName");
+		expect(documentoDoRealOffer(ctx)).not.toContain("Cliente");
 	});
 });
 
