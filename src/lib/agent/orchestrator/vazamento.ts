@@ -9,13 +9,33 @@
 //  · `isInternalToolLeak` — o segmento cita o nome literal de uma tool.
 import { isValidCpf, maskCpf } from "@/lib/conversation/identity";
 
+/** CPF na forma CANÔNICA (3-3-3-2), com os separadores que o cliente usa, e
+ * delimitado por não-dígito dos dois lados. É a 1ª passada de `scrubCpf`.
+ *
+ * A passada antiga era GULOSA (`{9,17}` entre dois dígitos): num texto com CPF e
+ * celular na mesma frase ela engolia os dois números, o candidato saía com 18
+ * dígitos, o DV não fechava (`isValidCpf` exige 11) e o CPF era devolvido em claro
+ * — P288, reauditoria 13. As bordas `(?<!\d)`/`(?!\d)` impedem o candidato de
+ * começar ou terminar dentro do número vizinho, e o molde consome exatamente
+ * 3+3+3+2 dígitos: não há como engolir o telefone. */
+const CPF_CANONICO = /(?<!\d)\d{3}[.\s]?\d{3}[.\s]?\d{3}[-.\s]?\d{2}(?!\d)/g;
 const CPF_CANDIDATO = /\d[\d.\-\s]{9,17}\d/g;
 
 /** Mascara CPF em texto livre. Só toca o que VALIDA no dígito verificador —
- * valor, data e telefone passam intactos. */
+ * valor, data e telefone passam intactos.
+ *
+ * DUAS passadas, nesta ordem:
+ *  1. a forma canônica, parada na borda do número (`CPF_CANONICO`) — o caso do CPF
+ *     seguido de telefone, que a passada gulosa perdia;
+ *  2. a passada antiga, sobre o resultado da 1ª, para os separadores que a forma
+ *     canônica não alcança (espaço em volta do traço, pontuação misturada).
+ * O que `maskCpf` produz não pode voltar a casar na 2ª passada: a máscara começa em
+ * `*` e tem só 5 dígitos, menos dos 11 que `isValidCpf` exige — o comprovante já
+ * mascarado não é remascado. */
 export function scrubCpf(text: string): string {
 	if (!text) return text;
-	return text.replace(CPF_CANDIDATO, (m) => (isValidCpf(m) ? maskCpf(m) : m));
+	const canônico = text.replace(CPF_CANONICO, (m) => (isValidCpf(m) ? maskCpf(m) : m));
+	return canônico.replace(CPF_CANDIDATO, (m) => (isValidCpf(m) ? maskCpf(m) : m));
 }
 
 /** Nomes de tool que o cliente nunca deve ler na fala do agente.

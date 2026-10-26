@@ -340,6 +340,30 @@ describe("P288 — o aceite persistido nunca leva CPF em claro", () => {
 		semCpfEmClaro(meta);
 	});
 
+	// P288 (reauditoria 13) — o contraexemplo que ainda abria a linha: dois números na
+	// mesma fala, CPF e celular separados só por espaço. O candidato guloso de
+	// `vazamento.ts` engolia os dois, o DV não fechava nos 18 dígitos e a fala era
+	// persistida com o CPF em claro.
+	it("no stage `cpf`, CPF e telefone vizinhos não entram no meta gravado", async () => {
+		estado.meta = {
+			...metaBase,
+			contractCollection: { stage: "cpf", avisoLgpdEm: "2026-10-25T12:00:00.000Z" },
+		};
+		const fala = "529.982.247-25 11 98765-4321";
+		const { captureContractText } = await import("./contract-capture");
+		const resultado = await captureContractText("5511987654321", fala);
+		expect(resultado).toEqual({ handled: true, outcome: "fire" });
+		// O telefone continua legível pra quem lê a conversa depois — só o CPF é mascarado.
+		expect(estado.meta.lgpdAceite?.fala).toBe(`${maskCpf(CPF_EM_CLARO)} 11 98765-4321`);
+		const gravado = JSON.stringify(estado.meta) ?? "";
+		semCpfEmClaro(gravado);
+		expect(gravado).not.toContain("529.982.247-25");
+		// A identidade continua guardada, e a única cópia persistida é a CIFRADA —
+		// mascarar a fala não pode perder o CPF que `storeIdentity` acabou de cifrar.
+		expect(estado.meta.identityEnc).toContain("v1.");
+		expect(decryptIdentity(estado.meta.identityEnc ?? "").cpf).toBe(CPF_EM_CLARO);
+	});
+
 	it("a fala longa é cortada em 200 chars depois de mascarar, e continua sem CPF", async () => {
 		const { aceiteDoDisparo } = await import("./contract-capture");
 		const fala = `529.982.247-25 ${"a".repeat(250)}`;
