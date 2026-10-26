@@ -159,6 +159,42 @@ describe("capturarIdentidadeDoTexto", () => {
 		expect(r.recebeuCpf).toBe(true);
 		expect(r.identidade).toEqual({ cpf: AMBIGUO, celular: "" });
 	});
+
+	// P188 (rodada 5): a constatação cadastral ISOLADA. "Seu CPF já está
+	// cadastrado." era lida como pedido por causa do prefixo `cadastra`, e o
+	// celular ambíguo que o cliente mandava em seguida sobrescrevia o CPF guardado.
+	it("CPF guardado + constatação cadastral isolada: o número ambíguo é o celular", () => {
+		const AMBIGUO = "11900000083";
+		const pedidoDeCpf = pedidoDeCpfNoUltimoBalao({
+			role: "assistant",
+			content: "Seu CPF já está cadastrado.",
+		});
+		expect(pedidoDeCpf).toBe(false);
+
+		const r = capturarIdentidadeDoTexto(AMBIGUO, { cpf: CPF, celular: "" }, { pedidoDeCpf });
+		expect(r.recebeuCpf).toBe(false);
+		expect(r.recebeuCelular).toBe(true);
+		expect(r.identidade).toEqual({ cpf: CPF, celular: AMBIGUO });
+	});
+
+	// P263 (rodada 5): o agente pede o CPF e, na frase seguinte, ensina o formato
+	// ("envie só os números"). A instrução não repete a palavra "CPF" e o pedido
+	// inteiro se perdia: o CPF que chegava era guardado como telefone e a
+	// identidade ficava incompleta.
+	it("pedido de CPF + instrução de formato: o número é CPF, não telefone", () => {
+		const AMBIGUO = "11900000083";
+		const pedidoDeCpf = pedidoDeCpfNoUltimoBalao({
+			role: "assistant",
+			content: "Qual é seu CPF? Envie só os números.",
+		});
+		expect(pedidoDeCpf).toBe(true);
+
+		const r = capturarIdentidadeDoTexto(AMBIGUO, { cpf: "", celular: "" }, { pedidoDeCpf });
+		expect(r.recebeuCpf).toBe(true);
+		expect(r.recebeuCelular).toBe(false);
+		expect(r.identidade).toEqual({ cpf: AMBIGUO, celular: "" });
+		expect(r.textoLimpo).not.toContain(AMBIGUO);
+	});
 });
 
 /** CPF com dígito trocado: continua PII, então tem que sair do texto — mas não

@@ -271,104 +271,121 @@ export function decidirCpfDoTexto(
 }
 
 // ── O ATO de pedir o CPF ──────────────────────────────────────────────────
-// `ditoSobreCpf` responde o que a fala DIZ sobre o CPF, e isso basta para ler um
-// número (a menção na oração que o anuncia). PEDIR é outra coisa, e mora numa
-// ORAÇÃO: "Já expliquei como funciona a consulta do CPF. Qual é seu celular?"
-// fala do CPF e pede o CELULAR — lido como pedido de CPF, o celular ambíguo que
-// o cliente dita em resposta vira CPF e o telefone se perde (P188/P263). Por isso
-// quem decide é a ÚLTIMA oração do balão que PEDE alguma coisa: se ela pede o
-// celular, o CPF mencionado antes não foi pedido.
+// PRINCÍPIO, herdado da `main` (`a2bc3024:src/lib/whatsapp/contract-capture.ts`,
+// `isQuestion`): "É conservador de propósito, nos DOIS sentidos… Na dúvida,
+// ninguém decide por regex: quem responde é o modelo."
 //
-// A pontuação que fecha a fala (`.;:!?` e o travessão) separa orações; a vírgula
-// NÃO separa, porque "pode informar o CPF, por favor?" é um pedido só. Os
-// conectivos (`mas`, `e`, `agora`) emendam uma oração na outra sem pontuação. A
-// interrogação fica com a ÚLTIMA oração do trecho que ela fecha: em "não tenho
-// cpf, mas qual é o seu?" a pergunta é "qual é o seu".
-const SEPARA_ORACAO = /([^.;:!?\n\-–—]+)([.;:!?\n\-–—]*)/g;
-const CONECTIVO = /\b(?:mas|por[eé]m|contudo|entretanto|s[óo]\s+que|e|ent[ãa]o|agora|tamb[ée]m)\b/i;
+// Aqui o lado PERIGOSO é um CPF FALSO: o celular ambíguo que o cliente dita
+// gravado como identidade, e o telefone dele perdido no caminho. O lado SEGURO é
+// "não houve pedido" — o número fica telefone, o CPF continua faltando e o modelo
+// pede de novo no turno seguinte. Todo empate cai para o lado seguro.
+//
+// Por isso a resposta sai de TRÊS condições sobre o BALÃO INTEIRO, sem juntar
+// orações e sem apagar pontuação (cada rodada de auditoria achou um contraexemplo
+// novo de uma heurística que refinava a leitura da oração anterior):
+//   1. o balão fala de CPF (`cpf` como palavra);
+//   2. o balão PEDE alguma coisa: uma frase que busca um valor ("qual o cpf?") ou
+//      um verbo de pedido ("envie", "me passa", "preciso do");
+//   3. o balão não pede OUTRO dado (celular, telefone, e-mail, nome) nem CONSTATA
+//      que o CPF já existe ("já está cadastrado", "já recebi").
+// As três juntas. Faltando uma, não é pedido de CPF.
 
-/** Verbo de PEDIDO do dado. "consulta", "confere", "explico" e "recebi" ficam
- *  de fora de propósito: são o que o agente DIZ sobre o CPF, não o que ele pede.
+/** Fronteira de palavra que ENXERGA ACENTO. Com `\b` só, "cadastrado" casava o
+ *  prefixo `cadastra` (P188) e "informação" casava o verbo `informa`: o `ç` não é
+ *  caractere de palavra para o `\b`, então o prefixo passava por palavra inteira. */
+const INICIO_DE_PALAVRA = "(?<![\\p{L}\\p{N}])";
+const FIM_DE_PALAVRA = "(?![\\p{L}\\p{N}])";
+
+function palavra(chave: string): RegExp {
+	return new RegExp(`${INICIO_DE_PALAVRA}(?:${chave})${FIM_DE_PALAVRA}`, "iu");
+}
+
+/** O balão fala do dado. Só a palavra, sem julgar se é pedido ou constatação —
+ *  quem julga são as outras duas condições. */
+const MENCIONA_CPF = palavra("cpf");
+
+/** Verbo de PEDIDO do dado. "consulta", "confiro", "explico" e "recebi" ficam de
+ *  fora de propósito: são o que o agente DIZ sobre o CPF, não o que ele pede.
  *  Modal sozinho ("pode", "consegue") também fica: "você pode ficar tranquilo,
  *  seu CPF fica protegido" não pede nada — "pode informar o CPF" já casa pelo
- *  "informar". */
-const VERBO_DE_PEDIR =
-	/\b(?:pass(?:a|e|ar|em|aria)|inform(?:a|e|ar|em|aria)|envi(?:a|e|ar|em|aria)|mand(?:a|e|ar|em|aria)|d[ií]g(?:it(?:a|e|em|ar)|a|am|o)|diz(?:em)?|fal(?:a|e|ar|em|aria)|precis(?:o|amos|a|am|ar|e|em|ava|aria)|solicit(?:o|amos|a|am|ou)|compartilh(?:a|e|ar|em|aria)|cadastr(?:a|e|ar|em|aria)|preench(?:a|am|er)|confirm(?:a|e|ar|em|aria)|ped(?:ir|imos)|pe[cç]o|pe[çc]a)/i;
+ *  "informar". Cada forma está listada inteira, com limite de palavra dos dois
+ *  lados: `pass\w*` casaria "passou" e `fal\w*` casaria "falhou". */
+const VERBO_DE_PEDIDO = palavra(
+	[
+		"inform(?:e|a|em|ar|amos|o|aria)",
+		"envi(?:e|a|em|ar|amos|o|aria)",
+		"mand(?:e|a|em|ar|amos|o|aria)",
+		"pass(?:e|a|em|ar|amos|o|aria)",
+		"digit(?:e|a|em|ar|amos)",
+		"diz|diga|digam|dizer|dizem",
+		"fal(?:a|e|em|ar)",
+		"precis(?:o|a|amos|am|ar|e)",
+		"solicit(?:o|a|amos|am|ar)",
+		"compartilh(?:e|a|em|ar|amos)",
+		"confirm(?:e|a|em|ar|amos|o)",
+		"ped(?:ir|imos)|pe[cç]o|pe[çc]a",
+	].join("|"),
+);
 
-/** Pergunta que pede o VALOR do dado, e não a explicação dele ("qual o cpf?",
- *  "cadê o cpf?"). "como" fica de fora: "como funciona a consulta do CPF?" é
- *  explicação, e era por ele que a menção passava por pedido. */
-const PALAVRA_QUE_PEDE_VALOR = /\b(?:qual|quais|cad[êe])\b/i;
+/** Pergunta que pede o VALOR do dado ("qual o cpf?", "cadê o cpf?"). É o único
+ *  tipo de pergunta que conta como pedido: "como funciona a consulta do CPF?" é
+ *  explicação e abria o contexto do CPF para quem tinha pedido o celular
+ *  (P188, rodada 4). */
+const PALAVRA_QUE_PEDE_VALOR = palavra("qual|quais|cad[êe]");
 
-/** O dado SOZINHO na oração é um pedido: "CPF?", "seu CPF, por favor". */
+/** Outro dado/contato que o balão pode estar pedindo. Se ele pede o celular, o
+ *  número que chega sozinho é o CELULAR: "Já recebi seu CPF. Qual é seu
+ *  celular?" não é pedido de CPF. */
+const OUTRO_DADO = palavra("celular|telefone|whatsapp|whats|zap|e-?mail|nome|contato");
+
+/** Constatação: o balão fala do CPF como dado que JÁ EXISTE — não pede nada.
+ *  Entra também aqui o que vem antes de uma instrução de formato: "Seu CPF já
+ *  está cadastrado! Envie só os números" continua sendo constatação. */
+const CONSTATA_QUE_JA_TEM = palavra(
+	"cadastrad[oa]|recebi|confirmad[oa]|anotad[oa]|j[áa]\\s+(?:est[áa]|tenho|recebi)",
+);
+
+/** O dado SOZINHO no balão é um pedido: "CPF?", "SEU CPF, POR FAVOR". */
 const CPF_SOZINHO = /^(?:(?:e|o|a|seu|sua)\s+)*cpf(?:\s+(?:por\s+favor|pra\s+mim|para\s+mim))?$/i;
 
-type Oracao = {
-	/** A oração sem pontuação, com o símbolo (emoji) trocado por espaço. */
-	limpo: string;
-	/** É pergunta: o que ela pede é o que o cliente responde. */
-	interrogativa: boolean;
-	mencionaCpf: boolean;
-	negaCpf: boolean;
-};
+/** A pontuação que FECHA a fala separa frases (`.;:!?`, travessão e quebra de
+ *  linha), e a que fecha cada uma diz se ela é interrogativa. A vírgula NÃO
+ *  separa: "pode informar o CPF, por favor?" é um pedido só. As frases nunca são
+ *  juntadas — foi a união de orações que criou a associação falsa da rodada 4. */
+const SEPARA_FRASE = /([^.;:!?\n\-–—]+)([.;:!?\n\-–—]*)/g;
 
-function oracoesDoBalao(fala: string): Oracao[] {
-	const oracoes: Oracao[] = [];
-	for (const trecho of (fala ?? "").matchAll(SEPARA_ORACAO)) {
+/** Troca símbolo (emoji) e pontuação por espaço, para comparar palavras. */
+function normalizar(texto: string): string {
+	return (texto ?? "")
+		.replace(/[^\p{L}\p{N}\s]/gu, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
+/** O balão PEDE alguma coisa: o dado sozinho, um verbo de pedido em qualquer
+ *  frase, ou uma pergunta que busca um valor. */
+function balaoPedeAlgo(fala: string): boolean {
+	if (CPF_SOZINHO.test(normalizar(fala))) return true;
+	for (const trecho of (fala ?? "").matchAll(SEPARA_FRASE)) {
+		const frase = trecho[1];
 		const interrogativa = trecho[2].includes("?");
-		const pedacos = trecho[1]
-			.split(CONECTIVO)
-			.map((pedaco) =>
-				pedaco
-					.replace(/[^\p{L}\p{N}\s]/gu, " ")
-					.replace(/\s+/g, " ")
-					.trim(),
-			)
-			.filter(Boolean);
-		pedacos.forEach((limpo, i) => {
-			const dito = ditoSobreCpf(limpo);
-			oracoes.push({
-				limpo,
-				interrogativa: interrogativa && i === pedacos.length - 1,
-				mencionaCpf: dito.declara || dito.nega,
-				negaCpf: dito.nega && !dito.declara,
-			});
-		});
+		if (VERBO_DE_PEDIDO.test(frase)) return true;
+		if (interrogativa && PALAVRA_QUE_PEDE_VALOR.test(frase)) return true;
 	}
-	return oracoes;
+	return false;
 }
 
-/** Esta oração PEDE alguma coisa: pergunta, imperativo com verbo de pedido, ou o
- *  dado sozinho ("CPF?"). As que só constatam algo são puladas na busca. */
-function oracaoPede(oracao: Oracao): boolean {
-	return (
-		oracao.interrogativa || VERBO_DE_PEDIR.test(oracao.limpo) || CPF_SOZINHO.test(oracao.limpo)
-	);
-}
-
-/** Esta oração pede o CPF: o dado está NELA e ela é um pedido. Menção,
- *  explicação ou confirmação ("Já recebi seu CPF", "seu CPF fica protegido") não
- *  pedem nada — e a negação não pede o contrário ("não preciso do seu cpf"). */
-function oracaoPedeCpf(oracao: Oracao): boolean {
-	if (!oracao.mencionaCpf || oracao.negaCpf) return false;
-	if (CPF_SOZINHO.test(oracao.limpo)) return true;
-	if (VERBO_DE_PEDIR.test(oracao.limpo)) return true;
-	return oracao.interrogativa && PALAVRA_QUE_PEDE_VALOR.test(oracao.limpo);
-}
-
-/** O pedido de CPF é a ÚLTIMA coisa que o agente disse — sem turno do cliente no
- * meio. `false` quando a última fala é do cliente (aí o número comprido dele não
- * é resposta a pedido nenhum) ou a conversa não tem histórico. */
+/** O pedido de CPF é o que o ÚLTIMO balão do agente pede — sem turno do cliente
+ *  no meio. `false` quando a última fala é do cliente (aí o número comprido dele
+ *  não é resposta a pedido nenhum) ou a conversa não tem histórico.
+ *
+ *  Qualquer dúvida devolve `false`: na dúvida, quem pergunta é o modelo. */
 export function pedidoDeCpfNoUltimoBalao(
 	ultima: { role: string; content: string } | null | undefined,
 ): boolean {
 	if (!ultima || ultima.role !== "assistant") return false;
-	const oracoes = oracoesDoBalao(ultima.content ?? "");
-	// Da última oração para trás: a primeira que PEDE alguma coisa é a que o
-	// cliente vai responder, e é ela que diz se o CPF foi pedido.
-	for (let i = oracoes.length - 1; i >= 0; i--) {
-		const oracao = oracoes[i];
-		if (oracaoPede(oracao)) return oracaoPedeCpf(oracao);
-	}
-	return false;
+	const balao = ultima.content ?? "";
+	if (!MENCIONA_CPF.test(balao)) return false;
+	if (OUTRO_DADO.test(balao) || CONSTATA_QUE_JA_TEM.test(balao)) return false;
+	return balaoPedeAlgo(balao);
 }

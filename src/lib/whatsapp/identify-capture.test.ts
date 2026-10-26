@@ -119,6 +119,36 @@ describe("telefone e número comprido não são CPF", () => {
 		);
 		expect(pedidoDeCpfNoUltimoBalao(null)).toBe(false);
 	});
+
+	// P188 (rodada 5): "Seu CPF já está cadastrado." era lido como pedido — o
+	// prefixo `cadastra` de "cadastrado" casava o verbo de pedido — e o celular
+	// que o cliente mandava depois podia ser gravado como identidade.
+	it("constatação cadastral isolada não é pedido de CPF", async () => {
+		const { decidirCpfDoTexto: decidirNoWhatsApp, pedidoDeCpfNoUltimoBalao: pedidoNoWhatsApp } =
+			await import("./identify-capture");
+		const pedidoDeCpf = pedidoNoWhatsApp({
+			role: "assistant",
+			content: "Seu CPF já está cadastrado.",
+		});
+		expect(pedidoDeCpf).toBe(false);
+		expect(decidirNoWhatsApp("11900000083", { pedidoDeCpf })).toEqual({ outcome: "none" });
+	});
+
+	// P263 (rodada 5): a instrução de formato que vem depois do pedido não repete
+	// a palavra "CPF"; lida sozinha, ela apagava o pedido de cima.
+	it("pedido de CPF + instrução de formato continua pedido, e o número é CPF", async () => {
+		const { decidirCpfDoTexto: decidirNoWhatsApp, pedidoDeCpfNoUltimoBalao: pedidoNoWhatsApp } =
+			await import("./identify-capture");
+		const pedidoDeCpf = pedidoNoWhatsApp({
+			role: "assistant",
+			content: "Qual é seu CPF? Envie só os números.",
+		});
+		expect(pedidoDeCpf).toBe(true);
+		expect(decidirNoWhatsApp("11900000083", { pedidoDeCpf })).toEqual({
+			outcome: "captured",
+			cpf: "11900000083",
+		});
+	});
 });
 
 describe("o celular do fechamento nunca é um número inventado", () => {

@@ -196,6 +196,38 @@ describe("telefone × CPF — a mesma regra nos dois capturadores", () => {
 		});
 	});
 
+	// P188: a constatação cadastral ISOLADA — sem nenhum pedido depois dela para
+	// mascarar o falso positivo — fazia o celular ambíguo ser gravado como
+	// identidade no WhatsApp.
+	it("confirmação cadastral isolada deixa o número ambíguo como TELEFONE no WhatsApp", async () => {
+		const { decidirCpfDoTexto: decidirNoWhatsApp, pedidoDeCpfNoUltimoBalao: pedidoNoWhatsApp } =
+			await import("@/lib/whatsapp/identify-capture");
+
+		for (const fala of ["Seu CPF já está cadastrado.", "Já recebi seu CPF."]) {
+			const pedidoDeCpf = pedidoNoWhatsApp({ role: "assistant", content: fala });
+			expect(pedidoDeCpf).toBe(false);
+			expect(decidirNoWhatsApp(AMBIGUO, { pedidoDeCpf })).toEqual({ outcome: "none" });
+		}
+	});
+
+	// P263: pedido do dado seguido de instrução de formato não repetia a palavra
+	// "CPF" na última oração e o pedido inteiro se perdia — o CPF que o cliente
+	// mandava virava telefone.
+	it("pedido de CPF seguido de instrução de formato continua pedido no WhatsApp", async () => {
+		const { decidirCpfDoTexto: decidirNoWhatsApp, pedidoDeCpfNoUltimoBalao: pedidoNoWhatsApp } =
+			await import("@/lib/whatsapp/identify-capture");
+
+		const pedidoDeCpf = pedidoNoWhatsApp({
+			role: "assistant",
+			content: "Qual é seu CPF? Envie só os números.",
+		});
+		expect(pedidoDeCpf).toBe(true);
+		expect(decidirNoWhatsApp(AMBIGUO, { pedidoDeCpf })).toEqual({
+			outcome: "captured",
+			cpf: AMBIGUO,
+		});
+	});
+
 	it("exibição e DDD: lista fechada da Anatel, 11 dígitos + 9º dígito", () => {
 		expect(dddValido("11")).toBe(true);
 		expect(dddValido("28")).toBe(true);
@@ -206,14 +238,18 @@ describe("telefone × CPF — a mesma regra nos dois capturadores", () => {
 	});
 });
 
-// P188/P263: pedir o CPF é um ATO, e ele mora numa ORAÇÃO do balão do agente.
-// A rodada 4 da auditoria achou mais um jeito de uma EXPLICAÇÃO passar por
-// pedido — "Já expliquei como funciona a consulta do CPF. Qual é seu celular?"
-// casava com o `como … cpf` do detector e abria o contexto do CPF para quem
-// tinha acabado de pedir o celular. Cada rodada trouxe um contraexemplo novo, e
-// por isso a tabela abaixo é adversarial: pontuação, caixa, emoji, ordem
-// invertida, negação e frase composta entram todos.
-describe("o pedido de CPF é o ATO da última oração, não a menção ao dado", () => {
+// P188/P263: pedir o CPF é um ATO do balão do agente, não a menção ao dado.
+//
+// A tabela é ADVERSARIAL de propósito: cada rodada da auditoria (3, 4 e 5)
+// trouxe um contraexemplo novo de heurística que refinava a leitura da oração
+// anterior — a menção explicativa com `como` (rodada 4), o prefixo `cadastra`
+// de "cadastrado" e a instrução de formato que apagava o pedido da frase de cima
+// (rodada 5). Aqui o lado PERIGOSO é o celular ambíguo gravado como CPF; o lado
+// seguro é "não houve pedido", e todo empate cai para ele. Por isso os casos
+// seguros são "não captura" — e o detector só responde `true` quando o balão
+// fala do CPF, PEDE alguma coisa e não pede outro dado nem constata que o CPF já
+// existe.
+describe("o pedido de CPF é o ATO do balão, não a menção ao dado", () => {
 	const casos: { fala: string; pede: boolean; porque: string }[] = [
 		// ── pedidos de verdade: a ÚLTIMA oração que pede algo pede o CPF ──────
 		{ fala: "Qual é o seu CPF?", pede: true, porque: "pergunta pelo dado" },
@@ -337,7 +373,88 @@ describe("o pedido de CPF é o ATO da última oração, não a menção ao dado"
 		{
 			fala: "Qual o CPF e o celular?",
 			pede: false,
-			porque: "pedido composto: a última oração pede o CELULAR",
+			porque: "pedido composto: o balão também pede o CELULAR",
+		},
+		// ── rodada 5: a constatação ISOLADA e a instrução de formato ─────────
+		// P188: sem nenhum pedido posterior para mascarar o falso positivo, o
+		// prefixo `cadastra` de "cadastrado" virava pedido de CPF.
+		{
+			fala: "Seu CPF já está cadastrado.",
+			pede: false,
+			porque: "constatação ISOLADA de que o CPF já existe (P188)",
+		},
+		{
+			fala: "Já recebi seu CPF.",
+			pede: false,
+			porque: "a mesma constatação, sem palavra nenhuma de pedido",
+		},
+		{
+			fala: "Seu CPF já está cadastrado! Envie só os números.",
+			pede: false,
+			porque: "a instrução de formato não transforma a constatação em pedido",
+		},
+		// P263: a instrução de COMO mandar o dado não apaga o pedido da frase
+		// anterior — mas só quando o balão de fato pede o CPF.
+		{
+			fala: "Qual é seu CPF? Envie só os números.",
+			pede: true,
+			porque: "pedido do dado + instrução de formato (P263)",
+		},
+		{
+			fala: "me passa o CPF, por favor. pode digitar sem pontos",
+			pede: true,
+			porque: "pedido + instrução, sem repetir a palavra CPF",
+		},
+		// ── mais dez, cada um atacando uma palavra-chave diferente ───────────
+		{
+			fala: "Pode digitar o CPF, por favor.",
+			pede: true,
+			porque: "verbo de pedido no infinitivo, com cortesia",
+		},
+		{
+			fala: "Preciso do CPF para consultar o birô.",
+			pede: true,
+			porque: "precisar do dado, sem pergunta",
+		},
+		{
+			fala: "Qual o CPF do titular? Pode digitar.",
+			pede: true,
+			porque: "pergunta pelo dado + instrução depois",
+		},
+		{
+			fala: "Envie o CPF e o comprovante.",
+			pede: true,
+			porque: "imperativo que pede o dado e outra coisa junto",
+		},
+		{
+			fala: "CPF anotado! Agora me passa o celular.",
+			pede: false,
+			porque: "constatação do dado + pedido de CELULAR",
+		},
+		{
+			fala: "Já tenho seu CPF aqui.",
+			pede: false,
+			porque: "já tem o dado, sem pedir nada",
+		},
+		{
+			fala: "O CPF que você mandou está confirmado.",
+			pede: false,
+			porque: "confirmação do dado recebido",
+		},
+		{
+			fala: "O CPF é uma informação sigilosa.",
+			pede: false,
+			porque: "'informação' não é o verbo 'informa' — o limite de palavra enxerga o acento",
+		},
+		{
+			fala: "CPF e nome completo, por favor.",
+			pede: false,
+			porque: "o balão pede outro dado (NOME): o número sozinho é telefone",
+		},
+		{
+			fala: "O CPF é uma informação sensível. Qual seu e-mail?",
+			pede: false,
+			porque: "explicação do dado + pedido de E-MAIL",
 		},
 	];
 
