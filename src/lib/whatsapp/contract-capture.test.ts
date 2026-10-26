@@ -112,6 +112,8 @@ const estado = vi.hoisted(() => ({
 	meta: {} as ConversationMetadata,
 	textos: [] as string[],
 	chamadasStartContract: [] as string[],
+	ordem: [] as string[],
+	leadDoFecho: [] as Array<{ conversationId: string; celular: string; nome: string | null }>,
 }));
 
 /** P288 — o aceite é o comprovante, não o número. O único lugar onde o CPF pode
@@ -183,15 +185,36 @@ vi.mock("./api", () => ({
 vi.mock("@/lib/bevi/fulfillment", () => ({
 	startContract: vi.fn(async (convId: string) => {
 		estado.chamadasStartContract.push(convId);
+		estado.ordem.push("startContract");
 		return { proposalId: "p-1", offer: null, noOffer: true };
 	}),
 }));
 vi.mock("@/lib/bevi/proposal-repo", () => ({
 	getLatestBeviProposal: vi.fn(async () => null),
 }));
+// `getLeadIdForConversation` não é mais usado pelo fecho do WhatsApp (RE-A1): o lead
+// é resolvido por `garantirLeadDoFecho`, abaixo.
 vi.mock("@/lib/admin/lead-stage-tracker", () => ({
 	getLeadIdForConversation: vi.fn(async () => null),
 }));
+
+// RE-A1 — o fechamento determinístico usa o MESMO helper que o caminho do modelo já
+// usa. O mock preserva o resto do módulo (`metaDoFecho` é lido pelos testes abaixo).
+vi.mock("@/lib/agent/pi/tools-livres", async (importOriginal) => {
+	const real = await importOriginal<typeof import("@/lib/agent/pi/tools-livres")>();
+	return {
+		...real,
+		garantirLeadDoFecho: vi.fn(
+			async (args: { conversationId: string; celular: string; nome: string | null }) => {
+				estado.leadDoFecho.push(args);
+				estado.ordem.push("garantirLeadDoFecho");
+				// Sem lead o fecho continua valendo (é o cliente fechando); o que se perde
+				// é a raia — o mock devolve null e `startContract` segue chamando.
+				return null;
+			},
+		),
+	};
+});
 
 const metaBase: ConversationMetadata = {
 	currentCategory: "auto",
@@ -500,5 +523,55 @@ describe("P187 — o registro do aceite não apaga a identidade recém-capturada
 		// é o sinal de que o aceite apagou a identidade.
 		expect(estado.chamadasStartContract).toEqual(["conv-1"]);
 		expect(identidadeGuardada()?.cpf).toBe(CPF_EM_CLARO);
+	});
+});
+
+// RE-A1 (reteste no dev, t6) — `leads.phone` vazio em 6/6 conversas do reteste.
+//
+// Quem LIA o lead era `getLeadIdForConversation`; quem GRAVA o telefone é
+// `garantirLeadDoFecho` (`pi/tools-livres.ts:477`), alcançado só quando o turno passa
+// pelo modelo. No WhatsApp o CPF é interceptado por `captureContractText` — nenhuma
+// conversa do reteste passou pelo modelo, e a régua de identificados
+// (`admin/performance-queries.ts`), que lê `leads.phone`, não contava o cliente. O
+// fechamento determinístico passa a usar o mesmo helper, com o celular da identidade.
+//
+// `saveContactWhatsapp` está fora de propósito: ele reescreve `conversations.waId`
+// (no simulador `SIM-<uuid>`) e quebraria a própria sessão.
+describe("RE-A1 — o fecho determinístico resolve o lead pelo helper do caminho do modelo", () => {
+	beforeEach(() => {
+		estado.meta = {};
+		estado.textos.length = 0;
+		estado.chamadasStartContract.length = 0;
+		estado.ordem.length = 0;
+		estado.leadDoFecho.length = 0;
+	});
+
+	it("fecho com lead de `phone` nulo: o helper recebe o celular da identidade", async () => {
+		estado.meta = {
+			...metaBase,
+			contractCollection: { stage: "confirm", avisoLgpdEm: "2026-10-25T12:00:00.000Z" },
+		};
+		await storeIdentity("conv-1", { cpf: CPF_EM_CLARO, celular: "11987654321" });
+		const { fireContract } = await import("./contract-capture");
+		await fireContract("5511987654321", "conv-1");
+
+		expect(estado.leadDoFecho).toEqual([
+			{ conversationId: "conv-1", celular: "11987654321", nome: null },
+		]);
+		// O lead continua vinculado à proposta (FIX-48): o helper roda ANTES do
+		// `startContract`, e a Bevi é chamada mesmo sem lead resolvido.
+		expect(estado.ordem).toEqual(["garantirLeadDoFecho", "startContract"]);
+		expect(estado.chamadasStartContract).toEqual(["conv-1"]);
+	});
+
+	it("sem identidade o fecho não resolve lead — cai no pedido de CPF, sem consulta de bureau", async () => {
+		estado.meta = {
+			...metaBase,
+			contractCollection: { stage: "cpf", avisoLgpdEm: "2026-10-25T12:00:00.000Z" },
+		};
+		const { fireContract } = await import("./contract-capture");
+		await fireContract("5511987654321", "conv-1");
+		expect(estado.leadDoFecho).toEqual([]);
+		expect(estado.chamadasStartContract).toEqual([]);
 	});
 });

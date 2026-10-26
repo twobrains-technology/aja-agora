@@ -23,7 +23,6 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
 import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors";
-import { getLeadIdForConversation } from "@/lib/admin/lead-stage-tracker";
 import { comprovanteDeAceite } from "@/lib/agent/orchestrator/vazamento";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 
@@ -377,7 +376,27 @@ export async function fireContract(from: string, conversationId: string): Promis
 		// FIX-48: vincula a proposta ao lead da conversa (o WhatsApp cria o lead no
 		// handoff antes do fechamento). Antes o polling resgatava via conversationId
 		// — manter o leadId explícito blinda a raia sem depender do resgate.
-		const leadId = await getLeadIdForConversation(conversationId);
+		//
+		// RE-A1 (reteste no dev, t6): resolve o lead com o MESMO helper do caminho do
+		// modelo, `garantirLeadDoFecho` (`pi/tools-livres.ts`). O `getLeadIdForConversation`
+		// que estava aqui só LIA — quem grava `leads.phone` é o helper, e ele só era
+		// alcançado quando o turno passava pelo modelo. No WhatsApp o CPF é interceptado
+		// por `captureContractText` e o turno nunca chega ao modelo: medido no dev, o
+		// telefone estava vazio em 6/6 conversas do reteste, e a régua de identificados
+		// (`admin/performance-queries.ts`) lê exatamente essa coluna. Não usa
+		// `saveContactWhatsapp`: ele reescreve `conversations.waId` (no simulador é
+		// `SIM-<uuid>`) e quebraria a própria sessão — o helper não toca o `waId`.
+		//
+		// Import dinâmico: `pi/tools-livres.ts` importa `pi/lgpd.ts`, que importa este
+		// arquivo — o ciclo está registrado em `.orientacao/pendencia-ZAPFECHO.md`.
+		const { garantirLeadDoFecho } = await import("@/lib/agent/pi/tools-livres");
+		// Nome não é lido aqui: `garantirLeadDoFecho` preserva o nome do lead quando ele
+		// já existe, e o fecho determinístico não tem a fala do nome.
+		const leadId = await garantirLeadDoFecho({
+			conversationId,
+			celular: identity.celular,
+			nome: null,
+		});
 		// ── FIX-420: o guard ANTI-REFAZER chega ao WhatsApp ──
 		//
 		// A 13ª e a 14ª revisões independentes acharam isto aberto, e a 14ª o

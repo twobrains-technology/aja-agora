@@ -2,6 +2,7 @@ import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { contacts, conversations, remarketingTouches } from "@/db/schema";
 import { detectBackIntent, popNavState } from "@/lib/agent/orchestrator/navigation";
+import { scrubCpf } from "@/lib/agent/orchestrator/vazamento";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { metaOf, persistMeta } from "@/lib/conversation/meta";
 import { registrarFalhaDoLlm } from "@/lib/llm/alerta-do-llm";
@@ -220,7 +221,15 @@ async function processTextMessageSerialized(
 				// "confirma essa carta?" seguida direto do fechamento, como se ninguém
 				// tivesse consentido — péssimo pro atendente que lê depois, e pior
 				// ainda como registro do aceite.
-				if (conv) await saveMessage(conv.id, "user", text);
+				//
+				// RE-A2 (reteste no dev, t6): o que era gravado era o TEXTO CRU, e em 6 das
+				// 10 conversas do reteste a linha de `messages` tinha o CPF inteiro — o
+				// `metadata` estava limpo e `lgpdAceite.fala` sem dígito, mas a fala ficou na
+				// tabela em claro. A única cópia persistida do CPF é a cifrada em
+				// `identityEnc`: este registro é FALA, não dado. Máscara só o que fecha no DV
+				// — telefone e valor do cliente continuam — com o mesmo `scrubCpf` que
+				// protege o último passe da fala do agente e o comprovante do aceite.
+				if (conv) await saveMessage(conv.id, "user", scrubCpf(text));
 				if (capture.outcome === "fire" && conv) {
 					await withSimulatorClockIfNeeded(conv, () => fireContract(from, conv.id));
 				} else if (capture.outcome === "finalize" && conv) {
