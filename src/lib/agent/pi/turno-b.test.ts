@@ -296,14 +296,14 @@ describe("L44/P212 — o valor declarado entra no estado antes da busca", () => 
 			categoria: "auto",
 			valorDoBem: 80_000,
 		});
-		// …e, com bem e entrada distintos, cada número vai para o seu campo.
+		// …e, com bem e entrada distintos, o bem vai para o seu campo; a entrada não vira
+		// lance — `entrada` não é molde de lance.
 		expect(declaracaoDoTurno("quero um carro de 80 mil e dou 20 mil de entrada")).toEqual({
 			categoria: "auto",
 			valorDoBem: 80_000,
 		});
-		expect(lanceEPrazoDoTurno("quero um carro de 80 mil e dou 20 mil de entrada")).toEqual({
-			lanceValue: 20_000,
-		});
+		// lado seguro: fora dos moldes (onda 17)
+		expect(lanceEPrazoDoTurno("quero um carro de 80 mil e dou 20 mil de entrada")).toEqual({});
 	});
 
 	it("o turno sem busca grava o valor do bem mesmo com 'entrada' na frase", async () => {
@@ -324,7 +324,7 @@ describe("L44/P212 — o valor declarado entra no estado antes da busca", () => 
 		expect(qualify.lanceValue).toBeUndefined();
 	});
 
-	it("com bem e entrada distintos, cada um cai no seu campo da meta", async () => {
+	it("com bem e entrada distintos, o bem cai no seu campo e a entrada não vira lance", async () => {
 		const conversationId = await novaConversa();
 		const turno = await rodarTurno({
 			conversationId,
@@ -336,7 +336,8 @@ describe("L44/P212 — o valor declarado entra no estado antes da busca", () => 
 		const qualify = (await metaDa(conversationId)).qualifyAnswers as Record<string, unknown>;
 		expect(qualify.creditMax).toBe(80_000);
 		expect(qualify.valorDoBemAlvo).toBe(80_000);
-		expect(qualify.lanceValue).toBe(20_000);
+		// lado seguro: fora dos moldes (onda 17) — "dou 20 mil de entrada" não fecha molde
+		expect(qualify.lanceValue).toBeUndefined();
 	});
 
 	// RODADA 6 / P212 — a PERGUNTA sobre o lance, na mesma fala, não pode apagar o
@@ -365,6 +366,32 @@ describe("L44/P212 — o valor declarado entra no estado antes da busca", () => 
 		expect(qualify.lanceValue).toBeUndefined();
 	});
 
+	// RODADA 7 / P139+P212 — `tenho` com OUTRO objeto não declara dinheiro: o verbo de posse
+	// não pode aprovar o número do bem. No TURNO COMPLETO, sem busca: o lance fica pendente
+	// e o bem de 80 mil continua, como a main (`analyze.ts:230` lê o texto ORIGINAL).
+	it("«Tenho interesse em um carro de 80 mil e quero entender o lance.» não vira lance e não perde o bem", async () => {
+		const fala = "Tenho interesse em um carro de 80 mil e quero entender o lance.";
+		expect(lanceEPrazoDoTurno(fala)).toEqual({});
+		expect(declaracaoDoTurno(fala)).toEqual({ categoria: "auto", valorDoBem: 80_000 });
+
+		const conversationId = await novaConversa();
+		const turno = await rodarTurno({
+			conversationId,
+			userText: fala,
+			beats: [{ text: "Boa! Um carro de 80 mil, e o lance a gente vê depois." }],
+		});
+		await turno.fechar();
+
+		const meta = await metaDa(conversationId);
+		const qualify = meta.qualifyAnswers as Record<string, unknown>;
+		// Morde: com `tenho` lido como posse do dinheiro, o 80 mil virava reserva do cliente
+		// (os cenários usariam recurso que ele não tem) e o perfil ficava sem valor informado.
+		expect(qualify.lanceValue).toBeUndefined();
+		expect(qualify.creditMax).toBe(80_000);
+		expect(qualify.valorDoBemAlvo).toBe(80_000);
+		expect(meta.currentCategory).toBe("auto");
+	});
+
 	// O rótulo que liga PALAVRA a VALOR chega pelas quatro formas que o cliente
 	// usa no chat (`:`, `-`, `=`, "é de"). O `:` era o único que separava a
 	// oração: "Meu lance: R$ 30.000" deixava o dinheiro órfão e o `parseAssetValue`
@@ -379,12 +406,14 @@ describe("L44/P212 — o valor declarado entra no estado antes da busca", () => 
 		{
 			fala: "quero um carro de 80 mil e dou 20 mil de entrada",
 			bem: { categoria: "auto", valorDoBem: 80_000 },
-			lance: 20_000,
+			// lado seguro: fora dos moldes (onda 17) — `entrada` não é molde de lance
+			lance: undefined,
 		},
 		{
 			fala: "dou 20 mil de entrada pra um carro de 80 mil",
 			bem: { categoria: "auto", valorDoBem: 80_000 },
-			lance: 20_000,
+			// lado seguro: fora dos moldes (onda 17) — `entrada` não é molde de lance
+			lance: undefined,
 		},
 		{
 			fala: "quero um imóvel de 300 mil e 50 mil de entrada",

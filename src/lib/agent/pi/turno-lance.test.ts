@@ -143,8 +143,9 @@ describe("P139 — o lance declarado na fala chega aos três cenários", () => {
 		expect(qualify.creditMax).toBe(80_000);
 	});
 
-	it("'dou 20k de entrada' é lance; 'quero um de 80 mil, qual o lance?' não é", () => {
-		expect(lanceEPrazoDoTurno("dou 20k de entrada")).toEqual({ lanceValue: 20_000 });
+	it("'dou 20k de entrada' não é lance (fora dos moldes, onda 17); 'quero um de 80 mil, qual o lance?' não é", () => {
+		// lado seguro: fora dos moldes (onda 17) — `entrada` não é molde de lance
+		expect(lanceEPrazoDoTurno("dou 20k de entrada")).toEqual({});
 		expect(lanceEPrazoDoTurno("meu lance é de 30 mil")).toEqual({ lanceValue: 30_000 });
 		expect(lanceEPrazoDoTurno("tenho 30 mil pro lance")).toEqual({ lanceValue: 30_000 });
 		// O número ao lado do marcador aqui é o VALOR DO BEM, dito na mesma frase
@@ -304,11 +305,13 @@ describe("P139/P212 — a frase decide: pontuação e rótulo não trocam lance 
 		{ fala: "meu lance é de 30 mil", lance: { lanceValue: 30_000 }, bem: {} },
 		{ fala: "meu lance - 30 mil", lance: { lanceValue: 30_000 }, bem: {} },
 		{ fala: "meu lance = 30 mil", lance: { lanceValue: 30_000 }, bem: {} },
-		{ fala: "dou 20 mil de entrada", lance: { lanceValue: 20_000 }, bem: {} },
+		// lado seguro: fora dos moldes (onda 17) — `entrada` não é molde de lance
+		{ fala: "dou 20 mil de entrada", lance: {}, bem: {} },
 		// Caixa alta e emoji: o cliente digita assim no WhatsApp.
 		{ fala: "MEU LANCE: 30 MIL", lance: { lanceValue: 30_000 }, bem: {} },
 		{ fala: "tenho 30 mil de lance 😉", lance: { lanceValue: 30_000 }, bem: {} },
-		{ fala: "o lance é 30 mil!", lance: { lanceValue: 30_000 }, bem: {} },
+		// lado seguro: fora dos moldes (onda 17) — `o lance` sem `meu` não fecha molde 3
+		{ fala: "o lance é 30 mil!", lance: {}, bem: {} },
 		// Lance em PERGUNTA — o cliente quer saber, não declarou ter.
 		{ fala: "30 mil de lance?", lance: {}, bem: {} },
 		{ fala: "30 mil de lance???", lance: {}, bem: {} },
@@ -336,15 +339,18 @@ describe("P139/P212 — a frase decide: pontuação e rótulo não trocam lance 
 			lance: {},
 			bem: { categoria: "auto", valorDoBem: 80_000 },
 		},
-		// Bem + lance na MESMA frase, nas duas ordens.
+		// Bem + lance na MESMA frase, nas duas ordens. O verbo dos moldes é `dou`, e o
+		// dinheiro que ele nomeia é o da ENTRADA: o bem continua, o lance não entra.
 		{
 			fala: "quero um carro de 80 mil e dou 20 mil de entrada",
-			lance: { lanceValue: 20_000 },
+			// lado seguro: fora dos moldes (onda 17)
+			lance: {},
 			bem: { categoria: "auto", valorDoBem: 80_000 },
 		},
 		{
 			fala: "dou 20 mil de entrada pra um carro de 80 mil",
-			lance: { lanceValue: 20_000 },
+			// lado seguro: fora dos moldes (onda 17)
+			lance: {},
 			bem: { categoria: "auto", valorDoBem: 80_000 },
 		},
 		{
@@ -353,13 +359,15 @@ describe("P139/P212 — a frase decide: pontuação e rótulo não trocam lance 
 			bem: { categoria: "auto", valorDoBem: 80_000 },
 		},
 		// Dois dinheiros de lance na MESMA frase: o segundo não pode sobrar para o
-		// parser do bem.
+		// parser do bem. (`entrada de 10 mil` é masked do bem, mas não é molde de lance.)
 		{
 			fala: "lance de 30 mil e entrada de 10 mil pra um carro de 80 mil",
-			lance: { lanceValue: 30_000 },
+			// lado seguro: fora dos moldes (onda 17)
+			lance: {},
 			bem: { categoria: "auto", valorDoBem: 80_000 },
 		},
 		// `e`/`ou` ligam FRASES: cada marcador fica com o dinheiro que ele rotula.
+		// Moldes 1 e 3 fecham aqui; o dinheiro da `entrada` sai do bem mas não é lance.
 		{ fala: "tenho 30 mil pro lance e 20 mil de entrada", lance: { lanceValue: 30_000 }, bem: {} },
 		{ fala: "meu lance: 30mil, entrada: 10mil", lance: { lanceValue: 30_000 }, bem: {} },
 		{
@@ -381,7 +389,8 @@ describe("P139/P212 — a frase decide: pontuação e rótulo não trocam lance 
 			bem: { categoria: "auto", valorDoBem: 80_000 },
 		},
 		// O que o cliente diz sem pontuação nenhuma e o que ele só pergunta.
-		{ fala: "o lance seria de uns 30 mil", lance: { lanceValue: 30_000 }, bem: {} },
+		// lado seguro: fora dos moldes (onda 17) — verbo de intenção, não dos moldes
+		{ fala: "o lance seria de uns 30 mil", lance: {}, bem: {} },
 		{ fala: "lance é 30 mil?", lance: {}, bem: {} },
 		{ fala: "será que com 30 mil de lance eu consigo?", lance: {}, bem: {} },
 
@@ -424,14 +433,16 @@ describe("P139/P212 — a frase decide: pontuação e rótulo não trocam lance 
 			bem: { categoria: "auto", valorDoBem: 80_000 },
 		},
 		// A vírgula fecha a ORAÇÃO do par: o 80 mil é o preço do carro, não o lance.
+		// lado seguro: fora dos moldes (onda 17) — `lance de 30 mil` não é molde
 		{
 			fala: "Quero um carro de 80 mil, lance de 30 mil",
-			lance: { lanceValue: 30_000 },
+			lance: {},
 			bem: { categoria: "auto", valorDoBem: 80_000 },
 		},
 		{
 			fala: "Consigo dar 20 mil de entrada, quero um carro de 80 mil",
-			lance: { lanceValue: 20_000 },
+			// lado seguro: fora dos moldes (onda 17) — verbo de molde, mas `de entrada`
+			lance: {},
 			bem: { categoria: "auto", valorDoBem: 80_000 },
 		},
 		// `;` e `.` também são fronteira de frase.
@@ -485,16 +496,25 @@ describe("P139/P212 — a frase decide: pontuação e rótulo não trocam lance 
 		{ fala: "zero de entrada", lance: {}, bem: {} },
 		{ fala: "nunca juntei 30 mil de lance", lance: {}, bem: {} },
 
-		// RODADA 6 / P139 — as formas POSITIVAS da permissão, uma por verbete.
-		{ fala: "guardei 30 mil pra entrada", lance: { lanceValue: 30_000 }, bem: {} },
+		// RODADA 6 / P139 — as formas POSITIVAS da permissão, uma por verbete. Na onda 17
+		// só os três moldes gravam lance e `entrada` não é molde: cada linha abaixo que
+		// está fora dos moldes passou a esperar `{}`.
+		// lado seguro: fora dos moldes (onda 17) — `pra entrada`, não `pra lance`
+		{ fala: "guardei 30 mil pra entrada", lance: {}, bem: {} },
 		{ fala: "disponho de 30 mil de lance", lance: { lanceValue: 30_000 }, bem: {} },
-		{ fala: "consigo juntar 30 mil de entrada", lance: { lanceValue: 30_000 }, bem: {} },
-		{ fala: "posso oferecer 30 mil de lance", lance: { lanceValue: 30_000 }, bem: {} },
-		{ fala: "vou dar 30 mil de entrada", lance: { lanceValue: 30_000 }, bem: {} },
-		{ fala: "eu daria 30 mil de lance", lance: { lanceValue: 30_000 }, bem: {} },
-		// Gordura entre o dinheiro e o marcador não desfaz o que o cliente AFIRMOU.
-		{ fala: "tenho 30 mil guardados pro lance", lance: { lanceValue: 30_000 }, bem: {} },
-		{ fala: "tenho 30 mil como entrada", lance: { lanceValue: 30_000 }, bem: {} },
+		// lado seguro: fora dos moldes (onda 17) — `juntar` e `entrada` não são formas do molde
+		{ fala: "consigo juntar 30 mil de entrada", lance: {}, bem: {} },
+		// lado seguro: fora dos moldes (onda 17) — `oferecer` não é forma do molde
+		{ fala: "posso oferecer 30 mil de lance", lance: {}, bem: {} },
+		// lado seguro: fora dos moldes (onda 17) — `entrada` não é molde de lance
+		{ fala: "vou dar 30 mil de entrada", lance: {}, bem: {} },
+		// lado seguro: fora dos moldes (onda 17) — `daria` não é forma do molde
+		{ fala: "eu daria 30 mil de lance", lance: {}, bem: {} },
+		// lado seguro: fora dos moldes (onda 17) — gordura entre o dinheiro e o gancho: não
+		// fecha molde, mas o número OBJETO do verbo de posse continua fora do preço do bem (P212)
+		{ fala: "tenho 30 mil guardados pro lance", lance: {}, bem: {} },
+		// lado seguro: fora dos moldes (onda 17) — `como entrada`, não `como lance`
+		{ fala: "tenho 30 mil como entrada", lance: {}, bem: {} },
 	];
 
 	it.each(casos)("«$fala»", ({ fala, lance, bem }) => {

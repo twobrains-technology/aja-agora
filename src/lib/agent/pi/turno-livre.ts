@@ -314,8 +314,10 @@ const PALAVRAS_DE_CATEGORIA: ReadonlyArray<{ categoria: Category; re: RegExp }> 
  * categorias: palavra desconhecida ao lado do número é ambígua e não vira lance.
  *
  * O marcador sozinho NÃO basta para gravar lance (P139) — ele diz de QUEM é o
- * dinheiro, não que o cliente o tenha (ver `dinheiroFoiAfirmado`). */
-const PALAVRAS_DE_LANCE = "lance|entrada|[áa]gio";
+ * dinheiro, não que o cliente o tenha. Na onda 17 a permissão é o molde
+ * (`MOLDES_DO_LANCE`); esta lista serve só a MÁSCARA DO BEM, e o `ágio` da onda 15
+ * saiu dela: os moldes do chefe falam de `lance` e `entrada`. */
+const PALAVRAS_DE_LANCE = "lance|entrada";
 const MARCADORES_DE_LANCE = new RegExp(`\\b(${PALAVRAS_DE_LANCE})\\b`, "gi");
 
 /** O que pode ficar ENTRE o dinheiro e a palavra do lance sem desfazer o par:
@@ -454,9 +456,8 @@ function somenteLigacoes(vao: string): boolean {
  * número ficava órfão na oração e o `parseAssetValue` o lia como valor do BEM. */
 const GOVERNO_DO_LANCE = /\b(exig\w*|precis\w*|falt\w*|obrigat\w*)\b/i;
 
-/** Um TRECHO da fala: onde começa e onde termina. Os dois trechos que este
- * arquivo usa são a ORAÇÃO (o par dinheiro↔marcador) e a FRASE (o que o cliente
- * AFIRMA) — ver `trechosDe`. */
+/** Um TRECHO da fala: onde começa e onde termina. O trecho que este arquivo usa é a
+ * ORAÇÃO (o par dinheiro↔marcador da máscara) — ver `trechosDe`. */
 type TrechoDoTurno = { inicio: number; fim: number };
 
 /** O que separa ORAÇÕES — a unidade do PAR dinheiro↔marcador. A vírgula entra
@@ -468,12 +469,6 @@ type TrechoDoTurno = { inicio: number; fim: number };
  * R$ 30.000", "carro: 80 mil"). Cortar ali deixava o dinheiro órfão do rótulo e
  * o `parseAssetValue` o lia como valor do BEM (P212). */
 const SEPARADORES_DE_ORACAO = ",.;!?\n";
-
-/** O que separa FRASES — a unidade de quem AFIRMA. A vírgula fica de fora: "não
- * tenho 30 mil de lance, mas tenho 10 mil" é UMA frase e a negação vale nela
- * inteira, enquanto "quero um carro de 80 mil. Lance eu não tenho" são duas — e
- * o ponto entre elas é a fronteira que a fala preserva (P212). */
-const SEPARADORES_DE_FRASE = ".;!?\n";
 
 /** Quebra a fala em trechos com a PONTUAÇÃO ORIGINAL preservada: cada trecho é
  * uma fatia do próprio texto, e o separador não pertence a nenhum deles. Nada é
@@ -504,24 +499,17 @@ function oracoesDe(texto: string): TrechoDoTurno[] {
 	return trechosDe(texto, SEPARADORES_DE_ORACAO);
 }
 
-function frasesDe(texto: string): TrechoDoTurno[] {
-	return trechosDe(texto, SEPARADORES_DE_FRASE);
-}
-
-/** O dinheiro que a fala liga ao LANCE, com a posição: o token de dentro da
- * oração que nomeia lance/entrada/ágio, o mais colado ao marcador.
+/** O dinheiro que a fala liga ao LANCE, com a posição: o token de dentro da oração que
+ * nomeia `lance`/`entrada`, o mais colado ao marcador.
  *
- * Serve às duas perguntas do turno, e é por isso que ela devolve também a
- * posição: (a) o número é dinheiro AFIRMADO? — quem responde é
- * `dinheiroFoiAfirmado`, que lê a FRASE em volta; (b) o número é o valor do
- * BEM? — não: é do lance, e `semODinheiroDoLance` o mascara antes do
- * `parseAssetValue` (P212). */
+ * É o caminho da MÁSCARA DO BEM: o número ligado à palavra não é o preço do bem, e
+ * `semODinheiroDoLance` o tira da fala antes do `parseAssetValue` (P212). Não é caminho
+ * de captura de LANCE — na onda 17 a captura é só `MOLDES_DO_LANCE`. */
 type DinheiroDoLance = {
 	valor: number;
 	inicio: number;
 	fim: number;
 	oracao: TrechoDoTurno;
-	frase: TrechoDoTurno;
 	/** O número está LIGADO ao marcador? Vão só de ligação (`de`, `pro`, `:`,
 	 * `não é`) ou verbo de obrigação/falta no meio ("a entrada exige 30 mil")
 	 * dizem que o dinheiro é do lance mesmo quando o cliente não afirmou tê-lo.
@@ -532,7 +520,6 @@ type DinheiroDoLance = {
 
 function dinheirosDoLance(texto: string): DinheiroDoLance[] {
 	const oracoes = oracoesDe(texto);
-	const frases = frasesDe(texto);
 	const tokens = [...texto.matchAll(TOKEN_DE_DINHEIRO)].map((token) => ({
 		inicio: token.index ?? 0,
 		fim: (token.index ?? 0) + token[0].length,
@@ -578,21 +565,21 @@ function dinheirosDoLance(texto: string): DinheiroDoLance[] {
 				token,
 				valor: token.valor,
 				distancia,
+				// Os dois moldes literais da máscara (onda 17) são os casos estreitos deste
+				// vão: `D <gancho> <palavra>` e `<palavra> <cópula> D`. O vão largo só vale
+				// com conectivo desta tabela ou verbo de obrigação/falta — é o que preserva o
+				// preço do bem em "quanto de entrada pra um carro de 80 mil?" e o que não
+				// deixa "a entrada exige 30 mil" virar valor do bem.
 				ligadoAoMarcador: somenteLigacoes(vao) || GOVERNO_DO_LANCE.test(vao),
 			};
 		}
 		if (!melhor) continue;
-		// A FRASE do dinheiro: a oração nunca atravessa uma fronteira de frase, então
-		// a que contém a oração é a frase a que o valor pertence.
-		const frase = frases.find((f) => oracao.inicio >= f.inicio && oracao.fim <= f.fim);
-		if (!frase) continue;
 		jaAproveitados.add(melhor.token.inicio);
 		dinheiros.push({
 			valor: melhor.valor,
 			inicio: melhor.token.inicio,
 			fim: melhor.token.fim,
 			oracao,
-			frase,
 			ligadoAoMarcador: melhor.ligadoAoMarcador,
 		});
 	}
@@ -600,83 +587,115 @@ function dinheirosDoLance(texto: string): DinheiroDoLance[] {
 	return dinheiros.sort((a, b) => a.inicio - b.inicio);
 }
 
-// ── LANCE: LISTA DE PERMISSÃO, NÃO DE BLOQUEIO (P139) ──────────────────────
+// ── LANCE: OS MOLDES EXATOS, COM ADJACÊNCIA FIXA (P139, rodada 7) ──────────────
 //
-// O lado perigoso é gravar como LANCE um dinheiro que o cliente NÃO afirmou ter:
-// os três cenários de `cards-livres.ts` passam a usar recurso dele que não
-// existe, e a proposta sai com um valor que ele não tem. Proteger isso com uma
-// lista de BLOQUEIO não fecha — a cada rodada o auditor achou uma forma nova
-// ("não estou de acordo", "não preciso do seu CPF", "faltam 30 mil"). O lado
-// perigoso agora só acontece quando a MENSAGEM casa uma forma POSITIVA estreita;
-// qualquer outra coisa cai no lado seguro, que é não gravar (o modelo pergunta
-// de novo e o fato continua pendente).
+// O lado perigoso é gravar como LANCE um dinheiro que o cliente NÃO afirmou ter: os três
+// cenários de `cards-livres.ts` passam a usar recurso dele que não existe, e a proposta
+// sai com um valor que ele não tem. Uma lista de BLOQUEIO não fecha — a cada rodada o
+// auditor achou uma forma nova. A onda 16 inverteu para a forma POSITIVA estreita e
+// alargou a permissão; na onda 17 os moldes vêm escritos pelo chefe e são implementados
+// LITERALMENTE, com adjacência fixa: verbo colado no dinheiro, dinheiro colado em "de
+// lance". A busca de verbo de posse na frase inteira foi apagada — nada fora dos moldes
+// grava lance, e o que não fecha molde cai no lado seguro (o modelo pergunta de novo e o
+// fato continua pendente). `entrada` NÃO é molde de lance: quem diz "dou 20 mil de
+// entrada" nomeia o dinheiro da entrada, não uma reserva sua.
+//
+// A TRAVA da onda 16 continua com as mesmas formas e continua valendo na MENSAGEM inteira:
+// negação, pergunta, obrigação/falta ou hipótese em QUALQUER ponto derrubam o lance,
+// inclusive um molde que fecha em outra frase — "não tenho 30 mil de lance. Meu lance é de
+// 10 mil" fica pendente.
 
-/** As formas POSITIVAS de posse ou oferta do dinheiro. Fechada de propósito.
+/** D — o token de dinheiro que o código já reconhece (`TOKEN_DE_DINHEIRO`), em fonte para
+ * entrar dentro dos moldes. O VALOR sai de `parseAssetValue` sobre o token, como sempre:
+ * em "R$ 20.000" o `.` é milhar e em "1,5 milhão" a `,` é decimal. */
+const FONTE_DO_D = TOKEN_DE_DINHEIRO.source;
+
+/** As formas fixas dos moldes, na ordem em que o chefe as escreveu. */
+const MOLDE_VERBO = "tenho|juntei|guardei|disponho de|consigo dar|posso dar|vou dar|dou";
+const MOLDE_VERBO_SEM_FOLGA = "tenho|consigo dar|posso dar|dou";
+const MOLDE_FOLGA = "uns\\s+|cerca de\\s+|até\\s+";
+const MOLDE_GANCHO = "de|para o|pro|pra|como";
+const MOLDE_COPULA = "é|e|seria|fica";
+
+/** Os três moldes do LANCE. O último grupo de cada um é o dinheiro. O molde 3 é o do chefe
+ * corrigido: `[:=\-]` aceita o traço ("meu lance - 30 mil") e o `\s*` aceita o sinal colado
+ * em "lance" ("Meu lance: R$ 30.000"). */
+const MOLDES_DO_LANCE: readonly RegExp[] = [
+	new RegExp(
+		`\\b(?:${MOLDE_VERBO})\\s+(?:${MOLDE_FOLGA})?(${FONTE_DO_D})\\s+(?:${MOLDE_GANCHO})\\s+lance\\b`,
+		"gi",
+	),
+	new RegExp(
+		`\\b(?:${MOLDE_GANCHO})\\s+lance\\s+(?:eu\\s+)?(?:${MOLDE_VERBO_SEM_FOLGA})\\s+(?:${MOLDE_FOLGA})?(${FONTE_DO_D})`,
+		"gi",
+	),
+	new RegExp(
+		`\\bmeu lance\\s*(?:(?:${MOLDE_COPULA})\\s*)?(?:de\\s+)?[:=\\-]?\\s*(${FONTE_DO_D})`,
+		"gi",
+	),
+];
+
+/** Os moldes da MÁSCARA DO BEM: o bem continua sendo `parseAssetValue` sobre o texto
+ * ORIGINAL com essa máscara (P212), como na `main`
+ * (`a2bc3024:src/lib/agent/orchestrator/analyze.ts:230`). O `ágio` da onda 15 sai da
+ * máscara: os moldes do chefe falam de `lance` e `entrada`, e o terceiro é o dinheiro
+ * DECLARADO como recurso dele — que nunca é preço do bem. Mascarar é diferente de gravar
+ * lance: a captura é só `MOLDES_DO_LANCE`. */
+const MOLDES_DA_MASCARA_DO_BEM: readonly RegExp[] = [
+	new RegExp(`(${FONTE_DO_D})\\s+(?:${MOLDE_GANCHO})\\s+(?:lance|entrada)\\b`, "gi"),
+	new RegExp(`\\b(?:lance|entrada)\\s*(?:de|:|=|${MOLDE_COPULA})\\s*(${FONTE_DO_D})`, "gi"),
+	// O número OBJETO do verbo de posse: "tenho 30 mil guardados pro lance" DECLARA o dinheiro
+	// como recurso dele, e dinheiro declarado não é preço do bem (P212). O verbo tem de estar
+	// COLADO no número — em "Tenho interesse em um carro de 80 mil" o objeto de `tenho` é
+	// `interesse`, e o 80 mil continua sendo o bem (P139, rodada 7).
+	new RegExp(`\\b(?:${MOLDE_VERBO})\\s+(?:${MOLDE_FOLGA})?(${FONTE_DO_D})`, "gi"),
+];
+
+/** A trava geral da MENSAGEM: com qualquer uma destas formas em QUALQUER lugar da fala,
+ * nada nela vira lance. São as construções em que o número pode estar ao lado da palavra
+ * "lance" sem que o cliente tenha dito que TEM o dinheiro — pergunta, negação,
+ * obrigação/falta e hipótese.
  *
- * O que NÃO está aqui — "quero 30 mil de lance", "carro de 80 mil com 30 mil de
- * lance", "80 mil de lance" — é intenção ou fragmento: o cliente falou de um
- * dinheiro, não disse que o tem. */
-const POSSE_DO_DINHEIRO =
-	/\b(tenho|consigo\s+(?:dar|pagar|juntar|oferecer)|posso\s+(?:dar|pagar|oferecer)|dou|daria|vou\s+dar|disponho\s+de|juntei|guardei|tenho\s+guardad[oa]s?)\b/i;
-
-/** A outra forma positiva: o RÓTULO que nomeia o valor do lance — "meu lance:
- * R$ 30.000", "o lance é 30 mil", "lance de 30 mil". O dinheiro tem de vir
- * DEPOIS do rótulo e colado nele por ligações (`somenteLigacoes`). */
-const ROTULO_DO_LANCE =
-	/\b(?:(?:meu|minha|o|a|nosso|nossa)\s+)?lance\b\s*(?:(?:é|seria|fica|vai\s+ser)\s*)?(?::|=|-|–|—|de|em)?\s*/gi;
-
-/** A trava geral da MENSAGEM: com qualquer uma destas formas em QUALQUER lugar
- * da fala, nada nela vira lance. São as construções em que o número pode estar
- * ao lado da palavra "lance" sem que o cliente tenha dito que TEM o dinheiro —
- * pergunta, negação, obrigação/falta e hipótese.
- *
- * Na mensagem inteira, e não na frase, de propósito: é o lado reversível. "Ainda
- * faltam 30 mil para o lance" fica pendente em vez de virar recurso próprio.
- * `como` NÃO entra na lista de interrogativas porque é ligação de valor ("tenho
- * 30 mil como entrada"); pergunta com "como" vem com `?`, que já trava. */
+ * Na mensagem inteira, e não na frase, de propósito: é o lado reversível. "Ainda faltam 30
+ * mil para o lance" fica pendente em vez de virar recurso próprio. `como` NÃO entra na
+ * lista de interrogativas porque é ligação de valor ("tenho 30 mil como entrada"); pergunta
+ * com "como" vem com `?`, que já trava. */
 const TRAVA_DA_MENSAGEM =
 	/\?|\b(n[ãa]o|nem|nunca|jamais|sem|zero|tenho\s+que|tem\s+que|teria\s+que|precis\w*|falt\w*|exig\w*|obrigat\w*|se\s+eu|caso|tivesse|teria|quanto|quantos|quantas|qual|quais|quando|onde|quem|cad[êe]|ser[áa])\b/i;
 
-/** O dinheiro está DEPOIS de um rótulo de lance, colado nele por ligações? */
-function rotuladoComoLance(texto: string, dinheiro: DinheiroDoLance): boolean {
-	const oracao = texto.slice(dinheiro.oracao.inicio, dinheiro.oracao.fim);
-	const inicioDoDinheiro = dinheiro.inicio - dinheiro.oracao.inicio;
-	for (const rotulo of oracao.matchAll(ROTULO_DO_LANCE)) {
-		const fimDoRotulo = (rotulo.index ?? 0) + rotulo[0].length;
-		if (fimDoRotulo > inicioDoDinheiro) continue;
-		if (somenteLigacoes(oracao.slice(fimDoRotulo, inicioDoDinheiro))) return true;
+/** O dinheiro que um molde casou: valor e posição na fala. */
+type DinheiroDoMolde = { valor: number; inicio: number; fim: number };
+
+/** Os dinheiros que os moldes casam, na ordem da fala. Na captura de LANCE o próprio molde
+ * é a permissão: não há tabela de ligação nem verbo de posse na frase inteira. */
+function dinheirosPelosMoldes(texto: string, moldes: readonly RegExp[]): DinheiroDoMolde[] {
+	const dinheiros: DinheiroDoMolde[] = [];
+	for (const molde of moldes) {
+		for (const achado of texto.matchAll(molde)) {
+			const dinheiro = achado[achado.length - 1] ?? "";
+			const valor = parseAssetValue(dinheiro);
+			if (valor === null) continue;
+			const inicio = (achado.index ?? 0) + achado[0].indexOf(dinheiro);
+			dinheiros.push({ valor, inicio, fim: inicio + dinheiro.length });
+		}
 	}
-	return false;
+	// Na ordem da FALA: o primeiro dinheiro citado é o que o cliente declarou.
+	return dinheiros.sort((a, b) => a.inicio - b.inicio);
 }
 
-/** O cliente AFIRMOU ter (ou dar) esse dinheiro? (P139)
+/** A fala SEM o dinheiro que pertence ao lance — é sobre ela que o `parseAssetValue` decide
+ * o valor do BEM (P212), como na `main`, que lê o texto ORIGINAL.
  *
- * Uma das duas formas positivas — posse/oferta na frase do valor, ou o rótulo
- * do lance — E nenhuma trava na mensagem inteira. */
-function dinheiroFoiAfirmado(texto: string, dinheiro: DinheiroDoLance): boolean {
-	if (TRAVA_DA_MENSAGEM.test(texto)) return false;
-	const frase = texto.slice(dinheiro.frase.inicio, dinheiro.frase.fim);
-	return POSSE_DO_DINHEIRO.test(frase) || rotuladoComoLance(texto, dinheiro);
-}
-
-/** A fala SEM o dinheiro que pertence ao lance — é sobre ela que o
- * `parseAssetValue` decide o valor do BEM (P212), como na `main`, que lê o texto
- * ORIGINAL (`a2bc3024:src/lib/agent/orchestrator/analyze.ts:230`).
- *
- * A ÚNICA alteração é mascarar o dinheiro do lance, no lugar: a frase, a
- * pergunta e o preço do bem ficam como o cliente escreveu. Assim "quero um carro
- * de 80 mil, quanto de lance?" declara 80 mil, "quero um carro de 80 mil, sem
- * entrada" também, e "quero um de 80 mil e dou 20 mil de entrada" separa os dois
- * números: bem 80 mil, lance 20 mil. */
+ * A ÚNICA alteração é mascarar, no lugar: a frase, a pergunta e o preço do bem ficam como
+ * o cliente escreveu. Assim "quero um carro de 80 mil, quanto de lance?" declara 80 mil,
+ * "quero um carro de 80 mil, sem entrada" também, e "quero um de 80 mil e dou 20 mil de
+ * entrada" separa os dois números: bem 80 mil, lance nada — o dinheiro da entrada é
+ * mascarado do bem, mas não é reserva do cliente. */
 function semODinheiroDoLance(texto: string): string {
-	// Mascara o que é DO LANCE: o par que o cliente AFIRMOU ter (mesmo com gordura
-	// no meio — "tenho 30 mil guardados pro lance"), o par colado por ligação (o
-	// rótulo e a negativa) e o par governado por obrigação/falta ("a entrada exige
-	// 30 mil"). Vão largo sem nada disso é o preço do BEM dito perto da palavra
-	// ("quanto de entrada pra um carro de 80 mil?") e FICA.
-	const dinheiros = dinheirosDoLance(texto).filter(
-		(dinheiro) => dinheiro.ligadoAoMarcador || dinheiroFoiAfirmado(texto, dinheiro),
-	);
+	const dinheiros = [
+		...dinheirosPelosMoldes(texto, MOLDES_DA_MASCARA_DO_BEM),
+		...dinheirosDoLance(texto).filter((dinheiro) => dinheiro.ligadoAoMarcador),
+	];
 	if (dinheiros.length === 0) return texto;
 	let limpo = texto;
 	for (const dinheiro of [...dinheiros].sort((a, b) => b.inicio - a.inicio)) {
@@ -685,15 +704,11 @@ function semODinheiroDoLance(texto: string): string {
 	return limpo;
 }
 
-/** O valor de LANCE que o cliente AFIRMOU ter, ou `undefined`.
- *
- * O par é dinheiro + palavra de lance na MESMA oração ("tenho 30 mil pro
- * lance", "meu lance é de 30 mil"), e só vale com uma forma positiva e sem
- * nenhuma trava (ver `dinheiroFoiAfirmado`). */
+/** O valor de LANCE que um molde casou, ou `undefined` — o primeiro da fala. Só com o molde
+ * fechado e sem TRAVA na MENSAGEM inteira (P139). */
 function lanceDaFala(texto: string): number | undefined {
-	for (const dinheiro of dinheirosDoLance(texto)) {
-		if (dinheiroFoiAfirmado(texto, dinheiro)) return dinheiro.valor;
-	}
+	if (TRAVA_DA_MENSAGEM.test(texto)) return undefined;
+	for (const dinheiro of dinheirosPelosMoldes(texto, MOLDES_DO_LANCE)) return dinheiro.valor;
 	return undefined;
 }
 
