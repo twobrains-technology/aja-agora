@@ -252,21 +252,53 @@ describe("P262 — o consentimento é cronológico: recusa posterior revoga o si
 		expect(r.motivo).toBe("aceite-revogado");
 	});
 
-	it("aviso → não autorizo → sim: o cliente voltou atrás e autorizou", () => {
+	// Rodada 8: RE-ACEITE EXIGE O AGENTE REPETIR O AVISO (estágio da main, onda 18) —
+	// lado seguro. O candidato é a primeira fala do cliente depois do aviso: aqui é
+	// "não autorizo", e o "pode usar meus dados" é fala posterior e não decide.
+	it("aviso → não autorizo → sim: o sim não é candidato, falta o aceite", () => {
 		const r = resolverAceiteLgpd({
 			falas: [aviso, { role: "user", content: "não autorizo" }],
+			falaDoCliente: "pode usar meus dados",
+		});
+		expect(r.ok).toBe(false);
+		expect(r.motivo).toBe("falta-o-aceite");
+	});
+
+	// ... e com o aviso repetido, o "sim" volta a ser candidato e autoriza.
+	it("aviso → não autorizo → aviso de novo → sim: o sim do estágio autoriza", () => {
+		const r = resolverAceiteLgpd({
+			falas: [aviso, { role: "user", content: "não autorizo" }, aviso],
 			falaDoCliente: "pode usar meus dados",
 		});
 		expect(r.ok).toBe(true);
 		expect(r.motivo).toBe("aceite-do-cliente");
 	});
 
-	it("revogação depois de novo sim: o sim mais recente vale outra vez", () => {
+	// Rodada 8: RE-ACEITE EXIGE O AGENTE REPETIR O AVISO (estágio da main, onda 18) —
+	// lado seguro. O aceite veio do candidato "sim, pode usar"; a revogação derruba ele e
+	// o "pensando bem, pode usar" é fala posterior, não candidato.
+	it("revogação depois de novo sim: o sim mais recente não é candidato, está revogado", () => {
 		const r = resolverAceiteLgpd({
 			falas: [
 				aviso,
 				{ role: "user", content: "sim, pode usar" },
 				{ role: "user", content: "não autorizo mais" },
+				{ role: "user", content: "pensando bem, pode usar" },
+			],
+		});
+		expect(r.ok).toBe(false);
+		expect(r.motivo).toBe("aceite-revogado");
+	});
+
+	// ... e com o aviso repetido depois da revogação, o "pensando bem, pode usar" é
+	// candidato de novo e o aceite volta.
+	it("revogação e aviso repetido: o sim depois do aviso repetido vale outra vez", () => {
+		const r = resolverAceiteLgpd({
+			falas: [
+				aviso,
+				{ role: "user", content: "sim, pode usar" },
+				{ role: "user", content: "não autorizo mais" },
+				aviso,
 				{ role: "user", content: "pensando bem, pode usar" },
 			],
 		});
@@ -557,5 +589,65 @@ describe("P262 rodada 7 — o juiz é `decideConfirmStage` da main; a trava só 
 		const r = resolverAceiteLgpd({ falas: [aviso], falaDoCliente: fala });
 		expect(r.ok, fala).toBe(esperadoAceite);
 		expect(r.motivo, fala).toBe(esperadoAceite ? "aceite-do-cliente" : "falta-o-aceite");
+	});
+});
+
+// P262, re-auditoria 310e rodada 8: O ACEITE É DO ESTÁGIO, como na main. Na main, sem
+// coleta de contratação ativa nada é decidido (`contract-capture.ts:161`); a confirmação é
+// processada em `:200`, dentro do estágio aberto pelo pedido de autorização. Aqui o estágio
+// abre no AVISO: o ÚNICO candidato a aceite é a PRIMEIRA fala do cliente depois dele. Falas
+// posteriores não contam, a não ser que o agente repita o aviso — aí vale a primeira fala
+// depois da repetição. O juiz continua `decideConfirmStage` + trava; o que a rodada 8 fecha é
+// o CONTEXTO em que a decisão é aplicada, que era o que a main tinha: uma resposta de
+// qualificação respondia a OUTRA pergunta do agente, mas casa `quero` do `AFFIRM_RE` e virava
+// aceite retroativo, liberando a consulta de bureau sem consentimento.
+describe("P262 rodada 8 — o aceite é do estágio: só a primeira fala depois do aviso decide", () => {
+	const aviso = { role: "assistant" as const, content: AVISO };
+
+	it("aviso → “sim” ⇒ aceito", () => {
+		const r = resolverAceiteLgpd({ falas: [aviso], falaDoCliente: "sim" });
+		expect(r.ok).toBe(true);
+		expect(r.motivo).toBe("aceite-do-cliente");
+	});
+
+	it("aviso → “como funciona?” → agente “Qual bem você procura?” → “Quero um carro de 80 mil.” ⇒ NÃO aceito", () => {
+		const r = resolverAceiteLgpd({
+			falas: [
+				aviso,
+				{ role: "user", content: "como funciona?" },
+				{ role: "assistant", content: "Qual bem você procura?" },
+				{ role: "user", content: "Quero um carro de 80 mil." },
+			],
+		});
+		expect(r.ok).toBe(false);
+		expect(r.motivo).toBe("falta-o-aceite");
+	});
+
+	it("aviso → “como funciona?” → agente repete o aviso → “pode” ⇒ aceito", () => {
+		const r = resolverAceiteLgpd({
+			falas: [
+				aviso,
+				{ role: "user", content: "como funciona?" },
+				aviso,
+				{ role: "user", content: "pode" },
+			],
+		});
+		expect(r.ok).toBe(true);
+		expect(r.motivo).toBe("aceite-do-cliente");
+	});
+
+	// O estágio fecha para o ACEITE, não para a REVOGAÇÃO: ela derruba o consentimento vindo
+	// de qualquer fala, inclusive de uma que não foi candidata.
+	it("a revogação continua lendo qualquer fala, dentro ou fora do estágio", () => {
+		const r = resolverAceiteLgpd({
+			falas: [
+				aviso,
+				{ role: "user", content: "sim, pode usar" },
+				{ role: "assistant", content: "Qual prazo te serve, 48 ou 80 meses?" },
+				{ role: "user", content: "não autorizo" },
+			],
+		});
+		expect(r.ok).toBe(false);
+		expect(r.motivo).toBe("aceite-revogado");
 	});
 });

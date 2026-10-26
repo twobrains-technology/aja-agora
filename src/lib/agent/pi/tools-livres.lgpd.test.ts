@@ -341,3 +341,41 @@ describe("fazer_proposta — as três recusas de LGPD dizem coisas diferentes ao
 		expect(mocks.startContract).not.toHaveBeenCalled();
 	});
 });
+
+// P262, re-auditoria 310e rodada 8: o aceite é do ESTÁGIO, como na main. Sem coleta de
+// contratação ativa, `src/lib/whatsapp/contract-capture.ts:161` retorna sem decidir — a
+// confirmação só é processada dentro do estágio aberto pelo pedido de autorização (`:200`).
+// Aqui, o estágio abre no aviso e a única fala que decide o aceite é a primeira fala do
+// cliente depois dele. Uma resposta de qualificação casa o `quero` do `AFFIRM_RE` da main e
+// libera a consulta de bureau sem o cliente ter respondido o aviso. O que se prova aqui é o
+// fato de a Bevi não ser chamada.
+describe("fazer_proposta — rodada 8: a resposta de qualificação não é aceite", () => {
+	it("aviso → dúvida → o agente pergunta o bem → “Quero um carro de 80 mil.”: não gera proposta", async () => {
+		mocks.loadConversationHistory.mockResolvedValue([
+			{ role: "assistant", content: AVISO_LGPD },
+			{ role: "user", content: "como funciona?" },
+			{ role: "assistant", content: "Qual bem você procura?" },
+		]);
+		const ctx = ctxDoTurno({ userText: "Quero um carro de 80 mil." });
+		const retorno = await falarComAFerramenta(ctx);
+
+		expect(retorno).toContain("Peça o aceite");
+		expect(retorno).not.toContain("REVOGOU");
+		expect(mocks.startContract).not.toHaveBeenCalled();
+		expect(ctx.cards.some((c) => c.type === "real_offer")).toBe(false);
+	});
+
+	// Controle positivo: o mesmo juiz aceita quando a fala está respondendo ao aviso — o
+	// estágio fecha para o aceite, mas o agente o reabre repetindo o aviso.
+	it("aviso → dúvida → aviso repetido → “pode”: gera proposta", async () => {
+		mocks.loadConversationHistory.mockResolvedValue([
+			{ role: "assistant", content: AVISO_LGPD },
+			{ role: "user", content: "como funciona?" },
+			{ role: "assistant", content: AVISO_LGPD },
+		]);
+		const ctx = ctxDoTurno({ userText: "pode" });
+		await falarComAFerramenta(ctx);
+
+		expect(mocks.startContract).toHaveBeenCalledTimes(1);
+	});
+});

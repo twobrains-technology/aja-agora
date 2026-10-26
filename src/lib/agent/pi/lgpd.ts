@@ -198,6 +198,16 @@ export type ResultadoDoAceite = {
  * "sim" e parar ali autorizava a consulta de bureau mesmo depois de um "não autorizo"
  * (P262) — e o registro gravado, aceito sem conferir o que veio depois, escondia a
  * mesma revogação.
+ *
+ * O ACEITE É DO ESTÁGIO, como na main (P262, rodada 8): sem coleta de contratação
+ * ativa, `src/lib/whatsapp/contract-capture.ts:161` retorna sem decidir e a confirmação
+ * é processada em `:200` — a fala só é lida como resposta ao pedido de autorização.
+ * Aqui o estágio abre no aviso e a ÚNICA fala que decide o aceite é a primeira fala do
+ * cliente depois dele: a resposta de qualificação ("Quero um carro de 80 mil.") casa o
+ * `quero` do `AFFIRM_RE` da main, mas responde a OUTRA pergunta do agente e por isso não
+ * pode virar aceite retroativo. O estágio fecha para o aceite e reabre quando o agente
+ * repete o aviso; a REVOGAÇÃO não é do estágio — ela derruba o consentimento vindo de
+ * qualquer fala, porque é o lado seguro. O juiz continua `decideConfirmStage` + trava.
  */
 export function resolverAceiteLgpd(args: {
 	falas: readonly FalaDeLgpd[];
@@ -209,33 +219,38 @@ export function resolverAceiteLgpd(args: {
 	if (args.falaDoCliente) linha.push({ role: "user", content: args.falaDoCliente });
 	if (args.textoDoTurno) linha.push({ role: "assistant", content: args.textoDoTurno });
 
-	// O PRIMEIRO aviso é o que conta. O último já não servia: o modelo repete o aviso no
-	// turno em curso (era o que ele fazia quando a tool recusava), e o aviso novo apagava
-	// o sim que o cliente tinha dado antes dele.
-	let avisoEm = -1;
-	for (let i = 0; i < linha.length; i++) {
-		if (avisoEm >= 0) break;
-		if (linha[i].role === "assistant" && AVISO_LGPD_RE.test(linha[i].content)) avisoEm = i;
-	}
-
 	// O aceite gravado entra na linha do tempo como o primeiro "sim" conhecido — ele vale
 	// até uma fala posterior do cliente revogá-lo.
 	let consentiu: boolean | null = args.aceiteJaGravado ? true : null;
 	let aceiteDaConversa = false;
+	// O estágio: aberto pela fala do agente com o aviso, fechado pela primeira fala do
+	// cliente que o responde. Dentro dele só essa primeira fala é candidata — o aceite que
+	// ela deu continua valendo (quem o derruba é a revogação), e a repetição do aviso reabre
+	// o estágio para um novo aceite.
+	let avisoEm = -1;
+	let esperandoARespostaDoCliente = false;
+
 	for (let i = 0; i < linha.length; i++) {
 		const fala = linha[i];
-		if (fala.role !== "user") continue;
-		// Recusa tem prioridade sobre o aceite na MESMA fala ("não autorizo, sim" revoga).
-		if (consentiu === true && revogaConsentimento(fala.content)) {
-			consentiu = false;
-			aceiteDaConversa = false;
+		if (fala.role === "assistant") {
+			if (!AVISO_LGPD_RE.test(fala.content)) continue;
+			if (avisoEm < 0) avisoEm = i;
+			esperandoARespostaDoCliente = true;
 			continue;
 		}
-		// Sem aviso na conversa, o "sim" não é aceite — é resposta a outra coisa.
-		if (avisoEm >= 0 && i >= avisoEm && clienteAceitouLgpd(fala.content)) {
+
+		const candidata = esperandoARespostaDoCliente;
+		if (candidata && clienteAceitouLgpd(fala.content)) {
 			consentiu = true;
 			aceiteDaConversa = true;
 		}
+		// Recusa tem prioridade sobre o aceite na MESMA fala ("não autorizo, sim" revoga),
+		// e a revogação de uma fala posterior derruba o aceite que o estágio deu.
+		if (consentiu === true && revogaConsentimento(fala.content)) {
+			consentiu = false;
+			aceiteDaConversa = false;
+		}
+		if (candidata) esperandoARespostaDoCliente = false;
 	}
 
 	if (consentiu === true) {
