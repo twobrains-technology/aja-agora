@@ -610,6 +610,13 @@ function dinheirosDoLance(texto: string): DinheiroDoLance[] {
  * em "R$ 20.000" o `.` é milhar e em "1,5 milhão" a `,` é decimal. */
 const FONTE_DO_D = TOKEN_DE_DINHEIRO.source;
 
+/** O ÚNICO qualificador aceito entre o dinheiro e o gancho na MÁSCARA (roda 8, P212): uma palavra
+ * de uma lista FECHADA, nunca gordura qualquer. Sem ela, "tenho 30 mil guardados pro lance"
+ * perdia o vínculo com a palavra `lance` e o dinheiro do lance virava preço do BEM. O verbo dos
+ * moldes de captura não entra aqui. */
+const QUALIFICADOR_DA_MASCARA =
+	"guardad[oa]s?|reservad[oa]s?|separad[oa]s?|dispon[ií]ve(?:l|is)|em\\s+m[ãa]os|na\\s+m[ãa]o";
+
 /** As formas fixas dos moldes, na ordem em que o chefe as escreveu. */
 const MOLDE_VERBO = "tenho|juntei|guardei|disponho de|consigo dar|posso dar|vou dar|dou";
 const MOLDE_VERBO_SEM_FOLGA = "tenho|consigo dar|posso dar|dou";
@@ -638,30 +645,35 @@ const MOLDES_DO_LANCE: readonly RegExp[] = [
 /** Os moldes da MÁSCARA DO BEM: o bem continua sendo `parseAssetValue` sobre o texto
  * ORIGINAL com essa máscara (P212), como na `main`
  * (`a2bc3024:src/lib/agent/orchestrator/analyze.ts:230`). O `ágio` da onda 15 sai da
- * máscara: os moldes do chefe falam de `lance` e `entrada`, e o terceiro é o dinheiro
- * DECLARADO como recurso dele — que nunca é preço do bem. Mascarar é diferente de gravar
- * lance: a captura é só `MOLDES_DO_LANCE`. */
+ * máscara: os moldes do chefe falam de `lance` e `entrada`. Mascarar é diferente de gravar
+ * lance: a captura é só `MOLDES_DO_LANCE`.
+ *
+ * RODADA 8 (P212): são DOIS moldes e ambos exigem a palavra `lance`/`entrada`. O verbo dos moldes
+ * de captura não reaproveita aqui — em "Tenho 80 mil de orçamento para um carro" nada nomeia
+ * lance, e o número continua sendo o preço do bem. */
 const MOLDES_DA_MASCARA_DO_BEM: readonly RegExp[] = [
-	new RegExp(`(${FONTE_DO_D})\\s+(?:${MOLDE_GANCHO})\\s+(?:lance|entrada)\\b`, "gi"),
+	new RegExp(
+		`(${FONTE_DO_D})\\s+(?:(?:${QUALIFICADOR_DA_MASCARA})\\s+)?(?:${MOLDE_GANCHO})\\s+(?:lance|entrada)\\b`,
+		"gi",
+	),
 	new RegExp(`\\b(?:lance|entrada)\\s*(?:de|:|=|${MOLDE_COPULA})\\s*(${FONTE_DO_D})`, "gi"),
-	// O número OBJETO do verbo de posse: "tenho 30 mil guardados pro lance" DECLARA o dinheiro
-	// como recurso dele, e dinheiro declarado não é preço do bem (P212). O verbo tem de estar
-	// COLADO no número — em "Tenho interesse em um carro de 80 mil" o objeto de `tenho` é
-	// `interesse`, e o 80 mil continua sendo o bem (P139, rodada 7).
-	new RegExp(`\\b(?:${MOLDE_VERBO})\\s+(?:${MOLDE_FOLGA})?(${FONTE_DO_D})`, "gi"),
 ];
 
 /** A trava geral da MENSAGEM: com qualquer uma destas formas em QUALQUER lugar da fala,
  * nada nela vira lance. São as construções em que o número pode estar ao lado da palavra
  * "lance" sem que o cliente tenha dito que TEM o dinheiro — pergunta, negação,
- * obrigação/falta e hipótese.
+ * obrigação/falta, hipótese e dinheiro dito como embutido.
  *
  * Na mensagem inteira, e não na frase, de propósito: é o lado reversível. "Ainda faltam 30
  * mil para o lance" fica pendente em vez de virar recurso próprio. `como` NÃO entra na
  * lista de interrogativas porque é ligação de valor ("tenho 30 mil como entrada"); pergunta
- * com "como" vem com `?`, que já trava. */
+ * com "como" vem com `?`, que já trava.
+ *
+ * RODADA 8 (P139): `embutido` entra na trava. Quem diz "meu lance é 30 mil, tudo embutido" está
+ * nomeando o dinheiro da CARTA, não uma reserva dele — `cenarios.ts` transformaria o campo em
+ * `ownCashAvailable` e a proposta sairia com dinheiro que o cliente não tem. */
 const TRAVA_DA_MENSAGEM =
-	/\?|\b(n[ãa]o|nem|nunca|jamais|sem|zero|tenho\s+que|tem\s+que|teria\s+que|precis\w*|falt\w*|exig\w*|obrigat\w*|se\s+eu|caso|tivesse|teria|quanto|quantos|quantas|qual|quais|quando|onde|quem|cad[êe]|ser[áa])\b/i;
+	/\?|\b(n[ãa]o|nem|nunca|jamais|sem|zero|tenho\s+que|tem\s+que|teria\s+que|precis\w*|falt\w*|exig\w*|obrigat\w*|embutid\w*|se\s+eu|caso|tivesse|teria|quanto|quantos|quantas|qual|quais|quando|onde|quem|cad[êe]|ser[áa])\b/i;
 
 /** O dinheiro que um molde casou: valor e posição na fala. */
 type DinheiroDoMolde = { valor: number; inicio: number; fim: number };
@@ -697,8 +709,18 @@ function semODinheiroDoLance(texto: string): string {
 		...dinheirosDoLance(texto).filter((dinheiro) => dinheiro.ligadoAoMarcador),
 	];
 	if (dinheiros.length === 0) return texto;
+	// RODADA 8 (P212): o MESMO intervalo pode ser casado pelos moldes e pelo associador. Sem
+	// deduplicar, a segunda remoção aplicava a posição original sobre o texto já encurtado e
+	// apagava o número seguinte ("Meu lance: R$ 30.000; 80 mil para o carro").
+	const vistos = new Set<string>();
+	const unicos = dinheiros.filter((dinheiro) => {
+		const chave = `${dinheiro.inicio}:${dinheiro.fim}`;
+		if (vistos.has(chave)) return false;
+		vistos.add(chave);
+		return true;
+	});
 	let limpo = texto;
-	for (const dinheiro of [...dinheiros].sort((a, b) => b.inicio - a.inicio)) {
+	for (const dinheiro of [...unicos].sort((a, b) => b.inicio - a.inicio)) {
 		limpo = `${limpo.slice(0, dinheiro.inicio)} ${limpo.slice(dinheiro.fim)}`;
 	}
 	return limpo;

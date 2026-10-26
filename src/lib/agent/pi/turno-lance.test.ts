@@ -257,6 +257,35 @@ describe("P139 — pergunta e negativa NÃO são dinheiro disponível", () => {
 		expect(qualify.lanceValue).toBeUndefined();
 	});
 
+	// RODADA 8 / P139 — o lado perigoso do embutido: o dinheiro é da CARTA. No turno completo,
+	// ele não pode entrar como recurso próprio nos três cenários.
+	it("o turno com o lance declarado como EMBUTIDO chega aos cenários SEM dinheiro do cliente", async () => {
+		const fala = "Meu lance é 30 mil, tudo embutido.";
+		expect(lanceEPrazoDoTurno(fala)).toEqual({});
+
+		const conversationId = await novaConversa();
+		const turno = await rodarTurno({
+			conversationId,
+			userText: fala,
+			card: { tipo: "scenarios", payload: { groupId: CARTA.id } },
+		});
+		await turno.fechar();
+
+		// Morde: sem a trava do embutido, `lanceDeclarado` alimentava `ownCashAvailable`
+		// (`cenarios.ts:47`) e o `provavel` carregava 30 mil do bolso de quem disse que o
+		// dinheiro é da carta. Sem ele, o cenário é o de sempre — o embutido cobre o lance.
+		expect(cardDoTurno(turno.eventos, "scenarios")).toEqual(cenariosDaCarta(CARTA));
+		const provavel = (
+			cardDoTurno(turno.eventos, "scenarios")?.scenarios as {
+				provavel: { ownResourcesValue: number };
+			}
+		).provavel;
+		expect(provavel.ownResourcesValue).toBe(0);
+
+		const qualify = await qualifyDa(conversationId);
+		expect(qualify.lanceValue).toBeUndefined();
+	});
+
 	it("o turno com PERGUNTA de lance chega aos cenários SEM dinheiro do cliente", async () => {
 		const conversationId = await novaConversa();
 		const turno = await rodarTurno({
@@ -495,6 +524,13 @@ describe("P139/P212 — a frase decide: pontuação e rótulo não trocam lance 
 		{ fala: "sem 30 mil de entrada não dá", lance: {}, bem: {} },
 		{ fala: "zero de entrada", lance: {}, bem: {} },
 		{ fala: "nunca juntei 30 mil de lance", lance: {}, bem: {} },
+
+		// RODADA 8 / P139 — `embutido` na trava da MENSAGEM: o dinheiro vem da CARTA, não do
+		// bolso dele. Mesmo com o molde 3 fechado, nada na fala vira recurso próprio.
+		{ fala: "Meu lance é 30 mil, tudo embutido.", lance: {}, bem: {} },
+		{ fala: "meu lance é de 30 mil, tudo embutido no plano", lance: {}, bem: {} },
+		// A metade positiva continua valendo sem a palavra embutido.
+		{ fala: "meu lance é de 30 mil", lance: { lanceValue: 30_000 }, bem: {} },
 
 		// RODADA 6 / P139 — as formas POSITIVAS da permissão, uma por verbete. Na onda 17
 		// só os três moldes gravam lance e `entrada` não é molde: cada linha abaixo que

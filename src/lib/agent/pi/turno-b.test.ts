@@ -392,6 +392,57 @@ describe("L44/P212 — o valor declarado entra no estado antes da busca", () => 
 		expect(meta.currentCategory).toBe("auto");
 	});
 
+	// RODADA 8 / P212 — no TURNO COMPLETO, sem busca: a máscara do bem só remove o dinheiro que
+	// casa um dos DOIS moldes da máscara, ambos com a palavra `lance`/`entrada`.
+	it("«Tenho 80 mil de orçamento para um carro.» não perde o valor do bem", async () => {
+		const fala = "Tenho 80 mil de orçamento para um carro.";
+		expect(declaracaoDoTurno(fala)).toEqual({ categoria: "auto", valorDoBem: 80_000 });
+		// Sem a palavra lance/entrada, o verbo de posse não aprova o número: lance pendente.
+		expect(lanceEPrazoDoTurno(fala)).toEqual({});
+
+		const conversationId = await novaConversa();
+		const turno = await rodarTurno({
+			conversationId,
+			userText: fala,
+			beats: [{ text: "Beleza! Um carro de 80 mil." }],
+		});
+		await turno.fechar();
+
+		const meta = await metaDa(conversationId);
+		const qualify = meta.qualifyAnswers as Record<string, unknown>;
+		// Morde: com o verbo dos moldes de captura reaproveitado na máscara, o 80 mil era apagado
+		// e o painel contava o cliente sem valor informado — a main o capturava no texto original.
+		expect(qualify.creditMax).toBe(80_000);
+		expect(qualify.valorDoBemAlvo).toBe(80_000);
+		expect(qualify.lanceValue).toBeUndefined();
+		expect(meta.currentCategory).toBe("auto");
+	});
+
+	// RODADA 8 / P212 — o MESMO intervalo casado pelo molde e pelo associador era removido duas
+	// vezes com as posições originais sobre o texto já encurtado: a segunda remoção comia o número
+	// seguinte.
+	it("«Meu lance: R$ 30.000; 80 mil para o carro.» mantém o lance e o bem", async () => {
+		const fala = "Meu lance: R$ 30.000; 80 mil para o carro.";
+		expect(lanceEPrazoDoTurno(fala)).toEqual({ lanceValue: 30_000 });
+		expect(declaracaoDoTurno(fala)).toEqual({ categoria: "auto", valorDoBem: 80_000 });
+
+		const conversationId = await novaConversa();
+		const turno = await rodarTurno({
+			conversationId,
+			userText: fala,
+			beats: [{ text: "Anotado: 30 mil de lance para um carro de 80 mil." }],
+		});
+		await turno.fechar();
+
+		const meta = await metaDa(conversationId);
+		const qualify = meta.qualifyAnswers as Record<string, unknown>;
+		// Morde: com o intervalo duplicado, só o lance chegava e o bem de 80 mil sumia da meta.
+		expect(qualify.creditMax).toBe(80_000);
+		expect(qualify.valorDoBemAlvo).toBe(80_000);
+		expect(qualify.lanceValue).toBe(30_000);
+		expect(meta.currentCategory).toBe("auto");
+	});
+
 	// O rótulo que liga PALAVRA a VALOR chega pelas quatro formas que o cliente
 	// usa no chat (`:`, `-`, `=`, "é de"). O `:` era o único que separava a
 	// oração: "Meu lance: R$ 30.000" deixava o dinheiro órfão e o `parseAssetValue`
@@ -433,6 +484,18 @@ describe("L44/P212 — o valor declarado entra no estado antes da busca", () => 
 			bem: { categoria: "auto", valorDoBem: 80_000 },
 		},
 		{ fala: "Meu lance: R$ 30.000", bem: {}, lance: 30_000 },
+		// RODADA 8 / P212 — os dois moldes da máscara exigem a palavra `lance`/`entrada`; o verbo
+		// dos moldes de captura não reaproveita na máscara, e o intervalo duplicado não pode comer
+		// o número seguinte.
+		{
+			fala: "Tenho 80 mil de orçamento para um carro.",
+			bem: { categoria: "auto", valorDoBem: 80_000 },
+		},
+		{
+			fala: "Meu lance: R$ 30.000; 80 mil para o carro.",
+			bem: { categoria: "auto", valorDoBem: 80_000 },
+			lance: 30_000,
+		},
 		{ fala: "minha casa vale 300 mil", bem: { categoria: "imovel", valorDoBem: 300_000 } },
 	];
 
