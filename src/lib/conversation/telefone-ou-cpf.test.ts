@@ -205,3 +205,143 @@ describe("telefone × CPF — a mesma regra nos dois capturadores", () => {
 		expect(extractCpf(`meu cpf é ${CPF}`)).toBe(CPF);
 	});
 });
+
+// P188/P263: pedir o CPF é um ATO, e ele mora numa ORAÇÃO do balão do agente.
+// A rodada 4 da auditoria achou mais um jeito de uma EXPLICAÇÃO passar por
+// pedido — "Já expliquei como funciona a consulta do CPF. Qual é seu celular?"
+// casava com o `como … cpf` do detector e abria o contexto do CPF para quem
+// tinha acabado de pedir o celular. Cada rodada trouxe um contraexemplo novo, e
+// por isso a tabela abaixo é adversarial: pontuação, caixa, emoji, ordem
+// invertida, negação e frase composta entram todos.
+describe("o pedido de CPF é o ATO da última oração, não a menção ao dado", () => {
+	const casos: { fala: string; pede: boolean; porque: string }[] = [
+		// ── pedidos de verdade: a ÚLTIMA oração que pede algo pede o CPF ──────
+		{ fala: "Qual é o seu CPF?", pede: true, porque: "pergunta pelo dado" },
+		{ fala: "qual seu cpf?", pede: true, porque: "pergunta pelo dado, minúscula" },
+		{ fala: "CPF?", pede: true, porque: "o dado sozinho, interrogativo" },
+		{ fala: "CPF? 🙂", pede: true, porque: "o dado sozinho, com emoji" },
+		{ fala: "me passa seu CPF", pede: true, porque: "imperativo de pedido" },
+		{ fala: "Me manda o CPF aí, por favor", pede: true, porque: "imperativo + cortesia" },
+		{ fala: "pode informar o CPF, por favor?", pede: true, porque: "pedido cortês" },
+		{ fala: "consegue me passar o CPF?", pede: true, porque: "modal + verbo de pedido" },
+		{ fala: "Agora preciso do seu CPF.", pede: true, porque: "precisar + dado" },
+		{
+			fala: "preciso do seu CPF para simular a proposta",
+			pede: true,
+			porque: "precisar + dado, sem pontuação",
+		},
+		{ fala: "SEU CPF, POR FAVOR", pede: true, porque: "caixa alta, sem pergunta" },
+		{ fala: "Me diz seu CPF!", pede: true, porque: "exclamação, sem interrogação" },
+		{ fala: "Qual o CPF do titular?", pede: true, porque: "pergunta pelo dado de quem responde" },
+		{ fala: "Informe o CPF: é rapidinho", pede: true, porque: "imperativo antes dos dois-pontos" },
+		{
+			fala: "Me passa o CPF - prometo que é seguro",
+			pede: true,
+			porque: "travessão depois do pedido",
+		},
+		// ── menção, explicação, confirmação: NÃO são pedido ───────────────────
+		{
+			fala: "Já recebi seu CPF. Qual é seu celular?",
+			pede: false,
+			porque: "confirmação + pedido de CELULAR",
+		},
+		{
+			fala: "Já expliquei como funciona a consulta do CPF. Qual é seu celular?",
+			pede: false,
+			porque: "explicação com 'como' + pedido de CELULAR (achado da rodada 4)",
+		},
+		{
+			fala: "Seu CPF fica protegido. Me passa seu WhatsApp?",
+			pede: false,
+			porque: "promessa de sigilo + pedido de WHATSAPP",
+		},
+		{
+			fala: "Já recebi seu CPF: qual é seu celular?",
+			pede: false,
+			porque: "a mesma confirmação separada por dois-pontos",
+		},
+		{
+			fala: "JÁ RECEBI SEU CPF. QUAL É SEU CELULAR?",
+			pede: false,
+			porque: "a mesma frase em caixa alta",
+		},
+		{
+			fala: "O CPF serve para a administradora consultar seu histórico. Me manda seu telefone?",
+			pede: false,
+			porque: "para que serve o CPF + pedido de TELEFONE",
+		},
+		{
+			fala: "Para consultar o seu CPF a gente usa um birô de crédito. Pode me passar seu celular?",
+			pede: false,
+			porque: "explicação da consulta + pedido de CELULAR",
+		},
+		{
+			fala: "Seu CPF já está cadastrado! Me passa seu zap?",
+			pede: false,
+			porque: "dado já recebido + pedido de ZAP",
+		},
+		{
+			fala: "O CPF que você mandou está certo. Agora me informa seu celular.",
+			pede: false,
+			porque: "confirmação do dado + pedido de CELULAR no imperativo",
+		},
+		{
+			fala: "Qual seu celular? Já tenho seu CPF.",
+			pede: false,
+			porque: "ordem invertida: o pedido de CELULAR vem primeiro",
+		},
+		{
+			fala: "Já expliquei que o CPF é usado na análise — me passa seu WhatsApp?",
+			pede: false,
+			porque: "explicação emendada por travessão + pedido de WHATSAPP",
+		},
+		{
+			fala: "Seu CPF está protegido, mas me passa seu celular?",
+			pede: false,
+			porque: "adversativa: o pedido depois do 'mas' é o que vale",
+		},
+		{
+			fala: "Tudo certo com o CPF! Agora me confirma seu celular.",
+			pede: false,
+			porque: "confirmação + pedido de CELULAR com 'agora'",
+		},
+		{
+			fala: "Não preciso do seu CPF agora. Qual seu celular?",
+			pede: false,
+			porque: "negação do pedido + pergunta pelo CELULAR",
+		},
+		{
+			fala: "Sem CPF não consigo simular. Qual é o seu nome completo?",
+			pede: false,
+			porque: "consequência + pedido de NOME",
+		},
+		{
+			fala: "CPF é dado sensível. Como podemos continuar?",
+			pede: false,
+			porque: "comentário + pergunta que não pede dado nenhum",
+		},
+		{
+			fala: "Como funciona a consulta do CPF? Me conta.",
+			pede: false,
+			porque: "o 'como' é da explicação, não do pedido",
+		},
+		{
+			fala: "O CPF fica guardado, tá? Me passa seu telefone.",
+			pede: false,
+			porque: "pergunta retórica sobre o CPF + pedido de TELEFONE",
+		},
+		// Quando o agente pede os DOIS dados na mesma oração, o número que chega
+		// sozinho é lido como TELEFONE: é o lado que não inventa dado nenhum — o
+		// telefone fica guardado e o CPF continua faltando, para ser pedido de
+		// novo. O contrário gravaria um CPF que não é dele e apagaria o telefone.
+		{
+			fala: "Qual o CPF e o celular?",
+			pede: false,
+			porque: "pedido composto: a última oração pede o CELULAR",
+		},
+	];
+
+	it.each(casos)("$porque", ({ fala, pede }) => {
+		expect(pedidoDeCpfNoUltimoBalao({ role: "assistant", content: fala })).toBe(pede);
+	});
+});

@@ -270,22 +270,91 @@ export function decidirCpfDoTexto(
 	return { outcome: "none" };
 }
 
-/** O ATO de PEDIR o CPF — verbo de pedido colado no dado ("me passa o cpf"),
- *  pedido cortês ("seu cpf, por favor") ou a pergunta pelo dado ("qual seu
- *  cpf?"). A palavra "cpf" sozinha é MENÇÃO. É a mesma distinção de
- *  `PEDE_DADO_RE` em `src/lib/agent/pi/lgpd.ts` (N04), aqui só para o CPF. */
-const ATO_DE_PEDIR_CPF = String.raw`(?:me\s+)?(?:pass(?:a|e|ar|em|aria)|inform(?:a|e|ar|em|aria)|envi(?:a|e|ar|em|aria)|mand(?:a|e|ar|em|aria)|d[ií]g(?:a|am|o|z)|confirma(?:r|m|ria)?|precis(?:o|amos|a|am|ava|aria)|solicit(?:o|amos|a|am|ou)|compartilh(?:a|e|ar|em|aria)|cadastr(?:a|e|ar|em|aria)|preench(?:a|am|er)|ped(?:ir|imos)|pe[cç]o|pe[çc]a)`;
-const PEDE_CPF_RE = new RegExp(
-	[
-		// "me manda seu cpf", "preciso do cpf", "preencha o cpf no card"
-		String.raw`\b${ATO_DE_PEDIR_CPF}\b[^.?!\n]{0,40}?\bcpf\b`,
-		// "seu cpf, por favor", "o cpf pra mim"
-		String.raw`\bcpf\b[^.?!\n]{0,20}?\b(?:por\s+favor|pra\s+mim|para\s+mim)\b`,
-		// pergunta pelo dado: "qual seu cpf?", "qual é o cpf?"
-		String.raw`\b(?:qual|quais|como)\b[^.?!\n]{0,25}?\bcpf\b`,
-	].join("|"),
-	"i",
-);
+// ── O ATO de pedir o CPF ──────────────────────────────────────────────────
+// `ditoSobreCpf` responde o que a fala DIZ sobre o CPF, e isso basta para ler um
+// número (a menção na oração que o anuncia). PEDIR é outra coisa, e mora numa
+// ORAÇÃO: "Já expliquei como funciona a consulta do CPF. Qual é seu celular?"
+// fala do CPF e pede o CELULAR — lido como pedido de CPF, o celular ambíguo que
+// o cliente dita em resposta vira CPF e o telefone se perde (P188/P263). Por isso
+// quem decide é a ÚLTIMA oração do balão que PEDE alguma coisa: se ela pede o
+// celular, o CPF mencionado antes não foi pedido.
+//
+// A pontuação que fecha a fala (`.;:!?` e o travessão) separa orações; a vírgula
+// NÃO separa, porque "pode informar o CPF, por favor?" é um pedido só. Os
+// conectivos (`mas`, `e`, `agora`) emendam uma oração na outra sem pontuação. A
+// interrogação fica com a ÚLTIMA oração do trecho que ela fecha: em "não tenho
+// cpf, mas qual é o seu?" a pergunta é "qual é o seu".
+const SEPARA_ORACAO = /([^.;:!?\n\-–—]+)([.;:!?\n\-–—]*)/g;
+const CONECTIVO = /\b(?:mas|por[eé]m|contudo|entretanto|s[óo]\s+que|e|ent[ãa]o|agora|tamb[ée]m)\b/i;
+
+/** Verbo de PEDIDO do dado. "consulta", "confere", "explico" e "recebi" ficam
+ *  de fora de propósito: são o que o agente DIZ sobre o CPF, não o que ele pede.
+ *  Modal sozinho ("pode", "consegue") também fica: "você pode ficar tranquilo,
+ *  seu CPF fica protegido" não pede nada — "pode informar o CPF" já casa pelo
+ *  "informar". */
+const VERBO_DE_PEDIR =
+	/\b(?:pass(?:a|e|ar|em|aria)|inform(?:a|e|ar|em|aria)|envi(?:a|e|ar|em|aria)|mand(?:a|e|ar|em|aria)|d[ií]g(?:it(?:a|e|em|ar)|a|am|o)|diz(?:em)?|fal(?:a|e|ar|em|aria)|precis(?:o|amos|a|am|ar|e|em|ava|aria)|solicit(?:o|amos|a|am|ou)|compartilh(?:a|e|ar|em|aria)|cadastr(?:a|e|ar|em|aria)|preench(?:a|am|er)|confirm(?:a|e|ar|em|aria)|ped(?:ir|imos)|pe[cç]o|pe[çc]a)/i;
+
+/** Pergunta que pede o VALOR do dado, e não a explicação dele ("qual o cpf?",
+ *  "cadê o cpf?"). "como" fica de fora: "como funciona a consulta do CPF?" é
+ *  explicação, e era por ele que a menção passava por pedido. */
+const PALAVRA_QUE_PEDE_VALOR = /\b(?:qual|quais|cad[êe])\b/i;
+
+/** O dado SOZINHO na oração é um pedido: "CPF?", "seu CPF, por favor". */
+const CPF_SOZINHO = /^(?:(?:e|o|a|seu|sua)\s+)*cpf(?:\s+(?:por\s+favor|pra\s+mim|para\s+mim))?$/i;
+
+type Oracao = {
+	/** A oração sem pontuação, com o símbolo (emoji) trocado por espaço. */
+	limpo: string;
+	/** É pergunta: o que ela pede é o que o cliente responde. */
+	interrogativa: boolean;
+	mencionaCpf: boolean;
+	negaCpf: boolean;
+};
+
+function oracoesDoBalao(fala: string): Oracao[] {
+	const oracoes: Oracao[] = [];
+	for (const trecho of (fala ?? "").matchAll(SEPARA_ORACAO)) {
+		const interrogativa = trecho[2].includes("?");
+		const pedacos = trecho[1]
+			.split(CONECTIVO)
+			.map((pedaco) =>
+				pedaco
+					.replace(/[^\p{L}\p{N}\s]/gu, " ")
+					.replace(/\s+/g, " ")
+					.trim(),
+			)
+			.filter(Boolean);
+		pedacos.forEach((limpo, i) => {
+			const dito = ditoSobreCpf(limpo);
+			oracoes.push({
+				limpo,
+				interrogativa: interrogativa && i === pedacos.length - 1,
+				mencionaCpf: dito.declara || dito.nega,
+				negaCpf: dito.nega && !dito.declara,
+			});
+		});
+	}
+	return oracoes;
+}
+
+/** Esta oração PEDE alguma coisa: pergunta, imperativo com verbo de pedido, ou o
+ *  dado sozinho ("CPF?"). As que só constatam algo são puladas na busca. */
+function oracaoPede(oracao: Oracao): boolean {
+	return (
+		oracao.interrogativa || VERBO_DE_PEDIR.test(oracao.limpo) || CPF_SOZINHO.test(oracao.limpo)
+	);
+}
+
+/** Esta oração pede o CPF: o dado está NELA e ela é um pedido. Menção,
+ *  explicação ou confirmação ("Já recebi seu CPF", "seu CPF fica protegido") não
+ *  pedem nada — e a negação não pede o contrário ("não preciso do seu cpf"). */
+function oracaoPedeCpf(oracao: Oracao): boolean {
+	if (!oracao.mencionaCpf || oracao.negaCpf) return false;
+	if (CPF_SOZINHO.test(oracao.limpo)) return true;
+	if (VERBO_DE_PEDIR.test(oracao.limpo)) return true;
+	return oracao.interrogativa && PALAVRA_QUE_PEDE_VALOR.test(oracao.limpo);
+}
 
 /** O pedido de CPF é a ÚLTIMA coisa que o agente disse — sem turno do cliente no
  * meio. `false` quando a última fala é do cliente (aí o número comprido dele não
@@ -294,10 +363,12 @@ export function pedidoDeCpfNoUltimoBalao(
 	ultima: { role: string; content: string } | null | undefined,
 ): boolean {
 	if (!ultima || ultima.role !== "assistant") return false;
-	const fala = ultima.content ?? "";
-	// MENÇÃO não é PEDIDO. "Já recebi seu CPF. Qual é seu celular?" fala do CPF e
-	// pede o CELULAR: lido como pedido de CPF, o celular ambíguo que o cliente dita
-	// em resposta vira CPF — e o telefone se perde (P188/P263). A negação também
-	// não pede nada ("não preciso do seu cpf").
-	return ditoSobreCpf(fala).declara && PEDE_CPF_RE.test(fala);
+	const oracoes = oracoesDoBalao(ultima.content ?? "");
+	// Da última oração para trás: a primeira que PEDE alguma coisa é a que o
+	// cliente vai responder, e é ela que diz se o CPF foi pedido.
+	for (let i = oracoes.length - 1; i >= 0; i--) {
+		const oracao = oracoes[i];
+		if (oracaoPede(oracao)) return oracaoPedeCpf(oracao);
+	}
+	return false;
 }

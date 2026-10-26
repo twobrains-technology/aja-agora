@@ -86,6 +86,29 @@ describe("telefone e número comprido não são CPF", () => {
 		expect(pedidoDeCpfNoUltimoBalao({ role: "assistant", content: "me manda seu CPF?" })).toBe(
 			true,
 		);
+		// MENÇÃO EXPLICATIVA não é pedido (rodada 4 da auditoria, P188): o balão
+		// fala do CPF e pede o CELULAR. Lido como pedido de CPF, o celular ambíguo
+		// que o cliente dita em resposta é guardado como identidade.
+		expect(
+			pedidoDeCpfNoUltimoBalao({
+				role: "assistant",
+				content: "Já expliquei como funciona a consulta do CPF. Qual é seu celular?",
+			}),
+		).toBe(false);
+		expect(
+			pedidoDeCpfNoUltimoBalao({
+				role: "assistant",
+				content: "Seu CPF fica protegido. Me passa seu WhatsApp?",
+			}),
+		).toBe(false);
+		// E o pedido de CPF de verdade continua abrindo o contexto, pelo mesmo
+		// caminho: o número ambíguo que responde a ele é CPF.
+		expect(
+			pedidoDeCpfNoUltimoBalao({
+				role: "assistant",
+				content: "Já expliquei como funciona a consulta do CPF. Agora preciso do seu CPF.",
+			}),
+		).toBe(true);
 		expect(pedidoDeCpfNoUltimoBalao({ role: "assistant", content: "qual valor você quer?" })).toBe(
 			false,
 		);

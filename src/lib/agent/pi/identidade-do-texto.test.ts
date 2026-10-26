@@ -130,6 +130,24 @@ describe("capturarIdentidadeDoTexto", () => {
 		expect(r.identidade).toEqual({ cpf: CPF, celular: AMBIGUO });
 	});
 
+	// Rodada 4 da auditoria (P188/P263): a menção EXPLICATIVA ao CPF — "já
+	// expliquei como funciona a consulta do CPF" — passava pelo detector por
+	// causa do "como", e o pedido de celular que vinha depois era lido como pedido
+	// de CPF. O número ambíguo então sobrescrevia o CPF guardado.
+	it("CPF guardado + explicação com 'como' + pedido de celular: CPF preservado, celular capturado", () => {
+		const AMBIGUO = "11900000083";
+		const pedidoDeCpf = pedidoDeCpfNoUltimoBalao({
+			role: "assistant",
+			content: "Já expliquei como funciona a consulta do CPF. Qual é seu celular?",
+		});
+		expect(pedidoDeCpf).toBe(false);
+
+		const r = capturarIdentidadeDoTexto(AMBIGUO, { cpf: CPF, celular: "" }, { pedidoDeCpf });
+		expect(r.recebeuCpf).toBe(false);
+		expect(r.recebeuCelular).toBe(true);
+		expect(r.identidade).toEqual({ cpf: CPF, celular: AMBIGUO });
+	});
+
 	it("pedido de CPF de verdade: o mesmo número ambíguo é o CPF", () => {
 		const AMBIGUO = "11900000083";
 		const pedidoDeCpf = pedidoDeCpfNoUltimoBalao({
