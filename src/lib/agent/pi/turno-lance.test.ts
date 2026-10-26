@@ -18,7 +18,7 @@ import type { GroupSummary } from "@/lib/adapters/types";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { cenariosDaCarta } from "./cenarios";
 import { subirServidorRoteirizado } from "./testing/servidor-roteirizado";
-import { createRunTurnLivre, lanceEPrazoDoTurno } from "./turno-livre";
+import { createRunTurnLivre, declaracaoDoTurno, lanceEPrazoDoTurno } from "./turno-livre";
 
 const criadas: string[] = [];
 afterEach(async () => {
@@ -149,6 +149,49 @@ describe("P139 — o lance declarado na fala chega aos três cenários", () => {
 		// O número ao lado do marcador aqui é o VALOR DO BEM, dito na mesma frase
 		// de uma pergunta sobre o lance.
 		expect(lanceEPrazoDoTurno("quero um de 80 mil, qual o lance?")).toEqual({});
+	});
+});
+
+describe("P139 — pergunta e negativa NÃO são dinheiro disponível", () => {
+	it("'não tenho 30 mil para lance' não é dinheiro do cliente", () => {
+		expect(lanceEPrazoDoTurno("não tenho 30 mil para lance")).toEqual({});
+		// E o número ligado à negativa do lance também não é o valor do bem.
+		expect(declaracaoDoTurno("não tenho 30 mil para lance")).toEqual({});
+	});
+
+	it("'preciso ter 30 mil de lance?' é pergunta, não declaração", () => {
+		expect(lanceEPrazoDoTurno("preciso ter 30 mil de lance?")).toEqual({});
+		expect(declaracaoDoTurno("preciso ter 30 mil de lance?")).toEqual({});
+	});
+
+	it("a negativa não apaga o que o cliente AFIRMOU na oração seguinte", () => {
+		expect(lanceEPrazoDoTurno("não tenho 30 mil de lance, mas tenho 10 mil")).toEqual({});
+		expect(lanceEPrazoDoTurno("não tenho 30 mil de lance. meu lance é de 10 mil")).toEqual({
+			lanceValue: 10_000,
+		});
+	});
+
+	it("o turno com negativa chega aos cenários SEM dinheiro do cliente", async () => {
+		const conversationId = await novaConversa();
+		const turno = await rodarTurno({
+			conversationId,
+			userText: "não tenho 30 mil para lance",
+			card: { tipo: "scenarios", payload: { groupId: CARTA.id } },
+		});
+		await turno.fechar();
+
+		// Morde: com o dinheiro gravado, o `provavel` carregaria 30 mil do bolso do
+		// cliente. Sem ele, o cenário é o de sempre — o embutido cobre o lance.
+		expect(cardDoTurno(turno.eventos, "scenarios")).toEqual(cenariosDaCarta(CARTA));
+		const provavel = (
+			cardDoTurno(turno.eventos, "scenarios")?.scenarios as {
+				provavel: { ownResourcesValue: number };
+			}
+		).provavel;
+		expect(provavel.ownResourcesValue).toBe(0);
+
+		const qualify = await qualifyDa(conversationId);
+		expect(qualify.lanceValue).toBeUndefined();
 	});
 });
 

@@ -18,7 +18,7 @@ import type { TurnEvent, TurnInput } from "@/lib/agent/orchestrator/types";
 import { passaFinal } from "@/lib/agent/orchestrator/vazamento";
 import { parseAssetValue } from "@/lib/agent/parse-asset-value";
 import type { Category } from "@/lib/agent/personas";
-import type { MetaDaEmissao } from "@/lib/agent/pi/cards-livres";
+import { type MetaDaEmissao, TIPOS_DE_ESCOLHA } from "@/lib/agent/pi/cards-livres";
 import { type ChipGerado, garantirChip } from "@/lib/agent/pi/chips";
 import { executarBeat } from "@/lib/agent/pi/converse";
 import { linhaFinalDoHandoff, RE_DE_PROMESSA } from "@/lib/agent/pi/handoff";
@@ -313,7 +313,6 @@ const PALAVRAS_DE_CATEGORIA: ReadonlyArray<{ categoria: Category; re: RegExp }> 
  * cards `lance-value`/`lance-embutido` da `main`. Lista fechada, como a das
  * categorias: palavra desconhecida ao lado do número é ambígua e não vira lance. */
 const PALAVRAS_DE_LANCE = "lance|entrada|[áa]gio";
-const MARCADOR_DE_LANCE = new RegExp(`\\b(${PALAVRAS_DE_LANCE})\\b`, "i");
 const MARCADORES_DE_LANCE = new RegExp(`\\b(${PALAVRAS_DE_LANCE})\\b`, "gi");
 
 /** O que pode ficar ENTRE o dinheiro e a palavra do lance sem desfazer o par:
@@ -373,9 +372,9 @@ const LIGACOES_DO_LANCE = new Set([
  * A extração é a que já existe e está testada: `parseAssetValue` (FIX-115) lê
  * "80 mil", "R$ 80.000", "1,5 milhão" e recusa o que ambiguaria — número nu
  * fora do gate ("CG 160"), orçamento mensal ("850 por mês") e CPF. Lance não é
- * preço do bem e `parseAssetValue` não conhece a distinção, então o recado que
- * fala de LANCE não vira valor — o lance tem produtor próprio
- * (`lanceEPrazoDoTurno`, abaixo).
+ * preço do bem e `parseAssetValue` não conhece a distinção: o número que a fala
+ * liga ao LANCE sai da frase antes do parser, e o resto continua valendo (P212)
+ * — o lance tem produtor próprio (`lanceEPrazoDoTurno`, abaixo).
  *
  * Categoria: só quando o recado nomeia UMA. "carro ou moto" é comparação, não
  * declaração, e escolher uma das duas por conta própria envenenaria o filtro do
@@ -387,9 +386,11 @@ export function declaracaoDoTurno(texto: string | null | undefined): {
 	if (!texto) return {};
 	const nomeadas = PALAVRAS_DE_CATEGORIA.filter((p) => (texto.match(p.re) ?? []).length > 0);
 	const categoria = nomeadas.length === 1 ? nomeadas[0]?.categoria : undefined;
-	const valorDoBem = MARCADOR_DE_LANCE.test(texto)
-		? undefined
-		: (parseAssetValue(texto) ?? undefined);
+	// O DINHEIRO DO LANCE SAI DA FRASE, O RESTO FICA (P212): "quero um carro de 80
+	// mil, sem entrada" declara o bem de 80 mil — a palavra "entrada" não apaga a
+	// frase inteira. Só o número que o cliente ligou ao lance é retirado; o que
+	// sobra (o preço do bem) vai ao mesmo `parseAssetValue` de sempre.
+	const valorDoBem = parseAssetValue(semODinheiroDoLance(texto)) ?? undefined;
 	return {
 		...(categoria ? { categoria } : {}),
 		...(valorDoBem ? { valorDoBem } : {}),
@@ -429,35 +430,127 @@ function somenteLigacoes(vao: string): boolean {
 	return palavras.every((p) => LIGACOES_DO_LANCE.has(semAcento(p).replace(/[^\p{L}]/gu, "")));
 }
 
-/** O valor de LANCE dito na fala, ou `undefined`.
+type OracaoDoTurno = { inicio: number; fim: number };
+
+/** Quebra a fala em ORAÇÕES. A pontuação só separa quando NÃO está dentro de um
+ * número: em "R$ 20.000" o ponto é separador de milhar, e em "1,5 milhão" a
+ * vírgula é decimal — cortar ali partiria o dinheiro no meio.
  *
- * O par é dinheiro + palavra de lance, em qualquer ordem ("tenho 30 mil pro
- * lance", "meu lance é de 30 mil"); havendo mais de um par, vence o de vão
- * menor — é o número que está colado ao marcador. */
-function lanceDaFala(texto: string): number | undefined {
-	const marcadores = [...texto.matchAll(MARCADORES_DE_LANCE)].map((m) => ({
-		inicio: m.index ?? 0,
-		fim: (m.index ?? 0) + m[0].length,
-	}));
-	if (marcadores.length === 0) return undefined;
-	let melhor: { valor: number; vao: number } | null = null;
-	for (const token of texto.matchAll(TOKEN_DE_DINHEIRO)) {
-		const valor = parseAssetValue(token[0]);
-		if (valor === null) continue;
-		const inicio = token.index ?? 0;
-		const fim = inicio + token[0].length;
-		for (const marcador of marcadores) {
-			const vao =
-				fim <= marcador.inicio
-					? texto.slice(fim, marcador.inicio)
-					: inicio >= marcador.fim
-						? texto.slice(marcador.fim, inicio)
-						: null;
-			if (vao === null || !somenteLigacoes(vao)) continue;
-			if (!melhor || vao.trim().length < melhor.vao) melhor = { valor, vao: vao.trim().length };
-		}
+ * A oração é a unidade de quem DECLARA (P139): "quanto de lance eu preciso?" e
+ * "tenho 30 mil" são orações diferentes, e só a segunda é dinheiro disponível. */
+function oracoesDe(texto: string): OracaoDoTurno[] {
+	const oracoes: OracaoDoTurno[] = [];
+	let inicio = 0;
+	for (let i = 0; i < texto.length; i++) {
+		const caractere = texto[i] ?? "";
+		if (!",.;:!?\n".includes(caractere)) continue;
+		const anterior = texto[i - 1] ?? "";
+		const seguinte = texto[i + 1] ?? "";
+		// Separador DENTRO de um número (milhar/decimal) não fecha oração.
+		if (/\d/.test(anterior) && /\d/.test(seguinte)) continue;
+		oracoes.push({ inicio, fim: i });
+		inicio = i + 1;
 	}
-	return melhor?.valor;
+	oracoes.push({ inicio, fim: texto.length });
+	return oracoes;
+}
+
+/** O dinheiro que a fala liga ao LANCE, com a posição: o token de dentro da
+ * oração que nomeia lance/entrada/ágio, o mais colado ao marcador.
+ *
+ * Serve às duas perguntas do turno, e é por isso que ela devolve também a
+ * posição: (a) o número é dinheiro DISPONÍVEL? — quem responde é
+ * `dinheiroFoiDeclarado`, que lê a oração em volta; (b) o número é o valor do
+ * BEM? — não: é do lance, e `semODinheiroDoLance` o retira da frase antes do
+ * `parseAssetValue` (P212). */
+type DinheiroDoLance = { valor: number; inicio: number; fim: number; oracao: OracaoDoTurno };
+
+function dinheirosDoLance(texto: string): DinheiroDoLance[] {
+	const oracoes = oracoesDe(texto);
+	const tokens = [...texto.matchAll(TOKEN_DE_DINHEIRO)].map((token) => ({
+		inicio: token.index ?? 0,
+		fim: (token.index ?? 0) + token[0].length,
+		valor: parseAssetValue(token[0]),
+	}));
+	const dinheiros: DinheiroDoLance[] = [];
+	for (const oracao of oracoes) {
+		const marcadores = [...texto.matchAll(MARCADORES_DE_LANCE)]
+			.map((m) => ({ inicio: m.index ?? 0, fim: (m.index ?? 0) + m[0].length }))
+			.filter((m) => m.inicio >= oracao.inicio && m.fim <= oracao.fim);
+		if (marcadores.length === 0) continue;
+		let melhor: { dinheiro: DinheiroDoLance; distancia: number } | null = null;
+		for (const token of tokens) {
+			if (token.valor === null) continue;
+			if (token.inicio < oracao.inicio || token.fim > oracao.fim) continue;
+			for (const marcador of marcadores) {
+				const vao =
+					token.fim <= marcador.inicio
+						? texto.slice(token.fim, marcador.inicio)
+						: token.inicio >= marcador.fim
+							? texto.slice(marcador.fim, token.inicio)
+							: null;
+				// Vão de LIGAÇÃO só: "o carro de 80 mil tem lance de quanto?" não liga o
+				// preço do bem ao lance, e o "tem" no meio é o que desfaz o par.
+				if (vao === null || !somenteLigacoes(vao)) continue;
+				if (melhor && vao.trim().length >= melhor.distancia) continue;
+				melhor = {
+					dinheiro: { valor: token.valor, inicio: token.inicio, fim: token.fim, oracao },
+					distancia: vao.trim().length,
+				};
+			}
+		}
+		if (melhor) dinheiros.push(melhor.dinheiro);
+	}
+	return dinheiros;
+}
+
+/** O que NEGA o dinheiro antes do número ("não tenho 30 mil para lance") e o que
+ * TRANSFORMA a fala em pergunta ("preciso ter 30 mil de lance?"). */
+const NEGACAO_ANTES_DO_DINHEIRO = /\b(n[ãa]o|nunca|jamais|nem|sem)\b/i;
+const PERGUNTA_ANTES_DO_DINHEIRO =
+	/\b(quanto|quantos|quantas|qual|quais|quando|onde|como|preciso|precisaria|ser[áa]|tem como|d[áa] pra)\b/i;
+
+/** O cliente AFIRMOU ter esse dinheiro? (P139)
+ *
+ * Pergunta e negativa não viram dinheiro DISPONÍVEL: "preciso ter 30 mil de
+ * lance?" e "não tenho 30 mil para lance" descrevem o que ele NÃO tem ou quer
+ * saber — gravar como lance faria os três cenários usarem recurso que ele não
+ * tem. A leitura é da oração: a negação vale quando vem ANTES do dinheiro, e a
+ * pergunta quando está na mesma oração ("?") ou é aberta por palavra
+ * interrogativa antes do número. */
+function dinheiroFoiDeclarado(texto: string, dinheiro: DinheiroDoLance): boolean {
+	const antes = texto.slice(dinheiro.oracao.inicio, dinheiro.inicio);
+	const depois = texto.slice(dinheiro.fim, dinheiro.oracao.fim);
+	if (NEGACAO_ANTES_DO_DINHEIRO.test(antes)) return false;
+	if (depois.includes("?")) return false;
+	if (PERGUNTA_ANTES_DO_DINHEIRO.test(antes)) return false;
+	return true;
+}
+
+/** A fala SEM o dinheiro que pertence ao lance — é sobre ela que o
+ * `parseAssetValue` decide o valor do BEM (P212). Assim "quero um carro de 80
+ * mil, sem entrada" continua declarando 80 mil, e "quero um de 80 mil e dou 20
+ * mil de entrada" separa os dois números: bem 80 mil, lance 20 mil. */
+function semODinheiroDoLance(texto: string): string {
+	const dinheiros = dinheirosDoLance(texto);
+	if (dinheiros.length === 0) return texto;
+	let limpo = texto;
+	for (const dinheiro of [...dinheiros].sort((a, b) => b.inicio - a.inicio)) {
+		limpo = `${limpo.slice(0, dinheiro.inicio)} ${limpo.slice(dinheiro.fim)}`;
+	}
+	return limpo;
+}
+
+/** O valor de LANCE que o cliente DISSE TER, ou `undefined`.
+ *
+ * O par é dinheiro + palavra de lance na MESMA oração, em qualquer ordem
+ * ("tenho 30 mil pro lance", "meu lance é de 30 mil"), e só vale quando é
+ * declaração — pergunta e negativa ficam de fora (ver `dinheiroFoiDeclarado`). */
+function lanceDaFala(texto: string): number | undefined {
+	for (const dinheiro of dinheirosDoLance(texto)) {
+		if (dinheiroFoiDeclarado(texto, dinheiro)) return dinheiro.valor;
+	}
+	return undefined;
 }
 
 function prazoDaFala(texto: string): number | undefined {
@@ -498,7 +591,12 @@ export function lanceEPrazoDoTurno(texto: string | null | undefined): {
 }
 
 /** Um beat do turno, já com o preço do modelo resolvido. `cacheRead`/`cacheWrite`
- * são o recorte de CACHE do prompt que o provedor reportou (0 = não reportou). */
+ * são o recorte de CACHE do prompt.
+ *
+ * AUSENTE é "não medido" — o provedor não reportou essa parcela; ZERO é medição
+ * (o provedor reportou que nenhum token veio do cache). São coisas diferentes e
+ * a coluna de `uso_de_ia` as guarda assim (`null` × `0`): quem lê o custo não
+ * pode precificar integralmente um turno cujo cache ninguém mediu (P273). */
 export type UsoDoBeat = {
 	modelo: string;
 	tokensInput: number;
@@ -517,25 +615,29 @@ export type UsoDoBeat = {
  *
  * Preço desconhecido continua sendo `null`, nunca zero: um beat sem preço no
  * meio do turno torna o total do turno desconhecido (somar só o que se sabe
- * seria um número inventado, com cara de medição). */
+ * seria um número inventado, com cara de medição).
+ *
+ * O CACHE segue a mesma disciplina (P273): a soma só existe se ALGUM beat mediu
+ * aquela parcela. Nenhum beat medindo dá `null` (não medido), e não `0` — zero
+ * é medição de que nada veio do cache. */
 export function somarUsoDosBeats(beats: readonly UsoDoBeat[]): {
 	tokensInput: number;
 	tokensOutput: number;
-	cacheRead: number;
-	cacheWrite: number;
+	cacheRead: number | null;
+	cacheWrite: number | null;
 	custoUsdCents: number | null;
 } {
 	let tokensInput = 0;
 	let tokensOutput = 0;
-	let cacheRead = 0;
-	let cacheWrite = 0;
+	let cacheRead: number | null = null;
+	let cacheWrite: number | null = null;
 	let centavosExatos = 0;
 	let semPreco = false;
 	for (const beat of beats) {
 		tokensInput += beat.tokensInput;
 		tokensOutput += beat.tokensOutput;
-		cacheRead += beat.cacheRead ?? 0;
-		cacheWrite += beat.cacheWrite ?? 0;
+		if (beat.cacheRead !== undefined) cacheRead = (cacheRead ?? 0) + beat.cacheRead;
+		if (beat.cacheWrite !== undefined) cacheWrite = (cacheWrite ?? 0) + beat.cacheWrite;
 		const centavos = custoDoTurnoCentsExatos(beat);
 		if (centavos === null) semPreco = true;
 		else centavosExatos += centavos;
@@ -838,11 +940,20 @@ export function createRunTurnLivre(deps?: {
 		// beat, quando todas as falas já tinham ido ao ar — o cliente lia
 		// texto → texto → card, e a tabela caía embaixo da pergunta que ela deveria
 		// responder. Agora sai onde nasceu, uma vez (dedupe por payload).
-		const emitirCardsNovos = () => {
+		//
+		// EXCEÇÃO: o card de ESCOLHA (P136). Ele é a RESPOSTA de uma pergunta e sai
+		// DEPOIS da fala que a faz, como na `main` (o chip vinha no fim do balão). O
+		// modelo pede o card antes de escrever a pergunta (é o que a skill ensina),
+		// então emitir na ordem do stream entregava os botões antes do texto que lhes
+		// dá sentido — na web a pergunta aparecia embaixo das opções e, no WhatsApp,
+		// em mensagem separada e anterior. Por isso `quais`: o resultado da ferramenta
+		// leva só os cards FACTUAIS, e os de escolha ficam para o fim do beat.
+		const emitirCardsNovos = (quais: "fato" | "todos" = "fato") => {
 			// A marca que a emissão PROVA (L02/P259) entra no estado ANTES do artifact:
 			// é o que a persistência grava antes de registrar o card.
 			estado = aplicarMetaDaEmissao(estado, ctx.metaDaEmissao);
 			for (const card of ctx.cards) {
+				if (quais === "fato" && TIPOS_DE_ESCOLHA.some((tipo) => tipo === card.type)) continue;
 				const chave = `${card.type}:${JSON.stringify(card.payload)}`;
 				if (cardsJaEmitidos.has(chave)) continue;
 				cardsJaEmitidos.add(chave);
@@ -903,7 +1014,8 @@ export function createRunTurnLivre(deps?: {
 				},
 				// O RESULTADO da ferramenta é onde o card nasce: a tool já escreveu em
 				// `ctx.cards` quando o harness entrega o evento, e daqui ele vai ao canal na
-				// ordem do stream, antes da fala que o modelo fizer depois (P157).
+				// ordem do stream, antes da fala que o modelo fizer depois (P157). O card de
+				// ESCOLHA é a exceção: ele espera o fim do beat, depois da pergunta (P136).
 				aoResultado: () => {
 					emitirFalasNovas();
 					emitirCardsNovos();
@@ -949,11 +1061,12 @@ export function createRunTurnLivre(deps?: {
 			// 5. Cards por RESULTADO — o card de NÚMERO nunca é escolha do modelo;
 			// o de ESCOLHA (pergunta + opções) é, e foi validado em `mostrar_card`.
 			//
-			// O que sobrou aqui é o card que a tool NÃO produziu: o `quick_reply` que o
-			// verificador de perguntas tirou da fala. Os cards de tool já foram ao canal
-			// no resultado dela (P157) e o dedupe impede que saiam de novo.
+			// Aqui sai o que ficou para o fim do turno: os cards de ESCOLHA (esperam a
+			// pergunta que os explica — P136) e o `quick_reply` que o verificador de
+			// perguntas tirou da fala. Os cards FACTUAIS já foram ao canal no resultado da
+			// ferramenta (P157) e o dedupe impede que saiam de novo.
 			emitirFalasNovas();
-			emitirCardsNovos();
+			emitirCardsNovos("todos");
 			// O card fala por si (R5.1): o anúncio suspenso estava colado a ele e cai
 			// (quem o descarta é `emitirCardsNovos`). Sem card no turno, o anúncio é a
 			// fala da vez e sai como qualquer outra — fala legítima não se perde.
@@ -1033,16 +1146,18 @@ export function createRunTurnLivre(deps?: {
 			console.log(
 				`[pi-livre] uso conv=${conversationId} modelo=${modelo} input=${usoDoTurno.tokensInput} output=${usoDoTurno.tokensOutput} cacheRead=${usoDoTurno.cacheRead} cacheWrite=${usoDoTurno.cacheWrite} custoUsdCents=${usoDoTurno.custoUsdCents}`,
 			);
-			// `cacheRead`/`cacheWrite` só vão à coluna quando o provedor de fato
-			// reportou: o parser do pi resolve ausência para zero, então zero aqui é
-			// "não medido" — e a coluna nula é a mesma disciplina do trace.
+			// `cacheRead`/`cacheWrite` vão SEMPRE que o beat os mediu — inclusive zero, que
+			// é medição de que nenhum token veio do cache (P273). `null` fica reservado ao
+			// "não medido": o turno só o grava quando nenhum beat reportou a parcela, e é
+			// isso que faz a linha antiga ou incompleta entrar na marca parcial em vez de
+			// ser precificada integralmente.
 			await registrarUsoDeIa({
 				conversationId,
 				modelo,
 				tokensInput: usoDoTurno.tokensInput,
 				tokensOutput: usoDoTurno.tokensOutput,
-				cacheRead: usoDoTurno.cacheRead > 0 ? usoDoTurno.cacheRead : null,
-				cacheWrite: usoDoTurno.cacheWrite > 0 ? usoDoTurno.cacheWrite : null,
+				cacheRead: usoDoTurno.cacheRead,
+				cacheWrite: usoDoTurno.cacheWrite,
 			});
 
 			// 7. Persistência. A meta vai ao banco ANTES dos cards (o adapter relê a

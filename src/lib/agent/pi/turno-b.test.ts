@@ -20,6 +20,7 @@ import {
 	aplicarMetaDaEmissao,
 	createRunTurnLivre,
 	declaracaoDoTurno,
+	lanceEPrazoDoTurno,
 	semRepetirChamada,
 	somarUsoDosBeats,
 } from "./turno-livre";
@@ -287,6 +288,55 @@ describe("L44/P212 — o valor declarado entra no estado antes da busca", () => 
 		const qualify = meta.qualifyAnswers as Record<string, unknown>;
 		expect(qualify.creditMax).toBe(80_000);
 		expect(qualify.valorDoBemAlvo).toBe(80_000);
+	});
+
+	it("a palavra 'entrada' não invalida o valor do BEM dito na mesma frase", () => {
+		// "sem entrada" não apaga o preço do bem…
+		expect(declaracaoDoTurno("quero um carro de 80 mil, sem entrada")).toEqual({
+			categoria: "auto",
+			valorDoBem: 80_000,
+		});
+		// …e, com bem e entrada distintos, cada número vai para o seu campo.
+		expect(declaracaoDoTurno("quero um carro de 80 mil e dou 20 mil de entrada")).toEqual({
+			categoria: "auto",
+			valorDoBem: 80_000,
+		});
+		expect(lanceEPrazoDoTurno("quero um carro de 80 mil e dou 20 mil de entrada")).toEqual({
+			lanceValue: 20_000,
+		});
+	});
+
+	it("o turno sem busca grava o valor do bem mesmo com 'entrada' na frase", async () => {
+		const conversationId = await novaConversa();
+		const turno = await rodarTurno({
+			conversationId,
+			userText: "quero um carro de 80 mil, sem entrada",
+			beats: [{ text: "Boa escolha! Vamos ver as opções." }],
+		});
+		await turno.fechar();
+
+		const meta = await metaDa(conversationId);
+		expect(meta.currentCategory).toBe("auto");
+		const qualify = meta.qualifyAnswers as Record<string, unknown>;
+		expect(qualify.creditMax).toBe(80_000);
+		expect(qualify.valorDoBemAlvo).toBe(80_000);
+		// "sem entrada" é a AUSÊNCIA de lance, não dinheiro disponível.
+		expect(qualify.lanceValue).toBeUndefined();
+	});
+
+	it("com bem e entrada distintos, cada um cai no seu campo da meta", async () => {
+		const conversationId = await novaConversa();
+		const turno = await rodarTurno({
+			conversationId,
+			userText: "quero um carro de 80 mil e dou 20 mil de entrada",
+			beats: [{ text: "Perfeito, então você entra com 20 mil." }],
+		});
+		await turno.fechar();
+
+		const qualify = (await metaDa(conversationId)).qualifyAnswers as Record<string, unknown>;
+		expect(qualify.creditMax).toBe(80_000);
+		expect(qualify.valorDoBemAlvo).toBe(80_000);
+		expect(qualify.lanceValue).toBe(20_000);
 	});
 });
 

@@ -315,8 +315,10 @@ describe("P217/P273 — o livro-caixa do turno grava cache e custo completos", (
 		expect(linhas[0]?.tokensInput).toBe(240_000);
 		// 3 × 0,4 centavo = 1,2 → 1 centavo. Arredondando por beat daria 0 + 0 + 0.
 		expect(linhas[0]?.custoUsdCents).toBe(1);
-		// Provedor que não reporta cache deixa a coluna NULA (não medida), não zero.
-		expect(linhas[0]?.tokensCacheRead).toBeNull();
-		expect(linhas[0]?.tokensCacheWrite).toBeNull();
+		// Cache ZERO é medição: o provedor reportou que nenhum token veio do cache (P273).
+		// `null` na coluna é reservado ao "não medido" e é o que o CUSTO4 lê como
+		// desconhecido — o turno grava sempre o número medido, 0 incluído.
+		expect(linhas[0]?.tokensCacheRead).toBe(0);
+		expect(linhas[0]?.tokensCacheWrite).toBe(0);
 	});
 });
