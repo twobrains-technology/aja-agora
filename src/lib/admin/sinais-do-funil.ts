@@ -460,6 +460,9 @@ export const CLASSIFICACAO_DOS_ARTIFACTS: Record<ArtifactType, boolean> = {
  * FONTE ÚNICA: derivada de `CLASSIFICACAO_DOS_ARTIFACTS` acima — não existe
  * segunda lista. Usada pelo painel de Performance/Percurso e pelo endpoint do
  * teste do telefone. */
+/** A chave em `conversations.metadata` do estado do desbloqueio do telefone. */
+import { CHAVE_DO_TESTE_NO_METADATA } from "@/lib/chat/variante-da-visita";
+
 export const ARTIFACTS_DE_OFERTA: readonly ArtifactType[] = (
 	Object.keys(CLASSIFICACAO_DOS_ARTIFACTS) as ArtifactType[]
 ).filter((tipo) => CLASSIFICACAO_DOS_ARTIFACTS[tipo]);
@@ -475,21 +478,58 @@ export const ARTIFACTS_DE_OFERTA_SQL = sql.join(
 export const PADRAO_SQL_DE_OFERTA = ARTIFACTS_DE_OFERTA.map((tipo) => `'${tipo}'`).join(", ");
 
 /**
+ * A OFERTA PREPARADA E NÃO ENTREGUE NÃO CONTA COMO "VIU OFERTA".
+ *
+ * O teste do telefone (29/09/2026) criou dois estados em que a comparação é
+ * buscada mas o cliente NÃO lê número nenhum: `pede-antes` (A), em que o reveal
+ * é RETIDO no adapter até o telefone chegar, e `borrado` (B), em que os cards vão
+ * à tela EMBACADOS. Nos dois o nó `persist` grava os artifacts assim mesmo — a
+ * gravação acontece antes de o adapter reter/borrar, e é o banco que guarda a
+ * comparação para re-emitir quando o telefone chega.
+ *
+ * Consequência medida em produção em 06/10/2026: 9 conversas contavam como "viu
+ * oferta" sem o cliente ter lido nada — no braço A não apareceu nada, no B
+ * apareceu borrado. Quem NÃO deixou o telefone não viu a oferta; quem deixou viu
+ * (o desbloqueio é o que libera a leitura, e fica gravado em `desbloqueadoEm`).
+ *
+ * **WhatsApp é exceção e não tem teste:** ali o telefone é o próprio `waId`,
+ * não existe card e a comparação chega legível. Por isso o canal entra na
+ * condição — sem ele, o guard apagaria do funil toda conversa de WhatsApp.
+ *
+ * O predicado é `NOT` desta função no `viuOferta`, e mora aqui, junto da lista de
+ * artifacts: é a MESMA pergunta ("este cliente viu número de oferta?") feita
+ * pelo funil, pelo Percurso, pela exportação e pela régua.
+ */
+export function ofertaRetidaPeloTelefone(conversa: SQL = sql`c`): SQL {
+	return sql`(
+    ${conversa}.channel = 'web'
+    AND COALESCE(${conversa}.metadata -> ${CHAVE_DO_TESTE_NO_METADATA} ->> 'variante', '') IN ('A', 'B')
+    AND (${conversa}.metadata -> ${CHAVE_DO_TESTE_NO_METADATA} ->> 'desbloqueadoEm') IS NULL
+  )`;
+}
+
+/**
  * O CLIENTE VIU NÚMERO DE OFERTA — existe um artefato de oferta na conversa.
  *
  * É o degrau "Viram oferta" do funil de mídia, da escada do Percurso e da
  * exportação. Fonte única dos três: enquanto o `EXISTS` morava copiado em cada
  * consulta, uma correção valia para uma tela e não para a outra.
  *
+ * **E não conta a oferta que o cliente não chegou a ver** (ver
+ * `ofertaRetidaPeloTelefone`): no braço A o reveal é retido até o telefone, no B
+ * ele sai embaçado — e nos dois o artifact fica gravado. Contar o artifact ali
+ * era afirmar que a pessoa viu número que ela nunca leu.
+ *
  * O alias da conversa entra por parâmetro pelo mesmo motivo dos outros
  * fragmentos (`c` nas telas de hoje) — amarrar ao alias faria o fragmento
  * compilar num lugar e explodir no outro.
  */
 export function viuOferta(conversa: SQL = sql`c`): SQL {
-	return sql`EXISTS (SELECT 1 FROM messages m
+	return sql`(EXISTS (SELECT 1 FROM messages m
     JOIN artifacts a ON a.message_id = m.id
     WHERE m.conversation_id = ${conversa}.id
-      AND a.type IN (${ARTIFACTS_DE_OFERTA_SQL}))`;
+      AND a.type IN (${ARTIFACTS_DE_OFERTA_SQL}))
+    AND NOT ${ofertaRetidaPeloTelefone(conversa)})`;
 }
 
 /**
