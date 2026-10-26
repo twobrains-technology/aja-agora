@@ -187,6 +187,42 @@ describe("fazer_proposta — as três recusas de LGPD dizem coisas diferentes ao
 		expect(ctx.cards.some((c) => c.type === "real_offer")).toBe(false);
 	});
 
+	// P262 da re-auditoria 310e rodada 4: a revogação vale mesmo vizinha de uma
+	// pergunta. A fala inteira terminar em "?" não apaga o "não autorizo" da primeira
+	// oração — se apagasse, a consulta de bureau sairia depois da revogação explícita.
+	it("revogação seguida de pergunta independente: não gera proposta", async () => {
+		for (const fala of [
+			"Não autorizo consultar meu CPF, podemos seguir sem isso?",
+			"Não autorizo consultar meu CPF: podemos seguir sem isso?",
+			"Podemos seguir sem consultar meu CPF? Não autorizo.",
+			"não autorizo consultar meu cpf podemos seguir sem isso?",
+		]) {
+			vi.clearAllMocks();
+			mocks.reloadMeta.mockImplementation(
+				async () =>
+					({
+						currentCategory: "auto",
+						qualifyAnswers: {},
+						lgpdAceite: { em: "2026-10-20T12:00:00.000Z", fala: "pode usar" },
+					}) as unknown as ConversationMetadata,
+			);
+			mocks.loadConversationHistory.mockResolvedValue([
+				{ role: "assistant", content: AVISO_LGPD },
+				{ role: "user", content: "pode usar meus dados" },
+			]);
+			const ctx = ctxDoTurno({ userText: fala });
+			const retorno = await falarComAFerramenta(ctx);
+
+			expect(retorno, fala).toContain("REVOGOU");
+			expect(retorno, fala).not.toContain("Peça o aceite");
+			expect(mocks.startContract, fala).not.toHaveBeenCalled();
+			expect(
+				ctx.cards.some((c) => c.type === "real_offer"),
+				fala,
+			).toBe(false);
+		}
+	});
+
 	it("recusar o prazo sozinho não revoga: o fechamento segue", async () => {
 		mocks.loadConversationHistory.mockResolvedValue([
 			{ role: "assistant", content: AVISO_LGPD },

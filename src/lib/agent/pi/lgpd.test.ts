@@ -346,3 +346,82 @@ describe("P262 — o consentimento é cronológico: recusa posterior revoga o si
 		expect(r.motivo).toBe("falta-o-aceite");
 	});
 });
+
+// P262, re-auditoria 310e rodada 4: a decisão é POR ORAÇÃO.
+//
+// "Não autorizo consultar meu CPF, podemos seguir sem isso?" é UMA frase com DUAS
+// orações — a revogação e a pergunta. Descartar a frase porque termina em "?" fazia
+// o aceite anterior sobreviver a uma revogação explícita, e a consulta de bureau
+// podia acontecer mesmo assim.
+describe("P262 — revogação e aceite se decidem por ORAÇÃO, não pela frase inteira", () => {
+	const aviso = { role: "assistant" as const, content: AVISO };
+	const aceite = { role: "user" as const, content: "sim, pode usar" };
+
+	// Tabela adversarial: fala real de cliente brasileiro, depois do aviso e do sim.
+	// `revoga` = a revogação vale e o consentimento anterior cai.
+	const FALAS: Array<[string, boolean]> = [
+		// A frase citada pelo auditor, e variações de pontuação dela.
+		["Não autorizo consultar meu CPF, podemos seguir sem isso?", true],
+		["Não autorizo consultar meu CPF. Podemos seguir sem isso?", true],
+		["Não autorizo consultar meu CPF: podemos seguir sem isso?", true],
+		["Não autorizo consultar meu CPF! Podemos seguir sem isso?", true],
+		["Não autorizo consultar meu CPF, podemos seguir sem isso", true],
+		["NÃO AUTORIZO CONSULTAR MEU CPF, PODEMOS SEGUIR SEM ISSO?", true],
+		// Sem pontuação nenhuma entre as orações, e com emoji no meio e na frente.
+		["não autorizo consultar meu cpf podemos seguir sem isso?", true],
+		["não autorizo consultar meu CPF 😠 podemos seguir sem isso?", true],
+		["😠 não autorizo consultar meu CPF, podemos seguir sem isso?", true],
+		// Ordem invertida: a pergunta vem antes da revogação.
+		["Podemos seguir sem consultar meu CPF? Não autorizo.", true],
+		["Podemos seguir sem consultar meu CPF, mas não autorizo.", true],
+		// A revogação escrita com outras palavras.
+		["Não quero mais que vocês consultem meu CPF, tá bom?", true],
+		["Não vou autorizar a consulta do meu CPF, podemos seguir sem isso?", true],
+		["Revogo a autorização, e aí posso falar com um atendente?", true],
+		["Não autorizo o uso dos meus dados, mas pode me explicar como funciona?", true],
+		// NÃO são revogação: dúvida, explicação, recusa da oferta e aceite com pergunta.
+		["posso revogar isso depois?", false],
+		["Não entendi, pode explicar de novo?", false],
+		["E se eu não autorizar a consulta, dá pra seguir mesmo assim?", false],
+		["Vocês consultam meu CPF sem minha autorização?", false],
+		["Não aceito o prazo de 80 meses, prefiro 48. Podemos seguir?", false],
+		["Pode usar meus dados, obrigado 😊 Qual é o prazo?", false],
+	];
+
+	it.each(FALAS)("“%s” — revoga: %s", (fala, revoga) => {
+		const r = resolverAceiteLgpd({ falas: [aviso, aceite], falaDoCliente: fala });
+		if (revoga) {
+			expect(r.ok, fala).toBe(false);
+			expect(r.motivo, fala).toBe("aceite-revogado");
+			return;
+		}
+		expect(r.ok, fala).toBe(true);
+		expect(r.motivo, fala).not.toBe("aceite-revogado");
+	});
+
+	// O outro lado da mesma regra: uma ORAÇÃO interrogativa não aceita nada, e uma
+	// oração afirmativa de revogação derruba o aceite da fala inteira.
+	const ACEITES: Array<[string, boolean]> = [
+		["Não autorizo consultar meu CPF, podemos seguir sem isso?", false],
+		["Não autorizo consultar meu CPF: podemos seguir sem isso?", false],
+		["não autorizo consultar meu cpf podemos seguir sem isso?", false],
+		["Podemos seguir sem consultar meu CPF? Não autorizo.", false],
+		["Não quero mais que vocês consultem meus dados, certo?", false],
+		["posso revogar isso depois?", false],
+		["sim, pode usar", true],
+		["sim, pode consultar. Podemos seguir?", true],
+		["Pode usar. E qual é o prazo?", true],
+		["pode usar meus dados 😊", true],
+		["sim: pode usar, obrigado", true],
+		["Ok, autorizo — qual o prazo?", true],
+		["não tem problema, pode usar", true],
+		["não, pode", false],
+		["não pode, obrigado", false],
+		["claro, pode", true],
+		["beleza, autorizo", true],
+	];
+
+	it.each(ACEITES)("clienteAceitouLgpd(“%s”) = %s", (fala, aceitou) => {
+		expect(clienteAceitouLgpd(fala), fala).toBe(aceitou);
+	});
+});
