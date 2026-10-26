@@ -19,6 +19,13 @@ subir) é da skill `cortex-assistente`; o **estado** dos itens vive fora do git,
 Plataforma: `ajaagora.com.br` (agente web + WhatsApp e painel administrativo). Skill de acesso ao
 painel autenticado: `aja-agora-painel`.
 
+**Para que o grupo existe** (dito pela Bruna em 26/10/2026): `esse grupo será para você receber os
+leads para ligarmos`. É o **canal de entrega de lead para ligação** além do atendimento. Por isso
+lead com nome e telefone entra aqui — é ferramenta de trabalho deles. Recortes pedidos com frequência:
+"quem escreveu algo próprio", "quem recebeu oferta", por período. Antes de montar do zero, conferir se
+o recorte já existe (`~/Downloads/leads-aja-*.xlsx`, `~/Downloads/base-leads-oferta-*.xlsx`) e qual
+deles o dono quer — são coisas diferentes e não se substituem.
+
 ## O produto em duas linhas
 
 Agente conversacional de **vendas de consórcio** em dois canais (web com cards e WhatsApp): conversa,
@@ -111,9 +118,10 @@ se o comportamento está no código assim de propósito.
 
 ## PII
 
-Dado de lead é dado de terceiro: CPF, telefone, e-mail, nome de lead de outro vendedor, print com dado
-de cliente. Não entra no grupo e não entra no quadro. Para reproduzir, olhe você mesmo no banco/painel;
-para pedir, peça no privado.
+Dado de lead é dado de terceiro. **Nome e telefone** entram neste grupo porque a entrega de lead para
+ligação é a função do canal. Não entram: CPF, dado financeiro do lead, carteira/lista de outro
+vendedor, e print com PII solta de outro cliente. Para reproduzir um caso, olhe você mesmo no
+banco/painel; para pedir um dado sensível, peça no privado — nunca no grupo.
 
 ## Como o assistente fala aqui
 
