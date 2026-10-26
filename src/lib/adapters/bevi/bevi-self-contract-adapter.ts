@@ -384,13 +384,24 @@ export class BeviSelfContractAdapter implements AdministradoraAdapter {
 
 	/** Registra a variante do grupo na ordem de chegada, sem duplicar a mesma variante
 	 * (mesmo `quotaId` + mesma variante de embutido + mesma carta) — o cache devolve o
-	 * mesmo array e o sweep reencontra o grupo em outra faixa. */
+	 * mesmo array e o sweep reencontra o grupo em outra faixa.
+	 *
+	 * Quando a variante já existe, a resposta NOVA da Bevi SUBSTITUI a entrada no MESMO
+	 * índice (P133/P264): ignorá-la deixava a busca mostrar a parcela atualizada e a
+	 * simulação do mesmo grupo mostrar a antiga. A ordem das variantes não muda — a
+	 * primeira continua sendo a que a lista da busca mostra — e variantes diferentes
+	 * continuam separadas. */
 	private registrarOferta(offer: BeviOffer): void {
 		const variantes = this.offerIndex.get(offer.quotaId) ?? [];
-		if (!variantes.some((v) => varianteDaOferta(v) === varianteDaOferta(offer))) {
+		const mesmaVariante = variantes.findIndex(
+			(v) => varianteDaOferta(v) === varianteDaOferta(offer),
+		);
+		if (mesmaVariante === -1) {
 			variantes.push(offer);
 			this.offerIndex.set(offer.quotaId, variantes);
+			return;
 		}
+		variantes[mesmaVariante] = offer;
 	}
 
 	/** A variante de um grupo: a carta cujo `finalValue` é o `creditValue` pedido; sem

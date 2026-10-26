@@ -85,6 +85,92 @@ function adapterDo(
 
 const busca = { category: "auto" as const, creditMin: 60_000, creditMax: 60_000 };
 
+/** P133/P264 (R12-3): a MESMA carta, mas resposta nova da Bevi — parcela atualizada.
+ * Entra por outra chave de cache (busca por parcela), então o `searchGroups` mostra
+ * 820; o índice tem que concordar com o que a busca mostrou, não guardar a 788. */
+const parcelaAtualizada: BeviOffer = {
+	quotaId: GRUPO,
+	group: "4471",
+	bank: "ANCORA",
+	bankLabel: "ÂNCORA",
+	productType: "AUTOS",
+	finalValue: 60_000,
+	importedInstallmentValue: 820,
+	term: 114,
+	adminFee: 0.25,
+	reserveFundFee: 0.02,
+	insuranceFee: 0.03,
+	totalPaid: 93_480,
+	monthlyAwardedQuotas: 15,
+};
+
+/** Dublê com uma oferta por CHAVE de cache (o que `ensureOffers` consulta antes da
+ * rede): duas buscas de chaves distintas produziram respostas distintas do mesmo grupo. */
+function dubleClientePorChave(offersPorChave: Record<string, BeviOffer[]>) {
+	const chavesSimuladas: string[] = [];
+	const cliente = {
+		createProposal: async () => ({}),
+		setSegment: async () => {},
+		simulate: async (input: {
+			simulationType?: string;
+			simulationValue?: number;
+			embeddedPercentage?: string;
+		}) => {
+			const key = `${input.simulationType ?? "TOTAL_VALUE"}:${input.simulationValue}:${input.embeddedPercentage ?? "none"}`;
+			chavesSimuladas.push(key);
+			return offersPorChave[key] ?? [];
+		},
+	} as unknown as BeviSelfContractClient;
+	return { cliente, chavesSimuladas };
+}
+
+describe("busca nova do mesmo grupo substitui a oferta indexada da mesma variante", () => {
+	it("simulateQuota devolve a parcela da última carta mostrada, não a antiga", async () => {
+		const { cliente, chavesSimuladas } = dubleClientePorChave({
+			"TOTAL_VALUE:60000:none": [semEmbutido],
+			"INSTALLMENT_VALUE:820:none": [parcelaAtualizada],
+		});
+		// Sem embutido opt-in: só a baseline, pra a variante das duas buscas ser a mesma.
+		const adapter = adapterDo(cliente, {});
+
+		const primeira = await adapter.searchGroups(busca);
+		expect(primeira[0]?.monthlyPayment).toBe(788);
+
+		const segunda = await adapter.searchGroups({ category: "auto", parcelaAlvo: 820 });
+		expect(segunda[0]?.monthlyPayment).toBe(820);
+		// Chaves distintas = duas chamadas reais; a segunda resposta é NOVA, não o cache.
+		expect(chavesSimuladas).toEqual(["TOTAL_VALUE:60000:none", "INSTALLMENT_VALUE:820:none"]);
+
+		// Busca e simulação concordam na MESMA carta (60.000).
+		const sim = await adapter.simulateQuota({ groupId: GRUPO, creditValue: 60_000 });
+		expect(sim.creditValue).toBe(60_000);
+		expect(sim.monthlyPayment).toBe(820);
+		// A ordem das variantes não muda: a primeira continua sendo a que a lista mostra,
+		// agora com o valor atualizado — e continua uma variante só por carta.
+		expect((await adapter.getGroupDetails({ groupId: GRUPO })).monthlyPayment).toBe(820);
+	});
+
+	it("variantes diferentes continuam separadas quando uma resposta atualiza outra variante", async () => {
+		const { cliente } = dubleClientePorChave({
+			"TOTAL_VALUE:60000:none": [semEmbutido],
+			"TOTAL_VALUE:60000:30": [comEmbutido],
+			"INSTALLMENT_VALUE:820:none": [parcelaAtualizada],
+		});
+		const adapter = adapterDo(cliente);
+
+		await adapter.searchGroups(busca);
+		const lista = await adapter.searchGroups({ category: "auto", parcelaAlvo: 820 });
+		// A lista da segunda busca: variante SEM embutido atualizada; a variante COM
+		// embutido (carta 85.000) não é a mesma variante e não é sobrescrita.
+		expect(lista.map((g) => g.creditValue)).toEqual([60_000]);
+
+		const simAtualizada = await adapter.simulateQuota({ groupId: GRUPO, creditValue: 60_000 });
+		expect(simAtualizada.monthlyPayment).toBe(820);
+		const simEmbutida = await adapter.simulateQuota({ groupId: GRUPO, creditValue: 85_000 });
+		expect(simEmbutida.monthlyPayment).toBe(1038.61);
+	});
+});
+
 describe("índice de ofertas guarda todas as variantes do mesmo quotaId", () => {
 	it("simulateQuota devolve a variante que a tabela mostrou (60.000), não a última", async () => {
 		const { cliente, variantesSimuladas } = dubleCliente({
