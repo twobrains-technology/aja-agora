@@ -686,40 +686,58 @@ const MOLDES_DA_MASCARA_DO_BEM: readonly RegExp[] = [
 	new RegExp(`\\b(?:lance|entrada)[ \\t]*(?:de|:|=|${MOLDE_COPULA})[ \\t]*(${FONTE_DO_D})`, "gi"),
 ];
 
-/** A trava geral da MENSAGEM: com qualquer uma destas formas em QUALQUER lugar da fala,
- * nada nela vira lance. São as construções em que o número pode estar ao lado da palavra
- * "lance" sem que o cliente tenha dito que TEM o dinheiro — pergunta, negação,
- * obrigação/falta, hipótese e dinheiro dito como embutido.
+const TRAVA_DA_NEGACAO = /\b(n[ãa]o|nem|nunca|jamais|sem|zero|nada)\b/i;
+const TRAVA_DO_EMBUTIDO = /\bembutid\w*/i;
+
+/** As três formas que NÃO são dinheiro do cliente: PERGUNTA, HIPÓTESE e OBRIGAÇÃO/FALTA. Elas
+ * derrubam a CAPTURA (P139) e, desde a rodada 10, também a decisão de ZERAR a reserva — o número
+ * pode estar ao lado da palavra "lance" sem que o cliente tenha dito que TEM o dinheiro.
  *
  * Na mensagem inteira, e não na frase, de propósito: é o lado reversível. "Ainda faltam 30
  * mil para o lance" fica pendente em vez de virar recurso próprio. `como` NÃO entra na
  * lista de interrogativas porque é ligação de valor ("tenho 30 mil como entrada"); pergunta
  * com "como" vem com `?`, que já trava.
  *
+ * RODADA 10 (P139): `seria` e `e se` entram na hipótese. "Se eu não tivesse lance, quanto ficaria
+ * a parcela?" tinha `não` + `lance` e zerava a reserva confirmada: é uma hipótese sobre um cenário,
+ * não uma retratação do que ele já declarou. */
+const TRAVA_DA_PERGUNTA =
+	/\?|\b(quanto|quantos|quantas|qual|quais|quando|onde|quem|cad[êe]|ser[áa])\b/i;
+const TRAVA_DA_HIPOTESE = /\b(se\s+eu|caso|tivesse|teria|seria|e\s+se)\b/i;
+const TRAVA_DA_OBRIGACAO =
+	/\b(tenho\s+que|tem\s+que|teria\s+que|precis\w*|falt\w*|exig\w*|obrigat\w*)\b/i;
+
+/** As três travas juntas, para decidir sobre a MENSAGEM inteira. */
+const TRAVA_DA_CLAREZA = new RegExp(
+	`(?:${TRAVA_DA_PERGUNTA.source})|(?:${TRAVA_DA_HIPOTESE.source})|(?:${TRAVA_DA_OBRIGACAO.source})`,
+	"i",
+);
+
+/** A trava geral da MENSAGEM: com qualquer uma destas formas em QUALQUER lugar da fala, nada nela
+ * vira lance. São as três travas acima mais a NEGAÇÃO e o EMBUTIDO.
+ *
  * RODADA 8 (P139): `embutido` entra na trava. Quem diz "meu lance é 30 mil, tudo embutido" está
  * nomeando o dinheiro da CARTA, não uma reserva dele — `cenarios.ts` transformaria o campo em
  * `ownCashAvailable` e a proposta sairia com dinheiro que o cliente não tem. */
-const TRAVA_DA_MENSAGEM =
-	/\?|\b(n[ãa]o|nem|nunca|jamais|sem|zero|tenho\s+que|tem\s+que|teria\s+que|precis\w*|falt\w*|exig\w*|obrigat\w*|embutid\w*|se\s+eu|caso|tivesse|teria|quanto|quantos|quantas|qual|quais|quando|onde|quem|cad[êe]|ser[áa])\b/i;
+const TRAVA_DA_MENSAGEM = new RegExp(
+	`(?:${TRAVA_DA_CLAREZA.source})|(?:${TRAVA_DA_NEGACAO.source})|(?:${TRAVA_DO_EMBUTIDO.source})`,
+	"i",
+);
 
-/** As DUAS travas que ZERAM a reserva (rodada 9, P139), do conjunto da trava da mensagem:
- * NEGAÇÃO e EMBUTIDO. As outras formas derrubam a CAPTURA, porque o número pode estar ao lado
- * da palavra sem que o cliente diga que tem o dinheiro; a negação e o embutido falam do
- * DINHEIRO DO CLIENTE, e por isso também sobrescrevem o que ele já tinha declarado.
+/** As DUAS travas que ZERAM a reserva (rodada 9, P139): NEGAÇÃO e EMBUTIDO. A negação e o
+ * embutido falam do DINHEIRO DO CLIENTE, e por isso sobrescrevem o que ele já tinha declarado.
  *
- * Elas só valem sobre uma mensagem que nomeia `lance`/`entrada`, e só zeram quando JÁ EXISTE
- * reserva persistida: sem reserva anterior não há o que sobrescrever, e a fala isolada continua
- * sem gravar lance. É como a tabela de P139 a lê — "quero um carro de 80 mil, sem entrada" é o
- * preço do BEM perto da palavra, não uma retirada de lance. */
-const TRAVA_DA_NEGACAO = /\b(n[ãa]o|nem|nunca|jamais|sem|zero|nada)\b/i;
-const TRAVA_DO_EMBUTIDO = /\bembutid\w*/i;
-
-/** A fala NEGA ou EMBUTE o dinheiro do lance: marcador de lance/entrada na mensagem e uma das duas
- * travas que zeram. É o que fecha a transição no turno, porque a retratação depende da reserva já
- * gravada, não desta fala sozinha. */
+ * Elas só valem sobre uma mensagem que nomeia `lance`/`entrada`, só zeram quando JÁ EXISTE reserva
+ * persistida, e — rodada 10 (P139) — só quando a fala é uma DECLARAÇÃO: com pergunta, hipótese ou
+ * obrigação, a retratação não aconteceu e a reserva fica como está. Sem reserva anterior não há o
+ * que sobrescrever, e a fala isolada continua sem gravar lance. É como a tabela de P139 a lê —
+ * "quero um carro de 80 mil, sem entrada" é o preço do BEM perto da palavra, não uma retirada. */
 function negouOuEmbutiuOLance(texto: string | null | undefined): boolean {
 	if (!texto) return false;
 	if ((texto.match(MARCADORES_DE_LANCE) ?? []).length === 0) return false;
+	// RODADA 10 (P139): as MESMAS travas que já impedem a captura impedem o ZERO. Pergunta,
+	// hipótese e obrigação/falta não mexem na reserva; só a declaração afirmativa retrata.
+	if (TRAVA_DA_CLAREZA.test(texto)) return false;
 	return TRAVA_DA_NEGACAO.test(texto) || TRAVA_DO_EMBUTIDO.test(texto);
 }
 

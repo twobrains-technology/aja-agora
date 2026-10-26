@@ -423,6 +423,10 @@ describe("P139/P212 — a frase decide: pontuação e rótulo não trocam lance 
 		// O que o cliente diz sem pontuação nenhuma e o que ele só pergunta.
 		// lado seguro: fora dos moldes (onda 17) — verbo de intenção, não dos moldes
 		{ fala: "o lance seria de uns 30 mil", lance: {}, bem: {} },
+		// RODADA 10 / P139 — as travas são UMA só e valem nas duas decisões: `nada` entra na captura
+		// (a trava de negação é a mesma) e `seria`/`e se` entram na hipótese.
+		{ fala: "meu lance é 30 mil, nada de reserva", lance: {}, bem: {} },
+		{ fala: "meu lance seria 30 mil", lance: {}, bem: {} },
 		{ fala: "lance é 30 mil?", lance: {}, bem: {} },
 		{ fala: "será que com 30 mil de lance eu consigo?", lance: {}, bem: {} },
 
@@ -648,6 +652,67 @@ describe("P139 (rodada 9) — a transição zera a reserva anterior, até o card
 
 	// Morde: sem a trava de negação/embutido, os cinco casos acima ficam com 30000; sem o teste
 	// de PRESENÇA, só o zero capturado volta a ser descartado.
+});
+
+// RODADA 10 / P139 — a RETRATAÇÃO precisa ser DECLARAÇÃO AFIRMATIVA.
+//
+// Na rodada 9 `negouOuEmbutiuOLance` passou a zerar a reserva com marcador + negação, mas a trava
+// de pergunta/hipótese/obrigação continuou só na CAPTURA: uma hipótese que contém `não` apaga o
+// dinheiro que o cliente já tinha confirmado. "Se eu não tivesse lance, quanto ficaria a parcela?"
+// pergunta um cenário, não retira a reserva — na `main` a reserva confirmada continuava sendo a
+// fonte dos cenários (`qualify-state.ts:225`). As MESMAS travas de `lanceDaFala` passam a valer
+// também na decisão de zerar.
+//
+// Cada caso roda dois turnos na MESMA conversa, partindo de «Tenho 30 mil de lance.»: a reserva na
+// metadata e `ownCashAvailable` do cenário seguinte (`provavel.ownResourcesValue`) são o que morde.
+describe("P139 (rodada 10) — pergunta, hipótese e obrigação com negação não apagam a reserva", () => {
+	type Caso = { fala: string; reserva: number };
+
+	const casos: Caso[] = [
+		// Hipótese e pergunta: o cliente imagina um cenário, não retira o dinheiro.
+		{ fala: "Se eu não tivesse lance, quanto ficaria a parcela?", reserva: 30_000 },
+		{ fala: "E se eu não der lance?", reserva: 30_000 },
+		{ fala: "Caso eu não tenha lance, como fica?", reserva: 30_000 },
+		{ fala: "Não precisa de lance?", reserva: 30_000 },
+		// A hipótese sozinha, sem pontuação de pergunta: é a alternativa `e se` que trava aqui.
+		{ fala: "E se não dá, de lance eu não tenho nada.", reserva: 30_000 },
+		// Obrigação/falta com negação dentro: é o dinheiro que falta, não uma retratação.
+		{ fala: "Preciso de 30 mil de lance, não dá pra agora.", reserva: 30_000 },
+		// A retratação dita como PERGUNTA não é retratação: aqui só `?` trava.
+		{ fala: "Não tenho mais os 30 mil de lance?", reserva: 30_000 },
+		// As retratações afirmativas continuam zerando.
+		{ fala: "Não tenho mais os 30 mil de lance.", reserva: 0 },
+		{ fala: "De lance, não tenho nada.", reserva: 0 },
+		{ fala: "Meu lance é 30 mil, tudo embutido.", reserva: 0 },
+		{ fala: "Meu lance: R$ 0", reserva: 0 },
+	];
+
+	function bolsoDoCard(payload: Record<string, unknown> | undefined): number {
+		return (payload?.scenarios as { provavel: { ownResourcesValue: number } }).provavel
+			.ownResourcesValue;
+	}
+
+	it.each(casos)("«$fala» deixa a reserva em $reserva", async ({ fala, reserva }) => {
+		const conversationId = await novaConversa();
+		const card = { tipo: "scenarios" as const, payload: { groupId: CARTA.id } };
+
+		const primeiro = await rodarTurno({ conversationId, userText: "Tenho 30 mil de lance.", card });
+		await primeiro.fechar();
+		const segundo = await rodarTurno({ conversationId, userText: fala, card });
+		await segundo.fechar();
+
+		// Morde: com a trava só na captura, os sete casos de pergunta, hipótese e obrigação ficam zerados.
+		const qualify = await qualifyDa(conversationId);
+		expect(qualify.lanceValue).toBe(reserva);
+
+		// O card do segundo turno lê a mesma reserva: `ownCashAvailable` é o bolso do cliente.
+		const depois = cardDoTurno(segundo.eventos, "scenarios");
+		const esperado =
+			reserva === 0 ? cenariosDaCarta(CARTA) : cenariosDaCarta(CARTA, { lanceDeclarado: reserva });
+		expect(depois).toEqual(esperado);
+		// `ownCashAvailable` entra no bolso do `provavel` até o tamanho do lance do cenário.
+		expect(bolsoDoCard(depois)).toBe(Math.min(reserva, esperado.scenarios.provavel.lanceValue));
+	});
 });
 
 describe("P139 — o prazo declarado na fala é o default do dial", () => {
