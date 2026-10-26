@@ -165,11 +165,14 @@ describe("P139 — pergunta e negativa NÃO são dinheiro disponível", () => {
 		expect(declaracaoDoTurno("preciso ter 30 mil de lance?")).toEqual({});
 	});
 
-	it("a negativa não apaga o que o cliente AFIRMOU na oração seguinte", () => {
+	it("a trava é da MENSAGEM inteira: negação em qualquer frase derruba o lance", () => {
+		// RODADA 6: a trava é da mensagem, não da frase. "Não tenho 30 mil de lance.
+		// Meu lance é de 10 mil" continua pendente — o modelo pergunta de novo em vez
+		// de os cenários usarem uma reserva que a própria fala põe em dúvida.
 		expect(lanceEPrazoDoTurno("não tenho 30 mil de lance, mas tenho 10 mil")).toEqual({});
-		expect(lanceEPrazoDoTurno("não tenho 30 mil de lance. meu lance é de 10 mil")).toEqual({
-			lanceValue: 10_000,
-		});
+		expect(lanceEPrazoDoTurno("não tenho 30 mil de lance. meu lance é de 10 mil")).toEqual({});
+		// A metade positiva, sozinha, vale: é ela que a trava estava derrubando.
+		expect(lanceEPrazoDoTurno("meu lance é de 10 mil")).toEqual({ lanceValue: 10_000 });
 	});
 
 	// RODADA 5 / P139 — a negação vem DEPOIS do número e o dinheiro era gravado
@@ -215,6 +218,32 @@ describe("P139 — pergunta e negativa NÃO são dinheiro disponível", () => {
 
 		// Morde: com o dinheiro gravado, o `provavel` carregaria 30 mil do bolso do
 		// cliente. Sem ele, o cenário é o de sempre — o embutido cobre o lance.
+		expect(cardDoTurno(turno.eventos, "scenarios")).toEqual(cenariosDaCarta(CARTA));
+		const provavel = (
+			cardDoTurno(turno.eventos, "scenarios")?.scenarios as {
+				provavel: { ownResourcesValue: number };
+			}
+		).provavel;
+		expect(provavel.ownResourcesValue).toBe(0);
+
+		const qualify = await qualifyDa(conversationId);
+		expect(qualify.lanceValue).toBeUndefined();
+	});
+
+	// RODADA 6 / P139 — "faltam 30 mil" atravessava a lista de negações da onda 15
+	// e entrava como recurso próprio. É o dinheiro que falta, não o que o cliente
+	// tem: os cenários passavam a usar uma reserva inexistente.
+	it("o turno com 'faltam 30 mil' chega aos cenários SEM dinheiro do cliente", async () => {
+		const conversationId = await novaConversa();
+		const turno = await rodarTurno({
+			conversationId,
+			userText: "Ainda faltam 30 mil para o lance.",
+			card: { tipo: "scenarios", payload: { groupId: CARTA.id } },
+		});
+		await turno.fechar();
+
+		// Morde: gravado, o `provavel` carregaria 30 mil de quem disse que ainda
+		// precisa deles. Sem isso, o cenário é o de sempre.
 		expect(cardDoTurno(turno.eventos, "scenarios")).toEqual(cenariosDaCarta(CARTA));
 		const provavel = (
 			cardDoTurno(turno.eventos, "scenarios")?.scenarios as {
@@ -283,7 +312,12 @@ describe("P139/P212 — a frase decide: pontuação e rótulo não trocam lance 
 		// Lance em PERGUNTA — o cliente quer saber, não declarou ter.
 		{ fala: "30 mil de lance?", lance: {}, bem: {} },
 		{ fala: "30 mil de lance???", lance: {}, bem: {} },
-		{ fala: "Quanto de lance? 30 mil?", lance: {}, bem: {} },
+		// Paridade com a main também no BEM (P212): `parseAssetValue` roda sobre o
+		// texto ORIGINAL (`a2bc3024:src/lib/agent/orchestrator/analyze.ts:230`) e aqui
+		// o 30 mil está numa oração SEM marcador — a máscara do lance não o alcança,
+		// então ele é lido como valor do bem, como a main lia. O que não se grava é o
+		// LANCE: pergunta não é afirmação de posse (P139).
+		{ fala: "Quanto de lance? 30 mil?", lance: {}, bem: { valorDoBem: 30_000 } },
 		{ fala: "preciso ter 30 mil de lance?", lance: {}, bem: {} },
 		// Lance NEGADO — dizer que não tem não é ter.
 		{ fala: "não tenho 30 mil de lance", lance: {}, bem: {} },
@@ -333,14 +367,17 @@ describe("P139/P212 — a frase decide: pontuação e rótulo não trocam lance 
 			lance: { lanceValue: 30_000 },
 			bem: { categoria: "auto", valorDoBem: 80_000 },
 		},
+		// RODADA 6 / P139 — marcar o dinheiro como sendo do lance NÃO é dizer que o
+		// cliente o tem. Sem verbo de posse, o lado seguro é não gravar o lance — e o
+		// preço do bem continua sendo o bem.
 		{
 			fala: "quero um carro de 80 mil com 20 mil de lance",
-			lance: { lanceValue: 20_000 },
+			lance: {},
 			bem: { categoria: "auto", valorDoBem: 80_000 },
 		},
 		{
 			fala: "80 mil de carro, 30 mil de lance",
-			lance: { lanceValue: 30_000 },
+			lance: {},
 			bem: { categoria: "auto", valorDoBem: 80_000 },
 		},
 		// O que o cliente diz sem pontuação nenhuma e o que ele só pergunta.
@@ -408,7 +445,56 @@ describe("P139/P212 — a frase decide: pontuação e rótulo não trocam lance 
 			lance: { lanceValue: 30_000 },
 			bem: { categoria: "auto", valorDoBem: 80_000 },
 		},
-		{ fala: "80 mil de lance", lance: { lanceValue: 80_000 }, bem: {} },
+		// Fragmento nu: o número é do lance e sai do caminho do bem, mas ninguém
+		// AFIRMOU tê-lo — o caso clássico de "quanto de lance?" respondido só com o
+		// número (P139, rodada 6).
+		{ fala: "80 mil de lance", lance: {}, bem: {} },
+		// RODADA 6 / P212 — o vão LARGO sem afirmação é o preço do bem dito perto da
+		// palavra: a máscara do lance não pode levá-lo junto.
+		{
+			fala: "quero um carro de 80 mil sem entrada",
+			lance: {},
+			bem: { categoria: "auto", valorDoBem: 80_000 },
+		},
+		{
+			fala: "Quanto de entrada pra um carro de 80 mil?",
+			lance: {},
+			bem: { categoria: "auto", valorDoBem: 80_000 },
+		},
+		{
+			fala: "o carro de 80 mil tem lance de quanto?",
+			lance: {},
+			bem: { categoria: "auto", valorDoBem: 80_000 },
+		},
+
+		// RODADA 6 / P139 — a TRAVA DA MENSAGEM. Falta, obrigação, hipótese e
+		// pergunta disfarçada são o dinheiro que o cliente NÃO tem; a onda 15
+		// enumerava negações e cada rodada trazia uma forma nova. Depois da trava,
+		// nada na mensagem vira lance.
+		{ fala: "Ainda faltam 30 mil para o lance.", lance: {}, bem: {} },
+		{ fala: "faltam 30 mil de entrada", lance: {}, bem: {} },
+		{ fala: "tenho que dar 30 mil de lance", lance: {}, bem: {} },
+		{ fala: "teria que dar 30 mil de entrada", lance: {}, bem: {} },
+		{ fala: "preciso de 30 mil de lance", lance: {}, bem: {} },
+		{ fala: "a entrada exige 30 mil", lance: {}, bem: {} },
+		{ fala: "sou obrigado a dar 30 mil de lance", lance: {}, bem: {} },
+		{ fala: "se eu der 30 mil de lance, quanto fica a parcela?", lance: {}, bem: {} },
+		{ fala: "caso eu dê 30 mil de entrada", lance: {}, bem: {} },
+		{ fala: "eu teria 30 mil de lance", lance: {}, bem: {} },
+		{ fala: "sem 30 mil de entrada não dá", lance: {}, bem: {} },
+		{ fala: "zero de entrada", lance: {}, bem: {} },
+		{ fala: "nunca juntei 30 mil de lance", lance: {}, bem: {} },
+
+		// RODADA 6 / P139 — as formas POSITIVAS da permissão, uma por verbete.
+		{ fala: "guardei 30 mil pra entrada", lance: { lanceValue: 30_000 }, bem: {} },
+		{ fala: "disponho de 30 mil de lance", lance: { lanceValue: 30_000 }, bem: {} },
+		{ fala: "consigo juntar 30 mil de entrada", lance: { lanceValue: 30_000 }, bem: {} },
+		{ fala: "posso oferecer 30 mil de lance", lance: { lanceValue: 30_000 }, bem: {} },
+		{ fala: "vou dar 30 mil de entrada", lance: { lanceValue: 30_000 }, bem: {} },
+		{ fala: "eu daria 30 mil de lance", lance: { lanceValue: 30_000 }, bem: {} },
+		// Gordura entre o dinheiro e o marcador não desfaz o que o cliente AFIRMOU.
+		{ fala: "tenho 30 mil guardados pro lance", lance: { lanceValue: 30_000 }, bem: {} },
+		{ fala: "tenho 30 mil como entrada", lance: { lanceValue: 30_000 }, bem: {} },
 	];
 
 	it.each(casos)("«$fala»", ({ fala, lance, bem }) => {

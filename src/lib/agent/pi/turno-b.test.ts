@@ -339,6 +339,32 @@ describe("L44/P212 — o valor declarado entra no estado antes da busca", () => 
 		expect(qualify.lanceValue).toBe(20_000);
 	});
 
+	// RODADA 6 / P212 — a PERGUNTA sobre o lance, na mesma fala, não pode apagar o
+	// bem declarado: no HEAD a vírgula não fechava frase, `semAsPerguntas` apagava
+	// a fala inteira terminada em `?` e o cliente saía sem `creditMax` — captura
+	// que a main fazia (`a2bc3024:src/lib/agent/orchestrator/analyze.ts:230`).
+	it("a pergunta sobre o lance NÃO apaga o bem declarado na mesma fala", async () => {
+		const fala = "Quero um carro de 80 mil, quanto de lance?";
+		expect(declaracaoDoTurno(fala)).toEqual({ categoria: "auto", valorDoBem: 80_000 });
+		expect(lanceEPrazoDoTurno(fala)).toEqual({});
+
+		const conversationId = await novaConversa();
+		const turno = await rodarTurno({
+			conversationId,
+			userText: fala,
+			beats: [{ text: "Boa escolha! O lance a gente vê com calma." }],
+		});
+		await turno.fechar();
+
+		const meta = await metaDa(conversationId);
+		expect(meta.currentCategory).toBe("auto");
+		const qualify = meta.qualifyAnswers as Record<string, unknown>;
+		expect(qualify.creditMax).toBe(80_000);
+		expect(qualify.valorDoBemAlvo).toBe(80_000);
+		// A pergunta não vira recurso próprio: quem pergunta o lance não declarou ter.
+		expect(qualify.lanceValue).toBeUndefined();
+	});
+
 	// O rótulo que liga PALAVRA a VALOR chega pelas quatro formas que o cliente
 	// usa no chat (`:`, `-`, `=`, "é de"). O `:` era o único que separava a
 	// oração: "Meu lance: R$ 30.000" deixava o dinheiro órfão e o `parseAssetValue`
@@ -363,7 +389,19 @@ describe("L44/P212 — o valor declarado entra no estado antes da busca", () => 
 		{
 			fala: "quero um imóvel de 300 mil e 50 mil de entrada",
 			bem: { categoria: "imovel", valorDoBem: 300_000 },
-			lance: 50_000,
+			// RODADA 6 / P139: atribuir 50 mil à entrada não é afirmar que o cliente
+			// os TEM (não há verbo de posse na fala), então o lance não é gravado — mas
+			// o dinheiro da entrada sai do caminho do bem.
+		},
+		// RODADA 6 / P212 — a pergunta ao lado NÃO apaga o bem declarado (a main lê o
+		// texto ORIGINAL em `analyze.ts:230`; o livre apagava a frase inteira).
+		{
+			fala: "Quero um carro de 80 mil, quanto de lance?",
+			bem: { categoria: "auto", valorDoBem: 80_000 },
+		},
+		{
+			fala: "carro de 80 mil com 30 mil de lance",
+			bem: { categoria: "auto", valorDoBem: 80_000 },
 		},
 		{ fala: "Meu lance: R$ 30.000", bem: {}, lance: 30_000 },
 		{ fala: "minha casa vale 300 mil", bem: { categoria: "imovel", valorDoBem: 300_000 } },
