@@ -228,6 +228,30 @@ describe("telefone × CPF — a mesma regra nos dois capturadores", () => {
 		});
 	});
 
+	// P188/P263 (rodada 6): o pedido NEGADO. "Não preciso do seu CPF agora."
+	// casava o verbo `preciso` e abria o contexto do CPF; o celular ambíguo que o
+	// cliente ditava depois virava identidade, e o telefone dele se perdia.
+	it("pedido de CPF negado não abre o contexto: o número ambíguo é TELEFONE", async () => {
+		const { decidirCpfDoTexto: decidirNoWhatsApp, pedidoDeCpfNoUltimoBalao: pedidoNoWhatsApp } =
+			await import("@/lib/whatsapp/identify-capture");
+
+		for (const fala of [
+			"Não preciso do seu CPF agora.",
+			"Ainda não preciso do CPF.",
+			"Sem o CPF eu não sigo com a simulação.",
+			"Me passa o CPF mais tarde.",
+		]) {
+			const pedidoDeCpf = pedidoNoWhatsApp({ role: "assistant", content: fala });
+			expect(pedidoDeCpf).toBe(false);
+			expect(decidirNoWhatsApp(AMBIGUO, { pedidoDeCpf })).toEqual({ outcome: "none" });
+			// E a declaração do cliente continua vencendo tudo (regra (a) da main).
+			expect(decidirNoWhatsApp(`meu cpf é ${AMBIGUO}`, { pedidoDeCpf })).toEqual({
+				outcome: "captured",
+				cpf: AMBIGUO,
+			});
+		}
+	});
+
 	it("exibição e DDD: lista fechada da Anatel, 11 dígitos + 9º dígito", () => {
 		expect(dddValido("11")).toBe(true);
 		expect(dddValido("28")).toBe(true);
@@ -400,10 +424,13 @@ describe("o pedido de CPF é o ATO do balão, não a menção ao dado", () => {
 			pede: true,
 			porque: "pedido do dado + instrução de formato (P263)",
 		},
+		// Rodada 6: a trava geral vale para o BALÃO INTEIRO, e a negação `sem`
+		// derruba o pedido mesmo quando ela não nega o dado ("sem pontos" é o
+		// formato). O lado seguro custa um turno: o modelo pede o CPF de novo.
 		{
 			fala: "me passa o CPF, por favor. pode digitar sem pontos",
-			pede: true,
-			porque: "pedido + instrução, sem repetir a palavra CPF",
+			pede: false,
+			porque: "negação no balão inteiro derruba o pedido",
 		},
 		// ── mais dez, cada um atacando uma palavra-chave diferente ───────────
 		{
@@ -455,6 +482,113 @@ describe("o pedido de CPF é o ATO do balão, não a menção ao dado", () => {
 			fala: "O CPF é uma informação sensível. Qual seu e-mail?",
 			pede: false,
 			porque: "explicação do dado + pedido de E-MAIL",
+		},
+		// ── rodada 6: o PEDIDO NEGADO (P188/P263) ─────────────────────────────
+		// A regressão de `9a5947dd`: `preciso` casava o verbo de pedido sem
+		// olhar a negação da frase, e "não preciso do seu CPF" abria o
+		// contexto do CPF. O celular ambíguo que o cliente ditava em seguida
+		// era gravado como identidade.
+		{
+			fala: "Não preciso do seu CPF agora.",
+			pede: false,
+			porque: "pedido NEGADO não é pedido (P188/P263, rodada 6)",
+		},
+		{
+			fala: "Não preciso do seu CPF agora. Me passa seu celular?",
+			pede: false,
+			porque: "pedido negado + pedido de CELULAR",
+		},
+		{
+			fala: "Ainda não preciso do CPF.",
+			pede: false,
+			porque: "a negação vem antes do verbo de pedido",
+		},
+		{
+			fala: "Não estou pedindo seu CPF ainda.",
+			pede: false,
+			porque: "'não estou pedindo' também nega o ato",
+		},
+		{
+			fala: "Nem preciso do CPF para simular.",
+			pede: false,
+			porque: "negação com 'nem'",
+		},
+		// ── mais dez, cada um atacando uma trava ou o ato de pedido ───────────
+		{
+			fala: "Qual é seu CPF? Depois a gente acerta os detalhes.",
+			pede: false,
+			porque: "adiamento ('depois') no balão inteiro",
+		},
+		{
+			fala: "Me passa o CPF mais tarde.",
+			pede: false,
+			porque: "adiamento explícito ('mais tarde')",
+		},
+		{
+			fala: "Deixa o CPF pra depois.",
+			pede: false,
+			porque: "adiamento ('pra depois')",
+		},
+		{
+			fala: "Sem o CPF eu não sigo com a simulação.",
+			pede: false,
+			porque: "'sem' + 'não': o balão explica a falta, não pede o dado",
+		},
+		{
+			fala: "Qual o CPF? Não precisa do celular.",
+			pede: false,
+			porque: "a negação derruba o balão mesmo com o '?' na frase do dado",
+		},
+		{
+			fala: "Seu CPF foi anotado, obrigado.",
+			pede: false,
+			porque: "constatação com 'anotado'",
+		},
+		{
+			fala: "Você pode ficar tranquilo, seu CPF fica protegido.",
+			pede: false,
+			porque: "'pode' modal sozinho não é verbo de pedido",
+		},
+		{
+			fala: "O CPF do titular é necessário para a análise. Consegue seguir?",
+			pede: false,
+			porque: "o ato de pedido tem de estar na frase DO DADO, não na vizinha",
+		},
+		{
+			fala: "CPF é só para a consulta ao birô, tá bom?",
+			pede: false,
+			porque: "pergunta que não busca o valor do dado",
+		},
+		{
+			fala: "Nunca pedi seu CPF, fica tranquilo.",
+			pede: false,
+			porque: "negação com 'nunca'",
+		},
+		// ── e o pedido de verdade continua abrindo o contexto ─────────────────
+		{
+			fala: "Preciso do CPF do titular, por favor.",
+			pede: true,
+			porque: "verbo de pedido na frase do dado",
+		},
+		{
+			fala: "Qual é o CPF? Digita aí.",
+			pede: true,
+			porque: "o '?' com 'qual' na frase do dado",
+		},
+		{
+			fala: "Me envia o CPF que está no seu documento.",
+			pede: true,
+			porque: "imperativo + complemento qualquer",
+		},
+		{
+			fala: "Cadê o CPF?",
+			pede: true,
+			porque: "'cadê' pergunta pelo valor do dado",
+		},
+		{
+			fala: "CPF, por favor.",
+			pede: true,
+			porque: "o dado sozinho com cortesia",
 		},
 	];
 

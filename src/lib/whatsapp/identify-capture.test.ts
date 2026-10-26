@@ -149,6 +149,31 @@ describe("telefone e número comprido não são CPF", () => {
 			cpf: "11900000083",
 		});
 	});
+	// P188/P263 (rodada 6): pedido NEGADO. "Não preciso do seu CPF agora." abria o
+	// contexto do CPF (o verbo `preciso` não olhava a negação), e o celular ambíguo
+	// que o cliente mandava depois podia sobrescrever o CPF que já estava guardado.
+	it("pedido de CPF negado: o celular ambíguo não vira CPF no WhatsApp", async () => {
+		const { decidirCpfDoTexto: decidirNoWhatsApp, pedidoDeCpfNoUltimoBalao: pedidoNoWhatsApp } =
+			await import("./identify-capture");
+		const pedidoDeCpf = pedidoNoWhatsApp({
+			role: "assistant",
+			content: "Não preciso do seu CPF agora.",
+		});
+		expect(pedidoDeCpf).toBe(false);
+		// CPF já guardado + celular ambíguo: a decisão é "não é CPF", então o CPF
+		// anterior não é sobrescrito e o número segue como telefone.
+		expect(decidirNoWhatsApp("11900000083", { pedidoDeCpf })).toEqual({ outcome: "none" });
+		// Nem com a insistência: o balão que pede o CPF e depois o nega continua
+		// negado.
+		expect(
+			decidirNoWhatsApp("11900000083", {
+				pedidoDeCpf: pedidoNoWhatsApp({
+					role: "assistant",
+					content: "Qual é seu CPF? Não precisa do celular.",
+				}),
+			}),
+		).toEqual({ outcome: "none" });
+	});
 });
 
 describe("o celular do fechamento nunca é um número inventado", () => {

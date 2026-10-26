@@ -148,6 +148,24 @@ describe("capturarIdentidadeDoTexto", () => {
 		expect(r.identidade).toEqual({ cpf: CPF, celular: AMBIGUO });
 	});
 
+	// P263 (rodada 6): o pedido NEGADO. "Não preciso do seu CPF agora." era lido
+	// como pedido (o verbo `preciso` sem a negação), e o celular ambíguo que o
+	// cliente mandava em seguida entrava como CPF: sobrescrevia o CPF guardado e
+	// apagava o telefone antes da captura telefônica.
+	it("CPF guardado + pedido de CPF NEGADO: CPF preservado, celular capturado", () => {
+		const AMBIGUO = "11900000083";
+		const pedidoDeCpf = pedidoDeCpfNoUltimoBalao({
+			role: "assistant",
+			content: "Não preciso do seu CPF agora.",
+		});
+		expect(pedidoDeCpf).toBe(false);
+
+		const r = capturarIdentidadeDoTexto(AMBIGUO, { cpf: CPF, celular: "" }, { pedidoDeCpf });
+		expect(r.recebeuCpf).toBe(false);
+		expect(r.recebeuCelular).toBe(true);
+		expect(r.identidade).toEqual({ cpf: CPF, celular: AMBIGUO });
+	});
+
 	it("pedido de CPF de verdade: o mesmo número ambíguo é o CPF", () => {
 		const AMBIGUO = "11900000083";
 		const pedidoDeCpf = pedidoDeCpfNoUltimoBalao({

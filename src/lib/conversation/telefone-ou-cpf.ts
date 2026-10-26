@@ -14,6 +14,14 @@
 // dado (a palavra "cpf" no texto, ou o CPF formatado, que não existe como
 // telefone) ou o agente acabou de PEDIR o CPF (`pedidoDeCpf`). Fora desse
 // contexto, o número com cara de celular continua telefone.
+//
+// O PEDIDO do agente é um PERMISSÃO, não um bloqueio (rodada 6 da auditoria):
+// ele só existe quando o balão casa uma forma POSITIVA estreita — a última frase
+// que fala do dado tem um ATO de pedido E o balão inteiro passa nas travas
+// gerais (negação, outro contato, constatação, adiamento). Qualquer outra coisa
+// cai no lado seguro: o número fica telefone e o modelo pede o CPF de novo no
+// turno seguinte. O detalhe das duas condições está em
+// `pedidoDeCpfNoUltimoBalao`, no fim deste arquivo.
 
 import { isValidCpf } from "@/lib/conversation/identity";
 
@@ -280,15 +288,23 @@ export function decidirCpfDoTexto(
 // "não houve pedido" — o número fica telefone, o CPF continua faltando e o modelo
 // pede de novo no turno seguinte. Todo empate cai para o lado seguro.
 //
-// Por isso a resposta sai de TRÊS condições sobre o BALÃO INTEIRO, sem juntar
-// orações e sem apagar pontuação (cada rodada de auditoria achou um contraexemplo
-// novo de uma heurística que refinava a leitura da oração anterior):
-//   1. o balão fala de CPF (`cpf` como palavra);
-//   2. o balão PEDE alguma coisa: uma frase que busca um valor ("qual o cpf?") ou
-//      um verbo de pedido ("envie", "me passa", "preciso do");
-//   3. o balão não pede OUTRO dado (celular, telefone, e-mail, nome) nem CONSTATA
-//      que o CPF já existe ("já está cadastrado", "já recebi").
-// As três juntas. Faltando uma, não é pedido de CPF.
+// LISTA DE PERMISSÃO, não de bloqueio. As rodadas 3 a 5 tentaram enumerar as
+// formas de NÃO pedir (menção explicativa, constatação cadastral, instrução de
+// formato) e a rodada 6 achou mais uma: o pedido NEGADO, "não preciso do seu
+// CPF agora" — `preciso` casava o verbo e a negação passava batido. Enumeração
+// de bloqueio nunca fecha. Invertida, a resposta exige uma forma POSITIVA
+// estreita sobre o balão:
+//   1. a ÚLTIMA frase que fala do dado (`cpf` como palavra) tem um ATO de
+//      pedido: um verbo de pedido nela, uma pergunta que busca o valor
+//      ("qual o cpf?"), ou o dado sozinho ("CPF?", "SEU CPF, POR FAVOR");
+//   2. o balão INTEIRO passa nas TRAVAS gerais abaixo — negação, menção a outro
+//      contato, constatação de que o CPF já existe, adiamento.
+// As duas juntas. Faltando uma, não é pedido de CPF.
+//
+// A "última frase que fala do dado" (e não a última frase do balão) é o que
+// mantém vivo o pedido seguido de instrução de formato: em "Qual é seu CPF?
+// Envie só os números." a instrução não pede outro dado, e o balão inteiro já
+// passa nas travas — é dela que sai o "não".
 
 /** Fronteira de palavra que ENXERGA ACENTO. Com `\b` só, "cadastrado" casava o
  *  prefixo `cadastra` (P188) e "informação" casava o verbo `informa`: o `ç` não é
@@ -301,7 +317,7 @@ function palavra(chave: string): RegExp {
 }
 
 /** O balão fala do dado. Só a palavra, sem julgar se é pedido ou constatação —
- *  quem julga são as outras duas condições. */
+ *  quem julga são o ato de pedido e as travas. */
 const MENCIONA_CPF = palavra("cpf");
 
 /** Verbo de PEDIDO do dado. "consulta", "confiro", "explico" e "recebi" ficam de
@@ -333,26 +349,48 @@ const VERBO_DE_PEDIDO = palavra(
  *  (P188, rodada 4). */
 const PALAVRA_QUE_PEDE_VALOR = palavra("qual|quais|cad[êe]");
 
-/** Outro dado/contato que o balão pode estar pedindo. Se ele pede o celular, o
- *  número que chega sozinho é o CELULAR: "Já recebi seu CPF. Qual é seu
- *  celular?" não é pedido de CPF. */
-const OUTRO_DADO = palavra("celular|telefone|whatsapp|whats|zap|e-?mail|nome|contato");
+/** Outro dado/contato que o balão menciona. Se ele fala do celular, o número
+ *  que chega sozinho é o CELULAR: "Já recebi seu CPF. Qual é seu celular?" não é
+ *  pedido de CPF. Trava do balão INTEIRO, inclusive quando a menção é permissão
+ *  ("você pode mandar por e-mail"). */
+const TRAVA_OUTRO_CONTATO = palavra("celular|telefone|whatsapp|whats|zap|e-?mail|nome|contato");
 
 /** Constatação: o balão fala do CPF como dado que JÁ EXISTE — não pede nada.
  *  Entra também aqui o que vem antes de uma instrução de formato: "Seu CPF já
  *  está cadastrado! Envie só os números" continua sendo constatação. */
-const CONSTATA_QUE_JA_TEM = palavra(
+const TRAVA_JA_TEM = palavra(
 	"cadastrad[oa]|recebi|confirmad[oa]|anotad[oa]|j[áa]\\s+(?:est[áa]|tenho|recebi)",
 );
 
-/** O dado SOZINHO no balão é um pedido: "CPF?", "SEU CPF, POR FAVOR". */
+/** Negação em qualquer lugar do balão. Largo de propósito: a rodada 6 mostrou
+ *  que "não preciso do seu CPF agora" abre o contexto do CPF quando o verbo é
+ *  lido sozinho, e que enumerar as negações deixa a próxima de fora. O preço
+ *  ("pode digitar sem pontos" também cai) é o lado seguro: o modelo pede de
+ *  novo no turno seguinte. */
+const TRAVA_NEGACAO = palavra("n[ãa]o|nem|nunca|jamais|sem");
+
+/** Adiamento: o pedido vale para DEPOIS, não para o número que chega agora.
+ *  `depois` já cobre "pra depois", e a trava de negação cobre "agora não". */
+const TRAVA_ADIAMENTO = palavra("depois|mais\\s+tarde|por\\s+enquanto");
+
+/** As travas gerais, uma por motivo de derrubar o pedido. Basta uma delas
+ *  aparecer no balão para a resposta ser "não houve pedido". */
+const TRAVAS: readonly RegExp[] = [
+	TRAVA_NEGACAO,
+	TRAVA_OUTRO_CONTATO,
+	TRAVA_JA_TEM,
+	TRAVA_ADIAMENTO,
+];
+
+/** O dado SOZINHO na frase é um pedido: "CPF?", "SEU CPF, POR FAVOR". */
 const CPF_SOZINHO = /^(?:(?:e|o|a|seu|sua)\s+)*cpf(?:\s+(?:por\s+favor|pra\s+mim|para\s+mim))?$/i;
 
-/** A pontuação que FECHA a fala separa frases (`.;:!?`, travessão e quebra de
- *  linha), e a que fecha cada uma diz se ela é interrogativa. A vírgula NÃO
- *  separa: "pode informar o CPF, por favor?" é um pedido só. As frases nunca são
- *  juntadas — foi a união de orações que criou a associação falsa da rodada 4. */
-const SEPARA_FRASE = /([^.;:!?\n\-–—]+)([.;:!?\n\-–—]*)/g;
+/** As frases do balão, cortadas por `. ! ? \n`. A pontuação que fecha a frase
+ *  vai junto, porque é ela que diz se a frase é interrogativa; a vírgula não
+ *  corta ("pode informar o CPF, por favor?" é um pedido só) e as frases nunca
+ *  são juntadas — foi a união de orações que criou a associação falsa da
+ *  rodada 4. */
+const FRASES = /[^.!?\n]+[.!?]*/g;
 
 /** Troca símbolo (emoji) e pontuação por espaço, para comparar palavras. */
 function normalizar(texto: string): string {
@@ -362,17 +400,22 @@ function normalizar(texto: string): string {
 		.trim();
 }
 
-/** O balão PEDE alguma coisa: o dado sozinho, um verbo de pedido em qualquer
- *  frase, ou uma pergunta que busca um valor. */
-function balaoPedeAlgo(fala: string): boolean {
-	if (CPF_SOZINHO.test(normalizar(fala))) return true;
-	for (const trecho of (fala ?? "").matchAll(SEPARA_FRASE)) {
-		const frase = trecho[1];
-		const interrogativa = trecho[2].includes("?");
-		if (VERBO_DE_PEDIDO.test(frase)) return true;
-		if (interrogativa && PALAVRA_QUE_PEDE_VALOR.test(frase)) return true;
-	}
-	return false;
+type Frase = { texto: string; interrogativa: boolean };
+
+function frasesDoBalao(balao: string): Frase[] {
+	return [...(balao ?? "").matchAll(FRASES)].map((achado) => ({
+		texto: achado[0],
+		interrogativa: achado[0].includes("?"),
+	}));
+}
+
+/** A frase TEM um ato de pedido: o dado sozinho, um verbo de pedido, ou uma
+ *  pergunta que busca um valor. Pergunta que não busca valor ("como funciona a
+ *  consulta do CPF?") é explicação, não pedido. */
+function frasePede(frase: Frase): boolean {
+	if (CPF_SOZINHO.test(normalizar(frase.texto))) return true;
+	if (VERBO_DE_PEDIDO.test(frase.texto)) return true;
+	return frase.interrogativa && PALAVRA_QUE_PEDE_VALOR.test(frase.texto);
 }
 
 /** O pedido de CPF é o que o ÚLTIMO balão do agente pede — sem turno do cliente
@@ -385,7 +428,12 @@ export function pedidoDeCpfNoUltimoBalao(
 ): boolean {
 	if (!ultima || ultima.role !== "assistant") return false;
 	const balao = ultima.content ?? "";
-	if (!MENCIONA_CPF.test(balao)) return false;
-	if (OUTRO_DADO.test(balao) || CONSTATA_QUE_JA_TEM.test(balao)) return false;
-	return balaoPedeAlgo(balao);
+	if (TRAVAS.some((trava) => trava.test(balao))) return false;
+	// A última frase que fala do dado é a que pode pedi-lo: uma menção anterior a
+	// ela ("já expliquei como funciona a consulta do CPF") não vale como pedido.
+	const pedido = frasesDoBalao(balao)
+		.filter((frase) => MENCIONA_CPF.test(frase.texto))
+		.pop();
+	if (!pedido) return false;
+	return frasePede(pedido);
 }
