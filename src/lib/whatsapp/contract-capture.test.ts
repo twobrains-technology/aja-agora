@@ -2,13 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { AVISO_LGPD_RE } from "@/lib/agent/pi/lgpd";
 import { metaDoFecho } from "@/lib/agent/pi/tools-livres";
-import {
-	decryptIdentity,
-	maskCpf,
-	type StoredIdentity,
-	storeIdentity,
-} from "@/lib/conversation/identity";
-import { decidirCpfDoTexto } from "@/lib/conversation/telefone-ou-cpf";
+import { decryptIdentity, type StoredIdentity, storeIdentity } from "@/lib/conversation/identity";
+import { decidirCpfDoTexto, extractCpf } from "@/lib/conversation/telefone-ou-cpf";
 
 // O módulo importa o banco; o mock dele está mais abaixo, junto do estado que o
 // caminho determinístico do fechamento escreve.
@@ -128,6 +123,13 @@ function semCpfEmClaro(objeto: unknown): void {
 	expect(JSON.stringify(objeto) ?? "").not.toContain(CPF_EM_CLARO);
 }
 
+/** P288 (rodada 15) — a garantia estrutural, não o tamanho do trecho: o comprovante não tem
+ * dígito nenhum. Contar trechos com a delimitação do guarda deixava `sim, (529)(982)(247)(25)`
+ * passar com três trechos de 3 dígitos — o número continuava extraível pelo capturador. */
+function semDigito(texto: string): void {
+	expect(texto).not.toMatch(/\d/);
+}
+
 vi.mock("@/db", () => ({
 	db: {
 		query: {
@@ -224,9 +226,14 @@ describe("o aviso de LGPD é gravado antes de o CPF valer como proposta", () => 
 		expect(resultado).toEqual({ handled: true, outcome: "fire" });
 		expect(estado.meta.lgpdAceite).toBeTruthy();
 		// P288: o registro continua sendo a fala do cliente, mas mascarada — nenhum CPF
-		// completo no meta, com ou sem pontuação. O que o atendente lê é `***.***.247-25`.
-		expect(estado.meta.lgpdAceite?.fala).toBe(maskCpf("529.982.247-25"));
+		// completo no meta, com ou sem pontuação. Rodada 15: o comprovante não tem dígito NENHUM, e
+		// os 5 dígitos que `maskCpf` deixava legíveis viram `#`. O atendente lê `***.***.###-##`, e
+		// nenhuma sequência deste meta é CPF extraível pelo reconhecedor compartilhado.
+		expect(estado.meta.lgpdAceite?.fala).toBe("***.***.###-##");
 		semCpfEmClaro(estado.meta);
+		// O teste morde o `#`: sem a garantia estrutural, `***.***.247-25` continua sendo o mesmo
+		// CPF que `extractCpf` lê — só com três dígitos pintados.
+		expect(extractCpf(estado.meta.lgpdAceite?.fala ?? "")).toBeNull();
 	});
 
 	it("no stage confirm, o aceite explícito registra o lgpdAceite", async () => {
@@ -300,7 +307,10 @@ describe("o aviso de LGPD é gravado antes de o CPF valer como proposta", () => 
 		// P288: a fala é comprovante mascarado, não o número. O mesmo `scrubCpf` que
 		// protege a fala do cliente protege o registro.
 		const aceite = aceiteDoDisparo(meta, "meu cpf é 529.982.247-25");
-		expect(aceite?.fala).toBe(`meu cpf é ${maskCpf("529.982.247-25")}`);
+		// Rodada 15: o comprovante não tem dígito — os 5 que `maskCpf` deixa legíveis são o que
+		// `extractCpf` ainda leria como o mesmo CPF. O atendente lê `***.***.###-##`.
+		expect(aceite?.fala).toBe("meu cpf é ***.***.###-##");
+		semDigito(aceite?.fala ?? "");
 		semCpfEmClaro(aceite);
 	});
 
@@ -334,9 +344,8 @@ describe("P288 — o aceite persistido nunca leva CPF em claro", () => {
 			},
 			falaDoCliente: "meu cpf é 529.982.247-25, pode usar meus dados",
 		});
-		expect(meta.lgpdAceite?.fala).toBe(
-			`meu cpf é ${maskCpf("529.982.247-25")}, pode usar meus dados`,
-		);
+		expect(meta.lgpdAceite?.fala).toBe("meu cpf é ***.***.###-##, pode usar meus dados");
+		semDigito(meta.lgpdAceite?.fala ?? "");
 		semCpfEmClaro(meta);
 	});
 
@@ -353,14 +362,14 @@ describe("P288 — o aceite persistido nunca leva CPF em claro", () => {
 		const { captureContractText } = await import("./contract-capture");
 		const resultado = await captureContractText("5511987654321", fala);
 		expect(resultado).toEqual({ handled: true, outcome: "fire" });
-		// P288 (rodada 14): o comprovante não guarda número. O telefone vizinho sai junto — a
-		// garantia do registro é a fala SEM número, não o número legível — e os 5 dígitos que
-		// `maskCpf` deixa visíveis somem com ele, porque formam um trecho de 16 dígitos com o
-		// celular na sequência. CPF sozinho continua `***.***.247-25` (teste acima).
-		expect(estado.meta.lgpdAceite?.fala).toBe("***.***.[número omitido]");
+		// P288 (rodadas 14 e 15): o comprovante não guarda número. O telefone vizinho sai junto — a
+		// garantia do registro é a fala SEM dígito, não o número legível: os 5 dígitos que `maskCpf`
+		// deixa visíveis são justamente o que o reconhecedor compartilhado ainda leria como CPF.
+		expect(estado.meta.lgpdAceite?.fala).toBe("***.***.###-## ## #####-####");
 		const gravado = JSON.stringify(estado.meta) ?? "";
 		semCpfEmClaro(gravado);
 		expect(gravado).not.toContain("529.982.247-25");
+		expect(extractCpf(gravado)).toBeNull();
 		// A identidade continua guardada, e a única cópia persistida é a CIFRADA —
 		// mascarar a fala não pode perder o CPF que `storeIdentity` acabou de cifrar.
 		expect(estado.meta.identityEnc).toContain("v1.");
@@ -382,33 +391,24 @@ describe("P288 — o aceite persistido nunca leva CPF em claro", () => {
 	});
 });
 
-// P288 (rodada 14) — o comprovante gravado, conferido no OBJETO que `persistMeta` recebe.
-// As falas abaixo têm CPF com separadores que o molde por regex não alcança (espaço em volta
-// do hífen, barra) e número na sequência. A garantia é POR TRECHO numérico: nenhum com 8+ dígitos
-// — assim `R$ 60.000` continua legível e o telefone/CPF do cliente não ficam persistidos fora da
-// identidade cifrada. O teste morde: tirar `comprovanteDeAceite` e voltar para o `scrubCpf`
-// sozinho deixa `52998224725` no meta gravado.
-describe("P288 (rodada 14) — o aceite gravado não leva CPF nem número de 8+ dígitos", () => {
+// P288 (rodadas 14 e 15) — o comprovante gravado, conferido no OBJETO que `persistMeta` recebe.
+// As falas abaixo têm CPF com separadores que o molde por regex não alcança (espaço em volta do
+// hífen, barra, parênteses) e número na sequência. A garantia é estrutural: o comprovante não tem
+// dígito nenhum, e nenhuma sequência do meta gravado é CPF para o reconhecedor compartilhado
+// (`extractCpf` em `telefone-ou-cpf.ts`) — os dois têm que ler o mesmo conjunto de separadores.
+// O teste morde: tirar `comprovanteDeAceite` e voltar para o `scrubCpf` sozinho deixa
+// `52998224725` no meta gravado; contar só "trecho de 8+ dígitos" deixa `sim, (529)(982)(247)(25)`
+// passar com três trechos de 3 dígitos.
+describe("P288 (rodadas 14 e 15) — o aceite gravado não leva dígito nem CPF extraível", () => {
 	beforeEach(() => {
 		estado.meta = {};
 		estado.textos.length = 0;
 		estado.chamadasStartContract.length = 0;
 	});
 
-	// Contado por trecho, não pelo total: um meta com `R$ 60.000 em 114 meses` tem 12 dígitos
-	// somados e nenhum trecho de 8+.
-	function maiorTrechoNumérico(texto: string): number {
-		let max = 0;
-		for (const trecho of texto.match(/\d[\d.\-\s/]*\d|\d/g) ?? []) {
-			const digitos = [...trecho].filter((c) => c >= "0" && c <= "9").length;
-			if (digitos > max) max = digitos;
-		}
-		return max;
-	}
-
-	// O `identityEnc` não se confere por trecho numérico: é base64url e pode ter 11 dígitos por
-	// acaso — é a única cópia que deve existir, e está cifrada. O que não pode ter número em claro
-	// é o comprovante.
+	// `identityEnc` entra na conta: é base64url e poderia ter 11 dígitos por acaso que validam no
+	// DV — é a única cópia que deve existir, e está cifrada. O que não pode guardar número em claro
+	// é o comprovante, e a checagem é pelo reconhecido, não pelo tamanho de um trecho.
 	const falas = [
 		"sim, 529.982.247 - 25 11 98765-4321",
 		"sim, meu CPF é 52998224725 11987654321",
@@ -417,10 +417,12 @@ describe("P288 (rodada 14) — o aceite gravado não leva CPF nem número de 8+ 
 		"sim, 11987654321529.982.247-25",
 		"sim, 11 98765-4321 é o telefone e 52998224725 é o cpf",
 		"sim, 529.982.247-25 11 98765-4321",
+		"sim, (529)(982)(247)(25)",
+		"sim, meu CPF é 529.982(247)-25",
 	];
 
 	for (const fala of falas) {
-		it(`o meta gravado de "${fala}" não contém CPF nem número de 8+ dígitos`, async () => {
+		it(`o meta gravado de "${fala}" não contém CPF extraível nem dígito na fala`, async () => {
 			estado.meta = {
 				...metaBase,
 				contractCollection: { stage: "confirm", avisoLgpdEm: "2026-10-25T12:00:00.000Z" },
@@ -430,11 +432,14 @@ describe("P288 (rodada 14) — o aceite gravado não leva CPF nem número de 8+ 
 			expect(resultado).toEqual({ handled: true, outcome: "fire" });
 			const gravado = JSON.stringify(estado.meta) ?? "";
 			semCpfEmClaro(gravado);
+			// Nenhuma sequência do meta é CPF para o reconhecedor compartilhado. O blob cifrado não
+			// é lido como número por acaso, e o comprovante não pode ser a segunda cópia.
+			expect(extractCpf(gravado)).toBeNull();
 			expect(gravado).not.toContain("529.982.247-25");
 			expect(gravado).not.toContain("529.982.247 - 25");
-			// O número se confere na FALA: `em` é o instante ISO do registro e tem 8 dígitos
-			// na data (`2026-10-25`) — não é o dado do cliente, e o comprovante não guarda número.
-			expect(maiorTrechoNumérico(estado.meta.lgpdAceite?.fala ?? "")).toBeLessThan(8);
+			expect(gravado).not.toContain("(529)(982)(247)(25)");
+			// O comprovante é a FALA: sem dígito nenhum, qualquer que seja o separador.
+			semDigito(estado.meta.lgpdAceite?.fala ?? "");
 			// A fala do cliente continua registrada — o que sai é o número, não o aceite.
 			expect(estado.meta.lgpdAceite?.fala).toContain("sim");
 		});
@@ -452,8 +457,8 @@ describe("P288 (rodada 14) — o aceite gravado não leva CPF nem número de 8+ 
 			},
 			falaDoCliente: "sim, 529.982.247 - 25 11 98765-4321",
 		});
-		expect(meta.lgpdAceite?.fala).toBe("sim, ***.***.[número omitido]");
-		expect(maiorTrechoNumérico(meta.lgpdAceite?.fala ?? "")).toBeLessThan(8);
+		expect(meta.lgpdAceite?.fala).toBe("sim, ***.***.###-## ## #####-####");
+		semDigito(meta.lgpdAceite?.fala ?? "");
 	});
 });
 

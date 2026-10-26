@@ -5,20 +5,26 @@
 // dos argumentos de uma tool, quem lê é o cliente.
 //
 //  · `scrubCpf`           — mascara o que valida como CPF, por janela de 11 dígitos;
-//  · `comprovanteDeAceite` — o registro do aceite: a fala sem número de 8+ dígitos;
+//  · `comprovanteDeAceite` — o registro do aceite: a fala sem dígito nenhum;
 //  · `isJsonFragmentLeak` — o segmento é um fragmento de JSON de argumentos;
 //  · `isInternalToolLeak` — o segmento cita o nome literal de uma tool.
 import { isValidCpf, maskCpf } from "@/lib/conversation/identity";
 
-/** Um TRECHO NUMÉRICO: a sequência MÁXIMA de dígitos e separadores `[.\-\s/]`, começando e
- * terminando em dígito. É a unidade que o guarda lê, em vez de um molde de formato (3-3-3-2): as
- * bordas de dígito impedem o trecho de começar ou terminar dentro do número vizinho.
+/** Um TRECHO NUMÉRICO: a sequência MÁXIMA de dígitos e separadores, começando e terminando em
+ * dígito. É a unidade que o guarda lê, em vez de um molde de formato (3-3-3-2): as bordas de
+ * dígito impedem o trecho de começar ou terminar dentro do número vizinho.
  *
- * P288 (reauditorias 13 e 14) — o remendo por formato parou. A passada gulosa juntava o CPF ao
- * celular ditado na sequência (`529.982.247 - 25 11` = 13 dígitos) e devolvia o trecho em claro; o
- * molde canônico não admitia o espaço em volta do traço. O que faz um número de 11 dígitos ser CPF
- * não é a pontuação: é fechar no dígito verificador. Então o guarda decide por JANELA. */
-const TRECHO_NUMERICO = /(?<!\d)\d(?:[.\-\s/]*\d)*(?!\d)/g;
+ * P288 (reauditorias 13, 14 e 15) — o remendo por formato parou, e os separadores têm que ser os
+ * do capturador. A passada gulosa juntava o CPF ao celular ditado na sequência (`529.982.247 - 25
+ * 11` = 13 dígitos) e devolvia o trecho em claro; e a delimitação antiga (ponto, hífen, espaço,
+ * barra) dividia `529.982(247)-25` em trechos que nunca fechavam os 11 dígitos, enquanto
+ * `telefone-ou-cpf.ts` (`NUMERO_DITADO`) lê parênteses entre os dígitos e captura esse número.
+ * Um número que o capturador valida como CPF não pode sobreviver legível no comprovante. O que faz
+ * um número de 11 dígitos ser CPF não é a pontuação: é fechar no dígito verificador. Então o
+ * guarda decide por JANELA, com o MESMO conjunto de separadores do capturador (mais a barra, que o
+ * guarda já lia: ele pode ler mais, nunca menos). */
+const SEPARADOR_ENTRE_DIGITOS = "[.\\-\\s()/]";
+const TRECHO_NUMERICO = new RegExp(`(?<!\\d)\\d(?:${SEPARADOR_ENTRE_DIGITOS}*\\d)*(?!\\d)`, "g");
 const GRUPO_DE_DIGITOS = /\d+/g;
 
 interface GrupoDeDigitos {
@@ -84,18 +90,14 @@ export function scrubCpf(text: string): string {
 }
 
 /** O COMPROVANTE do aceite — o que entra em `lgpdAceite.fala` (`whatsapp/contract-capture.ts` e
- * `pi/tools-livres.ts`). Não é o número: é a fala com o CPF mascarado e todo trecho numérico de
- * 8+ dígitos substituído — telefone, valor e prazo não são o consentimento e não podem ficar
- * persistidos fora da identidade cifrada. O corte de 200 chars vem DEPOIS de mascarar: `maskCpf` é
- * curto, então o truncamento nunca perde o comprovante. */
+ * `pi/tools-livres.ts`). É a fala SEM DÍGITO NENHUM: o número do cliente — CPF, telefone, valor,
+ * prazo — não é o consentimento e não pode ficar persistido fora da identidade cifrada. Nenhum
+ * dígito significa que nenhum CPF é recuperável, qualquer que seja o separador ou o tamanho do
+ * trecho; contar só o trecho de 8+ dígitos deixava `sim, (529)(982)(247)(25)` passar em três
+ * trechos de 3. O corte de 200 chars vem DEPOIS: `maskCpf` é curto, então o truncamento nunca
+ * perde o comprovante. */
 export function comprovanteDeAceite(texto: string): string {
-	return scrubCpf(texto)
-		.replace(TRECHO_NUMERICO, (trecho) => {
-			const grupos = gruposDoTrecho(trecho);
-			const digitos = digitosDosGrupos(grupos, 0, grupos.length - 1);
-			return digitos.length >= 8 ? "[número omitido]" : trecho;
-		})
-		.slice(0, 200);
+	return scrubCpf(texto).replace(/\d/g, "#").slice(0, 200);
 }
 
 /** Nomes de tool que o cliente nunca deve ler na fala do agente.

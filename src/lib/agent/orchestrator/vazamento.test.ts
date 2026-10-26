@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { NOMES_DAS_TOOLS_LIVRES } from "@/lib/agent/pi/tools-livres";
 import { maskCpf } from "@/lib/conversation/identity";
+import { extractCpf } from "@/lib/conversation/telefone-ou-cpf";
 import { comprovanteDeAceite, isInternalToolLeak, passaFinal, scrubCpf } from "./vazamento";
 
 describe("vazamento — nome de tool na fala não chega ao cliente", () => {
@@ -159,26 +160,15 @@ describe("P288 (rodada 14) — scrubCpf por janela de 11 dígitos, por fronteira
 });
 
 // P288 — o COMPROVANTE do aceite, não o número. O registro persistido (`lgpdAceite.fala`) é a
-// fala com o CPF mascarado e todo trecho numérico de 8+ dígitos fora: telefone, valor e prazo
-// não são o consentimento, e são justamente os dígitos que a janela de 11 não alcança. O corte
-// de 200 chars vem DEPOIS de mascarar, pra o truncamento nunca perder o comprovante.
+// fala SEM NENHUM dígito: o número do cliente não é o consentimento, e é justamente o que o
+// comprovante não pode guardar. O corte de 200 chars vem DEPOIS de mascarar, pra o truncamento
+// nunca perder o comprovante.
 describe("P288 — comprovanteDeAceite não guarda número", () => {
-	// A garantia é POR TRECHO, não pelo total: `R$ 60.000 em 114 meses` tem 12 dígitos somados
-	// e nenhum trecho de 8+. Contar digitos soltos deixaria o teste vermelho pelo motivo errado.
-	function maiorTrechoNumérico(texto: string): number {
-		let max = 0;
-		for (const trecho of texto.match(/\d[\d.\-\s/]*\d|\d/g) ?? []) {
-			const digitos = [...trecho].filter((c) => c >= "0" && c <= "9").length;
-			if (digitos > max) max = digitos;
-		}
-		return max;
-	}
-
-	function semNumeroDe8MaisDigitos(comprovante: string): void {
-		expect(maiorTrechoNumérico(comprovante)).toBeLessThan(8);
-		expect(comprovante).not.toContain("52998224725");
-		expect(comprovante).not.toContain("529.982.247-25");
-		expect(comprovante).not.toContain("529.982.247 - 25");
+	// A garantia não é "tem asterisco" nem um limite por tamanho de trecho: é a AUSÊNCIA de
+	// dígito. Um limite de 8+ dígitos deixa o CPF com parênteses internos inteiro na fala —
+	// `sim (529)(982)(247)(25)` são três trechos de 3 dígitos, e o número continua extraível.
+	function semDigito(comprovante: string): void {
+		expect(comprovante).not.toMatch(/\d/);
 	}
 
 	for (const fala of [
@@ -187,14 +177,23 @@ describe("P288 — comprovanteDeAceite não guarda número", () => {
 		"11987654321529.982.247-25",
 		"cpf 529/982/247-25",
 		"sim, 529 . 982 . 247 - 25, pode usar meus dados",
+		"sim (529)(982)(247)(25)",
+		"529.982.247-25 11 98765-4321",
+		"5 2 9 9 8 2 2 4 7 2 5",
 	]) {
 		it(`comprovante sem número: ${fala}`, () => {
 			const comprovante = comprovanteDeAceite(fala);
 			// A fala continua legível — só o número sai.
 			expect(comprovante).not.toBe("");
-			semNumeroDe8MaisDigitos(comprovante);
+			semDigito(comprovante);
+			expect(comprovante).not.toContain("529.982.247-25");
+			expect(comprovante).not.toContain("529.982.247 - 25");
 		});
 	}
+
+	it("a fala que não tem número sai igual", () => {
+		expect(comprovanteDeAceite("sim pode seguir")).toBe("sim pode seguir");
+	});
 
 	it("mascara antes de cortar em 200 chars", () => {
 		const comprovante = comprovanteDeAceite(`sim, ${"a".repeat(250)}`);
@@ -212,4 +211,62 @@ describe("P288 — comprovanteDeAceite não guarda número", () => {
 		expect(comprovante).toBe(`${"a".repeat(195)} ***.`);
 		expect(comprovante).not.toContain("529.982.247-25");
 	});
+});
+
+// P288 (reauditoria 15, rodada 15) — os separadores. O guarda delimitava o trecho numérico só
+// com ponto, hífen, espaço e barra; o capturador (`telefone-ou-cpf.ts`) aceita parênteses entre
+// os dígitos. Um número que o capturador lê como CPF não pode sobreviver legível no comprovante:
+// os dois têm que ler o MESMO conjunto de separadores, e a garantia estrutural é que o
+// comprovante sai sem dígito nenhum — qualquer que seja o separador.
+describe("P288 (rodada 15) — os separadores do guarda são os do capturador", () => {
+	const CPF = maskCpf("52998224725"); // ***.***.247-25
+
+	for (const fala of [
+		"(529) 982 247 (25)",
+		"cpf: (529.982.247-25)",
+		"sim, meu CPF é 529.982(247)-25",
+		"(529).(982).(247)-(25)",
+	]) {
+		it(`mascara o CPF com parênteses em ${fala}`, () => {
+			expect(scrubCpf(fala)).toContain(CPF);
+			expect(scrubCpf(fala)).not.toContain("52998224725");
+		});
+	}
+
+	// O telefone com parênteses continua telefone: a janela de 11 dígitos dele não fecha no DV,
+	// e o que muda é só o CPF.
+	it("mantém o telefone com parênteses intacto", () => {
+		const fala = "celular (11) 98765-4321";
+		expect(scrubCpf(fala)).toBe(fala);
+	});
+
+	// O teste que morde a DIVERGÊNCIA entre os dois conjuntos de separadores: os mesmos exemplos
+	// passam pelo reconhecedor compartilhado (`extractCpf`, em `telefone-ou-cpf.ts`) e pelo guarda.
+	// O conjunto do guarda é o do reconhecedor mais a barra — ele pode ler mais, nunca menos. Se o
+	// guarda deixar de ler um separador que o capturador aceita, o número é capturado e continua
+	// legível no comprovante, e este teste fica vermelho.
+	const mesmosExemplos = [
+		"sim, meu CPF é 529.982.247-25",
+		"sim, meu CPF é 529.982(247)-25",
+		"sim, meu CPF é (529) 982 247 (25)",
+		"sim, meu CPF é 529-982-247-25",
+		"sim, meu CPF é 5 2 9 9 8 2 2 4 7 2 5",
+		"sim, meu CPF é (529)982(247)(25)",
+		"sim, meu CPF é 529.982.247-25 e o celular é 11 98765-4321",
+	];
+
+	for (const fala of mesmosExemplos) {
+		it(`captura e mascara o mesmo número em ${fala}`, () => {
+			const capturado = extractCpf(fala);
+			expect(capturado).toBe("52998224725");
+			if (!capturado) throw new Error(`o capturador não leu CPF em ${fala}`);
+			// O que o capturador lê como CPF tem que ser o que o guarda mascara: se os dois
+			// conjuntos de separadores divergem, o número é capturado e o comprovante continua com
+			// ele em claro (mascarado ou não), e esta linha fica vermelha.
+			expect(scrubCpf(fala)).toContain(maskCpf(capturado));
+			const comprovante = comprovanteDeAceite(fala);
+			expect(comprovante).not.toMatch(/\d/);
+			expect(comprovante).not.toContain(capturado);
+		});
+	}
 });
