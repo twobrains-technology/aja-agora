@@ -97,6 +97,9 @@ async function falarComAFerramenta(ctx: ContextoDasTools): Promise<string> {
 }
 
 beforeEach(() => {
+	// As chamadas de um caso não podem vazar para o seguinte: há teste que afirma
+	// `startContract` chamado e teste que afirma o contrário.
+	vi.clearAllMocks();
 	mocks.reloadMeta.mockImplementation(
 		async () =>
 			({ currentCategory: "auto", qualifyAnswers: {} }) as unknown as ConversationMetadata,
@@ -166,6 +169,34 @@ describe("fazer_proposta — as três recusas de LGPD dizem coisas diferentes ao
 		expect(retorno).not.toContain("não respondeu o aviso");
 		expect(mocks.startContract).not.toHaveBeenCalled();
 		expect(ctx.cards.some((c) => c.type === "real_offer")).toBe(false);
+	});
+
+	// A recusa da oferta e a revogação podem estar na MESMA frase. A recusa do prazo
+	// não pode engolir o "não autorizo" que vem ao lado dela.
+	it("recusa do prazo não engole a revogação na mesma frase: não gera proposta", async () => {
+		mocks.loadConversationHistory.mockResolvedValue([
+			{ role: "assistant", content: AVISO_LGPD },
+			{ role: "user", content: "pode usar meus dados" },
+		]);
+		const ctx = ctxDoTurno({ userText: "Não aceito o prazo, não autorizo consultar meu CPF." });
+		const retorno = await falarComAFerramenta(ctx);
+
+		expect(retorno).toContain("REVOGOU");
+		expect(retorno).not.toContain("Peça o aceite");
+		expect(mocks.startContract).not.toHaveBeenCalled();
+		expect(ctx.cards.some((c) => c.type === "real_offer")).toBe(false);
+	});
+
+	it("recusar o prazo sozinho não revoga: o fechamento segue", async () => {
+		mocks.loadConversationHistory.mockResolvedValue([
+			{ role: "assistant", content: AVISO_LGPD },
+			{ role: "user", content: "pode usar meus dados" },
+		]);
+		const ctx = ctxDoTurno({ userText: "Não aceito o prazo." });
+		const retorno = await falarComAFerramenta(ctx);
+
+		expect(retorno).not.toContain("REVOGOU");
+		expect(mocks.startContract).toHaveBeenCalledTimes(1);
 	});
 
 	it("a revogação chegando só pelo histórico (aceite gravado antes) também não insiste", async () => {

@@ -303,6 +303,32 @@ describe("P262 — o consentimento é cronológico: recusa posterior revoga o si
 		}
 	});
 
+	// A recusa da OFERTA é uma oração; a revogação da AUTORIZAÇÃO pode ser outra, na
+	// mesma frase. Recusar o prazo não pode apagar o "não autorizo" que vem ao lado.
+	it("a recusa da oferta não neutraliza a revogação da outra oração da mesma frase", () => {
+		for (const fala of [
+			"Não aceito o prazo, não autorizo consultar meu CPF.",
+			"Não aceito o prazo e não autorizo consultar meu CPF.",
+			"Não aceito a parcela, mas não quero mais que vocês consultem meu CPF.",
+		]) {
+			const r = resolverAceiteLgpd({
+				falas: [aviso, { role: "user", content: "sim, pode usar" }],
+				falaDoCliente: fala,
+			});
+			expect(r.ok, fala).toBe(false);
+			expect(r.motivo, fala).toBe("aceite-revogado");
+		}
+	});
+
+	it("a recusa da oferta sozinha continua sem revogar o consentimento", () => {
+		const r = resolverAceiteLgpd({
+			falas: [aviso, { role: "user", content: "sim, pode usar" }],
+			falaDoCliente: "Não aceito o prazo.",
+		});
+		expect(r.ok).toBe(true);
+		expect(r.motivo).toBe("aceite-do-cliente");
+	});
+
 	it("perguntar sobre a revogação não é revogar", () => {
 		const r = resolverAceiteLgpd({
 			falas: [aviso, { role: "user", content: "sim, pode usar" }],

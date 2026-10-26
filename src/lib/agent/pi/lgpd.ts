@@ -137,10 +137,20 @@ const REVOGA_RE =
 const RECUSA_DA_OFERTA_RE =
 	/\bn[ãa]o\s+(?:aceito|autorizo|concordo|permito|quero)\s+(?:mais\s+)?(?:o|a|esse|essa|este|esta|aquele|aquela|um|uma)\s+(?:prazo|parcela|carta|plano|lance|valor|m[eê]s|meses|simula[cç][aã]o|oferta|op[cç][aã]o|administradora|embutido)\b/i;
 
+// A frase pode juntar duas orações: "não aceito o prazo, não autorizo consultar meu
+// CPF" recusa a oferta numa e revoga a autorização na outra. A exceção da oferta vale
+// para a ORAÇÃO em que ela está — não para a frase inteira.
+const ORACAO_SEP_RE = /[,;]|\s+(?:e|mas|por[ée]m|contudo|todavia|nem)\s+/i;
+
 /** O cliente revogou o consentimento que já tinha dado? Pergunta não revoga. */
 function revogaConsentimento(texto: string): boolean {
 	const frases = texto.split(/(?<=[.!?;])\s+|\n+/).filter((f) => f.trim());
-	return frases.some((f) => !ehPergunta(f) && REVOGA_RE.test(f) && !RECUSA_DA_OFERTA_RE.test(f));
+	return frases.some((frase) => {
+		if (ehPergunta(frase)) return false;
+		return frase
+			.split(ORACAO_SEP_RE)
+			.some((oracao) => REVOGA_RE.test(oracao) && !RECUSA_DA_OFERTA_RE.test(oracao));
+	});
 }
 
 export type FalaDeLgpd = { role: "user" | "assistant"; content: string };
