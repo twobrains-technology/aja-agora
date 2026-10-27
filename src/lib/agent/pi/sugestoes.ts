@@ -32,6 +32,10 @@ const MAXIMO = 40;
  * chamar?" — convite a pular justamente o dado que salva o lead (P6). A primeira versão desta
  * regex só via "seu nome" e "como você se chama"; o modelo pergunta de outros jeitos.
  */
+/** Atalhos da pergunta de NOME: nenhum botão escreve o nome pela pessoa, mas a conversa não
+ * pode parar por causa dele. Duas saídas honestas, nenhuma convidando a recusar o dado. */
+const SAIDAS_DO_NOME = ["Vamos direto às cartas", "Depois eu te digo"];
+
 const RESPOSTA_LIVRE =
 	/\b(?:seu|teu)\s+(?:primeiro\s+)?nome\b|\bcomo\s+(?:voc[êe]|vc|posso|eu\s+posso|devo)\s+(?:te\s+|lhe\s+)?(?:se\s+)?cham(?:a|ar|o|á-lo)\b|\bme\s+diz\s+(?:o\s+)?(?:seu\s+)?nome\b|\bqual\s+(?:é|e|eh)?\s*o\s+nome\b|\bposso\s+te\s+chamar\b/i;
 
@@ -104,7 +108,10 @@ export function sugestoesDaPergunta(
 ): string[] | null {
 	const texto = (pergunta ?? "").trim();
 	if (!texto.includes("?")) return null;
-	if (RESPOSTA_LIVRE.test(texto)) return null;
+	// A pergunta de NOME não tem resposta em botão, mas tem saída: seguir para as cartas ou
+	// dizer o nome depois. Nenhuma das duas recusa o dado — e a conversa anda (o auditor da
+	// bateria cobrou o requisito literal: 43 de 186 perguntas ficavam sem nenhum toque).
+	if (RESPOSTA_LIVRE.test(texto)) return SAIDAS_DO_NOME;
 
 	// A PERGUNTA é a última frase. Classificar o texto inteiro pegava palavra de uma explicação
 	// anterior ("Vou te explicar como funciona a contemplação\nFaz sentido pra você?") e oferecia

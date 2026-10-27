@@ -63,18 +63,26 @@ describe("(a) pergunta feita ⇒ opções de um toque, derivadas do momento", ()
 });
 
 describe("(b) as exceções são deliberadas", () => {
-	it("pergunta de resposta livre (o nome) não vira botão", () => {
-		expect(sugestoesDaPergunta("Qual é o seu nome?")).toBeNull();
-		expect(rotulos("Como você se chama?")).toBeUndefined();
-		// As formas que o modelo usou de verdade na R7 (28 chips genéricos caíram nelas).
+	it("pergunta de resposta livre (o nome) não tem botão que diga o nome — tem saída", () => {
+		// O auditor da bateria cobrou o requisito LITERAL do dono ("sempre ter opções de
+		// resposta automática"): 43 de 186 perguntas ficavam sem nenhum toque, quase todas
+		// a do nome. Agora a pergunta de nome traz duas saídas que não recusam o dado.
 		for (const fala of [
+			"Qual é o seu nome?",
+			"Como você se chama?",
 			"Antes de eu te ajudar, como posso te chamar?",
 			"Show, carro novo abre portas! Como posso te chamar?",
 			"Prazer! Qual é o seu primeiro nome?",
 			"Antes de eu confirmar, me diz seu nome?",
 			"Claro, vou abrir o caso para você. Antes, qual o nome?",
-		])
-			expect(sugestoesDaPergunta(fala), fala).toBeNull();
+		]) {
+			expect(sugestoesDaPergunta(fala), fala).toEqual([
+				"Vamos direto às cartas",
+				"Depois eu te digo",
+			]);
+			// Nunca um botão que empurre a pessoa a pular o contato nem "Pode seguir" solto.
+			expect(rotulos(fala), fala).not.toContain("Pode seguir");
+		}
 	});
 
 	it("card que já pede um toque dispensa o chip — nada se duplica", () => {
