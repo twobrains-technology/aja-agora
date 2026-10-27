@@ -34,6 +34,7 @@ import {
 } from "@/lib/eval/golden-asserts";
 
 import { DEFAULT_BASE_URL, sendTurn } from "./eval/chat-client.mjs";
+import { shaDoCodigo } from "./eval-sha";
 
 const BASE = DEFAULT_BASE_URL as string;
 const GOLDEN_DIR = join(import.meta.dirname, "eval", "golden");
@@ -112,16 +113,9 @@ function gitShaCurto(): string {
 	try {
 		return execSync("git rev-parse --short HEAD", { encoding: "utf8" }).trim();
 	} catch {
-		// Container não tem o binário git — lê o .git do bind mount na unha.
-		try {
-			const head = readFileSync(".git/HEAD", "utf8").trim();
-			const sha = head.startsWith("ref: ")
-				? readFileSync(`.git/${head.slice(5)}`, "utf8").trim()
-				: head;
-			return sha.slice(0, 8);
-		} catch {
-			return "sem-git";
-		}
+		// Container não tem o binário git — lê o .git na unha (`scripts/eval-sha.ts`),
+		// com o layout de WORKTREE incluído: aqui `.git` é arquivo, não diretório.
+		return shaDoCodigo(process.cwd());
 	}
 }
 
