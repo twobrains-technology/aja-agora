@@ -637,5 +637,26 @@ O que está de pé, com o comando que prova — não com relato:
 | Id de conversa fora do formato não derruba o turno | `sessao.test.ts` | sessão nasce com id gerado, turno roda |
 | Build do Next | `pnpm -s build` | typecheck do Next passa (o P1 do B2 morria aqui) |
 
-**O que ainda não está provado neste documento:** o turno real de dev no Langfuse (B5). A tabela acima é
-fechada de novo, com o trace do environment `dev`, quando o deploy terminar.
+### B5 fechado — o turno real de dev
+
+Conversa `dea48023-61f3-4692-bc81-a5b4ed742140`, dois turnos reais em
+`https://tb-dev-aja-agora.twobrainstechnology.com/api/chat`:
+
+| trace | o que tem |
+|---|---|
+| `abe65b72001e3fae361e5b3bd3f841cb` | `Conversational Turn` 19,8 s · `LLM Call` 1,77 s · **`Tool: buscar_cartas`** 14,4 s · `LLM Call` 2,67 s |
+| `0d114102c583e6f6bd02f6eb687da421` | `Conversational Turn` 4,1 s · `LLM Call` 1,84 s · **`Tool: mostrar_card`** · `LLM Call` 2,19 s |
+
+Os dois na **mesma sessão** (`session_id = conversationId`), `environment=dev`, projeto `aja-agora` — a
+tela da sessão mostra `Total traces: 2 · Total cost: $0,030566`
+(`evidencias/2026-10-27-langfuse-dev-sessao-dois-turnos.png`).
+
+**Duas armadilhas de operação que o deploy ensinou** (as duas custaram uma volta cada):
+
+1. O workflow renderiza a task definition **no início da run**: gravar o secret depois de disparar o
+   deploy deixa as chaves de fora. Grave o secret **antes**.
+2. O workflow **não registra task definition nova** — só `--force-new-deployment` (troca a imagem). Chave
+   nova no secret só chega ao container com **revisão nova** registrada. Em dev: `aja-agora-dev:13`,
+   reversível para `:12`.
+3. E a terceira, de imagem: o file tracer do Next não enxerga um módulo carregado por caminho — o
+   `Dockerfile` copia os escopos `@langfuse`/`@opentelemetry` à mão.
