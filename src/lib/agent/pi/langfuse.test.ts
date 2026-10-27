@@ -25,18 +25,34 @@ const LIGADO = {
 	LANGFUSE_SECRET_KEY: "sk-lf-def",
 } as const;
 
-describe("configDoLangfuse — o interruptor é ter as três chaves", () => {
+describe("configDoLangfuse — o interruptor é a flag MAIS as três chaves", () => {
 	it("sem nada no ambiente, desligado", () => {
 		expect(configDoLangfuse({})).toBeNull();
 		expect(langfuseLigado({})).toBe(false);
 	});
 
+	// ESTE é o caso que morde o "desligado por padrão": se alguém voltar a ligar a
+	// observabilidade só porque as chaves estão no ambiente, este teste cai. Foi o
+	// furo que o verificador achou na primeira versão do teste — a constante
+	// `LIGADO` já trazia a flag, e sem esta linha ninguém provava o contrário.
+	it("com as TRÊS chaves e SEM a flag, continua DESLIGADO", () => {
+		const semFlag: Ambiente = { ...LIGADO };
+		delete semFlag.LANGFUSE_TRACING_ENABLED;
+		expect(configDoLangfuse(semFlag)).toBeNull();
+		expect(langfuseLigado(semFlag)).toBe(false);
+		expect(caminhoDoPluginDoLangfuse(semFlag)).toBeNull();
+	});
+
 	it("com duas das três chaves, desligado (não existe meio-ligado)", () => {
 		expect(
-			configDoLangfuse({ LANGFUSE_BASE_URL: "https://x", LANGFUSE_PUBLIC_KEY: "pk-lf-a" }),
+			configDoLangfuse({ ...LIGADO, LANGFUSE_BASE_URL: undefined, LANGFUSE_SECRET_KEY: undefined }),
 		).toBeNull();
 		expect(
-			configDoLangfuse({ LANGFUSE_PUBLIC_KEY: "pk-lf-a", LANGFUSE_SECRET_KEY: "sk-lf-b" }),
+			configDoLangfuse({
+				...LIGADO,
+				LANGFUSE_PUBLIC_KEY: undefined,
+				LANGFUSE_SECRET_KEY: undefined,
+			}),
 		).toBeNull();
 	});
 
@@ -44,7 +60,7 @@ describe("configDoLangfuse — o interruptor é ter as três chaves", () => {
 		expect(configDoLangfuse({ ...LIGADO, LANGFUSE_SECRET_KEY: "   " })).toBeNull();
 	});
 
-	it("com as três, ligado — e devolve o que o plugin precisa", () => {
+	it("com a flag e as três, ligado — e devolve o que o plugin precisa", () => {
 		expect(configDoLangfuse({ ...LIGADO, LANGFUSE_TRACING_ENVIRONMENT: "dev" })).toEqual({
 			baseUrl: "https://langfuse.example.com",
 			publicKey: "pk-lf-abc",
@@ -53,13 +69,16 @@ describe("configDoLangfuse — o interruptor é ter as três chaves", () => {
 		});
 	});
 
-	it("LANGFUSE_TRACING_ENABLED=false desliga mesmo com as três (é o kill switch do plugin)", () => {
-		expect(configDoLangfuse({ ...LIGADO, LANGFUSE_TRACING_ENABLED: "false" })).toBeNull();
-		expect(configDoLangfuse({ ...LIGADO, LANGFUSE_TRACING_ENABLED: " FALSE " })).toBeNull();
+	it("a flag aceita true/1/yes/on em qualquer caixa ou com espaço", () => {
+		for (const liga of ["true", "TRUE", "1", "yes", "on", " true "]) {
+			expect(langfuseLigado({ ...LIGADO, LANGFUSE_TRACING_ENABLED: liga })).toBe(true);
+		}
 	});
 
-	it('um valor qualquer em LANGFUSE_TRACING_ENABLED NÃO desliga (o plugin só lê "false")', () => {
-		expect(langfuseLigado({ ...LIGADO, LANGFUSE_TRACING_ENABLED: "1" })).toBe(true);
+	it("e recusa false/0/no/off/vazio — mesmo com as três chaves postas", () => {
+		for (const desliga of ["false", "FALSE", "0", "no", "off", "", "   "]) {
+			expect(configDoLangfuse({ ...LIGADO, LANGFUSE_TRACING_ENABLED: desliga })).toBeNull();
+		}
 	});
 });
 
