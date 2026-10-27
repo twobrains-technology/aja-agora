@@ -23,8 +23,17 @@ export type MomentoDaConversa = {
 /** Teto de rótulo: botão é toque, não frase. O mesmo limite de `chips.ts`. */
 const MAXIMO = 40;
 
-/** Perguntas de RESPOSTA LIVRE: nenhum botão responde por ela. Hoje, o nome. */
-const RESPOSTA_LIVRE = /\b(?:seu|teu)\s+nome\b|\bcomo\s+(?:voc[êe]|vc)\s+se\s+chama\b/i;
+/**
+ * Perguntas de RESPOSTA LIVRE: nenhum botão responde por ela — e um botão genérico ali é pior
+ * que nenhum. Hoje, o nome.
+ *
+ * Medido na rodada de produção de 27/10 (R7, modelo de produção, 155 perguntas do agente): **28**
+ * `quick_reply` genéricos ("Pode seguir / Tenho uma dúvida") caíram logo depois de "como posso te
+ * chamar?" — convite a pular justamente o dado que salva o lead (P6). A primeira versão desta
+ * regex só via "seu nome" e "como você se chama"; o modelo pergunta de outros jeitos.
+ */
+const RESPOSTA_LIVRE =
+	/\b(?:seu|teu)\s+(?:primeiro\s+)?nome\b|\bcomo\s+(?:voc[êe]|vc|posso|eu\s+posso|devo)\s+(?:te\s+|lhe\s+)?(?:se\s+)?cham(?:a|ar|o|á-lo)\b|\bme\s+diz\s+(?:o\s+)?(?:seu\s+)?nome\b|\bqual\s+(?:é|e|eh)?\s*o\s+nome\b|\bposso\s+te\s+chamar\b/i;
 
 /** Um tipo de pergunta → as respostas que a pessoa daria, na voz dela. */
 type TipoDePergunta = { quando: RegExp; opcoes: string[] };

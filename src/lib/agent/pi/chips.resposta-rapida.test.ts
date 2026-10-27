@@ -66,6 +66,15 @@ describe("(b) as exceções são deliberadas", () => {
 	it("pergunta de resposta livre (o nome) não vira botão", () => {
 		expect(sugestoesDaPergunta("Qual é o seu nome?")).toBeNull();
 		expect(rotulos("Como você se chama?")).toBeUndefined();
+		// As formas que o modelo usou de verdade na R7 (28 chips genéricos caíram nelas).
+		for (const fala of [
+			"Antes de eu te ajudar, como posso te chamar?",
+			"Show, carro novo abre portas! Como posso te chamar?",
+			"Prazer! Qual é o seu primeiro nome?",
+			"Antes de eu confirmar, me diz seu nome?",
+			"Claro, vou abrir o caso para você. Antes, qual o nome?",
+		])
+			expect(sugestoesDaPergunta(fala), fala).toBeNull();
 	});
 
 	it("card que já pede um toque dispensa o chip — nada se duplica", () => {
