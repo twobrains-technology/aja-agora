@@ -165,6 +165,7 @@ describe("pi/sessao — o id da sessão é o da conversa, e só com o Langfuse l
 		const falso = await servidorFalso([]);
 		abertas.push(falso.fechar);
 		// aponta para o servidor falso: nenhum span sai da máquina
+		process.env.LANGFUSE_TRACING_ENABLED = "true";
 		process.env.LANGFUSE_BASE_URL = falso.url;
 		process.env.LANGFUSE_PUBLIC_KEY = "pk-lf-teste";
 		process.env.LANGFUSE_SECRET_KEY = "sk-lf-teste";
@@ -199,9 +200,32 @@ describe("pi/sessao — o id da sessão é o da conversa, e só com o Langfuse l
 		expect(session.hasExtensionHandlers("before_agent_start")).toBe(false);
 	}, 60_000);
 
+	it("a identidade da pessoa entra na carga e NÃO fica no ambiente depois", async () => {
+		const falso = await servidorFalso([]);
+		abertas.push(falso.fechar);
+		process.env.LANGFUSE_TRACING_ENABLED = "true";
+		process.env.LANGFUSE_BASE_URL = falso.url;
+		process.env.LANGFUSE_PUBLIC_KEY = "pk-lf-teste";
+		process.env.LANGFUSE_SECRET_KEY = "sk-lf-teste";
+
+		await abrirSessao({
+			system: "Você é o consultor.",
+			tools: [],
+			conversaId: CONVERSA,
+			userId: "wa:5511988887777",
+			provider: { id: "fake", baseUrl: `${falso.url}/v1`, apiKey: "x", model: "fake" },
+		});
+
+		// o valor vale DURANTE o load (é quando o plugin o lê) e o ambiente volta ao
+		// que era: um turno não pode deixar a identidade de uma pessoa pendurada no
+		// processo para o próximo turno de outra.
+		expect(process.env.LANGFUSE_USER_ID).toBeUndefined();
+	}, 60_000);
+
 	it("com as envs mas id de conversa fora do formato, não estoura o turno", async () => {
 		const falso = await servidorFalso([]);
 		abertas.push(falso.fechar);
+		process.env.LANGFUSE_TRACING_ENABLED = "true";
 		process.env.LANGFUSE_BASE_URL = falso.url;
 		process.env.LANGFUSE_PUBLIC_KEY = "pk-lf-teste";
 		process.env.LANGFUSE_SECRET_KEY = "sk-lf-teste";

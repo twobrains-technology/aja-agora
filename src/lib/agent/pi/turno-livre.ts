@@ -22,6 +22,7 @@ import { type MetaDaEmissao, TIPOS_DE_ESCOLHA } from "@/lib/agent/pi/cards-livre
 import { type ChipGerado, garantirChip } from "@/lib/agent/pi/chips";
 import { executarBeat } from "@/lib/agent/pi/converse";
 import { linhaFinalDoHandoff, RE_DE_PROMESSA } from "@/lib/agent/pi/handoff";
+import { userIdDoTurno } from "@/lib/agent/pi/langfuse";
 import { AVISO_LGPD_RE, garanteAvisoLgpd, PEDE_DADO_RE } from "@/lib/agent/pi/lgpd";
 import { criarNarracaoDoTurno } from "@/lib/agent/pi/narracao";
 import { persistirTurnoLivre } from "@/lib/agent/pi/persist-livre";
@@ -1254,10 +1255,19 @@ export function createRunTurnLivre(deps?: {
 				system,
 				turnMessage: (captura.textoLimpo || "(sem fala)") + naTela,
 				historico,
-				// o id da conversa vira o `session_id` do trace no Langfuse (D-0014):
-				// assim dois turnos da MESMA conversa caem na mesma sessão lá, em vez
-				// de cada turno abrir uma sessão nova. Sem as envs, não tem efeito.
+				// O RASTRO DO TURNO NO LANGFUSE (D-0014), com a regra de identidade do
+				// `origin/main`: a conversa é a sessão (`conversaId`) e a pessoa é o
+				// `userId` — cookie `AJA_UID` na web, `wa:<telefone>` no WhatsApp, e o
+				// próprio `conversationId` quando nenhum dos dois existe. O WhatsApp não
+				// manda `userKey` no `TurnInput`, então o telefone sai do `waId` da
+				// conversa, que é o mesmo em que a `main` se baseava no adapter.
+				// Sem as envs do Langfuse, nada disto tem efeito.
 				conversaId: conversationId,
+				userId: userIdDoTurno({
+					userKey: input.userKey,
+					waId: conv?.waId,
+					conversaId: conversationId,
+				}),
 				tools: semRepetirChamada(
 					toPiTools(buildToolsLivres(ctx, { buscarGrupos: deps?.busca }) as never, {
 						conversationId,

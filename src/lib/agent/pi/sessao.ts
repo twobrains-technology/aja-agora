@@ -23,7 +23,12 @@ import { join } from "node:path";
 // módulo ESM marcado como externo.
 import type * as PiPacote from "@earendil-works/pi-coding-agent";
 import type { MensagemDaConversa } from "@/lib/agent/turn/estado";
-import { caminhoDoPluginDoLangfuse, ehIdDeSessaoValido, langfuseLigado } from "./langfuse";
+import {
+	caminhoDoPluginDoLangfuse,
+	comIdentidadeDoTurno,
+	ehIdDeSessaoValido,
+	langfuseLigado,
+} from "./langfuse";
 import type { PiToolDefinition } from "./tools";
 
 type PiModule = typeof PiPacote;
@@ -111,6 +116,10 @@ export async function abrirSessao(args: {
 	 *  `session_id` no Langfuse — uma conversa é UMA sessão lá, não uma por turno.
 	 *  Sem as envs do Langfuse, este campo não tem efeito nenhum. */
 	conversaId?: string;
+	/** Chave estável da PESSOA no canal (cookie `AJA_UID` na web, `wa:<telefone>`
+	 *  no WhatsApp) — a regra do `origin/main`. Vira `userId` no trace. Sem as
+	 *  envs do Langfuse, não tem efeito nenhum. */
+	userId?: string | null;
 	/** Injetável para teste: provedor OpenAI-completions falso. */
 	provider?: { id: string; baseUrl: string; apiKey: string; model: string };
 }): Promise<SessaoAberta> {
@@ -168,7 +177,11 @@ export async function abrirSessao(args: {
 		// três envs, a lista é vazia e a sessão é exatamente a de antes.
 		additionalExtensionPaths: pluginDoLangfuse ? [pluginDoLangfuse] : [],
 	});
-	await loader.reload();
+	// A extensão do Langfuse lê `LANGFUSE_USER_ID` no instante em que é carregada, e
+	// é aqui que ela é carregada. `comIdentidadeDoTurno` põe a identidade da pessoa
+	// em volta só deste `reload()` e devolve o ambiente como estava — desligada a
+	// observabilidade, chama a função direto, sem fila.
+	await comIdentidadeDoTurno(args.userId, () => loader.reload());
 
 	const runtime = await ModelRuntime.create({
 		authPath: join(agentDir, "auth.json"),

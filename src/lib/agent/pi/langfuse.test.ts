@@ -5,18 +5,21 @@
 // interruptor por uma flag solta, ou deixar passar "duas chaves das três", é aqui
 // que estoura — antes de o vendedor gastar um turno montando span que nunca sai.
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
 	type Ambiente,
 	caminhoDoPluginDoLangfuse,
+	comIdentidadeDoTurno,
 	configDoLangfuse,
 	ehIdDeSessaoValido,
 	langfuseLigado,
 	MAX_CHARS_PADRAO,
+	userIdDoTurno,
 } from "./langfuse";
 
 const LIGADO = {
+	LANGFUSE_TRACING_ENABLED: "true",
 	LANGFUSE_BASE_URL: "https://langfuse.example.com",
 	LANGFUSE_PUBLIC_KEY: "pk-lf-abc",
 	LANGFUSE_SECRET_KEY: "sk-lf-def",
@@ -95,5 +98,81 @@ describe("caminhoDoPluginDoLangfuse — desligado não resolve nada", () => {
 		const env: Ambiente = { ...LIGADO, PI_LANGFUSE_MAX_CHARS: "1234" };
 		caminhoDoPluginDoLangfuse(env);
 		expect(env.PI_LANGFUSE_MAX_CHARS).toBe("1234");
+	});
+});
+
+describe("userIdDoTurno — a regra de identidade do origin/main", () => {
+	const CONVERSA = "4a1af177-0a58-4dc4-9d0f-2e5f0f0f6b21";
+
+	it("web: o cookie AJA_UID é a identidade", () => {
+		expect(userIdDoTurno({ userKey: "a1b2c3d4e5", waId: null, conversaId: CONVERSA })).toBe(
+			"a1b2c3d4e5",
+		);
+	});
+
+	it("WhatsApp: o telefone vira `wa:<numero>`", () => {
+		expect(userIdDoTurno({ userKey: null, waId: "5511999998888", conversaId: CONVERSA })).toBe(
+			"wa:5511999998888",
+		);
+	});
+
+	it("se o telefone já veio com o prefixo, não duplica", () => {
+		expect(userIdDoTurno({ userKey: null, waId: "wa:5511999998888", conversaId: CONVERSA })).toBe(
+			"wa:5511999998888",
+		);
+	});
+
+	it("sem chave e sem telefone, cai no conversationId (como a main fazia)", () => {
+		expect(userIdDoTurno({ userKey: null, waId: null, conversaId: CONVERSA })).toBe(CONVERSA);
+		expect(userIdDoTurno({ userKey: "   ", waId: "", conversaId: CONVERSA })).toBe(CONVERSA);
+	});
+});
+
+describe("comIdentidadeDoTurno — a env vale durante a carga e não vaza depois", () => {
+	afterEach(() => {
+		delete process.env.LANGFUSE_USER_ID;
+	});
+
+	it("põe a identidade enquanto a função roda e devolve o ambiente como estava", async () => {
+		let vistoDentro: string | undefined;
+		const r = await comIdentidadeDoTurno("wa:5511988887777", async () => {
+			vistoDentro = process.env.LANGFUSE_USER_ID;
+			return "ok";
+		});
+		expect(vistoDentro).toBe("wa:5511988887777");
+		expect(r).toBe("ok");
+		expect(process.env.LANGFUSE_USER_ID).toBeUndefined();
+	});
+
+	it("sem identidade, não entra na fila e não escreve nada", async () => {
+		let vistoDentro: string | undefined = "ainda-nao-rodou";
+		await comIdentidadeDoTurno(null, async () => {
+			vistoDentro = process.env.LANGFUSE_USER_ID;
+		});
+		expect(vistoDentro).toBeUndefined();
+	});
+
+	it("duas conversas simultâneas NÃO se contaminam (é o teste que morde da corrida)", async () => {
+		// Sem a fila, um dos dois leria a identidade do outro: o "põe" de B
+		// sobrescreve o de A antes de A terminar de carregar a extensão.
+		const lidos: string[] = [];
+		await Promise.all([
+			comIdentidadeDoTurno("pessoa-A", async () => {
+				await new Promise((r) => setTimeout(r, 30));
+				lidos.push(`A=${process.env.LANGFUSE_USER_ID}`);
+			}),
+			comIdentidadeDoTurno("pessoa-B", async () => {
+				await new Promise((r) => setTimeout(r, 5));
+				lidos.push(`B=${process.env.LANGFUSE_USER_ID}`);
+			}),
+		]);
+		expect(lidos.sort()).toEqual(["A=pessoa-A", "B=pessoa-B"]);
+		expect(process.env.LANGFUSE_USER_ID).toBeUndefined();
+	});
+
+	it("valor do operador no ambiente é restaurado, não apagado", async () => {
+		process.env.LANGFUSE_USER_ID = "do-operador";
+		await comIdentidadeDoTurno("da-conversa", async () => {});
+		expect(process.env.LANGFUSE_USER_ID).toBe("do-operador");
 	});
 });

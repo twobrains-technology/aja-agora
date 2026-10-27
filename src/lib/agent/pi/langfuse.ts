@@ -17,13 +17,14 @@
 //    ExtensionAPI)`, src/index.ts:442) — o `session_id` sai de
 //    `ctx.sessionManager.getSessionId()` (src/index.ts:605), por isso o id tem de
 //    entrar pelo `SessionManager`;
-//  · `userId` só existe por `LANGFUSE_USER_ID`/arquivo, um valor por PROCESSO
-//    (src/index.ts:108) — não há como dar a identidade da pessoa por conversa sem
-//    inventar corrida entre turnos, então o `userId` fica ausente de propósito (a
-//    pessoa continua ligada à conversa no banco, pelo `conversationId`);
-//  · `LANGFUSE_TRACING_ENABLED` só desliga no literal `"false"` (src/index.ts:89);
-//    sem chaves a factory registra um hook de status e sai (src/index.ts:442-452).
-//    Logo o interruptor de verdade é TER as chaves — e é isso que `ligado()` mede.
+//  · `userId` sai do `process.env.LANGFUSE_USER_ID` lido no `loadConfig()` da
+//    factory (src/index.ts:108,444) — ou seja, no momento em que a extensão é
+//    carregada. É por aí que a identidade da pessoa entra: `comIdentidadeDoTurno`
+//    põe o valor em volta do `loader.reload()` e tira depois;
+//  · `LANGFUSE_TRACING_ENABLED` no PLUGIN só desliga no literal `"false"`
+//    (src/index.ts:89), e sem chaves a factory registra um hook e sai
+//    (src/index.ts:442-452). Aqui a régua é mais dura e é a do pedido: **a flag
+//    tem de estar ligada** (`true`/`1`/`yes`/`on`) E as três chaves presentes.
 //  · `PI_LANGFUSE_MAX_CHARS` é lido no LOAD do módulo (src/index.ts:29), então o
 //    default tem de ser posto ANTES de o Pi carregar a extensão.
 
@@ -63,7 +64,13 @@ function texto(valor: string | undefined): string | null {
  *  montando spans que nunca saem. */
 export function configDoLangfuse(env: Ambiente = process.env): ConfigDoLangfuse | null {
 	// o plugin só desliga no literal "false" — então aqui a checagem é explícita
-	if ((env.LANGFUSE_TRACING_ENABLED ?? "").trim().toLowerCase() === "false") return null;
+	// "Desligado por padrão" ao pé da letra: sem a flag, não liga — mesmo com as
+	// três chaves presentes. O plugin sozinho faria o contrário (ele só entende o
+	// literal "false" como desligado, `src/index.ts:89`), e um app que passa a
+	// mandar trace por alguém ter exportado uma chave é um app que muda de
+	// comportamento sem ninguém pedir.
+	const flag = (env.LANGFUSE_TRACING_ENABLED ?? "").trim().toLowerCase();
+	if (!["true", "1", "yes", "on"].includes(flag)) return null;
 
 	const baseUrl = texto(env.LANGFUSE_BASE_URL);
 	const publicKey = texto(env.LANGFUSE_PUBLIC_KEY);
@@ -143,4 +150,73 @@ export function caminhoDoPluginDoLangfuse(env: Ambiente = process.env): string |
 		console.error("[langfuse] plugin indisponível — turno segue sem trace:", erro);
 		return null;
 	}
+}
+
+/** A IDENTIDADE DA PESSOA no trace — a regra do `origin/main`, agora por sessão.
+ *
+ *  O plugin lê `process.env.LANGFUSE_USER_ID` **uma vez**, dentro do `loadConfig()`
+ *  da factory (`src/index.ts:108,444`), no instante em que a extensão é carregada.
+ *  Como cada turno monta a própria sessão (`loader.reload()` por turno em
+ *  `sessao.ts`), dá para dar a cada conversa o seu `userId` — desde que ninguém
+ *  troque a variável entre o "põe" e o "a factory leu".
+ *
+ *  É isso que esta fila garante: um turno de cada vez na janela
+ *  `põe → reload → tira`. Ela custa o tempo de UM `loader.reload()` (medido: 4-5 ms
+ *  com o jiti quente) e **só existe com a observabilidade ligada** — desligada,
+ *  `comIdentidadeDoTurno` nem é chamada e o turno não passa por fila nenhuma.
+ *
+ *  As alternativas foram descartadas com motivo, não por gosto:
+ *  · `defineProperty` com getter no `process.env` lendo um `AsyncLocalStorage`
+ *    (que seria livre de fila) — o Node recusa: `ERR_INVALID_OBJECT_DEFINE_PROPERTY`;
+ *  · deixar a env sem proteção — cria corrida entre conversas simultâneas, e
+ *    atribuição ERRADA em observabilidade é pior que atribuição ausente, porque
+ *    ninguém desconfia dela depois;
+ *  · arquivo de config por sessão (`~/.pi/agent/langfuse.json`) — o caminho também
+ *    é global (`getAgentDir()` lê `PI_CODING_AGENT_DIR` do processo), mesma corrida.
+ *
+ *  O que a fila NÃO é: fila do turno. `mkdtemp`, o `ModelRuntime` e o `prompt`
+ *  ficam fora dela. */
+let filaDaIdentidade: Promise<unknown> = Promise.resolve();
+
+export async function comIdentidadeDoTurno<T>(
+	userId: string | null | undefined,
+	fn: () => Promise<T>,
+): Promise<T> {
+	const limpo = typeof userId === "string" ? userId.trim() : "";
+	if (!limpo) return fn(); // sem identidade não há por que entrar na fila
+
+	const anterior = filaDaIdentidade;
+	let liberar!: () => void;
+	filaDaIdentidade = new Promise<void>((resolver) => {
+		liberar = resolver;
+	});
+	await anterior;
+
+	const tinha = process.env.LANGFUSE_USER_ID;
+	process.env.LANGFUSE_USER_ID = limpo;
+	try {
+		return await fn();
+	} finally {
+		// restaura o que existia: o operador pode ter posto o valor dele no ambiente
+		if (tinha === undefined) delete process.env.LANGFUSE_USER_ID;
+		else process.env.LANGFUSE_USER_ID = tinha;
+		liberar();
+	}
+}
+
+/** A regra de identidade do `origin/main` (`lib/observability/langfuse/turn.ts`):
+ *  o `userId` é a chave estável da pessoa no canal — cookie `AJA_UID` na web
+ *  (`waId` ausente), `wa:<telefone>` no WhatsApp — e, quando não existe nenhuma
+ *  das duas, cai no `conversationId`. Nunca devolve vazio: um trace sem `userId`
+ *  some do agrupamento por pessoa no Langfuse. */
+export function userIdDoTurno(args: {
+	userKey?: string | null;
+	waId?: string | null;
+	conversaId: string;
+}): string {
+	const chave = args.userKey?.trim();
+	if (chave) return chave;
+	const telefone = args.waId?.trim();
+	if (telefone) return telefone.startsWith("wa:") ? telefone : `wa:${telefone}`;
+	return args.conversaId;
 }

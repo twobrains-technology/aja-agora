@@ -76,16 +76,15 @@ continua ligada à conversa no banco pelo `conversationId`.
 
 | fato | onde está |
 |---|---|
-| `langfuse.ts` **já existe** com gate, guarda de id e carregador injetável | `src/lib/agent/pi/langfuse.ts:33` (`ConfigDoLangfuse`), `:45` (`MAX_CHARS_PADRAO = "40000"`), `:56-71` (`configDoLangfuse`), `:73` (`langfuseLigado`), `:84-87` (`ehIdDeSessaoValido`), `:98-121` (`extensoesDoLangfuse`, com `carregar` injetável), `:132-134` (`carregarPluginDoLangfuse`, `import()` do caminho explícito em `:133`) |
-| `sessao.ts` **já chama** `extensoesDoLangfuse()` e passa `{ id }` guardado | `src/lib/agent/pi/sessao.ts:26` (import), `:113` (`conversaId?`), `:150-165` (`extensionFactories` com o spread), `:225-228` (`idDaSessao`), `:236` (`SessionManager.inMemory(cwd, { id }, entries)`) |
-| `converse.ts` **já repassa** `conversaId` para `abrirSessao` | `src/lib/agent/pi/converse.ts:26` (`BeatArgs.conversaId`), `:65` (`abrirSessao({ conversaId: args.conversaId })`) |
-| **falta** o turno passar o id | `src/lib/agent/pi/turno-livre.ts:1253-1265` (`executarBeat({ system, turnMessage, historico, tools })` — sem `conversaId`) |
-| **não existe** nenhum teste de `langfuse.ts` | `ls src/lib/agent/pi` não tem `langfuse.test.ts` (tem `sessao.test.ts`, `converse.test.ts`) |
+| `langfuse.ts` — gate, guarda de id, caminho do plugin e identidade por sessão | `src/lib/agent/pi/langfuse.ts:42` (`ConfigDoLangfuse`), `:54` (`MAX_CHARS_PADRAO = "40000"`), `:65-86` (`configDoLangfuse`, com a flag obrigatória), `:88` (`langfuseLigado`), `:99` (`ehIdDeSessaoValido`), `:128` (`caminhoDoPluginDoLangfuse`), `:181` (`comIdentidadeDoTurno`), `:212` (`userIdDoTurno`) |
+| `sessao.ts` — `additionalExtensionPaths` + `{ id }` guardado + identidade em volta do reload | `src/lib/agent/pi/sessao.ts:27-29` (imports), `:118` (`conversaId?`), `:122` (`userId?`), `:162` (`pluginDoLangfuse`), `:178` (`additionalExtensionPaths`), `:184` (`comIdentidadeDoTurno(…, loader.reload)`), `:246-258` (`idDaSessao` + `SessionManager.inMemory`) |
+| `converse.ts` — repassa `conversaId` e `userId` | `src/lib/agent/pi/converse.ts:26` e `:29` (`BeatArgs`), `:68-69` (`abrirSessao({…})`) |
+| `turno-livre.ts` — o turno entrega id da conversa e identidade da pessoa | `src/lib/agent/pi/turno-livre.ts:25` (import), `:1265-1269` (`executarBeat({ …, conversaId, userId: userIdDoTurno(…) })`) |
+| testes | `src/lib/agent/pi/langfuse.test.ts` (19 casos), `src/lib/agent/pi/sessao.test.ts` (6) |
 | `session.dispose()` existe em 1.3.0 e **ninguém chama** | `agent-session.d.ts:387`; `grep -rn dispose src/lib/agent/pi` → nada. O plugin só desliga o provider no hook `session_shutdown` com `reason === "quit"` (`src/index.ts:972-981`) → provider vivo até o processo morrer |
 | o plugin lê config também de `~/.pi/agent/langfuse.json` | `src/index.ts:96-111` (`readConfigFile` → `getAgentDir()`), precedência: env > arquivo |
 | `LANGFUSE_HOST` é fallback **dentro do plugin** (`src/index.ts:100-101`), mas o gate do app só lê `LANGFUSE_BASE_URL` (`langfuse.ts:56-71`) | divergência real (Q1) |
-| `.env.example` tem `LANGFUSE_BASE_URL/PUBLIC_KEY/SECRET_KEY` e **não** tem `LANGFUSE_TRACING_ENVIRONMENT` | `.env.example:135-151` |
-| `docker-compose.yml` repassa as três e **não** repassa `LANGFUSE_TRACING_ENVIRONMENT` | `docker-compose.yml:142-146` |
+| `.env.example` e `docker-compose.yml` passaram a trazer a flag, o environment e o teto de caracteres | `.env.example:146-156`, `docker-compose.yml:147-156` |
 | deploy de **dev** é `workflow_dispatch` com `env=dev`; as envs vêm do secret `tb/dev/<app>/env` | `.github/workflows/aws-ecr-deploy.yml:10`, `:180-185` |
 | Etapa 1 provada | `docs/design/planos/evidencias/2026-10-27-langfuse-etapa1-trace.png` |
 
@@ -577,49 +576,39 @@ cobrindo os três passos, com o `curl` do trace como prova apresentada depois. S
 
 ## Conferência de linhas
 
-Conferido por leitura **nesta worktree** (`kairogyn/chefe-langfuse-pi`):
+Reverificado **contra o código commitado** (`0460c970` e os commits que fecharam esta rodada), não
+contra o rascunho que existia quando o plano foi escrito. A primeira versão desta seção citava
+`extensoesDoLangfuse()`/`import()` — código que o Bloco B2 abandonou quando o `next build` reprovou o
+caminho de import. Fica registrado porque **plano que cita linha que não existe é pior que plano sem
+linha**: dá aparência de conferido a quem não vai abrir o arquivo.
 
-- `src/lib/agent/pi/langfuse.ts` — `ConfigDoLangfuse` `:33`, `MAX_CHARS_PADRAO` `:45`, `texto()` `:47`,
-  `configDoLangfuse` `:56-71`, `langfuseLigado` `:73`, `ehIdDeSessaoValido` `:84-87`,
-  `extensoesDoLangfuse` `:98-121` (`??=` em `:105`, `catch` em `:115-120`),
-  `carregarPluginDoLangfuse` `:132-134` (`import()` em `:133`) ✅
-- `src/lib/agent/pi/sessao.ts` — import do `langfuse` `:26`, `abrirSessao` `:106`, `conversaId?` `:113`,
-  `extensionFactories` + spread `:150-165`, `idDaSessao` `:225-228`, `SessionManager.inMemory(cwd, {id},
-  entries)` `:236` ✅
-- `src/lib/agent/pi/converse.ts` — `BeatArgs.conversaId` `:26`, `abrirSessao({ conversaId })` `:65` ✅
-- `src/lib/agent/pi/turno-livre.ts` — `conversationId` desestruturado `:936`, `executarBeat({ … })`
-  `:1253-1265`, log de uso `:1419`, `registrarUsoDeIa` `:1426` ✅
+- `src/lib/agent/pi/langfuse.ts` — `Ambiente` `:39`, `ConfigDoLangfuse` `:42`, `MAX_CHARS_PADRAO` `:54`,
+  `texto()` `:56`, `configDoLangfuse` `:65-86` (flag obrigatória em `:72-73`), `langfuseLigado` `:88`,
+  `ehIdDeSessaoValido` `:99`, `caminhoDoPluginDoLangfuse` `:128`, a fila `filaDaIdentidade` `:179`,
+  `comIdentidadeDoTurno` `:181`, `userIdDoTurno` `:212`.
+- `src/lib/agent/pi/sessao.ts` — imports `:27-29`, `abrirSessao` com `conversaId?` `:118` e `userId?`
+  `:122`, `pluginDoLangfuse` `:162`, `additionalExtensionPaths` `:178`, `comIdentidadeDoTurno(…,
+  loader.reload)` `:184`, `idDaSessao` `:246`, `SessionManager.inMemory(cwd, { id } | undefined,
+  entries)` `:255-259`.
+- `src/lib/agent/pi/converse.ts` — `BeatArgs.conversaId` `:26`, `userId` `:29`, repasse `:68-69`.
+- `src/lib/agent/pi/turno-livre.ts` — import `:25`, `executarBeat({ …, conversaId, userId })`
+  `:1265-1269`.
+- `src/lib/agent/pi/langfuse.test.ts` / `sessao.test.ts` — 19 e 6 casos; os que mordem: "sem a flag,
+  com as três chaves, continua desligado", "duas conversas simultâneas NÃO se contaminam" e "sem as envs
+  o id não é o da conversa e `hasExtensionHandlers("before_agent_start")` é `false`".
 - `node_modules/@langfuse/pi-observability-plugin/package.json` — **sem** `main`/`exports`/`types`;
   `"pi": { "extensions": ["./src/index.ts"] }`; deps `@langfuse/otel`, `@langfuse/tracing`,
-  `@opentelemetry/*` ✅ (o pacote **está** em `node_modules`; `pnpm-lock.yaml:42` e `package.json:54` o
-  pinam em `0.1.2`)
+  `@opentelemetry/*`. Pinado em `package.json:54` e `pnpm-lock.yaml`.
 - `…/pi-observability-plugin/src/index.ts` — `:29` `PI_LANGFUSE_MAX_CHARS` (default 20000), `:89` kill
   switch, `:96-111` config (env > arquivo; `:100-101` BASE_URL→HOST, `:108` userId, `:109` environment),
   `:373-410` runtime/provider, `:404` `new NodeTracerProvider`, `:442` factory default, `:605` e `:870`
-  `getSessionId()`, `:965` flush em `agent_settled`, `:972-981` shutdown em `session_shutdown`
-  (`reason === "quit"`) ✅
-- `@earendil-works/pi-coding-agent` — `NewSessionOptions { id }` `dist/core/session-manager.d.ts:13-16`,
-  `SessionManager.inMemory(cwd, options, entries)` `:386`, `assertValidSessionId` `:179`,
-  `AgentSession.dispose()` `dist/core/agent-session.d.ts:387`, `session.sessionManager` público `:222`,
-  `DefaultResourceLoaderOptions.additionalExtensionPaths` `dist/core/resource-loader.d.ts` ✅;
-  `resolveExtensionEntries` lê `pi.extensions` em `dist/core/extensions/loader.js:593-621`; `jiti@2.7.0`
-  em `dist/package.json:57`; `parseSource` local vs npm em `dist/core/package-manager.js:1170-1190` ✅
-- `next.config.ts` — `outputFileTracingIncludes` `:25-28`, `serverExternalPackages` `:30-41`; **não**
-  existe `transpilePackages` ✅
-- `vitest.config.ts` — `test.include`, `setupFiles`, `testTimeout: 20_000`; **não** existe
-  `server`/`deps` ✅
-- `package.json` — `lint` `:13`, `typecheck` `:15`, `test` `:30`, dependência
-  `@langfuse/pi-observability-plugin: "0.1.2"` em `:54` ✅
-- `.env.example:135-151` (três chaves Langfuse, sem `LANGFUSE_TRACING_ENVIRONMENT`) ✅;
-  `docker-compose.yml:142-146` (três chaves) ✅
-- `.github/workflows/aws-ecr-deploy.yml:10` (secrets `tb/dev|prod/<app>/env`), `:180-185`
-  (`workflow_dispatch` para dev) ✅
-- `docs/design/planos/evidencias/2026-10-27-langfuse-etapa1-trace.png` existe ✅
-- `src/lib/agent/pi` — **não existe** `langfuse.test.ts` nem `carregador-do-langfuse.test.ts` ✅
-- **Não confirmei:** que `transpilePackages` transpila `.ts` de `node_modules` no Next 16 (medição do
-  B2); a chave exata do vitest 4 para inline de dependência; que o projeto `aja-agora` exista com chaves
-  próprias no Langfuse v4.6.0; se `langfuse.ts` já foi commitado; que `~/.pi/agent/langfuse.json` exista
-  em host de dev; e que o deploy de dev injete o secret no compose exatamente chave a chave.
+  `getSessionId()`, `:965` flush em `agent_settled`, `:972-981` shutdown em `session_shutdown`.
+- `@earendil-works/pi-coding-agent` — `NewSessionOptions { id }` `dist/core/session-manager.d.ts:13-16`;
+  `newSession()` usa `options.id` `dist/core/session-manager.js:691-695`; `assertValidSessionId`
+  `:15-19`; jiti carrega extensão `dist/core/extensions/loader.js:22-26,468-479`;
+  `additionalExtensionPaths` em `dist/core/resource-loader.js:258,414`;
+  `before_agent_start` com `prompt` para turno de usuário `dist/core/agent-session.js:1664` e o handler
+  protegido por `try/catch` em `dist/core/extensions/runner.js:1151`.
 
 ## Resultado medido (27/10/2026)
 
