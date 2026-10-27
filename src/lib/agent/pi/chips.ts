@@ -4,8 +4,21 @@
 // escrevia "1) Agora 2) Nos próximos meses" como texto: o cliente via a lista e não
 // tinha nada para tocar (medido no dev, 25/10/2026 — os chips não apareciam). O
 // detector roda no TEXTO FINAL de cada trecho: pergunta fechada com opções ⇒ chip.
-// Se o turno já mostrou um card de escolha, nada muda. Se as opções estão no texto,
-// elas viram `quick_reply` e o texto fica só com a pergunta.
+// Se as opções estão no texto, elas viram `quick_reply` e o texto fica só com a
+// pergunta.
+//
+// TODO TURNO TEM TOQUE — ordem do dono, 27/10/2026 17:16: *os balões de sugestão
+// aparecem em todo turno do agente, pergunte ele ou não*. Até aqui o chip só saía
+// quando o texto tinha "?": os prints 02 (depois da oferta) e 04 (falha da tool)
+// terminaram sem balão nenhum, e o cliente não tinha o que tocar no momento em que
+// mais precisava de um próximo passo. Agora o turno sem pergunta também sai com os
+// próximos passos do momento (`sugestoes.ts`, regra (e)), e a exceção deixou de ser
+// "o texto tem '?'" para ser o CARD: o que já é a escolha (`quick_reply`,
+// `value_picker`, `topic_picker`) não ganha outro por cima — seria a mesma decisão
+// duas vezes —, e o card que COLETA o dado pedido (formulário/opt-in) é a resposta
+// do pedido de "digite o CPF/celular". Os demais cards (oferta real, assinatura,
+// upload, decisão) passam a sair ACOMPANHADOS dos balões de próximo passo: é neles
+// que o cliente decide o que fazer depois de ver o card.
 //
 // Duas fronteiras aprendidas na main e que aqui valem igual (L26, L33, N05):
 //  · OPÇÃO TEM MARCADOR. Lista de verdade abre cada linha com `1)`, `a)`, `-` ou
@@ -19,33 +32,37 @@
 //    atalho escolhe — só existe quando o MODELO declarou a cota, e é conferido
 //    contra as cartas reais em `cards-livres.ts` (fail-closed da main).
 
-import { sugestoesDaPergunta } from "@/lib/agent/pi/sugestoes";
+import type { Category } from "@/lib/agent/personas";
+import { sugestaoDoTurno } from "@/lib/agent/pi/sugestoes";
+import { CREDIT_BOUNDS } from "@/lib/agent/qualify-config";
+import type { ValuePickerPayload } from "@/lib/chat/types";
 
+/** O card já É a escolha: um segundo menu por cima duplicaria a mesma decisão. */
 const CARD_DE_ESCOLHA = ["quick_reply", "value_picker", "topic_picker"];
 
 /**
- * CARDS QUE JÁ PEDEM UM TOQUE — o chip não entra por cima.
- *
- * Card que já tem botão próprio (opt-in do WhatsApp, formulário de contratação, proposta real,
- * pedido de assinatura, decisão) dispensa resposta rápida: duplicar seria mostrar duas vezes a
- * mesma escolha, que é o defeito de duplicidade que a bateria mede.
+ * CARDS QUE COLETAM O DADO PEDIDO — com um deles na tela, pedir "digite o CPF/celular" não
+ * ganha balão: o card é a resposta do pedido, e um toque ao lado convidaria a pessoa a
+ * responder por fora dele.
  */
-const CARD_QUE_JA_ESPERA_TOQUE = [
-	...CARD_DE_ESCOLHA,
-	"whatsapp_optin",
-	"contract_form",
-	"real_offer",
-	"signature_handoff",
-	"document_upload",
-	"decision_prompt",
-];
+const CARD_QUE_COLETA = ["contract_form", "whatsapp_optin"];
+
+/** A frase que pede para DIGITAR um dado — a única em que o card que coleta é a resposta.
+ * "me passa seu WhatsApp" NÃO está aqui de propósito: esse é o pedido do print 02, que termina no
+ * card de opt-in e PRECISA dos balões de próximo passo (ordem das 17:16). */
+const PEDE_PARA_DIGITAR = /\b(?:digite|digita|informe|escreva|escreve|preencha|preenche)\b/i;
+const O_DADO_COLETADO = /\bcpf\b|celular|telefone|whats\s?app|n[úu]mero/i;
 
 /** A identidade PERSISTIDA do atalho (`QuickReplyOption.replyId`, L4): gerada a
  * cada emissão de propósito — um card repetido em outro turno recebe id novo e
  * não nasce "já consumido". */
 export type OpcaoDeChip = { label: string; replyId: string; groupId?: string };
 
-export type ChipGerado = { type: "quick_reply"; payload: { options: OpcaoDeChip[] } };
+/** O card que o `garantirChip` devolve. `value_picker` é o slider do VALOR do bem — a pergunta
+ * de valor com a categoria conhecida sai nele, não em botão. */
+export type CardGerado =
+	| { type: "quick_reply"; payload: { options: OpcaoDeChip[] } }
+	| { type: "value_picker"; payload: ValuePickerPayload };
 
 const TETO_DE_OPÇÕES = 4;
 const MAXIMO_DE_ROTULO = 40;
@@ -161,11 +178,21 @@ export function garantirChip(args: {
 	 * pergunta aberta ("qual dessas fica melhor?") para as opções da oferta. */
 	temCartaNaTela?: boolean;
 	canal?: "web" | "whatsapp";
+	/** A última fala do cliente: o anti-eco do `sugestoes.ts` não repete o que ele disse. */
+	falaDoCliente?: string;
+	/** Categoria do bem já declarada — é ela que autoriza o `value_picker` do valor. */
+	categoriaDoBem?: Category;
 }): {
 	texto: string;
-	chip: ChipGerado | null;
+	chip: CardGerado | null;
 } {
-	if (args.cardsDoTurno.some((c) => CARD_QUE_JA_ESPERA_TOQUE.includes(c.type))) {
+	const tipos = args.cardsDoTurno.map((c) => c.type);
+	if (tipos.some((t) => CARD_DE_ESCOLHA.includes(t))) return { texto: args.texto, chip: null };
+	if (
+		tipos.some((t) => CARD_QUE_COLETA.includes(t)) &&
+		PEDE_PARA_DIGITAR.test(args.texto) &&
+		O_DADO_COLETADO.test(args.texto)
+	) {
 		return { texto: args.texto, chip: null };
 	}
 
@@ -179,18 +206,52 @@ export function garantirChip(args: {
 	if (corteUtil) return { texto: textoLimpo, chip: chipDe(opcoes) };
 
 	// 2. A opção derivada do MOMENTO (ordem do dono, 27/10): pergunta feita sem toque é pergunta
-	//    perdida. Aqui o balão NÃO muda — só ganha os botões.
-	const doMomento = sugestoesDaPergunta(args.texto, {
+	//    perdida — e turno SEM pergunta também tem próximo passo (ordem das 17:16). Aqui o balão
+	//    NÃO muda: só ganha os botões.
+	const sugestao = sugestaoDoTurno(args.texto, {
 		temCartaNaTela: args.temCartaNaTela === true,
 		...(args.canal ? { canal: args.canal } : {}),
+		...(args.falaDoCliente ? { falaDoCliente: args.falaDoCliente } : {}),
+		...(args.categoriaDoBem ? { categoriaDoBem: args.categoriaDoBem } : {}),
 	});
-	if (doMomento && doMomento.length >= 2) return { texto: args.texto, chip: chipDe(doMomento) };
+	if (sugestao.opcoes.length < 2) return { texto: args.texto, chip: null };
+	if (sugestao.tipoDoCard === "value_picker" && args.categoriaDoBem) {
+		return { texto: args.texto, chip: sliderDoValor(args.categoriaDoBem) };
+	}
+	return { texto: args.texto, chip: chipDe(sugestao.opcoes) };
+}
 
-	return { texto: args.texto, chip: null };
+/**
+ * O SLIDER DO VALOR DO BEM — o card `value_picker` com a faixa REAL da categoria.
+ *
+ * Ordem da auditoria ("4 turnos pedindo valor saíram em texto puro") e ordem do dono das 13:50:
+ * a pergunta de valor tem card. Os números não são inventados: `min`/`max`/`step`/`default` vêm de
+ * `CREDIT_BOUNDS`, a mesma régua do funil — e é por isso que sem a categoria na conversa o card
+ * não sai (faixa de valor de categoria desconhecida seria número inventado).
+ */
+function sliderDoValor(categoria: Category): CardGerado {
+	const { min, max, step, default: padrao } = CREDIT_BOUNDS[categoria];
+	return {
+		type: "value_picker",
+		payload: {
+			category: categoria,
+			fields: [
+				{
+					id: "valor-do-bem",
+					label: "Valor do bem",
+					min,
+					max,
+					step,
+					default: padrao,
+					format: "currency",
+				},
+			],
+		},
+	};
 }
 
 /** Cada opção nasce com `replyId` do SERVIDOR (nunca do modelo) — é ele que o clique consome. */
-function chipDe(opcoes: readonly string[]): ChipGerado {
+function chipDe(opcoes: readonly string[]): CardGerado {
 	return {
 		type: "quick_reply",
 		payload: {

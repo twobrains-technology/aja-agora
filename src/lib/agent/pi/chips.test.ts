@@ -1,6 +1,11 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { garantirChip, opcoesDePerguntaFechada } from "./chips";
+import { type CardGerado, garantirChip, opcoesDePerguntaFechada } from "./chips";
+
+/** Os toques do card — `quick_reply` é o único que carrega rótulos (o `value_picker` é slider). */
+const toques = (chip: CardGerado | null) =>
+	chip?.type === "quick_reply" ? chip.payload.options : [];
+const rotulos = (chip: CardGerado | null) => toques(chip).map((o) => o.label);
 
 describe("pergunta fechada vira chip, não lista escrita no texto", () => {
 	it("lista no texto: as opções viram botão e o balão guarda só a pergunta", () => {
@@ -9,7 +14,7 @@ describe("pergunta fechada vira chip, não lista escrita no texto", () => {
 			cardsDoTurno: [],
 		});
 		expect(r.chip).not.toBeNull();
-		expect(r.chip?.payload.options.map((o) => o.label)).toEqual(["Agora", "Nos próximos meses"]);
+		expect(rotulos(r.chip)).toEqual(["Agora", "Nos próximos meses"]);
 		expect(r.texto).toBe("Para quando você está pensando nessa troca?");
 	});
 
@@ -18,16 +23,16 @@ describe("pergunta fechada vira chip, não lista escrita no texto", () => {
 			texto: "Você prefere parcela menor ou prazo mais curto?",
 			cardsDoTurno: [],
 		});
-		expect(r.chip?.payload.options).toHaveLength(2);
-		expect(r.chip?.payload.options[0]?.label).toBe("parcela menor");
+		expect(rotulos(r.chip)).toHaveLength(2);
+		expect(rotulos(r.chip)[0]).toBe("parcela menor");
 	});
 
 	it("a vírgula antes do «ou» não cega o detector (forma real medida no dev)", () => {
 		const texto =
 			"Qual dessas faz mais sentido pra você: parcela menor por mais tempo, ou prazo mais curto mesmo que a parcela suba?";
 		const r = garantirChip({ texto, cardsDoTurno: [] });
-		expect(r.chip?.payload.options).toHaveLength(2);
-		expect(r.chip?.payload.options[0]?.label).toBe("parcela menor por mais tempo");
+		expect(rotulos(r.chip)).toHaveLength(2);
+		expect(rotulos(r.chip)[0]).toBe("parcela menor por mais tempo");
 	});
 
 	it("card de escolha já mostrado no turno: nada se duplica", () => {
@@ -44,20 +49,14 @@ describe("pergunta fechada vira chip, não lista escrita no texto", () => {
 				"Tem mais alguma dúvida antes de a gente prosseguir com a proposta, ou quer seguir em frente?",
 			cardsDoTurno: [],
 		});
-		expect(r.chip?.payload.options.map((o) => o.label)).toEqual([
-			"Tem mais alguma dúvida",
-			"quer seguir em frente",
-		]);
+		expect(rotulos(r.chip)).toEqual(["Tem mais alguma dúvida", "quer seguir em frente"]);
 
 		const comParentese = garantirChip({
 			texto:
 				"A contemplação (quando você recebe o dinheiro) vem por sorteio. Tem dúvida, ou quer seguir?",
 			cardsDoTurno: [],
 		});
-		expect(comParentese.chip?.payload.options.map((o) => o.label)).toEqual([
-			"Tem dúvida",
-			"quer seguir",
-		]);
+		expect(rotulos(comParentese.chip)).toEqual(["Tem dúvida", "quer seguir"]);
 	});
 
 	it("parêntese dentro da pergunta não entra no botão", () => {
@@ -65,7 +64,7 @@ describe("pergunta fechada vira chip, não lista escrita no texto", () => {
 			texto: "Prefere o lance (que entra com dinheiro agora) ou a sorteio?",
 			cardsDoTurno: [],
 		});
-		expect(r.chip?.payload.options.map((o) => o.label)).toEqual(["Prefere o lance", "a sorteio"]);
+		expect(rotulos(r.chip)).toEqual(["Prefere o lance", "a sorteio"]);
 	});
 
 	it("prosa curta com pergunta no fim NÃO vira menu do texto — o balão fica inteiro (N05/L33)", () => {
@@ -78,10 +77,9 @@ describe("pergunta fechada vira chip, não lista escrita no texto", () => {
 		const r = garantirChip({ texto, cardsDoTurno: [] });
 		expect(r.texto).toBe(texto);
 		expect(opcoesDePerguntaFechada("Claro!\nFaz sentido pra você?")).toEqual([]);
-		expect(r.chip?.payload.options.map((o) => o.label)).toEqual([
-			"Sim, pode seguir",
-			"Ainda tenho uma dúvida",
-		]);
+		// Inversão de critério (ordem do dono, 27/10 17:15): pergunta de sim/não agora
+		// responde sim/não casado com o verbo do pedido — antes eram os toques de tema.
+		expect(rotulos(r.chip)).toEqual(["Sim, pode", "Agora não"]);
 	});
 
 	it("a lista marcada sai do balão, o resto da fala fica (N05)", () => {
@@ -89,7 +87,7 @@ describe("pergunta fechada vira chip, não lista escrita no texto", () => {
 			texto: "Ótimo, Marcos!\nPara quando você está pensando?\n1) Agora\n2) Nos próximos meses",
 			cardsDoTurno: [],
 		});
-		expect(r.chip?.payload.options.map((o) => o.label)).toEqual(["Agora", "Nos próximos meses"]);
+		expect(rotulos(r.chip)).toEqual(["Agora", "Nos próximos meses"]);
 		// O texto guarda a FALA; a lista virou botão.
 		expect(r.texto).toBe("Ótimo, Marcos!\nPara quando você está pensando?");
 	});
@@ -99,7 +97,7 @@ describe("pergunta fechada vira chip, não lista escrita no texto", () => {
 			texto: "Para quando?\n- Agora\n- Nos próximos meses",
 			cardsDoTurno: [],
 		});
-		const ids = r.chip?.payload.options.map((o) => o.replyId) ?? [];
+		const ids = toques(r.chip).map((o) => o.replyId);
 		expect(ids).toHaveLength(2);
 		for (const id of ids) expect(id).toMatch(/^[0-9a-f-]{36}$/);
 		// Um id por opção: dois botões nunca disputam a mesma chave de consumo.
@@ -116,10 +114,7 @@ describe("pergunta fechada vira chip, não lista escrita no texto", () => {
 		});
 		expect(r.texto).toBe("Como você está vendo isso hoje?");
 		expect(opcoesDePerguntaFechada("Como você está vendo isso hoje?")).toEqual([]);
-		expect(r.chip?.payload.options.map((o) => o.label)).toEqual([
-			"Pode seguir",
-			"Tenho uma dúvida",
-		]);
+		expect(rotulos(r.chip)).toEqual(["Pode seguir", "Tenho uma dúvida"]);
 	});
 
 	it("teto de 4 opções e rótulo curto", () => {
@@ -127,7 +122,7 @@ describe("pergunta fechada vira chip, não lista escrita no texto", () => {
 			texto: "Qual destas?\n1) a\n2) b\n3) c\n4) d\n5) e",
 			cardsDoTurno: [],
 		});
-		expect(r.chip?.payload.options).toHaveLength(4);
+		expect(rotulos(r.chip)).toHaveLength(4);
 	});
 
 	// O detector não vale de nada se o turno não aplicar: esta guarda fica vermelha

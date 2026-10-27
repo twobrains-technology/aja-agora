@@ -19,7 +19,7 @@ import { passaFinal } from "@/lib/agent/orchestrator/vazamento";
 import { parseAssetValue } from "@/lib/agent/parse-asset-value";
 import type { Category } from "@/lib/agent/personas";
 import { type MetaDaEmissao, TIPOS_DE_ESCOLHA } from "@/lib/agent/pi/cards-livres";
-import { type ChipGerado, garantirChip } from "@/lib/agent/pi/chips";
+import { type CardGerado, garantirChip } from "@/lib/agent/pi/chips";
 import { executarBeat } from "@/lib/agent/pi/converse";
 import { linhaFinalDoHandoff, RE_DE_PROMESSA } from "@/lib/agent/pi/handoff";
 import { criarNarracaoDoTurno } from "@/lib/agent/pi/narracao";
@@ -188,7 +188,12 @@ export function montarTrechoDeSaida(args: {
 	/** A conversa já tem carta na tela — muda a resposta rápida de pergunta aberta. */
 	temCartaNaTela?: boolean;
 	canal?: "web" | "whatsapp";
-}): { texto: string; chip: ChipGerado | null } {
+	/** A última fala do cliente, a que este turno responde: o toque não repete o que ele disse
+	 * (ordem do dono, 27/10 17:15). */
+	falaDoCliente?: string;
+	/** Categoria do bem já declarada — autoriza o slider do valor (`value_picker`). */
+	categoriaDoBem?: Category;
+}): { texto: string; chip: CardGerado | null } {
 	// O ÚLTIMO PASSE roda AQUI, no texto que vai AO VIVO para o canal — não só na
 	// persistência: máscara de CPF e o corte de vazamento de máquina (JSON de
 	// argumento, nome de tool) têm de valer para o cliente, não só para o banco.
@@ -217,6 +222,8 @@ export function montarTrechoDeSaida(args: {
 		cardsDoTurno: args.cardsDoTurno ?? [],
 		...(args.temCartaNaTela ? { temCartaNaTela: true } : {}),
 		...(args.canal ? { canal: args.canal } : {}),
+		...(args.falaDoCliente ? { falaDoCliente: args.falaDoCliente } : {}),
+		...(args.categoriaDoBem ? { categoriaDoBem: args.categoriaDoBem } : {}),
 	});
 	return { texto: chipado.texto, chip: chipado.chip };
 }
@@ -1190,6 +1197,15 @@ export function createRunTurnLivre(deps?: {
 					.join("\n")}`
 			: "";
 
+		// A ÚLTIMA FALA DO CLIENTE — a que este turno do agente responde. É o insumo do anti-eco
+		// do toque (ordem do dono, 27/10 17:15): a resposta rápida não pode repetir a pergunta que
+		// ele acabou de fazer. O texto corrente vem de `captura` (já mascarado); num turno que não
+		// é fala dele (directive, retomada) vale a última fala de `user` do histórico.
+		const falaDoClienteDoTurno =
+			(isUserTurn ? captura.textoLimpo : "") ||
+			[...historico].reverse().find((m) => m.role === "user")?.content ||
+			undefined;
+
 		// Fila de eventos: o beat empurra o texto AO VIVO, o generator drena.
 		const fila: TurnEvent[] = [];
 		let acordar: (() => void) | null = null;
@@ -1233,6 +1249,11 @@ export function createRunTurnLivre(deps?: {
 				// pergunta aberta ("qual dessas fica melhor?") ganha as opções da oferta.
 				temCartaNaTela: ctx.cartasNaTela.length > 0,
 				canal: ctx.channel,
+				// O toque é a resposta ao que ESTE turno disse (ordem das 17:15): a fala do cliente
+				// entra como filtro anti-eco e a categoria do bem decide se a pergunta de valor sai
+				// no slider (`value_picker`).
+				...(falaDoClienteDoTurno ? { falaDoCliente: falaDoClienteDoTurno } : {}),
+				...(estado.funnel.currentCategory ? { categoriaDoBem: estado.funnel.currentCategory } : {}),
 				handoff:
 					casoAberto || RE_DE_PROMESSA.test(pendente)
 						? {
@@ -1315,7 +1336,10 @@ export function createRunTurnLivre(deps?: {
 				emitir(fronteira);
 				emitir(artifact);
 				// O card fala por si: o anúncio suspenso estava colado a ele e cai.
-				narracaoDoTurno.mostrouCard();
+				// O TOQUE não é esse card: `quick_reply`/`value_picker`/`topic_picker` são
+				// a resposta rápida, não o card que "diz tudo" — desde a ordem das 17:16 todo
+				// turno termina com um deles, e tratar toque como card comeria a fala do turno.
+				if (!TIPOS_DE_ESCOLHA.some((tipo) => tipo === card.type)) narracaoDoTurno.mostrouCard();
 			}
 		};
 
@@ -1413,8 +1437,11 @@ export function createRunTurnLivre(deps?: {
 			emitirCardsNovos("todos");
 			// O card fala por si (R5.1): o anúncio suspenso estava colado a ele e cai
 			// (quem o descarta é `emitirCardsNovos`). Sem card no turno, o anúncio é a
-			// fala da vez e sai como qualquer outra — fala legítima não se perde.
-			if (ctx.cards.length === 0) {
+			// fala da vez e sai como qualquer outra — fala legítima não se perde. O balão
+			// de TOQUE (`quick_reply`/`value_picker`/`topic_picker`) não conta como card:
+			// desde a ordem das 17:16 ele acompanha todo turno, e contá-lo calaria toda
+			// fala de anúncio de ferramenta.
+			if (!ctx.cards.some((c) => !TIPOS_DE_ESCOLHA.some((tipo) => tipo === c.type))) {
 				for (const texto of narracaoDoTurno.fimDoTurno()) emitirFala(texto);
 			}
 			// O MARCO DA PRIMEIRA CARTA (L29/P281) — sinal de SESSÃO, uma vez por
@@ -1524,16 +1551,24 @@ export function createRunTurnLivre(deps?: {
 			// Modelo sem nada a dizer não pode virar turno mudo no canal. Turno cujo
 			// anúncio caiu não é mudo: o card é a fala dele (R5.1) — e uma linha de
 			// preenchimento ali seria só outra narração.
+			//
+			// O TOQUE não é fala nem card que fale por si: desde a ordem das 17:16 o
+			// `quick_reply`/`value_picker`/`topic_picker` acompanha TODO turno, e contá-lo
+			// como fala calaria a linha de reserva de um turno em que o modelo não disse
+			// nada (foi o que o caso do JSON vazado pegou).
+			const temCardQueFala = estado.events.some(
+				(ev) =>
+					ev.type === "artifact" && !TIPOS_DE_ESCOLHA.some((tipo) => tipo === ev.artifactType),
+			);
 			const falou =
-				cardsJaEmitidos.size > 0 ||
+				temCardQueFala ||
 				estado.events.some((ev) => ev.type === "text-delta" && ev.text.trim().length > 0);
 			if (!falou) {
 				emitir({
 					type: "text-delta",
-					text:
-						ctx.cards.length > 0
-							? "Achei essas opções pra você. Alguma te interessa?"
-							: "Desculpa, me perdi aqui. Pode me contar de novo o que você quer?",
+					text: temCardQueFala
+						? "Achei essas opções pra você. Alguma te interessa?"
+						: "Desculpa, me perdi aqui. Pode me contar de novo o que você quer?",
 				});
 			}
 
