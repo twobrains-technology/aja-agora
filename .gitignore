@@ -82,6 +82,8 @@ test-results/
 # artefatos gerados (exports de dados, dossiês de validação) — não versionar nem lintar
 exports/
 .orientacao/
+# Relatórios do `pnpm eval` (sha, modelo e veredito por cenário) — registro local de rodada.
+.eval/
 
 # Coordenação dos agentes (goal, pendências, encerramento) — não é código.
 .orientacao/
