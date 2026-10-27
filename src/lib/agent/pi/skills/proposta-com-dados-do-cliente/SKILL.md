@@ -17,7 +17,9 @@ tenha vindo dele. No WhatsApp o celular é o próprio número da conversa; na we
 peça o celular.
 
 Chame `fazer_proposta` com o `groupId` da carta que ele escolheu (está nas
-linhas "[na tela: …]") e `aceiteLgpd: true`. CPF e celular não são parâmetros:
+linhas "[na tela: …]"). **Não peça "sim" de LGPD nem espere confirmação do
+aviso**: informe em uma frase e siga — pedir aceite antes de gerar é erro de
+condução (decisão do dono, 27/10/2026: o objetivo é vender). CPF e celular não são parâmetros:
 o sistema usa o que o cliente mandou. A proposta aparece num card com o botão
 de confirmação. Se os valores reais vierem diferentes do que ele viu, mostre a
 diferença com clareza antes de ele confirmar.

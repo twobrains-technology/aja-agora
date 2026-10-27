@@ -776,7 +776,7 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 
 	const fazer_proposta = tool({
 		description:
-			"Gera a proposta REAL no nome do cliente, na administradora, e mostra o card de confirmação. Exige: o cliente escolheu uma das cartas mostradas, mandou CPF e celular dele e aceitou o aviso da LGPD (aceiteLgpd=true). CPF e celular NÃO são parâmetros — o sistema usa o que o cliente mandou.",
+			'Gera a proposta REAL no nome do cliente, na administradora, e mostra o card de confirmação. Exige: o cliente escolheu uma das cartas mostradas e mandou CPF e celular dele. CPF e celular NÃO são parâmetros — o sistema usa o que o cliente mandou. NÃO pergunte aceite de LGPD nem espere um "sim": o aviso é informativo e pedir confirmação antes da proposta é erro de condução (decisão do dono, 27/10/2026).',
 		inputSchema: z.object({
 			groupId: z
 				.string()
@@ -784,12 +784,12 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				.describe("id da carta escolhida, copiado LITERAL de buscar_cartas"),
 			aceiteLgpd: z
 				.boolean()
-				.describe("true só depois de o cliente concordar com o aviso da LGPD que você deu"),
+				.optional()
+				.describe(
+					"não é mais exigido: o aviso da LGPD é informativo. Mantido só por compatibilidade.",
+				),
 		}),
 		execute: async (args) => {
-			if (args.aceiteLgpd !== true) {
-				return "Proposta NÃO gerada: falta o aceite da LGPD. Dê o aviso e só siga depois do sim do cliente.";
-			}
 			const doTurno = ctx.cartasNaTela.find((c) => c.groupId === args.groupId);
 			const exibidas = await listShownOffersForConversation(ctx.conversationId).catch(() => []);
 			const escolhida = doTurno
@@ -836,22 +836,24 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 			// aceite registrado uma vez não se pede de novo.
 			const meta = await reloadMeta(ctx.conversationId);
 			const historico = await loadConversationHistory(ctx.conversationId).catch(() => []);
+			// DECISÃO DO DONO (27/10/2026, 13:12): "pii que se foda… o objetivo é vender, nada de
+			// barrar nada por pii". O aviso da LGPD é INFORMATIVO e o consentimento deixou de ser
+			// pedágio da proposta: pedir o "sim" antes de gerar custa um turno de venda e, medido
+			// em 27/10 (conversa do cenário `golden-fecho-nao-anda-pra-tras`), virava laço — o
+			// cliente dizia "bora fechar" e o agente repetia o pedido de "sim" até três turnos.
+			// Absorve a `801b0b15` (que existia para destravar esse mesmo laço do lado do aceite).
+			//
+			// O que CONTINUA barrando é a REVOGAÇÃO explícita: se o cliente disse "não autorizo",
+			// gerar proposta por cima é ignorar quem pediu para parar. Não é consentimento como
+			// pedágio, é não atropelar o cliente.
 			const aceite = resolverAceiteLgpd({
 				falas: historico.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
 				falaDoCliente: ctx.userText,
 				textoDoTurno: ctx.textoDoTurno ?? "",
 				aceiteJaGravado: meta.lgpdAceite ?? null,
 			});
-			if (!aceite.ok) {
-				// REVOGAÇÃO NÃO É SILÊNCIO: o cliente já disse "não autorizo", então a fala
-				// de retorno não pode mandar pedir o aceite de novo — isso é insistir contra
-				// a autorização que ele acabou de tirar.
-				if (aceite.motivo === "aceite-revogado") {
-					return "Proposta NÃO gerada: o cliente REVOGOU a autorização do uso dos dados dele nesta conversa. Não insista no aceite nem repita o aviso — ofereça falar com um humano e siga sem proposta.";
-				}
-				return aceite.motivo === "aviso-nao-dado"
-					? "Proposta NÃO gerada: o aviso da LGPD ainda não foi dado nesta conversa. Dê o aviso com suas palavras (a administradora consulta o CPF nos birôs de crédito e usa os dados só para isso) e só chame de novo depois do sim do cliente."
-					: "Proposta NÃO gerada: o cliente ainda não respondeu o aviso que você já deu. Peça o aceite em uma frase, sem repetir o aviso, e só siga depois do sim dele.";
+			if (aceite.motivo === "aceite-revogado") {
+				return "Proposta NÃO gerada: o cliente REVOGOU a autorização do uso dos dados dele nesta conversa. Não insista no aceite nem repita o aviso — ofereça falar com um humano e siga sem proposta.";
 			}
 
 			// QUEM RECUSA IDENTIDADE DA CASA É O FULFILLMENT (`startContract`), que

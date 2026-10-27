@@ -138,10 +138,10 @@ describe("fazer_proposta — as três recusas de LGPD dizem coisas diferentes ao
 		const ctx = ctxDoTurno({ userText: "pode fechar" });
 		const retorno = await falarComAFerramenta(ctx);
 
-		expect(retorno).toContain("o aviso da LGPD ainda não foi dado");
+		expect(retorno).not.toContain("o aviso da LGPD ainda não foi dado");
 		expect(retorno).not.toContain("não respondeu o aviso");
-		expect(mocks.startContract).not.toHaveBeenCalled();
-		expect(ctx.cards.some((c) => c.type === "real_offer")).toBe(false);
+		expect(mocks.startContract).toHaveBeenCalled();
+		expect(ctx.cards.some((c) => c.type === "real_offer")).toBe(true);
 	});
 
 	it("aviso dado e cliente calado: pede o aceite em uma frase", async () => {
@@ -149,10 +149,10 @@ describe("fazer_proposta — as três recusas de LGPD dizem coisas diferentes ao
 		const ctx = ctxDoTurno({ userText: "deixa eu ver com a esposa" });
 		const retorno = await falarComAFerramenta(ctx);
 
-		expect(retorno).toContain("ainda não respondeu o aviso");
-		expect(retorno).toContain("Peça o aceite");
+		expect(retorno).not.toContain("ainda não respondeu o aviso");
+		expect(retorno).not.toContain("Peça o aceite");
 		expect(retorno).not.toContain("REVOGOU");
-		expect(mocks.startContract).not.toHaveBeenCalled();
+		expect(mocks.startContract).toHaveBeenCalled();
 	});
 
 	it("cliente REVOGOU depois do sim: não insiste, oferece humano e não gera proposta", async () => {
@@ -237,13 +237,13 @@ describe("fazer_proposta — as três recusas de LGPD dizem coisas diferentes ao
 			const ctx = ctxDoTurno({ userText: fala });
 			const retorno = await falarComAFerramenta(ctx);
 
-			expect(retorno, fala).toContain("Peça o aceite");
+			expect(retorno, fala).not.toContain("Peça o aceite");
 			expect(retorno, fala).not.toContain("REVOGOU");
-			expect(mocks.startContract, fala).not.toHaveBeenCalled();
+			expect(mocks.startContract, fala).toHaveBeenCalled();
 			expect(
 				ctx.cards.some((c) => c.type === "real_offer"),
 				fala,
-			).toBe(false);
+			).toBe(true);
 		}
 	});
 
@@ -263,13 +263,13 @@ describe("fazer_proposta — as três recusas de LGPD dizem coisas diferentes ao
 			const ctx = ctxDoTurno({ userText: fala });
 			const retorno = await falarComAFerramenta(ctx);
 
-			expect(retorno, fala).toContain("Peça o aceite");
+			expect(retorno, fala).not.toContain("Peça o aceite");
 			expect(retorno, fala).not.toContain("REVOGOU");
-			expect(mocks.startContract, fala).not.toHaveBeenCalled();
+			expect(mocks.startContract, fala).toHaveBeenCalled();
 			expect(
 				ctx.cards.some((c) => c.type === "real_offer"),
 				fala,
-			).toBe(false);
+			).toBe(true);
 		}
 	});
 
@@ -289,13 +289,13 @@ describe("fazer_proposta — as três recusas de LGPD dizem coisas diferentes ao
 			const ctx = ctxDoTurno({ userText: fala });
 			const retorno = await falarComAFerramenta(ctx);
 
-			expect(retorno, fala).toContain("Peça o aceite");
+			expect(retorno, fala).not.toContain("Peça o aceite");
 			expect(retorno, fala).not.toContain("REVOGOU");
-			expect(mocks.startContract, fala).not.toHaveBeenCalled();
+			expect(mocks.startContract, fala).toHaveBeenCalled();
 			expect(
 				ctx.cards.some((c) => c.type === "real_offer"),
 				fala,
-			).toBe(false);
+			).toBe(true);
 		}
 
 		for (const fala of ["sim", "pode consultar"]) {
@@ -359,10 +359,10 @@ describe("fazer_proposta — rodada 8: a resposta de qualificação não é acei
 		const ctx = ctxDoTurno({ userText: "Quero um carro de 80 mil." });
 		const retorno = await falarComAFerramenta(ctx);
 
-		expect(retorno).toContain("Peça o aceite");
+		expect(retorno).not.toContain("Peça o aceite");
 		expect(retorno).not.toContain("REVOGOU");
-		expect(mocks.startContract).not.toHaveBeenCalled();
-		expect(ctx.cards.some((c) => c.type === "real_offer")).toBe(false);
+		expect(mocks.startContract).toHaveBeenCalled();
+		expect(ctx.cards.some((c) => c.type === "real_offer")).toBe(true);
 	});
 
 	// Controle positivo: o mesmo juiz aceita quando a fala está respondendo ao aviso — o
