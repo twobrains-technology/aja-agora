@@ -1,8 +1,9 @@
 # Matriz do caminho — paridade por passo, nos dois canais
 
 O caminho da venda, degrau por degrau, com o que o cliente vê em cada canal, qual card carrega o passo, o
-clique que ele dispara e a prova no banco. É o que os `expectArtifacts` do Bloco 4 citam e o que a camada
-de caminho (`scripts/eval/prova-caminho.ts`) tem de provar ao fim de cada conversa.
+clique que ele dispara e a prova no banco. É o que os `expectArtifacts` dos cenários de `scripts/eval/golden/`
+citam e o que a camada de caminho (`scripts/qa/caminho.mjs` + `scripts/qa/provas-do-caminho.sql`) prova ao
+fim de cada conversa.
 
 Regra da casa: **`NÃO MEDIDO` não é `ok`.** Só entra número medido nesta rodada, com a fonte ao lado
 (`.orientacao/diario.md` §1.2/§1.3, `scripts/qa/medidor-duplicidade.sql`, ou o SQL abaixo). Todo o resto —
@@ -34,7 +35,35 @@ Quatro tipos são `fora-do-motor` e só nascem de handler, não de `mostrar_card
 | **8 · pedido de contato (o número na web)** | `whatsapp_optin` (`src/lib/chat/types.ts:490`); sem `knownPhone` o card abre input (`src/components/chat/artifacts/whatsapp-optin.tsx:48`, `:131`). Cliques `whatsapp_optin` (`src/lib/chat/actions.ts:130`), `whatsapp_optin_confirm` (`:133`), `whatsapp_optin_decline` (`:134`) | **não se pede o número**: telefone e nome chegaram com a mensagem (P6). O card é `fora-do-motor` no canal | SQL-B: `leads.phone` da conversa; SQL-A para a ordem (o turno do card × o turno em que o telefone passou a existir) | `whatsapp_optin` em **21 de 346** conversas web; telefone **antes** do card em 21 × **depois** em 0; `lead_form` em **0**; `leads.phone` preenchido em **73 de 346** (diário §1.2 item 2) |
 | **9 · CPF/identidade** | gate `identify` (`src/lib/chat/actions.ts:52`) com o form de identidade (`src/components/chat/artifacts/gate-identity-form.tsx`) — o CPF completo nunca volta ao browser | texto/estado; a identidade é coletada no fluxo do canal, não em card | SQL-E: CPF em claro em `messages` (Q4, `scripts/qa/medidor-duplicidade.sql:103`) e na fala do agente | CPF em claro em `messages` = **3**, todos `role='user'` (entrada crua de julho); na fala do agente = **0** (Q4/Q11, diário §1.3) |
 | **10 · proposta** | `contract_form` (`src/lib/chat/types.ts:492`) → `contract-submit` (`src/lib/chat/actions.ts:141`) → `real_offer` (`src/lib/chat/types.ts:493`) → `offer-confirm` (`src/lib/chat/actions.ts:149`) | `contract_confirm` (`src/lib/whatsapp/formatter.ts:1020`) e `offer_confirm` (`:1092`), roteados em `src/lib/whatsapp/interactive-handlers.ts:130`, `:132` | SQL-C: `bevi_proposals.lead_id` = `leads.id` da conversa | NÃO MEDIDO |
-| **11 · fechamento** | `contractClosed = true` gravado em `src/app/api/chat/route.ts:1430`; `signature_handoff` e `document_upload` nascem depois do fecho | `finalizarOfertaReal` (`src/lib/whatsapp/interactive-handlers.ts:241`) faz o `confirmOffer` (`:243`) e grava o mesmo estado (`:246`) | SQL-D: `conversations.metadata->>'contractClosed'` | NÃO MEDIDO |
+| **11 · fechamento** | `contractClosed = true` gravado em `src/app/api/chat/route.ts:1430`; `signature_handoff` e `document_upload` nascem depois do fecho | `finalizarOfertaReal` (`src/lib/whatsapp/interactive-handlers.ts:241`) faz o `confirmOffer` (`:243`) e grava o mesmo estado (`:246`) | SQL-D: `conversations.metadata->>'contractClosed'` | **NULL em 2 de 2** (27/10 11:20) |
+
+## A rodada de 27/10/2026 (11:11–11:20) — o que o caminho andou de verdade
+
+Instrumento: `node scripts/qa/caminho.mjs --canal web` e `--canal whatsapp`, rodados **dentro do container**
+(o Node do host não alcança o OrbStack: `EHOSTUNREACH`), com `AJA_BASE_URL=http://localhost:3000`, modelo
+`qwen-35b`, `caixa_de_prompt` = 0 (conduta = texto do código). Provas: `scripts/qa/provas-do-caminho.sql`
+com `-v conv=<uuid>`. Relatório completo em `.orientacao/relatorios/4b.md`.
+
+Conversas medidas: web `18b875a8-15f7-4116-8b22-4cedde277bcd` (10 turnos do cliente) ·
+WhatsApp `191b287c-a668-4408-b4a6-342d936627f5` (9 turnos).
+
+| passo | web | whatsapp | número medido |
+|---|---|---|---|
+| 1 entrada (`data-welcome`) | texto puro | texto puro, sem botão `category_*` | `data-welcome` = **0 de 1** — a matriz supunha esse segmento; ele **não aparece** |
+| 2 saudação | avançou | avançou | saudação em texto **2 de 2**; `leads.name` = `Mário` em **2 de 2** |
+| 3 tipo de bem | avançou | avançou | `metadata.currentCategory = "auto"` em **2 de 2** |
+| 4 valor/parcela | avançou | avançou | valor capturado do texto **2 de 2**; card `value_picker` **0 de 1** (web); botões de faixa **0 de 1** (WhatsApp) |
+| 5 primeira oferta | **parou** | **parou** | cards de oferta **0 de 2** — `buscar_cartas` fora do ar (vitrine vazia) |
+| 6 interesse/recomendação | parou | parou | `recommendation_card` **0 de 2** |
+| 7 simulação/lance | parou | parou | cards de simulação **0 de 2**; nenhum valor em reais inventado nestas duas conversas |
+| 8 pedido de contato | avançou isolado | não existe no canal | web: `whatsapp_optin` **1 de 1**; `leads.phone` **0 de 2** (o card saiu, o número não foi digitado) |
+| 9 CPF/identidade | pediu, não recebeu | pediu, não recebeu | CPF enviado **0 de 2** (`E2E_TEST_CPF` vazia); CPF em claro **0**; máscara **0** |
+| 10 proposta | parou | parou | `bevi_proposals` = **0 rows** nas duas |
+| 11 fechamento | não alcançado | não alcançado | `contractClosed` **NULL em 2 de 2** |
+
+**Leitura:** o caminho andou até o passo 4 nos dois canais e parou no 5 — por **ambiente** (busca sem
+vitrine), não por condução. Do passo 5 em diante, o que está medido é **zero**, e zero por impossibilidade
+não é verde: `contractClosed` continua **NÃO MEDIDO**, com o motivo escrito.
 
 ## As provas por SQL
 
