@@ -147,3 +147,24 @@ order by m.created_at;
   comportamento dos dois canais no mesmo roteiro é o Bloco 4 que produz.
 - **O golden set não cobre o caminho completo:** `contractClosed` aparece em **0** das 25 fichas e
   `leads.phone` também em **0** — as fichas afirmam trajetória de card, não estado de banco.
+
+## A rodada de 27/10/2026 12:0x — com o MODELO DE PRODUÇÃO, nos dois canais
+
+`AI_MODEL=claude-haiku-5-5-alan-brow-twobrains` (o da produção), vitrine e identidade ligadas.
+Conversas de referência: WhatsApp `c27aea93-3f7f-4219-925a-c537c1bb3800` e a rodada de `caminho.mjs
+--canal ambos`. Provas: `scripts/qa/provas-do-caminho.sql`.
+
+| passo | estado medido | prova |
+|---|---|---|
+| 1–4 saudação, bem, nome, valor | avançou nos dois canais | `leads.name`, `metadata.currentCategory`, `qualifyAnswers.valorDoBemAlvo = 90000` |
+| 5 oferta/carta | **avançou** (a vitrine busca) | `artifacts.type = comparison_table` |
+| 6 interesse/recomendação | avançou | recomendação em texto + `quick_reply` |
+| 7 simulação/lance | avançou | fala com parcela real do card (`R$ 1.176,39 / 96 meses`) |
+| 8 pedido de contato | web: `whatsapp_optin` emitido · WhatsApp: não existe no canal (P6) | `artifacts.type`; `leads.phone` preenchido |
+| 9 CPF/identidade | avançou — CPF por texto, identidade **cifrada** | `metadata.identityEnc`, `identityCollected = true`, `lgpdAceite` |
+| 10 proposta | **parou** — tool chamada, sem proposta | `fazer_proposta` com `aceiteLgpd: true`; `BEVI_API_TOKEN` vazio; `bevi_proposals` = 0 rows |
+| 11 fechamento | não alcançado | `contractClosed` ausente |
+
+**O que continua `NÃO MEDIDO` e por quê:** `bevi_proposals.lead_id` e `contractClosed` dependem de
+criar proposta REAL na Bevi — sem `BEVI_API_TOKEN` e sem "GO BEVI" do dono, não se cria. O caminho está
+provado até o ato de fechar (`fazer_proposta` chamada com o aceite), que é o que o ambiente permite.
