@@ -199,6 +199,38 @@ describe("(print 06) o card responde a pergunta que o agente FEZ", () => {
 	});
 });
 
+describe("(print 10) a alternativa escrita na pergunta é a resposta — não o par de números", () => {
+	it("«Quer seguir com ela ou prefere comparar outra?» → seguir · comparar", () => {
+		// Defeito do print `.orientacao/prints-ux/10-conversa-picada-oferta.png` (ordem do líder,
+		// 27/10/2026 19:40): o agente oferecia os dois caminhos e os toques saíam `Quero ver os
+		// números` · `Agora não` — nenhum dos dois responde à pergunta. Causa: o ramo de sim/não
+		// rodava antes de qualquer alternativa, e `PEDIDO_DE_NUMEROS` casa "compara" (de
+		// "comparar").
+		const opcoes = sugestaoDoTurno("Quer seguir com ela ou prefere comparar outra?", {
+			temCartaNaTela: true,
+			falaDoCliente: "quero um carro de uns 90 mil",
+			categoriaDoBem: "auto",
+		}).opcoes;
+		expect(opcoes).toEqual(["Quero seguir com ela", "Comparar outra"]);
+		const juntas = opcoes.join(" | ").toLowerCase();
+		expect(juntas).toContain("seguir com ela");
+		expect(juntas).toContain("comparar outra");
+		expect(juntas).not.toContain("números");
+		expect(juntas).not.toContain("agora não");
+	});
+
+	it("«Prefere uma parcela menor ou um prazo mais curto?» → um toque por lado", () => {
+		expect(sugestaoDoTurno("Prefere uma parcela menor ou um prazo mais curto?").opcoes).toEqual([
+			"Uma parcela menor",
+			"Um prazo mais curto",
+		]);
+	});
+
+	it("«Quer carro ou moto?» → um toque por lado, sem a voz do agente", () => {
+		expect(sugestoesDaPergunta("Quer carro ou moto?")).toEqual(["Carro", "Moto"]);
+	});
+});
+
 describe("(b) as exceções são deliberadas", () => {
 	it("pergunta de resposta livre (o nome) não tem botão que diga o nome — tem saída", () => {
 		// O auditor da bateria cobrou o requisito LITERAL do dono ("sempre ter opções de
