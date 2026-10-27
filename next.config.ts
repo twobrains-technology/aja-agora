@@ -15,15 +15,7 @@ const nextConfig: NextConfig = {
 	// esta linha elas não entram na imagem standalone e o vendedor perde o
 	// conhecimento da Bevi EM SILÊNCIO — o turno funciona e responde pior.
 	outputFileTracingIncludes: {
-		"/api/**": [
-			"src/lib/agent/pi/skills/**/*.md",
-			// o plugin do Langfuse é lido do disco por caminho no runtime
-			"node_modules/@langfuse/pi-observability-plugin/src/**/*",
-			"node_modules/@langfuse/otel/**/*",
-			"node_modules/@langfuse/tracing/**/*",
-			"node_modules/@langfuse/core/**/*",
-			"node_modules/@opentelemetry/**/*",
-		],
+		"/api/**": ["src/lib/agent/pi/skills/**/*.md"],
 		"/**": ["src/lib/agent/pi/skills/**/*.md"],
 	},
 	serverExternalPackages: [
@@ -41,9 +33,10 @@ const nextConfig: NextConfig = {
 	//    TypeScript cru, sem `main`/`exports`; transpilado aqui, o `tsc` seguiria o fonte
 	//    dele e o `next build` morreria em "Failed to type check" (o defeito #54 do plugin,
 	//    `event.prompt` na variante `custom` de `before_agent_start`);
-	//  · mas ele PRECISA existir em `node_modules` no runtime — por isso o tracing include
-	//    abaixo. Sem isto, a imagem standalone sobe sem o plugin e o turno roda sem trace
-	//    EM SILÊNCIO (o oposto do defeito barulhento, e por isso pior).
+	//  · mas ele PRECISA existir em `node_modules` no runtime, e o file tracer do Next não
+	//    o enxerga (não há import estático; `outputFileTracingIncludes` com glob de
+	//    `node_modules` também não resolveu — medido no dev). Quem o leva para a imagem é
+	//    um COPY explícito no `Dockerfile`.
 	allowedDevOrigins: [
 		"aja-agora.twobrainstechnology.com",
 		// HMR via DNS local OrbStack (padrão dev-stack DNS-first).

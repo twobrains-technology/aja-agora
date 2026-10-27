@@ -74,6 +74,19 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
+# O plugin de observabilidade do Pi (D-0014) NÃO entra pelo file tracer do Next:
+# ele não é `import()` do código da app — o Pi o carrega por CAMINHO em runtime
+# (jiti, `additionalExtensionPaths`; ver `src/lib/agent/pi/langfuse.ts`), e o
+# tracer só segue `import`/`require` estático. `outputFileTracingIncludes` com
+# glob de `node_modules` também não o trouxe: medido no dev em 27/10/2026, o log
+# da task dizia `[langfuse] plugin indisponível … Cannot find module
+# '@langfuse/pi-observability-plugin/package.json'` e o turno rodava sem trace —
+# em silêncio, que é o pior jeito de falhar. Então os pacotes vêm copiados.
+# São pequenos (o plugin é 1 arquivo .ts) e a cópia preserva o `package.json` do
+# escopo, que é o que o `resolve` do Node precisa para achá-los.
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@langfuse ./node_modules/@langfuse
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@opentelemetry ./node_modules/@opentelemetry
+
 # Migrations runtime — pasta de migrations + bundle do guard + package.json.
 # O guard é um bundle self-contained (pg + drizzle-orm/migrator) que roda com
 # `node` PURO — NÃO precisa de pnpm. Por isso MIGRATE_CMD aponta direto pro node
