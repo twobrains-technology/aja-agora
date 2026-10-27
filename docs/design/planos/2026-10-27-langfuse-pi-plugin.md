@@ -640,6 +640,13 @@ Os dois na **mesma sessão** (`session_id = conversationId`), `environment=dev`,
 tela da sessão mostra `Total traces: 2 · Total cost: $0,030566`
 (`evidencias/2026-10-27-langfuse-dev-sessao-dois-turnos.png`).
 
+**Identidade da pessoa no trace** (o requisito que a revisão exigiu): conversa
+`f6239b96-1a5c-4851-b595-407b618a2c96`, trace `8b21dd5645297ef7989b0cad9c594083` — a tela mostra
+`User ID: uid-d0014-revisao-1793125864` (o cookie daquele turno), `Session: f6239b96-…`, `Env: dev`,
+`13.548 prompt → 297 completion`, `$0,015033`, com `Tool: buscar_cartas` e as duas `LLM Call`
+(`evidencias/2026-10-27-langfuse-dev-userid-trace.png`). O `userId` chega lá pela fila de
+`comIdentidadeDoTurno` em volta do `loader.reload()` — o plugin o lê no `loadConfig()` da factory.
+
 **Duas armadilhas de operação que o deploy ensinou** (as duas custaram uma volta cada):
 
 1. O workflow renderiza a task definition **no início da run**: gravar o secret depois de disparar o
