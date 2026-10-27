@@ -270,3 +270,66 @@ describe("P288 (rodada 15) — os separadores do guarda são os do capturador", 
 		});
 	}
 });
+
+// MEDIDO no chat web (mesma conversa do print 10, 3 mensagens `assistant` seguidas): a PRIMEIRA
+// fala do turno foi o plano interno do modelo, impresso para o cliente —
+//
+//   "Show-me-the-price: a faixa está na tela. Pergunto o valor. Boa!"
+//
+// Não é tom, é máquina: linha de raciocínio (rótulo em inglês de planejamento, passo narrado em
+// 1ª pessoa, interjeição solta de fim de passo) não é fala de vendedor. A guarda da narração
+// (`pi/narracao.ts`) não pega porque ela compara o balão inteiro com o VOCABULÁRIO FECHADO de
+// anúncio de ferramenta: basta uma palavra de fora ("price", "Boa") para o balão passar. Quem
+// corta é este pacote, no mesmo lugar onde já caem JSON de argumento e nome de tool.
+describe("plano interno do modelo não chega ao cliente", () => {
+	const VAZAMENTO = "Show-me-the-price: a faixa está na tela. Pergunto o valor. Boa!";
+
+	it("derruba a string exata que apareceu na tela", () => {
+		expect(passaFinal(VAZAMENTO)).toBe("");
+	});
+
+	it("derruba o plano escrito em três linhas", () => {
+		expect(passaFinal("Show-me-the-price: a faixa está na tela.\nPergunto o valor.\nBoa!")).toBe(
+			"",
+		);
+	});
+
+	// Cada forma de plano, uma por teste: rótulo em inglês de planejamento, passo em 1ª pessoa e
+	// interjeição solta de fim de passo.
+	for (const plano of [
+		"Step 2: agora pergunto o valor do bem.",
+		"Plan: mostrar a Canopus e perguntar o valor.",
+		"Reasoning: ele pediu 90 mil, a faixa cobre.",
+		"Thought: já viu a oferta, falta o valor.",
+		"Action: abrir a busca de cartas.",
+		"Observation: duas cartas na faixa.",
+		"Pergunto o valor.",
+		"Busco as cartas.",
+	]) {
+		it(`derruba o plano: ${plano}`, () => {
+			expect(passaFinal(plano)).toBe("");
+		});
+	}
+
+	// O QUE NÃO PODE CAIR — fala real do produto. O filtro olha o COMEÇO da linha e o vocabulário
+	// de planejamento; nome próprio, número, pergunta e "deixa eu" continuam na tela.
+	for (const fala of [
+		"Deixa eu buscar as cartas.",
+		"Olha, eu escolheria a CANOPUS de 90 mil.",
+		"Quer seguir com ela ou prefere comparar outra?",
+		"Boa, Marcos! A Canopus tem a parcela mais leve do grupo.",
+	]) {
+		it(`mantém a fala legítima intacta: ${fala}`, () => {
+			expect(passaFinal(fala)).toBe(fala);
+		});
+	}
+
+	it("o turno do print 10 continua inteiro, balão por balão", async () => {
+		const { picarEmBaloes } = await import("@/lib/agent/pi/baloes");
+		const texto =
+			"Olha, eu escolheria a CANOPUS de 90 mil. Ela tem a parcela mais leve entre as de 90 mil e sorteia 3 cartas por mês, mais que as outras do grupo. Quer seguir com ela ou prefere comparar outra?";
+		const baloes = picarEmBaloes(texto);
+		expect(baloes).toHaveLength(3);
+		expect(baloes.map((b) => passaFinal(b))).toEqual(baloes);
+	});
+});
