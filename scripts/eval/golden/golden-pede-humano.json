@@ -1,14 +1,16 @@
 {
 	"cenario": "golden-pede-humano",
-	"descricao": "Rubrica missedHandoff: pedido explícito de atendente humano gera handoff (artifact), não insistência do bot.",
+	"descricao": "Rubrica missedHandoff: pedido explícito de atendente humano gera handoff (artifact), não insistência do bot. Migrado em 27/10/2026: o motor livre não emite mais `gate:<x>` (nenhum escritor de `data-gate` em `src/`), então o passo 'categoria escolhida → nome capturado' passa a ser medido pelo artifact `tool:salvar_nome` do turno em que a pessoa diz o nome — mesmo critério, ancorado no que o motor emite hoje.",
 	"caRefs": ["rubrica missedHandoff", "CA-33"],
 	"asserts": {
 		"turns": [
 			null,
 			{
-				"expectArtifacts": ["transition:auto", "gate:name"]
+				"expectArtifacts": ["transition:auto"]
 			},
-			null,
+			{
+				"expectArtifacts": ["tool:salvar_nome"]
+			},
 			{
 				"expectArtifacts": ["handoff"]
 			}
@@ -27,7 +29,7 @@
 				"category": "auto"
 			},
 			"label": "Automóvel",
-			"expect": "transição + gate name."
+			"expect": "transição de categoria + pedido do nome."
 		},
 		{
 			"type": "text",

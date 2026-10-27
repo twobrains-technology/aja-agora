@@ -46,6 +46,7 @@ import { sendFechoPedirOi } from "@/lib/bevi/fecho-pedir-oi";
 import { confirmOffer, startContract, uploadContractDocument } from "@/lib/bevi/fulfillment";
 import { getLatestBeviProposal } from "@/lib/bevi/proposal-repo";
 import type { ChatAction } from "@/lib/chat/actions";
+import { chipsDoAviso } from "@/lib/chat/chips-dos-avisos";
 import {
 	EMPTY_TURN_FALLBACK,
 	isTurnEmpty,
@@ -58,6 +59,7 @@ import {
 	comparacaoGuardadaDaConversa,
 	registrarDesfechoDoTeste,
 } from "@/lib/chat/telefone-ab-do-servidor";
+import type { QuickReplyPayload } from "@/lib/chat/types";
 import type { AjaUIMessage, ArtifactPartData } from "@/lib/chat/ui-message";
 import {
 	VARIANTES_DO_TELEFONE,
@@ -68,6 +70,7 @@ import { loadIdentity, maskPhoneForDisplay, storeIdentity } from "@/lib/conversa
 import { loadConversationHistory, saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { bracoDaFila } from "@/lib/experimentos/fila";
+import { nomeUtilizavel } from "@/lib/leads/nome-plausivel";
 import { normalizePhoneBR } from "@/lib/leads/phone";
 import { registrarFalhaDoLlm } from "@/lib/llm/alerta-do-llm";
 import { COOKIE_MAX_AGE_SECONDS, COOKIE_NAME, generateCookieValue } from "@/lib/memory/identity";
@@ -237,12 +240,51 @@ async function writeAndSaveText(
 	conversationId: string,
 	persona: Persona | null,
 	text: string,
-): Promise<void> {
+): Promise<string> {
 	const id = crypto.randomUUID();
 	writer.write({ type: "text-start", id });
 	writer.write({ type: "text-delta", id, delta: text });
 	writer.write({ type: "text-end", id });
-	await saveMessage(conversationId, "assistant", text, "web", persona);
+	return saveMessage(conversationId, "assistant", text, "web", persona);
+}
+
+/** Aviso do SERVIDOR com o atalho que ele pede (ordem do dono, 27/10: turno que espera resposta
+ * traz opção de um toque).
+ *
+ * Medido no banco do dev: dos 558 turnos com pergunta, 102 saíam sem nenhum toque, e as duas
+ * maiores famílias eram exatamente dois avisos daqui — escritos por `writeAndSaveText`, que grava
+ * só TEXTO e por isso nunca passou pelo `garantirChip` do loop livre: 9× "Tive um problema ao gerar
+ * sua proposta…" e 7× "Não encontrei seus dados aqui…" (`chips-dos-avisos.ts`).
+ *
+ * O artifact sai no stream (a pessoa vê o botão no turno em que ele acontece) e é PERSISTIDO na
+ * mensagem — mesmo par de `pipeAndSaveClosingItems`: sem a linha no banco o atalho sumiria no
+ * reload, e sem o stream ele só apareceria depois de recarregar a página. */
+async function writeAndSaveTextComAviso(
+	writer: UIMessageStreamWriter<AjaUIMessage>,
+	conversationId: string,
+	persona: Persona | null,
+	text: string,
+): Promise<void> {
+	const messageId = await writeAndSaveText(writer, conversationId, persona, text);
+	const opcoes = chipsDoAviso(text);
+	if (!opcoes) return;
+
+	// `replyId` é do SERVIDOR, um por opção — é por ele que o clique é reivindicado
+	// (`click:<conversationId>:<replyId>`, `quick-reply.tsx`).
+	const payload: QuickReplyPayload = {
+		options: opcoes.map((o) => ({ label: o.label, replyId: crypto.randomUUID() })),
+	};
+	writer.write({
+		type: "data-artifact",
+		id: crypto.randomUUID(),
+		data: { type: "quick_reply", payload } as unknown as ArtifactPartData,
+	});
+	await db.insert(artifactsTable).values({
+		messageId,
+		type: "quick_reply",
+		payload: { options: payload.options },
+		createdAt: simulatorNow(),
+	});
 }
 
 /** FIX-11: pipeClosingItems + persistência — 1 message com os textos do
@@ -508,7 +550,10 @@ export async function POST(req: NextRequest) {
 			return new Response("No user message in payload", { status: 400 });
 		}
 		await saveMessage(conversationId, "user", userText, "web");
-		const userName = conv.contactName ?? "Cliente";
+		// O nome vai ao atendente só se for NOME. Antes o nulo virava "Cliente", e o
+		// vocativo inventado pelo servidor voltava na conversa como se fosse o nome da
+		// pessoa ("Obrigado, Cliente."). Sem nome, o lugar do nome fica vazio.
+		const userName = nomeUtilizavel(conv.contactName);
 		const entregue = await relayWebUserToAgent(conversationId, userText, userName);
 		publishMessage(conversationId, {
 			id: lastUserMessageId(body.messages) ?? crypto.randomUUID(),
@@ -1268,7 +1313,7 @@ export async function POST(req: NextRequest) {
 										await storeIdentity(conversationId, { cpf, celular });
 									}
 									if (!cpf || !celular) {
-										await writeAndSaveText(
+										await writeAndSaveTextComAviso(
 											writer,
 											conversationId,
 											meta.currentPersona ?? null,
@@ -1487,7 +1532,7 @@ export async function POST(req: NextRequest) {
 											`[offer-confirm] confirmOffer falhou (conv=${conversationId})`,
 											err,
 										);
-										await writeAndSaveText(
+										await writeAndSaveTextComAviso(
 											writer,
 											conversationId,
 											meta.currentPersona ?? null,

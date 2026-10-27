@@ -52,8 +52,8 @@ import {
 	type TipoDeEscolha,
 	type TipoDeFato,
 } from "@/lib/agent/pi/cards-livres";
-import { abrirCasoNaMesa, nomeNaFala } from "@/lib/agent/pi/handoff";
-import { resolverAceiteLgpd } from "@/lib/agent/pi/lgpd";
+import { abrirCasoNaMesa, clientePedeHumano, nomeNaFala } from "@/lib/agent/pi/handoff";
+import { revogouOsDados } from "@/lib/agent/pi/lgpd";
 import { pisoPadraoPara } from "@/lib/agent/qualify-answers";
 import { type ClosingItem, realOfferPresentation } from "@/lib/bevi/closing-presentation";
 import {
@@ -618,6 +618,34 @@ function refDoPayload(payload: Record<string, unknown>): RefDeCard {
 	return ref;
 }
 
+/** O preço do BEM que o cliente quer: o do turno quando a busca rodou nele, senão o que
+ * a qualificação gravou. É a régua do que ainda pode ser oferecido depois de uma falha. */
+function valorDoBemDoCliente(
+	ctx: ContextoDasTools,
+	meta: ConversationMetadata,
+): number | undefined {
+	const doTurno = ctx.estadoDepoisDaBusca?.valorDoBemAlvo;
+	if (typeof doTurno === "number" && doTurno > 0) return doTurno;
+	const declarado = meta.qualifyAnswers?.valorDoBemAlvo;
+	return typeof declarado === "number" && declarado > 0 ? declarado : undefined;
+}
+
+/** O QUE PODE SER OFERECIDO depois de a proposta falhar. A mensagem antiga dizia só
+ * "oferecendo outra das cartas da tela", sem dizer QUAL — e o modelo ofereceu carta de
+ * R$ 110 mil para um Corolla de R$ 160 mil (`.orientacao/prints-kairo/1532-lance-embutido.png`).
+ * Carta menor que o bem não compra o bem: ou se lista só as que compram, ou se manda buscar
+ * com o lance embutido. Sem o valor do bem não há régua — a instrução genérica fica como era. */
+function restricaoDaOfertaAposFalha(ctx: ContextoDasTools, valorDoBem: number | undefined): string {
+	if (valorDoBem === undefined) return "";
+	const reais = (v: number) => `R$ ${v.toLocaleString("pt-BR")}`;
+	const compram = ctx.cartasNaTela.filter((c) => c.carta >= valorDoBem * 0.995);
+	if (compram.length === 0) {
+		return ` Nenhuma carta desta tela compra o bem de ${reais(valorDoBem)} — chame \`buscar_cartas\` com usaraLanceEmbutido: true antes de oferecer outra.`;
+	}
+	const lista = compram.map((c) => `${reais(c.carta)} (${c.administradora})`).join(", ");
+	return ` As cartas DESTA tela que ainda compram o bem de ${reais(valorDoBem)}: ${lista} — ofereça uma DELAS, nunca uma carta menor que o bem.`;
+}
+
 export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres = {}) {
 	// UM adapter por turno: `simulateQuota` lê o índice de ofertas que a busca
 	// populou dentro da MESMA instância — com um adapter novo por chamada, a
@@ -776,7 +804,7 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 
 	const fazer_proposta = tool({
 		description:
-			"Gera a proposta REAL no nome do cliente, na administradora, e mostra o card de confirmação. Exige: o cliente escolheu uma das cartas mostradas, mandou CPF e celular dele e aceitou o aviso da LGPD (aceiteLgpd=true). CPF e celular NÃO são parâmetros — o sistema usa o que o cliente mandou.",
+			'Gera a proposta REAL no nome do cliente, na administradora, e mostra o card de confirmação. Exige: o cliente escolheu uma das cartas mostradas e mandou CPF e celular dele. CPF e celular NÃO são parâmetros — o sistema usa o que o cliente mandou. NÃO pergunte aceite de LGPD nem espere um "sim": o aviso é informativo e pedir confirmação antes da proposta é erro de condução (decisão do dono, 27/10/2026).',
 		inputSchema: z.object({
 			groupId: z
 				.string()
@@ -784,12 +812,12 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				.describe("id da carta escolhida, copiado LITERAL de buscar_cartas"),
 			aceiteLgpd: z
 				.boolean()
-				.describe("true só depois de o cliente concordar com o aviso da LGPD que você deu"),
+				.optional()
+				.describe(
+					"não é mais exigido: o aviso da LGPD é informativo. Mantido só por compatibilidade.",
+				),
 		}),
 		execute: async (args) => {
-			if (args.aceiteLgpd !== true) {
-				return "Proposta NÃO gerada: falta o aceite da LGPD. Dê o aviso e só siga depois do sim do cliente.";
-			}
 			const doTurno = ctx.cartasNaTela.find((c) => c.groupId === args.groupId);
 			const exibidas = await listShownOffersForConversation(ctx.conversationId).catch(() => []);
 			const escolhida = doTurno
@@ -807,7 +835,7 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 
 			const identity = await loadIdentity(ctx.conversationId);
 			if (!identity) {
-				return "Proposta NÃO gerada: não tenho o CPF do cliente guardado nesta conversa. Peça o CPF, explique que a administradora consulta os birôs de crédito, e só então chame de novo.";
+				return "Proposta NÃO gerada: não tenho o CPF do cliente guardado nesta conversa. Peça o CPF em UMA frase curta (sem aviso de privacidade, sem pedir autorização) e chame de novo.";
 			}
 			if (!identity.celular) {
 				return "Proposta NÃO gerada: falta o celular do cliente — o CPF já está guardado nesta conversa. No WhatsApp o celular é o número da conversa, não peça: use o que já existe. Na web, peça uma vez e chame de novo.";
@@ -826,32 +854,23 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				return "Proposta NÃO gerada: esta conversa é de teste e o ambiente não tem par de teste. Não invente número — diga que o fechamento aqui é de teste e siga.";
 			}
 
-			// O AVISO E O ACEITE SÃO FATO CONFERIDOS NA CONVERSA INTEIRA, não na última
-			// fala do agente — o `aceiteLgpd: true` do modelo não é prova de nada, e
-			// `startContract` já dispara consulta de bureau com `termoLgpd: true`.
-			// Medido em 92dfa1ba: aviso dado dois turnos antes, no meio o agente pediu o
-			// celular; o check antigo (só a última fala) não achava o aviso, recusava, e
-			// o modelo repetia o aviso — texto duplicado na tela. Agora o aviso vale em
-			// qualquer fala do agente, um "pode" do cliente depois dele é aceite, e o
-			// aceite registrado uma vez não se pede de novo.
+			// A ÚNICA COISA QUE AINDA BARRA É A REVOGAÇÃO EXPLÍCITA (decisão do dono,
+			// 27/10/2026): o aviso da LGPD, o "sim" e o estágio de consentimento saíram da
+			// conversa (`d7394727`) e a TEXTA deles saiu agora (`lgpd.ts`, skill, formatter).
+			// Quem diz "não autorizo" não tem proposta gerada — não é consentimento como
+			// pedágio, é não atropelar quem pediu para parar. A fala lida aqui é só a do
+			// CLIENTE: nada nesta tool lê a fala do agente.
 			const meta = await reloadMeta(ctx.conversationId);
 			const historico = await loadConversationHistory(ctx.conversationId).catch(() => []);
-			const aceite = resolverAceiteLgpd({
-				falas: historico.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
-				falaDoCliente: ctx.userText,
-				textoDoTurno: ctx.textoDoTurno ?? "",
-				aceiteJaGravado: meta.lgpdAceite ?? null,
-			});
-			if (!aceite.ok) {
-				// REVOGAÇÃO NÃO É SILÊNCIO: o cliente já disse "não autorizo", então a fala
-				// de retorno não pode mandar pedir o aceite de novo — isso é insistir contra
-				// a autorização que ele acabou de tirar.
-				if (aceite.motivo === "aceite-revogado") {
-					return "Proposta NÃO gerada: o cliente REVOGOU a autorização do uso dos dados dele nesta conversa. Não insista no aceite nem repita o aviso — ofereça falar com um humano e siga sem proposta.";
-				}
-				return aceite.motivo === "aviso-nao-dado"
-					? "Proposta NÃO gerada: o aviso da LGPD ainda não foi dado nesta conversa. Dê o aviso com suas palavras (a administradora consulta o CPF nos birôs de crédito e usa os dados só para isso) e só chame de novo depois do sim do cliente."
-					: "Proposta NÃO gerada: o cliente ainda não respondeu o aviso que você já deu. Peça o aceite em uma frase, sem repetir o aviso, e só siga depois do sim dele.";
+			const revogacao = revogouOsDados([
+				...historico.map((m) => ({
+					role: m.role as "user" | "assistant",
+					content: m.content,
+				})),
+				{ role: "user" as const, content: ctx.userText ?? "" },
+			]);
+			if (revogacao) {
+				return "Proposta NÃO gerada: o cliente REVOGOU o uso dos dados dele nesta conversa. Não insista, não repita aviso nenhum — siga a conversa sem gerar proposta, e só chame `falar_com_humano` se ELE pedir para falar com uma pessoa.";
 			}
 
 			// QUEM RECUSA IDENTIDADE DA CASA É O FULFILLMENT (`startContract`), que
@@ -916,7 +935,15 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				);
 			} catch (erro) {
 				console.error("[fazer_proposta] falha no fechamento:", erro);
-				return `Proposta NÃO gerada (${erro instanceof Error ? erro.message : String(erro)}). Diga ao cliente que houve um problema ao falar com a administradora e ofereça um especialista humano.`;
+				// FALHA DE FERRAMENTA NÃO É HANDOFF (P5/P7). A instrução anterior mandava "ofereça um
+				// especialista humano" e, com a Bevi fora do ar no dev (`BEVI_API_TOKEN` vazio), o
+				// vendedor empurrou para a mesa um cliente que dizia "quero essa mesma, bora fechar" —
+				// três turnos seguidos (`.orientacao/prints-lgpd/prod/05-depois-do-aceite.png`).
+				// Problema técnico se resolve tentando de novo, não passando o cliente adiante.
+				// A carta oferecida tem que COMPRAR o bem: é isto que impede a repetição do
+				// "Corolla de R$ 160 mil, carta de R$ 110 mil".
+				const restricao = restricaoDaOfertaAposFalha(ctx, valorDoBemDoCliente(ctx, meta));
+				return `Proposta NÃO gerada (${erro instanceof Error ? erro.message : String(erro)}). PROBLEMA TÉCNICO — não é motivo para passar o cliente para outra pessoa: em UMA frase curta diga que houve um problema ao falar com a administradora e siga VOCÊ MESMO, chamando \`fazer_proposta\` de novo com o mesmo groupId ou oferecendo outra das cartas da tela.${restricao} Não chame \`falar_com_humano\` por causa disto: o cliente quer comprar.`;
 			}
 
 			// Depois do fecho, a cota REAL é a âncora do estado — é o snapshot que
@@ -1032,6 +1059,20 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 			motivo: z.string().min(3).describe("Por que está chamando o especialista"),
 		}),
 		execute: async ({ motivo }) => {
+			// O GATE DA MESA (P5/P7): o caso só abre quando o CLIENTE pede uma pessoa. Falha de
+			// ferramenta, objeção ("e se eu não for contemplado"), dúvida de taxa ou conversa
+			// difícil são trabalho do vendedor — mandar para a mesa é desistir da venda. O modelo
+			// continua dono de COMO conduzir; o que não é dele é decidir que a conversa acabou.
+			const pediuAgora = clientePedeHumano(ctx.userText);
+			const pediuAntes =
+				pediuAgora ||
+				(await loadConversationHistory(ctx.conversationId).catch(() => []))
+					.filter((m) => m.role === "user")
+					.slice(-8)
+					.some((m) => clientePedeHumano(m.content));
+			if (!pediuAntes) {
+				return "Caso NÃO aberto: o cliente não pediu para falar com uma pessoa, e passar o atendimento para a mesa no meio da venda é desistir dele. Siga você: responda o que ele perguntou, resolva o que falhou (se uma ferramenta falhou, diga em UMA frase e tente de novo) e leve para o próximo passo da compra.";
+			}
 			ctx.pediuHumano = true;
 			// O nome que o cliente já disse na fala é FATO, não interpretação do modelo. Sem
 			// nome não há caso na mesa — capturar é mais honesto que pedir de novo.

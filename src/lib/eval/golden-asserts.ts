@@ -68,6 +68,11 @@ const rotuloOferta = (o: OfertaLida) =>
 export type GoldenTurnAsserts = {
 	/** Todos precisam aparecer nos artifacts do turno (subset match). */
 	expectArtifacts?: string[];
+	/** PELO MENOS UM destes precisa aparecer. Existe porque há passo com dois caminhos
+	 * legítimos — ex.: fechar a venda com `contract_form` (identidade ainda desconhecida)
+	 * ou direto com `tool:fazer_proposta` (identidade já capturada). `expectArtifacts`
+	 * exige TODOS; aqui exige um. */
+	expectAnyArtifact?: string[];
 	/** Nenhum pode aparecer. */
 	forbidArtifacts?: string[];
 	/** Report de 05/08 ("Está repetindo grupos iguais"): duas ofertas com a MESMA
@@ -91,6 +96,24 @@ export type GoldenTurnAsserts = {
 	 * pra menor lance, `monthlyPayment` pra menor parcela). */
 	recommendationMustMinimize?: string;
 };
+
+/** Valores que a aritmética de uma carta determina: produtos e somas de dois campos.
+ * Existe para o "custo total" (parcela × prazo) e o "total com taxa" não serem lidos como
+ * número inventado. Só combina dois números por vez, para não virar gerador de qualquer
+ * coisa: produto/soma de dois campos do MESMO card é o que uma conta de consórcio faz. */
+export function derivadosDaCarta(numeros: readonly number[]): number[] {
+	const base = numeros.filter((n) => Number.isFinite(n) && n > 0).slice(0, 12);
+	const saida: number[] = [];
+	for (let i = 0; i < base.length; i++) {
+		for (let j = i + 1; j < base.length; j++) {
+			const a = base[i];
+			const b = base[j];
+			if (a === undefined || b === undefined) continue;
+			saida.push(a * b, a + b);
+		}
+	}
+	return saida;
+}
 
 /** Frases longas o bastante pra que repetir signifique loop, não confirmação.
  * "Beleza!" repetido é conversa normal; um bloco de 40+ caracteres repetido
@@ -215,6 +238,16 @@ export function checkScenario(
 				);
 			}
 		}
+		if (asserts.expectAnyArtifact?.length) {
+			const apareceu = asserts.expectAnyArtifact.some((esperado) =>
+				t.artifactTypes.includes(esperado),
+			);
+			if (!apareceu) {
+				failures.push(
+					`${rotulo}: esperava UM de [${asserts.expectAnyArtifact.join(", ")}], veio [${t.artifactTypes.join(", ")}]`,
+				);
+			}
+		}
 		for (const proibido of asserts.forbidArtifacts ?? []) {
 			if (t.artifactTypes.includes(proibido)) {
 				failures.push(`${rotulo}: artifact PROIBIDO "${proibido}" apareceu`);
@@ -318,12 +351,20 @@ export function checkScenario(
 
 		if (asserts.forbidUngroundedMoney) {
 			// Lastro = número que apareceu em QUALQUER artifact (deste turno ou dos
-			// anteriores — a conversa acumula contexto) ou que o próprio usuário
-			// falou. Fora disso, o valor saiu do modelo.
+			// anteriores — a conversa acumula contexto), que o próprio usuário falou, ou
+			// que a ARITMÉTICA da carta determina (parcela × prazo = custo total,
+			// crédito × taxa, crédito + lance). Fora disso, o valor saiu do modelo.
+			//
+			// Medido em 27/10/2026 (rodada R6, `golden-hero-chega-na-tela` turno 9): a fala
+			// "o custo total dela, por volta de R$ 112,9 mil" foi acusada de inventar número,
+			// mas 1.176,39 × 96 = 112.933,44 — era conta de carta, não invenção. Sem o lastro
+			// derivado o assert acusava o argumento de venda mais comum do consórcio.
 			const comLastro = new Set<number>();
 			for (const anterior of turns.slice(0, i + 1)) {
 				for (const a of anterior.artifacts ?? []) {
-					for (const n of coletarNumeros(a.data)) comLastro.add(n);
+					const numeros = [...coletarNumeros(a.data)];
+					for (const n of numeros) comLastro.add(n);
+					for (const derivado of derivadosDaCarta(numeros)) comLastro.add(derivado);
 				}
 				for (const n of extractMoneyMentions(anterior.userMsg)) comLastro.add(n);
 			}

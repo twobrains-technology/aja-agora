@@ -1,0 +1,52 @@
+{
+	"cenario": "golden-dono-chato-quer-lance",
+	"descricao": "Lead difícil #11: a pessoa quer lance para antecipar a contemplação. O que se mede: nenhum valor de lance pode sair da cabeça do modelo — lance é número de tool (P-07, `forbidUngroundedMoney`), e querer lance não é motivo para empurrar a pessoa ao especialista (C-06).",
+	"caRefs": ["P-07", "C-06"],
+	"asserts": {
+		"turns": [
+			null,
+			null,
+			null,
+			{
+				"forbidArtifacts": ["handoff"],
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidArtifacts": ["handoff"],
+				"forbidRepeatedAgentText": true,
+				"forbidUngroundedMoney": true
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi",
+			"expect": "welcome com as categorias."
+		},
+		{
+			"type": "action",
+			"action": {
+				"kind": "category",
+				"category": "auto"
+			},
+			"label": "Automóvel",
+			"expect": "transição para carro + pedido do nome."
+		},
+		{
+			"type": "text",
+			"text": "Tiago",
+			"expect": "usa o nome e pergunta o valor do bem."
+		},
+		{
+			"type": "text",
+			"text": "quero dar lance pra ser contemplado logo",
+			"expect": "explica lance com o número da tool (lance médio/embutido), sem inventar percentual nem prometer contemplação."
+		},
+		{
+			"type": "text",
+			"text": "quanto eu preciso ter de lance?",
+			"expect": "responde com valor de tool, não com estimativa — e sem despachar para humano."
+		}
+	]
+}

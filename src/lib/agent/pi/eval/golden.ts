@@ -1,17 +1,21 @@
 // O JOGO DE REGRA DO CONDUCT — avaliado OFFLINE, na transcription.
 //
 // O eval roda SEM modelo juiz: cada regra é uma checagem determinística sobre os turnos
-// gravados, porque o que se quer é o CONTRATO, não a opinião. As cinco regras que o
-// padrão ouro cobra:
+// gravados, porque o que se quer é o CONTRATO, não a opinião. As seis regras do padrão
+// ouro:
 //
 //  1. `pergunta-repetida`      — a mesma pergunta em dois turnos.
 //  2. `pergunta-fechada-sem-chip` — o modelo lista opções no texto e não mostra chip.
-//  3. `dado-sem-aviso`          — pediu CPF/celular antes do aviso da LGPD.
-//  4. `contexto-nao-dito`       — número que o cliente nunca disse, sem card que o sustente.
-//  5. `card-relistado`          — relista o card em texto (a skill manda comentar só a recomendada).
+//  3. `contexto-nao-dito`       — número que o cliente nunca disse, sem card que o sustente.
+//  4. `card-relistado`          — relista o card em texto (a skill manda comentar só a recomendada).
+//  5. `pedido-repetido`         — o mesmo SLOT pedido de novo depois de o cliente ter respondido.
+//  6. `dado-repetido`           — o mesmo número no texto e no card do turno, ou em dois turnos.
+//
+// 5 e 6 medem duplicidade de CONTEÚDO, não de string (`docs/qa/criterios-do-chat.md` § DUPLICIDADE,
+// D-01/D-02/D-03): o medidor antigo casava pergunta por string e via 46 achados onde o medidor por
+// slot vê 472. Eles são MEDIDA OFFLINE — nunca guarda de runtime, nunca guarda de balão.
 
 import { opcoesDePerguntaFechada } from "@/lib/agent/pi/chips";
-import { AVISO_LGPD_RE, PEDE_DADO_RE } from "@/lib/agent/pi/lgpd";
 
 export type TurnoDeConversa = {
 	role: "user" | "assistant";
@@ -27,12 +31,17 @@ export type Achado = {
 	regra:
 		| "pergunta-repetida"
 		| "pergunta-fechada-sem-chip"
-		| "dado-sem-aviso"
 		| "contexto-nao-dito"
-		| "card-relistado";
+		| "card-relistado"
+		| "pedido-repetido"
+		| "dado-repetido";
 	turno: number;
 	evidencia: string;
 };
+
+/** Os sete slots do Q1 de `scripts/qa/medidor-duplicidade.sql:16-24`, com os mesmos nomes: sem
+ *  isso a contagem do TS não é comparável com a do SQL. */
+export type Slot = "tipo_de_bem" | "valor" | "parcela" | "cpf" | "nome" | "lance" | "aceite";
 
 // O que põe a ESCOLHA na tela como algo clicável. Não é só quick_reply: a comparison_table e a
 // group_card têm botão em cada linha — o cliente responde ali. A regra pergunta: a pergunta
@@ -48,6 +57,65 @@ export const CARTAO_CLICAVEL = [
 	"recommendation_card",
 	"welcome_categories",
 ];
+
+// ─── O QUE O BALÃO PEDE (D-01) ────────────────────────────────────────────────────────────────
+//
+// Os padrões espelham o Q1 do SQL (`scripts/qa/medidor-duplicidade.sql:16-24`), inclusive na
+// largueza dos de `cpf`/`parcela`/`lance`: é o que deixa as duas contagens no mesmo denominador.
+// O que a regra acusa é o PEDIDO repetido, não a menção — quem decide se o balão pede é a mesma
+// leitura que o SQL faz do balão.
+const PADROES_DE_SLOT: Record<Slot, RegExp> = {
+	tipo_de_bem:
+		/\b(?:qual|que)\s+(?:tipo\s+de\s+)?(?:bem|ve[íi]culo)\b|\bo\s+que\s+voc[êe]\s+(?:quer|pretende)\s+(?:comprar|adquirir|conquistar)\b|\b(?:carro|moto|im[oó]vel)\s+ou\s+(?:carro|moto|im[oó]vel)\b/i,
+	valor:
+		/\bvalor\b|\bquanto\s+(?:custa|custaria|pretende|voc[êe]\s+quer|quer\s+gastar)\b|\bfaixa\s+de\s+valor\b/i,
+	parcela: /\bparcela\b|\bpresta[çc][ãa]o\b|\bmensalidade\b|\bpor\s+m[êe]s\b/i,
+	cpf: /\bcpf\b/i,
+	nome: /\bseu\s+nome\b|\bcomo\s+(?:voc[êe]\s+)?se\s+chama\b|\bnome\s+completo\b/i,
+	lance: /\blance\b/i,
+	aceite:
+		/\bposso\s+(?:seguir|criar|gerar|mandar)\b|\bseguimos\b|\bfechamos\b|\bconfirma\b|\best[áa]\s+bom\s+assim\b/i,
+};
+
+/** Os slots que o balão do agente PEDE. Um balão pode pedir mais de um. */
+export function slotsPedidos(texto: string): Slot[] {
+	return (Object.keys(PADROES_DE_SLOT) as Slot[]).filter((slot) =>
+		PADROES_DE_SLOT[slot].test(texto),
+	);
+}
+
+const CPF_RESPOSTA_RE = /\d{3}\.?\d{3}\.?\d{3}-?\d{2}/;
+const NOME_PROPRIO_CURTO_RE = /^\p{Lu}[\p{L}']*(?:\s+\p{Lu}[\p{L}']*){0,2}$/u;
+
+/** O cliente RESPONDEU o slot no turno dele. É o que separa "pedir de novo porque a pessoa já
+ *  contou" (defeito) de "insistir porque ela não respondeu" (outra conversa). */
+export function respondeuSlot(slot: Slot, textoDoCliente: string): boolean {
+	const t = textoDoCliente.trim();
+	switch (slot) {
+		case "cpf":
+			return CPF_RESPOSTA_RE.test(t) || /\d{11}/.test(t.replace(/[.\-\s]/g, ""));
+		case "valor":
+		case "parcela":
+			return /\d/.test(t);
+		case "tipo_de_bem":
+			return /\b(carro|moto|im[oó]vel|caminh[ãa]o|terreno|casa|apartamento|servi[çc]o)\b/i.test(t);
+		case "nome":
+			return (
+				/\bme\s+chamo\b|\bmeu\s+nome\s+(?:é|e)\b/i.test(t) ||
+				(t.length <= 20 && !/\d/.test(t) && NOME_PROPRIO_CURTO_RE.test(t))
+			);
+		case "lance":
+			return /\d/.test(t) || /\b(?:sim|n[ãa]o|talvez|tenho|n[ãa]o\s+tenho)\b/i.test(t);
+		case "aceite":
+			return /\b(?:sim|pode|de\s+acordo|claro|vamos|confirmo|t[áa])\b/i.test(t);
+	}
+}
+
+// ─── O MESMO NÚMERO DUAS VEZES (D-02 e D-03) ─────────────────────────────────────────────────
+//
+// O piso de 100 é o mesmo do Q3b do SQL: sem ele, id de conversa, data e "3 meses" poluem a
+// contagem e o número deixa de ser "dado de conversa".
+const PISO_DE_DADO_DE_CONVERSA = 100;
 
 function normalizarPergunta(texto: string): string {
 	return texto.toLowerCase().replace(/\s+/g, " ").trim();
@@ -81,10 +149,15 @@ function leiturasNumericas(bruto: string): number[] {
 	return out;
 }
 
+/** Os números como aparecem escritos — é a comparação do Q2 do SQL (token a token). */
+function numerosBrutosDoTexto(texto: string): string[] {
+	return [...texto.matchAll(/\d+(?:[.,]\d+)?/g)].map((m) => m[0]);
+}
+
 /** Leituras numéricas de TODOS os números de um texto (não de uma token isolado). */
 function leiturasDoTexto(texto: string): number[] {
 	const out: number[] = [];
-	for (const m of texto.matchAll(/\d+(?:[.,]\d+)?/g)) out.push(...leiturasNumericas(m[0]));
+	for (const bruto of numerosBrutosDoTexto(texto)) out.push(...leiturasNumericas(bruto));
 	return out;
 }
 
@@ -119,13 +192,18 @@ export function agruparEmTurnos(mensagens: TurnoDeConversa[]): TurnoDeConversa[]
 export function avaliarConversa(turnos: TurnoDeConversa[]): Achado[] {
 	const achados: Achado[] = [];
 	const perguntasJaFeitas = new Set<string>();
-	let avisoVistoEm = -1;
 	const ditoPeloCliente = new Set<string>();
+	const slotsJaPedidos = new Map<Slot, { turno: number; respondido: boolean }>();
+	const numerosJaDitosPeloAgente = new Set<number>();
 
 	for (let i = 0; i < turnos.length; i++) {
 		const turno = turnos[i];
 		if (turno.role === "user") {
 			for (const n of numerosDeDinheiro(turno.content)) ditoPeloCliente.add(n);
+			// 5. o cliente respondeu um slot que já tinha sido pedido
+			for (const [slot, estado] of slotsJaPedidos) {
+				if (!estado.respondido && respondeuSlot(slot, turno.content)) estado.respondido = true;
+			}
 			continue;
 		}
 
@@ -150,13 +228,7 @@ export function avaliarConversa(turnos: TurnoDeConversa[]): Achado[] {
 			});
 		}
 
-		// 3. dado antes do aviso
-		if (AVISO_LGPD_RE.test(turno.content) && avisoVistoEm < 0) avisoVistoEm = i;
-		if (PEDE_DADO_RE.test(turno.content) && avisoVistoEm < 0) {
-			achados.push({ regra: "dado-sem-aviso", turno: i, evidencia: turno.content.trim() });
-		}
-
-		// 4. número que o agente afirma, que o cliente nunca disse e que nenhum card mostrou
+		// 3. número que o agente afirma, que o cliente nunca disse e que nenhum card mostrou
 		const mostrados = new Set<number>();
 		for (let j = 0; j <= i; j++) {
 			for (const v of turnos[j].valores ?? []) {
@@ -177,11 +249,50 @@ export function avaliarConversa(turnos: TurnoDeConversa[]): Achado[] {
 			achados.push({ regra: "contexto-nao-dito", turno: i, evidencia: bruto });
 		}
 
-		// 5. card relistado em texto
+		// 4. card relistado em texto
 		if (turno.cards.includes("comparison_table")) {
 			const linhas = turno.content.split(/\n+/).filter((l) => /^\s*(?:\d+[).:]|[-*–—•])\s/.test(l));
 			if (linhas.length >= 3) {
 				achados.push({ regra: "card-relistado", turno: i, evidencia: linhas.join(" | ") });
+			}
+		}
+
+		// 5. pedido repetido por slot — o primeiro pedido de cada slot nunca acusa
+		for (const slot of slotsPedidos(turno.content)) {
+			const anterior = slotsJaPedidos.get(slot);
+			if (anterior?.respondido) {
+				achados.push({
+					regra: "pedido-repetido",
+					turno: i,
+					evidencia: `${slot}: ${turno.content.trim()}`,
+				});
+			}
+			slotsJaPedidos.set(slot, { turno: i, respondido: false });
+		}
+
+		// 6. dado repetido — (i) no texto e no card do MESMO turno; (ii) em dois turnos do agente
+		const numerosDoCard = new Set<string>();
+		for (const valor of turno.valores ?? []) {
+			for (const bruto of numerosBrutosDoTexto(String(valor))) numerosDoCard.add(bruto);
+		}
+		const numerosJaNoTurno = new Set<string>();
+		const leiturasJaAcusadasNoTurno = new Set<number>();
+		for (const bruto of numerosBrutosDoTexto(turno.content)) {
+			if (numerosJaNoTurno.has(bruto)) continue;
+			numerosJaNoTurno.add(bruto);
+			const leituras = leiturasNumericas(bruto).filter((n) => n >= PISO_DE_DADO_DE_CONVERSA);
+			if (!leituras.length) continue;
+			if (numerosDoCard.has(bruto)) {
+				achados.push({ regra: "dado-repetido", turno: i, evidencia: `texto×card: ${bruto}` });
+			}
+			for (const n of leituras) {
+				// um achado por número: "733" e "733,00" no mesmo turno são o mesmo dado
+				if (leiturasJaAcusadasNoTurno.has(n)) continue;
+				leiturasJaAcusadasNoTurno.add(n);
+				if (numerosJaDitosPeloAgente.has(n)) {
+					achados.push({ regra: "dado-repetido", turno: i, evidencia: `dois turnos: ${n}` });
+				}
+				numerosJaDitosPeloAgente.add(n);
 			}
 		}
 	}

@@ -15,9 +15,9 @@
 //   4. fireContract → loadIdentity (decrypt) → startContract → apresenta real_offer.
 //
 // LGPD: o CPF NUNCA é logado nem persistido em claro. A identidade vem cifrada do
-// identify (loadIdentity decifra em memória); o payload do contract_form só carrega
-// CPF mascarado; criar proposta (consulta de bureau) exige aceite EXPLÍCITO — e só
-// vale como resposta ao aviso, cujo instante fica gravado no stage (`avisoLgpdEm`).
+// identify (loadIdentity decifra em memória) e o payload do contract_form só carrega
+// CPF mascarado. NÃO existe mais exigência de aviso/aceite para consultar o bureau
+// (decisão do dono, 27/10/2026): o que barra é revogação explícita, lida antes.
 
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -50,9 +50,10 @@ const brl = (n: number) =>
 	n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 
 /** Pedido de CPF quando a identidade não está on file (defensivo). */
+// O CPF É PEDIDO EM UMA LINHA, sem o rodapé "(LGPD)" que existia aqui: aviso de
+// privacidade no meio da compra é o rito que o dono mandou tirar (27/10/2026).
 export const CONTRACT_CPF_PROMPT =
-	"Pra eu criar sua proposta com a administradora, me confirma seu *CPF* (só os números)? " +
-	"Seus dados ficam protegidos (LGPD). 🔒";
+	"Pra eu criar sua proposta com a administradora, me confirma seu *CPF* (só os números)?";
 
 export const CONTRACT_INVALID_CPF_REPLY =
 	"Hmm, esse CPF não confere — confere os números e me manda de novo?";
@@ -346,19 +347,14 @@ export async function fireContract(from: string, conversationId: string): Promis
 	// o aceite já gravado. Sem nenhum dos dois, não chama a Bevi: o cliente recebe o
 	// aviso e o pedido de novo, e o instante do aviso passa a estar registrado — a
 	// mesma resposta que `pi/lgpd.ts` dá no turno livre.
+	// O AVISO DA LGPD NÃO É MAIS PEDÁGIO DO FECHAMENTO (decisão do dono, 27/10/2026).
+	// Aqui havia um portão: sem `avisoLgpdEm` gravado e sem aceite, o disparo NÃO chamava a
+	// Bevi e respondia o aviso — o cliente que já tinha dado o CPF recebia de volta um texto
+	// sobre birôs de crédito, no meio de uma conversa que já estava comprando (mesmo rito do
+	// print 1532-formulario-fixo). Quem autoriza o fechamento é o cliente ter pedido a
+	// proposta; quem barra é a REVOGAÇÃO explícita, e ela é lida no turno livre
+	// (`pi/lgpd.ts` → `revogouOsDados`) antes de a tool chamar este módulo.
 	const marcaPretendida = meta.contractOffer?.administradora ?? meta.recommendedAdministradora;
-	if (!cc.avisoLgpdEm && !meta.lgpdAceite) {
-		const aviso =
-			contractFormToWhatsApp({
-				...(marcaPretendida ? { administradora: marcaPretendida } : {}),
-				identityOnFile: false,
-			}).text ?? "";
-		const comAviso = { ...cc, avisoLgpdEm: new Date().toISOString() };
-		await persistMeta(conversationId, { ...meta, contractCollection: comAviso });
-		await sendTextMessage(from, aviso);
-		return;
-	}
-
 	const identity = await loadIdentity(conversationId).catch(() => null);
 	if (!identity) {
 		// Identidade sumiu — cai pro stage cpf e pede por texto (sem dead-end).

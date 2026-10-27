@@ -1,0 +1,51 @@
+{
+	"cenario": "golden-dono-chato-nao-entendi-duas-vezes",
+	"descricao": "Lead difícil #12: a pessoa não entendeu duas vezes seguidas. O risco é o agente repetir a mesma explicação (F-01/F-02) ou concluir que a pessoa não serve e passar para humano (C-05/C-06). Explicar de novo é explicar DIFERENTE, com outro exemplo, e o lead continua vivo.",
+	"caRefs": ["F-01", "F-02", "C-05"],
+	"asserts": {
+		"turns": [
+			null,
+			null,
+			null,
+			{
+				"forbidArtifacts": ["handoff"],
+				"forbidRepeatedAgentText": true
+			},
+			{
+				"forbidArtifacts": ["handoff"],
+				"forbidRepeatedAgentText": true
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi",
+			"expect": "welcome com as categorias."
+		},
+		{
+			"type": "action",
+			"action": {
+				"kind": "category",
+				"category": "imovel"
+			},
+			"label": "Imóvel",
+			"expect": "transição para imóvel + pedido do nome."
+		},
+		{
+			"type": "text",
+			"text": "Lu",
+			"expect": "usa o nome e pergunta o valor do bem."
+		},
+		{
+			"type": "text",
+			"text": "não entendi nada",
+			"expect": "explica de outro jeito, mais simples, sem repetir o bloco anterior."
+		},
+		{
+			"type": "text",
+			"text": "continuo não entendendo, explica diferente",
+			"expect": "muda o exemplo e o ângulo (outro caminho, sem aula) e mantém a conversa — sem handoff."
+		}
+	]
+}
