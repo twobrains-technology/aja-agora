@@ -274,6 +274,26 @@ describe("L44/P212 — o valor declarado entra no estado antes da busca", () => 
 		expect(declaracaoDoTurno("não sei, carro ou moto, uns 60 mil").categoria).toBeUndefined();
 	});
 
+	it("troca de categoria: a negada sai, a afirmada é a declarada", () => {
+		// Golden `golden-troca-de-categoria`: o modelo diz que trocou e o banco
+		// continuava com o `currentCategory` antigo.
+		expect(declaracaoDoTurno("Pensando melhor, na verdade eu quero uma moto, não imóvel")).toEqual({
+			categoria: "moto",
+		});
+		expect(declaracaoDoTurno("não quero carro, quero imóvel")).toEqual({ categoria: "imovel" });
+		expect(declaracaoDoTurno("deixa o carro, quero uma moto de 20 mil")).toEqual({
+			categoria: "moto",
+			valorDoBem: 20_000,
+		});
+	});
+
+	it("a comparação pura continua fora, mesmo com duas categorias na fala", () => {
+		// Nenhuma negada: sobra mais de uma e não há o que declarar.
+		expect(declaracaoDoTurno("carro ou moto, tanto faz").categoria).toBeUndefined();
+		// Negadas as duas: também não há categoria afirmada.
+		expect(declaracaoDoTurno("não quero carro nem moto").categoria).toBeUndefined();
+	});
+
 	it("o turno sem NENHUMA busca ainda grava categoria e faixa na meta", async () => {
 		const conversationId = await novaConversa();
 		const turno = await rodarTurno({

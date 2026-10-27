@@ -361,6 +361,49 @@ const LIGACOES_DO_LANCE = new Set([
 	"real",
 ]);
 
+/** As marcas de NEGAÇÃO que desmentem a categoria logo depois delas. A janela é
+ * de 15 caracteres e NÃO cruza `.`, `,` nem `?`: a negação vale dentro da
+ * MESMA oração. Em "não quero carro, quero imóvel" o `,` fecha a primeira e o
+ * `não` não alcança o imóvel. */
+const NEGACAO_DA_CATEGORIA =
+	/(?:\bn[aã]o\b|\bnem\b|\bem\s+vez\s+de\b|\besquec\w*\b|\bdeix\w*\b)[^.,?]{0,15}$/i;
+
+/** O cue explícito de TROCA (`na verdade`, `pensando melhor`, `mudei de ideia`,
+ * `trocar`). Duas categorias com cue de troca é troca declarada, não
+ * comparação — e a categoria que veio ANTES do cue é a que ficou para trás:
+ * "eu queria imóvel, mas pensando melhor quero uma moto". */
+const CUE_DE_TROCA = /\b(?:na\s+verdade|pensando\s+melhor|mudei\s+de\s+ideia|troc\w*)\b/i;
+
+/** Em que posições (início da palavra) a categoria aparece no texto. As regexes
+ * de `PALAVRAS_DE_CATEGORIA` são `g`: a cópia com o mesmo `source` evita depender
+ * do `lastIndex` delas. */
+function ocorrenciasDaCategoria(re: RegExp, texto: string): number[] {
+	return [...texto.matchAll(new RegExp(re.source, "gi"))].map((m) => m.index ?? 0);
+}
+
+/** A categoria AFIRMADA numa fala que nomeia DUAS ou mais.
+ *
+ * "carro ou moto" continua FORA: é comparação, nenhuma das duas está negada,
+ * sobra mais de uma e o resultado é `undefined` — escolher uma envenenaria o
+ * filtro do painel e o estágio do lead. TROCA é outra coisa: "quero uma moto,
+ * não imóvel" e "deixa o carro, quero uma moto" negam uma categoria e afirmam
+ * a outra. Até aqui o código jogava as duas fora — o modelo dizia que trocou e o
+ * `currentCategory` do banco continuava o antigo.
+ *
+ * A categoria é negada quando aparece precedida, na mesma oração, por alguma
+ * marca de `NEGACAO_DA_CATEGORIA`, ou quando vem antes do `CUE_DE_TROCA`. */
+function categoriaDaTroca(texto: string): Category | undefined {
+	const cue = CUE_DE_TROCA.exec(texto);
+	const afirmadas = PALAVRAS_DE_CATEGORIA.filter((p) =>
+		ocorrenciasDaCategoria(p.re, texto).some((inicio) => {
+			const antes = texto.slice(Math.max(0, inicio - 24), inicio);
+			if (NEGACAO_DA_CATEGORIA.test(antes)) return false;
+			return !(cue && inicio < (cue.index ?? 0));
+		}),
+	);
+	return afirmadas.length === 1 ? afirmadas[0]?.categoria : undefined;
+}
+
 /** O que o cliente DECLAROU neste turno — categoria e valor do bem —, sem
  * esperar a busca (L44/P212).
  *
@@ -379,14 +422,20 @@ const LIGACOES_DO_LANCE = new Set([
  *
  * Categoria: só quando o recado nomeia UMA. "carro ou moto" é comparação, não
  * declaração, e escolher uma das duas por conta própria envenenaria o filtro do
- * painel e o estágio do lead. */
+ * painel e o estágio do lead. Com DUAS ou mais nomeadas, vale a TROCA: negada
+ * uma, a outra é a declarada (`categoriaDaTroca`). */
 export function declaracaoDoTurno(texto: string | null | undefined): {
 	categoria?: Category;
 	valorDoBem?: number;
 } {
 	if (!texto) return {};
 	const nomeadas = PALAVRAS_DE_CATEGORIA.filter((p) => (texto.match(p.re) ?? []).length > 0);
-	const categoria = nomeadas.length === 1 ? nomeadas[0]?.categoria : undefined;
+	const categoria =
+		nomeadas.length === 1
+			? nomeadas[0]?.categoria
+			: nomeadas.length > 1
+				? categoriaDaTroca(texto)
+				: undefined;
 	// O DINHEIRO DO LANCE SAI DA ORAÇÃO, O RESTO FICA (P212): "quero um carro de 80
 	// mil, sem entrada" declara o bem de 80 mil — a palavra "entrada" não apaga a
 	// frase inteira. Só o número PAR que o cliente ligou ao lance é mascarado; o
