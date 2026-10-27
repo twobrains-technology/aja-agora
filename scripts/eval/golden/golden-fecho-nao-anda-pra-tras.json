@@ -1,6 +1,6 @@
 {
 	"cenario": "golden-fecho-nao-anda-pra-tras",
-	"descricao": "Cliente que já escolheu e pede pra contratar não pode receber pergunta de qualificação de volta. Produção 2026-08 (Caua, Erik, Monique): depois do clique na oferta, o funil voltava pra 'você já fez consórcio antes?' e depois pra pergunta de lance — o contract_form nunca chegava à tela e a venda morria. Três portas causavam isso: `experience` sem guarda de idempotência (reaparecia turno após turno), a cascata de lance barrando quem já escolheu, e o hero preso esperando um gate que saiu da cascata em 2026-07-21.",
+	"descricao": "Cliente que já escolheu e pede pra contratar não pode receber pergunta de qualificação de volta. Produção 2026-08 (Caua, Erik, Monique): depois do clique na oferta, o funil voltava pra 'você já fez consórcio antes?' e depois pra pergunta de lance — o contract_form nunca chegava à tela e a venda morria. Três portas causavam isso: `experience` sem guarda de idempotência (reaparecia turno após turno), a cascata de lance barrando quem já escolheu, e o hero preso esperando um gate que saiu da cascata em 2026-07-21. | Migrado em 27/10/2026: o turno 6 mandava `action {kind:'gate', gate:'identify'}` — vocabulário que o motor livre não emite nem aceita (nenhum escritor de `data-gate` em `src/`). A identidade agora vai por TEXTO e o servidor a captura em `capturarIdentidadeDoTexto`. O critério é o mesmo: depois da identidade, as ofertas aparecem.",
 	"caRefs": ["CA-20 fechamento", "CA-21 contract_form"],
 	"asserts": {
 		"turns": [
@@ -51,18 +51,9 @@
 			"expect": "espelha o motivo UMA vez e conduz pro CPF/celular (identify). Nunca pede CPF por texto livre."
 		},
 		{
-			"type": "action",
-			"action": {
-				"kind": "gate",
-				"gate": "identify",
-				"value": {
-					"cpf": "${E2E_TEST_CPF}",
-					"celular": "${E2E_TEST_CELULAR}",
-					"lgpd": true
-				},
-				"label": "Enviei meus dados pra buscar as ofertas"
-			},
-			"expect": "busca real e reveal das ofertas."
+			"type": "text",
+			"text": "meu cpf é ${E2E_TEST_CPF} e meu celular é ${E2E_TEST_CELULAR}",
+			"expect": "identidade entregue por TEXTO (o gate identify morreu em 20/10); o servidor captura e busca — a tabela de ofertas aparece."
 		},
 		{
 			"type": "text",

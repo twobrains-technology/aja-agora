@@ -1,6 +1,6 @@
 {
 	"cenario": "golden-troca-de-categoria",
-	"descricao": "Troca explícita de categoria no meio do funil gera transição limpa (sem estado vazado da categoria anterior). Migrado em 27/10/2026: o motor livre não emite mais `gate:<x>` (nenhum escritor de `data-gate` em `src/`), então 'categoria escolhida → nome capturado' é medido por `tool:salvar_nome`. O turno 4 (troca dita em TEXTO) passou a afirmar `tool:buscar_cartas`: `data-transition` só é escrito em `pipeTransitionTurn` (`src/lib/web/adapter.ts:438`), chamado apenas no clique `action.kind === category` (`src/app/api/chat/route.ts:647`), então o evento não é atingível por texto — o que se prova aqui é que o agente AGE na troca (busca de novo). O FATO do servidor (`metadata.currentCategory = moto`) é provado em SQL, não por SSE: `declaracaoDoTurno` foi corrigido em `8c8bd708` para ler a troca ('quero uma moto, não imóvel') e a rodada de 27/10 mediu `currentCategory = 'moto'` em 2 de 2 conversas.",
+	"descricao": "Troca explícita de categoria no meio do funil gera transição limpa (sem estado vazado da categoria anterior). Migrado em 27/10/2026: o motor livre não emite mais `gate:<x>` (nenhum escritor de `data-gate` em `src/`), então 'categoria escolhida → nome capturado' é medido por `tool:salvar_nome`. O turno 4 (troca dita em TEXTO) passou a afirmar `tool:buscar_cartas`: `data-transition` só é escrito em `pipeTransitionTurn` (`src/lib/web/adapter.ts:438`), chamado apenas no clique `action.kind === category` (`src/app/api/chat/route.ts:647`), então o evento não é atingível por texto — o que se prova aqui é que o agente AGE na troca (busca de novo). O FATO do servidor (`metadata.currentCategory = moto`) é provado em SQL, não por SSE: `declaracaoDoTurno` foi corrigido em `8c8bd708` para ler a troca ('quero uma moto, não imóvel') e a rodada de 27/10 mediu `currentCategory = 'moto'` em 2 de 2 conversas. | Ajuste de 27/10/2026 (medido com o modelo de produção, 3 rodadas): o assert `tool:buscar_cartas` no turno 4 era MEU erro — com o bem trocado e sem valor novo o agente pede o valor primeiro (`tool:mostrar_card`+`value_picker`), o que é condução correta. O turno ficou livre e o critério (P4) passou a ser provado por SQL.",
 	"caRefs": ["CA-2", "FIX multi-persona"],
 	"asserts": {
 		"turns": [
@@ -11,9 +11,7 @@
 			{
 				"expectArtifacts": ["tool:salvar_nome"]
 			},
-			{
-				"expectArtifacts": ["tool:buscar_cartas"]
-			}
+			null
 		]
 	},
 	"turns": [
@@ -39,7 +37,7 @@
 		{
 			"type": "text",
 			"text": "Pensando melhor, na verdade eu quero uma moto, não imóvel",
-			"expect": "o agente age na troca: busca de novo com o bem novo (o fato `currentCategory = moto` é provado por SQL)."
+			"expect": "o agente AGE na troca (o fato `currentCategory = moto` é provado por SQL, não por SSE: `data-transition` só nasce de clique)."
 		}
 	]
 }

@@ -36,6 +36,15 @@ const CPF = (process.env.E2E_TEST_CPF ?? "").trim();
 const CELULAR = (process.env.E2E_TEST_CELULAR ?? "").trim();
 const TEM_IDENTIDADE = Boolean(CPF && CELULAR);
 
+/** PII NUNCA sai em claro no relatório: CPF e celular entram mascarados em toda
+ * linha impressa por este script (e nos JSON de saída). O valor enviado à API é
+ * o de verdade; o que se protege é o que fica gravado no log/diário. */
+function mascarar(texto) {
+	return String(texto ?? "")
+		.replace(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g, "[CPF mascarado]")
+		.replace(/\b\d{11}\b/g, "[número mascarado]");
+}
+
 const TETO_TURNO_WEB_MS = 200_000;
 const TETO_TURNO_WA_MS = 330_000;
 
@@ -129,21 +138,15 @@ const ROTEIRO = [
 	{
 		id: "9-cpf-identidade",
 		nome: "CPF/identidade",
-		espera: { web: ["gate:identify", "contract_form"], whatsapp: ["whatsapp:interactive"] },
+		// O motor livre não emite mais `gate:identify` (o funil em código morreu em
+		// 20/10/2026): o CPF entra por TEXTO e o servidor o captura em
+		// `capturarIdentidadeDoTexto` (`src/lib/agent/pi/turno-livre.ts`). O que
+		// prova que o passo andou é o `contract_form` ou a `real_offer` na tela.
+		espera: { web: ["contract_form", "real_offer"], whatsapp: [] },
 		turns: () =>
 			TEM_IDENTIDADE
 				? {
-						web: [
-							{
-								action: {
-									kind: "gate",
-									gate: "identify",
-									value: { cpf: CPF, celular: CELULAR, lgpd: true },
-									label: "meus dados",
-								},
-								label: "meus dados",
-							},
-						],
+						web: [{ text: `meu cpf é ${CPF} e meu celular é ${CELULAR}` }],
 						whatsapp: [{ text: `meu cpf é ${CPF} e meu celular é ${CELULAR}` }],
 					}
 				: {
@@ -157,14 +160,39 @@ const ROTEIRO = [
 	{
 		id: "10-proposta",
 		nome: "proposta",
-		bloqueio:
-			"sem identidade homologada (`E2E_TEST_CPF` vazia) o `startContract` não roda — `bevi_proposals` não nasce (`src/lib/bevi/fulfillment.ts:9`)",
+		espera: { web: ["real_offer"], whatsapp: [] },
+		// O portão de consentimento da tool FICA (decisão do dono, 27/10): a proposta
+		// só nasce com o aviso dado e o aceite na conversa. Então o roteiro responde
+		// o aviso e só depois pede a geração — é o comportamento real do produto, não
+		// um passo inventado pelo roteiro.
+		turns: () => ({
+			web: [
+				{ text: "pode seguir, autorizo o uso dos meus dados" },
+				{ text: "agora gera a proposta" },
+			],
+			whatsapp: [
+				{ text: "pode seguir, autorizo o uso dos meus dados" },
+				{ text: "agora gera a proposta" },
+			],
+		}),
+		// Com identidade homologada o passo RODA (o bloqueio é medido depois, no banco);
+		// sem ela, nem adianta tentar — é aí que o caminho para.
+		bloqueio: () =>
+			TEM_IDENTIDADE
+				? null
+				: "sem identidade homologada (`E2E_TEST_CPF` vazia) o `startContract` não roda — `bevi_proposals` não nasce (`src/lib/bevi/fulfillment.ts:9`)",
 	},
 	{
 		id: "11-fechamento",
 		nome: "fechamento",
-		bloqueio:
-			"`contractClosed` só é gravado depois da proposta real do passo 10, que não nasce sem identidade homologada",
+		// O clique que fecha é `offer-confirm` (`src/lib/chat/actions.ts:149`); no
+		// WhatsApp o mesmo passo vem por texto. O veredito FINAL não é o artifact:
+		// é `contractClosed` no banco, provado por SQL.
+		espera: {},
+		turns: () => ({
+			web: [{ action: { kind: "offer-confirm" }, label: "quero fechar" }],
+			whatsapp: [{ text: "quero fechar" }],
+		}),
 	},
 ];
 
@@ -368,18 +396,19 @@ async function conduzirCanal(canal) {
 			continue;
 		}
 
-		if (passo.bloqueio) {
+		const bloqueio = typeof passo.bloqueio === "function" ? passo.bloqueio() : passo.bloqueio;
+		if (bloqueio) {
 			passos.push({
 				id: passo.id,
 				nome: passo.nome,
 				status: "parou",
-				motivo: passo.bloqueio,
+				motivo: bloqueio,
 				turnos: [],
 				artifacts: [],
 				gate: null,
 			});
 			parouEm = passo.id;
-			motivoDaParada = passo.bloqueio;
+			motivoDaParada = bloqueio;
 			continue;
 		}
 
@@ -469,7 +498,7 @@ function imprimirCanal(resultado) {
 		console.log(`\n── ${passo.id} · ${passo.nome} ──`);
 		console.log(`status    : ${etiqueta}`);
 		for (const turno of passo.turnos) {
-			console.log(`cliente   : ${turno.cliente}`);
+			console.log(`cliente   : ${mascarar(turno.cliente)}`);
 			console.log(`agente    : ${turno.agente.replace(/\n/g, "\n            ") || "(sem texto)"}`);
 			console.log(`artifacts : ${turno.artifacts.join(", ") || "—"}`);
 			if (turno.erro) console.log(`erro      : ${turno.erro}`);
@@ -567,4 +596,4 @@ if (!soJson) {
 	}
 }
 
-console.log(JSON.stringify(saida, null, 2));
+console.log(mascarar(JSON.stringify(saida, null, 2)));
