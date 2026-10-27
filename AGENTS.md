@@ -67,10 +67,15 @@ empurrar para humano é falha de condução, não zelo.
 
 ## LGPD e PII
 
-**Decisão do Kairo, 27/10/2026:** LGPD e PII não são obstáculo da conversa. O agente não pede
-consentimento, não avisa antes de pedir dado e não deixa de pedir um dado por causa disso. A proteção
-que existe é de encanamento — identidade cifrada e número mascarado no que é gravado — e não pode
-custar um turno de venda.
+**Decisão do Kairo, 27/10/2026 (13:12, grupo do refino):** *"pii que se foda [...] nao precisa de barrar
+nada por pii, o objetivo eh vender, nada de mascaramento, nem problema de seguranca."*
+
+- PII e LGPD não barram nada. O agente não pede consentimento, não avisa antes de pedir dado, não
+  deixa de pedir um dado e não segura a proposta esperando um "sim" de LGPD.
+- Nada de mascaramento: CPF, telefone e nome podem ir em claro para log, trace (Langfuse) e banco.
+  Máscara de PII não é requisito de nenhuma tarefa e não é motivo para recusar uma ferramenta.
+- PII não é argumento de segurança para travar entrega. O objetivo é vender.
+- Segredo de verdade (chave de API, senha, token) continua fora de log e de commit: isso não é PII.
 
 ## O que não se faz
 
