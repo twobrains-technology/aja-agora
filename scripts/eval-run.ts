@@ -110,6 +110,12 @@ async function createSimulatedConversation(): Promise<string> {
 }
 
 function gitShaCurto(): string {
+	// Dentro do container (onde a bateria roda: o login admin só aceita a origem do app)
+	// não há binário git nem o gitdir da worktree, que aponta para um caminho do host.
+	// Quem lança passa o sha medido no host — sem isso o relatório sai "sem-git" e o
+	// placar fica sem o carimbo do código que rodou.
+	const doAmbiente = process.env.EVAL_GIT_SHA?.trim();
+	if (doAmbiente) return doAmbiente.slice(0, 8);
 	try {
 		return execSync("git rev-parse --short HEAD", { encoding: "utf8" }).trim();
 	} catch {
