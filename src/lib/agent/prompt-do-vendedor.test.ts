@@ -15,6 +15,32 @@ describe("semente do vendedor — o que a dona do produto cobrou em 14 e 15/10",
 		expect(PROMPT_DO_VENDEDOR).toMatch(/opções na tela/i);
 	});
 
+	it("o nome é a PRIMEIRA pergunta, antes de qualquer oferta (ordem do dono, 27/10)", () => {
+		// Ordem literal do dono: *"o nome, um vendedor a primeira coisa que ele pergunta eh o
+		// nome"*. A conduta abria entregando oferta e o nome ficava para depois (ou nunca).
+		expect(diz(/a primeira coisa é o nome/i)).toBe(true);
+		expect(diz(/antes de qualquer oferta/i)).toBe(true);
+		expect(diz(/antes de tudo, como você se chama\?/i)).toBe(true);
+	});
+
+	it("o nome se pergunta antes da busca de cartas, não depois da oferta", () => {
+		// O texto é lido em ordem: a regra do nome tem de vir ANTES da instrução de buscar e
+		// mostrar carta, que é o que o modelo fazia primeiro.
+		const inicioDaConduta = PROMPT_DO_VENDEDOR.indexOf("Como um bom vendedor de consórcio age");
+		const nome = PROMPT_DO_VENDEDOR.indexOf("A primeira coisa é o nome");
+		const busca = PROMPT_DO_VENDEDOR.indexOf("Pergunta o mínimo antes de mostrar");
+		expect(nome).toBeGreaterThan(inicioDaConduta);
+		expect(busca).toBeGreaterThan(nome);
+	});
+
+	it("o nome é perguntado UMA vez e nunca trava a venda", () => {
+		expect(diz(/no máximo uma vez/i)).toBe(true);
+		expect(diz(/o nome nunca trava a venda/i)).toBe(true);
+		// O texto antigo dizia que o nome era OPCIONAL: com a ordem do dono, era a instrução
+		// contraditória que fazia o modelo nunca perguntar.
+		expect(diz(/o nome é opcional/i)).toBe(false);
+	});
+
 	it("tipo de bem + valor basta para buscar: parcela nunca é pré-requisito", () => {
 		expect(PROMPT_DO_VENDEDOR).toMatch(/nunca peça a parcela ou o prazo como condição/i);
 	});
