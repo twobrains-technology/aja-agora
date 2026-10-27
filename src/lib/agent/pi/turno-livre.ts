@@ -1152,9 +1152,16 @@ export function createRunTurnLivre(deps?: {
 		};
 
 		// "O que está na tela" — o modelo precisa dos ids para fechar a proposta.
+		//
+		// O bloco é CONTEXTO, e contexto mal rotulado vira fala repetida: medido em
+		// 27/10/2026 (rodada R6, 147 dos 167 achados do medidor de conteúdo são repetição;
+		// o pior caso repete o mesmo parágrafo de carta/parcela em quatro turnos seguidos),
+		// o modelo recebia esta lista de novo a cada turno sem saber que ela já tinha sido
+		// dita e recitava os mesmos números. O rótulo abaixo diz o que a lista É — fato já
+		// apresentado — para o número não virar eco. Não é guarda de fala: nada é cortado.
 		const exibidas = await listShownOffersForConversation(conversationId).catch(() => []);
 		const naTela = exibidas.length
-			? `\n\nCartas na tela desta conversa:\n${exibidas
+			? `\n\nCartas que JÁ estão na tela desta conversa (o cliente já viu estes valores; use os ids para fechar a proposta e não recite os números de novo a menos que ele pergunte):\n${exibidas
 					.map(
 						(o) =>
 							`- [na tela: ${o.administradora ?? "administradora"} · carta R$ ${o.creditValue?.toLocaleString("pt-BR") ?? "?"} · id ${o.groupId}]`,
