@@ -23,6 +23,7 @@ import { join } from "node:path";
 // módulo ESM marcado como externo.
 import type * as PiPacote from "@earendil-works/pi-coding-agent";
 import type { MensagemDaConversa } from "@/lib/agent/turn/estado";
+import { caminhoDoPluginDoLangfuse, ehIdDeSessaoValido, langfuseLigado } from "./langfuse";
 import type { PiToolDefinition } from "./tools";
 
 type PiModule = typeof PiPacote;
@@ -106,6 +107,10 @@ export async function abrirSessao(args: {
 	system: string;
 	tools: PiToolDefinition[];
 	historico?: MensagemDaConversa[];
+	/** Id da CONVERSA (uuid do banco). Com a observabilidade ligada, é ele que vira
+	 *  `session_id` no Langfuse — uma conversa é UMA sessão lá, não uma por turno.
+	 *  Sem as envs do Langfuse, este campo não tem efeito nenhum. */
+	conversaId?: string;
 	/** Injetável para teste: provedor OpenAI-completions falso. */
 	provider?: { id: string; baseUrl: string; apiKey: string; model: string };
 }): Promise<SessaoAberta> {
@@ -143,6 +148,10 @@ export async function abrirSessao(args: {
 		SettingsManager,
 	} = pi;
 
+	// Resolvido UMA vez: a função também prepara o `PI_LANGFUSE_MAX_CHARS`, que o
+	// plugin lê no load do módulo.
+	const pluginDoLangfuse = caminhoDoPluginDoLangfuse();
+
 	const loader = new DefaultResourceLoader({
 		cwd,
 		agentDir,
@@ -153,6 +162,11 @@ export async function abrirSessao(args: {
 				for (const tool of args.tools) api.registerTool(tool as never);
 			},
 		],
+		// A OBSERVABILIDADE entra por caminho, não por código importado: o plugin
+		// publicado é TypeScript cru e sem `main`/`exports`, então quem transpila é o
+		// jiti que o próprio Pi usa para carregar extensão (ver `langfuse.ts`). Sem as
+		// três envs, a lista é vazia e a sessão é exatamente a de antes.
+		additionalExtensionPaths: pluginDoLangfuse ? [pluginDoLangfuse] : [],
 	});
 	await loader.reload();
 
@@ -209,13 +223,27 @@ export async function abrirSessao(args: {
 		return entry;
 	});
 
+	// ID DA SESSÃO — o `session_id` que o Langfuse vai mostrar.
+	//
+	// O plugin lê `ctx.sessionManager.getSessionId()`, então o id tem de entrar AQUI.
+	// Só vale com a observabilidade ligada (fora dela, o comportamento é o de sempre,
+	// byte por byte) e só com id no formato que o Pi aceita: `assertValidSessionId`
+	// LANÇA dentro do turno, e um id estranho derrubaria a fala do cliente por causa
+	// de observabilidade — o oposto do que este módulo promete.
+	const idDaSessao =
+		langfuseLigado() && ehIdDeSessaoValido(args.conversaId) ? args.conversaId : undefined;
+
 	const { session } = await createAgentSession({
 		cwd,
 		agentDir,
 		model: modelo as never,
 		modelRuntime: runtime,
 		resourceLoader: loader,
-		sessionManager: SessionManager.inMemory(cwd, undefined, entries as never),
+		sessionManager: SessionManager.inMemory(
+			cwd,
+			idDaSessao ? { id: idDaSessao } : undefined,
+			entries as never,
+		),
 		settingsManager: SettingsManager.inMemory({ compaction: { enabled: false } }),
 		noTools: "builtin",
 	});

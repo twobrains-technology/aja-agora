@@ -1254,6 +1254,10 @@ export function createRunTurnLivre(deps?: {
 				system,
 				turnMessage: (captura.textoLimpo || "(sem fala)") + naTela,
 				historico,
+				// o id da conversa vira o `session_id` do trace no Langfuse (D-0014):
+				// assim dois turnos da MESMA conversa caem na mesma sessão lá, em vez
+				// de cada turno abrir uma sessão nova. Sem as envs, não tem efeito.
+				conversaId: conversationId,
 				tools: semRepetirChamada(
 					toPiTools(buildToolsLivres(ctx, { buscarGrupos: deps?.busca }) as never, {
 						conversationId,

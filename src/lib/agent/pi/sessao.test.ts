@@ -72,6 +72,10 @@ async function servidorFalso(chamadas: Array<{ role: string; content?: unknown }
 const abertas: Array<() => void> = [];
 afterEach(() => {
 	for (const f of abertas.splice(0)) f();
+	for (const chave of Object.keys(process.env)) {
+		if (chave.startsWith("LANGFUSE_") || chave === "PI_LANGFUSE_MAX_CHARS")
+			delete process.env[chave];
+	}
 });
 
 describe("pi/sessao — a sessão do turno é montada em controle total", () => {
@@ -141,5 +145,75 @@ describe("pi/sessao — a sessão do turno é montada em controle total", () => 
 		expect(enviado).toContain("50 mil reais");
 		expect(enviado).toContain("Para quando?");
 		expect(enviado).toContain("300 por mês");
+	}, 60_000);
+});
+
+// D-0014 — O ID DA SESSÃO é o que o Langfuse mostra como `session_id`.
+//
+// O plugin da observabilidade lê `ctx.sessionManager.getSessionId()`, então a única
+// forma de uma CONVERSA ser UMA sessão no Langfuse (e não uma por turno) é o id entrar
+// aqui, no `SessionManager`. Estes dois casos são o aceite inteiro:
+//   · com as envs ligadas  → o id da sessão É o id da conversa;
+//   · sem as envs          → nada muda (id do Pi, como sempre foi).
+// Se alguém tirar o `{ id }`, o primeiro caso cai; se alguém passar o id sempre, o
+// segundo cai — e o turno passa a depender de observabilidade, que é justamente o
+// que não pode acontecer.
+describe("pi/sessao — o id da sessão é o da conversa, e só com o Langfuse ligado", () => {
+	const CONVERSA = "4a1af177-0a58-4dc4-9d0f-2e5f0f0f6b21";
+
+	it("com as envs do Langfuse, `getSessionId()` devolve o conversationId", async () => {
+		const falso = await servidorFalso([]);
+		abertas.push(falso.fechar);
+		// aponta para o servidor falso: nenhum span sai da máquina
+		process.env.LANGFUSE_BASE_URL = falso.url;
+		process.env.LANGFUSE_PUBLIC_KEY = "pk-lf-teste";
+		process.env.LANGFUSE_SECRET_KEY = "sk-lf-teste";
+
+		const { session } = await abrirSessao({
+			system: "Você é o consultor.",
+			tools: [],
+			conversaId: CONVERSA,
+			provider: { id: "fake", baseUrl: `${falso.url}/v1`, apiKey: "x", model: "fake" },
+		});
+
+		expect(session.sessionManager.getSessionId()).toBe(CONVERSA);
+		// e a extensão do plugin está DE FATO na sessão: ela registra
+		// `before_agent_start`, que é onde o trace do turno nasce. Sem isto, o id
+		// acima passaria e mesmo assim não haveria trace nenhum.
+		expect(session.hasExtensionHandlers("before_agent_start")).toBe(true);
+	}, 60_000);
+
+	it("sem as envs, o id é o do próprio Pi — a conversa NÃO vira sessão", async () => {
+		const falso = await servidorFalso([]);
+		abertas.push(falso.fechar);
+
+		const { session } = await abrirSessao({
+			system: "Você é o consultor.",
+			tools: [],
+			conversaId: CONVERSA,
+			provider: { id: "fake", baseUrl: `${falso.url}/v1`, apiKey: "x", model: "fake" },
+		});
+
+		expect(session.sessionManager.getSessionId()).not.toBe(CONVERSA);
+		// "sem as envs, nenhum efeito" — nem a extensão é carregada
+		expect(session.hasExtensionHandlers("before_agent_start")).toBe(false);
+	}, 60_000);
+
+	it("com as envs mas id de conversa fora do formato, não estoura o turno", async () => {
+		const falso = await servidorFalso([]);
+		abertas.push(falso.fechar);
+		process.env.LANGFUSE_BASE_URL = falso.url;
+		process.env.LANGFUSE_PUBLIC_KEY = "pk-lf-teste";
+		process.env.LANGFUSE_SECRET_KEY = "sk-lf-teste";
+
+		const { session } = await abrirSessao({
+			system: "Você é o consultor.",
+			tools: [],
+			conversaId: "id com espaço",
+			provider: { id: "fake", baseUrl: `${falso.url}/v1`, apiKey: "x", model: "fake" },
+		});
+
+		// o Pi não viu o id ruim (ele lançaria): a sessão caiu no id gerado
+		expect(session.sessionManager.getSessionId()).not.toBe("id com espaço");
 	}, 60_000);
 });

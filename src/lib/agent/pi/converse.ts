@@ -21,6 +21,9 @@ export type BeatArgs = {
 	turnMessage: string;
 	historico: readonly MensagemDaConversa[];
 	tools: PiToolDefinition[];
+	/** Id da conversa (uuid do banco). Com o Langfuse ligado ele vira o `session_id`
+	 *  do trace — uma conversa é uma sessão lá. Sem as envs, não tem efeito. */
+	conversaId?: string;
 	/** Delta de texto já limpo pelo chamador. */
 	aoDelta?: (texto: string) => void;
 	aoToolCall?: (chamada: ChamadaDeTool) => void;
@@ -59,6 +62,7 @@ export async function executarBeat(args: BeatArgs): Promise<BeatResultado> {
 		system: args.system,
 		tools: args.tools,
 		historico: [...args.historico],
+		conversaId: args.conversaId,
 		provider: args.provider,
 	});
 
