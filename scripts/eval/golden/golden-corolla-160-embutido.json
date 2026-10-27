@@ -1,0 +1,40 @@
+{
+	"cenario": "golden-corolla-160-embutido",
+	"descricao": "Print do dono (27/10, 15:32, `.orientacao/prints-kairo/1532-lance-embutido.png`): a pessoa quer o Corolla de R$ 160 mil e o agente aplicou 30% de lance embutido NA CARTA DE 160 mil, mostrando 'você recebe 112 mil' — dinheiro que não compra o carro. O que se mede: com embutido, a carta ofertada tem que ser MAIOR que o bem (carta ~ 160/(1-30%) = 229 mil), então nenhuma carta abaixo de 200 mil pode entrar na tela nesse caminho, e o agente não inventa número.",
+	"caRefs": ["P-07", "R-03"],
+	"asserts": {
+		"turns": [
+			null,
+			null,
+			null,
+			{ "minCreditValue": 150000, "forbidArtifacts": ["handoff"] },
+			{ "minCreditValue": 200000, "forbidArtifacts": ["handoff"], "forbidUngroundedMoney": true },
+			{ "minCreditValue": 200000, "forbidUngroundedMoney": true }
+		]
+	},
+	"turns": [
+		{ "type": "text", "text": "oi", "expect": "saudação com as categorias." },
+		{
+			"type": "action",
+			"action": { "kind": "category", "category": "auto" },
+			"label": "Automóvel",
+			"expect": "transição para carro + pedido do nome."
+		},
+		{ "type": "text", "text": "Marina", "expect": "usa o nome e pergunta o valor do bem." },
+		{
+			"type": "text",
+			"text": "quero um Corolla de 160 mil",
+			"expect": "mostra as cartas de 160 mil e recomenda uma."
+		},
+		{
+			"type": "text",
+			"text": "e com lance embutido, como fica?",
+			"expect": "explica que a carta precisa ser maior que o bem e busca a carta de ~229 mil — nada de embutido na carta de 160."
+		},
+		{
+			"type": "text",
+			"text": "então me mostra como fica nessa maior",
+			"expect": "mostra o embutido na carta que sobra o valor do carro."
+		}
+	]
+}

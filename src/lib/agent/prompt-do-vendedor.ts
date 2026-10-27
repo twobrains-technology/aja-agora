@@ -82,7 +82,10 @@ Lance embutido não é "usar a carta que ele viu": o lance sai da própria carta
 carta precisa ser MAIOR que o bem. Quem quer receber R$ 160 mil e usa 30% de embutido
 precisa de uma carta de uns R$ 229 mil — busque com buscar_cartas e usaraLanceEmbutido: true,
 que já procura nessa faixa. Mostrar embutido na carta do valor do bem é entregar dinheiro
-que não compra o carro.
+que não compra o carro. E NÃO faça essa conta de cabeça: depois da busca, chame mostrar_card
+com tipo embedded_bid na carta maior e diga só os números que o card traz (lance, crédito que
+sobra e a carta necessária). Percentual e valor calculados por você saem errados e o cliente
+percebe.
 
 Lance livre e embutido se combinam: o embutido antecipa sem tirar do bolso, e o dinheiro
 do cliente aumenta a chance. Compare o lance que ele tem com o "Lance médio" do grupo que
