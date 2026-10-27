@@ -53,7 +53,7 @@ import {
 	type TipoDeFato,
 } from "@/lib/agent/pi/cards-livres";
 import { abrirCasoNaMesa, clientePedeHumano, nomeNaFala } from "@/lib/agent/pi/handoff";
-import { resolverAceiteLgpd } from "@/lib/agent/pi/lgpd";
+import { revogouOsDados } from "@/lib/agent/pi/lgpd";
 import { pisoPadraoPara } from "@/lib/agent/qualify-answers";
 import { type ClosingItem, realOfferPresentation } from "@/lib/bevi/closing-presentation";
 import {
@@ -807,7 +807,7 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 
 			const identity = await loadIdentity(ctx.conversationId);
 			if (!identity) {
-				return "Proposta NÃO gerada: não tenho o CPF do cliente guardado nesta conversa. Peça o CPF, explique que a administradora consulta os birôs de crédito, e só então chame de novo.";
+				return "Proposta NÃO gerada: não tenho o CPF do cliente guardado nesta conversa. Peça o CPF em UMA frase curta (sem aviso de privacidade, sem pedir autorização) e chame de novo.";
 			}
 			if (!identity.celular) {
 				return "Proposta NÃO gerada: falta o celular do cliente — o CPF já está guardado nesta conversa. No WhatsApp o celular é o número da conversa, não peça: use o que já existe. Na web, peça uma vez e chame de novo.";
@@ -826,34 +826,23 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				return "Proposta NÃO gerada: esta conversa é de teste e o ambiente não tem par de teste. Não invente número — diga que o fechamento aqui é de teste e siga.";
 			}
 
-			// O AVISO E O ACEITE SÃO FATO CONFERIDOS NA CONVERSA INTEIRA, não na última
-			// fala do agente — o `aceiteLgpd: true` do modelo não é prova de nada, e
-			// `startContract` já dispara consulta de bureau com `termoLgpd: true`.
-			// Medido em 92dfa1ba: aviso dado dois turnos antes, no meio o agente pediu o
-			// celular; o check antigo (só a última fala) não achava o aviso, recusava, e
-			// o modelo repetia o aviso — texto duplicado na tela. Agora o aviso vale em
-			// qualquer fala do agente, um "pode" do cliente depois dele é aceite, e o
-			// aceite registrado uma vez não se pede de novo.
+			// A ÚNICA COISA QUE AINDA BARRA É A REVOGAÇÃO EXPLÍCITA (decisão do dono,
+			// 27/10/2026): o aviso da LGPD, o "sim" e o estágio de consentimento saíram da
+			// conversa (`d7394727`) e a TEXTA deles saiu agora (`lgpd.ts`, skill, formatter).
+			// Quem diz "não autorizo" não tem proposta gerada — não é consentimento como
+			// pedágio, é não atropelar quem pediu para parar. A fala lida aqui é só a do
+			// CLIENTE: nada nesta tool lê a fala do agente.
 			const meta = await reloadMeta(ctx.conversationId);
 			const historico = await loadConversationHistory(ctx.conversationId).catch(() => []);
-			// DECISÃO DO DONO (27/10/2026, 13:12): "pii que se foda… o objetivo é vender, nada de
-			// barrar nada por pii". O aviso da LGPD é INFORMATIVO e o consentimento deixou de ser
-			// pedágio da proposta: pedir o "sim" antes de gerar custa um turno de venda e, medido
-			// em 27/10 (conversa do cenário `golden-fecho-nao-anda-pra-tras`), virava laço — o
-			// cliente dizia "bora fechar" e o agente repetia o pedido de "sim" até três turnos.
-			// Absorve a `801b0b15` (que existia para destravar esse mesmo laço do lado do aceite).
-			//
-			// O que CONTINUA barrando é a REVOGAÇÃO explícita: se o cliente disse "não autorizo",
-			// gerar proposta por cima é ignorar quem pediu para parar. Não é consentimento como
-			// pedágio, é não atropelar o cliente.
-			const aceite = resolverAceiteLgpd({
-				falas: historico.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
-				falaDoCliente: ctx.userText,
-				textoDoTurno: ctx.textoDoTurno ?? "",
-				aceiteJaGravado: meta.lgpdAceite ?? null,
-			});
-			if (aceite.motivo === "aceite-revogado") {
-				return "Proposta NÃO gerada: o cliente REVOGOU a autorização do uso dos dados dele nesta conversa. Não insista no aceite nem repita o aviso — siga a conversa sem gerar proposta, e só chame `falar_com_humano` se ELE pedir para falar com uma pessoa.";
+			const revogacao = revogouOsDados([
+				...historico.map((m) => ({
+					role: m.role as "user" | "assistant",
+					content: m.content,
+				})),
+				{ role: "user" as const, content: ctx.userText ?? "" },
+			]);
+			if (revogacao) {
+				return "Proposta NÃO gerada: o cliente REVOGOU o uso dos dados dele nesta conversa. Não insista, não repita aviso nenhum — siga a conversa sem gerar proposta, e só chame `falar_com_humano` se ELE pedir para falar com uma pessoa.";
 			}
 
 			// QUEM RECUSA IDENTIDADE DA CASA É O FULFILLMENT (`startContract`), que

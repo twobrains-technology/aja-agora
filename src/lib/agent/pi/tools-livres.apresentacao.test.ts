@@ -21,7 +21,7 @@ const mocks = vi.hoisted(() => ({
 	reloadMeta: vi.fn(),
 	persistMeta: vi.fn(),
 	loadConversationHistory: vi.fn(),
-	resolverAceiteLgpd: vi.fn(),
+	revogouOsDados: vi.fn(),
 	loadIdentity: vi.fn(),
 	getLatestBeviProposal: vi.fn(),
 	startContract: vi.fn(),
@@ -46,7 +46,7 @@ vi.mock("@/lib/conversation/meta", () => ({
 vi.mock("@/lib/conversation/messages", () => ({
 	loadConversationHistory: mocks.loadConversationHistory,
 }));
-vi.mock("@/lib/agent/pi/lgpd", () => ({ resolverAceiteLgpd: mocks.resolverAceiteLgpd }));
+vi.mock("@/lib/agent/pi/lgpd", () => ({ revogouOsDados: mocks.revogouOsDados }));
 vi.mock("@/lib/conversation/identity", () => ({ loadIdentity: mocks.loadIdentity }));
 vi.mock("@/lib/bevi/proposal-repo", () => ({ getLatestBeviProposal: mocks.getLatestBeviProposal }));
 vi.mock("@/lib/bevi/pessoa", () => ({
@@ -167,7 +167,7 @@ beforeEach(() => {
 	mocks.reloadMeta.mockImplementation(async () => metaDaConversa());
 	mocks.persistMeta.mockResolvedValue(undefined);
 	mocks.loadConversationHistory.mockResolvedValue([]);
-	mocks.resolverAceiteLgpd.mockReturnValue({ ok: true });
+	mocks.revogouOsDados.mockReturnValue(null);
 	mocks.loadIdentity.mockResolvedValue({ cpf: CPF, celular: CELULAR });
 	mocks.getLatestBeviProposal.mockResolvedValue(null);
 	mocks.leadFindFirst.mockResolvedValue({ id: "lead-1", phone: CELULAR, name: null });

@@ -52,6 +52,7 @@ import {
 	ehCelularBR,
 	pedidoDeCpfNoUltimoBalao,
 } from "@/lib/conversation/telefone-ou-cpf";
+import { saveContactWhatsapp } from "@/lib/leads/contact-capture";
 import { marcarPrimeiraCarta } from "@/lib/observability/sinais/marcar-primeira-carta";
 import { registrarUsoDeIa } from "@/lib/observability/sinais/publicar";
 import {
@@ -1009,6 +1010,18 @@ export function createRunTurnLivre(deps?: {
 			await storeIdentity(conversationId, captura.identidade).catch((erro: unknown) => {
 				console.error("[pi-livre] identidade não gravada (ignorado):", erro);
 			});
+		}
+		// O CONTATO VIROU LEAD NA HORA EM QUE ELE DEU O NÚMERO (P6 — o contato é o ativo).
+		// Antes, o telefone só chegava a `leads.phone` no fechamento (`garantirLeadDoFecho`,
+		// dentro do `fazer_proposta`): quem dava o WhatsApp na web e fechava a tela antes da
+		// proposta não deixava contato nenhum para a régua. O dado vem da fala do cliente
+		// (qualquer turno, qualquer ordem) e gravar é encanamento — não custa turno de venda.
+		if (captura.recebeuCelular && captura.identidade?.celular) {
+			await saveContactWhatsapp(conversationId, captura.identidade.celular).catch(
+				(erro: unknown) => {
+					console.error("[pi-livre] contato do WhatsApp não gravado (ignorado):", erro);
+				},
+			);
 		}
 
 		// Rastro de entrada: sem isto, um turno que "fala mas não busca" não tem

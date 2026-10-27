@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { AVISO_LGPD_RE } from "@/lib/agent/pi/lgpd";
 
 // `toLocaleString("pt-BR", { style: "currency" })` separa com espaço INQUEBRÁVEL.
 const semNbsp = (t: string) => t.replace(/\u00a0/g, " ");
@@ -141,29 +140,28 @@ describe("o dial do WhatsApp diz o resultado, não só a pergunta", () => {
 	});
 });
 
-// F4 (achado do testador no dev, conversa dfd69823): o `contract_form` do WhatsApp
-// pedia o CPF com um "(LGPD)" genérico. Sem o aviso CANÔNICO na fala, o CPF mandado
-// na resposta virava proposta real — consulta de bureau com consentimento que nunca
-// foi dito. Os dois ramos do mapper agora carregam o aviso, e é ele que
-// `AVISO_LGPD_RE` confere aqui (a mesma regex que o motor livre usa no turno).
+// O AVISO DA LGPD SAIU DO FECHAMENTO (decisão do dono, 27/10/2026 — ver
+// `.orientacao/prints-kairo/1532-formulario-fixo.png`): o texto que recitava "conforme a
+// LGPD… Posso criar?" virou rito e atropelou o pedido de WhatsApp que a pessoa estava
+// fazendo. O que este bloco protege agora é o contrário: o pedido do CPF sai LIMPO, sem
+// pergunta de autorização, e o texto não quebra quando falta a administradora.
 const perguntas = (t: string) => (t.match(/\?/g) ?? []).length;
 
-describe("o pedido de CPF do fechamento carrega o aviso canônico da LGPD", () => {
-	it("sem identidade: aviso + pedido, sem pergunta extra", async () => {
+describe("o pedido de CPF do fechamento não recita aviso de LGPD", () => {
+	it("sem identidade: pede o CPF direto, sem aviso e sem 'Posso seguir'", async () => {
 		const { contractFormToWhatsApp } = await import("./formatter");
 		const wa = contractFormToWhatsApp({ administradora: "Canopus" });
 		expect(wa.type).toBe("text");
 		const texto = wa.text ?? "";
-		expect(AVISO_LGPD_RE.test(texto)).toBe(true);
-		expect(perguntas(texto)).toBeLessThanOrEqual(1);
-		// O aviso vem ANTES do pedido: o cliente só manda o CPF depois de dizer
-		// que está de acordo.
-		expect(texto.search(AVISO_LGPD_RE)).toBeLessThan(texto.indexOf("manda"));
+		expect(texto).not.toMatch(/LGPD/i);
+		expect(texto).not.toMatch(/bir[ôo]s?\s+de\s+cr[eé]dito/i);
+		expect(texto).not.toMatch(/Posso seguir/i);
 		expect(texto).toContain("manda seu *CPF*");
 		expect(texto).toContain("Canopus");
+		expect(perguntas(texto)).toBe(0);
 	});
 
-	it("com identidade: o corpo dos botões carrega o aviso, e os botões são os mesmos", async () => {
+	it("com identidade: o corpo dos botões confirma os dados e pergunta se pode criar", async () => {
 		const { contractFormToWhatsApp } = await import("./formatter");
 		const wa = contractFormToWhatsApp({
 			administradora: "Rodobens",
@@ -172,7 +170,8 @@ describe("o pedido de CPF do fechamento carrega o aviso canônico da LGPD", () =
 		});
 		expect(wa.type).toBe("interactive");
 		const corpo = (wa.interactive as { body: { text: string } }).body.text;
-		expect(AVISO_LGPD_RE.test(corpo)).toBe(true);
+		expect(corpo).not.toMatch(/LGPD/i);
+		expect(corpo).not.toMatch(/bir[ôo]s?\s+de\s+cr[eé]dito/i);
 		expect(perguntas(corpo)).toBeLessThanOrEqual(1);
 		expect(corpo).toContain("123.456.7**");
 		expect(corpo).toContain("Rodobens");
@@ -181,10 +180,10 @@ describe("o pedido de CPF do fechamento carrega o aviso canônico da LGPD", () =
 		expect(buttons.map((b) => b.reply.id)).toEqual(["contract_confirm", "contract_cancel"]);
 	});
 
-	it("sem administradora no payload, o aviso não sai com buraco no meio", async () => {
+	it("sem administradora no payload, o texto não sai com buraco no meio", async () => {
 		const { contractFormToWhatsApp } = await import("./formatter");
 		const texto = contractFormToWhatsApp({}).text ?? "";
-		expect(AVISO_LGPD_RE.test(texto)).toBe(true);
+		expect(texto).toMatch(/proposta/);
 		expect(texto).not.toMatch(/proposta\s+,/);
 	});
 });

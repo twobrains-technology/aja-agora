@@ -34,10 +34,17 @@ describe("skills do vendedor", () => {
 		expect(() => parseSkillBruto("sem frontmatter")).toThrow();
 	});
 
-	it("o aviso da LGPD é dito UMA vez: a skill manda não repetir", () => {
+	// O aviso da LGPD saiu de vez (decisão do dono, 27/10 — print 1532-formulario-fixo):
+	// a skill da proposta não recita aviso nem espera "sim". O que ela passou a mandar é o
+	// que o vendedor precisa: dado de qualquer fala, e o WhatsApp pedido quando a pessoa
+	// sinaliza que vai sair.
+	it("a skill da proposta não pede aviso nem aceite; manda capturar do jeito que vier", () => {
 		limparCacheDeSkills();
-		expect(skillsParaPrompt()).toMatch(/dito UMA vez na conversa/);
-		expect(skillsParaPrompt()).toMatch(/não repita/);
+		const texto = skillsParaPrompt();
+		expect(texto).not.toMatch(/avise com estas palavras/i);
+		expect(texto).not.toMatch(/s[óo] continue depois de um sim/i);
+		expect(texto).toMatch(/em qualquer ordem e em qualquer turno/i);
+		expect(texto).toMatch(/whatsapp_optin/);
 	});
 
 	it("buscar-cartas manda comentar só a recomendada, sem relistar o card", () => {
