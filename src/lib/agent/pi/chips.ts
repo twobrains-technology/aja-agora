@@ -19,7 +19,26 @@
 //    atalho escolhe — só existe quando o MODELO declarou a cota, e é conferido
 //    contra as cartas reais em `cards-livres.ts` (fail-closed da main).
 
+import { sugestoesDaPergunta } from "@/lib/agent/pi/sugestoes";
+
 const CARD_DE_ESCOLHA = ["quick_reply", "value_picker", "topic_picker"];
+
+/**
+ * CARDS QUE JÁ PEDEM UM TOQUE — o chip não entra por cima.
+ *
+ * Card que já tem botão próprio (opt-in do WhatsApp, formulário de contratação, proposta real,
+ * pedido de assinatura, decisão) dispensa resposta rápida: duplicar seria mostrar duas vezes a
+ * mesma escolha, que é o defeito de duplicidade que a bateria mede.
+ */
+const CARD_QUE_JA_ESPERA_TOQUE = [
+	...CARD_DE_ESCOLHA,
+	"whatsapp_optin",
+	"contract_form",
+	"real_offer",
+	"signature_handoff",
+	"document_upload",
+	"decision_prompt",
+];
 
 /** A identidade PERSISTIDA do atalho (`QuickReplyOption.replyId`, L4): gerada a
  * cada emissão de propósito — um card repetido em outro turno recebe id novo e
@@ -31,7 +50,6 @@ export type ChipGerado = { type: "quick_reply"; payload: { options: OpcaoDeChip[
 const TETO_DE_OPÇÕES = 4;
 const MAXIMO_DE_ROTULO = 40;
 const MAXIMO_DE_ROTULO_DE_FRASE = 60;
-
 /** O que faz de uma linha uma OPÇÃO: o marcador de lista, sempre no começo. */
 const MARCADOR_DE_LISTA = /^(?:\d+[).:]|[a-zA-Z][).]|[-*–—•])\s+/;
 
@@ -136,26 +154,49 @@ function detectarOpcoes(texto: string): { opcoes: string[]; textoLimpo: string }
  * o texto não é uma lista — não se duplica o chip. `texto` é o balão SEM a lista
  * que virou botão (N05): o cliente não lê a mesma opção duas vezes.
  */
-export function garantirChip(args: { texto: string; cardsDoTurno: readonly { type: string }[] }): {
+export function garantirChip(args: {
+	texto: string;
+	cardsDoTurno: readonly { type: string }[];
+	/** Fato do turno: já existe carta na tela desta conversa. Muda a resposta rápida de uma
+	 * pergunta aberta ("qual dessas fica melhor?") para as opções da oferta. */
+	temCartaNaTela?: boolean;
+	canal?: "web" | "whatsapp";
+}): {
 	texto: string;
 	chip: ChipGerado | null;
 } {
-	if (args.cardsDoTurno.some((c) => CARD_DE_ESCOLHA.includes(c.type))) {
+	if (args.cardsDoTurno.some((c) => CARD_QUE_JA_ESPERA_TOQUE.includes(c.type))) {
 		return { texto: args.texto, chip: null };
 	}
 
+	// 1. A opção escrita no TEXTO (lista marcada ou "A ou B?") — a melhor de todas: a lista sai
+	//    do balão e vira botão.
 	const { opcoes, textoLimpo } = detectarOpcoes(args.texto);
-	if (opcoes.length < 2) return { texto: args.texto, chip: null };
+	// A alternativa escrita só vale quando o corte parece RÓTULO. "O bem é carro, moto ou imóvel?"
+	// saía como dois botões quebrados ("O bem é carro, moto" / "imóvel") — vírgula no rótulo é o
+	// sinal de que a frase era pergunta, não menu. Aí quem responde é o momento (`sugestoes.ts`).
+	const corteUtil = opcoes.length >= 2 && !opcoes.some((o) => o.includes(","));
+	if (corteUtil) return { texto: textoLimpo, chip: chipDe(opcoes) };
 
+	// 2. A opção derivada do MOMENTO (ordem do dono, 27/10): pergunta feita sem toque é pergunta
+	//    perdida. Aqui o balão NÃO muda — só ganha os botões.
+	const doMomento = sugestoesDaPergunta(args.texto, {
+		temCartaNaTela: args.temCartaNaTela === true,
+		...(args.canal ? { canal: args.canal } : {}),
+	});
+	if (doMomento && doMomento.length >= 2) return { texto: args.texto, chip: chipDe(doMomento) };
+
+	return { texto: args.texto, chip: null };
+}
+
+/** Cada opção nasce com `replyId` do SERVIDOR (nunca do modelo) — é ele que o clique consome. */
+function chipDe(opcoes: readonly string[]): ChipGerado {
 	return {
-		texto: textoLimpo,
-		chip: {
-			type: "quick_reply",
-			payload: {
-				// `crypto.randomUUID` é global no runtime do servidor (mesmo id que a
-				// main gerava em `converse.ts`) — o id é do SERVIDOR, nunca do modelo.
-				options: opcoes.map((label) => ({ label, replyId: crypto.randomUUID() })),
-			},
+		type: "quick_reply",
+		payload: {
+			// `crypto.randomUUID` é global no runtime do servidor (mesmo id que a
+			// main gerava em `converse.ts`) — o id é do SERVIDOR, nunca do modelo.
+			options: opcoes.map((label) => ({ label, replyId: crypto.randomUUID() })),
 		},
 	};
 }

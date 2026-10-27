@@ -184,6 +184,9 @@ export function montarTrechoDeSaida(args: {
 	texto: string;
 	cardsDoTurno?: readonly { type: string }[];
 	handoff?: { nome: string | null; clientePediu: boolean; casoAberto: boolean };
+	/** A conversa já tem carta na tela — muda a resposta rápida de pergunta aberta. */
+	temCartaNaTela?: boolean;
+	canal?: "web" | "whatsapp";
 }): { texto: string; chip: ChipGerado | null } {
 	// O ÚLTIMO PASSE roda AQUI, no texto que vai AO VIVO para o canal — não só na
 	// persistência: máscara de CPF e o corte de vazamento de máquina (JSON de
@@ -208,7 +211,12 @@ export function montarTrechoDeSaida(args: {
 	// Pergunta fechada sem card de escolha no turno ⇒ o chip sai do texto. O balão
 	// guarda a pergunta; a opção vira botão — e a LISTA que virou botão sai do
 	// balão (`.texto`), senão o cliente lê duas vezes a mesma escolha.
-	const chipado = garantirChip({ texto: final, cardsDoTurno: args.cardsDoTurno ?? [] });
+	const chipado = garantirChip({
+		texto: final,
+		cardsDoTurno: args.cardsDoTurno ?? [],
+		...(args.temCartaNaTela ? { temCartaNaTela: true } : {}),
+		...(args.canal ? { canal: args.canal } : {}),
+	});
 	return { texto: chipado.texto, chip: chipado.chip };
 }
 
@@ -1208,6 +1216,10 @@ export function createRunTurnLivre(deps?: {
 			const saida = montarTrechoDeSaida({
 				texto: pendente,
 				cardsDoTurno: ctx.cards,
+				// Fato do turno para a resposta rápida (ordem do dono, 27/10): com carta na tela a
+				// pergunta aberta ("qual dessas fica melhor?") ganha as opções da oferta.
+				temCartaNaTela: ctx.cartasNaTela.length > 0,
+				canal: ctx.channel,
 				handoff:
 					casoAberto || RE_DE_PROMESSA.test(pendente)
 						? {

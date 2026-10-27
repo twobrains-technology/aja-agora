@@ -129,3 +129,42 @@ select 'Q13 pergunta-repetida por string (medidor de hoje)' as medidor,
 	sum(vezes - 1) as achados,
 	count(distinct conversation_id) as conversas
 from por where vezes >= 2;
+
+-- ══════════════════════════════════════════════════════════════════════════════════════════
+-- Q15/Q16 — A FALA E A RESPOSTA RÁPIDA (ordem do dono, 27/10 13:50). Linha de base e depois:
+-- todo turno do agente que espera resposta deve trazer opções de um toque, e a fala deve ser
+-- curta. Medido sobre as conversas SIMULADAS (as que a bateria produz), que é o que se compara
+-- entre rodadas. `is_simulated` filtra lead real.
+-- ══════════════════════════════════════════════════════════════════════════════════════════
+
+-- Q15. Tamanho da fala do agente, em caracteres.
+with falas as (
+	select length(m.content) as n
+	from messages m
+	join conversations c on c.id = m.conversation_id
+	where m.role = 'assistant' and c.is_simulated
+)
+select 'Q15 tamanho da fala do agente (simuladas)' as medidor,
+	count(*) as falas,
+	round(avg(n))::int as media_chars,
+	percentile_cont(0.5) within group (order by n)::int as mediana_chars,
+	max(n) as maior
+from falas;
+
+-- Q16. Turnos do agente que trazem `quick_reply` (a opção de um toque).
+with turnos as (
+	select m.id
+	from messages m
+	join conversations c on c.id = m.conversation_id
+	where m.role = 'assistant' and c.is_simulated
+),
+com as (
+	select t.id,
+		exists (select 1 from artifacts a where a.message_id = t.id and a.type = 'quick_reply') as tem
+	from turnos t
+)
+select 'Q16 quick_reply por turno do agente (simuladas)' as medidor,
+	count(*) as turnos,
+	count(*) filter (where tem) as com_quick_reply,
+	round(100.0 * count(*) filter (where tem) / nullif(count(*), 0), 1) as pct
+from com;

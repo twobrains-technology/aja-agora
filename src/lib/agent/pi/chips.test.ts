@@ -68,15 +68,20 @@ describe("pergunta fechada vira chip, não lista escrita no texto", () => {
 		expect(r.chip?.payload.options.map((o) => o.label)).toEqual(["Prefere o lance", "a sorteio"]);
 	});
 
-	it("prosa curta com uma pergunta no fim não vira menu (N05/L33)", () => {
-		// Duas linhas curtas são FRASES, não opções: sem marcador de lista, o que
-		// existe é uma fala seguida de pergunta aberta.
-		const r = garantirChip({
-			texto: "Claro, Marcos!\nVou te explicar como funciona a contemplação\nFaz sentido pra você?",
-			cardsDoTurno: [],
-		});
-		expect(r.chip).toBeNull();
+	it("prosa curta com pergunta no fim NÃO vira menu do texto — o balão fica inteiro (N05/L33)", () => {
+		// Duas linhas curtas são FRASES, não opções: sem marcador de lista, nada é
+		// extraído do texto. Desde a ordem do dono de 27/10 (13:50) o turno AINDA
+		// oferece toque, mas ele vem do MOMENTO (`sugestoes.ts`), não do texto — o que
+		// este teste protege é que a fala não é picada em botões.
+		const texto =
+			"Claro, Marcos!\nVou te explicar como funciona a contemplação\nFaz sentido pra você?";
+		const r = garantirChip({ texto, cardsDoTurno: [] });
+		expect(r.texto).toBe(texto);
 		expect(opcoesDePerguntaFechada("Claro!\nFaz sentido pra você?")).toEqual([]);
+		expect(r.chip?.payload.options.map((o) => o.label)).toEqual([
+			"Sim, pode seguir",
+			"Ainda tenho uma dúvida",
+		]);
 	});
 
 	it("a lista marcada sai do balão, o resto da fala fica (N05)", () => {
@@ -101,13 +106,20 @@ describe("pergunta fechada vira chip, não lista escrita no texto", () => {
 		expect(new Set(ids).size).toBe(2);
 	});
 
-	it("pergunta aberta não vira chip", () => {
+	it("pergunta aberta não vira chip DO TEXTO, mas o turno ainda oferece toque", () => {
+		// Inversão de critério registrada em `.orientacao/diario.md` (t13): a ordem do dono
+		// de 27/10 13:50 é que todo turno que espera resposta tenha opções de um toque. O
+		// texto continua não sendo picado — o chip vem do momento.
 		const r = garantirChip({
 			texto: "Como você está vendo isso hoje?",
 			cardsDoTurno: [],
 		});
-		expect(r.chip).toBeNull();
+		expect(r.texto).toBe("Como você está vendo isso hoje?");
 		expect(opcoesDePerguntaFechada("Como você está vendo isso hoje?")).toEqual([]);
+		expect(r.chip?.payload.options.map((o) => o.label)).toEqual([
+			"Pode seguir",
+			"Tenho uma dúvida",
+		]);
 	});
 
 	it("teto de 4 opções e rótulo curto", () => {
