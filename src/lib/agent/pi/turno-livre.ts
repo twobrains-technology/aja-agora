@@ -1517,11 +1517,16 @@ export function createRunTurnLivre(deps?: {
 			// que ele já tinha saído.
 			//
 			// Duas travas, as duas no servidor:
-			//  · `casoAberto` — o aviso é do caso que EXISTE. Anunciar transferência que não
-			//    aconteceu é a promessa que este caminho inteiro evita;
 			//  · `handoffSuggested` — o estado da CONVERSA (meta, lido em `funnelFromMeta` no
-			//    início do turno). Anunciado uma vez, não se anuncia de novo.
-			if (ctx.pediuHumano && casoAberto && !estado.funnel.handoffSuggested) {
+			//    início do turno). Anunciado uma vez, não se anuncia de novo. É a trava da
+			//    duplicata que o dono viu no print (banner depois de "Como você se chama?" e
+			//    outra vez depois de "abri o caso pra nossa mesa").
+			//  · NADA de `casoAberto` aqui: no turno em que o cliente pede a pessoa ainda não
+			//    há lead, o caso não abre — e sem o aviso o cliente fica sem resposta nenhuma
+			//    ao pedido dele. A regressão apareceu na R16
+			//    (`golden-dono-chato-pede-humano-no-turno-2`: esperava `handoff`, veio só a tool).
+			//    O aviso é do PEDIDO, uma vez por conversa; o caso, quando abrir, não repete.
+			if (ctx.pediuHumano && !estado.funnel.handoffSuggested) {
 				estado = {
 					...estado,
 					events: [...estado.events, { type: "handoff", reason: "pedido do cliente" } as never],

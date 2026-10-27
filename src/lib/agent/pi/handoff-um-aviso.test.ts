@@ -76,7 +76,7 @@ const PEDIDO = {
 };
 
 describe("o aviso de handoff sai UMA vez por conversa", () => {
-	it("a sequência do dono (pedido sem nome → nome) tem UM aviso, e é o do caso aberto", async () => {
+	it("a sequência do dono (pedido sem nome → nome) tem UM aviso, no turno do pedido", async () => {
 		const conversationId = await novaConversa();
 
 		// Turno 1 — "quero falar com alguém": o agente pede o nome, e o caso ainda NÃO existe:
@@ -97,9 +97,12 @@ describe("o aviso de handoff sai UMA vez por conversa", () => {
 		});
 		await segundo.fechar();
 
-		// O aviso é do caso que EXISTE: no turno em que ele não abriu, não há aviso nenhum.
-		expect(avisos(primeiro.eventos)).toHaveLength(0);
-		expect(avisos(segundo.eventos)).toHaveLength(1);
+		// O aviso é do PEDIDO, não do caso: ele sai no turno em que o cliente pede a pessoa e
+		// não se repete depois. (A primeira versão exigia `casoAberto` e o cliente ficava sem
+		// resposta ao pedido quando não havia lead — regressão pega na R16,
+		// `golden-dono-chato-pede-humano-no-turno-2`.)
+		expect(avisos(primeiro.eventos)).toHaveLength(1);
+		expect(avisos(segundo.eventos)).toHaveLength(0);
 		expect([...avisos(primeiro.eventos), ...avisos(segundo.eventos)]).toHaveLength(1);
 
 		const caso = await db.query.mesaHandoffs.findFirst({
