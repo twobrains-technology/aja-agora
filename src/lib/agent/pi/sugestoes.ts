@@ -109,9 +109,23 @@ const FAIXAS_DE_VALOR = ["Até R$ 50 mil", "Uns R$ 80 mil", "R$ 100 mil ou mais"
 const FAIXAS_DE_PARCELA = ["Até R$ 800", "Até R$ 1.200", "Quero saber o mínimo"];
 const TIPOS_DE_BEM = ["Carro", "Moto", "Imóvel"];
 const RESPOSTAS_DO_CPF = ["Pode usar meu CPF", "Por que precisa do CPF?"];
+/** O pedido de LANCE/ENTRADA — valor que o cliente já tem, não o valor do bem. Nenhum número
+ * aqui: quanto a pessoa tem guardado é ela quem diz (AGENTS.md: número vem de ferramenta). */
+const RESPOSTAS_DO_LANCE = ["Tenho sim, consigo dar lance", "Tenho pouco", "Agora não tenho"];
 
 const DADO_DE_PARCELA = /parcela|por\s+m[êe]s|mensalidade/i;
 const DADO_DE_CPF = /\bcpf\b/i;
+/**
+ * O LANCE — o valor que o cliente já tem para dar de entrada — pede outro card: o `value_picker`
+ * existe para o valor do BEM (faixa de `CREDIT_BOUNDS` por categoria). Defeito medido no print
+ * `.orientacao/prints-ux/06-quick-reply-responde-a-pergunta.png` (produção `a02d8ead`): o agente
+ * perguntou "Você tem algum valor guardado para oferecer?" e o servidor respondeu com o slider de
+ * 80.000 "Valor do bem" — card que responde OUTRA pergunta. Por isso este teste vem ANTES do
+ * `DADO_DE_VALOR`, cuja regex larga ("valor") casava "algum valor guardado".
+ */
+const DADO_DE_LANCE =
+	/\bvalor\s+guardado\b|\b(?:dar|oferecer|pagar)\s+(?:de\s+)?lance\b|\blance\s+pr[óo]prio\b|\blance\s+do\s+bolso\b|\bentrada\b|\bquanto\s+(?:voc[êe]|vc)\s+tem\s+(?:guardado|separado)\b|\breserva\b/i;
+
 const DADO_DE_VALOR = /\bquanto\b|valor|or[çc]amento|gastar|investir/i;
 const DADO_DE_BEM = /carro|moto|im[óo]vel|tipo\s+de\s+bem|qual\s+bem/i;
 
@@ -201,6 +215,10 @@ function respostasDeSimNao(pedido: string): string[] {
 function dadoPedido(alvo: string, momento: MomentoDaConversa): SugestaoDoTurno | null {
 	if (DADO_DE_CPF.test(alvo)) return { opcoes: RESPOSTAS_DO_CPF, tipoDoCard: "quick_reply" };
 	if (DADO_DE_PARCELA.test(alvo)) return { opcoes: FAIXAS_DE_PARCELA, tipoDoCard: "quick_reply" };
+	// (c1) O LANCE vem antes do valor: "algum valor guardado" não é o valor do bem.
+	if (DADO_DE_LANCE.test(alvo)) {
+		return { opcoes: RESPOSTAS_DO_LANCE, tipoDoCard: "quick_reply" };
+	}
 	if (DADO_DE_VALOR.test(alvo)) {
 		return {
 			opcoes: FAIXAS_DE_VALOR,

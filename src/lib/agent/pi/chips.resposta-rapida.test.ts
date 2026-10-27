@@ -19,7 +19,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { type CardGerado, garantirChip } from "./chips";
-import { sugestoesDaPergunta } from "./sugestoes";
+import { sugestaoDoTurno, sugestoesDaPergunta } from "./sugestoes";
 
 /** Os rótulos do card — só `quick_reply` os tem (o `value_picker` é o slider do valor). */
 const rotulosDoChip = (chip: CardGerado | null) =>
@@ -164,6 +164,38 @@ describe("(a) pergunta feita ⇒ opções de um toque, derivadas do momento", ()
 				canal: "whatsapp",
 			}),
 		).toEqual(faixas);
+	});
+});
+
+describe("(print 06) o card responde a pergunta que o agente FEZ", () => {
+	it("pedido de lance/valor guardado sai em quick_reply, nunca no slider do valor do bem", () => {
+		// Defeito medido na produção `a02d8ead` (print
+		// `.orientacao/prints-ux/06-quick-reply-responde-a-pergunta.png`): o agente perguntou "Você
+		// tem algum valor guardado para oferecer?" e o servidor respondeu com o card
+		// `value_picker` "Valor do bem" (slider de 80.000) — card que responde OUTRA pergunta.
+		// Causa: `DADO_DE_VALOR` (`/valor/`) casava "algum valor guardado".
+		const lance = sugestaoDoTurno("Você tem algum valor guardado para oferecer?", {
+			temCartaNaTela: true,
+			categoriaDoBem: "auto",
+			canal: "web",
+		});
+		expect(lance.tipoDoCard).toBe("quick_reply");
+		expect(lance.opcoes).toContain("Tenho pouco");
+		expect(lance.opcoes).toEqual([
+			"Tenho sim, consigo dar lance",
+			"Tenho pouco",
+			"Agora não tenho",
+		]);
+	});
+
+	it("controle: a pergunta do valor do BEM continua no slider", () => {
+		// A correção é de ESCOPO: só o valor que o cliente JÁ TEM sai do `value_picker`. Quem
+		// pergunta quanto custa o bem que ele quer continua com o slider da faixa da categoria.
+		const bem = sugestaoDoTurno("Qual valor de carro você tem em mente?", {
+			categoriaDoBem: "auto",
+			canal: "web",
+		});
+		expect(bem.tipoDoCard).toBe("value_picker");
 	});
 });
 
