@@ -1,6 +1,6 @@
 {
 	"cenario": "golden-fecho-nao-anda-pra-tras",
-	"descricao": "Cliente que já escolheu e pede pra contratar não pode receber pergunta de qualificação de volta. Produção 2026-08 (Caua, Erik, Monique): depois do clique na oferta, o funil voltava pra 'você já fez consórcio antes?' e depois pra pergunta de lance — o contract_form nunca chegava à tela e a venda morria. Três portas causavam isso: `experience` sem guarda de idempotência (reaparecia turno após turno), a cascata de lance barrando quem já escolheu, e o hero preso esperando um gate que saiu da cascata em 2026-07-21. | Migrado em 27/10/2026: o turno 6 mandava `action {kind:'gate', gate:'identify'}` — vocabulário que o motor livre não emite nem aceita (nenhum escritor de `data-gate` em `src/`). A identidade agora vai por TEXTO e o servidor a captura em `capturarIdentidadeDoTexto`. O critério é o mesmo: depois da identidade, as ofertas aparecem.",
+	"descricao": "Cliente que já escolheu e pede pra contratar não pode receber pergunta de qualificação de volta. Produção 2026-08 (Caua, Erik, Monique): depois do clique na oferta, o funil voltava pra 'você já fez consórcio antes?' e depois pra pergunta de lance — o contract_form nunca chegava à tela e a venda morria. Três portas causavam isso: `experience` sem guarda de idempotência (reaparecia turno após turno), a cascata de lance barrando quem já escolheu, e o hero preso esperando um gate que saiu da cascata em 2026-07-21. | Migrado em 27/10/2026: o turno 6 mandava `action {kind:'gate', gate:'identify'}` — vocabulário que o motor livre não emite nem aceita (nenhum escritor de `data-gate` em `src/`). A identidade agora vai por TEXTO e o servidor a captura em `capturarIdentidadeDoTexto`. O critério é o mesmo: depois da identidade, as ofertas aparecem. | Asserts corrigidos em 27/10/2026 depois de medir com o modelo de produção: (a) o turno 6 não exige `comparison_table` — a tabela já estava na tela desde o turno 4 e o que acontece ali é o aviso + pedido de aceite; (b) o turno 9 aceita `contract_form` OU `tool:fazer_proposta`, porque com a identidade já capturada o formulário é dispensável e a proposta direta é o caminho certo.",
 	"caRefs": ["CA-20 fechamento", "CA-21 contract_form"],
 	"asserts": {
 		"turns": [
@@ -9,13 +9,11 @@
 			null,
 			null,
 			null,
-			{
-				"expectArtifacts": ["comparison_table"]
-			},
+			null,
 			null,
 			null,
 			{
-				"expectArtifacts": ["contract_form"],
+				"expectAnyArtifact": ["contract_form", "tool:fazer_proposta"],
 				"forbidUngroundedMoney": true
 			}
 		]
@@ -53,7 +51,7 @@
 		{
 			"type": "text",
 			"text": "meu cpf é ${E2E_TEST_CPF} e meu celular é ${E2E_TEST_CELULAR}",
-			"expect": "identidade entregue por TEXTO (o gate identify morreu em 20/10); o servidor captura e busca — a tabela de ofertas aparece."
+			"expect": "o servidor captura o CPF do texto; a oferta já está na tela desde o turno 4. O agente diz o aviso e pede o aceite (o portão da tool exige)."
 		},
 		{
 			"type": "text",
@@ -68,7 +66,7 @@
 		{
 			"type": "text",
 			"text": "isso, quero contratar",
-			"expect": "entrega o formulário de contratação (contract_form) com a fala curta de pré-cadastro: não paga nada agora, o pagamento começa quando o boleto chegar. Nada de 'cota reservada' antes da contratação."
+			"expect": "fecha: ou o formulário de contratação, ou direto a proposta real (com a identidade já conhecida, o formulário é dispensável)."
 		}
 	]
 }

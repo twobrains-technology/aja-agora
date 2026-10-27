@@ -68,6 +68,11 @@ const rotuloOferta = (o: OfertaLida) =>
 export type GoldenTurnAsserts = {
 	/** Todos precisam aparecer nos artifacts do turno (subset match). */
 	expectArtifacts?: string[];
+	/** PELO MENOS UM destes precisa aparecer. Existe porque há passo com dois caminhos
+	 * legítimos — ex.: fechar a venda com `contract_form` (identidade ainda desconhecida)
+	 * ou direto com `tool:fazer_proposta` (identidade já capturada). `expectArtifacts`
+	 * exige TODOS; aqui exige um. */
+	expectAnyArtifact?: string[];
 	/** Nenhum pode aparecer. */
 	forbidArtifacts?: string[];
 	/** Report de 05/08 ("Está repetindo grupos iguais"): duas ofertas com a MESMA
@@ -212,6 +217,16 @@ export function checkScenario(
 			if (!t.artifactTypes.includes(esperado)) {
 				failures.push(
 					`${rotulo}: esperava artifact "${esperado}", veio [${t.artifactTypes.join(", ")}]`,
+				);
+			}
+		}
+		if (asserts.expectAnyArtifact?.length) {
+			const apareceu = asserts.expectAnyArtifact.some((esperado) =>
+				t.artifactTypes.includes(esperado),
+			);
+			if (!apareceu) {
+				failures.push(
+					`${rotulo}: esperava UM de [${asserts.expectAnyArtifact.join(", ")}], veio [${t.artifactTypes.join(", ")}]`,
 				);
 			}
 		}

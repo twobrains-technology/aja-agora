@@ -186,34 +186,62 @@ export function resolverAceiteLgpd(args: {
 	// até uma fala posterior do cliente revogá-lo.
 	let consentiu: boolean | null = args.aceiteJaGravado ? true : null;
 	let aceiteDaConversa = false;
-	// O estágio: aberto pela fala do agente com o aviso, fechado pela primeira fala do
-	// cliente que o responde. Dentro dele só essa primeira fala é candidata — o aceite que
-	// ela deu continua valendo (quem o derruba é a revogação), e a repetição do aviso reabre
-	// o estágio para um novo aceite.
+	// O estágio: aberto pela fala do agente com o aviso; um PERGUNTA do cliente não fecha o
+	// estágio (perguntar não é decidir); fecha quando o cliente aceita ou revoga, ou quando
+	// o agente MUDA DE ASSUNTO (aí aquele "sim" solto já não é resposta ao aviso).
+	//
+	// A versão anterior fechava o estágio na primeira fala do cliente, qualquer que fosse.
+	// Medido em 27/10/2026 (conversa 436dec29, cenário `golden-fecho-nao-anda-pra-tras`,
+	// modelo de produção): o aviso saiu, o cliente respondeu "e agora?", e depois disse
+	// "Quero essa mesma, bora fechar" e "isso, quero contratar". O aceite era claro
+	// (`clienteAceitouLgpd` devolve `true` nas duas falas), mas o estágio já tinha fechado
+	// na pergunta — a tool recusava com `falta-o-aceite` para sempre, o modelo repetia o
+	// pedido de "sim" e a VENDA MORRIA num laço, com o cliente já dizendo que queria
+	// contratar. O lado perigoso continua fechado: quem aceita é `clienteAceitouLgpd` (juiz
+	// da main + trava que só estreita), e a revogação em qualquer fala posterior derruba o
+	// aceite.
 	let avisoEm = -1;
 	let esperandoARespostaDoCliente = false;
 
 	for (let i = 0; i < linha.length; i++) {
 		const fala = linha[i];
 		if (fala.role === "assistant") {
-			if (!AVISO_LGPD_RE.test(fala.content)) continue;
-			if (avisoEm < 0) avisoEm = i;
-			esperandoARespostaDoCliente = true;
+			if (AVISO_LGPD_RE.test(fala.content)) {
+				if (avisoEm < 0) avisoEm = i;
+				esperandoARespostaDoCliente = true;
+				continue;
+			}
+			// Fala do agente que ainda é sobre o consentimento (re-pedido do aceite, menção
+			// à LGPD) mantém o estágio aberto; qualquer outra é mudança de assunto e fecha.
+			if (esperandoARespostaDoCliente && /confirma|aceite|autoriz|lgpd/i.test(fala.content)) {
+				continue;
+			}
+			esperandoARespostaDoCliente = false;
 			continue;
 		}
 
 		const candidata = esperandoARespostaDoCliente;
+		let decidiu = false;
 		if (candidata && clienteAceitouLgpd(fala.content)) {
 			consentiu = true;
 			aceiteDaConversa = true;
+			decidiu = true;
 		}
 		// Recusa tem prioridade sobre o aceite na MESMA fala ("não autorizo, sim" revoga),
 		// e a revogação de uma fala posterior derruba o aceite que o estágio deu.
-		if (consentiu === true && revogaConsentimento(fala.content)) {
-			consentiu = false;
-			aceiteDaConversa = false;
+		if (revogaConsentimento(fala.content)) {
+			// Recusa ANTES de qualquer sim não é "revogação" (não havia o que revogar): é
+			// falta de aceite. Depois de um sim, derruba o aceite — como sempre foi.
+			if (consentiu === true) {
+				consentiu = false;
+				aceiteDaConversa = false;
+			}
+			decidiu = true;
 		}
-		if (candidata) esperandoARespostaDoCliente = false;
+		// O estágio só fecha quando o cliente DECIDE: aceitou, ou revogou um aceite que já
+		// existia. Uma pergunta no meio ("e agora?") não queima o aceite que vem depois —
+		// era ela que matava a venda no caso medido de 27/10/2026.
+		if (decidiu) esperandoARespostaDoCliente = false;
 	}
 
 	if (consentiu === true) {

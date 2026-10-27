@@ -37,6 +37,47 @@ describe("o aceite da LGPD é conferido na conversa, não na última fala", () =
 		expect(r.ok).toBe(true);
 	});
 
+	// O CASO MEDIDO (27/10/2026, conversa 436dec29, cenário `golden-fecho-nao-anda-pra-tras`,
+	// modelo de produção): aviso → cliente pergunta "e agora?" → cliente diz "Quero essa
+	// mesma, bora fechar". O estágio fechava na pergunta e a tool recusava para sempre; o
+	// modelo repetia o pedido de "sim" e a venda morria com o cliente pedindo para fechar.
+	it("uma pergunta no meio não queima o aceite que vem depois", () => {
+		const r = resolverAceiteLgpd({
+			falas: [
+				{ role: "assistant", content: AVISO },
+				{ role: "user", content: "e agora?" },
+				{ role: "assistant", content: "Preciso da sua confirmação para o aviso que te enviei." },
+				{ role: "user", content: "Quero essa mesma, bora fechar" },
+			],
+		});
+		expect(r.ok).toBe(true);
+		expect(r.motivo).toBe("aceite-do-cliente");
+	});
+
+	it("recusa depois da pergunta fecha o estágio e não vira aceite", () => {
+		const r = resolverAceiteLgpd({
+			falas: [
+				{ role: "assistant", content: AVISO },
+				{ role: "user", content: "e agora?" },
+				{ role: "user", content: "não autorizo o uso dos meus dados" },
+				{ role: "user", content: "sim" },
+			],
+		});
+		expect(r.ok).toBe(false);
+	});
+
+	it("só pergunta, sem aceite nenhum: continua faltando o aceite", () => {
+		const r = resolverAceiteLgpd({
+			falas: [
+				{ role: "assistant", content: AVISO },
+				{ role: "user", content: "e agora?" },
+				{ role: "user", content: "quanto fica a parcela?" },
+			],
+		});
+		expect(r.ok).toBe(false);
+		expect(r.motivo).toBe("falta-o-aceite");
+	});
+
 	it("aceite já registrado vale uma vez e não pede aviso de novo", () => {
 		const r = resolverAceiteLgpd({
 			falas: [],
