@@ -1506,7 +1506,22 @@ export function createRunTurnLivre(deps?: {
 			if (!baseMeta.revealCompleted && ctx.cards.some((c) => c.type === "comparison_table")) {
 				void marcarPrimeiraCarta(conversationId, !isUserTurn);
 			}
-			if (ctx.pediuHumano) {
+			// O AVISO DE HANDOFF: UM POR CONVERSA, E SÓ DO CASO QUE EXISTE.
+			//
+			// Medido no print do dono (27/10/2026, ~19:30): o aviso "Pra esse caso, recomendo
+			// conversar direto com nosso consultor humano" saía DUAS vezes na mesma conversa —
+			// depois de "Como você se chama?" e de novo depois de "Kairo, abri o caso pra nossa
+			// mesa". O gatilho era `ctx.pediuHumano`, flag do TURNO: no turno do pedido ainda não
+			// havia nome, o caso NÃO abriu (`abrirCasoNaMesa` devolve `sem-lead`), e o aviso saiu
+			// assim mesmo; quando o caso abriu, saiu outra vez porque nada na conversa lembrava
+			// que ele já tinha saído.
+			//
+			// Duas travas, as duas no servidor:
+			//  · `casoAberto` — o aviso é do caso que EXISTE. Anunciar transferência que não
+			//    aconteceu é a promessa que este caminho inteiro evita;
+			//  · `handoffSuggested` — o estado da CONVERSA (meta, lido em `funnelFromMeta` no
+			//    início do turno). Anunciado uma vez, não se anuncia de novo.
+			if (ctx.pediuHumano && casoAberto && !estado.funnel.handoffSuggested) {
 				estado = {
 					...estado,
 					events: [...estado.events, { type: "handoff", reason: "pedido do cliente" } as never],

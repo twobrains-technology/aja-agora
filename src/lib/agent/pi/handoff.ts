@@ -87,6 +87,30 @@ export function nomeNaFala(texto: string | null): string | null {
 	return nome.length >= 2 ? nome : null;
 }
 
+/** O nome que o cliente DISSE na conversa — nesta fala ou numa anterior.
+ *
+ * O caso da mesa lê nome e telefone do LEAD (`broadcastCaseToAttendants`, dossiê do
+ * atendente), e o nome dito num turno em que o modelo não chamou `salvar_nome` se perdia:
+ * o handoff só olhava a fala do turno ATUAL. Devolve junto a fala onde o nome apareceu — é
+ * ela que ancora o `saveContactName` (nome não-ancorado não vira dado).
+ */
+export function nomeDitoNaConversa(args: {
+	falaDoTurno: string | null;
+	historico: ReadonlyArray<{ role: string; content: string }>;
+}): { nome: string; fala: string } | null {
+	if (args.falaDoTurno) {
+		const doTurno = nomeNaFala(args.falaDoTurno);
+		if (doTurno) return { nome: doTurno, fala: args.falaDoTurno };
+	}
+	// De trás para a frente: a ÚLTIMA apresentação do cliente é a que vale.
+	for (const mensagem of [...args.historico].reverse()) {
+		if (mensagem.role !== "user") continue;
+		const nome = nomeNaFala(mensagem.content);
+		if (nome) return { nome, fala: mensagem.content };
+	}
+	return null;
+}
+
 export function semPromessa(texto: string): boolean {
 	return !RE_DE_PROMESSA.test(texto);
 }
