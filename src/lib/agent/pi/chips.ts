@@ -7,6 +7,13 @@
 // Se as opções estão no texto, elas viram `quick_reply` e o texto fica só com a
 // pergunta.
 //
+// UM CARD POR TURNO, NO ÚLTIMO BALÃO — defeito medido nos prints 07/08 (ordem do
+// líder, 27/10/2026 18:08). O chip era decidido a cada trecho do turno
+// (`soltarTrecho`): quando o modelo falava em dois beats, o toque nascia com as
+// opções do PRIMEIRO balão e pousava embaixo do segundo — nos prints o cliente leu
+// a mesma pergunta em dois balões e a pergunta final ficou sem toque do lado dela.
+// Quem decide agora é o turno, uma vez, no último balão: `chipDoUltimoBalao`.
+//
 // TODO TURNO TEM TOQUE — ordem do dono, 27/10/2026 17:16: *os balões de sugestão
 // aparecem em todo turno do agente, pergunte ele ou não*. Até aqui o chip só saía
 // quando o texto tinha "?": os prints 02 (depois da oferta) e 04 (falha da tool)
@@ -164,6 +171,17 @@ function detectarOpcoes(texto: string): { opcoes: string[]; textoLimpo: string }
 	return { opcoes: opcoesDaFrase, textoLimpo: texto };
 }
 
+/** O toque deste turno neste balão seria a MESMA decisão já na tela? */
+function toqueBloqueado(texto: string, cardsDoTurno: readonly { type: string }[]): boolean {
+	const tipos = cardsDoTurno.map((c) => c.type);
+	if (tipos.some((t) => CARD_DE_ESCOLHA.includes(t))) return true;
+	return (
+		tipos.some((t) => CARD_QUE_COLETA.includes(t)) &&
+		PEDE_PARA_DIGITAR.test(texto) &&
+		O_DADO_COLETADO.test(texto)
+	);
+}
+
 /**
  * O trecho que sai no balão e o chip que o acompanha.
  *
@@ -186,15 +204,7 @@ export function garantirChip(args: {
 	texto: string;
 	chip: CardGerado | null;
 } {
-	const tipos = args.cardsDoTurno.map((c) => c.type);
-	if (tipos.some((t) => CARD_DE_ESCOLHA.includes(t))) return { texto: args.texto, chip: null };
-	if (
-		tipos.some((t) => CARD_QUE_COLETA.includes(t)) &&
-		PEDE_PARA_DIGITAR.test(args.texto) &&
-		O_DADO_COLETADO.test(args.texto)
-	) {
-		return { texto: args.texto, chip: null };
-	}
+	if (toqueBloqueado(args.texto, args.cardsDoTurno)) return { texto: args.texto, chip: null };
 
 	// 1. A opção escrita no TEXTO (lista marcada ou "A ou B?") — a melhor de todas: a lista sai
 	//    do balão e vira botão.
@@ -219,6 +229,54 @@ export function garantirChip(args: {
 		return { texto: args.texto, chip: sliderDoValor(args.categoriaDoBem) };
 	}
 	return { texto: args.texto, chip: chipDe(sugestao.opcoes) };
+}
+
+/**
+ * O ÚNICO card de toque do TURNO — um por turno, no ÚLTIMO balão, derivado da ÚLTIMA pergunta.
+ *
+ * Defeito medido no print `prints-ux/07` (conversa web `1a4927bd`, 27/10/2026 20:49:07) e cobrado
+ * pelo líder às 18:08: o chip era decidido a cada TRECHO do turno (`soltarTrecho`), então o toque
+ * saía com as opções do balão em que o assunto começou e pousava embaixo do balão seguinte — no
+ * print 08 o cliente leu "Qual dessas cartas você quer seguir?" sem toque do lado dela, porque o
+ * único card do turno tinha sido decidido duas falas antes. Aqui a decisão é do TURNO: o texto que
+ * entra é o do último balão, e o card que sai é UM só.
+ *
+ * A lista MARCADA escrita nesse balão ("1) … 2) …") continua ganhando do momento: ela é a escolha
+ * que o modelo escreveu. A alternativa solta na frase ("…, ou prefere usar só o embutido?") NÃO é
+ * menu — foi ela que virava botão com a pergunta inteira dentro (ver `garantirChip`), e por isso
+ * aqui quem responde é o `sugestoes.ts`.
+ *
+ * Esta função NUNCA cria fala: ela só deriva os toques. O card é mensagem própria (`[card: …]`),
+ * como sempre foi.
+ */
+export function chipDoUltimoBalao(args: {
+	/** O texto do ÚLTIMO balão do turno, como o modelo escreveu. */
+	texto: string;
+	cardsDoTurno: readonly { type: string }[];
+	temCartaNaTela?: boolean;
+	canal?: "web" | "whatsapp";
+	falaDoCliente?: string;
+	categoriaDoBem?: Category;
+}): CardGerado | null {
+	if (!args.texto.trim()) return null;
+	if (toqueBloqueado(args.texto, args.cardsDoTurno)) return null;
+
+	// 1. A lista MARCADA escrita no último balão.
+	const daLista = listaDeOpcoes(args.texto);
+	if (daLista) return chipDe(daLista.opcoes);
+
+	// 2. A resposta do que o agente acabou de perguntar.
+	const sugestao = sugestaoDoTurno(args.texto, {
+		temCartaNaTela: args.temCartaNaTela === true,
+		...(args.canal ? { canal: args.canal } : {}),
+		...(args.falaDoCliente ? { falaDoCliente: args.falaDoCliente } : {}),
+		...(args.categoriaDoBem ? { categoriaDoBem: args.categoriaDoBem } : {}),
+	});
+	if (sugestao.opcoes.length < 2) return null;
+	if (sugestao.tipoDoCard === "value_picker" && args.categoriaDoBem) {
+		return sliderDoValor(args.categoriaDoBem);
+	}
+	return chipDe(sugestao.opcoes);
 }
 
 /**

@@ -70,6 +70,7 @@ import { loadIdentity, maskPhoneForDisplay, storeIdentity } from "@/lib/conversa
 import { loadConversationHistory, saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { bracoDaFila } from "@/lib/experimentos/fila";
+import { nomeUtilizavel } from "@/lib/leads/nome-plausivel";
 import { normalizePhoneBR } from "@/lib/leads/phone";
 import { registrarFalhaDoLlm } from "@/lib/llm/alerta-do-llm";
 import { COOKIE_MAX_AGE_SECONDS, COOKIE_NAME, generateCookieValue } from "@/lib/memory/identity";
@@ -549,7 +550,10 @@ export async function POST(req: NextRequest) {
 			return new Response("No user message in payload", { status: 400 });
 		}
 		await saveMessage(conversationId, "user", userText, "web");
-		const userName = conv.contactName ?? "Cliente";
+		// O nome vai ao atendente só se for NOME. Antes o nulo virava "Cliente", e o
+		// vocativo inventado pelo servidor voltava na conversa como se fosse o nome da
+		// pessoa ("Obrigado, Cliente."). Sem nome, o lugar do nome fica vazio.
+		const userName = nomeUtilizavel(conv.contactName);
 		const entregue = await relayWebUserToAgent(conversationId, userText, userName);
 		publishMessage(conversationId, {
 			id: lastUserMessageId(body.messages) ?? crypto.randomUUID(),

@@ -126,11 +126,26 @@ describe("pergunta fechada vira chip, não lista escrita no texto", () => {
 	});
 
 	// O detector não vale de nada se o turno não aplicar: esta guarda fica vermelha
-	// se `soltarTrecho` voltar a emitir só o texto.
-	it("o turno aplica o chip em cada trecho", () => {
+	// se o turno voltar a decidir o chip no meio da fala.
+	//
+	// ORDEM DO LÍDER, 27/10/2026 18:08: UM card por turno, no ÚLTIMO balão. Antes o
+	// chip nascia a cada trecho (`soltarTrecho`) e pousava embaixo do balão seguinte —
+	// prints 07/08.
+	it("o turno decide o chip UMA vez, no último balão", () => {
 		const fonte = readFileSync(new URL("./turno-livre.ts", import.meta.url).pathname, "utf8");
-		const corpo = fonte.slice(fonte.indexOf("const soltarTrecho"), fonte.indexOf("const executar"));
-		expect(corpo).toContain("cardsDoTurno: ctx.cards");
-		expect(corpo).toContain("ctx.cards.push(saida.chip");
+		const soltar = fonte.slice(
+			fonte.indexOf("const soltarTrecho"),
+			fonte.indexOf("const executar"),
+		);
+		expect(soltar).toContain("cardsDoTurno: ctx.cards");
+		// O trecho guarda o TEXTO do balão; o card sai no fim do turno.
+		expect(soltar).toContain("ultimoBalaoDoTurno = pendente");
+		expect(soltar).not.toContain("ctx.cards.push(saida.chip");
+		const fim = fonte.slice(
+			fonte.indexOf("// O ÚNICO TOQUE DO TURNO"),
+			fonte.indexOf('emitirCardsNovos("todos")'),
+		);
+		expect(fim).toContain("chipDoUltimoBalao({");
+		expect(fim).toContain("ctx.cards.push(chipDoTurno");
 	});
 });

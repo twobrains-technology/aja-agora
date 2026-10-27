@@ -28,6 +28,16 @@ describe("semente do vendedor — o que a dona do produto cobrou em 14 e 15/10",
 		}
 	});
 
+	it("proíbe o vocativo inventado (o 'Obrigado, Cliente.' da conversa 1a4927bd)", () => {
+		// Conversa web `1a4927bd-78a9-4fa0-9510-9550a7b583c5` (27/10/2026 20:50:20), com
+		// `contact_name` NULO: o modelo inventou o vocativo "Cliente" para preencher a lacuna
+		// do nome. O fato não vem do servidor — a fala é que tem de aprender a ficar sem nome.
+		expect(PROMPT_DO_VENDEDOR).toMatch(/não invente vocativo/i);
+		for (const rotulo of ["Cliente", "Comprador", "Interessado"]) {
+			expect(PROMPT_DO_VENDEDOR, rotulo).toContain(rotulo);
+		}
+	});
+
 	it("conduta + skills ficam abaixo de 20.000 caracteres (guardrail de contexto)", () => {
 		limparCacheDeSkills();
 		const skills = skillsParaPrompt();

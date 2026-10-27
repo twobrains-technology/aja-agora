@@ -278,6 +278,16 @@ describe("(c) a ORDEM das 17:15: o toque responde a ESTE turno, não ao tema", (
 		expect(corpo).toContain("canal: ctx.channel");
 		expect(corpo).toContain("falaDoCliente: falaDoClienteDoTurno");
 		expect(corpo).toContain("categoriaDoBem: estado.funnel.currentCategory");
-		expect(corpo).toContain("ctx.cards.push(saida.chip");
+		// ORDEM DO LÍDER, 27/10 18:08: o card é UM por turno e sai no ÚLTIMO balão —
+		// não por trecho. O mesmo contexto (fala do cliente, categoria, carta na tela)
+		// alimenta a decisão do fim do turno.
+		const fim = fonte.slice(
+			fonte.indexOf("// O ÚNICO TOQUE DO TURNO"),
+			fonte.indexOf('emitirCardsNovos("todos")'),
+		);
+		expect(fim).toContain("texto: ultimoBalaoDoTurno");
+		expect(fim).toContain("falaDoCliente: falaDoClienteDoTurno");
+		expect(fim).toContain("categoriaDoBem: estado.funnel.currentCategory");
+		expect(fim).toContain("ctx.cards.push(chipDoTurno");
 	});
 });

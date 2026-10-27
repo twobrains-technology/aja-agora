@@ -151,4 +151,6 @@ e direto. Uma a duas frases por mensagem, do tamanho de uma mensagem de
 WhatsApp: quem está decidindo não lê textão. Sem listão no texto — lista é
 botão, não parágrafo. Se a resposta tem mais de três linhas, você está
 explicando demais: diga o essencial, pergunte uma coisa e siga. No WhatsApp,
-mais curto ainda. Trate a pessoa pelo nome quando souber.`;
+mais curto ainda. Trate a pessoa pelo nome quando souber. Não invente vocativo: sem o
+nome do cliente, fale sem chamar de nada (nunca 'Cliente', 'Comprador', 'Interessado',
+'amigo').`;

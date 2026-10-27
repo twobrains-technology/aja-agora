@@ -19,7 +19,7 @@ import { passaFinal } from "@/lib/agent/orchestrator/vazamento";
 import { parseAssetValue } from "@/lib/agent/parse-asset-value";
 import type { Category } from "@/lib/agent/personas";
 import { type MetaDaEmissao, TIPOS_DE_ESCOLHA } from "@/lib/agent/pi/cards-livres";
-import { type CardGerado, garantirChip } from "@/lib/agent/pi/chips";
+import { chipDoUltimoBalao, garantirChip } from "@/lib/agent/pi/chips";
 import { executarBeat } from "@/lib/agent/pi/converse";
 import { linhaFinalDoHandoff, RE_DE_PROMESSA } from "@/lib/agent/pi/handoff";
 import { criarNarracaoDoTurno } from "@/lib/agent/pi/narracao";
@@ -180,6 +180,12 @@ export function capturarIdentidadeDoTexto(
 /** O texto que sai no balão: CPF mascarado e uma pergunta por trecho.
  * A fala NÃO é reescrita por trava de LGPD (decisão do dono, 27/10/2026) — o que
  * protege é o encanamento: máscara, cifra e o aceite conferido antes do bureau.
+ *
+ * O CHIP NÃO SAI DAQUI. Um card por turno, decidido no ÚLTIMO balão
+ * (`chipDoUltimoBalao`, ordem do líder de 27/10 18:08): decidir por trecho dava o
+ * toque do primeiro balão embaixo do segundo (prints 07/08). O que continua sendo
+ * deste trecho é a FORMA do balão — a lista marcada que virou botão sai do texto
+ * (N05), mesmo que os botões só sejam emitidos no fim do turno.
  * Exportado para ser testado sem banco. */
 export function montarTrechoDeSaida(args: {
 	texto: string;
@@ -193,7 +199,7 @@ export function montarTrechoDeSaida(args: {
 	falaDoCliente?: string;
 	/** Categoria do bem já declarada — autoriza o slider do valor (`value_picker`). */
 	categoriaDoBem?: Category;
-}): { texto: string; chip: CardGerado | null } {
+}): { texto: string } {
 	// O ÚLTIMO PASSE roda AQUI, no texto que vai AO VIVO para o canal — não só na
 	// persistência: máscara de CPF e o corte de vazamento de máquina (JSON de
 	// argumento, nome de tool) têm de valer para o cliente, não só para o banco.
@@ -209,23 +215,23 @@ export function montarTrechoDeSaida(args: {
 			clientePediu: args.handoff.clientePediu,
 			casoAberto: args.handoff.casoAberto,
 		});
-		return { texto: linha, chip: null };
+		return { texto: linha };
 	}
 
 	// Uma pergunta por mensagem: o verificador roda sobre o texto do modelo.
 	const final = manterUmaPergunta(texto);
-	// Pergunta fechada sem card de escolha no turno ⇒ o chip sai do texto. O balão
-	// guarda a pergunta; a opção vira botão — e a LISTA que virou botão sai do
-	// balão (`.texto`), senão o cliente lê duas vezes a mesma escolha.
-	const chipado = garantirChip({
-		texto: final,
-		cardsDoTurno: args.cardsDoTurno ?? [],
-		...(args.temCartaNaTela ? { temCartaNaTela: true } : {}),
-		...(args.canal ? { canal: args.canal } : {}),
-		...(args.falaDoCliente ? { falaDoCliente: args.falaDoCliente } : {}),
-		...(args.categoriaDoBem ? { categoriaDoBem: args.categoriaDoBem } : {}),
-	});
-	return { texto: chipado.texto, chip: chipado.chip };
+	// A forma do balão (a lista marcada vira botão e sai do texto, N05) é decidida
+	// aqui; o CHIP é derivado uma vez no fim do turno.
+	return {
+		texto: garantirChip({
+			texto: final,
+			cardsDoTurno: args.cardsDoTurno ?? [],
+			...(args.temCartaNaTela ? { temCartaNaTela: true } : {}),
+			...(args.canal ? { canal: args.canal } : {}),
+			...(args.falaDoCliente ? { falaDoCliente: args.falaDoCliente } : {}),
+			...(args.categoriaDoBem ? { categoriaDoBem: args.categoriaDoBem } : {}),
+		}).texto,
+	};
 }
 
 /** Texto antes e depois de uma tool é fala DIFERENTE: sem separador o stream
@@ -1226,6 +1232,9 @@ export function createRunTurnLivre(deps?: {
 		// Uma linha por turno: se a linha da casa já saiu, o segundo trecho de prosa de handoff
 		// não vira segunda mensagem.
 		let linhaDeHandoffEmitida = false;
+		// O texto do ÚLTIMO balão do turno, como o modelo escreveu: é dele que sai o
+		// ÚNICO card de toque, no fim do turno (`chipDoUltimoBalao`).
+		let ultimoBalaoDoTurno: string | null = null;
 		// CPF mascarado JÁ na saída (o número digitado não volta por eco do modelo)
 		// e uma pergunta por trecho de fala — tudo em `montarTrechoDeSaida`, testável sem banco.
 		/** Um balão pronto no canal: fronteira (se mudou de fala) + delta. */
@@ -1267,13 +1276,15 @@ export function createRunTurnLivre(deps?: {
 						: undefined,
 			});
 			if (ehHandoff) linhaDeHandoffEmitida = true;
+			// O ÚLTIMO balão do turno é a pergunta que o toque responde. A linha de
+			// handoff fica FORA: ela fecha a conversa com o especialista e não ganha
+			// próximo passo (era assim antes, quando o chip nascia por trecho).
+			if (!ehHandoff) ultimoBalaoDoTurno = pendente;
 			pendente = "";
 			// O anúncio da ferramenta não vira balão quando o card fala por si: o
 			// que estava suspenso sai antes deste balão, e este fica suspenso
 			// (R5.1).
 			for (const texto of narracaoDoTurno.aoTexto(saida.texto)) emitirFala(texto);
-			// O chip entra DEPOIS da pergunta: o cliente lê e toca, não lê a lista.
-			if (saida.chip) ctx.cards.push(saida.chip as never);
 		};
 		// O mesmo `toolCallId` duas vezes não vira dois eventos de tool.
 		const chamadasEmitidas = new Set<string>();
@@ -1430,20 +1441,44 @@ export function createRunTurnLivre(deps?: {
 			// o de ESCOLHA (pergunta + opções) é, e foi validado em `mostrar_card`.
 			//
 			// Aqui sai o que ficou para o fim do turno: os cards de ESCOLHA (esperam a
-			// pergunta que os explica — P136) e o `quick_reply` que o verificador de
-			// perguntas tirou da fala. Os cards FACTUAIS já foram ao canal no resultado da
-			// ferramenta (P157) e o dedupe impede que saiam de novo.
+			// pergunta que os explica — P136) e o `quick_reply` derivado do ÚLTIMO balão do
+			// turno. Os cards FACTUAIS já foram ao canal no resultado da ferramenta (P157) e
+			// o dedupe impede que saiam de novo.
 			emitirFalasNovas();
-			emitirCardsNovos("todos");
 			// O card fala por si (R5.1): o anúncio suspenso estava colado a ele e cai
 			// (quem o descarta é `emitirCardsNovos`). Sem card no turno, o anúncio é a
 			// fala da vez e sai como qualquer outra — fala legítima não se perde. O balão
 			// de TOQUE (`quick_reply`/`value_picker`/`topic_picker`) não conta como card:
 			// desde a ordem das 17:16 ele acompanha todo turno, e contá-lo calaria toda
 			// fala de anúncio de ferramenta.
+			//
+			// Antes dos cards de propósito: o anúncio liberado aqui é TEXTO, e o toque
+			// tem de ficar no último balão do turno, nunca acima dele.
 			if (!ctx.cards.some((c) => !TIPOS_DE_ESCOLHA.some((tipo) => tipo === c.type))) {
 				for (const texto of narracaoDoTurno.fimDoTurno()) emitirFala(texto);
 			}
+			// O ÚNICO TOQUE DO TURNO — ordem do líder, 27/10/2026 18:08.
+			//
+			// Um card por turno, derivado da ÚLTIMA pergunta e emitido no ÚLTIMO balão
+			// (`ctx.cards` é emitido agora, depois de toda a fala). Decidir por trecho dava
+			// o toque do primeiro balão embaixo do segundo: o cliente lia a mesma pergunta
+			// duas vezes (print 07) e a pergunta final chegava sem nada para tocar
+			// (print 08). Sem balão de texto no turno não há toque: turno que só mostrou
+			// card não ganha botão ao lado dele.
+			if (ultimoBalaoDoTurno !== null) {
+				const chipDoTurno = chipDoUltimoBalao({
+					texto: ultimoBalaoDoTurno,
+					cardsDoTurno: ctx.cards,
+					temCartaNaTela: ctx.cartasNaTela.length > 0,
+					canal: ctx.channel,
+					...(falaDoClienteDoTurno ? { falaDoCliente: falaDoClienteDoTurno } : {}),
+					...(estado.funnel.currentCategory
+						? { categoriaDoBem: estado.funnel.currentCategory }
+						: {}),
+				});
+				if (chipDoTurno) ctx.cards.push(chipDoTurno as never);
+			}
+			emitirCardsNovos("todos");
 			// O MARCO DA PRIMEIRA CARTA (L29/P281) — sinal de SESSÃO, uma vez por
 			// conversa. Na `main` quem chamava era o nó de descoberta; com o Pi ninguém
 			// chamava, e o `carta_vista`/`turnos_ate_carta` (a métrica que disse se a
