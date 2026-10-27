@@ -186,11 +186,13 @@ Lema da jornada: "Seu objetivo primeiro. O melhor consórcio depois."
   embutido ajuda justamente quem não tem o valor hoje) e pode acontecer no gate da
   conversa (copy completa do docx) OU resumida no componente do D9 — ambas valem.
 - Fechou com o gancho: "a Aja Agora vai analisar várias administradoras…".
-- DECISÃO DOCUMENTADA D1 (não punir ordem): a coleta de CPF + celular + aceite
-  LGPD acontece ao FIM do passo 2, no gancho acima — a administradora NÃO simula
-  oferta real sem CPF (exigência técnica registrada em docs/jornada/CONTEXT.md).
-  O docx posiciona "dados pessoais" no passo 5; a antecipação do CPF é decisão
-  aprovada — avalie a ordem dos passos considerando isso (não é quebra de fluxo).
+- DECISÃO DOCUMENTADA D1 (não punir ordem): a coleta de CPF + celular acontece ao FIM
+  do passo 2, no gancho acima — a administradora NÃO simula oferta real sem CPF
+  (exigência técnica registrada em docs/jornada/CONTEXT.md). O aceite da LGPD é
+  conferido pelo servidor ANTES de consultar o birô de crédito, e NÃO é passo de
+  conversa nem critério de nota de fala (decisão do dono, 27/10/2026). O docx
+  posiciona "dados pessoais" no passo 5; a antecipação do CPF é decisão aprovada —
+  avalie a ORDEM da coleta considerando isso (não é quebra de fluxo).
 
 ### passo 3 — Buscar alternativas
 - Anunciou que encontrou boas opções PARA O PERFIL dele e que vai recomendar a mais
@@ -223,7 +225,7 @@ Lema da jornada: "Seu objetivo primeiro. O melhor consórcio depois."
   (contratar agora / ver outras opções / falar com especialista da Aja Agora).
 
 ### passo 5 — Contratar
-- Fechou rumo à CONTRATAÇÃO REAL: dados (CPF/celular/LGPD) → proposta na
+- Fechou rumo à CONTRATAÇÃO REAL: dados (CPF/celular) → proposta na
   administradora → carta real confirmada → PROPOSTA pronta (PDF) + documentos.
 - DESVIO DE ENTENDIMENTO DES-1 (não cobrar): o docx fala em "assinatura digital"
   no fechamento, mas a API entrega o PDF da PROPOSTA; a assinatura/efetivação é

@@ -1,17 +1,15 @@
 // O JOGO DE REGRA DO CONDUCT — avaliado OFFLINE, na transcription.
 //
 // O eval roda SEM modelo juiz: cada regra é uma checagem determinística sobre os turnos
-// gravados, porque o que se quer é o CONTRATO, não a opinião. As cinco regras que o
-// padrão ouro cobra:
+// gravados, porque o que se quer é o CONTRATO, não a opinião. As quatro regras do padrão
+// ouro:
 //
 //  1. `pergunta-repetida`      — a mesma pergunta em dois turnos.
 //  2. `pergunta-fechada-sem-chip` — o modelo lista opções no texto e não mostra chip.
-//  3. `dado-sem-aviso`          — pediu CPF/celular antes do aviso da LGPD.
-//  4. `contexto-nao-dito`       — número que o cliente nunca disse, sem card que o sustente.
-//  5. `card-relistado`          — relista o card em texto (a skill manda comentar só a recomendada).
+//  3. `contexto-nao-dito`       — número que o cliente nunca disse, sem card que o sustente.
+//  4. `card-relistado`          — relista o card em texto (a skill manda comentar só a recomendada).
 
 import { opcoesDePerguntaFechada } from "@/lib/agent/pi/chips";
-import { AVISO_LGPD_RE, PEDE_DADO_RE } from "@/lib/agent/pi/lgpd";
 
 export type TurnoDeConversa = {
 	role: "user" | "assistant";
@@ -24,12 +22,7 @@ export type TurnoDeConversa = {
 };
 
 export type Achado = {
-	regra:
-		| "pergunta-repetida"
-		| "pergunta-fechada-sem-chip"
-		| "dado-sem-aviso"
-		| "contexto-nao-dito"
-		| "card-relistado";
+	regra: "pergunta-repetida" | "pergunta-fechada-sem-chip" | "contexto-nao-dito" | "card-relistado";
 	turno: number;
 	evidencia: string;
 };
@@ -119,7 +112,6 @@ export function agruparEmTurnos(mensagens: TurnoDeConversa[]): TurnoDeConversa[]
 export function avaliarConversa(turnos: TurnoDeConversa[]): Achado[] {
 	const achados: Achado[] = [];
 	const perguntasJaFeitas = new Set<string>();
-	let avisoVistoEm = -1;
 	const ditoPeloCliente = new Set<string>();
 
 	for (let i = 0; i < turnos.length; i++) {
@@ -150,13 +142,7 @@ export function avaliarConversa(turnos: TurnoDeConversa[]): Achado[] {
 			});
 		}
 
-		// 3. dado antes do aviso
-		if (AVISO_LGPD_RE.test(turno.content) && avisoVistoEm < 0) avisoVistoEm = i;
-		if (PEDE_DADO_RE.test(turno.content) && avisoVistoEm < 0) {
-			achados.push({ regra: "dado-sem-aviso", turno: i, evidencia: turno.content.trim() });
-		}
-
-		// 4. número que o agente afirma, que o cliente nunca disse e que nenhum card mostrou
+		// 3. número que o agente afirma, que o cliente nunca disse e que nenhum card mostrou
 		const mostrados = new Set<number>();
 		for (let j = 0; j <= i; j++) {
 			for (const v of turnos[j].valores ?? []) {
@@ -177,7 +163,7 @@ export function avaliarConversa(turnos: TurnoDeConversa[]): Achado[] {
 			achados.push({ regra: "contexto-nao-dito", turno: i, evidencia: bruto });
 		}
 
-		// 5. card relistado em texto
+		// 4. card relistado em texto
 		if (turno.cards.includes("comparison_table")) {
 			const linhas = turno.content.split(/\n+/).filter((l) => /^\s*(?:\d+[).:]|[-*–—•])\s/.test(l));
 			if (linhas.length >= 3) {

@@ -33,7 +33,7 @@ const DADO = String.raw`(?:cpf|celular|telefone|whats\s?app|n[uú]mero(?:\s+(?:d
 // administradora" não é coleta de dado. Sujeito na frente do verbo = descrição.
 const SUJEITO = String.raw`(?<![oa]s?\s|ele\s|ela\s|eles\s|elas\s|que\s|isso\s|isto\s|voc[êe]s\s|contrato\s|proposta\s|sistema\s|banco\s|administradora\s|empresa\s)`;
 
-/** O pedido de dado pessoal — CPF ou celular — que NÃO pode vir antes do aviso. */
+/** O pedido de dado pessoal — CPF ou celular. Usado pelo formatter do WhatsApp e pelo aceite; NÃO reescreve balão. */
 export const PEDE_DADO_RE = new RegExp(
 	[
 		// "me passa seu CPF", "preciso do celular", "envie o número do WhatsApp"
@@ -45,43 +45,6 @@ export const PEDE_DADO_RE = new RegExp(
 	].join("|"),
 	"i",
 );
-
-export type ResultadoDoAviso = {
-	/** O texto que sai no balão: o aviso vem ANTES do pedido de dado. */
-	texto: string;
-	/** true quando o aviso foi acrescentado pelo harness (não pelo modelo). */
-	avisoAdicionado: boolean;
-	/** O pedido de dado da fala é adiado pro turno seguinte — o aceite vem primeiro. */
-	pedidoAdiado: boolean;
-};
-
-/**
- * O AVISO VEM ANTES DO PEDIDO DE DADO — decidido no HARNESS, não no prompt.
- *
- * Se o aviso ainda não foi dado na conversa e a fala pede CPF ou celular, o aviso
- * ocupa a mensagem e o pedido de dado fica para depois do aceite. Frases que não
- * são o pedido continuam (acolhimento, explicação) — não se joga a fala fora.
- */
-export function garanteAvisoLgpd(args: { texto: string; avisoJaDado: boolean }): ResultadoDoAviso {
-	const texto = args.texto.trim();
-	if (args.avisoJaDado) return { texto, avisoAdicionado: false, pedidoAdiado: false };
-	if (!PEDE_DADO_RE.test(texto)) return { texto, avisoAdicionado: false, pedidoAdiado: false };
-
-	const frases = texto.split(/(?<=[.!?])\s+|\n+/).filter(Boolean);
-	const pediu = frases.some((f) => PEDE_DADO_RE.test(f));
-	// O `resto` é só o que NÃO é pedido e NÃO é pergunta: se a pergunta sobrevive, o balão
-	// sai com duas perguntas (a do aviso e a que o modelo escreveu), e o cliente responde a
-	// errada.
-	const resto = frases
-		.filter((f) => !PEDE_DADO_RE.test(f) && !/[?!]\s*$/.test(f))
-		.join(" ")
-		.trim();
-	// O aviso vem ANTES do resto: no dev o modelo escrevia "preciso do seu CPF. Para gerar
-	// sua proposta, ... conforme a LGPD. Posso seguir?" — o pedido vinha na frente do aviso,
-	// e o cliente respondia o pedido sem ter aceite nada.
-	const saida = resto ? `${AVISO_LGPD}\n\n${resto}` : AVISO_LGPD;
-	return { texto: saida, avisoAdicionado: true, pedidoAdiado: pediu };
-}
 
 /* O LADO PERIGOSO É O ACEITE FALSO — e o desenho dele é o que manda no resto do módulo.
  *

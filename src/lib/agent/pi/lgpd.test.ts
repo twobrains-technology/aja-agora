@@ -1,12 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import {
-	AVISO_LGPD,
-	clienteAceitouLgpd,
-	garanteAvisoLgpd,
-	PEDE_DADO_RE,
-	resolverAceiteLgpd,
-} from "./lgpd";
+import { AVISO_LGPD, clienteAceitouLgpd, PEDE_DADO_RE, resolverAceiteLgpd } from "./lgpd";
 import { montarTrechoDeSaida } from "./turno-livre";
 
 const AVISO =
@@ -68,66 +62,42 @@ describe("o aceite da LGPD é conferido na conversa, não na última fala", () =
 	});
 });
 
-describe("o aviso vem antes do pedido de dado — decidido no harness, não no prompt", () => {
-	it("fala que pede CPF sem aviso: o aviso ocupa a mensagem e o pedido fica pro aceite", () => {
-		const r = garanteAvisoLgpd({
+// Decisão do dono, 27/10/2026 (D-0009): LGPD e PII não são obstáculo da conversa. O balão
+// não é reescrito, o pedido de dado não é adiado, nenhum aviso é empurrado na fala. O que
+// fica é encanamento: CPF mascarado na saída, identidade cifrada, e o aceite conferido na
+// conversa ANTES de consultar bureau (`resolverAceiteLgpd`, testado adiante).
+describe("o balão não é reescrito — LGPD não trava fala (decisão do dono, 27/10/2026)", () => {
+	it("pedir CPF sem aviso anterior sai como o modelo escreveu", () => {
+		const r = montarTrechoDeSaida({
 			texto: "Você escolheu a Canopus. Me passa seu CPF pra eu gerar a proposta.",
-			avisoJaDado: false,
 		});
-		expect(r.avisoAdicionado).toBe(true);
-		expect(r.pedidoAdiado).toBe(true);
-		expect(r.texto).toContain("conforme a LGPD. Posso seguir?");
-		// O acolhimento não se joga fora; o que se adia é o PEDIDO, até haver sim.
-		expect(r.texto).toContain("Você escolheu a Canopus.");
-		expect(r.texto.indexOf("LGPD")).toBeLessThan(r.texto.length);
+		expect(r.texto).toBe("Você escolheu a Canopus. Me passa seu CPF pra eu gerar a proposta.");
+		expect(r.texto).not.toContain("conforme a LGPD");
 	});
 
-	it("aviso já dado na conversa: nada se repete", () => {
-		const r = garanteAvisoLgpd({ texto: "Me passa seu CPF?", avisoJaDado: true });
-		expect(r.avisoAdicionado).toBe(false);
-		expect(r.texto).toBe("Me passa seu CPF?");
+	it("pedir o celular sem aviso anterior também não ganha aviso", () => {
+		const r = montarTrechoDeSaida({ texto: "Qual é o seu celular com DDD?" });
+		expect(r.texto).toBe("Qual é o seu celular com DDD?");
 	});
 
-	it("fala que não pede dado não é tocada", () => {
-		const r = garanteAvisoLgpd({
-			texto: "Qual prazo te serve, 48 ou 80 meses?",
-			avisoJaDado: false,
-		});
-		expect(r.avisoAdicionado).toBe(false);
+	it("o CPF em claro continua mascarado na saída", () => {
+		const r = montarTrechoDeSaida({ texto: "Anotado: 111.444.777-35, obrigado." });
+		expect(r.texto).not.toMatch(/\d{3}\.\d{3}\.\d{3}-\d{2}/);
 	});
 
-	it("o aviso não é cortado pelo verificador de uma pergunta por mensagem", () => {
-		const r = montarTrechoDeSaida({
-			texto: "Você escolheu a Canopus. Me passa seu CPF, por favor, conforme a LGPD. Posso seguir?",
-			avisoDado: false,
-		});
-		expect(r.texto.startsWith("Para gerar a sua proposta")).toBe(true);
-		expect(r.texto).toContain("Você escolheu a Canopus");
-		// Uma pergunta por mensagem: a pergunta do balão é a do aviso.
-		expect((r.texto.match(/\?/g) ?? []).length).toBe(1);
-	});
-
-	it("o trecho que sai no balão aplica o aviso antes do pedido de dado", () => {
-		const r = montarTrechoDeSaida({
-			texto: "Legal! Me passa seu CPF pra eu gerar a proposta.",
-			avisoDado: false,
-		});
-		expect(r.avisoAplicado).toBe(true);
-		expect(r.texto).toContain("conforme a LGPD. Posso seguir?");
-		// Com o aviso já dado na conversa, o mesmo trecho sai como o modelo escreveu.
-		const depois = montarTrechoDeSaida({ texto: "Me passa seu CPF?", avisoDado: true });
-		expect(depois.avisoAplicado).toBe(false);
-		expect(depois.texto).toBe("Me passa seu CPF?");
-	});
-
-	// O turno não pode deixar de aplicar a guarda: se `soltarTrecho` voltar a só
-	// mascarar CPF e contar pergunta, o aviso depende outra vez da boa vontade do modelo.
-	it("o turno aplica a guarda em cada trecho que sai no balão", () => {
+	// A trava de fala não pode voltar: se `soltarTrecho` voltar a consultar aviso da LGPD,
+	// o balão é reescrito outra vez e o custo cai na conversa de venda.
+	it("nenhum trecho do turno consulta aviso da LGPD", () => {
 		const fonte = readFileSync(new URL("./turno-livre.ts", import.meta.url).pathname, "utf8");
 		const corpo = fonte.slice(fonte.indexOf("const soltarTrecho"), fonte.indexOf("const executar"));
-		expect(corpo).toMatch(/montarTrechoDeSaida\(\{[^}]*texto:\s*pendente[^}]*avisoDado/);
-		expect(corpo).not.toContain("manterUmaPergunta(scrubCpf(");
-		expect(fonte).toMatch(/avisoDado = historico\.some/);
+		expect(corpo).toContain("montarTrechoDeSaida({");
+		expect(corpo).not.toMatch(/aviso\s+d[ao]\s+LGPD|AVISO_LGPD|PEDE_DADO/);
+		expect(fonte).not.toMatch(/avisoDado|garanteAvisoLgpd|avisoAplicado/);
+	});
+
+	it("o avaliador não tem regra de dado sem aviso", () => {
+		const fonte = readFileSync(new URL("./eval/golden.ts", import.meta.url).pathname, "utf8");
+		expect(fonte).not.toContain("dado-sem-aviso");
 	});
 
 	it("o aviso canônico do harness é o mesmo da skill", () => {
@@ -149,8 +119,7 @@ describe("L32/N04 — só é pedido de dado quando há ato de pedir", () => {
 			"O contrato informa o telefone da administradora.",
 		]) {
 			expect(PEDE_DADO_RE.test(fala), fala).toBe(false);
-			const r = garanteAvisoLgpd({ texto: fala, avisoJaDado: false });
-			expect(r.avisoAdicionado, fala).toBe(false);
+			const r = montarTrechoDeSaida({ texto: fala });
 			expect(r.texto, fala).toBe(fala);
 		}
 	});
@@ -171,9 +140,7 @@ describe("L32/N04 — só é pedido de dado quando há ato de pedir", () => {
 		const r = montarTrechoDeSaida({
 			texto:
 				"Atendemos pelo WhatsApp, de segunda a sexta. Seu celular cadastrado recebe o contrato por lá.",
-			avisoDado: false,
 		});
-		expect(r.avisoAplicado).toBe(false);
 		expect(r.texto).not.toContain("conforme a LGPD");
 	});
 });

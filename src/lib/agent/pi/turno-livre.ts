@@ -22,7 +22,6 @@ import { type MetaDaEmissao, TIPOS_DE_ESCOLHA } from "@/lib/agent/pi/cards-livre
 import { type ChipGerado, garantirChip } from "@/lib/agent/pi/chips";
 import { executarBeat } from "@/lib/agent/pi/converse";
 import { linhaFinalDoHandoff, RE_DE_PROMESSA } from "@/lib/agent/pi/handoff";
-import { AVISO_LGPD_RE, garanteAvisoLgpd, PEDE_DADO_RE } from "@/lib/agent/pi/lgpd";
 import { criarNarracaoDoTurno } from "@/lib/agent/pi/narracao";
 import { persistirTurnoLivre } from "@/lib/agent/pi/persist-livre";
 import { custoDoTurnoCentsExatos } from "@/lib/agent/pi/precos";
@@ -177,26 +176,20 @@ export function capturarIdentidadeDoTexto(
 	return { identidade, textoLimpo, recebeuCpf, recebeuCelular };
 }
 
-/** O texto que sai no balão: CPF mascarado, aviso da LGPD antes do pedido de dado,
- * e uma pergunta por trecho. Exportado para ser testado sem banco. */
+/** O texto que sai no balão: CPF mascarado e uma pergunta por trecho.
+ * A fala NÃO é reescrita por trava de LGPD (decisão do dono, 27/10/2026) — o que
+ * protege é o encanamento: máscara, cifra e o aceite conferido antes do bureau.
+ * Exportado para ser testado sem banco. */
 export function montarTrechoDeSaida(args: {
 	texto: string;
-	avisoDado: boolean;
 	cardsDoTurno?: readonly { type: string }[];
 	handoff?: { nome: string | null; clientePediu: boolean; casoAberto: boolean };
-}): { texto: string; avisoAplicado: boolean; chip: ChipGerado | null } {
+}): { texto: string; chip: ChipGerado | null } {
 	// O ÚLTIMO PASSE roda AQUI, no texto que vai AO VIVO para o canal — não só na
 	// persistência: máscara de CPF e o corte de vazamento de máquina (JSON de
 	// argumento, nome de tool) têm de valer para o cliente, não só para o banco.
 	const bruto = passaFinal(args.texto);
-	let texto = bruto;
-	let avisoAplicado = false;
-	if (!args.avisoDado && PEDE_DADO_RE.test(bruto)) {
-		// Mesmo quando o modelo escreveu o aviso na mesma mensagem, o aviso ocupa o primeiro
-		// bloco e o pedido de dado fica para o turno seguinte — o aceite vem antes.
-		texto = garanteAvisoLgpd({ texto: bruto, avisoJaDado: false }).texto;
-		avisoAplicado = true;
-	}
+	const texto = bruto;
 	if (args.handoff) {
 		// O balão do handoff é UMA linha sem promessa. O modelo acrescentava uma confirmação
 		// com prazo ("um especialista vai entrar em contato em breve") — duas vozes, uma delas
@@ -207,17 +200,16 @@ export function montarTrechoDeSaida(args: {
 			clientePediu: args.handoff.clientePediu,
 			casoAberto: args.handoff.casoAberto,
 		});
-		return { texto: linha, avisoAplicado: false, chip: null };
+		return { texto: linha, chip: null };
 	}
 
-	// O aviso é a pergunta do turno: o verificador de "uma pergunta por mensagem" roda
-	// DEPOIS dele, senão o aviso é cortado como pergunta extra.
+	// Uma pergunta por mensagem: o verificador roda sobre o texto do modelo.
 	const final = manterUmaPergunta(texto);
 	// Pergunta fechada sem card de escolha no turno ⇒ o chip sai do texto. O balão
 	// guarda a pergunta; a opção vira botão — e a LISTA que virou botão sai do
 	// balão (`.texto`), senão o cliente lê duas vezes a mesma escolha.
 	const chipado = garantirChip({ texto: final, cardsDoTurno: args.cardsDoTurno ?? [] });
-	return { texto: chipado.texto, avisoAplicado, chip: chipado.chip };
+	return { texto: chipado.texto, chip: chipado.chip };
 }
 
 /** Texto antes e depois de uma tool é fala DIFERENTE: sem separador o stream
@@ -1136,19 +1128,13 @@ export function createRunTurnLivre(deps?: {
 		// card ele é a fala da vez. Ver `narracao.ts`.
 		const narracaoDoTurno = criarNarracaoDoTurno();
 		let pendente = "";
-		// O aviso da LGPD é FATO DO HARNESS: se ele ainda não foi dado na conversa e a
-		// fala pede CPF ou celular, o aviso entra ANTES do pedido e o pedido fica pro
-		// turno depois do aceite. Não é conselho de prompt — é o verificador do texto.
-		let avisoDado = historico.some((f) => f.role === "assistant" && AVISO_LGPD_RE.test(f.content));
 		// O caso aberto NESTE turno define o balão: uma linha, sem promessa.
 		let casoAberto = false;
 		// Uma linha por turno: se a linha da casa já saiu, o segundo trecho de prosa de handoff
 		// não vira segunda mensagem.
 		let linhaDeHandoffEmitida = false;
 		// CPF mascarado JÁ na saída (o número digitado não volta por eco do modelo)
-		// e uma pergunta por trecho de fala.
-		// CPF mascarado, aviso da LGPD antes do pedido de dado e uma pergunta por
-		// trecho — tudo em `montarTrechoDeSaida`, que é testável sem banco.
+		// e uma pergunta por trecho de fala — tudo em `montarTrechoDeSaida`, testável sem banco.
 		/** Um balão pronto no canal: fronteira (se mudou de fala) + delta. */
 		const emitirFala = (texto: string) => {
 			for (const ev of trechos.aoDelta(texto)) {
@@ -1165,14 +1151,12 @@ export function createRunTurnLivre(deps?: {
 			}
 			const saida = montarTrechoDeSaida({
 				texto: pendente,
-				avisoDado,
 				cardsDoTurno: ctx.cards,
 				handoff:
 					casoAberto || RE_DE_PROMESSA.test(pendente)
 						? { nome: ctx.nomeDoCliente, clientePediu: true, casoAberto }
 						: undefined,
 			});
-			avisoDado ||= saida.avisoAplicado;
 			if (ehHandoff) linhaDeHandoffEmitida = true;
 			pendente = "";
 			// O anúncio da ferramenta não vira balão quando o card fala por si: o
