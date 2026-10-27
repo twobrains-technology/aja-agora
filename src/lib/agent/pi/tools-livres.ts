@@ -618,6 +618,34 @@ function refDoPayload(payload: Record<string, unknown>): RefDeCard {
 	return ref;
 }
 
+/** O preço do BEM que o cliente quer: o do turno quando a busca rodou nele, senão o que
+ * a qualificação gravou. É a régua do que ainda pode ser oferecido depois de uma falha. */
+function valorDoBemDoCliente(
+	ctx: ContextoDasTools,
+	meta: ConversationMetadata,
+): number | undefined {
+	const doTurno = ctx.estadoDepoisDaBusca?.valorDoBemAlvo;
+	if (typeof doTurno === "number" && doTurno > 0) return doTurno;
+	const declarado = meta.qualifyAnswers?.valorDoBemAlvo;
+	return typeof declarado === "number" && declarado > 0 ? declarado : undefined;
+}
+
+/** O QUE PODE SER OFERECIDO depois de a proposta falhar. A mensagem antiga dizia só
+ * "oferecendo outra das cartas da tela", sem dizer QUAL — e o modelo ofereceu carta de
+ * R$ 110 mil para um Corolla de R$ 160 mil (`.orientacao/prints-kairo/1532-lance-embutido.png`).
+ * Carta menor que o bem não compra o bem: ou se lista só as que compram, ou se manda buscar
+ * com o lance embutido. Sem o valor do bem não há régua — a instrução genérica fica como era. */
+function restricaoDaOfertaAposFalha(ctx: ContextoDasTools, valorDoBem: number | undefined): string {
+	if (valorDoBem === undefined) return "";
+	const reais = (v: number) => `R$ ${v.toLocaleString("pt-BR")}`;
+	const compram = ctx.cartasNaTela.filter((c) => c.carta >= valorDoBem * 0.995);
+	if (compram.length === 0) {
+		return ` Nenhuma carta desta tela compra o bem de ${reais(valorDoBem)} — chame \`buscar_cartas\` com usaraLanceEmbutido: true antes de oferecer outra.`;
+	}
+	const lista = compram.map((c) => `${reais(c.carta)} (${c.administradora})`).join(", ");
+	return ` As cartas DESTA tela que ainda compram o bem de ${reais(valorDoBem)}: ${lista} — ofereça uma DELAS, nunca uma carta menor que o bem.`;
+}
+
 export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres = {}) {
 	// UM adapter por turno: `simulateQuota` lê o índice de ofertas que a busca
 	// populou dentro da MESMA instância — com um adapter novo por chamada, a
@@ -912,7 +940,10 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				// vendedor empurrou para a mesa um cliente que dizia "quero essa mesma, bora fechar" —
 				// três turnos seguidos (`.orientacao/prints-lgpd/prod/05-depois-do-aceite.png`).
 				// Problema técnico se resolve tentando de novo, não passando o cliente adiante.
-				return `Proposta NÃO gerada (${erro instanceof Error ? erro.message : String(erro)}). PROBLEMA TÉCNICO — não é motivo para passar o cliente para outra pessoa: em UMA frase curta diga que houve um problema ao falar com a administradora e siga VOCÊ MESMO, chamando \`fazer_proposta\` de novo com o mesmo groupId ou oferecendo outra das cartas da tela. Não chame \`falar_com_humano\` por causa disto: o cliente quer comprar.`;
+				// A carta oferecida tem que COMPRAR o bem: é isto que impede a repetição do
+				// "Corolla de R$ 160 mil, carta de R$ 110 mil".
+				const restricao = restricaoDaOfertaAposFalha(ctx, valorDoBemDoCliente(ctx, meta));
+				return `Proposta NÃO gerada (${erro instanceof Error ? erro.message : String(erro)}). PROBLEMA TÉCNICO — não é motivo para passar o cliente para outra pessoa: em UMA frase curta diga que houve um problema ao falar com a administradora e siga VOCÊ MESMO, chamando \`fazer_proposta\` de novo com o mesmo groupId ou oferecendo outra das cartas da tela.${restricao} Não chame \`falar_com_humano\` por causa disto: o cliente quer comprar.`;
 			}
 
 			// Depois do fecho, a cota REAL é a âncora do estado — é o snapshot que

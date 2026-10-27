@@ -256,3 +256,66 @@ describe("(3) clientePedeHumano lê só o pedido explícito de gente", () => {
 			expect(clientePedeHumano(fala), fala).toBe(false);
 	});
 });
+
+// A FALHA TÉCNICA NÃO PODE VIRAR CARTA ERRADA. Print de 27/10
+// (`.orientacao/prints-kairo/1532-lance-embutido.png`): o cliente queria um Corolla de R$ 160 mil,
+// a tela tinha cartas de R$ 230 mil, a `fazer_proposta` falhou e o vendedor ofereceu a carta de
+// R$ 110 mil. A mensagem de erro dizia só "outra das cartas da tela", sem dizer qual.
+describe("(4) falha da proposta só oferece carta que ainda compra o bem", () => {
+	const CARTAS_DO_COROLLA = [
+		{
+			groupId: "grupo-canopus-110",
+			administradora: "CANOPUS",
+			carta: 110_000,
+			parcela: 1_100,
+			prazoMeses: 96,
+		},
+		{
+			groupId: "grupo-canopus-230",
+			administradora: "CANOPUS",
+			carta: 230_000,
+			parcela: 2_300,
+			prazoMeses: 96,
+		},
+	];
+
+	it("o caso do Corolla: oferece a de R$ 230 mil, nunca a de R$ 110 mil", async () => {
+		mocks.startContract.mockRejectedValue(new Error("BEVI_API_TOKEN ausente"));
+		const ctx = ctxDoTurno({
+			cartasNaTela: CARTAS_DO_COROLLA,
+			estadoDepoisDaBusca: { categoria: "auto", valorDoBemAlvo: 160_000 },
+		});
+		const saida = await chamar(ctx, "fazer_proposta", { groupId: "grupo-canopus-230" });
+
+		expect(saida).toContain("R$ 230.000 (CANOPUS)");
+		// O defeito medido: a carta que não compra o bem existia na lista de oferta.
+		expect(saida).not.toContain("110.000");
+		// Segue vendendo: mesma tool, mesmo id, e a mesa fora do caminho.
+		expect(saida).toContain("fazer_proposta");
+		expect(saida).toContain("falar_com_humano");
+	});
+
+	it("nenhuma carta da tela compra o bem: manda buscar com lance embutido", async () => {
+		mocks.startContract.mockRejectedValue(new Error("BEVI_API_TOKEN ausente"));
+		const ctx = ctxDoTurno({
+			cartasNaTela: [CARTAS_DO_COROLLA[0]],
+			estadoDepoisDaBusca: { categoria: "auto", valorDoBemAlvo: 160_000 },
+		});
+		const saida = await chamar(ctx, "fazer_proposta", { groupId: "grupo-canopus-110" });
+
+		expect(saida).toContain("Nenhuma carta desta tela compra o bem de R$ 160.000");
+		expect(saida).toContain("usaraLanceEmbutido: true");
+		expect(saida).not.toContain("110.000");
+	});
+
+	it("sem o valor do bem, mantém a instrução genérica de antes", async () => {
+		mocks.startContract.mockRejectedValue(new Error("BEVI_API_TOKEN ausente"));
+		const ctx = ctxDoTurno({ cartasNaTela: CARTAS_DO_COROLLA });
+		const saida = await chamar(ctx, "fazer_proposta", { groupId: "grupo-canopus-230" });
+
+		expect(saida).toContain("oferecendo outra das cartas da tela");
+		// Sem o preço do bem, a tool não lista nem esconde carta: não inventa faixa.
+		expect(saida).not.toContain("R$ 110.000");
+		expect(saida).not.toContain("R$ 230.000");
+	});
+});
