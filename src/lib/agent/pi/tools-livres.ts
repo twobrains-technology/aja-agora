@@ -52,7 +52,7 @@ import {
 	type TipoDeEscolha,
 	type TipoDeFato,
 } from "@/lib/agent/pi/cards-livres";
-import { abrirCasoNaMesa, nomeNaFala } from "@/lib/agent/pi/handoff";
+import { abrirCasoNaMesa, clientePedeHumano, nomeNaFala } from "@/lib/agent/pi/handoff";
 import { resolverAceiteLgpd } from "@/lib/agent/pi/lgpd";
 import { pisoPadraoPara } from "@/lib/agent/qualify-answers";
 import { type ClosingItem, realOfferPresentation } from "@/lib/bevi/closing-presentation";
@@ -853,7 +853,7 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				aceiteJaGravado: meta.lgpdAceite ?? null,
 			});
 			if (aceite.motivo === "aceite-revogado") {
-				return "Proposta NÃO gerada: o cliente REVOGOU a autorização do uso dos dados dele nesta conversa. Não insista no aceite nem repita o aviso — ofereça falar com um humano e siga sem proposta.";
+				return "Proposta NÃO gerada: o cliente REVOGOU a autorização do uso dos dados dele nesta conversa. Não insista no aceite nem repita o aviso — siga a conversa sem gerar proposta, e só chame `falar_com_humano` se ELE pedir para falar com uma pessoa.";
 			}
 
 			// QUEM RECUSA IDENTIDADE DA CASA É O FULFILLMENT (`startContract`), que
@@ -918,7 +918,12 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				);
 			} catch (erro) {
 				console.error("[fazer_proposta] falha no fechamento:", erro);
-				return `Proposta NÃO gerada (${erro instanceof Error ? erro.message : String(erro)}). Diga ao cliente que houve um problema ao falar com a administradora e ofereça um especialista humano.`;
+				// FALHA DE FERRAMENTA NÃO É HANDOFF (P5/P7). A instrução anterior mandava "ofereça um
+				// especialista humano" e, com a Bevi fora do ar no dev (`BEVI_API_TOKEN` vazio), o
+				// vendedor empurrou para a mesa um cliente que dizia "quero essa mesma, bora fechar" —
+				// três turnos seguidos (`.orientacao/prints-lgpd/prod/05-depois-do-aceite.png`).
+				// Problema técnico se resolve tentando de novo, não passando o cliente adiante.
+				return `Proposta NÃO gerada (${erro instanceof Error ? erro.message : String(erro)}). PROBLEMA TÉCNICO — não é motivo para passar o cliente para outra pessoa: em UMA frase curta diga que houve um problema ao falar com a administradora e siga VOCÊ MESMO, chamando \`fazer_proposta\` de novo com o mesmo groupId ou oferecendo outra das cartas da tela. Não chame \`falar_com_humano\` por causa disto: o cliente quer comprar.`;
 			}
 
 			// Depois do fecho, a cota REAL é a âncora do estado — é o snapshot que
@@ -1034,6 +1039,20 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 			motivo: z.string().min(3).describe("Por que está chamando o especialista"),
 		}),
 		execute: async ({ motivo }) => {
+			// O GATE DA MESA (P5/P7): o caso só abre quando o CLIENTE pede uma pessoa. Falha de
+			// ferramenta, objeção ("e se eu não for contemplado"), dúvida de taxa ou conversa
+			// difícil são trabalho do vendedor — mandar para a mesa é desistir da venda. O modelo
+			// continua dono de COMO conduzir; o que não é dele é decidir que a conversa acabou.
+			const pediuAgora = clientePedeHumano(ctx.userText);
+			const pediuAntes =
+				pediuAgora ||
+				(await loadConversationHistory(ctx.conversationId).catch(() => []))
+					.filter((m) => m.role === "user")
+					.slice(-8)
+					.some((m) => clientePedeHumano(m.content));
+			if (!pediuAntes) {
+				return "Caso NÃO aberto: o cliente não pediu para falar com uma pessoa, e passar o atendimento para a mesa no meio da venda é desistir dele. Siga você: responda o que ele perguntou, resolva o que falhou (se uma ferramenta falhou, diga em UMA frase e tente de novo) e leve para o próximo passo da compra.";
+			}
 			ctx.pediuHumano = true;
 			// O nome que o cliente já disse na fala é FATO, não interpretação do modelo. Sem
 			// nome não há caso na mesa — capturar é mais honesto que pedir de novo.

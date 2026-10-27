@@ -91,6 +91,51 @@ export function semPromessa(texto: string): boolean {
 	return !RE_DE_PROMESSA.test(texto);
 }
 
+/**
+ * O CLIENTE PEDIU UMA PESSOA — nas palavras DELE.
+ *
+ * P5/P7: "o lead só vai ao especialista quando ele pede" e "empurrar para humano é falha de
+ * condução". O gate é de PRODUTO e mora no servidor, não no texto de conduta: quem decide se o
+ * caso da mesa abre é a fala do cliente, não a vontade do modelo. Medido nos prints de produção
+ * de 27/10 (`.orientacao/prints-lgpd/prod/05-depois-do-aceite.png`): a `fazer_proposta` falhou
+ * (credencial da Bevi ausente) e o agente empurrou para a mesa um cliente que dizia "bora
+ * fechar" — três turnos seguidos.
+ *
+ * Não é guarda de FALA do agente (o que o AGENTS.md proíbe): é a validação de uma tool contra o
+ * estado da conversa, como o aceite da LGPD era. A lista abaixo é curta de propósito — só o
+ * pedido explícito de gente. "Quero saber se é seguro", "não entendi" e "tive um problema" não
+ * são pedido de humano; são conversa, e conversa o vendedor resolve.
+ */
+const GENTE =
+	"(?:pessoa|humano|humana|atendente|consultor(?:a)?|especialista|supervisor(?:a)?|gerente|algu[ée]m)";
+const PEDIDO_DE_GENTE = [
+	// "quero falar com uma pessoa", "preciso conversar com um atendente", "quero falar com alguém"
+	new RegExp(
+		`(?:falar|conversar|negociar)\\s+(?:com|para|pra|pro)\\s+(?:um[a]?\\s+|o\\s+|a\\s+)?${GENTE}`,
+		"i",
+	),
+	// "quero um atendente", "preciso de um humano", "queria falar com especialista"
+	new RegExp(
+		`(?:quero|queria|preciso|precisava|gostaria)\\s+(?:de\\s+|falar\\s+(?:com|para|pra)\\s+)?(?:um[a]?\\s+|o\\s+|a\\s+)?${GENTE}`,
+		"i",
+	),
+	// "me passa para um atendente", "chama um humano", "transfere pro consultor"
+	new RegExp(
+		`(?:me\\s+)?(?:passa|passe|passar|chama|chame|chamar|transfere|transfira|transferir)\\s+(?:para|pra|pro|um|uma|o|a)?\\s*(?:um[a]?\\s+|o\\s+|a\\s+)?${GENTE}`,
+		"i",
+	),
+	// "atendimento humano", "pessoa de verdade", "atendente de verdade"
+	new RegExp(`(?:atendimento\\s+(?:humano|de\\s+verdade))|(?:${GENTE}\\s+de\\s+verdade)`, "i"),
+	// "não quero falar com robô/bot/robô de novo"
+	/(?:n[ãa]o\s+(?:quero|gosto)\s+(?:de\s+)?falar\s+(?:com|com o|com a)\s+(?:rob[ôo]|bot|m[áa]quina|computador|ia))/i,
+];
+
+/** A fala do CLIENTE é pedido de gente? Só ela — a fala do agente nunca passa por aqui. */
+export function clientePedeHumano(texto: string | null | undefined): boolean {
+	if (!texto || texto.trim().length < 3) return false;
+	return PEDIDO_DE_GENTE.some((re) => re.test(texto));
+}
+
 export type ResultadoDoCaso = {
 	ok: boolean;
 	/** `caso-aberto` | `sem-lead` (o nome ainda não chegou) */

@@ -1210,7 +1210,14 @@ export function createRunTurnLivre(deps?: {
 				cardsDoTurno: ctx.cards,
 				handoff:
 					casoAberto || RE_DE_PROMESSA.test(pendente)
-						? { nome: ctx.nomeDoCliente, clientePediu: true, casoAberto }
+						? {
+								// O FATO, não a suposição: `pediuHumano` é setado pela tool e só quando o
+								// cliente pediu uma pessoa (`tools-livres.ts`, gate da mesa). O `true`
+								// fixo dizia "abri o caso" até para quem nunca pediu.
+								nome: ctx.nomeDoCliente,
+								clientePediu: ctx.pediuHumano,
+								casoAberto,
+							}
 						: undefined,
 			});
 			if (ehHandoff) linhaDeHandoffEmitida = true;
