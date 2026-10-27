@@ -1,14 +1,16 @@
 {
 	"cenario": "golden-troca-de-categoria",
-	"descricao": "Troca explícita de categoria no meio do funil gera transição limpa (sem estado vazado da categoria anterior).",
+	"descricao": "Troca explícita de categoria no meio do funil gera transição limpa (sem estado vazado da categoria anterior). Migrado em 27/10/2026 só no passo da categoria clicada: o motor livre não emite mais `gate:<x>` (nenhum escritor de `data-gate` em `src/`), então 'categoria escolhida → nome capturado' é medido por `tool:salvar_nome`. O assert 4 (`transition:moto` em turno de TEXTO) NÃO foi migrado: `data-transition` só é escrito em `pipeTransitionTurn` (`src/lib/web/adapter.ts:438`), chamado apenas no clique `action.kind === category` (`src/app/api/chat/route.ts:647`) — a troca dita em texto não grava `metadata.currentCategory`, e aí o estado do servidor contradiz a fala ('Vamos mudar o foco para motos'). É defeito do agente, medido no banco: conversa `53ed3164-d2b0-4a66-8cea-ef3b177cbc49` terminou com `currentCategory = imovel`.",
 	"caRefs": ["CA-2", "FIX multi-persona"],
 	"asserts": {
 		"turns": [
 			null,
 			{
-				"expectArtifacts": ["transition:imovel", "gate:name"]
+				"expectArtifacts": ["transition:imovel"]
 			},
-			null,
+			{
+				"expectArtifacts": ["tool:salvar_nome"]
+			},
 			{
 				"expectArtifacts": ["transition:moto"]
 			}
@@ -27,12 +29,12 @@
 				"category": "imovel"
 			},
 			"label": "Imóvel",
-			"expect": "transição + gate name."
+			"expect": "transição + pedido do nome."
 		},
 		{
 			"type": "text",
 			"text": "Lia",
-			"expect": "saudação + desire."
+			"expect": "saudação + pedido do valor."
 		},
 		{
 			"type": "text",
