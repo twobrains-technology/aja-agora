@@ -22,6 +22,7 @@ import { picarEmBaloes } from "@/lib/agent/pi/baloes";
 import { type MetaDaEmissao, TIPOS_DE_ESCOLHA } from "@/lib/agent/pi/cards-livres";
 import { chipDoTurno, garantirChip } from "@/lib/agent/pi/chips";
 import { executarBeat } from "@/lib/agent/pi/converse";
+import { corrigirComparacaoDePrazo } from "@/lib/agent/pi/comparacao-de-prazo";
 import { linhaFinalDoHandoff, RE_DE_PROMESSA } from "@/lib/agent/pi/handoff";
 import { criarNarracaoDoTurno } from "@/lib/agent/pi/narracao";
 import { persistirTurnoLivre } from "@/lib/agent/pi/persist-livre";
@@ -200,11 +201,19 @@ export function montarTrechoDeSaida(args: {
 	falaDoCliente?: string;
 	/** Categoria do bem já declarada — autoriza o slider do valor (`value_picker`). */
 	categoriaDoBem?: Category;
+	/** Os prazos REAIS das cartas na mesa: a comparação de prazo na fala tem de bater com eles
+	 * (ordem do líder, 27/10 22:35 — a fala disse "96 é mais curto que 94"). */
+	prazosDaMesa?: readonly number[];
+	/** O prazo da carta que o agente está recomendando ("ela") — sujeito da comparação. */
+	prazoDaRecomendada?: number;
 }): { texto: string } {
 	// O ÚLTIMO PASSE roda AQUI, no texto que vai AO VIVO para o canal — não só na
 	// persistência: máscara de CPF e o corte de vazamento de máquina (JSON de
 	// argumento, nome de tool) têm de valer para o cliente, não só para o banco.
-	const bruto = passaFinal(args.texto);
+	const bruto = corrigirComparacaoDePrazo(passaFinal(args.texto), {
+		prazosDaMesa: args.prazosDaMesa ?? [],
+		...(args.prazoDaRecomendada ? { prazoDaRecomendada: args.prazoDaRecomendada } : {}),
+	});
 	const texto = bruto;
 	if (args.handoff) {
 		// O balão do handoff é UMA linha sem promessa. O modelo acrescentava uma confirmação
@@ -1276,6 +1285,8 @@ export function createRunTurnLivre(deps?: {
 				// Fato do turno para a resposta rápida (ordem do dono, 27/10): com carta na tela a
 				// pergunta aberta ("qual dessas fica melhor?") ganha as opções da oferta.
 				temCartaNaTela: ctx.cartasNaTela.length > 0,
+				prazosDaMesa: ctx.cartasNaTela.map((c) => c.prazoMeses),
+				...(ctx.cartasNaTela[0] ? { prazoDaRecomendada: ctx.cartasNaTela[0].prazoMeses } : {}),
 				canal: ctx.channel,
 				// O toque é a resposta ao que ESTE turno disse (ordem das 17:15): a fala do cliente
 				// entra como filtro anti-eco e a categoria do bem decide se a pergunta de valor sai
