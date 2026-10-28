@@ -117,7 +117,7 @@ A versão vem do lockfile, não da memória do modelo. A doc vem da fonte oficia
 
 Tag aproximada do Context7 não prova a versão travada: quando a API for sensível, confira no `node_modules` ou no changelog.
 
-Não se usa (e por quê): Prisma, next-auth, Inngest, Mastra e o SDK `openai` direto, porque o projeto já escolheu outra peça (Drizzle, better-auth, BullMQ, Pi como motor do vendedor e AI SDK para o LLM) e trocar exige decisão. LangChain, LangGraph e Langfuse saíram porque o agente passou a rodar no motor do Pi como biblioteca (sessão de 25/10/2026).
+Não se usa (e por quê): Prisma, next-auth, Inngest, Mastra e o SDK `openai` direto, porque o projeto já escolheu outra peça (Drizzle, better-auth, BullMQ, Pi como motor do vendedor e AI SDK para o LLM) e trocar exige decisão. LangChain, LangGraph e o SDK do Langfuse saíram porque o agente passou a rodar no motor do Pi como biblioteca (sessão de 25/10/2026). O Langfuse está desligado por ora (desde 19/10/2026, B6): o trace do turno é local (`comTraceDoTurno`, só log), e a volta pelo plugin de observabilidade do Pi está em estudo na D-0014.
 
 Aprovado por Kairo em 28/10/2026 · origem grupo Agent - Preciso do kairo, 11:53 · D-0024
 
