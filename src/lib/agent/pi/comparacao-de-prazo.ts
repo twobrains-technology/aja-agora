@@ -279,7 +279,7 @@ function tirarOracao(frase: string, oracao: string): string {
 
 /** "…, mas o prazo é de 100 meses" / "o prazo fica em 100 meses": o prazo ESCRITO como atributo. */
 const PRAZO_COMO_ATRIBUTO =
-	/(\s*[,;]?\s*(?:mas\s+|e\s+|por[ée]m\s+)?)\b(?:o\s+)?prazo\s+(?:dela\s+|dele\s+)?(?:[ée]|fica|seria|ser[áa]|são|ficaria)?\s*(?:de|em|por)?\s*(\d{2,3})\s*(?:meses|m[êe]s)\b/i;
+	/(\s*[,;]?\s*(?:mas\s+|e\s+|por[ée]m\s+)?)\bo\s+prazo\s+(?:dela\s+|dele\s+)?(?:[ée]|fica|seria|ser[áa]|são|ficaria)?\s*(?:de|em|por)?\s*(\d{2,3})\s*(?:meses|m[êe]s)\b/i;
 
 /** "A da ÂNCORA tem 100 meses", "a CANOPUS com 100 meses", "prazo de 100 meses": o prazo dito como
  * característica da carta. Só vale de 36 meses para cima (prazo de consórcio) — "contemplado em
@@ -315,7 +315,7 @@ export function semPrazoInventado(
 				const antes = frase.slice(0, inicio).trim();
 				// O prazo era a frase inteira ("O prazo é de 100 meses."): a frase sai.
 				if (!antes || /:$/.test(antes)) return antes.replace(/:$/, "").trim();
-				const depois = frase.slice(fim).replace(/^[\s,]*(?:que\s+)?[^.!?]*?(?=[.!?]|$)/, "");
+				const depois = frase.slice(fim);
 				return `${antes}${depois}`.replace(/\s+([,.;:!?])/g, "$1").trim();
 			}
 

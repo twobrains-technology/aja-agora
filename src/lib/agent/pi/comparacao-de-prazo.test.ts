@@ -256,3 +256,36 @@ describe("'é de N meses' e a diferença calculada em cima de número inventado"
 		expect(semPrazoInventado(dito, MESA)).toBe(dito);
 	});
 });
+
+describe("a correção não come o resto da frase (defeito achado ao vivo: 'A Âncora tem.')", () => {
+	it("'tem prazo de 100 meses e a Canopus tem 96' mantém a segunda metade", () => {
+		const saida = semPrazoInventado(
+			"A Âncora tem prazo de 100 meses e a Canopus tem 96 meses.",
+			MESA,
+		);
+		expect(saida).not.toContain("100");
+		expect(saida).toContain("a Canopus tem 96 meses");
+		expect(saida).not.toBe("A Âncora tem.");
+	});
+
+	it("o prazo-atributo no meio da frase tira só a oração, não o que vem depois", () => {
+		const saida = semPrazoInventado(
+			"A menor parcela é da ÂNCORA, mas o prazo é de 100 meses, e a CANOPUS fecha em 96 meses.",
+			MESA,
+		);
+		expect(saida).not.toContain("100");
+		expect(saida).toContain("a CANOPUS fecha em 96 meses");
+	});
+
+	it("nenhuma frase termina pendurada num verbo depois da correção", () => {
+		for (const dito of [
+			"A Âncora tem prazo de 100 meses.",
+			"A ÂNCORA é de 100 meses e a CANOPUS é de 96 meses.",
+			"A ÂNCORA fica em 100 meses.",
+		]) {
+			const saida = semPrazoInventado(dito, MESA);
+			expect(saida, dito).not.toMatch(/\b(?:tem|é|fica|com)\s*[.!?]$/);
+			expect(saida.length, dito).toBeGreaterThan(8);
+		}
+	});
+});
