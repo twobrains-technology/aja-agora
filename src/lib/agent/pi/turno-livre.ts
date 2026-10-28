@@ -23,7 +23,7 @@ import { type MetaDaEmissao, TIPOS_DE_ESCOLHA } from "@/lib/agent/pi/cards-livre
 import { chipDoTurno, garantirChip } from "@/lib/agent/pi/chips";
 import { executarBeat } from "@/lib/agent/pi/converse";
 import { corrigirComparacaoDePrazo } from "@/lib/agent/pi/comparacao-de-prazo";
-import { linhaFinalDoHandoff, RE_DE_PROMESSA } from "@/lib/agent/pi/handoff";
+import { clientePedeHumano, linhaFinalDoHandoff, RE_DE_PROMESSA } from "@/lib/agent/pi/handoff";
 import { criarNarracaoDoTurno } from "@/lib/agent/pi/narracao";
 import { persistirTurnoLivre } from "@/lib/agent/pi/persist-livre";
 import { custoDoTurnoCentsExatos } from "@/lib/agent/pi/precos";
@@ -1231,6 +1231,12 @@ export function createRunTurnLivre(deps?: {
 			[...historico].reverse().find((m) => m.role === "user")?.content ||
 			undefined;
 
+		// O CLIENTE PEDIU GENTE NESTE TURNO. Não é o `ctx.pediuHumano` (que só existe se o modelo
+		// chamou a tool): a fala do cliente é fato do turno, e a transferência não pode depender de
+		// o modelo lembrar. Ordem do líder (27/10 01:05, print 16 reprovado): o agente respondeu
+		// "Antes de mais nada, você já me disse seu nome?" a quem pediu um atendente.
+		const pedidoDeHumanoNoTurno = clientePedeHumano(falaDoClienteDoTurno);
+
 		// Fila de eventos: o beat empurra o texto AO VIVO, o generator drena.
 		const fila: TurnEvent[] = [];
 		let acordar: (() => void) | null = null;
@@ -1274,6 +1280,26 @@ export function createRunTurnLivre(deps?: {
 		};
 		const soltarTrecho = () => {
 			if (!pendente) return;
+			// A TRANSFERÊNCIA PEDIDA PELO CLIENTE TEM UMA FALA SÓ, montada aqui: aceita o pedido e
+			// pede o que falta para o consultor chamar (nome e WhatsApp). A prosa do modelo nesta
+			// hora perguntava coisa de outro momento e ainda duplicava a linha da casa.
+			if (pedidoDeHumanoNoTurno) {
+				if (linhaDeHandoffEmitida) {
+					pendente = "";
+					return;
+				}
+				const fala = linhaFinalDoHandoff({
+					texto: "",
+					nome: ctx.nomeDoCliente,
+					clientePediu: true,
+					casoAberto,
+				});
+				linhaDeHandoffEmitida = true;
+				pendente = "";
+				for (const balao of picarEmBaloes(fala)) baloesDoTurno.push(balao);
+				emitirFala(fala);
+				return;
+			}
 			const ehHandoff = casoAberto || RE_DE_PROMESSA.test(pendente);
 			if (ehHandoff && linhaDeHandoffEmitida) {
 				pendente = "";
