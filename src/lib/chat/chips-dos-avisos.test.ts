@@ -67,11 +67,50 @@ describe("aviso de dados faltando", () => {
 	});
 });
 
-describe("qualquer outro texto", () => {
-	it("devolve null — fala do modelo não é aviso do servidor", () => {
-		expect(chipsDoAviso("Qual dessas cartas fica melhor pra você?")).toBeNull();
-		expect(chipsDoAviso("")).toBeNull();
+describe("qualquer outro aviso", () => {
+	it("aviso neutro, sem pergunta e sem pedido, devolve null — não inventa botão", () => {
+		expect(chipsDoAviso("Tudo certo, já registrei.")).toBeNull();
 		expect(chipsDoAviso("Recebi seus documentos ✅.")).toBeNull();
+		expect(chipsDoAviso("")).toBeNull();
+	});
+
+	// Caso REAL da auditoria (sha `e2461a52`, R21 de 28/10 01:58:27Z, `route.ts:1245`): a pergunta
+	// saiu por `writeAndSaveText` puro e o cliente ficou sem nenhum botão.
+	it("o aviso do formulário (route.ts:1245) sai com 2+ opções, nunca null", () => {
+		const opcoes = chipsDoAviso(
+			"Antes de eu confirmar seu plano, deixa eu te mostrar o formulário rapidinho — me diz que quer seguir?",
+		);
+		expect(opcoes).not.toBeNull();
+		expect(opcoes?.length).toBeGreaterThanOrEqual(2);
+		// Pelo menos uma opção RESPONDE ao pedido do turno ("me diz que quer seguir?").
+		expect(opcoes?.some((o) => /^(pode|quero|sim|mando|vou)/i.test(o.label.trim()))).toBe(true);
+	});
+
+	it("o aviso do número que não registrou (route.ts:858) também sai com opções", () => {
+		const opcoes = chipsDoAviso(
+			"Hmm, não consegui registrar esse número. Pode conferir e mandar de novo?",
+		);
+		expect(opcoes).not.toBeNull();
+		expect(opcoes?.length).toBeGreaterThanOrEqual(2);
+	});
+
+	it("o aviso de proposta já registrada (route.ts:1298) sai com opções", () => {
+		const opcoes = chipsDoAviso(
+			"Você já tem uma proposta registrada com a RODOBENS — não dá pra abrir uma segunda com outra administradora por aqui. Quer que eu confira o status dessa proposta pra você?",
+		);
+		expect(opcoes).not.toBeNull();
+		expect(opcoes?.length).toBeGreaterThanOrEqual(2);
+	});
+
+	it("pedido de CPF/celular recebe as opções DO DADO, não as genéricas", () => {
+		expect(
+			chipsDoAviso("Preciso do celular completo, com DDD — dá uma conferida e me manda de novo?"),
+		).toEqual([{ label: "Mando meu celular" }, { label: "Por que precisa do celular?" }]);
+
+		const doCpf = chipsDoAviso("Pra seguir eu preciso do seu CPF, pode me passar?") ?? [];
+		expect(doCpf.map((o) => o.label)).toEqual(["Pode usar meu CPF", "Por que precisa do CPF?"]);
+		// Nenhuma das duas é o par genérico que não responde ao pedido.
+		expect(doCpf.map((o) => o.label)).not.toContain("Pode seguir");
 	});
 });
 

@@ -18,7 +18,7 @@
 
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { type CardGerado, garantirChip } from "./chips";
+import { type CardGerado, chipDoTurno, garantirChip } from "./chips";
 import { sugestaoDoTurno, sugestoesDaPergunta } from "./sugestoes";
 
 /** Os rótulos do card — só `quick_reply` os tem (o `value_picker` é o slider do valor). */
@@ -357,6 +357,79 @@ describe("(print 13) aviso de dado não vira saída de nome", () => {
 		const juntas = r.opcoes.join(" | ").toLowerCase();
 		expect(juntas).not.toContain("cartas");
 		expect(juntas).toContain("cpf");
+	});
+});
+
+describe("(R21) o pedido de dado no BEAT ÚNICO — a frase que pede, não só a última", () => {
+	// Defeito medido no SHA `e2461a52` (auditoria independente, e visível no banco): com o pedido
+	// de dado e o fecho na MESMA resposta, o toque saía genérico ou de oferta. Duas causas:
+	//  · `PEDIDO_DIRETO` cobria "pode me passar" e não "pode me mandar"/"consegue me mandar";
+	//  · `decidir` olhava o texto inteiro ou só a última frase, e o fecho afirmativo
+	//    ("Se for a Canopus… eu já gero a proposta") escondia o pedido da frase anterior.
+	const ehDoDado = (rotulo: string) => /\bcpf\b|celular|whats?\s?app/i.test(rotulo);
+
+	const BEAT_UNICO_COM_PERGUNTA =
+		"Pode me mandar o CPF e o celular escritos aqui mesmo? Se for a Canopus de 96 meses que eu recomendei, eu já gero a proposta no seu nome.";
+	const BEAT_UNICO_SEM_PERGUNTA = "Pode me mandar o CPF e o celular. Vou gerar a proposta.";
+
+	it("(a) pedido com '?' na primeira frase + fecho afirmativo → toque do dado", () => {
+		for (const opcoes of [
+			rotulos(BEAT_UNICO_COM_PERGUNTA, { temCartaNaTela: true, categoriaDoBem: "auto" }),
+			sugestaoDoTurno(BEAT_UNICO_COM_PERGUNTA, { temCartaNaTela: true, categoriaDoBem: "auto" })
+				.opcoes,
+		]) {
+			expect(opcoes.length, opcoes.join(" | ")).toBeGreaterThanOrEqual(2);
+			expect(ehDoDado(opcoes[0] ?? ""), opcoes.join(" | ")).toBe(true);
+			expect(opcoes).not.toContain("Pode seguir");
+			expect(opcoes).not.toContain("Quero essa");
+		}
+	});
+
+	it("(b) pedido + fecho sem '?' no MESMO beat → toque do dado, nunca 'Quero essa'", () => {
+		const opcoes = rotulos(BEAT_UNICO_SEM_PERGUNTA, {
+			temCartaNaTela: true,
+			categoriaDoBem: "auto",
+		});
+		expect(opcoes.length).toBeGreaterThanOrEqual(2);
+		expect(ehDoDado(opcoes[0] ?? ""), opcoes.join(" | ")).toBe(true);
+		expect(opcoes).not.toContain("Quero essa");
+		expect(opcoes).not.toContain("Ver outra opção");
+	});
+
+	it("o TURNO de um balão só entrega o card do dado, não o do fecho", () => {
+		// O caminho real: `chipDoTurno` com um balão único. Antes o toque vinha do fecho.
+		const chip = chipDoTurno({
+			baloes: [BEAT_UNICO_COM_PERGUNTA],
+			cardsDoTurno: [],
+			temCartaNaTela: true,
+			categoriaDoBem: "auto",
+		});
+		const labels = rotulosDoChip(chip);
+		expect(labels.length).toBeGreaterThanOrEqual(2);
+		expect(ehDoDado(labels[0] ?? ""), labels.join(" | ")).toBe(true);
+	});
+
+	it("os VERBOS novos do pedido são reconhecidos em qualquer posição da frase", () => {
+		for (const frase of [
+			"Consegue me mandar o CPF aqui?",
+			"Pode mandar o CPF e o celular no chat.",
+			"Para seguir, vou precisar do seu CPF.",
+			"Me envia o celular com DDD.",
+			"Me confirma o CPF, por favor.",
+		]) {
+			const opcoes = rotulos(frase, { temCartaNaTela: true });
+			expect(ehDoDado(opcoes[0] ?? ""), `${frase} → ${opcoes.join(" | ")}`).toBe(true);
+		}
+	});
+
+	it("(c) regressão: turno de oferta SEM pedido de dado continua nos próximos passos", () => {
+		expect(
+			rotulos("Encontrei 4 opções na tela para um carro de R$ 90 mil.", { temCartaNaTela: true }),
+		).toEqual(["Quero essa", "Ver outra opção", "Falar do lance"]);
+	});
+
+	it("regressão: a OFERTA (quem oferece o dado, não pede) continua sim/não", () => {
+		expect(rotulos("Posso usar seu CPF pra consultar?")).toEqual(["Sim, pode", "Agora não"]);
 	});
 });
 

@@ -137,7 +137,7 @@ const PEDIDO_DE_WHATS = /whats\s?app|telefone|celular|seu\s+n[úu]mero/i;
  * passos (`Quero essa` · `Ver outra opção` · `Falar do lance`).
  */
 const PEDIDO_DIRETO =
-	/\b(?:me\s+(?:diz|diga|fala|passa|manda|envia|informa|compartilha)|pode\s+(?:me\s+passar|passar|mandar|enviar)|consegue\s+me\s+passar|me\s+confirma|digite|digita|informe|escreva|escreve|manda|envia|compartilha|(?:preciso|precisamos|vou\s+precisar)\s+d[eo])\b/i;
+	/\b(?:me\s+(?:diz|diga|fala|passa|manda|envia|informa|compartilha|confirma)|pode\s+(?:me\s+)?(?:mandar|enviar|passar|confirmar)|consegue\s+me\s+(?:mandar|passar|enviar)|vou\s+precisar\s+d[eo]|digite|digita|informe|escreva|escreve|manda|envia|compartilha|(?:preciso|precisamos)\s+d[eo])\b/i;
 
 /** (c) Os dados que o agente pede — a lista daquele dado, na voz da pessoa. */
 const FAIXAS_DE_VALOR = ["Até R$ 50 mil", "Uns R$ 80 mil", "R$ 100 mil ou mais"];
@@ -183,17 +183,19 @@ const PROXIMOS_COM_CARTA = ["Quero essa", "Ver outra opção", "Falar do lance"]
 /** (f) A conversa continua mesmo quando o pedido não é nenhuma das formas acima. */
 const GENERICO = ["Pode seguir", "Tenho uma dúvida"];
 
-/** A última frase é a unidade de decisão: classificar o texto inteiro pegava palavra de uma
- * explicação anterior ("Vou te explicar como funciona a contemplação\nFaz sentido pra você?") e
- * oferecia toque de outro assunto. */
-function ultimaFraseDe(texto: string): string {
-	return (
-		texto
-			.split(/(?<=[?.!])\s+|\n+/)
-			.map((f) => f.trim())
-			.filter(Boolean)
-			.pop() ?? texto
-	);
+/** O turno picado em FRASES — a unidade de decisão.
+ *
+ * A frase é a unidade porque classificar o texto inteiro pegava palavra de uma explicação
+ * anterior ("Vou te explicar como funciona a contemplação\nFaz sentido pra você?") e oferecia
+ * toque de outro assunto. E olhar SÓ a última frase perdia o pedido do MEIO do turno: no beat
+ * único "Pode me mandar o CPF e o celular escritos aqui mesmo? / Se for a Canopus de 96 meses que
+ * eu recomendei, eu já gero a proposta no seu nome." o pedido é a PRIMEIRA frase e o fecho
+ * afirmativo é a última — o turno saía com os próximos passos genéricos. */
+export function frasesDe(texto: string): string[] {
+	return texto
+		.split(/(?<=[?.!])\s+|\n+/)
+		.map((f) => f.trim())
+		.filter(Boolean);
 }
 
 /** Minúsculas, sem acento e sem pontuação — por esta forma duas falas são a MESMA fala. */
@@ -377,26 +379,61 @@ function dadoPedido(alvo: string, momento: MomentoDaConversa): SugestaoDoTurno |
 	return null;
 }
 
+/** A frase PEDE RESPOSTA sobre um dado: é interrogativa ou traz o verbo do pedido
+ * (`PEDIDO_DIRETO`). Sem este filtro, a menção ao bem numa frase afirmativa ("Encontrei 4 opções
+ * na tela para um carro de R$ 90 mil.") viraria pedido de tipo de bem. */
+const pedeODado = (frase: string) => frase.includes("?") || PEDIDO_DIRETO.test(frase);
+
+/** O pedido EXPLÍCITO — só o verbo escrito, sem a interrogativa. É o que ganha do sim/não:
+ * "Pode me mandar o CPF?" pede o dado; "Posso usar seu CPF?" oferece. */
+const pedeODadoExplicito = (frase: string) => PEDIDO_DIRETO.test(frase);
+
+/**
+ * O DADO PEDIDO NO TURNO INTEIRO — todas as frases, de trás pra frente.
+ *
+ * Defeito medido no SHA `e2461a52` (auditoria, e visto no banco): o pedido de dado saía em **beat
+ * único**, com a pergunta numa frase e o fecho afirmativo na seguinte — "…Pode me mandar o CPF e o
+ * celular escritos aqui mesmo? / Se for a Canopus de 96 meses que eu recomendei, eu já gero a
+ * proposta no seu nome." saía `Pode seguir` · `Tenho uma dúvida`, e "Pode me mandar o CPF e o
+ * celular. Vou gerar a proposta." saía `Quero essa` · `Ver outra opção` · `Falar do lance`. A
+ * causa era decidir pelo texto inteiro ou só pela última frase; agora a busca é frase a frase:
+ * a ÚLTIMA frase ainda tem prioridade (é a primeira que a varredura vê), e o resto do turno é o
+ * fallback.
+ */
+function dadoNoTurno(
+	frases: readonly string[],
+	momento: MomentoDaConversa,
+	pedeResposta: (frase: string) => boolean,
+): SugestaoDoTurno | null {
+	for (let i = frases.length - 1; i >= 0; i -= 1) {
+		const frase = frases[i] ?? "";
+		if (!pedeResposta(frase)) continue;
+		const doDado = dadoPedido(frase, momento);
+		if (doDado) return doDado;
+	}
+	return null;
+}
+
 /**
  * A tabela (a)→(f) — qual é o pedido DESTE turno e o que o cliente responderia a ele.
  *
  * `null` não existe mais: todo turno do agente tem um próximo passo do cliente (ordem das 17:16).
  */
 function decidir(texto: string, momento: MomentoDaConversa): SugestaoDoTurno {
-	const ultimaFrase = ultimaFraseDe(texto);
+	const frases = frasesDe(texto);
+	const ultimaFrase = frases[frases.length - 1] ?? texto;
 	const alvo = ultimaFrase.includes("?") ? ultimaFrase : texto;
 	const ehPergunta = texto.includes("?");
 
 	// (e0) PEDIDO DIRETO SEM INTERROGAÇÃO. "Para gerar a proposta preciso do seu CPF e do seu
 	// celular com DDD." não tem "?", mas pede um dado — e os próximos passos genéricos
-	// ("Quero essa") não respondem a isso (visto no turno da contratação, 27/10).
-	if (!ehPergunta && (PEDIDO_DIRETO.test(alvo) || PEDIDO_DIRETO.test(ultimaFrase))) {
-		const doDado = dadoPedido(alvo, momento);
-		if (doDado) return doDado;
-	}
-
-	// (e) TURNO SEM PERGUNTA — os próximos passos do momento, não uma resposta inventada.
+	// ("Quero essa") não respondem a isso (visto no turno da contratação, 27/10). O pedido pode
+	// estar em QUALQUER frase do turno ("Pode me mandar o CPF e o celular. Vou gerar a proposta.").
 	if (!ehPergunta) {
+		const doTurno = dadoNoTurno(frases, momento, pedeODado);
+		if (doTurno) return doTurno;
+
+		// (e) TURNO SEM PERGUNTA — os próximos passos do momento, não uma resposta inventada.
 		return {
 			opcoes: momento.temCartaNaTela ? PROXIMOS_COM_CARTA : PROXIMOS_SEM_CARTA,
 			tipoDoCard: "quick_reply",
@@ -419,15 +456,27 @@ function decidir(texto: string, momento: MomentoDaConversa): SugestaoDoTurno {
 	const alternativas = ultimaFrase.includes("?") ? alternativasDaPergunta(ultimaFrase) : [];
 	if (alternativas.length === 2) return { opcoes: alternativas, tipoDoCard: "quick_reply" };
 
+	// (b0) PEDIDO EXPLÍCITO DE DADO, EM QUALQUER FRASE DO TURNO. Vem antes do sim/não por dois
+	// motivos medidos:
+	//  · "Pode me mandar o CPF e o celular?" abre com "Pode…", que casa o `SIM_NAO` — a resposta
+	//    saía "Pode seguir" em vez do dado;
+	//  · o pedido pode estar numa frase e a pergunta do fecho noutra, e aí a última frase decidia
+	//    sozinha.
+	// Só o pedido com o VERBO escrito (`PEDIDO_DIRETO`) passa na frente: "Posso usar seu CPF pra
+	// consultar?" OFERECE o dado — ela continua sim/não.
+	const pedidoExplicito = dadoNoTurno(frases, momento, pedeODadoExplicito);
+	if (pedidoExplicito) return pedidoExplicito;
+
 	// (b) PERGUNTA DE SIM/NÃO — a resposta é sim/não, casada com o verbo do pedido.
 	const limpa = alvo.replace(/^[^A-Za-zÀ-ÿ]+/, "");
 	if (ultimaFrase.includes("?") && (SIM_NAO.test(limpa) || CONFIRMA_NO_FIM.test(alvo))) {
 		return { opcoes: respostasDeSimNao(alvo), tipoDoCard: "quick_reply" };
 	}
 
-	// (c) PEDIDO DE DADO — pergunta ou imperativo ("me diz quanto…").
-	const pedeODado = ultimaFrase.includes("?") || PEDIDO_DIRETO.test(limpa);
-	const dado = pedeODado ? dadoPedido(alvo, momento) : null;
+	// (c) PEDIDO DE DADO — pergunta ou imperativo ("me diz quanto…"), em qualquer frase do turno:
+	// a última frase manda quando ela própria pede o dado; o resto do turno é o fallback, de trás
+	// pra frente.
+	const dado = dadoNoTurno(frases, momento, pedeODado);
 	if (dado) return dado;
 
 	// (d) PERGUNTA ABERTA COM CARTA NA TELA — a decisão é sobre o que ele está vendo.
@@ -443,10 +492,7 @@ function decidir(texto: string, momento: MomentoDaConversa): SugestaoDoTurno {
  * Sem isso, "preciso do seu CPF e do seu celular… no seu nome" casava `\bseu nome\b` e devolvia
  * as saídas do nome numa pergunta de CPF (visto no turno da contratação, 27/10). */
 function ultimaPerguntaDeNome(texto: string): boolean {
-	const frases = texto
-		.split(/(?<=[?.!])\s+|\n+/)
-		.map((f) => f.trim())
-		.filter(Boolean);
+	const frases = frasesDe(texto);
 	const ultima = frases[frases.length - 1] ?? "";
 	return ultima.includes("?") && RESPOSTA_LIVRE.test(ultima);
 }

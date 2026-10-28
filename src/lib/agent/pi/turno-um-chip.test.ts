@@ -213,6 +213,47 @@ describe("(ordem das 17:16) turno sem pergunta continua com próximo passo", () 
 	});
 });
 
+describe("(R21) o pedido de dado no BEAT ÚNICO — pedido e fecho na mesma resposta", () => {
+	// Defeito medido no SHA `e2461a52`: com o pedido de CPF/celular e o fecho na MESMA resposta do
+	// agente, o único card do turno saía genérico (`Pode seguir` · `Tenho uma dúvida`) ou de oferta
+	// (`Quero essa` · `Ver outra opção` · `Falar do lance`). A decisão olhava o texto inteiro ou só
+	// a última frase, e a frase que PEDE o dado podia ser a primeira.
+	it("pedido com '?' + fecho afirmativo no mesmo balão: o card é do DADO", async () => {
+		const conversationId = await novaConversa();
+		const turno = await rodarTurno({
+			conversationId,
+			userText: "pode ser a de 90 mil",
+			beats: [
+				{
+					text: "Pode me mandar o CPF e o celular escritos aqui mesmo? Se for a Canopus de 96 meses que eu recomendei, eu já gero a proposta no seu nome.",
+				},
+			],
+		});
+		await turno.fechar();
+
+		expect(chips(turno.eventos)).toHaveLength(1);
+		const opcoes = chips(turno.eventos)[0] as string[];
+		expect(opcoes.join(" | ")).toMatch(/cpf|celular/i);
+		expect(opcoes).not.toContain("Pode seguir");
+		expect(opcoes).not.toContain("Quero essa");
+	});
+
+	it("pedido + fecho sem '?' no mesmo balão: o card é do DADO, nunca 'Quero essa'", async () => {
+		const conversationId = await novaConversa();
+		const turno = await rodarTurno({
+			conversationId,
+			userText: "pode ser a de 90 mil",
+			beats: [{ text: "Pode me mandar o CPF e o celular. Vou gerar a proposta." }],
+		});
+		await turno.fechar();
+
+		expect(chips(turno.eventos)).toHaveLength(1);
+		const opcoes = chips(turno.eventos)[0] as string[];
+		expect(opcoes.join(" | ")).toMatch(/cpf|celular/i);
+		expect(opcoes).not.toContain("Quero essa");
+	});
+});
+
 describe("(R20) o toque sai do ÚLTIMO PEDIDO do turno, não do último balão", () => {
 	// Defeito medido no SHA `3236f59f` (auditoria independente da R20, 237 turnos): o pedido de
 	// CPF/celular saía num balão e o fecho ("Tudo bem, aguardo.") noutro. O toque nascia do fecho
