@@ -49,3 +49,33 @@ describe("lastro do número: conta de carta não é invenção (medido em 27/10/
 		expect(derivadosDaCarta([2, 3])).not.toContain(8);
 	});
 });
+
+describe("expectAnyArtifact + orAgentTextMatches: o WhatsApp pedido em frase cumpre o turno (líder, 28/10 05:05)", () => {
+	const asserts = {
+		turns: [
+			{
+				expectAnyArtifact: ["whatsapp_optin"],
+				orAgentTextMatches: ["me manda.{0,40}(whatsapp|n[úu]mero)"],
+			},
+		],
+	};
+	const turnoSem = (agentText: string): GoldenTurnResult => ({
+		userMsg: "e se eu fechar a tela?",
+		agentText,
+		httpStatus: 200,
+		error: null,
+		artifactTypes: ["quick_reply"],
+	});
+
+	it("sem o card, a fala que pede o WhatsApp passa", () => {
+		expect(
+			checkScenario([turnoSem("Me manda seu WhatsApp que a gente segue por lá.")], asserts).pass,
+		).toBe(true);
+	});
+
+	it("sem o card e sem pedir o contato, continua vermelho", () => {
+		const v = checkScenario([turnoSem("Boa pergunta! Quer ver outra carta?")], asserts);
+		expect(v.pass).toBe(false);
+		expect(v.failures[0]).toMatch(/esperava UM de \[whatsapp_optin\]/);
+	});
+});

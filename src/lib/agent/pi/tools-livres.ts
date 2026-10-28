@@ -1056,8 +1056,8 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				(ctx.whatsappOptinJaMostrado || ctx.cards.some((c) => c.type === "whatsapp_optin"))
 			) {
 				return ctx.telefoneMascarado
-					? `Card NÃO mostrado: o card de WhatsApp já foi à tela e o celular do cliente JÁ está guardado (${ctx.telefoneMascarado}). Não peça número nem mande digitar em card: confirme que você continua pelo WhatsApp no número que ele passou.`
-					: "Card NÃO mostrado: o card de WhatsApp já foi à tela nesta conversa e não sai de novo. Se o cliente ainda não deu o número, peça em uma frase, na conversa.";
+					? `Card NÃO mostrado: o card de WhatsApp já foi à tela e o celular do cliente JÁ está guardado (${ctx.telefoneMascarado}). Não peça número nem mande digitar em card, e não comente que o card já apareceu: confirme que você continua pelo WhatsApp no número que ele passou.`
+					: "Card NÃO mostrado: o card de WhatsApp já foi à tela nesta conversa e não sai de novo. Se o cliente ainda não deu o número, peça em uma frase, na conversa, sem comentar que o card já apareceu.";
 			}
 
 			const card = await montarCardDeFato(

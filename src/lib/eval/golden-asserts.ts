@@ -73,6 +73,11 @@ export type GoldenTurnAsserts = {
 	 * ou direto com `tool:fazer_proposta` (identidade já capturada). `expectArtifacts`
 	 * exige TODOS; aqui exige um. */
 	expectAnyArtifact?: string[];
+	/** Caminho alternativo de `expectAnyArtifact`: se nenhum artifact esperado veio, a fala do
+	 * agente pode cumprir o passo (regex, sem diferenciar maiúsculas). Existe porque o card de
+	 * WhatsApp sai UMA vez por conversa (ordem do líder, 28/10 05:05): quando já foi à tela, o
+	 * contato é pedido em uma frase — que é o outro jeito legítimo do P6. */
+	orAgentTextMatches?: string[];
 	/** Nenhum pode aparecer. */
 	forbidArtifacts?: string[];
 	/** Report de 05/08 ("Está repetindo grupos iguais"): duas ofertas com a MESMA
@@ -242,7 +247,10 @@ export function checkScenario(
 			const apareceu = asserts.expectAnyArtifact.some((esperado) =>
 				t.artifactTypes.includes(esperado),
 			);
-			if (!apareceu) {
+			const falaCumpre = (asserts.orAgentTextMatches ?? []).some((re) =>
+				new RegExp(re, "i").test(t.agentText),
+			);
+			if (!apareceu && !falaCumpre) {
 				failures.push(
 					`${rotulo}: esperava UM de [${asserts.expectAnyArtifact.join(", ")}], veio [${t.artifactTypes.join(", ")}]`,
 				);

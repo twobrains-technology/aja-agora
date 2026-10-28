@@ -637,3 +637,15 @@ describe("card de WhatsApp: uma vez por conversa, e sem pedir o número que o le
 		expect(ctx.cards.filter((c) => c.type === "whatsapp_optin")).toHaveLength(1);
 	});
 });
+
+describe("card de WhatsApp repetido: a tool não deixa o modelo comentar o card", () => {
+	it("a recusa diz para não comentar que o card já apareceu (a fala vazou 'Como o cartão já apareceu antes…')", async () => {
+		for (const telefoneMascarado of ["(11) *****-4321", null]) {
+			const ctx = { ...ctxVazio(), telefoneMascarado, whatsappOptinJaMostrado: true };
+			const saida = await mostrarCard(ctx, "whatsapp_optin", {});
+			expect(saida).toMatch(
+				/não comente que o card já apareceu|sem comentar que o card já apareceu/,
+			);
+		}
+	});
+});
