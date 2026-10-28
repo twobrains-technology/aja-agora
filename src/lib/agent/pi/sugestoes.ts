@@ -137,7 +137,7 @@ const PEDIDO_DE_WHATS = /whats\s?app|telefone|celular|seu\s+n[úu]mero/i;
  * passos (`Quero essa` · `Ver outra opção` · `Falar do lance`).
  */
 const PEDIDO_DIRETO =
-	/\b(?:me\s+(?:diz|diga|fala|passa|manda|envia|informa|compartilha|confirma)|pode\s+(?:me\s+)?(?:mandar|enviar|passar|confirmar)|consegue\s+me\s+(?:mandar|passar|enviar)|vou\s+precisar\s+d[eo]|digite|digita|informe|escreva|escreve|manda|envia|compartilha|(?:preciso|precisamos)\s+d[eo])\b/i;
+	/\b(?:me\s+(?:diz|diga|fala|passa|manda|envia|informa|compartilha|confirma)|pode\s+(?:me\s+)?(?:mandar|enviar|passar|confirmar)|consegue\s+me\s+(?:mandar|passar|enviar)|(?:se\s+)?puder\s+(?:confirmar|mandar|passar|enviar)|confirma(?:r)?\s+(?:seu|o)\s+(?:cpf|celular|telefone|n[úu]mero)|vou\s+precisar\s+d[eo]|digite|digita|informe|escreva|escreve|manda|envia|compartilha|(?:preciso|precisamos)\s+d[eo])\b/i;
 
 /** (c) Os dados que o agente pede — a lista daquele dado, na voz da pessoa. */
 const FAIXAS_DE_VALOR = ["Até R$ 50 mil", "Uns R$ 80 mil", "R$ 100 mil ou mais"];
@@ -158,7 +158,11 @@ const DADO_DE_PARCELA = /parcela|por\s+m[êe]s|mensalidade/i;
 const DADO_DE_CPF = /\bcpf\b/i;
 /** O CONTATO pedido — o dado que salva o lead (P6). "número" fica FORA de propósito: no turno
  * do vendedor ele é o número da carta ("o número da contemplação"), não o do telefone. */
-const DADO_DE_CONTATO = /whats\s?app|celular|telefone/i;
+// "número" sozinho é o número do CARD ("me mostra os números"). Só é CONTATO com posse ou
+// com o canal colado: "seu número", "qual o seu número", "número do whats", "número do celular".
+// Auditar 28/10: "Qual seu número?" caía em próximo passo — pedido de dado com toque de oferta.
+const DADO_DE_CONTATO =
+	/whats\s?app|celular|telefone|(?:seu|teu)\s+n[úu]mero|qual\s+(?:é\s+|e\s+)?(?:o\s+)?(?:seu\s+)?n[úu]mero|n[úu]mero\s+d[oe]\s+(?:whats|celular|telefone)/i;
 /**
  * O LANCE — o valor que o cliente já tem para dar de entrada — pede outro card: o `value_picker`
  * existe para o valor do BEM (faixa de `CREDIT_BOUNDS` por categoria). Defeito medido no print
