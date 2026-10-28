@@ -280,6 +280,25 @@ describe("(b) as exceções são deliberadas", () => {
 		}
 	});
 
+	it("pergunta aberta com 'ou' no fim não vira botão que repete a pergunta (visto ao vivo, 28/10)", () => {
+		const fala = "Qual dessas opções mais te interessa ou prefere alguma outra característica?";
+		const opcoes = rotulos(fala, { temCartaNaTela: true });
+		// os botões são respostas do cliente à oferta, não pedaços da pergunta do agente
+		expect(opcoes).toEqual(["Quero essa", "Ver outra opção", "Como funciona o lance?"]);
+		expect(opcoes.join(" ")).not.toMatch(/qual dessas|te interessa|outra característica/i);
+		// sem carta na tela, o fallback do momento — nunca o corte da pergunta
+		const semCarta = rotulos(fala);
+		expect(semCarta.join(" ")).not.toMatch(/qual dessas|te interessa|outra característica/i);
+	});
+
+	it("a alternativa de verdade continua sendo as duas escolhas (seguir × comparar)", () => {
+		expect(
+			rotulos("Quer seguir com essa, Kairo, ou prefere comparar outra opção?", {
+				temCartaNaTela: true,
+			}),
+		).toEqual(["Quero seguir com essa", "Comparar outra opção"]);
+	});
+
 	it("a lista escrita no texto continua ganhando do momento (o balão fica só com a pergunta)", () => {
 		const r = garantirChip({
 			texto: "Pra quando você quer?\n1) Agora\n2) Nos próximos meses",

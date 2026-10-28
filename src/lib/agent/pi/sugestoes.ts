@@ -357,6 +357,13 @@ function alternativasDaPergunta(frase: string): string[] {
 		.replace(/,\s*,/g, ",")
 		.replace(/[?!.]+\s*$/, "")
 		.trim();
+	// PERGUNTA ABERTA NÃO É MENU. "Qual dessas opções mais te interessa ou prefere alguma outra
+	// característica?" abre com pronome interrogativo: o lado esquerdo é a PRÓPRIA PERGUNTA, e virou
+	// o botão `Qual dessas opções mais te interessa` (visto ao vivo em 28/10 — "parece que o
+	// usuário está falando"). Quem responde é o momento (a oferta na tela), não o corte no "ou".
+	if (/^\s*(?:qual|quais|quanto|quantos|quantas|como|quando|onde|o\s+que|por\s+que|porque)\b/i.test(corpo)) {
+		return [];
+	}
 	const partes = corpo.split(/\s+ou\s+/i);
 	if (partes.length !== 2) return [];
 	const [lado1 = "", lado2 = ""] = partes;
@@ -531,7 +538,7 @@ function decidir(texto: string, momento: MomentoDaConversa): SugestaoDoTurno {
 	// os casos de dado ("me manda o CPF" com "cartas" na mesma fala).
 	if (
 		momento.temCartaNaTela &&
-		/qual\s+(?:dessas\s+)?carr?tas?|seguir\s+com\s+(?:ela|essa|essa\s+mesma)|comparar\s+outra|quer\s+essa/i.test(
+		/qual\s+(?:dessas\s+)?(?:carr?tas?|op[çc][õo]es|op[çc][ãa]o)|seguir\s+com\s+(?:ela|essa|essa\s+mesma)|comparar\s+outra|quer\s+essa/i.test(
 			texto,
 		)
 	) {
