@@ -92,6 +92,34 @@ export function linhaFinalDoHandoff(args: {
 }
 
 /**
+ * O CLIENTE VOLTOU — "voltei", "oi, voltei", "estou de volta".
+ *
+ * Ordem do líder (27/10 01:35, print 17): no meio da transferência o cliente saiu e voltou, e o
+ * agente perguntou "Você já conversou com a gente antes?" — perdeu o fio do que estava pendente.
+ * Na volta, o vendedor RETOMA o que ficou combinado; não recomeça a conversa.
+ */
+export function clienteVoltou(texto: string | null | undefined): boolean {
+	const t = (texto ?? "").trim();
+	if (!t) return false;
+	// "não voltei a trabalhar", "não estou de volta" não é volta: a negação sai antes do teste.
+	const semNegacao = t.replace(/\bn[ãa]o\s+(?:voltei|estou\s+de\s+volta|t[ôo]\s+de\s+volta|retomei|voltando)/gi, " ");
+	return /(?:^|[^a-zà-ÿ])(?:voltei|estou\s+de\s+volta|t[ôo]\s+de\s+volta|retomei|voltando|de\s+volta)/i.test(
+		semNegacao,
+	);
+}
+
+/**
+ * A FALA DA VOLTA, quando havia uma transferência pendente: retoma o pedido do cliente e pede,
+ * numa frase, o que falta para o consultor chamar. Quando o nome já é conhecido, o que falta é só
+ * o WhatsApp — pedir o nome de novo é pedir o que a conversa já entregou.
+ */
+export function falaDaRetomadaDaTransferencia(nome: string | null): string {
+	const quem = nome?.trim();
+	if (quem) return `Que bom, ${quem}, você voltou! Já estou chamando o consultor — me passa seu WhatsApp?`;
+	return "Que bom, você voltou! Me passa seu nome e seu WhatsApp que eu já chamo o consultor.";
+}
+
+/**
  * O nome dito na fala do cliente. Não é chute do modelo: é o que ele escreveu, e sem nome não
  * há caso na mesa — então o caminho é capturar, não pedir de novo.
  */

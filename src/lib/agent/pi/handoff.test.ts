@@ -5,12 +5,14 @@ import { db } from "@/db";
 import { conversations, leads, mesaHandoffs } from "@/db/schema";
 import type { AnunciarCasoNaMesaArgs } from "@/lib/mesa/dispatch";
 import {
+	RE_DE_PROMESSA,
 	abrirCasoNaMesa,
+	clienteVoltou,
+	falaDaRetomadaDaTransferencia,
 	linhaDeHandoff,
 	linhaFinalDoHandoff,
 	nomeDitoNaConversa,
 	nomeNaFala,
-	RE_DE_PROMESSA,
 	semPromessa,
 } from "./handoff";
 
@@ -308,5 +310,31 @@ describe("abrirCasoNaMesa anuncia o caso na mesa", () => {
 		expect(segundo.ok).toBe(true);
 		expect(segundo.handoffId).toBe(primeiro.handoffId);
 		expect(anuncios).toHaveLength(1);
+	});
+});
+
+describe("a volta do cliente no meio da transferência (print 17, ordem de 01:35)", () => {
+	it("reconhece que o cliente voltou", () => {
+		for (const fala of ["Voltei", "oi, voltei", "estou de volta", "Tô de volta, bora"]) {
+			expect(clienteVoltou(fala), fala).toBe(true);
+		}
+		for (const fala of ["quero um carro", "não voltei a trabalhar ainda", ""]) {
+			expect(clienteVoltou(fala), fala).toBe(false);
+		}
+	});
+
+	it("a retomada retoma a transferência em vez de recomeçar a conversa", () => {
+		const semNome = falaDaRetomadaDaTransferencia(null);
+		expect(semNome).toContain("você voltou");
+		expect(semNome).toContain("seu nome e seu WhatsApp");
+		expect(semNome).toContain("consultor");
+		// o que o agente dizia antes: recomeçar do zero, sem memória do que estava pendente
+		expect(semNome).not.toMatch(/já conversou com a gente|já me disse seu nome/i);
+
+		const comNome = falaDaRetomadaDaTransferencia("Kairo");
+		expect(comNome).toContain("Kairo");
+		expect(comNome).toContain("WhatsApp");
+		// nome já é conhecido: não pede de novo
+		expect(comNome).not.toMatch(/seu nome/i);
 	});
 });

@@ -23,7 +23,14 @@ import { type MetaDaEmissao, TIPOS_DE_ESCOLHA } from "@/lib/agent/pi/cards-livre
 import { chipDoTurno, garantirChip } from "@/lib/agent/pi/chips";
 import { executarBeat } from "@/lib/agent/pi/converse";
 import { corrigirComparacaoDePrazo } from "@/lib/agent/pi/comparacao-de-prazo";
-import { clientePedeHumano, linhaFinalDoHandoff, RE_DE_PROMESSA } from "@/lib/agent/pi/handoff";
+import { ehTurnoDeHandoff } from "@/lib/agent/pi/sugestoes";
+import {
+	clientePedeHumano,
+	clienteVoltou,
+	falaDaRetomadaDaTransferencia,
+	linhaFinalDoHandoff,
+	RE_DE_PROMESSA,
+} from "@/lib/agent/pi/handoff";
 import { criarNarracaoDoTurno } from "@/lib/agent/pi/narracao";
 import { persistirTurnoLivre } from "@/lib/agent/pi/persist-livre";
 import { custoDoTurnoCentsExatos } from "@/lib/agent/pi/precos";
@@ -1237,6 +1244,16 @@ export function createRunTurnLivre(deps?: {
 		// "Antes de mais nada, você já me disse seu nome?" a quem pediu um atendente.
 		const pedidoDeHumanoNoTurno = clientePedeHumano(falaDoClienteDoTurno);
 
+		// O CLIENTE VOLTOU NO MEIO DA TRANSFERÊNCIA (ordem do líder, 27/10 01:35). O agente perdia o
+		// fio e recomeçava ("Você já conversou com a gente antes?"). Aqui a volta RETOMA o que estava
+		// pendente — a última fala do agente era de transferência e o cliente voltou.
+		const ultimaFalaDoAgente =
+			[...historico].reverse().find((m) => m.role === "assistant")?.content ?? "";
+		const retomadaDaTransferencia =
+			!pedidoDeHumanoNoTurno &&
+			clienteVoltou(falaDoClienteDoTurno) &&
+			ehTurnoDeHandoff(ultimaFalaDoAgente);
+
 		// Fila de eventos: o beat empurra o texto AO VIVO, o generator drena.
 		const fila: TurnEvent[] = [];
 		let acordar: (() => void) | null = null;
@@ -1283,6 +1300,18 @@ export function createRunTurnLivre(deps?: {
 			// A TRANSFERÊNCIA PEDIDA PELO CLIENTE TEM UMA FALA SÓ, montada aqui: aceita o pedido e
 			// pede o que falta para o consultor chamar (nome e WhatsApp). A prosa do modelo nesta
 			// hora perguntava coisa de outro momento e ainda duplicava a linha da casa.
+			if (retomadaDaTransferencia) {
+				if (linhaDeHandoffEmitida) {
+					pendente = "";
+					return;
+				}
+				const fala = falaDaRetomadaDaTransferencia(ctx.nomeDoCliente);
+				linhaDeHandoffEmitida = true;
+				pendente = "";
+				for (const balao of picarEmBaloes(fala)) baloesDoTurno.push(balao);
+				emitirFala(fala);
+				return;
+			}
 			if (pedidoDeHumanoNoTurno) {
 				if (linhaDeHandoffEmitida) {
 					pendente = "";
