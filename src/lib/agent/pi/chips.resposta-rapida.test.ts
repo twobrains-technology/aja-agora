@@ -291,6 +291,16 @@ describe("(b) as exceções são deliberadas", () => {
 		expect(semCarta.join(" ")).not.toMatch(/qual dessas|te interessa|outra característica/i);
 	});
 
+	it("a pergunta EXATA do print 13: envio pelo WhatsApp se responde 'Pode mandar' / 'Prefiro ver aqui'", () => {
+		const fala = "Quer que eu te mande essas opções pelo WhatsApp para você ver com calma?";
+		for (const temCartaNaTela of [true, false]) {
+			expect(rotulos(fala, { temCartaNaTela }), String(temCartaNaTela)).toEqual([
+				"Pode mandar",
+				"Prefiro ver aqui",
+			]);
+		}
+	});
+
 	it("a alternativa de verdade continua sendo as duas escolhas (seguir × comparar)", () => {
 		expect(
 			rotulos("Quer seguir com essa, Kairo, ou prefere comparar outra opção?", {
