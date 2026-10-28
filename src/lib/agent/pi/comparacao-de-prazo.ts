@@ -271,10 +271,46 @@ function tirarOracao(frase: string, oracao: string): string {
 	return `${antes}${frase.slice(i + oracao.length)}`.replace(/\s+([,.;:!?])/g, "$1").trim();
 }
 
+// ---------------------------------------------------------------------------------------------
+// PRAZO INVENTADO — conversa de teste de 28/10: "a menor parcela é da ÂNCORA, mas o prazo é de
+// 100 meses". A ÂNCORA da mesa tem 114 e 94; não existe carta de 100. Prazo dito sobre a oferta tem
+// de ser o de uma carta da mesa — o que não é, sai da fala (a frase continua só com o fato).
+// ---------------------------------------------------------------------------------------------
+
+/** "…, mas o prazo é de 100 meses" / "o prazo fica em 100 meses": o prazo ESCRITO como atributo. */
+const PRAZO_COMO_ATRIBUTO =
+	/(\s*[,;]?\s*(?:mas\s+|e\s+|por[ée]m\s+)?)\b(?:o\s+)?prazo\s+(?:dela\s+|dele\s+)?(?:[ée]|fica|seria|ser[áa]|são|ficaria)?\s*(?:de|em|por)?\s*(\d{2,3})\s*(?:meses|m[êe]s)\b/i;
+
+/** Tira da fala o prazo-atributo que não é de carta nenhuma da mesa. Sem cartas na mesa, não faz nada. */
+export function semPrazoInventado(
+	texto: string,
+	args: { cartasDaMesa: readonly CartaDaMesa[] },
+): string {
+	if (!texto || args.cartasDaMesa.length === 0) return texto;
+	const prazos = new Set(args.cartasDaMesa.map((c) => c.prazoMeses));
+	return frasesDe(texto)
+		.map((frase) => {
+			const m = PRAZO_COMO_ATRIBUTO.exec(frase);
+			if (!m || prazos.has(Number(m[2]))) return frase;
+			const inicio = m.index;
+			const fim = inicio + m[0].length;
+			const antes = frase.slice(0, inicio).trim();
+			// O prazo era a frase inteira ("O prazo é de 100 meses."): a frase sai.
+			if (!antes || /:$/.test(antes)) return antes.replace(/:$/, "").trim();
+			const depois = frase.slice(fim).replace(/^[\s,]*(?:que\s+)?[^.!?]*?(?=[.!?]|$)/, "");
+			return `${antes}${depois}`.replace(/\s+([,.;:!?])/g, "$1").trim();
+		})
+		.filter((f) => f.length > 0)
+		.join(" ");
+}
+
 /** As duas réguas juntas — o que `montarTrechoDeSaida` aplica ao balão. */
 export function corrigirComparacoes(
 	texto: string,
 	args: { cartasDaMesa: readonly CartaDaMesa[] },
 ): string {
-	return corrigirComparacaoDeParcela(corrigirComparacaoDePrazo(texto, args), args);
+	return corrigirComparacaoDeParcela(
+		corrigirComparacaoDePrazo(semPrazoInventado(texto, args), args),
+		args,
+	);
 }

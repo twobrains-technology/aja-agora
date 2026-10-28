@@ -15,6 +15,7 @@ import {
 	corrigirComparacaoDeParcela,
 	corrigirComparacaoDePrazo,
 	corrigirComparacoes,
+	semPrazoInventado,
 } from "./comparacao-de-prazo";
 
 const MESA = {
@@ -159,5 +160,35 @@ describe("comparação de PARCELA com o número da mesa", () => {
 		expect(saida).not.toMatch(/parcela\s+menor/i);
 		expect(saida).toContain("com 94 meses");
 		expect(corrigirComparacoes(medida, MESA)).not.toMatch(/parcela\s+menor/i);
+	});
+});
+
+describe("prazo inventado: não existe carta com esse número na mesa", () => {
+	it("a fala medida: 'a menor parcela é da ÂNCORA, mas o prazo é de 100 meses'", () => {
+		const dito = "Então, olha: a menor parcela é da ÂNCORA, mas o prazo é de 100 meses.";
+		const saida = semPrazoInventado(dito, MESA);
+		expect(saida).not.toContain("100");
+		expect(saida).toContain("a menor parcela é da ÂNCORA");
+		expect(saida.endsWith(".")).toBe(true);
+	});
+
+	it("prazo de carta da mesa passa intacto", () => {
+		const dito = "A menor parcela é da ÂNCORA, mas o prazo é de 114 meses.";
+		expect(semPrazoInventado(dito, MESA)).toBe(dito);
+	});
+
+	it("a frase que era só o prazo inventado sai; as outras ficam", () => {
+		const saida = semPrazoInventado("Olha só. O prazo é de 100 meses. Quer ver o lance?", MESA);
+		expect(saida).toBe("Olha só. Quer ver o lance?");
+	});
+
+	it("sem carta na mesa não há o que conferir: a fala fica", () => {
+		const dito = "O prazo é de 100 meses.";
+		expect(semPrazoInventado(dito, { cartasDaMesa: [] })).toBe(dito);
+	});
+
+	it("prazo que NÃO é atributo da oferta ('em 12 meses') não é tocado", () => {
+		const dito = "Você pode ser contemplado em 12 meses se der lance alto.";
+		expect(semPrazoInventado(dito, MESA)).toBe(dito);
 	});
 });
