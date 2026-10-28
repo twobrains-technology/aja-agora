@@ -127,7 +127,7 @@ const PEDIDO_DE_WHATS = /whats\s?app|telefone|celular|n[úu]mero/i;
 /** O pedido de dado pode vir de pergunta ("quanto você pensa em gastar?") ou de imperativo
  * ("me diz quanto…", "digite seu CPF"). */
 const PEDIDO_DIRETO =
-	/^(?:me\s+(?:diz|diga|fala|passa|manda|informa)|digite|digita|informe|escreva|escreve)\b/i;
+	/^(?:me\s+(?:diz|diga|fala|passa|manda|informa)|digite|digita|informe|escreva|escreve)\b|\b(?:preciso|precisamos|vou\s+precisar)\s+d[eo]\b/i;
 
 /** (c) Os dados que o agente pede — a lista daquele dado, na voz da pessoa. */
 const FAIXAS_DE_VALOR = ["Até R$ 50 mil", "Uns R$ 80 mil", "R$ 100 mil ou mais"];
@@ -357,6 +357,14 @@ function decidir(texto: string, momento: MomentoDaConversa): SugestaoDoTurno {
 	const ultimaFrase = ultimaFraseDe(texto);
 	const alvo = ultimaFrase.includes("?") ? ultimaFrase : texto;
 	const ehPergunta = texto.includes("?");
+
+	// (e0) PEDIDO DIRETO SEM INTERROGAÇÃO. "Para gerar a proposta preciso do seu CPF e do seu
+	// celular com DDD." não tem "?", mas pede um dado — e os próximos passos genéricos
+	// ("Quero essa") não respondem a isso (visto no turno da contratação, 27/10).
+	if (!ehPergunta && (PEDIDO_DIRETO.test(alvo) || PEDIDO_DIRETO.test(ultimaFrase))) {
+		const doDado = dadoPedido(alvo, momento);
+		if (doDado) return doDado;
+	}
 
 	// (e) TURNO SEM PERGUNTA — os próximos passos do momento, não uma resposta inventada.
 	if (!ehPergunta) {
