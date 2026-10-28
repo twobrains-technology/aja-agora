@@ -192,3 +192,32 @@ describe("prazo inventado: não existe carta com esse número na mesa", () => {
 		expect(semPrazoInventado(dito, MESA)).toBe(dito);
 	});
 });
+
+describe("'tem N meses' dito da carta: o número é o da carta que a frase identifica", () => {
+	it("a fala medida: a ÂNCORA de R$ 1.099,62 tem 114 meses, não 100", () => {
+		const dito = "A da ÂNCORA tem 100 meses e a parcela é de R$ 1.099,62.";
+		expect(semPrazoInventado(dito, MESA)).toBe("A da ÂNCORA tem 114 meses e a parcela é de R$ 1.099,62.");
+	});
+
+	it("sem como identificar a carta, vira 'o prazo da tabela' (verdadeiro e sem número)", () => {
+		const saida = semPrazoInventado("A da ÂNCORA tem 100 meses de prazo.", MESA);
+		expect(saida).not.toContain("100");
+		expect(saida).toContain("o prazo da tabela");
+	});
+
+	it("administradora com UMA carta só na mesa: o número é o dela", () => {
+		const umaSo = { cartasDaMesa: [{ administradora: "ÂNCORA", parcela: 1099.62, prazoMeses: 114 }] };
+		expect(semPrazoInventado("A da ÂNCORA tem 100 meses de prazo.", umaSo)).toBe(
+			"A da ÂNCORA tem 114 meses de prazo.",
+		);
+	});
+
+	it("prazo certo e conversa de contemplação passam intactos", () => {
+		for (const dito of [
+			"A da CANOPUS tem 96 meses e a parcela é de R$ 1.176,39.",
+			"Com lance alto você pode ser contemplado com 12 meses de grupo andando.",
+		]) {
+			expect(semPrazoInventado(dito, MESA), dito).toBe(dito);
+		}
+	});
+});

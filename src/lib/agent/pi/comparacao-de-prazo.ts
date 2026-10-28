@@ -281,27 +281,85 @@ function tirarOracao(frase: string, oracao: string): string {
 const PRAZO_COMO_ATRIBUTO =
 	/(\s*[,;]?\s*(?:mas\s+|e\s+|por[ée]m\s+)?)\b(?:o\s+)?prazo\s+(?:dela\s+|dele\s+)?(?:[ée]|fica|seria|ser[áa]|são|ficaria)?\s*(?:de|em|por)?\s*(\d{2,3})\s*(?:meses|m[êe]s)\b/i;
 
-/** Tira da fala o prazo-atributo que não é de carta nenhuma da mesa. Sem cartas na mesa, não faz nada. */
+/** "A da ÂNCORA tem 100 meses", "a CANOPUS com 100 meses", "prazo de 100 meses": o prazo dito como
+ * característica da carta. Só vale de 36 meses para cima (prazo de consórcio) — "contemplado em
+ * 12 meses" não é prazo de carta. */
+const PRAZO_DITO_DA_CARTA = /\b(tem|com|prazo\s+de)\s+(\d{2,3})\s*(?:meses|m[êe]s)\b/i;
+const MENCIONA_A_OFERTA = /parcela|prazo|carta|recomend|op[çc][ãa]o|cota|grupo/i;
+
+/**
+ * Tira da fala o prazo que não é de carta nenhuma da mesa. Sem cartas na mesa, não faz nada.
+ *
+ *  · prazo-atributo ("o prazo é de 100 meses") → a oração sai;
+ *  · "tem/com/prazo de 100 meses" → o número vira o da carta que a PRÓPRIA frase identifica (pela
+ *    parcela, ou pela administradora quando ela só tem uma carta); sem identificar, vira "o prazo
+ *    da tabela" — verdadeiro, e a tabela está na tela.
+ */
 export function semPrazoInventado(
 	texto: string,
 	args: { cartasDaMesa: readonly CartaDaMesa[] },
 ): string {
 	if (!texto || args.cartasDaMesa.length === 0) return texto;
-	const prazos = new Set(args.cartasDaMesa.map((c) => c.prazoMeses));
+	const mesa = args.cartasDaMesa;
+	const prazos = new Set(mesa.map((c) => c.prazoMeses));
 	return frasesDe(texto)
 		.map((frase) => {
-			const m = PRAZO_COMO_ATRIBUTO.exec(frase);
-			if (!m || prazos.has(Number(m[2]))) return frase;
-			const inicio = m.index;
-			const fim = inicio + m[0].length;
-			const antes = frase.slice(0, inicio).trim();
-			// O prazo era a frase inteira ("O prazo é de 100 meses."): a frase sai.
-			if (!antes || /:$/.test(antes)) return antes.replace(/:$/, "").trim();
-			const depois = frase.slice(fim).replace(/^[\s,]*(?:que\s+)?[^.!?]*?(?=[.!?]|$)/, "");
-			return `${antes}${depois}`.replace(/\s+([,.;:!?])/g, "$1").trim();
+			const atributo = PRAZO_COMO_ATRIBUTO.exec(frase);
+			if (atributo && !prazos.has(Number(atributo[2]))) {
+				const inicio = atributo.index;
+				const fim = inicio + atributo[0].length;
+				const antes = frase.slice(0, inicio).trim();
+				// O prazo era a frase inteira ("O prazo é de 100 meses."): a frase sai.
+				if (!antes || /:$/.test(antes)) return antes.replace(/:$/, "").trim();
+				const depois = frase.slice(fim).replace(/^[\s,]*(?:que\s+)?[^.!?]*?(?=[.!?]|$)/, "");
+				return `${antes}${depois}`.replace(/\s+([,.;:!?])/g, "$1").trim();
+			}
+
+			const dito = PRAZO_DITO_DA_CARTA.exec(frase);
+			if (dito && Number(dito[2]) >= 36 && !prazos.has(Number(dito[2])) && MENCIONA_A_OFERTA.test(frase)) {
+				const semOMatch = frase.replace(dito[0], " ");
+				const daParcela = cartasCitadasPelaParcela(semOMatch, mesa);
+				const daAdministradora = cartaUnicaDaAdministradora(semOMatch, mesa);
+				const verdadeiro = (daParcela ?? daAdministradora)?.prazoMeses;
+				const troca =
+					verdadeiro !== undefined
+						? `${dito[1]} ${verdadeiro} meses`
+						: /^prazo/i.test(dito[1] as string)
+							? "prazo da tabela"
+							: `${dito[1]} o prazo da tabela`;
+				return frase.replace(dito[0], troca);
+			}
+			return frase;
 		})
 		.filter((f) => f.length > 0)
 		.join(" ");
+}
+
+/** A carta que a frase identifica pela parcela em R$ (única), se houver. */
+function cartasCitadasPelaParcela(
+	frase: string,
+	mesa: readonly CartaDaMesa[],
+): CartaDaMesa | undefined {
+	for (const m of frase.matchAll(PARCELA)) {
+		const valor = dinheiro(m[1] as string);
+		const cartas = mesa.filter((c) => Math.abs(c.parcela - valor) < 0.005);
+		if (cartas.length === 1) return cartas[0];
+	}
+	return undefined;
+}
+
+/** A administradora citada na frase tem UMA carta só na mesa? Então é essa. */
+function cartaUnicaDaAdministradora(
+	frase: string,
+	mesa: readonly CartaDaMesa[],
+): CartaDaMesa | undefined {
+	const t = semAcento(frase);
+	const nomes = [
+		...new Set(mesa.map((c) => c.administradora).filter((a): a is string => Boolean(a))),
+	].filter((a) => t.includes(semAcento(a)));
+	if (nomes.length !== 1) return undefined;
+	const dela = mesa.filter((c) => c.administradora === nomes[0]);
+	return dela.length === 1 ? dela[0] : undefined;
 }
 
 /** As duas réguas juntas — o que `montarTrechoDeSaida` aplica ao balão. */
