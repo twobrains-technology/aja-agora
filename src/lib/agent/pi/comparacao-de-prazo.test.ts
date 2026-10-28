@@ -237,3 +237,22 @@ describe("o prazo dito tem de ser o da carta que a frase identifica, mesmo exist
 		expect(semPrazoInventado(dito, MESA)).toBe(dito);
 	});
 });
+
+describe("'é de N meses' e a diferença calculada em cima de número inventado", () => {
+	it("a fala medida: 'A diferença é de 4 meses. A ÂNCORA é de 100 meses e a CANOPUS é de 96 meses.'", () => {
+		const saida = semPrazoInventado(
+			"A diferença é de 4 meses. A ÂNCORA é de 100 meses e a CANOPUS é de 96 meses.",
+			MESA,
+		);
+		// nenhum par de cartas da mesa difere em 4 meses: a frase da diferença sai
+		expect(saida).not.toMatch(/diferença/i);
+		// o 100 não existe na mesa; o 96 existe e fica
+		expect(saida).not.toContain("100");
+		expect(saida).toContain("96 meses");
+	});
+
+	it("diferença que existe entre duas cartas da mesa passa (114 − 96 = 18)", () => {
+		const dito = "A diferença é de 18 meses entre a ÂNCORA e a CANOPUS.";
+		expect(semPrazoInventado(dito, MESA)).toBe(dito);
+	});
+});

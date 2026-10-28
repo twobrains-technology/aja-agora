@@ -284,7 +284,11 @@ const PRAZO_COMO_ATRIBUTO =
 /** "A da ÂNCORA tem 100 meses", "a CANOPUS com 100 meses", "prazo de 100 meses": o prazo dito como
  * característica da carta. Só vale de 36 meses para cima (prazo de consórcio) — "contemplado em
  * 12 meses" não é prazo de carta. */
-const PRAZO_DITO_DA_CARTA = /\b(tem|com|prazo\s+de)\s+(\d{2,3})\s*(?:meses|m[êe]s)\b/i;
+const PRAZO_DITO_DA_CARTA =
+	/(?<![A-Za-zÀ-ÿ])(tem|com|prazo\s+de|[ée]\s+de|s[ãa]o\s+de|fica\s+em|ficam\s+em)\s+(\d{2,3})\s*(?:meses|m[êe]s)\b/i;
+/** "A diferença é de 4 meses" / "diferença de prazo de 4 meses". */
+const DIFERENCA_DE_PRAZO =
+	/diferen[çc]a\s+(?:de\s+prazo\s+)?(?:[ée]\s+de|de|entre\s+[^.!?]*?\s+[ée]\s+de)\s+(\d{1,3})\s*(?:meses|m[êe]s)/i;
 const MENCIONA_A_OFERTA = /parcela|prazo|carta|recomend|op[çc][ãa]o|cota|grupo/i;
 
 /**
@@ -315,29 +319,52 @@ export function semPrazoInventado(
 				return `${antes}${depois}`.replace(/\s+([,.;:!?])/g, "$1").trim();
 			}
 
-			const dito = PRAZO_DITO_DA_CARTA.exec(frase);
-			if (dito && Number(dito[2]) >= 36 && MENCIONA_A_OFERTA.test(frase)) {
-				const dissePrazo = Number(dito[2]);
-				const semOMatch = frase.replace(dito[0], " ");
-				const daParcela = cartasCitadasPelaParcela(semOMatch, mesa);
-				const daAdministradora = cartaUnicaDaAdministradora(semOMatch, mesa);
-				const identificada = daParcela ?? daAdministradora;
-				// O prazo está certo quando é o da carta que a frase identifica; sem identificar,
-				// basta existir na mesa.
-				const certo = identificada ? identificada.prazoMeses === dissePrazo : prazos.has(dissePrazo);
-				if (certo) return frase;
-				const troca = identificada
-					? `${dito[1]} ${identificada.prazoMeses} meses`
-					: /^prazo/i.test(dito[1] as string)
-						? "prazo da tabela"
-						: `${dito[1]} o prazo da tabela`;
-				// Corrigido o número, "igual à CANOPUS" deixa de ser verdade: a oração sai.
-				return frase
-					.replace(dito[0], troca)
-					.replace(/\s*,?\s*igual\s+(?:à|ao|a)\s+[^,.;!?]+/i, "")
-					.replace(/\s+([,.;:!?])/g, "$1");
+			// "A diferença é de 4 meses": só é verdade se algum PAR de cartas da mesa difere assim.
+			const diferenca = DIFERENCA_DE_PRAZO.exec(frase);
+			if (diferenca) {
+				const possiveis = new Set<number>();
+				for (const a of prazos) for (const b of prazos) if (a !== b) possiveis.add(Math.abs(a - b));
+				if (!possiveis.has(Number(diferenca[1]))) return "";
 			}
-			return frase;
+
+			// Cada "tem/é de/com N meses" da frase é conferido (a frase pode citar duas cartas).
+			const fala = semAcento(frase);
+			const citaAAdministradora = mesa.some(
+				(c) => c.administradora && fala.includes(semAcento(c.administradora)),
+			);
+			if (!MENCIONA_A_OFERTA.test(frase) && !citaAAdministradora) return frase;
+			let corrigiu = false;
+			const corrigida = frase.replace(
+				new RegExp(PRAZO_DITO_DA_CARTA.source, "gi"),
+				(inteiro: string, verboDito: string, n: string) => {
+					const dissePrazo = Number(n);
+					if (dissePrazo < 36) return inteiro;
+					// A carta que a frase identifica: pela parcela, ou pela administradora que só tem uma.
+					const semEste = frase.replace(inteiro, " ");
+					const identificada =
+						cartasCitadasPelaParcela(semEste, mesa) ?? cartaUnicaDaAdministradora(semEste, mesa);
+					// Certo = é o prazo da carta identificada; sem identificar, basta existir na mesa.
+					const certo = identificada
+						? identificada.prazoMeses === dissePrazo
+						: prazos.has(dissePrazo);
+					if (certo) return inteiro;
+					corrigiu = true;
+					const verbo = verboDito.toLowerCase();
+					const comoVerbo = /^(?:[ée]\s+de|s[ãa]o\s+de|fica\s+em|ficam\s+em)$/i.test(verbo);
+					if (identificada) {
+						return comoVerbo
+							? `tem ${identificada.prazoMeses} meses`
+							: `${verboDito} ${identificada.prazoMeses} meses`;
+					}
+					if (/^prazo/i.test(verbo)) return "prazo da tabela";
+					return comoVerbo ? "tem o prazo da tabela" : `${verboDito} o prazo da tabela`;
+				},
+			);
+			if (!corrigiu) return frase;
+			// Corrigido o número, "igual à CANOPUS" deixa de ser verdade: a oração sai.
+			return corrigida
+				.replace(/\s*,?\s*igual\s+(?:à|ao|a)\s+[^,.;!?]+/i, "")
+				.replace(/\s+([,.;:!?])/g, "$1");
 		})
 		.filter((f) => f.length > 0)
 		.join(" ");
