@@ -337,3 +337,15 @@ describe("(print 12) o vocativo não estraga a alternativa", () => {
 		expect(juntas).not.toContain("números");
 	});
 });
+
+describe("(print 13) aviso de dado não vira saída de nome", () => {
+	it("'no seu nome, preciso do seu CPF e do seu celular com DDD.' pede CPF, não o nome", () => {
+		const r = sugestaoDoTurno(
+			"Ótima escolha, Kairo. Para gerar a proposta no seu nome, preciso do seu CPF e do seu celular com DDD.",
+			{ temCartaNaTela: true, categoriaDoBem: "auto" },
+		);
+		const juntas = r.opcoes.join(" | ").toLowerCase();
+		expect(juntas).not.toContain("cartas");
+		expect(juntas).toContain("cpf");
+	});
+});

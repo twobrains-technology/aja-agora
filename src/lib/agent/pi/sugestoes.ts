@@ -402,6 +402,18 @@ function decidir(texto: string, momento: MomentoDaConversa): SugestaoDoTurno {
 	return { opcoes: GENERICO, tipoDoCard: "quick_reply" };
 }
 
+/** A última frase do turno é a PERGUNTA do nome? ("como você se chama?", "qual o seu nome?")
+ * Sem isso, "preciso do seu CPF e do seu celular… no seu nome" casava `\bseu nome\b` e devolvia
+ * as saídas do nome numa pergunta de CPF (visto no turno da contratação, 27/10). */
+function ultimaPerguntaDeNome(texto: string): boolean {
+	const frases = texto
+		.split(/(?<=[?.!])\s+|\n+/)
+		.map((f) => f.trim())
+		.filter(Boolean);
+	const ultima = frases[frases.length - 1] ?? "";
+	return ultima.includes("?") && RESPOSTA_LIVRE.test(ultima);
+}
+
 /**
  * A sugestão do turno: as opções que o cliente toca e o card em que elas saem.
  *
@@ -414,7 +426,10 @@ export function sugestaoDoTurno(
 	momento: MomentoDaConversa = {},
 ): SugestaoDoTurno {
 	const texto = (pergunta ?? "").trim();
-	if (RESPOSTA_LIVRE.test(texto)) return { opcoes: SAIDAS_DO_NOME, tipoDoCard: "quick_reply" };
+	// A PERGUNTA de nome, não a menção: "preciso do seu CPF e do seu celular… no seu nome"
+	// caía no `\bseu nome\b` e devolvia as saídas do nome numa pergunta de CPF (visto no print
+	// de 27/10, turno da contratação). Só vale quando a ÚLTIMA frase é a pergunta do nome.
+	if (ultimaPerguntaDeNome(texto)) return { opcoes: SAIDAS_DO_NOME, tipoDoCard: "quick_reply" };
 	const escolhida = decidir(texto, momento);
 	return { ...escolhida, opcoes: semEco(escolhida.opcoes, momento.falaDoCliente) };
 }
