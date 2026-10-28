@@ -20,7 +20,7 @@ import { parseAssetValue } from "@/lib/agent/parse-asset-value";
 import type { Category } from "@/lib/agent/personas";
 import { picarEmBaloes } from "@/lib/agent/pi/baloes";
 import { type MetaDaEmissao, TIPOS_DE_ESCOLHA } from "@/lib/agent/pi/cards-livres";
-import { chipDoUltimoBalao, garantirChip } from "@/lib/agent/pi/chips";
+import { chipDoTurno, garantirChip } from "@/lib/agent/pi/chips";
 import { executarBeat } from "@/lib/agent/pi/converse";
 import { linhaFinalDoHandoff, RE_DE_PROMESSA } from "@/lib/agent/pi/handoff";
 import { criarNarracaoDoTurno } from "@/lib/agent/pi/narracao";
@@ -183,7 +183,7 @@ export function capturarIdentidadeDoTexto(
  * protege é o encanamento: máscara, cifra e o aceite conferido antes do bureau.
  *
  * O CHIP NÃO SAI DAQUI. Um card por turno, decidido no ÚLTIMO balão
- * (`chipDoUltimoBalao`, ordem do líder de 27/10 18:08): decidir por trecho dava o
+ * (`chipDoTurno`, ordem do líder de 27/10 18:08): decidir por trecho dava o
  * toque do primeiro balão embaixo do segundo (prints 07/08). O que continua sendo
  * deste trecho é a FORMA do balão — a lista marcada que virou botão sai do texto
  * (N05), mesmo que os botões só sejam emitidos no fim do turno.
@@ -1242,9 +1242,10 @@ export function createRunTurnLivre(deps?: {
 		// Uma linha por turno: se a linha da casa já saiu, o segundo trecho de prosa de handoff
 		// não vira segunda mensagem.
 		let linhaDeHandoffEmitida = false;
-		// O texto do ÚLTIMO balão do turno, como o modelo escreveu: é dele que sai o
-		// ÚNICO card de toque, no fim do turno (`chipDoUltimoBalao`).
-		let ultimoBalaoDoTurno: string | null = null;
+		// Os textos dos BALÕES do turno, na ordem em que foram ao canal: é deles que sai o
+		// ÚNICO card de toque, no fim do turno (`chipDoTurno`). O turno inteiro, e não só o
+		// último balão: o pedido do dado pode estar num balão e o fecho noutro (R20).
+		const baloesDoTurno: string[] = [];
 		// CPF mascarado JÁ na saída (o número digitado não volta por eco do modelo)
 		// e uma pergunta por trecho de fala — tudo em `montarTrechoDeSaida`, testável sem banco.
 		/** Os balões prontos no canal: cada um com a sua fronteira + delta. */
@@ -1294,10 +1295,10 @@ export function createRunTurnLivre(deps?: {
 						: undefined,
 			});
 			if (ehHandoff) linhaDeHandoffEmitida = true;
-			// O ÚLTIMO balão do turno é a pergunta que o toque responde. A linha de
+			// O balão do turno é o que pode pedir a resposta que o toque oferece. A linha de
 			// handoff fica FORA: ela fecha a conversa com o especialista e não ganha
 			// próximo passo (era assim antes, quando o chip nascia por trecho).
-			if (!ehHandoff) ultimoBalaoDoTurno = pendente;
+			if (!ehHandoff) baloesDoTurno.push(pendente);
 			pendente = "";
 			// O anúncio da ferramenta não vira balão quando o card fala por si: o
 			// que estava suspenso sai antes deste balão, e este fica suspenso
@@ -1477,15 +1478,20 @@ export function createRunTurnLivre(deps?: {
 			}
 			// O ÚNICO TOQUE DO TURNO — ordem do líder, 27/10/2026 18:08.
 			//
-			// Um card por turno, derivado da ÚLTIMA pergunta e emitido no ÚLTIMO balão
+			// Um card por turno, derivado do ÚLTIMO PEDIDO do turno e emitido no ÚLTIMO balão
 			// (`ctx.cards` é emitido agora, depois de toda a fala). Decidir por trecho dava
 			// o toque do primeiro balão embaixo do segundo: o cliente lia a mesma pergunta
 			// duas vezes (print 07) e a pergunta final chegava sem nada para tocar
 			// (print 08). Sem balão de texto no turno não há toque: turno que só mostrou
 			// card não ganha botão ao lado dele.
-			if (ultimoBalaoDoTurno !== null) {
-				const chipDoTurno = chipDoUltimoBalao({
-					texto: ultimoBalaoDoTurno,
+			//
+			// O que entra é o TURNO INTEIRO (R20): o pedido de CPF/celular num balão e o fecho
+			// "Tudo bem, aguardo." noutro faziam o toque nascer do fecho — `Quero essa` no
+			// lugar do dado. `chipDoTurno` procura, de trás pra frente, o balão que pergunta
+			// ou pede dado.
+			if (baloesDoTurno.length > 0) {
+				const toqueDoTurno = chipDoTurno({
+					baloes: baloesDoTurno,
 					cardsDoTurno: ctx.cards,
 					temCartaNaTela: ctx.cartasNaTela.length > 0,
 					canal: ctx.channel,
@@ -1494,7 +1500,7 @@ export function createRunTurnLivre(deps?: {
 						? { categoriaDoBem: estado.funnel.currentCategory }
 						: {}),
 				});
-				if (chipDoTurno) ctx.cards.push(chipDoTurno as never);
+				if (toqueDoTurno) ctx.cards.push(toqueDoTurno as never);
 			}
 			emitirCardsNovos("todos");
 			// O MARCO DA PRIMEIRA CARTA (L29/P281) — sinal de SESSÃO, uma vez por

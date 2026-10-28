@@ -212,3 +212,30 @@ describe("(ordem das 17:16) turno sem pergunta continua com próximo passo", () 
 		expect(indiceDoChip(turno.eventos)).toBeGreaterThan(fala);
 	});
 });
+
+describe("(R20) o toque sai do ÚLTIMO PEDIDO do turno, não do último balão", () => {
+	// Defeito medido no SHA `3236f59f` (auditoria independente da R20, 237 turnos): o pedido de
+	// CPF/celular saía num balão e o fecho ("Tudo bem, aguardo.") noutro. O toque nascia do fecho
+	// — que não pede nada — e saía `Quero essa` · `Ver outra opção` · `Falar do lance` embaixo de
+	// "me manda seu CPF e seu celular". Agora a derivação olha o TURNO INTEIRO, de trás pra
+	// frente, até o balão que pergunta ou pede um dado.
+	it("pedido de CPF num balão + fecho no seguinte: o chip é o do CPF, no FIM do turno", async () => {
+		const conversationId = await novaConversa();
+		const turno = await rodarTurno({
+			conversationId,
+			userText: "pode ser a de 90 mil",
+			beats: [
+				{ text: "Para fechar a proposta, me manda seu CPF e seu celular." },
+				{ text: "Tudo bem, aguardo." },
+			],
+		});
+		await turno.fechar();
+
+		expect(chips(turno.eventos)).toHaveLength(1);
+		const opcoes = chips(turno.eventos)[0] as string[];
+		expect(opcoes.join(" | ")).toMatch(/cpf|celular/i);
+		expect(opcoes).not.toContain("Quero essa");
+		// O card continua UM e no FIM: depois do fecho, como o cliente lê.
+		expect(indiceDoChip(turno.eventos)).toBeGreaterThan(indiceDaFala(turno.eventos, "aguardo"));
+	});
+});

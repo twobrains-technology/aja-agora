@@ -122,12 +122,22 @@ const CONFIRMA_NO_FIM = /,\s*(?:certo|combinado|tudo\s+bem|beleza|ok)\s*\?/i;
  * é sobre números, e sim sobre qual dos dois caminhos — ver `alternativasDaPergunta`. */
 const PEDIDO_DE_NUMEROS = /mostr|\bver\b|n[úu]meros|compara/i;
 const PEDIDO_DE_SEGUIR = /seguir|gerar|proposta|fechar|preparar/i;
-const PEDIDO_DE_WHATS = /whats\s?app|telefone|celular|n[úu]mero/i;
+// "número" sozinho é o número do CARD ("mostrar os números"), não o contato do cliente:
+// só vale com posse explícita ("seu número"). Foi o que embaralhou o fim do print 13.
+const PEDIDO_DE_WHATS = /whats\s?app|telefone|celular|seu\s+n[úu]mero/i;
 
-/** O pedido de dado pode vir de pergunta ("quanto você pensa em gastar?") ou de imperativo
- * ("me diz quanto…", "digite seu CPF"). */
+/**
+ * O pedido de dado pode vir de pergunta ("quanto você pensa em gastar?") ou de imperativo
+ * ("me diz quanto…", "digite seu CPF").
+ *
+ * O pedido casa em QUALQUER posição da frase, não só no começo — defeito medido no SHA
+ * `3236f59f` (R20, 237 turnos do agente): **24 turnos que pedem CPF/celular/WhatsApp** saíram
+ * com toque que não responde ao pedido, 6 deles sem nenhum toque do dado. O pedido nascia no MEIO
+ * ("…, me manda seu CPF e seu celular"), a âncora `^` não casava, e o turno caía nos próximos
+ * passos (`Quero essa` · `Ver outra opção` · `Falar do lance`).
+ */
 const PEDIDO_DIRETO =
-	/^(?:me\s+(?:diz|diga|fala|passa|manda|informa)|digite|digita|informe|escreva|escreve)\b|\b(?:preciso|precisamos|vou\s+precisar)\s+d[eo]\b/i;
+	/\b(?:me\s+(?:diz|diga|fala|passa|manda|envia|informa|compartilha)|pode\s+(?:me\s+passar|passar|mandar|enviar)|consegue\s+me\s+passar|me\s+confirma|digite|digita|informe|escreva|escreve|manda|envia|compartilha|(?:preciso|precisamos|vou\s+precisar)\s+d[eo])\b/i;
 
 /** (c) Os dados que o agente pede — a lista daquele dado, na voz da pessoa. */
 const FAIXAS_DE_VALOR = ["Até R$ 50 mil", "Uns R$ 80 mil", "R$ 100 mil ou mais"];
@@ -137,12 +147,18 @@ const FAIXAS_DE_VALOR = ["Até R$ 50 mil", "Uns R$ 80 mil", "R$ 100 mil ou mais"
 const FAIXAS_DE_PARCELA = ["Até R$ 800", "Até R$ 1.200", "Quero saber o mínimo"];
 const TIPOS_DE_BEM = ["Carro", "Moto", "Imóvel"];
 const RESPOSTAS_DO_CPF = ["Pode usar meu CPF", "Por que precisa do CPF?"];
+/** O contato (celular/WhatsApp) tem a mesma forma da resposta do CPF: entregar o dado ou
+ * perguntar por quê. Sem esta lista o pedido de celular caía nas faixas do valor. */
+const RESPOSTAS_DO_CONTATO = ["Mando meu celular", "Por que precisa do celular?"];
 /** O pedido de LANCE/ENTRADA — valor que o cliente já tem, não o valor do bem. Nenhum número
  * aqui: quanto a pessoa tem guardado é ela quem diz (AGENTS.md: número vem de ferramenta). */
 const RESPOSTAS_DO_LANCE = ["Tenho sim, consigo dar lance", "Tenho pouco", "Agora não tenho"];
 
 const DADO_DE_PARCELA = /parcela|por\s+m[êe]s|mensalidade/i;
 const DADO_DE_CPF = /\bcpf\b/i;
+/** O CONTATO pedido — o dado que salva o lead (P6). "número" fica FORA de propósito: no turno
+ * do vendedor ele é o número da carta ("o número da contemplação"), não o do telefone. */
+const DADO_DE_CONTATO = /whats\s?app|celular|telefone/i;
 /**
  * O LANCE — o valor que o cliente já tem para dar de entrada — pede outro card: o `value_picker`
  * existe para o valor do BEM (faixa de `CREDIT_BOUNDS` por categoria). Defeito medido no print
@@ -319,20 +335,33 @@ function alternativasDaPergunta(frase: string): string[] {
 /** (b) A resposta do sim/não casa com o VERBO do pedido: "quer ver os números?" não se responde
  * "Quero dar lance". */
 function respostasDeSimNao(pedido: string): string[] {
+	// A ORDEM IMPORTA: o envio pelo WhatsApp vem primeiro, porque "para você ver com calma"
+	// casa o `\bver\b` de `PEDIDO_DE_NUMEROS` e o cliente recebia "Quero ver os números" numa
+	// pergunta sobre mandar as opções por lá (print 13, ordem do líder de 22:35).
+	if (PEDIDO_DE_WHATS.test(pedido)) return ["Pode mandar", "Prefiro ver aqui"];
 	if (PEDIDO_DE_NUMEROS.test(pedido)) return ["Quero ver os números", "Agora não"];
 	if (PEDIDO_DE_SEGUIR.test(pedido)) return ["Pode seguir", "Agora não"];
-	if (PEDIDO_DE_WHATS.test(pedido)) return ["Sigo pelo WhatsApp", "Prefiro aqui"];
 	return ["Sim, pode", "Agora não"];
 }
 
-/** (c) O dado concreto que a pergunta pede — a lista daquele dado. */
+/**
+ * (c) O dado concreto que a pergunta pede — a lista daquele dado.
+ *
+ * A ORDEM é a da ordem da tarefa (R20): lance/reserva → CPF/celular/WhatsApp → parcela → valor →
+ * bem. O lance vem primeiro porque "algum valor guardado" não é o valor do bem (`DADO_DE_VALOR`
+ * casaria "valor"); CPF/celular vêm antes de valor e bem porque são o dado que o turno PEDE, e
+ * "me manda seu CPF e seu celular para saber o valor" é pedido de contato, não de faixa.
+ */
 function dadoPedido(alvo: string, momento: MomentoDaConversa): SugestaoDoTurno | null {
-	if (DADO_DE_CPF.test(alvo)) return { opcoes: RESPOSTAS_DO_CPF, tipoDoCard: "quick_reply" };
-	if (DADO_DE_PARCELA.test(alvo)) return { opcoes: FAIXAS_DE_PARCELA, tipoDoCard: "quick_reply" };
-	// (c1) O LANCE vem antes do valor: "algum valor guardado" não é o valor do bem.
+	// (c1) O LANCE vem antes de tudo: "algum valor guardado" não é o valor do bem.
 	if (DADO_DE_LANCE.test(alvo)) {
 		return { opcoes: RESPOSTAS_DO_LANCE, tipoDoCard: "quick_reply" };
 	}
+	if (DADO_DE_CPF.test(alvo)) return { opcoes: RESPOSTAS_DO_CPF, tipoDoCard: "quick_reply" };
+	if (DADO_DE_CONTATO.test(alvo)) {
+		return { opcoes: RESPOSTAS_DO_CONTATO, tipoDoCard: "quick_reply" };
+	}
+	if (DADO_DE_PARCELA.test(alvo)) return { opcoes: FAIXAS_DE_PARCELA, tipoDoCard: "quick_reply" };
 	if (DADO_DE_VALOR.test(alvo)) {
 		return {
 			opcoes: FAIXAS_DE_VALOR,
@@ -445,4 +474,17 @@ export function sugestaoDoTurno(
 /** Só os rótulos — o que a maioria dos chamadores quer. */
 export function sugestoesDaPergunta(pergunta: string, momento: MomentoDaConversa = {}): string[] {
 	return sugestaoDoTurno(pergunta, momento).opcoes;
+}
+
+/**
+ * ESTE BALÃO PEDE UMA RESPOSTA? — a interrogativa ou o pedido de dado (`PEDIDO_DIRETO`).
+ *
+ * É o critério com que `chips.ts` acha, de trás pra frente, o balão de onde o toque nasce: o
+ * pedido do turno pode estar num balão anterior ao último ("…, me manda seu CPF e seu celular" /
+ * "Tudo bem, aguardo."), e o toque derivado só do último balão nascia do balão errado (defeito
+ * medido na R20, `turno-livre.ts`).
+ */
+export function balaoPedeResposta(texto: string): boolean {
+	const t = texto ?? "";
+	return t.includes("?") || PEDIDO_DIRETO.test(t);
 }
