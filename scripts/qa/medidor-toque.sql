@@ -4,7 +4,7 @@ with m as (
          sum(case when m.role='user' then 1 else 0 end)
            over (partition by m.conversation_id order by m.created_at, m.id) as turno
   from messages m join conversations c on c.id = m.conversation_id
-  where c.is_simulated and m.created_at >= timestamp '2026-10-28 02:26'
+  where c.is_simulated and m.created_at >= now() - (:minutos || ' minutes')::interval
 ),
 turnos as (
   select conversation_id, turno,
@@ -21,8 +21,8 @@ select
   round(100.0*count(*) filter (where tem_chip)/count(*),1) as pct_chip,
   count(*) filter (where tem_chip or tem_card_dado) as com_algum_toque,
   round(100.0*count(*) filter (where tem_chip or tem_card_dado)/count(*),1) as pct_algum_toque,
-  count(*) filter (where fala ~* '(cpf|celular|telefone|whats ?app)') as turnos_pedem_dado,
-  count(*) filter (where fala ~* '(cpf|celular|telefone|whats ?app)' and chips ~* '(cpf|celular|telefone|whats ?app)') as pedem_dado_com_toque_do_dado
+  count(*) filter (where fala ~* '(cpf|celular|telefone|whats ?app|(seu|qual)[^?]{0,12}n[uú]mero)') as turnos_pedem_dado,
+  count(*) filter (where fala ~* '(cpf|celular|telefone|whats ?app|(seu|qual)[^?]{0,12}n[uú]mero)' and chips ~* '(cpf|celular|telefone|whats ?app|(seu|qual)[^?]{0,12}n[uú]mero)') as pedem_dado_com_toque_do_dado
 from turnos where fala is not null;
 
 -- ══════════════════════════════════════════════════════════════════════════════════════════
@@ -38,7 +38,9 @@ with m as (
 		sum(case when m.role = 'user' then 1 else 0 end)
 			over (partition by m.conversation_id order by m.created_at, m.id) as turno
 	from messages m join conversations c on c.id = m.conversation_id
-	where c.is_simulated and m.created_at >= now() - interval '40 minutes'
+	where c.is_simulated
+	  and m.created_at >= now() - (:minutos || ' minutes')::interval
+	  and m.created_at <= now()
 ),
 t as (
 	select conversation_id, turno,
@@ -54,7 +56,7 @@ select
 	count(*) as turnos_do_agente,
 	count(*) filter (where coalesce(chips, '') <> '' or cards ~ '(quick_reply|_picker|contract_form|whatsapp_optin)') as com_toque,
 	round(100.0 * count(*) filter (where coalesce(chips, '') <> '' or cards ~ '(quick_reply|_picker|contract_form|whatsapp_optin)') / count(*), 1) as pct_com_toque,
-	count(*) filter (where fala ~* '(cpf|celular|telefone|whats ?app)') as turnos_que_pedem_dado,
-	count(*) filter (where fala ~* '(cpf|celular|telefone|whats ?app)'
-		and (chips ~* '(cpf|celular|telefone|whats ?app)' or cards ~ '(contract_form|whatsapp_optin)')) as pedem_dado_com_toque_do_dado
+	count(*) filter (where fala ~* '(cpf|celular|telefone|whats ?app|(seu|qual)[^?]{0,12}n[uú]mero)') as turnos_que_pedem_dado,
+	count(*) filter (where fala ~* '(cpf|celular|telefone|whats ?app|(seu|qual)[^?]{0,12}n[uú]mero)'
+		and (chips ~* '(cpf|celular|telefone|whats ?app|(seu|qual)[^?]{0,12}n[uú]mero)' or cards ~ '(contract_form|whatsapp_optin)')) as pedem_dado_com_toque_do_dado
 from t where fala is not null;

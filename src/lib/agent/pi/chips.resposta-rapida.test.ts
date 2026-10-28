@@ -485,3 +485,26 @@ describe("(R20) o pedido de dado no MEIO da frase ganha o toque do DADO", () => 
 		).toEqual(["Quero essa", "Ver outra opção", "Falar do lance"]);
 	});
 });
+
+describe("(auditoria 28/10) o pedido de contato e o de nome no turno de handoff", () => {
+	it("'Qual seu número?' e 'Me passa seu número' pedem o CELULAR, não próximo passo", () => {
+		for (const fala of ["Qual seu número?", "Me passa seu número, por favor."]) {
+			const r = sugestaoDoTurno(fala, { temCartaNaTela: true, categoriaDoBem: "auto" });
+			expect(r.opcoes.join(" ").toLowerCase()).toContain("celular");
+			expect(r.opcoes).not.toContain("Quero essa");
+		}
+	});
+
+	it("'Se puder confirmar seu CPF e celular…' pede o CPF do cliente", () => {
+		const r = sugestaoDoTurno("Se puder confirmar seu CPF e celular, já gero a proposta pra você!", {
+			temCartaNaTela: true,
+			categoriaDoBem: "auto",
+		});
+		expect(r.opcoes.join(" ").toLowerCase()).toContain("cpf");
+	});
+
+	it("mas 'me mostra os números do card' continua sendo o par de números", () => {
+		const r = sugestaoDoTurno("Quer que eu te mostre os números do card?", { temCartaNaTela: true });
+		expect(r.opcoes).toEqual(["Quero ver os números", "Agora não"]);
+	});
+});

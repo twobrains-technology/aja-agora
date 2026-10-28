@@ -1295,10 +1295,13 @@ export function createRunTurnLivre(deps?: {
 						: undefined,
 			});
 			if (ehHandoff) linhaDeHandoffEmitida = true;
-			// O balão do turno é o que pode pedir a resposta que o toque oferece. A linha de
-			// handoff fica FORA: ela fecha a conversa com o especialista e não ganha
-			// próximo passo (era assim antes, quando o chip nascia por trecho).
-			if (!ehHandoff) baloesDoTurno.push(pendente);
+			// O balão do turno é o que pode pedir a resposta que o toque oferece — inclusive quando
+			// o turno é de handoff: "Qual é o seu nome, pra eu abrir o caso na nossa mesa?" é uma
+			// PERGUNTA do agente, e ficar fora da lista deixava o turno sem nenhum botão
+			// (auditoria de 28/10, conversa `779c330f` 03:11:59Z). O que não ganha próximo passo é
+			// o FECHO ("abri o caso, um atendente assume"), e quem sabe disso é o classificador
+			// (`sugestaoDoTurno`), não a origem do texto.
+			if (pendente.trim()) baloesDoTurno.push(pendente);
 			pendente = "";
 			// O anúncio da ferramenta não vira balão quando o card fala por si: o
 			// que estava suspenso sai antes deste balão, e este fica suspenso
