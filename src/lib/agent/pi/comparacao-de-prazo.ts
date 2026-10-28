@@ -316,18 +316,26 @@ export function semPrazoInventado(
 			}
 
 			const dito = PRAZO_DITO_DA_CARTA.exec(frase);
-			if (dito && Number(dito[2]) >= 36 && !prazos.has(Number(dito[2])) && MENCIONA_A_OFERTA.test(frase)) {
+			if (dito && Number(dito[2]) >= 36 && MENCIONA_A_OFERTA.test(frase)) {
+				const dissePrazo = Number(dito[2]);
 				const semOMatch = frase.replace(dito[0], " ");
 				const daParcela = cartasCitadasPelaParcela(semOMatch, mesa);
 				const daAdministradora = cartaUnicaDaAdministradora(semOMatch, mesa);
-				const verdadeiro = (daParcela ?? daAdministradora)?.prazoMeses;
-				const troca =
-					verdadeiro !== undefined
-						? `${dito[1]} ${verdadeiro} meses`
-						: /^prazo/i.test(dito[1] as string)
-							? "prazo da tabela"
-							: `${dito[1]} o prazo da tabela`;
-				return frase.replace(dito[0], troca);
+				const identificada = daParcela ?? daAdministradora;
+				// O prazo está certo quando é o da carta que a frase identifica; sem identificar,
+				// basta existir na mesa.
+				const certo = identificada ? identificada.prazoMeses === dissePrazo : prazos.has(dissePrazo);
+				if (certo) return frase;
+				const troca = identificada
+					? `${dito[1]} ${identificada.prazoMeses} meses`
+					: /^prazo/i.test(dito[1] as string)
+						? "prazo da tabela"
+						: `${dito[1]} o prazo da tabela`;
+				// Corrigido o número, "igual à CANOPUS" deixa de ser verdade: a oração sai.
+				return frase
+					.replace(dito[0], troca)
+					.replace(/\s*,?\s*igual\s+(?:à|ao|a)\s+[^,.;!?]+/i, "")
+					.replace(/\s+([,.;:!?])/g, "$1");
 			}
 			return frase;
 		})

@@ -221,3 +221,19 @@ describe("'tem N meses' dito da carta: o número é o da carta que a frase ident
 		}
 	});
 });
+
+describe("o prazo dito tem de ser o da carta que a frase identifica, mesmo existindo em outra", () => {
+	it("a fala medida: a ÂNCORA de R$ 1.099,62 tem 114, não 96 (que é da CANOPUS) — e não é 'igual à CANOPUS'", () => {
+		const dito =
+			"A outra opção da ÂNCORA tem 96 meses, igual à CANOPUS, mas a parcela é um pouco menor, de R$ 1.099,62.";
+		const saida = semPrazoInventado(dito, MESA);
+		expect(saida).toContain("tem 114 meses");
+		expect(saida).not.toMatch(/igual\s+à\s+CANOPUS/);
+		expect(saida).toContain("R$ 1.099,62");
+	});
+
+	it("prazo igual ao da carta identificada passa intacto", () => {
+		const dito = "A da CANOPUS tem 96 meses, com parcela de R$ 1.176,39.";
+		expect(semPrazoInventado(dito, MESA)).toBe(dito);
+	});
+});
