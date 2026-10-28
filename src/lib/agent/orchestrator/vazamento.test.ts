@@ -333,3 +333,31 @@ describe("plano interno do modelo não chega ao cliente", () => {
 		expect(baloes.map((b) => passaFinal(b))).toEqual(baloes);
 	});
 });
+
+describe("o id interno da carta não vai para a fala (conversa de teste, 28/10)", () => {
+	it("a fala medida: o id e a etiqueta saem, o resto fica", async () => {
+		const { passaFinal } = await import("./vazamento");
+		const medida =
+			"A de menor prazo é a da ÂNCORA, id 6abfaec94c0ff2a8453a73a0, com 94 meses.";
+		expect(passaFinal(medida)).toBe("A de menor prazo é a da ÂNCORA, com 94 meses.");
+	});
+
+	it("id solto, entre parênteses e UUID também saem", async () => {
+		const { passaFinal } = await import("./vazamento");
+		expect(passaFinal("É a carta 6abfaec94c0ff2a8453a73a0 que eu recomendo.")).toBe(
+			"É a carta que eu recomendo.",
+		);
+		expect(passaFinal("Use o grupo (id: 6abfaec94c0ff2a8453a73a0) na proposta.")).toBe(
+			"Use o grupo na proposta.",
+		);
+		expect(passaFinal("O código 123e4567-e89b-12d3-a456-426614174000 não vai ao cliente.")).toBe(
+			"O código não vai ao cliente.",
+		);
+	});
+
+	it("número de fala legítima não é tocado", async () => {
+		const { passaFinal } = await import("./vazamento");
+		const fala = "Parcela de R$ 1.176,39 em 96 meses, carta de R$ 90.000 (grupo 1234).";
+		expect(passaFinal(fala)).toBe(fala);
+	});
+});

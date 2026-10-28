@@ -193,9 +193,32 @@ export function removerLinhasDePlano(text: string): string {
 	return restantes.join("\n").trim();
 }
 
+// O ID INTERNO DA CARTA NA FALA — medido numa conversa de teste (28/10): "A de menor prazo é a da
+// ÂNCORA, id 6abfaec94c0ff2a8453a73a0, com 94 meses." O identificador do grupo/cota (24 hex do
+// Mongo ou UUID) é chave de máquina: o cliente não lê nem usa, e ainda por cima o id citado era o
+// de OUTRA carta. A fala continua; só o id (e a etiqueta "id") sai.
+const HEX_DO_ID = "(?:[0-9a-f]{24}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})";
+const ETIQUETA_DE_ID = "(?:\\bid\\b[ \\t]*:?[ \\t]*)?";
+/** "(id: 6abf…)" entre parênteses. */
+const ID_ENTRE_PARENTESES = new RegExp(`[ \\t]*\\([ \\t]*${ETIQUETA_DE_ID}${HEX_DO_ID}[ \\t]*\\)`, "gi");
+/** ", id 6abf…," — aposto entre vírgulas: leva a vírgula de abertura junto. */
+const ID_EM_APOSTO = new RegExp(`[ \\t]*,[ \\t]*${ETIQUETA_DE_ID}${HEX_DO_ID}[ \\t]*(?=,)`, "gi");
+/** O id solto, com a etiqueta "id" se houver. */
+const ID_SOLTO = new RegExp(`[ \\t]*${ETIQUETA_DE_ID}\\b${HEX_DO_ID}\\b`, "gi");
+
+/** O TEXTO SEM O ID INTERNO — "a da ÂNCORA, id 6abf…73a0, com 94 meses" → "a da ÂNCORA, com 94 meses". */
+export function removerIdsInternos(text: string): string {
+	if (!text) return text;
+	return text
+		.replace(ID_ENTRE_PARENTESES, "")
+		.replace(ID_EM_APOSTO, "")
+		.replace(ID_SOLTO, "")
+		.replace(/[ \t]+([,.;:!?])/g, "$1");
+}
+
 /** Último passe do texto que vai para o cliente: mascara CPF e derruba o que é
- * claramente máquina (JSON de argumento, nome de tool, plano interno). */
+ * claramente máquina (JSON de argumento, nome de tool, plano interno, id de carta). */
 export function passaFinal(text: string): string {
 	if (isJsonFragmentLeak(text) || isInternalToolLeak(text)) return "";
-	return removerLinhasDePlano(scrubCpf(text));
+	return removerIdsInternos(removerLinhasDePlano(scrubCpf(text)));
 }

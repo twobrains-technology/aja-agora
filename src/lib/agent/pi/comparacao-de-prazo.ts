@@ -22,7 +22,7 @@
 // mesma família do "número sem lastro" — comparação verificável contra o dado da ferramenta.
 
 /** A carta como a mesa a conhece — só o que a comparação precisa. */
-export type CartaDaMesa = { parcela: number; prazoMeses: number };
+export type CartaDaMesa = { parcela: number; prazoMeses: number; administradora?: string };
 
 const PRAZO_COM_UNIDADE = /(\d{2,3})\s*(?:meses|m[êe]s)\b/gi;
 /** Prazo citado sem a unidade: "a de 94 tem…". Só vale depois de "de" e NÃO é dinheiro. */
@@ -149,4 +149,132 @@ function semComparativo(frase: string): string {
 		)
 		.replace(/\s{2,}/g, " ")
 		.trim();
+}
+
+
+// ---------------------------------------------------------------------------------------------
+// PARCELA — a mesma régua. Medido na conversa de teste de 28/10: depois de apontar a ÂNCORA de 94
+// meses (parcela R$ 1.454,51) o agente disse que ela tinha "parcela menor que a outra da ÂNCORA"
+// (a outra é R$ 1.099,62). Comparação de parcela também tem de bater com a mesa.
+// ---------------------------------------------------------------------------------------------
+
+/** "parcela menor/maior/mais baixa/mais alta/mais barata/mais cara/mais em conta (do) que …" */
+const COMPARATIVO_DE_PARCELA =
+	/(?:a\s+)?parcela\s+(menor|maior|mais\s+baixa|mais\s+alta|mais\s+barata|mais\s+cara|mais\s+em\s+conta)\s+(?:do\s+)?que\s+((?:[^.!?]|\.(?=\d))*)/i;
+const PARCELA_MENOR = /menor|baixa|barata|em\s+conta/i;
+
+const semAcento = (t: string) =>
+	t
+		.normalize("NFD")
+		.replace(/[\u0300-\u036f]/g, "")
+		.toLowerCase();
+
+/** As cartas que a frase cita, na ordem: pela parcela (R$), ou pelo prazo (a administradora
+ * desempata quando duas cartas têm o mesmo prazo). Citação ambígua não conta. */
+function cartasCitadas(frase: string, mesa: readonly CartaDaMesa[]): CartaDaMesa[] {
+	const achadas: { at: number; carta: CartaDaMesa }[] = [];
+	const fraseSemAcento = semAcento(frase);
+	for (const m of frase.matchAll(PARCELA)) {
+		const valor = dinheiro(m[1] as string);
+		const cartas = mesa.filter((c) => Math.abs(c.parcela - valor) < 0.005);
+		if (cartas.length === 1) achadas.push({ at: m.index ?? 0, carta: cartas[0] as CartaDaMesa });
+	}
+	const prazos = [
+		...[...frase.matchAll(PRAZO_COM_UNIDADE)].map((m) => ({ at: m.index ?? 0, n: Number(m[1]) })),
+		...[...frase.matchAll(PRAZO_SEM_UNIDADE)].map((m) => ({
+			at: (m.index ?? 0) + m[0].indexOf("de"),
+			n: Number(m[1]),
+		})),
+	];
+	for (const { at, n } of prazos) {
+		let cartas = mesa.filter((c) => c.prazoMeses === n);
+		if (cartas.length > 1) {
+			cartas = cartas.filter(
+				(c) => c.administradora && fraseSemAcento.includes(semAcento(c.administradora)),
+			);
+		}
+		if (cartas.length === 1) achadas.push({ at, carta: cartas[0] as CartaDaMesa });
+	}
+	achadas.sort((a, b) => a.at - b.at);
+	const unicas: CartaDaMesa[] = [];
+	for (const { carta } of achadas) if (!unicas.includes(carta)) unicas.push(carta);
+	return unicas;
+}
+
+/** "a outra da ÂNCORA", "a da CANOPUS": a carta da administradora que NÃO é o sujeito. */
+function cartaPelaAdministradora(
+	trecho: string,
+	mesa: readonly CartaDaMesa[],
+	sujeito: CartaDaMesa,
+): CartaDaMesa | undefined {
+	const t = semAcento(trecho);
+	const nomes = [
+		...new Set(mesa.map((c) => c.administradora).filter((a): a is string => Boolean(a))),
+	].filter((a) => t.includes(semAcento(a)));
+	if (nomes.length !== 1) return undefined;
+	const doNome = mesa.filter((c) => c.administradora === nomes[0] && c !== sujeito);
+	return doNome.length === 1 ? doNome[0] : undefined;
+}
+
+/**
+ * Confere "parcela menor/maior … que …". Direção trocada e verificável → troca a palavra; não dá
+ * para saber de qual carta se fala (ou a referência não está na mesa) → a oração comparativa sai e
+ * a frase continua só com o que é fato.
+ */
+export function corrigirComparacaoDeParcela(
+	texto: string,
+	args: { cartasDaMesa: readonly CartaDaMesa[] } = { cartasDaMesa: [] },
+): string {
+	if (!texto || !COMPARATIVO_DE_PARCELA.test(texto)) return texto;
+	const mesa = args.cartasDaMesa;
+	const frases = frasesDe(texto);
+	return frases
+		.map((frase, i) => {
+			const achado = COMPARATIVO_DE_PARCELA.exec(frase);
+			if (!achado) return frase;
+			const [inteiro, direcao, referenciaEscrita] = achado as unknown as [string, string, string];
+			const antes = frase.slice(0, achado.index);
+
+			// O sujeito: a última carta citada ANTES do comparativo na frase, ou na frase anterior
+			// mais próxima que cite uma.
+			let sujeito = cartasCitadas(antes, mesa).at(-1);
+			for (let k = i - 1; k >= 0 && !sujeito; k--) {
+				sujeito = cartasCitadas(frases[k] ?? "", mesa).at(-1);
+			}
+			// A referência: a carta citada na própria oração ("que a de R$ 1.099,62") ou a outra da
+			// administradora ("que a outra da ÂNCORA").
+			const referencia = sujeito
+				? (cartasCitadas(referenciaEscrita, mesa).at(-1) ??
+					cartaPelaAdministradora(referenciaEscrita, mesa, sujeito))
+				: undefined;
+
+			if (!sujeito || !referencia || sujeito === referencia) return tirarOracao(frase, inteiro);
+
+			const afirmaMenor = PARCELA_MENOR.test(direcao);
+			if (afirmaMenor === sujeito.parcela < referencia.parcela) return frase;
+			// Direção trocada: a parcela dela é o oposto do que a fala disse.
+			const oposta = afirmaMenor ? "parcela maior" : "parcela menor";
+			return frase.replace(
+				/(?:a\s+)?parcela\s+(?:menor|maior|mais\s+baixa|mais\s+alta|mais\s+barata|mais\s+cara|mais\s+em\s+conta)/i,
+				oposta,
+			);
+		})
+		.join(" ");
+}
+
+/** Tira a oração comparativa ("e parcela menor que a outra da ÂNCORA") e deixa o resto da frase. */
+function tirarOracao(frase: string, oracao: string): string {
+	const i = frase.indexOf(oracao);
+	if (i < 0) return frase;
+	// O que sobra de antes perde o conectivo pendurado ("…o menor prazo e" / ", com").
+	const antes = frase.slice(0, i).replace(/\s*,?\s*\b(?:e|com)\s*$/i, "");
+	return `${antes}${frase.slice(i + oracao.length)}`.replace(/\s+([,.;:!?])/g, "$1").trim();
+}
+
+/** As duas réguas juntas — o que `montarTrechoDeSaida` aplica ao balão. */
+export function corrigirComparacoes(
+	texto: string,
+	args: { cartasDaMesa: readonly CartaDaMesa[] },
+): string {
+	return corrigirComparacaoDeParcela(corrigirComparacaoDePrazo(texto, args), args);
 }

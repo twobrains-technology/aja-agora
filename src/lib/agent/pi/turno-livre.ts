@@ -22,7 +22,7 @@ import { picarEmBaloes } from "@/lib/agent/pi/baloes";
 import { type MetaDaEmissao, TIPOS_DE_ESCOLHA } from "@/lib/agent/pi/cards-livres";
 import { chipDoTurno, garantirChip } from "@/lib/agent/pi/chips";
 import { executarBeat } from "@/lib/agent/pi/converse";
-import { corrigirComparacaoDePrazo } from "@/lib/agent/pi/comparacao-de-prazo";
+import { corrigirComparacoes } from "@/lib/agent/pi/comparacao-de-prazo";
 import { ehTurnoDeHandoff } from "@/lib/agent/pi/sugestoes";
 import {
 	clientePedeHumano,
@@ -211,12 +211,12 @@ export function montarTrechoDeSaida(args: {
 	/** As cartas REAIS da mesa (parcela + prazo): a comparação de prazo na fala tem de bater com
 	 * elas (ordem do líder, 27/10 22:35 — a fala disse "96 é mais curto que 94"). O sujeito da
 	 * comparação é a carta que a própria fala cita, pela parcela ou pelo prazo. */
-	cartasDaMesa?: readonly { parcela: number; prazoMeses: number }[];
+	cartasDaMesa?: readonly { parcela: number; prazoMeses: number; administradora?: string }[];
 }): { texto: string } {
 	// O ÚLTIMO PASSE roda AQUI, no texto que vai AO VIVO para o canal — não só na
 	// persistência: máscara de CPF e o corte de vazamento de máquina (JSON de
 	// argumento, nome de tool) têm de valer para o cliente, não só para o banco.
-	const bruto = corrigirComparacaoDePrazo(passaFinal(args.texto), {
+	const bruto = corrigirComparacoes(passaFinal(args.texto), {
 		cartasDaMesa: args.cartasDaMesa ?? [],
 	});
 	const texto = bruto;
@@ -1338,7 +1338,11 @@ export function createRunTurnLivre(deps?: {
 				// Fato do turno para a resposta rápida (ordem do dono, 27/10): com carta na tela a
 				// pergunta aberta ("qual dessas fica melhor?") ganha as opções da oferta.
 				temCartaNaTela: ctx.cartasNaTela.length > 0,
-				cartasDaMesa: ctx.cartasNaTela.map((c) => ({ parcela: c.parcela, prazoMeses: c.prazoMeses })),
+				cartasDaMesa: ctx.cartasNaTela.map((c) => ({
+					parcela: c.parcela,
+					prazoMeses: c.prazoMeses,
+					administradora: c.administradora,
+				})),
 				canal: ctx.channel,
 				// O toque é a resposta ao que ESTE turno disse (ordem das 17:15): a fala do cliente
 				// entra como filtro anti-eco e a categoria do bem decide se a pergunta de valor sai
