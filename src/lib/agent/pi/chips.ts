@@ -165,6 +165,12 @@ function detectarOpcoes(texto: string): { opcoes: string[]; textoLimpo: string }
 	if (!frase) return { opcoes: [], textoLimpo: texto };
 	let corpo = frase.replace(/\([^)]*\)/g, "").replace(/\?$/, "");
 	if (corpo.includes(":")) corpo = corpo.slice(corpo.lastIndexOf(":") + 1);
+	// PERGUNTA ABERTA NÃO É MENU: "Qual dessas opções mais te interessa ou prefere alguma outra
+	// característica?" abre com pronome interrogativo e SEM introdução de dois-pontos — o lado
+	// esquerdo é a própria pergunta, e virava o botão (visto ao vivo, 28/10).
+	if (/^\s*(?:qual|quais|quanto|quantos|quantas|como|quando|onde|o\s+que|por\s+que|porque)\b/i.test(corpo)) {
+		return { opcoes: [], textoLimpo: texto };
+	}
 	const opcoesDaFrase = corpo
 		.split(/\s+ou\s+/)
 		.map((parte) =>

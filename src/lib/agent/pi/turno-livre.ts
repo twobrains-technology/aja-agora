@@ -22,8 +22,16 @@ import { picarEmBaloes } from "@/lib/agent/pi/baloes";
 import { type MetaDaEmissao, TIPOS_DE_ESCOLHA } from "@/lib/agent/pi/cards-livres";
 import { chipDoTurno, garantirChip } from "@/lib/agent/pi/chips";
 import { executarBeat } from "@/lib/agent/pi/converse";
-import { linhaFinalDoHandoff, RE_DE_PROMESSA } from "@/lib/agent/pi/handoff";
+import { corrigirComparacoes } from "@/lib/agent/pi/comparacao-de-prazo";
+import {
+	clientePedeHumano,
+	clienteVoltou,
+	falaDaRetomadaDaTransferencia,
+	linhaFinalDoHandoff,
+	RE_DE_PROMESSA,
+} from "@/lib/agent/pi/handoff";
 import { userIdDoTurno } from "@/lib/agent/pi/langfuse";
+import { ehTurnoDeHandoff } from "@/lib/agent/pi/sugestoes";
 import { criarNarracaoDoTurno } from "@/lib/agent/pi/narracao";
 import { persistirTurnoLivre } from "@/lib/agent/pi/persist-livre";
 import { custoDoTurnoCentsExatos } from "@/lib/agent/pi/precos";
@@ -201,11 +209,17 @@ export function montarTrechoDeSaida(args: {
 	falaDoCliente?: string;
 	/** Categoria do bem já declarada — autoriza o slider do valor (`value_picker`). */
 	categoriaDoBem?: Category;
+	/** As cartas REAIS da mesa (parcela + prazo): a comparação de prazo na fala tem de bater com
+	 * elas (ordem do líder, 27/10 22:35 — a fala disse "96 é mais curto que 94"). O sujeito da
+	 * comparação é a carta que a própria fala cita, pela parcela ou pelo prazo. */
+	cartasDaMesa?: readonly { parcela: number; prazoMeses: number; administradora?: string }[];
 }): { texto: string } {
 	// O ÚLTIMO PASSE roda AQUI, no texto que vai AO VIVO para o canal — não só na
 	// persistência: máscara de CPF e o corte de vazamento de máquina (JSON de
 	// argumento, nome de tool) têm de valer para o cliente, não só para o banco.
-	const bruto = passaFinal(args.texto);
+	const bruto = corrigirComparacoes(passaFinal(args.texto), {
+		cartasDaMesa: args.cartasDaMesa ?? [],
+	});
 	const texto = bruto;
 	if (args.handoff) {
 		// O balão do handoff é UMA linha sem promessa. O modelo acrescentava uma confirmação
@@ -1223,6 +1237,22 @@ export function createRunTurnLivre(deps?: {
 			[...historico].reverse().find((m) => m.role === "user")?.content ||
 			undefined;
 
+		// O CLIENTE PEDIU GENTE NESTE TURNO. Não é o `ctx.pediuHumano` (que só existe se o modelo
+		// chamou a tool): a fala do cliente é fato do turno, e a transferência não pode depender de
+		// o modelo lembrar. Ordem do líder (27/10 01:05, print 16 reprovado): o agente respondeu
+		// "Antes de mais nada, você já me disse seu nome?" a quem pediu um atendente.
+		const pedidoDeHumanoNoTurno = clientePedeHumano(falaDoClienteDoTurno);
+
+		// O CLIENTE VOLTOU NO MEIO DA TRANSFERÊNCIA (ordem do líder, 27/10 01:35). O agente perdia o
+		// fio e recomeçava ("Você já conversou com a gente antes?"). Aqui a volta RETOMA o que estava
+		// pendente — a última fala do agente era de transferência e o cliente voltou.
+		const ultimaFalaDoAgente =
+			[...historico].reverse().find((m) => m.role === "assistant")?.content ?? "";
+		const retomadaDaTransferencia =
+			!pedidoDeHumanoNoTurno &&
+			clienteVoltou(falaDoClienteDoTurno) &&
+			ehTurnoDeHandoff(ultimaFalaDoAgente);
+
 		// Fila de eventos: o beat empurra o texto AO VIVO, o generator drena.
 		const fila: TurnEvent[] = [];
 		let acordar: (() => void) | null = null;
@@ -1266,6 +1296,38 @@ export function createRunTurnLivre(deps?: {
 		};
 		const soltarTrecho = () => {
 			if (!pendente) return;
+			// A TRANSFERÊNCIA PEDIDA PELO CLIENTE TEM UMA FALA SÓ, montada aqui: aceita o pedido e
+			// pede o que falta para o consultor chamar (nome e WhatsApp). A prosa do modelo nesta
+			// hora perguntava coisa de outro momento e ainda duplicava a linha da casa.
+			if (retomadaDaTransferencia) {
+				if (linhaDeHandoffEmitida) {
+					pendente = "";
+					return;
+				}
+				const fala = falaDaRetomadaDaTransferencia(ctx.nomeDoCliente);
+				linhaDeHandoffEmitida = true;
+				pendente = "";
+				for (const balao of picarEmBaloes(fala)) baloesDoTurno.push(balao);
+				emitirFala(fala);
+				return;
+			}
+			if (pedidoDeHumanoNoTurno) {
+				if (linhaDeHandoffEmitida) {
+					pendente = "";
+					return;
+				}
+				const fala = linhaFinalDoHandoff({
+					texto: "",
+					nome: ctx.nomeDoCliente,
+					clientePediu: true,
+					casoAberto,
+				});
+				linhaDeHandoffEmitida = true;
+				pendente = "";
+				for (const balao of picarEmBaloes(fala)) baloesDoTurno.push(balao);
+				emitirFala(fala);
+				return;
+			}
 			const ehHandoff = casoAberto || RE_DE_PROMESSA.test(pendente);
 			if (ehHandoff && linhaDeHandoffEmitida) {
 				pendente = "";
@@ -1277,6 +1339,11 @@ export function createRunTurnLivre(deps?: {
 				// Fato do turno para a resposta rápida (ordem do dono, 27/10): com carta na tela a
 				// pergunta aberta ("qual dessas fica melhor?") ganha as opções da oferta.
 				temCartaNaTela: ctx.cartasNaTela.length > 0,
+				cartasDaMesa: ctx.cartasNaTela.map((c) => ({
+					parcela: c.parcela,
+					prazoMeses: c.prazoMeses,
+					administradora: c.administradora,
+				})),
 				canal: ctx.channel,
 				// O toque é a resposta ao que ESTE turno disse (ordem das 17:15): a fala do cliente
 				// entra como filtro anti-eco e a categoria do bem decide se a pergunta de valor sai

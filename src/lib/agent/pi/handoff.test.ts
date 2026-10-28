@@ -5,12 +5,14 @@ import { db } from "@/db";
 import { conversations, leads, mesaHandoffs } from "@/db/schema";
 import type { AnunciarCasoNaMesaArgs } from "@/lib/mesa/dispatch";
 import {
+	RE_DE_PROMESSA,
 	abrirCasoNaMesa,
+	clienteVoltou,
+	falaDaRetomadaDaTransferencia,
 	linhaDeHandoff,
 	linhaFinalDoHandoff,
 	nomeDitoNaConversa,
 	nomeNaFala,
-	RE_DE_PROMESSA,
 	semPromessa,
 } from "./handoff";
 
@@ -94,9 +96,29 @@ describe("o pedido de humano honra o pedido, sem promessa", () => {
 			clientePediu: true,
 			casoAberto: false,
 		});
-		expect(semNome).toBe("Qual é o seu nome?");
-		expect(semNome).toContain("Qual é o seu nome?");
+		// Ordem do líder (27/10, print 16): o pedido de humano é ACEITO primeiro e o balão pede
+		// o que falta para o consultor chamar — nome e WhatsApp. "Você já me disse seu nome?"
+		// saiu de cena: o agente sabe que o cliente não disse, e isso ignorava o pedido dele.
+		expect(semNome).toContain("vou te passar pra um consultor");
+		expect(semNome).toContain("como você se chama");
+		expect(semNome).toContain("seu número");
+		expect(semNome).not.toContain("já me disse");
 		expect(semPromessa(semNome)).toBe(true);
+		// A aceitação vem ANTES do pedido do dado — nesta ordem.
+		expect(semNome.indexOf("consultor")).toBeLessThan(semNome.indexOf("como você se chama"));
+	});
+
+	it("com o nome já dito, a transferência o chama pelo nome e pede só o que falta", () => {
+		const balao = linhaFinalDoHandoff({
+			texto: "Vou te passar para um atendente.",
+			nome: "Marcos",
+			clientePediu: true,
+			casoAberto: false,
+		});
+		expect(balao).toContain("Claro, Marcos!");
+		expect(balao).toContain("pra um consultor");
+		expect(balao).toContain("nome e no seu WhatsApp");
+		expect(semPromessa(balao)).toBe(true);
 	});
 
 	it("`falar_com_humano` abre o caso, e o caso marca handed_off", () => {
@@ -288,5 +310,31 @@ describe("abrirCasoNaMesa anuncia o caso na mesa", () => {
 		expect(segundo.ok).toBe(true);
 		expect(segundo.handoffId).toBe(primeiro.handoffId);
 		expect(anuncios).toHaveLength(1);
+	});
+});
+
+describe("a volta do cliente no meio da transferência (print 17, ordem de 01:35)", () => {
+	it("reconhece que o cliente voltou", () => {
+		for (const fala of ["Voltei", "oi, voltei", "estou de volta", "Tô de volta, bora"]) {
+			expect(clienteVoltou(fala), fala).toBe(true);
+		}
+		for (const fala of ["quero um carro", "não voltei a trabalhar ainda", ""]) {
+			expect(clienteVoltou(fala), fala).toBe(false);
+		}
+	});
+
+	it("a retomada retoma a transferência em vez de recomeçar a conversa", () => {
+		const semNome = falaDaRetomadaDaTransferencia(null);
+		expect(semNome).toContain("você voltou");
+		expect(semNome).toContain("seu nome e seu WhatsApp");
+		expect(semNome).toContain("consultor");
+		// o que o agente dizia antes: recomeçar do zero, sem memória do que estava pendente
+		expect(semNome).not.toMatch(/já conversou com a gente|já me disse seu nome/i);
+
+		const comNome = falaDaRetomadaDaTransferencia("Kairo");
+		expect(comNome).toContain("Kairo");
+		expect(comNome).toContain("WhatsApp");
+		// nome já é conhecido: não pede de novo
+		expect(comNome).not.toMatch(/seu nome/i);
 	});
 });

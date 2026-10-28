@@ -264,6 +264,51 @@ describe("(b) as exceções são deliberadas", () => {
 		}
 	});
 
+	it("turno de transferência tem toque de transferência, não o do momento", () => {
+		// Print 16 reprovado pelo líder (27/10): cliente pediu humano e o agente perguntou o
+		// nome com os toques de abertura (`Vamos direto às cartas` / `Depois eu te digo`). Os
+		// toques do momento não respondem a um pedido de gente — quem responde é por ONDE o
+		// consultor chama.
+		for (const fala of [
+			"Claro, vou te passar pra um consultor.\n\nPra ele já te chamar pelo nome e no seu WhatsApp: como você se chama e qual o seu número?",
+			"Pra esse caso, recomendo conversar direto com nosso consultor humano.",
+			"Já abri o caso pra nossa mesa. Um atendente humano assume por aqui.",
+		]) {
+			expect(rotulos(fala), fala).toEqual(["Pode me ligar", "Prefiro pelo WhatsApp"]);
+			expect(rotulos(fala), fala).not.toContain("Vamos direto às cartas");
+			expect(rotulos(fala), fala).not.toContain("Pode seguir");
+		}
+	});
+
+	it("pergunta aberta com 'ou' no fim não vira botão que repete a pergunta (visto ao vivo, 28/10)", () => {
+		const fala = "Qual dessas opções mais te interessa ou prefere alguma outra característica?";
+		const opcoes = rotulos(fala, { temCartaNaTela: true });
+		// os botões são respostas do cliente à oferta, não pedaços da pergunta do agente
+		expect(opcoes).toEqual(["Quero essa", "Ver outra opção", "Como funciona o lance?"]);
+		expect(opcoes.join(" ")).not.toMatch(/qual dessas|te interessa|outra característica/i);
+		// sem carta na tela, o fallback do momento — nunca o corte da pergunta
+		const semCarta = rotulos(fala);
+		expect(semCarta.join(" ")).not.toMatch(/qual dessas|te interessa|outra característica/i);
+	});
+
+	it("a pergunta EXATA do print 13: envio pelo WhatsApp se responde 'Pode mandar' / 'Prefiro ver aqui'", () => {
+		const fala = "Quer que eu te mande essas opções pelo WhatsApp para você ver com calma?";
+		for (const temCartaNaTela of [true, false]) {
+			expect(rotulos(fala, { temCartaNaTela }), String(temCartaNaTela)).toEqual([
+				"Pode mandar",
+				"Prefiro ver aqui",
+			]);
+		}
+	});
+
+	it("a alternativa de verdade continua sendo as duas escolhas (seguir × comparar)", () => {
+		expect(
+			rotulos("Quer seguir com essa, Kairo, ou prefere comparar outra opção?", {
+				temCartaNaTela: true,
+			}),
+		).toEqual(["Quero seguir com essa", "Comparar outra opção"]);
+	});
+
 	it("a lista escrita no texto continua ganhando do momento (o balão fica só com a pergunta)", () => {
 		const r = garantirChip({
 			texto: "Pra quando você quer?\n1) Agora\n2) Nos próximos meses",

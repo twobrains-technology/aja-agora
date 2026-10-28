@@ -319,6 +319,22 @@ const AVISO_DE_REENVIO_DE_DADO =
 const AVISO_DE_PROPOSTA_TRAVADA =
 	/proposta\s+(?:ainda\s+)?n[ãa]o\s+saiu|n[ãa]o\s+respondeu\s+agora|problema\s+ao\s+falar\s+com\s+a\s+administradora|administradora\s+n[ãa]o\s+respondeu/i;
 
+/**
+ * O TURNO DE TRANSFERÊNCIA. Quem acabou de pedir um humano não quer `Vamos direto às cartas`
+ * nem a saída do nome: os toques do momento não respondem a nada ali (print 16, reprovado pelo
+ * líder em 27/10). O que responde é por ONDE o consultor chama — ligação ou WhatsApp.
+ */
+const AVISO_DE_HANDOFF =
+	/consultor(?:a)?\b|atendente|atendimento\s+humano|nossa\s+mesa|especialista\b|te\s+passar\s+pra\s+(?:um|uma)/i;
+const RESPOSTAS_DO_HANDOFF = ["Pode me ligar", "Prefiro pelo WhatsApp"];
+
+/** O turno é de transferência? Exportado porque a FAMÍLIA vence a pergunta de nome: o balão
+ * "…como você se chama e qual o seu número?" termina em pergunta de nome e recebia as saídas de
+ * abertura (`Vamos direto às cartas`), que é exatamente o que o líder reprovou no print 16. */
+export function ehTurnoDeHandoff(texto: string | null | undefined): boolean {
+	return AVISO_DE_HANDOFF.test(texto ?? "");
+}
+
 const RESPOSTAS_DE_REENVIO = ["Mando de novo", "Vou conferir aqui"];
 const RESPOSTAS_DE_RETOMADA = ["Tentar de novo", "Ver outra carta"];
 
@@ -341,6 +357,13 @@ function alternativasDaPergunta(frase: string): string[] {
 		.replace(/,\s*,/g, ",")
 		.replace(/[?!.]+\s*$/, "")
 		.trim();
+	// PERGUNTA ABERTA NÃO É MENU. "Qual dessas opções mais te interessa ou prefere alguma outra
+	// característica?" abre com pronome interrogativo: o lado esquerdo é a PRÓPRIA PERGUNTA, e virou
+	// o botão `Qual dessas opções mais te interessa` (visto ao vivo em 28/10 — "parece que o
+	// usuário está falando"). Quem responde é o momento (a oferta na tela), não o corte no "ou".
+	if (/^\s*(?:qual|quais|quanto|quantos|quantas|como|quando|onde|o\s+que|por\s+que|porque)\b/i.test(corpo)) {
+		return [];
+	}
 	const partes = corpo.split(/\s+ou\s+/i);
 	if (partes.length !== 2) return [];
 	const [lado1 = "", lado2 = ""] = partes;
@@ -450,6 +473,11 @@ function decidir(texto: string, momento: MomentoDaConversa): SugestaoDoTurno {
 		return { opcoes: RESPOSTAS_DE_RETOMADA, tipoDoCard: "quick_reply" };
 	}
 
+	// (a01) TURNO DE TRANSFERÊNCIA — antes de qualquer toque do momento.
+	if (AVISO_DE_HANDOFF.test(texto)) {
+		return { opcoes: RESPOSTAS_DO_HANDOFF, tipoDoCard: "quick_reply" };
+	}
+
 	// (e0) PEDIDO DIRETO SEM INTERROGAÇÃO. "Para gerar a proposta preciso do seu CPF e do seu
 	// celular com DDD." não tem "?", mas pede um dado — e os próximos passos genéricos
 	// ("Quero essa") não respondem a isso (visto no turno da contratação, 27/10). O pedido pode
@@ -510,7 +538,7 @@ function decidir(texto: string, momento: MomentoDaConversa): SugestaoDoTurno {
 	// os casos de dado ("me manda o CPF" com "cartas" na mesma fala).
 	if (
 		momento.temCartaNaTela &&
-		/qual\s+(?:dessas\s+)?carr?tas?|seguir\s+com\s+(?:ela|essa|essa\s+mesma)|comparar\s+outra|quer\s+essa/i.test(
+		/qual\s+(?:dessas\s+)?(?:carr?tas?|op[çc][õo]es|op[çc][ãa]o)|seguir\s+com\s+(?:ela|essa|essa\s+mesma)|comparar\s+outra|quer\s+essa/i.test(
 			texto,
 		)
 	) {
@@ -550,6 +578,7 @@ export function sugestaoDoTurno(
 	// A PERGUNTA de nome, não a menção: "preciso do seu CPF e do seu celular… no seu nome"
 	// caía no `\bseu nome\b` e devolvia as saídas do nome numa pergunta de CPF (visto no print
 	// de 27/10, turno da contratação). Só vale quando a ÚLTIMA frase é a pergunta do nome.
+	if (ehTurnoDeHandoff(texto)) return { opcoes: RESPOSTAS_DO_HANDOFF, tipoDoCard: "quick_reply" };
 	if (ultimaPerguntaDeNome(texto)) return { opcoes: SAIDAS_DO_NOME, tipoDoCard: "quick_reply" };
 	const escolhida = decidir(texto, momento);
 	return { ...escolhida, opcoes: semEco(escolhida.opcoes, momento.falaDoCliente) };
