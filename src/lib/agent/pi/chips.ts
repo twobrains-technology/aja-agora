@@ -41,7 +41,7 @@
 //    contra as cartas reais em `cards-livres.ts` (fail-closed da main).
 
 import type { Category } from "@/lib/agent/personas";
-import { balaoPedeResposta, sugestaoDoTurno } from "@/lib/agent/pi/sugestoes";
+import { balaoPedeResposta, frasesDe, sugestaoDoTurno } from "@/lib/agent/pi/sugestoes";
 import { CREDIT_BOUNDS } from "@/lib/agent/qualify-config";
 import type { ValuePickerPayload } from "@/lib/chat/types";
 
@@ -281,7 +281,15 @@ export function chipDoTurno(args: {
 
 	// O BALÃO DO PEDIDO: o último, de trás pra frente, que pergunta ou pede um dado. Sem nenhum,
 	// o turno não pede resposta — e aí o último balão é o que ganha o próximo passo do momento.
-	const pedido = [...baloes].reverse().find(balaoPedeResposta) ?? ultimo;
+	//
+	// A busca é feita nas FRASES de cada balão: num balão único com o pedido numa frase e o fecho
+	// noutra ("Pode me mandar o CPF e o celular escritos aqui mesmo? Se for a Canopus de 96 meses
+	// que eu recomendei, eu já gero a proposta no seu nome.") quem pede é a PRIMEIRA frase — o
+	// fecho afirmativo não pode decidir o card. O que segue para a derivação é o BALÃO da frase que
+	// pede, e não a frase solta: a lista marcada (`listaDeOpcoes`) e o `toqueBloqueado` leem o
+	// balão inteiro, e o `sugestoes.ts` refaz a varredura frase a frase dentro dele.
+	const pedido =
+		[...baloes].reverse().find((balao) => frasesDe(balao).some(balaoPedeResposta)) ?? ultimo;
 
 	// O card que COLETA o dado pedido é a resposta do pedido — vale para o balão de onde o toque
 	// sai, não para o texto solto do fim do turno.

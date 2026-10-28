@@ -258,7 +258,13 @@ async function writeAndSaveText(
  *
  * O artifact sai no stream (a pessoa vê o botão no turno em que ele acontece) e é PERSISTIDO na
  * mensagem — mesmo par de `pipeAndSaveClosingItems`: sem a linha no banco o atalho sumiria no
- * reload, e sem o stream ele só apareceria depois de recarregar a página. */
+ * reload, e sem o stream ele só apareceria depois de recarregar a página.
+ *
+ * TODO aviso ao cliente daqui passa por esta função (auditoria do sha `e2461a52`: cinco avisos,
+ * entre eles o "me diz que quer seguir?" de 28/10 01:58:27Z, saíam por `writeAndSaveText` puro). O
+ * toque NÃO duplica: cada aviso destes escreve e dá `return` no mesmo passo do handler, então o
+ * turno não chega aqui com um `quick_reply`/`value_picker`/`topic_picker` já emitido — a trava de
+ * card único do caminho do agente (`garantirChip`/`manterUmaPergunta`) continua sendo a de lá. */
 async function writeAndSaveTextComAviso(
 	writer: UIMessageStreamWriter<AjaUIMessage>,
 	conversationId: string,
@@ -769,7 +775,7 @@ export async function POST(req: NextRequest) {
 								if (body.action?.kind === "telefone_desbloqueio") {
 									const celularDigits = normalizePhoneBR(body.action.celular ?? "") ?? "";
 									if (celularDigits.length < 10) {
-										await writeAndSaveText(
+										await writeAndSaveTextComAviso(
 											writer,
 											conversationId,
 											meta.currentPersona ?? null,
@@ -851,7 +857,7 @@ export async function POST(req: NextRequest) {
 											`Show${greetName}! Anotei seu WhatsApp. Se algo acontecer aqui, te chamo por lá. ✅`,
 										);
 									} else {
-										await writeAndSaveText(
+										await writeAndSaveTextComAviso(
 											writer,
 											conversationId,
 											meta.currentPersona ?? null,
@@ -1203,7 +1209,7 @@ export async function POST(req: NextRequest) {
 											},
 										});
 									} catch {
-										await writeAndSaveText(
+										await writeAndSaveTextComAviso(
 											writer,
 											conversationId,
 											meta.currentPersona ?? null,
@@ -1238,7 +1244,7 @@ export async function POST(req: NextRequest) {
 									// distância). Achado ao vivo: o Fable fechou uma proposta
 									// atirando contract-submit numa conversa que nunca viu o form.
 									if (!formularioDeContratoFoiEnviado(freshMeta)) {
-										await writeAndSaveText(
+										await writeAndSaveTextComAviso(
 											writer,
 											conversationId,
 											meta.currentPersona ?? null,
@@ -1291,7 +1297,7 @@ export async function POST(req: NextRequest) {
 												freshMeta.recommendedAdministradora,
 										)
 									) {
-										await writeAndSaveText(
+										await writeAndSaveTextComAviso(
 											writer,
 											conversationId,
 											meta.currentPersona ?? null,
