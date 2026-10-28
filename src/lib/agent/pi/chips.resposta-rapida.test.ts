@@ -264,6 +264,22 @@ describe("(b) as exceções são deliberadas", () => {
 		}
 	});
 
+	it("turno de transferência tem toque de transferência, não o do momento", () => {
+		// Print 16 reprovado pelo líder (27/10): cliente pediu humano e o agente perguntou o
+		// nome com os toques de abertura (`Vamos direto às cartas` / `Depois eu te digo`). Os
+		// toques do momento não respondem a um pedido de gente — quem responde é por ONDE o
+		// consultor chama.
+		for (const fala of [
+			"Claro, vou te passar pra um consultor.\n\nPra ele já te chamar pelo nome e no seu WhatsApp: como você se chama e qual o seu número?",
+			"Pra esse caso, recomendo conversar direto com nosso consultor humano.",
+			"Já abri o caso pra nossa mesa. Um atendente humano assume por aqui.",
+		]) {
+			expect(rotulos(fala), fala).toEqual(["Pode me ligar", "Prefiro pelo WhatsApp"]);
+			expect(rotulos(fala), fala).not.toContain("Vamos direto às cartas");
+			expect(rotulos(fala), fala).not.toContain("Pode seguir");
+		}
+	});
+
 	it("a lista escrita no texto continua ganhando do momento (o balão fica só com a pergunta)", () => {
 		const r = garantirChip({
 			texto: "Pra quando você quer?\n1) Agora\n2) Nos próximos meses",

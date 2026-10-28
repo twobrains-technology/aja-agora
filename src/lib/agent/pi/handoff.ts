@@ -58,12 +58,30 @@ export function linhaFinalDoHandoff(args: {
 	casoAberto: boolean;
 }): string {
 	// Sem lead não há caso na mesa: a linha honesta é a que pede o nome, não "abri o caso".
+	// Ordem do líder (27/10, print 16 reprovado): quando o cliente PEDE um humano, o balão
+	// primeiro ACEITA a transferência e só então pede o que falta para o consultor chamar —
+	// nome e WhatsApp. "Você já me disse seu nome?" era pergunta estranha (o agente sabe que
+	// não disse) e ignorava o pedido, que é o que a pessoa acabou de fazer.
 	if (!args.casoAberto) {
-		const pergunta = args.texto
+		const doModelo = args.texto
 			.split(/\n+/)
 			.map((l) => l.trim())
 			.find((l) => /[?!]$/.test(l));
-		return pergunta ?? "Qual é o seu nome, pra eu abrir o caso na nossa mesa?";
+		if (args.clientePediu) {
+			const nome = args.nome?.trim();
+			const abertura = nome
+				? `Claro, ${nome}! Vou te passar pra um consultor.`
+				: "Claro, vou te passar pra um consultor.";
+			const jaPedeOsDois =
+				doModelo !== undefined &&
+				/nome|chama/i.test(doModelo) &&
+				/n[úu]mero|whats|celular|telefone/i.test(doModelo);
+			const falta = jaPedeOsDois
+				? (doModelo as string)
+				: "Pra ele já te chamar pelo nome e no seu WhatsApp: como você se chama e qual o seu número?";
+			return `${abertura}\n\n${falta}`;
+		}
+		return doModelo ?? "Qual é o seu nome, pra eu abrir o caso na nossa mesa?";
 	}
 	const linha = linhaDeHandoff({ nome: args.nome, clientePediu: args.clientePediu });
 	const pergunta = args.texto

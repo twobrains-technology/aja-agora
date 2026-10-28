@@ -94,9 +94,29 @@ describe("o pedido de humano honra o pedido, sem promessa", () => {
 			clientePediu: true,
 			casoAberto: false,
 		});
-		expect(semNome).toBe("Qual é o seu nome?");
-		expect(semNome).toContain("Qual é o seu nome?");
+		// Ordem do líder (27/10, print 16): o pedido de humano é ACEITO primeiro e o balão pede
+		// o que falta para o consultor chamar — nome e WhatsApp. "Você já me disse seu nome?"
+		// saiu de cena: o agente sabe que o cliente não disse, e isso ignorava o pedido dele.
+		expect(semNome).toContain("vou te passar pra um consultor");
+		expect(semNome).toContain("como você se chama");
+		expect(semNome).toContain("seu número");
+		expect(semNome).not.toContain("já me disse");
 		expect(semPromessa(semNome)).toBe(true);
+		// A aceitação vem ANTES do pedido do dado — nesta ordem.
+		expect(semNome.indexOf("consultor")).toBeLessThan(semNome.indexOf("como você se chama"));
+	});
+
+	it("com o nome já dito, a transferência o chama pelo nome e pede só o que falta", () => {
+		const balao = linhaFinalDoHandoff({
+			texto: "Vou te passar para um atendente.",
+			nome: "Marcos",
+			clientePediu: true,
+			casoAberto: false,
+		});
+		expect(balao).toContain("Claro, Marcos!");
+		expect(balao).toContain("pra um consultor");
+		expect(balao).toContain("nome e no seu WhatsApp");
+		expect(semPromessa(balao)).toBe(true);
 	});
 
 	it("`falar_com_humano` abre o caso, e o caso marca handed_off", () => {
