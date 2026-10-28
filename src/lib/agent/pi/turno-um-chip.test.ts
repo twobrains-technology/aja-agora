@@ -193,7 +193,9 @@ describe("(print 08) a pergunta final é a que ganha o toque", () => {
 		expect(chip).toBeGreaterThan(pergunta);
 		// A pergunta "qual dessas cartas você quer seguir?" chega COM toque do lado dela: antes o
 		// único card do turno respondia ao balão anterior (lance/entrada) e a pergunta ficava órfã.
-		expect(chips(turno.eventos)[0]).toEqual(["Pode seguir", "Tenho uma dúvida"]);
+		// E os toques são os da PERGUNTA: escolher entre as cartas da tela (ordem do líder 18:08,
+		// item 3) — "Pode seguir" era resposta genérica para uma escolha entre cartas.
+		expect(chips(turno.eventos)[0]).toEqual(["Quero essa", "Ver outra opção", "Como funciona o lance?"]);
 	});
 });
 

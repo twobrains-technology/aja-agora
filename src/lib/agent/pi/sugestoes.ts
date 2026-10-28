@@ -305,6 +305,19 @@ function ladoDaAlternativa(lado: string, primeiro: boolean): string | null {
  * lista tem o card do dado) e lado com vírgula — a vírgula é sinal de PERGUNTA, não de menu,
  * a mesma régua do `detectarOpcoes` de `chips.ts`.
  */
+/**
+ * AVISOS QUE PEDEM RETOMADA, não oferta. O modelo escreve estes com palavras dele ("não chegou
+ * certinho", "não respondeu agora"), então o classificador de dado não os pegava e o cliente
+ * recebia `Quero essa` depois de um pedido de reenvio (medido na R22: 2 turnos).
+ */
+const AVISO_DE_REENVIO_DE_DADO =
+	/(?:cpf|celular|telefone)\b[^?.]{0,60}(?:n[ãa]o\s+chegou|veio\s+uma\s+marca[çc][ãa]o|n[ãa]o\s+confere|est[áa]\s+incompleto|faltou\s+(?:algum\s+)?d[íi]gito)|(?:n[ãa]o\s+chegou|veio\s+uma\s+marca[çc][ãa]o|n[ãa]o\s+confere)[^?.]{0,50}(?:cpf|celular|telefone)/i;
+const AVISO_DE_PROPOSTA_TRAVADA =
+	/proposta\s+(?:ainda\s+)?n[ãa]o\s+saiu|n[ãa]o\s+respondeu\s+agora|problema\s+ao\s+falar\s+com\s+a\s+administradora|administradora\s+n[ãa]o\s+respondeu/i;
+
+const RESPOSTAS_DE_REENVIO = ["Mando de novo", "Vou conferir aqui"];
+const RESPOSTAS_DE_RETOMADA = ["Tentar de novo", "Ver outra carta"];
+
 /** Só a pergunta sobre TER reserva/valor guardado para o lance passa na frente do menu:
  * "Quer seguir com o lance de 20 mil?" continua sendo sim/não. */
 const RESERVA_PARA_LANCE =
@@ -425,6 +438,14 @@ function decidir(texto: string, momento: MomentoDaConversa): SugestaoDoTurno {
 	const alvo = ultimaFrase.includes("?") ? ultimaFrase : texto;
 	const ehPergunta = texto.includes("?");
 
+	// (a00) AVISO QUE PEDE RETOMADA — reenviar o dado, ou tentar a proposta de novo.
+	if (AVISO_DE_REENVIO_DE_DADO.test(texto)) {
+		return { opcoes: RESPOSTAS_DE_REENVIO, tipoDoCard: "quick_reply" };
+	}
+	if (AVISO_DE_PROPOSTA_TRAVADA.test(texto)) {
+		return { opcoes: RESPOSTAS_DE_RETOMADA, tipoDoCard: "quick_reply" };
+	}
+
 	// (e0) PEDIDO DIRETO SEM INTERROGAÇÃO. "Para gerar a proposta preciso do seu CPF e do seu
 	// celular com DDD." não tem "?", mas pede um dado — e os próximos passos genéricos
 	// ("Quero essa") não respondem a isso (visto no turno da contratação, 27/10). O pedido pode
@@ -478,6 +499,19 @@ function decidir(texto: string, momento: MomentoDaConversa): SugestaoDoTurno {
 	// pra frente.
 	const dado = dadoNoTurno(frases, momento, pedeODado);
 	if (dado) return dado;
+
+	// (d0) ESCOLHER ENTRE AS CARTAS DA TELA — "qual dessas cartas você quer seguir?" não se
+	// responde "Pode seguir": a resposta é escolher uma (print 08, ordem de 18:08 item 3).
+	// Estreito de propósito: só quando o pedido é ESCOLHER (verbo de escolha), senão roubava
+	// os casos de dado ("me manda o CPF" com "cartas" na mesma fala).
+	if (
+		momento.temCartaNaTela &&
+		/qual\s+(?:dessas\s+)?carr?tas?|seguir\s+com\s+(?:ela|essa|essa\s+mesma)|comparar\s+outra|quer\s+essa/i.test(
+			texto,
+		)
+	) {
+		return { opcoes: DEPOIS_DA_OFERTA, tipoDoCard: "quick_reply" };
+	}
 
 	// (d) PERGUNTA ABERTA COM CARTA NA TELA — a decisão é sobre o que ele está vendo.
 	if (ultimaFrase.includes("?") && momento.temCartaNaTela) {
