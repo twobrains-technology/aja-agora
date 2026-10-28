@@ -264,6 +264,28 @@ describe("(b) as exceções são deliberadas", () => {
 		}
 	});
 
+	it("pergunta do nome com carta na mesa: sem toque de abertura, toque que responde (finais 02 e 03)", () => {
+		// final-02: depois do card de CPF/celular o agente perguntou o nome com "Vamos direto às
+		// cartas" / "Depois eu te digo". final-03: a pergunta do nome vinha seguida de uma frase
+		// afirmativa e o toque saía genérico ("Pode seguir" / "Tenho uma dúvida").
+		for (const fala of [
+			"Boa escolha, fechou! Pra gerar a proposta no seu nome, preciso do seu CPF e do seu celular com DDD.\n\nE como você se chama?",
+			"Tentei duas vezes e a administradora não respondeu.\n\nQuer que eu tente de novo daqui a pouco?\n\nAh, e como você se chama? Assim eu já te chamo pelo nome.",
+		]) {
+			expect(rotulos(fala, { temCartaNaTela: true }), fala).toEqual([
+				"Prefiro não dizer",
+				"Depois eu te digo",
+			]);
+			expect(rotulos(fala, { temCartaNaTela: true }), fala).not.toContain("Vamos direto às cartas");
+			expect(rotulos(fala, { temCartaNaTela: true }), fala).not.toContain("Pode seguir");
+		}
+		// na abertura (sem carta) continuam as saídas da abertura
+		expect(rotulos("Antes de tudo, como você se chama?")).toEqual([
+			"Vamos direto às cartas",
+			"Depois eu te digo",
+		]);
+	});
+
 	it("turno de transferência tem toque de transferência, não o do momento", () => {
 		// Print 16 reprovado pelo líder (27/10): cliente pediu humano e o agente perguntou o
 		// nome com os toques de abertura (`Vamos direto às cartas` / `Depois eu te digo`). Os
@@ -541,15 +563,20 @@ describe("(auditoria 28/10) o pedido de contato e o de nome no turno de handoff"
 	});
 
 	it("'Se puder confirmar seu CPF e celular…' pede o CPF do cliente", () => {
-		const r = sugestaoDoTurno("Se puder confirmar seu CPF e celular, já gero a proposta pra você!", {
-			temCartaNaTela: true,
-			categoriaDoBem: "auto",
-		});
+		const r = sugestaoDoTurno(
+			"Se puder confirmar seu CPF e celular, já gero a proposta pra você!",
+			{
+				temCartaNaTela: true,
+				categoriaDoBem: "auto",
+			},
+		);
 		expect(r.opcoes.join(" ").toLowerCase()).toContain("cpf");
 	});
 
 	it("mas 'me mostra os números do card' continua sendo o par de números", () => {
-		const r = sugestaoDoTurno("Quer que eu te mostre os números do card?", { temCartaNaTela: true });
+		const r = sugestaoDoTurno("Quer que eu te mostre os números do card?", {
+			temCartaNaTela: true,
+		});
 		expect(r.opcoes).toEqual(["Quero ver os números", "Agora não"]);
 	});
 });

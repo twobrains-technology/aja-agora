@@ -129,7 +129,6 @@ export function ContractForm({ payload }: { payload: ContractFormPayload }) {
 				</>
 			)}
 
-
 			<Button
 				type="button"
 				className="w-full h-[46px] min-h-[44px] gap-2 rounded-full bg-primary text-sm font-semibold text-primary-foreground hover:brightness-105"

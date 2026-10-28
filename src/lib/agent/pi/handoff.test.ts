@@ -5,7 +5,6 @@ import { db } from "@/db";
 import { conversations, leads, mesaHandoffs } from "@/db/schema";
 import type { AnunciarCasoNaMesaArgs } from "@/lib/mesa/dispatch";
 import {
-	RE_DE_PROMESSA,
 	abrirCasoNaMesa,
 	clienteVoltou,
 	falaDaRetomadaDaTransferencia,
@@ -13,6 +12,7 @@ import {
 	linhaFinalDoHandoff,
 	nomeDitoNaConversa,
 	nomeNaFala,
+	RE_DE_PROMESSA,
 	semPromessa,
 } from "./handoff";
 

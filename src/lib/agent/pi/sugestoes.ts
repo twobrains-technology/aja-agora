@@ -81,6 +81,10 @@ export type SugestaoDoTurno = { opcoes: string[]; tipoDoCard: CardDaSugestao };
  * pode parar por causa dele. Duas saídas honestas, nenhuma convidando a recusar o dado. */
 const SAIDAS_DO_NOME = ["Vamos direto às cartas", "Depois eu te digo"];
 
+/** Fora da abertura (já há carta na mesa) "vamos direto às cartas" não cabe: as cartas já estão
+ * aí. Os toques ali respondem à pergunta do nome e nada mais (ordem do líder, 03:40). */
+const SAIDAS_DO_NOME_COM_CARTA = ["Prefiro não dizer", "Depois eu te digo"];
+
 const RESPOSTA_LIVRE =
 	/\b(?:seu|teu)\s+(?:primeiro\s+)?nome\b|\bcomo\s+(?:voc[êe]|vc|posso|eu\s+posso|devo)\s+(?:te\s+|lhe\s+)?(?:se\s+)?cham(?:a|ar|o|á-lo)\b|\bme\s+diz\s+(?:o\s+)?(?:seu\s+)?nome\b|\bqual\s+(?:é|e|eh)?\s*o\s+nome\b|\bposso\s+te\s+chamar\b/i;
 
@@ -361,7 +365,11 @@ function alternativasDaPergunta(frase: string): string[] {
 	// característica?" abre com pronome interrogativo: o lado esquerdo é a PRÓPRIA PERGUNTA, e virou
 	// o botão `Qual dessas opções mais te interessa` (visto ao vivo em 28/10 — "parece que o
 	// usuário está falando"). Quem responde é o momento (a oferta na tela), não o corte no "ou".
-	if (/^\s*(?:qual|quais|quanto|quantos|quantas|como|quando|onde|o\s+que|por\s+que|porque)\b/i.test(corpo)) {
+	if (
+		/^\s*(?:qual|quais|quanto|quantos|quantas|como|quando|onde|o\s+que|por\s+que|porque)\b/i.test(
+			corpo,
+		)
+	) {
 		return [];
 	}
 	const partes = corpo.split(/\s+ou\s+/i);
@@ -558,9 +566,10 @@ function decidir(texto: string, momento: MomentoDaConversa): SugestaoDoTurno {
  * Sem isso, "preciso do seu CPF e do seu celular… no seu nome" casava `\bseu nome\b` e devolvia
  * as saídas do nome numa pergunta de CPF (visto no turno da contratação, 27/10). */
 function ultimaPerguntaDeNome(texto: string): boolean {
-	const frases = frasesDe(texto);
-	const ultima = frases[frases.length - 1] ?? "";
-	return ultima.includes("?") && RESPOSTA_LIVRE.test(ultima);
+	// A última PERGUNTA do turno: "Ah, e como você se chama? Assim eu já te chamo pelo nome."
+	// termina em afirmação, mas quem espera resposta é a pergunta do nome (final-03, 03:40).
+	const ultima = [...frasesDe(texto)].reverse().find((f) => f.includes("?")) ?? "";
+	return RESPOSTA_LIVRE.test(ultima);
 }
 
 /**
@@ -579,7 +588,10 @@ export function sugestaoDoTurno(
 	// caía no `\bseu nome\b` e devolvia as saídas do nome numa pergunta de CPF (visto no print
 	// de 27/10, turno da contratação). Só vale quando a ÚLTIMA frase é a pergunta do nome.
 	if (ehTurnoDeHandoff(texto)) return { opcoes: RESPOSTAS_DO_HANDOFF, tipoDoCard: "quick_reply" };
-	if (ultimaPerguntaDeNome(texto)) return { opcoes: SAIDAS_DO_NOME, tipoDoCard: "quick_reply" };
+	if (ultimaPerguntaDeNome(texto)) {
+		const opcoes = momento.temCartaNaTela ? SAIDAS_DO_NOME_COM_CARTA : SAIDAS_DO_NOME;
+		return { opcoes, tipoDoCard: "quick_reply" };
+	}
 	const escolhida = decidir(texto, momento);
 	return { ...escolhida, opcoes: semEco(escolhida.opcoes, momento.falaDoCliente) };
 }

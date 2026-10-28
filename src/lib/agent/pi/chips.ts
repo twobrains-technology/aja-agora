@@ -168,7 +168,11 @@ function detectarOpcoes(texto: string): { opcoes: string[]; textoLimpo: string }
 	// PERGUNTA ABERTA NÃO É MENU: "Qual dessas opções mais te interessa ou prefere alguma outra
 	// característica?" abre com pronome interrogativo e SEM introdução de dois-pontos — o lado
 	// esquerdo é a própria pergunta, e virava o botão (visto ao vivo, 28/10).
-	if (/^\s*(?:qual|quais|quanto|quantos|quantas|como|quando|onde|o\s+que|por\s+que|porque)\b/i.test(corpo)) {
+	if (
+		/^\s*(?:qual|quais|quanto|quantos|quantas|como|quando|onde|o\s+que|por\s+que|porque)\b/i.test(
+			corpo,
+		)
+	) {
 		return { opcoes: [], textoLimpo: texto };
 	}
 	const opcoesDaFrase = corpo

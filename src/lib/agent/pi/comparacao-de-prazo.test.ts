@@ -119,8 +119,7 @@ describe("comparação de PARCELA com o número da mesa", () => {
 	});
 
 	it("parcela maior dita sobre a carta de parcela maior passa intacta", () => {
-		const dito =
-			"A da ÂNCORA com 94 meses tem parcela maior que a outra da ÂNCORA.";
+		const dito = "A da ÂNCORA com 94 meses tem parcela maior que a outra da ÂNCORA.";
 		expect(corrigirComparacaoDeParcela(dito, MESA)).toBe(dito);
 	});
 
@@ -196,7 +195,9 @@ describe("prazo inventado: não existe carta com esse número na mesa", () => {
 describe("'tem N meses' dito da carta: o número é o da carta que a frase identifica", () => {
 	it("a fala medida: a ÂNCORA de R$ 1.099,62 tem 114 meses, não 100", () => {
 		const dito = "A da ÂNCORA tem 100 meses e a parcela é de R$ 1.099,62.";
-		expect(semPrazoInventado(dito, MESA)).toBe("A da ÂNCORA tem 114 meses e a parcela é de R$ 1.099,62.");
+		expect(semPrazoInventado(dito, MESA)).toBe(
+			"A da ÂNCORA tem 114 meses e a parcela é de R$ 1.099,62.",
+		);
 	});
 
 	it("sem como identificar a carta, vira 'o prazo da tabela' (verdadeiro e sem número)", () => {
@@ -206,7 +207,9 @@ describe("'tem N meses' dito da carta: o número é o da carta que a frase ident
 	});
 
 	it("administradora com UMA carta só na mesa: o número é o dela", () => {
-		const umaSo = { cartasDaMesa: [{ administradora: "ÂNCORA", parcela: 1099.62, prazoMeses: 114 }] };
+		const umaSo = {
+			cartasDaMesa: [{ administradora: "ÂNCORA", parcela: 1099.62, prazoMeses: 114 }],
+		};
 		expect(semPrazoInventado("A da ÂNCORA tem 100 meses de prazo.", umaSo)).toBe(
 			"A da ÂNCORA tem 114 meses de prazo.",
 		);

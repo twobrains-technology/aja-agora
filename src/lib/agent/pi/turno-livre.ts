@@ -21,9 +21,8 @@ import type { Category } from "@/lib/agent/personas";
 import { picarEmBaloes } from "@/lib/agent/pi/baloes";
 import { type MetaDaEmissao, TIPOS_DE_ESCOLHA } from "@/lib/agent/pi/cards-livres";
 import { chipDoTurno, garantirChip } from "@/lib/agent/pi/chips";
-import { executarBeat } from "@/lib/agent/pi/converse";
 import { corrigirComparacoes } from "@/lib/agent/pi/comparacao-de-prazo";
-import { ehTurnoDeHandoff } from "@/lib/agent/pi/sugestoes";
+import { executarBeat } from "@/lib/agent/pi/converse";
 import {
 	clientePedeHumano,
 	clienteVoltou,
@@ -35,6 +34,7 @@ import { criarNarracaoDoTurno } from "@/lib/agent/pi/narracao";
 import { persistirTurnoLivre } from "@/lib/agent/pi/persist-livre";
 import { custoDoTurnoCentsExatos } from "@/lib/agent/pi/precos";
 import { modeloDoAgente } from "@/lib/agent/pi/sessao";
+import { ehTurnoDeHandoff } from "@/lib/agent/pi/sugestoes";
 import { montarSystemDoVendedor } from "@/lib/agent/pi/system-do-vendedor";
 import { type PiToolDefinition, toPiTools } from "@/lib/agent/pi/tools";
 import {

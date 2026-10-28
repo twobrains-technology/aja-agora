@@ -151,7 +151,6 @@ function semComparativo(frase: string): string {
 		.trim();
 }
 
-
 // ---------------------------------------------------------------------------------------------
 // PARCELA — a mesma régua. Medido na conversa de teste de 28/10: depois de apontar a ÂNCORA de 94
 // meses (parcela R$ 1.454,51) o agente disse que ela tinha "parcela menor que a outra da ÂNCORA"

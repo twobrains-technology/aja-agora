@@ -200,7 +200,10 @@ export function removerLinhasDePlano(text: string): string {
 const HEX_DO_ID = "(?:[0-9a-f]{24}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})";
 const ETIQUETA_DE_ID = "(?:\\bid\\b[ \\t]*:?[ \\t]*)?";
 /** "(id: 6abf…)" entre parênteses. */
-const ID_ENTRE_PARENTESES = new RegExp(`[ \\t]*\\([ \\t]*${ETIQUETA_DE_ID}${HEX_DO_ID}[ \\t]*\\)`, "gi");
+const ID_ENTRE_PARENTESES = new RegExp(
+	`[ \\t]*\\([ \\t]*${ETIQUETA_DE_ID}${HEX_DO_ID}[ \\t]*\\)`,
+	"gi",
+);
 /** ", id 6abf…," — aposto entre vírgulas: leva a vírgula de abertura junto. */
 const ID_EM_APOSTO = new RegExp(`[ \\t]*,[ \\t]*${ETIQUETA_DE_ID}${HEX_DO_ID}[ \\t]*(?=,)`, "gi");
 /** O id solto, com a etiqueta "id" se houver. */

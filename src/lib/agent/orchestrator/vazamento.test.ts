@@ -337,8 +337,7 @@ describe("plano interno do modelo não chega ao cliente", () => {
 describe("o id interno da carta não vai para a fala (conversa de teste, 28/10)", () => {
 	it("a fala medida: o id e a etiqueta saem, o resto fica", async () => {
 		const { passaFinal } = await import("./vazamento");
-		const medida =
-			"A de menor prazo é a da ÂNCORA, id 6abfaec94c0ff2a8453a73a0, com 94 meses.";
+		const medida = "A de menor prazo é a da ÂNCORA, id 6abfaec94c0ff2a8453a73a0, com 94 meses.";
 		expect(passaFinal(medida)).toBe("A de menor prazo é a da ÂNCORA, com 94 meses.");
 	});
 

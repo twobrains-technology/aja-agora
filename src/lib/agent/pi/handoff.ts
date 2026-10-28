@@ -102,7 +102,10 @@ export function clienteVoltou(texto: string | null | undefined): boolean {
 	const t = (texto ?? "").trim();
 	if (!t) return false;
 	// "não voltei a trabalhar", "não estou de volta" não é volta: a negação sai antes do teste.
-	const semNegacao = t.replace(/\bn[ãa]o\s+(?:voltei|estou\s+de\s+volta|t[ôo]\s+de\s+volta|retomei|voltando)/gi, " ");
+	const semNegacao = t.replace(
+		/\bn[ãa]o\s+(?:voltei|estou\s+de\s+volta|t[ôo]\s+de\s+volta|retomei|voltando)/gi,
+		" ",
+	);
 	return /(?:^|[^a-zà-ÿ])(?:voltei|estou\s+de\s+volta|t[ôo]\s+de\s+volta|retomei|voltando|de\s+volta)/i.test(
 		semNegacao,
 	);
@@ -115,7 +118,8 @@ export function clienteVoltou(texto: string | null | undefined): boolean {
  */
 export function falaDaRetomadaDaTransferencia(nome: string | null): string {
 	const quem = nome?.trim();
-	if (quem) return `Que bom, ${quem}, você voltou! Já estou chamando o consultor — me passa seu WhatsApp?`;
+	if (quem)
+		return `Que bom, ${quem}, você voltou! Já estou chamando o consultor — me passa seu WhatsApp?`;
 	return "Que bom, você voltou! Me passa seu nome e seu WhatsApp que eu já chamo o consultor.";
 }
 
