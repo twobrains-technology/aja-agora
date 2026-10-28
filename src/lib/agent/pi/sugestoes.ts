@@ -287,9 +287,23 @@ function ladoDaAlternativa(lado: string, primeiro: boolean): string | null {
  * lista tem o card do dado) e lado com vírgula — a vírgula é sinal de PERGUNTA, não de menu,
  * a mesma régua do `detectarOpcoes` de `chips.ts`.
  */
+/** Só a pergunta sobre TER reserva/valor guardado para o lance passa na frente do menu:
+ * "Quer seguir com o lance de 20 mil?" continua sendo sim/não. */
+const RESERVA_PARA_LANCE =
+	/\breserva\b|\bvalor\s+guardado\b|\bguardad[oa]s?\b|\bseparad[oa]s?\b|\bquanto\s+(?:voc[êe]|vc)\s+tem\b/i;
+
 function alternativasDaPergunta(frase: string): string[] {
 	const corpo = frase
+		// O VOCATIVO SAI ANTES DE PARTIR. "Quer seguir com essa, Kairo, ou prefere comparar
+		// outra opção?" é escolha entre dois caminhos — a vírgula era do nome do cliente, não
+		// sinal de pergunta, e derrubava o ramo inteiro (medido no print
+		// `.orientacao/prints-ux/12-conversa-picada-depois.png`: o toque saiu `Quero ver os
+		// números` no lugar de `Quero seguir com essa`).
+		.replace(/(?:^|,\s*)([A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'-]+)(?=\s*,)/gu, "")
 		.replace(/\([^)]*\)/g, "")
+		// Sobra a vírgula do vocativo ("com essa, ou prefere…") — ela também não é menu.
+		.replace(/,\s*(?=ou\b)/i, " ")
+		.replace(/,\s*,/g, ",")
 		.replace(/[?!.]+\s*$/, "")
 		.trim();
 	const partes = corpo.split(/\s+ou\s+/i);
@@ -350,6 +364,16 @@ function decidir(texto: string, momento: MomentoDaConversa): SugestaoDoTurno {
 			opcoes: momento.temCartaNaTela ? PROXIMOS_COM_CARTA : PROXIMOS_SEM_CARTA,
 			tipoDoCard: "quick_reply",
 		};
+	}
+
+	// (a0) O LANCE PRIMEIRO. "Você tem alguma reserva guardada para dar lance, ou prefere usar só
+	// o embutido?" TEM um "ou", mas a resposta do cliente é sobre o LANCE ("Tenho pouco"), não
+	// sobre o menu — a alternativa genérica devolveria "Quero reserva guardada", que ninguém
+	// escreve. Só o lance passa na frente: parcela, valor e tipo de bem ficam no ramo do dado
+	// DEPOIS do menu, senão "prefere uma parcela menor ou um prazo mais curto?" viraria faixa.
+	if (ultimaFrase.includes("?") && RESERVA_PARA_LANCE.test(alvo)) {
+		const doLance = dadoPedido(alvo, momento);
+		if (doLance) return doLance;
 	}
 
 	// (a) ALTERNATIVA EXPLÍCITA — a pergunta oferece dois caminhos e a resposta é escolher um.

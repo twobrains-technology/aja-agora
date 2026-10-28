@@ -323,3 +323,17 @@ describe("(c) a ORDEM das 17:15: o toque responde a ESTE turno, não ao tema", (
 		expect(fim).toContain("ctx.cards.push(chipDoTurno");
 	});
 });
+
+describe("(print 12) o vocativo não estraga a alternativa", () => {
+	it("'Quer seguir com essa, Kairo, ou prefere comparar outra opção?' vira seguir × comparar", () => {
+		const r = sugestaoDoTurno("Quer seguir com essa, Kairo, ou prefere comparar outra opção?", {
+			temCartaNaTela: true,
+			falaDoCliente: "quero um carro de uns 90 mil",
+			categoriaDoBem: "auto",
+		});
+		const juntas = r.opcoes.join(" | ").toLowerCase();
+		expect(juntas).toContain("seguir");
+		expect(juntas).toContain("comparar");
+		expect(juntas).not.toContain("números");
+	});
+});
