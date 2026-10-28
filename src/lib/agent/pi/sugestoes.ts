@@ -85,7 +85,7 @@ const SAIDAS_DO_NOME = ["Vamos direto às cartas", "Depois eu te digo"];
  * aí. Os toques ali respondem à pergunta do nome e nada mais (ordem do líder, 03:40). */
 const SAIDAS_DO_NOME_COM_CARTA = ["Prefiro não dizer", "Depois eu te digo"];
 
-const RESPOSTA_LIVRE =
+export const RESPOSTA_LIVRE =
 	/\b(?:seu|teu)\s+(?:primeiro\s+)?nome\b|\bcomo\s+(?:voc[êe]|vc|posso|eu\s+posso|devo)\s+(?:te\s+|lhe\s+)?(?:se\s+)?cham(?:a|ar|o|á-lo)\b|\bme\s+diz\s+(?:o\s+)?(?:seu\s+)?nome\b|\bqual\s+(?:é|e|eh)?\s*o\s+nome\b|\bposso\s+te\s+chamar\b/i;
 
 /** A pergunta é do tipo sim/não — a resposta mais natural é "sim" ou a dúvida. O sujeito

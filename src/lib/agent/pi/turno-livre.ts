@@ -31,6 +31,12 @@ import {
 	RE_DE_PROMESSA,
 } from "@/lib/agent/pi/handoff";
 import { criarNarracaoDoTurno } from "@/lib/agent/pi/narracao";
+import {
+	pedeONome,
+	pedidosDeNomeNoHistorico,
+	podePedirONome,
+	semPerguntaDeNome,
+} from "@/lib/agent/pi/pergunta-de-nome";
 import { persistirTurnoLivre } from "@/lib/agent/pi/persist-livre";
 import { custoDoTurnoCentsExatos } from "@/lib/agent/pi/precos";
 import { modeloDoAgente } from "@/lib/agent/pi/sessao";
@@ -1252,6 +1258,12 @@ export function createRunTurnLivre(deps?: {
 			clienteVoltou(falaDoClienteDoTurno) &&
 			ehTurnoDeHandoff(ultimaFalaDoAgente);
 
+		// O NOME SE PEDE NA ABERTURA E, NO MÁXIMO, MAIS UMA VEZ (ordem do líder, 28/10 04:35). A conduta
+		// já dizia isso e o modelo perguntou três vezes na mesma conversa: a contagem é fato do
+		// histórico, então o servidor corta o pedido que passa do limite (`pergunta-de-nome.ts`).
+		const pedidosDeNomeAntes = pedidosDeNomeNoHistorico(historico);
+		let pedidosDeNomeNoTurno = 0;
+
 		// Fila de eventos: o beat empurra o texto AO VIVO, o generator drena.
 		const fila: TurnEvent[] = [];
 		let acordar: (() => void) | null = null;
@@ -1328,6 +1340,18 @@ export function createRunTurnLivre(deps?: {
 				return;
 			}
 			const ehHandoff = casoAberto || RE_DE_PROMESSA.test(pendente);
+			if (!ehHandoff && pedeONome(pendente)) {
+				const pode = podePedirONome({
+					nomeConhecido: Boolean(ctx.nomeDoCliente),
+					jaPedidos: pedidosDeNomeAntes + pedidosDeNomeNoTurno,
+				});
+				if (pode) {
+					pedidosDeNomeNoTurno++;
+				} else {
+					pendente = semPerguntaDeNome(pendente);
+					if (!pendente.trim()) return;
+				}
+			}
 			if (ehHandoff && linhaDeHandoffEmitida) {
 				pendente = "";
 				return;
