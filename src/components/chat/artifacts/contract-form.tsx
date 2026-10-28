@@ -3,7 +3,6 @@
 import { ShieldCheck } from "lucide-react";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useChatContext } from "@/lib/chat/provider";
@@ -30,7 +29,6 @@ export function ContractForm({ payload }: { payload: ContractFormPayload }) {
 	const [useStored, setUseStored] = useState(payload.identityOnFile === true);
 	const [cpf, setCpf] = useState("");
 	const [phone, setPhone] = useState(payload.identityOnFile ? "" : (payload.prefilledPhone ?? ""));
-	const [lgpd, setLgpd] = useState(false);
 	// EC-7 (QA crítico 2026-06-02): guard SÍNCRONO contra duplo/triplo-clique.
 	// Um `useState` não basta: o `submitted`/`isStreaming` só atualizam no próximo
 	// render, então cliques no MESMO tick veem o valor antigo (closure stale) e
@@ -43,12 +41,12 @@ export function ContractForm({ payload }: { payload: ContractFormPayload }) {
 	const cpfDigits = onlyDigits(cpf);
 	const phoneDigits = onlyDigits(phone);
 	const fieldsValid = useStored || (cpfDigits.length === 11 && phoneDigits.length >= 10);
-	const valid = fieldsValid && lgpd && !isStreaming && !submitted;
+	const valid = fieldsValid && !isStreaming && !submitted;
 
 	const submit = () => {
 		// Guard de corrida (ref, síncrono) — precede qualquer checagem de state.
 		if (submittingRef.current) return;
-		if (!fieldsValid || !lgpd || isStreaming) return;
+		if (!fieldsValid || isStreaming) return;
 		submittingRef.current = true;
 		setSubmitted(true);
 		void sendAction(
@@ -131,23 +129,6 @@ export function ContractForm({ payload }: { payload: ContractFormPayload }) {
 				</>
 			)}
 
-			<label
-				htmlFor="contract-lgpd"
-				className="flex items-start gap-[9px] text-[11px] text-muted-foreground leading-[1.45]"
-			>
-				<Checkbox
-					id="contract-lgpd"
-					checked={lgpd}
-					onCheckedChange={(v) => setLgpd(v === true)}
-					disabled={isStreaming}
-					data-testid="contract-lgpd"
-					className="mt-0.5 size-5 rounded-[6px] border-2 border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
-				/>
-				<span>
-					Autorizo a consulta dos meus dados e aceito os termos de tratamento (LGPD) para a
-					contratação do consórcio.
-				</span>
-			</label>
 
 			<Button
 				type="button"
@@ -157,7 +138,7 @@ export function ContractForm({ payload }: { payload: ContractFormPayload }) {
 				data-testid="contract-submit"
 			>
 				<ShieldCheck className="size-4" />
-				Continuar com segurança
+				Fazer a proposta
 			</Button>
 		</div>
 	);

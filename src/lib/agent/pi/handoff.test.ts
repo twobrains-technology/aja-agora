@@ -8,6 +8,7 @@ import {
 	abrirCasoNaMesa,
 	linhaDeHandoff,
 	linhaFinalDoHandoff,
+	nomeDitoNaConversa,
 	nomeNaFala,
 	RE_DE_PROMESSA,
 	semPromessa,
@@ -39,9 +40,39 @@ describe("o pedido de humano honra o pedido, sem promessa", () => {
 		expect(nomeNaFala("me chamo Ana Clara")).toBe("Ana");
 		expect(nomeNaFala("quero falar com uma pessoa")).toBeNull();
 
-		// O tool usa o nome da fala antes de abrir o caso — capturar, não perguntar de novo.
+		// O tool usa o nome DITO — na fala do turno ou num turno anterior — antes de abrir o
+		// caso: capturar, não perguntar de novo.
 		const tools = readFileSync(new URL("./tools-livres.ts", import.meta.url).pathname, "utf8");
-		expect(tools).toMatch(/ctx\.nomeDoCliente \?\? nomeNaFala\(ctx\.userText\)/);
+		expect(tools).toContain("nomeDitoNaConversa({ falaDoTurno: ctx.userText, historico })");
+		expect(tools).toMatch(/ctx\.nomeDoCliente \?\? dito\?\.nome/);
+	});
+
+	it("o nome dito num turno ANTERIOR não se perde no caminho do caso", () => {
+		// O handoff olhava só a fala do turno atual: quem disse o nome e, dois turnos depois,
+		// pediu uma pessoa chegava anônimo na mesa (defeito da call de 18:36).
+		expect(
+			nomeDitoNaConversa({
+				falaDoTurno: "quero falar com um atendente",
+				historico: [
+					{ role: "user", content: "oi, meu nome é Marcos" },
+					{ role: "assistant", content: "Prazer, Marcos!" },
+				],
+			}),
+		).toEqual({ nome: "Marcos", fala: "oi, meu nome é Marcos" });
+		// A fala do turno manda: é a apresentação mais recente.
+		expect(
+			nomeDitoNaConversa({
+				falaDoTurno: "me chamo Ana",
+				historico: [{ role: "user", content: "meu nome é Marcos" }],
+			}),
+		).toEqual({ nome: "Ana", fala: "me chamo Ana" });
+		// Nenhuma apresentação: nada é inventado (e a fala do AGENTE não conta).
+		expect(
+			nomeDitoNaConversa({
+				falaDoTurno: "quero falar com uma pessoa",
+				historico: [{ role: "assistant", content: "meu nome é Marcos" }],
+			}),
+		).toBeNull();
 	});
 
 	it("o balão do handoff é UMA linha — a confirmação com prazo não sai", () => {

@@ -31,9 +31,11 @@
 //   derivado aqui, não depende de o modelo lembrar. Fim do `null` para texto sem "?".
 //
 // A ORDEM DE DECISÃO (a)→(f), a primeira que casa ganha:
-//   (a) alternativa explícita na pergunta ("A ou B?", "carro, moto ou imóvel") → ela mesma. Quem
-//       detecta isso no TEXTO é o `detectarOpcoes` de `chips.ts`, que roda ANTES de chamar esta
-//       função — aqui a mesma ideia aparece no pedido de tipo de bem (`Carro`/`Moto`/`Imóvel`).
+//   (a) alternativa explícita na pergunta ("Quer seguir com ela ou prefere comparar outra?")
+//       → os dois lados dela, na voz do cliente. Roda ANTES do sim/não de propósito: a pergunta
+//       abre com "quer…" (casa o `SIM_NAO`) e "comparar" casa o `PEDIDO_DE_NUMEROS`, então o par
+//       `Quero ver os números` · `Agora não` saía no lugar de "seguir" e "comparar" (print 10 do
+//       líder, 27/10/2026 19:40).
 //   (b) pergunta de sim/não → respostas de sim/não CASADAS COM O VERBO do pedido.
 //   (c) pedido de DADO concreto (valor, parcela, tipo de bem, CPF) → as opções daquele dado;
 //       valor do bem com a categoria conhecida pede o card `value_picker` (slider), não chips.
@@ -87,11 +89,37 @@ const RESPOSTA_LIVRE =
 const SIM_NAO =
 	/^\s*(?:(?:voc[êe]|vc|tu)\s+)?(?:quer|querer|pode|posso|podemos|vamos|prefere|deseja|gostaria|confirma|tudo\s+bem|faz\s+sentido|ok)\b/i;
 
+/** O VERBO DE ESCOLHA do lado do "ou" — ele é o pedido do agente, não a fala do cliente: no
+ * toque, o núcleo vem depois dele ("Qual dessas cartas você quer **seguir**"). */
+const VERBO_DE_ESCOLHA =
+	/\b(?:quer(?:e|eria)?|prefer(?:e|iria)|deseja|gostaria|escolhe|opta|pensa\s+em)\s+/gi;
+
+/** Verbo no infinitivo abrindo o núcleo: a resposta precisa do "Quero" para soar resposta
+ * ("Quero seguir com ela"), não ordem ("Seguir com ela"). */
+const INFINITIVO = /^[a-zà-ÿ]{4,}(?:ar|er|ir)\b/i;
+
+/** O conector que começa a EXPLICAÇÃO do lado ("… para pagar menos", "… que cabe no bolso"). */
+const CONECTOR = /^(?:que|para|pra|porque|pois|mesmo|assim|enquanto|quando|se|caso|só|so)$/i;
+
+/** Palavra que não FECHA um rótulo: artigo/preposição solto no fim do corte, advérbio pela
+ * metade ("prazo mais") e número sem a unidade ("de 90") saem do toque. */
+const NAO_FECHA_O_ROTULO =
+	/^(?:de|do|da|dos|das|com|em|no|na|nos|nas|para|pra|por|que|e|ou|o|a|os|as|um|uma|uns|umas|mais|menos|\d+)$/i;
+
+/** O teto de uma opção da alternativa: acima disso o toque vira parágrafo. */
+const MAXIMO_DA_ALTERNATIVA = 40;
+/** Acima de ~6 palavras o lado do "ou" é uma frase inteira: o toque fica com o núcleo. */
+const MAXIMO_DE_PALAVRAS_DA_ALTERNATIVA = 6;
+
 /** A pergunta que só pede confirmação no fim ("…, certo?", "…, combinado?"). */
 const CONFIRMA_NO_FIM = /,\s*(?:certo|combinado|tudo\s+bem|beleza|ok)\s*\?/i;
 
 /** O VERBO do pedido decide a resposta do sim/não. A ordem importa: "números" também contém
- * "número" (o do WhatsApp), e o pedido de mostrar os números vem antes. */
+ * "número" (o do WhatsApp), e o pedido de mostrar os números vem antes.
+ *
+ * "compara" está aqui de propósito (é o pedido de comparação de números), e é por isso que a
+ * ALTERNATIVA EXPLÍCITA decide antes: em "quer seguir ou prefere comparar outra?" a pergunta não
+ * é sobre números, e sim sobre qual dos dois caminhos — ver `alternativasDaPergunta`. */
 const PEDIDO_DE_NUMEROS = /mostr|\bver\b|n[úu]meros|compara/i;
 const PEDIDO_DE_SEGUIR = /seguir|gerar|proposta|fechar|preparar/i;
 const PEDIDO_DE_WHATS = /whats\s?app|telefone|celular|n[úu]mero/i;
@@ -99,7 +127,7 @@ const PEDIDO_DE_WHATS = /whats\s?app|telefone|celular|n[úu]mero/i;
 /** O pedido de dado pode vir de pergunta ("quanto você pensa em gastar?") ou de imperativo
  * ("me diz quanto…", "digite seu CPF"). */
 const PEDIDO_DIRETO =
-	/^(?:me\s+(?:diz|diga|fala|passa|manda|informa)|digite|digita|informe|escreva|escreve)\b/i;
+	/^(?:me\s+(?:diz|diga|fala|passa|manda|informa)|digite|digita|informe|escreva|escreve)\b|\b(?:preciso|precisamos|vou\s+precisar)\s+d[eo]\b/i;
 
 /** (c) Os dados que o agente pede — a lista daquele dado, na voz da pessoa. */
 const FAIXAS_DE_VALOR = ["Até R$ 50 mil", "Uns R$ 80 mil", "R$ 100 mil ou mais"];
@@ -202,6 +230,92 @@ function semEco(opcoes: readonly string[], falaDoCliente?: string): string[] {
 	return limpas;
 }
 
+/** Acima do teto do botão: corta palavra inteira, nunca no meio. */
+function dentroDoTeto(rotulo: string): string {
+	if (rotulo.length <= MAXIMO_DA_ALTERNATIVA) return rotulo;
+	const palavras = rotulo.split(" ");
+	while (palavras.length > 1 && palavras.join(" ").length > MAXIMO_DA_ALTERNATIVA) palavras.pop();
+	return palavras.join(" ");
+}
+
+/** Lado comprido demais: fica o núcleo — as palavras até o conector que abre a explicação. */
+function encurtaParaONucleo(nucleo: string): string {
+	const palavras = nucleo.split(/\s+/);
+	if (palavras.length <= MAXIMO_DE_PALAVRAS_DA_ALTERNATIVA) return nucleo;
+	const corte = palavras.findIndex((p, i) => i > 0 && CONECTOR.test(p));
+	const doNucleo = corte > 1 ? palavras.slice(0, corte) : palavras;
+	const fatiado = doNucleo.slice(0, MAXIMO_DE_PALAVRAS_DA_ALTERNATIVA);
+	while (fatiado.length > 1 && NAO_FECHA_O_ROTULO.test(fatiado[fatiado.length - 1] ?? "")) {
+		fatiado.pop();
+	}
+	return fatiado.join(" ");
+}
+
+/**
+ * Um lado do "ou", na voz do cliente: o verbo de escolha sai, o núcleo fica curto e a inicial
+ * sobe. O PRIMEIRO lado herda o "Quero" quando o núcleo é um verbo no infinitivo — a pergunta
+ * abriu com "Quer…", então a resposta é "Quero seguir com ela"; o segundo lado já é resposta por
+ * si ("Comparar outra"). `null` quando não sobra núcleo: sem núcleo não há alternativa.
+ */
+function ladoDaAlternativa(lado: string, primeiro: boolean): string | null {
+	const semIntroducao = (lado.includes(":") ? lado.slice(lado.lastIndexOf(":") + 1) : lado).trim();
+	const verbos = [...semIntroducao.matchAll(VERBO_DE_ESCOLHA)];
+	const ultimo = verbos[verbos.length - 1];
+	const nucleo = (
+		ultimo?.index === undefined
+			? semIntroducao
+			: semIntroducao.slice(ultimo.index + ultimo[0].length)
+	)
+		.replace(/^[^\p{L}\p{N}]+/u, "")
+		.trim();
+	if (!nucleo) return null;
+	const curto = encurtaParaONucleo(nucleo);
+	const naVozDoCliente = primeiro && INFINITIVO.test(curto) ? `Quero ${curto}` : curto;
+	return dentroDoTeto(naVozDoCliente.charAt(0).toUpperCase() + naVozDoCliente.slice(1));
+}
+
+/**
+ * (a) A ALTERNATIVA EXPLÍCITA da última pergunta — "quer A ou B?", "prefere A ou B": a resposta
+ * é escolher um dos dois caminhos, com as palavras que o agente acabou de escrever.
+ *
+ * Defeito medido no print `.orientacao/prints-ux/10-conversa-picada-oferta.png` (ordem do líder,
+ * 27/10/2026 19:40): "Quer seguir com ela ou prefere comparar outra?" saía com `Quero ver os
+ * números` · `Agora não` — o par do `PEDIDO_DE_NUMEROS`, cuja regex casa o "compara" de
+ * "comparar". Nenhum dos dois responde à pergunta.
+ *
+ * Não é escolha: frase sem exatamente um "ou" ("O bem é carro, moto ou imóvel?" é lista, e a
+ * lista tem o card do dado) e lado com vírgula — a vírgula é sinal de PERGUNTA, não de menu,
+ * a mesma régua do `detectarOpcoes` de `chips.ts`.
+ */
+/** Só a pergunta sobre TER reserva/valor guardado para o lance passa na frente do menu:
+ * "Quer seguir com o lance de 20 mil?" continua sendo sim/não. */
+const RESERVA_PARA_LANCE =
+	/\breserva\b|\bvalor\s+guardado\b|\bguardad[oa]s?\b|\bseparad[oa]s?\b|\bquanto\s+(?:voc[êe]|vc)\s+tem\b/i;
+
+function alternativasDaPergunta(frase: string): string[] {
+	const corpo = frase
+		// O VOCATIVO SAI ANTES DE PARTIR. "Quer seguir com essa, Kairo, ou prefere comparar
+		// outra opção?" é escolha entre dois caminhos — a vírgula era do nome do cliente, não
+		// sinal de pergunta, e derrubava o ramo inteiro (medido no print
+		// `.orientacao/prints-ux/12-conversa-picada-depois.png`: o toque saiu `Quero ver os
+		// números` no lugar de `Quero seguir com essa`).
+		.replace(/(?:^|,\s*)([A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'-]+)(?=\s*,)/gu, "")
+		.replace(/\([^)]*\)/g, "")
+		// Sobra a vírgula do vocativo ("com essa, ou prefere…") — ela também não é menu.
+		.replace(/,\s*(?=ou\b)/i, " ")
+		.replace(/,\s*,/g, ",")
+		.replace(/[?!.]+\s*$/, "")
+		.trim();
+	const partes = corpo.split(/\s+ou\s+/i);
+	if (partes.length !== 2) return [];
+	const [lado1 = "", lado2 = ""] = partes;
+	if (lado1.includes(",") || lado2.includes(",")) return [];
+	const primeira = ladoDaAlternativa(lado1, true);
+	const segunda = ladoDaAlternativa(lado2, false);
+	if (!primeira || !segunda || primeira === segunda) return [];
+	return [primeira, segunda];
+}
+
 /** (b) A resposta do sim/não casa com o VERBO do pedido: "quer ver os números?" não se responde
  * "Quero dar lance". */
 function respostasDeSimNao(pedido: string): string[] {
@@ -244,6 +358,14 @@ function decidir(texto: string, momento: MomentoDaConversa): SugestaoDoTurno {
 	const alvo = ultimaFrase.includes("?") ? ultimaFrase : texto;
 	const ehPergunta = texto.includes("?");
 
+	// (e0) PEDIDO DIRETO SEM INTERROGAÇÃO. "Para gerar a proposta preciso do seu CPF e do seu
+	// celular com DDD." não tem "?", mas pede um dado — e os próximos passos genéricos
+	// ("Quero essa") não respondem a isso (visto no turno da contratação, 27/10).
+	if (!ehPergunta && (PEDIDO_DIRETO.test(alvo) || PEDIDO_DIRETO.test(ultimaFrase))) {
+		const doDado = dadoPedido(alvo, momento);
+		if (doDado) return doDado;
+	}
+
 	// (e) TURNO SEM PERGUNTA — os próximos passos do momento, não uma resposta inventada.
 	if (!ehPergunta) {
 		return {
@@ -251,6 +373,22 @@ function decidir(texto: string, momento: MomentoDaConversa): SugestaoDoTurno {
 			tipoDoCard: "quick_reply",
 		};
 	}
+
+	// (a0) O LANCE PRIMEIRO. "Você tem alguma reserva guardada para dar lance, ou prefere usar só
+	// o embutido?" TEM um "ou", mas a resposta do cliente é sobre o LANCE ("Tenho pouco"), não
+	// sobre o menu — a alternativa genérica devolveria "Quero reserva guardada", que ninguém
+	// escreve. Só o lance passa na frente: parcela, valor e tipo de bem ficam no ramo do dado
+	// DEPOIS do menu, senão "prefere uma parcela menor ou um prazo mais curto?" viraria faixa.
+	if (ultimaFrase.includes("?") && RESERVA_PARA_LANCE.test(alvo)) {
+		const doLance = dadoPedido(alvo, momento);
+		if (doLance) return doLance;
+	}
+
+	// (a) ALTERNATIVA EXPLÍCITA — a pergunta oferece dois caminhos e a resposta é escolher um.
+	// Vem ANTES do sim/não: "quer…" casa o `SIM_NAO`, e "comparar" casa o `PEDIDO_DE_NUMEROS`
+	// (print 10). O que decide é a pergunta ter os dois lados escritos, não o verbo de abertura.
+	const alternativas = ultimaFrase.includes("?") ? alternativasDaPergunta(ultimaFrase) : [];
+	if (alternativas.length === 2) return { opcoes: alternativas, tipoDoCard: "quick_reply" };
 
 	// (b) PERGUNTA DE SIM/NÃO — a resposta é sim/não, casada com o verbo do pedido.
 	const limpa = alvo.replace(/^[^A-Za-zÀ-ÿ]+/, "");
@@ -272,6 +410,18 @@ function decidir(texto: string, momento: MomentoDaConversa): SugestaoDoTurno {
 	return { opcoes: GENERICO, tipoDoCard: "quick_reply" };
 }
 
+/** A última frase do turno é a PERGUNTA do nome? ("como você se chama?", "qual o seu nome?")
+ * Sem isso, "preciso do seu CPF e do seu celular… no seu nome" casava `\bseu nome\b` e devolvia
+ * as saídas do nome numa pergunta de CPF (visto no turno da contratação, 27/10). */
+function ultimaPerguntaDeNome(texto: string): boolean {
+	const frases = texto
+		.split(/(?<=[?.!])\s+|\n+/)
+		.map((f) => f.trim())
+		.filter(Boolean);
+	const ultima = frases[frases.length - 1] ?? "";
+	return ultima.includes("?") && RESPOSTA_LIVRE.test(ultima);
+}
+
 /**
  * A sugestão do turno: as opções que o cliente toca e o card em que elas saem.
  *
@@ -284,7 +434,10 @@ export function sugestaoDoTurno(
 	momento: MomentoDaConversa = {},
 ): SugestaoDoTurno {
 	const texto = (pergunta ?? "").trim();
-	if (RESPOSTA_LIVRE.test(texto)) return { opcoes: SAIDAS_DO_NOME, tipoDoCard: "quick_reply" };
+	// A PERGUNTA de nome, não a menção: "preciso do seu CPF e do seu celular… no seu nome"
+	// caía no `\bseu nome\b` e devolvia as saídas do nome numa pergunta de CPF (visto no print
+	// de 27/10, turno da contratação). Só vale quando a ÚLTIMA frase é a pergunta do nome.
+	if (ultimaPerguntaDeNome(texto)) return { opcoes: SAIDAS_DO_NOME, tipoDoCard: "quick_reply" };
 	const escolhida = decidir(texto, momento);
 	return { ...escolhida, opcoes: semEco(escolhida.opcoes, momento.falaDoCliente) };
 }

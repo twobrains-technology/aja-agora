@@ -18,6 +18,7 @@ import type { TurnEvent, TurnInput } from "@/lib/agent/orchestrator/types";
 import { passaFinal } from "@/lib/agent/orchestrator/vazamento";
 import { parseAssetValue } from "@/lib/agent/parse-asset-value";
 import type { Category } from "@/lib/agent/personas";
+import { picarEmBaloes } from "@/lib/agent/pi/baloes";
 import { type MetaDaEmissao, TIPOS_DE_ESCOLHA } from "@/lib/agent/pi/cards-livres";
 import { chipDoUltimoBalao, garantirChip } from "@/lib/agent/pi/chips";
 import { executarBeat } from "@/lib/agent/pi/converse";
@@ -242,20 +243,29 @@ export function montarTrechoDeSaida(args: {
 export function criarSeparadorDeTrechos() {
 	let falou = false;
 	let toolDesdeAFala = false;
+	// A fala anterior já fechou porque era OUTRA bolha do mesmo trecho (conversa picada):
+	// o próximo delta abre balão novo, como se uma tool tivesse entrado no meio.
+	let balaoNovo = false;
 	const jáSoltos = new Set<string>();
 	const normalizar = (t: string) => t.toLowerCase().replace(/\s+/g, " ").trim();
 	return {
 		aoToolCall() {
 			if (falou) toolDesdeAFala = true;
 		},
+		/** O balão anterior é outro balão: o próximo delta abre um `text-boundary` (web: balão
+		 * novo; WhatsApp: mensagem nova; persistência: uma linha por boundary). */
+		aoNovoBalao() {
+			balaoNovo = true;
+		},
 		/** Eventos a emitir para este delta, na ordem. Um trecho IDÊNTICO a um já solto
 		 * neste turno não sai: foi assim que "Ótimo! Vou gerar sua proposta agora na
 		 * Canopus." apareceu duas vezes na tela, depois de a tool recusar o aceite. */
 		aoDelta(texto: string): TurnEvent[] {
 			const eventos: TurnEvent[] = [];
-			if (toolDesdeAFala && texto.trim().length > 0) {
+			if ((toolDesdeAFala || balaoNovo) && texto.trim().length > 0) {
 				eventos.push({ type: "text-boundary" });
 				toolDesdeAFala = false;
+				balaoNovo = false;
 			}
 			if (texto.trim().length > 0) {
 				const chave = normalizar(texto);
@@ -1238,11 +1248,19 @@ export function createRunTurnLivre(deps?: {
 		let ultimoBalaoDoTurno: string | null = null;
 		// CPF mascarado JÁ na saída (o número digitado não volta por eco do modelo)
 		// e uma pergunta por trecho de fala — tudo em `montarTrechoDeSaida`, testável sem banco.
-		/** Um balão pronto no canal: fronteira (se mudou de fala) + delta. */
+		/** Os balões prontos no canal: cada um com a sua fronteira + delta. */
 		const emitirFala = (texto: string) => {
-			for (const ev of trechos.aoDelta(texto)) {
-				estado = { ...estado, events: [...estado.events, ev] };
-				emitir(ev);
+			// CONVERSA PICADA (ordem do dono, 27/10/2026): o texto do beat chega inteiro e pode ter
+			// quatro, cinco frases — no canal isso era UM bloco de 7 a 9 linhas (prints 07/08).
+			// `picarEmBaloes` devolve o MESMO texto em até 3 bolhas curtas, e cada uma sai com a
+			// fronteira dela: na web fecha o balão, no WhatsApp vira mensagem nova, no banco uma
+			// linha por balão.
+			for (const [indice, balao] of picarEmBaloes(texto).entries()) {
+				if (indice > 0) trechos.aoNovoBalao();
+				for (const ev of trechos.aoDelta(balao)) {
+					estado = { ...estado, events: [...estado.events, ev] };
+					emitir(ev);
+				}
 			}
 		};
 		const soltarTrecho = () => {
@@ -1495,7 +1513,27 @@ export function createRunTurnLivre(deps?: {
 			if (!baseMeta.revealCompleted && ctx.cards.some((c) => c.type === "comparison_table")) {
 				void marcarPrimeiraCarta(conversationId, !isUserTurn);
 			}
-			if (ctx.pediuHumano) {
+			// O AVISO DE HANDOFF: UM POR CONVERSA, E SÓ DO CASO QUE EXISTE.
+			//
+			// Medido no print do dono (27/10/2026, ~19:30): o aviso "Pra esse caso, recomendo
+			// conversar direto com nosso consultor humano" saía DUAS vezes na mesma conversa —
+			// depois de "Como você se chama?" e de novo depois de "Kairo, abri o caso pra nossa
+			// mesa". O gatilho era `ctx.pediuHumano`, flag do TURNO: no turno do pedido ainda não
+			// havia nome, o caso NÃO abriu (`abrirCasoNaMesa` devolve `sem-lead`), e o aviso saiu
+			// assim mesmo; quando o caso abriu, saiu outra vez porque nada na conversa lembrava
+			// que ele já tinha saído.
+			//
+			// Duas travas, as duas no servidor:
+			//  · `handoffSuggested` — o estado da CONVERSA (meta, lido em `funnelFromMeta` no
+			//    início do turno). Anunciado uma vez, não se anuncia de novo. É a trava da
+			//    duplicata que o dono viu no print (banner depois de "Como você se chama?" e
+			//    outra vez depois de "abri o caso pra nossa mesa").
+			//  · NADA de `casoAberto` aqui: no turno em que o cliente pede a pessoa ainda não
+			//    há lead, o caso não abre — e sem o aviso o cliente fica sem resposta nenhuma
+			//    ao pedido dele. A regressão apareceu na R16
+			//    (`golden-dono-chato-pede-humano-no-turno-2`: esperava `handoff`, veio só a tool).
+			//    O aviso é do PEDIDO, uma vez por conversa; o caso, quando abrir, não repete.
+			if (ctx.pediuHumano && !estado.funnel.handoffSuggested) {
 				estado = {
 					...estado,
 					events: [...estado.events, { type: "handoff", reason: "pedido do cliente" } as never],

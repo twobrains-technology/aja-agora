@@ -36,3 +36,24 @@ describe("texto antes e depois de uma tool não cola", () => {
 		expect(saida.map((e) => e.type)).toEqual(["text-delta", "text-boundary"]);
 	});
 });
+
+describe("conversa picada: cada bolha abre a própria fronteira", () => {
+	it("aoNovoBalao faz o próximo delta abrir text-boundary, e só ele", async () => {
+		const { criarSeparadorDeTrechos } = await import("./turno-livre");
+		const sep = criarSeparadorDeTrechos();
+		const saida = [...sep.aoDelta("Lance é um valor que você oferece.")];
+		// O balão anterior fechou porque era OUTRA bolha do mesmo trecho: sem a fronteira, as
+		// bolhas colavam de volta num bloco só (prints 07/08).
+		sep.aoNovoBalao();
+		saida.push(...sep.aoDelta("Há dois tipos."));
+		sep.aoNovoBalao();
+		saida.push(...sep.aoDelta("Você tem algum valor guardado?"));
+		expect(saida.map((e) => e.type)).toEqual([
+			"text-delta",
+			"text-boundary",
+			"text-delta",
+			"text-boundary",
+			"text-delta",
+		]);
+	});
+});
