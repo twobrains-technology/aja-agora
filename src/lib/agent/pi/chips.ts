@@ -12,7 +12,8 @@
 // (`soltarTrecho`): quando o modelo falava em dois beats, o toque nascia com as
 // opções do PRIMEIRO balão e pousava embaixo do segundo — nos prints o cliente leu
 // a mesma pergunta em dois balões e a pergunta final ficou sem toque do lado dela.
-// Quem decide agora é o turno, uma vez, no último balão: `chipDoUltimoBalao`.
+// Quem decide agora é o turno, uma vez, no último balão: `chipDoTurno` — e ele olha o turno
+// INTEIRO para achar o balão que pede (o fecho "Tudo bem, aguardo." não apaga o pedido do CPF).
 //
 // TODO TURNO TEM TOQUE — ordem do dono, 27/10/2026 17:16: *os balões de sugestão
 // aparecem em todo turno do agente, pergunte ele ou não*. Até aqui o chip só saía
@@ -40,7 +41,7 @@
 //    contra as cartas reais em `cards-livres.ts` (fail-closed da main).
 
 import type { Category } from "@/lib/agent/personas";
-import { sugestaoDoTurno } from "@/lib/agent/pi/sugestoes";
+import { balaoPedeResposta, sugestaoDoTurno } from "@/lib/agent/pi/sugestoes";
 import { CREDIT_BOUNDS } from "@/lib/agent/qualify-config";
 import type { ValuePickerPayload } from "@/lib/chat/types";
 
@@ -54,10 +55,19 @@ const CARD_DE_ESCOLHA = ["quick_reply", "value_picker", "topic_picker"];
  */
 const CARD_QUE_COLETA = ["contract_form", "whatsapp_optin"];
 
-/** A frase que pede para DIGITAR um dado — a única em que o card que coleta é a resposta.
- * "me passa seu WhatsApp" NÃO está aqui de propósito: esse é o pedido do print 02, que termina no
- * card de opt-in e PRECISA dos balões de próximo passo (ordem das 17:16). */
-const PEDE_PARA_DIGITAR = /\b(?:digite|digita|informe|escreva|escreve|preencha|preenche)\b/i;
+/** A frase que pede o PRÓPRIO dado — a única em que o card que coleta é a resposta.
+ *
+ * Os verbos do PEDIDO entraram na R20 (defeito medido no SHA `3236f59f`): o modelo pede
+ * CPF/celular/WhatsApp com "me manda"/"me passa" muito mais que com "digite", e com o card que
+ * coleta na tela o chip do MESMO dado saía POR CIMA dele — "me manda seu CPF e celular" com
+ * `contract_form` no turno ganhava "Mando meu celular" ao lado do formulário. É também o que
+ * sustenta o pedido **no meio da frase** ("…, me manda seu WhatsApp aqui no card").
+ *
+ * Isto REVOGA a exclusão anterior de "me passa seu WhatsApp" (pedido do print 02, que pela ordem
+ * das 17:16 terminava no card de opt-in e pedia os balões de próximo passo): com o card de opt-in
+ * na tela, o chip de WhatsApp é a mesma decisão duas vezes (ordem da R20). */
+const PEDE_PARA_DIGITAR =
+	/\b(?:digite|digita|informe|escreva|escreve|preencha|preenche|me\s+(?:manda|passa|envia|compartilha))\b/i;
 const O_DADO_COLETADO = /\bcpf\b|celular|telefone|whats\s?app|n[úu]mero/i;
 
 /** A identidade PERSISTIDA do atalho (`QuickReplyOption.replyId`, L4): gerada a
@@ -232,7 +242,8 @@ export function garantirChip(args: {
 }
 
 /**
- * O ÚNICO card de toque do TURNO — um por turno, no ÚLTIMO balão, derivado da ÚLTIMA pergunta.
+ * O ÚNICO card de toque do TURNO — um por turno, no último balão, derivado do ÚLTIMO PEDIDO do
+ * turno.
  *
  * Defeito medido no print `prints-ux/07` (conversa web `1a4927bd`, 27/10/2026 20:49:07) e cobrado
  * pelo líder às 18:08: o chip era decidido a cada TRECHO do turno (`soltarTrecho`), então o toque
@@ -246,27 +257,42 @@ export function garantirChip(args: {
  * menu — foi ela que virava botão com a pergunta inteira dentro (ver `garantirChip`), e por isso
  * aqui quem responde é o `sugestoes.ts`.
  *
+ * O TURNO INTEIRO, e não só o último balão (R20). Defeito medido no SHA `3236f59f`: o pedido de
+ * CPF/celular saía num balão e o fecho ("Tudo bem, aguardo.") noutro — o toque nascia do fecho,
+ * que não pede nada, e virava `Quero essa`. Agora o balão que PEDE (pergunta ou pedido de dado,
+ * `balaoPedeResposta`) é procurado de trás pra frente no turno inteiro; só quando nenhum balão
+ * pede nada é que a resposta é o próximo passo do momento. O card continua UM, no fim do turno.
+ *
  * Esta função NUNCA cria fala: ela só deriva os toques. O card é mensagem própria (`[card: …]`),
  * como sempre foi.
  */
-export function chipDoUltimoBalao(args: {
-	/** O texto do ÚLTIMO balão do turno, como o modelo escreveu. */
-	texto: string;
+export function chipDoTurno(args: {
+	/** Os textos dos balões do turno, na ORDEM em que foram ao canal. */
+	baloes: readonly string[];
 	cardsDoTurno: readonly { type: string }[];
 	temCartaNaTela?: boolean;
 	canal?: "web" | "whatsapp";
 	falaDoCliente?: string;
 	categoriaDoBem?: Category;
 }): CardGerado | null {
-	if (!args.texto.trim()) return null;
-	if (toqueBloqueado(args.texto, args.cardsDoTurno)) return null;
+	const baloes = args.baloes.map((b) => b.trim()).filter(Boolean);
+	const ultimo = baloes[baloes.length - 1];
+	if (!ultimo) return null;
 
-	// 1. A lista MARCADA escrita no último balão.
-	const daLista = listaDeOpcoes(args.texto);
+	// O BALÃO DO PEDIDO: o último, de trás pra frente, que pergunta ou pede um dado. Sem nenhum,
+	// o turno não pede resposta — e aí o último balão é o que ganha o próximo passo do momento.
+	const pedido = [...baloes].reverse().find(balaoPedeResposta) ?? ultimo;
+
+	// O card que COLETA o dado pedido é a resposta do pedido — vale para o balão de onde o toque
+	// sai, não para o texto solto do fim do turno.
+	if (toqueBloqueado(pedido, args.cardsDoTurno)) return null;
+
+	// 1. A lista MARCADA escrita no balão do pedido.
+	const daLista = listaDeOpcoes(pedido);
 	if (daLista) return chipDe(daLista.opcoes);
 
-	// 2. A resposta do que o agente acabou de perguntar.
-	const sugestao = sugestaoDoTurno(args.texto, {
+	// 2. A resposta do que o agente acabou de perguntar/pedir.
+	const sugestao = sugestaoDoTurno(pedido, {
 		temCartaNaTela: args.temCartaNaTela === true,
 		...(args.canal ? { canal: args.canal } : {}),
 		...(args.falaDoCliente ? { falaDoCliente: args.falaDoCliente } : {}),

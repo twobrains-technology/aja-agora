@@ -138,14 +138,16 @@ describe("pergunta fechada vira chip, não lista escrita no texto", () => {
 			fonte.indexOf("const executar"),
 		);
 		expect(soltar).toContain("cardsDoTurno: ctx.cards");
-		// O trecho guarda o TEXTO do balão; o card sai no fim do turno.
-		expect(soltar).toContain("ultimoBalaoDoTurno = pendente");
+		// O trecho guarda o TEXTO do balão; o card sai no fim do turno. São os BALÕES do turno
+		// (na ordem), não só o último: o pedido do dado pode estar num balão e o fecho noutro.
+		expect(soltar).toContain("baloesDoTurno.push(pendente)");
 		expect(soltar).not.toContain("ctx.cards.push(saida.chip");
 		const fim = fonte.slice(
 			fonte.indexOf("// O ÚNICO TOQUE DO TURNO"),
 			fonte.indexOf('emitirCardsNovos("todos")'),
 		);
-		expect(fim).toContain("chipDoUltimoBalao({");
-		expect(fim).toContain("ctx.cards.push(chipDoTurno");
+		expect(fim).toContain("chipDoTurno({");
+		expect(fim).toContain("baloes: baloesDoTurno");
+		expect(fim).toContain("ctx.cards.push(toqueDoTurno");
 	});
 });

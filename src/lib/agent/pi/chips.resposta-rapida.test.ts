@@ -62,10 +62,9 @@ describe("(a) pergunta feita ⇒ opções de um toque, derivadas do momento", ()
 		// "Você quer dar lance pra antecipar?" também é sim/não: o verbo não é nem mostrar
 		// números, nem seguir, nem WhatsApp — resposta de sim/não genérica.
 		expect(rotulos("Você quer dar lance pra antecipar?")).toEqual(["Sim, pode", "Agora não"]);
-		expect(rotulos("Posso continuar pelo WhatsApp?")).toEqual([
-			"Sigo pelo WhatsApp",
-			"Prefiro aqui",
-		]);
+		// Ordem do líder de 22:35: sim/não de envio pelo WhatsApp se responde "Pode mandar" /
+		// "Prefiro ver aqui" — o texto do botão é a fala do cliente, não o nome do canal.
+		expect(rotulos("Posso continuar pelo WhatsApp?")).toEqual(["Pode mandar", "Prefiro ver aqui"]);
 	});
 
 	it("pergunta de sim/não casa a resposta com o VERBO do pedido", () => {
@@ -116,16 +115,27 @@ describe("(a) pergunta feita ⇒ opções de um toque, derivadas do momento", ()
 		expect(r.chip).toBeNull();
 	});
 
-	it("os outros cards saem ACOMPANHADOS dos próximos passos (prints 02 e 04 do dono)", () => {
+	it("os outros cards saem ACOMPANHADOS da resposta ao pedido (prints 02 e 04 do dono)", () => {
 		// Antes o opt-in do WhatsApp e a oferta real matavam o balão: o turno terminava sem
-		// nada para tocar (ordem das 17:16).
-		for (const type of ["whatsapp_optin", "real_offer", "signature_handoff", "document_upload"]) {
-			const r = garantirChip({
-				texto: "Me passa seu WhatsApp no card aqui embaixo que eu te mando essa carta.",
-				cardsDoTurno: [{ type }],
-			});
-			expect(rotulosDoChip(r.chip), type).toEqual(["Quero ver as opções", "Tenho uma dúvida"]);
+		// nada para tocar (ordem das 17:16). O turno continua com toque — e, desde a R20, o toque
+		// é a resposta ao PEDIDO do balão (o WhatsApp que ele pediu), não um próximo passo
+		// genérico.
+		const pedidoDoWhatsApp =
+			"Me passa seu WhatsApp no card aqui embaixo que eu te mando essa carta.";
+		for (const type of ["real_offer", "signature_handoff", "document_upload"]) {
+			const r = garantirChip({ texto: pedidoDoWhatsApp, cardsDoTurno: [{ type }] });
+			expect(rotulosDoChip(r.chip), type).toEqual([
+				"Mando meu celular",
+				"Por que precisa do celular?",
+			]);
 		}
+		// Com o card que COLETA o dado pedido, o card é a resposta: nada de chip do mesmo dado
+		// por cima dele (ordem da R20 — antes saíam os próximos passos ao lado do opt-in).
+		const comOptIn = garantirChip({
+			texto: pedidoDoWhatsApp,
+			cardsDoTurno: [{ type: "whatsapp_optin" }],
+		});
+		expect(comOptIn.chip).toBeNull();
 	});
 
 	it("a pergunta de valor sai no SLIDER quando a categoria do bem está no contexto", () => {
@@ -317,10 +327,10 @@ describe("(c) a ORDEM das 17:15: o toque responde a ESTE turno, não ao tema", (
 			fonte.indexOf("// O ÚNICO TOQUE DO TURNO"),
 			fonte.indexOf('emitirCardsNovos("todos")'),
 		);
-		expect(fim).toContain("texto: ultimoBalaoDoTurno");
+		expect(fim).toContain("baloes: baloesDoTurno");
 		expect(fim).toContain("falaDoCliente: falaDoClienteDoTurno");
 		expect(fim).toContain("categoriaDoBem: estado.funnel.currentCategory");
-		expect(fim).toContain("ctx.cards.push(chipDoTurno");
+		expect(fim).toContain("ctx.cards.push(toqueDoTurno");
 	});
 });
 
@@ -347,5 +357,58 @@ describe("(print 13) aviso de dado não vira saída de nome", () => {
 		const juntas = r.opcoes.join(" | ").toLowerCase();
 		expect(juntas).not.toContain("cartas");
 		expect(juntas).toContain("cpf");
+	});
+});
+
+describe("(R20) o pedido de dado no MEIO da frase ganha o toque do DADO", () => {
+	// Defeito medido no SHA `3236f59f` (auditoria independente, janela da R20, 237 turnos do
+	// agente): **24 turnos que pedem CPF/celular/WhatsApp** entregaram toque que não responde ao
+	// pedido — em 6 deles sem NENHUM toque do dado. Causa: o ramo `(e0)` do `sugestoes.ts` só casava
+	// o pedido ANCORADO NO INÍCIO da frase (`/^(?:me\s+(?:diz|manda…))/`), e "…, me manda seu CPF e
+	// seu celular" tem o pedido no meio — caía em `PROXIMOS_COM_CARTA` (`Quero essa`). As cinco
+	// frases abaixo são literais do banco; a primeira opção tem de ser DO DADO.
+	const FRASES_DO_BANCO = [
+		"Recebi seu CPF, Carla. Agora me manda seu celular com DDD.",
+		"Perfeito, Carla! Só me manda seu CPF e seu celular que eu gero a proposta.",
+		"Para fechar a proposta, me manda seu CPF e seu celular.",
+		"Sem problema, pode mandar o CPF e o celular aqui mesmo, ou preencher no card.",
+		"Boa, Beatriz! Para sair no seu nome, me manda seu CPF e seu celular.",
+	];
+
+	const ehDoDado = (rotulo: string) => /\bcpf\b|celular|whats?\s?app/i.test(rotulo);
+
+	for (const frase of FRASES_DO_BANCO) {
+		it(`«${frase}» → toque do dado, nunca "Quero essa"`, () => {
+			const opcoes = rotulos(frase, { temCartaNaTela: true, categoriaDoBem: "auto" });
+			expect(opcoes.length).toBeGreaterThanOrEqual(2);
+			expect(opcoes).not.toContain("Quero essa");
+			expect(ehDoDado(opcoes[0] ?? ""), opcoes.join(" | ")).toBe(true);
+		});
+	}
+
+	it("«pode mandar o CPF e o celular aqui mesmo, ou preencher no card» → CPF no primeiro toque", () => {
+		const opcoes = rotulos(
+			"Sem problema, pode mandar o CPF e o celular aqui mesmo, ou preencher no card.",
+			{ temCartaNaTela: true },
+		);
+		expect(opcoes[0] ?? "").toMatch(/cpf|celular/i);
+	});
+
+	it("pedido de WhatsApp com o card `whatsapp_optin` no turno não ganha chip redundante", () => {
+		// O card É a resposta do pedido: um chip "Mando meu celular" ao lado convida a pessoa a
+		// responder por fora do card que já coleta o dado.
+		const r = garantirChip({
+			texto: "Perfeito, Carla! Me manda seu WhatsApp aqui no card que eu te envio a carta.",
+			cardsDoTurno: [{ type: "whatsapp_optin" }],
+		});
+		expect(r.chip).toBeNull();
+	});
+
+	it("regressão: turno de oferta sem pedido de dado continua com os próximos passos", () => {
+		expect(
+			rotulos("Encontrei 4 opções na tela para um carro de R$ 90 mil.", {
+				temCartaNaTela: true,
+			}),
+		).toEqual(["Quero essa", "Ver outra opção", "Falar do lance"]);
 	});
 });

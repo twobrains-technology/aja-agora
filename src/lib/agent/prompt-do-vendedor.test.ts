@@ -96,4 +96,9 @@ describe("semente do vendedor — o que a dona do produto cobrou em 14 e 15/10",
 		);
 		expect(total).toBeLessThan(20_000);
 	});
+
+	it("proíbe comparar prazo/parcela de cabeça (print 13: 96 meses ditos como 'mais curto' que 94)", () => {
+		expect(PROMPT_DO_VENDEDOR).toMatch(/94 meses é prazo\s+MENOR que 96/i);
+		expect(PROMPT_DO_VENDEDOR).toMatch(/se o número não está na tela, não compare/i);
+	});
 });
