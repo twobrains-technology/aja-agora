@@ -1081,7 +1081,11 @@ export function createRunTurnLivre(deps?: {
 		// novo, e a proposta ficava ancorada numa busca refeita. Medido em 25/10/2026
 		// no dev, com navegador real (conversas 4a1af177 e 361be4f5).
 		const lerCartas = deps?.lerCartas ?? lerCartasDaConversa;
-		const cartasRestauradas = await restaurarCartasDaConversa(await lerCartas(conversationId));
+		const artefatosDaConversa = await lerCartas(conversationId);
+		const cartasRestauradas = await restaurarCartasDaConversa(artefatosDaConversa);
+		// O card de WhatsApp sai UMA vez por conversa (ordem do líder, 28/10 05:05): o fato é o card
+		// já persistido, não a memória do modelo.
+		const whatsappOptinJaMostrado = artefatosDaConversa.some((a) => a.type === "whatsapp_optin");
 
 		let estado = estadoInicialDoTurno({
 			conversationId,
@@ -1196,6 +1200,7 @@ export function createRunTurnLivre(deps?: {
 				? maskPhoneForDisplay(identidadeVisivel.celular) || null
 				: null,
 			cpfMascarado: identidadeVisivel?.cpf ? maskCpfForDisplay(identidadeVisivel.cpf) : null,
+			whatsappOptinJaMostrado,
 			// O perfil DECLARADO na qualificação (prazo e lance) é o default do dial
 			// (FIX-C5): vem do estado do turno, nunca do que o modelo disse agora.
 			perfilDeclarado: {

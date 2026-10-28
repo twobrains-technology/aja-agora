@@ -187,7 +187,9 @@ describe("cartas da conversa — o que o cliente já viu continua na tela no tur
 	// alguém voltar a deixar o índice vazio fora do turno da busca.
 	it("o turno restaura o índice antes de o modelo falar", () => {
 		const fonte = readFileSync(new URL("./turno-livre.ts", import.meta.url).pathname, "utf8");
-		expect(fonte).toMatch(/restaurarCartasDaConversa\(await lerCartas\(conversationId\)\)/);
+		expect(fonte).toMatch(
+			/await lerCartas\(conversationId\)[\s\S]{0,200}restaurarCartasDaConversa\(artefatosDaConversa\)/,
+		);
 		expect(fonte).toMatch(/gruposRevelados: cartasRestauradas\.grupos/);
 		expect(fonte).not.toMatch(/gruposRevelados: new Map\(\)/);
 	});

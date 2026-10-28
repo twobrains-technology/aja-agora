@@ -177,6 +177,8 @@ export type ContextoDasTools = {
 	 * a máscara; o submit resolve a identidade cifrada no servidor. */
 	telefoneMascarado?: string | null;
 	cpfMascarado?: string | null;
+	/** O card `whatsapp_optin` já foi à tela nesta conversa (fato do banco): ele não sai de novo. */
+	whatsappOptinJaMostrado?: boolean;
 	/** Fala que o agente já escreveu NESTE turno, antes da tool: o aceite da LGPD é
 	 * conferido nela também, porque o aviso pode ser dado no mesmo turno do fechamento. */
 	textoDoTurno?: string;
@@ -1046,6 +1048,18 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				return `[Card ${escolha.card.type} na tela. Ele aparece para o cliente agora — não repita as opções na sua fala.]`;
 			}
 
+			// O CARD DE WHATSAPP SAI UMA VEZ POR CONVERSA (ordem do líder, 28/10 05:05). Repetido, ele
+			// reaparecia a cada turno pedindo de novo o número que o cliente já deu, e a fala mandava
+			// "digitar no card". Recusa é texto: ensina o modelo o que fazer no lugar.
+			if (
+				args.tipo === "whatsapp_optin" &&
+				(ctx.whatsappOptinJaMostrado || ctx.cards.some((c) => c.type === "whatsapp_optin"))
+			) {
+				return ctx.telefoneMascarado
+					? `Card NÃO mostrado: o card de WhatsApp já foi à tela e o celular do cliente JÁ está guardado (${ctx.telefoneMascarado}). Não peça número nem mande digitar em card: confirme que você continua pelo WhatsApp no número que ele passou.`
+					: "Card NÃO mostrado: o card de WhatsApp já foi à tela nesta conversa e não sai de novo. Se o cliente ainda não deu o número, peça em uma frase, na conversa.";
+			}
+
 			const card = await montarCardDeFato(
 				args.tipo,
 				{
@@ -1066,6 +1080,11 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 			// despachado (é o que autoriza o `contract-submit`). O turno lê este campo.
 			if (card.metaDoTurno) ctx.metaDaEmissao = { ...ctx.metaDaEmissao, ...card.metaDoTurno };
 			ctx.cards.push(card.card);
+			// Com o celular já guardado o card é só a CONFIRMAÇÃO do número (um clique): a fala não
+			// manda digitar nada.
+			if (card.card.type === "whatsapp_optin" && ctx.telefoneMascarado) {
+				return `[Card whatsapp_optin na tela, só para confirmar o número que o cliente já passou (${ctx.telefoneMascarado}). Não peça número nem mande digitar: diga que te chama nesse número, se ele topar.]`;
+			}
 			return `[Card ${card.card.type} na tela. Ele aparece para o cliente agora — os números vieram da carta real, não os repita com outros valores.]`;
 		},
 	});

@@ -600,3 +600,40 @@ describe("cenários de contemplação (L17/P139) — card de FATO, calculado da 
 		expect(r.card.payload.initialTargetMonth).toBe(12);
 	});
 });
+
+describe("card de WhatsApp: uma vez por conversa, e sem pedir o número que o lead já tem (líder, 28/10 05:05)", () => {
+	it("a primeira vez com o celular já no lead: o card é só confirmação e a tool manda não pedir número", async () => {
+		const ctx = { ...ctxVazio(), telefoneMascarado: "(11) *****-4321" };
+		const saida = await mostrarCard(ctx, "whatsapp_optin", {});
+		expect(ctx.cards.map((c) => c.type)).toEqual(["whatsapp_optin"]);
+		expect(ctx.cards[0].payload).toMatchObject({ knownPhone: "(11) *****-4321" });
+		expect(saida).toMatch(/não peça número/i);
+	});
+
+	it("depois de o card já ter ido à tela, ele NÃO sai de novo e a tool diz para confirmar o número que o cliente passou", async () => {
+		const ctx = {
+			...ctxVazio(),
+			telefoneMascarado: "(11) *****-4321",
+			whatsappOptinJaMostrado: true,
+		};
+		const saida = await mostrarCard(ctx, "whatsapp_optin", {});
+		expect(ctx.cards).toHaveLength(0);
+		expect(saida).toMatch(/NÃO mostrado/);
+		expect(saida).toMatch(/Não peça número nem mande digitar em card/);
+		expect(saida).toContain("(11) *****-4321");
+	});
+
+	it("sem celular conhecido, o card repetido também não sai; a fala pede o número em uma frase", async () => {
+		const ctx = { ...ctxVazio(), whatsappOptinJaMostrado: true };
+		const saida = await mostrarCard(ctx, "whatsapp_optin", {});
+		expect(ctx.cards).toHaveLength(0);
+		expect(saida).toMatch(/peça em uma frase, na conversa/);
+	});
+
+	it("o mesmo turno também não empilha dois cards de WhatsApp", async () => {
+		const ctx = ctxVazio();
+		await mostrarCard(ctx, "whatsapp_optin", {});
+		await mostrarCard(ctx, "whatsapp_optin", {});
+		expect(ctx.cards.filter((c) => c.type === "whatsapp_optin")).toHaveLength(1);
+	});
+});
