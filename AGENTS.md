@@ -92,6 +92,35 @@ nada por pii, o objetivo eh vender, nada de mascaramento, nem problema de segura
 Existe um backoffice (feito na v1) para enxergar o que chega de lead e a **temperatura** dele — até
 onde avançou na contratação. É a tela que o cliente usa para ler o resultado.
 
+## Premissa técnica
+
+A versão vem do lockfile, não da memória do modelo. A doc vem da fonte oficial na versão travada (Context7), para o agente não escrever API velha.
+
+| peça | versão travada (fonte: lockfile) | onde está a doc | id no Context7 |
+|---|---|---|---|
+| Next.js (App Router, framework web) | 16.2.3 (`pnpm-lock.yaml:84-86`; `package.json` pina `16.2.3` exato) | nextjs.org/docs; Context7 | `/vercel/next.js` · tag mais próxima `v16.2.2` (não há `v16.2.3`) |
+| React / react-dom | 19.2.4 (`pnpm-lock.yaml:96-98` e `102-104`) | react.dev; Context7 | `/reactjs/react.dev` (sem tag de versão; `/react/react` tem `v19.2.6`, `v19.2.7`, não `v19.2.4`) |
+| Vercel AI SDK (`ai`) | 6.0.184 (`pnpm-lock.yaml:48-50`) | ai-sdk.dev/docs; Context7 | `/vercel/ai` · tag `ai_6.0.0` (a linha 6.x; não há tag 6.0.184) |
+| `@ai-sdk/anthropic` | 3.0.78 (`pnpm-lock.yaml:15-17`) | mesma doc do AI SDK (providers) | `/vercel/ai` · tag `ai_6.0.0` |
+| `@ai-sdk/openai` | 3.0.80 (`pnpm-lock.yaml:18-20`) | mesma doc do AI SDK (providers) | `/vercel/ai` · tag `ai_6.0.0` |
+| `@ai-sdk/react` | 3.0.186 (`pnpm-lock.yaml:21-23`) | mesma doc do AI SDK (UI) | `/vercel/ai` · tag `ai_6.0.0` |
+| Pi coding agent SDK (motor do vendedor: `src/lib/agent/pi/sessao.ts`) | 1.3.0 (`pnpm-lock.yaml:33-35`; `package.json` pina `1.3.0` exato) | `docs/` do pacote `@earendil-works/pi-coding-agent` instalado; Context7 | `/earendil-works/pi` · tag `v1.3.0` |
+| better-auth | 1.6.11 (`pnpm-lock.yaml:51-53`) | better-auth.com/docs; Context7 | `/better-auth/better-auth` · tag `v1.6.11` |
+| Drizzle ORM | 0.45.2 (`pnpm-lock.yaml:69-71`) | orm.drizzle.team/docs; Context7 | `/drizzle-team/drizzle-orm` · tags `0.45.1` e `0.45.4` (não há `0.45.2`) |
+| drizzle-kit (migrações) | 0.31.10 (`pnpm-lock.yaml:169-171`) | orm.drizzle.team/docs/kit-overview | `/drizzle-team/drizzle-orm` · tag `drizzle-kit_0.31.5` (a mais próxima; não há `0.31.10`) |
+| Fila: BullMQ | 5.78.1 (`pnpm-lock.yaml:54-56`) | docs.bullmq.io; Context7 | `/taskforcesh/bullmq` · tag `v5.77.6` (a mais próxima; não há `v5.78.1`) |
+| Redis: ioredis | 5.11.1 (`pnpm-lock.yaml:75-77`) | github.com/redis/ioredis | `/redis/ioredis` · tags `v5_4_0`, `v6.0.0` (não há 5.11.1) |
+| Postgres: pg | 8.20.0 (`pnpm-lock.yaml:93-95`) | node-postgres.com | `/brianc/node-postgres` (sem tags de versão) |
+| zod | 4.4.3 (`pnpm-lock.yaml:132-134`) | zod.dev; Context7 | `/colinhacks/zod` · tags `v4.3.6` e `v4.6.5` (não há `v4.4.3`) |
+| Tailwind CSS | 4.3.0 (`pnpm-lock.yaml:181-183`) | tailwindcss.com/docs; Context7 | `/tailwindlabs/tailwindcss.com` (só a tag `__branch__v4-beta-docs`; sem tag 4.3.0, a doc pode estar à frente ou atrás da versão travada) |
+| Testes: vitest | 4.1.6 (`pnpm-lock.yaml:193-195`) | vitest.dev | `/vitest-dev/vitest` · tag `v4.1.6` |
+
+Tag aproximada do Context7 não prova a versão travada: quando a API for sensível, confira no `node_modules` ou no changelog.
+
+Não se usa (e por quê): Prisma, next-auth, Inngest, Mastra e o SDK `openai` direto, porque o projeto já escolheu outra peça (Drizzle, better-auth, BullMQ, Pi como motor do vendedor e AI SDK para o LLM) e trocar exige decisão. LangChain, LangGraph e Langfuse saíram porque o agente passou a rodar no motor do Pi como biblioteca (sessão de 25/10/2026).
+
+Aprovado por Kairo em 28/10/2026 · origem grupo Agent - Preciso do kairo, 11:53 · D-0024
+
 ## O técnico — só o que não se descobre lendo o repo
 
 - **Motor:** o vendedor livre, `src/lib/agent/pi/turno-livre.ts` (`runTurnLivre`). O funil em código
