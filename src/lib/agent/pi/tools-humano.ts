@@ -57,8 +57,10 @@ export function criarToolsHumano(ctx: ContextoDasTools, deps: DepsHumano = {}) {
 			// A ROTA É DO SERVIDOR (P5/P8): proposta gerada ou pedido de fechar → mesa; o resto → fila
 			// de vendedores, e o agente segue conduzindo. O histórico serve também ao nome dito antes.
 			const historico = await loadConversationHistory(ctx.conversationId).catch(() => []);
+			// Só conta linha com oferta real: a tentativa com carta indisponível grava a linha sem oferta.
 			const temProposta =
-				(await getLatestBeviProposal(ctx.conversationId).catch(() => null)) != null;
+				((await getLatestBeviProposal(ctx.conversationId).catch(() => null))?.ofertaId ?? null) !=
+				null;
 			const pediuFechar =
 				clientePedeFechar(ctx.userText) ||
 				historico

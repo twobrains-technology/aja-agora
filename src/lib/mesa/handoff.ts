@@ -2,7 +2,7 @@
 // Spec: docs/visao/mesa-de-operacao.md §4 + DEC-B (gatilho manual).
 // Decisões: docs/decisoes/blocos/2026-06-21-bloco-mesa-b.md.
 
-import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
 	administradoras,
@@ -96,7 +96,7 @@ async function resolveProposalForLead(
 	const [byLead] = await db
 		.select()
 		.from(beviProposals)
-		.where(eq(beviProposals.leadId, lead.id))
+		.where(and(eq(beviProposals.leadId, lead.id), isNotNull(beviProposals.ofertaId)))
 		.orderBy(desc(beviProposals.createdAt))
 		.limit(1);
 	if (byLead) return byLead;
@@ -104,7 +104,9 @@ async function resolveProposalForLead(
 	const [byConv] = await db
 		.select()
 		.from(beviProposals)
-		.where(eq(beviProposals.conversationId, lead.conversationId))
+		.where(
+			and(eq(beviProposals.conversationId, lead.conversationId), isNotNull(beviProposals.ofertaId)),
+		)
 		.orderBy(desc(beviProposals.createdAt))
 		.limit(1);
 	return byConv ?? null;

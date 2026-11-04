@@ -308,7 +308,10 @@ export async function startContract(
 	};
 
 	if (reusing) {
-		await updateBeviProposal(existing.id, snapshot);
+		// Sem oferta nesta tentativa (carta vista indisponível ou simulação vazia): a linha
+		// existente segue como está. Gravar nulos por cima apagaria a oferta válida que a
+		// mesa e o roteamento leem. O `proposalId` já é reaproveitado, sem novo bureau.
+		if (offer) await updateBeviProposal(existing.id, snapshot);
 	} else {
 		await createBeviProposal(conversationId, snapshot, input.leadId);
 	}

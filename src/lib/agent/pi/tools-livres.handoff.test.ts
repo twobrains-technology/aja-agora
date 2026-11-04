@@ -242,7 +242,7 @@ describe("(2) a mesa só abre com proposta ou pedido de fechar; antes disso é a
 	});
 
 	it("pedido de pessoa no turno atual, com proposta gerada: a mesa abre", async () => {
-		mocks.getLatestBeviProposal.mockResolvedValue({ id: "prop-1" });
+		mocks.getLatestBeviProposal.mockResolvedValue({ id: "prop-1", ofertaId: "oferta-1" });
 		const ctx = ctxDoTurno({ userText: "quero falar com uma pessoa de verdade" });
 		await falarComHumano(ctx);
 		expect(ctx.pediuHumano).toBe(true);
@@ -251,7 +251,7 @@ describe("(2) a mesa só abre com proposta ou pedido de fechar; antes disso é a
 	});
 
 	it("pedido em turno anterior + proposta gerada: a mesa abre", async () => {
-		mocks.getLatestBeviProposal.mockResolvedValue({ id: "prop-1" });
+		mocks.getLatestBeviProposal.mockResolvedValue({ id: "prop-1", ofertaId: "oferta-1" });
 		mocks.loadConversationHistory.mockResolvedValue([
 			{ role: "user", content: "prefiro falar com um atendente, por favor" },
 		]);

@@ -97,7 +97,7 @@ describe("falar_com_humano: para onde cai", () => {
 	});
 
 	it("3) com proposta gerada vai para a mesa", async () => {
-		mocks.getLatestBeviProposal.mockResolvedValue({ id: "prop-1" });
+		mocks.getLatestBeviProposal.mockResolvedValue({ id: "prop-1", ofertaId: "oferta-1" });
 		const ctx = ctxDoTurno({ userText: "quero falar com uma pessoa" });
 		const saida = await chamarTool(ctx);
 
@@ -105,6 +105,16 @@ describe("falar_com_humano: para onde cai", () => {
 		expect(mocks.chamar).not.toHaveBeenCalled();
 		expect(saida).toContain("Caso aberto na mesa");
 		expect(ctx.pediuHumano).toBe(true);
+	});
+
+	it("3b) linha sem oferta é tentativa, não proposta: pedir atendente vai para a fila", async () => {
+		mocks.getLatestBeviProposal.mockResolvedValue({ id: "prop-vazia", ofertaId: null });
+		const ctx = ctxDoTurno({ userText: "quero falar com uma pessoa" });
+		await chamarTool(ctx);
+
+		expect(mocks.chamar).toHaveBeenCalledTimes(1);
+		expect(mocks.abrirCasoNaMesa).not.toHaveBeenCalled();
+		expect(ctx.pediuHumano).toBe(false);
 	});
 
 	it("4) 'bora fechar' sem proposta vai para a mesa", async () => {

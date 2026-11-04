@@ -125,12 +125,21 @@ describe("balão fixo de transferência só na rota da mesa", () => {
 	});
 
 	it("com proposta gerada, o balão da mesa continua saindo", async () => {
-		propostaSpy.mockResolvedValue({ id: "prop-1" });
+		propostaSpy.mockResolvedValue({ id: "prop-1", ofertaId: "oferta-real" });
 		const { texto } = await rodar({
 			userText: "quero falar com uma pessoa",
 			beats: [{ text: "Claro." }],
 		});
 		expect(texto).toMatch(BALAO_DA_MESA);
+	});
+
+	it("linha de proposta sem oferta (carta indisponível) não conta: vai à fila, não à mesa", async () => {
+		propostaSpy.mockResolvedValue({ id: "prop-vazia", ofertaId: null });
+		const { texto } = await rodar({
+			userText: "quero falar com uma pessoa",
+			beats: [{ text: "Claro, já te ajudo por aqui." }],
+		});
+		expect(texto).not.toMatch(BALAO_DA_MESA);
 	});
 
 	it("a volta do cliente no meio da transferência não retoma a mesa quando a rota é fila", async () => {

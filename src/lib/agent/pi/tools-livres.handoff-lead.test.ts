@@ -152,7 +152,7 @@ beforeEach(() => {
 	mocks.loadConversationHistory.mockResolvedValue([]);
 	mocks.loadIdentity.mockResolvedValue({ cpf: CPF, celular: CELULAR });
 	// O caso só vai para a mesa com proposta gerada (ou pedido de fechar): estes testes são da mesa.
-	mocks.getLatestBeviProposal.mockResolvedValue({ id: "prop-1" });
+	mocks.getLatestBeviProposal.mockResolvedValue({ id: "prop-1", ofertaId: "oferta-1" });
 });
 
 describe("o caso da mesa leva o nome e o telefone já capturados", () => {

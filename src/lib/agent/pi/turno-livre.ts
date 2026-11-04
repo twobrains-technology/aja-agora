@@ -1293,7 +1293,9 @@ export function createRunTurnLivre(deps?: {
 		// "Antes de mais nada, você já me disse seu nome?" a quem pediu um atendente.
 		// A ROTA É DO SERVIDOR (P5/P8): o balão fixo de transferência é da MESA (proposta gerada ou
 		// pedido de fechar). Na fila de vendedores o agente segue conduzindo e a fala é do modelo.
-		const temProposta = (await getLatestBeviProposal(conversationId).catch(() => null)) != null;
+		// Só conta linha com oferta real: a tentativa com carta indisponível grava a linha sem oferta.
+		const temProposta =
+			((await getLatestBeviProposal(conversationId).catch(() => null))?.ofertaId ?? null) != null;
 		const rotaMesaNoTurno =
 			decidirRota({ temProposta, pediuFechar: clientePedeFechar(falaDoClienteDoTurno) }) === "mesa";
 		const pedidoDeHumanoNoTurno = rotaMesaNoTurno && clientePedeHumano(falaDoClienteDoTurno);
