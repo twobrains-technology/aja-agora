@@ -44,10 +44,36 @@ describe("repartição do prompt em partes (base e partes)", () => {
 		for (const bloco of operacionais) {
 			expect(noPerfil, bloco.slice(0, 50)).toContain(normaliza(bloco));
 		}
+		// Cada bloco movido foi dividido: o fato fica na base, o comportamento vai para uma parte.
+		const naBaseFrases = [
+			"Não tem juros, tem taxa de administração e fundo de reserva.",
+			"Ninguém sabe o mês da contemplação: ela vem por sorteio ou por lance.",
+			"O lance embutido usa parte da própria carta e diminui o crédito que a pessoa recebe.",
+			"Nunca prometa data de contemplação.",
+			"Valores, parcelas, prazos e nomes de administradora vêm das ferramentas.",
+			"Se você não tem o número, diga que vai buscar ou que não sabe.",
+			"Nunca estime nem invente.",
+		];
+		for (const f of naBaseFrases) {
+			expect(naBase, f).toContain(f);
+			expect(noPerfil, f).not.toContain(f);
+		}
+		const nasPartesFrases = [
+			"Explique com palavras simples quando fizer diferença para a decisão dela, sem aula.",
+			"diga isso em UMA frase curta e siga para o próximo passo útil (o contato, o prazo, o lance)",
+			"não repita o aviso em turnos seguidos",
+			"não invente faixa em reais como exemplo e não ponha valor aproximado entre parênteses",
+			"responda em uma frase DIFERENTE — o aviso já foi dado.",
+			"De madrugada ninguém atende: diga isso e combine o retorno.",
+		];
+		for (const f of nasPartesFrases) {
+			expect(noPerfil, f).toContain(normaliza(f));
+			expect(naBase, f).not.toContain(normaliza(f));
+		}
+		// Os blocos originais do legado já não existem inteiros em lugar nenhum.
 		for (const m of MOVIDOS) {
 			const original = legado.split("\n\n").find((x) => x.startsWith(m)) as string;
-			expect(naBase).toContain(normaliza(original));
-			expect(noPerfil).not.toContain(normaliza(original));
+			expect(naBase).not.toContain(normaliza(original));
 		}
 	});
 
@@ -68,17 +94,16 @@ describe("repartição do prompt em partes (base e partes)", () => {
 		expect(t).toMatch(/Ninguém é empurrado para o fechamento/);
 		expect(t).toMatch(/só recebe a pessoa quando ela pede para fechar ou já gerou a proposta/);
 		expect(t).toMatch(/A fila de vendedores não é a mesa/);
-		expect(t).toMatch(/para se perder/);
-		expect(t).toMatch(/pede atendente/);
+		expect(t).toMatch(/não silencia/);
 		expect(t).toMatch(/sem prometer\s+prazo/);
 		expect(t).toMatch(/hora do fato/);
-		expect(t).toMatch(/de madrugada ninguém atende/);
 		expect(t).toMatch(/você se cala/);
 		expect(t).toMatch(/Só afirma o que sabe/);
 		expect(t).toMatch(/vêm das ferramentas/);
 		expect(t).toMatch(/Não tem juros, tem taxa de administração/);
 		expect(t).toMatch(/sorteio ou por lance/);
-		expect(t).toMatch(/nunca prometa data de contemplação/);
+		expect(t).toMatch(/Nunca prometa data de contemplação/);
+		expect(t).toMatch(/Nunca estime nem invente/);
 		expect(t).not.toMatch(/\bP\d{1,2}\b|Bruna|Kairo|Bernardo|Eduardo/);
 	});
 
@@ -98,6 +123,8 @@ describe("repartição do prompt em partes (base e partes)", () => {
 		expect(t).toMatch(/pedir atendente/i);
 		expect(t).toMatch(/para se perder/i);
 		expect(t).toMatch(/transferir/i);
+		expect(t).toMatch(/pede atendente/i);
+		expect(t).toMatch(/de madrugada ninguém atende/i);
 		expect(t).toMatch(/Dúvida sobre contemplação, lance, taxa ou segurança dos dados é conversa/);
 		expect(t).not.toMatch(/(duas|três|2|3) vezes/i);
 		expect(t).not.toMatch(/garant\w+ (o )?prazo/i);
