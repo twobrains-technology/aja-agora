@@ -2,8 +2,10 @@
 //
 // Regras (determinísticas; as heurísticas estão marcadas):
 //  · chegou-a-proposta (SUCESSO): tool-call `fazer_proposta` E artifact em ARTIFACTS_DE_PROPOSTA.
-//  · pedido-repetido (DEFEITO): `avaliarConversa` de golden.ts, regra `pedido-repetido`.
-//  · card-que-nao-apareceu (DEFEITO): (a) `mostrar_card` sem artifact de mesmo toolCallId;
+//  · pedido-repetido (DEFEITO): `avaliarConversa` de golden.ts, regra `pedido-repetido`, filtrada: só
+//    vale quando uma PERGUNTA do vendedor pede o dado (menção em afirmação ou oferta não conta).
+//  · card-que-nao-apareceu (DEFEITO): (a) `mostrar_card` de tipo X sem artifact do tipo X no turno (o servidor emite o artifact com
+//    outro id, então não casa por toolCallId) ou, em comparison_table, com ids diferentes dos pedidos;
 //    (b) HEURÍSTICA: texto com verbo de mostrar + substantivo de card e nenhum artifact no turno.
 //    A direção inversa (card com carta que o texto não cita) NÃO é defeito (P10).
 //  · resposta-cortada (DEFEITO): HEURÍSTICA — último balão sem pontuação final, stream sem `final`
@@ -15,7 +17,7 @@
 //  · chamou-fila (INFORMATIVA): tool-call `falar_com_humano`; o veredito decide se era esperado.
 //  · falou-prazo (DEFEITO): HEURÍSTICA — P8 proíbe prometer prazo de atendimento.
 
-import { avaliarConversa, type TurnoDeConversa } from "@/lib/agent/pi/eval/golden";
+import { avaliarConversa, slotsPedidos, type TurnoDeConversa } from "@/lib/agent/pi/eval/golden";
 import type {
 	ContextoDeMarcacao,
 	DadosDaSimulacao,
@@ -138,9 +140,27 @@ function conversaDe(t: TurnoDaSimulacao[], conhecidos: number[] = []): TurnoDeCo
 const turnoDaPosicao = (t: TurnoDaSimulacao[], pos: number): number =>
 	t[Math.floor(pos / 2)]?.indice ?? Math.floor(pos / 2);
 
+/** Pergunta que só oferece (seguir, saber mais, buscar) ou aponta outra opção não pede o dado. */
+const OFERTA_NAO_PEDIDO =
+	/\bquer\s+(?:saber|seguir|que\s+eu)\b|\boutr[ao]s?\s+(?:faixas?|valores?|parcelas?)\b/i;
+
+/** O vendedor PEDE o slot: alguma frase com `?` que não seja oferta casa o padrão do slot. */
+function perguntaPedeSlot(texto: string, slot: string): boolean {
+	return texto
+		.split(/(?<=[?!.])\s+|\n+/)
+		.map((f) => f.trim())
+		.filter((f) => f.endsWith("?") && !OFERTA_NAO_PEDIDO.test(f))
+		.some((f) => (slotsPedidos(f) as string[]).includes(slot));
+}
+
 export function pedidoRepetido(t: TurnoDaSimulacao[]): Marcacao {
 	const oc = avaliarConversa(conversaDe(t))
 		.filter((a) => a.regra === "pedido-repetido")
+		.filter((a) => {
+			const turno = t[Math.floor(a.turno / 2)];
+			const slot = a.evidencia.split(":", 1)[0];
+			return turno ? perguntaPedeSlot(textoDoVendedor(turno.vendedor), slot) : true;
+		})
 		.map((a) => ({ turno: turnoDaPosicao(t, a.turno), evidencia: corto(a.evidencia) }));
 	return montar("pedido-repetido", oc);
 }
@@ -149,18 +169,54 @@ const VERBO_DE_MOSTRAR =
 	/\b(segue|seguem|olha|olhe|mostrei|mandei|veja|confira|d[áa]\s+uma\s+olhada)\b/i;
 const SUBSTANTIVO_DE_CARD = /\b(tabela|card|cards|op[çc][õo]es|op[çc][ãa]o|cartas?)\b/i;
 
+function pedidoDoCard(input: unknown): { tipo: string; ids: string[] | null } | null {
+	if (typeof input !== "object" || input === null) return null;
+	const { tipo, payload } = input as { tipo?: unknown; payload?: unknown };
+	if (typeof tipo !== "string") return null;
+	const ids = (payload as { ids?: unknown } | null | undefined)?.ids;
+	const lista = Array.isArray(ids) ? ids.filter((i): i is string => typeof i === "string") : null;
+	return { tipo, ids: tipo === "comparison_table" && lista && lista.length > 0 ? lista : null };
+}
+
+/** Sem ids pedidos, qualquer artifact do tipo serve; com ids, todos têm de estar nos `groups`. */
+function idsBatem(pedidos: string[] | null, payload: Record<string, unknown>): boolean {
+	if (!pedidos) return true;
+	const groups = Array.isArray(payload.groups) ? payload.groups : [];
+	const naTela = new Set(
+		groups.flatMap((g) => {
+			const r = g as { id?: unknown; groupId?: unknown };
+			return [r.id, r.groupId].filter((x): x is string => typeof x === "string");
+		}),
+	);
+	return pedidos.every((id) => naTela.has(id));
+}
+
 export function cardQueNaoApareceu(t: TurnoDaSimulacao[]): Marcacao {
 	const oc: Ocorrencia[] = [];
 	for (const turno of t) {
 		const v = turno.vendedor;
-		const ids = new Set(v.artifacts.map((a) => a.toolCallId));
+		const livres = [...v.artifacts];
 		for (const c of v.toolCalls) {
-			if (c.toolName === "mostrar_card" && !ids.has(c.toolCallId)) {
+			if (c.toolName !== "mostrar_card") continue;
+			const pedido = pedidoDoCard(c.input);
+			if (!pedido) continue;
+			const mesmoTipo = livres.filter((x) => x.artifactType === pedido.tipo);
+			if (mesmoTipo.length === 0) {
 				oc.push({
 					turno: turno.indice,
-					evidencia: `mostrar_card (${c.toolCallId}) sem artifact correspondente`,
+					evidencia: `mostrar_card ${pedido.tipo} (${c.toolCallId}) sem artifact desse tipo`,
 				});
+				continue;
 			}
+			const achado = mesmoTipo.find((x) => idsBatem(pedido.ids, x.payload)) ?? null;
+			if (!achado) {
+				oc.push({
+					turno: turno.indice,
+					evidencia: `mostrar_card ${pedido.tipo} (${c.toolCallId}): ids do card diferem dos pedidos (${pedido.ids?.join(", ")})`,
+				});
+				continue;
+			}
+			livres.splice(livres.indexOf(achado), 1);
 		}
 		const texto = textoDoVendedor(v);
 		if (

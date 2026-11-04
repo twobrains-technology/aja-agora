@@ -161,9 +161,9 @@ describe("rodarSimulacao", () => {
 });
 
 describe("corpoDoChat", () => {
-	it("não envia dados quando são o padrão do servidor", () => {
+	it("envia a fila do perfil mesmo com 2 atendentes: o padrão do servidor é 0", () => {
 		const c = corpoDoChat(opcoes("caminho-feliz", { dados: PADRAO_DO_SERVIDOR }), null, "oi");
-		expect(c).toEqual({ modo: "antes", mensagem: "oi" });
+		expect(c).toEqual({ modo: "antes", mensagem: "oi", dublesDaFila: { atendentes: 2 } });
 	});
 
 	it("modo depois sem perfil do playground cai para antes", () => {
@@ -218,7 +218,7 @@ describe("corpoDoChat", () => {
 		);
 		expect(c.fonteDeDados).toBe("bevi-dev");
 		expect(c.perfilId).toBe("p1");
-		expect(c.dublesDaFila).toBeUndefined();
+		expect(c.dublesDaFila).toBeUndefined(); // fila dublê só existe com fonte dublê
 	});
 });
 

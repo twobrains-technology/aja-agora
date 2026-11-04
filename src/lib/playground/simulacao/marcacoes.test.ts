@@ -99,25 +99,95 @@ describe("pedidoRepetido", () => {
 		]);
 		expect(m.status).toBe("LIMPA");
 	});
+	it("LIMPA: o vendedor só MENCIONA o dado numa afirmação (caminho-feliz t9 real)", () => {
+		const m = pedidoRepetido([
+			turno(0, { cliente: "oi", texto: "Qual parcela você topa pagar por mês?" }),
+			turno(1, {
+				cliente: "uns 500",
+				texto:
+					"Perfeito! Agora vou gerar sua proposta com a do Itaú:\n\nA parcela fica em R$ 518 por mês.",
+			}),
+		]);
+		expect(m.status).toBe("LIMPA");
+	});
+	it("LIMPA: pergunta que oferece alternativa ou explicação, sem pedir o dado", () => {
+		const m = pedidoRepetido([
+			turno(0, { cliente: "oi", texto: "Qual valor você quer?" }),
+			turno(1, {
+				cliente: "60 mil",
+				texto: "Quer seguir com essa ou quer ver outra faixa de valor?",
+			}),
+			turno(2, { cliente: "sim", texto: "Quer saber mais sobre o lance?" }),
+		]);
+		expect(m.status).toBe("LIMPA");
+	});
+	it("ACIONADA: pergunta de novo o valor que o cliente já deu", () => {
+		const m = pedidoRepetido([
+			turno(0, { cliente: "oi", texto: "Qual valor você quer?" }),
+			turno(1, { cliente: "60 mil", texto: "Beleza. Qual é o valor do imóvel que você pensa?" }),
+		]);
+		expect(m.status).toBe("ACIONADA");
+		expect(m.ocorrencias[0].turno).toBe(1);
+	});
 });
 
 describe("cardQueNaoApareceu", () => {
-	it("ACIONADA: mostrar_card sem artifact do mesmo toolCallId", () => {
+	// Trecho real da rodada 2026-11-04T23-22, caminho-feliz turno 3: o servidor emite o artifact com
+	// OUTRO id (uuid) que o toolCallId do modelo.
+	const IDS = ["6a0ca9c83e68cce9b61d36a1", "6a0ca9c73e68cce9b61d30df", "6a0ca9c73e68cce9b61d3143"];
+	const mostrar = (
+		tipo: string,
+		payload: unknown,
+		toolCallId = "toolu_01BvfVAX",
+	): ToolCallLido => ({
+		toolName: "mostrar_card",
+		input: { tipo, payload },
+		toolCallId,
+	});
+	const tabela = (ids: string[], toolCallId = "3e370138-d8e9-4a18-9db0-bc421664ddb7") =>
+		artifact("comparison_table", { groups: ids.map((id) => ({ id, groupId: id })) }, toolCallId);
+
+	it("LIMPA: card veio com id de artifact diferente do toolCallId (turno real)", () => {
+		const m = cardQueNaoApareceu([
+			turno(3, {
+				texto: "Achei três opções.",
+				toolCalls: [mostrar("comparison_table", { ids: IDS })],
+				artifacts: [tabela(IDS), artifact("quick_reply", {}, "f7ab394a")],
+			}),
+		]);
+		expect(m.status).toBe("LIMPA");
+	});
+	it("ACIONADA: mostrar_card de um tipo e nenhum artifact desse tipo", () => {
 		const m = cardQueNaoApareceu([
 			turno(0, {
 				texto: "Aqui.",
-				toolCalls: [chamada("mostrar_card", "a")],
-				artifacts: [artifact("x", {}, "b")],
+				toolCalls: [mostrar("comparison_table", { ids: IDS })],
+				artifacts: [artifact("quick_reply", {}, "b")],
 			}),
 		]);
 		expect(m.status).toBe("ACIONADA");
+		expect(m.ocorrencias[0].evidencia).toContain("comparison_table");
 	});
-	it("LIMPA: mostrar_card com artifact do mesmo toolCallId", () => {
+	it("ACIONADA: comparison_table veio com ids diferentes dos pedidos", () => {
 		const m = cardQueNaoApareceu([
 			turno(0, {
 				texto: "Aqui.",
-				toolCalls: [chamada("mostrar_card", "a")],
-				artifacts: [artifact("x", {}, "a")],
+				toolCalls: [mostrar("comparison_table", { ids: IDS })],
+				artifacts: [tabela([IDS[0], "outro"])],
+			}),
+		]);
+		expect(m.status).toBe("ACIONADA");
+		expect(m.ocorrencias[0].evidencia).toContain("ids");
+	});
+	it("LIMPA: dois mostrar_card do mesmo tipo casam um artifact cada", () => {
+		const m = cardQueNaoApareceu([
+			turno(0, {
+				texto: "Aqui.",
+				toolCalls: [
+					mostrar("group_card", { groupId: "g1" }, "a"),
+					mostrar("group_card", { groupId: "g2" }, "b"),
+				],
+				artifacts: [artifact("group_card", {}, "x"), artifact("group_card", {}, "y")],
 			}),
 		]);
 		expect(m.status).toBe("LIMPA");

@@ -22,7 +22,7 @@ import type {
 export const ACHADO_FINISH_REASON =
 	"finishReason do modelo indisponível: o evento `finish` sempre diz `complete` (turno-livre.ts:1808)";
 
-/** Padrão assumido do servidor: só o que difere dele vai no corpo do chat. */
+/** Padrão da simulação (perfis). A fila vai sempre no corpo: o servidor assume 0 atendentes. */
 export const PADRAO_DO_SERVIDOR: DadosDaSimulacao = {
 	fonteDeDados: "duble",
 	catalogo: "padrao",
@@ -64,15 +64,11 @@ export function corpoDoChat(
 		corpo.fonteDeDados = dados.fonteDeDados;
 	if (dados.fonteDeDados === "duble") {
 		if (dados.catalogo !== PADRAO_DO_SERVIDOR.catalogo) corpo.catalogo = dados.catalogo;
-		const difereFila =
-			dados.fila.atendentes !== PADRAO_DO_SERVIDOR.fila.atendentes ||
-			dados.fila.horaFixa !== undefined;
-		if (difereFila) {
-			corpo.dublesDaFila = {
-				atendentes: dados.fila.atendentes,
-				...(dados.fila.horaFixa ? { horaFixa: dados.fila.horaFixa } : {}),
-			};
-		}
+		// Sempre: o padrão do servidor para a fila é 0 atendentes, não o do perfil.
+		corpo.dublesDaFila = {
+			atendentes: dados.fila.atendentes,
+			...(dados.fila.horaFixa ? { horaFixa: dados.fila.horaFixa } : {}),
+		};
 	}
 	return corpo;
 }

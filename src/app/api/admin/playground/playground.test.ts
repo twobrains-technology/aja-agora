@@ -307,6 +307,31 @@ describe("I1 · dados da simulação no chat", () => {
 		expect(String(inicio.dados.agora).slice(11, 16)).toBe("06:00");
 	});
 
+	it.each([
+		["dublesDaFila", "dublesDaFila"],
+		["fila (forma do perfil: dados.fila)", "fila"],
+	])("fila de 2 atendentes pela chave %s ecoa 2 e chega ao motor", async (_nome, chave) => {
+		capturado.deps = null;
+		chamarRealSpy.mockClear();
+		const r = await chatPOST(json({ modo: "antes", mensagem: "oi", [chave]: { atendentes: 2 } }));
+		expect(r.status).toBe(200);
+		const inicio = (await lerLinhas(r)).find((l) => l.type === "inicio") as {
+			dados: Record<string, unknown>;
+		};
+		expect(inicio.dados).toMatchObject({
+			fila: { atendentes: 2 },
+			dublesDaFila: { atendentes: 2 },
+		});
+		const deps = capturado.deps as unknown as {
+			filaDeVendedores: {
+				chamar: (a: unknown) => Promise<{ notificados: number; semAtendentes: boolean }>;
+				estado: (id: string) => Promise<{ atendentesAtivos: number }>;
+			};
+		};
+		expect(await deps.filaDeVendedores.estado("x")).toMatchObject({ atendentesAtivos: 2 });
+		expect(chamarRealSpy).not.toHaveBeenCalled();
+	});
+
 	it("catalogo ou hora inválidos são 400", async () => {
 		expect((await chatPOST(json({ modo: "antes", mensagem: "oi", catalogo: "x" }))).status).toBe(
 			400,

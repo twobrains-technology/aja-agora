@@ -52,6 +52,8 @@ const corpoSchema = z.object({
 	fonteDeDados: fonteDeDadosSchema.default("duble"),
 	catalogo: catalogoSchema.optional(),
 	dublesDaFila: dublesDaFilaSchema.optional(),
+	/** Alias de `dublesDaFila`: a forma de `dados.fila` dos perfis da simulação. */
+	fila: dublesDaFilaSchema.optional(),
 	atributos: atributosSchema.optional(),
 	orientacao: orientacaoSchema.optional(),
 	modo: z.enum(["antes", "depois"]),
@@ -155,7 +157,7 @@ export async function POST(req: Request) {
 
 	const convId = conversationId;
 	const d = dublesDa(convId, corpo.catalogo ?? "padrao");
-	const fila = corpo.dublesDaFila ?? { atendentes: 0 };
+	const fila = corpo.dublesDaFila ?? corpo.fila ?? { atendentes: 0 };
 	const agora = fila.horaFixa ? instanteDaHoraFixa(fila.horaFixa) : null;
 	const run = createRunTurnLivre({
 		caixa,
