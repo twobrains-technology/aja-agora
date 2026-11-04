@@ -13,6 +13,16 @@ import type {
 
 export const MODELO_DA_IA_CLIENTE = "claude-sonnet-4-6";
 
+/**
+ * O modelo da IA-cliente da simulação (P12), com override opcional por env,
+ * mesmo padrão de `modeloDoAgente` (model-provider.ts): `?.trim() ||` de
+ * propósito, porque o compose materializa `${AI_CLIENT_MODEL:-}` como string
+ * VAZIA e `??` não cairia no default.
+ */
+export function modeloDaIaCliente(): string {
+	return process.env.AI_CLIENT_MODEL?.trim() || MODELO_DA_IA_CLIENTE;
+}
+
 type GenerateObjectFn = typeof generateObject;
 let generateObjectImpl: GenerateObjectFn = generateObject;
 
@@ -53,7 +63,7 @@ export async function gerarFalaDoCliente(
 	const perfil = perfilPorId(pedido.perfilId);
 	const anthropic = createGatewayAnthropic();
 	const r = await generateObjectImpl({
-		model: anthropic(MODELO_DA_IA_CLIENTE),
+		model: anthropic(modeloDaIaCliente()),
 		schema: falaDoClienteSchema,
 		system: montarSystemDoCliente(perfil, pedido.horaFixa),
 		prompt: montarPromptDoCliente(perfil, pedido.historico, pedido.turno),

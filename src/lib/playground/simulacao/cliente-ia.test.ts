@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	__setGenerateObjectDoClienteForTests,
 	gerarFalaDoCliente,
+	MODELO_DA_IA_CLIENTE,
+	modeloDaIaCliente,
 	montarPromptDoCliente,
 	montarSystemDoCliente,
 } from "./cliente-ia";
@@ -41,6 +43,16 @@ describe("cliente-ia", () => {
 		__setGenerateObjectDoClienteForTests(fake({ texto: "quanto fica?", estado: "continua" }));
 		const r = await gerarFalaDoCliente({ perfilId: "objecao", historico: [], turno: 2 });
 		expect(r).toEqual({ texto: "quanto fica?", estado: "continua", origem: "ia" });
+	});
+
+	it("respeita o override por env AI_CLIENT_MODEL", () => {
+		const antes = process.env.AI_CLIENT_MODEL;
+		process.env.AI_CLIENT_MODEL = "  ";
+		expect(modeloDaIaCliente()).toBe(MODELO_DA_IA_CLIENTE); // var vazia cai no padrão
+		process.env.AI_CLIENT_MODEL = "claude-opus-4-6";
+		expect(modeloDaIaCliente()).toBe("claude-opus-4-6");
+		if (antes === undefined) delete process.env.AI_CLIENT_MODEL;
+		else process.env.AI_CLIENT_MODEL = antes;
 	});
 
 	it("rejeita estado inválido do seam", async () => {
