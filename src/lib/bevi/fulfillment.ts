@@ -249,7 +249,16 @@ export async function startContract(
 	const chosen =
 		cartaVista ??
 		pickClosestOffer(sim.offers, input.valor, input.administradoraPreferida, input.prazoPreferido);
-	const cartaVistaIndisponivel = !!input.quotaIdVista && !cartaVista && !!chosen;
+	// Oferta de OUTRA administradora que a da tela (ou da preferência) nunca vira proposta:
+	// vale para carta vista ausente, achada com outra marca, ou escolhida por proximidade.
+	// O agente recebe o fato e as alternativas e o cliente escolhe — nada de "opção equivalente".
+	const marcaNaTela = input.administradoraExibida ?? input.administradoraPreferida;
+	const outraMarca =
+		!!marcaNaTela &&
+		!!chosen &&
+		normalizeAdmin(partnerOfferToRealOffer(chosen, input.segmento).administradora) !==
+			normalizeAdmin(marcaNaTela);
+	const cartaVistaIndisponivel = (!!input.quotaIdVista && !cartaVista && !!chosen) || outraMarca;
 	// Carta vista fora do catálogo: NÃO se gera proposta de outra carta. O que sobra
 	// vai como alternativas, para o cliente escolher.
 	const offer =
@@ -277,20 +286,6 @@ export async function startContract(
 	// vai marcado no resultado para o canal abrir a confirmação explícita (o card
 	// da oferta real), antes do contrato — nunca no resumo, depois do fato.
 	const divergiu = valorDoFechoDivergiu(input.valorVisto, offer?.creditValue);
-
-	// FIX-259: a administradora fechada pode divergir da confirmada (catálogo do
-	// fechamento sem ela na faixa → pickClosestOffer cai pro global best). Detecta
-	// pela comparação final (normalizada) — cobre QUALQUER caminho que produziu a
-	// divergência, sem duplicar a lógica interna do clamp.
-	// FIX-417 — compara contra o que o cliente VIU, e só cai na preferência quando
-	// não há tela a citar. Antes exigia `administradoraPreferida`, e com ela nula
-	// (jornada sem clique, o caso comum pós-FIX-414) o aviso simplesmente não saía:
-	// a marca mudava em silêncio.
-	const marcaNaTela = input.administradoraExibida ?? input.administradoraPreferida;
-	const administradoraChanged =
-		!!marcaNaTela &&
-		!!offer &&
-		normalizeAdmin(offer.administradora) !== normalizeAdmin(marcaNaTela);
 
 	const snapshot = {
 		proposalId,
@@ -322,35 +317,13 @@ export async function startContract(
 		noOffer: !chosen,
 		alternativas,
 		requestedCreditValue: input.originalRequestedCreditValue ?? input.valor,
-		administradoraChanged,
+		// Troca de administradora não existe mais: vira `cartaVistaIndisponivel` (sem oferta).
+		administradoraChanged: false,
 		// Só o que houve de fato: sem `valorVisto` (heurística) não há divergência a
 		// afirmar, e sem divergência não há o que o resumo tenha que explicar.
 		valorDivergiu: divergiu,
 		valorVisto: divergiu ? input.valorVisto : undefined,
-		// FIX-418 — a marca ANTERIOR é a que estava na TELA, não a preferência.
-		//
-		// O FIX-417 trocou a fonte de `administradoraChanged` pra `marcaNaTela` e
-		// esqueceu esta linha: `administradoraPreferida` é nula justamente na jornada
-		// sem clique — o caso que aquele commit dizia estar corrigindo. Os dois
-		// consumidores (`closing-presentation.ts`, `contract-capture.ts`) exigem valor
-		// truthy, então o aviso seguia MUDO e o cliente lia "Confirmei com a ITAÚ"
-		// com RODOBENS na tela. A 13ª revisão provou que era vácuo: revertendo o
-		// FIX-417, ZERO testes falhavam.
-		// FIX-419 — REVERTIDO, e isto é correção, não recuo.
-		//
-		// O FIX-418 fez este campo vir de `marcaNaTela` pro aviso "parar de emudecer".
-		// A 14ª revisão rodou até a TELA e mostrou o que o cliente passou a ler:
-		// "A RODOBENS não tem grupo disponível nessa faixa agora" — com a RODOBENS
-		// TENDO grupo na faixa. A causalidade que a copy afirma nunca foi estabelecida
-		// pelo código: sem `administradoraPreferida`, o gateway não PROCUROU a
-		// RODOBENS; ele caiu em `best(offers)` por proximidade de valor.
-		//
-		// Trocar silêncio por afirmação falsa sobre o catálogo de uma administradora,
-		// num contrato de consórcio, não é upgrade. O aviso volta a falar só quando
-		// houve preferência de verdade — aí a frase é verdadeira. Fazer o aviso contar
-		// o que REALMENTE aconteceu ("a busca trouxe a mais próxima do valor") é
-		// mudança de COPY, e copy é decisão do Kairo.
-		previousAdministradora: administradoraChanged ? input.administradoraPreferida : null,
+		previousAdministradora: null,
 		cartaVistaIndisponivel,
 	};
 }

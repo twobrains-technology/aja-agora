@@ -90,3 +90,44 @@ describe("carta vista indisponível", () => {
 		expect(snapshot.ofertaId).toBeNull();
 	});
 });
+
+describe("oferta de outra administradora nunca vira proposta nem fala de troca", () => {
+	const gw = (admin: string) =>
+		({
+			createProposal,
+			simulate: async () => ({
+				simulationSessionId: "sim-3",
+				expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+				offers: [{ ...oferta("quota-vista", 49_349), administradora: admin }],
+			}),
+		}) as unknown as ProposalGateway;
+
+	it.each([
+		["com quotaIdVista achada, mas de outra marca", { quotaIdVista: "quota-vista" }],
+		["sem quotaIdVista (proximidade)", {}],
+	])("%s: sem proposta, com alternativas", async (_n, extra) => {
+		getLatest.mockResolvedValue(null);
+		const r = await startContract(
+			"conv-1",
+			{ ...ENTRADA, quotaIdVista: undefined, ...extra, administradoraExibida: "ITAU" },
+			gw("ANCORA"),
+		);
+		expect(r.offer).toBeNull();
+		expect(r.cartaVistaIndisponivel).toBe(true);
+		expect(r.alternativas?.length).toBeGreaterThan(0);
+		expect(r.previousAdministradora ?? null).toBeNull();
+		expect(criar).toHaveBeenCalledWith(
+			"conv-1",
+			expect.objectContaining({ ofertaId: null }),
+			undefined,
+		);
+	});
+
+	it("sem marca na tela, a proximidade segue e não anuncia troca", async () => {
+		getLatest.mockResolvedValue(null);
+		const r = await startContract("conv-1", { ...ENTRADA, quotaIdVista: undefined }, gw("ANCORA"));
+		expect(r.offer?.administradora).toBeTruthy();
+		expect(r.previousAdministradora ?? null).toBeNull();
+		expect(r.cartaVistaIndisponivel).toBeFalsy();
+	});
+});

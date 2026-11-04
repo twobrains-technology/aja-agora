@@ -1073,19 +1073,13 @@ export function realOfferToWhatsApp(payload: Record<string, unknown>): WhatsAppR
 	const planChangeLine = mudancas
 		? `\n\n_Atenção: essa cota não é a mesma que eu simulei — ${mudancas}._`
 		: "";
-	const previousAdministradora = payload.previousAdministradora as string | undefined;
-	const swapLine = previousAdministradora
-		? `\n\n_A ${previousAdministradora} não tem grupo disponível nessa faixa agora — a opção equivalente é a ${admin}._`
-		: "";
-	const introLine = previousAdministradora
-		? `Confirmado com a ${admin} (opção equivalente à ${previousAdministradora}):`
-		: `Confirmado com a ${admin}:`;
+	const introLine = `Confirmado com a ${admin}:`;
 	return {
 		type: "interactive",
 		interactive: {
 			type: "button",
 			body: {
-				text: `${introLine}\n\n*Carta:* ${brlWa(credit)}\n*Parcela:* ${brlWa(parcela)}${grupo ? `\n*Grupo:* ${grupo}` : ""}${prazoLine}${lanceLine}${adjustmentLine}${swapLine}${planChangeLine}\n\nConfirma essa carta pra eu seguir?`,
+				text: `${introLine}\n\n*Carta:* ${brlWa(credit)}\n*Parcela:* ${brlWa(parcela)}${grupo ? `\n*Grupo:* ${grupo}` : ""}${prazoLine}${lanceLine}${adjustmentLine}${planChangeLine}\n\nConfirma essa carta pra eu seguir?`,
 			},
 			action: {
 				buttons: [
