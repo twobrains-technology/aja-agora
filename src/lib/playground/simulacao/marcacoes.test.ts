@@ -55,6 +55,11 @@ const chamada = (toolName: string, toolCallId = "t1"): ToolCallLido => ({
 	input: {},
 	toolCallId,
 });
+const chamadaComInput = (toolName: string, input: unknown, toolCallId = "t1"): ToolCallLido => ({
+	toolName,
+	input,
+	toolCallId,
+});
 const artifact = (artifactType: string, payload = {}, toolCallId = "t1"): ArtifactLido => ({
 	artifactType,
 	payload,
@@ -121,6 +126,28 @@ describe("cardQueNaoApareceu", () => {
 			}),
 		]);
 		expect(m.status).toBe("LIMPA");
+	});
+	it("LIMPA: artifact de mesmo tipo que o input.tipo do mostrar_card, com id divergente", () => {
+		// Prova real: mostrar_card { tipo: 'whatsapp_optin' } com artifact whatsapp_optin
+		// de outro toolCallId. O card apareceu; não é card ausente.
+		const m = cardQueNaoApareceu([
+			turno(0, {
+				texto: "Prontinho.",
+				toolCalls: [chamadaComInput("mostrar_card", { tipo: "whatsapp_optin" }, "a")],
+				artifacts: [artifact("whatsapp_optin", {}, "b")],
+			}),
+		]);
+		expect(m.status).toBe("LIMPA");
+	});
+	it("ACIONADA: mostrar_card com input.tipo e nenhum artifact", () => {
+		const m = cardQueNaoApareceu([
+			turno(0, {
+				texto: "Aqui.",
+				toolCalls: [chamadaComInput("mostrar_card", { tipo: "whatsapp_optin" }, "a")],
+			}),
+		]);
+		expect(m.status).toBe("ACIONADA");
+		expect(m.ocorrencias[0].evidencia).toContain("whatsapp_optin");
 	});
 	it("ACIONADA: 'segue a tabela' sem artifact", () => {
 		const m = cardQueNaoApareceu([turno(0, { texto: "Segue a tabela com as opções." })]);

@@ -3,8 +3,10 @@
 // Regras (determinísticas; as heurísticas estão marcadas):
 //  · chegou-a-proposta (SUCESSO): tool-call `fazer_proposta` E artifact em ARTIFACTS_DE_PROPOSTA.
 //  · pedido-repetido (DEFEITO): `avaliarConversa` de golden.ts, regra `pedido-repetido`.
-//  · card-que-nao-apareceu (DEFEITO): (a) `mostrar_card` sem artifact de mesmo toolCallId;
-//    (b) HEURÍSTICA: texto com verbo de mostrar + substantivo de card e nenhum artifact no turno.
+//  · card-que-nao-apareceu (DEFEITO): (a) `mostrar_card` sem artifact de mesmo toolCallId E
+//    sem artifact de mesmo artifactType que o `tipo` do input (o servidor emite o artifact com
+//    toolCallId próprio); (b) HEURÍSTICA: texto com verbo de mostrar + substantivo de card e
+//    nenhum artifact no turno.
 //    A direção inversa (card com carta que o texto não cita) NÃO é defeito (P10).
 //  · resposta-cortada (DEFEITO): HEURÍSTICA — último balão sem pontuação final, stream sem `final`
 //    com texto parcial, ou `erro` depois de texto. O finishReason do modelo não chega (o motor
@@ -149,18 +151,29 @@ const VERBO_DE_MOSTRAR =
 	/\b(segue|seguem|olha|olhe|mostrei|mandei|veja|confira|d[áa]\s+uma\s+olhada)\b/i;
 const SUBSTANTIVO_DE_CARD = /\b(tabela|card|cards|op[çc][õo]es|op[çc][ãa]o|cartas?)\b/i;
 
+/** O `tipo` do input do `mostrar_card`, se o input o traz. */
+function tipoDoInput(input: unknown): string | null {
+	if (typeof input !== "object" || input === null) return null;
+	const tipo = (input as { tipo?: unknown }).tipo;
+	return typeof tipo === "string" && tipo.trim() !== "" ? tipo : null;
+}
+
 export function cardQueNaoApareceu(t: TurnoDaSimulacao[]): Marcacao {
 	const oc: Ocorrencia[] = [];
 	for (const turno of t) {
 		const v = turno.vendedor;
 		const ids = new Set(v.artifacts.map((a) => a.toolCallId));
 		for (const c of v.toolCalls) {
-			if (c.toolName === "mostrar_card" && !ids.has(c.toolCallId)) {
-				oc.push({
-					turno: turno.indice,
-					evidencia: `mostrar_card (${c.toolCallId}) sem artifact correspondente`,
-				});
-			}
+			if (c.toolName !== "mostrar_card") continue;
+			if (ids.has(c.toolCallId)) continue; // artifact do mesmo toolCallId: apareceu
+			const tipo = tipoDoInput(c.input);
+			// Prova real (simulação): o artifact sai com toolCallId próprio; o que importa é o
+			// artifactType == input.tipo. Só ausência de artifact é card ausente.
+			if (tipo && v.artifacts.some((a) => a.artifactType === tipo)) continue;
+			oc.push({
+				turno: turno.indice,
+				evidencia: `mostrar_card (${tipo ? `tipo ${tipo}, ` : ""}${c.toolCallId}) sem artifact correspondente`,
+			});
 		}
 		const texto = textoDoVendedor(v);
 		if (
