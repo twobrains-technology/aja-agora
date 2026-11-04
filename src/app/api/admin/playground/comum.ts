@@ -8,8 +8,11 @@ import { type DepsDasToolsLivres, simularCotaDaCarta } from "@/lib/agent/pi/tool
 import { PARTES_PADRAO } from "@/lib/agent/prompt-do-vendedor";
 import { isPlaygroundEnabled } from "@/lib/playground/ambiente";
 import { detectarPromessaDeContemplacao } from "@/lib/playground/detector-de-promessa";
+import { CATALOGO_IDS } from "@/lib/playground/dubles/catalogos";
+import { criarFilaDuble } from "@/lib/playground/dubles/fila-duble";
 import type { fixtureDiscoveryAdapter } from "@/lib/playground/dubles/fixture-discovery-adapter";
 import { ler } from "@/lib/playground/orientacao-em-partes";
+import type { CatalogoId } from "@/lib/playground/simulacao/tipos";
 import {
 	AGRESSIVIDADES,
 	CONTATOS_DO_PRESET,
@@ -17,6 +20,7 @@ import {
 	PROATIVIDADES,
 	TONS,
 } from "@/lib/playground/tipos";
+import type { FilaDeVendedores } from "@/lib/whatsapp/proxy";
 
 export const atributosSchema = z.object({
 	agressividade: z.enum(AGRESSIVIDADES),
@@ -35,11 +39,43 @@ export const partesSchema = z.record(
 	z.enum(Object.keys(PARTES_PADRAO) as [ParteId, ...ParteId[]]),
 	z.string().max(8000),
 );
-/** Validado e guardado; a ligação à fila é do líder depois do merge de F2 (Q6). */
+/** Dublê da fila: `atendentes` ativos (0 = ninguém) e hora fixa "HH:MM" de São Paulo. */
 export const dublesDaFilaSchema = z.object({
 	atendentes: z.number().int().min(0),
-	horaFixa: z.string().optional(),
+	horaFixa: z
+		.string()
+		.regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:MM.")
+		.optional(),
 });
+export const catalogoSchema = z.enum(CATALOGO_IDS as [CatalogoId, ...CatalogoId[]]);
+
+/** O instante de hoje, na hora fixa "HH:MM" de São Paulo (UTC-3, sem horário de verão). */
+export function instanteDaHoraFixa(horaFixa: string, base: Date = new Date()): Date {
+	const dia = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(base);
+	return new Date(`${dia}T${horaFixa}:00-03:00`);
+}
+
+/**
+ * A fila do playground é SEMPRE dublê: registra a chamada e devolve os atendentes
+ * configurados (padrão 0). Nunca a fila real — não sai mensagem para vendedor.
+ */
+export function filaDoPlayground(cfg: { atendentes: number }): FilaDeVendedores {
+	const duble = criarFilaDuble({ atendentes: cfg.atendentes });
+	return {
+		chamar: async (a) => {
+			const r = duble.chamar({
+				conversationId: a.conversationId,
+				resumo: a.summary,
+			});
+			return { notificados: r.notificados, semAtendentes: r.semAtendentes };
+		},
+		estado: async () => ({
+			atendentesAtivos: duble.atendentes(),
+			chamadaEm: null,
+			assumidaPor: null,
+		}),
+	};
+}
 
 /**
  * Texto que o detector examina: o `livre` e cada parte que DIFERE do padrão.

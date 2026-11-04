@@ -19,20 +19,24 @@ import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { createRunTurnLivre } from "@/lib/agent/pi/turno-livre";
 import { aplicarBloco, compilarConduta, compilarPerfil } from "@/lib/playground/compilar-perfil";
 import { detectarPromessaDeContemplacao } from "@/lib/playground/detector-de-promessa";
-import { fixtureDiscoveryAdapter } from "@/lib/playground/dubles/fixture-discovery-adapter";
+import { adapterDoCatalogo } from "@/lib/playground/dubles/catalogos";
 import { MockProposalGateway } from "@/lib/playground/dubles/mock-proposal-gateway";
 import { ehEnvelope, ler } from "@/lib/playground/orientacao-em-partes";
 import { obterPerfil } from "@/lib/playground/repo";
+import type { CatalogoId } from "@/lib/playground/simulacao/tipos";
 import {
 	atributosSchema,
 	barrarPromessa,
+	catalogoSchema,
 	contatoSchema,
 	corpoInvalido,
 	depsDaFonte,
 	dublesDaFilaSchema,
+	filaDoPlayground,
 	fonteDeDadosSchema,
 	guarda,
 	idSchema,
+	instanteDaHoraFixa,
 	lerJson,
 	naoEncontrado,
 	orientacaoSchema,
@@ -46,6 +50,7 @@ const corpoSchema = z.object({
 	partes: partesSchema.optional(),
 	contato: contatoSchema.optional(),
 	fonteDeDados: fonteDeDadosSchema.default("duble"),
+	catalogo: catalogoSchema.optional(),
 	dublesDaFila: dublesDaFilaSchema.optional(),
 	atributos: atributosSchema.optional(),
 	orientacao: orientacaoSchema.optional(),
@@ -58,14 +63,15 @@ const corpoSchema = z.object({
 const dublesPorConversa = new Map<
 	string,
 	{
-		adapter: ReturnType<typeof fixtureDiscoveryAdapter>;
+		catalogo: CatalogoId;
+		adapter: ReturnType<typeof adapterDoCatalogo>;
 		gateway: MockProposalGateway;
 		grupos: Map<string, GroupSummary>;
 	}
 >();
 const MAX_DUBLES = 200;
 
-function dublesDa(conversationId: string) {
+function dublesDa(conversationId: string, catalogo: CatalogoId) {
 	let d = dublesPorConversa.get(conversationId);
 	if (!d) {
 		if (dublesPorConversa.size >= MAX_DUBLES) {
@@ -73,7 +79,8 @@ function dublesDa(conversationId: string) {
 			if (primeira) dublesPorConversa.delete(primeira);
 		}
 		d = {
-			adapter: fixtureDiscoveryAdapter(),
+			catalogo,
+			adapter: adapterDoCatalogo(catalogo),
 			gateway: new MockProposalGateway(),
 			grupos: new Map(),
 		};
@@ -147,12 +154,24 @@ export async function POST(req: Request) {
 	}
 
 	const convId = conversationId;
-	const d = dublesDa(convId);
+	const d = dublesDa(convId, corpo.catalogo ?? "padrao");
+	const fila = corpo.dublesDaFila ?? { atendentes: 0 };
+	const agora = fila.horaFixa ? instanteDaHoraFixa(fila.horaFixa) : null;
 	const run = createRunTurnLivre({
 		caixa,
 		...depsDaFonte(corpo.fonteDeDados, d),
 		semCapturarContato: true,
+		filaDeVendedores: filaDoPlayground(fila),
+		...(agora ? { agora: () => agora } : {}),
 	});
+	/** O que o servidor efetivamente aplicou (a tela da simulação lê `fila`). */
+	const dados = {
+		fonteDeDados: corpo.fonteDeDados,
+		catalogo: d.catalogo,
+		fila,
+		dublesDaFila: fila,
+		agora: agora ? agora.toISOString() : null,
+	};
 
 	const enc = new TextEncoder();
 	const stream = new ReadableStream<Uint8Array>({
@@ -165,6 +184,7 @@ export async function POST(req: Request) {
 					conversationId: convId,
 					modo: corpo.modo,
 					caixaVersao: caixa.versao,
+					dados,
 				});
 				const turno = run({
 					channel: "web",

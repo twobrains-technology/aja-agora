@@ -8,6 +8,21 @@ vi.mock("@/lib/admin/require-role", () => ({
 	}),
 }));
 
+const { capturado, chamarRealSpy } = vi.hoisted(() => ({
+	capturado: { deps: null as Record<string, unknown> | null },
+	chamarRealSpy: vi.fn(),
+}));
+vi.mock("@/lib/agent/pi/turno-livre", () => ({
+	createRunTurnLivre: (deps: Record<string, unknown>) => {
+		capturado.deps = deps;
+		return async function* () {};
+	},
+}));
+vi.mock("@/lib/whatsapp/proxy", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@/lib/whatsapp/proxy")>()),
+	chamarFilaDeVendedores: chamarRealSpy,
+}));
+
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { caixaDePrompt } from "@/db/schema";
@@ -222,5 +237,90 @@ describe("U4 · orientação por partes", () => {
 				compilarPerfil({ atributos: ATRIBUTOS as never, orientacao: "Seja breve." }),
 			),
 		);
+	});
+});
+
+describe("I1 · dados da simulação no chat", () => {
+	const lerLinhas = async (r: Response) =>
+		(await r.text())
+			.split("\n")
+			.filter(Boolean)
+			.map((l) => JSON.parse(l) as Record<string, unknown>);
+
+	it("corpo antigo continua aceito; inicio.dados ecoa o padrão aplicado", async () => {
+		capturado.deps = null;
+		const r = await chatPOST(json({ modo: "antes", mensagem: "oi" }));
+		expect(r.status).toBe(200);
+		const inicio = (await lerLinhas(r)).find((l) => l.type === "inicio");
+		expect(inicio?.dados).toMatchObject({
+			fonteDeDados: "duble",
+			catalogo: "padrao",
+			fila: { atendentes: 0 },
+		});
+		const fila = (capturado.deps as unknown as Record<string, unknown>).filaDeVendedores as {
+			chamar: (a: unknown) => Promise<unknown>;
+		};
+		expect(fila).toBeTruthy();
+		await fila.chamar({ conversationId: "x", userName: "n", userWaId: "", summary: "s" });
+		expect(chamarRealSpy).not.toHaveBeenCalled();
+	});
+
+	it("dublesDaFila com 0 atendentes e 03:00 chega ao motor; nada real sai; eco confere", async () => {
+		capturado.deps = null;
+		chamarRealSpy.mockClear();
+		const r = await chatPOST(
+			json({
+				modo: "antes",
+				mensagem: "oi",
+				catalogo: "grande",
+				dublesDaFila: { atendentes: 0, horaFixa: "03:00" },
+			}),
+		);
+		expect(r.status).toBe(200);
+		const inicio = (await lerLinhas(r)).find((l) => l.type === "inicio") as {
+			dados: Record<string, unknown>;
+		};
+		const deps = capturado.deps as unknown as {
+			filaDeVendedores: {
+				chamar: (a: unknown) => Promise<{ notificados: number; semAtendentes: boolean }>;
+				estado: (id: string) => Promise<{ atendentesAtivos: number }>;
+			};
+			agora: () => Date;
+		};
+		expect(deps.agora().toISOString().slice(11, 16)).toBe("06:00"); // 03:00 em São Paulo (UTC-3)
+		expect(await deps.filaDeVendedores.estado("x")).toMatchObject({ atendentesAtivos: 0 });
+		expect(
+			await deps.filaDeVendedores.chamar({
+				conversationId: "x",
+				userName: "n",
+				userWaId: "",
+				summary: "s",
+			}),
+		).toEqual({ notificados: 0, semAtendentes: true });
+		expect(chamarRealSpy).not.toHaveBeenCalled();
+		expect(inicio.dados).toMatchObject({
+			fonteDeDados: "duble",
+			catalogo: "grande",
+			fila: { atendentes: 0, horaFixa: "03:00" },
+			dublesDaFila: { atendentes: 0, horaFixa: "03:00" },
+		});
+		expect(String(inicio.dados.agora).slice(11, 16)).toBe("06:00");
+	});
+
+	it("catalogo ou hora inválidos são 400", async () => {
+		expect((await chatPOST(json({ modo: "antes", mensagem: "oi", catalogo: "x" }))).status).toBe(
+			400,
+		);
+		expect(
+			(
+				await chatPOST(
+					json({
+						modo: "antes",
+						mensagem: "oi",
+						dublesDaFila: { atendentes: 1, horaFixa: "25:99" },
+					}),
+				)
+			).status,
+		).toBe(400);
 	});
 });
