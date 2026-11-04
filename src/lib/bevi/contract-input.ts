@@ -239,6 +239,9 @@ export function buildStartContractInput(
 		// porta dos fundos, que é exatamente o tipo de fresta que esta campanha
 		// vem encontrando.
 		prazoPreferido: meta.contractOffer?.termMonths ?? null,
+		// O id da carta ancorada (`groupId` do card = `quotaId` da Bevi): sem ele o
+		// fechamento só sabe "perto de tal valor" e pode abrir outra carta (Renan).
+		quotaIdVista: meta.contractOffer?.groupId ?? null,
 		// FIX-48: vincula a proposta ao lead já existente da conversa pra a raia
 		// avançar (qualificado→proposta_enviada). null explícito (nunca undefined).
 		leadId: links.leadId ?? null,

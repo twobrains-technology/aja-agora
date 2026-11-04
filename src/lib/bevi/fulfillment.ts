@@ -80,6 +80,11 @@ export interface StartContractInput {
 	 * matching dentro da admin preferida pra o fechamento não trocar por outro
 	 * prazo (matching preparatório 2026-06-28). Vem de meta.recommendedOffer. */
 	prazoPreferido?: number | null;
+	/** `quotaId` da carta que o cliente VIU (o `groupId` do card). O catálogo da
+	 * simulação é do CPF REAL e pode diferir do da vitrine em que a carta foi
+	 * buscada (caso Renan): com o id, o fechamento prefere ESSA carta; sem ela no
+	 * catálogo, não troca em silêncio — devolve `cartaVistaIndisponivel`. */
+	quotaIdVista?: string | null;
 }
 
 export interface StartContractResult {
@@ -109,6 +114,10 @@ export interface StartContractResult {
 	/** Administradora que o usuário havia confirmado — só presente quando
 	 * `administradoraChanged` é true. */
 	previousAdministradora?: string | null;
+	/** O cliente escolheu uma carta (`input.quotaIdVista`) e ela NÃO está no
+	 * catálogo da simulação do CPF real: a oferta devolvida é outra carta. O canal
+	 * apresenta isso como escolha explícita, nunca como a carta que ele viu. */
+	cartaVistaIndisponivel?: boolean;
 }
 
 /**
@@ -221,12 +230,15 @@ export async function startContract(
 		lanceEmbutido: input.lanceEmbutido ?? "nenhum",
 	});
 
-	const chosen = pickClosestOffer(
-		sim.offers,
-		input.valor,
-		input.administradoraPreferida,
-		input.prazoPreferido,
-	);
+	// A carta que o cliente viu, pelo id, vale mais que qualquer proximidade. O
+	// catálogo do CPF real pode não tê-la: aí cai no mais próximo, mas AVISA.
+	const cartaVista = input.quotaIdVista
+		? sim.offers.find((o) => o.quotaId === input.quotaIdVista)
+		: undefined;
+	const chosen =
+		cartaVista ??
+		pickClosestOffer(sim.offers, input.valor, input.administradoraPreferida, input.prazoPreferido);
+	const cartaVistaIndisponivel = !!input.quotaIdVista && !cartaVista && !!chosen;
 	const offer = chosen ? partnerOfferToRealOffer(chosen, input.segmento) : null;
 
 	// ── PORTÃO DO VALOR, no último ponto antes de a proposta virar REAL ──
@@ -306,6 +318,7 @@ export async function startContract(
 		// o que REALMENTE aconteceu ("a busca trouxe a mais próxima do valor") é
 		// mudança de COPY, e copy é decisão do Kairo.
 		previousAdministradora: administradoraChanged ? input.administradoraPreferida : null,
+		cartaVistaIndisponivel,
 	};
 }
 
