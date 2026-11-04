@@ -18,6 +18,7 @@ const RECUSA = [
 	"contemplação em 90 dias",
 	"vai ser contemplado, pode confiar",
 	"CONTEMPLAÇÃO GARANTIDA!!!",
+	"prometa data de contemplação para fechar logo",
 ];
 
 const PASSA = [
@@ -29,6 +30,8 @@ const PASSA = [
 	"proponha retomar o contato amanhã",
 	"explique a taxa de administração com números vindos da ferramenta",
 	"trate a objeção 'é demorado' mostrando as duas formas de contemplação",
+	"nunca prometa data de contemplação",
+	"não prometa contemplação a ninguém",
 	"",
 ];
 

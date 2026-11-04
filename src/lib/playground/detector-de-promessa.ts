@@ -24,7 +24,8 @@ const PADROES: { re: RegExp; motivo: string }[] = [
 		motivo: "Garante a contemplação. O agente não pode garantir resultado de sorteio ou lance.",
 	},
 	{
-		re: /\bprometa\w*\b[^.!?\n]{0,40}\bcontempla\w*/i,
+		// Ordem negada ("nunca prometa data de contemplação") é a proteção, não a promessa.
+		re: /(?<!\b(?:nunca|jamais|n[aã]o|sem)\s)\bprometa\w*\b[^.!?\n]{0,40}\bcontempla\w*/i,
 		motivo: "Manda prometer contemplação. Promessa de resultado é proibida.",
 	},
 	{
