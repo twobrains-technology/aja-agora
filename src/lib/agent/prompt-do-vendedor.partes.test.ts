@@ -125,6 +125,7 @@ describe("repartição do prompt em partes (base e partes)", () => {
 		expect(t).toMatch(/transferir/i);
 		expect(t).toMatch(/pede atendente/i);
 		expect(t).toMatch(/de madrugada ninguém atende/i);
+		expect(t).toMatch(/acalm/i);
 		expect(t).toMatch(/Dúvida sobre contemplação, lance, taxa ou segurança dos dados é conversa/);
 		expect(t).not.toMatch(/(duas|três|2|3) vezes/i);
 		expect(t).not.toMatch(/garant\w+ (o )?prazo/i);

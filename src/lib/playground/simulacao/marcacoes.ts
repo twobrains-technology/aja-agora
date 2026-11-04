@@ -144,12 +144,16 @@ const turnoDaPosicao = (t: TurnoDaSimulacao[], pos: number): number =>
 const OFERTA_NAO_PEDIDO =
 	/\bquer\s+(?:saber|seguir|que\s+eu)\b|\boutr[ao]s?\s+(?:faixas?|valores?|parcelas?)\b/i;
 
+/** Pergunta direta pelo dado: com ela, a frase pede mesmo que ofereça alternativa. */
+const PEDIDO_DIRETO =
+	/\b(?:qual|quais|quanto|quantos?|me\s+(?:diz|diga|passa|passe|conta|informa))\b/i;
+
 /** O vendedor PEDE o slot: alguma frase com `?` que não seja oferta casa o padrão do slot. */
 function perguntaPedeSlot(texto: string, slot: string): boolean {
 	return texto
 		.split(/(?<=[?!.])\s+|\n+/)
 		.map((f) => f.trim())
-		.filter((f) => f.endsWith("?") && !OFERTA_NAO_PEDIDO.test(f))
+		.filter((f) => f.endsWith("?") && (!OFERTA_NAO_PEDIDO.test(f) || PEDIDO_DIRETO.test(f)))
 		.some((f) => (slotsPedidos(f) as string[]).includes(slot));
 }
 

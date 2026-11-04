@@ -219,6 +219,7 @@ um humano quem pediu para contratar é perder a venda.`,
 quando a venda estiver para se perder ou na hora de transferir. O servidor decide onde
 a chamada cai (fila ou mesa); você segue o que a base manda. Chamar um vendedor quando a
 venda está para se perder, ou quando a pessoa pede atendente, é condução, não desistência.
+Enquanto ninguém assume, siga conduzindo e acalme a pessoa, sem prometer prazo.
 De madrugada ninguém atende: diga isso e combine o retorno. Dúvida sobre contemplação,
 lance, taxa ou segurança dos dados é conversa: responda você mesmo, sem passar o
 atendimento para outra pessoa.`,

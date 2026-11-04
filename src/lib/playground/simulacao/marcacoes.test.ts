@@ -121,6 +121,16 @@ describe("pedidoRepetido", () => {
 		]);
 		expect(m.status).toBe("LIMPA");
 	});
+	it("ACIONADA: frase única pede o dado E oferece alternativa", () => {
+		const m = pedidoRepetido([
+			turno(0, { cliente: "oi", texto: "Qual valor você quer?" }),
+			turno(1, {
+				cliente: "60 mil",
+				texto: "Qual valor você quer, ou prefere ver outras faixas?",
+			}),
+		]);
+		expect(m.status).toBe("ACIONADA");
+	});
 	it("ACIONADA: pergunta de novo o valor que o cliente já deu", () => {
 		const m = pedidoRepetido([
 			turno(0, { cliente: "oi", texto: "Qual valor você quer?" }),
