@@ -17,6 +17,7 @@ import {
 	MessageSquareTextIcon,
 	MessagesSquareIcon,
 	SettingsIcon,
+	SlidersHorizontalIcon,
 	TargetIcon,
 	UserIcon,
 	UsersIcon,
@@ -66,7 +67,13 @@ const settingsItems = [
  * "Cadastro da régua" vai para Cadastros: a tela da Régua já tem o botão
  * "Cadastro da régua" no cabeçalho, então o atalho não se perde.
  */
-export function AppSidebar({ role = "viewer" }: { role?: Role }) {
+export function AppSidebar({
+	role = "viewer",
+	playgroundHabilitado = false,
+}: {
+	role?: Role;
+	playgroundHabilitado?: boolean;
+}) {
 	const pathname = usePathname();
 
 	// Mesmo filtro que o `proxy.ts` aplica na navegação (`role-scope.ts`): o menu
@@ -97,6 +104,9 @@ export function AppSidebar({ role = "viewer" }: { role?: Role }) {
 		{ title: "Régua de remarketing", href: "/admin/remarketing", icon: MegaphoneIcon },
 		{ title: "Templates WhatsApp", href: "/admin/whatsapp/templates", icon: MessagesSquareIcon },
 		{ title: "Simulador", href: "/admin/simulator", icon: FlaskConicalIcon },
+		...(playgroundHabilitado
+			? [{ title: "Playground", href: "/admin/playground", icon: SlidersHorizontalIcon }]
+			: []),
 	]);
 	const cadastrosItems = permitido([
 		{ title: "Atendentes", href: "/admin/attendants", icon: UsersIcon },
