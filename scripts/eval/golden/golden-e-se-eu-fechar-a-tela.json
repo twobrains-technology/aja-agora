@@ -1,6 +1,6 @@
 {
 	"cenario": "golden-e-se-eu-fechar-a-tela",
-	"descricao": "Print do dono (27/10, 15:32, `.orientacao/prints-kairo/1532-formulario-fixo.png`): a pessoa diz 'você nem tem meu telefone, e se eu fechar a tela agora?' e o agente recitava o aviso da LGPD pedindo CPF, sem pedir o WhatsApp. O que se mede: (P6) o contato é pedido no momento em que a pessoa sinaliza que vai sair — card `whatsapp_optin` ou pedido de WhatsApp em uma frase — e NENHUMA fala recita aviso de privacidade ('conforme a LGPD', 'birôs de crédito', 'Posso seguir').",
+	"descricao": "Print do dono (27/10, 15:32, `.orientacao/prints-kairo/1532-formulario-fixo.png`): a pessoa diz 'você nem tem meu telefone, e se eu fechar a tela agora?' e o agente recitava o aviso da LGPD pedindo CPF, sem pedir o WhatsApp. O que se mede: (P6) o contato é pedido no momento em que a pessoa sinaliza que vai sair — card `whatsapp_optin` ou pedido de WhatsApp em uma frase — e NENHUMA fala recita aviso de privacidade ('conforme a LGPD', 'birôs de crédito', 'Posso seguir'). Régua (28/10, ordem do líder 05:05): o card whatsapp_optin sai UMA vez por conversa; se já foi à tela, o pedido de WhatsApp em uma frase também cumpre o turno.",
 	"caRefs": ["P-08", "R-02", "C-05"],
 	"asserts": {
 		"forbidTextMarkers": [
@@ -16,19 +16,33 @@
 			null,
 			{
 				"expectAnyArtifact": ["whatsapp_optin"],
-				"forbidArtifacts": ["handoff"]
+				"forbidArtifacts": ["handoff"],
+				"orAgentTextMatches": [
+					"whatsapp.{0,80}(n[úu]mero|DDD)|(n[úu]mero|celular).{0,80}whatsapp|me manda.{0,40}(whatsapp|n[úu]mero)"
+				]
 			}
 		]
 	},
 	"turns": [
-		{ "type": "text", "text": "oi", "expect": "saudação com as categorias." },
+		{
+			"type": "text",
+			"text": "oi",
+			"expect": "saudação com as categorias."
+		},
 		{
 			"type": "action",
-			"action": { "kind": "category", "category": "auto" },
+			"action": {
+				"kind": "category",
+				"category": "auto"
+			},
 			"label": "Automóvel",
 			"expect": "transição para carro + pedido do nome."
 		},
-		{ "type": "text", "text": "Mário", "expect": "usa o nome e pergunta o valor do bem." },
+		{
+			"type": "text",
+			"text": "Mário",
+			"expect": "usa o nome e pergunta o valor do bem."
+		},
 		{
 			"type": "text",
 			"text": "uns 90 mil",

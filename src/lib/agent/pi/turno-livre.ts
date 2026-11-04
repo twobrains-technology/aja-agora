@@ -32,6 +32,12 @@ import {
 } from "@/lib/agent/pi/handoff";
 import { userIdDoTurno } from "@/lib/agent/pi/langfuse";
 import { criarNarracaoDoTurno } from "@/lib/agent/pi/narracao";
+import {
+	pedeONome,
+	pedidosDeNomeNoHistorico,
+	podePedirONome,
+	semPerguntaDeNome,
+} from "@/lib/agent/pi/pergunta-de-nome";
 import { persistirTurnoLivre } from "@/lib/agent/pi/persist-livre";
 import { custoDoTurnoCentsExatos } from "@/lib/agent/pi/precos";
 import { modeloDoAgente } from "@/lib/agent/pi/sessao";
@@ -1076,7 +1082,11 @@ export function createRunTurnLivre(deps?: {
 		// novo, e a proposta ficava ancorada numa busca refeita. Medido em 25/10/2026
 		// no dev, com navegador real (conversas 4a1af177 e 361be4f5).
 		const lerCartas = deps?.lerCartas ?? lerCartasDaConversa;
-		const cartasRestauradas = await restaurarCartasDaConversa(await lerCartas(conversationId));
+		const artefatosDaConversa = await lerCartas(conversationId);
+		const cartasRestauradas = await restaurarCartasDaConversa(artefatosDaConversa);
+		// O card de WhatsApp sai UMA vez por conversa (ordem do líder, 28/10 05:05): o fato é o card
+		// já persistido, não a memória do modelo.
+		const whatsappOptinJaMostrado = artefatosDaConversa.some((a) => a.type === "whatsapp_optin");
 
 		let estado = estadoInicialDoTurno({
 			conversationId,
@@ -1191,6 +1201,7 @@ export function createRunTurnLivre(deps?: {
 				? maskPhoneForDisplay(identidadeVisivel.celular) || null
 				: null,
 			cpfMascarado: identidadeVisivel?.cpf ? maskCpfForDisplay(identidadeVisivel.cpf) : null,
+			whatsappOptinJaMostrado,
 			// O perfil DECLARADO na qualificação (prazo e lance) é o default do dial
 			// (FIX-C5): vem do estado do turno, nunca do que o modelo disse agora.
 			perfilDeclarado: {
@@ -1252,6 +1263,12 @@ export function createRunTurnLivre(deps?: {
 			!pedidoDeHumanoNoTurno &&
 			clienteVoltou(falaDoClienteDoTurno) &&
 			ehTurnoDeHandoff(ultimaFalaDoAgente);
+
+		// O NOME SE PEDE NA ABERTURA E, NO MÁXIMO, MAIS UMA VEZ (ordem do líder, 28/10 04:35). A conduta
+		// já dizia isso e o modelo perguntou três vezes na mesma conversa: a contagem é fato do
+		// histórico, então o servidor corta o pedido que passa do limite (`pergunta-de-nome.ts`).
+		const pedidosDeNomeAntes = pedidosDeNomeNoHistorico(historico);
+		let pedidosDeNomeNoTurno = 0;
 
 		// Fila de eventos: o beat empurra o texto AO VIVO, o generator drena.
 		const fila: TurnEvent[] = [];
@@ -1329,6 +1346,18 @@ export function createRunTurnLivre(deps?: {
 				return;
 			}
 			const ehHandoff = casoAberto || RE_DE_PROMESSA.test(pendente);
+			if (!ehHandoff && pedeONome(pendente)) {
+				const pode = podePedirONome({
+					nomeConhecido: Boolean(ctx.nomeDoCliente),
+					jaPedidos: pedidosDeNomeAntes + pedidosDeNomeNoTurno,
+				});
+				if (pode) {
+					pedidosDeNomeNoTurno++;
+				} else {
+					pendente = semPerguntaDeNome(pendente);
+					if (!pendente.trim()) return;
+				}
+			}
 			if (ehHandoff && linhaDeHandoffEmitida) {
 				pendente = "";
 				return;
