@@ -72,6 +72,14 @@ async function rodarTurno(args: {
 }): Promise<{ eventos: TurnEvent[]; fechar: () => Promise<void> }> {
 	const servidor = await subirServidorRoteirizado([
 		{ toolCalls: [{ name: "buscar_cartas", args: { categoria: "auto", valorDoBem: 80_000 } }] },
+		{
+			toolCalls: [
+				{
+					name: "mostrar_card",
+					args: { tipo: "comparison_table", payload: { ids: ["grupo-itaú-1"] } },
+				},
+			],
+		},
 		{ toolCalls: [{ name: "mostrar_card", args: args.card }] },
 		{ text: "Pronto, olha aí." },
 	]);

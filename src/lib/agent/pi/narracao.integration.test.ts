@@ -55,9 +55,17 @@ const cartas: GroupSummary[] = [
 	},
 ];
 
-const BUSCA = {
-	toolCalls: [{ name: "buscar_cartas", args: { categoria: "auto", valorDoBem: 80_000 } }],
-};
+const BUSCA = [
+	{ toolCalls: [{ name: "buscar_cartas", args: { categoria: "auto", valorDoBem: 80_000 } }] },
+	{
+		toolCalls: [
+			{
+				name: "mostrar_card",
+				args: { tipo: "comparison_table", payload: { ids: ["grupo-itaú-1"] } },
+			},
+		],
+	},
+];
 
 /** Roda um turno com o "modelo" roteirizado e devolve o que chegou ao canal. */
 async function turnoRoteirizado(beats: Parameters<typeof subirServidorRoteirizado>[0]) {
@@ -100,7 +108,7 @@ async function turnoRoteirizado(beats: Parameters<typeof subirServidorRoteirizad
 describe("turno livre — o anúncio da ferramenta não chega ao canal com card na tela", () => {
 	it("anúncio colado ao card cai, e o card fica", async () => {
 		const { falas, cards } = await turnoRoteirizado([
-			BUSCA,
+			...BUSCA,
 			{ text: "Deixa eu mostrar os detalhes dela para você:" },
 		]);
 		expect(cards).toHaveLength(1);
@@ -111,7 +119,7 @@ describe("turno livre — o anúncio da ferramenta não chega ao canal com card 
 
 	it("fala com informação fica inteira, mesmo com card no turno", async () => {
 		const { falas, cards } = await turnoRoteirizado([
-			BUSCA,
+			...BUSCA,
 			{ text: "Achei essas opções pra você: a ITAÚ e o Banco do Brasil." },
 		]);
 		expect(cards).toHaveLength(1);
@@ -121,7 +129,7 @@ describe("turno livre — o anúncio da ferramenta não chega ao canal com card 
 	it("o balão do print (nome da administradora + pergunta) fica inteiro", async () => {
 		const balao =
 			"Ótima escolha! A carta da Canopus é sólida também.\nDeixa eu mostrar os detalhes dela para você:\nPronto! Aí estão todos os números da carta da Canopus. Você quer seguir com essa, Marcos?";
-		const { falas, cards } = await turnoRoteirizado([BUSCA, { text: balao }]);
+		const { falas, cards } = await turnoRoteirizado([...BUSCA, { text: balao }]);
 		expect(cards).toHaveLength(1);
 		expect(falas.join(" ")).toContain("Ótima escolha!");
 		expect(falas.join(" ")).toContain("Deixa eu mostrar os detalhes dela para você");

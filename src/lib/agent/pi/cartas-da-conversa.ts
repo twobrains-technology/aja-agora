@@ -78,7 +78,15 @@ export function restaurarCartasDaConversa(artefatos: readonly ArtefatoDaConversa
 		carta: g.creditValue,
 		parcela: g.monthlyPayment,
 		prazoMeses: g.termMonths,
-		...(g.availableSlots > 0 ? { contempladosMes: g.availableSlots } : {}),
+		category: g.category,
+		...(g.availableSlots > 0
+			? { contempladosMes: g.availableSlots, availableSlots: g.availableSlots }
+			: {}),
+		// Só o que o payload realmente trouxe: zero de ausente seria número fabricado.
+		...(g.adminFeePercent > 0 ? { adminFeePercent: g.adminFeePercent } : {}),
+		...(g.totalParticipants > 0 ? { totalParticipants: g.totalParticipants } : {}),
+		...(g.ofertaId ? { ofertaId: g.ofertaId } : {}),
+		...(g.avgBidValue != null ? { avgBidValue: g.avgBidValue } : {}),
 	}));
 
 	return { grupos, cartas };

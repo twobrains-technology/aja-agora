@@ -101,6 +101,14 @@ describe("P136 — o card de ESCOLHA sai depois da pergunta, o factual na ordem 
 					toolCalls: [
 						{
 							name: "mostrar_card",
+							args: { tipo: "comparison_table", payload: { ids: ["grupo-itaú-1"] } },
+						},
+					],
+				},
+				{
+					toolCalls: [
+						{
+							name: "mostrar_card",
 							args: {
 								tipo: "quick_reply",
 								payload: { options: [{ label: "Até 80 mil" }, { label: "Até 120 mil" }] },

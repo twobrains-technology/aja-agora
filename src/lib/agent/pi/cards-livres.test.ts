@@ -17,7 +17,6 @@ import {
 	cardDeEscolha,
 	DESTINO_DOS_CARDS,
 	destinoDoCard,
-	MAX_OPCOES_NO_CARD,
 	montarCardDeFato,
 	TIPOS_DE_ESCOLHA,
 } from "./cards-livres";
@@ -177,18 +176,15 @@ describe("cardDeEscolha — quick_reply", () => {
 		expect(r.erro.length).toBeGreaterThan(0);
 	});
 
-	it(`aceita ${MAX_OPCOES_NO_CARD} opções e recusa a quinta`, () => {
-		const quatro = cardDeEscolha("quick_reply", {
-			options: ["a", "b", "c", "d"].map((label) => ({ label })),
-		});
-		expect(quatro.ok).toBe(true);
+	it("aceita seis opções nos três cards de escolha, sem teto em código", () => {
+		const seis = ["a", "b", "c", "d", "e", "f"];
 
-		const cinco = cardDeEscolha("quick_reply", {
-			options: ["a", "b", "c", "d", "e"].map((label) => ({ label })),
-		});
-		expect(cinco.ok).toBe(false);
-		if (cinco.ok) return;
-		expect(cinco.erro).toContain(String(MAX_OPCOES_NO_CARD));
+		expect(cardDeEscolha("quick_reply", { options: seis.map((label) => ({ label })) }).ok).toBe(true);
+		expect(
+			cardDeEscolha("topic_picker", { topics: seis, includeBackButton: false }).ok,
+		).toBe(true);
+		const fields = seis.map((id) => ({ id, label: id, min: 10_000, max: 80_000, default: 50_000 }));
+		expect(cardDeEscolha("value_picker", { category: "auto", fields }).ok).toBe(true);
 	});
 
 	it("opção sem label (ou com label vazio) é recusada", () => {
@@ -647,5 +643,55 @@ describe("card de WhatsApp repetido: a tool não deixa o modelo comentar o card"
 				/não comente que o card já apareceu|sem comentar que o card já apareceu/,
 			);
 		}
+	});
+});
+
+
+describe("comparison_table — só as cartas que o agente pediu por ids", () => {
+	const grupos = new Map<string, GroupSummary>(
+		["a", "b", "c", "d", "e"].map((id, i) => [
+			id,
+			{ ...CARTA_DA_TELA, id, monthlyPayment: 1_000 + i },
+		]),
+	);
+	const idsDoCard = (r: Awaited<ReturnType<typeof montarCardDeFato>>) =>
+		r.ok ? (r.card.payload.groups as Array<{ id: string }>).map((g) => g.id) : [];
+
+	it("monta exatamente os ids pedidos, na ordem pedida", async () => {
+		const r = await montarCardDeFato("comparison_table", ctxDeFato({ grupos }), {
+			ids: ["c", "a", "e"],
+		});
+
+		expect(r.ok).toBe(true);
+		expect(idsDoCard(r)).toEqual(["c", "a", "e"]);
+	});
+
+	it("id repetido mantém a primeira ocorrência", async () => {
+		const r = await montarCardDeFato("comparison_table", ctxDeFato({ grupos }), {
+			ids: ["b", "a", "b"],
+		});
+
+		expect(idsDoCard(r)).toEqual(["b", "a"]);
+	});
+
+	it("sem ids (ou vazio) recusa e ensina o uso com os ids disponíveis", async () => {
+		for (const ref of [{}, { ids: [] }]) {
+			const r = await montarCardDeFato("comparison_table", ctxDeFato({ grupos }), ref);
+			expect(r.ok).toBe(false);
+			if (r.ok) return;
+			expect(r.erro).toContain("ids");
+			expect(r.erro).toContain("a, b, c, d, e");
+		}
+	});
+
+	it("id fora das cartas disponíveis recusa citando os válidos", async () => {
+		const r = await montarCardDeFato("comparison_table", ctxDeFato({ grupos }), {
+			ids: ["a", "zzz"],
+		});
+
+		expect(r.ok).toBe(false);
+		if (r.ok) return;
+		expect(r.erro).toContain("zzz");
+		expect(r.erro).toContain("a, b, c, d, e");
 	});
 });

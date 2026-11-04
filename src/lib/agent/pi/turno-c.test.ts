@@ -199,6 +199,14 @@ describe("P157 — o card sai no resultado da ferramenta, na ordem do stream", (
 					text: "Boa! Um carro de 80 mil é bem possível.",
 					toolCalls: [{ name: "buscar_cartas", args: { categoria: "auto" } }],
 				},
+				{
+					toolCalls: [
+						{
+							name: "mostrar_card",
+							args: { tipo: "comparison_table", payload: { ids: ["grupo-itaú-1"] } },
+						},
+					],
+				},
 				{ text: "Achei essas três. Alguma te interessa?" },
 			],
 		});
@@ -230,6 +238,14 @@ describe("P157 — o card sai no resultado da ferramenta, na ordem do stream", (
 				{
 					text: "Boa! Um carro de 80 mil é bem possível.",
 					toolCalls: [{ name: "buscar_cartas", args: { categoria: "auto" } }],
+				},
+				{
+					toolCalls: [
+						{
+							name: "mostrar_card",
+							args: { tipo: "comparison_table", payload: { ids: ["grupo-itaú-1"] } },
+						},
+					],
 				},
 				{ text: "Achei essas três. Alguma te interessa?" },
 			],
@@ -304,6 +320,14 @@ describe("P217/P273 — o livro-caixa do turno grava cache e custo completos", (
 				{
 					toolCalls: [{ id: "call-1", name: "buscar_cartas", args: { categoria: "auto" } }],
 					...beatSubcentavo,
+				},
+				{
+					toolCalls: [
+						{
+							name: "mostrar_card",
+							args: { tipo: "comparison_table", payload: { ids: ["grupo-itaú-1"] } },
+						},
+					],
 				},
 				{
 					toolCalls: [{ id: "call-2", name: "buscar_cartas", args: { categoria: "auto" } }],

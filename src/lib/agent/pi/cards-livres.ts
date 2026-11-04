@@ -83,10 +83,6 @@ export const TIPOS_DE_ESCOLHA = ["quick_reply", "value_picker", "topic_picker"] 
 
 export type TipoDeEscolha = (typeof TIPOS_DE_ESCOLHA)[number];
 
-/** Card é decisão, não menu. Mesmo teto de `MAX_OPCOES_NA_COMPARACAO`: mais
- * opções que isso, o modelo oferece na conversa. Número num lugar só. */
-export const MAX_OPCOES_NO_CARD = 4;
-
 /** Teto de sanidade do `value_picker`: ali os números são a PERGUNTA (faixa de
  * intenção), e carta de consórcio não passa disso. */
 const MAX_VALOR_DO_PICKER = 1_000_000;
@@ -180,12 +176,7 @@ function validarQuickReply(
 	const bruto = payload.options;
 	if (!Array.isArray(bruto) || bruto.length === 0) {
 		return recusa(
-			'Card NÃO mostrado: `options` vazio. Escreva de 1 a 4 opções, cada uma com `label` (o texto do botão, ex.: "Até 80 mil").',
-		);
-	}
-	if (bruto.length > MAX_OPCOES_NO_CARD) {
-		return recusa(
-			`Card NÃO mostrado: quick_reply aceita no máximo ${MAX_OPCOES_NO_CARD} opções — card é decisão, não menu. Ofereça as demais na conversa.`,
+			'Card NÃO mostrado: `options` vazio. Escreva uma ou mais opções, cada uma com `label` (o texto do botão, ex.: "Até 80 mil").',
 		);
 	}
 	const declaradas: Array<{ label: string; groupId?: string }> = [];
@@ -234,12 +225,7 @@ function validarValuePicker(payload: unknown): ResultadoDaValidacao {
 	const bruto = payload.fields;
 	if (!Array.isArray(bruto) || bruto.length === 0) {
 		return recusa(
-			"Card NÃO mostrado: `fields` vazio. Escreva de 1 a 4 faixas, cada uma com `id`, `label`, `min`, `max` e `default`.",
-		);
-	}
-	if (bruto.length > MAX_OPCOES_NO_CARD) {
-		return recusa(
-			`Card NÃO mostrado: value_picker aceita no máximo ${MAX_OPCOES_NO_CARD} campos — card é decisão, não menu.`,
+			"Card NÃO mostrado: `fields` vazio. Escreva uma ou mais faixas, cada uma com `id`, `label`, `min`, `max` e `default`.",
 		);
 	}
 	const fields: Array<Record<string, unknown>> = [];
@@ -292,12 +278,7 @@ function validarTopicPicker(payload: unknown): ResultadoDaValidacao {
 	}
 	const bruto = payload.topics;
 	if (!Array.isArray(bruto) || bruto.length === 0) {
-		return recusa("Card NÃO mostrado: `topics` vazio. Escreva de 1 a 4 tópicos.");
-	}
-	if (bruto.length > MAX_OPCOES_NO_CARD) {
-		return recusa(
-			`Card NÃO mostrado: topic_picker aceita no máximo ${MAX_OPCOES_NO_CARD} tópicos — card é decisão, não menu.`,
-		);
+		return recusa("Card NÃO mostrado: `topics` vazio. Escreva um ou mais tópicos.");
 	}
 	const topics: string[] = [];
 	for (const [indice, topico] of bruto.entries()) {
@@ -385,6 +366,9 @@ export type RefDeCard = {
 	 * recusa e passa `false` (mesmo argumento da `compute_scenarios` da main).
 	 * Ausente = comportamento de sempre, a carta cobre parte do lance. */
 	usarLanceEmbutido?: boolean;
+	/** `comparison_table`: os ids (de `buscar_cartas`) das cartas que o agente quer
+	 * na tabela, na ordem em que devem aparecer. */
+	ids?: string[];
 };
 
 /** O que o cliente DECLAROU na qualificação — prazo desejado e lance que ele tem.
@@ -572,17 +556,38 @@ export const MONTADORES_DE_CARD: Record<TipoDeFato, MontadorDeCard> = {
 		};
 	},
 
-	comparison_table: (ctx) => {
+	comparison_table: (ctx, ref) => {
 		if (ctx.grupos.size === 0) return { ok: false, motivo: SEM_CARTA };
-		const payload = buildComparisonTableFromRevealGroups(
-			indiceDosGrupos(ctx.grupos),
-			ctx.logos,
-		) as { groups?: unknown[] };
-		if (!Array.isArray(payload.groups) || payload.groups.length === 0) {
+		const disponiveis = [...ctx.grupos.keys()].join(", ");
+		const pedidos = [...new Set(ref.ids ?? [])];
+		if (pedidos.length === 0) {
 			return {
 				ok: false,
-				motivo:
-					"a tabela comparativa precisa de pelo menos uma carta com número completo na tela — busque de novo.",
+				motivo: `a tabela comparativa não aparece sozinha: diga quais cartas mostrar com mostrar_card(comparison_table, { ids: [...] }). Ids disponíveis: ${disponiveis}.`,
+			};
+		}
+		const index: RevealGroupIndex = new Map();
+		for (const id of pedidos) {
+			const grupo = ctx.grupos.get(id);
+			if (!grupo) {
+				return {
+					ok: false,
+					motivo: `o id "${id}" não está entre as cartas buscadas (${disponiveis}). Copie os ids literais de buscar_cartas.`,
+				};
+			}
+			index.set(id, grupo);
+		}
+		const payload = buildComparisonTableFromRevealGroups(index, ctx.logos) as {
+			groups?: unknown[];
+		};
+		const entraram = new Set(
+			(Array.isArray(payload.groups) ? payload.groups : []).map((g) => (g as { id?: string }).id),
+		);
+		const descartados = pedidos.filter((id) => !entraram.has(id));
+		if (descartados.length > 0) {
+			return {
+				ok: false,
+				motivo: `as cartas ${descartados.map((id) => `"${id}"`).join(", ")} não têm número completo para a tabela — tire-as de ids ou escolha outras, e chame de novo.`,
 			};
 		}
 		return { ok: true, card: { type: "comparison_table", payload } };

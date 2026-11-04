@@ -34,11 +34,6 @@ import type { ProposalGateway } from "@/lib/adapters/proposal-gateway";
 import type { AdministradoraAdapter, GroupSummary, QuotaSimulation } from "@/lib/adapters/types";
 import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
 import { listShownOffersForConversation } from "@/lib/agent/orchestrator/choose-offer";
-import {
-	buildComparisonTableFromRevealGroups,
-	indexRevealGroups,
-	type RevealGroupIndex,
-} from "@/lib/agent/orchestrator/recommendation-payload";
 import { comprovanteDeAceite } from "@/lib/agent/orchestrator/vazamento";
 import type { Category, ConversationMetadata } from "@/lib/agent/personas";
 import {
@@ -153,7 +148,38 @@ export type CartaLivre = {
 	parcela: number;
 	prazoMeses: number;
 	contempladosMes?: number;
+	/** Os demais campos que a Bevi devolve (P10): o agente recebe tudo e filtra. */
+	category?: Category;
+	adminFeePercent?: number;
+	totalParticipants?: number;
+	availableSlots?: number;
+	ofertaId?: string;
+	avgBidValue?: number;
+	tipoOferta?: string;
+	grupo?: string;
+	embeddedVariant?: string;
 };
+
+/** A carta do agente a partir do grupo da Bevi — todos os campos, nada cortado. */
+export function cartaDoGrupo(g: GroupSummary): CartaLivre {
+	return {
+		groupId: g.id,
+		administradora: g.administradora,
+		carta: g.creditValue,
+		parcela: g.monthlyPayment,
+		prazoMeses: g.termMonths,
+		contempladosMes: g.availableSlots,
+		category: g.category,
+		adminFeePercent: g.adminFeePercent,
+		totalParticipants: g.totalParticipants,
+		availableSlots: g.availableSlots,
+		ofertaId: g.ofertaId,
+		avgBidValue: g.avgBidValue,
+		tipoOferta: g.tipoOferta,
+		grupo: g.grupo,
+		embeddedVariant: g.embeddedVariant,
+	};
+}
 
 export type CardLivre = {
 	type: ArtifactType;
@@ -185,13 +211,16 @@ export type ContextoDasTools = {
 	cards: CardLivre[];
 	/** Texto do fecho (copy de produção) que acompanha o card. */
 	falasDoFecho: string[];
-	/** Cartas que foram para o CARD neste turno (não as 12 da busca crua). É
-	 * contra elas que a proposta é ancorada — o modelo só pode escolher o que o
-	 * cliente está vendo. */
+	/** Cartas que foram para o CARD (`mostrar_card` com `ids`), não as da busca
+	 * crua. É contra elas que a proposta é ancorada — o modelo só pode escolher o
+	 * que o cliente está vendo. */
 	cartasNaTela: CartaLivre[];
-	/** Grupos REAIS que `buscar_cartas` pôs na tela neste turno, por id — a fonte
-	 * única dos cards de FATO. Vazio enquanto a busca não roda. */
+	/** Grupos REAIS que foram à tela (restaurados da conversa ou escolhidos via
+	 * `ids`), por id — a fonte dos cards de FATO. */
 	gruposRevelados: Map<string, GroupSummary>;
+	/** TODAS as cartas das buscas deste turno, por id: validam os `ids` do
+	 * `comparison_table`. Não é o que está na tela — isso é `gruposRevelados`. */
+	gruposDaBusca?: Map<string, GroupSummary>;
 	/** Perfil que o cliente DECLAROU na qualificação (prazo e lance) — default do
 	 * `contemplation_dial`. Preenchido pelo turno com `qualifyAnswers`. */
 	perfilDeclarado?: PerfilDeclarado;
@@ -321,6 +350,8 @@ export function metaDoFecho(args: {
 	return {
 		...args.meta,
 		contractOffer: {
+			// O id da carta VISTA (`quotaId`): o fechamento prefere esta carta no catálogo do CPF real.
+			groupId: args.escolhida.groupId,
 			administradora: args.escolhida.administradora ?? null,
 			creditValue: args.escolhida.creditValue ?? null,
 			termMonths: args.escolhida.termMonths ?? null,
@@ -514,7 +545,7 @@ const CATEGORIAS = ["auto", "moto", "imovel", "servicos"] as const;
 
 /** Os cards de ESCOLHA, com o shape do payload de cada um — o que o modelo lê. */
 const SHAPE_DO_CARD_DE_ESCOLHA: Record<TipoDeEscolha, string> = {
-	quick_reply: "`quick_reply` (payload { options: [{ label }] }, até 4 atalhos de resposta)",
+	quick_reply: "`quick_reply` (payload { options: [{ label }] }, atalhos de resposta)",
 	value_picker:
 		"`value_picker` (payload { category: imovel|auto|moto, fields: [{ id, label, min, max, default }] }, faixas de valor do bem)",
 	topic_picker: "`topic_picker` (payload { topics: [...], includeBackButton })",
@@ -568,7 +599,7 @@ function descricaoDoMostrarCard(channel: "web" | "whatsapp"): string {
 		`1) Card de ESCOLHA (o payload é seu): ${escolha.map((tipo) => SHAPE_DO_CARD_DE_ESCOLHA[tipo]).join(", ")}.` +
 		semFaixasDeValor +
 		"\n\n" +
-		`2) Card de FATO (o payload é do servidor; você só diz QUAL carta e, se for o caso, o cenário): ${comCarta.join(", ")} (todos precisam de \`groupId\` copiado de buscar_cartas), e os de estado ${deEstado.join(", ")}. Payload do fato: { groupId, lancePercent?, initialTargetMonth?, usarLanceEmbutido? } — \`usarLanceEmbutido: false\` quando o cliente recusou lance embutido; qualquer outro número que você mandar é ignorado, porque o valor vem da carta real.`
+		`2) Card de FATO (o payload é do servidor; você só diz QUAL carta e, se for o caso, o cenário): ${comCarta.join(", ")} (todos precisam de \`groupId\` copiado de buscar_cartas, menos \`comparison_table\`, que pede \`ids\`), e os de estado ${deEstado.join(", ")}. Payload do fato: { groupId, lancePercent?, initialTargetMonth?, usarLanceEmbutido? }; \`usarLanceEmbutido: false\` quando o cliente recusou lance embutido. \`comparison_table\` leva { ids: string[] }: os ids das cartas de buscar_cartas que você quer na tabela, na ordem em que devem aparecer (a busca NÃO põe nada na tela sozinha). Qualquer outro número que você mandar é ignorado, porque o valor vem da carta real.`
 	);
 }
 
@@ -602,7 +633,7 @@ function valoresPedidos(ctx: ContextoDasTools): { valorPedido?: number; valorDoB
 	};
 }
 
-/** Do payload do modelo, só estas quatro chaves são lidas (ver `RefDeCard`). */
+/** Do payload do modelo, só estas cinco chaves são lidas (ver `RefDeCard`). */
 function refDoPayload(payload: Record<string, unknown>): RefDeCard {
 	const ref: RefDeCard = {};
 	if (typeof payload.groupId === "string" && payload.groupId.length > 0) {
@@ -619,6 +650,9 @@ function refDoPayload(payload: Record<string, unknown>): RefDeCard {
 	}
 	if (typeof payload.usarLanceEmbutido === "boolean") {
 		ref.usarLanceEmbutido = payload.usarLanceEmbutido;
+	}
+	if (Array.isArray(payload.ids)) {
+		ref.ids = payload.ids.filter((id): id is string => typeof id === "string");
 	}
 	return ref;
 }
@@ -682,7 +716,7 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 
 	const buscar_cartas = tool({
 		description:
-			"Busca cartas de consórcio REAIS na administradora, no tipo de bem e na faixa que o cliente disse, e mostra as opções na tela. Usa a identidade da própria Aja Agora: NÃO peça CPF nem telefone para isto. Devolve o resumo de cada carta (id, administradora, carta, parcela, prazo).",
+			"Busca cartas de consórcio REAIS na administradora, no tipo de bem e na faixa que o cliente disse, e devolve TODAS, com todos os campos. NÃO põe nada na tela: para o cliente ver cartas, chame `mostrar_card` com `comparison_table` e `ids` das que você escolher. Usa a identidade da própria Aja Agora: NÃO peça CPF nem telefone para isto.",
 		inputSchema: z.object({
 			categoria: z.enum(CATEGORIAS).describe("Tipo de bem: auto, moto, imovel ou servicos"),
 			valorDoBem: z
@@ -730,22 +764,8 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				return `Busca falhou agora (${erro instanceof Error ? erro.message : String(erro)}). Diga ao cliente que a busca não voltou e proponha tentar de novo — nunca invente número.`;
 			}
 
-			const index: RevealGroupIndex = new Map();
-			// `indexRevealGroups` espera o ENVELOPE (`{ groups }`), não o array: com
-			// o array cru o índice sai vazio e a coerção descarta todas as cotas —
-			// o card chegava vazio na tela (medido no smoke de 20/10/2026).
-			indexRevealGroups(index, "search_groups", { groups: grupos });
-			const cartas: CartaLivre[] = grupos
-				.filter((g) => typeof g?.id === "string" && g.id.length > 0)
-				.slice(0, 12)
-				.map((g) => ({
-					groupId: g.id,
-					administradora: g.administradora,
-					carta: g.creditValue,
-					parcela: g.monthlyPayment,
-					prazoMeses: g.termMonths,
-					contempladosMes: g.availableSlots,
-				}));
+			const comId = grupos.filter((g) => typeof g?.id === "string" && g.id.length > 0);
+			const cartas: CartaLivre[] = comId.map(cartaDoGrupo);
 
 			if (cartas.length === 0) {
 				ctx.estadoDepoisDaBusca = {
@@ -757,31 +777,10 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				return "A busca voltou sem nenhuma carta nessa faixa. Diga isso ao cliente com naturalidade e proponha outro valor ou outra parcela.";
 			}
 
-			const logos = await logosDoTurno();
-			// O card corta em até 4 opções (`limitarOpcoesDaComparacao`). O modelo
-			// recebia as 12 da busca e recomendava carta que o cliente NÃO estava
-			// vendo — e `fazer_proposta` recusava depois. A verdade é o card.
-			const payloadDoCard = buildComparisonTableFromRevealGroups(index, logos) as {
-				groups?: Array<{ id?: string }>;
-			};
-			const idsNoCard = new Set(
-				(payloadDoCard.groups ?? [])
-					.map((g) => g?.id)
-					.filter((id): id is string => typeof id === "string"),
-			);
-			const cartasNoCard = cartas.filter((c) => idsNoCard.has(c.groupId));
-			// A fonte dos cards de FATO é o que está NA TELA — não as 12 da busca.
-			// SOMA ao índice em vez de substituir: duas buscas no mesmo turno (outra
-			// categoria, refino de faixa) deixam a primeira `comparison_table` na tela,
-			// e os ids dela continuam válidos para os cards de FATO.
-			for (const g of grupos) {
-				if (idsNoCard.has(g.id)) ctx.gruposRevelados.set(g.id, g);
-			}
-			ctx.cards.push({
-				type: "comparison_table",
-				payload: payloadDoCard as unknown as Record<string, unknown>,
-			});
-			ctx.cartasNaTela = cartasNoCard;
+			// A busca NÃO põe nada na tela: soma ao que valida os `ids` do `mostrar_card`.
+			// Duas buscas no mesmo turno somam (outra categoria, refino de faixa).
+			ctx.gruposDaBusca ??= new Map();
+			for (const g of comId) ctx.gruposDaBusca.set(g.id, g);
 			ctx.estadoDepoisDaBusca = {
 				categoria,
 				creditMax,
@@ -792,10 +791,12 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 			};
 
 			return JSON.stringify({
-				cartas: cartasNoCard,
-				obs: args.usaraLanceEmbutido
-					? `Busca feita com lance embutido de ${pct}%: a carta é maior que o bem de propósito (o embutido consome parte dela).`
-					: "Cartas reais, sem lance embutido.",
+				cartas,
+				obs:
+					(args.usaraLanceEmbutido
+						? `Busca feita com lance embutido de ${pct}%: a carta é maior que o bem de propósito (o embutido consome parte dela).`
+						: "Cartas reais, sem lance embutido.") +
+					" Nada está na tela até você chamar `mostrar_card` (comparison_table, { ids }) com as cartas que escolher.",
 				...(args.parcelaMensal && args.valorDoBem
 					? {
 							parcelaDoCliente: args.parcelaMensal,
@@ -1046,13 +1047,19 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 					: "Card NÃO mostrado: o card de WhatsApp já foi à tela nesta conversa e não sai de novo. Se o cliente ainda não deu o número, peça em uma frase, na conversa, sem comentar que o card já apareceu.";
 			}
 
+			// Os `ids` do comparison_table valem contra o que foi buscado NESTE turno ∪ o que
+			// o cliente já viu (restaurado); os demais cards de fato, só contra o que está na tela.
+			const gruposDoCard =
+				args.tipo === "comparison_table" && ctx.gruposDaBusca
+					? new Map([...ctx.gruposDaBusca, ...ctx.gruposRevelados])
+					: ctx.gruposRevelados;
 			const card = await montarCardDeFato(
 				args.tipo,
 				{
 					conversationId: ctx.conversationId,
 					channel: ctx.channel,
 					nomeDoCliente: ctx.nomeDoCliente,
-					grupos: ctx.gruposRevelados,
+					grupos: gruposDoCard,
 					telefoneMascarado: ctx.telefoneMascarado ?? null,
 					cpfMascarado: ctx.cpfMascarado ?? null,
 					...valoresPedidos(ctx),
@@ -1066,6 +1073,14 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 			// despachado (é o que autoriza o `contract-submit`). O turno lê este campo.
 			if (card.metaDoTurno) ctx.metaDaEmissao = { ...ctx.metaDaEmissao, ...card.metaDoTurno };
 			ctx.cards.push(card.card);
+			if (card.card.type === "comparison_table") {
+				// O que o cliente passa a ver: ancora de `fazer_proposta` e fonte dos cards de fato.
+				const escolhidos = ((card.card.payload as { groups?: Array<{ id?: string }> }).groups ?? [])
+					.map((g) => (typeof g?.id === "string" ? gruposDoCard.get(g.id) : undefined))
+					.filter((g): g is GroupSummary => g !== undefined);
+				for (const g of escolhidos) ctx.gruposRevelados.set(g.id, g);
+				ctx.cartasNaTela = escolhidos.map(cartaDoGrupo);
+			}
 			// Com o celular já guardado o card é só a CONFIRMAÇÃO do número (um clique): a fala não
 			// manda digitar nada.
 			if (card.card.type === "whatsapp_optin" && ctx.telefoneMascarado) {

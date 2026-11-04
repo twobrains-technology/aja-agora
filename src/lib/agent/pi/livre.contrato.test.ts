@@ -63,6 +63,14 @@ describe("motor livre — vendedor sem funil", () => {
 		const conversationId = await novaConversa();
 		const servidor = await subirServidorRoteirizado([
 			{ toolCalls: [{ name: "buscar_cartas", args: { categoria: "auto", valorDoBem: 80_000 } }] },
+			{
+				toolCalls: [
+					{
+						name: "mostrar_card",
+						args: { tipo: "comparison_table", payload: { ids: ["grupo-itaú-1", "grupo-bb-2"] } },
+					},
+				],
+			},
 			{ text: "Achei essas opções pra você: a ITAÚ e o Banco do Brasil." },
 		]);
 
@@ -134,6 +142,14 @@ describe("motor livre — vendedor sem funil", () => {
 		criadas.push(conv.id);
 		const servidor = await subirServidorRoteirizado([
 			{ toolCalls: [{ name: "buscar_cartas", args: { categoria: "auto", valorDoBem: 80_000 } }] },
+			{
+				toolCalls: [
+					{
+						name: "mostrar_card",
+						args: { tipo: "comparison_table", payload: { ids: ["grupo-itaú-1", "grupo-bb-2"] } },
+					},
+				],
+			},
 			{ text: "Olha o que achei pro seu caso." },
 		]);
 		try {
