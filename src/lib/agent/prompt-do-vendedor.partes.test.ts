@@ -29,6 +29,8 @@ describe("repartição do prompt em partes (base e partes)", () => {
 			"Mostra número cedo.",
 			"Na comparação, não ponha duas cartas iguais",
 			"A primeira coisa é o nome.",
+			"Se a busca falhar",
+			"Opção que cabe em um toque",
 			"Escuta antes de oferecer.",
 			"O cliente não tem formulário.",
 			"Pergunta o mínimo antes de mostrar.",
@@ -60,9 +62,7 @@ describe("repartição do prompt em partes (base e partes)", () => {
 		}
 		const nasPartesFrases = [
 			"Explique com palavras simples quando fizer diferença para a decisão dela, sem aula.",
-			"diga isso em UMA frase curta e siga para o próximo passo útil (o contato, o prazo, o lance)",
-			"não repita o aviso em turnos seguidos",
-			"não invente faixa em reais como exemplo e não ponha valor aproximado entre parênteses",
+			"diga isso em UMA frase curta e siga para o próximo passo útil, sem repetir o aviso em turnos seguidos",
 			"responda em uma frase DIFERENTE — o aviso já foi dado.",
 			"De madrugada ninguém atende: diga isso e combine o retorno.",
 		];
@@ -154,6 +154,23 @@ describe("repartição do prompt em partes (base e partes)", () => {
 			.filter(([, texto]) => !detectarPromessaDeContemplacao(texto).ok)
 			.map(([id]) => id);
 		expect(acusadas).toEqual([]);
+	});
+
+	it("T2.9 a base proíbe número sem lastro, nem como exemplo ou aproximado", () => {
+		const base = normaliza(BASE_DO_VENDEDOR.prefixo);
+		expect(base).toContain("não veio de ferramenta nem da própria pessoa");
+		expect(base).toContain(
+			"nem como exemplo, ilustração, faixa sugerida ou valor aproximado entre parênteses",
+		);
+		expect(base).toContain("use os números das cartas que a busca devolveu, ou fale sem número");
+	});
+
+	it("T2.10 a regra de número sem lastro não se repete nas partes", () => {
+		for (const [id, texto] of Object.entries(PARTES_PADRAO)) {
+			const t = normaliza(texto);
+			expect(t, id).not.toContain("faixa em reais como exemplo");
+			expect(t, id).not.toContain("valor aproximado entre parênteses");
+		}
 	});
 
 	it("T2.6 limite de conduta segue folgado", () => {
