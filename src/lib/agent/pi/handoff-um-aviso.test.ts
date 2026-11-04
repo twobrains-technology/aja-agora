@@ -56,6 +56,11 @@ async function rodarTurno(args: {
 	const servidor = await subirServidorRoteirizado(args.beats);
 	const run = createRunTurnLivre({
 		provider: { id: "litellm", baseUrl: servidor.url, apiKey: "teste", model: "roteirizado" },
+		// A fila é fronteira externa (WhatsApp dos vendedores): dublê, nunca o proxy real.
+		filaDeVendedores: {
+			chamar: vi.fn(async () => ({ notificados: 0, semAtendentes: true })),
+			estado: vi.fn(async () => ({ atendentesAtivos: 0, chamadaEm: null, assumidaPor: null })),
+		},
 	});
 	const eventos: TurnEvent[] = [];
 	for await (const ev of run({
@@ -71,6 +76,10 @@ async function rodarTurno(args: {
 
 const avisos = (eventos: TurnEvent[]) => eventos.filter((ev) => ev.type === "handoff");
 
+// O aviso é da rota MESA (P5/P8): proposta gerada ou pedido de fechar. Sem isso o pedido de uma
+// pessoa vai para a fila de vendedores e o agente segue falando, sem balão fixo nem caso na mesa.
+const PEDIDO_DE_FECHAR = "quero fechar, quero falar com uma pessoa";
+
 const PEDIDO = {
 	toolCalls: [{ name: "falar_com_humano", args: { motivo: "cliente pediu uma pessoa" } }],
 };
@@ -83,7 +92,7 @@ describe("o aviso de handoff sai UMA vez por conversa", () => {
 		// sem lead não há caso na mesa (`abrirCasoNaMesa` devolve `sem-lead`).
 		const primeiro = await rodarTurno({
 			conversationId,
-			userText: "quero falar com uma pessoa",
+			userText: PEDIDO_DE_FECHAR,
 			beats: [PEDIDO, { text: "Como você se chama?" }],
 		});
 		await primeiro.fechar();
@@ -128,7 +137,7 @@ describe("o aviso de handoff sai UMA vez por conversa", () => {
 		const avisosDaConversa: TurnEvent[] = [];
 
 		for (const fala of [
-			"quero falar com uma pessoa",
+			PEDIDO_DE_FECHAR,
 			"meu nome é Kairo",
 			"quero falar com um atendente agora",
 		]) {
@@ -142,5 +151,26 @@ describe("o aviso de handoff sai UMA vez por conversa", () => {
 		}
 
 		expect(avisosDaConversa).toHaveLength(1);
+	});
+
+	it("sem proposta nem pedido de fechar, o pedido vai para a fila: nenhum aviso e nenhum caso na mesa", async () => {
+		const conversationId = await novaConversa();
+		const avisosDaConversa: TurnEvent[] = [];
+
+		for (const fala of ["quero falar com uma pessoa", "meu nome é Kairo"]) {
+			const turno = await rodarTurno({
+				conversationId,
+				userText: fala,
+				beats: [PEDIDO, { text: "Já chamei o time e sigo com você." }],
+			});
+			await turno.fechar();
+			avisosDaConversa.push(...avisos(turno.eventos));
+		}
+
+		expect(avisosDaConversa).toHaveLength(0);
+		const caso = await db.query.mesaHandoffs.findFirst({
+			where: eq(mesaHandoffs.conversationId, conversationId),
+		});
+		expect(caso).toBeUndefined();
 	});
 });
