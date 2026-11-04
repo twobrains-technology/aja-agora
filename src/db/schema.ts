@@ -21,6 +21,7 @@ import {
 import type { UserIntent } from "@/lib/agent/funil-tipos";
 import type { Category, ExpertiseLevel } from "@/lib/agent/personas";
 import type { HumanMemoryBlock } from "@/lib/memory/types";
+import type { AtributosDoPerfil } from "@/lib/playground/tipos";
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
@@ -2010,4 +2011,42 @@ export const sinaisDeConversa = pgTable(
 		criadoEm: timestamp("criado_em", { withTimezone: true }).defaultNow().notNull(),
 	},
 	(table) => [index("sinais_de_conversa_conversation_id_idx").on(table.conversationId)],
+);
+
+// PLAYGROUND DE COMPORTAMENTO (D-0056) — perfis de teste só da dev.
+//
+// O perfil NÃO é a conduta viva: a conduta continua em `caixa_de_prompt`. O perfil
+// é a receita (4 atributos + orientação) que o servidor compila num bloco de texto
+// e acrescenta à conduta, na conversa de teste ou ao publicar. `versao` é o
+// controle otimista do editor; cada salvar grava uma linha em `playground_perfil_versoes`.
+export const playgroundPerfis = pgTable("playground_perfis", {
+	id: uuid().defaultRandom().primaryKey(),
+	nome: text().notNull(),
+	atributos: jsonb().$type<AtributosDoPerfil>().notNull(),
+	orientacao: text().notNull().default(""),
+	versao: integer().notNull().default(1),
+	criadoEm: timestamp("criado_em", { withTimezone: true }).defaultNow().notNull(),
+	atualizadoEm: timestamp("atualizado_em", { withTimezone: true }).defaultNow().notNull(),
+	atualizadoPor: text("atualizado_por"),
+});
+
+export const playgroundPerfilVersoes = pgTable(
+	"playground_perfil_versoes",
+	{
+		id: uuid().defaultRandom().primaryKey(),
+		perfilId: uuid("perfil_id")
+			.notNull()
+			.references(() => playgroundPerfis.id, { onDelete: "cascade" }),
+		versao: integer().notNull(),
+		atributos: jsonb().$type<AtributosDoPerfil>().notNull(),
+		orientacao: text().notNull().default(""),
+		blocoCompilado: text("bloco_compilado").notNull(),
+		salvoPor: text("salvo_por"),
+		criadoEm: timestamp("criado_em", { withTimezone: true }).defaultNow().notNull(),
+		/** Nulo até publicar; depois, a versão devolvida por `publicarCaixa`. */
+		caixaVersao: integer("caixa_versao"),
+	},
+	(table) => [
+		uniqueIndex("playground_perfil_versoes_perfil_versao_idx").on(table.perfilId, table.versao),
+	],
 );
