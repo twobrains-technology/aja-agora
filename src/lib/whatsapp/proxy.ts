@@ -605,6 +605,17 @@ export async function handoffToAgents(
  * SQL, nunca `persistMeta`) é o que deixa o primeiro vendedor que escrever
  * assumir a conversa (`findUnclaimedConversation`).
  */
+export async function regravarMarcadorDaFila(
+	conversationId: string,
+	chamadaEm: Date,
+): Promise<void> {
+	const marcador = JSON.stringify({ filaDeVendedores: { chamadaEm: chamadaEm.toISOString() } });
+	await db
+		.update(conversations)
+		.set({ metadata: sql`coalesce(${conversations.metadata}, '{}'::jsonb) || ${marcador}::jsonb` })
+		.where(eq(conversations.id, conversationId));
+}
+
 export async function chamarFilaDeVendedores(args: {
 	conversationId: string;
 	userName: string;
@@ -619,13 +630,7 @@ export async function chamarFilaDeVendedores(args: {
 	});
 	const isSimulated = conv?.isSimulated ?? false;
 
-	const marcador = JSON.stringify({
-		filaDeVendedores: { chamadaEm: simulatorNow().toISOString() },
-	});
-	await db
-		.update(conversations)
-		.set({ metadata: sql`coalesce(${conversations.metadata}, '{}'::jsonb) || ${marcador}::jsonb` })
-		.where(eq(conversations.id, conversationId));
+	await regravarMarcadorDaFila(conversationId, simulatorNow());
 
 	const agentMessage = [
 		"🔔 *Nova negociação — Aja Agora*",

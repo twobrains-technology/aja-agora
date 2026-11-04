@@ -77,6 +77,7 @@ import {
 	handoffToAgents,
 	invalidateAttendantCache,
 	listarEstadoDaFila,
+	regravarMarcadorDaFila,
 } from "./proxy";
 import { saveMessage } from "./session";
 import { publishToAttendant } from "./simulator-bus";
@@ -250,5 +251,41 @@ describe("regressão: handoffToAgents segue igual", () => {
 			.mock.calls.filter((c) => c[0] === ARGS.userWaId)
 			.map((c) => String(c[1]));
 		expect(paraOCliente.join("\n")).toContain("ele te chama aqui em instantes");
+	});
+});
+
+describe("regravarMarcadorDaFila", () => {
+	const CHAMADA = new Date("2026-11-05T04:12:00.000Z");
+
+	it("regrava o marcador por merge SQL, sem tocar status nem falar com ninguém", async () => {
+		await regravarMarcadorDaFila("conv-1", CHAMADA);
+
+		expect(estado.updates).toHaveLength(1);
+		const [update] = estado.updates;
+		expect(Object.keys(update)).toEqual(["metadata"]);
+		const sqlTexto = textoDoSql(update.metadata);
+		expect(sqlTexto).toContain("||");
+		expect(sqlTexto).toContain("filaDeVendedores");
+		expect(sqlTexto).toContain(CHAMADA.toISOString());
+		expect(sendTextMessage).not.toHaveBeenCalled();
+		expect(publishToAttendant).not.toHaveBeenCalled();
+	});
+
+	it("depois de a metadata ser sobrescrita, listarEstadoDaFila volta a ver chamadaEm", async () => {
+		// persistMeta do turno apagou o marcador
+		estado.conversa = { id: "conv-1", handedOffUserId: null, metadata: { outra: 1 } };
+		expect((await listarEstadoDaFila("conv-1")).chamadaEm).toBeNull();
+
+		await regravarMarcadorDaFila("conv-1", CHAMADA);
+
+		// o dublê do banco aplica o JSON que o merge SQL carregaria
+		const json =
+			textoDoSql(estado.updates[0].metadata).match(/\{"filaDeVendedores".*\}\}/)?.[0] ?? "{}";
+		estado.conversa = {
+			...estado.conversa,
+			metadata: { ...(estado.conversa.metadata as object), ...JSON.parse(json) },
+		};
+		expect((await listarEstadoDaFila("conv-1")).chamadaEm).toEqual(CHAMADA);
+		expect((estado.conversa.metadata as { outra: number }).outra).toBe(1);
 	});
 });
