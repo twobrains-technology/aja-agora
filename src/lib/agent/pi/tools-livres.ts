@@ -599,7 +599,7 @@ function descricaoDoMostrarCard(channel: "web" | "whatsapp"): string {
 		`1) Card de ESCOLHA (o payload é seu): ${escolha.map((tipo) => SHAPE_DO_CARD_DE_ESCOLHA[tipo]).join(", ")}.` +
 		semFaixasDeValor +
 		"\n\n" +
-		`2) Card de FATO (o payload é do servidor; você só diz QUAL carta e, se for o caso, o cenário): ${comCarta.join(", ")} (todos precisam de \`groupId\` copiado de buscar_cartas, menos \`comparison_table\`, que pede \`ids\`), e os de estado ${deEstado.join(", ")}. Payload do fato: { groupId, lancePercent?, initialTargetMonth?, usarLanceEmbutido? }; \`comparison_table\` leva { ids: string[] } — os ids das cartas de buscar_cartas que você quer na tabela, na ordem em que devem aparecer (a busca NÃO põe nada na tela sozinha) — \`usarLanceEmbutido: false\` quando o cliente recusou lance embutido; qualquer outro número que você mandar é ignorado, porque o valor vem da carta real.`
+		`2) Card de FATO (o payload é do servidor; você só diz QUAL carta e, se for o caso, o cenário): ${comCarta.join(", ")} (todos precisam de \`groupId\` copiado de buscar_cartas, menos \`comparison_table\`, que pede \`ids\`), e os de estado ${deEstado.join(", ")}. Payload do fato: { groupId, lancePercent?, initialTargetMonth?, usarLanceEmbutido? }; \`usarLanceEmbutido: false\` quando o cliente recusou lance embutido. \`comparison_table\` leva { ids: string[] }: os ids das cartas de buscar_cartas que você quer na tabela, na ordem em que devem aparecer (a busca NÃO põe nada na tela sozinha). Qualquer outro número que você mandar é ignorado, porque o valor vem da carta real.`
 	);
 }
 
