@@ -41,14 +41,14 @@ describe("catálogos do dublê", () => {
 			expect(rotuloDoCatalogo(id).length).toBeGreaterThan(0);
 		}
 	});
-	it("numerosDoCatalogo sem NaN e com 977.12 e 977.4", () => {
+	it("numerosDoCatalogo sem NaN e com 1012.12 e 1012.4", () => {
 		for (const id of CATALOGO_IDS) {
 			expect(numerosDoCatalogo(id).every((n) => Number.isFinite(n))).toBe(true);
 		}
 		const n = numerosDoCatalogo("canopus-quase-iguais");
-		expect(n).toContain(977.12);
-		expect(n).toContain(977.4);
-		expect(n).toContain(977);
+		expect(n).toContain(1012.12);
+		expect(n).toContain(1012.4);
+		expect(n).toContain(1012);
 	});
 	it("adapter do grande devolve mais de 4 grupos", async () => {
 		const grupos = await adapterDoCatalogo("grande").searchGroups({
@@ -57,11 +57,15 @@ describe("catálogos do dublê", () => {
 		});
 		expect(grupos.length).toBeGreaterThan(4);
 	});
-	it("adapter do canopus-quase-iguais mantém os grupos do grande e o guard descarta o par 977 (parcela×prazo < carta)", async () => {
+	it("adapter do canopus-quase-iguais mantém os grupos do grande e devolve o par CANOPUS 977", async () => {
 		const grupos = await adapterDoCatalogo("canopus-quase-iguais").searchGroups({
 			category: "auto",
 			creditMax: 80000,
 		});
 		expect(grupos.length).toBeGreaterThan(4);
+		const canopus = grupos.filter(
+			(g) => g.administradora === "CANOPUS" && (g as { grupo?: string }).grupo === "977",
+		);
+		expect(canopus.length).toBeGreaterThanOrEqual(2);
 	});
 });

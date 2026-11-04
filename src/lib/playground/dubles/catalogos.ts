@@ -123,6 +123,7 @@ function ofertaCanopus(
 	) as unknown as Record<string, unknown>;
 	o.installmentValue = parcela;
 	o.importedInstallmentValue = imported;
+	o.totalPaid = Math.round(parcela * 80 * 100) / 100; // fecha com parcela×prazo (guard dos 15%)
 	o.embeddedVariant = variante;
 	return o as unknown as BeviOffer;
 }
@@ -137,8 +138,8 @@ export function ofertasDoCatalogo(id: CatalogoId): BeviOffer[] {
 	if (id === "grande") return grande;
 	return [
 		...grande,
-		ofertaCanopus(1, 977.12, "sem", 977.12),
-		ofertaCanopus(2, 977.4, "com", 977.4),
+		ofertaCanopus(1, 1012.12, "sem", 1012.12),
+		ofertaCanopus(2, 1012.4, "com", 1012.4),
 	];
 }
 
