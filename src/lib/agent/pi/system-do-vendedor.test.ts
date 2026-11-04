@@ -114,3 +114,18 @@ describe("no WhatsApp o celular é o número da conversa — não se pede", () =
 		expect(r.partes.fato).toMatch(/Celular: ainda não informado \(peça uma vez/);
 	});
 });
+
+describe("system do vendedor — fatosExtras", () => {
+	it("sem fatosExtras o system é igual a conduta + skills + fato", async () => {
+		const { system, partes } = await montar();
+		expect(partes.extras).toBe("");
+		expect(system).toBe(partes.conduta + partes.skills + partes.fato);
+	});
+
+	it("com fatosExtras, cada um entra depois do fato precedido de \\n", async () => {
+		const base = await montar();
+		const { system, partes } = await montar({ fatosExtras: ["EXTRA A", "EXTRA B"] });
+		expect(partes.extras).toBe("\nEXTRA A\nEXTRA B");
+		expect(system).toBe(`${base.system}\nEXTRA A\nEXTRA B`);
+	});
+});

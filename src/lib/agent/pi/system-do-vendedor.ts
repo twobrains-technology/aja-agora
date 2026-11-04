@@ -54,8 +54,13 @@ export async function montarSystemDoVendedor(args: {
 	caixa?: Caixa;
 	/** Injetável para teste; por padrão `skillsParaPrompt()`. */
 	skills?: string;
+	/** Fatos extras, concatenados depois do bloco de fato (cada um precedido de "\n"). */
+	fatosExtras?: string[];
 	agora?: number;
-}): Promise<{ system: string; partes: { conduta: string; skills: string; fato: string } }> {
+}): Promise<{
+	system: string;
+	partes: { conduta: string; skills: string; fato: string; extras: string };
+}> {
 	// `lerCaixa` já não lança; o `catch` é a segunda rede: turno sem conduta é
 	// pior que conduta do código.
 	const caixa =
@@ -70,5 +75,7 @@ export async function montarSystemDoVendedor(args: {
 		identidade: args.identidade,
 	});
 
-	return { system: conduta + skills + fato, partes: { conduta, skills, fato } };
+	const extras = (args.fatosExtras ?? []).map((f) => `\n${f}`).join("");
+
+	return { system: conduta + skills + fato + extras, partes: { conduta, skills, fato, extras } };
 }

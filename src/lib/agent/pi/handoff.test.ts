@@ -44,7 +44,7 @@ describe("o pedido de humano honra o pedido, sem promessa", () => {
 
 		// O tool usa o nome DITO — na fala do turno ou num turno anterior — antes de abrir o
 		// caso: capturar, não perguntar de novo.
-		const tools = readFileSync(new URL("./tools-livres.ts", import.meta.url).pathname, "utf8");
+		const tools = readFileSync(new URL("./tools-humano.ts", import.meta.url).pathname, "utf8");
 		expect(tools).toContain("nomeDitoNaConversa({ falaDoTurno: ctx.userText, historico })");
 		expect(tools).toMatch(/ctx\.nomeDoCliente \?\? dito\?\.nome/);
 	});
@@ -122,7 +122,7 @@ describe("o pedido de humano honra o pedido, sem promessa", () => {
 	});
 
 	it("`falar_com_humano` abre o caso, e o caso marca handed_off", () => {
-		const tool = readFileSync(new URL("./tools-livres.ts", import.meta.url).pathname, "utf8");
+		const tool = readFileSync(new URL("./tools-humano.ts", import.meta.url).pathname, "utf8");
 		const corpo = tool.slice(
 			tool.indexOf("const falar_com_humano"),
 			tool.indexOf("const salvar_nome"),
@@ -144,7 +144,7 @@ describe("o pedido de humano honra o pedido, sem promessa", () => {
 		// Uma linha por turno: a segunda prosa de handoff não vira segunda mensagem.
 		expect(turno).toMatch(/linhaDeHandoffEmitida/);
 
-		const tools = readFileSync(new URL("./tools-livres.ts", import.meta.url).pathname, "utf8");
+		const tools = readFileSync(new URL("./tools-humano.ts", import.meta.url).pathname, "utf8");
 		expect(tools).toMatch(/ctx\.casoAbertoNesteTurno\?\.\(\);/);
 		// O aviso de "caso aberto" que sai no balão é o da casa, não a frase do modelo.
 		expect(turno).not.toMatch(/Caso aberto!/);
