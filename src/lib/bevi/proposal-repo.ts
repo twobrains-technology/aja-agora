@@ -72,8 +72,11 @@ export async function createBeviProposal(
 	// FIX-44: a proposta Bevi já nasce automática (com PDF). A raia passa a
 	// acompanhar o evento que JÁ existe — move o lead pra `proposta_enviada`
 	// (system, forward-only). Antes a proposta nascia e a raia não movia.
+	// Só com oferta REAL (`ofertaId`): a linha vazia existe para reaproveitar o proposalId,
+	// e a temperatura do lead no backoffice não sobe sem proposta. Quando a oferta chegar,
+	// `updateBeviProposal` registra o evento.
 	if (leadId) {
-		await transitionLeadStage(leadId, "proposta_enviada", { type: "system" });
+		if (row.ofertaId) await transitionLeadStage(leadId, "proposta_enviada", { type: "system" });
 	} else {
 		// FIX-48: telemetria — proposta nasceu ÓRFÃ (sem leadId). No caminho web
 		// isso trava a raia em `qualificado` (o resgate retroativo em /api/leads
@@ -101,9 +104,10 @@ export async function relinkOrphanProposals(
 		.update(beviProposals)
 		.set({ leadId, updatedAt: new Date() })
 		.where(and(eq(beviProposals.conversationId, conversationId), isNull(beviProposals.leadId)))
-		.returning({ id: beviProposals.id });
+		.returning({ id: beviProposals.id, ofertaId: beviProposals.ofertaId });
 
-	if (relinked.length > 0) {
+	// Órfã sem oferta não é proposta: religa, mas não sobe a temperatura.
+	if (relinked.some((r) => r.ofertaId)) {
 		await transitionLeadStage(leadId, "proposta_enviada", { type: "system" });
 	}
 	return relinked.length;
@@ -115,6 +119,15 @@ export async function updateBeviProposal(
 	id: string,
 	patch: Partial<BeviProposalSnapshot>,
 ): Promise<void> {
+	// A oferta que aparece pela primeira vez (linha estava sem `ofertaId`) é o momento
+	// de registrar `proposta_enviada` — uma vez só (a linha passa a ter oferta).
+	const antes = patch.ofertaId
+		? await db.query.beviProposals.findFirst({
+				where: eq(beviProposals.id, id),
+				columns: { ofertaId: true, leadId: true },
+			})
+		: undefined;
+
 	await db
 		.update(beviProposals)
 		.set({
@@ -146,6 +159,10 @@ export async function updateBeviProposal(
 			updatedAt: new Date(),
 		})
 		.where(eq(beviProposals.id, id));
+
+	if (antes && !antes.ofertaId && antes.leadId) {
+		await transitionLeadStage(antes.leadId, "proposta_enviada", { type: "system" });
+	}
 }
 
 /** Proposta mais recente da conversa (pra retomar o fechamento). */

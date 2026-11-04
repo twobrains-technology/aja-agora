@@ -91,7 +91,11 @@ describeIfDb("FIX-44 — automação do desfecho (integration)", () => {
 
 	it("createBeviProposal move o lead pra proposta_enviada", async () => {
 		const { conversationId, leadId } = await seed("qualificado");
-		await createBeviProposal(conversationId, { proposalId: "prop-pe-1" }, leadId);
+		await createBeviProposal(
+			conversationId,
+			{ proposalId: "prop-pe-1", ofertaId: "oferta-pe-1" },
+			leadId,
+		);
 		const lead = await db.query.leads.findFirst({ where: eq(schema.leads.id, leadId) });
 		expect(lead?.stage).toBe("proposta_enviada");
 	});
