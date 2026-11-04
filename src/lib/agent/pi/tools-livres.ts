@@ -30,6 +30,7 @@ import {
 	GroupNotInDiscoveryError,
 } from "@/lib/adapters/bevi/bevi-self-contract-adapter";
 import { BeviSelfContractClient } from "@/lib/adapters/bevi/self-contract-client";
+import type { ProposalGateway } from "@/lib/adapters/proposal-gateway";
 import type { AdministradoraAdapter, GroupSummary, QuotaSimulation } from "@/lib/adapters/types";
 import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
 import { listShownOffersForConversation } from "@/lib/agent/orchestrator/choose-offer";
@@ -601,6 +602,8 @@ export type DepsDasToolsLivres = {
 	simularCota?: (params: { groupId: string; creditValue: number }) => Promise<QuotaSimulation>;
 	/** Logos das administradoras — injetável nos testes. */
 	carregarLogos?: () => Promise<ReadonlyMap<string, string>>;
+	/** Gateway da proposta — injetável (playground/testes). Sem ele, `startContract` usa o real. */
+	gateway?: ProposalGateway;
 };
 
 /** O que o cliente PEDIU nesta busca: o teto de crédito alimenta o aviso de
@@ -952,6 +955,7 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 						leadId,
 						registeredAdministradora: anterior?.administradora ?? null,
 					}),
+					deps.gateway,
 				);
 			} catch (erro) {
 				console.error("[fazer_proposta] falha no fechamento:", erro);

@@ -97,6 +97,8 @@ export function decryptIdentity(blob: string): StoredIdentity {
 export async function storeIdentity(
 	conversationId: string,
 	identity: StoredIdentity,
+	/** `semContato`: playground — guarda a identidade mas não liga o celular ao lead. */
+	opcoes?: { semContato?: boolean },
 ): Promise<void> {
 	const meta = await reloadMeta(conversationId);
 	// A identidade chega em PEDAÇOS: o cliente dita o CPF num turno e o celular no
@@ -118,6 +120,7 @@ export async function storeIdentity(
 		conversationId,
 		input: { cpf: completa.cpf, phone: completa.celular },
 	});
+	if (opcoes?.semContato) return;
 	await vincularCelularAoLead(conversationId, completa.celular).catch((erro: unknown) => {
 		// O telefone do LEAD é o que faz a pessoa contar como identificada no
 		// painel — mas não é o que fecha a venda: falhar aqui não pode derrubar o

@@ -12,6 +12,8 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations } from "@/db/schema";
+import type { ProposalGateway } from "@/lib/adapters/proposal-gateway";
+import type { Caixa } from "@/lib/agent/box/caixa";
 import { listShownOffersForConversation } from "@/lib/agent/orchestrator/choose-offer";
 import { maskCpfForDisplay } from "@/lib/agent/orchestrator/contract-form-prefill";
 import type { TurnEvent, TurnInput } from "@/lib/agent/orchestrator/types";
@@ -1025,6 +1027,14 @@ export function createRunTurnLivre(deps?: {
 	busca?: DepsDasToolsLivres["buscarGrupos"];
 	/** Os cards já mostrados na conversa — teste injeta, produção lê do banco. */
 	lerCartas?: (conversationId: string) => Promise<ArtefatoDaConversa[]>;
+	/** Conduta injetada (playground) — sem ela, `montarSystemDoVendedor` lê a caixa viva. */
+	caixa?: Caixa;
+	/** Fronteira da simulação — repassada às tools. */
+	simularCota?: DepsDasToolsLivres["simularCota"];
+	/** Gateway da proposta — repassado ao fecho (`startContract`). */
+	gateway?: ProposalGateway;
+	/** Playground: não grava o contato do WhatsApp (nem lead, nem conversão). */
+	semCapturarContato?: boolean;
 }): (input: TurnInput) => AsyncGenerator<TurnEvent> {
 	return async function* runTurnLivreImpl(input: TurnInput): AsyncGenerator<TurnEvent> {
 		const { conversationId, channel, userText, isUserTurn, contactName } = input;
@@ -1051,7 +1061,9 @@ export function createRunTurnLivre(deps?: {
 			pedidoDeCpf: pedidoDeCpfNoUltimoBalao(historico.at(-1)),
 		});
 		if (captura.identidade && (captura.recebeuCpf || captura.recebeuCelular)) {
-			await storeIdentity(conversationId, captura.identidade).catch((erro: unknown) => {
+			await storeIdentity(conversationId, captura.identidade, {
+				semContato: deps?.semCapturarContato,
+			}).catch((erro: unknown) => {
 				console.error("[pi-livre] identidade não gravada (ignorado):", erro);
 			});
 		}
@@ -1061,11 +1073,13 @@ export function createRunTurnLivre(deps?: {
 		// proposta não deixava contato nenhum para a régua. O dado vem da fala do cliente
 		// (qualquer turno, qualquer ordem) e gravar é encanamento — não custa turno de venda.
 		if (captura.recebeuCelular && captura.identidade?.celular) {
-			await saveContactWhatsapp(conversationId, captura.identidade.celular).catch(
-				(erro: unknown) => {
-					console.error("[pi-livre] contato do WhatsApp não gravado (ignorado):", erro);
-				},
-			);
+			if (!deps?.semCapturarContato) {
+				await saveContactWhatsapp(conversationId, captura.identidade.celular).catch(
+					(erro: unknown) => {
+						console.error("[pi-livre] contato do WhatsApp não gravado (ignorado):", erro);
+					},
+				);
+			}
 		}
 
 		// Rastro de entrada: sem isto, um turno que "fala mas não busca" não tem
@@ -1187,6 +1201,7 @@ export function createRunTurnLivre(deps?: {
 			channel,
 			contactName: estado.contactName,
 			identidade: identidadeDoPrompt,
+			caixa: deps?.caixa,
 		});
 
 		// 3. As tools e o beat.
@@ -1487,10 +1502,17 @@ export function createRunTurnLivre(deps?: {
 				}),
 				historico,
 				tools: semRepetirChamada(
-					toPiTools(buildToolsLivres(ctx, { buscarGrupos: deps?.busca }) as never, {
-						conversationId,
-						so: [...NOMES_DAS_TOOLS_LIVRES],
-					}),
+					toPiTools(
+						buildToolsLivres(ctx, {
+							buscarGrupos: deps?.busca,
+							simularCota: deps?.simularCota,
+							gateway: deps?.gateway,
+						}) as never,
+						{
+							conversationId,
+							so: [...NOMES_DAS_TOOLS_LIVRES],
+						},
+					),
 				),
 				aoDelta: (delta) => {
 					// O trecho é SEGURADO até acabar (tool ou fim do beat): o verificador
