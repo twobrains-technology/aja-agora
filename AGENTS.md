@@ -40,6 +40,8 @@ taxa como quem sabe, e **fecha**.
 
 ## As premissas de condução
 
+**P0 · A conversa não morre.** Do primeiro ao último turno, toda resposta deixa um próximo passo para o lead. Nenhuma resposta truncada e nenhum beco sem saída: nem quando a Bevi falha, nem quando o lead recusa um dado, nem quando ninguém da fila atende. *(Kairo, 04/11: "do início ao fim, não deixar a conversa morrer")*
+
 **P1 · Entrega antes de perguntar.** A primeira resposta entrega valor — opção, comparação, número — e a
 qualificação vem depois.
 
@@ -51,19 +53,26 @@ ignorado é card errado.
 **P4 · Atende o que a pessoa pediu.** Se o anúncio vende carro e ela pede imóvel, o agente atende o que
 ela pediu.
 
-**P5 · Ninguém é empurrado para o fim da negociação.** O lead só vai ao especialista e ao fechamento
-quando ele pede. *(Bruna, 26/10: "o processo já me pôs no final da negociação, sem eu ter solicitado
-nenhum valor")*
+**P5 · Ninguém é empurrado para o fechamento.** A mesa só recebe o lead quando ele pede para fechar ou já gerou a proposta. Isso vale para a mesa, não para a fila de vendedores (P8). *(Bruna, 26/10: "o processo já me pôs no final da negociação, sem eu ter solicitado nenhum valor")*
 
 **P6 · O contato é o ativo.** Na **web**, o número do WhatsApp é o que salva o lead para contato depois
 que ele fecha a tela — é o dado que mais importa. No **WhatsApp** o telefone e o nome já chegaram com a
-mensagem: não se pede de novo o que já se tem.
+mensagem: não se pede de novo o que já se tem. Na web, o perfil do playground pode pedir o telefone antes da carta (escolha da Bruna e do Charles na call de 04/11); o perfil padrão mostra a carta primeiro e pede o telefone logo depois.
 
-**P7 · Vender é o trabalho.** O agente faz o diabo para fechar. Travar assunto, desistir do lead ou
-empurrar para humano é falha de condução, não zelo.
+**P7 · Vender é o trabalho.** O agente faz o diabo para fechar. Travar assunto e desistir do lead são falha de condução. Chamar o vendedor da fila quando a venda está para se perder é condução, não desistência: o agente segue com o lead até um humano assumir. *(Kairo, 04/11)*
+
+**P8 · A fila de vendedores não é a mesa.** A fila é o vendedor humano chamado no meio da venda: quando o lead pede atendente, quando a venda está para se perder ou na hora de transferir. A mensagem vai ao WhatsApp de todos os vendedores ativos e quem pegar primeiro atende. A mesa é o fechamento burocrático (documentação), atendido pela Juna no painel. Enquanto ninguém da fila assume, o agente conduz e acalma o lead sem prometer prazo, sabendo a hora em que está: de madrugada ninguém atende, e ele diz isso e combina o retorno. Quando um humano assume, o agente se cala. *(Kairo, 04/11)*
+
+**P9 · Nada fixo.** Como conversar (ordem dos pedidos, quantas cartas e opções mostrar, quando chamar o vendedor, quantas vezes insistir) é orientação editável no playground, separada por parte do fluxo. O prompt base guarda só as premissas. *(Kairo, 04/11: "tudo em prompt, nada fixo")*
+
+**P10 · O agente recebe tudo e filtra.** As ferramentas entregam ao agente todas as cartas e todos os campos que a Bevi devolve. Quem escolhe o que mostrar, e quantas, é o agente. *(Kairo, 04/11: "tudo que está capando a informação para o agente a gente tem que tirar")*
+
+**P11 · O código garante só a verdade.** Número vem de ferramenta; a carta escolhida existe na busca; o card mostra exatamente o que o agente escolheu; o agente não fala por cima de humano que assumiu a conversa. Todo o resto é conversa, e conversa é do prompt: nada de teto, dedup ou contador de recusa em código.
+
+**P12 · O playground é um eval.** Uma IA faz o cliente, segundo um perfil de simulação (caminho feliz, nervoso, recusa o telefone, entre outros), e conversa sozinha com o vendedor, que é o mesmo motor do agente da dev. O layout é o da plataforma. *(Kairo, 04/11)*
 
 > P1 a P5 são **direção**, não número: nenhuma delas carrega métrica herdada de relatório. A régua de
-> cada uma se mede no app e no banco, na hora do teste. P6 e P7 são palavras do dono.
+> cada uma se mede no app e no banco, na hora do teste. P0 e P6 a P12 são palavras do dono. P0 e P7 a P12 foram revistas e aprovadas por Kairo em 04/11/2026 (ordem na sessão: "pode reajustar totalmente tudo… refine e lance"), a partir da call de 04/11, 16:02–17:04 (`C:transcricao:2026-11-04/1315-call-teams.md`).
 
 ## LGPD e PII
 
@@ -126,16 +135,14 @@ Aprovado por Kairo em 28/10/2026 · origem grupo Agent - Preciso do kairo, 11:53
 - **Motor:** o vendedor livre, `src/lib/agent/pi/turno-livre.ts` (`runTurnLivre`). O funil em código
   morreu em 20/10/2026: não existe gate, fila de perguntas nem card escolhido pelo código. Quem
   escolhe como perguntar, em que ordem e qual card é o **modelo**.
-- **Conduta:** `PROMPT_DO_VENDEDOR` em `src/lib/agent/prompt-do-vendedor.ts` é o texto que o modelo
-  recebe hoje. Existe a tabela `caixa_de_prompt` para publicar conduta sem deploy, e ela está **vazia
-  no dev**: o arquivo é a lei até alguém publicar versão. `pnpm prompts:check` compara os dois.
+- **Conduta:** `PROMPT_DO_VENDEDOR` em `src/lib/agent/prompt-do-vendedor.ts` é a **base**: só as premissas. O comportamento vem do perfil do playground, por parte do fluxo; sem perfil publicado vale o perfil padrão. A tabela `caixa_de_prompt` guarda a versão publicada e é a lei quando existe; `pnpm prompts:check` compara o arquivo com ela.
 - **Conhecimento da Bevi (a administradora):** as skills em `src/lib/agent/pi/skills/*/SKILL.md`.
-- **Cards:** `ArtifactType` em `src/lib/chat/types.ts`. Card escolhido pelo modelo, payload montado no
-  servidor.
+- **Cards:** `ArtifactType` em `src/lib/chat/types.ts`. O modelo recebe todas as cartas e todos os campos da busca e escolhe quais e quantas vão ao card (`mostrar_card` com `ids`); o servidor só valida que o id existe e monta o payload (P10, P11).
+- **Fila × mesa:** a fila de vendedores avisa todo usuário `attendant` ativo e quem assumir primeiro atende (`src/lib/whatsapp/proxy.ts`); a mesa é `src/lib/mesa/` (fechamento e documentação, Juna). Chamar a fila não silencia o agente; o claim de um atendente ou o caso aberto na mesa silenciam.
 - **Teste:** pontual, ao lado do arquivo que você tocou, mais `pnpm -s typecheck`. A suíte inteira foi
   removida em 16/10/2026 — não ressuscite.
 - **Gate de promoção de prompt:** `pnpm eval` roda os cenários de `scripts/eval/golden/*.json` contra
-  o app real. Nenhuma versão nova de conduta vai para produção sem ele verde.
+  o app real. Nenhuma versão nova de conduta vai para produção sem ele verde. A simulação do playground (P12), com os perfis de cliente, é o segundo gate.
 
 ## Como se trabalha aqui
 
