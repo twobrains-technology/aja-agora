@@ -112,6 +112,14 @@ describe("(print 07) o chip é UM por turno e sai no ÚLTIMO balão", () => {
 					text: "Quanto cabe na parcela por mês? Me diz que eu já busco as cartas.",
 					toolCalls: [{ name: "buscar_cartas", args: { categoria: "auto" } }],
 				},
+				{
+					toolCalls: [
+						{
+							name: "mostrar_card",
+							args: { tipo: "comparison_table", payload: { ids: ["grupo-canopus-1"] } },
+						},
+					],
+				},
 				{ text: "Você tem alguma reserva guardada para dar lance, ou prefere usar só o embutido?" },
 			],
 		});
@@ -146,6 +154,14 @@ describe("(print 07) o chip é UM por turno e sai no ÚLTIMO balão", () => {
 					text: "Quanto cabe na parcela por mês? Me diz que eu já busco as cartas.",
 					toolCalls: [{ name: "buscar_cartas", args: { categoria: "auto" } }],
 				},
+				{
+					toolCalls: [
+						{
+							name: "mostrar_card",
+							args: { tipo: "comparison_table", payload: { ids: ["grupo-canopus-1"] } },
+						},
+					],
+				},
 				{ text: "Você tem alguma reserva guardada para dar lance, ou prefere usar só o embutido?" },
 			],
 		});
@@ -176,6 +192,14 @@ describe("(print 08) a pergunta final é a que ganha o toque", () => {
 				{
 					text: "Obrigado! Com R$ 20 mil de reserva, dá para usar como lance livre e ter mais chance de ser chamado cedo.",
 					toolCalls: [{ name: "buscar_cartas", args: { categoria: "auto" } }],
+				},
+				{
+					toolCalls: [
+						{
+							name: "mostrar_card",
+							args: { tipo: "comparison_table", payload: { ids: ["grupo-canopus-1"] } },
+						},
+					],
 				},
 				{
 					text: "Qual dessas cartas você quer seguir? A Canopus de R$ 90 mil é a que eu recomendo para o seu caso.",

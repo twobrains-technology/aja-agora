@@ -347,7 +347,7 @@ describe("o card de FATO sai com o número da CARTA REAL", () => {
 
 	it("comparison_table: sai com as cartas reais que estão na tela", async () => {
 		const ctx = ctxComCarta();
-		await mostrarCard(ctx, "comparison_table", {});
+		await mostrarCard(ctx, "comparison_table", { ids: [CARTA.id] });
 
 		const payload = payloadDoCard(ctx);
 		const grupos = payload.groups as Array<{ id?: string; creditValue?: number }>;
@@ -467,7 +467,11 @@ describe("duas buscas no mesmo turno não apagam a primeira", () => {
 		await buscarCartas(ctx, async () => [CARTA], { categoria: "auto" });
 		await buscarCartas(ctx, async () => [outra], { categoria: "auto", valorDoBem: 150_000 });
 
-		// O índice SOMA: a primeira tabela comparativa continua na tela do cliente.
+		// A busca NÃO põe nada na tela: as duas buscas somam em `gruposDaBusca` e o
+		// agente escolhe, com `ids`, o que vai ao card (as duas cartas, de buscas diferentes).
+		expect(ctx.cards).toHaveLength(0);
+		expect([...(ctx.gruposDaBusca?.keys() ?? [])].sort()).toEqual([CARTA.id, outra.id].sort());
+		await mostrarCard(ctx, "comparison_table", { ids: [CARTA.id, outra.id] });
 		expect([...ctx.gruposRevelados.keys()].sort()).toEqual([CARTA.id, outra.id].sort());
 
 		const antes = ctx.cards.length;

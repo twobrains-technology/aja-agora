@@ -142,10 +142,22 @@ describe("jornada completa com dublês (Bevi mockada)", () => {
 		expect(buscas).toHaveLength(0);
 
 		// 2. bem + valor → busca na fixture → card de cartas.
+		// A busca não põe nada na tela: o roteiro escolhe, por `ids`, a carta que vai ao card.
+		const primeiraDaBusca = (
+			await adapter.searchGroups({ category: "auto", creditMax: 80_000, creditMin: 60_000 })
+		)[0]?.id as string;
 		const t2 = await turno("quero um carro de uns 80 mil", [
 			{
 				text: "Boa, deixa eu ver o que tem pra você.",
 				toolCalls: [{ name: "buscar_cartas", args: { categoria: "auto", valorDoBem: 80_000 } }],
+			},
+			{
+				toolCalls: [
+					{
+						name: "mostrar_card",
+						args: { tipo: "comparison_table", payload: { ids: [primeiraDaBusca] } },
+					},
+				],
 			},
 			{ text: "Separei estas cartas pra você." },
 		]);

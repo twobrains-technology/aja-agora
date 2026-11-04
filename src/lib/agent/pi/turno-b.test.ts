@@ -138,7 +138,17 @@ describe("L29/P281 — o turno sabe QUAL turno ele é", () => {
 		const espiar = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
 			logs.push(args.map((a) => String(a)).join(" "));
 		});
-		const busca = [{ toolCalls: [{ name: "buscar_cartas", args: { categoria: "auto" } }] }];
+		const busca = [
+			{ toolCalls: [{ name: "buscar_cartas", args: { categoria: "auto" } }] },
+			{
+				toolCalls: [
+					{
+						name: "mostrar_card",
+						args: { tipo: "comparison_table", payload: { ids: ["grupo-itaú-1"] } },
+					},
+				],
+			},
+		];
 		try {
 			const primeiro = await rodarTurno({
 				conversationId,
@@ -208,6 +218,15 @@ describe("L41/P301 — a mesma chamada de tool não acontece duas vezes", () => 
 					toolCalls: [
 						{ id: "call-a", name: "buscar_cartas", args: { categoria: "auto" } },
 						{ id: "call-b", name: "buscar_cartas", args: { categoria: "auto" } },
+					],
+				},
+				// A busca não põe card na tela: duas buscas e um `mostrar_card` → uma tabela só.
+				{
+					toolCalls: [
+						{
+							name: "mostrar_card",
+							args: { tipo: "comparison_table", payload: { ids: ["grupo-itaú-1"] } },
+						},
 					],
 				},
 				{ text: "Olha o que achei." },
@@ -684,6 +703,14 @@ describe("R5.1 — o card abre balão próprio e não gruda na fala que o anunci
 			userText: "quero um carro de 80 mil",
 			beats: [
 				{ toolCalls: [{ name: "buscar_cartas", args: { categoria: "auto" } }] },
+				{
+					toolCalls: [
+						{
+							name: "mostrar_card",
+							args: { tipo: "comparison_table", payload: { ids: ["grupo-itaú-1"] } },
+						},
+					],
+				},
 				{ text: "Pronto! Aí estão os números." },
 			],
 		});
