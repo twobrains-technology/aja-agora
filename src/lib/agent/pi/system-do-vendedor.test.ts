@@ -103,7 +103,7 @@ describe("no WhatsApp o celular é o número da conversa — não se pede", () =
 		expect(r.partes.fato).not.toMatch(/celular: ainda não informado/);
 	});
 
-	it("fato da web: pode pedir uma vez, na proposta", async () => {
+	it("fato da web: celular ausente não carrega a instrução (ela mora na parte contato)", async () => {
 		const r = await montarSystemDoVendedor({
 			channel: "web",
 			contactName: null,
@@ -111,7 +111,8 @@ describe("no WhatsApp o celular é o número da conversa — não se pede", () =
 			caixa: caixaPublicada,
 			skills: "",
 		});
-		expect(r.partes.fato).toMatch(/Celular: ainda não informado \(peça uma vez/);
+		expect(r.partes.fato).toMatch(/Celular: ainda não informado\./);
+		expect(r.partes.fato).not.toContain("peça uma vez");
 	});
 });
 

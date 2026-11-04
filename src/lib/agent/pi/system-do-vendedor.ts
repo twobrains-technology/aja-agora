@@ -35,7 +35,7 @@ function linhaDeFato(args: {
 				: "o número da conversa, já conhecido — não pergunte"
 			: args.identidade?.celular
 				? "recebido e guardado"
-				: "ainda não informado (peça uma vez, só na proposta)";
+				: "ainda não informado";
 	return `\n\n# Fato deste atendimento\n\nCanal: ${args.channel === "web" ? "site" : "WhatsApp"}.${nome ? ` Nome do cliente: ${nome}.` : ""} CPF: ${cpf}. Celular: ${celular}.`;
 }
 
