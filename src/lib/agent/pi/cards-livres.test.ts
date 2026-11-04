@@ -179,10 +179,10 @@ describe("cardDeEscolha — quick_reply", () => {
 	it("aceita seis opções nos três cards de escolha, sem teto em código", () => {
 		const seis = ["a", "b", "c", "d", "e", "f"];
 
-		expect(cardDeEscolha("quick_reply", { options: seis.map((label) => ({ label })) }).ok).toBe(true);
-		expect(
-			cardDeEscolha("topic_picker", { topics: seis, includeBackButton: false }).ok,
-		).toBe(true);
+		expect(cardDeEscolha("quick_reply", { options: seis.map((label) => ({ label })) }).ok).toBe(
+			true,
+		);
+		expect(cardDeEscolha("topic_picker", { topics: seis, includeBackButton: false }).ok).toBe(true);
 		const fields = seis.map((id) => ({ id, label: id, min: 10_000, max: 80_000, default: 50_000 }));
 		expect(cardDeEscolha("value_picker", { category: "auto", fields }).ok).toBe(true);
 	});
@@ -645,7 +645,6 @@ describe("card de WhatsApp repetido: a tool não deixa o modelo comentar o card"
 		}
 	});
 });
-
 
 describe("comparison_table — só as cartas que o agente pediu por ids", () => {
 	const grupos = new Map<string, GroupSummary>(

@@ -6,12 +6,12 @@ import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { conversations, messages, usoDeIa } from "@/db/schema";
-import type { TurnEvent } from "@/lib/agent/orchestrator/types";
-import { subirServidorRoteirizado } from "./testing/servidor-roteirizado";
-import { createRunTurnLivre } from "./turno-livre";
 import type { GroupSummary } from "@/lib/adapters/types";
+import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import type { ConversationMetadata } from "@/lib/agent/personas";
+import { subirServidorRoteirizado } from "./testing/servidor-roteirizado";
 import { buildToolsLivres, type ContextoDasTools, inputDoFecho, metaDoFecho } from "./tools-livres";
+import { createRunTurnLivre } from "./turno-livre";
 
 function grupo(n: number, over: Partial<GroupSummary> = {}): GroupSummary {
 	return {

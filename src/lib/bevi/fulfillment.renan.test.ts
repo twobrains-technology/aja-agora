@@ -26,7 +26,9 @@ vi.mock("../conversation/identity", async (importOriginal) => ({
 
 const CPF_REAL = "11144477735";
 
-function oferta(p: Partial<PartnerOffer> & Pick<PartnerOffer, "quotaId" | "valorCarta">): PartnerOffer {
+function oferta(
+	p: Partial<PartnerOffer> & Pick<PartnerOffer, "quotaId" | "valorCarta">,
+): PartnerOffer {
 	return {
 		ofertaId: `oferta-${p.quotaId}`,
 		administradora: "CANOPUS",
@@ -95,7 +97,11 @@ describe("Renan — a carta vista existe no catálogo do CPF real", () => {
 			oferta({ quotaId: "quota-vista-80", valorCarta: 80_000, parcela: 977.12, prazo: 120 }),
 		];
 		// Sem id a mais próxima (79,5k) ganha; com id, vale a que o cliente viu.
-		const semId = await startContract("conv-1", { ...ENTRADA, prazoPreferido: 100 }, gatewayFalso(catalogo));
+		const semId = await startContract(
+			"conv-1",
+			{ ...ENTRADA, prazoPreferido: 100 },
+			gatewayFalso(catalogo),
+		);
 		expect(semId.offer?.ofertaId).toBe("oferta-quota-mais-perto");
 
 		const comId = await startContract(
@@ -122,7 +128,11 @@ describe("Renan — o input do fechamento carrega o id da carta escolhida", () =
 			},
 		} as unknown as ConversationMetadata;
 
-		const input = buildStartContractInput(meta, { cpf: CPF_REAL, celular: "11987654321", lgpd: true });
+		const input = buildStartContractInput(meta, {
+			cpf: CPF_REAL,
+			celular: "11987654321",
+			lgpd: true,
+		});
 		expect(input.quotaIdVista).toBe("quota-vista-80");
 	});
 });
