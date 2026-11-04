@@ -165,6 +165,25 @@ describe("cartas da conversa — o que o cliente já viu continua na tela no tur
 		expect(ctx.cards[1]?.payload).toMatchObject({ creditValue: 60000, monthlyPayment: 910 });
 	});
 
+	it("a carta restaurada leva os campos do grupo que o payload trouxe, sem fabricar os que faltam", () => {
+		const doDial = restaurarCartasDaConversa([ARTEFATO_DO_DIAL]).cartas[0];
+		expect(doDial).toMatchObject({
+			category: "auto",
+			availableSlots: 15,
+			ofertaId: "oferta-canopus-sessao",
+			avgBidValue: 21000,
+		});
+		const { cartas } = restaurarCartasDaConversa([ARTEFATO_DO_TURNO_2]);
+		const canopus = cartas.find((c) => c.groupId === CANOPUS);
+		expect(canopus).toMatchObject({ category: "auto", adminFeePercent: 0.22, availableSlots: 15 });
+		const bresser = cartas.find((c) => c.groupId === "outra-carta");
+		expect(bresser).toMatchObject({ category: "auto" });
+		expect(bresser?.adminFeePercent).toBeUndefined();
+		expect(bresser?.totalParticipants).toBeUndefined();
+		expect(bresser?.ofertaId).toBeUndefined();
+		expect(bresser?.avgBidValue).toBeUndefined();
+	});
+
 	it("payload só com availableSlots não vira zero: contempladosMes volta do fallback", () => {
 		const { grupos, cartas } = restaurarCartasDaConversa([ARTEFATO_SO_COM_AVAILABLE_SLOTS]);
 		expect(grupos.get(CANOPUS)?.availableSlots).toBe(15);
