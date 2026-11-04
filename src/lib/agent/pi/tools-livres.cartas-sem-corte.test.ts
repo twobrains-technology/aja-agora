@@ -2,7 +2,13 @@
 // na tela; quem escolhe quais cartas (e quantas) vão ao card é o agente, com
 // `mostrar_card(comparison_table, { ids })`. P10/P11: o código só garante a verdade
 // (o id existe na busca), nenhum teto, nenhuma dedup.
-import { describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
+import { afterEach, describe, expect, it } from "vitest";
+import { db } from "@/db";
+import { conversations, messages, usoDeIa } from "@/db/schema";
+import type { TurnEvent } from "@/lib/agent/orchestrator/types";
+import { subirServidorRoteirizado } from "./testing/servidor-roteirizado";
+import { createRunTurnLivre } from "./turno-livre";
 import type { GroupSummary } from "@/lib/adapters/types";
 import type { ConversationMetadata } from "@/lib/agent/personas";
 import { buildToolsLivres, type ContextoDasTools, inputDoFecho, metaDoFecho } from "./tools-livres";
@@ -251,7 +257,71 @@ describe("ids sem número completo são recusados, não descartados em silêncio
 		await f.buscar();
 		const saida = await f.mostrar({ ids: ["g1", "g2", "g3"] });
 		expect(saida).toContain("g2");
-		expect(saida).not.toContain("g1\"");
+		expect(saida).not.toContain('g1"');
 		expect(ctx.cards.some((c) => c.type === "comparison_table")).toBe(false);
+	});
+});
+
+describe("no turno, só a busca não põe card; o card nasce do mostrar_card(ids)", () => {
+	const criadas: string[] = [];
+	afterEach(async () => {
+		for (const id of criadas.splice(0)) {
+			await db.delete(usoDeIa).where(eq(usoDeIa.conversationId, id));
+			await db.delete(messages).where(eq(messages.conversationId, id));
+			await db.delete(conversations).where(eq(conversations.id, id));
+		}
+	});
+
+	async function turno(beats: Parameters<typeof subirServidorRoteirizado>[0]) {
+		const [conv] = await db
+			.insert(conversations)
+			.values({ channel: "web", status: "active", isSimulated: true, contactName: null })
+			.returning({ id: conversations.id });
+		criadas.push(conv.id);
+		const servidor = await subirServidorRoteirizado(beats);
+		const run = createRunTurnLivre({
+			provider: { id: "litellm", baseUrl: servidor.url, apiKey: "teste", model: "roteirizado" },
+			busca: async () => trinta.slice(0, 5),
+		});
+		const eventos: TurnEvent[] = [];
+		for await (const ev of run({
+			channel: "web",
+			conversationId: conv.id,
+			userText: "quero um carro",
+			isUserTurn: true,
+			contactName: null,
+		}))
+			eventos.push(ev);
+		await servidor.fechar();
+		return eventos.filter(
+			(e) =>
+				e.type === "artifact" &&
+				(e as { artifactType: string }).artifactType === "comparison_table",
+		) as unknown as Array<{ payload: { groups: Array<{ id: string }> } }>;
+	}
+
+	it("só buscar_cartas → zero comparison_table nos eventos", async () => {
+		const cards = await turno([
+			{ toolCalls: [{ name: "buscar_cartas", args: { categoria: "auto" } }] },
+			{ text: "Achei cinco opções. Quer ver alguma?" },
+		]);
+		expect(cards).toHaveLength(0);
+	});
+
+	it("busca e depois mostrar_card(ids) em beat próprio → um comparison_table com os ids", async () => {
+		const cards = await turno([
+			{ toolCalls: [{ name: "buscar_cartas", args: { categoria: "auto" } }] },
+			{
+				toolCalls: [
+					{
+						name: "mostrar_card",
+						args: { tipo: "comparison_table", payload: { ids: ["g2", "g4"] } },
+					},
+				],
+			},
+			{ text: "Essas duas. Qual te agrada?" },
+		]);
+		expect(cards).toHaveLength(1);
+		expect(cards[0].payload.groups.map((g) => g.id)).toEqual(["g2", "g4"]);
 	});
 });
