@@ -37,17 +37,6 @@ const SEGMENTS: BeviSegment[] = [
 export const quotaIdsDoCatalogo = (segmento: string): string[] =>
 	(segmento === "IMOVEL" ? FIXTURE_OFFERS_IMOVEL : FIXTURE_OFFERS).map((o) => o.quotaId);
 
-const ADMINS = ["ANCORA", "RODOBENS", "ITAU", "CANOPUS", "BANCO DO BRASIL"];
-// prazos típicos por segmento (meses) — só pra gerar parcela coerente no mock
-const TERM_BY_SEGMENT: Record<string, number> = {
-	IMOVEL: 200,
-	AUTOS: 80,
-	MOTOS: 60,
-	PESADOS: 100,
-	SERVICOS: 48,
-	"OUTROS BENS": 60,
-};
-
 let seq = 0;
 const nextId = (prefix: string) => `${prefix}-mock-${(++seq).toString(16).padStart(6, "0")}`;
 
@@ -99,30 +88,21 @@ export class MockProposalGateway implements ProposalGateway {
 
 	async simulate(input: SimulateInput): Promise<SimulationResult> {
 		const state = this.byProposal.get(input.proposalId);
-		const term = TERM_BY_SEGMENT[input.segmento] ?? 80;
-		// crédito-alvo: se valor_parcela, infere a carta a partir da parcela
-		const targetCredit =
-			input.tipoSimulacao === "valor_parcela" ? Math.round(input.valor * term) : input.valor;
-		const embutidoPct =
-			input.lanceEmbutido && input.lanceEmbutido !== "nenhum" ? Number(input.lanceEmbutido) : 0;
-
-		const quotaIds = quotaIdsDoCatalogo(input.segmento);
-		const offers: PartnerOffer[] = ADMINS.slice(0, 3).map((admin, i) => {
-			const valorCarta = Math.round(targetCredit * (0.9 + i * 0.12));
-			const grossParcela = (valorCarta * 1.18) / term; // ~18% taxa adm diluída
-			// lance embutido aumenta a carta efetiva (menos crédito líquido, parcela maior)
-			const parcela = grossParcela * (1 + embutidoPct / 100);
-			return {
-				ofertaId: nextId("oferta"),
-				administradora: admin,
-				tipoOferta: i === 0 ? "SPECIAL_OFFER" : "FREE_BID",
-				grupo: String(500 + i * 37),
-				valorCarta,
-				parcela,
-				taxaContemplacao: 0.6 - i * 0.08,
-				quotaId: quotaIds[i] ?? nextId("quota"),
-			};
-		});
+		// Mesma cota = mesma administradora, carta, parcela, prazo e grupo do discovery dublê.
+		// O dublê não "gera ofertas em torno do valor": devolve o catálogo que o cliente viu,
+		// senão a proposta sai de outra marca e o vendedor teria de anunciar troca.
+		const cartas = input.segmento === "IMOVEL" ? FIXTURE_OFFERS_IMOVEL : FIXTURE_OFFERS;
+		const offers: PartnerOffer[] = cartas.map((c) => ({
+			ofertaId: nextId("oferta"),
+			administradora: c.bank,
+			tipoOferta: c.tipoOferta === "SPECIAL_OFFER" ? "SPECIAL_OFFER" : "FREE_BID",
+			grupo: c.grupo ?? c.group,
+			valorCarta: c.finalValue,
+			parcela: c.importedInstallmentValue ?? c.installmentValue ?? 0,
+			prazo: c.term,
+			taxaContemplacao: c.taxaContemplacao ?? 0,
+			quotaId: c.quotaId,
+		}));
 		const expiresAt = new Date((this.opts.now?.() ?? mockNow()) + 30 * 60_000).toISOString();
 		if (state) {
 			state.segmento = input.segmento;
