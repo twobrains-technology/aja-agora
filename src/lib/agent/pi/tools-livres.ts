@@ -967,6 +967,19 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				);
 			}
 
+			// A carta que ele escolheu não existe no catálogo do CPF dele: nenhuma outra
+			// vira proposta e nenhum card de proposta sai. Texto de ferramenta, não fala.
+			if (result.cartaVistaIndisponivel) {
+				const alternativas = (result.alternativas ?? []).map((a) => ({
+					id: a.quotaId,
+					administradora: a.administradora,
+					carta: a.creditValue,
+					parcela: a.monthlyPayment ?? null,
+					prazoMeses: a.termMonths ?? null,
+				}));
+				return `Proposta NÃO gerada: a carta que o cliente escolheu (${escolhida.administradora ?? "?"}, ${escolhida.creditValue ?? "?"}) não está mais disponível para o CPF dele. Nenhuma outra carta foi usada no lugar e nunca troque sem ele escolher. Diga isso em UMA frase, sem culpar sistema nem administradora, e siga vendendo: apresente as alternativas mais próximas (use \`buscar_cartas\` e depois \`mostrar_card\` com os ids da busca; as abaixo são do catálogo do CPF dele, para você citar em texto se preferir) ou ofereça chamar um vendedor (\`falar_com_humano\`). Alternativas: ${JSON.stringify(alternativas)}`;
+			}
+
 			aplicarItensDoFecho(
 				ctx,
 				realOfferPresentation(

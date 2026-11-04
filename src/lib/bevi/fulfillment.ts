@@ -118,6 +118,17 @@ export interface StartContractResult {
 	 * catálogo da simulação do CPF real: a oferta devolvida é outra carta. O canal
 	 * apresenta isso como escolha explícita, nunca como a carta que ele viu. */
 	cartaVistaIndisponivel?: boolean;
+	/** Só com `cartaVistaIndisponivel`: as cartas mais próximas do catálogo REAL do
+	 * CPF (até 5), para o agente oferecer sem nova busca. Nenhuma virou proposta. */
+	alternativas?: AlternativaDoCatalogo[];
+}
+
+export interface AlternativaDoCatalogo {
+	quotaId: string;
+	administradora: string;
+	creditValue: number;
+	monthlyPayment?: number;
+	termMonths?: number;
 }
 
 /**
@@ -239,7 +250,25 @@ export async function startContract(
 		cartaVista ??
 		pickClosestOffer(sim.offers, input.valor, input.administradoraPreferida, input.prazoPreferido);
 	const cartaVistaIndisponivel = !!input.quotaIdVista && !cartaVista && !!chosen;
-	const offer = chosen ? partnerOfferToRealOffer(chosen, input.segmento) : null;
+	// Carta vista fora do catálogo: NÃO se gera proposta de outra carta. O que sobra
+	// vai como alternativas, para o cliente escolher.
+	const offer =
+		chosen && !cartaVistaIndisponivel ? partnerOfferToRealOffer(chosen, input.segmento) : null;
+	const alternativas: AlternativaDoCatalogo[] | undefined = cartaVistaIndisponivel
+		? [...sim.offers]
+				.sort((a, b) => Math.abs(a.valorCarta - input.valor) - Math.abs(b.valorCarta - input.valor))
+				.slice(0, 5)
+				.map((o) => {
+					const r = partnerOfferToRealOffer(o, input.segmento);
+					return {
+						quotaId: o.quotaId,
+						administradora: r.administradora,
+						creditValue: r.creditValue,
+						monthlyPayment: r.monthlyPayment,
+						termMonths: r.termMonths,
+					};
+				})
+		: undefined;
 
 	// ── PORTÃO DO VALOR, no último ponto antes de a proposta virar REAL ──
 	// Daqui pra baixo a proposta é registrada (`createBeviProposal`/
@@ -266,7 +295,7 @@ export async function startContract(
 	const snapshot = {
 		proposalId,
 		simulationSessionId: sim.simulationSessionId,
-		ofertaId: chosen?.ofertaId ?? null,
+		ofertaId: offer ? (chosen?.ofertaId ?? null) : null,
 		offerExpiresAt: sim.expiresAt ? new Date(sim.expiresAt) : null,
 		segmento: input.segmento,
 		administradora: offer?.administradora ?? null,
@@ -288,6 +317,7 @@ export async function startContract(
 		proposalId,
 		offer,
 		noOffer: !chosen,
+		alternativas,
 		requestedCreditValue: input.originalRequestedCreditValue ?? input.valor,
 		administradoraChanged,
 		// Só o que houve de fato: sem `valorVisto` (heurística) não há divergência a
