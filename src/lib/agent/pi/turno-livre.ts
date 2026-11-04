@@ -25,6 +25,7 @@ import { type MetaDaEmissao, TIPOS_DE_ESCOLHA } from "@/lib/agent/pi/cards-livre
 import { chipDoTurno, garantirChip } from "@/lib/agent/pi/chips";
 import { corrigirComparacoes } from "@/lib/agent/pi/comparacao-de-prazo";
 import { executarBeat } from "@/lib/agent/pi/converse";
+import { montarFatoDaFila } from "@/lib/agent/pi/fato-da-fila";
 import {
 	clientePedeHumano,
 	clienteVoltou,
@@ -42,10 +43,12 @@ import {
 } from "@/lib/agent/pi/pergunta-de-nome";
 import { persistirTurnoLivre } from "@/lib/agent/pi/persist-livre";
 import { custoDoTurnoCentsExatos } from "@/lib/agent/pi/precos";
+import { clientePedeFechar, decidirRota } from "@/lib/agent/pi/rota-do-humano";
 import { modeloDoAgente } from "@/lib/agent/pi/sessao";
 import { ehTurnoDeHandoff } from "@/lib/agent/pi/sugestoes";
 import { montarSystemDoVendedor } from "@/lib/agent/pi/system-do-vendedor";
 import { type PiToolDefinition, toPiTools } from "@/lib/agent/pi/tools";
+import { definirDepsHumano, filaChamadaNoTurno } from "@/lib/agent/pi/tools-humano";
 import {
 	buildToolsLivres,
 	type ContextoDasTools,
@@ -55,6 +58,7 @@ import {
 import { manterUmaPergunta } from "@/lib/agent/pi/uma-pergunta";
 import { type EstadoDoTurno, estadoInicialDoTurno } from "@/lib/agent/turn/estado";
 import { projectToMeta } from "@/lib/agent/turn/projecao";
+import { getLatestBeviProposal } from "@/lib/bevi/proposal-repo";
 import {
 	isValidCpf,
 	loadIdentity,
@@ -73,6 +77,11 @@ import {
 import { saveContactWhatsapp } from "@/lib/leads/contact-capture";
 import { marcarPrimeiraCarta } from "@/lib/observability/sinais/marcar-primeira-carta";
 import { registrarUsoDeIa } from "@/lib/observability/sinais/publicar";
+import {
+	type FilaDeVendedores,
+	filaDeVendedoresReal,
+	regravarMarcadorDaFila,
+} from "@/lib/whatsapp/proxy";
 import {
 	type ArtefatoDaConversa,
 	lerCartasDaConversa,
@@ -1035,6 +1044,10 @@ export function createRunTurnLivre(deps?: {
 	gateway?: ProposalGateway;
 	/** Playground: não grava o contato do WhatsApp (nem lead, nem conversão). */
 	semCapturarContato?: boolean;
+	/** Fila de vendedores — teste injeta o dublê, produção usa a do proxy. */
+	filaDeVendedores?: FilaDeVendedores;
+	/** Relógio do fato da fila — teste injeta, produção usa a hora de agora. */
+	agora?: () => Date;
 }): (input: TurnInput) => AsyncGenerator<TurnEvent> {
 	return async function* runTurnLivreImpl(input: TurnInput): AsyncGenerator<TurnEvent> {
 		const { conversationId, channel, userText, isUserTurn, contactName } = input;
@@ -1197,7 +1210,17 @@ export function createRunTurnLivre(deps?: {
 		// identidade — anunciar "CPF: recebido e guardado" sem CPF faria o vendedor
 		// parar de pedir o dado que a administradora exige.
 		const identidadeDoPrompt = identidadeDeCpf(captura.identidade ?? identidadeAtual);
+		const filaDoTurno = deps?.filaDeVendedores ?? filaDeVendedoresReal;
+		const estadoDaFila = await filaDoTurno.estado(conversationId);
 		const { system } = await montarSystemDoVendedor({
+			fatosExtras: [
+				montarFatoDaFila({
+					agora: deps?.agora?.() ?? new Date(),
+					atendentesAtivos: estadoDaFila.atendentesAtivos,
+					chamadaEm: estadoDaFila.chamadaEm,
+					assumidaPor: estadoDaFila.assumidaPor?.nome ?? null,
+				}),
+			],
 			channel,
 			contactName: estado.contactName,
 			identidade: identidadeDoPrompt,
@@ -1235,6 +1258,7 @@ export function createRunTurnLivre(deps?: {
 			},
 			estadoDepoisDaBusca: null,
 		};
+		definirDepsHumano(ctx, { filaDeVendedores: filaDoTurno });
 
 		// "O que está na tela" — o modelo precisa dos ids para fechar a proposta.
 		//
@@ -1267,7 +1291,12 @@ export function createRunTurnLivre(deps?: {
 		// chamou a tool): a fala do cliente é fato do turno, e a transferência não pode depender de
 		// o modelo lembrar. Ordem do líder (27/10 01:05, print 16 reprovado): o agente respondeu
 		// "Antes de mais nada, você já me disse seu nome?" a quem pediu um atendente.
-		const pedidoDeHumanoNoTurno = clientePedeHumano(falaDoClienteDoTurno);
+		// A ROTA É DO SERVIDOR (P5/P8): o balão fixo de transferência é da MESA (proposta gerada ou
+		// pedido de fechar). Na fila de vendedores o agente segue conduzindo e a fala é do modelo.
+		const temProposta = (await getLatestBeviProposal(conversationId).catch(() => null)) != null;
+		const rotaMesaNoTurno =
+			decidirRota({ temProposta, pediuFechar: clientePedeFechar(falaDoClienteDoTurno) }) === "mesa";
+		const pedidoDeHumanoNoTurno = rotaMesaNoTurno && clientePedeHumano(falaDoClienteDoTurno);
 
 		// O CLIENTE VOLTOU NO MEIO DA TRANSFERÊNCIA (ordem do líder, 27/10 01:35). O agente perdia o
 		// fio e recomeçava ("Você já conversou com a gente antes?"). Aqui a volta RETOMA o que estava
@@ -1275,6 +1304,7 @@ export function createRunTurnLivre(deps?: {
 		const ultimaFalaDoAgente =
 			[...historico].reverse().find((m) => m.role === "assistant")?.content ?? "";
 		const retomadaDaTransferencia =
+			rotaMesaNoTurno &&
 			!pedidoDeHumanoNoTurno &&
 			clienteVoltou(falaDoClienteDoTurno) &&
 			ehTurnoDeHandoff(ultimaFalaDoAgente);
@@ -1360,7 +1390,7 @@ export function createRunTurnLivre(deps?: {
 				emitirFala(fala);
 				return;
 			}
-			const ehHandoff = casoAberto || RE_DE_PROMESSA.test(pendente);
+			const ehHandoff = casoAberto || (rotaMesaNoTurno && RE_DE_PROMESSA.test(pendente));
 			if (!ehHandoff && pedeONome(pendente)) {
 				const pode = podePedirONome({
 					nomeConhecido: Boolean(ctx.nomeDoCliente),
@@ -1395,7 +1425,7 @@ export function createRunTurnLivre(deps?: {
 				...(falaDoClienteDoTurno ? { falaDoCliente: falaDoClienteDoTurno } : {}),
 				...(estado.funnel.currentCategory ? { categoriaDoBem: estado.funnel.currentCategory } : {}),
 				handoff:
-					casoAberto || RE_DE_PROMESSA.test(pendente)
+					casoAberto || (rotaMesaNoTurno && RE_DE_PROMESSA.test(pendente))
 						? {
 								// O FATO, não a suposição: `pediuHumano` é setado pela tool e só quando o
 								// cliente pediu uma pessoa (`tools-livres.ts`, gate da mesa). O `true`
@@ -1744,6 +1774,10 @@ export function createRunTurnLivre(deps?: {
 			// o `turno-do-cliente`, o `usage` e o `handoff` — reentregar a fala, a
 			// fronteira ou o card que já saíram duplicaria o balão na tela.
 			await persistirTurnoLivre({ estado });
+			// O `persistMeta` regrava a metadata inteira e apaga o marcador da fila: se a tool
+			// chamou a fila neste turno, o marcador volta depois da persistência.
+			const filaChamadaEm = filaChamadaNoTurno(ctx);
+			if (filaChamadaEm) await regravarMarcadorDaFila(conversationId, filaChamadaEm);
 			for (const ev of estado.events) {
 				if (
 					ev.type === "tool-call" ||

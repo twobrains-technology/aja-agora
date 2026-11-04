@@ -28,6 +28,12 @@ const mocks = vi.hoisted(() => ({
 	loadIdentity: vi.fn(),
 	reloadMeta: vi.fn(),
 	persistMeta: vi.fn(),
+	getLatestBeviProposal: vi.fn(),
+}));
+
+// Nenhum teste toca o proxy real (WhatsApp dos vendedores).
+vi.mock("@/lib/whatsapp/proxy", () => ({
+	filaDeVendedoresReal: { chamar: vi.fn(), estado: vi.fn() },
 }));
 
 vi.mock("@/db", () => ({
@@ -59,7 +65,7 @@ vi.mock("@/lib/conversation/messages", () => ({
 	loadConversationHistory: mocks.loadConversationHistory,
 }));
 vi.mock("@/lib/conversation/identity", () => ({ loadIdentity: mocks.loadIdentity }));
-vi.mock("@/lib/bevi/proposal-repo", () => ({ getLatestBeviProposal: vi.fn(async () => null) }));
+vi.mock("@/lib/bevi/proposal-repo", () => ({ getLatestBeviProposal: mocks.getLatestBeviProposal }));
 vi.mock("@/lib/bevi/pessoa", () => ({
 	pessoaDaConversa: vi.fn(async () => null),
 	ultimaPropostaDaPessoa: vi.fn(async () => null),
@@ -145,6 +151,8 @@ beforeEach(() => {
 	mocks.persistMeta.mockResolvedValue(undefined);
 	mocks.loadConversationHistory.mockResolvedValue([]);
 	mocks.loadIdentity.mockResolvedValue({ cpf: CPF, celular: CELULAR });
+	// O caso só vai para a mesa com proposta gerada (ou pedido de fechar): estes testes são da mesa.
+	mocks.getLatestBeviProposal.mockResolvedValue({ id: "prop-1" });
 });
 
 describe("o caso da mesa leva o nome e o telefone já capturados", () => {

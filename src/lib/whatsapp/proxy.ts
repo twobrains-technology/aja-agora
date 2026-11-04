@@ -10,7 +10,7 @@
  * Results are cached in-process for 60s; mutations in /api/admin/attendants invalidate via
  * `invalidateAttendantCache()`.
  */
-import { and, desc, eq, isNotNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations, handoffNotifications, leads, user as userTable } from "@/db/schema";
 import { applyTrackedStageToLead } from "@/lib/admin/lead-stage-tracker";
@@ -598,6 +598,112 @@ export async function handoffToAgents(
 }
 
 /**
+ * Fila de vendedores (P8): chama os vendedores ativos no meio da venda SEM
+ * passar a conversa para humano. O agente segue falando até alguém assumir.
+ * Diferente de `handoffToAgents`: não muda status, não fala com o cliente, não
+ * toca lead e não promete prazo. O marcador `metadata.filaDeVendedores` (merge
+ * SQL, nunca `persistMeta`) é o que deixa o primeiro vendedor que escrever
+ * assumir a conversa (`findUnclaimedConversation`).
+ */
+export async function regravarMarcadorDaFila(
+	conversationId: string,
+	chamadaEm: Date,
+): Promise<void> {
+	const marcador = JSON.stringify({ filaDeVendedores: { chamadaEm: chamadaEm.toISOString() } });
+	await db
+		.update(conversations)
+		.set({ metadata: sql`coalesce(${conversations.metadata}, '{}'::jsonb) || ${marcador}::jsonb` })
+		.where(eq(conversations.id, conversationId));
+}
+
+export async function chamarFilaDeVendedores(args: {
+	conversationId: string;
+	userName: string;
+	userWaId: string;
+	summary: string;
+}): Promise<{ notificados: number; semAtendentes: boolean }> {
+	const { conversationId, userName, userWaId, summary } = args;
+	const attendants = await getAttendantList();
+	const conv = await db.query.conversations.findFirst({
+		where: eq(conversations.id, conversationId),
+		columns: { isSimulated: true },
+	});
+	const isSimulated = conv?.isSimulated ?? false;
+
+	await regravarMarcadorDaFila(conversationId, simulatorNow());
+
+	const agentMessage = [
+		"🔔 *Nova negociação — Aja Agora*",
+		"",
+		`👤 *Cliente:* ${userName}`,
+		`📱 *WhatsApp:* ${userWaId ? `+${userWaId}` : "(canal web)"}`,
+		"",
+		"*Resumo da conversa:*",
+		summary,
+		"",
+		"_Responda para assumir este atendimento. Primeiro a responder fica com o cliente._",
+	].join("\n");
+
+	for (const attendant of attendants) {
+		const { messageId, listeners } = await sendToAttendant(attendant.phone, agentMessage, {
+			simulated: isSimulated,
+		});
+		if (!isSimulated) {
+			void db
+				.insert(handoffNotifications)
+				.values({
+					conversationId,
+					attendantPhone: attendant.phone,
+					attendantName: attendant.name,
+					wamid: messageId ?? null,
+					listenersNoHandoff: listeners,
+				})
+				.catch((err) => console.error("[whatsapp-proxy] registro da chamada da fila falhou:", err));
+		}
+	}
+
+	console.log(
+		`[whatsapp-proxy] Fila chamada: conversation ${conversationId} → ${attendants.length} vendedores simulated=${isSimulated}`,
+	);
+	return { notificados: attendants.length, semAtendentes: attendants.length === 0 };
+}
+
+export type EstadoDaFila = {
+	atendentesAtivos: number;
+	chamadaEm: Date | null;
+	assumidaPor: { id: string; nome: string } | null;
+};
+
+/** O que o agente precisa saber da fila agora: quantos vendedores, quando foi chamada e quem assumiu. */
+export async function listarEstadoDaFila(conversationId: string): Promise<EstadoDaFila> {
+	const attendants = await getAttendantList();
+	const conv = await db.query.conversations.findFirst({
+		where: eq(conversations.id, conversationId),
+		columns: { metadata: true, handedOffUserId: true },
+	});
+	const fila = (conv?.metadata as { filaDeVendedores?: { chamadaEm?: string } } | null)
+		?.filaDeVendedores;
+	const chamadaEm = fila?.chamadaEm ? new Date(fila.chamadaEm) : null;
+	const donoId = conv?.handedOffUserId ?? null;
+	const dono = donoId ? attendants.find((a) => a.id === donoId) : undefined;
+	return {
+		atendentesAtivos: attendants.length,
+		chamadaEm: chamadaEm && !Number.isNaN(chamadaEm.getTime()) ? chamadaEm : null,
+		assumidaPor: donoId ? { id: donoId, nome: dono?.name ?? "vendedor" } : null,
+	};
+}
+
+export type FilaDeVendedores = {
+	chamar: typeof chamarFilaDeVendedores;
+	estado: typeof listarEstadoDaFila;
+};
+
+export const filaDeVendedoresReal: FilaDeVendedores = {
+	chamar: chamarFilaDeVendedores,
+	estado: listarEstadoDaFila,
+};
+
+/**
  * Este cliente está sendo atendido por gente?
  *
  * A pergunta é sobre a PESSOA, não sobre a linha da conversa. Quem assumiu o caso
@@ -679,7 +785,12 @@ async function findConversationByAttendant(
  * web conversations stuck in handed_off state get claimed before the fresh one. */
 async function findUnclaimedConversation(): Promise<OwnedConversation | null> {
 	const allConvs = await db.query.conversations.findMany({
-		where: eq(conversations.status, "handed_off"),
+		// Além do handed_off sem dono, vale a conversa `active` cuja fila foi chamada
+		// (`chamarFilaDeVendedores`): é assim que o vendedor consegue assumi-la.
+		where: or(
+			eq(conversations.status, "handed_off"),
+			and(eq(conversations.status, "active"), sql`${conversations.metadata} ? 'filaDeVendedores'`),
+		),
 		orderBy: [desc(conversations.updatedAt)],
 	});
 	const unclaimed = allConvs.find((c) => !c.handedOffUserId && (c.waId || c.channel === "web"));
@@ -767,6 +878,7 @@ export async function handleAgentMessage(agentWaId: string, text: string): Promi
 		await db
 			.update(conversations)
 			.set({
+				status: "handed_off",
 				handedOffUserId: attendant.id,
 				updatedAt: simulatorNow(),
 			})
