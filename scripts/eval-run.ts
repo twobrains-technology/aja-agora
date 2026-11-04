@@ -34,6 +34,7 @@ import {
 } from "@/lib/eval/golden-asserts";
 
 import { DEFAULT_BASE_URL, sendTurn } from "./eval/chat-client.mjs";
+import { escolherSonda, motivoDaSondaPeloApp, type Sonda } from "./eval-run-sonda";
 import { shaDoCodigo } from "./eval-sha";
 
 const BASE = DEFAULT_BASE_URL as string;
@@ -82,6 +83,18 @@ async function probeLlm(): Promise<{ ok: boolean; reason?: string }> {
 		return { ok: false, reason: `gateway HTTP ${res.status}: ${(await res.text()).slice(0, 160)}` };
 	} catch (err) {
 		return { ok: false, reason: `gateway inalcançável: ${err}` };
+	}
+}
+
+/** Sonda pelo próprio app (alvo remoto): um turno "oi" pelo mesmo caminho dos cenários. */
+async function probeLlmPeloApp(): Promise<{ ok: boolean; reason?: string }> {
+	try {
+		const cid = await createSimulatedConversation();
+		const r = await sendTurn(BASE, cid, { text: "oi" }, { timeoutMs: TURN_TIMEOUT_MS });
+		const motivo = motivoDaSondaPeloApp(r);
+		return motivo ? { ok: false, reason: motivo } : { ok: true };
+	} catch (err) {
+		return { ok: false, reason: `sonda pelo app falhou: ${err}` };
 	}
 }
 
@@ -207,7 +220,9 @@ async function main(): Promise<void> {
 		process.exit(3);
 	}
 
-	const llm = await probeLlm();
+	const sonda: Sonda = escolherSonda(BASE, process.env.EVAL_SONDA);
+	console.log(`Sonda de LLM: ${sonda} (alvo ${BASE})`);
+	const llm = sonda === "app" ? await probeLlmPeloApp() : await probeLlm();
 	if (!llm.ok) {
 		console.error(`\n⚠️  LLM INDISPONÍVEL — eval INCONCLUSIVO (não é veredito!): ${llm.reason}\n`);
 		process.exit(3);
@@ -302,6 +317,7 @@ async function main(): Promise<void> {
 					sha,
 					quando: inicio.toISOString(),
 					baseUrl: BASE,
+					sonda,
 					aiModel: process.env.AI_MODEL ?? null,
 					labelDaCaixa: process.env.CAIXA_LABEL ?? "production",
 					pass,
