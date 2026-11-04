@@ -31,7 +31,47 @@ export function temPromessa(texto: string): boolean {
 	return !detectarPromessaDeContemplacao(texto).ok;
 }
 
-/** Lê o NDJSON de eventos; tolerante a nomes de campo (texto/delta/conversationId). */
+export interface EstadoDoTurno {
+	texto: string;
+	erro?: boolean;
+	conversationId?: string;
+}
+
+/** Aplica uma linha NDJSON do servidor ao texto acumulado do turno. */
+export function aplicarLinha(estado: EstadoDoTurno, linha: Record<string, unknown>): EstadoDoTurno {
+	switch (linha.type) {
+		case "inicio":
+			return typeof linha.conversationId === "string"
+				? { ...estado, conversationId: linha.conversationId }
+				: estado;
+		case "evento": {
+			const ev = linha.evento as { type?: unknown; text?: unknown } | undefined;
+			if (ev?.type === "text-delta" && typeof ev.text === "string") {
+				return { ...estado, texto: estado.texto + ev.text };
+			}
+			if (ev?.type === "text-boundary" && estado.texto && !estado.texto.endsWith("\n\n")) {
+				return { ...estado, texto: `${estado.texto}\n\n` };
+			}
+			return estado;
+		}
+		case "final": {
+			const baloes = Array.isArray(linha.baloes) ? (linha.baloes as { texto?: unknown }[]) : [];
+			const textos = baloes.map((b) => b.texto).filter((t): t is string => typeof t === "string");
+			return {
+				...estado,
+				texto: textos.join("\n\n"),
+				conversationId:
+					typeof linha.conversationId === "string" ? linha.conversationId : estado.conversationId,
+			};
+		}
+		case "erro":
+			return { ...estado, texto: typeof linha.error === "string" ? linha.error : "Erro", erro: true };
+		default:
+			return estado;
+	}
+}
+
+/** Lê o NDJSON de eventos; uma linha JSON por evento. */
 export async function lerEventos(
 	resp: Response,
 	aoEvento: (e: Record<string, unknown>) => void,
@@ -137,16 +177,11 @@ export function ChatLadoALado({
 				escrever(corpo.erro ?? corpo.error ?? `Falha ${resp.status}`, true);
 				return;
 			}
-			let acumulado = "";
-			await lerEventos(resp, (e) => {
-				if (typeof e.conversationId === "string") conversas.current[modo] = e.conversationId;
-				const parte =
-					typeof e.texto === "string" ? e.texto : typeof e.delta === "string" ? e.delta : null;
-				if (parte) {
-					acumulado += parte;
-					escrever(acumulado);
-				}
-				if (typeof e.erro === "string") escrever(e.erro, true);
+			let estado: EstadoDoTurno = { texto: "" };
+			await lerEventos(resp, (linha) => {
+				estado = aplicarLinha(estado, linha);
+				if (estado.conversationId) conversas.current[modo] = estado.conversationId;
+				escrever(estado.texto, estado.erro);
 			});
 		} catch (err) {
 			escrever(err instanceof Error ? err.message : "Falha de rede", true);
