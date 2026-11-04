@@ -1,13 +1,15 @@
-// TRÊS GUARDAS DE VAZAMENTO — as únicas regras de TEXTO que sobrevivem ao corte.
+// GUARDAS DE VAZAMENTO — as únicas regras de TEXTO que sobrevivem ao corte.
 //
 // Não são conduta (isso é o prompt do vendedor): são vazamento de máquina para
-// a pessoa. Se o modelo ecoar o CPF que acabou de receber, ou despejar o JSON
-// dos argumentos de uma tool, quem lê é o cliente.
+// a pessoa. Se o modelo ecoar o CPF que acabou de receber, despejar o JSON dos
+// argumentos de uma tool, ou imprimir o PRÓPRIO PLANO ("Show-me-the-price: a faixa
+// está na tela. Pergunto o valor. Boa!", medido no chat web), quem lê é o cliente.
 //
 //  · `scrubCpf`           — mascara o que valida como CPF, por janela de 11 dígitos;
 //  · `comprovanteDeAceite` — o registro do aceite: a fala sem dígito nenhum;
 //  · `isJsonFragmentLeak` — o segmento é um fragmento de JSON de argumentos;
-//  · `isInternalToolLeak` — o segmento cita o nome literal de uma tool.
+//  · `isInternalToolLeak` — o segmento cita o nome literal de uma tool;
+//  · `removerLinhasDePlano` — a linha é raciocínio do modelo, não fala de vendedor.
 import { isValidCpf, maskCpf } from "@/lib/conversation/identity";
 
 /** Um TRECHO NUMÉRICO: a sequência MÁXIMA de dígitos e separadores, começando e terminando em
@@ -144,9 +146,82 @@ export function isInternalToolLeak(segment: string): boolean {
 	return TOOL_LEAK.test(s);
 }
 
+// O PLANO INTERNO DO MODELO — medido no chat web (print 10, conversa com três
+// mensagens `assistant` seguidas): a PRIMEIRA fala do turno foi
+//
+//   "Show-me-the-price: a faixa está na tela. Pergunto o valor. Boa!"
+//
+// e ela foi PARA A TELA do cliente. Não é tom, é máquina: a fala do vendedor começa no
+// cliente ou na oferta ("Olha…", "Deixa eu…", "A Canopus…"), nunca na narração do que o
+// modelo vai fazer. A guarda da narração (`pi/narracao.ts`) não pega: ela compara o BALÃO
+// INTEIRO com o vocabulário fechado de anúncio de ferramenta, e basta uma palavra de fora
+// ("price", "Boa") para o balão passar como fala. Quem corta é este pacote, no mesmo
+// lugar onde já caem o JSON de argumento e o nome de tool — e vale para a tela e para o
+// banco, porque é o `passaFinal` que os dois usam.
+
+/** RÓTULO DE PLANO — a linha abre com a etiqueta de raciocínio, em inglês de planejamento
+ * ("Show-me-the-price:", "Step 2:", "Plan:", "Reasoning:", "Thought:", "Action:",
+ * "Observation:"). Etiqueta seguida de dois-pontos é o caderno do modelo, não fala. */
+const ROTULO_DE_PLANO =
+	/^[ \t]*(?:show-me-the|step|plan|reasoning|thought|action|observation)\b[^\n:]{0,40}:/i;
+
+/** PASSO EM 1ª PESSOA — a linha abre com o verbo do próprio passo ("Pergunto o valor.",
+ * "Busco as cartas."). Quem descreve a própria ação em curso é o plano; o vendedor pede
+ * licença ("Deixa eu buscar as cartas."), que é fala e fica. */
+const PASSO_EM_PRIMEIRA_PESSOA =
+	/^[ \t]*(?:pergunto|busco|mostro|peço|peco|confiro|checo|consulto|calculo|comparo|procuro|escolho|anoto|monto|simulo|listo|envio|gero)\b/i;
+
+/** INTERJEIÇÃO SOLTA — "Boa!", "Ok!", "Perfeito!" sozinha na linha. Sozinha ela pode ser
+ * fala ("Boa, Marcos!"); dentro de um texto que TEM plano, é o modelo se aplaudindo no fim
+ * do passo. */
+const INTERJEICAO_SOLTA = /^[ \t]*(?:boa|ok|isso|certo|perfeito|ótimo|otimo|beleza)[\s!.,…]*$/i;
+
+/** O TEXTO SEM O PLANO INTERNO. Cada linha de plano cai inteira e, num texto que tem
+ * plano, a interjeição solta de fim de passo cai junto. Sem plano no texto NADA muda: a
+ * fala legítima sai igual, caractere por caractere. */
+export function removerLinhasDePlano(text: string): string {
+	if (!text) return text;
+	const linhas = text.split("\n");
+	const temPlano = linhas.some((l) => ROTULO_DE_PLANO.test(l) || PASSO_EM_PRIMEIRA_PESSOA.test(l));
+	const restantes = linhas.filter(
+		(linha) =>
+			!ROTULO_DE_PLANO.test(linha) &&
+			!PASSO_EM_PRIMEIRA_PESSOA.test(linha) &&
+			!(temPlano && INTERJEICAO_SOLTA.test(linha)),
+	);
+	if (restantes.length === linhas.length) return text;
+	return restantes.join("\n").trim();
+}
+
+// O ID INTERNO DA CARTA NA FALA — medido numa conversa de teste (28/10): "A de menor prazo é a da
+// ÂNCORA, id 6abfaec94c0ff2a8453a73a0, com 94 meses." O identificador do grupo/cota (24 hex do
+// Mongo ou UUID) é chave de máquina: o cliente não lê nem usa, e ainda por cima o id citado era o
+// de OUTRA carta. A fala continua; só o id (e a etiqueta "id") sai.
+const HEX_DO_ID = "(?:[0-9a-f]{24}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})";
+const ETIQUETA_DE_ID = "(?:\\bid\\b[ \\t]*:?[ \\t]*)?";
+/** "(id: 6abf…)" entre parênteses. */
+const ID_ENTRE_PARENTESES = new RegExp(
+	`[ \\t]*\\([ \\t]*${ETIQUETA_DE_ID}${HEX_DO_ID}[ \\t]*\\)`,
+	"gi",
+);
+/** ", id 6abf…," — aposto entre vírgulas: leva a vírgula de abertura junto. */
+const ID_EM_APOSTO = new RegExp(`[ \\t]*,[ \\t]*${ETIQUETA_DE_ID}${HEX_DO_ID}[ \\t]*(?=,)`, "gi");
+/** O id solto, com a etiqueta "id" se houver. */
+const ID_SOLTO = new RegExp(`[ \\t]*${ETIQUETA_DE_ID}\\b${HEX_DO_ID}\\b`, "gi");
+
+/** O TEXTO SEM O ID INTERNO — "a da ÂNCORA, id 6abf…73a0, com 94 meses" → "a da ÂNCORA, com 94 meses". */
+export function removerIdsInternos(text: string): string {
+	if (!text) return text;
+	return text
+		.replace(ID_ENTRE_PARENTESES, "")
+		.replace(ID_EM_APOSTO, "")
+		.replace(ID_SOLTO, "")
+		.replace(/[ \t]+([,.;:!?])/g, "$1");
+}
+
 /** Último passe do texto que vai para o cliente: mascara CPF e derruba o que é
- * claramente máquina (JSON de argumento ou nome de tool). */
+ * claramente máquina (JSON de argumento, nome de tool, plano interno, id de carta). */
 export function passaFinal(text: string): string {
 	if (isJsonFragmentLeak(text) || isInternalToolLeak(text)) return "";
-	return scrubCpf(text);
+	return removerIdsInternos(removerLinhasDePlano(scrubCpf(text)));
 }

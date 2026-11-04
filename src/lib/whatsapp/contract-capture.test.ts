@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConversationMetadata } from "@/lib/agent/personas";
-import { AVISO_LGPD_RE } from "@/lib/agent/pi/lgpd";
 import { metaDoFecho } from "@/lib/agent/pi/tools-livres";
 import { decryptIdentity, type StoredIdentity, storeIdentity } from "@/lib/conversation/identity";
 import { decidirCpfDoTexto, extractCpf } from "@/lib/conversation/telefone-ou-cpf";
@@ -281,14 +280,16 @@ describe("o aviso de LGPD é gravado antes de o CPF valer como proposta", () => 
 		expect(estado.meta.lgpdAceite?.fala).toBe("pode usar meus dados");
 	});
 
-	it("sem aviso gravado e sem aceite, o disparo NÃO chama a Bevi — responde o aviso de novo", async () => {
+	// INVERSÃO DE CRITÉRIO (decisão do dono, 27/10/2026 — print 1532-formulario-fixo): o
+	// disparo NÃO espera aviso nem aceite. Sem `avisoLgpdEm` gravado, o caminho antigo
+	// respondia o aviso da LGPD e não chamava a Bevi; agora ele fecha a proposta, que é o
+	// que o cliente pediu. Continua sendo obrigatório ter a identidade: sem ela o caminho
+	// pede o CPF (`CONTRACT_CPF_PROMPT`), e isso o teste seguinte cobre.
+	it("sem aviso gravado, o disparo SEGUE e chama a Bevi (nada de rito de LGPD)", async () => {
 		estado.meta = { ...metaBase, contractCollection: { stage: "cpf" } };
 		const { fireContract } = await import("./contract-capture");
 		await fireContract("5511987654321", "conv-1");
-		expect(estado.chamadasStartContract).toEqual([]);
-		expect(estado.textos).toHaveLength(1);
-		expect(AVISO_LGPD_RE.test(estado.textos[0])).toBe(true);
-		expect(estado.textos[0]).toContain("CPF");
+		expect(estado.textos.join(" ")).not.toMatch(/bir[ôo]s?\s+de\s+cr[eé]dito|LGPD/i);
 	});
 
 	it("com o aviso gravado, o disparo segue criando a proposta (a trava não bloqueia o fecho)", async () => {

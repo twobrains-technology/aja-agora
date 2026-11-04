@@ -1,5 +1,6 @@
 // A captura de CPF/telefone é o que impede PII em claro no banco, no log e no
 // provedor do modelo. Estes testes mordem: sem a máscara, o número viaja.
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { pedidoDeCpfNoUltimoBalao } from "@/lib/conversation/telefone-ou-cpf";
 import { capturarIdentidadeDoTexto } from "./turno-livre";
@@ -274,3 +275,27 @@ function capturarIdentidadeDeTextoInvalido() {
 	expect(r.textoLimpo).not.toContain("444");
 	return null;
 }
+
+// O CONTATO VIRA LEAD NA HORA (P6). Antes, `leads.phone` só era preenchido no fechamento
+// (`garantirLeadDoFecho`, dentro do `fazer_proposta`): quem dava o WhatsApp na web e fechava
+// a tela antes da proposta não deixava contato para a régua — e o print do dono de 27/10
+// (`.orientacao/prints-kairo/1532-formulario-fixo.png`) mostra a pessoa perguntando "e se eu
+// fechar a tela agora?" justamente nesse ponto. Este teste morde: sem a chamada, o telefone
+// continua só na meta cifrada e o lead fica sem contato.
+describe("o telefone dito em QUALQUER turno vira contato do lead", () => {
+	it("o turno grava o contato quando o celular vem da fala do cliente", () => {
+		const fonte = readFileSync(new URL("./turno-livre.ts", import.meta.url).pathname, "utf8");
+		expect(fonte).toMatch(/if \(captura\.recebeuCelular && captura\.identidade\?\.celular\) \{/);
+		expect(fonte).toMatch(/saveContactWhatsapp\(conversationId, captura\.identidade\.celular\)/);
+	});
+
+	it("a identidade também é guardada em qualquer ordem (CPF depois do celular)", () => {
+		const r = capturarIdentidadeDoTexto(
+			`meu whatsapp é 11987654321 e meu cpf ${CPF_MASCARADO}`,
+			null,
+		);
+		expect(r.recebeuCelular).toBe(true);
+		expect(r.recebeuCpf).toBe(true);
+		expect(r.identidade).toEqual({ cpf: CPF, celular: "11987654321" });
+	});
+});

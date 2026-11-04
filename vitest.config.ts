@@ -20,7 +20,11 @@ export default defineConfig({
 		// (6/100 conexões). 20s dá headroom sem deixar de pegar hang real.
 		testTimeout: 20_000,
 		hookTimeout: 20_000,
-		include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+		// `scripts/**` entra porque o leitor de sha do relatório do gate
+		// (`scripts/eval-sha.ts`) tem layout de caminho demais para ficar sem teste
+		// — `.git` diretório, `.git`-arquivo de worktree, `commondir`, `packed-refs`.
+		// O teste é hermético (só `mkdtemp`), então não contamina a suíte de DB.
+		include: ["src/**/*.test.ts", "src/**/*.test.tsx", "scripts/**/*.test.ts"],
 		setupFiles: ["./vitest.setup.ts"],
 		coverage: {
 			provider: "v8",

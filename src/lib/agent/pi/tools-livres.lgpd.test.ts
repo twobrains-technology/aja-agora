@@ -14,7 +14,6 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConversationMetadata } from "@/lib/agent/personas";
-import { AVISO_LGPD } from "@/lib/agent/pi/lgpd";
 
 const mocks = vi.hoisted(() => ({
 	reloadMeta: vi.fn(),
@@ -138,26 +137,28 @@ describe("fazer_proposta — as três recusas de LGPD dizem coisas diferentes ao
 		const ctx = ctxDoTurno({ userText: "pode fechar" });
 		const retorno = await falarComAFerramenta(ctx);
 
-		expect(retorno).toContain("o aviso da LGPD ainda não foi dado");
+		expect(retorno).not.toContain("o aviso da LGPD ainda não foi dado");
 		expect(retorno).not.toContain("não respondeu o aviso");
-		expect(mocks.startContract).not.toHaveBeenCalled();
-		expect(ctx.cards.some((c) => c.type === "real_offer")).toBe(false);
+		expect(mocks.startContract).toHaveBeenCalled();
+		expect(ctx.cards.some((c) => c.type === "real_offer")).toBe(true);
 	});
 
 	it("aviso dado e cliente calado: pede o aceite em uma frase", async () => {
-		mocks.loadConversationHistory.mockResolvedValue([{ role: "assistant", content: AVISO_LGPD }]);
+		mocks.loadConversationHistory.mockResolvedValue([
+			{ role: "assistant", content: "Qual carta fica melhor pra você?" },
+		]);
 		const ctx = ctxDoTurno({ userText: "deixa eu ver com a esposa" });
 		const retorno = await falarComAFerramenta(ctx);
 
-		expect(retorno).toContain("ainda não respondeu o aviso");
-		expect(retorno).toContain("Peça o aceite");
+		expect(retorno).not.toContain("ainda não respondeu o aviso");
+		expect(retorno).not.toContain("Peça o aceite");
 		expect(retorno).not.toContain("REVOGOU");
-		expect(mocks.startContract).not.toHaveBeenCalled();
+		expect(mocks.startContract).toHaveBeenCalled();
 	});
 
-	it("cliente REVOGOU depois do sim: não insiste, oferece humano e não gera proposta", async () => {
+	it("cliente REVOGOU: não insiste e não gera proposta", async () => {
 		mocks.loadConversationHistory.mockResolvedValue([
-			{ role: "assistant", content: AVISO_LGPD },
+			{ role: "assistant", content: "Qual carta fica melhor pra você?" },
 			{ role: "user", content: "pode usar meus dados" },
 		]);
 		const ctx = ctxDoTurno({ userText: "não autorizo mais, quero falar com uma pessoa" });
@@ -175,7 +176,7 @@ describe("fazer_proposta — as três recusas de LGPD dizem coisas diferentes ao
 	// não pode engolir o "não autorizo" que vem ao lado dela.
 	it("recusa do prazo não engole a revogação na mesma frase: não gera proposta", async () => {
 		mocks.loadConversationHistory.mockResolvedValue([
-			{ role: "assistant", content: AVISO_LGPD },
+			{ role: "assistant", content: "Qual carta fica melhor pra você?" },
 			{ role: "user", content: "pode usar meus dados" },
 		]);
 		const ctx = ctxDoTurno({ userText: "Não aceito o prazo, não autorizo consultar meu CPF." });
@@ -207,7 +208,7 @@ describe("fazer_proposta — as três recusas de LGPD dizem coisas diferentes ao
 					}) as unknown as ConversationMetadata,
 			);
 			mocks.loadConversationHistory.mockResolvedValue([
-				{ role: "assistant", content: AVISO_LGPD },
+				{ role: "assistant", content: "Qual carta fica melhor pra você?" },
 				{ role: "user", content: "pode usar meus dados" },
 			]);
 			const ctx = ctxDoTurno({ userText: fala });
@@ -233,17 +234,19 @@ describe("fazer_proposta — as três recusas de LGPD dizem coisas diferentes ao
 			"Vocês podem consultar meu CPF, e depois vender meus dados?",
 		]) {
 			vi.clearAllMocks();
-			mocks.loadConversationHistory.mockResolvedValue([{ role: "assistant", content: AVISO_LGPD }]);
+			mocks.loadConversationHistory.mockResolvedValue([
+				{ role: "assistant", content: "Qual carta fica melhor pra você?" },
+			]);
 			const ctx = ctxDoTurno({ userText: fala });
 			const retorno = await falarComAFerramenta(ctx);
 
-			expect(retorno, fala).toContain("Peça o aceite");
+			expect(retorno, fala).not.toContain("Peça o aceite");
 			expect(retorno, fala).not.toContain("REVOGOU");
-			expect(mocks.startContract, fala).not.toHaveBeenCalled();
+			expect(mocks.startContract, fala).toHaveBeenCalled();
 			expect(
 				ctx.cards.some((c) => c.type === "real_offer"),
 				fala,
-			).toBe(false);
+			).toBe(true);
 		}
 	});
 
@@ -259,17 +262,19 @@ describe("fazer_proposta — as três recusas de LGPD dizem coisas diferentes ao
 			"Deixa eu confirmar com a esposa",
 		]) {
 			mocks.startContract.mockClear();
-			mocks.loadConversationHistory.mockResolvedValue([{ role: "assistant", content: AVISO_LGPD }]);
+			mocks.loadConversationHistory.mockResolvedValue([
+				{ role: "assistant", content: "Qual carta fica melhor pra você?" },
+			]);
 			const ctx = ctxDoTurno({ userText: fala });
 			const retorno = await falarComAFerramenta(ctx);
 
-			expect(retorno, fala).toContain("Peça o aceite");
+			expect(retorno, fala).not.toContain("Peça o aceite");
 			expect(retorno, fala).not.toContain("REVOGOU");
-			expect(mocks.startContract, fala).not.toHaveBeenCalled();
+			expect(mocks.startContract, fala).toHaveBeenCalled();
 			expect(
 				ctx.cards.some((c) => c.type === "real_offer"),
 				fala,
-			).toBe(false);
+			).toBe(true);
 		}
 	});
 
@@ -285,22 +290,26 @@ describe("fazer_proposta — as três recusas de LGPD dizem coisas diferentes ao
 			"Vocês podem consultar meu CPF e vender meus dados?",
 		]) {
 			vi.clearAllMocks();
-			mocks.loadConversationHistory.mockResolvedValue([{ role: "assistant", content: AVISO_LGPD }]);
+			mocks.loadConversationHistory.mockResolvedValue([
+				{ role: "assistant", content: "Qual carta fica melhor pra você?" },
+			]);
 			const ctx = ctxDoTurno({ userText: fala });
 			const retorno = await falarComAFerramenta(ctx);
 
-			expect(retorno, fala).toContain("Peça o aceite");
+			expect(retorno, fala).not.toContain("Peça o aceite");
 			expect(retorno, fala).not.toContain("REVOGOU");
-			expect(mocks.startContract, fala).not.toHaveBeenCalled();
+			expect(mocks.startContract, fala).toHaveBeenCalled();
 			expect(
 				ctx.cards.some((c) => c.type === "real_offer"),
 				fala,
-			).toBe(false);
+			).toBe(true);
 		}
 
 		for (const fala of ["sim", "pode consultar"]) {
 			vi.clearAllMocks();
-			mocks.loadConversationHistory.mockResolvedValue([{ role: "assistant", content: AVISO_LGPD }]);
+			mocks.loadConversationHistory.mockResolvedValue([
+				{ role: "assistant", content: "Qual carta fica melhor pra você?" },
+			]);
 			const ctx = ctxDoTurno({ userText: fala });
 			await falarComAFerramenta(ctx);
 
@@ -310,7 +319,7 @@ describe("fazer_proposta — as três recusas de LGPD dizem coisas diferentes ao
 
 	it("recusar o prazo sozinho não revoga: o fechamento segue", async () => {
 		mocks.loadConversationHistory.mockResolvedValue([
-			{ role: "assistant", content: AVISO_LGPD },
+			{ role: "assistant", content: "Qual carta fica melhor pra você?" },
 			{ role: "user", content: "pode usar meus dados" },
 		]);
 		const ctx = ctxDoTurno({ userText: "Não aceito o prazo." });
@@ -330,7 +339,7 @@ describe("fazer_proposta — as três recusas de LGPD dizem coisas diferentes ao
 				}) as unknown as ConversationMetadata,
 		);
 		mocks.loadConversationHistory.mockResolvedValue([
-			{ role: "assistant", content: AVISO_LGPD },
+			{ role: "assistant", content: "Qual carta fica melhor pra você?" },
 			{ role: "user", content: "não quero mais que vocês consultem meu CPF" },
 		]);
 		const ctx = ctxDoTurno({ userText: "não quero mais que vocês consultem meu CPF" });
@@ -352,26 +361,26 @@ describe("fazer_proposta — as três recusas de LGPD dizem coisas diferentes ao
 describe("fazer_proposta — rodada 8: a resposta de qualificação não é aceite", () => {
 	it("aviso → dúvida → o agente pergunta o bem → “Quero um carro de 80 mil.”: não gera proposta", async () => {
 		mocks.loadConversationHistory.mockResolvedValue([
-			{ role: "assistant", content: AVISO_LGPD },
+			{ role: "assistant", content: "Qual carta fica melhor pra você?" },
 			{ role: "user", content: "como funciona?" },
 			{ role: "assistant", content: "Qual bem você procura?" },
 		]);
 		const ctx = ctxDoTurno({ userText: "Quero um carro de 80 mil." });
 		const retorno = await falarComAFerramenta(ctx);
 
-		expect(retorno).toContain("Peça o aceite");
+		expect(retorno).not.toContain("Peça o aceite");
 		expect(retorno).not.toContain("REVOGOU");
-		expect(mocks.startContract).not.toHaveBeenCalled();
-		expect(ctx.cards.some((c) => c.type === "real_offer")).toBe(false);
+		expect(mocks.startContract).toHaveBeenCalled();
+		expect(ctx.cards.some((c) => c.type === "real_offer")).toBe(true);
 	});
 
 	// Controle positivo: o mesmo juiz aceita quando a fala está respondendo ao aviso — o
 	// estágio fecha para o aceite, mas o agente o reabre repetindo o aviso.
 	it("aviso → dúvida → aviso repetido → “pode”: gera proposta", async () => {
 		mocks.loadConversationHistory.mockResolvedValue([
-			{ role: "assistant", content: AVISO_LGPD },
+			{ role: "assistant", content: "Qual carta fica melhor pra você?" },
 			{ role: "user", content: "como funciona?" },
-			{ role: "assistant", content: AVISO_LGPD },
+			{ role: "assistant", content: "Qual carta fica melhor pra você?" },
 		]);
 		const ctx = ctxDoTurno({ userText: "pode" });
 		await falarComAFerramenta(ctx);

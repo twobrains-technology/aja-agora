@@ -1,0 +1,25 @@
+{
+	"cenario": "golden-dono-chato-pede-humano-no-turno-2",
+	"descricao": "Lead difícil #4: o pedido de humano chega no SEGUNDO turno, antes de qualquer qualificação. O contrato é o inverso dos cenários de objeção: quando a pessoa pede explicitamente por uma pessoa, o agente tem de chamar o especialista — o artifact `handoff` é o comportamento correto aqui (C-06).",
+	"caRefs": ["C-06"],
+	"asserts": {
+		"turns": [
+			null,
+			{
+				"expectArtifacts": ["handoff"]
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi",
+			"expect": "welcome com as categorias."
+		},
+		{
+			"type": "text",
+			"text": "olha, eu quero falar com uma pessoa de verdade, não com robô",
+			"expect": "pedido explícito de humano: chama o especialista (artifact handoff), sem insistir em continuar sozinho."
+		}
+	]
+}

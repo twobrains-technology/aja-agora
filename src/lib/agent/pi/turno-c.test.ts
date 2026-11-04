@@ -211,9 +211,14 @@ describe("P157 — o card sai no resultado da ferramenta, na ordem do stream", (
 		expect(card).toBeGreaterThan(antes);
 		expect(depois).toBeGreaterThan(card);
 		// O card abre balão próprio (R5.1) e sai UMA vez: o mesmo payload não volta
-		// no fim do turno.
+		// no fim do turno. O segundo artifact é o `quick_reply` da pergunta que fecha a
+		// fala ("Alguma te interessa?") — ordem do dono de 27/10: todo turno que espera
+		// resposta traz toque (ver `chips.resposta-rapida.test.ts`).
 		expect(turno.eventos[card - 1]?.type).toBe("text-boundary");
-		expect(turno.eventos.filter((e) => e.type === "artifact")).toHaveLength(1);
+		const cards = turno.eventos.filter((e) => e.type === "artifact");
+		expect(cards).toHaveLength(2);
+		const tipos = cards.map((e) => (e as { artifactType?: string }).artifactType);
+		expect(tipos).toEqual(["comparison_table", "quick_reply"]);
 	});
 
 	it("a persistência grava a MESMA ordem: fala → card → fala", async () => {
@@ -239,7 +244,9 @@ describe("P157 — o card sai no resultado da ferramenta, na ordem do stream", (
 		const ordem = linhas
 			.filter((l) => l.role === "assistant")
 			.map((l) => (l.content.startsWith("[card: ") ? l.content : "fala"));
-		expect(ordem).toEqual(["fala", "[card: comparison_table]", "fala"]);
+		// A ordem fala → card → fala continua; o `quick_reply` da pergunta vem depois
+		// (é o toque que o turno garante, ordem do dono de 27/10).
+		expect(ordem).toEqual(["fala", "[card: comparison_table]", "fala", "[card: quick_reply]"]);
 	});
 });
 

@@ -1,0 +1,54 @@
+{
+	"cenario": "golden-dono-chato-muda-de-assunto-duas-vezes-e-volta-ao-valor",
+	"descricao": "Lead difícil #1: a pessoa troca de assunto duas vezes (moto, loja física) e volta ao valor do carro. O que se mede é trajetória: mudar de assunto não pode virar motivo de handoff, e quando ela volta ao valor o agente tem de estar no mesmo assunto dela — sem despachar para humano e sem valor sem lastro na fala.",
+	"caRefs": ["C-04", "D-01", "F-04"],
+	"asserts": {
+		"turns": [
+			null,
+			null,
+			null,
+			null,
+			null,
+			{
+				"forbidArtifacts": ["handoff"],
+				"forbidUngroundedMoney": true
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi",
+			"expect": "welcome com as categorias."
+		},
+		{
+			"type": "action",
+			"action": {
+				"kind": "category",
+				"category": "auto"
+			},
+			"label": "Automóvel",
+			"expect": "transição para carro + pedido do nome."
+		},
+		{
+			"type": "text",
+			"text": "Rafael",
+			"expect": "usa o nome e pergunta o valor do bem."
+		},
+		{
+			"type": "text",
+			"text": "antes disso, uma dúvida: vocês trabalham com moto também?",
+			"expect": "responde a dúvida sem abandonar o carro nem mandar para humano."
+		},
+		{
+			"type": "text",
+			"text": "outra coisa, tem loja física que eu possa ir?",
+			"expect": "responde o segundo desvio e mantém a conversa viva."
+		},
+		{
+			"type": "text",
+			"text": "voltando ao que interessa: pra um carro de 80 mil, quanto fica a parcela?",
+			"expect": "volta ao valor do bem e busca as cartas — nenhum número que não venha de tool, nenhum handoff."
+		}
+	]
+}

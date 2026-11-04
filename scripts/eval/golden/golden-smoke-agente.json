@@ -1,14 +1,16 @@
 {
 	"cenario": "golden-smoke-agente",
-	"descricao": "Smoke pós-merge: confirma que o agente (builder→gateway) responde com LLM real após restart.",
+	"descricao": "Smoke pós-merge: confirma que o agente (builder→gateway) responde com LLM real após restart. Migrado em 27/10/2026: o motor livre não emite mais `gate:<x>` (nenhum escritor de `data-gate` em `src/`), então o passo 'categoria escolhida → nome capturado' é medido pelo artifact `tool:salvar_nome` do turno em que a pessoa diz o nome.",
 	"caRefs": ["CA-1", "CA-2"],
 	"asserts": {
 		"turns": [
 			null,
 			{
-				"expectArtifacts": ["transition:imovel", "gate:name"]
+				"expectArtifacts": ["transition:imovel"]
 			},
-			null,
+			{
+				"expectArtifacts": ["tool:salvar_nome"]
+			},
 			null
 		]
 	},
@@ -25,12 +27,12 @@
 				"category": "imovel"
 			},
 			"label": "Imóvel",
-			"expect": "transição Helena + gate name"
+			"expect": "transição Helena + pedido do nome"
 		},
 		{
 			"type": "text",
 			"text": "Joana",
-			"expect": "saudação + gate desire (LLM real)"
+			"expect": "saudação + pedido do valor (LLM real)"
 		},
 		{
 			"type": "text",

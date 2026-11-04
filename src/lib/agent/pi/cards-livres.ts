@@ -707,6 +707,29 @@ export const MONTADORES_DE_CARD: Record<TipoDeFato, MontadorDeCard> = {
 		const creditValue = r.grupo.creditValue;
 		const embeddedBidValue = round2((pct / 100) * creditValue);
 		const valorDoBem = ctx.valorDoBem;
+		// A CARTA TEM QUE COMPRAR O BEM — o erro que o dono viu no print
+		// (`.orientacao/prints-kairo/1532-lance-embutido.png`): o cliente queria o Corolla de
+		// R$ 160 mil, o agente aplicou 30% de embutido NA CARTA DE R$ 160 mil e o card mostrou
+		// "você recebe R$ 112.000" — dinheiro que não compra o carro. O próprio card dizia que
+		// era preciso "um grupo de carta maior", mas o servidor deixava montar assim mesmo.
+		// Aqui o card NÃO sai: o modelo recebe a conta pronta e o caminho certo (buscar de novo,
+		// com embutido, que já procura a carta maior — `paramsDaBusca`).
+		if (valorDoBem && valorDoBem > 0) {
+			const liquido = round2(creditValue - embeddedBidValue);
+			// Tolerância de 0,5%: a carta é ESTIMATIVA (a de 228.571 deixa 159.999,70 para um
+			// bem de 160.000 e isso é a mesma coisa — não se recusa card por 30 centavos).
+			if (liquido < valorDoBem * 0.995) {
+				const cartaNecessaria = Math.round(valorDoBem / (1 - pct / 100));
+				return {
+					ok: false,
+					motivo:
+						`Card NÃO mostrado: esta carta de R$ ${creditValue.toLocaleString("pt-BR")} não compra o bem de R$ ${valorDoBem.toLocaleString("pt-BR")} com ${pct}% de embutido — ` +
+						`sobrariam R$ ${liquido.toLocaleString("pt-BR")} e faltariam R$ ${Math.round(valorDoBem - liquido).toLocaleString("pt-BR")}. ` +
+						`Chame buscar_cartas com usaraLanceEmbutido: true (a busca já traz carta por volta de R$ ${cartaNecessaria.toLocaleString("pt-BR")}) ` +
+						`e mostre o embutido na carta que sobra o valor do bem.`,
+				};
+			}
+		}
 		return {
 			ok: true,
 			card: {

@@ -18,15 +18,24 @@ import type { TurnEvent, TurnInput } from "@/lib/agent/orchestrator/types";
 import { passaFinal } from "@/lib/agent/orchestrator/vazamento";
 import { parseAssetValue } from "@/lib/agent/parse-asset-value";
 import type { Category } from "@/lib/agent/personas";
+import { picarEmBaloes } from "@/lib/agent/pi/baloes";
 import { type MetaDaEmissao, TIPOS_DE_ESCOLHA } from "@/lib/agent/pi/cards-livres";
-import { type ChipGerado, garantirChip } from "@/lib/agent/pi/chips";
+import { chipDoTurno, garantirChip } from "@/lib/agent/pi/chips";
+import { corrigirComparacoes } from "@/lib/agent/pi/comparacao-de-prazo";
 import { executarBeat } from "@/lib/agent/pi/converse";
-import { linhaFinalDoHandoff, RE_DE_PROMESSA } from "@/lib/agent/pi/handoff";
-import { AVISO_LGPD_RE, garanteAvisoLgpd, PEDE_DADO_RE } from "@/lib/agent/pi/lgpd";
+import {
+	clientePedeHumano,
+	clienteVoltou,
+	falaDaRetomadaDaTransferencia,
+	linhaFinalDoHandoff,
+	RE_DE_PROMESSA,
+} from "@/lib/agent/pi/handoff";
+import { userIdDoTurno } from "@/lib/agent/pi/langfuse";
 import { criarNarracaoDoTurno } from "@/lib/agent/pi/narracao";
 import { persistirTurnoLivre } from "@/lib/agent/pi/persist-livre";
 import { custoDoTurnoCentsExatos } from "@/lib/agent/pi/precos";
 import { modeloDoAgente } from "@/lib/agent/pi/sessao";
+import { ehTurnoDeHandoff } from "@/lib/agent/pi/sugestoes";
 import { montarSystemDoVendedor } from "@/lib/agent/pi/system-do-vendedor";
 import { type PiToolDefinition, toPiTools } from "@/lib/agent/pi/tools";
 import {
@@ -53,6 +62,7 @@ import {
 	ehCelularBR,
 	pedidoDeCpfNoUltimoBalao,
 } from "@/lib/conversation/telefone-ou-cpf";
+import { saveContactWhatsapp } from "@/lib/leads/contact-capture";
 import { marcarPrimeiraCarta } from "@/lib/observability/sinais/marcar-primeira-carta";
 import { registrarUsoDeIa } from "@/lib/observability/sinais/publicar";
 import {
@@ -177,26 +187,40 @@ export function capturarIdentidadeDoTexto(
 	return { identidade, textoLimpo, recebeuCpf, recebeuCelular };
 }
 
-/** O texto que sai no balão: CPF mascarado, aviso da LGPD antes do pedido de dado,
- * e uma pergunta por trecho. Exportado para ser testado sem banco. */
+/** O texto que sai no balão: CPF mascarado e uma pergunta por trecho.
+ * A fala NÃO é reescrita por trava de LGPD (decisão do dono, 27/10/2026) — o que
+ * protege é o encanamento: máscara, cifra e o aceite conferido antes do bureau.
+ *
+ * O CHIP NÃO SAI DAQUI. Um card por turno, decidido no ÚLTIMO balão
+ * (`chipDoTurno`, ordem do líder de 27/10 18:08): decidir por trecho dava o
+ * toque do primeiro balão embaixo do segundo (prints 07/08). O que continua sendo
+ * deste trecho é a FORMA do balão — a lista marcada que virou botão sai do texto
+ * (N05), mesmo que os botões só sejam emitidos no fim do turno.
+ * Exportado para ser testado sem banco. */
 export function montarTrechoDeSaida(args: {
 	texto: string;
-	avisoDado: boolean;
 	cardsDoTurno?: readonly { type: string }[];
 	handoff?: { nome: string | null; clientePediu: boolean; casoAberto: boolean };
-}): { texto: string; avisoAplicado: boolean; chip: ChipGerado | null } {
+	/** A conversa já tem carta na tela — muda a resposta rápida de pergunta aberta. */
+	temCartaNaTela?: boolean;
+	canal?: "web" | "whatsapp";
+	/** A última fala do cliente, a que este turno responde: o toque não repete o que ele disse
+	 * (ordem do dono, 27/10 17:15). */
+	falaDoCliente?: string;
+	/** Categoria do bem já declarada — autoriza o slider do valor (`value_picker`). */
+	categoriaDoBem?: Category;
+	/** As cartas REAIS da mesa (parcela + prazo): a comparação de prazo na fala tem de bater com
+	 * elas (ordem do líder, 27/10 22:35 — a fala disse "96 é mais curto que 94"). O sujeito da
+	 * comparação é a carta que a própria fala cita, pela parcela ou pelo prazo. */
+	cartasDaMesa?: readonly { parcela: number; prazoMeses: number; administradora?: string }[];
+}): { texto: string } {
 	// O ÚLTIMO PASSE roda AQUI, no texto que vai AO VIVO para o canal — não só na
 	// persistência: máscara de CPF e o corte de vazamento de máquina (JSON de
 	// argumento, nome de tool) têm de valer para o cliente, não só para o banco.
-	const bruto = passaFinal(args.texto);
-	let texto = bruto;
-	let avisoAplicado = false;
-	if (!args.avisoDado && PEDE_DADO_RE.test(bruto)) {
-		// Mesmo quando o modelo escreveu o aviso na mesma mensagem, o aviso ocupa o primeiro
-		// bloco e o pedido de dado fica para o turno seguinte — o aceite vem antes.
-		texto = garanteAvisoLgpd({ texto: bruto, avisoJaDado: false }).texto;
-		avisoAplicado = true;
-	}
+	const bruto = corrigirComparacoes(passaFinal(args.texto), {
+		cartasDaMesa: args.cartasDaMesa ?? [],
+	});
+	const texto = bruto;
 	if (args.handoff) {
 		// O balão do handoff é UMA linha sem promessa. O modelo acrescentava uma confirmação
 		// com prazo ("um especialista vai entrar em contato em breve") — duas vozes, uma delas
@@ -207,17 +231,23 @@ export function montarTrechoDeSaida(args: {
 			clientePediu: args.handoff.clientePediu,
 			casoAberto: args.handoff.casoAberto,
 		});
-		return { texto: linha, avisoAplicado: false, chip: null };
+		return { texto: linha };
 	}
 
-	// O aviso é a pergunta do turno: o verificador de "uma pergunta por mensagem" roda
-	// DEPOIS dele, senão o aviso é cortado como pergunta extra.
+	// Uma pergunta por mensagem: o verificador roda sobre o texto do modelo.
 	const final = manterUmaPergunta(texto);
-	// Pergunta fechada sem card de escolha no turno ⇒ o chip sai do texto. O balão
-	// guarda a pergunta; a opção vira botão — e a LISTA que virou botão sai do
-	// balão (`.texto`), senão o cliente lê duas vezes a mesma escolha.
-	const chipado = garantirChip({ texto: final, cardsDoTurno: args.cardsDoTurno ?? [] });
-	return { texto: chipado.texto, avisoAplicado, chip: chipado.chip };
+	// A forma do balão (a lista marcada vira botão e sai do texto, N05) é decidida
+	// aqui; o CHIP é derivado uma vez no fim do turno.
+	return {
+		texto: garantirChip({
+			texto: final,
+			cardsDoTurno: args.cardsDoTurno ?? [],
+			...(args.temCartaNaTela ? { temCartaNaTela: true } : {}),
+			...(args.canal ? { canal: args.canal } : {}),
+			...(args.falaDoCliente ? { falaDoCliente: args.falaDoCliente } : {}),
+			...(args.categoriaDoBem ? { categoriaDoBem: args.categoriaDoBem } : {}),
+		}).texto,
+	};
 }
 
 /** Texto antes e depois de uma tool é fala DIFERENTE: sem separador o stream
@@ -227,20 +257,29 @@ export function montarTrechoDeSaida(args: {
 export function criarSeparadorDeTrechos() {
 	let falou = false;
 	let toolDesdeAFala = false;
+	// A fala anterior já fechou porque era OUTRA bolha do mesmo trecho (conversa picada):
+	// o próximo delta abre balão novo, como se uma tool tivesse entrado no meio.
+	let balaoNovo = false;
 	const jáSoltos = new Set<string>();
 	const normalizar = (t: string) => t.toLowerCase().replace(/\s+/g, " ").trim();
 	return {
 		aoToolCall() {
 			if (falou) toolDesdeAFala = true;
 		},
+		/** O balão anterior é outro balão: o próximo delta abre um `text-boundary` (web: balão
+		 * novo; WhatsApp: mensagem nova; persistência: uma linha por boundary). */
+		aoNovoBalao() {
+			balaoNovo = true;
+		},
 		/** Eventos a emitir para este delta, na ordem. Um trecho IDÊNTICO a um já solto
 		 * neste turno não sai: foi assim que "Ótimo! Vou gerar sua proposta agora na
 		 * Canopus." apareceu duas vezes na tela, depois de a tool recusar o aceite. */
 		aoDelta(texto: string): TurnEvent[] {
 			const eventos: TurnEvent[] = [];
-			if (toolDesdeAFala && texto.trim().length > 0) {
+			if ((toolDesdeAFala || balaoNovo) && texto.trim().length > 0) {
 				eventos.push({ type: "text-boundary" });
 				toolDesdeAFala = false;
+				balaoNovo = false;
 			}
 			if (texto.trim().length > 0) {
 				const chave = normalizar(texto);
@@ -369,6 +408,49 @@ const LIGACOES_DO_LANCE = new Set([
 	"real",
 ]);
 
+/** As marcas de NEGAÇÃO que desmentem a categoria logo depois delas. A janela é
+ * de 15 caracteres e NÃO cruza `.`, `,` nem `?`: a negação vale dentro da
+ * MESMA oração. Em "não quero carro, quero imóvel" o `,` fecha a primeira e o
+ * `não` não alcança o imóvel. */
+const NEGACAO_DA_CATEGORIA =
+	/(?:\bn[aã]o\b|\bnem\b|\bem\s+vez\s+de\b|\besquec\w*\b|\bdeix\w*\b)[^.,?]{0,15}$/i;
+
+/** O cue explícito de TROCA (`na verdade`, `pensando melhor`, `mudei de ideia`,
+ * `trocar`). Duas categorias com cue de troca é troca declarada, não
+ * comparação — e a categoria que veio ANTES do cue é a que ficou para trás:
+ * "eu queria imóvel, mas pensando melhor quero uma moto". */
+const CUE_DE_TROCA = /\b(?:na\s+verdade|pensando\s+melhor|mudei\s+de\s+ideia|troc\w*)\b/i;
+
+/** Em que posições (início da palavra) a categoria aparece no texto. As regexes
+ * de `PALAVRAS_DE_CATEGORIA` são `g`: a cópia com o mesmo `source` evita depender
+ * do `lastIndex` delas. */
+function ocorrenciasDaCategoria(re: RegExp, texto: string): number[] {
+	return [...texto.matchAll(new RegExp(re.source, "gi"))].map((m) => m.index ?? 0);
+}
+
+/** A categoria AFIRMADA numa fala que nomeia DUAS ou mais.
+ *
+ * "carro ou moto" continua FORA: é comparação, nenhuma das duas está negada,
+ * sobra mais de uma e o resultado é `undefined` — escolher uma envenenaria o
+ * filtro do painel e o estágio do lead. TROCA é outra coisa: "quero uma moto,
+ * não imóvel" e "deixa o carro, quero uma moto" negam uma categoria e afirmam
+ * a outra. Até aqui o código jogava as duas fora — o modelo dizia que trocou e o
+ * `currentCategory` do banco continuava o antigo.
+ *
+ * A categoria é negada quando aparece precedida, na mesma oração, por alguma
+ * marca de `NEGACAO_DA_CATEGORIA`, ou quando vem antes do `CUE_DE_TROCA`. */
+function categoriaDaTroca(texto: string): Category | undefined {
+	const cue = CUE_DE_TROCA.exec(texto);
+	const afirmadas = PALAVRAS_DE_CATEGORIA.filter((p) =>
+		ocorrenciasDaCategoria(p.re, texto).some((inicio) => {
+			const antes = texto.slice(Math.max(0, inicio - 24), inicio);
+			if (NEGACAO_DA_CATEGORIA.test(antes)) return false;
+			return !(cue && inicio < (cue.index ?? 0));
+		}),
+	);
+	return afirmadas.length === 1 ? afirmadas[0]?.categoria : undefined;
+}
+
 /** O que o cliente DECLAROU neste turno — categoria e valor do bem —, sem
  * esperar a busca (L44/P212).
  *
@@ -387,14 +469,20 @@ const LIGACOES_DO_LANCE = new Set([
  *
  * Categoria: só quando o recado nomeia UMA. "carro ou moto" é comparação, não
  * declaração, e escolher uma das duas por conta própria envenenaria o filtro do
- * painel e o estágio do lead. */
+ * painel e o estágio do lead. Com DUAS ou mais nomeadas, vale a TROCA: negada
+ * uma, a outra é a declarada (`categoriaDaTroca`). */
 export function declaracaoDoTurno(texto: string | null | undefined): {
 	categoria?: Category;
 	valorDoBem?: number;
 } {
 	if (!texto) return {};
 	const nomeadas = PALAVRAS_DE_CATEGORIA.filter((p) => (texto.match(p.re) ?? []).length > 0);
-	const categoria = nomeadas.length === 1 ? nomeadas[0]?.categoria : undefined;
+	const categoria =
+		nomeadas.length === 1
+			? nomeadas[0]?.categoria
+			: nomeadas.length > 1
+				? categoriaDaTroca(texto)
+				: undefined;
 	// O DINHEIRO DO LANCE SAI DA ORAÇÃO, O RESTO FICA (P212): "quero um carro de 80
 	// mil, sem entrada" declara o bem de 80 mil — a palavra "entrada" não apaga a
 	// frase inteira. Só o número PAR que o cliente ligou ao lance é mascarado; o
@@ -961,6 +1049,18 @@ export function createRunTurnLivre(deps?: {
 				console.error("[pi-livre] identidade não gravada (ignorado):", erro);
 			});
 		}
+		// O CONTATO VIROU LEAD NA HORA EM QUE ELE DEU O NÚMERO (P6 — o contato é o ativo).
+		// Antes, o telefone só chegava a `leads.phone` no fechamento (`garantirLeadDoFecho`,
+		// dentro do `fazer_proposta`): quem dava o WhatsApp na web e fechava a tela antes da
+		// proposta não deixava contato nenhum para a régua. O dado vem da fala do cliente
+		// (qualquer turno, qualquer ordem) e gravar é encanamento — não custa turno de venda.
+		if (captura.recebeuCelular && captura.identidade?.celular) {
+			await saveContactWhatsapp(conversationId, captura.identidade.celular).catch(
+				(erro: unknown) => {
+					console.error("[pi-livre] contato do WhatsApp não gravado (ignorado):", erro);
+				},
+			);
+		}
 
 		// Rastro de entrada: sem isto, um turno que "fala mas não busca" não tem
 		// como ser diagnosticado do lado do servidor (foi o caso do e2e de 20/10).
@@ -1111,15 +1211,47 @@ export function createRunTurnLivre(deps?: {
 		};
 
 		// "O que está na tela" — o modelo precisa dos ids para fechar a proposta.
+		//
+		// O bloco é CONTEXTO, e contexto mal rotulado vira fala repetida: medido em
+		// 27/10/2026 (rodada R6, 147 dos 167 achados do medidor de conteúdo são repetição;
+		// o pior caso repete o mesmo parágrafo de carta/parcela em quatro turnos seguidos),
+		// o modelo recebia esta lista de novo a cada turno sem saber que ela já tinha sido
+		// dita e recitava os mesmos números. O rótulo abaixo diz o que a lista É — fato já
+		// apresentado — para o número não virar eco. Não é guarda de fala: nada é cortado.
 		const exibidas = await listShownOffersForConversation(conversationId).catch(() => []);
 		const naTela = exibidas.length
-			? `\n\nCartas na tela desta conversa:\n${exibidas
+			? `\n\nCartas que JÁ estão na tela desta conversa (o cliente já viu estes valores; use os ids para fechar a proposta e não recite os números de novo a menos que ele pergunte):\n${exibidas
 					.map(
 						(o) =>
 							`- [na tela: ${o.administradora ?? "administradora"} · carta R$ ${o.creditValue?.toLocaleString("pt-BR") ?? "?"} · id ${o.groupId}]`,
 					)
 					.join("\n")}`
 			: "";
+
+		// A ÚLTIMA FALA DO CLIENTE — a que este turno do agente responde. É o insumo do anti-eco
+		// do toque (ordem do dono, 27/10 17:15): a resposta rápida não pode repetir a pergunta que
+		// ele acabou de fazer. O texto corrente vem de `captura` (já mascarado); num turno que não
+		// é fala dele (directive, retomada) vale a última fala de `user` do histórico.
+		const falaDoClienteDoTurno =
+			(isUserTurn ? captura.textoLimpo : "") ||
+			[...historico].reverse().find((m) => m.role === "user")?.content ||
+			undefined;
+
+		// O CLIENTE PEDIU GENTE NESTE TURNO. Não é o `ctx.pediuHumano` (que só existe se o modelo
+		// chamou a tool): a fala do cliente é fato do turno, e a transferência não pode depender de
+		// o modelo lembrar. Ordem do líder (27/10 01:05, print 16 reprovado): o agente respondeu
+		// "Antes de mais nada, você já me disse seu nome?" a quem pediu um atendente.
+		const pedidoDeHumanoNoTurno = clientePedeHumano(falaDoClienteDoTurno);
+
+		// O CLIENTE VOLTOU NO MEIO DA TRANSFERÊNCIA (ordem do líder, 27/10 01:35). O agente perdia o
+		// fio e recomeçava ("Você já conversou com a gente antes?"). Aqui a volta RETOMA o que estava
+		// pendente — a última fala do agente era de transferência e o cliente voltou.
+		const ultimaFalaDoAgente =
+			[...historico].reverse().find((m) => m.role === "assistant")?.content ?? "";
+		const retomadaDaTransferencia =
+			!pedidoDeHumanoNoTurno &&
+			clienteVoltou(falaDoClienteDoTurno) &&
+			ehTurnoDeHandoff(ultimaFalaDoAgente);
 
 		// Fila de eventos: o beat empurra o texto AO VIVO, o generator drena.
 		const fila: TurnEvent[] = [];
@@ -1136,28 +1268,66 @@ export function createRunTurnLivre(deps?: {
 		// card ele é a fala da vez. Ver `narracao.ts`.
 		const narracaoDoTurno = criarNarracaoDoTurno();
 		let pendente = "";
-		// O aviso da LGPD é FATO DO HARNESS: se ele ainda não foi dado na conversa e a
-		// fala pede CPF ou celular, o aviso entra ANTES do pedido e o pedido fica pro
-		// turno depois do aceite. Não é conselho de prompt — é o verificador do texto.
-		let avisoDado = historico.some((f) => f.role === "assistant" && AVISO_LGPD_RE.test(f.content));
 		// O caso aberto NESTE turno define o balão: uma linha, sem promessa.
 		let casoAberto = false;
 		// Uma linha por turno: se a linha da casa já saiu, o segundo trecho de prosa de handoff
 		// não vira segunda mensagem.
 		let linhaDeHandoffEmitida = false;
+		// Os textos dos BALÕES do turno, na ordem em que foram ao canal: é deles que sai o
+		// ÚNICO card de toque, no fim do turno (`chipDoTurno`). O turno inteiro, e não só o
+		// último balão: o pedido do dado pode estar num balão e o fecho noutro (R20).
+		const baloesDoTurno: string[] = [];
 		// CPF mascarado JÁ na saída (o número digitado não volta por eco do modelo)
-		// e uma pergunta por trecho de fala.
-		// CPF mascarado, aviso da LGPD antes do pedido de dado e uma pergunta por
-		// trecho — tudo em `montarTrechoDeSaida`, que é testável sem banco.
-		/** Um balão pronto no canal: fronteira (se mudou de fala) + delta. */
+		// e uma pergunta por trecho de fala — tudo em `montarTrechoDeSaida`, testável sem banco.
+		/** Os balões prontos no canal: cada um com a sua fronteira + delta. */
 		const emitirFala = (texto: string) => {
-			for (const ev of trechos.aoDelta(texto)) {
-				estado = { ...estado, events: [...estado.events, ev] };
-				emitir(ev);
+			// CONVERSA PICADA (ordem do dono, 27/10/2026): o texto do beat chega inteiro e pode ter
+			// quatro, cinco frases — no canal isso era UM bloco de 7 a 9 linhas (prints 07/08).
+			// `picarEmBaloes` devolve o MESMO texto em até 3 bolhas curtas, e cada uma sai com a
+			// fronteira dela: na web fecha o balão, no WhatsApp vira mensagem nova, no banco uma
+			// linha por balão.
+			for (const [indice, balao] of picarEmBaloes(texto).entries()) {
+				if (indice > 0) trechos.aoNovoBalao();
+				for (const ev of trechos.aoDelta(balao)) {
+					estado = { ...estado, events: [...estado.events, ev] };
+					emitir(ev);
+				}
 			}
 		};
 		const soltarTrecho = () => {
 			if (!pendente) return;
+			// A TRANSFERÊNCIA PEDIDA PELO CLIENTE TEM UMA FALA SÓ, montada aqui: aceita o pedido e
+			// pede o que falta para o consultor chamar (nome e WhatsApp). A prosa do modelo nesta
+			// hora perguntava coisa de outro momento e ainda duplicava a linha da casa.
+			if (retomadaDaTransferencia) {
+				if (linhaDeHandoffEmitida) {
+					pendente = "";
+					return;
+				}
+				const fala = falaDaRetomadaDaTransferencia(ctx.nomeDoCliente);
+				linhaDeHandoffEmitida = true;
+				pendente = "";
+				for (const balao of picarEmBaloes(fala)) baloesDoTurno.push(balao);
+				emitirFala(fala);
+				return;
+			}
+			if (pedidoDeHumanoNoTurno) {
+				if (linhaDeHandoffEmitida) {
+					pendente = "";
+					return;
+				}
+				const fala = linhaFinalDoHandoff({
+					texto: "",
+					nome: ctx.nomeDoCliente,
+					clientePediu: true,
+					casoAberto,
+				});
+				linhaDeHandoffEmitida = true;
+				pendente = "";
+				for (const balao of picarEmBaloes(fala)) baloesDoTurno.push(balao);
+				emitirFala(fala);
+				return;
+			}
 			const ehHandoff = casoAberto || RE_DE_PROMESSA.test(pendente);
 			if (ehHandoff && linhaDeHandoffEmitida) {
 				pendente = "";
@@ -1165,22 +1335,46 @@ export function createRunTurnLivre(deps?: {
 			}
 			const saida = montarTrechoDeSaida({
 				texto: pendente,
-				avisoDado,
 				cardsDoTurno: ctx.cards,
+				// Fato do turno para a resposta rápida (ordem do dono, 27/10): com carta na tela a
+				// pergunta aberta ("qual dessas fica melhor?") ganha as opções da oferta.
+				temCartaNaTela: ctx.cartasNaTela.length > 0,
+				cartasDaMesa: ctx.cartasNaTela.map((c) => ({
+					parcela: c.parcela,
+					prazoMeses: c.prazoMeses,
+					administradora: c.administradora,
+				})),
+				canal: ctx.channel,
+				// O toque é a resposta ao que ESTE turno disse (ordem das 17:15): a fala do cliente
+				// entra como filtro anti-eco e a categoria do bem decide se a pergunta de valor sai
+				// no slider (`value_picker`).
+				...(falaDoClienteDoTurno ? { falaDoCliente: falaDoClienteDoTurno } : {}),
+				...(estado.funnel.currentCategory ? { categoriaDoBem: estado.funnel.currentCategory } : {}),
 				handoff:
 					casoAberto || RE_DE_PROMESSA.test(pendente)
-						? { nome: ctx.nomeDoCliente, clientePediu: true, casoAberto }
+						? {
+								// O FATO, não a suposição: `pediuHumano` é setado pela tool e só quando o
+								// cliente pediu uma pessoa (`tools-livres.ts`, gate da mesa). O `true`
+								// fixo dizia "abri o caso" até para quem nunca pediu.
+								nome: ctx.nomeDoCliente,
+								clientePediu: ctx.pediuHumano,
+								casoAberto,
+							}
 						: undefined,
 			});
-			avisoDado ||= saida.avisoAplicado;
 			if (ehHandoff) linhaDeHandoffEmitida = true;
+			// O balão do turno é o que pode pedir a resposta que o toque oferece — inclusive quando
+			// o turno é de handoff: "Qual é o seu nome, pra eu abrir o caso na nossa mesa?" é uma
+			// PERGUNTA do agente, e ficar fora da lista deixava o turno sem nenhum botão
+			// (auditoria de 28/10, conversa `779c330f` 03:11:59Z). O que não ganha próximo passo é
+			// o FECHO ("abri o caso, um atendente assume"), e quem sabe disso é o classificador
+			// (`sugestaoDoTurno`), não a origem do texto.
+			if (pendente.trim()) baloesDoTurno.push(pendente);
 			pendente = "";
 			// O anúncio da ferramenta não vira balão quando o card fala por si: o
 			// que estava suspenso sai antes deste balão, e este fica suspenso
 			// (R5.1).
 			for (const texto of narracaoDoTurno.aoTexto(saida.texto)) emitirFala(texto);
-			// O chip entra DEPOIS da pergunta: o cliente lê e toca, não lê a lista.
-			if (saida.chip) ctx.cards.push(saida.chip as never);
 		};
 		// O mesmo `toolCallId` duas vezes não vira dois eventos de tool.
 		const chamadasEmitidas = new Set<string>();
@@ -1243,7 +1437,10 @@ export function createRunTurnLivre(deps?: {
 				emitir(fronteira);
 				emitir(artifact);
 				// O card fala por si: o anúncio suspenso estava colado a ele e cai.
-				narracaoDoTurno.mostrouCard();
+				// O TOQUE não é esse card: `quick_reply`/`value_picker`/`topic_picker` são
+				// a resposta rápida, não o card que "diz tudo" — desde a ordem das 17:16 todo
+				// turno termina com um deles, e tratar toque como card comeria a fala do turno.
+				if (!TIPOS_DE_ESCOLHA.some((tipo) => tipo === card.type)) narracaoDoTurno.mostrouCard();
 			}
 		};
 
@@ -1253,6 +1450,12 @@ export function createRunTurnLivre(deps?: {
 			const beat = await executarBeat({
 				system,
 				turnMessage: (captura.textoLimpo || "(sem fala)") + naTela,
+				conversaId: conversationId,
+				userId: userIdDoTurno({
+					userKey: input.userKey,
+					waId: conv?.waId,
+					conversaId: conversationId,
+				}),
 				historico,
 				tools: semRepetirChamada(
 					toPiTools(buildToolsLivres(ctx, { buscarGrupos: deps?.busca }) as never, {
@@ -1334,17 +1537,49 @@ export function createRunTurnLivre(deps?: {
 			// o de ESCOLHA (pergunta + opções) é, e foi validado em `mostrar_card`.
 			//
 			// Aqui sai o que ficou para o fim do turno: os cards de ESCOLHA (esperam a
-			// pergunta que os explica — P136) e o `quick_reply` que o verificador de
-			// perguntas tirou da fala. Os cards FACTUAIS já foram ao canal no resultado da
-			// ferramenta (P157) e o dedupe impede que saiam de novo.
+			// pergunta que os explica — P136) e o `quick_reply` derivado do ÚLTIMO balão do
+			// turno. Os cards FACTUAIS já foram ao canal no resultado da ferramenta (P157) e
+			// o dedupe impede que saiam de novo.
 			emitirFalasNovas();
-			emitirCardsNovos("todos");
 			// O card fala por si (R5.1): o anúncio suspenso estava colado a ele e cai
 			// (quem o descarta é `emitirCardsNovos`). Sem card no turno, o anúncio é a
-			// fala da vez e sai como qualquer outra — fala legítima não se perde.
-			if (ctx.cards.length === 0) {
+			// fala da vez e sai como qualquer outra — fala legítima não se perde. O balão
+			// de TOQUE (`quick_reply`/`value_picker`/`topic_picker`) não conta como card:
+			// desde a ordem das 17:16 ele acompanha todo turno, e contá-lo calaria toda
+			// fala de anúncio de ferramenta.
+			//
+			// Antes dos cards de propósito: o anúncio liberado aqui é TEXTO, e o toque
+			// tem de ficar no último balão do turno, nunca acima dele.
+			if (!ctx.cards.some((c) => !TIPOS_DE_ESCOLHA.some((tipo) => tipo === c.type))) {
 				for (const texto of narracaoDoTurno.fimDoTurno()) emitirFala(texto);
 			}
+			// O ÚNICO TOQUE DO TURNO — ordem do líder, 27/10/2026 18:08.
+			//
+			// Um card por turno, derivado do ÚLTIMO PEDIDO do turno e emitido no ÚLTIMO balão
+			// (`ctx.cards` é emitido agora, depois de toda a fala). Decidir por trecho dava
+			// o toque do primeiro balão embaixo do segundo: o cliente lia a mesma pergunta
+			// duas vezes (print 07) e a pergunta final chegava sem nada para tocar
+			// (print 08). Sem balão de texto no turno não há toque: turno que só mostrou
+			// card não ganha botão ao lado dele.
+			//
+			// O que entra é o TURNO INTEIRO (R20): o pedido de CPF/celular num balão e o fecho
+			// "Tudo bem, aguardo." noutro faziam o toque nascer do fecho — `Quero essa` no
+			// lugar do dado. `chipDoTurno` procura, de trás pra frente, o balão que pergunta
+			// ou pede dado.
+			if (baloesDoTurno.length > 0) {
+				const toqueDoTurno = chipDoTurno({
+					baloes: baloesDoTurno,
+					cardsDoTurno: ctx.cards,
+					temCartaNaTela: ctx.cartasNaTela.length > 0,
+					canal: ctx.channel,
+					...(falaDoClienteDoTurno ? { falaDoCliente: falaDoClienteDoTurno } : {}),
+					...(estado.funnel.currentCategory
+						? { categoriaDoBem: estado.funnel.currentCategory }
+						: {}),
+				});
+				if (toqueDoTurno) ctx.cards.push(toqueDoTurno as never);
+			}
+			emitirCardsNovos("todos");
 			// O MARCO DA PRIMEIRA CARTA (L29/P281) — sinal de SESSÃO, uma vez por
 			// conversa. Na `main` quem chamava era o nó de descoberta; com o Pi ninguém
 			// chamava, e o `carta_vista`/`turnos_ate_carta` (a métrica que disse se a
@@ -1354,7 +1589,27 @@ export function createRunTurnLivre(deps?: {
 			if (!baseMeta.revealCompleted && ctx.cards.some((c) => c.type === "comparison_table")) {
 				void marcarPrimeiraCarta(conversationId, !isUserTurn);
 			}
-			if (ctx.pediuHumano) {
+			// O AVISO DE HANDOFF: UM POR CONVERSA, E SÓ DO CASO QUE EXISTE.
+			//
+			// Medido no print do dono (27/10/2026, ~19:30): o aviso "Pra esse caso, recomendo
+			// conversar direto com nosso consultor humano" saía DUAS vezes na mesma conversa —
+			// depois de "Como você se chama?" e de novo depois de "Kairo, abri o caso pra nossa
+			// mesa". O gatilho era `ctx.pediuHumano`, flag do TURNO: no turno do pedido ainda não
+			// havia nome, o caso NÃO abriu (`abrirCasoNaMesa` devolve `sem-lead`), e o aviso saiu
+			// assim mesmo; quando o caso abriu, saiu outra vez porque nada na conversa lembrava
+			// que ele já tinha saído.
+			//
+			// Duas travas, as duas no servidor:
+			//  · `handoffSuggested` — o estado da CONVERSA (meta, lido em `funnelFromMeta` no
+			//    início do turno). Anunciado uma vez, não se anuncia de novo. É a trava da
+			//    duplicata que o dono viu no print (banner depois de "Como você se chama?" e
+			//    outra vez depois de "abri o caso pra nossa mesa").
+			//  · NADA de `casoAberto` aqui: no turno em que o cliente pede a pessoa ainda não
+			//    há lead, o caso não abre — e sem o aviso o cliente fica sem resposta nenhuma
+			//    ao pedido dele. A regressão apareceu na R16
+			//    (`golden-dono-chato-pede-humano-no-turno-2`: esperava `handoff`, veio só a tool).
+			//    O aviso é do PEDIDO, uma vez por conversa; o caso, quando abrir, não repete.
+			if (ctx.pediuHumano && !estado.funnel.handoffSuggested) {
 				estado = {
 					...estado,
 					events: [...estado.events, { type: "handoff", reason: "pedido do cliente" } as never],
@@ -1452,16 +1707,24 @@ export function createRunTurnLivre(deps?: {
 			// Modelo sem nada a dizer não pode virar turno mudo no canal. Turno cujo
 			// anúncio caiu não é mudo: o card é a fala dele (R5.1) — e uma linha de
 			// preenchimento ali seria só outra narração.
+			//
+			// O TOQUE não é fala nem card que fale por si: desde a ordem das 17:16 o
+			// `quick_reply`/`value_picker`/`topic_picker` acompanha TODO turno, e contá-lo
+			// como fala calaria a linha de reserva de um turno em que o modelo não disse
+			// nada (foi o que o caso do JSON vazado pegou).
+			const temCardQueFala = estado.events.some(
+				(ev) =>
+					ev.type === "artifact" && !TIPOS_DE_ESCOLHA.some((tipo) => tipo === ev.artifactType),
+			);
 			const falou =
-				cardsJaEmitidos.size > 0 ||
+				temCardQueFala ||
 				estado.events.some((ev) => ev.type === "text-delta" && ev.text.trim().length > 0);
 			if (!falou) {
 				emitir({
 					type: "text-delta",
-					text:
-						ctx.cards.length > 0
-							? "Achei essas opções pra você. Alguma te interessa?"
-							: "Desculpa, me perdi aqui. Pode me contar de novo o que você quer?",
+					text: temCardQueFala
+						? "Achei essas opções pra você. Alguma te interessa?"
+						: "Desculpa, me perdi aqui. Pode me contar de novo o que você quer?",
 				});
 			}
 

@@ -1,0 +1,52 @@
+{
+	"cenario": "golden-dono-chato-grupo-novo-versus-em-andamento",
+	"descricao": "Lead difícil #10: a pergunta que o agente já prometeu responder sem ter o dado (D-0004, Bruna 26/10 — 'o agente prometeu mostrar se o grupo é novo ou em andamento'). O que se mede: chegar o assunto não pode virar handoff, e nenhum número de grupo/prazo pode aparecer na fala sem lastro — a cota não traz estado do grupo, então a resposta honesta é 'não sei' ou o que o card mostra.",
+	"caRefs": ["C-03", "C-04"],
+	"asserts": {
+		"turns": [
+			null,
+			null,
+			null,
+			{
+				"forbidArtifacts": ["handoff"],
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidArtifacts": ["handoff"],
+				"forbidRepeatedAgentText": true,
+				"forbidUngroundedMoney": true
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi",
+			"expect": "welcome com as categorias."
+		},
+		{
+			"type": "action",
+			"action": {
+				"kind": "category",
+				"category": "imovel"
+			},
+			"label": "Imóvel",
+			"expect": "transição para imóvel + pedido do nome."
+		},
+		{
+			"type": "text",
+			"text": "Sandra",
+			"expect": "usa o nome e pergunta o valor do bem."
+		},
+		{
+			"type": "text",
+			"text": "o grupo que vocês me mostrarem é novo ou já tá em andamento?",
+			"expect": "não promete o que a cota não mostra: diz o que sabe do card e o que não sabe."
+		},
+		{
+			"type": "text",
+			"text": "e se for grupo novo, demora mais pra ser contemplado?",
+			"expect": "explica sem prometer prazo nem número de grupos, com fala nova e sem handoff."
+		}
+	]
+}

@@ -94,3 +94,43 @@ describe("ChatMessage — ordem do stream (R5.1)", () => {
 		expect(baloes[1].textContent).toContain("Achei três opções");
 	});
 });
+
+// MEDIDO no chat web (`.orientacao/prints-ux/10-conversa-picada-oferta.png`, conversa no banco
+// com 3 mensagens `assistant` seguidas): o servidor grava a conversa picada em TRÊS balões — cada
+// `text-boundary` fecha um `text-start/text-end` —, mas a tela mostrava um balão só com as três
+// linhas. A fronteira do servidor chega ao cliente como PART DE TEXTO NOVA: part de texto adjacente
+// não é continuação da anterior, é outro balão.
+describe("conversa picada — cada fala do turno é um balão (print 10)", () => {
+	const FALAS = [
+		"Olha, eu escolheria a CANOPUS de 90 mil.",
+		"Ela tem a parcela mais leve entre as de 90 mil e sorteia 3 cartas por mês, mais que as outras do grupo.",
+		"Quer seguir com ela ou prefere comparar outra?",
+	];
+
+	// O turno como ele foi PERSISTIDO: o card da oferta e, depois dele, uma part de texto por
+	// balão (uma linha por `text-boundary`, ver `persist-livre.ts`).
+	const turnoDoPrint10 = () =>
+		assistant([cardPart, ...FALAS.map((text) => ({ type: "text", text }))]);
+
+	it("três parts de texto separadas pela fronteira viram três balões", () => {
+		render(<ChatMessage message={turnoDoPrint10()} isStreaming isLast isNew={false} />);
+
+		const baloes = screen.getAllByTestId("balao-texto");
+		expect(baloes).toHaveLength(3);
+		for (const [i, fala] of FALAS.entries()) {
+			expect(baloes[i].textContent).toContain(fala);
+		}
+		// O card continua ACIMA das falas: a oferta é o que a primeira linha comenta.
+		const card = screen.getByTestId("carrossel-cartas");
+		const ordem = (a: Element, b: Element) =>
+			Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+		expect(ordem(card, baloes[0])).toBe(true);
+	});
+
+	it("na retomada a conversa picada aparece igual: um balão por fala", () => {
+		// `resume.ts` devolve UM turno com uma part de texto por linha gravada — a mesma forma
+		// acima, então a tela tem de ser a mesma.
+		render(<ChatMessage message={turnoDoPrint10()} isNew={false} />);
+		expect(screen.getAllByTestId("balao-texto")).toHaveLength(3);
+	});
+});

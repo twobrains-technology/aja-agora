@@ -95,3 +95,38 @@ describe("o clique de fecho da web leva o id da carta", () => {
 		}
 	});
 });
+
+/**
+ * GUARDA DE ENCANAMENTO — não é guarda de fala.
+ *
+ * Defeito medido na auditoria do sha `e2461a52` (R21 de 28/10 01:58:27Z): só dois avisos do
+ * servidor saíam por `writeAndSaveTextComAviso`; os outros cinco saíam por `writeAndSaveText`, que
+ * grava só texto — o turno do agente perguntava ("…me diz que quer seguir?") e o cliente ficava sem
+ * nenhum botão. Nada aqui julga o TEXTO do aviso (ele não muda): o que se prova é a LIGAÇÃO — que
+ * estes avisos continuam saindo pela variante que emite o toque.
+ *
+ * Sem harness de POST na rota, a prova é a fonte: para cada aviso, a chamada imediatamente antes do
+ * literal tem de ser `writeAndSaveTextComAviso(`.
+ */
+describe("os avisos que perguntam saem com toque (encanamento)", () => {
+	// O último entra pelo trecho final: o texto da rota interpola
+	// `${existingProposal?.administradora}` e o `${` num literal comum vira aviso do biome.
+	const AVISOS_SEM_TOQUE_DO_SHA_E2461A52 = [
+		"Preciso do celular completo, com DDD — dá uma conferida e me manda de novo?",
+		"Hmm, não consegui registrar esse número. Pode conferir e mandar de novo?",
+		"Deixa eu refazer a busca pra te mostrar as outras opções — me dá um instante e pede de novo?",
+		"Antes de eu confirmar seu plano, deixa eu te mostrar o formulário rapidinho — me diz que quer seguir?",
+		"não dá pra abrir uma segunda com outra administradora por aqui. Quer que eu confira o status dessa proposta pra você?",
+	];
+
+	it("cada um deles passa por writeAndSaveTextComAviso, nunca pelo texto puro", () => {
+		const fonte = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
+		for (const aviso of AVISOS_SEM_TOQUE_DO_SHA_E2461A52) {
+			const posicao = fonte.indexOf(aviso);
+			expect(posicao, `aviso não encontrado na rota: ${aviso}`).toBeGreaterThan(-1);
+			const chamadas = [...fonte.slice(0, posicao).matchAll(/writeAndSaveText(?:ComAviso)?\(/g)];
+			const ultima = chamadas[chamadas.length - 1]?.[0];
+			expect(ultima, `o aviso saiu sem toque: ${aviso}`).toBe("writeAndSaveTextComAviso(");
+		}
+	});
+});

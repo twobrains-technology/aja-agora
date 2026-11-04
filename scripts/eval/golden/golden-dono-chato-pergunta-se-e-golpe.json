@@ -1,0 +1,52 @@
+{
+	"cenario": "golden-dono-chato-pergunta-se-e-golpe",
+	"descricao": "Lead difícil #8: desconfiança explícita ('isso é golpe?'). O agente tem de responder à desconfiança com transparência e continuar vendendo — não pode empurrar a pessoa para humano justamente na hora em que ela desconfia (C-04/C-06), nem encher a tela com a mesma oferta duas vezes. Nenhum valor em R$ sem lastro na fala: garantia de retorno é o que golpe promete.",
+	"caRefs": ["C-04", "C-06", "F-02"],
+	"asserts": {
+		"turns": [
+			null,
+			null,
+			null,
+			{
+				"forbidArtifacts": ["handoff"],
+				"forbidDuplicateOffers": true
+			},
+			{
+				"forbidArtifacts": ["handoff"],
+				"forbidDuplicateOffers": true,
+				"forbidUngroundedMoney": true
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi",
+			"expect": "welcome com as categorias."
+		},
+		{
+			"type": "action",
+			"action": {
+				"kind": "category",
+				"category": "auto"
+			},
+			"label": "Automóvel",
+			"expect": "transição para carro + pedido do nome."
+		},
+		{
+			"type": "text",
+			"text": "Paulo",
+			"expect": "usa o nome e pergunta o valor do bem."
+		},
+		{
+			"type": "text",
+			"text": "isso é golpe? como eu sei que vocês existem de verdade?",
+			"expect": "responde a desconfiança com transparência e mantém a venda — sem despachar para humano."
+		},
+		{
+			"type": "text",
+			"text": "já vi gente perdendo dinheiro com consórcio, tenho medo",
+			"expect": "acolhe o medo com fato (taxa, fundo de reserva, o que a cota mostra) — nenhum número inventado, nenhum handoff."
+		}
+	]
+}

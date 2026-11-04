@@ -26,6 +26,17 @@ const nextConfig: NextConfig = {
 		"@earendil-works/pi-codemode",
 		"quickjs-wasi",
 	],
+	// O plugin de observabilidade do Pi (D-0014) é carregado por CAMINHO, pelo jiti do
+	// próprio Pi (`additionalExtensionPaths` — ver `src/lib/agent/pi/langfuse.ts`), e não
+	// por `import()`. Duas consequências que já custaram um build vermelho em 27/10/2026:
+	//  · ele NÃO entra em `serverExternalPackages` nem em bundling: o pacote publicado é
+	//    TypeScript cru, sem `main`/`exports`; transpilado aqui, o `tsc` seguiria o fonte
+	//    dele e o `next build` morreria em "Failed to type check" (o defeito #54 do plugin,
+	//    `event.prompt` na variante `custom` de `before_agent_start`);
+	//  · mas ele PRECISA existir em `node_modules` no runtime, e o file tracer do Next não
+	//    o enxerga (não há import estático; `outputFileTracingIncludes` com glob de
+	//    `node_modules` também não resolveu — medido no dev). Quem o leva para a imagem é
+	//    um COPY explícito no `Dockerfile`.
 	allowedDevOrigins: [
 		"aja-agora.twobrainstechnology.com",
 		// HMR via DNS local OrbStack (padrão dev-stack DNS-first).

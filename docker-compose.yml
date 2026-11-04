@@ -144,6 +144,15 @@ services:
       LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      # D-0014 — o rastro do turno do motor Pi (plugin oficial). A flag é o
+      # interruptor: sem `true`, o app nem carrega a extensão, mesmo com as três
+      # chaves acima. `LANGFUSE_TRACING_ENVIRONMENT` separa este tráfego do que a
+      # produção manda no MESMO projeto do Langfuse.
+      LANGFUSE_TRACING_ENABLED: ${LANGFUSE_TRACING_ENABLED:-}
+      LANGFUSE_TRACING_ENVIRONMENT: ${LANGFUSE_TRACING_ENVIRONMENT:-}
+      # Teto de caracteres por campo no trace. O prompt do vendedor passa de 20 mil
+      # (o default do plugin é 20.000 e cortaria o input).
+      PI_LANGFUSE_MAX_CHARS: ${PI_LANGFUSE_MAX_CHARS:-}
       # A ponte do alerta (Monitor do Langfuse → e-mail + ocorrência no Cortex).
       # Estavam fora do compose, então em dev a rota respondia 503 e ninguém
       # conseguia exercitá-la localmente — a mesma classe do que a manteve muda

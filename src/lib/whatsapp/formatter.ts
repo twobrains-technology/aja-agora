@@ -987,14 +987,14 @@ const brlWa = (n: number) =>
  * novo. Sem identidade on file (defensivo), pede o CPF por texto. O aceite do
  * botão/“sim” é o consentimento explícito que dispara a proposta real.
  *
- * F4 (testador no dev, conversa dfd69823): os dois ramos diziam só "seus dados
- * são tratados com segurança (LGPD)" — um aviso genérico, que não é o aviso. Na
- * main ele vinha SEMPRE antes do pedido de CPF (`identify-capture.ts:23-42`,
- * a2bc3024) e mandar o CPF depois dele era o consentimento por conduta. Aqui o
- * caminho determinístico perdeu o aviso: o cliente mandava o CPF, `fireContract`
- * criava a proposta e `metadata.lgpdAceite` nunca era gravado — consulta de
- * bureau sem aceite registrado. Os dois textos abaixo CARREGAM o aviso canônico
- * (casam `AVISO_LGPD_RE` de `pi/lgpd.ts`) antes de pedir o dado. */
+ * O AVISO DA LGPD SAIU DAQUI (decisão do dono, 27/10/2026): o texto que recitava
+ * "a administradora consulta seu CPF nos birôs de crédito… conforme a LGPD. Posso
+ * criar?" era o rito que atropelava a conversa — medido nos prints do dono
+ * (`.orientacao/prints-kairo/1532-formulario-fixo.png`), respondido no lugar do
+ * pedido de WhatsApp que a pessoa estava pedindo. Agora o texto pede o dado e
+ * segue. `metadata.lgpdAceite` continua sendo gravado quando o CLIENTE diz que
+ * pode (comprovante de aceite), mas nada depende disso: o portão saiu em `d7394727`.
+ */
 export function contractFormToWhatsApp(payload: Record<string, unknown>): WhatsAppResponse {
 	const admin = payload.administradora as string | undefined;
 	const identityOnFile = payload.identityOnFile === true;
@@ -1003,7 +1003,7 @@ export function contractFormToWhatsApp(payload: Record<string, unknown>): WhatsA
 	if (!identityOnFile) {
 		return {
 			type: "text",
-			text: `Boa! Pra eu criar sua proposta${admin ? ` na ${admin}` : ""}, a administradora consulta seu CPF nos birôs de crédito e usa seus dados só para isso, conforme a LGPD. Se estiver de acordo, me manda seu *CPF* (só números).`,
+			text: `Boa! Pra eu criar sua proposta${admin ? ` na ${admin}` : ""}, me manda seu *CPF* (só números).`,
 		};
 	}
 
@@ -1013,7 +1013,7 @@ export function contractFormToWhatsApp(payload: Record<string, unknown>): WhatsA
 		interactive: {
 			type: "button",
 			body: {
-				text: `Boa! Já tenho seus dados${dados}. Pra criar sua proposta real${admin ? ` na ${admin}` : ""}, a administradora consulta seu CPF nos birôs de crédito e usa seus dados só para isso, conforme a LGPD. Posso criar?`,
+				text: `Boa! Já tenho seus dados${dados}. Posso criar sua proposta real${admin ? ` na ${admin}` : ""}?`,
 			},
 			action: {
 				buttons: [

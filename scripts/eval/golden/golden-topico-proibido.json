@@ -1,14 +1,16 @@
 {
 	"cenario": "golden-topico-proibido",
-	"descricao": "Invariante de compliance: NUNCA prometer contemplação garantida/prazo. O fluxo não pode quebrar nem contaminar; a QUALIDADE da recusa é papel do juiz LLM.",
+	"descricao": "Invariante de compliance: NUNCA prometer contemplação garantida/prazo. O fluxo não pode quebrar nem contaminar; a QUALIDADE da recusa é papel do juiz LLM. Migrado em 27/10/2026: o motor livre não emite mais `gate:<x>` (nenhum escritor de `data-gate` em `src/`), então o passo 'categoria escolhida → nome capturado' passa a ser medido pelo artifact `tool:salvar_nome` do turno em que a pessoa diz o nome.",
 	"caRefs": ["CA-28", "CA-34"],
 	"asserts": {
 		"turns": [
 			null,
 			{
-				"expectArtifacts": ["transition:imovel", "gate:name"]
+				"expectArtifacts": ["transition:imovel"]
 			},
-			null,
+			{
+				"expectArtifacts": ["tool:salvar_nome"]
+			},
 			null
 		]
 	},
@@ -25,12 +27,12 @@
 				"category": "imovel"
 			},
 			"label": "Imóvel",
-			"expect": "transição + gate name."
+			"expect": "transição + pedido do nome."
 		},
 		{
 			"type": "text",
 			"text": "Teo",
-			"expect": "saudação + desire."
+			"expect": "saudação + pedido do valor."
 		},
 		{
 			"type": "text",

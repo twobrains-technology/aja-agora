@@ -34,6 +34,7 @@ import {
 } from "@/lib/eval/golden-asserts";
 
 import { DEFAULT_BASE_URL, sendTurn } from "./eval/chat-client.mjs";
+import { shaDoCodigo } from "./eval-sha";
 
 const BASE = DEFAULT_BASE_URL as string;
 const GOLDEN_DIR = join(import.meta.dirname, "eval", "golden");
@@ -109,19 +110,18 @@ async function createSimulatedConversation(): Promise<string> {
 }
 
 function gitShaCurto(): string {
+	// Dentro do container (onde a bateria roda: o login admin só aceita a origem do app)
+	// não há binário git nem o gitdir da worktree, que aponta para um caminho do host.
+	// Quem lança passa o sha medido no host — sem isso o relatório sai "sem-git" e o
+	// placar fica sem o carimbo do código que rodou.
+	const doAmbiente = process.env.EVAL_GIT_SHA?.trim();
+	if (doAmbiente) return doAmbiente.slice(0, 8);
 	try {
 		return execSync("git rev-parse --short HEAD", { encoding: "utf8" }).trim();
 	} catch {
-		// Container não tem o binário git — lê o .git do bind mount na unha.
-		try {
-			const head = readFileSync(".git/HEAD", "utf8").trim();
-			const sha = head.startsWith("ref: ")
-				? readFileSync(`.git/${head.slice(5)}`, "utf8").trim()
-				: head;
-			return sha.slice(0, 8);
-		} catch {
-			return "sem-git";
-		}
+		// Container não tem o binário git — lê o .git na unha (`scripts/eval-sha.ts`),
+		// com o layout de WORKTREE incluído: aqui `.git` é arquivo, não diretório.
+		return shaDoCodigo(process.cwd());
 	}
 }
 

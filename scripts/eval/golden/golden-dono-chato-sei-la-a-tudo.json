@@ -1,0 +1,63 @@
+{
+	"cenario": "golden-dono-chato-sei-la-a-tudo",
+	"descricao": "Lead difícil #2: a pessoa responde 'sei lá' a tudo. O risco medido é o agente girar em falso — repetir o próprio bloco de fala (F-01) — ou desistir do lead (P7/C-05). Cada 'sei lá' é um turno em que o agente tem de mudar de ângulo, não de repetir a pergunta, e nunca pode empurrar para humano.",
+	"caRefs": ["F-01", "C-05", "P-02"],
+	"asserts": {
+		"turns": [
+			null,
+			null,
+			{
+				"forbidArtifacts": ["handoff"],
+				"forbidRepeatedAgentText": true
+			},
+			{
+				"forbidArtifacts": ["handoff"],
+				"forbidRepeatedAgentText": true
+			},
+			{
+				"forbidArtifacts": ["handoff"],
+				"forbidRepeatedAgentText": true
+			},
+			{
+				"forbidArtifacts": ["handoff"],
+				"forbidRepeatedAgentText": true
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi",
+			"expect": "welcome com as categorias."
+		},
+		{
+			"type": "action",
+			"action": {
+				"kind": "category",
+				"category": "auto"
+			},
+			"label": "Automóvel",
+			"expect": "transição para carro + pedido do nome."
+		},
+		{
+			"type": "text",
+			"text": "não sei",
+			"expect": "não insiste no nome; oferece um caminho (ex.: faixa de valor) com fala nova."
+		},
+		{
+			"type": "text",
+			"text": "sei lá",
+			"expect": "muda de ângulo em vez de repetir a mesma pergunta."
+		},
+		{
+			"type": "text",
+			"text": "sei lá mesmo, não entendo disso",
+			"expect": "entrega valor (opção, faixa, explicação) em vez de mais uma pergunta igual."
+		},
+		{
+			"type": "text",
+			"text": "tanto faz",
+			"expect": "escolhe por ela e mostra o caminho — sem bloco repetido e sem handoff."
+		}
+	]
+}

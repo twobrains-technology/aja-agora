@@ -1,0 +1,53 @@
+{
+  "coletado_em": "2026-10-27T18:31Z",
+  "origem": "GET https://langfuse.twobrainstechnology.com/api/public/v2/observations?limit=50&environment=dev",
+  "projeto": "aja-agora (cmsicnldl0006mv07gy700qy6)",
+  "conversa": "f6239b96-1a5c-4851-b595-407b618a2c96",
+  "trace": "8b21dd5645297ef7989b0cad9c594083",
+  "observacoes": [
+    {
+      "type": "SPAN",
+      "name": "Conversational Turn",
+      "startTime": "2026-10-27T18:31:11.206Z",
+      "latency": 18.947,
+      "environment": "dev",
+      "sessionId": "f6239b96-1a5c-4851-b595-407b618a2c96",
+      "userId": "uid-d0014-revisao-1793125864",
+      "traceId": "8b21dd5645297ef7989b0cad9c594083",
+      "parentObservationId": null
+    },
+    {
+      "type": "GENERATION",
+      "name": "LLM Call",
+      "startTime": "2026-10-27T18:31:11.528Z",
+      "latency": 1.837,
+      "environment": "dev",
+      "sessionId": "f6239b96-1a5c-4851-b595-407b618a2c96",
+      "userId": "uid-d0014-revisao-1793125864",
+      "traceId": "8b21dd5645297ef7989b0cad9c594083",
+      "parentObservationId": "95bcbb71b5e9e03e"
+    },
+    {
+      "type": "TOOL",
+      "name": "Tool: buscar_cartas",
+      "startTime": "2026-10-27T18:31:13.367Z",
+      "latency": 14.222,
+      "environment": "dev",
+      "sessionId": "f6239b96-1a5c-4851-b595-407b618a2c96",
+      "userId": "uid-d0014-revisao-1793125864",
+      "traceId": "8b21dd5645297ef7989b0cad9c594083",
+      "parentObservationId": "95bcbb71b5e9e03e"
+    },
+    {
+      "type": "GENERATION",
+      "name": "LLM Call",
+      "startTime": "2026-10-27T18:31:27.593Z",
+      "latency": 2.558,
+      "environment": "dev",
+      "sessionId": "f6239b96-1a5c-4851-b595-407b618a2c96",
+      "userId": "uid-d0014-revisao-1793125864",
+      "traceId": "8b21dd5645297ef7989b0cad9c594083",
+      "parentObservationId": "95bcbb71b5e9e03e"
+    }
+  ]
+}

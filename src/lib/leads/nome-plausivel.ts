@@ -211,6 +211,11 @@ export function nomeAncoradoNaFala(
  * `CLAUDE.md`, "não se fecha porta a porta"), é o vocabulário com que o servidor
  * se refere ao interlocutor nas suas próprias instruções. Se um desses aparecer
  * como "nome", a origem é a mecânica, não a pessoa.
+ *
+ * `comprador` e `interessado` entraram em 27/10/2026 junto com `nomeUtilizavel`: a lista
+ * tinha só os termos de SERVIDOR e deixava passar os dois papéis que o MODELO inventa para
+ * preencher a lacuna do nome (o próprio doc de `nomeAncoradoNaFala` nomeia os três — "Cliente",
+ * "Comprador", "Interessado" — como o defeito a barrar).
  */
 const PALAVRAS_QUE_O_SISTEMA_USA: ReadonlySet<string> = new Set([
 	"cliente",
@@ -219,4 +224,25 @@ const PALAVRAS_QUE_O_SISTEMA_USA: ReadonlySet<string> = new Set([
 	"agente",
 	"assistente",
 	"card",
+	"comprador",
+	"interessado",
 ]);
+
+/**
+ * O nome que JÁ ESTÁ gravado pode ser usado para chamar a pessoa?
+ *
+ * A pergunta do lado de FORA do funil: aqui não há fala para ancorar (o nome foi
+ * dito em outro turno, talvez em outro canal), então a régua é a de forma +
+ * vocabulário do sistema. Serve para quem exibe o nome sem o cliente na frente —
+ * hoje o relay da web para o WhatsApp do atendente (`route.ts`, prefixo `*Nome:*`),
+ * que fabricava "Cliente" quando `conversations.contactName` era nulo.
+ *
+ * `null` é a resposta honesta: sem nome, o lugar do nome fica vazio.
+ */
+export function nomeUtilizavel(nome: string | null | undefined): string | null {
+	const limpo = (nome ?? "").trim();
+	if (!limpo) return null;
+	if (!ehNomeProprioPlausivel(limpo)) return null;
+	if (PALAVRAS_QUE_O_SISTEMA_USA.has(stripAccents(limpo).toLowerCase())) return null;
+	return limpo;
+}

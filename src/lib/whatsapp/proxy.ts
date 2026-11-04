@@ -831,6 +831,12 @@ export async function handleAgentMessage(agentWaId: string, text: string): Promi
 	return false;
 }
 
+/** A mensagem que o atendente recebe: com o nome da pessoa quando ele existe, e sem
+ * prefixo quando não — é a fala dela, não a etiqueta que o servidor inventou. */
+function comNome(userName: string | null, text: string): string {
+	return userName ? `*${userName}:*\n${text}` : text;
+}
+
 /**
  * Entrega ao atendente uma mensagem que o cliente escreveu na web.
  *
@@ -858,7 +864,10 @@ export async function handleAgentMessage(agentWaId: string, text: string): Promi
 export async function relayWebUserToAgent(
 	conversationId: string,
 	text: string,
-	userName: string,
+	/** O nome da pessoa, quando ele EXISTE (`nomeUtilizavel` no chamador). `null` é o caso
+	 * de quem nunca se apresentou: a mensagem vai sem prefixo — inventar um vocativo
+	 * ("Cliente") é a origem do nome falso que o modelo acaba repetindo. */
+	userName: string | null,
 ): Promise<boolean> {
 	const conv = await db.query.conversations.findFirst({
 		where: eq(conversations.id, conversationId),
@@ -886,7 +895,7 @@ export async function relayWebUserToAgent(
 	if (atendimento.handedOffUserId) {
 		const attendant = await getAttendantById(atendimento.handedOffUserId);
 		if (attendant) {
-			await sendToAttendant(attendant.phone, `*${userName}:*\n${text}`, { simulated: isSimulated });
+			await sendToAttendant(attendant.phone, comNome(userName, text), { simulated: isSimulated });
 			console.log(
 				`[whatsapp-proxy] WebUser→Attendant: ${conversationId} → ${attendant.phone} | "${text.slice(0, 50)}" simulated=${isSimulated}`,
 			);
@@ -899,7 +908,7 @@ export async function relayWebUserToAgent(
 
 	const attendants = await getAttendantList();
 	for (const a of attendants) {
-		await sendToAttendant(a.phone, `*${userName}:*\n${text}`, { simulated: isSimulated });
+		await sendToAttendant(a.phone, comNome(userName, text), { simulated: isSimulated });
 	}
 	console.log(
 		`[whatsapp-proxy] WebUser→AllAttendants: ${conversationId} | "${text.slice(0, 50)}" simulated=${isSimulated} entregues=${attendants.length}`,

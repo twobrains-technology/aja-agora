@@ -52,7 +52,7 @@ card for de uma carta só.
 | `decision_prompt` | Fechar a escolha com quem já decidiu: "seguimos com esta?". | sim |
 | `lead_form` | Pedir os dados de contato no card, para a pessoa digitar com calma. | não |
 | `contract_form` | Pedir CPF e celular no card, quando ela já escolheu a carta e quer seguir. | não |
-| `whatsapp_optin` | Oferecer continuar a conversa no WhatsApp. | não |
+| `whatsapp_optin` | Salvar o contato no site: ofereça assim que já mostrou carta ou parcela, porque o número é o que permite retomar a conversa depois. No WhatsApp não peça de novo. | não |
 | `real_offer` | Não peça: a proposta real nasce da `fazer_proposta` e aparece sozinha, com o id e a URL dela. | — |
 
 ## Quando NÃO usar card nenhum

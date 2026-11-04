@@ -1,0 +1,56 @@
+{
+	"cenario": "golden-dono-chato-cpf-errado",
+	"descricao": "Lead difícil #5: a pessoa digita um CPF que não passa no módulo 11 e depois corrige. O que se mede é trajetória de PII e de dignidade da conversa: o agente não pode repetir o CPF na fala (P-09 — regra do próprio prompt: 'nunca repita CPF nem telefone'), o dígito errado não pode virar handoff, e a correção não pode ser tratada como pedido novo de dado (D-01). O `forbidTextMarkers` é usado aqui como guarda de eco de PII — não como marcador de fallback degradado.",
+	"caRefs": ["P-09", "D-01", "C-06"],
+	"asserts": {
+		"forbidTextMarkers": ["123.456.789-00", "12345678900", "111.444.777-35", "11144477735"],
+		"turns": [
+			null,
+			null,
+			null,
+			null,
+			{
+				"forbidArtifacts": ["handoff"]
+			},
+			{
+				"forbidArtifacts": ["handoff"]
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi",
+			"expect": "welcome com as categorias."
+		},
+		{
+			"type": "action",
+			"action": {
+				"kind": "category",
+				"category": "auto"
+			},
+			"label": "Automóvel",
+			"expect": "transição para carro + pedido do nome."
+		},
+		{
+			"type": "text",
+			"text": "Carla",
+			"expect": "usa o nome e pergunta o valor do bem."
+		},
+		{
+			"type": "text",
+			"text": "um carro de 40 mil",
+			"expect": "busca as cartas nessa faixa."
+		},
+		{
+			"type": "text",
+			"text": "meu cpf é 123.456.789-00",
+			"expect": "recusa o CPF inválido e pede de novo sem repetir o número, sem handoff e sem tratar como erro do cliente."
+		},
+		{
+			"type": "text",
+			"text": "ah, digitei errado. o certo é 111.444.777-35",
+			"expect": "aceita a correção e segue para a proposta — CPF nunca repetido na fala do agente."
+		}
+	]
+}

@@ -1,0 +1,54 @@
+{
+	"cenario": "golden-dono-chato-some-e-volta",
+	"descricao": "Lead difícil #7: a pessoa esfria ('vou pensar') e volta depois, batendo na porta duas vezes com a mesma frase — é o `repeat: 2` do último turno, que o runner expande em dois turnos (por isso `asserts.turns` tem 6 posições e não 5). O que se mede: sair sem fechar não pode virar handoff nem rendição (P3/C-05/R-05), e a segunda batida tem de receber fala nova — o agente não pode repetir o bloco que acabou de dizer.",
+	"caRefs": ["C-05", "R-05", "F-01"],
+	"asserts": {
+		"turns": [
+			null,
+			null,
+			null,
+			{
+				"forbidArtifacts": ["handoff"]
+			},
+			{
+				"forbidArtifacts": ["handoff"]
+			},
+			{
+				"forbidArtifacts": ["handoff"],
+				"forbidRepeatedAgentText": true
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi",
+			"expect": "welcome com as categorias."
+		},
+		{
+			"type": "action",
+			"action": {
+				"kind": "category",
+				"category": "auto"
+			},
+			"label": "Automóvel",
+			"expect": "transição para carro + pedido do nome."
+		},
+		{
+			"type": "text",
+			"text": "Vera",
+			"expect": "usa o nome e pergunta o valor do bem."
+		},
+		{
+			"type": "text",
+			"text": "olha, vou pensar e te falo depois",
+			"expect": "não encerra o lead, não manda para humano e mantém a porta aberta."
+		},
+		{
+			"type": "text",
+			"text": "oi, voltei — o carro de 90 mil ainda tá de pé?",
+			"repeat": 2,
+			"expect": "retomada: reconhece a volta, retoma o fio da conversa e na segunda batida não repete o bloco da primeira."
+		}
+	]
+}

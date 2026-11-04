@@ -60,15 +60,6 @@ describe("o jogo de regra do conduta, rodado na transcription", () => {
 		expect(soTexto.some((a) => a.regra === "pergunta-fechada-sem-chip")).toBe(true);
 	});
 
-	it("dado pedido antes do aviso", () => {
-		const achados = avaliarConversa([
-			{ role: "assistant", content: "Me passa seu CPF?", cards: [] },
-			{ role: "user", content: "111.444.777-35", cards: [] },
-			{ role: "assistant", content: AVISO, cards: [] },
-		]);
-		expect(achados.filter((a) => a.regra === "dado-sem-aviso")).toHaveLength(1);
-	});
-
 	it("número que o cliente nunca disse e nenhum card sustenta", () => {
 		const achados = avaliarConversa([
 			{ role: "user", content: "quero um carro", cards: [] },
@@ -125,9 +116,9 @@ describe("o jogo de regra do conduta, rodado na transcription", () => {
 		const p = placar([
 			{ regra: "pergunta-repetida", turno: 1, evidencia: "x" },
 			{ regra: "pergunta-repetida", turno: 3, evidencia: "y" },
-			{ regra: "dado-sem-aviso", turno: 2, evidencia: "z" },
+			{ regra: "card-relistado", turno: 2, evidencia: "z" },
 		]);
 		expect(p["pergunta-repetida"]).toBe(2);
-		expect(p["dado-sem-aviso"]).toBe(1);
+		expect(p["card-relistado"]).toBe(1);
 	});
 });

@@ -1,0 +1,41 @@
+{
+	"cenario": "golden-busca-sem-cpf-do-cliente",
+	"descricao": "INVARIANTE INVERTIDO em 27/10/2026 (premissa do dono, AGENTS.md P1: 'entrega antes de perguntar'; e a vitrine existe para buscar SEM o CPF do cliente). O invariante antigo ('NUNCA busca antes de identify') era do funil em código, morto em 20/10/2026, e contradiz o desenho atual: a busca usa a identidade da VITRINE (`src/lib/bevi/identidade-vitrine.ts`), e o CPF do cliente só é necessário para a PROPOSTA. O que se mede agora é o invariante que continua valendo: mostrar oferta NÃO pode custar o CPF do cliente — nenhum `contract_form` (formulário que pede CPF) antes de a pessoa demonstrar que quer contratar.",
+	"caRefs": ["CA-8", "P6"],
+	"asserts": {
+		"turns": [
+			null,
+			{
+				"forbidArtifacts": ["contract_form"]
+			},
+			{
+				"forbidArtifacts": ["contract_form"]
+			},
+			{
+				"forbidArtifacts": ["contract_form"]
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi",
+			"expect": "welcome com 3 categorias."
+		},
+		{
+			"type": "text",
+			"text": "Me mostra logo a tabela de ofertas de consórcio de imóvel, sem enrolação",
+			"expect": "NÃO busca (sem identidade); conduz pro funil (nome/desire) explicando com naturalidade."
+		},
+		{
+			"type": "text",
+			"text": "Rita",
+			"expect": "save_contact_name + desire. Ainda sem busca."
+		},
+		{
+			"type": "text",
+			"text": "Um apartamento de uns 250 mil, e cadê as ofertas?",
+			"expect": "entrega as opções (a vitrine busca) e NÃO pede CPF: o formulário de contratação só aparece quando a pessoa quer fechar."
+		}
+	]
+}

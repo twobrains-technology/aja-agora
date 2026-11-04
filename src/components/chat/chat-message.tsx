@@ -44,9 +44,10 @@ const messageSpring = {
 export type RenderablePart =
 	| { kind: "text"; id: string; text: string }
 	| { kind: "transition"; id: string; data: TransitionPartData }
-	// `tool` é FRONTEIRA, não conteúdo: o status da ferramenta não desenha nada,
-	// mas ele existiu no meio do turno — o texto que veio antes não pode se juntar
-	// com o que veio depois num balão só (R5.1: a ordem do stream é a ordem da tela).
+	// `tool` é FRONTEIRA já resolvida no servidor, não conteúdo: o status da ferramenta não
+	// desenha nada, e o adapter fecha o balão antes dele (`closeTextIfOpen`) — por isso o
+	// texto que veio antes e o que veio depois chegam aqui como parts separadas, cada uma
+	// com o seu balão (R5.1: a ordem do stream é a ordem da tela).
 	| { kind: "tool"; id: string }
 	| { kind: "artifact"; id: string; artifact: Artifact; embacada?: boolean }
 	| { kind: "welcome"; id: string; data: WelcomePartData }
@@ -152,7 +153,7 @@ function latestToolName(message: AjaUIMessage): string | undefined {
 }
 
 type RenderableSegment =
-	| { kind: "text-group"; id: string; text: string }
+	| { kind: "text"; id: string; text: string }
 	| Exclude<RenderablePart, { kind: "text" } | { kind: "transition" } | { kind: "tool" }>;
 
 /** FIX-184 — colapsa eco/degeneração da LLM ("Prazer, Mirella!Prazer, Mirella!")
@@ -178,38 +179,32 @@ function collapseEchoedText(text: string): string {
 	return out.join("");
 }
 
-function groupAdjacentText(parts: RenderablePart[]): RenderableSegment[] {
+/** CADA PART DE TEXTO É UM BALÃO. Juntar as parts adjacentes num só era o que colava a
+ * conversa picada num blocão: o servidor fecha o balão com um `text-boundary`
+ * (`web/adapter.ts` → `text-end` + `text-start` novo), então a fronteira chega aqui como
+ * uma PART DE TEXTO NOVA — e part nova é balão novo. Era isso que a tela não mostrava
+ * (print 10: três balões no banco, um só na tela).
+ *
+ * `transition` e `tool` não desenham nada e não interrompem nada; `artifact`, `welcome` e
+ * `handoff` viram segmento próprio, na ordem do stream. */
+function segmentosDoTurno(parts: RenderablePart[]): RenderableSegment[] {
 	const out: RenderableSegment[] = [];
-	let buffer: { id: string; text: string }[] = [];
-
-	const flush = () => {
-		if (buffer.length === 0) return;
-		const joined = buffer
-			.map((b) => b.text)
-			.filter(Boolean)
-			.join("\n\n");
-		const text = collapseEchoedText(joined);
-		if (text.length > 0) {
-			out.push({ kind: "text-group", id: buffer[0].id, text });
-		}
-		buffer = [];
-	};
+	// O balão anterior, para o colapso de eco (FIX-184) valer TAMBÉM entre balões: o
+	// eco em duas parts é um balão repetido, não dois.
+	let anterior = "";
 
 	for (const part of parts) {
-		// Transição e status de ferramenta são fronteiras invisíveis: fecham o
-		// balão corrente e não viram segmento próprio.
-		if (part.kind === "transition" || part.kind === "tool") {
-			flush();
-			continue;
-		}
 		if (part.kind === "text") {
-			buffer.push({ id: part.id, text: part.text });
+			const text = collapseEchoedText(part.text).trim();
+			if (!text || text === anterior) continue;
+			anterior = text;
+			out.push({ kind: "text", id: part.id, text });
 			continue;
 		}
-		flush();
+		if (part.kind === "transition" || part.kind === "tool") continue;
+		anterior = "";
 		out.push(part);
 	}
-	flush();
 
 	return out;
 }
@@ -331,14 +326,14 @@ export function ChatMessage({
 					<RevealSelectionProvider artifacts={revealArtifacts}>
 						<AnimatePresence mode="popLayout" initial={false}>
 							{(() => {
-								const segments = groupAdjacentText(inlineSegments);
+								const segments = segmentosDoTurno(inlineSegments);
 								const lastTextIdx = segments.reduce(
-									(acc, s, idx) => (s.kind === "text-group" ? idx : acc),
+									(acc, s, idx) => (s.kind === "text" ? idx : acc),
 									-1,
 								);
 								const isStreamingLast = isStreaming && isLast;
 								return segments.map((segment, i) => {
-									if (segment.kind === "text-group") {
+									if (segment.kind === "text") {
 										return (
 											<TextBubble
 												key={segment.id}

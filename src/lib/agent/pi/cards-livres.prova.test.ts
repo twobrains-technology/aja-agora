@@ -253,26 +253,41 @@ describe("o card de FATO sai com o número da CARTA REAL", () => {
 		expect(segunda.availableSlots).toBe(primeira.availableSlots);
 	});
 
-	it("embedded_bid: o embutido sai da carta real e a carta necessária é valorDoBem / (1 - pct)", async () => {
+	// A CARTA TEM QUE COMPRAR O BEM (print do dono, 27/10 15:32): com o bem de 80 mil, uma
+	// carta de 80 mil com 30% de embutido deixa 56 mil e NÃO compra nada — o card é recusado.
+	it("embedded_bid: carta igual ao bem é recusada, com a conta e a busca certa", async () => {
 		const ctx = ctxComCarta();
-		await mostrarCard(ctx, "embedded_bid", { groupId: CARTA.id, lancePercent: 30 });
+		const saida = await mostrarCard(ctx, "embedded_bid", {
+			groupId: CARTA.id,
+			lancePercent: 30,
+		});
+		expect(ctx.cards).toHaveLength(0);
+		expect(saida).toContain("não compra o bem");
+		expect(saida).toContain("usaraLanceEmbutido: true");
+	});
+
+	it("embedded_bid: na carta que sobra o bem, o embutido sai da carta real e a carta necessária é valorDoBem / (1 - pct)", async () => {
+		const grande = { ...CARTA, id: "grupo-grande", creditValue: 120_000 };
+		const ctx = ctxComCarta({ gruposRevelados: new Map([[grande.id, grande]]) });
+		await mostrarCard(ctx, "embedded_bid", { groupId: grande.id, lancePercent: 30 });
 
 		const payload = payloadDoCard(ctx);
-		expect(payload.creditValue).toBe(CARTA.creditValue);
+		expect(payload.creditValue).toBe(120_000);
 		expect(payload.maxEmbutidoPct).toBe(30);
-		expect(payload.embeddedBidValue).toBe(24_000);
-		expect(payload.netCredit).toBe(56_000);
+		expect(payload.embeddedBidValue).toBe(36_000);
+		expect(payload.netCredit).toBe(84_000);
 		expect(payload.cartaNecessaria).toBe(Math.round(80_000 / (1 - 0.3)));
 	});
 
 	it("embedded_bid: lancePercent absurdo (99) cai no teto de sanidade, não em 99% da carta", async () => {
-		const ctx = ctxComCarta();
-		await mostrarCard(ctx, "embedded_bid", { groupId: CARTA.id, lancePercent: 99 });
+		const grande = { ...CARTA, id: "grupo-grande", creditValue: 120_000 };
+		const ctx = ctxComCarta({ gruposRevelados: new Map([[grande.id, grande]]) });
+		await mostrarCard(ctx, "embedded_bid", { groupId: grande.id, lancePercent: 99 });
 
 		const payload = payloadDoCard(ctx);
 		expect(payload.maxEmbutidoPct).toBe(30);
-		expect(payload.embeddedBidValue).toBe(24_000);
-		expect(payload.netCredit).toBe(56_000);
+		expect(payload.embeddedBidValue).toBe(36_000);
+		expect(payload.netCredit).toBe(84_000);
 	});
 
 	it("contemplation_dial: carta/parcela/prazo da oferta, mês-alvo dentro do prazo real", async () => {

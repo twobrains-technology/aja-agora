@@ -1,0 +1,62 @@
+{
+	"cenario": "golden-dono-chato-preco-tres-vezes-com-palavras-diferentes",
+	"descricao": "Lead difícil #3: a pessoa pergunta preço três vezes com palavras diferentes (quanto custa / sai caro / valor da parcela). O que se mede: a mesma resposta não pode voltar com roupa nova (F-02/F-01), o número não pode aparecer sem lastro (P-07/D-03) e perguntar preço não é motivo para handoff.",
+	"caRefs": ["P-05", "F-02", "D-03"],
+	"asserts": {
+		"turns": [
+			null,
+			null,
+			null,
+			{
+				"forbidArtifacts": ["handoff"],
+				"forbidRepeatedAgentText": true
+			},
+			{
+				"forbidArtifacts": ["handoff"],
+				"forbidRepeatedAgentText": true,
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidArtifacts": ["handoff"],
+				"forbidRepeatedAgentText": true,
+				"forbidUngroundedMoney": true
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi",
+			"expect": "welcome com as categorias."
+		},
+		{
+			"type": "action",
+			"action": {
+				"kind": "category",
+				"category": "auto"
+			},
+			"label": "Automóvel",
+			"expect": "transição para carro + pedido do nome."
+		},
+		{
+			"type": "text",
+			"text": "Bruno",
+			"expect": "usa o nome e pergunta o valor do bem."
+		},
+		{
+			"type": "text",
+			"text": "quanto custa?",
+			"expect": "mostra preço: busca as cartas e traz número de tool."
+		},
+		{
+			"type": "text",
+			"text": "e o preço, sai caro pra mim?",
+			"expect": "responde com o número real da carta, sem repetir o bloco anterior e sem inventar valor."
+		},
+		{
+			"type": "text",
+			"text": "então me fala o valor da parcela",
+			"expect": "entrega a parcela vinda da tool, com fala nova."
+		}
+	]
+}

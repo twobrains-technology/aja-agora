@@ -1,0 +1,41 @@
+{
+	"cenario": "golden-dono-chato-tudo-numa-frase-so",
+	"descricao": "Lead difícil #9: a pessoa entrega tudo de uma vez numa frase só — nome, bem, valor e parcela. O que se mede: o agente não pode pedir de novo o que já veio junto (D-01) nem deixar a carta encolher abaixo do valor que a pessoa citou (P-07: `minCreditValue` 90000, o número que ela falou). Sem busca disponível o assert de valor passa sem oferta nenhuma na tela — verde vazio, registrado no relatório.",
+	"caRefs": ["D-01", "P-04", "P-05"],
+	"asserts": {
+		"turns": [
+			null,
+			{
+				"forbidArtifacts": ["handoff"],
+				"minCreditValue": 90000
+			},
+			null,
+			{
+				"forbidArtifacts": ["handoff"],
+				"minCreditValue": 90000
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi",
+			"expect": "welcome com as categorias."
+		},
+		{
+			"type": "text",
+			"text": "bom dia! sou o Marcelo, quero um carro de uns 90 mil pagando até 900 por mês, dá pra fazer?",
+			"expect": "usa o que já veio na frase (nome, bem, valor, parcela) e vai direto para as cartas por volta de 90 mil."
+		},
+		{
+			"type": "text",
+			"text": "isso, Marcelo, 90 mil mesmo",
+			"expect": "não repergunta nome nem valor com outra roupa."
+		},
+		{
+			"type": "text",
+			"text": "e a parcela fica nesse valor que eu falei?",
+			"expect": "responde em cima da carta real, sem encolher a carta e sem inventar parcela."
+		}
+	]
+}
