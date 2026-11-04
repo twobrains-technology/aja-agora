@@ -5,7 +5,8 @@
  */
 import { z } from "zod";
 import { labelDaCaixa, lerCaixa, publicarCaixa } from "@/lib/agent/box/caixa";
-import { aplicarBloco, compilarPerfil } from "@/lib/playground/compilar-perfil";
+import { aplicarBloco, compilarConduta, compilarPerfil } from "@/lib/playground/compilar-perfil";
+import { ehEnvelope, ler } from "@/lib/playground/orientacao-em-partes";
 import { carimbarCaixaVersao, obterPerfil } from "@/lib/playground/repo";
 import {
 	barrarPromessa,
@@ -37,7 +38,11 @@ export async function POST(req: Request, { params }: Ctx) {
 
 	const label = labelDaCaixa();
 	const viva = await lerCaixa({ label, semCache: true });
-	const texto = aplicarBloco(viva.texto, compilarPerfil(perfil)).trim();
+	const texto = (
+		ehEnvelope(perfil.orientacao)
+			? compilarConduta({ ...ler(perfil.orientacao), atributos: perfil.atributos })
+			: aplicarBloco(viva.texto, compilarPerfil(perfil))
+	).trim();
 	if (texto.length < 200) {
 		return Response.json(
 			{ error: "A conduta resultante tem menos de 200 caracteres." },

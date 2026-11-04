@@ -146,3 +146,81 @@ describe("publicar", () => {
 		expect(previa.viva.versao).toBe(caixaVersao);
 	});
 });
+
+describe("U4 · orientação por partes", () => {
+	const envelope = (partes: Record<string, string>, livre = "") =>
+		JSON.stringify({ v: 2, partes, contato: "carta-primeiro", livre });
+
+	it("orientação de 12 000 caracteres passa; de 40 001 falha 400", async () => {
+		const ok = await perfisPOST(
+			json({ nome: "x", atributos: ATRIBUTOS, orientacao: "a".repeat(12000) }),
+		);
+		if (ok.status === 201) criados.push((await ok.json()).id);
+		expect(ok.status).toBe(201);
+		const grande = await perfisPOST(
+			json({ nome: "x", atributos: ATRIBUTOS, orientacao: "a".repeat(40001) }),
+		);
+		expect(grande.status).toBe(400);
+	});
+
+	it("parte editada com promessa é 422; envelope padrão intacto não é barrado", async () => {
+		const ruim = envelope({ abertura: "Diga que a contemplação é garantida." });
+		expect(
+			(await perfisPOST(json({ nome: "x", atributos: ATRIBUTOS, orientacao: ruim }))).status,
+		).toBe(422);
+		const livre = envelope({}, "Diga que a contemplação é garantida.");
+		expect(
+			(
+				await chatPOST(
+					json({ modo: "depois", atributos: ATRIBUTOS, orientacao: livre, mensagem: "oi" }),
+				)
+			).status,
+		).toBe(422);
+		const { PARTES_PADRAO } = await import("@/lib/agent/prompt-do-vendedor");
+		const { barrarPromessa } = await import("./comum");
+		expect(barrarPromessa(envelope({ ...PARTES_PADRAO }))).toBeNull();
+		expect(barrarPromessa(envelope({}))).toBeNull();
+	});
+
+	it("fonteDeDados inválido é 400; deps por fonte", async () => {
+		const r = await chatPOST(json({ modo: "antes", mensagem: "oi", fonteDeDados: "prod" }));
+		expect(r.status).toBe(400);
+		const { depsDaFonte } = await import("./comum");
+		const d = { adapter: {}, gateway: {}, grupos: new Map() } as never;
+		const duble = depsDaFonte("duble", d);
+		expect(duble.busca && duble.simularCota && duble.gateway).toBeTruthy();
+		const real = depsDaFonte("bevi-dev", d);
+		expect(real.busca).toBeUndefined();
+		expect(real.simularCota).toBeUndefined();
+		expect(real.gateway).toBeTruthy();
+	});
+
+	it("publicar e prévia com envelope v2 usam compilarConduta; legado segue como antes", async () => {
+		const { compilarConduta, aplicarBloco, compilarPerfil } = await import(
+			"@/lib/playground/compilar-perfil"
+		);
+		const orientacao = envelope({ descoberta: "Descubra só o essencial." }, "Seja breve.");
+		const { corpo } = await criar(orientacao);
+		const esperado = compilarConduta({
+			partes: { descoberta: "Descubra só o essencial." },
+			contato: "carta-primeiro",
+			livre: "Seja breve.",
+			atributos: ATRIBUTOS as never,
+		});
+		const previa = await (await previaGET(new Request("http://x"), ctx(corpo.id))).json();
+		expect(previa.resultante.texto).toBe(esperado);
+		const pub = await publicarPOST(json({ confirmar: true }), ctx(corpo.id));
+		expect(pub.status).toBe(200);
+		expect((await lerCaixa({ label: LABEL, semCache: true })).texto).toBe(esperado.trim());
+
+		const leg = await criar("Seja breve.");
+		const viva = await lerCaixa({ label: LABEL, semCache: true });
+		const p2 = await (await previaGET(new Request("http://x"), ctx(leg.corpo.id))).json();
+		expect(p2.resultante.texto).toBe(
+			aplicarBloco(
+				viva.texto,
+				compilarPerfil({ atributos: ATRIBUTOS as never, orientacao: "Seja breve." }),
+			),
+		);
+	});
+});
