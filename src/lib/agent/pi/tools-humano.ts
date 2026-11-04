@@ -1,12 +1,15 @@
 // A TOOL DE HANDOFF DO VENDEDOR — `falar_com_humano`, separada de `tools-livres.ts`.
 import { tool } from "ai";
 import { z } from "zod";
-import { abrirCasoNaMesa, clientePedeHumano, nomeDitoNaConversa } from "@/lib/agent/pi/handoff";
+import { abrirCasoNaMesa, nomeDitoNaConversa } from "@/lib/agent/pi/handoff";
+import { clientePedeFechar, decidirRota } from "@/lib/agent/pi/rota-do-humano";
 import { type ContextoDasTools, garantirLeadDoFecho } from "@/lib/agent/pi/tools-livres";
+import { getLatestBeviProposal } from "@/lib/bevi/proposal-repo";
 import { loadIdentity } from "@/lib/conversation/identity";
 import { loadConversationHistory } from "@/lib/conversation/messages";
 import { saveContactName } from "@/lib/leads/contact-capture";
 import { normalizePhoneBR } from "@/lib/leads/phone";
+import { type FilaDeVendedores, filaDeVendedoresReal } from "@/lib/whatsapp/proxy";
 import { isSimulatedWaId } from "@/lib/whatsapp/simulator-bus";
 
 /** O TELEFONE do lead desta conversa, para o caso da mesa.
@@ -25,30 +28,60 @@ async function telefoneDoCasoNaMesa(ctx: ContextoDasTools): Promise<string | nul
 	return celular ? normalizePhoneBR(celular) : null;
 }
 
-export function criarToolsHumano(ctx: ContextoDasTools) {
+export type DepsHumano = { filaDeVendedores?: FilaDeVendedores };
+
+const depsPorContexto = new WeakMap<ContextoDasTools, DepsHumano>();
+const filaChamadaPorContexto = new WeakMap<ContextoDasTools, Date>();
+
+/** Injeta as dependências da tool no contexto do turno (o `buildToolsLivres` não as repassa). */
+export function definirDepsHumano(ctx: ContextoDasTools, deps: DepsHumano): void {
+	depsPorContexto.set(ctx, deps);
+}
+
+/** Quando a fila foi chamada NESTE turno (ou null): o turno regrava o marcador depois do `persistMeta`. */
+export function filaChamadaNoTurno(ctx: ContextoDasTools): Date | null {
+	return filaChamadaPorContexto.get(ctx) ?? null;
+}
+
+const SIGA_CONDUZINDO =
+	"continue conduzindo a conversa com o cliente; se ninguém assumir, acalme sem inventar horário nem prazo.";
+
+export function criarToolsHumano(ctx: ContextoDasTools, deps: DepsHumano = {}) {
 	const falar_com_humano = tool({
 		description:
-			"Abre o caso na mesa. Use quando o cliente pedir para falar com uma pessoa, estiver insatisfeito, ou o assunto fugir do que você resolve. Não prometa prazo nem 'está a caminho': avise em uma linha que o caso foi aberto.",
+			"Chama uma pessoa. O servidor decide onde cai: antes da proposta, chama a fila de vendedores (todos os ativos recebem o aviso, quem pegar primeiro atende) e você segue conduzindo; com proposta gerada ou pedido de fechar, abre o caso na mesa e você para. Use quando o cliente pedir uma pessoa, a venda estiver para se perder ou na hora de transferir. Não prometa prazo nem 'está a caminho'.",
 		inputSchema: z.object({
 			motivo: z.string().min(3).describe("Por que está chamando o especialista"),
 		}),
 		execute: async ({ motivo }) => {
-			// O GATE DA MESA (P5/P7): o caso só abre quando o CLIENTE pede uma pessoa. Falha de
-			// ferramenta, objeção ("e se eu não for contemplado"), dúvida de taxa ou conversa
-			// difícil são trabalho do vendedor — mandar para a mesa é desistir da venda. O modelo
-			// continua dono de COMO conduzir; o que não é dele é decidir que a conversa acabou.
-			const pediuAgora = clientePedeHumano(ctx.userText);
-			// O histórico serve a DUAS coisas: o pedido de pessoa num turno anterior e o nome
-			// que o cliente disse antes (o caso da mesa vai com o contato — ver abaixo).
+			// A ROTA É DO SERVIDOR (P5/P8): proposta gerada ou pedido de fechar → mesa; o resto → fila
+			// de vendedores, e o agente segue conduzindo. O histórico serve também ao nome dito antes.
 			const historico = await loadConversationHistory(ctx.conversationId).catch(() => []);
-			const pediuAntes =
-				pediuAgora ||
+			const temProposta =
+				(await getLatestBeviProposal(ctx.conversationId).catch(() => null)) != null;
+			const pediuFechar =
+				clientePedeFechar(ctx.userText) ||
 				historico
 					.filter((m) => m.role === "user")
 					.slice(-8)
-					.some((m) => clientePedeHumano(m.content));
-			if (!pediuAntes) {
-				return "Caso NÃO aberto: o cliente não pediu para falar com uma pessoa, e passar o atendimento para a mesa no meio da venda é desistir dele. Siga você: responda o que ele perguntou, resolva o que falhou (se uma ferramenta falhou, diga em UMA frase e tente de novo) e leve para o próximo passo da compra.";
+					.some((m) => clientePedeFechar(m.content));
+			if (decidirRota({ temProposta, pediuFechar }) === "fila") {
+				const fila =
+					deps.filaDeVendedores ??
+					depsPorContexto.get(ctx)?.filaDeVendedores ??
+					filaDeVendedoresReal;
+				try {
+					const r = await fila.chamar({
+						conversationId: ctx.conversationId,
+						userName: ctx.nomeDoCliente ?? "Cliente",
+						userWaId: ctx.waId ?? "",
+						summary: motivo,
+					});
+					filaChamadaPorContexto.set(ctx, new Date());
+					return `Fila de vendedores chamada (${r.notificados} avisados). Sem prazo prometido: ${SIGA_CONDUZINDO}`;
+				} catch {
+					return `Não consegui avisar a fila agora. Sem prazo prometido: ${SIGA_CONDUZINDO}`;
+				}
 			}
 			ctx.pediuHumano = true;
 			// O CONTATO VAI JUNTO COM O CASO. `mesa_handoffs` guarda só o `leadId`: o nome e o

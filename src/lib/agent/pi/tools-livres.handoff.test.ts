@@ -27,6 +27,12 @@ const mocks = vi.hoisted(() => ({
 	leadFindFirst: vi.fn(),
 	abrirCasoNaMesa: vi.fn(),
 	saveContactName: vi.fn(),
+	chamarFila: vi.fn(),
+}));
+
+// A fila é dublada: nenhum teste toca o proxy real (WhatsApp dos vendedores).
+vi.mock("@/lib/whatsapp/proxy", () => ({
+	filaDeVendedoresReal: { chamar: mocks.chamarFila, estado: vi.fn() },
 }));
 
 vi.mock("@/db", () => ({
@@ -137,6 +143,7 @@ beforeEach(() => {
 	]);
 	mocks.abrirCasoNaMesa.mockResolvedValue({ ok: true, motivo: "caso-aberto", handoffId: "h-1" });
 	mocks.saveContactName.mockResolvedValue({ ok: true, name: "Mário" });
+	mocks.chamarFila.mockResolvedValue({ notificados: 2, semAtendentes: false });
 	mocks.startContract.mockResolvedValue({
 		offer: {
 			administradora: CARTA_NA_TELA.administradora,
@@ -186,29 +193,42 @@ describe("(1) o texto de erro da proposta não manda o modelo passar o cliente a
 	});
 });
 
-describe("(2) a mesa só abre quando o CLIENTE pede uma pessoa", () => {
-	it("o caso medido: 'bora fechar' depois da falha não vira handoff", async () => {
+describe("(2) a mesa só abre com proposta ou pedido de fechar; antes disso é a fila", () => {
+	it("o caso medido: falha da proposta e o cliente segue na conversa — chama a fila, não a mesa", async () => {
 		mocks.startContract.mockRejectedValue(new Error("BEVI_API_TOKEN ausente"));
 		await chamar(ctxDoTurno(), "fazer_proposta", { groupId: CARTA_NA_TELA.groupId });
 
-		const ctx = ctxDoTurno();
+		const ctx = ctxDoTurno({ userText: "quero essa mesma" });
 		const saida = await falarComHumano(ctx);
 
-		expect(saida).toContain("Caso NÃO aberto");
+		expect(mocks.chamarFila).toHaveBeenCalledTimes(1);
+		expect(saida).toContain("Fila de vendedores chamada");
+		expect(saida).not.toContain("Caso NÃO aberto");
 		expect(ctx.pediuHumano).toBe(false);
 		expect(mocks.abrirCasoNaMesa).not.toHaveBeenCalled();
-		// O que o modelo precisa ler para continuar: siga você.
-		expect(saida).toMatch(/Siga você/);
+		// O que o modelo precisa ler para continuar: siga conduzindo, sem calar.
+		expect(saida).toMatch(/continue conduzindo/i);
+		expect(saida).not.toMatch(/pare de responder/i);
 	});
 
-	it("objeção ('e se eu não for contemplado') não é pedido de humano", async () => {
+	it("objeção ('e se eu não for contemplado') vai para a fila, nunca para a mesa", async () => {
 		const ctx = ctxDoTurno({ userText: "e se eu não for contemplado?" });
 		await falarComHumano(ctx);
 		expect(ctx.pediuHumano).toBe(false);
 		expect(mocks.abrirCasoNaMesa).not.toHaveBeenCalled();
+		expect(mocks.chamarFila).toHaveBeenCalledTimes(1);
 	});
 
-	it("pedido em turno anterior vale: o caso abre", async () => {
+	it("'bora fechar' é pedido de fechar: a mesa abre", async () => {
+		const ctx = ctxDoTurno({ userText: "quero essa mesma, bora fechar" });
+		const saida = await falarComHumano(ctx);
+
+		expect(saida).toContain("Caso aberto na mesa");
+		expect(mocks.chamarFila).not.toHaveBeenCalled();
+		expect(mocks.abrirCasoNaMesa).toHaveBeenCalledTimes(1);
+	});
+
+	it("pedido de pessoa em turno anterior, sem proposta: fila", async () => {
 		mocks.loadConversationHistory.mockResolvedValue([
 			{ role: "user", content: "prefiro falar com um atendente, por favor" },
 			{ role: "assistant", content: "Claro, já chamo." },
@@ -216,16 +236,28 @@ describe("(2) a mesa só abre quando o CLIENTE pede uma pessoa", () => {
 		const ctx = ctxDoTurno({ userText: "oi" });
 		const saida = await falarComHumano(ctx);
 
-		expect(saida).toContain("Caso aberto na mesa");
-		expect(ctx.pediuHumano).toBe(true);
-		expect(mocks.abrirCasoNaMesa).toHaveBeenCalledTimes(1);
+		expect(saida).toContain("Fila de vendedores chamada");
+		expect(ctx.pediuHumano).toBe(false);
+		expect(mocks.abrirCasoNaMesa).not.toHaveBeenCalled();
 	});
 
-	it("pedido no turno atual abre o caso na hora", async () => {
+	it("pedido de pessoa no turno atual, com proposta gerada: a mesa abre", async () => {
+		mocks.getLatestBeviProposal.mockResolvedValue({ id: "prop-1" });
 		const ctx = ctxDoTurno({ userText: "quero falar com uma pessoa de verdade" });
 		await falarComHumano(ctx);
 		expect(ctx.pediuHumano).toBe(true);
 		expect(mocks.abrirCasoNaMesa).toHaveBeenCalledTimes(1);
+		expect(mocks.chamarFila).not.toHaveBeenCalled();
+	});
+
+	it("pedido em turno anterior + proposta gerada: a mesa abre", async () => {
+		mocks.getLatestBeviProposal.mockResolvedValue({ id: "prop-1" });
+		mocks.loadConversationHistory.mockResolvedValue([
+			{ role: "user", content: "prefiro falar com um atendente, por favor" },
+		]);
+		const ctx = ctxDoTurno({ userText: "oi" });
+		expect(await falarComHumano(ctx)).toContain("Caso aberto na mesa");
+		expect(ctx.pediuHumano).toBe(true);
 	});
 });
 
