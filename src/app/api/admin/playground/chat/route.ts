@@ -16,28 +16,37 @@ import { conversations } from "@/db/schema";
 import type { GroupSummary } from "@/lib/adapters/types";
 import { lerCaixa } from "@/lib/agent/box/caixa";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
-import { simularCotaDaCarta } from "@/lib/agent/pi/tools-livres";
 import { createRunTurnLivre } from "@/lib/agent/pi/turno-livre";
-import { aplicarBloco, compilarPerfil } from "@/lib/playground/compilar-perfil";
+import { aplicarBloco, compilarConduta, compilarPerfil } from "@/lib/playground/compilar-perfil";
 import { detectarPromessaDeContemplacao } from "@/lib/playground/detector-de-promessa";
 import { fixtureDiscoveryAdapter } from "@/lib/playground/dubles/fixture-discovery-adapter";
 import { MockProposalGateway } from "@/lib/playground/dubles/mock-proposal-gateway";
+import { ehEnvelope, ler } from "@/lib/playground/orientacao-em-partes";
 import { obterPerfil } from "@/lib/playground/repo";
 import {
 	atributosSchema,
 	barrarPromessa,
+	contatoSchema,
 	corpoInvalido,
+	depsDaFonte,
+	dublesDaFilaSchema,
+	fonteDeDadosSchema,
 	guarda,
 	idSchema,
 	lerJson,
 	naoEncontrado,
 	orientacaoSchema,
+	partesSchema,
 } from "../comum";
 
 export const maxDuration = 120;
 
 const corpoSchema = z.object({
 	perfilId: z.string().uuid().optional(),
+	partes: partesSchema.optional(),
+	contato: contatoSchema.optional(),
+	fonteDeDados: fonteDeDadosSchema.default("duble"),
+	dublesDaFila: dublesDaFilaSchema.optional(),
 	atributos: atributosSchema.optional(),
 	orientacao: orientacaoSchema.optional(),
 	modo: z.enum(["antes", "depois"]),
@@ -95,9 +104,25 @@ export async function POST(req: Request) {
 			);
 		}
 		const orientacao = corpo.orientacao ?? perfil?.orientacao ?? "";
-		const barrado = barrarPromessa(orientacao);
+		const barrado = barrarPromessa(orientacao, corpo.partes);
 		if (barrado) return barrado;
-		caixa = { ...viva, texto: aplicarBloco(viva.texto, compilarPerfil({ atributos, orientacao })) };
+		if (corpo.partes || corpo.contato || ehEnvelope(orientacao)) {
+			const lida = ler(orientacao);
+			caixa = {
+				...viva,
+				texto: compilarConduta({
+					partes: corpo.partes ?? lida.partes,
+					contato: corpo.contato ?? lida.contato,
+					livre: lida.livre,
+					atributos,
+				}),
+			};
+		} else {
+			caixa = {
+				...viva,
+				texto: aplicarBloco(viva.texto, compilarPerfil({ atributos, orientacao })),
+			};
+		}
 	}
 
 	let conversationId = corpo.conversationId;
@@ -125,14 +150,7 @@ export async function POST(req: Request) {
 	const d = dublesDa(convId);
 	const run = createRunTurnLivre({
 		caixa,
-		busca: async (params) => {
-			const grupos = await d.adapter.searchGroups(params);
-			for (const gr of grupos) d.grupos.set(gr.id, gr);
-			return grupos;
-		},
-		simularCota: (params) =>
-			simularCotaDaCarta({ adapter: d.adapter, params, grupo: d.grupos.get(params.groupId) }),
-		gateway: d.gateway,
+		...depsDaFonte(corpo.fonteDeDados, d),
 		semCapturarContato: true,
 	});
 

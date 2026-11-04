@@ -1,6 +1,7 @@
 /** Prévia do diff: conduta viva × conduta resultante do perfil salvo. Não grava nada. */
 import { labelDaCaixa, lerCaixa } from "@/lib/agent/box/caixa";
-import { aplicarBloco, compilarPerfil } from "@/lib/playground/compilar-perfil";
+import { aplicarBloco, compilarConduta, compilarPerfil } from "@/lib/playground/compilar-perfil";
+import { ehEnvelope, ler } from "@/lib/playground/orientacao-em-partes";
 import { obterPerfil } from "@/lib/playground/repo";
 import { guarda, idSchema, naoEncontrado } from "../../../comum";
 
@@ -20,7 +21,11 @@ export async function GET(_req: Request, { params }: Ctx) {
 	return Response.json({
 		label,
 		viva: { versao: viva.versao, texto: viva.texto },
-		resultante: { texto: aplicarBloco(viva.texto, bloco) },
+		resultante: {
+			texto: ehEnvelope(perfil.orientacao)
+				? compilarConduta({ ...ler(perfil.orientacao), atributos: perfil.atributos })
+				: aplicarBloco(viva.texto, bloco),
+		},
 		bloco,
 	});
 }

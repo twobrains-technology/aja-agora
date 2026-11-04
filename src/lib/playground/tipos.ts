@@ -1,6 +1,11 @@
 // Contratos do playground de comportamento (D-0056). Sem dependência de banco.
 import type { ExpertiseLevel } from "@/lib/agent/personas";
 
+export type { ParteId } from "@/lib/agent/prompt-do-vendedor";
+
+export const CONTATOS_DO_PRESET = ["carta-primeiro", "telefone-antes"] as const;
+export type ContatoPreset = (typeof CONTATOS_DO_PRESET)[number];
+
 export const AGRESSIVIDADES = ["suave", "equilibrada", "insistente"] as const;
 export const PROATIVIDADES = ["baixa", "media", "alta"] as const;
 export const TECNICIDADES: readonly Tecnicidade[] = ["leigo", "neutro", "expert"];

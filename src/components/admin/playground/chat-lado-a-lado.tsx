@@ -2,17 +2,13 @@
 
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import type { AjaUIMessage } from "@/lib/chat/ui-message";
 import { detectarPromessaDeContemplacao } from "@/lib/playground/detector-de-promessa";
 import type { AtributosDoPerfil } from "@/lib/playground/tipos";
+import { aplicarEvento, estadoInicial, paraMensagem } from "./eventos-para-mensagem";
+import { PainelDeConversa } from "./painel-de-conversa";
 
 export type Modo = "antes" | "depois";
-
-export interface Bolha {
-	id: string;
-	autor: "cliente" | "vendedor";
-	texto: string;
-	erro?: boolean;
-}
 
 /** Roteiro fixo para comparar perfis sem digitar. Sem CPF; celular só o de teste. */
 export const ROTEIRO_PADRAO: readonly string[] = [
@@ -108,41 +104,21 @@ export async function lerEventos(
 	}
 }
 
-function PainelDeChat({ modo, bolhas }: { modo: Modo; bolhas: Bolha[] }) {
-	return (
-		<section
-			aria-label={`Conversa ${rotuloDeModo[modo]}`}
-			className="flex-1 min-w-0 rounded border"
-		>
-			<h3 className="border-b px-2 py-1 text-sm font-medium">{rotuloDeModo[modo]}</h3>
-			<ul className="min-h-64 space-y-2 p-2">
-				{bolhas.map((b) => (
-					<li key={b.id} className="rounded border px-2 py-1 text-sm">
-						<div className="text-xs font-medium">
-							{b.autor === "cliente" ? "Cliente" : "Vendedor"}
-							{b.erro ? " · ERRO" : ""}
-						</div>
-						{b.autor === "vendedor" && temPromessa(b.texto) && (
-							<div className="text-xs font-bold">PROMESSA DE CONTEMPLAÇÃO</div>
-						)}
-						<div className="whitespace-pre-wrap">{b.texto}</div>
-					</li>
-				))}
-			</ul>
-		</section>
-	);
-}
+export type FonteDeDados = "duble" | "bevi-dev";
 
 export function ChatLadoALado({
 	perfilId,
 	atributos,
 	orientacao,
+	fonteDeDados: fonteInicial = "duble",
 }: {
 	perfilId: string | null;
 	atributos: AtributosDoPerfil;
 	orientacao: string;
+	fonteDeDados?: FonteDeDados;
 }) {
-	const [bolhas, setBolhas] = useState<Record<Modo, Bolha[]>>({ antes: [], depois: [] });
+	const [fonte, setFonte] = useState<FonteDeDados>(fonteInicial);
+	const [bolhas, setBolhas] = useState<Record<Modo, AjaUIMessage[]>>({ antes: [], depois: [] });
 	const [texto, setTexto] = useState("");
 	const [ocupado, setOcupado] = useState(false);
 	const conversas = useRef<Record<Modo, string | undefined>>({
@@ -151,18 +127,28 @@ export function ChatLadoALado({
 	});
 	const contador = useRef(0);
 
-	const anexar = (modo: Modo, fn: (b: Bolha[]) => Bolha[]) =>
+	const anexar = (modo: Modo, fn: (b: AjaUIMessage[]) => AjaUIMessage[]) =>
 		setBolhas((s) => ({ ...s, [modo]: fn(s[modo]) }));
 
 	async function enviarUm(modo: Modo, mensagem: string) {
 		const idResp = `v-${++contador.current}`;
-		anexar(modo, (b) => [
-			...b,
-			{ id: `c-${++contador.current}`, autor: "cliente", texto: mensagem },
-		]);
-		anexar(modo, (b) => [...b, { id: idResp, autor: "vendedor", texto: "" }]);
-		const escrever = (t: string, erro = false) =>
-			anexar(modo, (b) => b.map((x) => (x.id === idResp ? { ...x, texto: t, erro } : x)));
+		const fala = {
+			id: `c-${++contador.current}`,
+			role: "user",
+			parts: [{ type: "text", text: mensagem }],
+		} as unknown as AjaUIMessage;
+		anexar(modo, (b) => [...b, fala]);
+		let estado = estadoInicial(idResp);
+		const mostrar = () => {
+			const nova = paraMensagem(estado);
+			anexar(modo, (b) =>
+				b.some((x) => x.id === idResp) ? b.map((x) => (x.id === idResp ? nova : x)) : [...b, nova],
+			);
+		};
+		const escrever = (t: string) => {
+			estado = aplicarEvento(estado, { type: "erro", error: t });
+			mostrar();
+		};
 		try {
 			const resp = await fetch("/api/admin/playground/chat", {
 				method: "POST",
@@ -172,23 +158,23 @@ export function ChatLadoALado({
 					atributos,
 					orientacao,
 					modo,
+					fonteDeDados: fonte,
 					conversationId: conversas.current[modo],
 					mensagem,
 				}),
 			});
 			if (!resp.ok) {
 				const corpo = (await resp.json().catch(() => ({}))) as { error?: string; erro?: string };
-				escrever(corpo.erro ?? corpo.error ?? `Falha ${resp.status}`, true);
+				escrever(corpo.erro ?? corpo.error ?? `Falha ${resp.status}`);
 				return;
 			}
-			let estado: EstadoDoTurno = { texto: "" };
 			await lerEventos(resp, (linha) => {
-				estado = aplicarLinha(estado, linha);
+				estado = aplicarEvento(estado, linha);
 				if (estado.conversationId) conversas.current[modo] = estado.conversationId;
-				escrever(estado.texto, estado.erro);
+				mostrar();
 			});
 		} catch (err) {
-			escrever(err instanceof Error ? err.message : "Falha de rede", true);
+			escrever(err instanceof Error ? err.message : "Falha de rede");
 		}
 	}
 
@@ -216,15 +202,30 @@ export function ChatLadoALado({
 	return (
 		<div className="space-y-2">
 			<div className="flex flex-wrap items-center gap-2 text-xs">
-				<span className="rounded border px-2 py-0.5 font-medium">Bevi: dublê</span>
+				<span className="rounded border px-2 py-0.5 font-medium">
+					{fonte === "duble" ? "Bevi: dublê" : "Bevi: dev (dados reais)"}
+				</span>
+				<label htmlFor="pg-fonte" className="font-medium">
+					Fonte dos dados:
+				</label>
+				<select
+					id="pg-fonte"
+					className="rounded border bg-background px-1 py-0.5"
+					value={fonte}
+					disabled={ocupado}
+					onChange={(e) => setFonte(e.target.value as FonteDeDados)}
+				>
+					<option value="duble">Dublê (padrão)</option>
+					<option value="bevi-dev">Bevi dev</option>
+				</select>
 				<span>
 					Duas respostas de modelo não provam diferença estatística; a medida é o relatório de
 					comparação. Se a fala trouxer celular, o motor grava contato e lead de teste.
 				</span>
 			</div>
 			<div className="flex gap-2">
-				<PainelDeChat modo="antes" bolhas={bolhas.antes} />
-				<PainelDeChat modo="depois" bolhas={bolhas.depois} />
+				<PainelDeConversa modo="antes" mensagens={bolhas.antes} />
+				<PainelDeConversa modo="depois" mensagens={bolhas.depois} />
 			</div>
 			<form
 				className="flex gap-2"
