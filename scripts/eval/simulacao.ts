@@ -50,7 +50,7 @@ async function main() {
 			return {
 				perfil,
 				dados: perfil.dados,
-				modo: "depois" as const,
+				modo: "antes" as const,
 				aoTurno: (t) => console.log(`[${id}] turno ${t.indice + 1}: ${t.cliente.texto}`),
 				aoEstado: (e) => console.log(`[${id}] estado: ${e}`),
 			};

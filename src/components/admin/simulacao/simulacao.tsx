@@ -86,7 +86,7 @@ export function Simulacao() {
 			const opcoes: OpcoesDaSimulacao = {
 				perfil,
 				dados: dadosEscolhidos ?? perfil.dados,
-				modo: "depois",
+				modo: "antes",
 				sinal: ac.signal,
 				aoEstado: (e) => setEstados((s) => ({ ...s, [id]: e })),
 				aoTurno: (t) => setVivos((v) => ({ ...v, [id]: [...(v[id] ?? []), t] })),

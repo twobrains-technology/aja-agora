@@ -46,12 +46,17 @@ export type OpcoesDaSimulacao = {
 	aoEstado?: (e: EstadoDeExecucao) => void;
 };
 
+/** A rota do chat exige perfilId para "depois": sem perfil do playground, vale a conduta viva. */
+export function modoEfetivo(o: OpcoesDaSimulacao): ModoDeConduta {
+	return o.modo === "depois" && !o.perfilDoPlaygroundId ? "antes" : o.modo;
+}
+
 export function corpoDoChat(
 	o: OpcoesDaSimulacao,
 	conversationId: string | null,
 	mensagem: string,
 ): Record<string, unknown> {
-	const corpo: Record<string, unknown> = { modo: o.modo, mensagem };
+	const corpo: Record<string, unknown> = { modo: modoEfetivo(o), mensagem };
 	if (conversationId) corpo.conversationId = conversationId;
 	if (o.perfilDoPlaygroundId) corpo.perfilId = o.perfilDoPlaygroundId;
 	const { dados } = o;
@@ -210,6 +215,11 @@ export async function rodarSimulacao(
 
 	const marcacoes = marcar();
 	const achados = [ACHADO_FINISH_REASON];
+	if (modoEfetivo(o) !== o.modo) {
+		achados.push(
+			"MODO: depois sem perfil do playground; a rota exige perfilId, então rodou a conduta viva (antes)",
+		);
+	}
 	if (!turnos.some((t) => t.vendedor.dadosEcoados !== null)) {
 		achados.push(
 			`DADOS: NÃO CONFIRMADOS PELO SERVIDOR (pedido: fonte ${dados.fonteDeDados}, catálogo ${dados.catalogo}, fila ${dados.fila.atendentes} atendentes${dados.fila.horaFixa ? ` às ${dados.fila.horaFixa}` : ""})`,
@@ -219,7 +229,7 @@ export async function rodarSimulacao(
 	const resultado: ResultadoDoPerfil = {
 		perfilId: perfil.id,
 		dados,
-		modo: o.modo,
+		modo: modoEfetivo(o),
 		turnos,
 		marcacoes,
 		parada,

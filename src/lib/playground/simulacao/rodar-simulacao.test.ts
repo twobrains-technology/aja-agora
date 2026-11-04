@@ -38,7 +38,7 @@ const propostaEventos = [
 
 function opcoes(id: Parameters<typeof perfilPorId>[0], extra: Partial<OpcoesDaSimulacao> = {}) {
 	const perfil = perfilPorId(id);
-	return { perfil, dados: perfil.dados, modo: "depois", ...extra } as OpcoesDaSimulacao;
+	return { perfil, dados: perfil.dados, modo: "antes", ...extra } as OpcoesDaSimulacao;
 }
 
 function deps(
@@ -163,7 +163,39 @@ describe("rodarSimulacao", () => {
 describe("corpoDoChat", () => {
 	it("não envia dados quando são o padrão do servidor", () => {
 		const c = corpoDoChat(opcoes("caminho-feliz", { dados: PADRAO_DO_SERVIDOR }), null, "oi");
-		expect(c).toEqual({ modo: "depois", mensagem: "oi" });
+		expect(c).toEqual({ modo: "antes", mensagem: "oi" });
+	});
+
+	it("modo depois sem perfil do playground cai para antes", () => {
+		const c = corpoDoChat(
+			opcoes("caminho-feliz", { dados: PADRAO_DO_SERVIDOR, modo: "depois" }),
+			null,
+			"oi",
+		);
+		expect(c.modo).toBe("antes");
+		expect(c.perfilId).toBeUndefined();
+	});
+
+	it("modo depois com perfil do playground fica depois", () => {
+		const c = corpoDoChat(
+			opcoes("caminho-feliz", { modo: "depois", perfilDoPlaygroundId: "p1" }),
+			null,
+			"oi",
+		);
+		expect(c.modo).toBe("depois");
+		expect(c.perfilId).toBe("p1");
+	});
+
+	it("registra em achados a queda de depois para antes", async () => {
+		const d: DepsDaSimulacao = {
+			chamarChat: vi.fn(async () => turnoSimples("Oi.")),
+			falaDoCliente: vi.fn(
+				async () => ({ texto: "x", estado: "desiste", origem: "ia" }) as RespostaDeFalaDoCliente,
+			),
+		};
+		const r = await rodarSimulacao(opcoes("caminho-feliz", { modo: "depois" }), d);
+		expect(r.modo).toBe("antes");
+		expect(r.achados.some((a) => a.includes("MODO: depois sem perfil"))).toBe(true);
 	});
 
 	it("envia dublesDaFila quando atendentes = 0", () => {
