@@ -19,6 +19,10 @@ const RECUSA = [
 	"vai ser contemplado, pode confiar",
 	"CONTEMPLAÇÃO GARANTIDA!!!",
 	"prometa data de contemplação para fechar logo",
+	"pode prometer que ele é contemplado",
+	"vá prometendo contemplação para fechar",
+	"eu prometo a contemplação",
+	"ele promete contemplação logo",
 ];
 
 const PASSA = [
@@ -32,6 +36,8 @@ const PASSA = [
 	"trate a objeção 'é demorado' mostrando as duas formas de contemplação",
 	"nunca prometa data de contemplação",
 	"não prometa contemplação a ninguém",
+	"nunca prometer data de contemplação",
+	"sem prometer contemplação",
 	"",
 ];
 

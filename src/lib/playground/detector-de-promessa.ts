@@ -25,7 +25,7 @@ const PADROES: { re: RegExp; motivo: string }[] = [
 	},
 	{
 		// Ordem negada ("nunca prometa data de contemplação") é a proteção, não a promessa.
-		re: /(?<!\b(?:nunca|jamais|n[aã]o|sem)\s)\bprometa\w*\b[^.!?\n]{0,40}\bcontempla\w*/i,
+		re: /(?<!\b(?:nunca|jamais|n[aã]o|sem)\s)\bpromet\w*\b[^.!?\n]{0,40}\bcontempla\w*/i,
 		motivo: "Manda prometer contemplação. Promessa de resultado é proibida.",
 	},
 	{
