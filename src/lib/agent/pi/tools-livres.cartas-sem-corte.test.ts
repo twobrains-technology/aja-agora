@@ -243,3 +243,15 @@ describe("o fecho leva o id da carta que o cliente viu (caso Renan, U1)", () => 
 		expect(input.quotaIdVista).toBe("quota-vista-80");
 	});
 });
+
+describe("ids sem número completo são recusados, não descartados em silêncio", () => {
+	it("recusa citando os ids descartados e não emite card menor", async () => {
+		const ctx = novoCtx();
+		const f = ferramentas(ctx, [grupo(1), grupo(2, { monthlyPayment: 0 }), grupo(3)]);
+		await f.buscar();
+		const saida = await f.mostrar({ ids: ["g1", "g2", "g3"] });
+		expect(saida).toContain("g2");
+		expect(saida).not.toContain("g1\"");
+		expect(ctx.cards.some((c) => c.type === "comparison_table")).toBe(false);
+	});
+});

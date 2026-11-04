@@ -580,11 +580,14 @@ export const MONTADORES_DE_CARD: Record<TipoDeFato, MontadorDeCard> = {
 		const payload = buildComparisonTableFromRevealGroups(index, ctx.logos) as {
 			groups?: unknown[];
 		};
-		if (!Array.isArray(payload.groups) || payload.groups.length === 0) {
+		const entraram = new Set(
+			(Array.isArray(payload.groups) ? payload.groups : []).map((g) => (g as { id?: string }).id),
+		);
+		const descartados = pedidos.filter((id) => !entraram.has(id));
+		if (descartados.length > 0) {
 			return {
 				ok: false,
-				motivo:
-					"as cartas pedidas não têm número completo para a tabela — escolha outras ou busque de novo.",
+				motivo: `as cartas ${descartados.map((id) => `"${id}"`).join(", ")} não têm número completo para a tabela — tire-as de ids ou escolha outras, e chame de novo.`,
 			};
 		}
 		return { ok: true, card: { type: "comparison_table", payload } };
