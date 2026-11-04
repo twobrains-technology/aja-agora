@@ -65,7 +65,11 @@ export function aplicarLinha(estado: EstadoDoTurno, linha: Record<string, unknow
 			};
 		}
 		case "erro":
-			return { ...estado, texto: typeof linha.error === "string" ? linha.error : "Erro", erro: true };
+			return {
+				...estado,
+				texto: typeof linha.error === "string" ? linha.error : "Erro",
+				erro: true,
+			};
 		default:
 			return estado;
 	}
