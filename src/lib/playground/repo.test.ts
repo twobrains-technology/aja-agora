@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { PROMPT_DO_VENDEDOR } from "@/lib/agent/prompt-do-vendedor";
+import { serializar } from "./orientacao-em-partes";
 import {
 	apagarPerfil,
 	atualizarPerfil,
@@ -51,6 +53,28 @@ describe("repo do playground", () => {
 		expect(h[0].salvoPor).toBe("b@x.test");
 		expect(h[0].blocoCompilado).toContain("playground:inicio");
 		expect(h[0].caixaVersao).toBeNull();
+	});
+
+	it("envelope v2 grava a conduta compilada; texto puro segue gravando só o bloco", async () => {
+		const orientacao = serializar({
+			partes: { descoberta: "DESC" },
+			contato: "carta-primeiro",
+			livre: "",
+		});
+		const p = await criarPerfil({ nome: "t", atributos: A, orientacao, salvoPor: null });
+		criados.push(p.id);
+		const [v] = await historicoDoPerfil(p.id);
+		expect(v.blocoCompilado).toContain("DESC");
+		expect(v.blocoCompilado.length).toBeGreaterThan(PROMPT_DO_VENDEDOR.length / 2);
+		const q = await criarPerfil({
+			nome: "t",
+			atributos: A,
+			orientacao: "seja breve",
+			salvoPor: null,
+		});
+		criados.push(q.id);
+		const [w] = await historicoDoPerfil(q.id);
+		expect(w.blocoCompilado.startsWith("<!-- playground:inicio -->")).toBe(true);
 	});
 
 	it("carimba a versão da caixa só na linha publicada; inexistente devolve null", async () => {

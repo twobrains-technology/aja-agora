@@ -3,8 +3,15 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { playgroundPerfilVersoes, playgroundPerfis } from "@/db/schema";
-import { compilarPerfil } from "./compilar-perfil";
+import { compilarConduta, compilarPerfil } from "./compilar-perfil";
+import { ehEnvelope, ler } from "./orientacao-em-partes";
 import type { AtributosDoPerfil, PerfilDoPlayground, VersaoDoPerfil } from "./tipos";
+
+/** Envelope v2: conduta compilada do perfil. Orientação em texto puro (legado): só o bloco, como antes. */
+function blocoCompilado(entrada: { atributos: AtributosDoPerfil; orientacao: string }): string {
+	if (!ehEnvelope(entrada.orientacao)) return compilarPerfil(entrada);
+	return compilarConduta({ ...ler(entrada.orientacao), atributos: entrada.atributos });
+}
 
 export class PerfilVersionConflictError extends Error {
 	constructor(
@@ -64,7 +71,7 @@ export async function criarPerfil(entrada: {
 			versao: 1,
 			atributos: entrada.atributos,
 			orientacao: entrada.orientacao,
-			blocoCompilado: compilarPerfil(entrada),
+			blocoCompilado: blocoCompilado(entrada),
 			salvoPor: entrada.salvoPor,
 		});
 		return paraPerfil(linha);
@@ -104,7 +111,7 @@ export async function atualizarPerfil(
 			versao: nova,
 			atributos: entrada.atributos,
 			orientacao: entrada.orientacao,
-			blocoCompilado: compilarPerfil(entrada),
+			blocoCompilado: blocoCompilado(entrada),
 			salvoPor: entrada.salvoPor,
 		});
 		return paraPerfil(linha);
