@@ -79,3 +79,12 @@ describe("expectAnyArtifact + orAgentTextMatches: o WhatsApp pedido em frase cum
 		expect(v.failures[0]).toMatch(/esperava UM de \[whatsapp_optin\]/);
 	});
 });
+
+describe("expectNonEmptyAgentText", () => {
+	const base = { userMsg: "u", artifactTypes: [], httpStatus: 200, error: null };
+	it("fala vazia reprova; com texto passa", () => {
+		const exp = { turns: [{ expectNonEmptyAgentText: true }] };
+		expect(checkScenario([{ ...base, agentText: "  " }], exp).pass).toBe(false);
+		expect(checkScenario([{ ...base, agentText: "Oi" }], exp).pass).toBe(true);
+	});
+});

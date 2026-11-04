@@ -1,6 +1,6 @@
 {
 	"cenario": "golden-pede-humano",
-	"descricao": "Rubrica missedHandoff: pedido explícito de atendente humano gera handoff (artifact), não insistência do bot. Migrado em 27/10/2026: o motor livre não emite mais `gate:<x>` (nenhum escritor de `data-gate` em `src/`), então o passo 'categoria escolhida → nome capturado' passa a ser medido pelo artifact `tool:salvar_nome` do turno em que a pessoa diz o nome — mesmo critério, ancorado no que o motor emite hoje.",
+	"descricao": "Rubrica missedHandoff: pedido explícito de atendente humano chama a FILA de vendedores (`tool:falar_com_humano`, sem card `handoff`, sem promessa de prazo) e o agente segue conduzindo; a mesa (handoff) só com proposta ou pedido de fechar (P5/P8, call 04/11). Migrado em 27/10/2026: o motor livre não emite mais `gate:<x>` (nenhum escritor de `data-gate` em `src/`), então o passo 'categoria escolhida → nome capturado' passa a ser medido pelo artifact `tool:salvar_nome` do turno em que a pessoa diz o nome — mesmo critério, ancorado no que o motor emite hoje.",
 	"caRefs": ["rubrica missedHandoff", "CA-33"],
 	"asserts": {
 		"turns": [
@@ -12,7 +12,9 @@
 				"expectArtifacts": ["tool:salvar_nome"]
 			},
 			{
-				"expectArtifacts": ["handoff"]
+				"expectArtifacts": ["tool:falar_com_humano"],
+				"expectNonEmptyAgentText": true,
+				"forbidArtifacts": ["handoff"]
 			}
 		]
 	},
@@ -39,7 +41,7 @@
 		{
 			"type": "text",
 			"text": "Olha, prefiro falar com um atendente humano de verdade, pode me transferir?",
-			"expect": "handoff sugerido/executado (artifact handoff) — não insiste em continuar sozinho."
+			"expect": "chama a fila (tool:falar_com_humano), responde no mesmo turno, sem card handoff."
 		}
 	]
 }

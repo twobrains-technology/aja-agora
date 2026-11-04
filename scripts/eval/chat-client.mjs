@@ -78,6 +78,7 @@ export async function sendTurn(baseUrl, conversationId, turn, opts = {}) {
 		langfuseTraceId: null,
 		error: null,
 		httpStatus: null,
+		retryAfterMs: null,
 		elapsedMs: 0,
 		rawEvents: [],
 	};
@@ -90,6 +91,8 @@ export async function sendTurn(baseUrl, conversationId, turn, opts = {}) {
 			signal: ctrl.signal,
 		});
 		result.httpStatus = res.status;
+		const ra = Number.parseFloat(res.headers.get("retry-after") ?? "");
+		result.retryAfterMs = Number.isFinite(ra) ? ra * 1000 : null;
 		result.conversationId = res.headers.get("x-conversation-id") ?? conversationId;
 
 		if (!res.ok || !res.body) {

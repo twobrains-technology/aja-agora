@@ -78,6 +78,8 @@ export type GoldenTurnAsserts = {
 	 * WhatsApp sai UMA vez por conversa (ordem do líder, 28/10 05:05): quando já foi à tela, o
 	 * contato é pedido em uma frase — que é o outro jeito legítimo do P6. */
 	orAgentTextMatches?: string[];
+	/** A fala do agente no turno não pode vir vazia (o agente segue conduzindo). */
+	expectNonEmptyAgentText?: boolean;
 	/** Nenhum pode aparecer. */
 	forbidArtifacts?: string[];
 	/** Report de 05/08 ("Está repetindo grupos iguais"): duas ofertas com a MESMA
@@ -255,6 +257,9 @@ export function checkScenario(
 					`${rotulo}: esperava UM de [${asserts.expectAnyArtifact.join(", ")}], veio [${t.artifactTypes.join(", ")}]`,
 				);
 			}
+		}
+		if (asserts.expectNonEmptyAgentText && t.agentText.trim() === "") {
+			failures.push(`${rotulo}: fala do agente VAZIA — esperava resposta no mesmo turno`);
 		}
 		for (const proibido of asserts.forbidArtifacts ?? []) {
 			if (t.artifactTypes.includes(proibido)) {

@@ -34,7 +34,14 @@ import {
 } from "@/lib/eval/golden-asserts";
 
 import { DEFAULT_BASE_URL, sendTurn } from "./eval/chat-client.mjs";
-import { escolherSonda, motivoDaSondaPeloApp, type Sonda } from "./eval-run-sonda";
+import {
+	criarSessaoSimulada,
+	enviarTurnoComRetry,
+	escolherSonda,
+	loginAdmin,
+	motivoDaSondaPeloApp,
+	type Sonda,
+} from "./eval-run-sonda";
 import { shaDoCodigo } from "./eval-sha";
 
 const BASE = DEFAULT_BASE_URL as string;
@@ -46,6 +53,8 @@ type Turn = { type: string; text?: string; action?: object; label?: string; repe
 type ItemOutput = {
 	skipped?: string;
 	conversationId?: string;
+	/** Esgotou o reenvio em 429: transporte, não conduta. */
+	inconclusivo?: boolean;
 	turns?: Array<GoldenTurnResult & { elapsedMs: number }>;
 };
 
@@ -98,28 +107,17 @@ async function probeLlmPeloApp(): Promise<{ ok: boolean; reason?: string }> {
 	}
 }
 
-/** Login admin + criação de sessão de simulador (conversa is_simulated). */
+let cookieAdmin: string | null = null;
+
+/** Login admin UMA vez por rodada (o Better Auth da dev limita o sign-in) + sessão de simulador (conversa is_simulated). */
 async function createSimulatedConversation(): Promise<string> {
-	const email = process.env.ADMIN_EMAIL;
-	const password = process.env.ADMIN_PASSWORD;
-	if (!email || !password) throw new Error("ADMIN_EMAIL/ADMIN_PASSWORD ausentes no ambiente");
-	// `Origin` explícito: fetch server-side não manda Origin e o Better Auth
-	// recusa POST sem origem confiável (403) — descoberto no smoke do runner.
-	const login = await fetch(`${BASE}/api/auth/sign-in/email`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json", Origin: BASE },
-		body: JSON.stringify({ email, password }),
-	});
-	if (!login.ok) throw new Error(`login admin falhou: HTTP ${login.status}`);
-	const cookie = login.headers.getSetCookie?.().join("; ") ?? login.headers.get("set-cookie") ?? "";
-	const res = await fetch(`${BASE}/api/admin/simulator/sessions`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json", Cookie: cookie, Origin: BASE },
-		body: JSON.stringify({ channel: "web" }),
-	});
-	if (!res.ok) throw new Error(`criação de sessão de simulador falhou: HTTP ${res.status}`);
-	const data = (await res.json()) as { conversationId: string };
-	return data.conversationId;
+	if (cookieAdmin === null) {
+		const email = process.env.ADMIN_EMAIL;
+		const password = process.env.ADMIN_PASSWORD;
+		if (!email || !password) throw new Error("ADMIN_EMAIL/ADMIN_PASSWORD ausentes no ambiente");
+		cookieAdmin = await loginAdmin(BASE, email, password);
+	}
+	return criarSessaoSimulada(BASE, cookieAdmin);
 }
 
 function gitShaCurto(): string {
@@ -183,12 +181,16 @@ function lerGolden(): Golden[] {
 async function rodarCenario(g: Golden): Promise<ItemOutput> {
 	const conversationId = await createSimulatedConversation();
 	const turns: NonNullable<ItemOutput["turns"]> = [];
+	const out: ItemOutput = { conversationId, turns };
 	for (const turn of g.turns) {
 		const repeat = turn.repeat ?? 1;
 		for (let i = 0; i < repeat; i++) {
 			const { text: expanded } = expandEnv(JSON.stringify(turn));
 			const t = JSON.parse(expanded) as Turn;
-			const r = await sendTurn(BASE, conversationId, t, { timeoutMs: TURN_TIMEOUT_MS });
+			const { r, inconclusivo } = await enviarTurnoComRetry(() =>
+				sendTurn(BASE, conversationId, t, { timeoutMs: TURN_TIMEOUT_MS }),
+			);
+			if (inconclusivo) out.inconclusivo = true;
 			turns.push({
 				userMsg: r.userMsg,
 				agentText: r.agentText,
@@ -201,8 +203,9 @@ async function rodarCenario(g: Golden): Promise<ItemOutput> {
 			});
 			if (r.error) break;
 		}
+		if (out.inconclusivo) break;
 	}
-	return { conversationId, turns };
+	return out;
 }
 
 async function main(): Promise<void> {
@@ -233,9 +236,10 @@ async function main(): Promise<void> {
 	let pass = 0;
 	let fail = 0;
 	let skipEnv = 0;
+	let inconclusivos = 0;
 	const relatorio: Array<{
 		cenario: string;
-		status: "pass" | "fail" | "skip-env" | "erro";
+		status: "pass" | "fail" | "skip-env" | "erro" | "inconclusivo";
 		turnos: number;
 		durMs: number;
 		falhas: string[];
@@ -268,6 +272,20 @@ async function main(): Promise<void> {
 		}
 
 		const turns = out.turns ?? [];
+		if (out.inconclusivo) {
+			inconclusivos++;
+			console.log(
+				`⚠️  ${g.cenario} — INCONCLUSIVO (HTTP 429 persistente após reenvios; transporte, não conduta)`,
+			);
+			relatorio.push({
+				cenario: g.cenario,
+				status: "inconclusivo",
+				turnos: turns.length,
+				durMs: 0,
+				falhas: [],
+			});
+			continue;
+		}
 		const verdict = checkScenario(turns, g.asserts);
 		const durMs = turns.reduce((acc, t) => acc + (t.elapsedMs ?? 0), 0);
 		relatorio.push({
@@ -298,7 +316,9 @@ async function main(): Promise<void> {
 	}
 
 	console.log("──────────────────────────────────────────────");
-	console.log(`${pass} PASS · ${fail} FAIL · ${skipEnv} SKIPPED (env)`);
+	console.log(
+		`${pass} PASS · ${fail} FAIL · ${skipEnv} SKIPPED (env) · ${inconclusivos} INCONCLUSIVO (429)`,
+	);
 	if (skipEnv > 0) {
 		console.log(
 			"⚠️  cenários pulados por env ausente — o gate NÃO cobre a jornada completa até E2E_TEST_CPF/E2E_TEST_CELULAR existirem.",
@@ -323,6 +343,7 @@ async function main(): Promise<void> {
 					pass,
 					fail,
 					skipEnv,
+					inconclusivos,
 					cenarios: relatorio,
 				},
 				null,
@@ -337,6 +358,10 @@ async function main(): Promise<void> {
 	if (fail > 0) {
 		console.log("GATE REPROVADO — não promova a caixa para a label de produção.");
 		process.exit(1);
+	}
+	if (inconclusivos > 0) {
+		console.log("⚠️  cenários INCONCLUSIVOS por 429 — gate não verde (inconclusivo ≠ verde).");
+		process.exit(3);
 	}
 	if (pass === 0) {
 		console.log("⚠️  NENHUM cenário rodou — gate INCONCLUSIVO (inconclusivo ≠ verde).");
