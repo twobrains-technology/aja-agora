@@ -21,6 +21,7 @@ import type {
 	SimulationResult,
 	UploadDocumentInput,
 } from "@/lib/adapters/proposal-gateway";
+import { FIXTURE_OFFERS, FIXTURE_OFFERS_IMOVEL } from "./fixture-discovery-adapter";
 
 const SEGMENTS: BeviSegment[] = [
 	{ segmento: "AUTOS", segmentoLabel: "AUTOS" },
@@ -30,6 +31,11 @@ const SEGMENTS: BeviSegment[] = [
 	{ segmento: "PESADOS", segmentoLabel: "PESADOS" },
 	{ segmento: "SERVICOS", segmentoLabel: "SERVIÇOS" },
 ];
+
+/** Catálogo do dublê = o do discovery dublê: o `quotaId` de cada oferta é o da carta que
+ * o `fixtureDiscoveryAdapter` mostra (mesmo segmento), senão "carta vista" nunca casa. */
+export const quotaIdsDoCatalogo = (segmento: string): string[] =>
+	(segmento === "IMOVEL" ? FIXTURE_OFFERS_IMOVEL : FIXTURE_OFFERS).map((o) => o.quotaId);
 
 const ADMINS = ["ANCORA", "RODOBENS", "ITAU", "CANOPUS", "BANCO DO BRASIL"];
 // prazos típicos por segmento (meses) — só pra gerar parcela coerente no mock
@@ -100,6 +106,7 @@ export class MockProposalGateway implements ProposalGateway {
 		const embutidoPct =
 			input.lanceEmbutido && input.lanceEmbutido !== "nenhum" ? Number(input.lanceEmbutido) : 0;
 
+		const quotaIds = quotaIdsDoCatalogo(input.segmento);
 		const offers: PartnerOffer[] = ADMINS.slice(0, 3).map((admin, i) => {
 			const valorCarta = Math.round(targetCredit * (0.9 + i * 0.12));
 			const grossParcela = (valorCarta * 1.18) / term; // ~18% taxa adm diluída
@@ -113,7 +120,7 @@ export class MockProposalGateway implements ProposalGateway {
 				valorCarta,
 				parcela,
 				taxaContemplacao: 0.6 - i * 0.08,
-				quotaId: nextId("quota"),
+				quotaId: quotaIds[i] ?? nextId("quota"),
 			};
 		});
 		const expiresAt = new Date((this.opts.now?.() ?? mockNow()) + 30 * 60_000).toISOString();
