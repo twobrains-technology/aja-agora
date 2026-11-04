@@ -10,6 +10,7 @@ import { COOKIE_DO_PERIODO, diasDoPeriodo } from "@/lib/admin/periodo";
 import { resolverPeriodoDaRequisicao } from "@/lib/admin/periodo-da-requisicao";
 import type { Role } from "@/lib/admin/role-scope";
 import { auth } from "@/lib/auth";
+import { isPlaygroundEnabled } from "@/lib/playground/ambiente";
 
 export default async function AdminDashboardLayout({ children }: { children: React.ReactNode }) {
 	// O papel vem do SERVIDOR pro menu não oferecer porta que o `proxy.ts` vai
@@ -28,7 +29,7 @@ export default async function AdminDashboardLayout({ children }: { children: Rea
 
 	return (
 		<SidebarProvider>
-			<AppSidebar role={role} />
+			<AppSidebar role={role} playgroundHabilitado={isPlaygroundEnabled()} />
 			<SidebarInset className="overflow-x-hidden">
 				<AdminHeader />
 				<div className="mx-auto w-full max-w-7xl flex-1 overflow-x-auto px-4 py-6 sm:px-6">
