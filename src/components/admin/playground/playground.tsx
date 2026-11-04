@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { detectarPromessaDeContemplacao } from "@/lib/playground/detector-de-promessa";
+import { ler } from "@/lib/playground/orientacao-em-partes";
 import type { AtributosDoPerfil } from "@/lib/playground/tipos";
 import { ChatLadoALado } from "./chat-lado-a-lado";
 import { ConfirmarPublicacao } from "./confirmar-publicacao";
@@ -94,8 +95,11 @@ export function Playground() {
 	async function salvar() {
 		setErro(null);
 		setAviso(null);
-		const det = detectarPromessaDeContemplacao(orientacao);
-		if (!det.ok) return setErro(det.motivo);
+		const em = ler(orientacao);
+		for (const texto of [...Object.values(em.partes), em.livre]) {
+			const det = detectarPromessaDeContemplacao(texto);
+			if (!det.ok) return setErro(det.motivo);
+		}
 		const corpo = JSON.stringify({ nome, atributos, orientacao, versao });
 		const cabecalho = { "Content-Type": "application/json" };
 		if (!perfilId) {
