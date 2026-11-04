@@ -1,0 +1,53 @@
+{
+  "suave-formal-leigo": {
+    "perfilId": "9d3b7eef-3343-4219-8aa8-e66b193e3649",
+    "atributos": {
+      "agressividade": "suave",
+      "proatividade": "baixa",
+      "tecnicidade": "leigo",
+      "tom": "formal"
+    },
+    "turnos": 5,
+    "baloes": 8,
+    "baloesPorTurno": 1.6,
+    "tamanhoMedioDoBalaoEmCaracteres": 115,
+    "perguntasPorMensagem": 0.6,
+    "cardsUsados": [
+      "comparison_table",
+      "quick_reply",
+      "quick_reply",
+      "quick_reply",
+      "financing_comparison",
+      "quick_reply",
+      "quick_reply"
+    ],
+    "turnosComCard": 5,
+    "promessasDeContemplacao": 0
+  },
+  "insistente-coloquial-expert": {
+    "perfilId": "70f85758-9366-4733-9951-88ee8a6cf592",
+    "atributos": {
+      "agressividade": "insistente",
+      "proatividade": "alta",
+      "tecnicidade": "expert",
+      "tom": "coloquial"
+    },
+    "turnos": 5,
+    "baloes": 10,
+    "baloesPorTurno": 2,
+    "tamanhoMedioDoBalaoEmCaracteres": 116,
+    "perguntasPorMensagem": 0.8,
+    "cardsUsados": [
+      "quick_reply",
+      "comparison_table",
+      "quick_reply",
+      "quick_reply",
+      "financing_comparison",
+      "quick_reply",
+      "decision_prompt",
+      "quick_reply"
+    ],
+    "turnosComCard": 5,
+    "promessasDeContemplacao": 0
+  }
+}
