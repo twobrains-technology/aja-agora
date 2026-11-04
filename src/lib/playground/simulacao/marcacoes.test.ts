@@ -104,6 +104,31 @@ describe("pedidoRepetido", () => {
 		]);
 		expect(m.status).toBe("LIMPA");
 	});
+	it("LIMPA: afirma parcela ('ficaram abaixo dos seus 1.300') sem pedir de novo", () => {
+		const m = pedidoRepetido([
+			turno(0, { cliente: "oi", texto: "Qual parcela cabe no seu bolso?" }),
+			turno(1, {
+				cliente: "900 tá ótimo",
+				texto: "Ótimo. Todas as parcelas ficaram abaixo dos seus 1.300.",
+			}),
+		]);
+		expect(m.status).toBe("LIMPA");
+	});
+	it("ACIONADA: pede a parcela de novo depois da resposta", () => {
+		const m = pedidoRepetido([
+			turno(0, { cliente: "oi", texto: "Qual parcela cabe no seu bolso?" }),
+			turno(1, { cliente: "900 tá ótimo", texto: "Ótimo. E qual parcela você paga hoje?" }),
+		]);
+		expect(m.status).toBe("ACIONADA");
+		expect(m.ocorrencias[0].turno).toBe(1);
+	});
+	it("ACIONADA: imperativo de pedido ('me passa a parcela') repete", () => {
+		const m = pedidoRepetido([
+			turno(0, { cliente: "oi", texto: "Me passa a parcela." }),
+			turno(1, { cliente: "900", texto: "Fechado. Me manda a parcela da carta de novo." }),
+		]);
+		expect(m.status).toBe("ACIONADA");
+	});
 });
 
 describe("cardQueNaoApareceu", () => {

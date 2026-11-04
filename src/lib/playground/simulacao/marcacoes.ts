@@ -17,7 +17,12 @@
 //  · chamou-fila (INFORMATIVA): tool-call `falar_com_humano`; o veredito decide se era esperado.
 //  · falou-prazo (DEFEITO): HEURÍSTICA — P8 proíbe prometer prazo de atendimento.
 
-import { avaliarConversa, type TurnoDeConversa } from "@/lib/agent/pi/eval/golden";
+import {
+	avaliarConversa,
+	type Slot,
+	slotsPedidos,
+	type TurnoDeConversa,
+} from "@/lib/agent/pi/eval/golden";
 import type {
 	ContextoDeMarcacao,
 	DadosDaSimulacao,
@@ -140,10 +145,34 @@ function conversaDe(t: TurnoDaSimulacao[], conhecidos: number[] = []): TurnoDeCo
 const turnoDaPosicao = (t: TurnoDaSimulacao[], pos: number): number =>
 	t[Math.floor(pos / 2)]?.indice ?? Math.floor(pos / 2);
 
+// Falso positivo do `pedido-repetido` (golden.ts): `slotsPedidos` casa o slot em qualquer
+// frase, inclusive quando o agente só REafirma um valor ("as parcelas ficaram abaixo dos seus
+// 1.300") sem pedir nada. A marcação só vale pedido: frase terminada em "?" com o slot, ou
+// imperativo de pedido. A frase só declarativa não pede — e não acusa.
+const PERGUNTA_OU_IMPERATIVO = /\?|\bme\s+(?:passa|diz|manda|confirma)\b/i;
+
+function slotPerguntado(texto: string, slot: Slot): boolean {
+	return texto
+		.split(/(?<=[.!?…])\s+/)
+		.some((frase) => slotsPedidos(frase).includes(slot) && PERGUNTA_OU_IMPERATIVO.test(frase));
+}
+
 export function pedidoRepetido(t: TurnoDaSimulacao[]): Marcacao {
 	const oc = avaliarConversa(conversaDe(t))
 		.filter((a) => a.regra === "pedido-repetido")
-		.map((a) => ({ turno: turnoDaPosicao(t, a.turno), evidencia: corto(a.evidencia) }));
+		.map((a) => ({
+			achado: a,
+			turno: turnoDaPosicao(t, a.turno),
+			evidencia: corto(a.evidencia),
+		}))
+		// evidencia é `${slot}: …`; o nome do slot vem antes do primeiro ":".
+		.filter((x) => {
+			const l = t.find((y) => y.indice === x.turno);
+			if (!l) return true;
+			const slot = x.achado.evidencia.slice(0, x.achado.evidencia.indexOf(":")) as Slot;
+			return slotPerguntado(textoDoVendedor(l.vendedor), slot);
+		})
+		.map(({ turno, evidencia }) => ({ turno, evidencia }));
 	return montar("pedido-repetido", oc);
 }
 
