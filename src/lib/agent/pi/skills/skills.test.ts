@@ -47,9 +47,22 @@ describe("skills do vendedor", () => {
 		expect(texto).toMatch(/whatsapp_optin/);
 	});
 
-	it("buscar-cartas manda comentar só a recomendada, sem relistar o card", () => {
+	it("buscar-cartas manda chamar mostrar_card com ids e comentar só a recomendada", () => {
 		const texto = skillsParaPrompt();
-		expect(texto).toMatch(/JÁ\s+ESTÃO NA TELA/);
+		expect(texto).not.toMatch(/aparecem na tela sozinhas/i);
+		expect(texto).not.toMatch(/JÁ\s+ESTÃO NA TELA/);
+		expect(texto).toMatch(/mostrar_card/);
+		expect(texto).toMatch(/comparison_table/);
+		expect(texto).toMatch(/ids/);
 		expect(texto).toMatch(/2 a\s+3 frases/);
+		expect(texto).toMatch(/n[ãa]o\s+(liste|relist)/i);
+	});
+
+	it("perguntar-com-opcoes: comparison_table só sai quando pedida, sem teto numérico", () => {
+		const texto = skillsParaPrompt();
+		expect(texto).not.toMatch(/Já aparece sozinha/i);
+		expect(texto).not.toMatch(/Teto de 4 op/i);
+		expect(texto).not.toMatch(/de 2 a 4 respostas/i);
+		expect(texto).toMatch(/payload\.ids/);
 	});
 });

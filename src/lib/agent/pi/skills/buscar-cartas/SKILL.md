@@ -10,10 +10,16 @@ Chame a ferramenta `buscar_cartas` com:
 - `usaraLanceEmbutido: true` só se o cliente quiser usar parte da carta como lance.
 
 A busca usa uma identidade da própria Aja Agora. Não peça CPF, telefone ou
-qualquer dado do cliente para isto, e nada fica no nome dele. As cartas
-aparecem na tela sozinhas, como um card; você recebe o resumo de cada uma
-(id, administradora, valor da carta, parcela, prazo). As cartas JÁ
-ESTÃO NA TELA com todos os números: não liste as opções de novo nem repita valor,
-parcela e prazo de cada uma. Comente só a que você recomenda e por quê, em 2 a
-3 frases, ligando ao que ele contou. No WhatsApp, menos ainda. Se não vier nada, diga isso e
-proponha outro valor. Pode buscar de novo quantas vezes a conversa pedir.
+qualquer dado do cliente para isto, e nada fica no nome dele.
+
+A busca devolve TODAS as cartas, com todos os campos, e NÃO põe nada na tela.
+No MESMO turno, chame `mostrar_card` com `tipo: "comparison_table"` e
+`payload: { ids: [...] }`, com os `id` copiados literal das cartas que você quer
+mostrar. Quantas e quais mostrar é decisão sua e vem da orientação de conduta.
+Só depois do card, comente.
+
+Com as cartas na tela e todos os números nelas, não liste as opções de novo nem
+repita valor, parcela e prazo de cada uma. Comente só a que você recomenda e por
+quê, em 2 a 3 frases, ligando ao que ele contou. No WhatsApp, menos ainda. Se não
+vier nada, diga isso e proponha outro valor. Pode buscar de novo quantas vezes a
+conversa pedir.
