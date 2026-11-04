@@ -2,7 +2,8 @@
 // atributos + orientação -> bloco de texto delimitado, acrescentado à conduta.
 // Nenhum nível contradiz P1–P7 (AGENTS.md): sem empurrar ao fecho, sem desistir
 // do lead, sem inventar número, sem prometer resultado de sorteio.
-import type { AtributosDoPerfil } from "./tipos";
+import { compor, PARTES_PADRAO } from "@/lib/agent/prompt-do-vendedor";
+import type { AtributosDoPerfil, ContatoPreset, ParteId } from "./tipos";
 
 export const MARCA_INICIO = "<!-- playground:inicio -->";
 export const MARCA_FIM = "<!-- playground:fim -->";
@@ -74,4 +75,36 @@ export function aplicarBloco(conduta: string, bloco: string): string {
 	const base = removerBloco(conduta);
 	const novo = bloco.trim();
 	return novo ? `${base}\n\n${novo}` : base;
+}
+
+/** Variante do preset `telefone-antes`: só o site pede o WhatsApp antes da carta (P6). */
+export const CONTATO_TELEFONE_ANTES = `O contato é o que salva a conversa. No site, peça o WhatsApp antes de mostrar a
+carta: chame mostrar_card com tipo "whatsapp_optin", que pede o número e permite
+retomar a conversa depois que a pessoa fechar a tela, e só então mostre a carta.
+No WhatsApp o telefone e o nome já chegaram com a mensagem, então não peça de novo.
+Peça o CPF quando for gerar a proposta, explique para que serve e nunca repita CPF
+nem telefone na conversa.`;
+
+/**
+ * Conduta completa do perfil: base + partes (padrão onde não editadas) + orientação
+ * adicional + Estilo geral. Sem `atributos` não há Estilo geral; a orientação
+ * adicional entra como texto simples.
+ */
+export function compilarConduta(entrada: {
+	partes: Partial<Record<ParteId, string>>;
+	contato: ContatoPreset;
+	livre: string;
+	atributos?: AtributosDoPerfil;
+}): string {
+	const contato =
+		entrada.contato === "telefone-antes" ? CONTATO_TELEFONE_ANTES : PARTES_PADRAO.contato;
+	const conduta = compor({ ...PARTES_PADRAO, contato, ...entrada.partes });
+	if (entrada.atributos) {
+		return aplicarBloco(
+			conduta,
+			compilarPerfil({ atributos: entrada.atributos, orientacao: entrada.livre }),
+		);
+	}
+	const livre = limparOrientacao(entrada.livre);
+	return livre ? `${conduta}\n\nOrientação adicional:\n${livre}` : conduta;
 }
