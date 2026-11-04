@@ -80,9 +80,9 @@ A recusa vem em texto e diz o motivo. Leia e obedeça:
 - *"preciso de uma carta já buscada"* ou *"o id não está entre as cartas"* →
   falta dado real: chame `buscar_cartas` e copie o `groupId` da carta que está na
   tela. Card recusado significa "falta dado real: busque primeiro".
-- *"falta `ids`"* ou *"id fora da busca"* (no `comparison_table`) → mande
-  `payload.ids` com `id` copiado literal de `buscar_cartas`; se a busca não
-  rodou, busque primeiro.
+- *"a tabela comparativa não aparece sozinha"* ou *"o id … não está entre as cartas
+  buscadas"* (no `comparison_table`) → mande `payload.ids` com `id` copiado literal de
+  `buscar_cartas`; se a busca não rodou, busque primeiro.
 - *"não sai do turno"* → aquele card nasce em outro lugar (contrato, experimento)
   e não é escolha sua; siga em texto.
 
