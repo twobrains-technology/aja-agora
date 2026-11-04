@@ -11,58 +11,99 @@ import {
 	PROMPT_DO_VENDEDOR,
 } from "./prompt-do-vendedor";
 
-// O legado foi extraído do HEAD antes da repartição (59b98e24). É a lei: a repartição em
-// partes não pode mudar um byte do que o modelo recebe.
+// O legado foi extraído do HEAD antes da repartição (59b98e24). É referência, não mais lei:
+// por decisão do dono (04/11) a base ganhou as premissas e a igualdade byte a byte caiu.
 const legado = readFileSync(join(__dirname, "__fixtures__/prompt-do-vendedor.legado.txt"), "utf8");
-
-/** Os três trechos do legado que a U2 troca ou amplia; fora deles o texto é idêntico. */
-const ANCORA_ATENDIMENTO = legado
-	.split("\n\n")
-	.find((b) => b.startsWith("Chama gente quando é a hora")) as string;
-const ANCORA_CARTAS = trechoDeCartasNoLegado();
-const ANCORA_CONTATO = legado
-	.split("\n\n")
-	.find((b) => b.startsWith("O contato é o que salva a conversa")) as string;
-
-function trechoDeCartasNoLegado(): string {
-	const blocos = legado.split("\n\n");
-	const ini = blocos.findIndex((b) => b.startsWith("Opção que cabe em um toque"));
-	const fim = blocos.findIndex((b) => b.startsWith("Recomenda com convicção"));
-	return blocos.slice(ini, fim + 1).join("\n\n");
-}
 
 const normaliza = (t: string) => t.replace(/\s+/g, " ");
 
 describe("repartição do prompt em partes (base e partes)", () => {
-	it("T2.4 o texto é o legado com exatamente três substituições", () => {
-		expect(PROMPT_DO_VENDEDOR).not.toBe(legado);
-		expect(PARTES_PADRAO["atendimento-humano"]).not.toBe(ANCORA_ATENDIMENTO);
-		expect(PARTES_PADRAO["cartas-e-cards"].startsWith(ANCORA_CARTAS)).toBe(true);
-		expect(PARTES_PADRAO.contato.startsWith(ANCORA_CONTATO)).toBe(true);
-		const reverso = PROMPT_DO_VENDEDOR.replace(
-			PARTES_PADRAO["atendimento-humano"],
-			ANCORA_ATENDIMENTO,
-		)
-			.replace(PARTES_PADRAO["cartas-e-cards"], ANCORA_CARTAS)
-			.replace(PARTES_PADRAO.contato, ANCORA_CONTATO);
-		expect(reverso).toBe(legado);
+	it("T2.4 todo bloco operacional do legado segue presente em alguma parte (exceto os movidos para a base)", () => {
+		const noPerfil = normaliza(Object.values(PARTES_PADRAO).join("\n\n"));
+		const naBase = normaliza(`${BASE_DO_VENDEDOR.prefixo}\n\n${BASE_DO_VENDEDOR.sufixo}`);
+		// Movidos para a base por decisão do dono (04/11): premissas do agente.
+		const MOVIDOS = ["É honesto sobre como o consórcio funciona.", "Só afirma o que sabe."];
+		// Reescritos nesta costura: o legado dizia o mesmo com outras palavras ou nomes de ferramenta.
+		const REESCRITOS = [
+			"Chama gente quando é a hora.",
+			"Mostra número cedo.",
+			"Na comparação, não ponha duas cartas iguais",
+			"A primeira coisa é o nome.",
+			"Escuta antes de oferecer.",
+			"O cliente não tem formulário.",
+			"Pergunta o mínimo antes de mostrar.",
+			"O contato é o que salva a conversa.",
+		];
+		const pulados = [...MOVIDOS, ...REESCRITOS];
+		const operacionais = legado
+			.split("\n\n")
+			.filter((b) => !pulados.some((m) => b.startsWith(m)))
+			.slice(1) // abertura do prefixo
+			.filter((b) => !b.startsWith("Como um bom vendedor") && !b.startsWith("Fala como gente"));
+		expect(operacionais.length).toBeGreaterThan(10);
+		for (const bloco of operacionais) {
+			expect(noPerfil, bloco.slice(0, 50)).toContain(normaliza(bloco));
+		}
+		for (const m of MOVIDOS) {
+			const original = legado.split("\n\n").find((x) => x.startsWith(m)) as string;
+			expect(naBase).toContain(normaliza(original));
+			expect(noPerfil).not.toContain(normaliza(original));
+		}
 	});
 
-	it("T2.1 atendimento-humano cobre a fila", () => {
+	it("T2.7 a base traz as premissas do agente", () => {
+		const t = normaliza(BASE_DO_VENDEDOR.prefixo);
+		expect(t).toMatch(/Vender é o seu trabalho/);
+		expect(t).toMatch(/não desiste do lead/);
+		expect(t).toMatch(/A conversa não morre/);
+		expect(t).toMatch(/próximo passo/);
+		expect(t).toMatch(/truncada/);
+		expect(t).toMatch(/beco sem saída/);
+		expect(t).toMatch(/quando a busca falha/);
+		expect(t).toMatch(/recusa um dado/);
+		expect(t).toMatch(/ninguém da fila atende/);
+		expect(t).toMatch(/Entregue valor antes de pedir dado/);
+		expect(t).toMatch(/Atenda o que a pessoa pediu/);
+		expect(t).toMatch(/Não peça de novo o que ela já respondeu nem o que o canal já entregou/);
+		expect(t).toMatch(/Ninguém é empurrado para o fechamento/);
+		expect(t).toMatch(/só recebe a pessoa quando ela pede para fechar ou já gerou a proposta/);
+		expect(t).toMatch(/A fila de vendedores não é a mesa/);
+		expect(t).toMatch(/para se perder/);
+		expect(t).toMatch(/pede atendente/);
+		expect(t).toMatch(/sem prometer\s+prazo/);
+		expect(t).toMatch(/hora do fato/);
+		expect(t).toMatch(/de madrugada ninguém atende/);
+		expect(t).toMatch(/você se cala/);
+		expect(t).toMatch(/Só afirma o que sabe/);
+		expect(t).toMatch(/vêm das ferramentas/);
+		expect(t).toMatch(/Não tem juros, tem taxa de administração/);
+		expect(t).toMatch(/sorteio ou por lance/);
+		expect(t).toMatch(/nunca prometa data de contemplação/);
+		expect(t).not.toMatch(/\bP\d{1,2}\b|Bruna|Kairo|Bernardo|Eduardo/);
+	});
+
+	it("T2.8 as ferramentas citadas nas partes existem com o nome do código", () => {
+		const cartas = normaliza(PARTES_PADRAO["cartas-e-cards"]);
+		expect(cartas).toMatch(/buscar_cartas/);
+		expect(cartas).toMatch(/mostrar_card/);
+		expect(cartas).toMatch(/comparison_table/);
+		expect(cartas).toMatch(/DEPOIS que a busca responder[^.]*não no\s+mesmo lote/);
+		expect(normaliza(PARTES_PADRAO["atendimento-humano"])).toMatch(/falar_com_humano/);
+		const todas = normaliza(Object.values(PARTES_PADRAO).join(" "));
+		expect(todas).not.toMatch(/ferramenta de atendimento/);
+	});
+
+	it("T2.1 atendimento-humano diz quando chamar; a premissa da fila está na base", () => {
 		const t = normaliza(PARTES_PADRAO["atendimento-humano"]);
-		expect(t).toMatch(/pedir (para falar com )?(um )?atendente|pedir para falar com alguém/i);
-		expect(t).toMatch(/para se perder|perder a venda/i);
+		expect(t).toMatch(/pedir atendente/i);
+		expect(t).toMatch(/para se perder/i);
 		expect(t).toMatch(/transferir/i);
-		expect(t).toMatch(/sem prometer prazo/i);
-		expect(t).toMatch(/hora/i);
-		expect(t).toMatch(/ninguém atende/i);
-		expect(t).toMatch(/madrugada/i);
-		expect(t).toMatch(/combin/i);
-		expect(t).toMatch(/se cal/i);
-		expect(t).toMatch(/não silencia/i);
 		expect(t).toMatch(/Dúvida sobre contemplação, lance, taxa ou segurança dos dados é conversa/);
 		expect(t).not.toMatch(/(duas|três|2|3) vezes/i);
 		expect(t).not.toMatch(/garant\w+ (o )?prazo/i);
+		const base = normaliza(BASE_DO_VENDEDOR.prefixo);
+		expect(base).toMatch(/não\s+silencia/);
+		expect(base).not.toMatch(/(duas|três|2|3) vezes/i);
 	});
 
 	it("T2.2 cartas-e-cards mantém duas a quatro, ids, não repetir e variar a administradora", () => {
@@ -80,13 +121,11 @@ describe("repartição do prompt em partes (base e partes)", () => {
 		expect(t).toMatch(/proposta/i);
 	});
 
-	it("T2.5 as partes novas passam no detector; só `objecoes` do legado é acusada (Q3)", () => {
-		// O legado diz "nunca prometa data de contemplação" e o detector acusa a frase. O servidor
-		// aplica o detector só às partes que diferem do padrão, então o padrão não é barrado.
+	it("T2.5 nenhuma parte padrão é acusada pelo detector", () => {
 		const acusadas = Object.entries(PARTES_PADRAO)
 			.filter(([, texto]) => !detectarPromessaDeContemplacao(texto).ok)
 			.map(([id]) => id);
-		expect(acusadas).toEqual(["objecoes"]);
+		expect(acusadas).toEqual([]);
 	});
 
 	it("T2.6 limite de conduta segue folgado", () => {
