@@ -29,6 +29,7 @@ import {
 	ehIdDeSessaoValido,
 	langfuseLigado,
 } from "./langfuse";
+import { registrarEnvelopeDoInputCompleto } from "./langfuse-input-completo";
 import type { PiToolDefinition } from "./tools";
 
 type PiModule = typeof PiPacote;
@@ -169,6 +170,12 @@ export async function abrirSessao(args: {
 		extensionFactories: [
 			(api: PiPacote.ExtensionAPI) => {
 				for (const tool of args.tools) api.registerTool(tool as never);
+				// O ENVELOPE do input completo (B3): com as envs do Langfuse, o system
+				// da caixa + histórico + tools chegam ao trace — o plugin 0.1.2 grava
+				// só o prompt do turno. Desligada, nem o handler existe. O startObservation
+				// da camada acha o provider isolado do plugin via globalThis
+				// (`Symbol.for("langfuse")` — ver `langfuse-input-completo.ts`).
+				if (langfuseLigado()) registrarEnvelopeDoInputCompleto(api as never);
 			},
 		],
 		// A OBSERVABILIDADE entra por caminho, não por código importado: o plugin

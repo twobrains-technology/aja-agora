@@ -5,7 +5,19 @@
 // interruptor por uma flag solta, ou deixar passar "duas chaves das três", é aqui
 // que estoura — antes de o vendedor gastar um turno montando span que nunca sai.
 
+import { InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base";
+import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
+import { setLangfuseTracerProvider } from "@langfuse/tracing";
 import { afterEach, describe, expect, it } from "vitest";
+
+import {
+	anexarInputCompleto,
+	comTeto,
+	entradaCompleta,
+	NOME_DA_OBSERVACAO,
+	tetoDoInput,
+	textoDaMensagem,
+} from "./langfuse-input-completo";
 
 import {
 	type Ambiente,
@@ -144,6 +156,156 @@ describe("userIdDoTurno — a regra de identidade do origin/main", () => {
 	it("sem chave e sem telefone, cai no conversationId (como a main fazia)", () => {
 		expect(userIdDoTurno({ userKey: null, waId: null, conversaId: CONVERSA })).toBe(CONVERSA);
 		expect(userIdDoTurno({ userKey: "   ", waId: "", conversaId: CONVERSA })).toBe(CONVERSA);
+	});
+});
+
+const PAYLOAD_OPENAI = {
+	model: "qwen3.6-flash",
+	messages: [
+		{ role: "system", content: "Você é o vendedor. PROMPT_DO_VENDEDOR base aqui." },
+		{ role: "user", content: "oi" },
+		{ role: "assistant", content: [{ type: "text", text: "oi, quanto quer investir?" }] },
+		{ role: "user", content: "50 mil" },
+	],
+	tools: [
+		{ type: "function", function: { name: "mostrar_card", parameters: { type: "object" } } },
+	],
+};
+
+const ENVS_DO_PAI = {
+	LANGFUSE_TRACING_ENABLED: "true",
+	LANGFUSE_BASE_URL: "https://langfuse.example.com",
+	LANGFUSE_PUBLIC_KEY: "pk-lf-abc",
+	LANGFUSE_SECRET_KEY: "sk-lf-def",
+	LANGFUSE_PI_PARENT_TRACE_ID: "a".repeat(32),
+	LANGFUSE_PI_PARENT_SPAN_ID: "b".repeat(16),
+	LANGFUSE_PI_PARENT_SESSION_ID: "4a1af177-0a58-4dc4-9d0f-2e5f0f0f6b21",
+} as const;
+
+describe("entradaCompleta — as três partes do que o modelo de fato leu", () => {
+	it("separa system (da caixa), histórico e definição de tools do payload OpenAI", () => {
+		const entrada = entradaCompleta(PAYLOAD_OPENAI);
+		expect(entrada).not.toBeNull();
+		expect(entrada?.system).toContain("PROMPT_DO_VENDEDOR");
+		const historico = JSON.parse(entrada?.historico ?? "[]") as Array<{ role: string; content: string }>;
+		// só as NÃO-system; e o content de array de parts vira o texto junto
+		expect(historico).toHaveLength(3);
+		expect(historico[2]).toEqual({ role: "user", content: "50 mil" });
+		expect(entrada?.tools).toContain("mostrar_card");
+	});
+
+	it("payload sem messages (ou não-objeto) não anexa nada — devolve null", () => {
+		expect(entradaCompleta({ model: "x" })).toBeNull();
+		expect(entradaCompleta(null)).toBeNull();
+		expect(entradaCompleta("lixo")).toBeNull();
+	});
+
+	it("content estranho (objeto solto) vira JSON, nunca crash", () => {
+		expect(textoDaMensagem({ estranho: true })).toBe('{"estranho":true}');
+	});
+});
+
+describe("comTeto — o mesmo formato de truncamento do plugin", () => {
+	it("abaixo do teto, inteiro e sem marca", () => {
+		const r = comTeto("abc", 10);
+		expect(r).toEqual({ texto: "abc", meta: { truncated: false, orig_len: 3 } });
+	});
+
+	it("acima do teto, corta, marca o tamanho e dá sha256", () => {
+		const texto = "x".repeat(50);
+		const r = comTeto(texto, 10);
+		expect(r.texto).toHaveLength(10);
+		expect(r.meta).toMatchObject({ truncated: true, orig_len: 50, kept_len: 10 });
+		expect(r.meta.sha256).toHaveLength(64);
+	});
+});
+
+describe("tetoDoInput — PI_LANGFUSE_MAX_CHARS manda, 40.000 é o piso da casa", () => {
+	it("env válida vence", () => {
+		expect(tetoDoInput({ PI_LANGFUSE_MAX_CHARS: "1234" })).toBe(1234);
+	});
+
+	it("ausente, vazia ou lixo cai no 40.000 — nunca no 20.000 do plugin", () => {
+		expect(tetoDoInput({})).toBe(40000);
+		expect(tetoDoInput({ PI_LANGFUSE_MAX_CHARS: "" })).toBe(40000);
+		expect(tetoDoInput({ PI_LANGFUSE_MAX_CHARS: "abc" })).toBe(40000);
+		expect(tetoDoInput({ PI_LANGFUSE_MAX_CHARS: "0" })).toBe(40000);
+	});
+});
+
+describe("anexarInputCompleto — anexa ao pai do plugin, e NUNCA derruba o turno", () => {
+	let exporter: InMemorySpanExporter;
+
+	const ligarProvider = () => {
+		exporter = new InMemorySpanExporter();
+		const provider = new NodeTracerProvider({
+			spanProcessors: [new SimpleSpanProcessor(exporter)],
+		});
+		setLangfuseTracerProvider(provider as never);
+		return () => setLangfuseTracerProvider(undefined as never);
+	};
+
+	afterEach(() => {
+		exporter?.shutdown();
+	});
+
+	it("com envs ligadas e pai publicado, cria a observation com o input completo", () => {
+		const desligar = ligarProvider();
+		try {
+			anexarInputCompleto(PAYLOAD_OPENAI, ENVS_DO_PAI);
+			const spans = exporter.getFinishedSpans();
+			expect(spans).toHaveLength(1);
+			const attrs = spans[0].attributes;
+			// o tipo correto e o pai do plugin: é o que faz a observation aparecer
+			// aninhada embaixo da root "Conversational Turn" no Langfuse
+			expect(attrs["langfuse.observation.type"]).toBe("generation");
+			const input = JSON.parse(String(attrs["langfuse.observation.input"])) as {
+				system?: string;
+			};
+			expect(input.system).toContain("PROMPT_DO_VENDEDOR");
+			expect(spans[0].parentSpanContext?.traceId).toBe(ENVS_DO_PAI.LANGFUSE_PI_PARENT_TRACE_ID);
+			expect(spans[0].parentSpanContext?.spanId).toBe(ENVS_DO_PAI.LANGFUSE_PI_PARENT_SPAN_ID);
+		} finally {
+			desligar();
+		}
+	});
+
+	it("SEM as envs do Langfuse: zero span — o no-op do inviolável", () => {
+		const desligar = ligarProvider();
+		try {
+			anexarInputCompleto(PAYLOAD_OPENAI, { PI_LANGFUSE_MAX_CHARS: "40000" });
+			expect(exporter.getFinishedSpans()).toHaveLength(0);
+		} finally {
+			desligar();
+		}
+	});
+
+	it("envs ligadas mas SEM pai publicado: zero span (não cria trace órfão)", () => {
+		const desligar = ligarProvider();
+		try {
+			const semPai = { ...ENVS_DO_PAI } as Record<string, string | undefined>;
+			delete semPai.LANGFUSE_PI_PARENT_TRACE_ID;
+			delete semPai.LANGFUSE_PI_PARENT_SPAN_ID;
+			anexarInputCompleto(PAYLOAD_OPENAI, semPai);
+			expect(exporter.getFinishedSpans()).toHaveLength(0);
+		} finally {
+			desligar();
+		}
+	});
+
+	it("sem provider nenhum no globalThis: engole e segue — observabilidade não derruba turno", () => {
+		setLangfuseTracerProvider(undefined as never);
+		expect(() => anexarInputCompleto(PAYLOAD_OPENAI, ENVS_DO_PAI)).not.toThrow();
+	});
+
+	it("payload lixo: engole e segue", () => {
+		const desligar = ligarProvider();
+		try {
+			anexarInputCompleto("nao-e-payload", ENVS_DO_PAI);
+			expect(exporter.getFinishedSpans()).toHaveLength(0);
+		} finally {
+			desligar();
+		}
 	});
 });
 
