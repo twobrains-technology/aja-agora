@@ -120,7 +120,7 @@ export class DatasetRunRecorder {
 		const lista = candidatas();
 		if (lista.length === 0) {
 			console.log(
-				`${DatasetRunRecorder.PREFIXO} sem credenciais LANGFUSE_* (env/vault) — eval segue SEM dataset run.`,
+				`${PREFIXO} sem credenciais LANGFUSE_* (env/vault) — eval segue SEM dataset run.`,
 			);
 			return null;
 		}
@@ -134,13 +134,13 @@ export class DatasetRunRecorder {
 				});
 				if (!r.ok) {
 					console.log(
-						`${DatasetRunRecorder.PREFIXO} credenciais ${c.origem} recusadas no GET dataset (HTTP ${r.status}).`,
+						`${PREFIXO} credenciais ${c.origem} recusadas no GET dataset (HTTP ${r.status}).`,
 					);
 					continue;
 				}
 			} catch (e) {
 				console.log(
-					`${DatasetRunRecorder.PREFIXO} credenciais ${c.origem} inalcançáveis: ${e instanceof Error ? e.message : e}`,
+					`${PREFIXO} credenciais ${c.origem} inalcançáveis: ${e instanceof Error ? e.message : e}`,
 				);
 				continue;
 			}
@@ -153,9 +153,7 @@ export class DatasetRunRecorder {
 			rec.runDescricao = `pnpm eval gate · sha ${args.sha} · ${args.nome}`;
 			return rec;
 		}
-		console.log(
-			`${DatasetRunRecorder.PREFIXO} nenhuma credencial válida — eval segue SEM dataset run.`,
-		);
+		console.log(`${PREFIXO} nenhuma credencial válida — eval segue SEM dataset run.`);
 		return null;
 	}
 
