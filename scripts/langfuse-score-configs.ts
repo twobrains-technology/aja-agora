@@ -2,7 +2,8 @@
 // `docs/design/planos/2026-11-05-langfuse-suíte.md`.
 //
 // Padroniza os scores na instância via `POST /api/public/score-configs`:
-// - BOOLEAN: `numero_fora_da_cota`, `promessa_sem_fato`, `conducao_entregue`, `tool_recusou`;
+// - BOOLEAN: `numero_fora_da_cota`, `promessa_sem_fato`, `afirmacao_comparativa_falsa`,
+//   `conducao_entregue`, `tool_recusou`;
 // - NUMERIC: as 6 dimensões da rubrica (`src/lib/eval/rubric.ts` — 5 do juiz +
 //   `conversao` do scorer, que também entra em `overallScore` em
 //   `scorer-pipeline.ts`), cada uma 0..1;
@@ -83,6 +84,12 @@ const CONFIGS: Config[] = [
 		dataType: "BOOLEAN",
 		description:
 			"Sinal determinístico: promessa sem lastro em ferramenta (ex.: grupo novo/em andamento sem o dado da busca).",
+	},
+	{
+		name: "afirmacao_comparativa_falsa",
+		dataType: "BOOLEAN",
+		description:
+			'Sinal determinístico: a fala afirma superlativo/comparativo ("a menor taxa", "o mais curto", "o melhor") que o conjunto devolvido pelas tools desmente — outra opção do conjunto tem valor melhor. Fato de servidor.',
 	},
 	{
 		name: "conducao_entregue",

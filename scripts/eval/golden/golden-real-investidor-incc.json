@@ -1,0 +1,52 @@
+{
+	"cenario": "golden-real-investidor-incc",
+	"descricao": "Conversa real ca0664dc (web, imóvel, 18/10/2026, 42 msgs, em_negociacao). O lead mudou o alvo 5 vezes (200→100→'meia parcela'→150 mil) e perguntou 'Consórcio para investidor' e 'Valorização'. O agente seguiu sem reclamar (bom) mas: quando o lead pediu R$ 80 mil respondeu 'nas opções da tela não tenho carta exatamente nesse valor' e citou números SEM rebuscar (inventando a referência); explicou INCC com 'estimado em 6% ao ano' — número sem fonte; e em 42 turnos o NOME nunca foi pedido/completado. A conversa morreu após 3 remarketings idênticos. O que se mede: a cada novo alvo, a busca nova é de tool (não 'na tela'); explicação de correção só com fonte; o nome é pedido UMA vez com gancho natural (P6 não é portão); próximo passo declarado a cada turno.",
+	"caRefs": ["P1", "P6", "P11", "conversa ca0664dc"],
+	"asserts": {
+		"turns": [
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true,
+				"forbidRepeatedAgentText": true
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "quero comprar um imóvel de 200 mil",
+			"expect": "welcome + cartas de tool para o alvo."
+		},
+		{
+			"type": "text",
+			"text": "melhor de 100 mil",
+			"expect": "rebusca de tool para o NOVO alvo (não reaproveita a lista antiga) e mostra números."
+		},
+		{
+			"type": "text",
+			"text": "Consórcio para investidor, quero valorização",
+			"expect": "explica o mecanismo de correção da carta SEM inventar percentual — INCC/índice só com fonte de tool ou sem número."
+		},
+		{
+			"type": "text",
+			"text": "então 150 mil",
+			"expect": "rebusca de tool de novo, sem reclamar da mudança; recomendação decidida com motivo."
+		},
+		{
+			"type": "text",
+			"text": "Simular BANCO DO BRASIL — R$ 157.747",
+			"expect": "simula e, no mesmo turno, oferece o próximo passo (pré-cadastro, comparação com contemplados) — pede o nome no máximo 1 vez com gancho natural."
+		}
+	]
+}

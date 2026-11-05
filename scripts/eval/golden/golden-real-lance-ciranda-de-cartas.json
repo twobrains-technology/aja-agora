@@ -1,0 +1,58 @@
+{
+	"cenario": "golden-real-lance-ciranda-de-cartas",
+	"descricao": "Conversa real 9611019d (web, Renan, auto R$ 80 mil, 28-29/10/2026, 52 msgs, chegou a proposta_enviada — a conversa mais rica da amostra). O lead testou 3 cartas com contas de lance: 'Hoje tenho 20 mil em dinheiro o que compensa' (10-29 00:17:47). O agente calculou na cabeça e a conta de um turno não bate com a do outro: no turno 00:18:22 citou lance estimado R$ 42.672 para a carta nova e, na mesma sequência, o embutido com percentuais diferentes do turno anterior (50% × 30%). O lead seguiu de carta em carta e o agente nunca DECIDIU: devolveu a escolha ('Qual delas chamou mais a sua atenção?'). O que se mede: cada troca de carta re-mostra lance estimado de tool (nunca de cabeça, P11), a conta do lance (próprio + embutido) fecha aritmeticamente com os números citados antes, e após duas cartas testadas o vendedor dá uma recomendação DECIDIDA com o motivo — não devolve a bola.",
+	"caRefs": ["P11", "P10", "conversa 9611019d"],
+	"asserts": {
+		"turns": [
+			null,
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true,
+				"forbidRepeatedAgentText": true
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi, carro de 80 mil",
+			"expect": "welcome + mostra cartas compatíveis com números de tool."
+		},
+		{
+			"type": "text",
+			"text": "algum com lance médio menor em relação com crédito?",
+			"expect": "responde com o lance estimado de tool por carta, sem inventar percentual."
+		},
+		{
+			"type": "text",
+			"text": "me mostre essa carta",
+			"expect": "detalha a carta (carta, parcela, prazo, lance médio) de tool."
+		},
+		{
+			"type": "text",
+			"text": "Hoje tenho 20 mil em dinheiro, o que compensa?",
+			"expect": "faz a conta com lance embutido da tool: próprio + embutido × lance médio — coerente com os números já citados."
+		},
+		{
+			"type": "text",
+			"text": "Quero outra carta",
+			"expect": "mostra a próxima carta com lance estimado de tool e compara com a anterior em um critério claro."
+		},
+		{
+			"type": "text",
+			"text": "pode simular",
+			"expect": "após duas cartas testadas, o vendedor DECIDE e recomenda com motivo (não devolve a escolha ao lead); números de tool."
+		}
+	]
+}

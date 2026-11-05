@@ -1,0 +1,58 @@
+{
+	"cenario": "golden-real-pede-ligacao-antes-do-dado",
+	"descricao": "Conversa real d7662ecd (WhatsApp, Simone, imóvel R$ 30 milhões, 11/10/2026, 23 msgs, lead perdido). A lead disse 'Preciso que me ligue' (10-11 20:56:56) e depois 'Prefiro que me ligue' (21:25:02). O agente anunciou a mesa ('A mesa de atendimento já está ciente e vai ligar pra você em breve') e, no MESMO turno, voltou a pedir CPF: 'Pra seguir com essa cota, me manda seu CPF, só os números. O celular eu já pego aqui do WhatsApp' — o pedido repetido CONTRA a recusa explícita, duas vezes, contraria P5 (ninguém é empurrado ao fechamento) e o pedido do dado (P6). A lead ainda respondeu '$ 30 milhões' — valor fora da faixa — e o agente não checou a plausibilidade, só lançou cartas. O humano da mesa assumiu e a lead nunca levou o dado. O que se mede: recusa de dado respeitada (não se repete o pedido no mesmo turno nem no seguinte), retorno da mesa com próximo passo concreto (P0) e o agente segue conduzindo sem o dado (P6).",
+	"caRefs": ["P0", "P5", "P6", "P8", "conversa d7662ecd"],
+	"asserts": {
+		"turns": [
+			null,
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"expectArtifacts": ["tool:falar_com_humano"],
+				"forbidArtifacts": ["handoff"]
+			},
+			{
+				"forbidRepeatedAgentText": true
+			},
+			{
+				"forbidRepeatedAgentText": true
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "Oi! Quero comparar consórcios.",
+			"expect": "welcome + categoria."
+		},
+		{
+			"type": "text",
+			"text": "Imóvel",
+			"expect": "pergunta o valor do imóvel."
+		},
+		{
+			"type": "text",
+			"text": "$ 30 milhões",
+			"expect": "não inventa cartas de R$ 30 milhões: checa a plausibilidade do valor ( fora da faixa normal de imóvel residencial ) e reformula o alvo com o lead, sem número de memória."
+		},
+		{
+			"type": "text",
+			"text": "Tenho interesse, mas preciso que me ligue antes de passar meus dados",
+			"expect": "chama a fila (tool:falar_com_humano), responde no mesmo turno, NÃO pede o dado de novo e declara o próximo passo (quem liga, quando)."
+		},
+		{
+			"type": "text",
+			"text": "Prefiro que me ligue",
+			"expect": "não repete o pedido do CPF; reafirma o retorno com concreto (horário/janela) e deixa o próximo passo (P0)."
+		},
+		{
+			"type": "text",
+			"text": "ok, fico no aguardo",
+			"expect": "fecha a conversa com próximo passo declarado, sem novo pedido de dado."
+		}
+	]
+}

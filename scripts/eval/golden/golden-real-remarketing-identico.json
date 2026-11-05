@@ -1,0 +1,44 @@
+{
+	"cenario": "golden-real-remarketing-identico",
+	"descricao": "Conversa real f41a02cb (web, carro entre R$ 50 e 100 mil, 15/10-04/11/2026, 45 msgs). O lead deu a faixa de valor, pediu 'Me explica melhor', entendeu e CONFIRMOU o telefone digitando o número na fala ('67998057023', 10-15 21:51:47). Depois disso o remarketing disparou O MESMO texto 17 vezes por 20 dias: 'Aqui é a Aja. Você começou a comparar consórcio com a gente e a conversa ficou pela metade — quero retomar de onde paramos. O que você quer conquistar: carro, moto ou imóvel?' — recomeçando do zero, ignorando que o lead já respondeu essa pergunta (P0/P3 violados: a retomada não sabia onde a conversa tinha parado). O que se mede: a retomada retoma de ONDE parou (faixa de valor dada, telefone confirmado) — nunca recomeça com 'o que você quer conquistar?'; e retomadas repetidas NÃO são o mesmo texto (forbidRepeatedAgentText).",
+	"caRefs": ["P0", "P3", "conversa f41a02cb"],
+	"asserts": {
+		"turns": [
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidRepeatedAgentText": true,
+				"forbidUngroundedMoney": true
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "carro entre 50 e 100 mil",
+			"expect": "welcome + cartas compatíveis com a faixa (tool)."
+		},
+		{
+			"type": "text",
+			"text": "me explica melhor",
+			"expect": "explica com valor (parcela, prazo, contemplação) antes de pedir dado (P1)."
+		},
+		{
+			"type": "text",
+			"text": "Entendi, pode liberar. Meu número é 67998057023",
+			"expect": "usa o telefone da FALA (não pede de novo no card) e mostra as opções (P6)."
+		},
+		{
+			"type": "text",
+			"text": "Voltei",
+			"expect": "a retomada retoma de ONDE parou (faixa 50-100 mil, telefone já dado) e traz algo novo — nunca o template 'O que você quer conquistar: carro, moto ou imóvel?' repetido."
+		}
+	]
+}

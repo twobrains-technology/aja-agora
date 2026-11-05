@@ -1,0 +1,43 @@
+{
+	"cenario": "golden-real-correntista-e-esposa",
+	"descricao": "Conversa real 8e28d6f0 (web, Paulo, imóvel R$ 500 mil, 08/2026, 64 msgs, humano atendeu, lead PERDIDO com proposta gravada). Depois do fechamento, o humano perguntou correntista; Paulo: 'Não sou. Sou do Itaú.' e então: 'Por enquanto, não. Estou verificando com a minha esposa os próximos passos e entro em contato em breve. De qualquer forma, muito obrigado!' (08-13 17:19:37). O humano respondeu oferecendo chamada marcada ('Sexta-feira as 11:00h ou Segunda as 14:00h') — e a retomada do motor, 4 dias depois, foi o template genérico 'Oi, Paulo! Tudo bem? … Pode me responder por aqui?' repetido 3× (08-17, 08-19, 08-19). O lead não voltou e virou perdido. O que se mede: na objeção de cônjuge, oferecer escolha CONCRETA de horário (o humano fez isso; o motor não), não prometer prazo, e a retomada seguinte trazer algo NOVO (prazo da reserva, validade da cota, lance) — nunca o template idêntico (P0/P3).",
+	"caRefs": ["P0", "P3", "P7", "conversa 8e28d6f0"],
+	"asserts": {
+		"turns": [
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidRepeatedAgentText": true
+			},
+			{
+				"forbidRepeatedAgentText": true
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "Oi! Acabei de fechar minha proposta da BANCO DO BRASIL pelo site da Aja Agora.",
+			"expect": "confirma o registro e pede o próximo passo de documentação."
+		},
+		{
+			"type": "text",
+			"text": "Não sou correntista do Banco do Brasil, sou do Itaú.",
+			"expect": "explica o efeito real (fato de sistema: casa bancária não trava o consórcio) sem inventar vantagem, e segue com o próximo passo."
+		},
+		{
+			"type": "text",
+			"text": "Por enquanto não. Estou verificando com a minha esposa os próximos passos e entro em contato em breve.",
+			"expect": "aceita o ritmo SEM desistir (P7): propõe duas janelas CONCRETAS de contato (ex.: sexta 11h ou segunda 14h) e deixa o próximo passo."
+		},
+		{
+			"type": "text",
+			"text": "Vou pensar e te falo",
+			"expect": "na retomada traz algo NOVO (validade/prazo da reserva da cota, próximo marco), não o template genérico 'Pode me responder por aqui?' repetido."
+		}
+	]
+}

@@ -5,8 +5,10 @@
 // Langfuse.
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { registrarAfirmacaoComparativaFalsa } from "./numero-fora-da-cota";
 import { registrarNumeroForaDaCota } from "./numero-fora-da-cota";
 import { numerosForaDaCota } from "./numero-fora-da-cota";
+import { afirmacoesComparativasFalsas } from "./numero-fora-da-cota";
 
 const ENV_LIGADO = {
 	LANGFUSE_TRACING_ENABLED: "true",
@@ -83,6 +85,89 @@ describe("numerosForaDaCota", () => {
 			resultadosDeTool: [],
 		});
 		expect(fora).toEqual([]);
+	});
+});
+
+// ── AFIRMAÇÃO COMPARATIVA (recado de Kairo, 05/11) ──────────────────────
+//
+// Caso REAL medido que virou o requisito: o agente disse "a menor taxa" para a
+// proposta 20486 (12,94%) quando a 50080 tinha 12,92%. Todo número da frase
+// estava certo — o que era falso era o superlativo.
+const PROPOSTAS_REAIS = [
+	{ proposalId: "20486", administradora: "Bevi", parcela: 1180, prazoMeses: 200, taxaAdministracao: 12.94 },
+	{ proposalId: "50080", administradora: "Bevi", parcela: 1175, prazoMeses: 200, taxaAdministracao: 12.92 },
+];
+
+describe("afirmacoesComparativasFalsas", () => {
+	it("marca 'a menor taxa' quando outra proposta do conjunto tem taxa menor (20486 × 50080)", () => {
+		const achados = afirmacoesComparativasFalsas({
+			fala: "Pode ir na 20486, é a menor taxa: 12,94%.",
+			resultadosDeTool: [PROPOSTAS_REAIS],
+		});
+		expect(achados).toEqual([
+			{
+				frase: "Pode ir na 20486, é a menor taxa: 12,94%.",
+				dimensao: "taxa",
+				dito: 12.94,
+				melhor: 12.92,
+			},
+		]);
+	});
+
+	it("superlativo VERDADEIRO não marca (a 50080 é mesmo a menor taxa)", () => {
+		const achados = afirmacoesComparativasFalsas({
+			fala: "A 50080 é a menor taxa: 12,92%.",
+			resultadosDeTool: [PROPOSTAS_REAIS],
+		});
+		expect(achados).toEqual([]);
+	});
+
+	it("fala que não é superlativo não marca", () => {
+		const achados = afirmacoesComparativasFalsas({
+			fala: "A taxa da 20486 é 12,94% e a da 50080 é 12,92%. Veja a tabela e me diz qual prefere.",
+			resultadosDeTool: [PROPOSTAS_REAIS],
+		});
+		expect(achados).toEqual([]);
+	});
+
+	it("superlativo de parcela verdadeiro não marca; falso marca", () => {
+		const verdadeiro = afirmacoesComparativasFalsas({
+			fala: "A 50080 tem a menor parcela: R$ 1.175,00.",
+			resultadosDeTool: [PROPOSTAS_REAIS],
+		});
+		expect(verdadeiro).toEqual([]);
+
+		const falso = afirmacoesComparativasFalsas({
+			fala: "A 20486 tem a menor parcela: R$ 1.180,00.",
+			resultadosDeTool: [PROPOSTAS_REAIS],
+		});
+		expect(falso).toHaveLength(1);
+		expect(falso[0]).toMatchObject({ dimensao: "parcela", dito: 1180, melhor: 1175 });
+	});
+
+	it("número que nenhuma tool devolveu não é deste sinal (é do detector numérico)", () => {
+		const achados = afirmacoesComparativasFalsas({
+			fala: "Essa é a menor taxa: 9,99%.",
+			resultadosDeTool: [PROPOSTAS_REAIS],
+		});
+		expect(achados).toEqual([]);
+	});
+
+	it("sem conjunto (uma opção só) não há superlativo a conferir", () => {
+		const achados = afirmacoesComparativasFalsas({
+			fala: "Essa é a menor taxa: 12,94%.",
+			resultadosDeTool: [PROPOSTAS_REAIS[0]],
+		});
+		expect(achados).toEqual([]);
+	});
+
+	it("o número pode vir na frase seguinte do mesmo turno", () => {
+		const achados = afirmacoesComparativasFalsas({
+			fala: "Essa é a menor taxa do comparativo. Fica em 12,94%.",
+			resultadosDeTool: [PROPOSTAS_REAIS],
+		});
+		expect(achados).toHaveLength(1);
+		expect(achados[0]).toMatchObject({ dimensao: "taxa", dito: 12.94, melhor: 12.92 });
 	});
 });
 
@@ -169,5 +254,67 @@ describe("registrarNumeroForaDaCota", () => {
 			}),
 		).not.toThrow();
 		expect(erroConsole).toHaveBeenCalled();
+	});
+});
+
+describe("registrarAfirmacaoComparativaFalsa", () => {
+	afterEach(() => {
+		vi.unstubAllEnvs();
+		logs.length = 0;
+	});
+
+	it("sem envs de Langfuse é no-op — nenhuma linha de sinal sai", () => {
+		vi.stubEnv("LANGFUSE_TRACING_ENABLED", "");
+		vi.stubEnv("LANGFUSE_BASE_URL", "");
+		vi.stubEnv("LANGFUSE_PUBLIC_KEY", "");
+		vi.stubEnv("LANGFUSE_SECRET_KEY", "");
+		vi.stubEnv("NODE_ENV", "test");
+		vi.spyOn(console, "log").mockImplementation((msg) => logs.push(String(msg)));
+
+		registrarAfirmacaoComparativaFalsa({
+			traceId: "trace-1",
+			fala: "Pode ir na 20486, é a menor taxa: 12,94%.",
+			resultadosDeTool: [PROPOSTAS_REAIS],
+		});
+
+		expect(logs.some((l) => l.includes("afirmacao_comparativa_falsa"))).toBe(false);
+	});
+
+	it("com envs ligadas, grava BOOLEAN no trace — 1 com superlativo falso, 0 limpo", () => {
+		vi.stubEnv("LANGFUSE_TRACING_ENABLED", ENV_LIGADO.LANGFUSE_TRACING_ENABLED);
+		vi.stubEnv("LANGFUSE_BASE_URL", ENV_LIGADO.LANGFUSE_BASE_URL);
+		vi.stubEnv("LANGFUSE_PUBLIC_KEY", ENV_LIGADO.LANGFUSE_PUBLIC_KEY);
+		vi.stubEnv("LANGFUSE_SECRET_KEY", ENV_LIGADO.LANGFUSE_SECRET_KEY);
+		vi.stubEnv("NODE_ENV", "test");
+		vi.spyOn(console, "log").mockImplementation((msg) => logs.push(String(msg)));
+
+		registrarAfirmacaoComparativaFalsa({
+			traceId: "trace-1",
+			fala: "Pode ir na 20486, é a menor taxa: 12,94%.",
+			resultadosDeTool: [PROPOSTAS_REAIS],
+		});
+		registrarAfirmacaoComparativaFalsa({
+			traceId: "trace-2",
+			fala: "A 50080 é a menor taxa: 12,92%.",
+			resultadosDeTool: [PROPOSTAS_REAIS],
+		});
+
+		const parse = (linha: string) =>
+			JSON.parse(
+				linha.slice(linha.indexOf("scores=") + "scores=".length),
+			) as Array<{ name: string; value: number; traceId?: string; comment?: string }>;
+		const linhas = logs.filter((l) => l.includes("afirmacao_comparativa_falsa"));
+		expect(linhas).toHaveLength(2);
+		expect(parse(linhas[0])[0]).toMatchObject({
+			name: "afirmacao_comparativa_falsa",
+			value: 1,
+			traceId: "trace-1",
+		});
+		expect(parse(linhas[0])[0]?.comment).toContain("12,94");
+		expect(parse(linhas[1])[0]).toMatchObject({
+			name: "afirmacao_comparativa_falsa",
+			value: 0,
+			traceId: "trace-2",
+		});
 	});
 });

@@ -1,0 +1,44 @@
+{
+	"cenario": "golden-real-voltei-sem-conteudo",
+	"descricao": "Conversa real bcd0e8cb (web, carro até R$ 90 mil, 22-28/10/2026, 47 msgs, em_negociacao). Depois da primeira comparação o lead voltou 3 vezes só com 'Voltei' (10-28 05:50:34) — e o agente respondeu bem na volta. O defeito veio depois: 'Antes de eu buscar as ofertas, como posso te chamar?' repetido 3× em 5 minutos (10-28 05:57:30, 05:59:00, 06:01:00) com completos diferentes ('Só falta isso pra eu seguir — é rapidinho', 'É seguro e sem compromisso') — o pedido repetido 3× é o oposto de P0/P3. E a conversa morreu ali. O que se mede: no retorno sem conteúdo, ENTREGAR algo (faixa com números reais, carta exemplo) em vez de perguntar de novo; máximo 1 repetição do mesmo pedido — na 2ª muda a abordagem (mostra opções, retoma a comparação); a retomada pós-silêncio não repete o mesmo texto.",
+	"caRefs": ["P0", "P3", "conversa bcd0e8cb"],
+	"asserts": {
+		"turns": [
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidRepeatedAgentText": true
+			},
+			{
+				"forbidRepeatedAgentText": true,
+				"forbidUngroundedMoney": true
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "carro até 90 mil",
+			"expect": "welcome + cartas compatíveis com números de tool."
+		},
+		{
+			"type": "text",
+			"text": "Voltei",
+			"expect": "ENTREGA na volta (P1): retoma com as opções/números reais que o lead já viu, sem repetir a mesma pergunta."
+		},
+		{
+			"type": "text",
+			"text": "Voltei",
+			"expect": "muda a abordagem na 2ª ocorrência (novo ângulo: exemplo de carta, contemplados, parcela) — não repete o turno anterior."
+		},
+		{
+			"type": "text",
+			"text": "Voltei",
+			"expect": "nunca 3 pedidos idênticos do mesmo dado: no 3º toque traz fato novo (carta mais barata do grupo, mudança da semana) e próximo passo declarado."
+		}
+	]
+}

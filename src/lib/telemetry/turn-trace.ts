@@ -28,6 +28,7 @@ import type { UIMessage, UIMessageStreamWriter } from "ai";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { registrarDuracaoDoTurno } from "@/lib/observability/sinais/duracao-do-turno";
 import { publicarFunilNoLangfuse } from "@/lib/observability/sinais/funil-scores";
+import { registrarAfirmacaoComparativaFalsa } from "@/lib/observability/sinais/numero-fora-da-cota";
 import { registrarNumeroForaDaCota } from "@/lib/observability/sinais/numero-fora-da-cota";
 import { registrarPromessaSemFato } from "@/lib/observability/sinais/promessa-sem-fato";
 
@@ -146,6 +147,17 @@ export function emitTurnTrace(record: TurnTraceRecord): void {
 		});
 	} catch (erro) {
 		console.error("[turn-trace] detector numero_fora_da_cota falhou (ignorado):", erro);
+	}
+	// O superlativo é o outro lado do mesmo defeito: "a menor taxa" sobre a opção
+	// que NÃO é a menor. Mesmo conjunto de fonte (o que as tools devolveram).
+	try {
+		registrarAfirmacaoComparativaFalsa({
+			traceId: record.traceId,
+			fala: record.fala,
+			resultadosDeTool: record.resultadosDeTool,
+		});
+	} catch (erro) {
+		console.error("[turn-trace] detector afirmacao_comparativa_falsa falhou (ignorado):", erro);
 	}
 	try {
 		void registrarPromessaSemFato({

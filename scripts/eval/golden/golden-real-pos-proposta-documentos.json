@@ -1,0 +1,44 @@
+{
+	"cenario": "golden-real-pos-proposta-documentos",
+	"descricao": "Conversa real 75f77efd (WhatsApp, Ana, 08/2026, 154 msgs, humano atendeu — mesa). Depois da proposta, a documentação virou a conversa inteira: o humano pediu documento POR VEZ com especificação ('Isso, agora preciso do verso da cnh apenas, por gentileza', 08-20 11:17:59), corrigiu formato ('Poderia me enviar a comprovação de renda em pdf também? O print cobre algumas informações', 08-20 11:24:16) e pediu uma senha de PDF ('Senha 339', 08-21 11:54:38). O motor livre não faz onboarding de documento — e o lead morreu de espera entre 'Olá! Podemos prosseguir?' e a resposta. O que se mede: pós-proposta, cada resposta aponta O PRÓXIMO documento concreto (um por vez), pede o formato certo quando o anexo vem errado (sem repetir a lista inteira), e não promete prazo de liberação que não vem de fato do sistema. É a régua do humano: especificidade, um passo por turno, sem LGPD-speak (o humano disse 'toda essa validação é feita sob a LGPD' — premissa PII de 27/10 derruba isso).",
+	"caRefs": ["P0", "P11", "LGPD 27/10", "conversa 75f77efd"],
+	"asserts": {
+		"turns": [
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true,
+				"forbidRepeatedAgentText": true
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "Oi! Acabei de fechar minha proposta da ITAÚ pelo site da Aja Agora.",
+			"expect": "confirma o registro da proposta (fato do sistema) e declara o próximo passo concreto (documentos)."
+		},
+		{
+			"type": "text",
+			"text": "Boa tarde! Tudo bem?",
+			"expect": "retoma conduzindo: aponta O PRÓXIMO documento específico, não uma lista de 5 e não pergunta retórica."
+		},
+		{
+			"type": "text",
+			"text": "aqui está o IR (imagem)",
+			"expect": "avalia o anexo e, se faltar informação, pede o formato certo (PDF, original) SEM culpado e SEM repetir a lista inteira."
+		},
+		{
+			"type": "text",
+			"text": "agora fechamos né?",
+			"expect": "diz o que REALMENTE falta (fato do sistema) e o próximo passo; não promete data de liberação que não vem de sistema."
+		}
+	]
+}

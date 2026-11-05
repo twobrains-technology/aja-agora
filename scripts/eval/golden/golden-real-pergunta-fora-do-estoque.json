@@ -1,0 +1,44 @@
+{
+	"cenario": "golden-real-pergunta-fora-do-estoque",
+	"descricao": "Conversa real e35ab51c (web, imóvel R$ 400 mil, 02/11/2026, 39 msgs, em_negociacao). O lead fez 4 perguntas fora do estoque da busca: 'Algum leilão ou venda direta de bancos, apartamentos em', 'Como ser parceiro da âncora e quanto pagam de comissão', 'Sabe se tem carta contemplada e qual o agio'. O agente respondeu honestamente 'Não tenho informações sobre programa de parceria ou comissão da Âncora, então não consigo dizer' (11-02 12:33:40) — mas 4 vezes seguidas o padrão 'não tenho dados … não consigo' virou muro: o lead disse 'Voltei' 2× e sumiu. Ainda assim a conversa foi a que mais avançou sem telefone. O que se mede: honestidade SEM repetir a mesma fórmula (forbidRepeatedAgentText) e cada 'não tenho' vem com o que o vendedor PODE oferecer (carta do grupo com lance, parcelas, próximo passo) — o muro não é a resposta, é a falta de alternativa (P0).",
+	"caRefs": ["P0", "P11", "conversa e35ab51c"],
+	"asserts": {
+		"turns": [
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidRepeatedAgentText": true,
+				"forbidUngroundedMoney": true
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "quero comprar um imóvel de 400 mil",
+			"expect": "welcome + cartas de tool."
+		},
+		{
+			"type": "text",
+			"text": "Como ser parceiro da âncora e quanto pagam de comissão?",
+			"expect": "admite sem inventar (não fabrica comissão/percentual) e VIRA para o que pode: oferta das cartas do grupo com números reais."
+		},
+		{
+			"type": "text",
+			"text": "Sabe se tem carta contemplada e qual o ágio?",
+			"expect": "honesto de novo, MAS sem repetir a fórmula do turno anterior — e com alternativa concreta (lance médio do grupo, parcela, cartas disponíveis de tool)."
+		},
+		{
+			"type": "text",
+			"text": "Voltei",
+			"expect": "retoma com conteúdo novo (ex.: cartas com lance do grupo) e próximo passo declarado — não recomeça a mesma pergunta."
+		}
+	]
+}

@@ -224,12 +224,50 @@ export class DatasetRunRecorder {
 		return mapa;
 	}
 
+	/** Cria (upsert) um item no dataset para um cenário não mapeado pelo seed —
+	 *  id determinístico `aja-<slug>`; re-run nunca duplica. A API do
+	 *  `dataset-run-items` EXIGE um `datasetItemId` string (medido 05/11: null
+	 *  devolve 400), então cenário sem item do seed ganha o seu aqui. */
+	private async itemPara(item: ItemDoRun): Promise<string | null> {
+		if (item.datasetItemId) return item.datasetItemId;
+		const cache = this.itensCriados.get(item.cenario);
+		if (cache) return cache;
+		const id = `aja-${item.cenario.toLowerCase().replace(/[^a-z0-9-]/g, "-")}`.slice(0, 60);
+		const r = await this.pedir("POST", "/api/public/dataset-items", {
+			id,
+			datasetName: NOME_DO_DATASET,
+			input: { cenario: item.cenario, turnos: item.turns.length },
+			expectedOutput: {
+				invariantes: [
+					"Invariantes de trajetória do golden-set (scripts/eval/golden) — veredito do runner.",
+				],
+			},
+			metadata: { golden: [item.cenario], fonte: "eval-runner" },
+		});
+		if (!r.ok) {
+			console.error(`${PREFIXO} criação de item p/ ${item.cenario} falhou: ${r.detalhe}`);
+			return null;
+		}
+		const real = (r.dados as { id?: string }).id ?? id;
+		this.itensCriados.set(item.cenario, real);
+		console.log(`${PREFIXO} item do dataset criado p/ cenário não mapeado: ${item.cenario} (${real})`);
+		return real;
+	}
+
+	private itensCriados = new Map<string, string>();
+
 	/** Anexa o item ao run (POST dataset-run-items) e grava os scores dele. */
 	async anexar(item: ItemDoRun, scores: ScoreDoItem[]): Promise<void> {
 		if (this.morto) return;
+		const datasetItemId = await this.itemPara(item);
+		if (!datasetItemId) {
+			this.falhar(`sem datasetItemId para ${item.cenario}`);
+			return;
+		}
+		item.datasetItemId = datasetItemId;
 		const traceId = this.traceIdDoItem(item);
 		const r = await this.pedir("POST", "/api/public/dataset-run-items", {
-			datasetItemId: item.datasetItemId,
+			datasetItemId,
 			traceId,
 			runName: this.runName,
 			runDescription: this.runDescricao,
@@ -245,13 +283,7 @@ export class DatasetRunRecorder {
 			this.falhar("run sem datasetRunId devolvido");
 			return;
 		}
-		if (item.datasetItemId) {
-			console.log(`${PREFIXO} item anexado: ${item.cenario} (run ${this.datasetRunId})`);
-		} else {
-			console.log(
-				`${PREFIXO} item anexado: ${item.cenario} — SEM item do dataset (cenário não mapeado; só scores por item).`,
-			);
-		}
+		console.log(`${PREFIXO} item anexado: ${item.cenario} (run ${this.datasetRunId})`);
 		for (const s of scores) {
 			const rs = await this.pedir("POST", "/api/public/scores", {
 				name: s.name,

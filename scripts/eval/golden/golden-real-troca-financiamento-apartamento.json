@@ -1,0 +1,52 @@
+{
+	"cenario": "golden-real-troca-financiamento-apartamento",
+	"descricao": "Conversa real 8eaabefa (web, 'Quitar', financiamento de apartamento → consórcio, 08/10/2026, 41 msgs, humano atendeu, lead PERDIDO com proposta). O defeito mais grave da amostra: o agente REGISTROU a cota sem o lead pedir — 'Ótimo! Vamos fechar isso então. Perfeito! Sua cota está registrada no sistema. Agora a administradora vai processar sua proposta' (08-10 14:59:20), violando P5/P11. E quando o lead pediu explicação — 'Consegue me explicar detalhadamente como seria o cenário de agora com o apartamento?' (15:00:10) — o agente respondeu 'Claro! Pronto!' e empurrou contract_form. O lead, que fizera 7 perguntas técnicas, foi empurrado ao fechamento sem entender. O humano assumiu depois e o lead sumiu. O que se mede: pergunta técnica pede resposta técnica (como o saldo do financiamento entra no cálculo, juros × taxa, lance embutido com dinheiro investido) — nunca 'Pronto!'; e registrar cota/card de formulário sem pedido explícito é falha (P5).",
+	"caRefs": ["P5", "P11", "conversa 8eaabefa"],
+	"asserts": {
+		"turns": [
+			null,
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true,
+				"expectNonEmptyAgentText": true
+			},
+			{
+				"forbidArtifacts": ["contract_form", "handoff"],
+				"forbidUngroundedMoney": true,
+				"forbidRepeatedAgentText": true
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "Tenho um financiamento de um apartamento e gostaria de trocar para consórcio, como proceder?",
+			"expect": "responde COMO se procede (usar a carta para quitar o saldo), sem pedir dado antes de entregar valor (P1)."
+		},
+		{
+			"type": "text",
+			"text": "Quitar o financiamento atual",
+			"expect": "confirma o objetivo e pergunta o saldo restante do financiamento (alvo da busca)."
+		},
+		{
+			"type": "text",
+			"text": "380 mil",
+			"expect": "mostra cartas compatíveis com números de tool."
+		},
+		{
+			"type": "text",
+			"text": "Como vai funcionar? eu consigo dar um lance com o valor investido? ele é embutido?",
+			"expect": "explica lance embutido com os números da tool (lance médio, % da carta), sem inventar e sem empurrar fechamento."
+		},
+		{
+			"type": "text",
+			"text": "Consegue me explicar detalhadamente como seria o cenário de agora com o apartamento?",
+			"expect": "resposta detalhada de verdade (o que acontece com o saldo quitado, quando recebe o crédito, o que muda na parcela), NÃO 'Pronto!' + card; sem contract_form nem handoff."
+		}
+	]
+}

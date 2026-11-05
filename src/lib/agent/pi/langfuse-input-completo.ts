@@ -28,7 +28,7 @@ import { createHash } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { startObservation } from "@langfuse/tracing";
 
-import { MAX_CHARS_PADRAO, langfuseLigado, type Ambiente } from "./langfuse";
+import { type Ambiente, langfuseLigado, MAX_CHARS_PADRAO } from "./langfuse";
 
 const ENV_PARENT_TRACE_ID = "LANGFUSE_PI_PARENT_TRACE_ID";
 const ENV_PARENT_SPAN_ID = "LANGFUSE_PI_PARENT_SPAN_ID";
@@ -110,7 +110,10 @@ export function entradaCompleta(payload: unknown): EntradaCompleta {
 
 /** Meta de truncamento no MESMO formato do plugin (`TruncationMeta`), para a
  *  leitura no Langfuse ser uniforme entre as observations. */
-export function comTeto(texto: string, teto: number): {
+export function comTeto(
+	texto: string,
+	teto: number,
+): {
 	texto: string;
 	meta: { truncated: boolean; orig_len: number; kept_len?: number; sha256?: string };
 } {

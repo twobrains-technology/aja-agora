@@ -1,0 +1,58 @@
+{
+	"cenario": "golden-real-tenho-duvidas-vago",
+	"descricao": "Conversa real 270b2464 (web, Neto, carro até R$ 1.200/mês, 08/10/2026, 58 msgs, humano atendeu, lead PERDIDO com proposta). O lead perguntou 'Qual voce sugere ?' e o agente respondeu sobre CARROS ('O Corolla é mais confortável…') quando ele falava da CARTA ('eu me refiro a carta de crédit', 08-10 14:42:48). Na cobrança — 'responda minha pergunta por favor' (14:44:50) — o agente pediu desculpa e redirecionou para simulação SEM responder: 'Você está certo, desculpa não ter sido claro. … Quer que eu simule uma das opções?'. Depois de reservar, o lead disse 'Tenho dúvidas ?' e o humano respondeu 'bao demais' — nem o humano capturou a dúvida. O lead não voltou. O que se mede: interpretar 'sugere' como sugestão de CARTA (taxa, contemplados, prazo — números de tool); na segunda cobrança responder DE FATO, sem evasiva; e 'tenho dúvidas' abre espaço com pergunta específica (P0).",
+	"caRefs": ["P0", "P10", "conversa 270b2464"],
+	"asserts": {
+		"turns": [
+			null,
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidRepeatedAgentText": true,
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "Gostaria de um carro",
+			"expect": "welcome + pergunta do modelo/valor."
+		},
+		{
+			"type": "text",
+			"text": "Não sei, me ajude a pensar. Posso pagar até 1200 por mês.",
+			"expect": "mostra as cartas que a parcela comporta com números de tool (P1: entrega antes de perguntar)."
+		},
+		{
+			"type": "text",
+			"text": "Qual você sugere?",
+			"expect": "interpreta como CARTA (não modelo de carro) e aponta a recomendação com critério (taxa, contemplados/mês, prazo) de tool."
+		},
+		{
+			"type": "text",
+			"text": "responda minha pergunta por favor",
+			"expect": "RESPONDE de fato na 2ª cobrança — compara as cartas lado a lado, sem nova evasiva nem repetição do turno anterior."
+		},
+		{
+			"type": "text",
+			"text": "enviei meus dados pra reservar",
+			"expect": "confirma a reserva e declara o próximo passo."
+		},
+		{
+			"type": "text",
+			"text": "Tenho dúvidas",
+			"expect": "abre espaço e pergunta QUAL dúvida com específico (assina, boleto, contemplação) — não responde com cumprimento e não repete."
+		}
+	]
+}

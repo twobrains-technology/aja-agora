@@ -1,0 +1,44 @@
+{
+	"cenario": "golden-real-administradora-que-nao-exista",
+	"descricao": "Conversa real 050bb0c8 (web, Kiko, carta R$ 170 mil, 01/11/2026, 32 msgs, em_negociacao). O lead pediu 'Sicred' e o agente corrigiu com honestidade: 'Não tenho nenhuma cota da Sicredi nesta busca … Também preciso corrigir o que falei antes: não tenho a contagem de contemplados do Itaú' (11-01 14:24:09) — modelo do que o P11 pede. Mas no turno seguinte terminou no muro: 'A simulação não trouxe um valor de lance embutido para esta cota, então não consigo concluir' (14:27:06) — e o lead nunca mais voltou. 'Não consigo' sem alternativa é desistência velada (P0/P7). O que se mede: erro anterior corrigido com transparência; quando a tool não devolve um dado, o vendedor oferece o caminho alternativo COM número (carta mais próxima que tem lance, ou cenário sem lance com parcela real) — nunca termina no 'não consigo'.",
+	"caRefs": ["P0", "P7", "P11", "conversa 050bb0c8"],
+	"asserts": {
+		"turns": [
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true,
+				"forbidRepeatedAgentText": true
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "carta de 170 mil, carro",
+			"expect": "welcome + cartas de tool para a faixa."
+		},
+		{
+			"type": "text",
+			"text": "Sicred",
+			"expect": "admite que a administradora não está na busca SEM inventar cota e oferece o que existe (com números)."
+		},
+		{
+			"type": "text",
+			"text": "Quero o do Banco do Brasil",
+			"expect": "mostra a cota BB com carta/parcela/prazo de tool."
+		},
+		{
+			"type": "text",
+			"text": "ver cenários de contemplação com lance embutido",
+			"expect": "se a tool não devolver o dado, NÃO termina em 'não consigo': oferece o cenário alternativo com números reais (sem lance, parcela, contemplados) e declara o próximo passo."
+		}
+	]
+}

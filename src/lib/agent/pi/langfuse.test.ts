@@ -5,20 +5,10 @@
 // interruptor por uma flag solta, ou deixar passar "duas chaves das três", é aqui
 // que estoura — antes de o vendedor gastar um turno montando span que nunca sai.
 
+import { setLangfuseTracerProvider } from "@langfuse/tracing";
 import { InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
-import { setLangfuseTracerProvider } from "@langfuse/tracing";
 import { afterEach, describe, expect, it } from "vitest";
-
-import {
-	anexarInputCompleto,
-	comTeto,
-	entradaCompleta,
-	NOME_DA_OBSERVACAO,
-	tetoDoInput,
-	textoDaMensagem,
-} from "./langfuse-input-completo";
-
 import {
 	type Ambiente,
 	caminhoDoPluginDoLangfuse,
@@ -29,6 +19,14 @@ import {
 	MAX_CHARS_PADRAO,
 	userIdDoTurno,
 } from "./langfuse";
+import {
+	anexarInputCompleto,
+	comTeto,
+	entradaCompleta,
+	NOME_DA_OBSERVACAO,
+	tetoDoInput,
+	textoDaMensagem,
+} from "./langfuse-input-completo";
 
 const LIGADO = {
 	LANGFUSE_TRACING_ENABLED: "true",
@@ -167,9 +165,7 @@ const PAYLOAD_OPENAI = {
 		{ role: "assistant", content: [{ type: "text", text: "oi, quanto quer investir?" }] },
 		{ role: "user", content: "50 mil" },
 	],
-	tools: [
-		{ type: "function", function: { name: "mostrar_card", parameters: { type: "object" } } },
-	],
+	tools: [{ type: "function", function: { name: "mostrar_card", parameters: { type: "object" } } }],
 };
 
 const ENVS_DO_PAI = {
@@ -187,7 +183,10 @@ describe("entradaCompleta — as três partes do que o modelo de fato leu", () =
 		const entrada = entradaCompleta(PAYLOAD_OPENAI);
 		expect(entrada).not.toBeNull();
 		expect(entrada?.system).toContain("PROMPT_DO_VENDEDOR");
-		const historico = JSON.parse(entrada?.historico ?? "[]") as Array<{ role: string; content: string }>;
+		const historico = JSON.parse(entrada?.historico ?? "[]") as Array<{
+			role: string;
+			content: string;
+		}>;
 		// só as NÃO-system; e o content de array de parts vira o texto junto
 		expect(historico).toHaveLength(3);
 		expect(historico[2]).toEqual({ role: "user", content: "50 mil" });

@@ -1,0 +1,44 @@
+{
+	"cenario": "golden-real-arrependido-pos-reserva",
+	"descricao": "Conversa real a9eb68d4 (web, Samir, Fiat Argo R$ 60 mil, 13/10/2026, 28 msgs, lead PERDIDO com proposta gravada). O lead confirmou a carta ('Confirmo essa carta', 10-13 20:30:31) e 2 minutos depois disse 'Quero ver outras opções' — arrependimento pós-reserva. O agente mostrou outras cartas, o lead clicou em simular a ÂNCORA… e a conversa morreu: a retomada do dia seguinte foi o template 'Aqui é a Aja. Sua comparação está pronta … O que ficou faltando?' (10-14 09:00:03), que não respondia ao arrependimento. O que se mede: na troca pós-reserva, o vendedor explica o que acontece com a RESERVA (fato do sistema), mostra a diferença real entre a carta reservada e a nova (tool), e a retomada seguinte retoma de ONDE parou (nome, carta reservada, dúvida aberta) — nunca o template genérico (P0/P3).",
+	"caRefs": ["P0", "P3", "P11", "conversa a9eb68d4"],
+	"asserts": {
+		"turns": [
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidRepeatedAgentText": true,
+				"forbidUngroundedMoney": true
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi, quero um Fiat Argo de 60 mil",
+			"expect": "welcome + cartas compatíveis com números de tool."
+		},
+		{
+			"type": "text",
+			"text": "Confirmo essa carta",
+			"expect": "confirma a reserva e declara o próximo passo."
+		},
+		{
+			"type": "text",
+			"text": "Quero ver outras opções",
+			"expect": "acolhe o arrependimento sem susto: explica o que acontece com a reserva (fato do sistema) e mostra as outras cartas de tool com comparação."
+		},
+		{
+			"type": "text",
+			"text": "Simular ÂNCORA — R$ 60.000",
+			"expect": "simula a nova carta e, no mesmo turno, compara com a reservada (parcela/prazo/lance) e deixa o próximo passo; retomada seguinte NÃO repete template genérico."
+		}
+	]
+}

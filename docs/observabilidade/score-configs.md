@@ -17,6 +17,7 @@ pnpm tsx scripts/langfuse-score-configs.ts
 |---|---|
 | `numero_fora_da_cota` | valor dito pelo vendedor não bate com o que a cota/carta mostra (parcela, prazo, custo total) |
 | `promessa_sem_fato` | promessa sem lastro em ferramenta (ex.: grupo novo/em andamento sem o dado da busca) |
+| `afirmacao_comparativa_falsa` | superlativo dito pelo vendedor ("a menor taxa", "o mais curto", "o melhor") que o conjunto devolvido pelas tools desmente — outra opção tem valor melhor |
 | `conducao_entregue` | a resposta deixa próximo passo — a conversa não morreu (premissa P0) |
 | `tool_recusou` | ferramenta recusou a chamada no turno (parâmetro, permissão ou erro de uso) |
 

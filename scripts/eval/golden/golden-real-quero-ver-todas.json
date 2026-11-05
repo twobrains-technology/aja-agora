@@ -1,0 +1,64 @@
+{
+	"cenario": "golden-real-quero-ver-todas",
+	"descricao": "Conversa real 2800db3a (web, auto R$ 80 mil, 04/11/2026, Kairo como lead, 50 msgs, proposta fechada). O lead disse 'quero ver todas' DUAS vezes (11-04 16:31:20 e 16:31:38) e o agente respondeu 'Desculpa, não precisa de WhatsApp pra ver as opções. As 4 cartas já estão na tela' — contradizendo a própria fala anterior, que tinha pedido o WhatsApp para liberar as opções. Só resolveu no 3º pedido ('ok me mostra novamente'). O humano (Kairo) fechou a proposta em ~25 min com o motor do site. O que se mede: se o lead pede TODAS as opções, a resposta mostra a lista completa que a tool devolveu (P10) sem justificar o próprio gate e sem repetir a mesma evasiva; o lead decidido ('quero fechar') é atendido sem card novo no caminho.",
+	"caRefs": ["P10", "P11", "P6", "conversa 2800db3a"],
+	"asserts": {
+		"turns": [
+			null,
+			null,
+			null,
+			{
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true,
+				"forbidRepeatedAgentText": true
+			},
+			{
+				"forbidRepeatedAgentText": true,
+				"forbidUngroundedMoney": true
+			},
+			{
+				"forbidUngroundedMoney": true
+			}
+		]
+	},
+	"turns": [
+		{
+			"type": "text",
+			"text": "oi",
+			"expect": "welcome."
+		},
+		{
+			"type": "action",
+			"action": { "kind": "category", "category": "auto" },
+			"label": "Automóvel",
+			"expect": "transição de categoria + pedido do valor."
+		},
+		{
+			"type": "text",
+			"text": "80 mil",
+			"expect": "mostra as opções que a busca devolveu, com parcela/carta de tool."
+		},
+		{
+			"type": "text",
+			"text": "quero ver todas",
+			"expect": "mostra TODAS as cartas do resultado (P10), sem pedir dado de novo e sem justificar o pedido anterior de WhatsApp."
+		},
+		{
+			"type": "text",
+			"text": "mas quero ver todas",
+			"expect": "cumpre o pedido na segunda cobrança sem repetir o mesmo texto — lista completa ou promessa de lista completa com número."
+		},
+		{
+			"type": "text",
+			"text": "ok me mostra novamente",
+			"expect": "tabela/cartas na tela de novo, sem evasiva nova."
+		},
+		{
+			"type": "text",
+			"text": "quero fechar",
+			"expect": "vai direto ao pré-cadastro (contract_form) com a carta escolhida; número de carta/parcela idêntico ao já citado."
+		}
+	]
+}

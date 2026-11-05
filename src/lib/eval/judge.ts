@@ -88,7 +88,8 @@ export async function judgeConversation(args: JudgeArgs): Promise<JudgeResponse>
 				schema: judgeResultSchema,
 				system: RUBRIC_SYSTEM_PROMPT,
 				prompt,
-				temperature: 0,
+				// `temperature` OMITIDO: o gateway (litellm 1.93) rejeita o parâmetro
+				// para claude-sonnet-5 (invalid_request_error: "deprecated").
 			});
 
 			// O usage vem com o TOTAL de entrada do SDK; `normalizarUsoDoSdk` separa a
