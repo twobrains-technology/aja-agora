@@ -19,6 +19,7 @@
 
 import { avaliarConversa, slotsPedidos, type TurnoDeConversa } from "@/lib/agent/pi/eval/golden";
 import type {
+	ArtifactLido,
 	ContextoDeMarcacao,
 	DadosDaSimulacao,
 	Gravidade,
@@ -48,6 +49,7 @@ const GRAVIDADE: Record<MarcacaoId, Gravidade> = {
 	"numero-sem-ferramenta": "DEFEITO",
 	"chamou-fila": "INFORMATIVA",
 	"falou-prazo": "DEFEITO",
+	"retomada-sem-novidade": "DEFEITO",
 };
 
 function montar(id: MarcacaoId, ocorrencias: Ocorrencia[]): Marcacao {
@@ -328,6 +330,102 @@ export function falouPrazo(t: TurnoDaSimulacao[]): Marcacao {
 	return montar("falou-prazo", oc);
 }
 
+// ── retomada dos perfis de morte ─────────────────────────────────────────
+
+const normaliza = (s: string): string =>
+	s
+		.normalize("NFD")
+		.replace(/\p{Diacritic}/gu, "")
+		.toLowerCase()
+		.replace(/[^\w\s]/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+
+/** Pergunta só de cumprimento não é "pergunta nova" (carinho não é novidade). */
+const CUMPRIMENTO_PURO = /^(oi|ola|opa|e ai|tudo bem|tudo bom|como vai|beleza)[\s?!]*$/;
+
+const perguntasDoTexto = (texto: string): string[] =>
+	texto
+		.split(/(?<=[?!.])\s+|\n+/)
+		.filter((f) => f.trim().endsWith("?"))
+		.map(normaliza)
+		.filter((f) => f !== "" && !CUMPRIMENTO_PURO.test(f));
+
+const R$: RegExp = /R\$\s?([\d.]+(?:,\d+)?)/g;
+
+function numerosEmReais(texto: string): number[] {
+	return [...texto.matchAll(R$)]
+		.map((m) => Number(m[1].replace(/\./g, "").replace(",", ".")))
+		.filter((n) => Number.isFinite(n));
+}
+
+function chavesDoArtifact(a: ArtifactLido): string[] {
+	const payload = a.payload as { groups?: unknown } | null | undefined;
+	const groups = Array.isArray(payload?.groups) ? payload.groups : [];
+	const ids = groups
+		.flatMap((g) => {
+			const r = g as { id?: unknown; groupId?: unknown };
+			return [r.id, r.groupId].filter((x): x is string => typeof x === "string");
+		})
+		.sort();
+	return [`${a.artifactType}|${ids.join(",")}`];
+}
+
+/**
+ * Perfis de morte (voltei-sem-nada, silencio-total, card-travado): no turno em que o lead
+ * VOLTA ou RETARDA, a retomada tem de levar algo novo — oferta, número de ferramenta (R$
+ * que não apareceu antes), card com conteúdo diferente ou pergunta nova — e o mesmo pedido
+ * textual não pode repetir mais de 1 vez. NAO_APLICAVEL fora desses perfis.
+ */
+export function retomadaSemNovidade(
+	t: TurnoDaSimulacao[],
+	perfil: ContextoDeMarcacao["perfil"],
+): Marcacao {
+	const ret = perfil.turnosDeRetorno ?? [];
+	if (ret.length === 0) {
+		return naoAplicavel("retomada-sem-novidade", `perfil ${perfil.id} sem turno de retomada`);
+	}
+	const oc: Ocorrencia[] = [];
+	const perguntasAnteriores = new Map<string, number>();
+	const chavesAnteriores = new Set<string>();
+	const numerosAnteriores = new Set<number>();
+	for (const turno of t) {
+		if (ret.includes(turno.indice)) {
+			const texto = textoDoVendedor(turno.vendedor);
+			const nova = perguntasDoTexto(texto).filter((p) => !perguntasAnteriores.has(p));
+			const numerosNovos = numerosEmReais(texto).filter((n) => !numerosAnteriores.has(n));
+			const repetiu = [...perguntasAnteriores.values()].some((n) => n >= 2);
+			const cartasNovas = turno.vendedor.artifacts.some((a) =>
+				chavesDoArtifact(a).some((c) => !chavesAnteriores.has(c)),
+			);
+			const novidade =
+				turno.vendedor.toolCalls.length > 0 ||
+				cartasNovas ||
+				numerosNovos.length > 0 ||
+				nova.length > 0;
+			if (repetiu)
+				oc.push({
+					turno: turno.indice,
+					evidencia: `mesmo pedido repetido além de 1 vez na retomada: ${corto(texto)}`,
+				});
+			else if (!novidade)
+				oc.push({
+					turno: turno.indice,
+					evidencia: `retomada sem novidade (nada novo: sem card, número, ferramenta ou pergunta): ${corto(texto)}`,
+				});
+		}
+		const texto = textoDoVendedor(turno.vendedor);
+		for (const p of perguntasDoTexto(texto))
+			perguntasAnteriores.set(p, (perguntasAnteriores.get(p) ?? 0) + 1);
+		for (const a of turno.vendedor.artifacts)
+			for (const c of chavesDoArtifact(a)) chavesAnteriores.add(c);
+		for (const n of numerosEmReais(texto)) numerosAnteriores.add(n);
+		for (const a of turno.vendedor.artifacts)
+			for (const n of numerosDoPayload(a.payload)) numerosAnteriores.add(n);
+	}
+	return montar("retomada-sem-novidade", oc);
+}
+
 export function marcarSimulacao(t: TurnoDaSimulacao[], ctx: ContextoDeMarcacao): Marcacao[] {
 	return [
 		chegouAProposta(t),
@@ -338,5 +436,6 @@ export function marcarSimulacao(t: TurnoDaSimulacao[], ctx: ContextoDeMarcacao):
 		numeroSemFerramenta(t, ctx.numerosConhecidos),
 		chamouFila(t, ctx.dados),
 		falouPrazo(t),
+		retomadaSemNovidade(t, ctx.perfil),
 	];
 }

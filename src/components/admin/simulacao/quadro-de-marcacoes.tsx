@@ -18,6 +18,7 @@ const ORDEM: MarcacaoId[] = [
 	"numero-sem-ferramenta",
 	"chamou-fila",
 	"falou-prazo",
+	"retomada-sem-novidade",
 ];
 
 type Props = {

@@ -1,4 +1,4 @@
-// Os 9 perfis de cliente da simulação do playground (P12). Persona e falas
+// Os 12 perfis de cliente da simulação do playground (P12). Persona e falas
 // semente em pt-BR; as sementes vêm dos cenários golden-dono-chato-*, lidas à
 // mão (nunca importadas em runtime).
 import type { DadosDaSimulacao, PerfilDeCliente, PerfilId } from "./tipos";
@@ -142,6 +142,65 @@ export const PERFIS_DE_CLIENTE: readonly PerfilDeCliente[] = [
 			{ depoisDoTurno: 3, texto: "olha, vou pensar e te falo depois", vezes: 1 },
 			{ depoisDoTurno: 4, texto: "oi, voltei — o carro de 90 mil ainda tá de pé?", vezes: 2 },
 		],
+		maxTurnos: 9,
+		esperaProposta: false,
+		esperaFila: false,
+		dados: DADOS_PADRAO,
+	},
+	{
+		// Morte: o lead volta sem dar conteúdo nenhum ("Voltei"). O agente não pode repetir o
+		// mesmo pedido textual de turno anterior (máx. 1 repetição) e a retomada tem de levar
+		// algo novo: oferta, número de ferramenta ou pergunta nova.
+		id: "voltei-sem-nada",
+		rotulo: "Voltei sem nada",
+		persona: `${REGRAS_COMUNS} Você desaparece no meio da conversa e volta dando contexto nenhum: só "voltei". Não responda a nada do que o vendedor disse antes e não repita frases suas antigas. Só avance se ele trouxer algo novo (oferta, número ou pergunta que você ainda não ouviu).`,
+		objetivo: "Voltar sem conteúdo e ser reconduzido sem o mesmo pedido repetido.",
+		abertura: "oi, queria ver consórcio de carro",
+		roteiro: [
+			{ depoisDoTurno: 2, texto: "oi, voltei", vezes: 1 },
+			{ depoisDoTurno: 4, texto: "voltei", vezes: 1 },
+		],
+		turnosDeRetorno: [3, 5],
+		maxTurnos: 8,
+		esperaProposta: false,
+		esperaFila: false,
+		dados: DADOS_PADRAO,
+	},
+	{
+		// Morte: o lead silencia. O runner não tem turno sem mensagem do cliente (a cada turno
+		// ele fala, `rodar-simulacao.ts`), então a pausa é modelada como respostas frias seguidas
+		// e o retorno depois. A retomada PROATIVA do agente pela régua de remarketing
+		// (src/lib/remarketing/, disparada por job) NÃO é exercitável aqui — pendência: teste e2e
+		// próprio (disparo do job da régua contra conversa simulada).
+		id: "silencio-total",
+		rotulo: "Silêncio total",
+		persona: `${REGRAS_COMUNS} Você para de se envolver: respostas frias de uma linha e volta só depois, sem explicar o sumiço. Não responda a nada do que o vendedor disse enquanto estava frio e só avance se ele trouxer algo novo (oferta, número ou pergunta que você ainda não ouviu).`,
+		objetivo: "Silenciar por alguns turnos, voltar e ser retomado sem repetição.",
+		abertura: "oi, quero saber de consórcio de imóvel",
+		roteiro: [
+			{ depoisDoTurno: 2, texto: "vou pensar, depois te falo", vezes: 1 },
+			{ depoisDoTurno: 3, texto: "deixa quieto por enquanto", vezes: 2 },
+			{ depoisDoTurno: 6, texto: "oi, desculpa o sumiço", vezes: 1 },
+		],
+		turnosDeRetorno: [7],
+		maxTurnos: 10,
+		esperaProposta: false,
+		esperaFila: false,
+		dados: DADOS_PADRAO,
+	},
+	{
+		// Morte: o lead vê o card e trava ("vou analisar"). O agente tem de levar algo novo
+		// (número novo, ângulo novo), não repetir o card igual.
+		id: "card-travado",
+		rotulo: "Card travado",
+		persona: `${REGRAS_COMUNS} Você olha a carta na tela e trava: "vou analisar". Não decida e não peça nada novo; só saia do lugar se o vendedor trouxer algo que você ainda não viu (número novo, ângulo novo). Se ele só repetir o que já mandou, continue travado.`,
+		objetivo: "Travar após o card e avançar só com novidade concreta.",
+		abertura: "oi, tô olhando consórcio de carro",
+		roteiro: [
+			{ depoisDoTurno: 3, texto: "vou analisar e te falo", vezes: 1 },
+			{ depoisDoTurno: 5, texto: "ainda analisando, deixa eu pensar", vezes: 1 },
+		],
+		turnosDeRetorno: [4, 6],
 		maxTurnos: 9,
 		esperaProposta: false,
 		esperaFila: false,

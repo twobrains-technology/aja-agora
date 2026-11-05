@@ -3,9 +3,9 @@ import { IDS_DE_PERFIL, PERFIS_DE_CLIENTE, perfilPorId } from "./perfis-de-clien
 import type { PerfilId } from "./tipos";
 
 describe("perfis de cliente", () => {
-	it("são 9, com ids únicos", () => {
-		expect(PERFIS_DE_CLIENTE).toHaveLength(9);
-		expect(new Set(IDS_DE_PERFIL).size).toBe(9);
+	it("são 12, com ids únicos", () => {
+		expect(PERFIS_DE_CLIENTE).toHaveLength(12);
+		expect(new Set(IDS_DE_PERFIL).size).toBe(12);
 	});
 
 	it("cada perfil tem abertura, persona e maxTurnos válidos", () => {
@@ -35,6 +35,22 @@ describe("perfis de cliente", () => {
 			"pede-atendente",
 			"madrugada-sem-atendente",
 		]);
+	});
+
+	it("perfis de morte têm retomada dentro do roteiro e teto coerente", () => {
+		for (const id of ["voltei-sem-nada", "silencio-total", "card-travado"] as const) {
+			const p = perfilPorId(id);
+			expect(p.roteiro).toBeDefined();
+			for (const t of p.turnosDeRetorno ?? []) {
+				expect(t).toBeGreaterThan(0);
+				expect(t).toBeLessThan(p.maxTurnos);
+				expect(p.roteiro?.some((r) => t > r.depoisDoTurno && t <= r.depoisDoTurno + r.vezes)).toBe(
+					true,
+				);
+			}
+			expect(p.esperaProposta).toBe(false);
+			expect(p.esperaFila).toBe(false);
+		}
 	});
 
 	it("perfilPorId acha e lança em id inválido", () => {
