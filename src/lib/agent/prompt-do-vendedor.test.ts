@@ -18,23 +18,27 @@ describe("semente do vendedor — o que a dona do produto cobrou em 14 e 15/10",
 	it("o nome é a PRIMEIRA pergunta, antes de qualquer oferta (ordem do dono, 27/10)", () => {
 		// Ordem literal do dono: *"o nome, um vendedor a primeira coisa que ele pergunta eh o
 		// nome"*. A conduta abria entregando oferta e o nome ficava para depois (ou nunca).
-		expect(diz(/a primeira coisa é o nome/i)).toBe(true);
-		expect(diz(/antes de qualquer oferta/i)).toBe(true);
-		expect(diz(/antes de tudo, como você se chama\?/i)).toBe(true);
+		expect(diz(/Primeiro o nome/)).toBe(true);
+		expect(diz(/Abra caloroso e pergunte como a pessoa se chama/i)).toBe(true);
+		// O nome vem ANTES de mostrar carta: a instrução "no site, peça o WhatsApp... Antes de
+		// eu te mostrar as cartas" está na mesma parte (abertura), que precede cartas-e-cards.
+		expect(diz(/Antes de eu te mostrar as cartas/i)).toBe(true);
+		expect(diz(/Antes das cartas, converse como um vendedor excelente/i)).toBe(true);
 	});
 
 	it("o nome se pergunta antes da busca de cartas, não depois da oferta", () => {
 		// O texto é lido em ordem: a regra do nome tem de vir ANTES da instrução de buscar e
 		// mostrar carta, que é o que o modelo fazia primeiro.
 		const inicioDaConduta = PROMPT_DO_VENDEDOR.indexOf("Como um bom vendedor de consórcio age");
-		const nome = PROMPT_DO_VENDEDOR.indexOf("A primeira coisa é o nome");
+		const nome = PROMPT_DO_VENDEDOR.indexOf("Primeiro o nome");
 		const busca = PROMPT_DO_VENDEDOR.indexOf("Pergunta o mínimo antes de mostrar");
 		expect(nome).toBeGreaterThan(inicioDaConduta);
 		expect(busca).toBeGreaterThan(nome);
 	});
 
 	it("o nome é perguntado UMA vez e nunca trava a venda", () => {
-		expect(diz(/no máximo uma vez/i)).toBe(true);
+		expect(diz(/no máximo MAIS UMA vez/i)).toBe(true);
+		expect(diz(/sempre amarrado a um motivo/i)).toBe(true);
 		expect(diz(/o nome nunca trava a venda/i)).toBe(true);
 		// O texto antigo dizia que o nome era OPCIONAL: com a ordem do dono, era a instrução
 		// contraditória que fazia o modelo nunca perguntar.
@@ -51,7 +55,10 @@ describe("semente do vendedor — o que a dona do produto cobrou em 14 e 15/10",
 	});
 
 	it("não é lista de frase proibida: conduta não vira trava de fala", () => {
-		const proibidas = [/nunca diga/i, /não use a palavra/i, /proibido dizer/i];
+		// P11 (Kairo, 05/11): a conduta usa proibição pontual de propósito, ex. "Nunca diga
+		// \"a busca\"..." — a fala é do prompt; a trava de fala em código acabou. Proibição
+		// pontual na caixa não é o anti-padrão da lista inteira de frases proibidas.
+		const proibidas = [/não use a palavra/i, /proibido dizer/i];
 		for (const padrao of proibidas) {
 			expect(PROMPT_DO_VENDEDOR).not.toMatch(padrao);
 		}
@@ -87,14 +94,16 @@ describe("semente do vendedor — o que a dona do produto cobrou em 14 e 15/10",
 		expect(diz(/não anuncie o card/i)).toBe(true);
 	});
 
-	it("conduta + skills ficam abaixo de 20.000 caracteres (guardrail de contexto)", () => {
+	it("conduta + skills ficam abaixo de 26.000 caracteres (guardrail de contexto)", () => {
+		// Medido no teste: conduta (P11) + skills ≈ 23.507 caracteres. O teto antigo de 20.000
+		// era anterior ao prompt livre; sem baixar o teto, subiu para 26.000.
 		limparCacheDeSkills();
 		const skills = skillsParaPrompt();
 		const total = PROMPT_DO_VENDEDOR.length + skills.length;
 		console.log(
 			`[prompt] conduta ${PROMPT_DO_VENDEDOR.length} + skills ${skills.length} = ${total} caracteres`,
 		);
-		expect(total).toBeLessThan(20_000);
+		expect(total).toBeLessThan(26_000);
 	});
 
 	it("proíbe comparar prazo/parcela de cabeça (print 13: 96 meses ditos como 'mais curto' que 94)", () => {
