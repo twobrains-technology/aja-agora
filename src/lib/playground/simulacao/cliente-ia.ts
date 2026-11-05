@@ -13,6 +13,16 @@ import type {
 
 export const MODELO_DA_IA_CLIENTE = "claude-sonnet-4-6";
 
+/**
+ * O modelo da IA-cliente da simulação (P12), com override opcional por env,
+ * mesmo padrão de `modeloDoAgente` (model-provider.ts): `?.trim() ||` de
+ * propósito, porque o compose materializa `${AI_CLIENT_MODEL:-}` como string
+ * VAZIA e `??` não cairia no default.
+ */
+export function modeloDaIaCliente(): string {
+	return process.env.AI_CLIENT_MODEL?.trim() || MODELO_DA_IA_CLIENTE;
+}
+
 type GenerateObjectFn = typeof generateObject;
 let generateObjectImpl: GenerateObjectFn = generateObject;
 
@@ -20,9 +30,14 @@ export function __setGenerateObjectDoClienteForTests(fn: GenerateObjectFn | null
 	generateObjectImpl = fn ?? generateObject;
 }
 
+/** Tolerância no schema: estado fora do enum vira "continua"; a fala importa é o texto (P12).
+ *  O texto vazio segue reprovando: sem fala não há turno. */
 export const falaDoClienteSchema: z.ZodType<{ texto: string; estado: EstadoDoCliente }> = z.object({
 	texto: z.string().min(1).max(2000),
-	estado: z.enum(["continua", "objetivo-atingido", "desiste"]),
+	estado: z.preprocess(
+		(v) => (v === "objetivo-atingido" || v === "desiste" ? v : "continua"),
+		z.enum(["continua", "objetivo-atingido", "desiste"]),
+	),
 });
 
 export function montarSystemDoCliente(p: PerfilDeCliente, horaFixa?: string): string {
@@ -47,18 +62,37 @@ export function montarPromptDoCliente(
 	return `Conversa até agora (turno ${turno}):\n${linhas.join("\n") || "(vazia)"}\n\nEscreva a próxima fala do cliente.`;
 }
 
+/** Uma repetição com o erro no prompt: rota do gateway pode falhar (502 no modelo local,
+ *  strata-mac). Depois das duas tentativas, o erro sobe ao chamador (erro-do-cliente). */
+const MAX_TENTATIVAS = 2;
+const cortoErro = (e: unknown): string => String(e instanceof Error ? e.message : e).slice(0, 200);
+
 export async function gerarFalaDoCliente(
 	pedido: PedidoDeFalaDoCliente,
 ): Promise<RespostaDeFalaDoCliente> {
 	const perfil = perfilPorId(pedido.perfilId);
 	const anthropic = createGatewayAnthropic();
-	const r = await generateObjectImpl({
-		model: anthropic(MODELO_DA_IA_CLIENTE),
-		schema: falaDoClienteSchema,
-		system: montarSystemDoCliente(perfil, pedido.horaFixa),
-		prompt: montarPromptDoCliente(perfil, pedido.historico, pedido.turno),
-		temperature: 0.7,
-	});
-	const objeto = falaDoClienteSchema.parse(r.object);
-	return { texto: objeto.texto, estado: objeto.estado, origem: "ia" };
+	let erroAnterior = "";
+	let ultimoErro: unknown;
+	for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa++) {
+		const base = montarPromptDoCliente(perfil, pedido.historico, pedido.turno);
+		const prompt = erroAnterior
+			? `${base}\n\nA tentativa anterior falhou com o erro: ${erroAnterior}. Responda de novo, no formato pedido.`
+			: base;
+		try {
+			const r = await generateObjectImpl({
+				model: anthropic(modeloDaIaCliente()),
+				schema: falaDoClienteSchema,
+				system: montarSystemDoCliente(perfil, pedido.horaFixa),
+				prompt,
+				temperature: 0.7,
+			});
+			const objeto = falaDoClienteSchema.parse(r.object);
+			return { texto: objeto.texto, estado: objeto.estado, origem: "ia" };
+		} catch (e) {
+			ultimoErro = e;
+			erroAnterior = cortoErro(e);
+		}
+	}
+	throw ultimoErro;
 }
