@@ -26,14 +26,20 @@ describe("texto antes e depois de uma tool não cola", () => {
 		expect(sep.aoDelta("Achei 4.").map((e) => e.type)).toEqual(["text-delta"]);
 	});
 
-	it("trecho idêntico a um já solto neste turno não sai duas vezes", async () => {
+	it("um trecho idêntico a um já solto SAI de novo (P11) e a repetição é medida", async () => {
 		const { criarSeparadorDeTrechos } = await import("./turno-livre");
 		const sep = criarSeparadorDeTrechos();
 		const saida = [...sep.aoDelta("Ótimo! Vou gerar sua proposta agora na Canopus.")];
 		sep.aoToolCall();
-		// A tool recusou o aceite e o modelo repetiu a mesma frase — na tela saía duplicada.
+		// A tool recusou o aceite e o modelo repetiu a mesma frase: o texto SAI (a
+		// dedup por conteúdo saiu com o P11) e a repetição é medida.
 		saida.push(...sep.aoDelta("Ótimo! Vou gerar sua proposta agora na Canopus."));
-		expect(saida.map((e) => e.type)).toEqual(["text-delta", "text-boundary"]);
+		expect(saida.map((e) => e.type)).toEqual(["text-delta", "text-boundary", "text-delta"]);
+		expect(saida[2]).toMatchObject({
+			type: "text-delta",
+			text: "Ótimo! Vou gerar sua proposta agora na Canopus.",
+		});
+		expect(sep.duplicatasNoTurno()).toBe(1);
 	});
 });
 

@@ -134,15 +134,20 @@ describe("o pedido de humano honra o pedido, sem promessa", () => {
 		expect(modulo).toMatch(/set\(\{ status: "handed_off" \}\)/);
 	});
 
-	// Botão de confirmação depois de o cliente já ter pedido é burocracia.
-	it("o turno escreve a LINHA do handoff, não a prosa do modelo", () => {
+	// P11 (Kairo, 05/11): o remendo do balão fixo de handoff saiu do turno. A fala
+	// do modelo passa; `RE_DE_PROMESSA` sobrevive só como MEDIDA (sinal
+	// `promessa_de_atendimento`), e o FATO do handoff (evento, `handoffSuggested`,
+	// a rota da mesa) vem da tool e do caso aberto.
+	it("o turno não substitui mais a fala do modelo na transferência", () => {
 		const turno = readFileSync(new URL("./turno-livre.ts", import.meta.url).pathname, "utf8");
-		expect(turno).toMatch(/linhaFinalDoHandoff\(\{[^}]*texto: bruto[\s\S]*?casoAberto/);
-		// O balão sai pela linha da casa tanto quando o caso foi aberto quanto quando o modelo
-		// escreve prosa de promessa antes de abrir.
-		expect(turno).toMatch(/handoff:[\s\S]*?RE_DE_PROMESSA\.test\(pendente\)/);
-		// Uma linha por turno: a segunda prosa de handoff não vira segunda mensagem.
-		expect(turno).toMatch(/linhaDeHandoffEmitida/);
+		// Nenhum balão fixo: nem a linha da casa, nem a fala de retomada substituem o modelo.
+		expect(turno).not.toMatch(/linhaFinalDoHandoff\(/);
+		expect(turno).not.toMatch(/falaDaRetomadaDaTransferencia\(/);
+		// A guarda de uma-linha-por-turno saiu junto com o balão fixo.
+		expect(turno).not.toMatch(/linhaDeHandoffEmitida/);
+		// A regex de promessa sobrevive só como MEDIDA: emite o sinal, não corta.
+		expect(turno).toMatch(/promessa_de_atendimento/);
+		expect(turno).toMatch(/RE_DE_PROMESSA\.test\(b\)/);
 
 		const tools = readFileSync(new URL("./tools-humano.ts", import.meta.url).pathname, "utf8");
 		expect(tools).toMatch(/ctx\.casoAbertoNesteTurno\?\.\(\);/);

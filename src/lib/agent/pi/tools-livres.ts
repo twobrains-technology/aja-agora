@@ -1166,6 +1166,13 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				return "Nada informado: passe ao menos um campo (categoria, valorDoBem, lanceValue ou prazoMeses) com o que o cliente declarou.";
 			}
 			ctx.perfilInformado = { ...ctx.perfilInformado, ...gravado };
+			// O perfil declarado NESTE turno já vale para os cards que o beat ainda vai
+			// montar: `informar_perfil` pode vir antes do `mostrar_card` no mesmo beat, e
+			// o cenário tem de ler o zero que o cliente acabou de declarar. Na NLU antiga
+			// a gravação rodava antes do beat e o card lia o estado fresco; com a tool,
+			// quem atualiza `perfilDeclarado` é a própria tool — o bloco 3b do turno
+			// espelha no estado para persistir.
+			ctx.perfilDeclarado = { ...ctx.perfilDeclarado, ...gravado };
 			publicarScores(
 				[
 					{
