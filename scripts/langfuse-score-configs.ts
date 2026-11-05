@@ -103,6 +103,12 @@ const CONFIGS: Config[] = [
 		description:
 			"Sinal determinístico: ferramenta recusou a chamada no turno (parâmetro, permissão ou erro de uso).",
 	},
+	{
+		name: "retomada_sem_novidade",
+		dataType: "BOOLEAN",
+		description:
+			'Sinal determinístico da morte do lead (D-0083, bloco B): retomada que repete o mesmo pedido de antes sem levar algo novo ("vou analisar", "Voltei" — o vendedor tem de levar algo novo). Marcação `retomada-sem-novidade` da simulação.',
+	},
 	...DIMENSOES.map((d) => ({
 		name: d.nome,
 		dataType: "NUMERIC" as const,

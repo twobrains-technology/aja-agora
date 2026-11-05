@@ -4,7 +4,19 @@
 // Cria a fila de calibração do juiz (`calibracao-juiz`) na instância e enfileira
 // os traces marcados pelos detectores determinísticos:
 // - `numero_fora_da_cota` — número dito que não bate com a cota/carta;
-// - `promessa_sem_fato` — promessa sem lastro em ferramenta.
+// - `promessa_sem_fato` — promessa sem lastro em ferramenta;
+// - `retomada_sem_novidade` — retomada que repete o mesmo pedido sem levar algo
+//   novo (D-0083, bloco B: morte do lead).
+//
+// Enfileira TAMBÉM os cenários de morte por sessão (independem de score):
+// os 3 perfis de morte da simulação (`voltei-sem-nada`, `silencio-total`,
+// `card-travado`) e os golden `golden-real-voltei-sem-conteudo`,
+// `golden-real-remarketing-identico`. A fonte dos ids é LOCAL: os exports da
+// simulação (`simulacao-*.json`, com `conversationId` por turno) e o relatório
+// do gate mais recente (`.eval/relatorio-gate-*.json`, campo `conversationId`
+// por cenário). No Langfuse, cada turno do app vira um trace cujo `sessionId`
+// é o `conversationId` (plugin do Pi) — enfileirar a SESSION traz todos os
+// turnos do cenário de uma vez.
 //
 // Os detectores gravam esses scores como BOOLEAN no trace do turno
 // (`src/lib/observability/sinais/numero-fora-da-cota.ts`,
@@ -24,18 +36,30 @@
 // o run prova a fila e o enfileiramento fica PENDENTE de dados.
 
 import { execFileSync } from "node:child_process";
-import { isAbsolute, resolve } from "node:path";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
 import { credenciais, listarScoreConfigs } from "./langfuse-score-configs";
 
 type Credenciais = { baseUrl: string; publicKey: string; secretKey: string };
 
 /** Nomes dos score configs que a fila pende — o juiz pontua na fila de
  * calibração. Os ids são resolvidos contra a instância no momento do uso. */
-const SCORE_CONFIGS_DA_FILA = ["numero_fora_da_cota", "promessa_sem_fato"];
+const SCORE_CONFIGS_DA_FILA = ["numero_fora_da_cota", "promessa_sem_fato", "retomada_sem_novidade"];
 
 const NOME_DA_FILA = "calibracao-juiz";
 const DESCRICAO_DA_FILA =
-	"Fila de calibração do juiz: traces marcados pelos detectores determinísticos (numero_fora_da_cota, promessa_sem_fato) para o Kairo julgar. O veredito do juiz nunca é gate — aqui é material de calibração.";
+	"Fila de calibração do juiz: traces marcados pelos detectores determinísticos (numero_fora_da_cota, promessa_sem_fato, retomada_sem_novidade) e sessões dos cenários de morte (perfis de morte da simulação + golden-real-voltei-sem-conteudo, golden-real-remarketing-identico) para o Kairo julgar. O veredito do juiz nunca é gate — aqui é material de calibração.";
+
+/** Os perfis de morte da simulação (bloco B) — o lead volta sem dar nada,
+ * silencia e retorna, trava no card. */
+export const PERFIS_DE_MORTE = ["voltei-sem-nada", "silencio-total", "card-travado"] as const;
+
+/** Os golden de retomada — conversa real gravada onde o lead volta sem
+ * conteúdo e onde o remarketing devolve a mesma fala de antes. */
+export const GOLDEN_DE_MORTE = [
+	"golden-real-voltei-sem-conteudo",
+	"golden-real-remarketing-identico",
+] as const;
 
 type Fila = {
 	id: string;
@@ -226,6 +250,88 @@ export async function itensDaFila(
 	}
 }
 
+// ── cenários de morte: sessões lidas dos registros locais ─────────────
+
+export type SessaoDeMorte = { sessionId: string; fonte: string };
+
+type ExportacaoSimulacao = {
+	resultados?: Array<{
+		perfilId?: string;
+		turnos?: Array<{ vendedor?: { conversationId?: string | null } }>;
+	}>;
+};
+
+/** Lê `simulacao-*.json` (exportações da simulação, em `dir` e `dir/.eval`) e
+ * devolve os conversationIds dos turnos dos perfis de morte. Arquivo que não
+ * abre ou que não casa com o formato é pulado — o registro é acessório, a fila
+ * nunca falha por causa dele. */
+export function sessoesDeMorteDaSimulacao(dir: string): SessaoDeMorte[] {
+	const achados = new Map<string, string>();
+	for (const pasta of [dir, join(dir, ".eval")]) {
+		let arquivos: string[];
+		try {
+			arquivos = readdirSync(pasta).filter(
+				(f) => f.startsWith("simulacao-") && f.endsWith(".json"),
+			);
+		} catch {
+			continue;
+		}
+		for (const arquivo of arquivos) {
+			let corpo: ExportacaoSimulacao;
+			try {
+				corpo = JSON.parse(readFileSync(join(pasta, arquivo), "utf8")) as ExportacaoSimulacao;
+			} catch {
+				continue;
+			}
+			for (const r of corpo.resultados ?? []) {
+				if (!r.perfilId || !(PERFIS_DE_MORTE as readonly string[]).includes(r.perfilId)) continue;
+				for (const t of r.turnos ?? []) {
+					const cid = t.vendedor?.conversationId;
+					if (cid) achados.set(cid, `${pasta}/${arquivo} (perfil ${r.perfilId})`);
+				}
+			}
+		}
+	}
+	return [...achados].map(([sessionId, fonte]) => ({ sessionId, fonte }));
+}
+
+/** Lê o relatório do gate mais recente (`.eval/relatorio-gate-*.json`) e
+ * devolve as sessões dos golden de morte que rodaram nele. */
+export function sessoesDeMorteDoGate(dir: string): SessaoDeMorte[] {
+	const pasta = join(dir, ".eval");
+	let arquivos: string[];
+	try {
+		arquivos = readdirSync(pasta).filter(
+			(f) => f.startsWith("relatorio-gate-") && f.endsWith(".json"),
+		);
+	} catch {
+		return [];
+	}
+	if (arquivos.length === 0) return [];
+	// O mais recente por mtime — o gate de agora, não um velho.
+	let maisNovo: { f: string; m: number } | null = null;
+	for (const f of arquivos) {
+		try {
+			const m = statSync(join(pasta, f)).mtimeMs;
+			if (!maisNovo || m > maisNovo.m) maisNovo = { f, m };
+		} catch {}
+	}
+	if (!maisNovo) return [];
+	let corpo: { cenarios?: Array<{ cenario?: string; conversationId?: string }> };
+	try {
+		corpo = JSON.parse(readFileSync(join(pasta, maisNovo.f), "utf8"));
+	} catch {
+		return [];
+	}
+	const achados: SessaoDeMorte[] = [];
+	for (const c of corpo.cenarios ?? []) {
+		if (!c.cenario || !(GOLDEN_DE_MORTE as readonly string[]).includes(c.cenario)) continue;
+		if (!c.conversationId) continue;
+		achados.push({ sessionId: c.conversationId, fonte: `.eval/${maisNovo.f} (${c.cenario})` });
+	}
+	return achados;
+}
+
 export type ResultadoExecucao = {
 	ok: boolean;
 	motivo?: string;
@@ -233,6 +339,9 @@ export type ResultadoExecucao = {
 	/** Scores dos detectores ainda não existe — enfileiramento PENDENTE de dados. */
 	enfileirados: number;
 	jaNaFila: number;
+	/** Sessões dos cenários de morte enfileiradas (perfis + golden). */
+	enfileiradosDeMorte: number;
+	fontesDeMorte: string[];
 	pendenteDeDados: boolean;
 };
 
@@ -240,6 +349,7 @@ export async function executar(
 	env: Record<string, string | undefined> = process.env,
 	lerCofre: (chave: string) => string | undefined = doCofre,
 	fetchFn: typeof fetch = fetch,
+	dir: string = process.cwd(),
 ): Promise<ResultadoExecucao> {
 	const cred = credenciais(env, lerCofre);
 	if (!cred) {
@@ -277,12 +387,36 @@ export async function executar(
 			enfileirados += 1;
 		}
 	}
+	// Cenários de morte: a fila também leva os registros locais — os perfis de
+	// morte da simulação e os golden de retomada — enfileirados por SESSÃO
+	// (todos os turnos do cenário entram de uma vez, com ou sem score de detector).
+	const deMorte = [...sessoesDeMorteDaSimulacao(dir), ...sessoesDeMorteDoGate(dir)];
+	let enfileiradosDeMorte = 0;
+	const fontesDeMorte: string[] = [];
+	for (const sessao of deMorte) {
+		// itens de SESSION na fila carregam o objectId cru — aceita as duas formas
+		// na dedup (com e sem o prefixo de chave interna).
+		if (presentes.has(`session:${sessao.sessionId}`) || presentes.has(sessao.sessionId)) {
+			jaNaFila += 1;
+			continue;
+		}
+		const { ok, status } = await enfileirar(fetchFn, cred, fila.id, {
+			traceId: null,
+			sessionId: sessao.sessionId,
+		});
+		if (!ok) throw new Error(`POST items (sessão ${sessao.sessionId}) → HTTP ${status}`);
+		presentes.add(sessao.sessionId);
+		enfileiradosDeMorte += 1;
+		fontesDeMorte.push(sessao.fonte);
+	}
 	return {
 		ok: true,
 		fila: { id: fila.id, criada },
 		enfileirados,
 		jaNaFila,
-		pendenteDeDados: !achouScore,
+		enfileiradosDeMorte,
+		fontesDeMorte,
+		pendenteDeDados: !achouScore && enfileiradosDeMorte === 0,
 	};
 }
 
@@ -312,13 +446,13 @@ if (ehProcessoPrincipal()) {
 			console.log(
 				`fila ${NOME_DA_FILA}: id=${resultado.fila.id} ${resultado.fila.criada ? "criada" : "já existia"}`,
 			);
+			console.log(
+				`itens: ${resultado.enfileirados} por detector, ${resultado.enfileiradosDeMorte} de morte, ${resultado.jaNaFila} já estavam na fila`,
+			);
+			for (const fonte of resultado.fontesDeMorte) console.log(`  morte     ${fonte}`);
 			if (resultado.pendenteDeDados) {
 				console.log(
-					"nenhum score real dos detectores na instância — enfileiramento PENDENTE de dados",
-				);
-			} else {
-				console.log(
-					`itens: ${resultado.enfileirados} enfileirados, ${resultado.jaNaFila} já estavam na fila`,
+					"nenhum score real dos detectores nem registro local de cenário de morte — enfileiramento PENDENTE de dados",
 				);
 			}
 			process.exit(0);

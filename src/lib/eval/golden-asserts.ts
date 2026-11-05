@@ -6,6 +6,7 @@
 /** Marcadores de fallback degradado — HTTP 200 que significa "a LLM nunca
  * respondeu" (guard herdado do driver r9). Presença = cenário CONTAMINADO. */
 import { extractMoneyMentions } from "@/lib/agent/orchestrator/money";
+import { lastroDaFala, valoresFalados } from "@/lib/eval/numeros-falados";
 
 export const DEFAULT_CONTAMINATION_MARKERS: readonly string[] = [
 	"Acho que me perdi por aqui",
@@ -380,12 +381,18 @@ export function checkScenario(
 					for (const derivado of derivadosDaCarta(numeros)) comLastro.add(derivado);
 				}
 				for (const n of extractMoneyMentions(anterior.userMsg)) comLastro.add(n);
+				// A FALA DO CLIENTE COMO ELA É FALADA, não como o regex gostaria que fosse.
+				// Medido em 05/11/2026: "carro entre 50 e 100 mil" — a escala do par
+				// pertence aos DOIS ponteiros (o "R$ 50" do eco do agente era 50 MIL);
+				// e "Posso pagar até 1200 por mês" — o "por" no meio tirava o 1200 do
+				// lastro. O que o cliente disse é fonte, adjacente ou não.
+				for (const n of lastroDaFala(anterior.userMsg)) comLastro.add(n);
 			}
 			// Tolerância de 1%: o agente arredonda ("R$ 6.252" vira "uns 6,3 mil")
 			// e arredondar não é inventar.
 			const temLastro = (v: number) =>
 				[...comLastro].some((c) => c > 0 && Math.abs(c - v) / c <= 0.01);
-			for (const v of extractMoneyMentions(t.agentText)) {
+			for (const v of valoresFalados(t.agentText)) {
 				if (!temLastro(v)) {
 					failures.push(
 						`${rotulo}: valor SEM LASTRO na fala — R$ ${v.toLocaleString("pt-BR")} não veio de tool nem do usuário`,

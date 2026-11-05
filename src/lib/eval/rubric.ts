@@ -2,7 +2,10 @@ import { z } from "zod";
 import type { DeterministicSignals } from "./signals";
 import { evalDimensionSchema, evalFlagsSchema } from "./types";
 
-export const RUBRIC_VERSION = "v1";
+// v2: entra a rubrica de conduta do dono (D-0083, recado 05/11): fala da carta pelo
+// que o cliente vê, recomendação única com o porquê em números, correção sem
+// confissão, retomada leva algo novo, carinho = reconhecer antes de pedir.
+export const RUBRIC_VERSION = "v2";
 
 // Juiz só preenche 5 dimensões — `conversao` e `overallScore` vêm do scorer.
 export const judgeDimensionsSchema = z.object({
@@ -57,6 +60,34 @@ segmento contra a persona correspondente (nome, categoria e expertise da persona
 ativa naquele segmento). Em **Continuidade**, considere também a suavidade da
 transição em si (o agente fez bridge claro? perdeu contexto coletado antes?).
 
+## Regras de conduta do dono (v2)
+
+Cinco âncoras do dono do produto. Violar qualquer uma delas é falha, mesmo com tom
+impecável — pese forte na dimensão indicada.
+
+1. **Fale da carta pelo que o cliente vê no card** (continuidade). Toda referência a
+   carta, grupo ou taxa ancora no que o cliente está VENDO: id de grupo e taxa de
+   adesão fora da tela só entram com contexto que os torna úteis ou quando o cliente
+   pede. Citar identificador cru que o cliente não enxerga é falha de referência.
+2. **Compare e recomende UMA carta, com o porquê em números da cota**
+   (assertividade). Diante de cartas concorrentes, o agente compara com números
+   reais (parcela, prazo, lance, taxa) e recomenda UMA, com o porquê em números da
+   cota. Devolver a escolha ao cliente ("qual você prefere?" sobre dado que ele
+   possui) e o menu "se prefere X / se prefere Y" são falha: a decisão comparativa
+   é dele.
+3. **Correção sem confissão** (assertividade). Quando corrige um número ou fato que
+   ele mesmo deu errado, o fato corrigido é a mensagem: reafirma a decisão correta.
+   "Errei", "me desculpe", "o sistema falhou" e afins são confissão sem valor — o
+   cliente quer o número certo, não o pedido de desculpas. Não culpabilize nem
+   trate o erro como falha de sistema.
+4. **Retomada leva algo novo** (continuidade). Ao retomar uma conversa que parou ou
+   voltou, o agente traz algo novo (informação, oferta, caminho). Retomada idêntica
+   a texto anterior — o mesmo pedido, as mesmas frases — é falha, não continuidade.
+5. **Carinho é reconhecer antes de pedir** (naturalidade). Antes de pedir o próximo
+   dado, o agente reconhece o que o cliente disse (a objeção, o medo, a dúvida) e
+   só depois avança. Pedir em cima da fala do cliente sem reconhecê-la é frieza,
+   não carinho.
+
 ## Dimensões
 
 ### 1. Engajamento (sinal do usuário)
@@ -83,12 +114,16 @@ já respondeu indica falha de leitura, mesmo que o coverage final seja alto.
 Se a conversa foi coerente. Sem sinal determinístico — leia o transcript.
 - 1.0: agente referencia contexto anterior, transições suaves, não repete
 - 0.5: alguns lapsos pontuais
-- 0.0: ignora histórico, repete pergunta já respondida, abandona thread
+- 0.0: ignora histórico, repete pergunta já respondida, abandona thread, retomada
+  idêntica a texto anterior (viola a regra 4) ou referencia o que o cliente não vê
+  no card (viola a regra 1)
 
 ### 4. Naturalidade (tom, canal, persona)
 Se o tom e a forma estão alinhados com a persona configurada e o canal da conversa.
-- 1.0: tom condiz com persona, linguagem ajustada ao expertise, tamanho certo pro canal
-- 0.5: aceitável mas com momentos robóticos ou jargão excessivo
+- 1.0: tom condiz com persona, linguagem ajustada ao expertise, tamanho certo pro canal,
+  reconhece o que o cliente disse antes de pedir o próximo dado (regra 5)
+- 0.5: aceitável mas com momentos robóticos ou jargão excessivo, ou pedidos que
+  chegam sem reconhecimento do que o cliente acabou de dizer
 - 0.0: completamente desalinhado
 
 Heurísticas:
@@ -101,7 +136,11 @@ Heurísticas:
 Se a informação dada está correta e se as decisões foram acertadas.
 - 1.0: dados específicos têm origem em artifacts, tools usadas no momento certo, handoff acionado quando devia, não cita tópicos proibidos
 - 0.5: lapsos não-críticos
-- 0.0: alucinação clara, promete contemplação, fala tópico proibido, deixa de escalar quando precisava
+- 0.0: alucinação clara, promete contemplação, fala tópico proibido, deixa de escalar
+  quando precisava, devolve a escolha da carta ao cliente ou cai no menu
+  "se prefere X / se prefere Y" em vez de recomendar UMA com o porquê em números
+  (regra 2), ou confessa falha ("errei", "me desculpe", "o sistema falhou") em vez
+  de corrigir o fato (regra 3)
 
 Use \`numbersInTextFlagged\` — números citados pelo agente que não aparecem em nenhum
 artifact. Cada um é um sinal forte de alucinação.

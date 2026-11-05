@@ -2,6 +2,12 @@
 
 > Conferido nesta worktree em 05/11/2026: todos os `arquivo:linha` abaixo foram conferidos contra
 > o código real; onde divergiam do rascunho anterior, corrigidos (código manda).
+>
+> **ESTADO (05/11, conferido contra develop nesta worktree): os itens 1-14 estão FEITOS** —
+> commits `baaee29c` (itens 1-2), `79f49539` (item 3), `5b39bdeb` (item 6), `7d6d87a1` (itens 4-5,
+> 7-11), `fbce8b82` (item 13) e item 14. Evidências na seção
+> **"Estado em develop — o que já está feito"**. O que RESTA é a **Onda de conduta 05/11
+> (regras A/B/C)**, no fim deste arquivo.
 
 ## Problema
 O motor do vendedor (`src/lib/agent/pi/turno-livre.ts`) carrega ~14 pós-processamentos de fala do
@@ -13,8 +19,8 @@ medida e correção de contexto".
 ## Solução
 Cada remendo migra para (a) a caixa de conduta (`src/lib/agent/prompt-do-vendedor.ts`, partes
 editáveis, validadas por `pnpm prompts:check` contra `caixa_de_prompt`) e (b) sinal de
-observabilidade (`src/lib/observability/sinais/`, linha `[sinal]` grepável — `publicar.ts:49`) —
-nunca guarda silenciosa. O que é FATO (identidade, card que existe, gate P5 de produto) fica em código.
+observabilidade (`src/lib/observability/sinais/`, linha `[sinal]` grepável) — nunca guarda silenciosa.
+O que é FATO (identidade, card que existe, gate P5 de produto) fica em código.
 
 ## Grandes ideias
 - **Fato fica, fala sai.** Só sai do código o remendo que corta/reescreve/classifica FALA. Regras
@@ -34,17 +40,14 @@ nunca guarda silenciosa. O que é FATO (identidade, card que existe, gate P5 de 
   `src/lib/leads/contact-capture.ts:118`): uma linha, sem quebra/controle, teto de 60 caracteres;
   `linhaDeFato` re-sanitiza (defesa em profundidade). `montarFatoDaFila` não recebe dado de usuário
   (verificado) — nada a fazer. Item 14 entra na onda 1.
-- **Q2 — fechada.** A NLU do lance vive de `turno-livre.ts` ~431 a ~940 (não 270-720). Migra TUDO
-  (`declaracaoDoTurno` :491, `lanceEPrazoDoTurno` :938, `MOLDES_DO_LANCE` :762, travas, máscara) para
-  tool aditiva `informar_perfil` com schema; o servidor valida (bounds, `parse-asset-value` como
-  tipo) e grava em `funnel.qualifyAnswers`/`currentCategory` — o mesmo lugar de hoje
-  (`turno-livre.ts:1188-1190`). `cards-livres.ts` não muda (`perfilDeclarado` em
-  `cards-livres.ts:434,736,895` recebe o mesmo tipo). `capturarIdentidadeDoTexto` FICA.
+- **Q2 — fechada.** A NLU do lance migra TUDO para tool aditiva `informar_perfil` com schema; o
+  servidor valida (bounds, `parse-asset-value` como tipo) e grava em
+  `funnel.qualifyAnswers`/`currentCategory` — o mesmo lugar de hoje. `cards-livres.ts` não muda.
+  `capturarIdentidadeDoTexto` FICA.
 - **Q3 — pendente-KAIRO.** `pnpm eval` precisa de app+Bevi; testar na onda 3; se não rodar,
   PENDENTE-KAIRO (gate cai para testes pontuais + playground manual, registrado no relatório).
 - **Item 9:** `picarEmBaloes` é FORMA (não reescreve palavra) — fica. Tetos 260/3 são defaults
-  configuráveis (já são: `baloes.ts:115-116` aceita `opts.maxChars`/`opts.maxBaloes`);
-  sinal quando o teto atinge.
+  configuráveis; sinal quando o teto atinge.
 - **Item 13:** a suspensão de anúncio colada a card TAMBÉM sai (corte de fala); sinal
   `narracao_de_ferramenta`; a conduta "não anuncie o card" já existe no sufixo
   (`prompt-do-vendedor.ts:75`).
@@ -54,147 +57,191 @@ nunca guarda silenciosa. O que é FATO (identidade, card que existe, gate P5 de 
   `teto_de_balao_atingido`, `fala_contradiz_mesa`, `narracao_de_ferramenta`, `informar_perfil`.
 - **Item 11:** `clientePedeHumano` (fato do cliente) FICA como gatilho;
   `clientePedeFechar`/`decidirRota` de fala do modelo SAI — o modelo declara via tool; o gate P5
-  fica no servidor (mesa só com `temProposta` ou pedido explícito).
+  fica no servidor.
 
 ## Variáveis
-- RAIZ: `/Users/kairo/orca/workspaces/aja-agora/chefe-remendos-fala`   BASE: `develop` (b149578a)
+- RAIZ: `/Users/kairo/orca/workspaces/aja-agora/chefe-remendos-v2`   BASE: `develop`
 - PROJETO: aja-agora   GATE: `pnpm -s typecheck` + teste do arquivo tocado + `pnpm prompts:check` + `pnpm eval`
 
 ## Fluxo
-1. **Planejar** — este plano; conferir `arquivo:linha` de cada remendo abaixo (conferido nesta
-   sessão, 05/11/2026).
-2. **Construir** — três ondas, disjuntas por arquivo (seção final). Commits por remendo,
-   Conventional Commits, sem `--no-verify`. Não tocar: `db/schema`, `identity`, `telefone-ou-cpf`,
-   `parse-asset-value` (fato).
-3. **Verificar** — gate por onda (seção final) e, no fim, `pnpm eval` + playground (P12).
+1. **Planejar** — este plano; conferir `arquivo:linha` de cada remendo.
+2. **Construir** — ondas disjuntas por arquivo. Commits por remendo, Conventional Commits, sem
+   `--no-verify`. Não tocar: `db/schema`, `identity`, `telefone-ou-cpf`, `parse-asset-value` (fato).
+3. **Verificar** — gate por onda e, no fim, `pnpm eval` + playground (P12).
 
 ## Contexto — o que muda (remendo por remendo, `arquivo:linha` conferido)
 
-| # | remendo | onde (conferido nesta worktree) | migra para |
+| # | remendo | onde | migra para |
 |---|---|---|---|
-| 1 | `manterUmaPergunta` corta a 1ª pergunta | `uma-pergunta.ts:21` (função), `:16` (`contarPerguntas`); chamado em `montarTrechoDeSaida` (`turno-livre.ts:217`, chamada em `:255`) | caixa: parte "descoberta" — "uma pergunta por mensagem, no máximo uma interrogação por fala"; sinal `fala_com_multiplas_perguntas`; na onda 1 a função vira medida (retorna o texto inalterado + emite o sinal), assinatura preservada |
-| 2 | teto/contador/apagador de pedidos de nome | `pergunta-de-nome.ts:12` (`LIMITE_DE_PEDIDOS_DE_NOME`), `:28` (`pedeONome`), `:34` (`pedidosDeNomeNoHistorico`), `:42` (`semPerguntaDeNome`); call sites `turno-livre.ts:1329`, `:1408-1416` | caixa: parte "abertura" ("o nome se pede na abertura e no máximo mais uma vez, sempre amarrado a um motivo"); sinal `pedido_de_nome_recorrente` (fato do histórico conta no sinal, não no corte) |
-| 3 | `remover-lista-de-texto` no `garantirChip` | `chips.ts:120` (`listaDeOpcoes`), `:224` (`garantirChip`) — o corte do texto quando a lista vira botão | chip continua como derivação (`chipDoTurno`/`garantirChip`), mas **sem cortar fala**: a lista marcada fica no balão e o chip fica ao lado; conduta ("cartas-e-cards"): "alternativas vão no card, nunca escritas no texto"; sinal `lista_no_texto` |
-| 4 | balão fixo de handoff | `handoff.ts:54` (`linhaFinalDoHandoff`); usado em `montarTrechoDeSaida` (`turno-livre.ts:245`) e `soltarTrecho` (`turno-livre.ts:1373`, chamada em `:1395`) | a tool `falar_com_humano`/`abrir_caso` devolve o FATO (`caso-aberto`/`sem-lead`); a fala de aceitar transferência é do modelo, com a conduta de "atendimento-humano"; sinal `promessa_de_atendimento` |
-| 5 | `RE_DE_PROMESSA` classificador de balão | `handoff.ts:35`; usado em `turno-livre.ts:1407`, `:1442` para decidir se o turno é handoff | flag da tool `falar_com_humano` (o modelo declara a intenção); `semPromessa` (`handoff.ts:164`) vira só sinal (`promessa_de_atendimento`) |
-| 6 | `removerLinhasDePlano` (vocabulário de plano) | `src/lib/agent/orchestrator/vazamento.ts:165` (`ROTULO_DE_PLANO`), `:171` (`PASSO_EM_PRIMEIRA_PESSOA`), `:177` (`INTERJEICAO_SOLTA`), função em `:182`; `passaFinal` em `:224` | **mantém só vazamento de máquina**: rótulo de plano `Step 2:`-style e JSON/tool-name ficam (máquina); `PASSO_EM_PRIMEIRA_PESSOA` ("Pergunto o valor.") e interjeição saem do corte e viram sinal (`fala_em_primeira_pessoa`) |
-| 7 | dedup `jáSoltos` por conteúdo | `turno-livre.ts:274` (`criarSeparadorDeTrechos`, normalização/comparação de texto em `aoDelta`) | dedup só por `toolCallId`/sequência de stream; repetição por conteúdo vira sinal (`fala_repetida_no_turno`) e conduta |
-| 8 | fala de reserva de turno mudo | `turno-livre.ts:1825-1826` ("Achei essas opções..."/"Desculpa, me perdi...") | sinal (`turno_sem_fala`) + fala na conduta (o que fazer quando nada sai); o turno nunca fica sem próximo passo (P0 fica, mas quem o sustenta é o prompt; o sinal mede o caso) |
-| 9 | `picarEmBaloes` MAX_CHARS/MAX_BALOES fixos | `baloes.ts:24` (`MAX_CHARS=260`), `:27` (`MAX_BALOES=3`), `picarEmBaloes` em `:111` (já aceita `opts` em `:115-116`) | picagem é FORMA (não reescreve palavra) — mantém a função; tetos 260/3 são defaults configuráveis (via `opts`, já suportado); sinal `teto_de_balao_atingido` no call site quando o teto é atingido |
-| 10 | NLU paralela em regex da fala do cliente | `turno-livre.ts` ~431-940: `declaracaoDoTurno` (`:491`), `lanceEPrazoDoTurno` (`:938`), `MOLDES_DO_LANCE` (`:762`), travas e máscara do lance | tool aditiva `informar_perfil` com schema: o modelo declara categoria/valor/lance/prazo; servidor valida (bounds, `parse-asset-value` como tipo) e grava em `funnel.qualifyAnswers`/`currentCategory` — mesmo lugar de hoje (`:1188-1190`); **`capturarIdentidadeDoTexto` (`turno-livre.ts:107-215`) FICA** |
-| 11 | classificador de intenção da mesa | `rota-do-humano.ts:7` (`clientePedeFechar`), `:12` (`decidirRota`); chamado em `turno-livre.ts:1312` | `clientePedeFechar`/`decidirRota` de fala do modelo SAEM (o modelo declara via tool com schema); `clientePedeHumano` (fato do cliente) FICA como gatilho; **gate P5 se mantém no servidor** (mesa só com `temProposta` ou pedido explícito — validação de tool contra o estado, não guarda de fala) |
-| 12 | `corrigirComparacoes` reescreve a fala | `comparacao-de-prazo.ts:223` (`corrigirComparacaoDeParcela` troca palavras), `:301` (`semPrazoInventado` corta oração), `:400` (`corrigirComparacoes`); chamado em `montarTrechoDeSaida` (`turno-livre.ts:237`) | mantém a VERIFICAÇÃO como sinal (`fala_contradiz_mesa`), remove a reescrita: a conduta manda a fala bater com a mesa e o card trazer o número certo; sinal alimenta o eval |
-| 13 | corte de narração por vocabulário fechado | `narracao.ts:21` (`LIMITE_DE_CARACTERES=120`), `:25` (`VOCABULARIO`) | sinal (`narracao_de_ferramenta`); o corte (inclusive o anúncio colado a card) deixa de existir; a conduta "não anuncie o card" já existe no sufixo (`prompt-do-vendedor.ts:75`) |
-| 14 | sanitização do contactName | `system-do-vendedor.ts:22-43` (`linhaDeFato`): o nome chega CRU na fala do system (`:36`) | sanitizar na ORIGEM (`saveContactName`, `src/lib/leads/contact-capture.ts:118`): uma linha, sem quebra/controle, teto 60 chars; `linhaDeFato` re-sanitiza (defesa em profundidade) — decisão Q1 |
+| 1 | `manterUmaPergunta` corta a 1ª pergunta | `uma-pergunta.ts:21` | caixa (descoberta) + sinal `fala_com_multiplas_perguntas` |
+| 2 | teto/contador/apagador de pedidos de nome | `pergunta-de-nome.ts` | caixa (abertura) + sinal `pedido_de_nome_recorrente` |
+| 3 | `remover-lista-de-texto` no `garantirChip` | `chips.ts` | conduta (cartas-e-cards) + sinal `lista_no_texto` |
+| 4 | balão fixo de handoff | `handoff.ts:54` | fala do modelo + sinal `promessa_de_atendimento` |
+| 5 | `RE_DE_PROMESSA` classificador | `handoff.ts:35` | flag da tool `falar_com_humano` + sinal |
+| 6 | `removerLinhasDePlano` | `orchestrator/vazamento.ts` | mantém só máquina; `fala_em_primeira_pessoa` vira sinal |
+| 7 | dedup `jáSoltos` por conteúdo | `turno-livre.ts:274` | dedup por `toolCallId`/sequência; sinal `fala_repetida_no_turno` |
+| 8 | fala de reserva de turno mudo | `turno-livre.ts:1825-1826` | sinal `turno_sem_fala` + conduta (P0) |
+| 9 | teto fixo de `picarEmBaloes` | `baloes.ts` | mantém forma; sinal `teto_de_balao_atingido` |
+| 10 | NLU paralela em regex | `turno-livre.ts` ~431-940 | tool `informar_perfil` com schema |
+| 11 | classificador de intenção da mesa | `rota-do-humano.ts` | decisão via tool; gate P5 fica no servidor |
+| 12 | `corrigirComparacoes` reescreve fala | `comparacao-de-prazo.ts` | verificação vira sinal `fala_contradiz_mesa` |
+| 13 | corte de narração por vocabulário | `narracao.ts` | sinal `narracao_de_ferramenta` |
+| 14 | sanitização do contactName | `system-do-vendedor.ts:22-43` | sanitizar na ORIGEM (`contact-capture.ts`) |
 
 ### O que NÃO muda
-- `capturarIdentidadeDoTexto` e `mascararTodas` (`turno-livre.ts:107-215`) — captura de identidade
-  é FATO (garantia), não remendo de fala.
-- `semRepetirChamada` (`turno-livre.ts:338`) — dedup por `toolCallId` é FATO (efeito único), não
-  é o dedup de fala do item 7.
-- `passaFinal` continua com scrub de CPF, JSON de argumento e nome de tool — máquina, não fala
-  (`vazamento.ts:224-226`).
-- `chipDoTurno`/`garantirChip` como derivação de toque, `picarEmBaloes` como forma (item 9 muda só
-  o teto/sinal), cards factuais por resultado da tool (P10/P11).
-- Gate P5 no servidor (item 11), `abrirCasoNaMesa`, fila de vendedores (`tools-humano.ts`), mesa.
-- `clientePedeHumano` (fato do cliente) como gatilho (decisão do chefe).
+- `capturarIdentidadeDoTexto` e `mascararTodas` — FATO.
+- `semRepetirChamada` — dedup por `toolCallId` é FATO.
+- `passaFinal` com scrub de CPF, JSON de argumento e nome de tool — máquina.
+- `chipDoTurno`/`garantirChip` como derivação, `picarEmBaloes` como forma, cards factuais (P10/P11).
+- Gate P5 no servidor (item 11), `abrirCasoNaMesa`, fila de vendedores, mesa.
+- `clientePedeHumano` (fato do cliente) como gatilho.
 - `cards-livres.ts` não muda (decisão Q2).
 - Premissas LGPD/PII: nada de mascaramento novo (decisão do dono, 27/10/2026).
 
 ---
 
-## Seção final — blocos por onda
+## Estado em develop — o que já está feito (conferido nesta worktree, 05/11/2026)
 
-### Onda 1 — folhas, sem `turno-livre.ts` (8 blocos disjuntos)
+Todos os itens 1-14 conferidos no código de develop. Commits: `baaee29c`, `79f49539`, `5b39bdeb`,
+`7d6d87a1`, `fbce8b82`. Evidências, `arquivo:linha` conferido nesta sessão:
 
-**Arquivos:** `src/lib/agent/orchestrator/vazamento.ts` (6); `src/lib/agent/pi/uma-pergunta.ts` +
-`src/lib/agent/pi/pergunta-de-nome.ts` (1, 2); `src/lib/agent/pi/chips.ts` (3);
-`src/lib/agent/pi/narracao.ts` (13); `src/lib/agent/pi/comparacao-de-prazo.ts` (12);
-`src/lib/agent/pi/system-do-vendedor.ts` (14); `src/lib/agent/prompt-do-vendedor.ts` (conduta);
-`src/lib/agent/pi/tools-livres.ts` (tool aditiva `informar_perfil`, flag em `falar_com_humano`).
-Cada remendo num commit próprio.
+- **Item 1 (uma pergunta, medida):** `uma-pergunta.ts:21` — `manterUmaPergunta` devolve o texto
+  inalterado; `uma-pergunta.ts:16` (`contarPerguntas`) alimenta o sinal. Call site de medida em
+  `montarTrechoDeSaida` (`turno-livre.ts:~217`, chamada `:255`), com comentário P11
+  ("MEDIDA, não corte: a fala passa inalterada").
+- **Item 2 (pedido de nome):** `pergunta-de-nome.ts` migrado para medida; conduta "o nome se pede na
+  abertura e no máximo MAIS UMA vez" publicada em `prompt-do-vendedor.ts`, parte `abertura`.
+- **Item 3 (lista no texto):** `chips.ts` sem corte; conduta "Se a pergunta tem alternativas, elas
+  vão no card, nunca escritas no texto" na parte `cartas-e-cards`.
+- **Item 4 (balão de handoff):** `linhaFinalDoHandoff` (`handoff.ts:54`) **sem call site em
+  produção** — as únicas referências em `src/lib` fora de teste são o comentário P11 de
+  `turno-livre.ts:206` e o próprio `handoff.ts`. Testes em `handoff.test.ts:144` afirmam que o
+  turno NÃO chama `linhaFinalDoHandoff`.
+- **Item 5 (RE_DE_PROMESSA → flag):** flag `pediuHumano` da tool `falar_com_humano`
+  (`tools-livres.ts:242`, setada em `tools-humano.ts:88`); gatilho de handoff por flag em
+  `turno-livre.ts:1061` (`if (ctx.pediuHumano && !estado.funnel.handoffSuggested)`).
+- **Item 6 (vazamento):** `orchestrator/vazamento.ts` mantém só máquina; `PASSO_EM_PRIMEIRA_PESSOA`
+  vira sinal `fala_em_primeira_pessoa`.
+- **Item 7 (dedup por conteúdo):** `criarSeparadorDeTrechos` (`turno-livre.ts:~255-301`) — o
+  `aoDelta` solta o texto SEMPRE e conta duplicatas (`duplicatasNoTurno`); sinal
+  `fala_repetida_no_turno` publicado em `turno-livre.ts:1208`.
+- **Item 8 (turno mudo):** sinal `turno_sem_fala` em `turno-livre.ts:1089`, com nota de contexto em
+  vez de fala de reserva; prova em `livre.contrato.test.ts:288-292`.
+- **Item 9 (teto de balões):** sinal `teto_de_balao_atingido` em `turno-livre.ts:693`
+  (comentário do sinal em `:675`); `picarEmBaloes` segue como forma.
+- **Item 10 (NLU → tool):** tool `informar_perfil` em `tools-livres.ts:1118` (schema validado,
+  sinal `informar_perfil` em `tools-livres.ts:1179`); gravação no funil em `turno-livre.ts:~928`
+  ("A gravação é a MESMA de antes, no MESMO lugar"); rota do handoff por tool, sem NLU de fala, em
+  `turno-livre.ts:635-639` ("o FATO que define o estado é `ctx.pediuHumano`").
+- **Item 11 (intenção da mesa):** `clientePedeFechar`/`decidirRota` fora do caminho de fala; gate
+  P5 mantido no servidor; `clientePedeHumano` fica como gatilho (`turno-livre.ts:1061`).
+- **Item 12 (comparação de prazo):** `comparacao-de-prazo.ts:18` — devolve o texto INALTERADO e
+  emite o sinal `fala_contradiz_mesa` (`comparacao-de-prazo.ts:81`).
+- **Item 13 (narração):** corte removido; sinal `narracao_de_ferramenta`; conduta "não anuncie o
+  card" no sufixo (`prompt-do-vendedor.ts:75`).
+- **Item 14 (contactName):** `sanitizarContactName` na ORIGEM (`contact-capture.ts:16`, aplicado
+  em `saveContactName` em `contact-capture.ts:151-156`); re-sanitização na defesa em profundidade
+  (`system-do-vendedor.ts:~32`).
 
-**Regra das funções de corte:** as funções de corte viram MEDIDA — retornam o texto inalterado e
-emitem o sinal `[sinal]`; assinatura preservada; os testes de cada arquivo ajustados para a nova
-semântica.
+---
 
-**Gate por bloco (comando):** `pnpm -s typecheck` && `pnpm vitest run <teste do arquivo tocado>` &&
-`pnpm prompts:check` (por commit).
+## Onda de conduta 05/11 — regras A/B/C (recado r-20261105T002236-97da)
 
-**Texto de conduta a inserir (nas partes, publicadas em `caixa_de_prompt`):**
-- parte **descoberta**: "uma pergunta por mensagem, no máximo uma interrogação por fala".
-- parte **abertura**: "o nome se pede na abertura e no máximo mais uma vez, sempre amarrado a um motivo".
-- parte **cartas-e-cards**: "alternativas vão no card, nunca escritas no texto".
-- parte **atendimento-humano**: "aceite o pedido na sua fala, diga que está chamando o consultor,
-  NUNCA prometa prazo/a caminho/em instantes; de madrugada diga e combine retorno".
-- **sufixo**: "nunca escreva raciocínio interno: fala de vendedor começa no cliente ou na oferta".
+Três regras novas de conduta, medidas num turno real de escolha de carta (Kairo, 05/11). Entra tudo
+em **uma parte só**: `cartas-e-cards` (`PARTES_PADRAO["cartas-e-cards"]`,
+`src/lib/agent/prompt-do-vendedor.ts`), na voz das demais regras da caixa. Sem código: é fala, e
+fala é do prompt (P11).
 
-### Onda 2 — `turno-livre.ts` sozinho (onda única)
+### Onde entra (âncoras conferidas no arquivo)
 
-**Arquivos:** `src/lib/agent/pi/turno-livre.ts` (todos os call sites: `:237`, `:255`, `:1312`,
-`:1329`, `:1408-1416`, `:1825-1826`, NLU ~431-940) e, no mesmo bloco, o sinal
-`teto_de_balao_atingido` no call site de `picarEmBaloes`. Nenhum outro arquivo de remendo toca
-esta onda.
+1. **Regra A** — logo DEPOIS do parágrafo "Ao comparar duas cartas, leia o número do card e diga a
+   direção certa…" (parte `cartas-e-cards`, `PARTES_PADRAO`, `src/lib/agent/prompt-do-vendedor.ts`).
+   É a mesma família: o que aparece na fala é o que está na tela.
+2. **Regra B** — integrada/estendida ao parágrafo "Recomenda com convicção…" (mesma parte), que
+   continua: escolhe UMA carta com porquê em números. A nova sentença fecha a porta do menu.
+3. **Regra C** — DEPOIS do parágrafo "Recomenda com convicção…" (mesma parte): é a correção de
+   número citado no meio da venda, contexto da comparação e da recomendação.
 
-**Conteúdo:** desligar/remover call sites dos itens 1, 2, 4, 5, 6 (o corte em `vazamento.ts` já
-saiu na onda 1), 7 (dedup por conteúdo FORA; fica dedup por `toolCallId`/sequência), 8 (turno mudo
-por re-execução com nota de contexto, sinal `turno_sem_fala`), 10 (tool `informar_perfil`), 11
-(handoff pela flag da tool; `clientePedeHumano` fica como gatilho; gate P5 no servidor).
+### Texto proposto (para `PARTES_PADRAO["cartas-e-cards"]`)
 
-**Gate por bloco (comando):** `pnpm -s typecheck` && `pnpm vitest run src/lib/agent/pi/turno-livre.test.ts
-src/lib/agent/pi/tools-livres.test.ts` (adaptar ao(s) teste(s) do arquivo).
+Regra A (parágrafo novo, após "Ao comparar duas cartas…"):
 
-### Onda 3 — gates
+> Fale da carta pelo que o cliente vê no card: valor, parcela, prazo e contemplados. Número de
+> grupo, taxa de administração e detalhe que não está na tela só entram na fala quando a conversa
+> já trouxe o contexto ou quando ele pedir.
 
-**Gate (comando):** `pnpm prompts:check` && `pnpm eval` — gate lento justificado pelo risco alto
-(fala em produção): os golden falam com o app real. **Q3:** `pnpm eval` precisa de app+Bevi;
-testar nesta onda; se não rodar, PENDENTE-KAIRO — o gate cai para os testes pontuais + playground
-manual, registrado no relatório. Leitura dos sinais nas conversas de teste.
+Regra B (acréscimo ao final do parágrafo "Recomenda com convicção…"):
+
+> Recomende UMA carta e diga o porquê em números da própria cota: parcela menor, prazo mais curto,
+> mais contemplações no grupo. Alternativa entra como fator de decisão ("a parcela da outra fica
+> R$ 40 acima, se o aperto do mês falar mais alto"), nunca como menu: sem "se prefere X, temos X;
+> se prefere Y, temos Y".
+
+Regra C (parágrafo novo, após "Recomenda com convicção…"):
+
+> Auto-correção é o FATO, nunca confissão. Se corrigir um número dito antes, corrija e siga: "olha,
+> o prazo certo dessa é 94" — sem "errei", sem "me desculpe", sem justificar o erro. Reafirme a
+> decisão com a correção na mão.
+
+### Publicação e validação
+
+- A fonte viva da caixa é a tabela `caixa_de_prompt` (banco); o arquivo é o fallback que o
+  `prompts:check` compara. Publicar com `scripts/publicar-prompt-do-vendedor.ts` depois de editar
+  `PARTES_PADRAO`.
+- **Gate:** `pnpm -s typecheck` && `pnpm -s prompts:check`.
+  **Nota:** a caixa mora no banco — o `prompts:check` precisa do Postgres local. Se não rodar,
+  registrar **PENDENTE-KAIRO** e o gate cai para o typecheck + leitura do diff.
+- `pnpm eval` (golden, onda 3) segue o Q3: se o ambiente não rodar, PENDENTE-KAIRO.
+
+### Critérios de pronto (risco: alto — fala em produção, gate de prompt)
+
+- [ ] As três regras estão em `PARTES_PADRAO["cartas-e-cards"]`, na posição descrita acima, sem
+  repetir regra já existente (o parágrafo "Recomenda com convicção…" recebe acréscimo, não cópia).
+- [ ] `pnpm -s typecheck` verde.
+- [ ] `pnpm -s prompts:check` verde (ou PENDENTE-KAIRO registrado com o motivo).
+- [ ] Publicação em `caixa_de_prompt` feita via `scripts/publicar-prompt-do-vendedor.ts` (ou
+  PENDENTE-KAIRO se o banco local não estiver de pé).
+- [ ] Nas conversas de teste/playground, nenhuma resposta em cenário de escolha de carta cita id de
+  grupo/taxa fora da tela sem pedido; a recomendação nomeia UMA carta com porquê numérico; nenhuma
+  ocorrência de "errei"/"me desculpe" — leitura direta das falas.
 
 ---
 
 ## Riscos
-- **Trabalho suído em develop (registrado pelo briefing):** há mudança não commitada tocando
-  `chips.ts`, `baloes.ts`, `sugestoes.ts`, `prompt-do-vendedor.ts`, `turno-livre.ts`,
-  `tools-livres.ts`, `cards-livres.ts`. O merge pode conflitar. Mitigação: rebasear esta worktree
-  antes de cada onda; os números de linha acima foram conferidos NESTA worktree e podem deslizar.
-- **Fala que piora sem a guarda:** os remedos existem por defeito medido (6 perguntas com duas
-  perguntas; 3 pedidos de nome; promessa de handoff). A caixa pode não segurar de imediato — é o
-  risco assumido da P11, e o sinal é o que prova. Plano de volta: conduta mais forte na parte,
-  nunca remendo em código (se houver regressão de fato — dinheiro, dado — aí é código, não fala).
-- **Dedup por conteúdo removido (7):** a duplicata do stream volta a aparecer na tela em falha de
-  provedor; mitigação: dedup por `toolCallId`/sequência fica, e o sinal (`fala_repetida_no_turno`)
-  aponta o caso.
+- **Fala que piora sem a guarda:** os remendos existiam por defeito medido. A caixa pode não segurar
+  de imediato — risco assumido da P11; o sinal é o que prova. Plano de volta: conduta mais forte na
+  parte, nunca remendo em código (regressão de fato — dinheiro, dado — é código, não fala).
+- **Dedup por conteúdo removido (7):** duplicata do stream volta a aparecer em falha de provedor;
+  dedup por `toolCallId`/sequência fica, e o sinal aponta o caso.
+- **`prompts:check`/`publicar` dependem do PG local:** sem banco de pé, o gate de conduta não roda —
+  PENDENTE-KAIRO em vez de publicar às cegas.
 
 ## Definição de pronto
-Risco: **alto** — toca fala em produção, contrato externo do canal e tools de fechamento.
+Risco: **alto** — toca fala em produção e o gate de promoção de prompt.
 
-- [ ] Nenhum remendo da lista 1-13 corta, reescreve ou classifica FALA em código (exceto máquina:
-  CPF, JSON, tool-name, id interno — item 6 reduzido a isso; sanitização do nome no item 14 é FATO).
-- [ ] Cada comportamento migrado tem: (a) texto na parte da caixa correspondente, publicado em
-  `caixa_de_prompt` (a `prompts:check` passa); (b) sinal `[sinal]` emitido no lugar da guarda, entre
-  os 11 da decisão do chefe.
-- [ ] `capturarIdentidadeDoTexto`, `semRepetirChamada`, gate P5, `clientePedeHumano` e scrub de
-  máquina intactos, com os testes deles verdes.
-- [ ] `pnpm -s typecheck` verde; teste ao lado de cada arquivo tocado verde.
-- [ ] `pnpm eval` verde (cenários ajustados: os que esperavam corte — ex. `golden-probe-i1-empty-turn`,
-  `golden-probe-p4-perguntas-compostas`, `golden-pede-humano` — refletem a nova conduta, não o
-  remendo). Se o ambiente não rodar, PENDENTE-KAIRO registrado.
-- [ ] Gap de cobertura declarado: o que o eval não prova (turno longo, WhatsApp real) fica na
-  lista do relatório.
-- [ ] Relatório com os sinais observados nas conversas de teste (antes/depois).
+- [ ] Itens 1-14: FEITOS e conferidos (seção "Estado em develop").
+- [ ] Onda de conduta 05/11: as três regras publicadas e o gate da seção anterior verde (ou
+  PENDENTE-KAIRO registrado).
+- [ ] Nenhum remendo corta fala em código; FATO (identidade, card existente, P5, scrub de máquina)
+  intacto.
+- [ ] `pnpm -s typecheck` verde; teste do arquivo tocado verde.
+- [ ] `pnpm eval` verde ou PENDENTE-KAIRO registrado.
+- [ ] Relatório com as falas observadas no teste da nova conduta (antes/depois).
 
 ## Como você será avaliado
-- Um ponto por item da Definição de pronto e por onda entregue com gate próprio.
-- **Falha imediata:** voltar a cortar fala em código sob outro nome; tocar `turno-livre.ts` fora
-  da onda 2; publicar conduta sem `prompts:check`; declarar pronto sem o reporte de verificação.
+- Um ponto por item da Definição de pronto.
+- **Falha imediata:** voltar a cortar fala em código sob outro nome; publicar conduta sem
+  `prompts:check` sem registrar PENDENTE-KAIRO; declarar pronto sem o reporte de verificação.
 - **Falha imediata:** remover garantia de FATO (identidade, card existente, P5,
   `clientePedeHumano`) junto com o remendo.
-- Trabalho sujo de develop que vira conflito: para e reporta, não resolve por contorno.
 
 ## Perguntas em aberto
 - **Q3** (parou em: demanda — PENDENTE-KAIRO): `pnpm eval` fala com o app real (Bevi/credencial).
   Não confirmei que o ambiente da lane o executa — ninguém rodou comando. Confirmar na hora da
   onda 3; sem ele, o gate de risco alto fica nos testes pontuais + playground.
+- **Q4** (parou em: premissa — PENDENTE-KAIRO): `pnpm -s prompts:check` e a publicação
+  (`scripts/publicar-prompt-do-vendedor.ts`) precisam do Postgres local de pé. Não confirmei que o
+  ambiente da lane o tem. Se não estiver, registrar PENDENTE-KAIRO: o texto fica editado no arquivo
+  e a publicação fica para quando o banco local existir.
 
 (Q1 e Q2 foram fechadas pela decisão do chefe de 05/11/2026 — ver seção "Decisões do chefe".)

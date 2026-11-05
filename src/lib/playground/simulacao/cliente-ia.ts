@@ -85,7 +85,8 @@ export async function gerarFalaDoCliente(
 				schema: falaDoClienteSchema,
 				system: montarSystemDoCliente(perfil, pedido.horaFixa),
 				prompt,
-				temperature: 0.7,
+				// `temperature` saiu: o upstream Anthropic passou a rejeitá-la ("temperature is
+				// deprecated for this model") e derrubava a rota inteira da IA-cliente (502).
 			});
 			const objeto = falaDoClienteSchema.parse(r.object);
 			return { texto: objeto.texto, estado: objeto.estado, origem: "ia" };

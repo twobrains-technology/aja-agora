@@ -5,6 +5,7 @@
 //     pnpm exec tsx scripts/eval/simulacao.ts --perfil caminho-feliz --perfil pede-atendente [--saida dir]
 //
 // Sem `--perfil`, roda os 9. Escreve `simulacao-AAAA-MM-DDTHH-MM.json` em `--saida` (padrão: .).
+import "../_env-host";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { IDS_DE_PERFIL, perfilPorId } from "../../src/lib/playground/simulacao/perfis-de-cliente";

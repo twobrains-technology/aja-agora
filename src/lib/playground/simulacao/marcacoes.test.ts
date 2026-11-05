@@ -11,9 +11,16 @@ import {
 	numerosDoPayload,
 	pedidoRepetido,
 	respostaCortada,
+	retomadaSemNovidade,
 	turnoSemResposta,
 } from "./marcacoes";
-import type { ArtifactLido, DadosDaSimulacao, ToolCallLido, TurnoDaSimulacao } from "./tipos";
+import type {
+	ArtifactLido,
+	ContextoDeMarcacao,
+	DadosDaSimulacao,
+	ToolCallLido,
+	TurnoDaSimulacao,
+} from "./tipos";
 
 type Opc = {
 	cliente?: string;
@@ -342,8 +349,80 @@ describe("numerosDoPayload", () => {
 	});
 });
 
+describe("retomadaSemNovidade", () => {
+	const perfilRetomada: ContextoDeMarcacao["perfil"] = {
+		id: "voltei-sem-nada",
+		esperaProposta: false,
+		esperaFila: false,
+		turnosDeRetorno: [1],
+	};
+	const perfilComum: ContextoDeMarcacao["perfil"] = {
+		id: "caminho-feliz",
+		esperaProposta: true,
+		esperaFila: false,
+	};
+
+	it("ACIONADA: volta repetindo a mesma pergunta pela 3ª vez", () => {
+		const t = [
+			turno(0, { texto: "Qual carro você procura?" }),
+			turno(1, { texto: "Qual carro você procura?" }),
+		];
+		const m = retomadaSemNovidade(t, perfilRetomada);
+		expect(m.status).toBe("ACIONADA");
+		expect(m.ocorrencias[0]?.turno).toBe(1);
+	});
+
+	it("LIMPA: repetiu uma vez, mas trouxe pergunta nova", () => {
+		const t = [
+			turno(0, { texto: "Qual carro você procura?" }),
+			turno(1, { texto: "Qual carro você procura? E se eu já tive o modelo?" }),
+		];
+		expect(retomadaSemNovidade(t, perfilRetomada).status).toBe("LIMPA");
+	});
+
+	it("LIMPA: retomada com número de ferramenta novo", () => {
+		const t = [
+			turno(0, { texto: "Quanto fica a parcela?" }),
+			turno(1, { texto: "Voltei: a parcela fica em R$ 1.977,12." }),
+		];
+		expect(retomadaSemNovidade(t, perfilRetomada).status).toBe("LIMPA");
+	});
+
+	it("ACIONADA: retomada sem nada novo (sem card, número ou pergunta)", () => {
+		const t = [
+			turno(0, { texto: "Me conta o que você procura." }),
+			turno(1, { texto: "Oi, voltei! Tudo bem?" }),
+		];
+		const m = retomadaSemNovidade(t, perfilRetomada);
+		expect(m.status).toBe("ACIONADA");
+		expect(m.ocorrencias[0]?.evidencia).toContain("sem novidade");
+	});
+
+	it("LIMPA: card novo na retomada", () => {
+		const t = [
+			turno(0, { artifacts: [artifact("comparison_table", { groups: [{ id: "g1" }] })] }),
+			turno(1, { artifacts: [artifact("comparison_table", { groups: [{ id: "g2" }] })] }),
+		];
+		expect(retomadaSemNovidade(t, perfilRetomada).status).toBe("LIMPA");
+	});
+
+	it("ACIONADA: repete o mesmo card igual na retomada", () => {
+		const t = [
+			turno(0, { artifacts: [artifact("comparison_table", { groups: [{ id: "g1" }] })] }),
+			turno(1, { artifacts: [artifact("comparison_table", { groups: [{ id: "g1" }] })] }),
+		];
+		const m = retomadaSemNovidade(t, perfilRetomada);
+		expect(m.status).toBe("ACIONADA");
+	});
+
+	it("NAO_APLICAVEL fora dos perfis de morte", () => {
+		const m = retomadaSemNovidade([turno(0)], perfilComum);
+		expect(m.status).toBe("NAO_APLICAVEL");
+	});
+});
+
 describe("marcarSimulacao", () => {
-	it("devolve as 8 marcações na ordem de MarcacaoId", () => {
+	it("devolve as 9 marcações na ordem de MarcacaoId", () => {
 		const m = marcarSimulacao([turno(0, { texto: "Oi, tudo bem?" })], {
 			perfil: { id: "caminho-feliz", esperaProposta: true, esperaFila: false },
 			dados: dadosDuble,
@@ -358,6 +437,7 @@ describe("marcarSimulacao", () => {
 			"numero-sem-ferramenta",
 			"chamou-fila",
 			"falou-prazo",
+			"retomada-sem-novidade",
 		]);
 	});
 });
