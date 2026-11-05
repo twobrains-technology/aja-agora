@@ -3,6 +3,7 @@ import { db } from "@/db";
 import type { ConfigDoLangfuse } from "@/lib/agent/pi/langfuse";
 
 vi.mock("@/db", () => ({ db: { select: vi.fn() } }));
+
 import { espelharCaixaDePrompt, espelharPrompt } from "./espelho-prompt";
 
 const CONFIG: ConfigDoLangfuse = {
@@ -51,7 +52,7 @@ describe("espelharPrompt", () => {
 	});
 
 	it("existindo a versão, só atualiza as labels via PUT — idempotente", async () => {
-		const { chamadas, fetchMock } = fetchEmSequencia([{ status: 200 }, { status: 200 }]);
+		const { chamadas } = fetchEmSequencia([{ status: 200 }, { status: 200 }]);
 		await expect(espelharPrompt(prom, CONFIG)).resolves.toBe("atualizado");
 		expect(chamadas).toHaveLength(2);
 		expect(JSON.parse(String(chamadas[1].init?.body))).toEqual({

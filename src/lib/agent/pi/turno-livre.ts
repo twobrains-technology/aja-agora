@@ -233,7 +233,7 @@ export function montarTrechoDeSaida(args: {
 	});
 	// MEDIDA, não corte: a fala passa inalterada; o sinal sobe dentro dela quando
 	// há mais de uma pergunta.
-	const final = manterUmaPergunta(texto);
+	const _final = manterUmaPergunta(texto);
 	// A forma do balão (a lista marcada vira botão e sai do texto, N05) é decidida
 	// aqui; o CHIP é derivado uma vez no fim do turno.
 	return {
@@ -599,7 +599,7 @@ export function createRunTurnLivre(deps?: {
 			falasDoFecho: [],
 			pediuHumano: false,
 			casoAbertoNesteTurno: () => {
-				casoAberto = true;
+				_casoAberto = true;
 			},
 			estadoDepoisDaBusca: null,
 		};
@@ -664,7 +664,7 @@ export function createRunTurnLivre(deps?: {
 		// O caso aberto NESTE turno é FATO que define o estado (evento `handoff`,
 		// `handoffSuggested`, a rota da mesa via tool). A FALA do handoff é do modelo:
 		// nenhum balão fixo a substitui mais (P11, decisão do chefe 05/11).
-		let casoAberto = false;
+		let _casoAberto = false;
 		// O sinal `promessa_de_atendimento` sobe UMA vez por turno, quando a fala do
 		// modelo promete o que a mesa não garante — medida, não corte (RE_DE_PROMESSA
 		// não reescreve mais nada).

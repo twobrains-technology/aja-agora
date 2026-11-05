@@ -1,6 +1,6 @@
-import { NUMBER_REGEX, matchesKnownNumber, parseNumeric } from "@/lib/eval/numeros-falados";
 import type { Gate } from "@/lib/agent/funil-tipos";
 import type { Category, ConversationMetadata, QualifyAnswers } from "@/lib/agent/personas";
+import { matchesKnownNumber, NUMBER_REGEX, parseNumeric } from "@/lib/eval/numeros-falados";
 import { scoresDeReconciliacao } from "@/lib/observability/reconciliacao-fala-estado";
 
 export type LeadStage =

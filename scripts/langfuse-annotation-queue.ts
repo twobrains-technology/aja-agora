@@ -47,7 +47,7 @@ type Fila = {
 type RespostaLista<T> = { data?: T[]; meta?: { page?: number; totalPages?: number } };
 
 function autorizacao(cred: Credenciais): string {
-	return "Basic " + Buffer.from(`${cred.publicKey}:${cred.secretKey}`).toString("base64");
+	return `Basic ${Buffer.from(`${cred.publicKey}:${cred.secretKey}`).toString("base64")}`;
 }
 
 function url(cred: Credenciais, caminho: string): string {

@@ -43,7 +43,7 @@ describe("garantirFila", () => {
 		const { fila, criada } = await garantirFila(fetchFn, cred, ["cfg-1", "cfg-2"]);
 		expect(criada).toBe(true);
 		expect(fila.id).toBe("fila-nova");
-		const init = fetchFn.mock.calls[1]![1] as RequestInit;
+		const init = fetchFn.mock.calls[1]?.[1] as RequestInit;
 		expect(JSON.parse(String(init.body))).toEqual({
 			name: "calibracao-juiz",
 			description: expect.stringContaining("calibração"),

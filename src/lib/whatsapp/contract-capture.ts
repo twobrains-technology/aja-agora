@@ -43,7 +43,7 @@ import { saveMessage } from "@/lib/conversation/messages";
 import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { decidirCpfDoTexto } from "@/lib/conversation/telefone-ou-cpf";
 import { sendInteractiveMessage, sendTextMessage } from "./api";
-import { contractFormToWhatsApp, realOfferToWhatsApp } from "./formatter";
+import { realOfferToWhatsApp } from "./formatter";
 import { waIdToCelular } from "./identify-capture";
 
 const brl = (n: number) =>

@@ -38,9 +38,9 @@ vi.mock("@/db", () => ({
 
 import {
 	duracaoDasObservations,
+	type ObservationDoLangfuse,
 	registrarDuracaoDoTurno,
 	ttftDasObservations,
-	type ObservationDoLangfuse,
 } from "./duracao-do-turno";
 
 const CONFIG = {
@@ -100,9 +100,7 @@ describe("B6 — TTFT e duração do turno", () => {
 		});
 
 		it("sem completionStartTime em nenhuma generation: null — não medido não é instantâneo", () => {
-			expect(
-				ttftDasObservations([generation("2026-11-05T10:00:00.000Z", null)]),
-			).toBeNull();
+			expect(ttftDasObservations([generation("2026-11-05T10:00:00.000Z", null)])).toBeNull();
 		});
 	});
 
@@ -226,7 +224,9 @@ describe("B6 — TTFT e duração do turno", () => {
 			estado.resposta = {
 				ok: true,
 				status: 200,
-				json: async () => ({ data: [generation("2026-11-05T10:00:00.000Z", "2026-11-05T10:00:00.800Z")] }),
+				json: async () => ({
+					data: [generation("2026-11-05T10:00:00.000Z", "2026-11-05T10:00:00.800Z")],
+				}),
 			} as unknown as Response;
 			await registrarDuracaoDoTurno(
 				{

@@ -23,7 +23,6 @@ import {
 	anexarInputCompleto,
 	comTeto,
 	entradaCompleta,
-	NOME_DA_OBSERVACAO,
 	tetoDoInput,
 	textoDaMensagem,
 } from "./langfuse-input-completo";

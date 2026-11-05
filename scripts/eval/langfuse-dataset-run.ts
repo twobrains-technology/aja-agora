@@ -250,7 +250,9 @@ export class DatasetRunRecorder {
 		}
 		const real = (r.dados as { id?: string }).id ?? id;
 		this.itensCriados.set(item.cenario, real);
-		console.log(`${PREFIXO} item do dataset criado p/ cenário não mapeado: ${item.cenario} (${real})`);
+		console.log(
+			`${PREFIXO} item do dataset criado p/ cenário não mapeado: ${item.cenario} (${real})`,
+		);
 		return real;
 	}
 

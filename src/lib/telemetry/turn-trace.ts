@@ -28,8 +28,10 @@ import type { UIMessage, UIMessageStreamWriter } from "ai";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { registrarDuracaoDoTurno } from "@/lib/observability/sinais/duracao-do-turno";
 import { publicarFunilNoLangfuse } from "@/lib/observability/sinais/funil-scores";
-import { registrarAfirmacaoComparativaFalsa } from "@/lib/observability/sinais/numero-fora-da-cota";
-import { registrarNumeroForaDaCota } from "@/lib/observability/sinais/numero-fora-da-cota";
+import {
+	registrarAfirmacaoComparativaFalsa,
+	registrarNumeroForaDaCota,
+} from "@/lib/observability/sinais/numero-fora-da-cota";
 import { registrarPromessaSemFato } from "@/lib/observability/sinais/promessa-sem-fato";
 
 export type TurnTraceChannel = "web" | "whatsapp";

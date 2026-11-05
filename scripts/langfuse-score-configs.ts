@@ -151,7 +151,7 @@ type RespostaScoreConfigs = {
 };
 
 function autorizacao(cred: Credenciais): string {
-	return "Basic " + Buffer.from(`${cred.publicKey}:${cred.secretKey}`).toString("base64");
+	return `Basic ${Buffer.from(`${cred.publicKey}:${cred.secretKey}`).toString("base64")}`;
 }
 
 export async function listarScoreConfigs(

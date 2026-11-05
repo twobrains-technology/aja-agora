@@ -59,7 +59,7 @@ export function credenciais(
 }
 
 function autorizacao(cred: Credenciais): string {
-	return "Basic " + Buffer.from(`${cred.publicKey}:${cred.secretKey}`).toString("base64");
+	return `Basic ${Buffer.from(`${cred.publicKey}:${cred.secretKey}`).toString("base64")}`;
 }
 
 type RespostaMetrics = { data?: Array<Record<string, number | string | null>> };

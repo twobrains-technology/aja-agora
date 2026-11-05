@@ -4,11 +4,12 @@
 // escalas de mil/porcento, arredondamento de centavos e o no-op sem envs de
 // Langfuse.
 import { afterEach, describe, expect, it, vi } from "vitest";
-
-import { registrarAfirmacaoComparativaFalsa } from "./numero-fora-da-cota";
-import { registrarNumeroForaDaCota } from "./numero-fora-da-cota";
-import { numerosForaDaCota } from "./numero-fora-da-cota";
-import { afirmacoesComparativasFalsas } from "./numero-fora-da-cota";
+import {
+	afirmacoesComparativasFalsas,
+	numerosForaDaCota,
+	registrarAfirmacaoComparativaFalsa,
+	registrarNumeroForaDaCota,
+} from "./numero-fora-da-cota";
 
 const ENV_LIGADO = {
 	LANGFUSE_TRACING_ENABLED: "true",
@@ -94,8 +95,20 @@ describe("numerosForaDaCota", () => {
 // proposta 20486 (12,94%) quando a 50080 tinha 12,92%. Todo número da frase
 // estava certo — o que era falso era o superlativo.
 const PROPOSTAS_REAIS = [
-	{ proposalId: "20486", administradora: "Bevi", parcela: 1180, prazoMeses: 200, taxaAdministracao: 12.94 },
-	{ proposalId: "50080", administradora: "Bevi", parcela: 1175, prazoMeses: 200, taxaAdministracao: 12.92 },
+	{
+		proposalId: "20486",
+		administradora: "Bevi",
+		parcela: 1180,
+		prazoMeses: 200,
+		taxaAdministracao: 12.94,
+	},
+	{
+		proposalId: "50080",
+		administradora: "Bevi",
+		parcela: 1175,
+		prazoMeses: 200,
+		taxaAdministracao: 12.92,
+	},
 ];
 
 describe("afirmacoesComparativasFalsas", () => {
@@ -214,9 +227,11 @@ describe("registrarNumeroForaDaCota", () => {
 		});
 
 		const parse = (linha: string) =>
-			JSON.parse(
-				linha.slice(linha.indexOf("scores=") + "scores=".length),
-			) as Array<{ name: string; value: number; traceId?: string }>;
+			JSON.parse(linha.slice(linha.indexOf("scores=") + "scores=".length)) as Array<{
+				name: string;
+				value: number;
+				traceId?: string;
+			}>;
 		const linhas = logs.filter((l) => l.includes("numero_fora_da_cota"));
 		expect(linhas).toHaveLength(2);
 		expect(parse(linhas[0])[0]).toMatchObject({
@@ -242,9 +257,11 @@ describe("registrarNumeroForaDaCota", () => {
 		vi.spyOn(console, "log").mockImplementation((msg) => logs.push(String(msg)));
 
 		// payload hostil: getter que lança
-		const hostil = { get credito(): number {
-			throw new Error("boom");
-		} };
+		const hostil = {
+			get credito(): number {
+				throw new Error("boom");
+			},
+		};
 
 		expect(() =>
 			registrarNumeroForaDaCota({
@@ -300,9 +317,12 @@ describe("registrarAfirmacaoComparativaFalsa", () => {
 		});
 
 		const parse = (linha: string) =>
-			JSON.parse(
-				linha.slice(linha.indexOf("scores=") + "scores=".length),
-			) as Array<{ name: string; value: number; traceId?: string; comment?: string }>;
+			JSON.parse(linha.slice(linha.indexOf("scores=") + "scores=".length)) as Array<{
+				name: string;
+				value: number;
+				traceId?: string;
+				comment?: string;
+			}>;
 		const linhas = logs.filter((l) => l.includes("afirmacao_comparativa_falsa"));
 		expect(linhas).toHaveLength(2);
 		expect(parse(linhas[0])[0]).toMatchObject({

@@ -70,8 +70,7 @@ export async function buscarObservacoes(
 	cred: Credenciais,
 	traceId: string,
 ): Promise<RespostaV2> {
-	const autorizacao =
-		"Basic " + Buffer.from(`${cred.publicKey}:${cred.secretKey}`).toString("base64");
+	const autorizacao = `Basic ${Buffer.from(`${cred.publicKey}:${cred.secretKey}`).toString("base64")}`;
 	const resposta = await fetchFn(
 		`${cred.baseUrl.replace(/\/$/, "")}${CAMINHO_DA_V2}?traceId=${encodeURIComponent(traceId)}`,
 		{ headers: { Authorization: autorizacao }, signal: AbortSignal.timeout(10_000) },

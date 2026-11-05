@@ -66,7 +66,7 @@ export function credenciais(
 }
 
 function autorizacao(cred: Credenciais): string {
-	return "Basic " + Buffer.from(`${cred.publicKey}:${cred.secretKey}`).toString("base64");
+	return `Basic ${Buffer.from(`${cred.publicKey}:${cred.secretKey}`).toString("base64")}`;
 }
 
 function api(cred: Credenciais, caminho: string): string {
@@ -90,13 +90,13 @@ export type Configuracao = {
  *  é alcançável da instância remota, então o modelo vem de provider público
  *  configurado na UI. */
 export function configuracao(env: Record<string, string | undefined> = process.env): Configuracao {
-	const bruto = env["LANGFUSE_JUDGE_SAMPLING"]?.trim() || "1";
+	const bruto = env.LANGFUSE_JUDGE_SAMPLING?.trim() || "1";
 	const sampling = Number(bruto);
 	return {
-		nome: env["LANGFUSE_JUDGE_NAME"]?.trim() || NOME_PADRAO,
+		nome: env.LANGFUSE_JUDGE_NAME?.trim() || NOME_PADRAO,
 		sampling: Number.isFinite(sampling) ? Math.min(1, Math.max(0.0001, sampling)) : 1,
-		provider: env["LANGFUSE_JUDGE_PROVIDER"]?.trim() || "anthropic",
-		model: env["LANGFUSE_JUDGE_MODEL"]?.trim() || "claude-sonnet-4-6",
+		provider: env.LANGFUSE_JUDGE_PROVIDER?.trim() || "anthropic",
+		model: env.LANGFUSE_JUDGE_MODEL?.trim() || "claude-sonnet-4-6",
 	};
 }
 

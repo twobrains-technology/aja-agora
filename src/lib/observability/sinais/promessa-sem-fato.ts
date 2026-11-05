@@ -155,8 +155,7 @@ export async function registrarPromessaSemFato(entrada: Entrada): Promise<void> 
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
-				Authorization:
-					"Basic " + Buffer.from(`${config.publicKey}:${config.secretKey}`).toString("base64"),
+				Authorization: `Basic ${Buffer.from(`${config.publicKey}:${config.secretKey}`).toString("base64")}`,
 			},
 			body: JSON.stringify(score),
 		});

@@ -142,9 +142,9 @@ async function observationsDoTurno(
 	url.searchParams.set("traceId", traceId);
 	const resposta = await (deps.fetch ?? fetch)(url, {
 		headers: {
-			Authorization: `Basic ${Buffer.from(
-				`${config.publicKey}:${config.secretKey}`,
-			).toString("base64")}`,
+			Authorization: `Basic ${Buffer.from(`${config.publicKey}:${config.secretKey}`).toString(
+				"base64",
+			)}`,
 		},
 		signal: AbortSignal.timeout(10_000),
 	});

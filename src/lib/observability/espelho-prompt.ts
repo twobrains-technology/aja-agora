@@ -13,7 +13,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { caixaDePrompt } from "@/db/schema";
 import { NOME_DA_CAIXA } from "@/lib/agent/box/caixa";
-import { configDoLangfuse, type ConfigDoLangfuse } from "@/lib/agent/pi/langfuse";
+import { type ConfigDoLangfuse, configDoLangfuse } from "@/lib/agent/pi/langfuse";
 
 export type EspecieDoPrompt = { nome: string; versao: number; texto: string };
 
@@ -84,7 +84,10 @@ export async function espelharCaixaDePrompt(
 			.limit(1);
 		const ultima = linha[0];
 		if (!ultima) return "sem-versao";
-		await espelharPrompt({ nome: NOME_DA_CAIXA, versao: ultima.versao, texto: ultima.texto }, config);
+		await espelharPrompt(
+			{ nome: NOME_DA_CAIXA, versao: ultima.versao, texto: ultima.texto },
+			config,
+		);
 		return "espelhado";
 	} catch (erro) {
 		console.error("[espelho-prompt] espelho da caixa falhou (a publicação segue igual):", erro);
