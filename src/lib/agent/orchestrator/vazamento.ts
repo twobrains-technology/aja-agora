@@ -11,6 +11,7 @@
 //  · `isInternalToolLeak` — o segmento cita o nome literal de uma tool;
 //  · `removerLinhasDePlano` — a linha é raciocínio do modelo, não fala de vendedor.
 import { isValidCpf, maskCpf } from "@/lib/conversation/identity";
+import { publicarScores } from "@/lib/observability/sinais/publicar";
 
 /** Um TRECHO NUMÉRICO: a sequência MÁXIMA de dígitos e separadores, começando e terminando em
  * dígito. É a unidade que o guarda lê, em vez de um molde de formato (3-3-3-2): as bordas de
@@ -114,6 +115,7 @@ const NOMES_DE_TOOL = [
 	"falar_com_humano",
 	"status_da_proposta",
 	"salvar_nome",
+	"informar_perfil",
 ];
 const TOOL_LEAK = new RegExp(`\\b(${NOMES_DE_TOOL.join("|")})\\b`, "i");
 
@@ -176,19 +178,29 @@ const PASSO_EM_PRIMEIRA_PESSOA =
  * do passo. */
 const INTERJEICAO_SOLTA = /^[ \t]*(?:boa|ok|isso|certo|perfeito|ótimo|otimo|beleza)[\s!.,…]*$/i;
 
-/** O TEXTO SEM O PLANO INTERNO. Cada linha de plano cai inteira e, num texto que tem
- * plano, a interjeição solta de fim de passo cai junto. Sem plano no texto NADA muda: a
- * fala legítima sai igual, caractere por caractere. */
+/** O TEXTO SEM O RÓTULO DE PLANO. A linha com etiqueta de raciocínio é máquina e cai inteira;
+ * passo em 1ª pessoa e interjeição solta NÃO cortam mais (P11, remendo de 05/11): passam a
+ * MEDIDA — quando o detector as acha, emitem o sinal `fala_em_primeira_pessoa` e o texto sai
+ * inteiro. Sem rótulo no texto NADA muda: a fala legítima sai igual, caractere por caractere. */
 export function removerLinhasDePlano(text: string): string {
 	if (!text) return text;
 	const linhas = text.split("\n");
-	const temPlano = linhas.some((l) => ROTULO_DE_PLANO.test(l) || PASSO_EM_PRIMEIRA_PESSOA.test(l));
-	const restantes = linhas.filter(
-		(linha) =>
-			!ROTULO_DE_PLANO.test(linha) &&
-			!PASSO_EM_PRIMEIRA_PESSOA.test(linha) &&
-			!(temPlano && INTERJEICAO_SOLTA.test(linha)),
+	const medidas = linhas.filter(
+		(linha) => PASSO_EM_PRIMEIRA_PESSOA.test(linha) || INTERJEICAO_SOLTA.test(linha),
 	);
+	if (medidas.length > 0) {
+		publicarScores(
+			[
+				{
+					name: "fala_em_primeira_pessoa",
+					value: medidas.length,
+					dataType: "NUMERIC",
+				},
+			],
+			"remendos-fala",
+		);
+	}
+	const restantes = linhas.filter((linha) => !ROTULO_DE_PLANO.test(linha));
 	if (restantes.length === linhas.length) return text;
 	return restantes.join("\n").trim();
 }

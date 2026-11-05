@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { NOMES_DAS_TOOLS_LIVRES } from "@/lib/agent/pi/tools-livres";
 import { maskCpf } from "@/lib/conversation/identity";
 import { extractCpf } from "@/lib/conversation/telefone-ou-cpf";
@@ -288,9 +288,53 @@ describe("plano interno do modelo não chega ao cliente", () => {
 		expect(passaFinal(VAZAMENTO)).toBe("");
 	});
 
-	it("derruba o plano escrito em três linhas", () => {
+	// P11 — só o RÓTULO de plano ainda corta. Passo em 1ª pessoa e interjeição solta viraram
+	// MEDIDA (sinal `fala_em_primeira_pessoa`): o texto sai INTEIRO, o corte sumiu.
+	it("mantém o passo em 1ª pessoa e a interjeição no texto", () => {
+		expect(passaFinal("Pergunto o valor. Busco as cartas.")).toBe(
+			"Pergunto o valor. Busco as cartas.",
+		);
+		expect(passaFinal("Boa!")).toBe("Boa!");
 		expect(passaFinal("Show-me-the-price: a faixa está na tela.\nPergunto o valor.\nBoa!")).toBe(
-			"",
+			"Pergunto o valor.\nBoa!",
+		);
+	});
+
+	function espiarSinais(): { linhas: unknown[][]; restaurar: () => void } {
+		const linhas: unknown[][] = [];
+		const espiar = vi.spyOn(console, "log").mockImplementation((...args) => {
+			linhas.push(args);
+		});
+		return { linhas, restaurar: () => espiar.mockRestore() };
+	}
+
+	it("emite o sinal fala_em_primeira_pessoa com o nº de linhas detectadas", () => {
+		const linhas = espiarSinais();
+		try {
+			passaFinal(
+				"Show-me-the-price: a faixa está na tela.\nPergunto o valor.\nBusco as cartas.\nBoa!",
+			);
+		} finally {
+			linhas.restaurar();
+		}
+		const sinal = linhas.linhas.find((args) => args.some((a) => String(a).includes("[sinal]")));
+		expect(sinal).toBeDefined();
+		const linha = sinal?.map(String).join(" ") ?? "";
+		expect(linha).toContain("fala_em_primeira_pessoa");
+		expect(linha).toContain('"value":3');
+		expect(linha).toContain("NUMERIC");
+		expect(linha).toContain("remendos-fala");
+	});
+
+	it("não emite sinal sem passo nem interjeição", () => {
+		const linhas = espiarSinais();
+		try {
+			passaFinal("Step 2: agora pergunto o valor do bem.");
+		} finally {
+			linhas.restaurar();
+		}
+		expect(linhas.linhas.some((args) => args.some((a) => String(a).includes("[sinal]")))).toBe(
+			false,
 		);
 	});
 
@@ -303,11 +347,15 @@ describe("plano interno do modelo não chega ao cliente", () => {
 		"Thought: já viu a oferta, falta o valor.",
 		"Action: abrir a busca de cartas.",
 		"Observation: duas cartas na faixa.",
-		"Pergunto o valor.",
-		"Busco as cartas.",
 	]) {
-		it(`derruba o plano: ${plano}`, () => {
+		it(`derruba o rótulo de plano: ${plano}`, () => {
 			expect(passaFinal(plano)).toBe("");
+		});
+	}
+
+	for (const plano of ["Pergunto o valor.", "Busco as cartas."]) {
+		it(`mede e mantém o passo em 1ª pessoa: ${plano}`, () => {
+			expect(passaFinal(plano)).toBe(plano);
 		});
 	}
 
@@ -329,7 +377,8 @@ describe("plano interno do modelo não chega ao cliente", () => {
 		const texto =
 			"Olha, eu escolheria a CANOPUS de 90 mil. Ela tem a parcela mais leve entre as de 90 mil e sorteia 3 cartas por mês, mais que as outras do grupo. Quer seguir com ela ou prefere comparar outra?";
 		const baloes = picarEmBaloes(texto);
-		expect(baloes).toHaveLength(3);
+		// 04/11 (develop): fala de duas frases é UMA mensagem; só bloco longo vira bolhas.
+		expect(baloes).toHaveLength(1);
 		expect(baloes.map((b) => passaFinal(b))).toEqual(baloes);
 	});
 });
