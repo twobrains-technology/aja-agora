@@ -49,6 +49,7 @@ import {
 } from "@/lib/agent/pi/sugestoes";
 import { CREDIT_BOUNDS } from "@/lib/agent/qualify-config";
 import type { ValuePickerPayload } from "@/lib/chat/types";
+import { publicarScores } from "@/lib/observability/sinais/publicar";
 
 /** O card já É a escolha: um segundo menu por cima duplicaria a mesma decisão. */
 const CARD_DE_ESCOLHA = ["quick_reply", "value_picker", "topic_picker"];
@@ -110,24 +111,21 @@ function encurta(bruto: string): string {
 }
 
 /**
- * A lista MARCADA do texto — e o texto sem ela.
+ * A lista MARCADA do texto — DETECTADA, não cortada (P11).
  *
  * Duas linhas curtas sem marcador não chegam aqui: `null`, e o detector segue
  * para a alternativa escrita na frase. Quando a lista vem numa linha só
- * ("1) Agora 2) Nos próximos meses"), o pedaço sem marcador (a pergunta) volta
- * para o balão.
+ * ("1) Agora 2) Nos próximos meses"), as opções derivam do texto. O texto SEMPRE
+ * volta inteiro (`textoLimpo` = o original): desde a P11 a lista marcada fica no
+ * balão E vira chip — quem decide não escrever a lista é o prompt, não o corte.
  */
 function listaDeOpcoes(texto: string): { opcoes: string[]; textoLimpo: string } | null {
 	const marcadas: string[] = [];
-	const restante: string[] = [];
 	for (const linha of texto.split(/\n+/)) {
 		const limpa = linha.trim();
 		if (!limpa) continue;
 		const partes = limpa.split(/\s+(?=\d+[).:]\s)/).map((p) => p.trim());
-		const daLista = partes.filter((p) => MARCADOR_DE_LISTA.test(p) && !p.includes("?"));
-		const foraDaLista = partes.filter((p) => !daLista.includes(p));
-		marcadas.push(...daLista);
-		if (foraDaLista.length > 0) restante.push(foraDaLista.join(" "));
+		marcadas.push(...partes.filter((p) => MARCADOR_DE_LISTA.test(p) && !p.includes("?")));
 	}
 	if (marcadas.length < 2) return null;
 	const opcoes = marcadas
@@ -135,7 +133,7 @@ function listaDeOpcoes(texto: string): { opcoes: string[]; textoLimpo: string } 
 		.filter((r) => r.length > 0 && r.length <= MAXIMO_DE_ROTULO)
 		.slice(0, TETO_DE_OPÇÕES);
 	if (opcoes.length < 2) return null;
-	return { opcoes, textoLimpo: restante.join("\n").trim() || texto.trim() };
+	return { opcoes, textoLimpo: texto };
 }
 
 /**
@@ -149,11 +147,16 @@ export function opcoesDePerguntaFechada(texto: string): string[] {
 	return detectarOpcoes(texto).opcoes;
 }
 
-function detectarOpcoes(texto: string): { opcoes: string[]; textoLimpo: string } {
-	if (!texto.includes("?")) return { opcoes: [], textoLimpo: texto };
+function detectarOpcoes(texto: string): {
+	opcoes: string[];
+	textoLimpo: string;
+	/** A lista marcada foi detectada no texto (P11: ela fica no balão E vira chip). */
+	veioDaLista: boolean;
+} {
+	if (!texto.includes("?")) return { opcoes: [], textoLimpo: texto, veioDaLista: false };
 
 	const daLista = listaDeOpcoes(texto);
-	if (daLista) return daLista;
+	if (daLista) return { ...daLista, veioDaLista: true };
 
 	// A forma real medida no dev é a alternativa dentro da pergunta, com pontuação:
 	// "Qual dessas faz mais sentido pra você: parcela menor por mais tempo, ou prazo mais curto?"
@@ -167,7 +170,7 @@ function detectarOpcoes(texto: string): { opcoes: string[]; textoLimpo: string }
 		.split(/(?<=[?.!])\s+/)
 		.map((s) => s.trim())
 		.find((s) => s.endsWith("?"));
-	if (!frase) return { opcoes: [], textoLimpo: texto };
+	if (!frase) return { opcoes: [], textoLimpo: texto, veioDaLista: false };
 	let corpo = frase.replace(/\([^)]*\)/g, "").replace(/\?$/, "");
 	if (corpo.includes(":")) corpo = corpo.slice(corpo.lastIndexOf(":") + 1);
 	// PERGUNTA ABERTA NÃO É MENU: "Qual dessas opções mais te interessa ou prefere alguma outra
@@ -178,7 +181,7 @@ function detectarOpcoes(texto: string): { opcoes: string[]; textoLimpo: string }
 			corpo,
 		)
 	) {
-		return { opcoes: [], textoLimpo: texto };
+		return { opcoes: [], textoLimpo: texto, veioDaLista: false };
 	}
 	const opcoesDaFrase = corpo
 		.split(/\s+ou\s+/)
@@ -192,11 +195,12 @@ function detectarOpcoes(texto: string): { opcoes: string[]; textoLimpo: string }
 		.filter((o) => o.length >= 3 && o.length <= MAXIMO_DE_ROTULO_DE_FRASE)
 		.map((o) => rotuloNaVozDoCliente(o));
 	// Sem conversão confiável para a voz do cliente: sem chip (não é o agente que fala no botão).
-	if (opcoesDaFrase.some((o) => o === null)) return { opcoes: [], textoLimpo: texto };
+	if (opcoesDaFrase.some((o) => o === null))
+		return { opcoes: [], textoLimpo: texto, veioDaLista: false };
 	// Uma pergunta sem "ou" não é fechada entre dois caminhos — não vira chip.
-	if (opcoesDaFrase.length < 2) return { opcoes: [], textoLimpo: texto };
+	if (opcoesDaFrase.length < 2) return { opcoes: [], textoLimpo: texto, veioDaLista: false };
 	// A alternativa estava DENTRO da pergunta: o balão continua inteiro.
-	return { opcoes: opcoesDaFrase as string[], textoLimpo: texto };
+	return { opcoes: opcoesDaFrase as string[], textoLimpo: texto, veioDaLista: false };
 }
 
 /** O toque deste turno neste balão seria a MESMA decisão já na tela? */
@@ -218,8 +222,8 @@ function toqueBloqueado(texto: string, cardsDoTurno: readonly { type: string }[]
  * O trecho que sai no balão e o chip que o acompanha.
  *
  * `cardsDoTurno` é o que o modelo já mostrou neste turno: se havia card de escolha,
- * o texto não é uma lista — não se duplica o chip. `texto` é o balão SEM a lista
- * que virou botão (N05): o cliente não lê a mesma opção duas vezes.
+ * o texto não é uma lista — não se duplica o chip. `texto` é o balão INTEIRO (P11):
+ * a lista marcada fica no balão E vira botão — o corte de fala não existe mais.
  */
 export function garantirChip(args: {
 	texto: string;
@@ -238,14 +242,20 @@ export function garantirChip(args: {
 } {
 	if (toqueBloqueado(args.texto, args.cardsDoTurno)) return { texto: args.texto, chip: null };
 
-	// 1. A opção escrita no TEXTO (lista marcada ou "A ou B?") — a melhor de todas: a lista sai
-	//    do balão e vira botão.
-	const { opcoes, textoLimpo } = detectarOpcoes(args.texto);
-	// A alternativa escrita só vale quando o corte parece RÓTULO. "O bem é carro, moto ou imóvel?"
+	// 1. A opção escrita no TEXTO (lista marcada ou "A ou B?") — a melhor de todas.
+	//    P11: o texto NUNCA é cortado; a lista marcada fica no balão E vira botão. Sinal
+	//    `lista_no_texto` mede a ocorrência para o dono ler (antes o corte era silencioso).
+	const { opcoes, veioDaLista } = detectarOpcoes(args.texto);
+	// A alternativa escrita só vale quando parece RÓTULO. "O bem é carro, moto ou imóvel?"
 	// saía como dois botões quebrados ("O bem é carro, moto" / "imóvel") — vírgula no rótulo é o
 	// sinal de que a frase era pergunta, não menu. Aí quem responde é o momento (`sugestoes.ts`).
-	const corteUtil = opcoes.length >= 2 && !opcoes.some((o) => o.includes(","));
-	if (corteUtil) return { texto: textoLimpo, chip: chipDe(opcoes) };
+	const util = opcoes.length >= 2 && !opcoes.some((o) => o.includes(","));
+	if (util) {
+		if (veioDaLista) {
+			publicarScores([{ name: "lista_no_texto", value: 1, dataType: "BOOLEAN" }], "remendos-fala");
+		}
+		return { texto: args.texto, chip: chipDe(opcoes) };
+	}
 
 	// 2. A opção derivada do MOMENTO (ordem do dono, 27/10): pergunta feita sem toque é pergunta
 	//    perdida — e turno SEM pergunta também tem próximo passo (ordem das 17:16). Aqui o balão

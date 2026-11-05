@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { type CardGerado, garantirChip, opcoesDePerguntaFechada } from "./chips";
 
 /** Os toques do card — `quick_reply` é o único que carrega rótulos (o `value_picker` é slider). */
@@ -8,14 +8,13 @@ const toques = (chip: CardGerado | null) =>
 const rotulos = (chip: CardGerado | null) => toques(chip).map((o) => o.label);
 
 describe("pergunta fechada vira chip, não lista escrita no texto", () => {
-	it("lista no texto: as opções viram botão e o balão guarda só a pergunta", () => {
-		const r = garantirChip({
-			texto: "Para quando você está pensando nessa troca?\n1) Agora\n2) Nos próximos meses",
-			cardsDoTurno: [],
-		});
+	it("lista no texto: as opções viram botão e o balão sai INTEIRO (P11)", () => {
+		const texto = "Para quando você está pensando nessa troca?\n1) Agora\n2) Nos próximos meses";
+		const r = garantirChip({ texto, cardsDoTurno: [] });
 		expect(r.chip).not.toBeNull();
 		expect(rotulos(r.chip)).toEqual(["Agora", "Nos próximos meses"]);
-		expect(r.texto).toBe("Para quando você está pensando nessa troca?");
+		// P11: nada é removido do balão — a lista fica no texto E vira chip.
+		expect(r.texto).toBe(texto);
 	});
 
 	it("alternativa escrita na frase também vira chip", () => {
@@ -82,14 +81,25 @@ describe("pergunta fechada vira chip, não lista escrita no texto", () => {
 		expect(rotulos(r.chip)).toEqual(["Sim, pode", "Agora não"]);
 	});
 
-	it("a lista marcada sai do balão, o resto da fala fica (N05)", () => {
-		const r = garantirChip({
-			texto: "Ótimo, Marcos!\nPara quando você está pensando?\n1) Agora\n2) Nos próximos meses",
+	it("a lista marcada vira botão e a fala fica inteira no balão (P11)", () => {
+		const texto =
+			"Ótimo, Marcos!\nPara quando você está pensando?\n1) Agora\n2) Nos próximos meses";
+		const r = garantirChip({ texto, cardsDoTurno: [] });
+		expect(rotulos(r.chip)).toEqual(["Agora", "Nos próximos meses"]);
+		// O balão sai inteiro: fala não é cortada em código (P11).
+		expect(r.texto).toBe(texto);
+	});
+
+	it("lista marcada detectada emite o sinal `lista_no_texto` (P11: medida, não corte)", () => {
+		const log = vi.spyOn(console, "log").mockImplementation(() => {});
+		garantirChip({
+			texto: "Pra quando?\n1) Agora\n2) Depois",
 			cardsDoTurno: [],
 		});
-		expect(rotulos(r.chip)).toEqual(["Agora", "Nos próximos meses"]);
-		// O texto guarda a FALA; a lista virou botão.
-		expect(r.texto).toBe("Ótimo, Marcos!\nPara quando você está pensando?");
+		const linha = log.mock.calls.map((c) => String(c[0])).find((l) => l.includes("[sinal]"));
+		expect(linha).toContain("lista_no_texto");
+		expect(linha).toContain("remendos-fala");
+		log.mockRestore();
 	});
 
 	it("cada opção nasce com replyId — é por ele que o clique é consumido (L26)", () => {

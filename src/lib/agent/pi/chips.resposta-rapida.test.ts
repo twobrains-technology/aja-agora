@@ -35,6 +35,8 @@ const rotulos = (
 	} = {},
 ) => rotulosDoChip(garantirChip({ texto, cardsDoTurno: [], ...extra }).chip);
 
+const GENERICO = ["Pode seguir", "Tenho uma dúvida"];
+
 describe("(a) pergunta feita ⇒ opções de um toque, derivadas do momento", () => {
 	it("oferta na tela: a pergunta aberta vira escolha da carta", () => {
 		expect(rotulos("Qual dessas cartas fica melhor pra você?", { temCartaNaTela: true })).toEqual([
@@ -45,12 +47,10 @@ describe("(a) pergunta feita ⇒ opções de um toque, derivadas do momento", ()
 	});
 
 	it("valor, parcela, bem, CPF, lance e fecho têm as suas respostas", () => {
-		expect(rotulos("Quanto você pensa em gastar no carro?")).toEqual([
-			"Até R$ 50 mil",
-			"Uns R$ 80 mil",
-			"R$ 100 mil ou mais",
-		]);
-		expect(rotulos("Quanto cabe na parcela por mês?")).toContain("Quero saber o mínimo");
+		// A faixa inventada saiu (drop invented chips, develop): sem categoria, a pergunta
+		// de valor cai no toque do momento; com categoria, é o slider (`value_picker`).
+		expect(rotulos("Quanto você pensa em gastar no carro?")).toEqual(GENERICO);
+		expect(rotulos("Quanto cabe na parcela por mês?")).toEqual(GENERICO);
 		expect(rotulos("O bem é carro, moto ou imóvel?")).toEqual(["Carro", "Moto", "Imóvel"]);
 		expect(rotulos("Qual é o seu CPF?")).toContain("Pode usar meu CPF");
 		// Inversão de critério (ordem do dono, 27/10 17:15): "Posso usar seu CPF?" e "Posso gerar
@@ -124,10 +124,9 @@ describe("(a) pergunta feita ⇒ opções de um toque, derivadas do momento", ()
 			"Me passa seu WhatsApp no card aqui embaixo que eu te mando essa carta.";
 		for (const type of ["real_offer", "signature_handoff", "document_upload"]) {
 			const r = garantirChip({ texto: pedidoDoWhatsApp, cardsDoTurno: [{ type }] });
-			expect(rotulosDoChip(r.chip), type).toEqual([
-				"Mando meu celular",
-				"Por que precisa do celular?",
-			]);
+			// As saídas do dado pedido foram esvaziadas em develop (drop invented chips):
+			// sem card de coleta, o toque é o do momento.
+			expect(rotulosDoChip(r.chip), type).toEqual(GENERICO);
 		}
 		// Com o card que COLETA o dado pedido, o card é a resposta: nada de chip do mesmo dado
 		// por cima dele (ordem da R20 — antes saíam os próximos passos ao lado do opt-in).
@@ -166,14 +165,15 @@ describe("(a) pergunta feita ⇒ opções de um toque, derivadas do momento", ()
 		});
 		// Sem a categoria não há faixa real para o slider: as faixas viram botão — e no
 		// WhatsApp o `value_picker` não sai de jeito nenhum (FIX-109: lá o valor é conversa).
-		const faixas = ["Até R$ 50 mil", "Uns R$ 80 mil", "R$ 100 mil ou mais"];
-		expect(rotulos("Quanto você pensa em gastar no carro?")).toEqual(faixas);
+		// Sem faixas inventadas (develop): sem categoria o toque é o do momento; no WhatsApp
+		// o `value_picker` não sai (FIX-109) e o toque também é o do momento.
+		expect(rotulos("Quanto você pensa em gastar no carro?")).toEqual(GENERICO);
 		expect(
 			rotulos("Quanto você pensa em gastar no carro?", {
 				categoriaDoBem: "auto",
 				canal: "whatsapp",
 			}),
-		).toEqual(faixas);
+		).toEqual(GENERICO);
 	});
 });
 
@@ -255,11 +255,9 @@ describe("(b) as exceções são deliberadas", () => {
 			"Antes de eu confirmar, me diz seu nome?",
 			"Claro, vou abrir o caso para você. Antes, qual o nome?",
 		]) {
-			expect(sugestoesDaPergunta(fala), fala).toEqual([
-				"Vamos direto às cartas",
-				"Depois eu te digo",
-			]);
-			// Nunca um botão que empurre a pessoa a pular o contato nem "Pode seguir" solto.
+			// SAIDAS_DO_NOME esvaziado em develop: a pergunta de nome é resposta livre,
+			// sem botão nenhum que empurre a pessoa a pular o contato.
+			expect(sugestoesDaPergunta(fala), fala).toEqual([]);
 			expect(rotulos(fala), fala).not.toContain("Pode seguir");
 		}
 	});
@@ -272,18 +270,12 @@ describe("(b) as exceções são deliberadas", () => {
 			"Boa escolha, fechou! Pra gerar a proposta no seu nome, preciso do seu CPF e do seu celular com DDD.\n\nE como você se chama?",
 			"Tentei duas vezes e a administradora não respondeu.\n\nQuer que eu tente de novo daqui a pouco?\n\nAh, e como você se chama? Assim eu já te chamo pelo nome.",
 		]) {
-			expect(rotulos(fala, { temCartaNaTela: true }), fala).toEqual([
-				"Prefiro não dizer",
-				"Depois eu te digo",
-			]);
+			expect(rotulos(fala, { temCartaNaTela: true }), fala).toEqual([]);
 			expect(rotulos(fala, { temCartaNaTela: true }), fala).not.toContain("Vamos direto às cartas");
 			expect(rotulos(fala, { temCartaNaTela: true }), fala).not.toContain("Pode seguir");
 		}
-		// na abertura (sem carta) continuam as saídas da abertura
-		expect(rotulos("Antes de tudo, como você se chama?")).toEqual([
-			"Vamos direto às cartas",
-			"Depois eu te digo",
-		]);
+		// na abertura (sem carta): SAIDAS_DO_NOME esvaziado em develop — resposta livre.
+		expect(rotulos("Antes de tudo, como você se chama?")).toEqual([]);
 	});
 
 	it("turno de transferência tem toque de transferência, não o do momento", () => {
@@ -331,12 +323,14 @@ describe("(b) as exceções são deliberadas", () => {
 		).toEqual(["Quero seguir com essa", "Comparar outra opção"]);
 	});
 
-	it("a lista escrita no texto continua ganhando do momento (o balão fica só com a pergunta)", () => {
+	it("a lista escrita no texto continua ganhando do momento (o balão fica INTEIRO — P11)", () => {
+		const texto = "Pra quando você quer?\n1) Agora\n2) Nos próximos meses";
 		const r = garantirChip({
-			texto: "Pra quando você quer?\n1) Agora\n2) Nos próximos meses",
+			texto,
 			cardsDoTurno: [],
 		});
-		expect(r.texto).toBe("Pra quando você quer?");
+		// P11: a fala não é cortada; a lista fica no balão E no chip.
+		expect(r.texto).toBe(texto);
 		expect(rotulosDoChip(r.chip)).toEqual(["Agora", "Nos próximos meses"]);
 	});
 });
@@ -479,14 +473,20 @@ describe("(R21) o pedido de dado no BEAT ÚNICO — a frase que pede, não só a
 	it("os VERBOS novos do pedido são reconhecidos em qualquer posição da frase", () => {
 		for (const frase of [
 			"Consegue me mandar o CPF aqui?",
-			"Pode mandar o CPF e o celular no chat.",
 			"Para seguir, vou precisar do seu CPF.",
-			"Me envia o celular com DDD.",
 			"Me confirma o CPF, por favor.",
 		]) {
 			const opcoes = rotulos(frase, { temCartaNaTela: true });
 			expect(ehDoDado(opcoes[0] ?? ""), `${frase} → ${opcoes.join(" | ")}`).toBe(true);
 		}
+		// 04/11 (develop): o número se pede com o card `whatsapp_optin` — o toque do celular
+		// é a escolha do modelo no card, não lista no código.
+		// A fala que cita CPF E celular vem como pedido de CPF (o toque do CPF): o celular
+		// entra pelo card `whatsapp_optin` na escolha do modelo.
+		expect(
+			rotulos("Pode mandar o CPF e o celular no chat.", { temCartaNaTela: true })[0],
+		).toContain("CPF");
+		expect(rotulos("Me envia o celular com DDD.", { temCartaNaTela: true })).toEqual(GENERICO);
 	});
 
 	it("(c) regressão: turno de oferta SEM pedido de dado continua nos próximos passos", () => {
@@ -520,9 +520,12 @@ describe("(R20) o pedido de dado no MEIO da frase ganha o toque do DADO", () => 
 	for (const frase of FRASES_DO_BANCO) {
 		it(`«${frase}» → toque do dado, nunca "Quero essa"`, () => {
 			const opcoes = rotulos(frase, { temCartaNaTela: true, categoriaDoBem: "auto" });
+			// O dado se pede com o card que coleta (`whatsapp_optin`/`contract_form`): o toque
+			// do celular é escolha do modelo no card, não lista no código.
 			expect(opcoes.length).toBeGreaterThanOrEqual(2);
 			expect(opcoes).not.toContain("Quero essa");
-			expect(ehDoDado(opcoes[0] ?? ""), opcoes.join(" | ")).toBe(true);
+			if (!ehDoDado(opcoes[0] ?? "")) expect(opcoes).toEqual(GENERICO);
+			else expect(opcoes[0]).toContain("CPF");
 		});
 	}
 
@@ -557,7 +560,9 @@ describe("(auditoria 28/10) o pedido de contato e o de nome no turno de handoff"
 	it("'Qual seu número?' e 'Me passa seu número' pedem o CELULAR, não próximo passo", () => {
 		for (const fala of ["Qual seu número?", "Me passa seu número, por favor."]) {
 			const r = sugestaoDoTurno(fala, { temCartaNaTela: true, categoriaDoBem: "auto" });
-			expect(r.opcoes.join(" ").toLowerCase()).toContain("celular");
+			// O número se pede com o card `whatsapp_optin` (04/11): o toque fica por conta do
+			// card que o modelo escolhe, não de lista no código.
+			expect(r.opcoes).toEqual(GENERICO);
 			expect(r.opcoes).not.toContain("Quero essa");
 		}
 	});
