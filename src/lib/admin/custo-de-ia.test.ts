@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { JUDGE_MODEL } from "@/lib/eval/judge";
 import {
 	type ConversaDoPostgres,
 	computeCustoDeIA,
@@ -122,12 +121,15 @@ describe("L24 — modelo sem preço continua nomeado, nunca custo 0, e não apag
 		expect(r.modelosSemPreco).toEqual(["modelo-sem-preco-de-teste", "outro-modelo-sem-preco"]);
 	});
 
-	it("o modelo do juiz e do diagnóstico, sem preço cadastrado, deixa o período PARCIAL", () => {
-		// É o caso real: `JUDGE_MODEL`/`DIAGNOSIS_MODEL` gravam linha em `uso_de_ia` a cada
-		// avaliação. Uma delas no dia não pode custar o custo do dia inteiro.
+	it("um modelo de avaliação sem preço cadastrado deixa o período PARCIAL", () => {
+		// É o caso real: o modelo do juiz/diagnóstico grava linha em `uso_de_ia` a cada
+		// avaliação, e uma delas no dia não pode custar o custo do dia inteiro. O soneto do
+		// juiz ganhou preço no B15 (`precos.ts`), então a fixture usa um id que NÃO tem preço
+		// — o guard é sobre modelo sem preço, não sobre o juiz especificamente.
+		const semPreco = "modelo-de-avaliacao-sem-preco";
 		const linhas = linhasDoLivroLocal([
 			beatDoVendedor(),
-			beatDoVendedor({ modelo: JUDGE_MODEL, tokensInput: 120_000, tokensOutput: 20_000 }),
+			beatDoVendedor({ modelo: semPreco, tokensInput: 120_000, tokensOutput: 20_000 }),
 		]);
 
 		const r = somarCustoDeIA({
@@ -139,7 +141,7 @@ describe("L24 — modelo sem preço continua nomeado, nunca custo 0, e não apag
 		expect(r.tipo).toBe("valor");
 		if (r.tipo !== "valor") return;
 		expect(r.parcial).toBe(true);
-		expect(r.semPreco).toEqual([{ modelo: JUDGE_MODEL, linhas: 1 }]);
+		expect(r.semPreco).toEqual([{ modelo: semPreco, linhas: 1 }]);
 		expect(r.usdCents).toBeCloseTo(0.4, 10); // só a linha do vendedor tem preço
 	});
 
