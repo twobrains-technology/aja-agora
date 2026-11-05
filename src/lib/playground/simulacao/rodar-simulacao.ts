@@ -115,6 +115,7 @@ export async function rodarSimulacao(
 				id: perfil.id,
 				esperaProposta: perfil.esperaProposta,
 				esperaFila: perfil.esperaFila,
+				turnosDeRetorno: perfil.turnosDeRetorno,
 			},
 			dados,
 			numerosConhecidos,
@@ -231,7 +232,12 @@ export async function rodarSimulacao(
 		parada,
 		veredito: vereditoDoPerfil(
 			marcacoes,
-			{ id: perfil.id, esperaProposta: perfil.esperaProposta, esperaFila: perfil.esperaFila },
+			{
+				id: perfil.id,
+				esperaProposta: perfil.esperaProposta,
+				esperaFila: perfil.esperaFila,
+				turnosDeRetorno: perfil.turnosDeRetorno,
+			},
 			parada,
 		),
 		iniciadoEm,

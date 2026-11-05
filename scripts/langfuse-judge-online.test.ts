@@ -86,6 +86,18 @@ describe("falha de LLM Connection", () => {
 					status: 200,
 				});
 			}
+			if (u.endsWith("/unstable/evaluators/e1") && method === "GET") {
+				return new Response(
+					JSON.stringify({
+						id: "e1",
+						name: "judge_avancou",
+						scope: "project",
+						version: 1,
+						prompt: PROMPT_DO_JUIZ,
+					}),
+					{ status: 200 },
+				);
+			}
 			if (method === "POST" && u.endsWith("/unstable/evaluation-rules")) {
 				const corpo = JSON.parse(String(init?.body));
 				regras.push({ id: "r1", name: corpo.name });
@@ -103,9 +115,59 @@ describe("falha de LLM Connection", () => {
 		}) as typeof fetch;
 		const r = await executar(ENV, () => undefined, fetchFn);
 		expect(r.ok).toBe(true);
-		expect(r.sincronizados).toEqual(["evaluator:judge_avancou"]);
+		expect(r.sincronizados.sort()).toEqual([
+			"evaluator:judge_avancou",
+			"evaluator:judge_avancou:prompt-ja-sincronizado",
+		]);
 		expect(r.criados).toEqual(["rule:judge_avancou"]);
 		expect(r.ultimoScore).toContain("0.87");
+	});
+	it("sincroniza o prompt do evaluator quando diverge da rubrica (PATCH)", async () => {
+		const patches: unknown[] = [];
+		const fetchFn = (async (url: RequestInfo | URL, init?: RequestInit) => {
+			const u = String(url);
+			const method = init?.method ?? "GET";
+			if (u.includes("/unstable/evaluators?page=")) {
+				return new Response(
+					JSON.stringify({
+						data: [{ id: "e1", name: "judge_avancou", scope: "project", version: 1 }],
+						meta: { totalPages: 1 },
+					}),
+					{ status: 200 },
+				);
+			}
+			if (u.endsWith("/unstable/evaluators/e1") && method === "GET") {
+				// prompt velho (v1) — deve virar PATCH com a rubrica corrente.
+				return new Response(
+					JSON.stringify({
+						id: "e1",
+						name: "judge_avancou",
+						scope: "project",
+						version: 1,
+						prompt: PROMPT_DO_JUIZ.replace("(v2)", "(v1)"),
+					}),
+					{ status: 200 },
+				);
+			}
+			if (u.endsWith("/unstable/evaluators/e1") && method === "PATCH") {
+				patches.push(JSON.parse(String(init?.body)));
+				return new Response(JSON.stringify({ id: "e1" }), { status: 200 });
+			}
+			if (u.includes("/unstable/evaluation-rules?page=")) {
+				return new Response(JSON.stringify({ data: [], meta: { totalPages: 1 } }), { status: 200 });
+			}
+			if (method === "POST" && u.endsWith("/unstable/evaluation-rules")) {
+				return new Response(JSON.stringify({ id: "r1" }), { status: 201 });
+			}
+			if (u.includes("/v3/scores")) {
+				return new Response(JSON.stringify({ data: [] }), { status: 200 });
+			}
+			throw new Error(`chamada inesperada: ${method} ${u}`);
+		}) as typeof fetch;
+		const r = await executar(ENV, () => undefined, fetchFn);
+		expect(r.ok).toBe(true);
+		expect(r.sincronizados).toContain("evaluator:judge_avancou:prompt");
+		expect(patches).toEqual([{ prompt: PROMPT_DO_JUIZ }]);
 	});
 	it("segunda execução é idempotente: PATCH em vez de POST", async () => {
 		const corpo: unknown[] = [{ id: "r1", name: "judge_avancou" }];
@@ -114,6 +176,18 @@ describe("falha de LLM Connection", () => {
 			const u = String(url);
 			const method = init?.method ?? "GET";
 			metodos.push(`${method} ${u.replace("https://lf.test", "")}`);
+			if (u.endsWith("/unstable/evaluators/e1") && method === "GET") {
+				return new Response(
+					JSON.stringify({
+						id: "e1",
+						name: "judge_avancou",
+						scope: "project",
+						version: 1,
+						prompt: PROMPT_DO_JUIZ,
+					}),
+					{ status: 200 },
+				);
+			}
 			if (u.includes("/unstable/evaluation-rules?page=")) {
 				return new Response(JSON.stringify({ data: corpo, meta: { totalPages: 1 } }), {
 					status: 200,
@@ -139,7 +213,11 @@ describe("falha de LLM Connection", () => {
 		const r = await executar(ENV, () => undefined, fetchFn);
 		expect(r.ok).toBe(true);
 		expect(r.criados).toEqual([]);
-		expect(r.sincronizados.sort()).toEqual(["evaluator:judge_avancou", "rule:judge_avancou"]);
+		expect(r.sincronizados.sort()).toEqual([
+			"evaluator:judge_avancou",
+			"evaluator:judge_avancou:prompt-ja-sincronizado",
+			"rule:judge_avancou",
+		]);
 		expect(metodos.some((m) => m.startsWith("PATCH"))).toBe(true);
 	});
 });

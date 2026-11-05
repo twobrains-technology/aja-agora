@@ -80,6 +80,61 @@ describe("expectAnyArtifact + orAgentTextMatches: o WhatsApp pedido em frase cum
 	});
 });
 
+describe("lastro da fala do usuário: faixa e unidade não adjacente (medido em 05/11/2026)", () => {
+	it("faixa 'entre X e Y mil': os DOIS ponteiros herdam a escala, e o eco do agente passa", () => {
+		// golden-real-remarketing-identico turno 1: "carro entre 50 e 100 mil";
+		// o agente ecoou "entre R$ 50 e R$ 100 mil" e o assert acusou R$ 50.
+		const v = checkScenario(
+			[
+				{
+					userMsg: "carro entre 50 e 100 mil",
+					agentText: "Entre R$ 50 e R$ 100 mil temos boas opções.",
+					httpStatus: 200,
+					error: null,
+					artifactTypes: [],
+				},
+			],
+			{ turns: [{ forbidUngroundedMoney: true }] },
+		);
+		expect(v.failures).toEqual([]);
+	});
+
+	it("'até X por mês': o 'por' no meio não tira o valor do lastro", () => {
+		// golden-real-tenho-duvidas-vago turno 2: "Posso pagar até 1200 por mês.";
+		// o agente falou "R$ 1.200" e o lastro não tinha 1200.
+		const v = checkScenario(
+			[
+				{
+					userMsg: "Não sei, me ajude a pensar. Posso pagar até 1200 por mês.",
+					agentText: "Com R$ 1.200 por mês você chega bem.",
+					httpStatus: 200,
+					error: null,
+					artifactTypes: [],
+				},
+			],
+			{ turns: [{ forbidUngroundedMoney: true }] },
+		);
+		expect(v.failures).toEqual([]);
+	});
+
+	it("número inventado segue vermelho: a tolerância nova não vira porta aberta", () => {
+		const v = checkScenario(
+			[
+				{
+					userMsg: "Posso pagar até 1200 por mês.",
+					agentText: "A parcela fica em R$ 4.500,00 por mês.",
+					httpStatus: 200,
+					error: null,
+					artifactTypes: [],
+				},
+			],
+			{ turns: [{ forbidUngroundedMoney: true }] },
+		);
+		expect(v.pass).toBe(false);
+		expect(v.failures.join(" ")).toContain("SEM LASTRO");
+	});
+});
+
 describe("expectNonEmptyAgentText", () => {
 	const base = { userMsg: "u", artifactTypes: [], httpStatus: 200, error: null };
 	it("fala vazia reprova; com texto passa", () => {

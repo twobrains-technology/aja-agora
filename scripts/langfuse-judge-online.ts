@@ -135,6 +135,34 @@ REGRA CRÍTICA: você avalia **apenas o agente IA**. Se o histórico mostrar que
 virou handoff humano em algum ponto, ignore os turnos pós-handoff e foque só nas decisões
 do agente.
 
+## Regras de conduta do dono (v2)
+
+Cinco âncoras do dono do produto. Violar qualquer uma delas é falha, mesmo com tom
+impecável — pese forte na dimensão indicada.
+
+1. **Fale da carta pelo que o cliente vê no card** (continuidade). Toda referência a
+   carta, grupo ou taxa ancora no que o cliente está VENDO: id de grupo e taxa de
+   adesão fora da tela só entram com contexto que os torna úteis ou quando o cliente
+   pede. Citar identificador cru que o cliente não enxerga é falha de referência.
+2. **Compare e recomende UMA carta, com o porquê em números da cota**
+   (assertividade). Diante de cartas concorrentes, o agente compara com números
+   reais (parcela, prazo, lance, taxa) e recomenda UMA, com o porquê em números da
+   cota. Devolver a escolha ao cliente ("qual você prefere?" sobre dado que ele
+   possui) e o menu "se prefere X / se prefere Y" são falha: a decisão comparativa
+   é dele.
+3. **Correção sem confissão** (assertividade). Quando corrige um número ou fato que
+   ele mesmo deu errado, o fato corrigido é a mensagem: reafirma a decisão correta.
+   "Errei", "me desculpe", "o sistema falhou" e afins são confissão sem valor — o
+   cliente quer o número certo, não o pedido de desculpas. Não culpabilize nem
+   trate o erro como falha de sistema.
+4. **Retomada leva algo novo** (continuidade). Ao retomar uma conversa que parou ou
+   voltou, o agente traz algo novo (informação, oferta, caminho). Retomada idêntica
+   a texto anterior — o mesmo pedido, as mesmas frases — é falha, não continuidade.
+5. **Carinho é reconhecer antes de pedir** (naturalidade). Antes de pedir o próximo
+   dado, o agente reconhece o que o cliente disse (a objeção, o medo, a dúvida) e
+   só depois avança. Pedir em cima da fala do cliente sem reconhecê-la é frieza,
+   não carinho.
+
 ## Dimensões
 
 ### 1. Engajamento (sinal do usuário)
@@ -159,12 +187,16 @@ já respondeu indica falha de leitura, mesmo que o coverage final seja alto.
 Se a conversa foi coerente. Sem sinal determinístico — leia o histórico.
 - 1.0: agente referencia contexto anterior, transições suaves, não repete
 - 0.5: alguns lapsos pontuais
-- 0.0: ignora histórico, repete pergunta já respondida, abandona thread
+- 0.0: ignora histórico, repete pergunta já respondida, abandona thread, retomada
+  idêntica a texto anterior (viola a regra 4) ou referencia o que o cliente não vê
+  no card (viola a regra 1)
 
 ### 4. Naturalidade (tom, canal, persona)
 Se o tom e a forma estão alinhados com a persona configurada e o canal da conversa.
-- 1.0: tom condiz com persona, linguagem ajustada ao expertise, tamanho certo pro canal
-- 0.5: aceitável mas com momentos robóticos ou jargão excessivo
+- 1.0: tom condiz com persona, linguagem ajustada ao expertise, tamanho certo pro canal,
+  reconhece o que o cliente disse antes de pedir o próximo dado (regra 5)
+- 0.5: aceitável mas com momentos robóticos ou jargão excessivo, ou pedidos que
+  chegam sem reconhecimento do que o cliente acabou de dizer
 - 0.0: completamente desalinhado
 
 Heurísticas:
@@ -178,7 +210,11 @@ Se a informação dada está correta e se as decisões foram acertadas.
 - 1.0: dados específicos têm origem em resultados de ferramenta do histórico, ferramentas
   usadas no momento certo, handoff acionado quando devia, não cita tópicos proibidos
 - 0.5: lapsos não-críticos
-- 0.0: alucinação clara, promete contemplação, fala tópico proibido, deixa de escalar quando precisava
+- 0.0: alucinação clara, promete contemplação, fala tópico proibido, deixa de escalar
+  quando precisava, devolve a escolha da carta ao cliente ou cai no menu
+  "se prefere X / se prefere Y" em vez de recomendar UMA com o porquê em números
+  (regra 2), ou confessa falha ("errei", "me desculpe", "o sistema falhou") em vez
+  de corrigir o fato (regra 3)
 
 Número citado que não aparece em nenhum resultado de ferramenta do histórico é sinal forte
 de alucinação.
@@ -238,7 +274,13 @@ export function filtroRaiz(): Array<{
 // API instável
 // ---------------------------------------------------------------------------
 
-type Evaluator = { id: string; name: string; scope: string; version: number };
+type Evaluator = {
+	id: string;
+	name: string;
+	scope: string;
+	version: number;
+	prompt?: string;
+};
 type Rule = {
 	id: string;
 	name: string;
@@ -351,7 +393,39 @@ export async function executar(
 	const evaluators = await listar<Evaluator>(fetchFn, cred, "/api/public/unstable/evaluators");
 	const criados: string[] = [];
 	const sincronizados: string[] = [];
-	if (evaluators.some((e) => e.name === cfg.nome)) {
+	const existente = evaluators.find((e) => e.name === cfg.nome);
+	if (existente) {
+		// Sincroniza o prompt do evaluator com a rubrica corrente (v2): GET do
+		// evaluator, compara com PROMPT_DO_JUIZ, PATCH só se divergir (idempotente).
+		const detalhe = await fetchFn(api(cred, `/api/public/unstable/evaluators/${existente.id}`), {
+			headers: { Authorization: autorizacao(cred) },
+			signal: AbortSignal.timeout(15_000),
+		});
+		if (detalhe.ok) {
+			const corpo = (await detalhe.json().catch(() => null)) as Evaluator | null;
+			if (corpo?.prompt !== undefined && corpo.prompt !== PROMPT_DO_JUIZ) {
+				const patch = await fetchFn(api(cred, `/api/public/unstable/evaluators/${existente.id}`), {
+					method: "PATCH",
+					headers: { Authorization: autorizacao(cred), "Content-Type": "application/json" },
+					body: JSON.stringify({ prompt: PROMPT_DO_JUIZ }),
+					signal: AbortSignal.timeout(20_000),
+				});
+				if (patch.status < 200 || patch.status >= 300) {
+					return {
+						ok: false,
+						motivo: `PATCH /api/public/unstable/evaluators/${existente.id} → HTTP ${patch.status} (atualizar o prompt do evaluator pode não existir na API — atualizar o prompt na UI, Settings → Evaluators)`,
+						criados,
+						sincronizados,
+						ultimoScore: null,
+					};
+				}
+				sincronizados.push(`evaluator:${cfg.nome}:prompt`);
+			} else {
+				sincronizados.push(`evaluator:${cfg.nome}:prompt-ja-sincronizado`);
+			}
+		} else {
+			sincronizados.push(`evaluator:${cfg.nome}:prompt-nao-verificavel`);
+		}
 		sincronizados.push(`evaluator:${cfg.nome}`);
 	} else {
 		const { status, corpo } = await postar<{ code?: string; message?: string }>(

@@ -50,7 +50,7 @@ import {
 	motivoDaSondaPeloApp,
 	type Sonda,
 } from "./eval-run-sonda";
-import { shaDoCodigo } from "./eval-sha";
+import { type FingerprintDaCaixa, nomeDoRunDeConduta, shaDoCodigo } from "./eval-sha";
 
 const BASE = DEFAULT_BASE_URL as string;
 const GOLDEN_DIR = join(import.meta.dirname, "eval", "golden");
@@ -406,7 +406,27 @@ async function main(): Promise<void> {
 
 	const sha = gitShaCurto();
 	const inicio = new Date();
-	const runName = `gate-${sha}-${inicio.toISOString().slice(0, 16).replace(/[-:T]/g, "")}`;
+	// D-0083/Q2: o run é determinístico pela CONDUTA — sha do código + hash da
+	// versão publicada da caixa (`caixa_de_prompt`, label de CAIXA_LABEL). Sem
+	// banco, cai no fallback do código e o nome fica só `gate-<sha>`; sem
+	// timestamp, porque re-run da mesma conduta tem de alimentar O MESMO run.
+	let fingerprintDaCaixa: FingerprintDaCaixa = null;
+	try {
+		const { labelDaCaixa, lerCaixa, limparCacheDaCaixa } = await import("@/lib/agent/box/caixa");
+		limparCacheDaCaixa();
+		const caixa = await lerCaixa({ label: labelDaCaixa() });
+		if (caixa.origem === "banco") {
+			fingerprintDaCaixa = { versao: caixa.versao, texto: caixa.texto };
+			console.log(`Conduta: caixa publicada v${caixa.versao} (label ${caixa.label}).`);
+		} else {
+			console.log(`Conduta: sem versão publicada para a label — texto do código.`);
+		}
+	} catch (e) {
+		console.warn(
+			`⚠️  leitura da caixa falhou (sha de conduta fica só do código): ${e instanceof Error ? e.message : e}`,
+		);
+	}
+	const runName = nomeDoRunDeConduta(sha, fingerprintDaCaixa);
 
 	const golden = lerGolden().filter((g) => !only || g.cenario === only);
 	if (golden.length === 0) {
@@ -443,6 +463,10 @@ async function main(): Promise<void> {
 		durMs: number;
 		falhas: string[];
 		erro?: string;
+		/** Sessão simulada no app — o Langfuse indexa os traces do turno por
+		 *  session (conversationId); é por aqui que a annotation queue acha o
+		 *  cenário de morte na instância (bloco D). */
+		conversationId?: string;
 	}> = [];
 
 	// B10 — anexa o item executado ao dataset run e grava os scores dele.
@@ -528,6 +552,7 @@ async function main(): Promise<void> {
 			turnos: turns.length,
 			durMs,
 			falhas: verdict.failures,
+			...(out.conversationId ? { conversationId: out.conversationId } : {}),
 		});
 		if (verdict.pass) {
 			pass++;

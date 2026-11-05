@@ -20,12 +20,13 @@ pnpm tsx scripts/langfuse-score-configs.ts
 | `afirmacao_comparativa_falsa` | superlativo dito pelo vendedor ("a menor taxa", "o mais curto", "o melhor") que o conjunto devolvido pelas tools desmente — outra opção tem valor melhor |
 | `conducao_entregue` | a resposta deixa próximo passo — a conversa não morreu (premissa P0) |
 | `tool_recusou` | ferramenta recusou a chamada no turno (parâmetro, permissão ou erro de uso) |
+| `retomada_sem_novidade` | retomada que repete o mesmo pedido de antes sem levar algo novo (D-0083, bloco B: morte do lead; marcação `retomada-sem-novidade` da simulação) |
 
 ## Dimensões NUMERIC (rubrica, 0 a 1)
 
-Cinco do juiz offline (`src/lib/eval/rubric.ts`, schema em `src/lib/eval/types.ts`)
-mais `conversao`, que é do scorer determinístico (`src/lib/eval/scorer-pipeline.ts`) —
-todas entram na média `overallScore`. Prefixo `judge_` separa opinião de modelo
+Cinco do juiz offline (`src/lib/eval/rubric.ts`, **rubrica v2** desde D-0083, schema em
+`src/lib/eval/types.ts`) mais `conversao`, que é do scorer determinístico
+(`src/lib/eval/scorer-pipeline.ts`) — todas entram na média `overallScore`. Prefixo `judge_` separa opinião de modelo
 (nunca gate) de sinal determinístico.
 
 | nome | origem | o que mede |

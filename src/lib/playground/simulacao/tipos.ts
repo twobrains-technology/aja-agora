@@ -19,7 +19,10 @@ export type PerfilId =
 	| "pede-atendente"
 	| "madrugada-sem-atendente"
 	| "objecao"
-	| "some-e-volta";
+	| "some-e-volta"
+	| "voltei-sem-nada"
+	| "silencio-total"
+	| "card-travado";
 
 export type PerfilDeCliente = {
 	id: PerfilId;
@@ -28,6 +31,9 @@ export type PerfilDeCliente = {
 	objetivo: string;
 	abertura: string; // 1ª fala, fixa
 	roteiro?: { depoisDoTurno: number; texto: string; vezes: number }[]; // falas forçadas
+	/** Índices (0-based) dos turnos em que o lead VOLTA ou RETARDA — a retomada leva algo novo
+	 *  (oferta, número de ferramenta, pergunta nova); medido por `retomada-sem-novidade`. */
+	turnosDeRetorno?: number[];
 	maxTurnos: number; // teto duro do orquestrador
 	esperaProposta: boolean; // chegarAProposta é sucesso (true) ou só informativo
 	esperaFila: boolean; // chamouFila é esperado (pede-atendente, madrugada)
@@ -87,7 +93,8 @@ export type MarcacaoId =
 	| "turno-sem-resposta"
 	| "numero-sem-ferramenta"
 	| "chamou-fila"
-	| "falou-prazo";
+	| "falou-prazo"
+	| "retomada-sem-novidade";
 export type StatusDaMarcacao = "ACIONADA" | "LIMPA" | "NAO_APLICAVEL";
 export type Gravidade = "DEFEITO" | "SUCESSO" | "INFORMATIVA";
 export type Ocorrencia = { turno: number; evidencia: string };
@@ -99,7 +106,7 @@ export type Marcacao = {
 	motivoNaoAplicavel?: string;
 };
 export type ContextoDeMarcacao = {
-	perfil: Pick<PerfilDeCliente, "id" | "esperaProposta" | "esperaFila">;
+	perfil: Pick<PerfilDeCliente, "id" | "esperaProposta" | "esperaFila" | "turnosDeRetorno">;
 	dados: DadosDaSimulacao;
 	numerosConhecidos: number[] | null; // null = fonte desconhecida (bevi-dev)
 };
@@ -158,6 +165,7 @@ export const ROTULO_DE_MARCACAO: Record<MarcacaoId, string> = {
 	"numero-sem-ferramenta": "Número sem ferramenta",
 	"chamou-fila": "Chamou a fila de vendedores",
 	"falou-prazo": "Prometeu prazo",
+	"retomada-sem-novidade": "Retomada sem novidade",
 };
 export const ROTULO_DE_STATUS: Record<StatusDaMarcacao, string> = {
 	ACIONADA: "ACIONADA",
