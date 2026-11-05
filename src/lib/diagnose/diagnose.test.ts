@@ -168,7 +168,11 @@ describe("P314/L25 — o diagnóstico registra o uso da IA", () => {
 		});
 		// O retorno acompanha o livro-caixa: entrada líquida, não o total do SDK.
 		expect(out.tokensInput).toBe(6_000);
-		// Soneto do diagnóstico sem preço conferido: custo DESCONHECIDO, nunca inventado.
-		expect(inserts[0].values.custoUsdCents).toBeNull();
+		// Soneto do diagnóstico com preço conferido no B15 (`precos.ts`): entrada 3.0/Mtok,
+		// saída 15.0/Mtok, cache de leitura 0.3 e de escrita 3.75. 6.000 líquidos + 300 de
+		// saída + 2.500/500 de cache dão ≈2,51 cents de dólar — arredonda para 3. Antes o
+		// modelo não tinha preço e o custo saía `null`; o guard do "nunca inventado" segue
+		// coberto em `admin/custo-de-ia.test.ts` (modelo sem preço → período parcial).
+		expect(inserts[0].values.custoUsdCents).toBe(3);
 	});
 });
