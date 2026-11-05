@@ -27,6 +27,8 @@ import { execFileSync } from "node:child_process";
 const NOME_DO_DATASET = "aja-agora-eval";
 const COFRE = "pi-agentes-aja-langfuse";
 
+const PREFIXO = "[dataset-run]";
+
 export type ScoreDoItem = {
 	name: string;
 	value: number | boolean;
@@ -97,8 +99,6 @@ type Sinal = { ok: boolean; dados?: unknown; detalhe?: string };
 
 /** Cliente REST mínimo — nunca lança além do que o caller espera. */
 export class DatasetRunRecorder {
-	private static readonly PREFIXO = "[dataset-run]";
-
 	private readonly base: string;
 	private readonly auth: string;
 	/** Primeira falha fatal desliga o gravador: sem spam, sem custo. */
@@ -193,9 +193,7 @@ export class DatasetRunRecorder {
 
 	private falhar(detalhe: string): void {
 		this.morto = true;
-		console.error(
-			`${this.PREFIXO} falha fatal (resto da execução segue SEM dataset run): ${detalhe}`,
-		);
+		console.error(`${PREFIXO} falha fatal (resto da execução segue SEM dataset run): ${detalhe}`);
 	}
 
 	/** Mapa cenário golden → datasetItemId, lido do `metadata.golden` dos itens. */
@@ -209,7 +207,7 @@ export class DatasetRunRecorder {
 			);
 			if (!r.ok) {
 				console.error(
-					`${this.PREFIXO} não conseguiu ler itens do dataset (${r.detalhe}) — itens não serão vinculados.`,
+					`${PREFIXO} não conseguiu ler itens do dataset (${r.detalhe}) — itens não serão vinculados.`,
 				);
 				return mapa;
 			}
@@ -224,7 +222,7 @@ export class DatasetRunRecorder {
 			if (dados.length < 50) break;
 			pagina += 1;
 		}
-		console.log(`${this.PREFIXO} ${mapa.size} cenário(s) golden mapeados em itens do dataset.`);
+		console.log(`${PREFIXO} ${mapa.size} cenário(s) golden mapeados em itens do dataset.`);
 		return mapa;
 	}
 
@@ -250,10 +248,10 @@ export class DatasetRunRecorder {
 			return;
 		}
 		if (item.datasetItemId) {
-			console.log(`${this.PREFIXO} item anexado: ${item.cenario} (run ${this.datasetRunId})`);
+			console.log(`${PREFIXO} item anexado: ${item.cenario} (run ${this.datasetRunId})`);
 		} else {
 			console.log(
-				`${this.PREFIXO} item anexado: ${item.cenario} — SEM item do dataset (cenário não mapeado; só scores por item).`,
+				`${PREFIXO} item anexado: ${item.cenario} — SEM item do dataset (cenário não mapeado; só scores por item).`,
 			);
 		}
 		for (const s of scores) {
@@ -268,9 +266,7 @@ export class DatasetRunRecorder {
 			});
 			if (!rs.ok) {
 				// Falha de score NÃO desliga o gravador: o item e o resto dos scores seguem.
-				console.error(
-					`${this.PREFIXO} score ${s.name} de ${item.cenario} não gravado (${rs.detalhe}).`,
-				);
+				console.error(`${PREFIXO} score ${s.name} de ${item.cenario} não gravado (${rs.detalhe}).`);
 			}
 		}
 	}
@@ -287,10 +283,10 @@ export class DatasetRunRecorder {
 			...args,
 			datasetRunId: this.datasetRunId,
 		});
-		if (!r.ok) console.error(`${this.PREFIXO} score agregado não gravado (${r.detalhe}).`);
+		if (!r.ok) console.error(`${PREFIXO} score agregado não gravado (${r.detalhe}).`);
 		else
 			console.log(
-				`${this.PREFIXO} run ${this.datasetRunId} (${this.runName}) gravado — comparável na UI do Langfuse.`,
+				`${PREFIXO} run ${this.datasetRunId} (${this.runName}) gravado — comparável na UI do Langfuse.`,
 			);
 	}
 
