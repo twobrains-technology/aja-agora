@@ -1,6 +1,10 @@
 // A FILA DE VENDEDORES NO TURNO (F2/U4): o fato da fila entra no system, a tool do turno chama o
-// dublê injetado, o balão fixo de transferência só sai na rota da mesa e o marcador da fila é
-// regravado DEPOIS da persistência do turno (`persistMeta` apagaria o marcador).
+// dublê injetado e o marcador da fila é regravado DEPOIS da persistência do turno (`persistMeta`
+// apagaria o marcador).
+//
+// P11 (Kairo, 05/11): o balão fixo de transferência saiu do turno — a fala é do
+// modelo, mesmo na rota da mesa. O FATO (evento `handoff`, `handoffSuggested`)
+// segue da tool e do caso aberto.
 import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
@@ -114,7 +118,7 @@ describe("fato da fila no system do turno", () => {
 	});
 });
 
-describe("balão fixo de transferência só na rota da mesa", () => {
+describe("sem balão fixo: a fala é do modelo em qualquer rota", () => {
 	it("sem proposta, pedir uma pessoa não solta o balão da mesa (fila: o modelo fala)", async () => {
 		const { texto } = await rodar({
 			userText: "quero falar com uma pessoa",
@@ -124,13 +128,15 @@ describe("balão fixo de transferência só na rota da mesa", () => {
 		expect(texto).toContain("já te ajudo por aqui");
 	});
 
-	it("com proposta gerada, o balão da mesa continua saindo", async () => {
+	it("com proposta gerada, a fala do modelo passa e nenhum balão fixo sai (P11)", async () => {
 		propostaSpy.mockResolvedValue({ id: "prop-1", ofertaId: "oferta-real" });
 		const { texto } = await rodar({
 			userText: "quero falar com uma pessoa",
 			beats: [{ text: "Claro." }],
 		});
-		expect(texto).toMatch(BALAO_DA_MESA);
+		expect(texto).not.toMatch(BALAO_DA_MESA);
+		// A fala do modelo chega intacta — nada a substitui na rota da mesa.
+		expect(texto).toContain("Claro.");
 	});
 
 	it("linha de proposta sem oferta (carta indisponível) não conta: vai à fila, não à mesa", async () => {

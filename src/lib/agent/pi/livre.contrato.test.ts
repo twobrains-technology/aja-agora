@@ -216,7 +216,7 @@ describe("motor livre — vendedor sem funil", () => {
 		}
 	});
 
-	it("pergunta fechada vira chip e a lista sai do balão", async () => {
+	it("pergunta fechada vira chip e a lista fica no balão (P11: nada corta fala)", async () => {
 		const conversationId = await novaConversa();
 		const servidor = await subirServidorRoteirizado([
 			{ text: "Qual combina com você?\n1) Carro\n2) Moto" },
@@ -240,9 +240,10 @@ describe("motor livre — vendedor sem funil", () => {
 				.filter((e) => e.type === "text-delta")
 				.map((e) => (e as { text: string }).text)
 				.join("\n");
-			// A pergunta fica no balão; a lista vira botão — não se lê duas vezes.
+			// P11 (Kairo, 05/11): a lista marcada NÃO sai mais do balão (o corte virou
+			// medida e conduta) — o texto passa como o modelo o fez, e o chip segue ao lado.
 			expect(texto).toContain("Qual combina com você?");
-			expect(texto).not.toContain("1) Carro");
+			expect(texto).toContain("1) Carro");
 
 			const chip = eventos.find((e) => e.type === "artifact") as
 				| { artifactType: string; payload: { options: { label: string }[] } }
@@ -259,6 +260,10 @@ describe("motor livre — vendedor sem funil", () => {
 		const servidor = await subirServidorRoteirizado([
 			{ text: '{"categoria": "auto", "valorDoBem": 80000}' },
 		]);
+		const logs: string[] = [];
+		const espiar = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+			logs.push(args.map((a) => String(a)).join(" "));
+		});
 		try {
 			const run = createRunTurnLivre({
 				provider: { id: "litellm", baseUrl: servidor.url, apiKey: "teste", model: "roteirizado" },
@@ -278,9 +283,16 @@ describe("motor livre — vendedor sem funil", () => {
 				.filter((e) => e.type === "text-delta")
 				.map((e) => (e as { text: string }).text)
 				.join("\n");
+			// P11: a fala de reserva FIXA saiu. O vazamento de máquina é cortado pelo
+			// `passaFinal`, o beat é refeito (aqui o roteiro já acabou, então segue sem
+			// fala) e o sinal `turno_sem_fala` registra o caso. Nada de máquina chega.
 			expect(texto).not.toContain("valorDoBem");
-			expect(texto.trim().length).toBeGreaterThan(0);
+			expect(texto.trim()).toBe("");
+			// O turno mudo é REFEITO uma vez e medido duas vezes — nunca uma frase fixa.
+			const sinais = logs.filter((l) => l.includes("[sinal]") && l.includes("turno_sem_fala"));
+			expect(sinais).toHaveLength(2);
 		} finally {
+			espiar.mockRestore();
 			await servidor.fechar();
 		}
 	});

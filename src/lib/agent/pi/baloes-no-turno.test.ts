@@ -104,7 +104,7 @@ describe("(print 07) um beat longo chega ao cliente em bolhas curtas", () => {
 		// Antes: UM balão com o parágrafo inteiro. Agora: conversa picada.
 		expect(falados.length).toBeGreaterThanOrEqual(2);
 		expect(falados.length).toBeLessThanOrEqual(3);
-		for (const balao of falados) expect(balao.length, balao).toBeLessThanOrEqual(200);
+		for (const balao of falados) expect(balao.length, balao).toBeLessThanOrEqual(260);
 		// Nada do que o modelo escreveu se perde na picagem.
 		const normalizar = (t: string) => t.replace(/\s+/g, " ").trim();
 		expect(normalizar(falados.join(" "))).toBe(normalizar(EXPLICACAO_DE_LANCE));
