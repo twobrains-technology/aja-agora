@@ -74,9 +74,7 @@ describe("ehPromessaSemFato / scoreDePromessaSemFato", () => {
 
 	it("conversa com proposta real: sem falso positivo, score nenhum", () => {
 		expect(ehPromessaSemFato({ fala: FALA_DO_ARTHUR, propostas: 1 })).toBe(false);
-		expect(
-			scoreDePromessaSemFato({ fala: FALA_DO_ARTHUR, propostas: 2, traceId: "t" }),
-		).toBeNull();
+		expect(scoreDePromessaSemFato({ fala: FALA_DO_ARTHUR, propostas: 2, traceId: "t" })).toBeNull();
 	});
 
 	it("fala comum × 0 propostas: nada a gravar", () => {
@@ -102,7 +100,7 @@ describe("registrarPromessaSemFato", () => {
 		expect(buscar).not.toHaveBeenCalled();
 	});
 
-	it("com envs e promessa sem fato: grava o score BOOLEAN via /api/public/v3/scores", async () => {
+	it("com envs e promessa sem fato: grava o score BOOLEAN via /api/public/scores", async () => {
 		const buscar = vi.fn(async () => new Response(null, { status: 201 }));
 		await registrarPromessaSemFato({
 			fala: FALA_DO_ARTHUR,
@@ -120,7 +118,7 @@ describe("registrarPromessaSemFato", () => {
 		});
 		expect(buscar).toHaveBeenCalledTimes(1);
 		const [url, init] = buscar.mock.calls[0] as unknown as [string, RequestInit];
-		expect(url).toBe("https://lf.example/api/public/v3/scores");
+		expect(url).toBe("https://lf.example/api/public/scores");
 		const corpo = JSON.parse(String(init.body)) as {
 			name: string;
 			value: boolean;

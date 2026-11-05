@@ -21,7 +21,7 @@
 // Quem cruza com o estado da conversa usa a MESMA fonte do banco de
 // `reconciliacao-fala-estado.ts` (`bevi_proposals`) — este módulo só lê.
 
-import { configDoLangfuse, type Ambiente } from "@/lib/agent/pi/langfuse";
+import { type Ambiente, configDoLangfuse } from "@/lib/agent/pi/langfuse";
 
 /** Fala que o assistente PRODUZIU no turno (o texto streamado). */
 type Entrada = {
@@ -112,7 +112,7 @@ export function scoreDePromessaSemFato(args: {
 		dataType: "BOOLEAN",
 		comment:
 			`A fala promete posse/finalização e \`bevi_proposals\` tem 0 linhas para esta conversa ` +
-			"(caso Arthur: \"A moto é sua!\" com proposta nenhuma). Fala × estado — juiz não pega.",
+			'(caso Arthur: "A moto é sua!" com proposta nenhuma). Fala × estado — juiz não pega.',
 	};
 }
 
@@ -151,7 +151,7 @@ export async function registrarPromessaSemFato(entrada: Entrada): Promise<void> 
 		if (!score) return;
 
 		const buscar = entrada.buscar ?? fetch;
-		const resposta = await buscar(`${config.baseUrl}/api/public/v3/scores`, {
+		const resposta = await buscar(`${config.baseUrl}/api/public/scores`, {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",

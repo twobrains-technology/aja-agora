@@ -11,6 +11,10 @@
  * com entrada, sha, modelo e o veredito por cenário — que é o que a promoção
  * precisa para ser auditável, sem depender de infra de terceiro.
  *
+ * Com `--dataset-run` (B10), ADEMIS grava o run na instância Langfuse via
+ * `scripts/eval/langfuse-dataset-run.ts` — fire-and-forget: falha de
+ * observabilidade nunca muda o veredito nem o exit code do gate.
+ *
  * - Asserts: trajetória (artifacts/gates) — NUNCA prosa (CLAUDE.md).
  * - Conversas nascem como SIMULADAS (via /api/admin/simulator/sessions) pra
  *   não poluir o CRM.
@@ -21,6 +25,7 @@
  * Uso:
  *   pnpm eval                      # todos os cenários
  *   pnpm eval -- --only golden-smoke-agente
+ *   pnpm eval -- --dataset-run     # grava o run no Langfuse (B10)
  */
 import "./_env-host";
 import { execSync } from "node:child_process";
@@ -32,8 +37,17 @@ import {
 	type GoldenExpectations,
 	type GoldenTurnResult,
 } from "@/lib/eval/golden-asserts";
+import { judgeConversation } from "@/lib/eval/judge";
+import type { PersonaContext } from "@/lib/eval/rubric";
+import type { DeterministicSignals } from "@/lib/eval/signals";
+import { numerosForaDaCota } from "@/lib/observability/sinais/numero-fora-da-cota";
+import {
+	ehPromessaSemFato,
+	falaPrometePosseOuFinalizacao,
+} from "@/lib/observability/sinais/promessa-sem-fato";
 
 import { DEFAULT_BASE_URL, sendTurn } from "./eval/chat-client.mjs";
+import { DatasetRunRecorder, type ItemDoRun, type ScoreDoItem } from "./eval/langfuse-dataset-run";
 import {
 	criarSessaoSimulada,
 	enviarTurnoComRetry,
@@ -208,10 +222,180 @@ async function rodarCenario(g: Golden): Promise<ItemOutput> {
 	return out;
 }
 
+// ── B10 — scores do item para o dataset run ─────────────────────────────
+
+const PERSONA_PADRAO: PersonaContext = {
+	personaId: "vendedor-aja-agora",
+	displayName: "Vendedor Aja Agora",
+	category: "auto",
+	expertise: "consorcio",
+};
+
+/** `bevi_proposals` da conversa simulada — o fato que B5 cruza com a fala.
+ *  Falha de banco aqui não quebra o eval: devolve 0 com aviso (sub-estima;
+ *  o comentário do score avisa). */
+async function contarPropostas(conversationId: string): Promise<number> {
+	try {
+		const { db } = await import("@/db");
+		const { beviProposals } = await import("@/db/schema");
+		const { sql } = await import("drizzle-orm");
+		const [linha] = await db
+			.select({ total: sql<number>`count(*)::int` })
+			.from(beviProposals)
+			.where(sql`${beviProposals.conversationId} = ${conversationId}`);
+		return Number(linha?.total ?? 0);
+	} catch (e) {
+		console.error(
+			`[dataset-run] contagem de propostas falhou (score B5 pode sub-estimar): ${e instanceof Error ? e.message : e}`,
+		);
+		return 0;
+	}
+}
+
+function sinaisDeItem(args: {
+	turns: ItemDoRun["turns"];
+	propostas: number;
+	falaPrometida: boolean;
+	numeroFora: string[];
+}): DeterministicSignals {
+	return {
+		replyRate: 1,
+		qualifyCoverage: 0,
+		qualifyMissing: [],
+		numbersInTextFlagged: args.numeroFora.map((n, i) => ({
+			messageId: `turn-${i}`,
+			number: n,
+			context: "turno do eval",
+		})),
+		dropOffGate: null,
+		conversionStage: "novo",
+		hasLead: false,
+		personaSegments: [],
+		propostas: args.propostas,
+		contratoFechado: false,
+		repeticoesDoAgente: 0,
+		alertas: args.falaPrometida && args.propostas === 0 ? ["promessa_sem_fato"] : [],
+	};
+}
+
+async function scoresDoItem(args: {
+	item: ItemDoRun;
+	falhasDeTrajetoria: string[];
+}): Promise<ScoreDoItem[]> {
+	const { item } = args;
+	const status = item.status === "pass" ? 1 : 0;
+	const scores: ScoreDoItem[] = [
+		{
+			name: "trajetoria_deterministica",
+			value: status,
+			dataType: "NUMERIC",
+			comment:
+				`Asserts de trajetória do golden-set (${item.status}). ` +
+				(args.falhasDeTrajetoria.length > 0
+					? `Falhas: ${args.falhasDeTrajetoria.join(" · ")}`
+					: "sem falhas.") +
+				(item.conversationId ? ` Conversa simulada: ${item.conversationId}.` : ""),
+		},
+	];
+
+	// B4 — número citado que nenhuma ferramenta devolveu. A fala do cliente é
+	// fonte (ecoar o cliente é escutar), igual ao detector em produção.
+	const fora: string[] = [];
+	for (const t of item.turns) {
+		for (const n of numerosForaDaCota({
+			fala: t.agentText,
+			falaDoCliente: t.userMsg,
+			resultadosDeTool: t.artifacts.map((a) => a.data),
+		}))
+			fora.push(n);
+	}
+	scores.push({
+		name: "numero_fora_da_cota",
+		value: fora.length > 0,
+		dataType: "BOOLEAN",
+		comment:
+			fora.length > 0
+				? `Números sem lastro de ferramenta: ${fora.join(", ")}`
+				: "Nenhum número sem lastro de ferramenta.",
+	});
+
+	// B5 — promessa de posse/finalização × desfecho real (propostas no banco).
+	const promete = item.turns.some((t) => falaPrometePosseOuFinalizacao(t.agentText));
+	scores.push({
+		name: "promessa_sem_fato",
+		value: promete && item.propostas === 0,
+		dataType: "BOOLEAN",
+		comment: `Fala promete posse/finalização: ${promete ? "sim" : "não"} · propostas em bevi_proposals: ${item.propostas}.`,
+	});
+
+	// Juiz offline — 5 dimensões da rubrica. Hipótese, nunca gate: falha de juiz
+	// só some as dimensões, o veredito do eval vem dos asserts.
+	if (item.turns.length > 0) {
+		try {
+			const transcrito = item.turns
+				.map(
+					(t, i) =>
+						`Turn ${i + 1}\nCLIENTE: ${t.userMsg}\nVENDEDOR: ${t.agentText}\n[cards: ${t.artifacts.map((a) => a.type).join(", ") || "nenhum"}]`,
+				)
+				.join("\n\n");
+			const resposta = await judgeConversation({
+				transcript: transcrito,
+				personas: [PERSONA_PADRAO],
+				signals: sinaisDeItem({
+					turns: item.turns,
+					propostas: item.propostas,
+					falaPrometida: promete,
+					numeroFora: fora,
+				}),
+				conversationId: null, // calibração offline: sem linha no livro-caixa
+			});
+			const d = resposta.result.dimensions;
+			scores.push(
+				{
+					name: "judge_engajamento",
+					value: d.engajamento.score,
+					dataType: "NUMERIC",
+					comment: d.engajamento.reasoning,
+				},
+				{
+					name: "judge_discovery",
+					value: d.discovery.score,
+					dataType: "NUMERIC",
+					comment: d.discovery.reasoning,
+				},
+				{
+					name: "judge_continuidade",
+					value: d.continuidade.score,
+					dataType: "NUMERIC",
+					comment: d.continuidade.reasoning,
+				},
+				{
+					name: "judge_naturalidade",
+					value: d.naturalidade.score,
+					dataType: "NUMERIC",
+					comment: d.naturalidade.reasoning,
+				},
+				{
+					name: "judge_assertividade",
+					value: d.assertividade.score,
+					dataType: "NUMERIC",
+					comment: d.assertividade.reasoning,
+				},
+			);
+		} catch (e) {
+			console.error(
+				`[dataset-run] juiz offline falhou em ${item.cenario} (dimensões não gravadas — hipótese, nunca gate): ${e instanceof Error ? e.message : e}`,
+			);
+		}
+	}
+	return scores;
+}
+
 async function main(): Promise<void> {
 	const only = process.argv.includes("--only")
 		? process.argv[process.argv.indexOf("--only") + 1]
 		: null;
+	const comDatasetRun = process.argv.includes("--dataset-run");
 
 	const sha = gitShaCurto();
 	const inicio = new Date();
@@ -233,6 +417,14 @@ async function main(): Promise<void> {
 
 	console.log(`\n── pnpm eval · ${golden.length} cenário(s) · run ${runName} ──`);
 
+	// B10 — gravador do dataset run: ligado só com `--dataset-run`. Qualquer
+	// falha aqui é observabilidade: nunca muda o veredito do gate.
+	let gravador: DatasetRunRecorder | null = null;
+	if (comDatasetRun) gravador = await DatasetRunRecorder.iniciar({ nome: runName, sha });
+	const itemIdsPorCenario: Map<string, string> = gravador
+		? new Map(await gravador.itensPorCenario())
+		: new Map();
+
 	let pass = 0;
 	let fail = 0;
 	let skipEnv = 0;
@@ -245,6 +437,39 @@ async function main(): Promise<void> {
 		falhas: string[];
 		erro?: string;
 	}> = [];
+
+	// B10 — anexa o item executado ao dataset run e grava os scores dele.
+	// Fire-and-forget de verdade: nada aqui altera o placar do gate.
+	async function gravarNoRun(
+		g: Golden,
+		status: ItemDoRun["status"],
+		out: ItemOutput | null,
+		falhas: string[],
+	): Promise<void> {
+		if (!gravador) return;
+		try {
+			const turns = (out?.turns ?? []) as NonNullable<ItemOutput["turns"]>;
+			const conversationId = out?.conversationId ?? null;
+			const propostas = conversationId ? await contarPropostas(conversationId) : 0;
+			const item: ItemDoRun = {
+				cenario: g.cenario,
+				status,
+				datasetItemId: itemIdsPorCenario.get(g.cenario) ?? null,
+				conversationId,
+				turns: turns.map((t) => ({
+					userMsg: t.userMsg,
+					agentText: t.agentText,
+					artifacts: (t.artifacts ?? []) as Array<{ type: string; data: unknown }>,
+				})),
+				propostas,
+			};
+			await gravador.anexar(item, await scoresDoItem({ item, falhasDeTrajetoria: falhas }));
+		} catch (e) {
+			console.error(
+				`[dataset-run] gravação de ${g.cenario} falhou (ignorado — observabilidade nunca derruba o gate): ${e instanceof Error ? e.message : e}`,
+			);
+		}
+	}
 
 	for (const g of golden) {
 		if (g.envFaltando.length > 0) {
@@ -268,6 +493,7 @@ async function main(): Promise<void> {
 				falhas: [],
 				erro: msg,
 			});
+			await gravarNoRun(g, "erro", null, [msg]);
 			continue;
 		}
 
@@ -284,6 +510,7 @@ async function main(): Promise<void> {
 				durMs: 0,
 				falhas: [],
 			});
+			await gravarNoRun(g, "inconclusivo", out, []);
 			continue;
 		}
 		const verdict = checkScenario(turns, g.asserts);
@@ -303,6 +530,7 @@ async function main(): Promise<void> {
 			console.log(`❌ ${g.cenario}  ${turns.length} turnos`);
 			for (const f of verdict.failures) console.log(`   └─ ${f}`);
 		}
+		await gravarNoRun(g, verdict.pass ? "pass" : "fail", out, verdict.failures);
 
 		// EVAL_VERBOSE=1 imprime a TRAJETÓRIA de cada turno mesmo quando passa: um
 		// cenário que passa por variância do modelo é indistinguível de um que
@@ -323,6 +551,23 @@ async function main(): Promise<void> {
 		console.log(
 			"⚠️  cenários pulados por env ausente — o gate NÃO cobre a jornada completa até E2E_TEST_CPF/E2E_TEST_CELULAR existirem.",
 		);
+	}
+
+	// B10 — score agregado por run (pass rate da trajetória) antes do relatório local.
+	if (gravador) {
+		const executados = pass + fail;
+		try {
+			await gravador.agregado({
+				name: "trajetoria_deterministica",
+				value: executados > 0 ? pass / executados : 0,
+				dataType: "NUMERIC",
+				comment: `Pass rate do gate ${runName}: ${pass}/${executados} (executados; ${skipEnv} pulados por env, ${inconclusivos} inconclusivos). sha ${sha}.`,
+			});
+		} catch (e) {
+			console.error(
+				`[dataset-run] agregado falhou (ignorado): ${e instanceof Error ? e.message : e}`,
+			);
+		}
 	}
 
 	// O relatório local é o registro auditável da promoção (antes: dataset run).

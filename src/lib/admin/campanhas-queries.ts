@@ -33,14 +33,13 @@
 
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
-import type { RecorteAB } from "@/lib/experimentos/registro";
 import { abreviarId } from "./agrupar-origens";
 import { diaDoNegocio } from "./periodo";
 import {
 	contagensDoFunil,
-	conversaIdentificada,
 	conversaSemOrigem,
 	leadComContato,
+	leadIdentificado,
 	VISITA_DE_GENTE,
 } from "./sinais-do-funil";
 
@@ -70,9 +69,9 @@ export interface LinhaFunilCampanha {
 	visitas: number;
 	conversas: number;
 	/**
-	 * Conversas em que o cliente se identificou — a regra é do CANAL
-	 * (`conversaIdentificada`, em `sinais-do-funil.ts`): no WhatsApp, quem entrou
-	 * (o canal entrega número e perfil); na web, quem deixou contato.
+	 * Conversas em que o CLIENTE se identificou — nome E telefone ou e-mail
+	 * (`leadIdentificado`, em `sinais-do-funil.ts`). Não conta o telefone que o
+	 * WhatsApp entrega sozinho.
 	 */
 	identificados: number;
 	/**
@@ -157,13 +156,7 @@ export interface LinhaCampanha {
 	qualificados: number;
 	propostas: number;
 	fechados: number;
-	/**
-	 * O gasto da Meta no período, ou `null` quando o recorte por braço está ativo
-	 * — a verba não se divide por braço (D6: ver
-	 * `RespostaDeCampanhas.custoNaoAplicavelAoRecorte`). Nunca `0` para dizer
-	 * "não aplicável": zero é uma afirmação sobre a verba.
-	 */
-	spendCents: number | null;
+	spendCents: number;
 	impressoes: number;
 	cliques: number;
 	leadsMeta: number;
@@ -173,11 +166,8 @@ export interface LinhaCampanha {
 	 * coincidência de desenho: os dois medem coisas diferentes.
 	 */
 	diferencaDeLeads: number;
-	/**
-	 * Valor ou motivo — `sem base` deixou de existir como resposta única.
-	 * `null` com recorte por braço ativo: o custo não se divide por braço de teste.
-	 */
-	custoPorQualificado: CustoPorQualificado | null;
+	/** Valor ou motivo — `sem base` deixou de existir como resposta única. */
+	custoPorQualificado: CustoPorQualificado;
 	/**
 	 * `true` na linha de reconciliação "Sem origem conhecida" — conversas que
 	 * chegaram fora da landing e não pertencem a campanha nenhuma. Não tem
@@ -193,27 +183,7 @@ export interface LinhaCampanha {
 }
 
 export interface TotaisDeCampanhas {
-	/**
-	 * O total reportado pelo gerenciador — **a leitura OFICIAL** (decisão do dono,
-	 * 28/09). Nenhuma soma muda por causa disso: o que muda é o nome.
-	 * `null` com recorte por braço ativo: a verba é do período inteiro.
-	 */
-	investimentoCents: number | null;
-	/**
-	 * O investimento que o CRM consegue ATRIBUIR: soma do gasto das campanhas com
-	 * vínculo — alguma visita, conversa, identificado ou qualificado aponta para
-	 * elas. É a linha vizinha do total, nunca a substituta dele.
-	 * `null` com recorte por braço ativo (ver `investimentoCents`).
-	 */
-	investimentoAtribuidoCents: number | null;
-	/**
-	 * A verba que a Meta reportou e o CRM **não** conseguiu atribuir: campanhas que
-	 * gastaram sem nenhuma visita ou conversa apontando para elas. É o motivo da
-	 * diferença entre as duas leituras, e por desenho
-	 * `investimentoCents = atribuído + sem atribuição`, sempre.
-	 * `null` com recorte por braço ativo (ver `investimentoCents`).
-	 */
-	investimentoSemAtribuicaoCents: number | null;
+	investimentoCents: number;
 	leadsMeta: number;
 	/**
 	 * Conversas em que o cliente se identificou (nome E contato) — o número que a
@@ -227,24 +197,12 @@ export interface TotaisDeCampanhas {
 	qualificados: number;
 	propostas: number;
 	fechados: number;
-	/** `null` com recorte por braço ativo: o custo não se divide por braço. */
-	custoPorQualificado: CustoPorQualificado | null;
+	custoPorQualificado: CustoPorQualificado;
 }
 
 export interface RespostaDeCampanhas {
 	linhas: LinhaCampanha[];
 	totais: TotaisDeCampanhas;
-	/**
-	 * O investimento da Meta NÃO se divide por braço de teste (D6).
-	 *
-	 * O gasto é do PERÍODO INTEIRO: `meta_insights_diarios` não tem coluna de
-	 * braço, e ratear a verba pelo funil recortado inventaria um CPC por onde o
-	 * dinheiro passa. Com recorte ativo, `spendCents` e `custoPorQualificado`
-	 * saem `null` e este campo sai `true`, para a tela declarar o motivo em vez
-	 * de mostrar `R$ 0,00`. Sempre presente: sem recorte é `false` (e os valores
-	 * são os de sempre).
-	 */
-	custoNaoAplicavelAoRecorte: boolean;
 	/**
 	 * `false` = o ciclo de sync do gerenciador nunca rodou. A tela então diz que
 	 * ainda não há dado, em vez de mostrar zero — zero seria uma afirmação falsa.
@@ -329,7 +287,11 @@ export function combinarCampanhas(
 				qualificados: linha.qualificados,
 				// Qualquer atividade no CRM já é vínculo: a linha veio do funil, então
 				// a campanha da Meta casa com algo nosso.
-				temVinculo: temVinculoComCrm(linha),
+				temVinculo:
+					linha.visitas > 0 ||
+					linha.conversas > 0 ||
+					linha.identificados > 0 ||
+					linha.qualificados > 0,
 			}),
 			semOrigemConhecida: false,
 			criativos: criativosPorCampanha?.get(linha.chave) ?? [],
@@ -375,12 +337,12 @@ export function combinarCampanhas(
 	// não tem vai para o fim, mas antes de quem investiu menos: entre os "sem custo
 	// calculável", o maior investimento é o que precisa de atenção primeiro.
 	linhas.sort((a, b) => {
-		const ca = a.custoPorQualificado?.tipo === "valor" ? a.custoPorQualificado.centavos : null;
-		const cb = b.custoPorQualificado?.tipo === "valor" ? b.custoPorQualificado.centavos : null;
+		const ca = a.custoPorQualificado.tipo === "valor" ? a.custoPorQualificado.centavos : null;
+		const cb = b.custoPorQualificado.tipo === "valor" ? b.custoPorQualificado.centavos : null;
 		if (ca !== null && cb !== null) return ca - cb;
 		if (ca !== null) return -1;
 		if (cb !== null) return 1;
-		return (b.spendCents ?? 0) - (a.spendCents ?? 0) || b.conversas - a.conversas;
+		return b.spendCents - a.spendCents || b.conversas - a.conversas;
 	});
 
 	// A linha de reconciliação vai SEMPRE por último, fora da ordenação — ela não
@@ -419,33 +381,9 @@ export function combinarCampanhas(
 	return linhas;
 }
 
-/**
- * A campanha tem vínculo com o CRM?
- *
- * Basta UMA visita, conversa, identificado ou qualificado apontando para ela — é
- * o mesmo corte de `custoPor`, e é o que separa o investimento **atribuído** do
- * gasto que a Meta reportou sem que o CRM consiga amarrar a nada. Uma definição
- * só para os dois usos (o motivo do custo e a reconciliação da verba).
- */
-export function temVinculoComCrm(contagens: {
-	visitas: number;
-	conversas: number;
-	identificados: number;
-	qualificados: number;
-}): boolean {
-	return (
-		contagens.visitas > 0 ||
-		contagens.conversas > 0 ||
-		contagens.identificados > 0 ||
-		contagens.qualificados > 0
-	);
-}
-
 /** O rodapé: soma o que foi gasto e o que o CRM produziu — duas moedas, uma nota. */
 export function totalizarCampanhas(linhas: LinhaCampanha[]): TotaisDeCampanhas {
 	let investimentoCents = 0;
-	let investimentoAtribuidoCents = 0;
-	let investimentoSemAtribuicaoCents = 0;
 	let leadsMeta = 0;
 	let leadsCrm = 0;
 	let comTelefone = 0;
@@ -455,11 +393,7 @@ export function totalizarCampanhas(linhas: LinhaCampanha[]): TotaisDeCampanhas {
 	let fechados = 0;
 
 	for (const linha of linhas) {
-		investimentoCents += linha.spendCents ?? 0;
-		// A mesma partição que dá o motivo do custo: com vínculo = o CRM atribui a
-		// verba; sem vínculo = gastou e o CRM não achou a campanha.
-		if (temVinculoComCrm(linha)) investimentoAtribuidoCents += linha.spendCents ?? 0;
-		else investimentoSemAtribuicaoCents += linha.spendCents ?? 0;
+		investimentoCents += linha.spendCents;
 		leadsMeta += linha.leadsMeta;
 		leadsCrm += linha.identificados;
 		comTelefone += linha.comTelefone;
@@ -471,8 +405,6 @@ export function totalizarCampanhas(linhas: LinhaCampanha[]): TotaisDeCampanhas {
 
 	return {
 		investimentoCents,
-		investimentoAtribuidoCents,
-		investimentoSemAtribuicaoCents,
 		leadsMeta,
 		leadsCrm,
 		comTelefone,
@@ -491,20 +423,13 @@ export function totalizarCampanhas(linhas: LinhaCampanha[]): TotaisDeCampanhas {
 
 // ─── Banco ──────────────────────────────────────────────────────────────────
 
-async function funilPorCampanha(
-	de: Date,
-	ate: Date,
-	recorte: RecorteAB = [],
-): Promise<LinhaFunilCampanha[]> {
-	// O recorte por braço entra DENTRO do fragmento único do funil: uma definição
-	// de cada degrau para todas as telas. Sem recorte, `contagensDoFunil` gera o
-	// SQL de sempre.
+async function funilPorCampanha(de: Date, ate: Date): Promise<LinhaFunilCampanha[]> {
 	const resultado = await db.execute<Record<string, unknown>>(sql`
     SELECT
       COALESCE(NULLIF(v.campaign_id, ''), NULLIF(v.utm_campaign, ''), NULLIF(v.ctwa_source_id, '')) AS chave,
       max(v.utm_campaign) AS utm_campaign,
       -- As MESMAS contagens de computeOrigens — uma definição de funil só.
-      ${contagensDoFunil(de, ate, recorte)}
+      ${contagensDoFunil()}
     FROM visits v
     LEFT JOIN conversations c ON c.visit_id = v.id AND c.is_simulated = false
     LEFT JOIN leads l ON l.conversation_id = c.id AND l.is_simulated = false
@@ -588,7 +513,7 @@ async function conversasSemOrigemConhecida(
 	const resultado = await db.execute<Record<string, unknown>>(sql`
     SELECT
       count(DISTINCT c.id) AS conversas,
-      count(DISTINCT c.id) FILTER (WHERE ${conversaIdentificada(sql`c`)}) AS identificados,
+      count(DISTINCT c.id) FILTER (WHERE ${leadIdentificado(sql`l`)}) AS identificados,
       count(DISTINCT c.id) FILTER (WHERE ${leadComContato(sql`l`)}) AS com_contato
     FROM conversations c
     LEFT JOIN leads l ON l.conversation_id = c.id AND l.is_simulated = false
@@ -613,18 +538,14 @@ async function conversasSemOrigemConhecida(
  * `max()` no criativo: pode haver mais de uma linha de anúncio por id se a Meta
  * tiver mudado o nome, e o mais recente interessa.
  */
-async function criativosPorCampanha(
-	de: Date,
-	ate: Date,
-	recorte: RecorteAB = [],
-): Promise<Map<string, LinhaCriativo[]>> {
+async function criativosPorCampanha(de: Date, ate: Date): Promise<Map<string, LinhaCriativo[]>> {
 	const resultado = await db.execute<Record<string, unknown>>(sql`
     SELECT
       COALESCE(NULLIF(v.campaign_id, ''), NULLIF(v.utm_campaign, ''), NULLIF(v.ctwa_source_id, '')) AS campanha,
       v.utm_content AS criativo,
       max(a.creative_name) AS creative_name,
       max(a.thumbnail_url) AS thumbnail_url,
-      ${contagensDoFunil(de, ate, recorte)}
+      ${contagensDoFunil()}
     FROM visits v
     LEFT JOIN conversations c ON c.visit_id = v.id AND c.is_simulated = false
     LEFT JOIN leads l ON l.conversation_id = c.id AND l.is_simulated = false
@@ -663,68 +584,23 @@ async function criativosPorCampanha(
 }
 
 /**
- * A resposta com o custo da Meta marcado como NÃO APLICÁVEL ao recorte (D6).
- *
- * O gasto é do PERÍODO INTEIRO e `meta_insights_diarios` não tem coluna de braço:
- * manter o investimento ao lado de um funil recortado daria um CPC por onde a
- * verba não passa. Aqui os valores viram `null` — nunca `0`, que afirmaria que a
- * campanha não gastou.
- *
- * A ordenação já aconteceu em `combinarCampanhas` (por custo, a régua de
- * sempre): o recorte muda o que se MOSTRA, não a ordem das campanhas.
- */
-function semCustoAplicavel(resposta: RespostaDeCampanhas): RespostaDeCampanhas {
-	return {
-		...resposta,
-		linhas: resposta.linhas.map((linha) => ({
-			...linha,
-			spendCents: null,
-			custoPorQualificado: null,
-		})),
-		totais: {
-			...resposta.totais,
-			investimentoCents: null,
-			investimentoAtribuidoCents: null,
-			investimentoSemAtribuicaoCents: null,
-			custoPorQualificado: null,
-		},
-	};
-}
-
-/**
  * O que a rota e a tela consomem. Uma ida por consulta, em paralelo.
- *
- * `recorte` é o recorte por braço de experimento (`?ab=`, D11). `[]` significa
- * "todas": os números saem idênticos aos de hoje (C4).
  */
-export async function computeCampanhas(
-	de: Date,
-	ate: Date,
-	recorte: RecorteAB = [],
-): Promise<RespostaDeCampanhas> {
-	const custoNaoAplicavelAoRecorte = recorte.length > 0;
-
+export async function computeCampanhas(de: Date, ate: Date): Promise<RespostaDeCampanhas> {
 	const [funil, gastos, temEntidades, semOrigem, criativos] = await Promise.all([
-		funilPorCampanha(de, ate, recorte),
-		// O gasto da Meta NÃO recebe o recorte (D6): `meta_insights_diarios` é do
-		// período inteiro. Ele continua sendo lido — a lista de campanhas que
-		// gastaram sem vínculo não pode sumir por causa do filtro —, e o que o
-		// recorte faz é marcá-lo como não aplicável, logo abaixo.
+		funilPorCampanha(de, ate),
 		gastosPorCampanha(de, ate),
 		temEntidadesDeCampanha(),
 		conversasSemOrigemConhecida(de, ate),
-		criativosPorCampanha(de, ate, recorte),
+		criativosPorCampanha(de, ate),
 	]);
 
 	const linhas = combinarCampanhas(funil, gastos, semOrigem, criativos);
 
-	const resposta: RespostaDeCampanhas = {
+	return {
 		linhas,
 		totais: totalizarCampanhas(linhas),
 		temDadosDoGerenciador: temEntidades || gastos.length > 0,
 		janelaDeAtribuicao: JANELA_DE_ATRIBUICAO_META,
-		custoNaoAplicavelAoRecorte,
 	};
-
-	return custoNaoAplicavelAoRecorte ? semCustoAplicavel(resposta) : resposta;
 }
