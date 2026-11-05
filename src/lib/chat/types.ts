@@ -201,6 +201,11 @@ export interface ValuePickerField {
 export interface ValuePickerPayload {
 	category: "imovel" | "auto" | "moto";
 	fields: ValuePickerField[];
+	/** Em que o card abre: valor do bem ou parcela por mês. Ausente = "valor"
+	 * (payload antigo). O cliente pode trocar no próprio card. */
+	modo?: "valor" | "parcela";
+	/** Faixa da parcela (R$/mês). Ausente = o card deriva da categoria. */
+	parcela?: { min: number; max: number; step: number; default: number };
 }
 
 // ---- Artifact discriminated union ----

@@ -270,6 +270,64 @@ function dentroDoTeto(rotulo: string): string {
 	return palavras.join(" ");
 }
 
+/** Verbos da 2ª/3ª pessoa do agente → 1ª pessoa do cliente. Só entra o que se sabe flexionar. */
+const VERBO_EM_PRIMEIRA_PESSOA: Record<string, string> = {
+	tem: "tenho",
+	está: "estou",
+	esta: "estou",
+	quer: "quero",
+	prefere: "prefiro",
+	pode: "posso",
+	vai: "vou",
+	precisa: "preciso",
+	busca: "busco",
+	procura: "procuro",
+	pensa: "penso",
+	gostaria: "gostaria",
+	consegue: "consigo",
+	usa: "uso",
+	compra: "compro",
+	pretende: "pretendo",
+};
+const ADVERBIO_ANTES_DO_VERBO = /^(?:já|ja|ainda|também|tambem|só|so|não|nao|mais)$/i;
+const SEGUNDA_PESSOA = /^(?:você|voce|vc|tu|te|lhe|seu|sua|seus|suas|teu|tua)$/i;
+const INTERROGATIVA = /^(?:qual|quais|quanto|quantos|quantas|como|quando|onde)$/i;
+
+/**
+ * O rótulo do chip é a RESPOSTA DO CLIENTE: 1ª pessoa, curto, sem cortar sintagma. Devolve `null`
+ * quando não há conversão confiável (verbo que não se sabe flexionar, resto em 2ª pessoa,
+ * rótulo truncado): pergunta sem chip é melhor que chip na voz do agente.
+ */
+export function rotuloNaVozDoCliente(bruto: string): string | null {
+	let palavras = bruto.trim().replace(/[?.!,;:]+$/, "").split(/\s+/).filter(Boolean);
+	if (palavras.length === 0) return null;
+	let tinhaSujeito = false;
+	if (/^(?:você|voce|vc|tu)$/i.test(palavras[0] ?? "")) {
+		palavras = palavras.slice(1);
+		tinhaSujeito = true;
+	}
+	// Acha o 1º verbo, depois de advérbios.
+	let i = 0;
+	while (i < palavras.length && ADVERBIO_ANTES_DO_VERBO.test(palavras[i] ?? "")) i += 1;
+	const candidato = (palavras[i] ?? "").toLowerCase();
+	const convertido = VERBO_EM_PRIMEIRA_PESSOA[candidato];
+	if (convertido) palavras[i] = convertido;
+	else if (tinhaSujeito && !INFINITIVO.test(candidato)) return null;
+	// "qual valor cabe no seu bolso" → "o valor": a oração interrogativa vira o núcleo.
+	const q = palavras.findIndex((p, k) => k > 0 && /^qual$/i.test(p));
+	if (q >= 0 && palavras[q + 1]) palavras = [...palavras.slice(0, q), "o", palavras[q + 1] ?? ""];
+	if (palavras.some((p) => SEGUNDA_PESSOA.test(p) || INTERROGATIVA.test(p))) return null;
+	if (palavras.length > MAXIMO_DE_PALAVRAS_DA_ALTERNATIVA) {
+		const corte = palavras.findIndex((p, k) => k > 1 && CONECTOR.test(p));
+		if (corte < 0) return null;
+		palavras = palavras.slice(0, corte);
+		if (palavras.length > MAXIMO_DE_PALAVRAS_DA_ALTERNATIVA) return null;
+	}
+	if (NAO_FECHA_O_ROTULO.test(palavras[palavras.length - 1] ?? "")) return null;
+	const texto = palavras.join(" ");
+	return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
+
 /** Lado comprido demais: fica o núcleo — as palavras até o conector que abre a explicação. */
 function encurtaParaONucleo(nucleo: string): string {
 	const palavras = nucleo.split(/\s+/);
@@ -301,9 +359,11 @@ function ladoDaAlternativa(lado: string, primeiro: boolean): string | null {
 		.replace(/^[^\p{L}\p{N}]+/u, "")
 		.trim();
 	if (!nucleo) return null;
-	const curto = encurtaParaONucleo(nucleo);
-	const naVozDoCliente = primeiro && INFINITIVO.test(curto) ? `Quero ${curto}` : curto;
-	return dentroDoTeto(naVozDoCliente.charAt(0).toUpperCase() + naVozDoCliente.slice(1));
+	const naVozDoCliente = rotuloNaVozDoCliente(
+		primeiro && INFINITIVO.test(nucleo) ? `Quero ${nucleo}` : nucleo,
+	);
+	if (!naVozDoCliente || naVozDoCliente.length > MAXIMO_DA_ALTERNATIVA) return null;
+	return naVozDoCliente;
 }
 
 /**
@@ -429,7 +489,11 @@ function dadoPedido(alvo: string, momento: MomentoDaConversa): SugestaoDoTurno |
 				momento.categoriaDoBem && momento.canal !== "whatsapp" ? "value_picker" : "quick_reply",
 		};
 	}
-	if (DADO_DE_BEM.test(alvo)) return { opcoes: TIPOS_DE_BEM, tipoDoCard: "quick_reply" };
+	// Só pergunta QUAL bem quando a categoria ainda não é conhecida; "o carro é para uso
+	// no dia a dia?" cita carro e não pede o tipo (Kairo, 04/11).
+	if (!momento.categoriaDoBem && DADO_DE_BEM.test(alvo)) {
+		return { opcoes: TIPOS_DE_BEM, tipoDoCard: "quick_reply" };
+	}
 	return null;
 }
 

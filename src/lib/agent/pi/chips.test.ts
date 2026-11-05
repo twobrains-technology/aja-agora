@@ -24,7 +24,7 @@ describe("pergunta fechada vira chip, não lista escrita no texto", () => {
 			cardsDoTurno: [],
 		});
 		expect(rotulos(r.chip)).toHaveLength(2);
-		expect(rotulos(r.chip)[0]).toBe("parcela menor");
+		expect(rotulos(r.chip)[0]).toBe("Parcela menor");
 	});
 
 	it("a vírgula antes do «ou» não cega o detector (forma real medida no dev)", () => {
@@ -32,7 +32,7 @@ describe("pergunta fechada vira chip, não lista escrita no texto", () => {
 			"Qual dessas faz mais sentido pra você: parcela menor por mais tempo, ou prazo mais curto mesmo que a parcela suba?";
 		const r = garantirChip({ texto, cardsDoTurno: [] });
 		expect(rotulos(r.chip)).toHaveLength(2);
-		expect(rotulos(r.chip)[0]).toBe("parcela menor por mais tempo");
+		expect(rotulos(r.chip)[0]).toBe("Parcela menor por mais tempo");
 	});
 
 	it("card de escolha já mostrado no turno: nada se duplica", () => {
@@ -49,14 +49,14 @@ describe("pergunta fechada vira chip, não lista escrita no texto", () => {
 				"Tem mais alguma dúvida antes de a gente prosseguir com a proposta, ou quer seguir em frente?",
 			cardsDoTurno: [],
 		});
-		expect(rotulos(r.chip)).toEqual(["Tem mais alguma dúvida", "quer seguir em frente"]);
+		expect(rotulos(r.chip)).toEqual(["Tenho mais alguma dúvida", "Quero seguir em frente"]);
 
 		const comParentese = garantirChip({
 			texto:
 				"A contemplação (quando você recebe o dinheiro) vem por sorteio. Tem dúvida, ou quer seguir?",
 			cardsDoTurno: [],
 		});
-		expect(rotulos(comParentese.chip)).toEqual(["Tem dúvida", "quer seguir"]);
+		expect(rotulos(comParentese.chip)).toEqual(["Tenho dúvida", "Quero seguir"]);
 	});
 
 	it("parêntese dentro da pergunta não entra no botão", () => {
@@ -64,7 +64,7 @@ describe("pergunta fechada vira chip, não lista escrita no texto", () => {
 			texto: "Prefere o lance (que entra com dinheiro agora) ou a sorteio?",
 			cardsDoTurno: [],
 		});
-		expect(rotulos(r.chip)).toEqual(["Prefere o lance", "a sorteio"]);
+		expect(rotulos(r.chip)).toEqual(["Prefiro o lance", "A sorteio"]);
 	});
 
 	it("prosa curta com pergunta no fim NÃO vira menu do texto — o balão fica inteiro (N05/L33)", () => {

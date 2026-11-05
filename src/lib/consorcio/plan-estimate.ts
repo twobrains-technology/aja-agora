@@ -121,6 +121,21 @@ export function parcelaEstimadaDeMercado(
 	return { parcela: estimatePayment(assetValue, category, prazoMeses), prazoMeses };
 }
 
+/**
+ * Inversa exata de `parcelaEstimadaDeMercado`: mesma taxa e mesmo prazo típicos
+ * da categoria, `carta = parcela × prazo ÷ (1 + taxa)`. Arredonda para mil.
+ * Não aplica CREDIT_BOUNDS (quem exibe decide "até"/"a partir de").
+ */
+export function cartaEstimadaDeMercado(
+	parcela: number,
+	category: Category = "auto",
+): { carta: number; prazoMeses: number } | null {
+	if (!Number.isFinite(parcela) || parcela <= 0) return null;
+	const prazoMeses = TYPICAL_TERM_MONTHS[category];
+	const bruta = (parcela * prazoMeses) / (1 + TYPICAL_ADMIN_FEE_PCT[category] / 100);
+	return { carta: Math.round(bruta / 1000) * 1000, prazoMeses };
+}
+
 export function computePlanEstimate(input: PlanEstimateInput): PlanEstimate {
 	const assetValue = Math.max(0, input.assetValue);
 	const category = input.category;

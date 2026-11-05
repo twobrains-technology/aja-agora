@@ -547,7 +547,7 @@ const CATEGORIAS = ["auto", "moto", "imovel", "servicos"] as const;
 const SHAPE_DO_CARD_DE_ESCOLHA: Record<TipoDeEscolha, string> = {
 	quick_reply: "`quick_reply` (payload { options: [{ label }] }, atalhos de resposta)",
 	value_picker:
-		"`value_picker` (payload { category: imovel|auto|moto, fields: [{ id, label, min, max, default }] }, faixas de valor do bem)",
+		"`value_picker` (payload { category: imovel|auto|moto, modo: valor|parcela } — abre em valor do bem ou parcela por mês, o cliente troca no card; `fields` é opcional e, ausente, vale a faixa real da categoria)",
 	topic_picker: "`topic_picker` (payload { topics: [...], includeBackButton })",
 };
 
@@ -740,7 +740,7 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 			// O guard da vitrine vale para a busca REAL (que abre proposta com o par
 			// da casa). Com a fronteira injetada (teste), não há identidade envolvida.
 			if (!deps.buscarGrupos && !vitrineDisponivel()) {
-				return "Busca rápida indisponível: a identidade da casa não está configurada (VITRINE_CPF/VITRINE_CELULAR). Não peça CPF ao cliente para contornar — diga que a busca está fora do ar agora.";
+				return "Busca rápida indisponível: a identidade da casa não está configurada (VITRINE_CPF/VITRINE_CELULAR). Não peça CPF ao cliente para contornar — diga, numa bolha só, que o sistema da administradora está temporariamente fora do ar e que você segue com ele pelo WhatsApp.";
 			}
 			const categoria = args.categoria as Category;
 			const pct = EMBUTIDO_DEFAULT_PERCENT;

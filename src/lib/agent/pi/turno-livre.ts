@@ -11,7 +11,7 @@
 // É o único motor: `runTurn` chama daqui direto, sem flag.
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { conversations } from "@/db/schema";
+import { conversations, leads } from "@/db/schema";
 import type { ProposalGateway } from "@/lib/adapters/proposal-gateway";
 import type { Caixa } from "@/lib/agent/box/caixa";
 import { listShownOffersForConversation } from "@/lib/agent/orchestrator/choose-offer";
@@ -1212,7 +1212,19 @@ export function createRunTurnLivre(deps?: {
 		const identidadeDoPrompt = identidadeDeCpf(captura.identidade ?? identidadeAtual);
 		const filaDoTurno = deps?.filaDeVendedores ?? filaDeVendedoresReal;
 		const estadoDaFila = await filaDoTurno.estado(conversationId);
+		// O celular salvo pelo card de WhatsApp vai para o lead, não para a identidade
+		// (que só chega ao prompt com CPF): sem esta leitura o fato dizia "ainda não
+		// informado" e o vendedor pedia o número de novo (Kairo, 04/11, conversa 75fbfffd).
+		const celularGuardado =
+			Boolean(captura.identidade?.celular ?? identidadeAtual?.celular) ||
+			Boolean(
+				await db.query.leads
+					.findFirst({ where: eq(leads.conversationId, conversationId), columns: { phone: true } })
+					.then((l) => l?.phone)
+					.catch(() => null),
+			);
 		const { system } = await montarSystemDoVendedor({
+			celularGuardado,
 			fatosExtras: [
 				montarFatoDaFila({
 					agora: deps?.agora?.() ?? new Date(),

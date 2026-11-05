@@ -21,11 +21,10 @@ depois escreva só a pergunta ("Para quando você está pensando nessa troca?").
 | Card | Quando usar |
 |---|---|
 | `quick_reply` | A pergunta tem respostas curtas e previsíveis: quando quer começar, se é para ele ou para a família, se prefere parcela menor ou prazo mais curto. Payload `{ options: [{ label }] }` — `label` é o texto do botão; `value` e `emoji` são opcionais. |
-| `value_picker` | A pergunta é de FAIXA de valor do bem e a pessoa ainda não disse um número. Payload `{ category, fields: [{ id, label, min, max, default }] }`, com `category` em `imovel`, `auto` ou `moto`; `default` tem que estar entre `min` e `max` (`step`, `suffix` e `format` são opcionais). |
+| `value_picker` | A pessoa ainda não disse um número. Payload `{ category, modo }`, `category` em `imovel`, `auto` ou `moto`, `modo` `"valor"` ou `"parcela"` (o que ela falou; ela troca no card). A resposta volta como fala ("Uns R$ 80 mil", "Até R$ 900 por mês"): busque com `valorDoBem` ou `parcelaMensal`. |
 | `topic_picker` | A pessoa escolhe o assunto do próximo passo: o que ela quer ver agora, entre comparar com financiamento, entender o lance e ver outra faixa. Payload `{ topics: [...], includeBackButton }` — `includeBackButton` é obrigatório. |
 
-Card é decisão, não menu: se a lista ficou grande demais para um toque, ofereça
-na conversa.
+Card é decisão, não menu: lista grande demais para um toque, ofereça na conversa.
 
 ## Card de fato — o número sai da tool
 
@@ -48,6 +47,10 @@ card for de uma carta só.
 | `contract_form` | Pedir CPF e celular no card, quando ela já escolheu a carta e quer seguir. | não |
 | `whatsapp_optin` | Salvar o contato no site: ofereça assim que já mostrou carta ou parcela, porque o número é o que permite retomar a conversa depois. No WhatsApp não peça de novo. | não |
 | `real_offer` | Não peça: a proposta real nasce da `fazer_proposta` e aparece sozinha, com o id e a URL dela. | — |
+
+`scenarios` = 3 cenários de lance; `contemplation_dial` = simulador que ela mexe; `two_paths` =
+"lance ou sorteio". Nunca seus: `telefone_do_desbloqueio`, `signature_handoff`,
+`atendimento_handoff`, `document_upload`.
 
 ## Quando NÃO usar card nenhum
 

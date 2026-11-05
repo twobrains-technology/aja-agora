@@ -41,7 +41,12 @@
 //    contra as cartas reais em `cards-livres.ts` (fail-closed da main).
 
 import type { Category } from "@/lib/agent/personas";
-import { balaoPedeResposta, frasesDe, sugestaoDoTurno } from "@/lib/agent/pi/sugestoes";
+import {
+	balaoPedeResposta,
+	frasesDe,
+	rotuloNaVozDoCliente,
+	sugestaoDoTurno,
+} from "@/lib/agent/pi/sugestoes";
 import { CREDIT_BOUNDS } from "@/lib/agent/qualify-config";
 import type { ValuePickerPayload } from "@/lib/chat/types";
 
@@ -184,11 +189,14 @@ function detectarOpcoes(texto: string): { opcoes: string[]; textoLimpo: string }
 			),
 		)
 		.map((o) => (o.length <= MAXIMO_DE_ROTULO ? o : encurta(o)))
-		.filter((o) => o.length >= 3 && o.length <= MAXIMO_DE_ROTULO_DE_FRASE);
+		.filter((o) => o.length >= 3 && o.length <= MAXIMO_DE_ROTULO_DE_FRASE)
+		.map((o) => rotuloNaVozDoCliente(o));
+	// Sem conversão confiável para a voz do cliente: sem chip (não é o agente que fala no botão).
+	if (opcoesDaFrase.some((o) => o === null)) return { opcoes: [], textoLimpo: texto };
 	// Uma pergunta sem "ou" não é fechada entre dois caminhos — não vira chip.
 	if (opcoesDaFrase.length < 2) return { opcoes: [], textoLimpo: texto };
 	// A alternativa estava DENTRO da pergunta: o balão continua inteiro.
-	return { opcoes: opcoesDaFrase, textoLimpo: texto };
+	return { opcoes: opcoesDaFrase as string[], textoLimpo: texto };
 }
 
 /** O toque deste turno neste balão seria a MESMA decisão já na tela? */

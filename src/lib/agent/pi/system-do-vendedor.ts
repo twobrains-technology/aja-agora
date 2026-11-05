@@ -23,6 +23,7 @@ function linhaDeFato(args: {
 	channel: "web" | "whatsapp";
 	contactName: string | null;
 	identidade: IdentidadeDoCliente | null;
+	celularGuardado?: boolean;
 }): string {
 	const nome = args.contactName?.trim();
 	const cpf = args.identidade ? "recebido e guardado" : "ainda não informado";
@@ -33,8 +34,8 @@ function linhaDeFato(args: {
 			? args.identidade?.celular
 				? "o número da conversa (já guardado) — não pergunte"
 				: "o número da conversa, já conhecido — não pergunte"
-			: args.identidade?.celular
-				? "recebido e guardado"
+			: args.identidade?.celular || args.celularGuardado
+				? "recebido e guardado — não peça de novo"
 				: "ainda não informado";
 	return `\n\n# Fato deste atendimento\n\nCanal: ${args.channel === "web" ? "site" : "WhatsApp"}.${nome ? ` Nome do cliente: ${nome}.` : ""} CPF: ${cpf}. Celular: ${celular}.`;
 }
@@ -56,6 +57,9 @@ export async function montarSystemDoVendedor(args: {
 	skills?: string;
 	/** Fatos extras, concatenados depois do bloco de fato (cada um precedido de "\n"). */
 	fatosExtras?: string[];
+	/** Celular já salvo fora da identidade (card de WhatsApp, lead). Sem CPF a
+	 * identidade não chega ao prompt, e o número salvo pelo card sumia do fato. */
+	celularGuardado?: boolean;
 	agora?: number;
 }): Promise<{
 	system: string;
@@ -73,6 +77,7 @@ export async function montarSystemDoVendedor(args: {
 		channel: args.channel,
 		contactName: args.contactName,
 		identidade: args.identidade,
+		celularGuardado: args.celularGuardado,
 	});
 
 	const extras = (args.fatosExtras ?? []).map((f) => `\n${f}`).join("");

@@ -26,6 +26,8 @@ import {
 	coerceRevealCota,
 	type RevealGroupIndex,
 } from "@/lib/agent/orchestrator/recommendation-payload";
+import type { Category } from "@/lib/agent/personas";
+import { CREDIT_BOUNDS } from "@/lib/agent/qualify-config";
 import type { ArtifactType } from "@/lib/chat/types";
 import { compareWithFinancing } from "@/lib/finance/pmt";
 import { cenariosDaCarta } from "./cenarios";
@@ -86,6 +88,9 @@ export type TipoDeEscolha = (typeof TIPOS_DE_ESCOLHA)[number];
 /** Teto de sanidade do `value_picker`: ali os números são a PERGUNTA (faixa de
  * intenção), e carta de consórcio não passa disso. */
 const MAX_VALOR_DO_PICKER = 1_000_000;
+
+/** Teto de sanidade da parcela mensal do `value_picker`. */
+const MAX_PARCELA_DO_PICKER = 50_000;
 
 const CATEGORIAS_DO_PICKER = ["imovel", "auto", "moto"] as const;
 
@@ -222,10 +227,17 @@ function validarValuePicker(payload: unknown): ResultadoDaValidacao {
 			`Card NÃO mostrado: \`category\` de value_picker tem que ser ${CATEGORIAS_DO_PICKER.join(", ")} — não existe faixa de valor para "${String(categoria)}".`,
 		);
 	}
-	const bruto = payload.fields;
+	const modo = payload.modo === "parcela" ? "parcela" : "valor";
+	// `fields` é opcional: sem ele vale a faixa real da categoria (CREDIT_BOUNDS).
+	// Com ele, é validado como sempre (payload antigo continua valendo).
+	let bruto: unknown = payload.fields;
+	if (bruto === undefined) {
+		const { min, max, step, default: padrao } = CREDIT_BOUNDS[categoria as Category];
+		bruto = [{ id: "valor-do-bem", label: "Valor do bem", min, max, step, default: padrao }];
+	}
 	if (!Array.isArray(bruto) || bruto.length === 0) {
 		return recusa(
-			"Card NÃO mostrado: `fields` vazio. Escreva uma ou mais faixas, cada uma com `id`, `label`, `min`, `max` e `default`.",
+			"Card NÃO mostrado: `fields` inválido. Escreva uma ou mais faixas, cada uma com `id`, `label`, `min`, `max` e `default` — ou omita `fields` para usar a faixa da categoria.",
 		);
 	}
 	const fields: Array<Record<string, unknown>> = [];
@@ -267,7 +279,28 @@ function validarValuePicker(payload: unknown): ResultadoDaValidacao {
 		if (campo.format === "currency" || campo.format === "months") normalizado.format = campo.format;
 		fields.push(normalizado);
 	}
-	return { ok: true, payload: { category: categoria, fields } };
+	const saida: Record<string, unknown> = { category: categoria, fields, modo };
+	// Faixa de parcela opcional do modelo; inválida é descartada (o card deriva a dele).
+	const p = payload.parcela;
+	if (
+		ehObjeto(p) &&
+		ehNumero(p.min) &&
+		ehNumero(p.max) &&
+		ehNumero(p.default) &&
+		p.min > 0 &&
+		p.max > p.min &&
+		p.max <= MAX_PARCELA_DO_PICKER &&
+		p.default >= p.min &&
+		p.default <= p.max
+	) {
+		saida.parcela = {
+			min: p.min,
+			max: p.max,
+			step: ehNumero(p.step) && p.step > 0 ? p.step : 50,
+			default: p.default,
+		};
+	}
+	return { ok: true, payload: saida };
 }
 
 function validarTopicPicker(payload: unknown): ResultadoDaValidacao {
