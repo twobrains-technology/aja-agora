@@ -11,7 +11,9 @@ import {
 } from "./rubric";
 import type { DeterministicSignals } from "./signals";
 
-export const JUDGE_MODEL = "claude-sonnet-4-6";
+// O gateway do ambiente (LiteLLM) pode expor o juiz com outro alias: `JUDGE_MODEL`
+// no ambiente vence o default, sem tocar no resto do judge.
+export const JUDGE_MODEL = process.env.JUDGE_MODEL?.trim() || "claude-sonnet-4-6";
 
 export class JudgeError extends Error {
 	override readonly cause?: unknown;

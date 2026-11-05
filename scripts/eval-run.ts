@@ -37,14 +37,8 @@ import {
 	type GoldenExpectations,
 	type GoldenTurnResult,
 } from "@/lib/eval/golden-asserts";
-import { judgeConversation } from "@/lib/eval/judge";
 import type { PersonaContext } from "@/lib/eval/rubric";
 import type { DeterministicSignals } from "@/lib/eval/signals";
-import { numerosForaDaCota } from "@/lib/observability/sinais/numero-fora-da-cota";
-import {
-	ehPromessaSemFato,
-	falaPrometePosseOuFinalizacao,
-} from "@/lib/observability/sinais/promessa-sem-fato";
 
 import { DEFAULT_BASE_URL, sendTurn } from "./eval/chat-client.mjs";
 import { DatasetRunRecorder, type ItemDoRun, type ScoreDoItem } from "./eval/langfuse-dataset-run";
@@ -299,15 +293,20 @@ async function scoresDoItem(args: {
 	];
 
 	// B4 — número citado que nenhuma ferramenta devolveu. A fala do cliente é
-	// fonte (ecoar o cliente é escutar), igual ao detector em produção.
+	// fonte (ecoar o cliente é escutar), igual ao detector em produção. Import
+	// preguiçoso: o módulo do detector puxa `@/db` via `publicar.ts`, e o eval
+	// roda em ambiente sem banco — sem `--dataset-run`, nada disso carrega.
 	const fora: string[] = [];
-	for (const t of item.turns) {
-		for (const n of numerosForaDaCota({
-			fala: t.agentText,
-			falaDoCliente: t.userMsg,
-			resultadosDeTool: t.artifacts.map((a) => a.data),
-		}))
-			fora.push(n);
+	if (item.turns.length > 0) {
+		const { numerosForaDaCota } = await import("@/lib/observability/sinais/numero-fora-da-cota");
+		for (const t of item.turns) {
+			for (const n of numerosForaDaCota({
+				fala: t.agentText,
+				falaDoCliente: t.userMsg,
+				resultadosDeTool: t.artifacts.map((a) => a.data),
+			}))
+				fora.push(n);
+		}
 	}
 	scores.push({
 		name: "numero_fora_da_cota",
@@ -320,18 +319,26 @@ async function scoresDoItem(args: {
 	});
 
 	// B5 — promessa de posse/finalização × desfecho real (propostas no banco).
-	const promete = item.turns.some((t) => falaPrometePosseOuFinalizacao(t.agentText));
+	// Import preguiçoso, mesmo motivo do detector B4.
+	const { falaPrometePosseOuFinalizacao } = item.turns.length
+		? await import("@/lib/observability/sinais/promessa-sem-fato")
+		: { falaPrometePosseOuFinalizacao: null };
+	const prometePosse =
+		falaPrometePosseOuFinalizacao !== null &&
+		item.turns.some((t) => falaPrometePosseOuFinalizacao(t.agentText));
 	scores.push({
 		name: "promessa_sem_fato",
-		value: promete && item.propostas === 0,
+		value: prometePosse && item.propostas === 0,
 		dataType: "BOOLEAN",
-		comment: `Fala promete posse/finalização: ${promete ? "sim" : "não"} · propostas em bevi_proposals: ${item.propostas}.`,
+		comment: `Fala promete posse/finalização: ${prometePosse ? "sim" : "não"} · propostas em bevi_proposals: ${item.propostas}.`,
 	});
 
 	// Juiz offline — 5 dimensões da rubrica. Hipótese, nunca gate: falha de juiz
 	// só some as dimensões, o veredito do eval vem dos asserts.
 	if (item.turns.length > 0) {
 		try {
+			// Import preguiçoso: o juiz puxa `@/db` via `publicar.ts`.
+			const { judgeConversation } = await import("@/lib/eval/judge");
 			const transcrito = item.turns
 				.map(
 					(t, i) =>
@@ -344,7 +351,7 @@ async function scoresDoItem(args: {
 				signals: sinaisDeItem({
 					turns: item.turns,
 					propostas: item.propostas,
-					falaPrometida: promete,
+					falaPrometida: prometePosse,
 					numeroFora: fora,
 				}),
 				conversationId: null, // calibração offline: sem linha no livro-caixa

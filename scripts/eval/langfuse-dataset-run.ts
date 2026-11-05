@@ -255,12 +255,14 @@ export class DatasetRunRecorder {
 		for (const s of scores) {
 			const rs = await this.pedir("POST", "/api/public/scores", {
 				name: s.name,
-				value: s.value,
+				// A instância v4 aceita BOOLEAN só como 0/1, e a API exige exatamente
+				// UMA âncora — aqui `datasetRunId` (+ `datasetItemId`); `traceId` junto
+				// com `datasetRunId` é rejeitado ("Provide exactly one of...").
+				value: typeof s.value === "boolean" ? (s.value ? 1 : 0) : s.value,
 				dataType: s.dataType,
 				comment: s.comment,
 				datasetRunId: this.datasetRunId,
 				...(item.datasetItemId ? { datasetItemId: item.datasetItemId } : {}),
-				traceId,
 			});
 			if (!rs.ok) {
 				// Falha de score NÃO desliga o gravador: o item e o resto dos scores seguem.
