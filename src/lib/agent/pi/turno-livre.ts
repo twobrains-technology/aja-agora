@@ -656,9 +656,9 @@ export function createRunTurnLivre(deps?: {
 		};
 
 		const trechos = criarSeparadorDeTrechos();
-		// A GUARDA DA NARRAÇÃO (R5.1): o balão que só anuncia a ferramenta fica
-		// suspenso até o turno dizer se veio card — colado a um card ele cai, sem
-		// card ele é a fala da vez. Ver `narracao.ts`.
+		// A MEDIDA DA NARRAÇÃO (P11): o anúncio de ferramenta passa INTEIRO (é fala);
+		// o balão que casa com o vocabulário de anúncio sobe o sinal `narracao_de_ferramenta`.
+		// A conduta ("não anuncie o card: mostre e fale uma frase") é quem manda. Ver `narracao.ts`.
 		const narracaoDoTurno = criarNarracaoDoTurno();
 		let pendente = "";
 		// O caso aberto NESTE turno é FATO que define o estado (evento `handoff`,
