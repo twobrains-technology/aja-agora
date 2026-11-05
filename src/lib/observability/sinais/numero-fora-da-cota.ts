@@ -27,7 +27,7 @@
 // Lei da casa: observabilidade NUNCA derruba o turno — tudo try/catch, e sem
 // envs de Langfuse é no-op.
 import { langfuseLigado } from "@/lib/agent/pi/langfuse";
-import { NUMBER_REGEX, matchesKnownNumber, parseNumeric } from "@/lib/eval/numeros-falados";
+import { matchesKnownNumber, NUMBER_REGEX, parseNumeric } from "@/lib/eval/numeros-falados";
 import { publicarScores } from "./publicar";
 
 /**
@@ -153,7 +153,8 @@ const DIMENSOES: readonly Dimensao[] = [
 ];
 
 /** O superlativo/comparativo que a frase AFIRMA. */
-const SUPERLATIVO = /\b(?:menor(?:es)?|maior(?:es)?|melhor(?:es)?|mais\s+(?:baix[ao]s?|barat[ao]s?|curt[ao]s?|alt[ao]s?|car[ao]s?|long[ao]s?)|mais\s+em\s+conta)\b/g;
+const SUPERLATIVO =
+	/\b(?:menor(?:es)?|maior(?:es)?|melhor(?:es)?|mais\s+(?:baix[ao]s?|barat[ao]s?|curt[ao]s?|alt[ao]s?|car[ao]s?|long[ao]s?)|mais\s+em\s+conta)\b/g;
 const MENOR = /\b(?:menor(?:es)?|mais\s+(?:baix[ao]s?|barat[ao]s?|curt[ao]s?|em\s+conta))\b/;
 const MAIOR = /\b(?:maior(?:es)?|mais\s+(?:alt[ao]s?|car[ao]s?|long[ao]s?))\b/;
 const MELHOR = /\b(?:melhor(?:es)?)\b/;
@@ -292,14 +293,12 @@ export function afirmacoesComparativasFalsas(args: {
 					const dito = numeroDaDimensao(frase, dim);
 					return dito !== null && matchesKnownNumber(dito, valoresDaDimensao(campos, dim));
 				});
-		console.error("DBG1", JSON.stringify({frase, nomeada: nomeada?.nome, direcao, candidatas: candidatas.map(c=>c.nome)}));
 		if (candidatas.length !== 1) return;
 		const dim = candidatas[0] as Dimensao;
 		const direcaoDaAfirmacao = direcao ?? direcaoDaFrase(semAcentoDaFrase, dim);
 		if (!direcaoDaAfirmacao) return;
 
 		const conjunto = valoresDaDimensao(campos, dim);
-		console.error("DBG2", JSON.stringify({dim: dim.nome, conjunto: [...conjunto], numero: numeroDaDimensao(frase, dim)}));
 		if (conjunto.size < 2) return;
 		// O número dito pode estar na frase seguinte ("Essa é a menor taxa. Fica em 12,94%.").
 		const dito = numeroDaDimensao(frase, dim) ?? numeroDaDimensao(frases[i + 1] ?? "", dim);

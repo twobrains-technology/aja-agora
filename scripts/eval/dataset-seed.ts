@@ -41,7 +41,7 @@ const chavesDoCofre: Record<(typeof CHAVES)[number], string> = {
 	LANGFUSE_PUBLIC_KEY: "LANGFUSE_PUBLIC_KEY",
 	LANGFUSE_SECRET_KEY: "LANGFUSE_SECRET_KEY",
 };
-const chavesDoValor: Record<(typeof CHAVES)[number], keyof Omit<Credenciais, "origem">> = {
+const _chavesDoValor: Record<(typeof CHAVES)[number], keyof Omit<Credenciais, "origem">> = {
 	LANGFUSE_BASE_URL: "baseUrl",
 	LANGFUSE_PUBLIC_KEY: "publicKey",
 	LANGFUSE_SECRET_KEY: "secretKey",
@@ -401,6 +401,35 @@ const PERFIS_REAIS: readonly PerfilReal[] = [
 		cenario_morte:
 			"ruído de anexos: o agente volta à pergunta padrão, não decifra o canal alternativo e o lead desiste",
 		golden: ["golden-fora-de-escopo"],
+	},
+	// Perfil do recado do Kairo (05/11 00:22) — não vem de conversa de produção:
+	// mede a DEFESA da recomendação. O simulado recebe a carta recomendada e só
+	// DEPOIS pergunta o critério, que é onde o vendedor inventa motivo, cita id de
+	// grupo interno ou foge da decisão com um menu.
+	{
+		id: "por-que-essa-carta",
+		abertura: "Oi, quero um carro de uns 60 mil.",
+		perfil: {
+			tom: "curioso e desconfiado com número; pergunta o porquê, não aceita 'é a melhor' sem motivo",
+			comportamento:
+				"dá o valor do bem (R$ 60.000) e deixa o agente recomendar. Só então pergunta 'por que essa carta e não outra?'. Se a resposta for menu ('se você prefere parcela menor… se prefere prazo menor…'), responde 'você que sabe, me diz qual' e fica sem decisão; se vier um id de grupo/proposta ('grupo 4287'), pede 'que grupo é esse? não vejo isso aqui'.",
+			o_que_quer: "saber em UMA frase por que a carta recomendada é a dele — e o que fazer agora",
+		},
+		categoria: "auto",
+		canal: "web",
+		administradora: null,
+		anuncio: "meta",
+		origem_real:
+			"perfil novo do recado do Kairo (05/11 00:22), sem conversa de produção de origem; eixo medido no detector B4: o agente disse 'a menor taxa' para a proposta 20486 (12,94%) quando a 50080 tinha 12,92%",
+		invariantes: [
+			'a justificativa cita só critério que o dado sustenta — parcela, prazo, valor da carta, contemplados/mês, taxa: o que a busca/card devolveu, nunca motivo que o dado não mostra ("a mais procurada", "a que aprova mais fácil")',
+			"a carta é referida pelo que está VISÍVEL no card (administradora, valor da carta, parcela, prazo) — nunca por id interno de grupo/proposta",
+			'a recomendação é uma DECISÃO: uma carta, o critério em uma frase e o próximo passo — nunca menu "se prefere X… se prefere Y…" nem devolver a escolha para o cliente',
+			'correção sem confissão de culpa: se o critério anterior não se sustentava, corrige o dado e segue ("o certo é …"), sem desculpa longa, sem se desqualificar nem culpar o sistema',
+		],
+		cenario_morte:
+			"cliente pergunta o critério e a resposta vira menu de opções ou cita um id de grupo que não está no card: a decisão some, o lead não sabe o que fazer e a conversa trava",
+		golden: ["golden-probe-i2-justificativa"],
 	},
 ];
 
