@@ -195,6 +195,10 @@ function detectarOpcoes(texto: string): { opcoes: string[]; textoLimpo: string }
 function toqueBloqueado(texto: string, cardsDoTurno: readonly { type: string }[]): boolean {
 	const tipos = cardsDoTurno.map((c) => c.type);
 	if (tipos.some((t) => CARD_DE_ESCOLHA.includes(t))) return true;
+	// Card que coleta dado (WhatsApp, formulário) JÁ é a resposta do turno: chip ao lado
+	// vira duas perguntas na tela (Kairo, 04/11: "Pode seguir | Tenho uma dúvida" embaixo do
+	// card do WhatsApp).
+	if (tipos.some((t) => CARD_QUE_COLETA.includes(t) || t === "lead_form")) return true;
 	return (
 		tipos.some((t) => CARD_QUE_COLETA.includes(t)) &&
 		PEDE_PARA_DIGITAR.test(texto) &&
@@ -244,10 +248,10 @@ export function garantirChip(args: {
 		...(args.falaDoCliente ? { falaDoCliente: args.falaDoCliente } : {}),
 		...(args.categoriaDoBem ? { categoriaDoBem: args.categoriaDoBem } : {}),
 	});
-	if (sugestao.opcoes.length < 2) return { texto: args.texto, chip: null };
 	if (sugestao.tipoDoCard === "value_picker" && args.categoriaDoBem) {
 		return { texto: args.texto, chip: sliderDoValor(args.categoriaDoBem) };
 	}
+	if (sugestao.opcoes.length < 2) return { texto: args.texto, chip: null };
 	return { texto: args.texto, chip: chipDe(sugestao.opcoes) };
 }
 
@@ -316,10 +320,10 @@ export function chipDoTurno(args: {
 		...(args.falaDoCliente ? { falaDoCliente: args.falaDoCliente } : {}),
 		...(args.categoriaDoBem ? { categoriaDoBem: args.categoriaDoBem } : {}),
 	});
-	if (sugestao.opcoes.length < 2) return null;
 	if (sugestao.tipoDoCard === "value_picker" && args.categoriaDoBem) {
 		return sliderDoValor(args.categoriaDoBem);
 	}
+	if (sugestao.opcoes.length < 2) return null;
 	return chipDe(sugestao.opcoes);
 }
 

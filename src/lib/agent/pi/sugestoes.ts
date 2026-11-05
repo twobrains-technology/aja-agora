@@ -79,11 +79,13 @@ export type SugestaoDoTurno = { opcoes: string[]; tipoDoCard: CardDaSugestao };
  */
 /** Atalhos da pergunta de NOME: nenhum botão escreve o nome pela pessoa, mas a conversa não
  * pode parar por causa dele. Duas saídas honestas, nenhuma convidando a recusar o dado. */
-const SAIDAS_DO_NOME = ["Vamos direto às cartas", "Depois eu te digo"];
+// 04/11 (Kairo): a primeira coisa é o nome — botão que pula a pergunta ("Vamos direto às
+// cartas") desfaz a pergunta. Sem toque: a pessoa digita o nome.
+const SAIDAS_DO_NOME: string[] = [];
 
 /** Fora da abertura (já há carta na mesa) "vamos direto às cartas" não cabe: as cartas já estão
  * aí. Os toques ali respondem à pergunta do nome e nada mais (ordem do líder, 03:40). */
-const SAIDAS_DO_NOME_COM_CARTA = ["Prefiro não dizer", "Depois eu te digo"];
+const SAIDAS_DO_NOME_COM_CARTA: string[] = [];
 
 export const RESPOSTA_LIVRE =
 	/\b(?:seu|teu)\s+(?:primeiro\s+)?nome\b|\bcomo\s+(?:voc[êe]|vc|posso|eu\s+posso|devo)\s+(?:te\s+|lhe\s+)?(?:se\s+)?cham(?:a|ar|o|á-lo)\b|\bme\s+diz\s+(?:o\s+)?(?:seu\s+)?nome\b|\bqual\s+(?:é|e|eh)?\s*o\s+nome\b|\bposso\s+te\s+chamar\b/i;
@@ -144,16 +146,20 @@ const PEDIDO_DIRETO =
 	/\b(?:me\s+(?:diz|diga|fala|passa|manda|envia|informa|compartilha|confirma)|pode\s+(?:me\s+)?(?:mandar|enviar|passar|confirmar)|consegue\s+me\s+(?:mandar|passar|enviar)|(?:se\s+)?puder\s+(?:confirmar|mandar|passar|enviar)|confirma(?:r)?\s+(?:seu|o)\s+(?:cpf|celular|telefone|n[úu]mero)|vou\s+precisar\s+d[eo]|digite|digita|informe|escreva|escreve|manda|envia|compartilha|(?:preciso|precisamos)\s+d[eo])\b/i;
 
 /** (c) Os dados que o agente pede — a lista daquele dado, na voz da pessoa. */
-const FAIXAS_DE_VALOR = ["Até R$ 50 mil", "Uns R$ 80 mil", "R$ 100 mil ou mais"];
+// P11 (04/11): rótulo em reais só com valor da pessoa ou de ferramenta. Com a categoria
+// conhecida o valor vira o slider (`value_picker`, faixa real); sem ela, a pessoa digita.
+const FAIXAS_DE_VALOR: string[] = [];
 /** Parcela NÃO virou `value_picker`: o repo não tem régua de parcela (o slider do valor vale
  * `CREDIT_BOUNDS`, que é crédito do bem). O que existe é `parcelaEstimadaDeMercado`, que é número
  * DERIVADO de um valor — pendência para o dono decidir se algum dia houver faixa própria. */
-const FAIXAS_DE_PARCELA = ["Até R$ 800", "Até R$ 1.200", "Quero saber o mínimo"];
+const FAIXAS_DE_PARCELA: string[] = [];
 const TIPOS_DE_BEM = ["Carro", "Moto", "Imóvel"];
 const RESPOSTAS_DO_CPF = ["Pode usar meu CPF", "Por que precisa do CPF?"];
 /** O contato (celular/WhatsApp) tem a mesma forma da resposta do CPF: entregar o dado ou
  * perguntar por quê. Sem esta lista o pedido de celular caía nas faixas do valor. */
-const RESPOSTAS_DO_CONTATO = ["Mando meu celular", "Por que precisa do celular?"];
+// 04/11: o número se pede com o card `whatsapp_optin` (escolha do modelo); "Mando meu celular"
+// como botão só adiava o dado e fazia o agente perguntar de novo.
+const RESPOSTAS_DO_CONTATO: string[] = [];
 /** O pedido de LANCE/ENTRADA — valor que o cliente já tem, não o valor do bem. Nenhum número
  * aqui: quanto a pessoa tem guardado é ela quem diz (AGENTS.md: número vem de ferramenta). */
 const RESPOSTAS_DO_LANCE = ["Tenho sim, consigo dar lance", "Tenho pouco", "Agora não tenho"];

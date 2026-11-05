@@ -845,17 +845,21 @@ export async function POST(req: NextRequest) {
 									const { saveContactWhatsapp } = await import("@/lib/leads/contact-capture");
 									const result = await saveContactWhatsapp(conversationId, body.action.phone);
 									if (result.ok) {
-										const greetName = contactName ? `, ${contactName}` : "";
 										await persistMeta(conversationId, {
 											...meta,
 											whatsappOptinShown: true,
 										});
-										await writeAndSaveText(
-											writer,
+										// O número é trocado pela oferta (call 04/11): quem conduz o próximo
+										// passo é o vendedor, não uma frase pronta — senão as cartas prometidas
+										// nunca aparecem e a conversa morre aqui (P0).
+										await pipeDirectiveTurn({
 											conversationId,
-											meta.currentPersona ?? null,
-											`Show${greetName}! Anotei seu WhatsApp. Se algo acontecer aqui, te chamo por lá. ✅`,
-										);
+											directive:
+												"[O cliente acabou de passar o WhatsApp pelo card; o número já está guardado. Agradeça em poucas palavras, sem repetir o número, e siga: se as cartas ainda não estão na tela, mostre agora (buscar_cartas e depois mostrar_card com os ids).]",
+											contactName,
+											writer,
+											userKey,
+										});
 									} else {
 										await writeAndSaveTextComAviso(
 											writer,
@@ -898,12 +902,14 @@ export async function POST(req: NextRequest) {
 										whatsappOptinShown: true,
 										whatsappOptinDeclined: true,
 									});
-									await writeAndSaveText(
-										writer,
+									await pipeDirectiveTurn({
 										conversationId,
-										meta.currentPersona ?? null,
-										"Sem problema, seguimos por aqui mesmo.",
-									);
+										directive:
+											"[O cliente tocou em 'Agora não' no card do WhatsApp. Siga o que a conduta manda para a recusa do número; a conversa não para aqui.]",
+										contactName,
+										writer,
+										userKey,
+									});
 									return;
 								}
 
