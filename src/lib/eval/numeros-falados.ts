@@ -130,5 +130,21 @@ export function matchesKnownNumber(value: number, known: Set<number>): boolean {
 	const rounded = Math.round(value);
 	if (known.has(rounded)) return true;
 	if (known.has(rounded + 1) || known.has(rounded - 1)) return true;
+	return ehDiferencaDeConhecidos(value, known);
+}
+
+/**
+ * A fala pode comparar duas cartas da tela ("a Canopus tem parcela R$ 42,53 menor"):
+ * a diferença de dois valores de tool é conta, não invenção. Tolerância de R$ 0,01.
+ */
+function ehDiferencaDeConhecidos(value: number, known: Set<number>): boolean {
+	if (!(value > 0) || known.size > 400) return false;
+	const lista = [...known].filter((n) => n > value);
+	for (const a of lista) {
+		const alvo = a - value;
+		for (const b of known) {
+			if (Math.abs(b - alvo) <= 0.011) return true;
+		}
+	}
 	return false;
 }
