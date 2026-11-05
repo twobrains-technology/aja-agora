@@ -26,6 +26,7 @@
 
 import type { UIMessage, UIMessageStreamWriter } from "ai";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
+import { registrarDuracaoDoTurno } from "@/lib/observability/sinais/duracao-do-turno";
 import { publicarFunilNoLangfuse } from "@/lib/observability/sinais/funil-scores";
 
 export type TurnTraceChannel = "web" | "whatsapp";
@@ -117,6 +118,14 @@ export type TurnTraceDeps = {
 export function emitTurnTrace(record: TurnTraceRecord): void {
 	console.log(`[turn-trace] ${JSON.stringify(record)}`);
 	publicarFunilNoLangfuse(record);
+	// A latência do turno vai ao livro-caixa (`uso_de_ia`): a duração é local (o
+	// `durationMs` deste registro) e o TTFT é lido da generation que o plugin grava
+	// no Langfuse. Fire-and-forget: nunca lança, sem envs é no-op.
+	void registrarDuracaoDoTurno({
+		traceId: record.traceId,
+		conversationId: record.conversationId,
+		durationMs: record.durationMs,
+	});
 }
 
 const defaultDeps: TurnTraceDeps = {

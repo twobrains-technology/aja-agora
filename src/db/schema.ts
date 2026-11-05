@@ -1972,6 +1972,14 @@ export const usoDeIa = pgTable(
 		tokensCacheRead: integer("tokens_cache_read"),
 		tokensCacheWrite: integer("tokens_cache_write"),
 		custoUsdCents: integer("custo_usd_cents"),
+		// A LATÊNCIA DO TURNO (bloco B6 da suíte Langfuse, 05/11/2026). `duracao_ms` é o
+		// wall-clock do turno inteiro (o mesmo número do `durationMs` do `turn-trace`,
+		// pré-LLM incluído); `ttft_ms` é o tempo até o primeiro token, lido da generation
+		// que o plugin do Langfuse grava (não existe na fonte local — vem da reconciliação
+		// via API). Nuláveis pela mesma disciplina das colunas acima: ausente = não medido,
+		// nunca 0. Linha antiga não tem essa medição e não pode afirmar zero.
+		duracaoMs: integer("duracao_ms"),
+		ttftMs: integer("ttft_ms"),
 		criadoEm: timestamp("criado_em", { withTimezone: true }).defaultNow().notNull(),
 	},
 	(table) => [
