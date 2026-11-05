@@ -1,3 +1,4 @@
+import { NUMBER_REGEX, matchesKnownNumber, parseNumeric } from "@/lib/eval/numeros-falados";
 import type { Gate } from "@/lib/agent/funil-tipos";
 import type { Category, ConversationMetadata, QualifyAnswers } from "@/lib/agent/personas";
 import { scoresDeReconciliacao } from "@/lib/observability/reconciliacao-fala-estado";
@@ -75,15 +76,9 @@ const REQUIRED_BY_CATEGORY: Record<string, ReadonlyArray<keyof QualifyAnswers | 
 	auto: ["creditRange", "hasLance"],
 };
 
-// R$, %, e número + unidade temporal/parcela. Unidade necessária pra evitar
-// matchar anos calendário ("em 2026") e quantidades genéricas no texto.
-// A ESCALA FAZ PARTE DO NÚMERO. "R$ 500 mil" dito pelo agente é o mesmo
-// 500.000 que está no card — e, sem capturar o sufixo, o detector lia
-// "R$ 500", não achava em artefato nenhum e marcava alucinação. Medido na
-// conversa real de 19/08/2026: era o último falso positivo que sobrava depois
-// do arredondamento.
-const NUMBER_REGEX =
-	/R\$\s*[\d.]+(?:,\d{1,2})?(?:\s*(?:milh[õo]es|milh[ãa]o|mil))?|\b\d+(?:[.,]\d+)?\s*%|\b\d+(?:[.,]\d+)?\s*(?:m[eê]s(?:es)?|anos?|parcelas?)\b/gi;
+// NUMBER_REGEX/parseNumeric/matchesKnownNumber moram no módulo compartilhado
+// `numeros-falados.ts` (extraído no bloco B4) — o mesmo que o detector
+// `numero_fora_da_cota` do turno usa.
 
 export function computeSignals(args: {
 	metadata: ConversationMetadata | null;
@@ -274,34 +269,6 @@ function walkForNumbers(value: unknown, out: Set<number>): void {
 	if (value && typeof value === "object") {
 		for (const v of Object.values(value)) walkForNumbers(v, out);
 	}
-}
-
-function parseNumeric(raw: string): number | null {
-	// "mil"/"milhão" multiplicam o que vem antes — ignorar isso transforma meio
-	// milhão em quinhentos reais.
-	const escala = /\bmilh[õo]es|\bmilh[ãa]o/i.test(raw)
-		? 1_000_000
-		: /\bmil\b/i.test(raw)
-			? 1_000
-			: 1;
-	const cleaned = raw
-		.replace(/R\$\s*/i, "")
-		.replace(/\s*%/, "")
-		.replace(/\s*(?:milh[õo]es|milh[ãa]o|mil)\s*$/i, "")
-		.replace(/\s*(?:m[eê]s(?:es)?|anos?|parcelas?)\s*$/i, "")
-		.replace(/\./g, "")
-		.replace(",", ".");
-	const n = Number(cleaned);
-	return Number.isFinite(n) ? n * escala : null;
-}
-
-function matchesKnownNumber(value: number, known: Set<number>): boolean {
-	if (known.has(value)) return true;
-	const rounded = Math.round(value);
-	if (known.has(rounded)) return true;
-	// Tolerância de ±1 unidade pra arredondamento de centavos
-	if (known.has(rounded + 1) || known.has(rounded - 1)) return true;
-	return false;
 }
 
 function extractContext(content: string, matchIndex: number): string {
