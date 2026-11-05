@@ -9,8 +9,13 @@
  * **CRM é o número grande**, e a Meta aparece ao lado com a diferença nomeada:
  * ela conta clique que não virou conversa, e é por isso que os dois nunca
  * fecham.
+ *
+ * Na verba o dono decidiu o contrário (28/09): a leitura oficial é **a reportada
+ * pela Meta** — o número que a cliente vê no gerenciador. O atribuído no CRM fica
+ * ao lado, e a diferença em reais tem nome. Nenhuma soma muda por isso.
  */
 
+import { FRASE_CUSTO_NAO_APLICAVEL } from "@/components/admin/dashboard/filtro-ab";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { TotaisDeCampanhas } from "@/lib/admin/campanhas-queries";
 import { descreverCusto, inteiro, reais } from "./formato";
@@ -23,7 +28,7 @@ function Cartao({
 }: {
 	titulo: string;
 	valor: string;
-	nota?: string;
+	nota?: React.ReactNode;
 	tooltip?: string;
 }) {
 	return (
@@ -51,17 +56,79 @@ function explicarDiferenca(diferenca: number): string {
 	return `O CRM contou +${inteiro(Math.abs(diferenca))} — lead que a Meta não atribuiu`;
 }
 
-export function ResumoCampanhas({ totais }: { totais: TotaisDeCampanhas }) {
+/**
+ * A frase que explica a divergência de VERBA (Meta × CRM) — a mesma linguagem de
+ * `explicarDiferenca`, só trocando leads por reais.
+ *
+ * O total reportado pela Meta É a leitura oficial; o atribuído no CRM é a linha
+ * vizinha. Os dois nunca fecham porque há campanha que gastou sem nenhuma visita
+ * ou conversa apontando para ela — e porque a janela de data da Meta não é a
+ * mesma do CRM. Nomear de que lado caiu a diferença é o que evita a conclusão de
+ * que o painel está errado.
+ */
+function explicarDiferencaDeVerba(reconciliacao: {
+	reportadoCents: number | null;
+	atribuidoCents: number | null;
+}): string {
+	// Com o recorte por braço ativo não há verba a reconciliar: o gasto da Meta é
+	// do período inteiro e não se divide (D6). A frase do recorte é de B3b.
+	if (reconciliacao.reportadoCents === null || reconciliacao.atribuidoCents === null) {
+		return "Custo não se divide por braço de teste: o investimento da Meta é do período inteiro.";
+	}
+	if (reconciliacao.reportadoCents === 0)
+		return "Sem investimento reportado no período — não há verba a reconciliar";
+	// Nunca negativo por desenho: o atribuído é um subconjunto do reportado.
+	const diferenca = reconciliacao.reportadoCents - reconciliacao.atribuidoCents;
+	if (diferenca === 0)
+		return "As duas leituras bateram no período — raro, e não significa que medem o mesmo";
+	return `A Meta reportou +${reais(diferenca)} — campanha sem atribuição no CRM: o gasto não achou visita dentro da janela de data`;
+}
+
+export function ResumoCampanhas({
+	totais,
+	custoNaoAplicavelAoRecorte = false,
+}: {
+	totais: TotaisDeCampanhas;
+	/** Recorte por braço ativo (D6): o investimento da Meta sai `null` e a
+	 *  verba/CPC deixam de ser aplicáveis a este recorte. A tela declara isso em
+	 *  vez de mostrar `R$ 0,00` ou um CPC falso. Sempre presente na resposta:
+	 *  `false` é o default (sem recorte, os valores são os de sempre). */
+	custoNaoAplicavelAoRecorte?: boolean;
+}) {
 	const custo = descreverCusto(totais.custoPorQualificado);
 	const diferenca = totais.leadsMeta - totais.leadsCrm;
 
 	return (
 		<div className="space-y-4">
+			{custoNaoAplicavelAoRecorte && (
+				<p
+					data-testid="custo-nao-aplicavel-ao-recorte"
+					className="rounded-md border border-dashed border-input bg-muted/30 p-3 text-sm text-muted-foreground"
+				>
+					{FRASE_CUSTO_NAO_APLICAVEL}
+				</p>
+			)}
 			<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 				<Cartao
-					titulo="Investimento no período"
+					titulo="Investimento reportado pela Meta"
 					valor={reais(totais.investimentoCents)}
-					nota="Soma do que o gerenciador reportou para as campanhas"
+					nota={
+						<>
+							O número oficial do período — soma do que o gerenciador reportou para as campanhas.{" "}
+							<span className="mt-1 block">
+								Investimento atribuído no CRM:{" "}
+								<span className="tabular-nums text-foreground">
+									{reais(totais.investimentoAtribuidoCents)}
+								</span>
+							</span>
+							<span className="mt-1 block">
+								{explicarDiferencaDeVerba({
+									reportadoCents: totais.investimentoCents,
+									atribuidoCents: totais.investimentoAtribuidoCents,
+								})}
+							</span>
+						</>
+					}
 				/>
 				<Cartao
 					titulo="Custo por lead qualificado"
@@ -82,8 +149,8 @@ export function ResumoCampanhas({ totais }: { totais: TotaisDeCampanhas }) {
 						<p className="text-sm font-medium text-muted-foreground">Leads no CRM</p>
 						<p className="text-4xl font-semibold tabular-nums">{inteiro(totais.leadsCrm)}</p>
 						<p className="mt-1 text-xs text-muted-foreground">
-							Conversas em que o cliente informou nome e telefone ou e-mail — o número que o Aja
-							Agora produziu. O telefone que o WhatsApp entrega sozinho não conta aqui.
+							Conversas em que o cliente se identificou: no WhatsApp, quem entrou (o canal já traz o
+							número e o perfil); na web, quem deixou contato. É o número que o Aja Agora produziu.
 						</p>
 						<p className="mt-1 text-xs text-muted-foreground" title="Inclui o telefone do WhatsApp">
 							Com telefone ou e-mail conhecido (a régua consegue falar):{" "}

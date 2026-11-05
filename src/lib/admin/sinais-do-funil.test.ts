@@ -1,126 +1,89 @@
-/**
- * O CONTRATO dos dois cortes de conversa que as telas de medição compartilham.
- *
- * Por que isto existe: `conversaAtribuida` nasceu local a `performance-queries.ts`
- * e a tela de Campanhas passou a precisar do mesmo recorte (o complemento) para
- * declarar as conversas que ficam fora do funil. Duas telas com duas definições
- * de "conversa do funil" divergem no primeiro dia, com o mesmo rótulo — e o
- * defeito aparece como um número que não fecha com a lista logo abaixo dele.
- *
- * Não é teste de banco: é o contrato do fragmento (quais condições ele carrega e
- * que ele não cola num alias fixo). A prova contra dado real é a integração de
- * `performance-queries` e `campanhas-queries`.
- */
-
-import { sql } from "drizzle-orm";
-import { PgDialect } from "drizzle-orm/pg-core";
+import { type SQL, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import {
-	contagensDoFunil,
-	conversaAtribuida,
 	conversaIdentificada,
-	conversaSemOrigem,
-	leadComContato,
-	leadIdentificado,
+	ofertaNoTurnoRetido,
+	ofertaRetidaPeloTelefone,
+	viuOferta,
 } from "./sinais-do-funil";
 
-const dialect = new PgDialect();
-const de = new Date("2026-09-01T00:00:00-03:00");
-const ate = new Date("2026-09-22T23:59:59-03:00");
-
-function texto(fragmento: ReturnType<typeof conversaAtribuida>) {
-	return dialect.sqlToQuery(fragmento).sql.replace(/\s+/g, " ").trim();
+/** Drizzle 0.45 não expõe `.sql`; o texto mora em `queryChunks`. Renderizar é o que
+ * permite o teste de ACOPLAGEM: a pergunta "esta pessoa viu número de oferta?" é a
+ * MESMA no funil, no Percurso, na exportação e na régua. Se `viuOferta` deixar de
+ * negar a oferta retida, cada tela volta a contar um número que o cliente nunca leu.
+ * A POPULAÇÃO resultante (quem entra e quem fica fora) é provada contra o banco em
+ * `sinais-do-funil.populacao.test.ts`. */
+function texto(c: unknown): string {
+	if (typeof c === "string") return c;
+	if (c && typeof c === "object" && "queryChunks" in c) {
+		return (c as SQL).queryChunks.map(texto).join("");
+	}
+	if (c && typeof c === "object" && "value" in c) return String((c as { value: unknown }).value);
+	return "";
 }
 
-describe("conversaAtribuida", () => {
-	it("exige conversa não simulada, com visita, dentro da janela", () => {
-		const q = dialect.sqlToQuery(conversaAtribuida(de, ate));
-		expect(q.sql).toContain("is_simulated = false");
-		expect(q.sql).toContain("visit_id IS NOT NULL");
-		expect(q.sql).toContain("created_at BETWEEN");
-		expect(q.params).toHaveLength(2);
+describe("viu oferta — a oferta retida pelo telefone não conta", () => {
+	it("a retenção é perguntada POR OFERTA dentro do EXISTS de viuOferta", () => {
+		// P208/P280/P322 — com `EXISTS … AND NOT <retenção da conversa>` a conversa
+		// antiga com card de telefone ficava retida para sempre, e a oferta legível
+		// emitida depois não contava em tela nenhuma.
+		const q = texto(viuOferta(sql`c`));
+		expect(q).toContain(texto(ofertaNoTurnoRetido(sql`c`, sql`m`)));
+		expect(q).toContain("NOT");
+		expect(q).toContain("EXISTS");
 	});
 
-	it("aceita o alias da conversa por parâmetro", () => {
-		expect(texto(conversaAtribuida(de, ate, sql`conversations`))).toContain(
-			"conversations.is_simulated",
-		);
-	});
-});
-
-describe("conversaSemOrigem", () => {
-	it("é o complemento exato: mesma janela, visita nula", () => {
-		const q = dialect.sqlToQuery(conversaSemOrigem(de, ate));
-		expect(q.sql).toContain("is_simulated = false");
-		expect(q.sql).toContain("visit_id IS NULL");
-		expect(q.sql).toContain("created_at BETWEEN");
-		expect(q.params).toHaveLength(2);
+	it("a retenção é só na WEB (no WhatsApp o telefone é o waId e não há card)", () => {
+		const q = texto(ofertaRetidaPeloTelefone(sql`c`));
+		expect(q).toContain("channel = 'web'");
+		expect(q).toContain("'A', 'B'");
+		// A âncora do card saiu daqui: ela é do TURNO da oferta, não da conversa.
+		expect(q).not.toContain("telefone_do_desbloqueio");
 	});
 
-	it("as duas metades são disjuntas — nenhuma conversa cai nos dois cortes", () => {
-		expect(texto(conversaAtribuida(de, ate))).not.toBe(texto(conversaSemOrigem(de, ate)));
-		expect(texto(conversaAtribuida(de, ate))).toContain("IS NOT NULL");
-		expect(texto(conversaSemOrigem(de, ate))).toContain("IS NULL");
-	});
-});
-
-/**
- * O degrau "Se identificaram": nome E contato, nunca só o contato.
- *
- * A prova contra o banco é de integração; aqui o que se prova é que ESTE
- * fragmento carrega as duas condições — se alguém apagar o `name IS NOT NULL`
- * para "simplificar", o teste cai antes de o número inflar em produção.
- */
-describe("leadIdentificado", () => {
-	const t = texto(leadIdentificado());
-
-	it("exige nome", () => {
-		expect(t).toContain("l.name IS NOT NULL");
+	it("web livre não é retida: sem variante registrada o COALESCE cai em '' e o IN não casa", () => {
+		const q = texto(ofertaRetidaPeloTelefone(sql`c`));
+		expect(q).toContain("COALESCE");
+		expect(q).toContain("IS NULL");
 	});
 
-	it("e exige contato — telefone ou e-mail", () => {
-		expect(t).toContain("l.phone IS NOT NULL");
-		expect(t).toContain("l.email IS NOT NULL");
+	// N01 — o vendedor livre (2026-10-20) mostra a carta antes de pedir qualquer
+	// dado, e a fila do experimento continua sorteando o braço. Sem a âncora do
+	// card, o guard apagava do funil toda oferta legível do motor novo.
+	it("só desconta quando a trava ESTAVA de pé — o card do telefone é a âncora", () => {
+		const q = texto(ofertaNoTurnoRetido(sql`c`, sql`m`));
+		expect(q).toContain("telefone_do_desbloqueio");
+		expect(q).toContain(texto(ofertaRetidaPeloTelefone(sql`c`)));
 	});
 
-	it("aceita o alias do lead por parâmetro", () => {
-		expect(texto(leadIdentificado(sql`li`))).toContain("li.name IS NOT NULL");
-	});
-
-	it("NÃO é o mesmo que leadComContato, que dispensa o nome", () => {
-		const comContato = texto(leadComContato());
-		expect(comContato).not.toContain("name");
-		expect(comContato).toContain("l.phone IS NOT NULL");
+	it("o turno é delimitado pela fala do CLIENTE, e a comparação é simétrica", () => {
+		// O `persist` grava a oferta e o adapter grava o card DEPOIS, no mesmo turno.
+		// Exigir "card antes da oferta" deixaria a oferta retida antiga contando.
+		const q = texto(ofertaNoTurnoRetido(sql`c`, sql`m`));
+		expect(q).toContain("LEAST");
+		expect(q).toContain("GREATEST");
+		expect(q).toContain("role = 'user'");
 	});
 });
 
-describe("conversaIdentificada", () => {
-	it("filtra simulado e usa o predicado inteiro", () => {
-		const t = texto(conversaIdentificada());
-		expect(t).toContain("li.is_simulated = false");
-		expect(t).toContain("li.name IS NOT NULL");
-		expect(t).toContain("c.id");
-	});
-});
-
-/**
- * As contagens do funil carregam os DOIS números de contato: o identificado pelo
- * cliente e o contato conhecido. Se `com_contato` sumir, a tela de Campanhas
- * perde a linha que explica por que o número do WhatsApp é maior.
- */
-describe("contagensDoFunil", () => {
-	const t = texto(contagensDoFunil());
-
-	it("tem a coluna de identificados e a de contato conhecido", () => {
-		expect(t).toContain("AS identificados");
-		expect(t).toContain("AS com_contato");
+describe("conversa identificada — a coleta da web em TODOS os caminhos", () => {
+	// P048/P061/P206/L05 — "identificado" é contato ALCANÇÁVEL. `contact_id` e
+	// `identityCollected` ligam com o CPF sozinho (o contato nasce e a flag sobe
+	// antes do celular), e o degrau contava quem o time não consegue chamar.
+	it("não conta contato unificado nem a flag de identidade: CPF isolado não é contato", () => {
+		const q = texto(conversaIdentificada(sql`c`));
+		expect(q).not.toContain("contact_id");
+		expect(q).not.toContain("identityCollected");
 	});
 
-	it("identificados usa o predicado com nome; com_contato usa o antigo", () => {
-		const identificados = t.slice(
-			t.indexOf("count(DISTINCT c.id) FILTER"),
-			t.indexOf("AS identificados"),
-		);
-		expect(identificados).toContain("name IS NOT NULL");
+	it("o telefone/e-mail do lead — o alcançável — continua contando", () => {
+		const q = texto(conversaIdentificada(sql`c`));
+		expect(q).toContain("li.phone IS NOT NULL");
+		expect(q).toContain("li.email IS NOT NULL");
+	});
+
+	it("WhatsApp continua identificado pelo canal", () => {
+		const q = texto(conversaIdentificada(sql`c`));
+		expect(q).toContain("wa_id");
 	});
 });

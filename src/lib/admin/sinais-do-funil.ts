@@ -9,6 +9,15 @@
 
 import { type SQL, sql } from "drizzle-orm";
 import { PADRAO_ROBO_SQL } from "@/lib/attribution/user-agent-robo";
+import type { ArtifactType } from "@/lib/chat/types";
+// O ciclo com `filtro-variante` é de CHAMADA, não de inicialização: os dois
+// módulos só usam o outro dentro de função (nenhum `const` de topo depende do
+// outro). Existe porque o FATO da etapa mora aqui (fonte única do funil) e o
+// FRAGMENTO que o lê mora lá — separar os dois exigiria um terceiro módulo, e
+// duplicar o fato é o defeito que este arquivo existe para impedir.
+import { CHAVE_DO_TESTE_NO_METADATA } from "@/lib/chat/variante-da-visita";
+import type { EtapaDoFunil, RecorteAB } from "@/lib/experimentos/registro";
+import { condicaoDeBracoDaPessoa } from "./filtro-variante";
 import { ESTAGIOS_QUALIFICADOS } from "./lead-stages";
 
 /**
@@ -66,6 +75,46 @@ export function chaveDaPessoa(de: Date, ate: Date, colunaVisitor: SQL = sql`v.vi
 
 /** Quanto tempo depois da anterior uma visita do mesmo visitante ainda é eco. */
 const JANELA_DE_ECO = "2 seconds";
+
+/**
+ * Quantos dias sem o cliente escrever até a conversa deixar de contar como
+ * VIVA.
+ *
+ * **É o critério ÚNICO de "parado" no painel.** Ele vivia como const local de
+ * `performance-queries.ts` e não existia no Percurso — quem abrisse as duas telas
+ * via dois sentidos para a mesma palavra, e nenhum jeito de saber qual valia.
+ *
+ * **O que ele NÃO é.** A régua de remarketing tem a janela dela
+ * (`JANELA_DE_ENTRADA_MS`, em `motivo-de-exclusao.ts`), e ela responde outra
+ * pergunta: "posso mandar um toque?". Aqui a pergunta é "dá para ler esta pessoa
+ * como retomável?". São decisões diferentes, com donos diferentes — juntar as
+ * duas faria mudar a cadência quando alguém mexesse no desenho do painel.
+ */
+export const DIAS_PARA_CONSIDERAR_VIVA = 7;
+
+/**
+ * A CONVERSA está VIVA — o cliente escreveu na janela recente e ninguém a
+ * encerrou.
+ *
+ * Conversa encerrada não é retomável por mais nova que seja a fala: o time já
+ * decidiu que aquele caso acabou. Os dois cortes andam juntos de propósito — uma
+ * tela que aplicasse só um deles mostraria uma população diferente das outras.
+ *
+ * Uma CONVERSA ser viva não faz a PESSOA viva: quem agrega precisa de
+ * `bool_or(viva)` sobre as conversas dela (basta uma aberta para ser retomável).
+ *
+ * O timestamp e o status entram por parâmetro porque cada consulta chega aqui
+ * com um alias diferente: no funil a fala do cliente vem de uma subconsulta e o
+ * status é `c.status`; no Percurso, do CTE `conv`. Acoplar a um alias faria o
+ * fragmento compilar num lugar e explodir no outro.
+ */
+export function conversaViva(
+	ultimoInbound: SQL = sql`ultimo_inbound`,
+	status: SQL = sql`c.status`,
+): SQL {
+	return sql`(${ultimoInbound} >= now() - ${sql.raw(`interval '${DIAS_PARA_CONSIDERAR_VIVA} days'`)}
+    AND ${status} = 'active')`;
+}
 
 /**
  * A visita não é ECO de outra — o mesmo visitante gravado de novo em instantes.
@@ -148,25 +197,52 @@ export function conversaSemOrigem(de: Date, ate: Date, conversa: SQL = sql`c`): 
 }
 
 /**
- * O LEAD IDENTIFICADO PELO CLIENTE — tem NOME **e** tem contato.
+ * A CONVERSA VEIO PELO WHATSAPP.
  *
- * **Por que o telefone sozinho não basta.** Toda conversa de WhatsApp nasce com
- * o telefone do `waId` já no lead (`src/lib/whatsapp/session.ts`), porque o
- * canal entrega o número sem o cliente ter informado nada. Contando "telefone
- * OU e-mail", o degrau "Se identificaram" media o CANAL, não o cliente: quem
- * chegou pelo WhatsApp entrava como identificado tendo escrito só "oi".
+ * `conversations.waId` é preenchido no nascimento de toda conversa de WhatsApp
+ * (`src/lib/whatsapp/session.ts`): o canal entrega o número — e o nome de perfil
+ * (pushName) — sem o cliente digitar nada.
  *
- * Foi a pergunta literal da cliente em 22/09/2026 — *"se vieram do WhatsApp, eu
- * já tenho o telefone… aqui ele vai entender que já se identificou"* — e a
- * decisão do dono foi exigir o NOME junto: identificado = nome E (telefone ou
- * e-mail). O nome chega pelo pushName do WhatsApp e pela extração do gate de
- * crédito, e `src/lib/contacts/sincronizar-nome.ts` é o ponto único que o leva a
- * `leads.name` e `conversations.contactName`.
- *
- * Espera a tabela `leads` com alias `l`, como `contagensDoFunil`.
+ * **É a definição de "identificado" no canal, por decisão do dono (23/09/2026):**
+ * *"whatsapp entrou já pode considerar que se identificou, já na web, você tem
+ * que considerar quando conseguirmos coletar"*.
  */
-export function leadIdentificado(lead: SQL = sql`l`): SQL {
-	return sql`${lead}.name IS NOT NULL AND (${lead}.phone IS NOT NULL OR ${lead}.email IS NOT NULL)`;
+export function conversaDeWhatsapp(conversa: SQL = sql`c`): SQL {
+	return sql`${conversa}.wa_id IS NOT NULL`;
+}
+
+/**
+ * O CONTATO QUE O CLIENTE INFORMOU — telefone ou e-mail gravado no LEAD.
+ *
+ * É o que existe na web, onde o canal não entrega nada: o telefone/e-mail do
+ * lead veio do formulário. Na conversa de WhatsApp este contato também existe
+ * (o lead nasce com o telefone do canal), mas lá quem decide é
+ * `conversaDeWhatsapp` — o `wa_id` fala pelo canal, não pelo preenchimento.
+ */
+export function contatoInformadoPeloCliente(lead: SQL = sql`l`): SQL {
+	return sql`(${lead}.phone IS NOT NULL OR ${lead}.email IS NOT NULL)`;
+}
+
+/**
+ * O LEAD IDENTIFICADO — a regra é do CANAL, não do preenchimento.
+ *
+ * Decisão do dono (23/09/2026): conversa de WhatsApp → identificado (o canal já
+ * entregou número e perfil); conversa de web → identificado quando conseguimos
+ * COLETAR o contato (telefone ou e-mail no lead).
+ *
+ * **O que esta regra NÃO faz: deduzir identificação pelo nome.** No WhatsApp o
+ * nome da conversa é o pushName do canal, que chega na PRIMEIRA mensagem —
+ * exigi-lo não mediria nada do cliente, mediria o canal. Foi por isso que a
+ * versão anterior (nome E contato) fazia "Se identificaram" empatar com
+ * "Conversas" e ainda assim subcontava quem só tinha o nome na conversa.
+ *
+ * Quem conta LINHA de lead (o cartão "Leads hoje") usa este fragmento; o degrau
+ * do funil conta CONVERSA — ver `conversaIdentificada`.
+ *
+ * Espera as tabelas `leads` e `conversations`, com os aliases por parâmetro.
+ */
+export function leadIdentificado(lead: SQL = sql`l`, conversa: SQL = sql`c`): SQL {
+	return sql`(${conversaDeWhatsapp(conversa)} OR ${contatoInformadoPeloCliente(lead)})`;
 }
 
 /**
@@ -184,18 +260,92 @@ export function leadComContato(lead: SQL = sql`l`): SQL {
 }
 
 /**
- * A CONVERSA cujo lead está identificado pelo cliente — o `EXISTS` que o funil
- * de mídia, o Percurso e a Exportação usam no degrau "Se identificaram".
+ * A CONVERSA CUJO CLIENTE SE IDENTIFICOU — o degrau "Se identificaram" do funil
+ * de mídia, do Percurso, da Exportação e da tela de Campanhas.
  *
- * Existe para que os três não repitam o `EXISTS` com a lista de condições: um
- * deles esquecendo o `is_simulated = false`, ou o nome, já faria o mesmo degrau
- * medir duas populações em telas diferentes.
+ * **Fonte única dos quatro**, para que o mesmo degrau não meça duas populações
+ * em telas diferentes.
+ *
+ * A regra é a do dono (23/09/2026), por CANAL: conversa de WhatsApp (`waId`
+ * presente) conta sempre; conversa de web conta quando conseguimos coletar o
+ * contato.
+ *
+ * **"Identificado" é contato ALCANÇÁVEL — telefone ou e-mail no LEAD.** É a
+ * definição da `main` (`a2bc3024`) e a única que o degrau pode ter: o time não
+ * chama quem só deixou o CPF.
+ *
+ * **O que NÃO entra, e por quê.** `conversations.contact_id` e
+ * `metadata.identityCollected` chegaram a ser aceitos aqui quando o vendedor
+ * livre passou a capturar identidade — a intenção era contar quem se
+ * identificou pelo motor novo, e o efeito foi contar quem deixou SÓ o CPF:
+ * `attachContact` cria o contato e `storeIdentity` liga a flag antes (ou sem)
+ * o celular chegar. CPF isolado não é contato alcançável, e o degrau inflava no
+ * filtro `?identificavel=true`, na Performance, nas Campanhas, no A/B e na
+ * Exportação (P048/P061/P206/L05).
+ *
+ * **O telefone do vendedor livre continua contando.** O celular capturado na
+ * web é gravado no LEAD por `vincularCelularAoLead`
+ * (`src/lib/conversation/identity.ts`) — é essa gravação que sustenta este
+ * predicado; sem ela o degrau cairia para perto de zero (L05).
+ *
+ * O `EXISTS` (e não um `JOIN`) é o que mantém a conversa na lista quando ela não
+ * tem linha em `leads` — que é o caso de quase metade das conversas de WhatsApp
+ * medidas em produção.
  */
 export function conversaIdentificada(conversa: SQL = sql`c`): SQL {
-	return sql`EXISTS (SELECT 1 FROM leads li
-    WHERE li.conversation_id = ${conversa}.id
-      AND li.is_simulated = false
-      AND ${leadIdentificado(sql`li`)})`;
+	return sql`(
+    ${conversaDeWhatsapp(conversa)}
+    OR EXISTS (SELECT 1 FROM leads li
+      WHERE li.conversation_id = ${conversa}.id
+        AND li.is_simulated = false
+        AND ${contatoInformadoPeloCliente(sql`li`)})
+  )`;
+}
+
+/**
+ * O FATO de uma etapa do funil, na forma "por CONVERSA".
+ *
+ * Existe para o recorte por braço de experimento: a pessoa é atribuída ao braço
+ * da conversa que a fez **avançar a etapa âncora do teste**, e o fragmento
+ * precisa perguntar "esta conversa avançou?" sem reimplementar o critério.
+ *
+ * Cada etapa devolve o MESMO predicado que este módulo já usa — `identificados`
+ * é literalmente `conversaIdentificada`, e as demais são a forma por conversa dos
+ * `FILTER` que `contagensDoFunil` já aplica (`leadComContato`, estados do lead,
+ * proposta). **Não há segundo caminho para um fato que já vive aqui.**
+ *
+ * `visitas` e `conversas` devolvem `null`: não existe "avanço" para elas — a
+ * pessoa está lá por ter chegado/aberto, e a atribuição cai na exposição.
+ */
+export function fatoDaEtapaNaConversa(etapa: EtapaDoFunil, conversa: SQL = sql`c`): SQL | null {
+	switch (etapa) {
+		case "visitas":
+		case "conversas":
+			return null;
+		case "identificados":
+			return conversaIdentificada(conversa);
+		case "com_contato":
+			return sql`EXISTS (SELECT 1 FROM leads li
+        WHERE li.conversation_id = ${conversa}.id
+          AND li.is_simulated = false
+          AND ${leadComContato(sql`li`)}))`;
+		case "qualificados":
+			return sql`EXISTS (SELECT 1 FROM leads li
+        WHERE li.conversation_id = ${conversa}.id
+          AND li.is_simulated = false
+          AND li.stage IN (${sql.join(
+						ESTAGIOS_QUALIFICADOS.map((estagio) => sql`${estagio}`),
+						sql`, `,
+					)}))`;
+		case "propostas":
+			return sql`EXISTS (SELECT 1 FROM bevi_proposals bp
+        WHERE bp.conversation_id = ${conversa}.id)`;
+		case "fechados":
+			return sql`EXISTS (SELECT 1 FROM leads li
+        WHERE li.conversation_id = ${conversa}.id
+          AND li.is_simulated = false
+          AND li.stage = 'fechado_ganho')`;
+	}
 }
 
 /**
@@ -213,34 +363,283 @@ export function conversaIdentificada(conversa: SQL = sql`c`): SQL {
  * `visits v`, `conversations c`, `leads l`, `bevi_proposals bp`. Quem não usa
  * `qualificados` simplesmente ignora a coluna.
  *
- * `identificados` conta CONVERSAS cujo lead tem nome E contato (`leadIdentificado`),
- * não leads: a mesma definição do funil de mídia (`computeFunilMidia`). Contando
- * leads, uma conversa com dedup imperfeito entrava duas vezes e a coluna
- * "Identificados" divergia da etapa "Se identificaram" do funil, na mesma tela,
- * com o mesmo rótulo. `com_contato` é a coluna vizinha — o número antigo, que
- * mede quem a régua consegue alcançar, não quem se identificou.
+ * **A unidade é PESSOA** (decisão do dono, 23/09/2026): cinco conversas do mesmo
+ * telefone são UMA pessoa. A chave é a `chaveDaPessoa` — a mesma da Porta e do
+ * Percurso —, e não `c.id`. Contando conversa, a tabela por origem discordava do
+ * funil logo acima dela na mesma tela; contando linha de proposta, discordava da
+ * escada do Percurso (5 × 1) com o mesmo rótulo.
+ *
+ * `identificados` conta PESSOAS cujo cliente se identificou
+ * (`conversaIdentificada`) — no WhatsApp, quem entrou (o canal entregou número e
+ * perfil); na web, quem deixou contato. É a MESMA definição do funil de mídia
+ * (`computeFunilMidia`). Contando leads, uma conversa com dedup imperfeito
+ * entrava duas vezes e a coluna "Identificados" divergia da etapa "Se
+ * identificaram" do funil, na mesma tela, com o mesmo rótulo. `com_contato` é a
+ * coluna vizinha — outro fato, não a mesma coisa: mede quem a régua consegue
+ * ALCANÇAR (telefone/e-mail no lead), e não são ordem um do outro (a conversa de
+ * WhatsApp sem linha em `leads` é identificada e não tem contato no lead).
  */
-export function contagensDoFunil(): SQL {
+export function contagensDoFunil(de: Date, ate: Date, recorte: RecorteAB = []): SQL {
 	const qualificados = sql.join(
 		ESTAGIOS_QUALIFICADOS.map((estagio) => sql`${estagio}`),
 		sql`, `,
 	);
+	const pessoa = chaveDaPessoa(de, ate);
+	// `[]` ⇒ `null` ⇒ NENHUM SQL novo entra: sem recorte o SQL gerado é o mesmo de
+	// antes desta mudança (é o que faz o default não mover número nenhum).
+	//
+	// O recorte entra como conjunção sobre a CONDIÇÃO INTEIRA do `FILTER`, com
+	// parênteses. Sem eles, o `OR` de `leadComContato` engoliria o recorte pela
+	// precedência (`A AND B OR C AND R` = `(A AND B) OR (C AND R)`) e o balde
+	// deixaria de fechar.
+	const daPessoa = condicaoDeBracoDaPessoa(recorte, {
+		de,
+		ate,
+		chave: pessoa,
+		colunaVisitor: sql`v.visitor_id`,
+	});
+	const comRecorte = (condicao: SQL): SQL =>
+		daPessoa ? sql`(${condicao}) AND (${daPessoa})` : condicao;
 	return sql`
-    count(DISTINCT v.id) FILTER (WHERE ${VISITA_NAO_E_ECO}) AS visitas,
-    count(DISTINCT c.id) AS conversas,
-    count(DISTINCT c.id) FILTER (WHERE ${leadComContato()}) AS com_contato,
-    count(DISTINCT c.id) FILTER (WHERE ${leadIdentificado()}) AS identificados,
-    count(DISTINCT l.id) FILTER (WHERE l.stage IN (${qualificados})) AS qualificados,
-    count(DISTINCT bp.id) AS propostas,
-    count(DISTINCT l.id) FILTER (WHERE l.stage = 'fechado_ganho') AS fechados
+    count(DISTINCT v.id) FILTER (WHERE ${comRecorte(VISITA_NAO_E_ECO)}) AS visitas,
+    count(DISTINCT ${pessoa}) FILTER (WHERE ${comRecorte(pessoaConversou())}) AS conversas,
+    count(DISTINCT ${pessoa}) FILTER (WHERE ${comRecorte(
+			sql`${pessoaConversou()} AND ${leadComContato()}`,
+		)}) AS com_contato,
+    count(DISTINCT ${pessoa}) FILTER (WHERE ${comRecorte(
+			sql`${pessoaConversou()} AND ${conversaIdentificada(sql`c`)}`,
+		)}) AS identificados,
+    count(DISTINCT ${pessoa}) FILTER (WHERE ${comRecorte(sql`l.stage IN (${qualificados})`)}) AS qualificados,
+    count(DISTINCT ${pessoa}) FILTER (WHERE ${comRecorte(sql`bp.id IS NOT NULL`)}) AS propostas,
+    count(DISTINCT ${pessoa}) FILTER (WHERE ${comRecorte(sql`l.stage = 'fechado_ganho'`)}) AS fechados
   `;
 }
 
-/** Artifacts que provam que o cliente VIU número de oferta na tela. */
-export const ARTIFACTS_DE_OFERTA = ["real_offer", "simulation_result"];
+/**
+ * A pessoa ABRIU uma conversa nestas visitas — a linha do `LEFT JOIN` existe.
+ *
+ * Existe como condição de `FILTER` porque contar pessoa em vez de `c.id`
+ * incluiria, sem ela, o visitante que só passou e nunca abriu o chat: ele tem
+ * chave (o próprio `visitor_id`) e entraria em "Conversas" por acidente.
+ */
+function pessoaConversou(): SQL {
+	return sql`c.id IS NOT NULL`;
+}
+
+/**
+ * TODO tipo de artifact, classificado: prova que o cliente VIU número de oferta
+ * na tela?
+ *
+ * FIX-398 (bloco-telefone-ab). Antes disto havia DUAS listas para a mesma
+ * pergunta: esta, com `["real_offer","simulation_result"]`, e a dos escritores
+ * de artifact no código (`comparison_table` em `src/app/api/chat/route.ts`,
+ * `recommendation_card` em `nodes/converse.ts`, `real_offer` em
+ * `closing-presentation.ts`). Quem viu a comparação no chat web NÃO era contado
+ * como quem viu oferta — o degrau que a Bruna lê para decidir investimento
+ * estava subcontado (palavras dela na call de 29/09: *"viram oferta, 9 → 18... e
+ * a proposta criada: zero"*).
+ *
+ * Agora a lista do painel DERIVA daqui, e o `Record<ArtifactType, boolean>` é
+ * exaustivo em tempo de compilação: nasceu um tipo novo em
+ * `src/lib/chat/types.ts`, o TypeScript quebra aqui — e o teste
+ * `sinais-do-funil.viu-oferta.fix-398.test.ts` quebra em runtime, lendo o
+ * arquivo de tipos. Um tipo novo não passa mais despercebido até o painel.
+ */
+export const CLASSIFICACAO_DOS_ARTIFACTS: Record<ArtifactType, boolean> = {
+	// ── PROVAM que a pessoa viu nº de oferta na tela ──────────────────────────
+	comparison_table: true,
+	recommendation_card: true,
+	real_offer: true,
+	simulation_result: true,
+	// ── Não provam (contexto, pergunta, formulário, dado do cliente) ──────────
+	group_card: false,
+	lead_form: false,
+	quick_reply: false,
+	value_picker: false,
+	topic_picker: false,
+	scenarios: false,
+	financing_comparison: false,
+	whatsapp_optin: false,
+	decision_prompt: false,
+	contract_form: false,
+	signature_handoff: false,
+	atendimento_handoff: false,
+	document_upload: false,
+	contemplation_dial: false,
+	embedded_bid: false,
+	two_paths: false,
+	scarcity: false,
+	// FIX-396 — o card do teste do telefone NÃO prova oferta: o que prova é o
+	// `comparison_table`/`recommendation_card` que ele acompanha.
+	telefone_do_desbloqueio: false,
+};
+
+/** Artifacts que provam que o cliente VIU número de oferta na tela.
+ *
+ * FONTE ÚNICA: derivada de `CLASSIFICACAO_DOS_ARTIFACTS` acima — não existe
+ * segunda lista. Usada pelo painel de Performance/Percurso e pelo endpoint do
+ * teste do telefone. */
+export const ARTIFACTS_DE_OFERTA: readonly ArtifactType[] = (
+	Object.keys(CLASSIFICACAO_DOS_ARTIFACTS) as ArtifactType[]
+).filter((tipo) => CLASSIFICACAO_DOS_ARTIFACTS[tipo]);
 
 /** Os mesmos tipos, prontos para um `IN (...)` de SQL. */
 export const ARTIFACTS_DE_OFERTA_SQL = sql.join(
 	ARTIFACTS_DE_OFERTA.map((tipo) => sql`${tipo}`),
 	sql`, `,
 );
+
+/** A lista literal, como TEXTO — para diagnóstico e para o teste de acoplamento
+ *  provar que o fragmento SQL carrega os MESMOS tipos. Derivada da fonte única. */
+export const PADRAO_SQL_DE_OFERTA = ARTIFACTS_DE_OFERTA.map((tipo) => `'${tipo}'`).join(", ");
+
+/**
+ * A OFERTA PREVENIDA E NÃO ENTREGUE NÃO CONTA COMO "VIU OFERTA".
+ *
+ * Portado da main (a2bc3024, 06/10/2026), medido em produção: 9 conversas contavam
+ * como "viu oferta" sem o cliente ter lido número nenhum. No braço A do teste do
+ * telefone o reveal é RETIDO no adapter até o telefone chegar; no B os cards vão à
+ * tela EMBACADOS. Nos dois o nó persist grava os artifacts assim mesmo (a gravação
+ * acontece antes de o adapter reter/borrar — é o banco que guarda a comparação para
+ * re-emitir quando o telefone chega). Contar o artifact ali era afirmar que a pessoa
+ * viu número que ela nunca leu.
+ *
+ * A regra é a do dono: sem telefone, não conta que viu. WhatsApp é exceção — ali o
+ * telefone é o próprio waId, não existe card e a comparação chega legível. Por isso o
+ * canal entra na condição: sem ele, o guard apagaria do funil toda conversa de WhatsApp.
+ *
+ * O predicado é `NOT` desta função dentro de `viuOferta`, e mora aqui, junto da lista
+ * de artifacts: é a MESMA pergunta, feita pelo funil, pelo Percurso, pela exportação e
+ * pela régua.
+ *
+ * **A TRAVA MORREU (2026-10-20) E A CONVERSA NOVA CONTINUA ROTULADA A/B.** O vendedor
+ * livre mostra a carta antes de pedir qualquer dado e o adapter não retém nem embaça
+ * nada (`src/lib/web/adapter.ts`) — mas a fila do experimento continua sorteando o
+ * braço no metadata de toda conversa web nova. Sem uma âncora, o guard apagava do
+ * funil justamente as ofertas legíveis do motor novo (N01).
+ *
+ * A âncora é o CARD DO TELEFONE: enquanto a trava esteve de pé, cada card que
+ * revelava oferta saía acompanhado de `telefone_do_desbloqueio` (era ele que segurava
+ * ou embaçava o reveal) e ele é persistido junto. Sem esse card na conversa, nada foi
+ * retido — não há o que descontar. É fato da própria conversa, e não um corte por
+ * data: conversa antiga sem card também nunca teve reveal retido.
+ *
+ * **E A RETENÇÃO É DA OFERTA, NÃO DA CONVERSA (P208/P280/P322/L28/N01).** A âncora
+ * nasceu como um `EXISTS` global na conversa, e aí uma conversa que retomou no
+ * vendedor livre — antiga, com card de telefone retido e variante sorteada — ficava
+ * excluída para SEMPRE: a oferta legível emitida depois, que o cliente leu, não
+ * contava em tela nenhuma. Este predicado responde só o que é da CONVERSA (canal,
+ * braço sorteado, desbloqueio) e mora inteiro aqui; o recorte por OFERTA/TURNO está
+ * em `ofertaNoTurnoRetido`, que recebe a mensagem da oferta.
+ */
+export function ofertaRetidaPeloTelefone(conversa: SQL = sql`c`): SQL {
+	return sql`(${conversa}.channel = 'web'
+    AND COALESCE(${conversa}.metadata -> ${CHAVE_DO_TESTE_NO_METADATA} ->> 'variante', '') IN ('A', 'B')
+    AND (${conversa}.metadata -> ${CHAVE_DO_TESTE_NO_METADATA} ->> 'desbloqueadoEm') IS NULL)`;
+}
+
+/**
+ * ESTA oferta saiu no TURNO em que a trava estava de pé — e por isso não conta.
+ *
+ * O turno é a unidade, não a mensagem: o nó `persist` grava os artifacts da oferta
+ * quando o turno fecha e o adapter grava o `telefone_do_desbloqueio` logo depois, ao
+ * drenar o stream — as duas coisas caem em mensagens DIFERENTES, separadas por
+ * milissegundos. O que as liga é não haver fala do cliente entre elas: fala do
+ * cliente ABRE turno novo.
+ *
+ * É o que separa dois fatos que o `EXISTS` global confundia:
+ *
+ *  · a oferta emitida sob a trava (mesmo turno do card) continua não contada, por
+ *    mais velha que seja a conversa;
+ *  · a oferta emitida DEPOIS — turno novo, com fala do cliente no meio — foi para a
+ *    tela legível (a trava não existe mais desde 2026-10-20) e conta.
+ *
+ * A comparação é simétrica de propósito (`LEAST`/`GREATEST`): o adapter grava o card
+ * DEPOIS dos cards de oferta do mesmo turno, então exigir "card antes da oferta"
+ * deixaria a oferta retida antiga contando — exatamente o número que a main não
+ * contava.
+ */
+export function ofertaNoTurnoRetido(conversa: SQL = sql`c`, mensagemDaOferta: SQL = sql`m`): SQL {
+	return sql`(${ofertaRetidaPeloTelefone(conversa)}
+    AND EXISTS (SELECT 1 FROM messages mt
+      JOIN artifacts at ON at.message_id = mt.id
+      WHERE mt.conversation_id = ${conversa}.id
+        AND at.type = 'telefone_do_desbloqueio'
+        AND NOT EXISTS (SELECT 1 FROM messages mu
+          WHERE mu.conversation_id = ${conversa}.id
+            AND mu.role = 'user'
+            AND mu.created_at > LEAST(mt.created_at, ${mensagemDaOferta}.created_at)
+            AND mu.created_at < GREATEST(mt.created_at, ${mensagemDaOferta}.created_at))))`;
+}
+
+/**
+ * O CLIENTE VIU NÚMERO DE OFERTA — existe uma oferta que ele pôde LER na tela.
+ *
+ * É o degrau "Viram oferta" do funil de mídia, da escada do Percurso, da
+ * exportação, do A/B e da macro-fase da régua. Fonte única de todos: enquanto o
+ * `EXISTS` morava copiado em cada consulta, uma correção valia para uma tela e não
+ * para a outra.
+ *
+ * A retenção é perguntada por OFERTA (`ofertaNoTurnoRetido`): uma conversa antiga
+ * pode ter uma oferta retida e outra legível, e a legível é a que o cliente leu.
+ *
+ * O alias da conversa entra por parâmetro pelo mesmo motivo dos outros
+ * fragmentos (`c` nas telas de hoje) — amarrar ao alias faria o fragmento
+ * compilar num lugar e explodir no outro.
+ */
+export function viuOferta(conversa: SQL = sql`c`): SQL {
+	return sql`EXISTS (SELECT 1 FROM messages m
+    JOIN artifacts a ON a.message_id = m.id
+    WHERE m.conversation_id = ${conversa}.id
+      AND a.type IN (${ARTIFACTS_DE_OFERTA_SQL})
+      AND NOT ${ofertaNoTurnoRetido(conversa, sql`m`)})`;
+}
+
+/**
+ * A PROPOSTA existe para a conversa — a simulação da Bevi é o FATO.
+ *
+ * É o degrau "Propostas" do funil, "Proposta" da escada e da exportação. Nasceu
+ * inline em TRÊS consultas (`percurso-queries`, `performance-queries` e
+ * `exportacao/percurso`); aqui ela existe uma vez, para não nascer a quarta
+ * definição no próximo consumidor.
+ */
+export function teveProposta(conversa: SQL = sql`c`): SQL {
+	return sql`EXISTS (SELECT 1 FROM bevi_proposals bp
+    WHERE bp.conversation_id = ${conversa}.id)`;
+}
+
+/**
+ * Os sinais que definem a macro-fase do funil em que a pessoa está.
+ *
+ * São DOIS porque são dois os fatos que a reunião de 22/09 nomeou como marcos da
+ * jornada: ver a oferta e ter a proposta na mesa. O degrau mais fundo vence.
+ */
+export interface SinaisDoFunil {
+	/** O cliente viu número de oferta na tela (`artifacts`: `real_offer` / `simulation_result`). */
+	viuOferta: boolean;
+	/** Existe proposta/simulação Bevi para a conversa. */
+	teveProposta: boolean;
+}
+
+/**
+ * As três macro-fases da comunicação (Kairo, reunião de 22/09 12:02:49).
+ *
+ * Não são os nove degraus do Percurso: são as três mensagens genéricas do
+ * remarketing — quem ainda não viu oferta, quem já viu e quem só falta fechar.
+ */
+export type FaseDoFunil = "inicio" | "viu_oferta" | "fechamento";
+
+/**
+ * A FASE do funil a partir dos sinais — função PURA, sem banco e sem relógio.
+ *
+ * Os nomes são os do operador: *"se o cara tá no início… ele chegou até
+ * visualizar a oferta… Já tá no finalzinho, é só fechar?"*. A ordem de leitura é
+ * do degrau mais FUNDO para o mais raso — ter proposta implica ter visto a
+ * oferta, e o evento de oferta pode não estar no histórico de uma conversa
+ * antiga. Ler a fase pelo degrau mais fundo é o que a escada do Percurso já faz.
+ */
+export function faseDoFunil(sinais: SinaisDoFunil): FaseDoFunil {
+	if (sinais.teveProposta) return "fechamento";
+	if (sinais.viuOferta) return "viu_oferta";
+	return "inicio";
+}

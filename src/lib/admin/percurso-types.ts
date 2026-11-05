@@ -13,6 +13,8 @@
  * virou lead desde o `lead-stage-tracker`, e nenhuma tela lia esse campo.
  */
 
+import type { RecorteAB } from "@/lib/experimentos/registro";
+import type { MotivoDeExclusao } from "@/lib/remarketing/motivo-de-exclusao";
 import type { Campanhas } from "./campanhas";
 import type { ChaveEtapaFunil } from "./performance-types";
 
@@ -75,7 +77,7 @@ export const PASSOS_DO_PERCURSO = [
 	{
 		chave: "se_identificou",
 		label: "Se identificou",
-		ajuda: "Informou nome e telefone ou e-mail — o telefone do WhatsApp não conta",
+		ajuda: "Veio pelo WhatsApp — o canal entrega o número e o perfil — ou deixou contato na web",
 	},
 	{ chave: "viu_oferta", label: "Viu oferta", ajuda: "Recebeu simulação ou oferta real" },
 	{
@@ -105,6 +107,12 @@ export function rotuloDoPasso(passo: PassoDoPercurso): string {
  * vocabulário: clicar em "Se identificaram" abre esta tela filtrada em
  * `se_identificou`. `visitas` mapeia para `null` de propósito — a etapa inteira
  * é a tela sem filtro nenhum.
+ *
+ * O clique abre em `modo=alcancou`, e `alcancou` no Percurso filtra pelo FATO do
+ * degrau (`identificou`, `teve_proposta`, …) — a MESMA definição que o funil usa
+ * para contar. Filtrando por posição na escada (`profundidade >= X`), a lista
+ * aberta não era a população do número clicado: no degrau de ramificação ("Só
+ * mandaram a mensagem do anúncio"), clicar em 1 abria 7.
  */
 export const PASSO_DA_ETAPA_DO_FUNIL: Record<ChaveEtapaFunil, PassoDoPercurso | null> = {
 	visitas: null,
@@ -135,6 +143,21 @@ export interface FiltroPercurso {
 	passo?: PassoDoPercurso | null;
 	/** `parou` = o percurso terminou aqui; `alcancou` = chegou ao menos aqui. */
 	modo?: ModoDoPasso;
+	/**
+	 * O recorte por braço de experimento A/B (`?ab=experimento:braço`).
+	 *
+	 * `[]` (ou ausente) = todas — e aí NENHUM SQL novo entra na consulta.
+	 *
+	 * Aqui a unidade é PESSOA, e o braço dela é resolvido no `conv_pessoa` pela
+	 * MESMA ordenação canônica dos funis (`sinais-do-funil`): a conversa em que
+	 * ela se identificou (a primeira, se houve mais de uma) e, quando nunca se
+	 * identificou, a última conversa com braço do período (exposição).
+	 *
+	 * A coluna do visitante não entra por parâmetro de propósito: a chave da
+	 * pessoa é a do CTE do Percurso (`chaveDaPessoa(de, ate, vi.visitor_id)`), a
+	 * mesma que monta as linhas da tela.
+	 */
+	recorte?: RecorteAB;
 	/** Busca por nome, telefone ou e-mail. */
 	q?: string | null;
 	limit?: number;
@@ -183,6 +206,41 @@ export interface PessoaDoPercurso {
 	primeiraChegada: string;
 	/** Último sinal de vida: a chegada mais recente ou a última mensagem dele. */
 	ultimaAtividade: string;
+	/**
+	 * O instante da última INTERAÇÃO — a última fala trocada, do cliente OU do
+	 * agente — ou `null` quando a pessoa nunca conversou.
+	 *
+	 * Não é a mesma data que `ultimaAtividade`: aquele é o último sinal de vida
+	 * (inclui visita e só a mensagem do CLIENTE), e este é a última mensagem de
+	 * qualquer lado. É o par do `ultimaInteracaoAutor`; sem ele a linha diria
+	 * "agente" acompanhada de uma data anterior à própria resposta.
+	 */
+	ultimaInteracaoEm: string | null;
+	/**
+	 * QUEM falou por último — foi o cliente que parou, ou a bola está com o
+	 * agente? É a pergunta que a cliente faz antes de ligar (25/09/2026).
+	 *
+	 * `null` quando não houve interação nenhuma (só chegou, ou só abriu o chat).
+	 */
+	ultimaInteracaoAutor: "cliente" | "agente" | null;
+	/**
+	 * Recebeu oferta ou simulação — o fato por trás do degrau "Viu oferta".
+	 *
+	 * É o "de fato pediram a simulação" do levantamento (2026-09-22, plano
+	 * §AJA-15/Task 3): o degrau honesto é `viram_oferta`, e não se cria métrica
+	 * paralela — este campo expõe o mesmo fato no shape plano da lista.
+	 */
+	pediuSimulacao: boolean;
+	/** Se há linha na régua de remarketing para a conversa desta pessoa. */
+	naRegua: boolean;
+	/**
+	 * Por que a pessoa NÃO está na régua, quando não está — o motivo NOMEADO.
+	 *
+	 * `null` quando ela está na régua, ou quando é elegível e ainda não entrou
+	 * (aí não há guarda a nomear). Nunca `null` em silêncio para quem ficou de
+	 * fora por causa de uma guarda.
+	 */
+	motivoForaDaRegua: MotivoDeExclusao | null;
 	chegadas: number;
 	conversas: number;
 	mensagensDoCliente: number;
@@ -197,6 +255,15 @@ export interface PessoaDoPercurso {
 	perdido: boolean;
 	/** Conversa mais recente da pessoa — o link para ler o que ela falou. */
 	conversationId: string | null;
+	/**
+	 * A pessoa ainda é RETOMÁVEL — o cliente escreveu na janela recente e ao menos
+	 * uma conversa dela não foi encerrada.
+	 *
+	 * É o MESMO critério de "ainda viva" do funil de mídia (`conversaViva`, em
+	 * `sinais-do-funil`), e é por isso que ele não é derivado aqui: duas telas com
+	 * dois sentidos para "parada" é o defeito que este campo fecha.
+	 */
+	aindaViva: boolean;
 }
 
 export interface ResumoDoPasso {
@@ -205,6 +272,26 @@ export interface ResumoDoPasso {
 	ajuda: string;
 	/** Quantas pessoas PARARAM neste degrau. */
 	pessoas: number;
+	/**
+	 * Dessas, quantas ainda são RETOMÁVEIS — o cliente escreveu na janela recente
+	 * e a conversa não foi encerrada.
+	 *
+	 * Mesmo critério, mesma constante e mesmo fragmento que o `aindaVivas` do funil
+	 * de mídia (FIX-375): a palavra "parada" não pode ter dois sentidos no painel.
+	 */
+	pessoasVivas: number;
+	/**
+	 * Quantas pessoas ALCANÇARAM este degrau — o mesmo fato por trás dele, sem
+	 * exigir que a pessoa tenha parado ali.
+	 *
+	 * `pessoas` é a posição na escada (quem parou); `alcancaram` é o fato (quem
+	 * chegou a fazer aquilo e seguiu em frente). Os dois números respondem
+	 * perguntas diferentes, e é por isso que os dois existem: sem `alcancaram`,
+	 * o degrau "Se identificou" mostrava 8 quando **10** pessoas tinham se
+	 * identificado — as outras 2 avançaram para "Viu oferta" e sumiam do
+	 * degrau, fazendo a tela discordar do funil de mídia (e do CAC).
+	 */
+	alcancaram: number;
 }
 
 export interface PercursoResponse {

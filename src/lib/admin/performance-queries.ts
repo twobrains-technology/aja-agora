@@ -12,6 +12,7 @@
 
 import { type SQL, sql } from "drizzle-orm";
 import { db } from "@/db";
+import type { RecorteAB } from "@/lib/experimentos/registro";
 import { sqlEscreveuAlgoProprio, sqlSoPrePreenchida } from "@/lib/funil/mensagem-pre-preenchida";
 import {
 	bemDaChave,
@@ -20,30 +21,35 @@ import {
 	ROTULO_SEM_VALOR,
 	rotuloDaFaixa,
 } from "@/lib/funil/quem-chegou";
+import { computeCustoDeIA } from "./custo-de-ia";
+import { computeCustoDeMensagem } from "./custo-de-mensagem";
+import { condicaoDeBracoDaPessoa } from "./filtro-variante";
 import { rotularOrigem } from "./origem-label";
 import {
+	type ChaveEtapaFunil,
 	type CoberturaAtribuicao,
+	type CustosDoCpc,
 	ETAPAS_FUNIL_MIDIA,
 	ETAPAS_RAMIFICADAS,
 	type EtapaFunilMidia,
+	type FontesDoCusto,
 	type LinhaOrigem,
 	type PontoSerie,
 	type PortaDoFunil,
 	type QuemChegou,
 } from "./performance-types";
+import { diaDoNegocio } from "./periodo";
 import {
-	ARTIFACTS_DE_OFERTA_SQL,
 	chaveDaPessoa,
 	contagensDoFunil,
 	conversaAtribuida,
 	conversaIdentificada,
-	leadIdentificado,
+	conversaViva,
+	teveProposta,
 	VISITA_CONTAVEL,
 	VISITA_DE_GENTE,
+	viuOferta,
 } from "./sinais-do-funil";
-
-/** Quantos dias sem o cliente escrever até a conversa deixar de contar como viva. */
-const DIAS_PARA_CONSIDERAR_VIVA = 7;
 
 /** O dia que o negócio enxerga. A operação é brasileira; o servidor é UTC. */
 const TZ = "America/Sao_Paulo";
@@ -94,14 +100,76 @@ function num(valor: unknown): number {
 	return Number(valor ?? 0) || 0;
 }
 
+// ─── Recorte por braço de experimento (FIX-404) ─────────────────────────────
+
+/**
+ * O filtro do recorte no nível PESSOA, para as consultas desta tela.
+ *
+ * A tela conta PESSOAS, então o recorte é o da pessoa (`condicaoDeBracoDaPessoa`,
+ * a mesma régua do funil de Campanhas e do Mapa de calor) — nunca o da conversa
+ * solta. `[]` (o default) devolve `null`, e aí NENHUM SQL novo entra: é o que faz
+ * o filtro em "todas" não mover um número sequer (C4).
+ *
+ * A coluna do visitante entra por parâmetro porque cada consulta chega aqui com
+ * um alias diferente — `v.visitor_id` onde há `visits v`, e a visita da própria
+ * conversa onde só existe o alias `c` (ver `visitanteDaConversaSql`).
+ */
+function filtroDaPessoa(
+	de: Date,
+	ate: Date,
+	recorte: RecorteAB,
+	colunaVisitor: SQL = sql`v.visitor_id`,
+): SQL | null {
+	return condicaoDeBracoDaPessoa(recorte, {
+		de,
+		ate,
+		chave: chaveDaPessoa(de, ate, colunaVisitor),
+		colunaVisitor,
+	});
+}
+
+/**
+ * A visita da CONVERSA (alias `c`) — para as consultas que não têm `visits v`.
+ *
+ * Não é um segundo jeito de resolver identidade: é o MESMO caminho do
+ * `chaveDaPessoa`, só que entrando pela visita da própria conversa em vez de
+ * pela linha de `visits` do `FROM`. Sem `v` no escopo, um `JOIN` a mais mudaria a
+ * cardinalidade da consulta — e o recorte não pode mudar o que a tela conta.
+ */
+function visitanteDaConversaSql(conversa: SQL = sql`c`): SQL {
+	return sql`(SELECT vp.visitor_id FROM visits vp WHERE vp.id = ${conversa}.visit_id)`;
+}
+
+/**
+ * Aplica o recorte a uma condição.
+ *
+ * Sem recorte devolve o MESMO objeto `SQL` — o texto gerado fica idêntico ao de
+ * antes desta frente. Com recorte, pararentiza a condição inteira: sem os
+ * parênteses um `OR` interno (`leadComContato`) engoliria o recorte pela
+ * precedência e o balde deixaria de fechar.
+ */
+function comRecorte(condicao: SQL, filtro: SQL | null): SQL {
+	return filtro ? sql`(${condicao}) AND (${filtro})` : condicao;
+}
+
 // ─── Funil de mídia ─────────────────────────────────────────────────────────
 
-export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<EtapaFunilMidia[]> {
+export async function computeFunilMidia(
+	fromDate: Date,
+	toDate: Date,
+	recorte: RecorteAB = [],
+): Promise<EtapaFunilMidia[]> {
 	// `atribuida` é o coração da correção: TODA etapa depois de `visitas` conta
 	// só conversa que nasceu de uma visita (ver `conversaAtribuida`, na fonte
 	// única dos sinais do funil — a mesma que a tela de Campanhas usa para
 	// declarar as conversas que ficam fora).
 	const atribuida = conversaAtribuida(fromDate, toDate);
+
+	// A CHAVE DA PESSOA — a fonte única de `sinais-do-funil`, a mesma que a Porta
+	// e o Percurso usam. Cada degrau conta PESSOAS, não conversas: cinco conversas
+	// do mesmo telefone são uma pessoa (decisão do dono, 23/09/2026). Duas
+	// definições de pessoa divergem no primeiro caso raro, com o mesmo rótulo.
+	const chave = chaveDaPessoa(fromDate, toDate);
 
 	// AJA-01 — as duas metades do que era só "tem mensagem do usuário".
 	// `engajou` é o que o negócio chama de "iniciou a conversa";
@@ -109,118 +177,81 @@ export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<E
 	const engajou = sqlEscreveuAlgoProprio(sql`c.id`);
 	const soPrePreenchida = sqlSoPrePreenchida(sql`c.id`);
 
+	// O recorte do braço — `null` sem filtro (nenhum SQL novo entra).
+	const filtro = filtroDaPessoa(fromDate, toDate, recorte);
+
 	const resultado = await db.execute<Record<string, unknown>>(sql`
     SELECT
       (SELECT count(*) FROM visits v
-        WHERE v.created_at BETWEEN ${fromDate} AND ${toDate}
-          AND ${VISITA_CONTAVEL}) AS visitas,
+        WHERE ${comRecorte(
+					sql`v.created_at BETWEEN ${fromDate} AND ${toDate}
+          AND ${VISITA_CONTAVEL}`,
+					filtro,
+				)}) AS visitas,
 
-      (SELECT count(*) FROM conversations c
-        WHERE ${atribuida}) AS conversas,
+      (SELECT count(DISTINCT ${chave}) FROM conversations c
+        JOIN visits v ON v.id = c.visit_id
+        WHERE ${comRecorte(atribuida, filtro)}) AS conversas,
 
       -- 'engajadas' EXIGE mensagem que o produto NÃO escreveu (AJA-01).
       -- Era 'EXISTS messages.role='user'', e o CTA entrega a primeira fala já
       -- pronta: 47% das conversas web medidas em produção tinham uma única
       -- mensagem, e ela era o texto do anúncio. O predicado mora em
       -- 'src/lib/funil/mensagem-pre-preenchida', o mesmo da tela de Percurso.
-      (SELECT count(DISTINCT c.id) FROM conversations c
-        WHERE ${atribuida} AND ${engajou}) AS engajadas,
+      (SELECT count(DISTINCT ${chave}) FROM conversations c
+        JOIN visits v ON v.id = c.visit_id
+        WHERE ${comRecorte(sql`${atribuida} AND ${engajou}`, filtro)}) AS engajadas,
 
       -- O degrau que faltava: existe mensagem do cliente, e TODAS são texto do
       -- produto. Era o vazamento somado dentro de "Engajaram".
-      (SELECT count(DISTINCT c.id) FROM conversations c
-        WHERE ${atribuida} AND ${soPrePreenchida}) AS so_pre_preenchida,
+      (SELECT count(DISTINCT ${chave}) FROM conversations c
+        JOIN visits v ON v.id = c.visit_id
+        WHERE ${comRecorte(sql`${atribuida} AND ${soPrePreenchida}`, filtro)}) AS so_pre_preenchida,
 
-      -- Conta CONVERSAS com lead identificado, não leads: uma conversa com dois
-      -- leads (dedup imperfeito) contaria duas vezes e passaria do total. O
-      -- predicado (nome E contato) mora em sinais-do-funil — o telefone que o
-      -- WhatsApp entrega sozinho não identifica ninguém.
-      (SELECT count(DISTINCT c.id) FROM conversations c
-        JOIN leads l ON l.conversation_id = c.id
-          AND l.is_simulated = false
-          AND ${leadIdentificado(sql`l`)}
-        WHERE ${atribuida}) AS identificados,
+      -- Conta PESSOAS identificadas: a regra é do CANAL e o fragmento é o
+      -- compartilhado com Percurso, Exportação e Campanhas.
+      (SELECT count(DISTINCT ${chave}) FROM conversations c
+        JOIN visits v ON v.id = c.visit_id
+        WHERE ${comRecorte(
+					sql`${atribuida} AND ${conversaIdentificada(sql`c`)}`,
+					filtro,
+				)}) AS identificados,
 
-      (SELECT count(DISTINCT c.id) FROM conversations c
-        JOIN messages m ON m.conversation_id = c.id
-        JOIN artifacts a ON a.message_id = m.id
-        WHERE ${atribuida}
-          AND a.type IN (${ARTIFACTS_DE_OFERTA_SQL})) AS viram_oferta,
+      -- 'Viram oferta' lê o MESMO predicado da escada do Percurso e da
+      -- exportação (port de a2bc3024). Com JOIN direto na tabela de artifacts,
+      -- a oferta que o cliente não chegou a ver contava aqui e não contava lá —
+      -- e o total do funil discordava do degrau logo abaixo.
+      (SELECT count(DISTINCT ${chave}) FROM conversations c
+        JOIN visits v ON v.id = c.visit_id
+        WHERE ${comRecorte(sql`${atribuida} AND ${viuOferta(sql`c`)}`, filtro)}) AS viram_oferta,
 
-      (SELECT count(DISTINCT c.id) FROM conversations c
+      (SELECT count(DISTINCT ${chave}) FROM conversations c
+        JOIN visits v ON v.id = c.visit_id
         JOIN bevi_proposals bp ON bp.conversation_id = c.id
-        WHERE ${atribuida}) AS propostas,
+        WHERE ${comRecorte(atribuida, filtro)}) AS propostas,
 
-      (SELECT count(DISTINCT c.id) FROM conversations c
+      (SELECT count(DISTINCT ${chave}) FROM conversations c
+        JOIN visits v ON v.id = c.visit_id
         JOIN leads l ON l.conversation_id = c.id
           AND l.is_simulated = false
           AND l.stage = 'fechado_ganho'
-        WHERE ${atribuida}) AS fechados
+        WHERE ${comRecorte(atribuida, filtro)}) AS fechados
   `);
 
-	// ONDE CADA CONVERSA PAROU — e se ela ainda está de pé.
-	//
-	// O funil dizia "44,4% saíram aqui" e parava por aí. Duas conversas paradas
-	// na mesma etapa pedem decisões opostas: a que morreu manda consertar o
-	// agente; a que ainda responde manda puxar de volta (o watchdog de retomada
-	// existe exatamente para isso). Sem separar, o painel manda consertar o que
-	// só precisava de um empurrão.
-	//
-	// `lastInboundAt` não serve como sinal de vida: é específico do WhatsApp
-	// (schema.ts). A última mensagem do CLIENTE vale nos dois canais.
-	const paradas = await db.execute<Record<string, unknown>>(sql`
-    WITH conv AS (
-      SELECT
-        c.id,
-        c.status,
-        (SELECT max(m.created_at) FROM messages m
-          WHERE m.conversation_id = c.id AND m.role = 'user') AS ultimo_inbound,
-      -- O ONDE CADA CONVERSA PAROU agora tem um degrau a mais: quem só mandou
-      -- a mensagem pré-preenchida era contado como engajado. As duas colunas
-      -- ("engajou" e "so_pre_preenchida") saem do MESMO predicado que as
-      -- contagens acima — duas definições de "escreveu" divergiriam no primeiro
-      -- dia, com o mesmo rótulo na mesma tela.
-        ${engajou} AS engajou,
-        ${soPrePreenchida} AS so_pre_preenchida,
-        ${conversaIdentificada(sql`c`)} AS identificou,
-        EXISTS (SELECT 1 FROM messages m
-          JOIN artifacts a ON a.message_id = m.id
-          WHERE m.conversation_id = c.id
-            AND a.type IN (${ARTIFACTS_DE_OFERTA_SQL})) AS viu_oferta,
-        EXISTS (SELECT 1 FROM bevi_proposals bp
-          WHERE bp.conversation_id = c.id) AS teve_proposta,
-        EXISTS (SELECT 1 FROM leads l
-          WHERE l.conversation_id = c.id AND l.is_simulated = false
-            AND l.stage = 'fechado_ganho') AS fechou
-      FROM conversations c
-      WHERE ${atribuida}
-    ),
-    profundidade AS (
-      SELECT
-        id,
-        CASE
-          WHEN fechou THEN 7
-          WHEN teve_proposta THEN 6
-          WHEN viu_oferta THEN 5
-          WHEN identificou THEN 4
-          WHEN engajou THEN 3
-          WHEN so_pre_preenchida THEN 2
-          ELSE 1
-        END AS etapa,
-        -- Viva = o cliente escreveu na janela recente e ninguém encerrou a
-        -- conversa. Conversa encerrada não é retomável, por mais nova que seja.
-        (ultimo_inbound >= now() - ${sql.raw(`interval '${DIAS_PARA_CONSIDERAR_VIVA} days'`)}
-          AND status = 'active') AS viva
-      FROM conv
-    )
-    SELECT etapa, count(*) AS pararam, count(*) FILTER (WHERE viva) AS vivas
-    FROM profundidade GROUP BY etapa
-  `);
+	// ONDE CADA PESSOA PAROU — e se ela ainda está de pé. A leitura mora em
+	// `pessoasQuePararam` (com o critério de vida compartilhado com o Percurso, em
+	// `conversaViva`); aqui só o agregado por degrau entra no funil.
+	const paradas = await pessoasQuePararam(fromDate, toDate, recorte);
 
-	// Índice da etapa (1..6) → quantas pararam ali e quantas seguem vivas.
-	const pararamPorEtapa = new Map<number, { pararam: number; vivas: number }>();
-	for (const p of paradas.rows) {
-		pararamPorEtapa.set(num(p.etapa), { pararam: num(p.pararam), vivas: num(p.vivas) });
+	// Chave da etapa → quantas PESSOAS pararam ali e quantas seguem vivas. A
+	// unidade do mapa é a mesma do `count` acima (pessoa), senão a soma das
+	// paradas deixaria de fechar com o topo do funil.
+	const pararamPorEtapa = new Map<string, { pararam: number; vivas: number }>();
+	for (const p of paradas) {
+		const atual = pararamPorEtapa.get(p.etapa) ?? { pararam: 0, vivas: 0 };
+		atual.pararam += 1;
+		if (p.viva) atual.vivas += 1;
+		pararamPorEtapa.set(p.etapa, atual);
 	}
 
 	const linha = resultado.rows[0] ?? {};
@@ -240,7 +271,7 @@ export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<E
 				: Math.max(0, pct(anterior - count, anterior));
 		// `visitas` é o índice 0 do array e não é etapa de conversa — a
 		// profundidade 1 ("abriu e não escreveu") casa com `conversas`, no índice 1.
-		const parada = pararamPorEtapa.get(i);
+		const parada = pararamPorEtapa.get(etapa.chave);
 		const resultadoEtapa: EtapaFunilMidia = {
 			chave: etapa.chave,
 			label: etapa.label,
@@ -260,26 +291,150 @@ export async function computeFunilMidia(fromDate: Date, toDate: Date): Promise<E
 }
 
 /**
+ * Uma PESSOA parada num degrau do funil de mídia — e se ela ainda está viva.
+ *
+ * Existe como leitura separada por duas razões: a tela precisa do AGREGADO por
+ * degrau, e o teste de equivalência precisa dos IDS — comparar contagem entre
+ * duas telas não prova que elas falam das mesmas pessoas.
+ */
+export interface PessoaParada {
+	/** A chave de `chaveDaPessoa`: o contato quando conhecido, senão o visitante. */
+	chave: string;
+	/** O degrau MAIS FUNDO que a pessoa alcançou — uma pessoa, um degrau. */
+	etapa: ChaveEtapaFunil;
+	/** O cliente escreveu na janela recente e a conversa não foi encerrada. */
+	viva: boolean;
+}
+
+/**
+ * ONDE CADA PESSOA PAROU — e se ela ainda está de pé.
+ *
+ * O funil dizia "44,4% saíram aqui" e parava por aí. Duas pessoas paradas na
+ * mesma etapa pedem decisões opostas: a que morreu manda consertar o agente; a
+ * que ainda responde manda puxar de volta (o watchdog de retomada existe
+ * exatamente para isso). Sem separar, o painel manda consertar o que só
+ * precisava de um empurrão.
+ *
+ * `lastInboundAt` não serve como sinal de vida: é específico do WhatsApp
+ * (schema). A última mensagem do CLIENTE vale nos dois canais — e o critério
+ * vive em `conversaViva` (`sinais-do-funil`), o MESMO que o Percurso lê.
+ *
+ * A parada é por PESSOA, no degrau mais fundo que ela alcançou. Contando
+ * conversa, quem voltou e abriu duas — uma que engajou, outra que virou
+ * proposta — aparecia parada em dois degraus, e a soma das paradas passava do
+ * topo do funil (que conta pessoa).
+ */
+export async function pessoasQuePararam(
+	fromDate: Date,
+	toDate: Date,
+	recorte: RecorteAB = [],
+): Promise<PessoaParada[]> {
+	const atribuida = conversaAtribuida(fromDate, toDate);
+	// A chave da PESSOA — a mesma de computePorta e da escada do Percurso.
+	const chave = chaveDaPessoa(fromDate, toDate);
+	const engajou = sqlEscreveuAlgoProprio(sql`c.id`);
+	const soPrePreenchida = sqlSoPrePreenchida(sql`c.id`);
+	const filtro = filtroDaPessoa(fromDate, toDate, recorte);
+
+	const resultado = await db.execute<Record<string, unknown>>(sql`
+    WITH conv AS (
+      SELECT
+        ${chave} AS chave,
+        ${conversaViva(sql`(SELECT max(m.created_at) FROM messages m
+          WHERE m.conversation_id = c.id AND m.role = 'user')`)} AS viva,
+      -- O ONDE CADA CONVERSA PAROU tem um degrau a mais: quem só mandou a
+      -- mensagem pré-preenchida era contado como engajado. As duas colunas
+      -- ("engajou" e "so_pre_preenchida") saem do MESMO predicado que as
+      -- contagens do funil — duas definições de "escreveu" divergiriam no
+      -- primeiro dia, com o mesmo rótulo na mesma tela.
+        ${engajou} AS engajou,
+        ${soPrePreenchida} AS so_pre_preenchida,
+        ${conversaIdentificada(sql`c`)} AS identificou,
+        ${viuOferta(sql`c`)} AS viu_oferta,
+        ${teveProposta(sql`c`)} AS teve_proposta,
+        EXISTS (SELECT 1 FROM leads l
+          WHERE l.conversation_id = c.id AND l.is_simulated = false
+            AND l.stage = 'fechado_ganho') AS fechou
+      FROM conversations c
+      JOIN visits v ON v.id = c.visit_id
+      WHERE ${comRecorte(atribuida, filtro)}
+    ),
+    profundidade AS (
+      SELECT
+        chave,
+        max(CASE
+          WHEN fechou THEN 7
+          WHEN teve_proposta THEN 6
+          WHEN viu_oferta THEN 5
+          WHEN identificou THEN 4
+          WHEN engajou THEN 3
+          WHEN so_pre_preenchida THEN 2
+          ELSE 1
+        END) AS etapa,
+        -- Por PESSOA: basta UMA conversa viva para ela ser retomável.
+        bool_or(viva) AS viva
+      FROM conv
+      GROUP BY chave
+    )
+    SELECT chave, etapa, viva FROM profundidade
+  `);
+
+	return resultado.rows.map((linha) => {
+		const indice = Math.min(Math.max(num(linha.etapa), 1), ETAPAS_FUNIL_MIDIA.length - 1);
+		return {
+			chave: String(linha.chave),
+			etapa: ETAPAS_FUNIL_MIDIA[indice].chave,
+			viva: linha.viva === true,
+		};
+	});
+}
+
+/**
  * O limiar de entrada: quantas chegadas viraram conversa.
  *
  * Separado do funil de propósito — ver `PortaDoFunil`.
  */
-export async function computePorta(fromDate: Date, toDate: Date): Promise<PortaDoFunil> {
+export async function computePorta(
+	fromDate: Date,
+	toDate: Date,
+	recorte: RecorteAB = [],
+): Promise<PortaDoFunil> {
+	// Sem recorte os dois fragmentos abaixo são `null` e o SQL sai igual ao de
+	// antes desta frente. O recorte das subqueries de CONVERSA passa pela visita
+	// da própria conversa (`visitanteDaConversaSql`): elas não têm `visits v` no
+	// `FROM`, e acrescentar um `JOIN` mudaria a contagem justamente quando o
+	// recorte entra — o recorte não pode mudar o que a tela conta.
+	const filtroDaVisita = filtroDaPessoa(fromDate, toDate, recorte);
+	const filtroDaConversa = filtroDaPessoa(
+		fromDate,
+		toDate,
+		recorte,
+		visitanteDaConversaSql(sql`c`),
+	);
 	const resultado = await db.execute<Record<string, unknown>>(sql`
     SELECT
       -- PESSOAS, com a MESMA chave que a tela de Percurso usa (sinais-do-funil).
       -- Duas telas contando a mesma população por definicoes diferentes foi o
       -- defeito que este numero existe para fechar.
       (SELECT count(DISTINCT ${chaveDaPessoa(fromDate, toDate)}) FROM visits v
-        WHERE v.created_at BETWEEN ${fromDate} AND ${toDate}
-          AND ${VISITA_DE_GENTE}) AS pessoas,
+        WHERE ${comRecorte(
+					sql`v.created_at BETWEEN ${fromDate} AND ${toDate}
+          AND ${VISITA_DE_GENTE}`,
+					filtroDaVisita,
+				)}) AS pessoas,
       (SELECT count(*) FROM visits v
-        WHERE v.created_at BETWEEN ${fromDate} AND ${toDate}
-          AND ${VISITA_CONTAVEL}) AS visitas,
+        WHERE ${comRecorte(
+					sql`v.created_at BETWEEN ${fromDate} AND ${toDate}
+          AND ${VISITA_CONTAVEL}`,
+					filtroDaVisita,
+				)}) AS visitas,
       (SELECT count(*) FROM conversations c
-        WHERE c.is_simulated = false
+        WHERE ${comRecorte(
+					sql`c.is_simulated = false
           AND c.visit_id IS NOT NULL
-          AND c.created_at BETWEEN ${fromDate} AND ${toDate}) AS conversas,
+          AND c.created_at BETWEEN ${fromDate} AND ${toDate}`,
+					filtroDaConversa,
+				)}) AS conversas,
       -- As mesmas conversas, contadas por PESSOA. É este o número que fecha com a
       -- escada do Percurso; "conversas" fica ao lado, como sublinha.
       -- A visita TAMBÉM precisa estar no período. Sem isso, quem chegou ontem às
@@ -288,19 +443,28 @@ export async function computePorta(fromDate: Date, toDate: Date): Promise<PortaD
       (SELECT count(DISTINCT ${chaveDaPessoa(fromDate, toDate)})
         FROM conversations c
         JOIN visits v ON v.id = c.visit_id
-        WHERE c.is_simulated = false
+        WHERE ${comRecorte(
+					sql`c.is_simulated = false
           AND c.created_at BETWEEN ${fromDate} AND ${toDate}
-          AND v.created_at BETWEEN ${fromDate} AND ${toDate}) AS pessoas_que_conversaram,
+          AND v.created_at BETWEEN ${fromDate} AND ${toDate}`,
+					filtroDaVisita,
+				)}) AS pessoas_que_conversaram,
       (SELECT count(*) FROM conversations c
-        WHERE c.is_simulated = false
+        WHERE ${comRecorte(
+					sql`c.is_simulated = false
           AND c.visit_id IS NOT NULL
           AND c.channel = 'web'
-          AND c.created_at BETWEEN ${fromDate} AND ${toDate}) AS web,
+          AND c.created_at BETWEEN ${fromDate} AND ${toDate}`,
+					filtroDaConversa,
+				)}) AS web,
       (SELECT count(*) FROM conversations c
-        WHERE c.is_simulated = false
+        WHERE ${comRecorte(
+					sql`c.is_simulated = false
           AND c.visit_id IS NOT NULL
           AND c.channel = 'whatsapp'
-          AND c.created_at BETWEEN ${fromDate} AND ${toDate}) AS whatsapp
+          AND c.created_at BETWEEN ${fromDate} AND ${toDate}`,
+					filtroDaConversa,
+				)}) AS whatsapp
   `);
 	const linha = resultado.rows[0] ?? {};
 	const pessoas = num(linha.pessoas);
@@ -323,6 +487,42 @@ export async function computePorta(fromDate: Date, toDate: Date): Promise<PortaD
 
 // ─── "Quem chegou" — o cheiro de perfil ────────────────────────────────
 
+/** O texto de um número declarado, em `jsonb` — a forma que o `::numeric` aceita. */
+const PADRAO_NUMERO_DECLARADO = "^[0-9]+([.][0-9]+)?$";
+
+/**
+ * O VALOR DECLARADO pela pessoa, do jeito que o vendedor o grava no metadata.
+ *
+ * Ler só `qualifyAnswers.creditMax` media um recorte do produto, não o que a
+ * pessoa disse: aquele campo é escrito pela BUSCA (o motor livre grava ali o
+ * teto que ele levou à Bevi, `turno-livre.ts`), então quem declarou um valor e
+ * não chegou a buscar — ou fechou uma carta de outro valor — caía em "valor
+ * não informado" no perfil.
+ *
+ * As três fontes, na ordem em que o dado é mais fiel ao que o cliente falou:
+ *  1. `qualifyAnswers.creditMax` — a busca/qualificação (o antigo e o novo);
+ *  2. `qualifyAnswers.valorDoBemAlvo` — o preço do bem que ele declarou, gravado
+ *     pelo mesmo turno da busca;
+ *  3. `contractOffer.creditValue` — a carta que ele escolheu no fecho
+ *     (`metaDoFecho`, o registro do vendedor livre).
+ *
+ * A conversão é guardada por regex em cada candidato: o `jsonb` é livre, e um
+ * `::numeric` direto derrubaria a tela inteira no dia em que alguém gravar
+ * "80 mil" ali.
+ */
+export function valorDeclaradoDaConversa(conversa: SQL = sql`c`): SQL {
+	const candidatos = [
+		sql`${conversa}.metadata -> 'qualifyAnswers' ->> 'creditMax'`,
+		sql`${conversa}.metadata -> 'qualifyAnswers' ->> 'valorDoBemAlvo'`,
+		sql`${conversa}.metadata -> 'contractOffer' ->> 'creditValue'`,
+	];
+	const numericos = candidatos.map(
+		(candidato) =>
+			sql`CASE WHEN ${candidato} ~ ${PADRAO_NUMERO_DECLARADO} THEN (${candidato})::numeric END`,
+	);
+	return sql`COALESCE(${sql.join(numericos, sql`, `)})`;
+}
+
 /**
  * A distribuição de QUEM INICIOU A CONVERSA, por bem e por faixa de valor.
  *
@@ -330,24 +530,31 @@ export async function computePorta(fromDate: Date, toDate: Date): Promise<PortaD
  * separou do texto do anúncio. Misturar quem só apertou enviar no CTA com quem
  * escreveu algo mudaria o perfil — e o perfil é justamente o que se quer ler.
  */
-export async function computeQuemChegou(fromDate: Date, toDate: Date): Promise<QuemChegou> {
-	// O valor vem de `metadata.qualifyAnswers.creditMax` — o que a pessoa informou
-	// no gate de crédito. A conversão é guardada por regex: o `jsonb` é livre, e
-	// um `::numeric` direto derrubaria a tela inteira no dia em que alguém gravar
-	// "80 mil" ali.
+export async function computeQuemChegou(
+	fromDate: Date,
+	toDate: Date,
+	recorte: RecorteAB = [],
+): Promise<QuemChegou> {
+	// A distribuição é de CONVERSAS, e cada conversa pertence a uma pessoa só —
+	// o recorte da pessoa parte o perfil em baldes que somam o total.
+	const filtro = filtroDaPessoa(fromDate, toDate, recorte, visitanteDaConversaSql(sql`c`));
+	// O BEM vem de `metadata.currentCategory` — a chave que o vendedor livre grava
+	// quando busca (`turno-livre.ts`) e que a lista de Conversas e o pipeline já
+	// leem. O VALOR vem de `valorDeclaradoDaConversa`, que junta as três gravações
+	// do metadata em vez de só a da busca.
 	const resultado = await db.execute<Record<string, unknown>>(sql`
     SELECT
       c.metadata->>'currentCategory' AS bem,
-      CASE
-        WHEN c.metadata->'qualifyAnswers'->>'creditMax' ~ '^[0-9]+(\.[0-9]+)?$'
-        THEN (c.metadata->'qualifyAnswers'->>'creditMax')::numeric
-      END AS valor,
+      ${valorDeclaradoDaConversa(sql`c`)} AS valor,
       count(*) AS total
     FROM conversations c
-    WHERE c.is_simulated = false
+    WHERE ${comRecorte(
+			sql`c.is_simulated = false
       AND c.visit_id IS NOT NULL
       AND c.created_at BETWEEN ${fromDate} AND ${toDate}
-      AND ${sqlEscreveuAlgoProprio(sql`c.id`)}
+      AND ${sqlEscreveuAlgoProprio(sql`c.id`)}`,
+			filtro,
+		)}
     GROUP BY 1, 2
   `);
 
@@ -388,7 +595,11 @@ export async function computeQuemChegou(fromDate: Date, toDate: Date): Promise<Q
 
 // ─── Desempenho por origem ──────────────────────────────────────────────────
 
-export async function computeOrigens(fromDate: Date, toDate: Date): Promise<LinhaOrigem[]> {
+export async function computeOrigens(
+	fromDate: Date,
+	toDate: Date,
+	recorte: RecorteAB = [],
+): Promise<LinhaOrigem[]> {
 	// O host do referrer só entra no agrupamento quando NÃO há campanha: senão
 	// uma mesma campanha alcançada por dois referrers viraria duas linhas com o
 	// mesmo nome na tela.
@@ -420,7 +631,8 @@ export async function computeOrigens(fromDate: Date, toDate: Date): Promise<Linh
       -- As cinco contagens vêm de contagensDoFunil, o MESMO fragmento que a
       -- tela de Campanhas usa. Era aqui o único lugar que sabia medir o degrau;
       -- agrupar por campanha não é motivo para ter uma segunda contagem.
-      ${contagensDoFunil()}
+      -- O recorte entra por dentro do fragmento: sem recorte, SQL idêntico ao de hoje.
+      ${contagensDoFunil(fromDate, toDate, recorte)}
     FROM visits v
     LEFT JOIN conversations c ON c.visit_id = v.id AND c.is_simulated = false
     LEFT JOIN leads l ON l.conversation_id = c.id AND l.is_simulated = false
@@ -475,31 +687,52 @@ export async function computeOrigens(fromDate: Date, toDate: Date): Promise<Linh
 
 // ─── Série temporal ─────────────────────────────────────────────────────────
 
-export async function computeSerie(fromDate: Date, toDate: Date): Promise<PontoSerie[]> {
+export async function computeSerie(
+	fromDate: Date,
+	toDate: Date,
+	recorte: RecorteAB = [],
+): Promise<PontoSerie[]> {
+	// A série é o funil COM recorte, dia a dia — as três curvas passam pelo mesmo
+	// filtro da pessoa, senão o gráfico mostraria um recorte e as barras do topo
+	// outro. Sem recorte o filtro é `null` e nenhum SQL novo entra.
+	const filtroDaVisita = filtroDaPessoa(fromDate, toDate, recorte);
+	const filtroDaConversa = filtroDaPessoa(
+		fromDate,
+		toDate,
+		recorte,
+		visitanteDaConversaSql(sql`c`),
+	);
 	const resultado = await db.execute<Record<string, unknown>>(sql`
     WITH v AS (
       SELECT ${diaLocal(sql`v.created_at`)} AS dia, count(*) AS total
-      FROM visits v WHERE v.created_at BETWEEN ${fromDate} AND ${toDate}
-        AND ${VISITA_CONTAVEL}
+      FROM visits v WHERE ${comRecorte(
+				sql`v.created_at BETWEEN ${fromDate} AND ${toDate}
+        AND ${VISITA_CONTAVEL}`,
+				filtroDaVisita,
+			)}
       GROUP BY 1
     ),
     -- Mesma população do funil de mídia (conversa COM origem). Contar aqui o
     -- total e lá o atribuído colocaria dois números diferentes com o mesmo
     -- nome na mesma tela.
     c AS (
-      SELECT ${diaLocal(sql`created_at`)} AS dia, count(*) AS total
-      FROM conversations
-      WHERE is_simulated = false AND visit_id IS NOT NULL
-        AND created_at BETWEEN ${fromDate} AND ${toDate} GROUP BY 1
+      SELECT ${diaLocal(sql`c.created_at`)} AS dia, count(*) AS total
+      FROM conversations c
+      WHERE ${comRecorte(
+				sql`c.is_simulated = false AND c.visit_id IS NOT NULL
+        AND c.created_at BETWEEN ${fromDate} AND ${toDate}`,
+				filtroDaConversa,
+			)} GROUP BY 1
     ),
     l AS (
       SELECT ${diaLocal(sql`c.created_at`)} AS dia, count(DISTINCT c.id) AS total
       FROM conversations c
-      JOIN leads l ON l.conversation_id = c.id
-        AND l.is_simulated = false
-        AND ${leadIdentificado(sql`l`)}
-      WHERE c.is_simulated = false AND c.visit_id IS NOT NULL
-        AND c.created_at BETWEEN ${fromDate} AND ${toDate} GROUP BY 1
+      WHERE ${comRecorte(
+				sql`c.is_simulated = false AND c.visit_id IS NOT NULL
+        AND ${conversaIdentificada(sql`c`)}
+        AND c.created_at BETWEEN ${fromDate} AND ${toDate}`,
+				filtroDaConversa,
+			)} GROUP BY 1
     )
     SELECT
       COALESCE(v.dia, c.dia, l.dia) AS dia,
@@ -532,13 +765,21 @@ export async function computeSerie(fromDate: Date, toDate: Date): Promise<PontoS
 
 // ─── Cobertura de atribuição ────────────────────────────────────────────────
 
-export async function computeCobertura(fromDate: Date, toDate: Date): Promise<CoberturaAtribuicao> {
+export async function computeCobertura(
+	fromDate: Date,
+	toDate: Date,
+	recorte: RecorteAB = [],
+): Promise<CoberturaAtribuicao> {
+	// Com recorte, a cobertura é a do RECORTE — senão o card diria que 90% do
+	// funil tem origem enquanto as barras mostram só o braço A.
+	const filtro = filtroDaPessoa(fromDate, toDate, recorte, visitanteDaConversaSql(sql`c`));
 	const resultado = await db.execute<Record<string, unknown>>(sql`
     SELECT
-      count(*) FILTER (WHERE visit_id IS NOT NULL) AS com_origem,
-      count(*) AS total
-    FROM conversations
-    WHERE is_simulated = false AND created_at BETWEEN ${fromDate} AND ${toDate}
+      count(*) FILTER (WHERE c.is_simulated = false AND c.visit_id IS NOT NULL) AS com_origem,
+      count(*) FILTER (WHERE c.is_simulated = false) AS total,
+      count(*) FILTER (WHERE c.is_simulated = true) AS de_teste
+    FROM conversations c
+    WHERE ${comRecorte(sql`c.created_at BETWEEN ${fromDate} AND ${toDate}`, filtro)}
   `);
 
 	const linha = resultado.rows[0] ?? {};
@@ -549,5 +790,101 @@ export async function computeCobertura(fromDate: Date, toDate: Date): Promise<Co
 		conversasComOrigem,
 		conversasTotal,
 		percent: pct(conversasComOrigem, conversasTotal),
+		// A conversa de TESTE não entra no total do funil (é o recorte que a tela
+		// declara) e não pode entrar aqui: misturá-la faria a porcentagem de
+		// atribuição cair por causa de conversa que não é do negócio.
+		conversasDeTeste: num(linha.de_teste),
+	};
+}
+
+// ─── Custos do período (o CPC) ──────────────────────────────────────────────
+
+/**
+ * AS FONTES que a tela de custo DECLARA, uma por metade do bloco.
+ *
+ * Fonte única de texto e de fato: `computeCustosDoCpc` devolve exatamente esta
+ * lista, e é ela que a tela repete. O custo de IA vinha da Metrics API do
+ * Langfuse até 19/10/2026; desde então o turno grava o consumo em `uso_de_ia`
+ * (`src/lib/admin/custo-de-ia.ts`, `lerCustoLocal`) — declarar "Langfuse" aqui
+ * era atribuir o número a um serviço que não é mais lido (L43).
+ */
+export const FONTES_DOS_CUSTOS: FontesDoCusto = {
+	investimento: "Meta (reportado)",
+	custoDeIA: "Postgres (uso_de_ia)",
+	custoDeMensagem: "Postgres (volume) + cadastro de preço",
+	contagens: "Postgres",
+};
+
+/**
+ * O bloco de custos da tela: os três custos do período, o denominador e as
+ * fontes declaradas.
+ *
+ * Cada metade lê de onde é dona do fato — investimento em `meta_insights_diarios`
+ * (nível `campaign`, senão os sub-níveis do mesmo gasto entrariam duas vezes),
+ * custo de IA no livro-caixa local `uso_de_ia`, custo de mensagem no Postgres +
+ * cadastro. Nenhuma é derivada de tabela paralela nem de constante em código.
+ *
+ * As fontes DECLARADAS são `FONTES_DOS_CUSTOS`: a tela repete a lista, e dizer
+ * "Langfuse" ali era mentir sobre a origem do número desde 19/10/2026.
+ *
+ * Ausência de número é `null`/motivo, nunca zero: quem decide o que mostrar é o
+ * componente (`calcularCpc`), com a mesma lei do resto da frente.
+ */
+export async function computeCustosDoCpc(
+	de: Date,
+	ate: Date,
+	recorte: RecorteAB = [],
+): Promise<CustosDoCpc> {
+	const deDia = diaDoNegocio(de);
+	const ateDia = diaDoNegocio(ate);
+	// O gasto da Meta não se divide por braço de teste (D6): `meta_insights_diarios`
+	// é do PERÍODO INTEIRO e não tem coluna de braço. Com recorte ativo o
+	// investimento sai `null` e a tela declara o motivo — ratear o gasto pelo funil
+	// recortado inventaria um CPC por onde a verba passa.
+	const custoNaoAplicavelAoRecorte = recorte.length > 0;
+
+	const [investimento, contagens, custoDeIA, custoDeMensagem] = await Promise.all([
+		// A meta não reporta gasto como zero: ou há linha, ou não há leitura. Por
+		// isso `linhas = 0` vira `null` ("não reportado") e não R$ 0,00.
+		db.execute<Record<string, unknown>>(sql`
+      SELECT count(*)::int AS linhas, sum(spend_cents) AS total_cents
+      FROM meta_insights_diarios
+      WHERE nivel = 'campaign' AND data BETWEEN ${deDia} AND ${ateDia}
+    `),
+		// As MESMAS contagens do funil — uma definição de "qualificado" só. Com
+		// recorte, são as contagens do RECORTE, para o bloco de custo falar da
+		// mesma população que o funil logo acima.
+		db.execute<Record<string, unknown>>(sql`
+      SELECT ${contagensDoFunil(de, ate, recorte)}
+      FROM visits v
+      LEFT JOIN conversations c ON c.visit_id = v.id AND c.is_simulated = false
+      LEFT JOIN leads l ON l.conversation_id = c.id AND l.is_simulated = false
+      LEFT JOIN bevi_proposals bp ON bp.conversation_id = c.id
+      WHERE v.created_at BETWEEN ${de} AND ${ate}
+        AND ${VISITA_DE_GENTE}
+    `),
+		computeCustoDeIA({ de, ate }),
+		computeCustoDeMensagem({ de, ate }),
+	]);
+
+	const linhaInvestimento = investimento.rows[0] ?? {};
+	const linhaContagens = contagens.rows[0] ?? {};
+	const temLeituraDaMeta = num(linhaInvestimento.linhas) > 0;
+
+	return {
+		investimentoMetaCents: custoNaoAplicavelAoRecorte
+			? null
+			: temLeituraDaMeta
+				? num(linhaInvestimento.total_cents)
+				: null,
+		custoDeIA,
+		custoDeMensagem,
+		contagens: {
+			conversas: num(linhaContagens.conversas),
+			identificados: num(linhaContagens.identificados),
+			qualificados: num(linhaContagens.qualificados),
+		},
+		fontes: FONTES_DOS_CUSTOS,
+		custoNaoAplicavelAoRecorte,
 	};
 }
