@@ -150,7 +150,9 @@ describe("P314/L25 — o julgamento registra o uso da IA", () => {
 		});
 		// O retorno acompanha o livro-caixa: entrada líquida, não o total do SDK.
 		expect(out.tokensInput).toBe(9_000);
-		// Soneto do juiz sem preço conferido: custo DESCONHECIDO, nunca inventado.
-		expect(inserts[0].values.custoUsdCents).toBeNull();
+		// B15: `claude-sonnet-4-6` tem preço cadastrado (`precos.ts`, 3.00/15.00 USD
+		// por milhão; cache 0.30/3.75). Custo: 9.000·3e-6 + 400·15e-6 + 2.800·0.3e-6
+		// + 200·3.75e-6 = 0,03459 USD = 3,459 ¢ → arredondado para 3.
+		expect(inserts[0].values.custoUsdCents).toBe(3);
 	});
 });

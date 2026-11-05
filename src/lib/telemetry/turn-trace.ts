@@ -28,6 +28,8 @@ import type { UIMessage, UIMessageStreamWriter } from "ai";
 import type { TurnEvent } from "@/lib/agent/orchestrator/types";
 import { registrarDuracaoDoTurno } from "@/lib/observability/sinais/duracao-do-turno";
 import { publicarFunilNoLangfuse } from "@/lib/observability/sinais/funil-scores";
+import { registrarNumeroForaDaCota } from "@/lib/observability/sinais/numero-fora-da-cota";
+import { registrarPromessaSemFato } from "@/lib/observability/sinais/promessa-sem-fato";
 
 export type TurnTraceChannel = "web" | "whatsapp";
 
@@ -74,6 +76,17 @@ export type TurnTraceRecord = {
 	finishReason: string | null;
 	/** Epoch ms do início do turno (ordenação na ingestão). */
 	startedAt: number;
+	/** A fala do assistente no turno, concatenada dos text-delta. Alimenta os
+	 *  detectores de sinais (`numero_fora_da_cota`, `promessa_sem_fato`) que
+	 *  fecham aqui — o único ponto por onde os dois canais passam. */
+	fala: string;
+	/** Fala do CLIENTE neste turno (o que ele disse/disparou). Eco dela na fala
+	 *  do agente não é alucinação — o detector de número usa como fonte. */
+	falaDoCliente: string | null;
+	/** Payloads dos artifacts emitidos no turno (o que as tools devolveram e
+	 *  virou card). Fonte de número conhecido para o detector de alucinação;
+	 *  resultados de tool sem artifact não passam por aqui. */
+	resultadosDeTool: unknown[];
 	/**
 	 * Quantas falas do CLIENTE esta conversa já tinha quando o turno começou —
 	 * `0` no primeiro contato.
@@ -95,6 +108,9 @@ export type TurnTraceContext = {
 	channel: TurnTraceChannel;
 	/** Persona conhecida no início do turno (web tem; whatsapp normalmente não). */
 	persona?: string | null;
+	/** O que o cliente disse/disparou neste turno — alimenta o detector de
+	 *  número (ecoar o cliente é escutar, não inventar). */
+	falaDoCliente?: string | null;
 };
 
 /** Dependências injetáveis — relógio/id/sink. Defaults reais; testes stubam. */
@@ -118,6 +134,28 @@ export type TurnTraceDeps = {
 export function emitTurnTrace(record: TurnTraceRecord): void {
 	console.log(`[turn-trace] ${JSON.stringify(record)}`);
 	publicarFunilNoLangfuse(record);
+	// Detectores de fala (B4/B5) — o fechamento do turno é o único ponto por onde
+	// os dois canais passam. Fire-and-forget, falha engolida (cada detector já
+	// engole a própria) e no-op sem envs de Langfuse.
+	try {
+		registrarNumeroForaDaCota({
+			traceId: record.traceId,
+			fala: record.fala,
+			falaDoCliente: record.falaDoCliente,
+			resultadosDeTool: record.resultadosDeTool,
+		});
+	} catch (erro) {
+		console.error("[turn-trace] detector numero_fora_da_cota falhou (ignorado):", erro);
+	}
+	try {
+		void registrarPromessaSemFato({
+			traceId: record.traceId,
+			conversationId: record.conversationId,
+			fala: record.fala,
+		});
+	} catch (erro) {
+		console.error("[turn-trace] detector promessa_sem_fato falhou (ignorado):", erro);
+	}
 	// A latência do turno vai ao livro-caixa (`uso_de_ia`): a duração é local (o
 	// `durationMs` deste registro) e o TTFT é lido da generation que o plugin grava
 	// no Langfuse. Fire-and-forget: nunca lança, sem envs é no-op.
@@ -152,6 +190,9 @@ export class TurnTrace {
 	private transitionedTo: string | null = null;
 	private leadStage: string | null = null;
 	private turnoDoCliente: number | null = null;
+	private readonly toolResults: unknown[] = [];
+	private fala = "";
+	private readonly falaDoCliente: string | null;
 	private finishReason: string | null = null;
 	private finalized = false;
 
@@ -162,10 +203,13 @@ export class TurnTrace {
 		this.startedAt = deps.now();
 		this.traceId = deps.newId();
 		this.persona = ctx.persona ?? null;
+		this.falaDoCliente = ctx.falaDoCliente ?? null;
 	}
 
-	addText(chars: number): void {
-		if (chars > 0) this.textChars += chars;
+	addText(text: string): void {
+		if (text.length === 0) return;
+		this.textChars += text.length;
+		this.fala += text;
 	}
 	addTool(name: string): void {
 		this.tools.push(name);
@@ -209,6 +253,12 @@ export class TurnTrace {
 	addSuppression(artifactType: string): void {
 		this.suppressed.push(artifactType);
 	}
+	/** Payload de resultado de ferramenta (o artifact que ele virou) — fonte
+	 *  de número conhecido para o detector `numero_fora_da_cota`. */
+	addToolResult(payload: unknown): void {
+		if (payload === null || payload === undefined) return;
+		this.toolResults.push(payload);
+	}
 	/** FIX-24: grava as métricas de cache da Anthropic (último report do turno). */
 	setCache(read: number, write: number): void {
 		this.cacheRead = read;
@@ -237,6 +287,9 @@ export class TurnTrace {
 			finishReason: this.finishReason,
 			startedAt: this.startedAt,
 			turnoDoCliente: this.turnoDoCliente,
+			fala: this.fala,
+			falaDoCliente: this.falaDoCliente,
+			resultadosDeTool: [...this.toolResults],
 		};
 	}
 
@@ -258,13 +311,14 @@ export class TurnTrace {
 export function recordTurnEvent(trace: TurnTrace, ev: TurnEvent): void {
 	switch (ev.type) {
 		case "text-delta":
-			trace.addText(ev.text.length);
+			trace.addText(ev.text);
 			break;
 		case "tool-call":
 			trace.addTool(ev.toolName);
 			break;
 		case "artifact":
 			trace.addArtifact(ev.artifactType);
+			trace.addToolResult(ev.payload);
 			break;
 		case "gate":
 			trace.setGate(ev.gate);
@@ -315,7 +369,7 @@ export function recordUIPart(
 	switch (type) {
 		case "text-delta": {
 			const delta = (part as { delta?: unknown }).delta;
-			if (typeof delta === "string") trace.addText(delta.length);
+			if (typeof delta === "string") trace.addText(delta);
 			return;
 		}
 		case "data-tool": {
@@ -326,6 +380,8 @@ export function recordUIPart(
 		case "data-artifact": {
 			const artifactType = (part as { data?: { type?: unknown } }).data?.type;
 			if (typeof artifactType === "string") trace.addArtifact(artifactType);
+			const payload = (part as { data?: { payload?: unknown } }).data?.payload;
+			if (payload !== undefined) trace.addToolResult(payload);
 			return;
 		}
 		case "data-transition": {

@@ -350,6 +350,9 @@ async function consumeEventsInner(
 		conversationId,
 		channel: "whatsapp",
 		persona: personaAtStart,
+		// Eco do cliente: repetir o número que o cliente disse não é alucinação
+		// (detector `numero_fora_da_cota`, B4).
+		falaDoCliente: opts?.userText ?? null,
 	});
 
 	let textBuffer = "";

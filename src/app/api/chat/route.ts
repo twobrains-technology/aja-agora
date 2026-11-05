@@ -642,6 +642,7 @@ export async function POST(req: NextRequest) {
 					conversationId,
 					channel: "web",
 					persona: meta.currentPersona ?? null,
+					falaDoCliente: actionLabel ?? null,
 				});
 				// Trace Langfuse do turno — o consumo do stream inteiro acontece DENTRO
 				// do wrapper (mesmo requisito do simulator-clock): é o que mantém os
@@ -1684,6 +1685,7 @@ export async function POST(req: NextRequest) {
 				conversationId,
 				channel: "web",
 				persona: meta.currentPersona ?? null,
+				falaDoCliente: userText,
 			});
 			await comTraceDoTurno(
 				{
