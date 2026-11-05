@@ -18,8 +18,34 @@
  *
  * Não achou nada → `"sem-git"`: o relatório continua gravável, só sem sha.
  */
+import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+
+/**
+ * Nome do dataset run (D-0083, Bloco A): determinístico pela CONDUTA, não pela
+ * hora. O dono decidiu (Q1) que re-run da mesma conduta alimenta o MESMO run;
+ * (Q2) que o sha de conduta inclui a versão publicada da caixa (`caixa_de_prompt`).
+ *
+ * O runner calcula a fingerprint da caixa (ele tem acesso ao Postgres) e passa
+ * aqui; este arquivo fica só com a função pura, testável sem banco.
+ *
+ *   · sem caixa publicada (origem = código): `gate-<sha-de-código>`;
+ *   · com caixa publicada vN: `gate-<sha>-c<N>-<sha256-8-do-texto>`.
+ *
+ * O texto da caixa entra no hash (não só a versão): publicar duas vezes a
+ * MESMA versão com textos diferentes é conduta diferente e precisa de run novo.
+ */
+export type FingerprintDaCaixa = { versao: number; texto: string } | null;
+
+export function nomeDoRunDeConduta(sha: string, caixa: FingerprintDaCaixa = null): string {
+	let id = `gate-${sha}`;
+	if (caixa && caixa.versao > 0 && caixa.texto?.trim()) {
+		const hash = createHash("sha256").update(caixa.texto.trim()).digest("hex").slice(0, 8);
+		id = `gate-${sha}-c${caixa.versao}-${hash}`;
+	}
+	return id;
+}
 
 const SEM_SHA = "sem-git";
 const TAMANHO_SHA_CURTO = 8;

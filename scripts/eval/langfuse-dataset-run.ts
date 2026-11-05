@@ -1,9 +1,13 @@
 // ── B10 — Dataset run do `pnpm eval` na instância Langfuse ───────────────
 //
 // O runner continua sendo O GATE (`scripts/eval-run.ts`); com `--dataset-run`
-// ele além do relatório local grava o run na instância Langfuse: um run novo
-// por execução (não é idempotente por desenho — cada execução é uma rodada
-// nova), cada cenário executado vira um item do run, e cada item recebe
+// ele além do relatório local grava o run na instância Langfuse. Premissa do
+// dono (D-0083, Q1): re-run da MESMA conduta alimenta O MESMO run — o
+// `runName` é determinístico (`gate-<sha de conduta>`, sem timestamp) e o
+// `iniciar` reusa o run existente, achado por GET antes do POST. Conduta nova
+// → sha novo → run novo → comparação side-by-side na UI. Cada execução é uma
+// RODADA do run (o comentário do score agregado registra qual); cada cenário
+// executado vira um item do run, e cada item recebe
 // scores: trajetória determinística (veredito dos asserts), juiz offline
 // (5 dimensões da rubrica) e os sinais B4/B5 (`numero_fora_da_cota`,
 // `promessa_sem_fato`). O run fecha com score agregado por run.
@@ -16,13 +20,19 @@
 //   · Scores por `POST /api/public/scores` (o endpoint vivo; a leitura nova é
 //     `GET /api/public/v3/scores`, mas gravação em `/v3/scores` devolve 405)
 //     com `datasetRunId` (+ `datasetItemId` por item) — é assim que dois
-//     runs ficam comparáveis side-by-side na UI.
+//     runs ficam comparáveis side-by-side na UI. O POST /scores aceita `id`
+//     explícito (upsert): com id determinístico por (run, item, score), o
+//     re-run SOBRESCREVE o score da rodada anterior em vez de duplicar — e o
+//     comentário do agregado registra a rodada.
+//   · `GET /api/public/dataset-runs?datasetName=...` lista os runs por nome —
+//     é assim que o `iniciar` acha o run da mesma conduta antes do POST.
 //
 // Lei da casa (plano B10 e premissa): falha de Langfuse NUNCA quebra o eval —
 // todo método engole erro com log e desliga o gravador na primeira falha
 // fatal; sem credenciais, o gravador nem liga. Nada aqui altera o veredito.
 
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 
 const NOME_DO_DATASET = "aja-agora-eval";
 const COFRE = "pi-agentes-aja-langfuse";
@@ -148,7 +158,35 @@ export class DatasetRunRecorder {
 			//    `runName` é único desta execução (nome + timestamp já o são) e que
 			//    os endpoints que o item usa respondem. O id do run devolvido pelo
 			//    primeiro item fica no recorde.
-			const rec = new DatasetRunRecorder({ ...c, baseUrl }, "");
+			// 2. Reuso (D-0083/Q1): antes de anexar item, procura o run desta
+			//    conduta (mesmo `runName`). Achei → o `datasetRunId` já é dele; os
+			//    itens e scores seguintes caem no MESMO run. Falha de leitura não
+			//    derruba: o POST do item devolve o id de qualquer forma.
+			let runId = "";
+			let pagina = 1;
+			buscar: for (;;) {
+				const rRuns = await fetch(
+					`${baseUrl}/api/public/dataset-runs?datasetName=${NOME_DO_DATASET}&page=${pagina}&limit=50`,
+					{ headers: { authorization: auth } },
+				);
+				if (!rRuns.ok) break;
+				const dados =
+					(
+						(await rRuns.json().catch(() => null)) as {
+							data?: Array<{ id?: string; name?: string }>;
+						} | null
+					)?.data ?? [];
+				for (const run of dados) {
+					if (run.name === args.nome && run.id) {
+						runId = run.id;
+						break buscar;
+					}
+				}
+				if (dados.length < 50) break;
+				pagina += 1;
+			}
+			if (runId) console.log(`${PREFIXO} run existente reusado: ${runId} (${args.nome}).`);
+			const rec = new DatasetRunRecorder({ ...c, baseUrl }, runId);
 			rec.runName = args.nome;
 			rec.runDescricao = `pnpm eval gate · sha ${args.sha} · ${args.nome}`;
 			return rec;
@@ -268,6 +306,8 @@ export class DatasetRunRecorder {
 		}
 		item.datasetItemId = datasetItemId;
 		const traceId = this.traceIdDoItem(item);
+		// Id determinístico do score por item: re-run da mesma conduta SOBRESCREVE
+		// o score anterior (upsert por id) em vez de duplicar linha no mesmo run.
 		const r = await this.pedir("POST", "/api/public/dataset-run-items", {
 			datasetItemId,
 			traceId,
@@ -288,6 +328,7 @@ export class DatasetRunRecorder {
 		console.log(`${PREFIXO} item anexado: ${item.cenario} (run ${this.datasetRunId})`);
 		for (const s of scores) {
 			const rs = await this.pedir("POST", "/api/public/scores", {
+				id: this.idDoScore(`${this.runName}:${item.datasetItemId}:${s.name}`),
 				name: s.name,
 				// A instância v4 aceita BOOLEAN só como 0/1, e a API exige exatamente
 				// UMA âncora — aqui `datasetRunId` (+ `datasetItemId`); `traceId` junto
@@ -305,7 +346,9 @@ export class DatasetRunRecorder {
 		}
 	}
 
-	/** Score agregado por run — pass rate da trajetória. */
+	/** Score agregado por run — pass rate da trajetória. Id determinístico:
+	 *  re-run da mesma conduta SOBRESCREVE o agregado anterior (upsert por id);
+	 *  o comentário registra a rodada (quantas execuções já chegaram ao run). */
 	async agregado(args: {
 		name: string;
 		value: number;
@@ -313,8 +356,11 @@ export class DatasetRunRecorder {
 		comment: string;
 	}): Promise<void> {
 		if (this.morto || !this.datasetRunId) return;
+		const rodada = await this.rodadasDe(args.name);
 		const r = await this.pedir("POST", "/api/public/scores", {
+			id: this.idDoScore(`${this.runName}:${args.name}`),
 			...args,
+			comment: rodada > 1 ? `${args.comment} · rodada ${rodada}` : args.comment,
 			datasetRunId: this.datasetRunId,
 		});
 		if (!r.ok) console.error(`${PREFIXO} score agregado não gravado (${r.detalhe}).`);
@@ -322,6 +368,27 @@ export class DatasetRunRecorder {
 			console.log(
 				`${PREFIXO} run ${this.datasetRunId} (${this.runName}) gravado — comparável na UI do Langfuse.`,
 			);
+	}
+
+	/** Count de scores deste nome no run atual — é a rodada anterior. Falha
+	 *  de leitura não bloqueia: devolve 1 (comentário fica sem número de rodada).
+	 *  LIMITAÇÃO (sondado 05/11/2026): na instância v4 events_only, GET
+	 *  /api/public/scores está desativado e GET /api/public/v3/scores rejeita
+	 *  `datasetRunId` — o número de rodada não é legível de volta. O upsert por
+	 *  id determinístico continua provado (o POST com o mesmo `id` devolve o
+	 *  mesmo id e atualiza em vez de duplicar). */
+	private async rodadasDe(name: string): Promise<number> {
+		const r = await this.pedir(
+			"GET",
+			`/api/public/scores?datasetRunId=${this.datasetRunId}&name=${encodeURIComponent(name)}&limit=1&page=1`,
+		);
+		const total = (r.dados as { meta?: { totalItems?: number } } | undefined)?.meta?.totalItems;
+		return typeof total === "number" && total > 0 ? total + 1 : 1;
+	}
+
+	/** Id determinístico de score (24 hex de sha256) — a âncora do upsert. */
+	private idDoScore(semente: string): string {
+		return createHash("sha256").update(semente).digest("hex").slice(0, 24);
 	}
 
 	private traceIdDoItem(item: ItemDoRun): string {
