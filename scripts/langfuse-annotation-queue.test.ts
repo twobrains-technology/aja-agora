@@ -1,6 +1,9 @@
 // Testes do script da annotation queue (bloco B14). Hermético: rede e cofre
 // são dublês — nada aqui fala com o Langfuse de verdade.
 
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
 	executar,
@@ -111,12 +114,14 @@ describe("executar", () => {
 				meta: { page: 1, totalPages: 1 },
 			}),
 		);
-		await expect(executar(credenciaisNoAmbiente, () => undefined, fetchFn)).rejects.toThrow(
+		await expect(executar(credenciaisNoAmbiente, () => undefined, fetchFn, ".")).rejects.toThrow(
 			/promessa_sem_fato/,
 		);
 	});
 
 	it("enfileira traces marcados e não duplica o que já está na fila", async () => {
+		// registro local vazio (tmpdir) — os mocks de fila/scores são os únicos dados
+		const raiz = mkdtempSync(join(tmpdir(), "fila-"));
 		const urls: string[] = [];
 		const corpos: string[] = [];
 		const fetchFn = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
@@ -139,26 +144,33 @@ describe("executar", () => {
 					data: [
 						{ id: "c1", name: "numero_fora_da_cota" },
 						{ id: "c2", name: "promessa_sem_fato" },
+						{ id: "c3", name: "retomada_sem_novidade" },
 					],
 					meta: { page: 1, totalPages: 1 },
 				});
 			}
-			// scores: t1 marcado (já na fila), t2 marcado (novo)
+			// scores: t1 marcado (já na fila), t2 marcado (novo); retomada sem score
 			if (url.includes("name=numero_fora_da_cota")) {
 				return resposta({ data: [{ id: "s1", name: "x", traceId: "t1" }], meta: {} });
 			}
+			if (url.includes("name=retomada_sem_novidade")) {
+				return resposta({ data: [], meta: {} });
+			}
 			return resposta({ data: [{ id: "s2", name: "x", traceId: "t2" }], meta: {} });
 		});
-		const resultado = await executar(credenciaisNoAmbiente, () => undefined, fetchFn);
+		const resultado = await executar(credenciaisNoAmbiente, () => undefined, fetchFn, raiz);
 		expect(resultado.ok).toBe(true);
 		expect(resultado.pendenteDeDados).toBe(false);
 		expect(resultado.jaNaFila).toBe(1);
 		expect(resultado.enfileirados).toBe(1);
+		expect(resultado.enfileiradosDeMorte).toBe(0);
 		expect(corpos.some((c) => JSON.parse(c).objectId === "t2")).toBe(true);
 		expect(corpos.some((c) => JSON.parse(c).objectId === "t1")).toBe(false);
 	});
 
 	it("reporta PENDENTE de dados quando não há scores reais dos detectores", async () => {
+		// registro local vazio (tmpdir): nenhum cenário de morte, nenhum score
+		const raizVazio = mkdtempSync(join(tmpdir(), "vazio-"));
 		const fetchFn = vi.fn().mockImplementation(async (url: string) => {
 			if (url.includes("/annotation-queues/") && url.includes("/items?")) {
 				return resposta({ data: [], meta: { page: 1, totalPages: 1 } });
@@ -174,14 +186,98 @@ describe("executar", () => {
 					data: [
 						{ id: "c1", name: "numero_fora_da_cota" },
 						{ id: "c2", name: "promessa_sem_fato" },
+						{ id: "c3", name: "retomada_sem_novidade" },
 					],
 					meta: { page: 1, totalPages: 1 },
 				});
 			}
 			return resposta({ data: [], meta: {} });
 		});
-		const resultado = await executar(credenciaisNoAmbiente, () => undefined, fetchFn);
+		const resultado = await executar(credenciaisNoAmbiente, () => undefined, fetchFn, raizVazio);
 		expect(resultado.pendenteDeDados).toBe(true);
 		expect(resultado.enfileirados).toBe(0);
+		expect(resultado.enfileiradosDeMorte).toBe(0);
+	});
+
+	it("enfileira as sessões de morte do export da simulação e do relatório do gate", async () => {
+		const raiz = mkdtempSync(join(tmpdir(), "morte-"));
+		const evalDir = join(raiz, ".eval");
+		mkdirSync(evalDir, { recursive: true });
+		writeFileSync(
+			join(evalDir, "simulacao-x.json"),
+			JSON.stringify({
+				resultados: [
+					{
+						perfilId: "voltei-sem-nada",
+						turnos: [{ vendedor: { conversationId: "conv-morte-1" } }],
+					},
+					{
+						perfilId: "caminho-feliz",
+						turnos: [{ vendedor: { conversationId: "conv-fora" } }],
+					},
+					{ perfilId: "card-travado", turnos: [{ vendedor: { conversationId: null } }] },
+				],
+			}),
+		);
+		writeFileSync(
+			join(evalDir, "relatorio-gate-abc.json"),
+			JSON.stringify({
+				cenarios: [
+					{ cenario: "golden-real-voltei-sem-conteudo", conversationId: "conv-golden-1" },
+					{ cenario: "golden-busca-sem-cpf", conversationId: "conv-outro" },
+				],
+			}),
+		);
+		const urls: string[] = [];
+		const corpos: string[] = [];
+		const naFila = new Set<string>();
+		const fetchFn = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+			urls.push(url);
+			if (init?.method === "POST") {
+				const corpo = JSON.parse(String(init.body)) as { objectId?: string };
+				corpos.push(String(init.body));
+				if (corpo.objectId) naFila.add(corpo.objectId);
+			}
+			if (url.includes("/annotation-queues/") && url.includes("/items?")) {
+				return resposta({
+					data: [...naFila].map((objectId) => ({ objectId, objectType: "SESSION" })),
+					meta: { page: 1, totalPages: 1 },
+				});
+			}
+			if (url.includes("/annotation-queues")) {
+				return resposta({
+					data: [{ id: "fila-1", name: "calibracao-juiz", description: null, scoreConfigIds: [] }],
+					meta: { page: 1, totalPages: 1 },
+				});
+			}
+			if (url.includes("/score-configs")) {
+				return resposta({
+					data: [
+						{ id: "c1", name: "numero_fora_da_cota" },
+						{ id: "c2", name: "promessa_sem_fato" },
+						{ id: "c3", name: "retomada_sem_novidade" },
+					],
+					meta: { page: 1, totalPages: 1 },
+				});
+			}
+			return resposta({ data: [], meta: {} });
+		});
+		const resultado = await executar(credenciaisNoAmbiente, () => undefined, fetchFn, raiz);
+		expect(resultado.ok).toBe(true);
+		expect(resultado.enfileiradosDeMorte).toBe(2);
+		const objetos = corpos.map((c) => JSON.parse(c).objectId);
+		expect(objetos).toContain("conv-morte-1");
+		expect(objetos).toContain("conv-golden-1");
+		expect(objetos).not.toContain("conv-fora");
+		expect(objetos).not.toContain("conv-outro");
+		// itens de morte entram como SESSION (traceId ausente)
+		const morte = corpos.map((c) => JSON.parse(c)).filter((o) => o.objectId === "conv-morte-1");
+		expect(morte[0].objectType).toBe("SESSION");
+		// fonte citada no resultado (auditoria do que entrou)
+		expect(resultado.fontesDeMorte.join(" ")).toContain("perfil voltei-sem-nada");
+		// idempotente: na segunda execução, nada entra de novo
+		const segunda = await executar(credenciaisNoAmbiente, () => undefined, fetchFn, raiz);
+		expect(segunda.enfileiradosDeMorte).toBe(0);
+		expect(segunda.jaNaFila).toBe(2);
 	});
 });

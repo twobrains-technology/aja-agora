@@ -463,6 +463,10 @@ async function main(): Promise<void> {
 		durMs: number;
 		falhas: string[];
 		erro?: string;
+		/** Sessão simulada no app — o Langfuse indexa os traces do turno por
+		 *  session (conversationId); é por aqui que a annotation queue acha o
+		 *  cenário de morte na instância (bloco D). */
+		conversationId?: string;
 	}> = [];
 
 	// B10 — anexa o item executado ao dataset run e grava os scores dele.
@@ -548,6 +552,7 @@ async function main(): Promise<void> {
 			turnos: turns.length,
 			durMs,
 			falhas: verdict.failures,
+			...(out.conversationId ? { conversationId: out.conversationId } : {}),
 		});
 		if (verdict.pass) {
 			pass++;
