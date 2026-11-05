@@ -116,7 +116,7 @@ describe("fazer_proposta com a carta vista fora do catálogo do CPF real", () =>
 			{ execute: (i: unknown, o: unknown) => Promise<unknown> }
 		>;
 		const saida = String(
-			await tools.fazer_proposta!.execute(
+			await tools.fazer_proposta?.execute(
 				{ groupId: VISTA.groupId },
 				{ toolCallId: "c1", messages: [] },
 			),

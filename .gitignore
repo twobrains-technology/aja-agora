@@ -95,3 +95,4 @@ exports/
 
 # artefato do spike do pi (fase 4 da campanha do motor)
 .spike-pi-resultado.json
+.orientacao/

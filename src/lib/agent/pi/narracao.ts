@@ -1,21 +1,17 @@
-// A NARRAÇÃO DA FERRAMENTA — o card fala por si (R5.1).
+// A NARRAÇÃO DA FERRAMENTA — medida, não corte (P11).
 //
 // Medido no dev em 25/10/2026 com navegador real (`/tmp/aja-dono/ui/item0-04.png`):
 // o vendedor anunciava a própria chamada de tool em volta do card — "Deixa eu
 // mostrar os detalhes dela para você:" antes, "Pronto! Aí estão todos os
 // números" depois. O padrão do dono é o card falar por si.
 //
-// A guarda é ESTREITA de propósito, e mora no harness como o verificador de "uma
-// pergunta por mensagem": só cai um BALÃO INTEIRO cujo texto seja só anúncio de
-// ferramenta, e só quando ele está colado a um card do MESMO turno (antes ou
-// depois). Um balão com qualquer outra informação — número, pergunta, nome
-// próprio, explicação — fica inteiro: cortar fala legítima é pior que ouvir o
-// vendedor narrar a ferramenta.
-//
-// O casamento é por VOCABULÁRIO FECHADO, não por regex de frase: qualquer
-// palavra fora do anúncio já conta como informação. É o que mantém
-// "Deixa eu te explicar como funciona o lance" e "Pronto, Marcos! Sua proposta
-// está gerada" fora da guarda.
+// Desde a P11 (`docs/design/planos/2026-11-05-remendos-fala-p11.md`, item 13)
+// isto é DETECTOR, não guarda: o corte de fala em código saiu. Nenhum balão é
+// suspenso nem suprimido — quem decide não anunciar o card é a conduta (sufixo
+// do prompt). O que fica é a medida: quando um balão casa com o vocabulário
+// fechado de anúncio de ferramenta, emite o sinal `narracao_de_ferramenta`
+// (`[sinal]`) para o dono ler a ocorrência em vez de ter a fala escondida.
+import { publicarScores } from "@/lib/observability/sinais/publicar";
 
 /** Anúncio comprido é fala, não etiqueta de passo. */
 const LIMITE_DE_CARACTERES = 120;
@@ -178,12 +174,8 @@ function palavrasDoBalao(texto: string): string[] {
 		.filter(Boolean);
 }
 
-/** O BALÃO INTEIRO é anúncio de ferramenta? Serve de guarda só com a condição
- * de vizinhança (`criarNarracaoDoTurno`): um anúncio longe de card é a fala da
- * vez e fica.
- *
- * Número não precisa de veto próprio: dígito vira palavra fora do vocabulário
- * ("de 80 mil" não casa) — informação no balão sempre derruba o casamento. */
+/** O BALÃO INTEIRO é anúncio de ferramenta? É detector puro: decide só o sinal,
+ * nunca corta fala. */
 export function ehNarracaoDeFerramenta(texto: string): boolean {
 	const balao = texto.trim();
 	if (!balao || balao.length > LIMITE_DE_CARACTERES) return false;
@@ -195,50 +187,32 @@ export function ehNarracaoDeFerramenta(texto: string): boolean {
 	return palavras.every((p) => VOCABULARIO.has(p));
 }
 
-/** O turno visto pela guarda da narração: cada balão pronto passa por aqui antes
- * de ir para o canal, e o card avisa quando aparece.
- *
- * A ORDEM DOS FATOS é a do harness (`turno-livre.ts`): o balão fica pronto
- * quando a tool é chamada ou quando o beat acaba, e o card sai no RESULTADO da
- * ferramenta — o artifact é emitido ali, antes da fala que vem depois dela. Por
- * isso o anúncio fica SUSPENSO até o turno dizer se veio card — é a
- * única hora em que dá para saber se ele estava colado a um. Guardar é o que
- * impede a guarda de comer fala legítima de um turno sem card. */
+/** O turno visto pela medida da narração: cada balão pronto passa por aqui e
+ * segue para o canal EXATAMENTE como saiu do modelo (P11 — fala é do prompt).
+ * O detector só emite o sinal `narracao_de_ferramenta` quando um balão casa com
+ * o vocabulário de anúncio. Nada aqui derruba o turno. */
 export function criarNarracaoDoTurno() {
-	let suspensa: string | null = null;
-	let ultimoFoiCard = false;
-	const soltarSuspensa = (): string[] => {
-		const antes = suspensa === null ? [] : [suspensa];
-		suspensa = null;
-		return antes;
+	const anunciar = (texto: string): void => {
+		if (!ehNarracaoDeFerramenta(texto)) return;
+		publicarScores(
+			[{ name: "narracao_de_ferramenta", value: 1, dataType: "BOOLEAN" }],
+			"remendos-fala",
+		);
 	};
 	return {
-		/** Um balão ficou pronto: devolve os balões a emitir AGORA, na ordem. */
+		/** Um balão ficou pronto: sai inteiro, sempre. */
 		aoTexto(texto: string): string[] {
 			if (!texto.trim()) return [];
-			if (!ehNarracaoDeFerramenta(texto)) {
-				ultimoFoiCard = false;
-				return [...soltarSuspensa(), texto];
-			}
-			// Colado a um card que já saiu: o card já disse tudo.
-			if (ultimoFoiCard) return [];
-			// Um anúncio seguido de outro não estava colado ao card: o mais velho sai.
-			const antes = soltarSuspensa();
-			suspensa = texto;
-			return antes;
+			anunciar(texto);
+			return [texto];
 		},
-		/** O turno mostrou card: o anúncio suspenso estava colado a ele e cai.
-		 * Devolve se havia um anúncio para cair — é o que diz que o turno FALOU,
-		 * com o card no lugar da prosa. */
+		/** No-op: o card nunca mais silencia fala. */
 		mostrouCard(): boolean {
-			const caiu = suspensa !== null;
-			suspensa = null;
-			ultimoFoiCard = true;
-			return caiu;
+			return false;
 		},
-		/** O turno acabou sem card: o anúncio era a fala da vez e sai como fala. */
+		/** O turno acabou: nada pendente — todo balão já saiu. */
 		fimDoTurno(): string[] {
-			return soltarSuspensa();
+			return [];
 		},
 	};
 }

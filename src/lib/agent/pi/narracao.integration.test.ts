@@ -1,9 +1,10 @@
-// A GUARDA DA NARRAÇÃO NA COSTURA DO TURNO (R5.1).
+// A NARRAÇÃO NA COSTURA DO TURNO (P11).
 //
 // `narracao.test.ts` prova a decisão (o que é anúncio, o que é fala). Este prova
-// o ENCAIXE: no turno de verdade, com o "modelo" roteirizado, o balão que só
-// anuncia a ferramenta não chega ao canal quando o card fala por si — e chega
-// quando não há card, quando tem informação ou quando é o balão do print.
+// o ENCAIXE: no turno de verdade, com o "modelo" roteirizado, NENHUM balão é
+// cortado — o anúncio colado ao card chega ao canal como saiu do modelo (a
+// conduta, no sufixo do prompt, é quem manda não anunciar; o sinal
+// `narracao_de_ferramenta` é quem mede).
 import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import { db } from "@/db";
@@ -105,16 +106,14 @@ async function turnoRoteirizado(beats: Parameters<typeof subirServidorRoteirizad
 	}
 }
 
-describe("turno livre — o anúncio da ferramenta não chega ao canal com card na tela", () => {
-	it("anúncio colado ao card cai, e o card fica", async () => {
+describe("turno livre — nenhum balão é cortado, card ou não (P11)", () => {
+	it("anúncio colado ao card CHEGA ao canal, e o card fica", async () => {
 		const { falas, cards } = await turnoRoteirizado([
 			...BUSCA,
 			{ text: "Deixa eu mostrar os detalhes dela para você:" },
 		]);
 		expect(cards).toHaveLength(1);
-		expect(falas.join(" ")).not.toContain("Deixa eu mostrar");
-		// o anúncio caiu porque o card falou: nenhuma linha de preenchimento no lugar
-		expect(falas.join(" ")).not.toContain("Achei essas opções pra você");
+		expect(falas.join(" ")).toContain("Deixa eu mostrar");
 	});
 
 	it("fala com informação fica inteira, mesmo com card no turno", async () => {

@@ -1,11 +1,19 @@
-// A NARRAÇÃO DA FERRAMENTA (R5.1) — o card fala por si.
+// A NARRAÇÃO DA FERRAMENTA — medida, não corte (P11).
 //
-// As frases de "cai" são as do print do dev (25/10/2026, `/tmp/aja-dono/ui/item0-04.png`);
-// as de "fica" são as falas legítimas que a guarda NÃO pode comer.
-import { describe, expect, it } from "vitest";
+// Desde a P11 nada é cortado: `aoTexto` devolve o balão inteiro sempre, e o
+// detector (`ehNarracaoDeFerramenta`) só alimenta o sinal `narracao_de_ferramenta`.
+// As frases abaixo continuam as do print do dev (25/10/2026,
+// `/tmp/aja-dono/ui/item0-04.png`) e as falas legítimas que o detector distingue.
+import { describe, expect, it, vi } from "vitest";
 import { criarNarracaoDoTurno, ehNarracaoDeFerramenta } from "./narracao";
 
-describe("guarda da narração de ferramenta", () => {
+vi.mock("@/lib/observability/sinais/publicar", () => ({
+	publicarScores: vi.fn(),
+}));
+
+import { publicarScores } from "@/lib/observability/sinais/publicar";
+
+describe("detector da narração de ferramenta", () => {
 	it("reconhece o balão que só anuncia a ferramenta", () => {
 		const anuncios = [
 			"Deixa eu mostrar os detalhes dela para você:",
@@ -26,7 +34,7 @@ describe("guarda da narração de ferramenta", () => {
 		}
 	});
 
-	it("informação no balão mantém o balão INTEIRO", () => {
+	it("informação no balão não casa com o vocabulário fechado", () => {
 		const falas = [
 			// o balão real do print: nome da administradora + pergunta
 			"Ótima escolha! A carta da Canopus é sólida também.\nDeixa eu mostrar os detalhes dela para você:\nPronto! Aí estão todos os números da carta da Canopus. Você quer seguir com essa, Marcos?",
@@ -55,47 +63,46 @@ describe("guarda da narração de ferramenta", () => {
 	});
 });
 
-describe("turno com card — o anúncio em volta dele cai", () => {
-	it("[anúncio, card, anúncio] → só o card", () => {
+describe("turno com narração — o balão sai INTEIRO, sempre (P11)", () => {
+	it("anúncio sai inteiro e emite o sinal narracao_de_ferramenta", () => {
+		vi.mocked(publicarScores).mockClear();
 		const turno = criarNarracaoDoTurno();
-		expect(turno.aoTexto("Deixa eu mostrar os detalhes dela para você:")).toEqual([]);
-		expect(turno.mostrouCard()).toBe(true);
-		// o anúncio depois do card já está na tela como card: não repete
-		expect(turno.aoTexto("Pronto! Aí estão todos os números.")).toEqual([]);
-		expect(turno.fimDoTurno()).toEqual([]);
+		const anuncio = "Deixa eu mostrar os detalhes dela para você:";
+		expect(turno.aoTexto(anuncio)).toEqual([anuncio]);
+		expect(publicarScores).toHaveBeenCalledWith(
+			[{ name: "narracao_de_ferramenta", value: 1, dataType: "BOOLEAN" }],
+			"remendos-fala",
+		);
 	});
 
-	it("fala útil antes do card sai, e o anúncio colado ao card cai", () => {
+	it("fala com informação sai inteira e não emite sinal", () => {
+		vi.mocked(publicarScores).mockClear();
 		const turno = criarNarracaoDoTurno();
 		const fala = "Ótima escolha! A carta da Canopus é sólida também.";
 		expect(turno.aoTexto(fala)).toEqual([fala]);
-		expect(turno.aoTexto("Deixa eu mostrar os detalhes dela para você:")).toEqual([]);
-		expect(turno.mostrouCard()).toBe(true);
+		expect(publicarScores).not.toHaveBeenCalled();
+	});
+
+	it("mostrouCard é no-op e nunca silencia fala", () => {
+		vi.mocked(publicarScores).mockClear();
+		const turno = criarNarracaoDoTurno();
+		const anuncio = "Deixa eu buscar as cartas pra você.";
+		expect(turno.aoTexto(anuncio)).toEqual([anuncio]);
+		expect(turno.mostrouCard()).toBe(false);
+		const depois = "Essas são as que sobram no seu orçamento.";
+		expect(turno.aoTexto(depois)).toEqual([depois]);
+	});
+
+	it("fimDoTurno devolve [] — nada fica suspenso", () => {
+		const turno = criarNarracaoDoTurno();
+		expect(turno.aoTexto("Só um instante.")).toEqual(["Só um instante."]);
 		expect(turno.fimDoTurno()).toEqual([]);
 	});
 
-	it("fala útil depois do card não é tocada", () => {
+	it("balão vazio não sai e não emite sinal", () => {
+		vi.mocked(publicarScores).mockClear();
 		const turno = criarNarracaoDoTurno();
-		expect(turno.aoTexto("Deixa eu buscar as cartas pra você.")).toEqual([]);
-		expect(turno.mostrouCard()).toBe(true);
-		const fala = "Essas são as que sobram no seu orçamento.";
-		expect(turno.aoTexto(fala)).toEqual([fala]);
-		expect(turno.fimDoTurno()).toEqual([]);
-	});
-
-	it("sem card no turno, o anúncio é a fala da vez e sai", () => {
-		const turno = criarNarracaoDoTurno();
-		expect(turno.aoTexto("Só um instante.")).toEqual([]);
-		expect(turno.fimDoTurno()).toEqual(["Só um instante."]);
-	});
-
-	it("dois anúncios seguidos: o mais velho não estava colado ao card e sai", () => {
-		const turno = criarNarracaoDoTurno();
-		expect(turno.aoTexto("Deixa eu buscar as cartas pra você.")).toEqual([]);
-		expect(turno.aoTexto("Pronto! Aí estão os números.")).toEqual([
-			"Deixa eu buscar as cartas pra você.",
-		]);
-		expect(turno.mostrouCard()).toBe(true);
-		expect(turno.fimDoTurno()).toEqual([]);
+		expect(turno.aoTexto("   ")).toEqual([]);
+		expect(publicarScores).not.toHaveBeenCalled();
 	});
 });

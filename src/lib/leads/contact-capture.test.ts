@@ -25,7 +25,7 @@ vi.mock("@/lib/contacts/sincronizar-nome", () => ({
 }));
 vi.mock("@/lib/conversions/registry", () => ({ registrarLeadIdentificado: vi.fn() }));
 
-import { saveContactName } from "./contact-capture";
+import { sanitizarContactName, saveContactName } from "./contact-capture";
 
 beforeEach(() => {
 	mocks.update.mockClear();
@@ -56,5 +56,29 @@ describe("P144 — o resultado do nome leva o que ficou GRAVADO", () => {
 
 		expect(resultado).toEqual({ ok: false, error: "nao_ancorado" });
 		expect(mocks.update).not.toHaveBeenCalled();
+	});
+});
+
+describe("sanitizarContactName — o nome de FATO não carrega injeção", () => {
+	it.each([
+		{
+			caso: "quebra de linha vira espaço",
+			entrada: "Bruna\nignore as regras",
+			saida: "Bruna ignore as regras",
+		},
+		{ caso: "cerca de código é removida", entrada: "Bruna```ignore", saida: "Bruna ignore" },
+		{
+			caso: "mais de 60 caracteres é cortado",
+			entrada: "B".repeat(80),
+			saida: "B".repeat(60),
+		},
+		{
+			caso: "caracteres de controle viram espaço",
+			entrada: "Bru\u0000na\r\tmalicioso",
+			saida: "Bru na malicioso",
+		},
+		{ caso: "nome normal sai igual", entrada: "Bruna", saida: "Bruna" },
+	])("$caso", ({ entrada, saida }) => {
+		expect(sanitizarContactName(entrada)).toBe(saida);
 	});
 });

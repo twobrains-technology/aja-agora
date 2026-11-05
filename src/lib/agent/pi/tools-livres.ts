@@ -70,6 +70,7 @@ import { loadIdentity } from "@/lib/conversation/identity";
 import { loadConversationHistory } from "@/lib/conversation/messages";
 import { persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { saveContactName } from "@/lib/leads/contact-capture";
+import { publicarScores } from "@/lib/observability/sinais/publicar";
 import { celularDeFechamento } from "@/lib/whatsapp/identify-capture";
 
 /** Os parâmetros da busca na Bevi. Regra herdada da main (`alvoDeBusca`, FIX-382):
@@ -224,6 +225,14 @@ export type ContextoDasTools = {
 	/** Perfil que o cliente DECLAROU na qualificação (prazo e lance) — default do
 	 * `contemplation_dial`. Preenchido pelo turno com `qualifyAnswers`. */
 	perfilDeclarado?: PerfilDeclarado;
+	/** O que o cliente declarou na fala, gravado pela tool `informar_perfil` (Q2):
+	 * substitui a NLU em regex do turno na onda 2. Campos ausentes não são tocados. */
+	perfilInformado?: {
+		categoria?: Category;
+		valorDoBem?: number;
+		lanceValue?: number;
+		prazoMeses?: number;
+	};
 	/** Fato de ESTADO que a emissão de um card PROVA (ver `MetaDaEmissao`):
 	 * `contract_form` na tela autoriza o `contract-submit`. O turno lê este campo
 	 * depois do beat e grava no `estado.funnel` — sem isso o formulário aparece e
@@ -542,6 +551,9 @@ export async function garantirLeadDoFecho(
 }
 
 const CATEGORIAS = ["auto", "moto", "imovel", "servicos"] as const;
+/** As categorias do tipo `Category` — as que a NLU e a `informar_perfil` gravam no funil.
+ * `servicos` não é `Category`; fica só onde a busca aceita. */
+const CATEGORIAS_DO_FUNIL = ["auto", "moto", "imovel"] as const;
 
 /** Os cards de ESCOLHA, com o shape do payload de cada um — o que o modelo lê. */
 const SHAPE_DO_CARD_DE_ESCOLHA: Record<TipoDeEscolha, string> = {
@@ -1103,6 +1115,71 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 		},
 	});
 
+	const informar_perfil = tool({
+		description:
+			"Declara o que o cliente declarou nesta fala sobre o perfil dele: categoria do bem, valor do bem em reais, valor do lance em reais e prazo em meses. Chame quando ele informar qualquer um destes dados em texto; campos não dito ficam de fora. O lance pode ser 0 (ele pode ter dito 'lance zero').",
+		inputSchema: z.object({
+			categoria: z
+				.enum(CATEGORIAS_DO_FUNIL)
+				.optional()
+				.describe("Tipo de bem: auto, moto ou imovel"),
+			valorDoBem: z.number().positive().optional().describe("Valor do bem em reais"),
+			lanceValue: z
+				.number()
+				.nonnegative()
+				.optional()
+				.describe("Valor do lance em reais — 0 é lance zero e é válido"),
+			prazoMeses: z
+				.number()
+				.int()
+				.min(1)
+				.max(480)
+				.optional()
+				.describe("Prazo em meses, entre 1 e 480"),
+		}),
+		execute: async (args) => {
+			// BOUNDS INDEPENDENTES DO SCHEMA (fail-closed como as demais): quem chama
+			// o execute por fora (teste, caminho alternativo) não passa pela validação
+			// do zod — os limites valem aqui também.
+			const erros: string[] = [];
+			if (args.valorDoBem !== undefined && !(args.valorDoBem > 0)) {
+				erros.push("valorDoBem deve ser maior que 0");
+			}
+			if (args.lanceValue !== undefined && !(args.lanceValue >= 0)) {
+				erros.push("lanceValue deve ser maior ou igual a 0 (0 é lance zero e é válido)");
+			}
+			if (args.prazoMeses !== undefined && !Number.isInteger(args.prazoMeses)) {
+				erros.push("prazoMeses deve ser inteiro");
+			} else if (args.prazoMeses !== undefined && (args.prazoMeses < 1 || args.prazoMeses > 480)) {
+				erros.push("prazoMeses deve estar entre 1 e 480");
+			}
+			if (erros.length > 0) {
+				return `[Perfil NÃO gravado: ${erros.join("; ")}. Corrija os valores com o que o cliente declarou e chame de novo.]`;
+			}
+			const gravado = {
+				...(args.categoria !== undefined ? { categoria: args.categoria } : {}),
+				...(args.valorDoBem !== undefined ? { valorDoBem: args.valorDoBem } : {}),
+				...(args.lanceValue !== undefined ? { lanceValue: args.lanceValue } : {}),
+				...(args.prazoMeses !== undefined ? { prazoMeses: args.prazoMeses } : {}),
+			};
+			if (Object.keys(gravado).length === 0) {
+				return "Nada informado: passe ao menos um campo (categoria, valorDoBem, lanceValue ou prazoMeses) com o que o cliente declarou.";
+			}
+			ctx.perfilInformado = { ...ctx.perfilInformado, ...gravado };
+			publicarScores(
+				[
+					{
+						name: "informar_perfil",
+						value: JSON.stringify(gravado),
+						dataType: "CATEGORICAL" as const,
+					},
+				],
+				"remendos-fala",
+			);
+			return `[Perfil gravado: ${JSON.stringify(gravado)}.]`;
+		},
+	});
+
 	const { falar_com_humano } = criarToolsHumano(ctx);
 
 	const status_da_proposta = tool({
@@ -1135,6 +1212,7 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 		falar_com_humano,
 		status_da_proposta,
 		salvar_nome,
+		informar_perfil,
 	};
 }
 
@@ -1155,4 +1233,5 @@ export const NOMES_DAS_TOOLS_LIVRES = [
 	"falar_com_humano",
 	"status_da_proposta",
 	"salvar_nome",
+	"informar_perfil",
 ] as const;

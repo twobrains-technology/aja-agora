@@ -8,6 +8,23 @@ import { sincronizarNomeDoContato } from "@/lib/contacts/sincronizar-nome";
 import { ehNomeProprioPlausivel, nomeAncoradoNaFala } from "./nome-plausivel";
 import { normalizePhoneBR } from "./phone";
 
+/** Sanitização do `contactName` — dado de FATO que entra no system e no banco.
+ * Tira o que uma fala de injeção usa para escapar do lugar: cercas de código,
+ * quebra de linha e outros caracteres de controle (viram espaço), espaços
+ * colapsados e teto de 60 caracteres. Uma régua só, usada na ORIGEM
+ * (`saveContactName`) e na defesa em profundidade (`linhaDeFato`). */
+export function sanitizarContactName(raw: string): string {
+	return (
+		raw
+			.replace(/`{3,}/g, " ")
+			// biome-ignore lint/suspicious/noControlCharactersInRegex: o dado vem de fora e os caracteres de controle são exatamente o que se tira.
+			.replace(/[\u0000-\u001f\u007f]/g, " ")
+			.replace(/\s+/g, " ")
+			.trim()
+			.slice(0, 60)
+	);
+}
+
 /** Reexportado: o predicado mudou de casa (ver `nome-plausivel.ts`), e os
  * importadores antigos continuam valendo. */
 export { ehNomeProprioPlausivel };
@@ -131,7 +148,9 @@ export async function saveContactName(
 		ancorarEm?: string | null;
 	},
 ): Promise<ContactNameCaptureResult> {
-	const trimmed = rawName.trim();
+	// Sanitização na ORIGEM: o que se grava já sai limpo (sem \n, sem cercas,
+	// sem controle) — o resto do pipeline valida o nome em si.
+	const trimmed = sanitizarContactName(rawName);
 	if (!trimmed) return { ok: false, error: "name_invalid" };
 
 	const firstToken = extractFirstName(trimmed);

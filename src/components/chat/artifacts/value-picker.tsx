@@ -186,6 +186,8 @@ export function ValuePicker({
 		>
 			<Card className="w-full max-w-[340px] rounded-[12px] shadow-lg border-[color:var(--border-strong)] overflow-hidden">
 				<CardContent className="space-y-4 p-[18px]">
+					{/* biome-ignore lint/a11y/useSemanticElements: o grupo alterna entre dois
+					modos de escolha; trocar por <fieldset> muda a semântica visual do card. */}
 					<div
 						role="group"
 						aria-label="O que você quer definir"

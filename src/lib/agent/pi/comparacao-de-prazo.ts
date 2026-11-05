@@ -1,4 +1,4 @@
-// COMPARAÇÃO DE PRAZO SÓ COM O NÚMERO DA MESA — invariante de FATO, não de tom.
+// COMPARAÇÃO DE PRAZO SÓ COM O NÚMERO DA MESA — VERIFICAÇÃO de FATO, não reescrita de fala.
 //
 // Defeito medido (print `prints-ux/13-seguir-ou-comparar-com-nome.png`, 27/10 22:35, ordem do
 // líder): o agente disse *"Ela tem prazo mais curto que a de 94 meses da ÂNCORA"* sobre a carta de
@@ -13,13 +13,16 @@
 // pela parcela ("R$ 1.176,39") ou pelo prazo ("a de 96"). É por esse número que a carta se acha.
 //
 // O que este arquivo faz: lê a direção que a fala AFIRMA ("mais curto", "mais longo", "menor
-// prazo", "maior prazo") e confere contra os prazos REAIS das cartas que estão na mesa. Se a
-// direção estiver trocada, corrige a palavra; se o prazo citado não existir em carta nenhuma da
-// mesa, o número é invenção e a comparação sai; se não dá para saber de quem se fala, a comparação
-// também sai (não se afirma o que não se pode conferir).
+// prazo", "maior prazo") e confere contra os prazos REAIS das cartas que estão na mesa. Quando a
+// direção CONTRADIZ a mesa — ou o prazo citado não existe em carta nenhuma (invenção), ou não dá
+// para saber de quem se fala — emite o sinal `fala_contradiz_mesa` e DEVOLVE O TEXTO INALTERADO.
 //
-// Não é guarda de fala do agente (o `AGENTS.md` proíbe regex de tom, repetição e fluidez): é a
-// mesma família do "número sem lastro" — comparação verificável contra o dado da ferramenta.
+// Desde o remendo P11 (05/11): a REESCRITA saiu do código (`AGENTS.md` P11 — conversa é do
+// prompt). A conduta manda a fala bater com a mesa e o card trazer o número certo; o sinal mede o
+// caso e alimenta o eval. Fica aqui só a conferência da verdade contra o dado da ferramenta.
+import { publicarScores } from "@/lib/observability/sinais/publicar";
+
+const ONDE = "remendos-fala";
 
 /** A carta como a mesa a conhece — só o que a comparação precisa. */
 export type CartaDaMesa = { parcela: number; prazoMeses: number; administradora?: string };
@@ -64,7 +67,7 @@ function mencoesDa(frase: string, mesa: readonly CartaDaMesa[]): Mencao[] {
 		if (prazos.size === 1) achadas.push({ at: m.index ?? 0, prazo: [...prazos][0] as number });
 	}
 	achadas.sort((a, b) => a.at - b.at);
-	// A mesma carta citada pela parcela e pelo prazo na mesma frase é UMA menção só.
+	// A mesma carta citada pela parcela e pelo prazo na mesma frase é UNA menção só.
 	const semRepetir: Mencao[] = [];
 	for (const m of achadas) {
 		if (!semRepetir.some((x) => x.prazo === m.prazo)) semRepetir.push(m);
@@ -72,83 +75,88 @@ function mencoesDa(frase: string, mesa: readonly CartaDaMesa[]): Mencao[] {
 	return semRepetir;
 }
 
+/** O sinal que substitui o remendo: quantas comparações na fala contradizem a mesa. */
+function publicarSinal(problemas: number): void {
+	if (problemas <= 0) return;
+	publicarScores([{ name: "fala_contradiz_mesa", value: problemas, dataType: "NUMERIC" }], ONDE);
+}
+
 /**
- * Corrige a comparação de prazo de um texto.
+ * Verifica a comparação de prazo de um texto. DEVOLVE O TEXTO INALTERADO; o segundo valor é o
+ * número de comparações problemáticas (direção contradiz a mesa; prazo citado não existe em carta
+ * nenhuma; não dá para saber de quem se fala).
  *
  * O SUJEITO é a primeira menção da frase; a REFERÊNCIA é a última. Frase com uma menção só ("Ela
  * tem prazo mais curto que a de 94 meses") herda o sujeito da frase anterior mais próxima que
  * cite uma carta ("A da CANOPUS com parcela de R$ 1.176,39…").
  */
+function verificarComparacaoDePrazo(
+	texto: string,
+	mesa: readonly CartaDaMesa[],
+): { texto: string; problemas: number } {
+	if (!texto || (!MAIS_CURTO.test(texto) && !MAIS_LONGO.test(texto)))
+		return { texto, problemas: 0 };
+	const prazosDaMesa = new Set(mesa.map((c) => c.prazoMeses));
+	const frases = frasesDe(texto);
+	let problemas = 0;
+
+	frases.forEach((frase, i) => {
+		const curto = MAIS_CURTO.test(frase);
+		const longo = MAIS_LONGO.test(frase);
+		if (!curto && !longo) return;
+
+		// Prazo ESCRITO que não é de carta nenhuma da mesa: o número é invenção.
+		const escritos = [
+			...[...frase.matchAll(PRAZO_COM_UNIDADE)].map((m) => Number(m[1])),
+			...[...frase.matchAll(PRAZO_SEM_UNIDADE)].map((m) => Number(m[1])),
+		];
+		if (escritos.some((p) => !prazosDaMesa.has(p))) {
+			problemas += 1;
+			return;
+		}
+
+		const mencoes = mencoesDa(frase, mesa);
+		let sujeito: number | undefined;
+		let referencia: number | undefined;
+		if (mencoes.length >= 2) {
+			sujeito = mencoes[0]?.prazo;
+			referencia = mencoes[mencoes.length - 1]?.prazo;
+		} else if (mencoes.length === 1) {
+			referencia = mencoes[0]?.prazo;
+			// O sujeito é a carta da frase anterior mais próxima que cite uma.
+			for (let k = i - 1; k >= 0 && sujeito === undefined; k--) {
+				const antes = mencoesDa(frases[k] ?? "", mesa);
+				const ultimo = antes[antes.length - 1];
+				if (ultimo) sujeito = ultimo.prazo;
+			}
+		}
+
+		// Sem os dois prazos não há como provar a direção: não dá para saber de quem se fala.
+		if (sujeito === undefined || referencia === undefined) {
+			problemas += 1;
+			return;
+		}
+		if (sujeito === referencia) return;
+
+		const afirmaCurto = curto && !longo;
+		// Direção contradiz a mesa: sinal, sem tocar a fala.
+		if (afirmaCurto !== sujeito < referencia) problemas += 1;
+	});
+
+	return { texto, problemas };
+}
+
+/**
+ * Verifica a comparação de prazo de um texto e emite o sinal `fala_contradiz_mesa`.
+ * A fala sai INALTERADA — a conduta manda a fala bater com a mesa.
+ */
 export function corrigirComparacaoDePrazo(
 	texto: string,
 	args: { cartasDaMesa: readonly CartaDaMesa[] } = { cartasDaMesa: [] },
 ): string {
-	if (!texto || (!MAIS_CURTO.test(texto) && !MAIS_LONGO.test(texto))) return texto;
-	const mesa = args.cartasDaMesa;
-	const prazosDaMesa = new Set(mesa.map((c) => c.prazoMeses));
-	const frases = frasesDe(texto);
-
-	return frases
-		.map((frase, i) => {
-			const curto = MAIS_CURTO.test(frase);
-			const longo = MAIS_LONGO.test(frase);
-			if (!curto && !longo) return frase;
-
-			// Prazo ESCRITO que não é de carta nenhuma da mesa: o número é invenção.
-			const escritos = [
-				...[...frase.matchAll(PRAZO_COM_UNIDADE)].map((m) => Number(m[1])),
-				...[...frase.matchAll(PRAZO_SEM_UNIDADE)].map((m) => Number(m[1])),
-			];
-			if (escritos.some((p) => !prazosDaMesa.has(p))) return semComparativo(frase);
-
-			const mencoes = mencoesDa(frase, mesa);
-			let sujeito: number | undefined;
-			let referencia: number | undefined;
-			if (mencoes.length >= 2) {
-				sujeito = mencoes[0]?.prazo;
-				referencia = mencoes[mencoes.length - 1]?.prazo;
-			} else if (mencoes.length === 1) {
-				referencia = mencoes[0]?.prazo;
-				// O sujeito é a carta da frase anterior mais próxima que cite uma.
-				for (let k = i - 1; k >= 0 && sujeito === undefined; k--) {
-					const antes = mencoesDa(frases[k] ?? "", mesa);
-					const ultimo = antes[antes.length - 1];
-					if (ultimo) sujeito = ultimo.prazo;
-				}
-			}
-
-			// Sem os dois prazos não há como provar a direção: a comparação sai.
-			if (sujeito === undefined || referencia === undefined) return semComparativo(frase);
-			if (sujeito === referencia) return frase;
-
-			const afirmaCurto = curto && !longo;
-			if (afirmaCurto === sujeito < referencia) return frase;
-
-			// Direção trocada: a palavra certa é a outra.
-			return curto
-				? frase.replace(MAIS_CURTO, (m) => trocarSentido(m, "longo"))
-				: frase.replace(MAIS_LONGO, (m) => trocarSentido(m, "curto"));
-		})
-		.join(" ");
-}
-
-function trocarSentido(achado: string, sentido: "curto" | "longo"): string {
-	const minusculo = achado.toLowerCase();
-	if (minusculo.includes("mais")) return `mais ${sentido}`;
-	if (minusculo.includes("menor") || minusculo.includes("maior"))
-		return sentido === "curto" ? "menor prazo" : "maior prazo";
-	return `prazo ${sentido === "curto" ? "menor" : "maior"}`;
-}
-
-/** Tira o comparativo da frase, mantendo o fato que ela carrega. */
-function semComparativo(frase: string): string {
-	return frase
-		.replace(
-			/\s*,?\s*(?:com|de|que tem)?\s*(?:prazo|tempo)?\s*(?:mais\s+(?:curto|longo)|menor|maior)\s*(?:prazo|tempo)?\s*(?:que|do que)\s+[^.!?]{0,40}?\d{2,3}\s*(?:meses|m[êe]s)[^.!?]*/gi,
-			"",
-		)
-		.replace(/\s{2,}/g, " ")
-		.trim();
+	const { texto: inalterado, problemas } = verificarComparacaoDePrazo(texto, args.cartasDaMesa);
+	publicarSinal(problemas);
+	return inalterado;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -216,64 +224,63 @@ function cartaPelaAdministradora(
 }
 
 /**
- * Confere "parcela menor/maior … que …". Direção trocada e verificável → troca a palavra; não dá
- * para saber de qual carta se fala (ou a referência não está na mesa) → a oração comparativa sai e
- * a frase continua só com o que é fato.
+ * Verifica "parcela menor/maior … que …". DEVOLVE O TEXTO INALTERADO e conta como problema quando
+ * a direção contradiz a mesa ou quando não dá para saber de qual carta se fala (sujeito ou
+ * referência fora da mesa). A conduta manda a fala bater com a mesa; o sinal mede o caso.
  */
+function verificarComparacaoDeParcela(
+	texto: string,
+	mesa: readonly CartaDaMesa[],
+): { texto: string; problemas: number } {
+	if (!texto || !COMPARATIVO_DE_PARCELA.test(texto)) return { texto, problemas: 0 };
+	const frases = frasesDe(texto);
+	let problemas = 0;
+
+	frases.forEach((frase, i) => {
+		const achado = COMPARATIVO_DE_PARCELA.exec(frase);
+		if (!achado) return;
+		const [, direcao, referenciaEscrita] = achado as unknown as [string, string, string];
+		const antes = frase.slice(0, achado.index);
+
+		// O sujeito: a última carta citada ANTES do comparativo na frase, ou na frase anterior
+		// mais próxima que cite uma.
+		let sujeito = cartasCitadas(antes, mesa).at(-1);
+		for (let k = i - 1; k >= 0 && !sujeito; k--) {
+			sujeito = cartasCitadas(frases[k] ?? "", mesa).at(-1);
+		}
+		// A referência: a carta citada na própria oração ("que a de R$ 1.099,62") ou a outra da
+		// administradora ("que a outra da ÂNCORA").
+		const referencia = sujeito
+			? (cartasCitadas(referenciaEscrita, mesa).at(-1) ??
+				cartaPelaAdministradora(referenciaEscrita, mesa, sujeito))
+			: undefined;
+
+		if (!sujeito || !referencia || sujeito === referencia) {
+			problemas += 1;
+			return;
+		}
+
+		const afirmaMenor = PARCELA_MENOR.test(direcao);
+		if (afirmaMenor !== sujeito.parcela < referencia.parcela) problemas += 1;
+	});
+
+	return { texto, problemas };
+}
+
+/** Verifica a comparação de parcela e emite o sinal. Fala sai INALTERADA. */
 export function corrigirComparacaoDeParcela(
 	texto: string,
 	args: { cartasDaMesa: readonly CartaDaMesa[] } = { cartasDaMesa: [] },
 ): string {
-	if (!texto || !COMPARATIVO_DE_PARCELA.test(texto)) return texto;
-	const mesa = args.cartasDaMesa;
-	const frases = frasesDe(texto);
-	return frases
-		.map((frase, i) => {
-			const achado = COMPARATIVO_DE_PARCELA.exec(frase);
-			if (!achado) return frase;
-			const [inteiro, direcao, referenciaEscrita] = achado as unknown as [string, string, string];
-			const antes = frase.slice(0, achado.index);
-
-			// O sujeito: a última carta citada ANTES do comparativo na frase, ou na frase anterior
-			// mais próxima que cite uma.
-			let sujeito = cartasCitadas(antes, mesa).at(-1);
-			for (let k = i - 1; k >= 0 && !sujeito; k--) {
-				sujeito = cartasCitadas(frases[k] ?? "", mesa).at(-1);
-			}
-			// A referência: a carta citada na própria oração ("que a de R$ 1.099,62") ou a outra da
-			// administradora ("que a outra da ÂNCORA").
-			const referencia = sujeito
-				? (cartasCitadas(referenciaEscrita, mesa).at(-1) ??
-					cartaPelaAdministradora(referenciaEscrita, mesa, sujeito))
-				: undefined;
-
-			if (!sujeito || !referencia || sujeito === referencia) return tirarOracao(frase, inteiro);
-
-			const afirmaMenor = PARCELA_MENOR.test(direcao);
-			if (afirmaMenor === sujeito.parcela < referencia.parcela) return frase;
-			// Direção trocada: a parcela dela é o oposto do que a fala disse.
-			const oposta = afirmaMenor ? "parcela maior" : "parcela menor";
-			return frase.replace(
-				/(?:a\s+)?parcela\s+(?:menor|maior|mais\s+baixa|mais\s+alta|mais\s+barata|mais\s+cara|mais\s+em\s+conta)/i,
-				oposta,
-			);
-		})
-		.join(" ");
-}
-
-/** Tira a oração comparativa ("e parcela menor que a outra da ÂNCORA") e deixa o resto da frase. */
-function tirarOracao(frase: string, oracao: string): string {
-	const i = frase.indexOf(oracao);
-	if (i < 0) return frase;
-	// O que sobra de antes perde o conectivo pendurado ("…o menor prazo e" / ", com").
-	const antes = frase.slice(0, i).replace(/\s*,?\s*\b(?:e|com)\s*$/i, "");
-	return `${antes}${frase.slice(i + oracao.length)}`.replace(/\s+([,.;:!?])/g, "$1").trim();
+	const { texto: inalterado, problemas } = verificarComparacaoDeParcela(texto, args.cartasDaMesa);
+	publicarSinal(problemas);
+	return inalterado;
 }
 
 // ---------------------------------------------------------------------------------------------
 // PRAZO INVENTADO — conversa de teste de 28/10: "a menor parcela é da ÂNCORA, mas o prazo é de
-// 100 meses". A ÂNCORA da mesa tem 114 e 94; não existe carta de 100. Prazo dito sobre a oferta tem
-// de ser o de uma carta da mesa — o que não é, sai da fala (a frase continua só com o fato).
+// 100 meses". A ÂNCORA da mesa tem 114 e 94; não existe carta de 100. Prazo dito sobre a oferta
+// tem de ser o de uma carta da mesa — o que não é, é invenção: sinal, sem tocar a fala.
 // ---------------------------------------------------------------------------------------------
 
 /** "…, mas o prazo é de 100 meses" / "o prazo fica em 100 meses": o prazo ESCRITO como atributo. */
@@ -291,82 +298,64 @@ const DIFERENCA_DE_PRAZO =
 const MENCIONA_A_OFERTA = /parcela|prazo|carta|recomend|op[çc][ãa]o|cota|grupo/i;
 
 /**
- * Tira da fala o prazo que não é de carta nenhuma da mesa. Sem cartas na mesa, não faz nada.
- *
- *  · prazo-atributo ("o prazo é de 100 meses") → a oração sai;
- *  · "tem/com/prazo de 100 meses" → o número vira o da carta que a PRÓPRIA frase identifica (pela
- *    parcela, ou pela administradora quando ela só tem uma carta); sem identificar, vira "o prazo
- *    da tabela" — verdadeiro, e a tabela está na tela.
+ * Verifica os prazos ditos na fala contra a mesa. DEVOLVE O TEXTO INALTERADO e conta como problema
+ * cada prazo que não é de carta nenhuma da mesa (invenção) ou que contradiz o prazo da carta que a
+ * própria frase identifica. Sem cartas na mesa, não há o que conferir: nenhum problema.
  */
+function verificarPrazoInventado(
+	texto: string,
+	mesa: readonly CartaDaMesa[],
+): { texto: string; problemas: number } {
+	if (!texto || mesa.length === 0) return { texto, problemas: 0 };
+	const prazos = new Set(mesa.map((c) => c.prazoMeses));
+	let problemas = 0;
+	for (const frase of frasesDe(texto)) {
+		const atributo = PRAZO_COMO_ATRIBUTO.exec(frase);
+		if (atributo && !prazos.has(Number(atributo[2]))) {
+			problemas += 1;
+			continue;
+		}
+
+		// "A diferença é de 4 meses": só é verdade se algum PAR de cartas da mesa difere assim.
+		const diferenca = DIFERENCA_DE_PRAZO.exec(frase);
+		if (diferenca) {
+			const possiveis = new Set<number>();
+			for (const a of prazos) for (const b of prazos) if (a !== b) possiveis.add(Math.abs(a - b));
+			if (!possiveis.has(Number(diferenca[1]))) {
+				problemas += 1;
+				continue;
+			}
+		}
+
+		// Cada "tem/é de/com N meses" da frase é conferido (a frase pode citar duas cartas).
+		const fala = semAcento(frase);
+		const citaAAdministradora = mesa.some(
+			(c) => c.administradora && fala.includes(semAcento(c.administradora)),
+		);
+		if (!MENCIONA_A_OFERTA.test(frase) && !citaAAdministradora) continue;
+		for (const m of frase.matchAll(new RegExp(PRAZO_DITO_DA_CARTA.source, "gi"))) {
+			const dissePrazo = Number(m[2]);
+			if (dissePrazo < 36) continue;
+			// A carta que a frase identifica: pela parcela, ou pela administradora que só tem uma.
+			const semEste = frase.replace(m[0], " ");
+			const identificada =
+				cartasCitadasPelaParcela(semEste, mesa) ?? cartaUnicaDaAdministradora(semEste, mesa);
+			// Certo = é o prazo da carta identificada; sem identificar, basta existir na mesa.
+			const certo = identificada ? identificada.prazoMeses === dissePrazo : prazos.has(dissePrazo);
+			if (!certo) problemas += 1;
+		}
+	}
+	return { texto, problemas };
+}
+
+/** Verifica os prazos ditos contra a mesa e emite o sinal. Fala sai INALTERADA. */
 export function semPrazoInventado(
 	texto: string,
 	args: { cartasDaMesa: readonly CartaDaMesa[] },
 ): string {
-	if (!texto || args.cartasDaMesa.length === 0) return texto;
-	const mesa = args.cartasDaMesa;
-	const prazos = new Set(mesa.map((c) => c.prazoMeses));
-	return frasesDe(texto)
-		.map((frase) => {
-			const atributo = PRAZO_COMO_ATRIBUTO.exec(frase);
-			if (atributo && !prazos.has(Number(atributo[2]))) {
-				const inicio = atributo.index;
-				const fim = inicio + atributo[0].length;
-				const antes = frase.slice(0, inicio).trim();
-				// O prazo era a frase inteira ("O prazo é de 100 meses."): a frase sai.
-				if (!antes || /:$/.test(antes)) return antes.replace(/:$/, "").trim();
-				const depois = frase.slice(fim);
-				return `${antes}${depois}`.replace(/\s+([,.;:!?])/g, "$1").trim();
-			}
-
-			// "A diferença é de 4 meses": só é verdade se algum PAR de cartas da mesa difere assim.
-			const diferenca = DIFERENCA_DE_PRAZO.exec(frase);
-			if (diferenca) {
-				const possiveis = new Set<number>();
-				for (const a of prazos) for (const b of prazos) if (a !== b) possiveis.add(Math.abs(a - b));
-				if (!possiveis.has(Number(diferenca[1]))) return "";
-			}
-
-			// Cada "tem/é de/com N meses" da frase é conferido (a frase pode citar duas cartas).
-			const fala = semAcento(frase);
-			const citaAAdministradora = mesa.some(
-				(c) => c.administradora && fala.includes(semAcento(c.administradora)),
-			);
-			if (!MENCIONA_A_OFERTA.test(frase) && !citaAAdministradora) return frase;
-			let corrigiu = false;
-			const corrigida = frase.replace(
-				new RegExp(PRAZO_DITO_DA_CARTA.source, "gi"),
-				(inteiro: string, verboDito: string, n: string) => {
-					const dissePrazo = Number(n);
-					if (dissePrazo < 36) return inteiro;
-					// A carta que a frase identifica: pela parcela, ou pela administradora que só tem uma.
-					const semEste = frase.replace(inteiro, " ");
-					const identificada =
-						cartasCitadasPelaParcela(semEste, mesa) ?? cartaUnicaDaAdministradora(semEste, mesa);
-					// Certo = é o prazo da carta identificada; sem identificar, basta existir na mesa.
-					const certo = identificada
-						? identificada.prazoMeses === dissePrazo
-						: prazos.has(dissePrazo);
-					if (certo) return inteiro;
-					corrigiu = true;
-					const verbo = verboDito.toLowerCase();
-					const comoVerbo = /^(?:[ée]\s+de|s[ãa]o\s+de|fica\s+em|ficam\s+em)$/i.test(verbo);
-					if (identificada) {
-						return comoVerbo
-							? `tem ${identificada.prazoMeses} meses`
-							: `${verboDito} ${identificada.prazoMeses} meses`;
-					}
-					if (/^prazo/i.test(verbo)) return "prazo da tabela";
-					return comoVerbo ? "tem o prazo da tabela" : `${verboDito} o prazo da tabela`;
-				},
-			);
-			if (!corrigiu) return frase;
-			// Corrigido o número, "igual à CANOPUS" deixa de ser verdade: a oração sai.
-			return corrigida
-				.replace(/\s*,?\s*igual\s+(?:à|ao|a)\s+[^,.;!?]+/i, "")
-				.replace(/\s+([,.;:!?])/g, "$1");
-		})
-		.filter((f) => f.length > 0)
-		.join(" ");
+	const { texto: inalterado, problemas } = verificarPrazoInventado(texto, args.cartasDaMesa);
+	publicarSinal(problemas);
+	return inalterado;
 }
 
 /** A carta que a frase identifica pela parcela em R$ (única), se houver. */
@@ -396,13 +385,19 @@ function cartaUnicaDaAdministradora(
 	return dela.length === 1 ? dela[0] : undefined;
 }
 
-/** As duas réguas juntas — o que `montarTrechoDeSaida` aplica ao balão. */
+/**
+ * As duas réguas juntas, em VERIFICAÇÃO: nenhuma reescrita, nenhum corte — a fala sai INALTERADA.
+ * O sinal `fala_contradiz_mesa` (NUMERIC, onde="remendos-fala") carrega o total de comparações
+ * problemáticas de todas as três conferências. `montarTrechoDeSaida` chama; o call site sai na
+ * onda 2.
+ */
 export function corrigirComparacoes(
 	texto: string,
 	args: { cartasDaMesa: readonly CartaDaMesa[] },
 ): string {
-	return corrigirComparacaoDeParcela(
-		corrigirComparacaoDePrazo(semPrazoInventado(texto, args), args),
-		args,
-	);
+	const prazo = verificarComparacaoDePrazo(texto, args.cartasDaMesa);
+	const parcela = verificarComparacaoDeParcela(prazo.texto, args.cartasDaMesa);
+	const inventado = verificarPrazoInventado(parcela.texto, args.cartasDaMesa);
+	publicarSinal(prazo.problemas + parcela.problemas + inventado.problemas);
+	return inventado.texto;
 }

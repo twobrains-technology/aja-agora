@@ -263,7 +263,7 @@ function semEco(opcoes: readonly string[], falaDoCliente?: string): string[] {
 }
 
 /** Acima do teto do botão: corta palavra inteira, nunca no meio. */
-function dentroDoTeto(rotulo: string): string {
+function _dentroDoTeto(rotulo: string): string {
 	if (rotulo.length <= MAXIMO_DA_ALTERNATIVA) return rotulo;
 	const palavras = rotulo.split(" ");
 	while (palavras.length > 1 && palavras.join(" ").length > MAXIMO_DA_ALTERNATIVA) palavras.pop();
@@ -299,7 +299,11 @@ const INTERROGATIVA = /^(?:qual|quais|quanto|quantos|quantas|como|quando|onde)$/
  * rótulo truncado): pergunta sem chip é melhor que chip na voz do agente.
  */
 export function rotuloNaVozDoCliente(bruto: string): string | null {
-	let palavras = bruto.trim().replace(/[?.!,;:]+$/, "").split(/\s+/).filter(Boolean);
+	let palavras = bruto
+		.trim()
+		.replace(/[?.!,;:]+$/, "")
+		.split(/\s+/)
+		.filter(Boolean);
 	if (palavras.length === 0) return null;
 	let tinhaSujeito = false;
 	if (/^(?:você|voce|vc|tu)$/i.test(palavras[0] ?? "")) {
@@ -329,7 +333,7 @@ export function rotuloNaVozDoCliente(bruto: string): string | null {
 }
 
 /** Lado comprido demais: fica o núcleo — as palavras até o conector que abre a explicação. */
-function encurtaParaONucleo(nucleo: string): string {
+function _encurtaParaONucleo(nucleo: string): string {
 	const palavras = nucleo.split(/\s+/);
 	if (palavras.length <= MAXIMO_DE_PALAVRAS_DA_ALTERNATIVA) return nucleo;
 	const corte = palavras.findIndex((p, i) => i > 0 && CONECTOR.test(p));

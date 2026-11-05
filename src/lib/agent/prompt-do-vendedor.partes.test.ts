@@ -62,7 +62,7 @@ describe("repartição do prompt em partes (base e partes)", () => {
 		}
 		const nasPartesFrases = [
 			"Explique com palavras simples quando fizer diferença para a decisão dela, sem aula.",
-			"diga isso em UMA frase curta e siga para o próximo passo útil, sem repetir o aviso em turnos seguidos",
+			"fale como vendedor, numa bolha só (um parágrafo, sem quebra de linha, mesmo que o resto da conduta peça bolhas)",
 			"responda em uma frase DIFERENTE — o aviso já foi dado.",
 			"De madrugada ninguém atende: diga isso e combine o retorno.",
 		];
@@ -88,7 +88,7 @@ describe("repartição do prompt em partes (base e partes)", () => {
 		expect(t).toMatch(/quando a busca falha/);
 		expect(t).toMatch(/recusa um dado/);
 		expect(t).toMatch(/ninguém da fila atende/);
-		expect(t).toMatch(/Entregue valor antes de pedir dado/);
+		expect(t).toMatch(/entregue valor antes de pedir dado/);
 		expect(t).toMatch(/Atenda o que a pessoa pediu/);
 		expect(t).toMatch(/Não peça de novo o que ela já respondeu nem o que o canal já entregou/);
 		expect(t).toMatch(/Ninguém é empurrado para o fechamento/);
@@ -145,7 +145,7 @@ describe("repartição do prompt em partes (base e partes)", () => {
 
 	it("T2.2b contato manda pedir o celular uma vez, só na proposta, no site", () => {
 		const t = normaliza(PARTES_PADRAO.contato);
-		expect(t).toMatch(/uma vez/i);
+		expect(t).toMatch(/uma [úu]nica vez/i);
 		expect(t).toMatch(/proposta/i);
 	});
 

@@ -12,6 +12,7 @@
 import { type Caixa, caixaDoCodigo, labelDaCaixa, lerCaixa } from "@/lib/agent/box/caixa";
 import { skillsParaPrompt } from "@/lib/agent/pi/skills";
 import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
+import { sanitizarContactName } from "@/lib/leads/contact-capture";
 
 /** Só o que o fato precisa saber da identidade — os dígitos NUNCA são impressos. */
 export type IdentidadeDoCliente = { cpf: string; celular?: string };
@@ -25,7 +26,10 @@ function linhaDeFato(args: {
 	identidade: IdentidadeDoCliente | null;
 	celularGuardado?: boolean;
 }): string {
-	const nome = args.contactName?.trim();
+	// Defesa em profundidade: o nome também é sanitizado AQUI. A origem
+	// (`saveContactName`) já grava limpo, mas o nome que chega por pushName ou por
+	// outro caminho do banco passa pela mesma régua antes de entrar no system.
+	const nome = args.contactName ? sanitizarContactName(args.contactName) : null;
 	const cpf = args.identidade ? "recebido e guardado" : "ainda não informado";
 	// No WhatsApp o celular É o número da conversa: não se pede, não se pergunta. Na
 	// web ele pode ser pedido UMA vez, no momento da proposta.
