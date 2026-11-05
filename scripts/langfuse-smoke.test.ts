@@ -2,7 +2,7 @@
 // substituídos por dublês — nada aqui fala com o Langfuse de verdade.
 
 import { describe, expect, it, vi } from "vitest";
-import { aguardarObservacao, credenciais, executarSmoke, type Credenciais } from "./langfuse-smoke";
+import { aguardarObservacao, type Credenciais, credenciais, executarSmoke } from "./langfuse-smoke";
 
 const semCofre = () => undefined;
 
@@ -31,9 +31,8 @@ describe("credenciais", () => {
 	});
 
 	it("leva o ambiente do cofre quando o ambiente não traz nada", () => {
-		const cred = credenciais(
-			{},
-			(chave) => (chave === "LANGFUSE_PUBLIC_KEY" ? "pk-cofre" : undefined),
+		const cred = credenciais({}, (chave) =>
+			chave === "LANGFUSE_PUBLIC_KEY" ? "pk-cofre" : undefined,
 		);
 		expect(cred).toBeNull(); // cofre trouxe só uma chave: não liga pela metade
 	});

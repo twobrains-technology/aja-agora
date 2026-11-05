@@ -26,8 +26,8 @@
 import "../_env-host";
 
 import { execFileSync } from "node:child_process";
-import type { PerfilDeCliente } from "../../src/lib/playground/simulacao/tipos";
 import { PERFIS_DE_CLIENTE } from "../../src/lib/playground/simulacao/perfis-de-cliente";
+import type { PerfilDeCliente } from "../../src/lib/playground/simulacao/tipos";
 
 const NOME_DO_DATASET = "aja-agora-eval";
 const DESCRICAO =
@@ -80,7 +80,10 @@ function paraHost(url: string): string {
  *  usam; medida em 05/11/2026: aceita credenciais, a instância local rejeita). */
 function candidatas(): Credenciais[] {
 	const montadas: Credenciais[] = [];
-	const porOrigem = (origem: string, ler: (chave: ChaveEnv) => string | null): Credenciais | null => {
+	const porOrigem = (
+		origem: string,
+		ler: (chave: ChaveEnv) => string | null,
+	): Credenciais | null => {
 		const valores: string[] = [];
 		for (const chave of CHAVES) {
 			const valor = ler(chave)?.trim();
@@ -98,7 +101,9 @@ function candidatas(): Credenciais[] {
 	if (ambiente) montadas.push(ambiente);
 	const aja = porOrigem("vault:aja-agora", (c) => doVault("aja-agora", chavesDoCofre[c]));
 	if (aja) montadas.push(aja);
-	const prod = porOrigem("vault:pi-agentes-aja-langfuse", (c) => doVault("pi-agentes-aja-langfuse", c));
+	const prod = porOrigem("vault:pi-agentes-aja-langfuse", (c) =>
+		doVault("pi-agentes-aja-langfuse", c),
+	);
 	if (prod) montadas.push(prod);
 	return montadas;
 }
@@ -135,7 +140,10 @@ function itemDePerfilDoPlayground(p: PerfilDeCliente): ItemDoDataset {
 	// Perfil → cenários golden que exercitam o mesmo eixo (metadata, para filtro).
 	const goldenPorPerfil: Partial<Record<PerfilDeCliente["id"], string[]>> = {
 		"caminho-feliz": ["golden-mario-sem-lance", "golden-smoke-agente"],
-		"nervoso-bugado": ["golden-dono-chato-tudo-numa-frase-so", "golden-dono-chato-nao-entendi-duas-vezes"],
+		"nervoso-bugado": [
+			"golden-dono-chato-tudo-numa-frase-so",
+			"golden-dono-chato-nao-entendi-duas-vezes",
+		],
 		"recusa-telefone": ["golden-objecao-cpf", "golden-e-se-eu-fechar-a-tela"],
 		objecao: ["golden-objecao-financiamento", "golden-objecao-quanto-tempo"],
 	};
@@ -252,15 +260,13 @@ const PERFIS_REAIS: readonly PerfilReal[] = [
 			tom: "cético, testa o vendedor com 3 objeções seguidas",
 			comportamento:
 				"faz as 3 objeções clássicas em sequência e NUNCA informa o WhatsApp — se o agente repetir o pedido do telefone a cada resposta, desiste silenciosamente",
-			o_que_quer:
-				"entender se consórcio vale mais que financiamento antes de dar qualquer contato",
+			o_que_quer: "entender se consórcio vale mais que financiamento antes de dar qualquer contato",
 		},
 		categoria: "auto",
 		canal: "web",
 		administradora: null,
 		anuncio: "direto",
-		origem_real:
-			"41081792 (web, auto, direto, 04/11 15:49, em_negociacao, 10 msgs, sem telefone)",
+		origem_real: "41081792 (web, auto, direto, 04/11 15:49, em_negociacao, 10 msgs, sem telefone)",
 		invariantes: [
 			"responder as 3 objeções com conteúdo (contemplação é por sorteio ou lance; financiamento x consórcio juros x taxa) — P1: entrega antes de perguntar",
 			"não amarrar CADA resposta ao mesmo pedido de telefone: máximo 1 pedido explícito por turno, e alternar o próximo passo",
@@ -285,7 +291,8 @@ const PERFIS_REAIS: readonly PerfilReal[] = [
 		canal: "whatsapp",
 		administradora: "Itaú",
 		anuncio: null,
-		origem_real: "f4b0708d (WhatsApp, Rafael, 21973685867, auto, 26/10 11:49, em_negociacao, 15 msgs)",
+		origem_real:
+			"f4b0708d (WhatsApp, Rafael, 21973685867, auto, 26/10 11:49, em_negociacao, 15 msgs)",
 		invariantes: [
 			"o vendedor reconhece lance embutido e propõe a estratégia da carta maior SEM inventar a lista de administradoras",
 			"número da carta, parcela e prazo vêm da ferramenta; contemplados/mês também",
@@ -354,7 +361,8 @@ const PERFIS_REAIS: readonly PerfilReal[] = [
 			tom: "whatsapp; apenas clique no quick-reply, nunca digita",
 			comportamento:
 				"responde 1 vez e depois recebe 2–3 toques do agente sem nunca voltar; não é robô (celular real identificado)",
-			o_que_quer: "desconhecido — o perfil testa se o agente consegue DESPERTAR conversa sem resposta",
+			o_que_quer:
+				"desconhecido — o perfil testa se o agente consegue DESPERTAR conversa sem resposta",
 		},
 		categoria: "auto",
 		canal: "whatsapp",
@@ -413,7 +421,8 @@ function itemDePerfilReal(p: PerfilReal): ItemDoDataset {
 		expectedOutput: {
 			invariantes: p.invariantes,
 			cenario_morte: p.cenario_morte,
-			sucesso: "a trajetória cumpre TODAS as invariantes; a conversa não morre e o lead não desiste pelo motivo do cenário de morte",
+			sucesso:
+				"a trajetória cumpre TODAS as invariantes; a conversa não morre e o lead não desiste pelo motivo do cenário de morte",
 		},
 		metadata: {
 			perfil: p.id,
@@ -502,7 +511,9 @@ async function idIdsExistentes(lf: LangfuseClient): Promise<Set<string>> {
 	const ids = new Set<string>();
 	let pagina = 1;
 	for (;;) {
-		const r = await lf.get(`/api/public/dataset-items?datasetName=${NOME_DO_DATASET}&page=${pagina}&limit=50`);
+		const r = await lf.get(
+			`/api/public/dataset-items?datasetName=${NOME_DO_DATASET}&page=${pagina}&limit=50`,
+		);
 		const dados = (r.corpo as { data?: Array<{ id?: string }> }).data ?? [];
 		for (const i of dados) if (i.id) ids.add(i.id);
 		if (dados.length < 50) break;
@@ -517,7 +528,7 @@ async function main(): Promise<void> {
 	const itens = todosOsItens();
 
 	// dataset existe? (GET 404 → cria; o POST de dataset é por nome, único por projeto)
-	let r;
+	let r: { corpo: unknown; status: number };
 	try {
 		r = await lf.get(`/api/public/datasets/${NOME_DO_DATASET}`);
 	} catch {
@@ -555,11 +566,11 @@ async function main(): Promise<void> {
 		console.error(`[dataset-seed] contagem do dataset diverge dos itens esperados: ${depois.size}`);
 		process.exit(1);
 	}
-	const semSaida = itens.filter(
-		(i) => (i.expectedOutput.invariantes as string[]).length === 0,
-	);
+	const semSaida = itens.filter((i) => (i.expectedOutput.invariantes as string[]).length === 0);
 	if (semSaida.length > 0) {
-		console.error(`[dataset-seed] itens sem expected_output: ${semSaida.map((i) => i.id).join(", ")}`);
+		console.error(
+			`[dataset-seed] itens sem expected_output: ${semSaida.map((i) => i.id).join(", ")}`,
+		);
 		process.exit(1);
 	}
 	console.log("[dataset-seed] GATE: verde — dataset com itens completos e sem duplicação.");

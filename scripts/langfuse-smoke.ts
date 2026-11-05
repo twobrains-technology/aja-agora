@@ -15,10 +15,10 @@
 
 import { execFileSync } from "node:child_process";
 import { isAbsolute, resolve } from "node:path";
-import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
-import { LangfuseSpanProcessor, isLangfuseSpan } from "@langfuse/otel";
-import { context, trace } from "@opentelemetry/api";
 import { LANGFUSE_TRACER_NAME } from "@langfuse/core";
+import { isLangfuseSpan, LangfuseSpanProcessor } from "@langfuse/otel";
+import { context, trace } from "@opentelemetry/api";
+import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 
 const COFRE = "pi-agentes-aja-langfuse";
 const TETO_DE_INGESTAO_MS = 30_000;

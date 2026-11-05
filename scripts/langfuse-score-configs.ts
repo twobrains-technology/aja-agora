@@ -178,22 +178,19 @@ export async function criarScoreConfig(
 	cred: Credenciais,
 	config: Config,
 ): Promise<{ status: number; criado: boolean }> {
-	const resposta = await fetchFn(
-		`${cred.baseUrl.replace(/\/$/, "")}/api/public/score-configs`,
-		{
-			method: "POST",
-			headers: { Authorization: autorizacao(cred), "Content-Type": "application/json" },
-			body: JSON.stringify({
-				name: config.name,
-				dataType: config.dataType,
-				...(config.dataType === "NUMERIC"
-					? { minValue: config.minValue ?? 0, maxValue: config.maxValue ?? 1 }
-					: {}),
-				description: config.description,
-			}),
-			signal: AbortSignal.timeout(15_000),
-		},
-	);
+	const resposta = await fetchFn(`${cred.baseUrl.replace(/\/$/, "")}/api/public/score-configs`, {
+		method: "POST",
+		headers: { Authorization: autorizacao(cred), "Content-Type": "application/json" },
+		body: JSON.stringify({
+			name: config.name,
+			dataType: config.dataType,
+			...(config.dataType === "NUMERIC"
+				? { minValue: config.minValue ?? 0, maxValue: config.maxValue ?? 1 }
+				: {}),
+			description: config.description,
+		}),
+		signal: AbortSignal.timeout(15_000),
+	});
 	return { status: resposta.status, criado: resposta.ok };
 }
 
@@ -211,7 +208,12 @@ export async function executar(
 ): Promise<ResultadoExecucao> {
 	const cred = credenciais(env, lerCofre);
 	if (!cred) {
-		return { ok: false, motivo: "sem credenciais no ambiente e no cofre — script não roda", criados: [], existentes: [] };
+		return {
+			ok: false,
+			motivo: "sem credenciais no ambiente e no cofre — script não roda",
+			criados: [],
+			existentes: [],
+		};
 	}
 
 	const existentes = await listarScoreConfigs(fetchFn, cred);
@@ -249,11 +251,15 @@ if (ehProcessoPrincipal()) {
 	void (async () => {
 		const resultado = await executar();
 		if (!resultado.ok) {
-			console.error(`[langfuse-score-configs] FALHOU: ${resultado.motivo ?? "motivo desconhecido"}`);
+			console.error(
+				`[langfuse-score-configs] FALHOU: ${resultado.motivo ?? "motivo desconhecido"}`,
+			);
 			console.error(`  criados antes da falha: ${resultado.criados.join(", ") || "nenhum"}`);
 			process.exit(1);
 		}
-		console.log(`score-configs: ${resultado.criados.length} criados, ${resultado.existentes.length} já existiam (idempotente)`);
+		console.log(
+			`score-configs: ${resultado.criados.length} criados, ${resultado.existentes.length} já existiam (idempotente)`,
+		);
 		for (const nome of resultado.criados) console.log(`  criado   ${nome}`);
 		for (const nome of resultado.existentes) console.log(`  existente ${nome}`);
 		process.exit(0);
