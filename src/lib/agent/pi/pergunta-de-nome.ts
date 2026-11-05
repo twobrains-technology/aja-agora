@@ -4,9 +4,13 @@
 // vezes — na oferta, no pedido de CPF ("Também não esqueço de perguntar: como você se chama?") e
 // depois da falha da proposta. A conduta já dizia "no máximo uma repetição" e o modelo não cumpriu:
 // quantas vezes o nome já foi pedido é FATO do histórico, então o limite mora no servidor, não no
-// prompt. Esta é uma regra de CONTAGEM de pedido, não de tom: o texto só é cortado quando o limite
-// já foi gasto (ou o nome já é conhecido).
+// prompt. Esta é uma regra de CONTAGEM de pedido, não de tom.
+//
+// P11 (Kairo, 05/11): o corte saiu do runtime — "nada de teto em código" (premissa P11).
+// O texto passa INALTERADO; `pedeONome` e `pedidosDeNomeNoHistorico` ficam como medida,
+// e o sinal `fala_pede_nome` registra quando a fala pediu o nome.
 import { RESPOSTA_LIVRE } from "@/lib/agent/pi/sugestoes";
+import { publicarScores } from "@/lib/observability/sinais/publicar";
 
 /** Total de vezes que o agente pode pedir o nome numa conversa: a abertura + uma repetição. */
 export const LIMITE_DE_PEDIDOS_DE_NOME = 2;
@@ -21,9 +25,6 @@ function fraseEhPerguntaDeNome(frase: string): boolean {
 	return frase.includes("?") && RESPOSTA_LIVRE.test(frase);
 }
 
-/** A frase que vem depois da pergunta só para justificá-la: "Assim eu já te chamo pelo nome." */
-const JUSTIFICATIVA_DO_NOME = /\b(?:chamo|chamar|chamá-lo)\b[^.!?]*\bnome\b|\bpelo\s+nome\b/i;
-
 /** O texto pede o nome? */
 export function pedeONome(texto: string): boolean {
 	return frasesDe(texto ?? "").some(fraseEhPerguntaDeNome);
@@ -37,28 +38,16 @@ export function pedidosDeNomeNoHistorico(
 	return historico.filter((m) => m.role === "assistant" && pedeONome(m.content)).length;
 }
 
-/** O texto sem a(s) pergunta(s) de nome (e a frase que só a justifica). O resto fica como o modelo
- * escreveu. Texto que só pedia o nome volta vazio. */
+/** Devolve o texto inalterado; se a fala pede o nome, emite o sinal da medida. */
 export function semPerguntaDeNome(texto: string): string {
-	const linhas = (texto ?? "").split(/\n{2,}/);
-	const saida: string[] = [];
-	for (const linha of linhas) {
-		const frases = linha.split(/(?<=[.!?])\s+/).filter((f) => f.trim().length > 0);
-		const mantidas: string[] = [];
-		let cortouAnterior = false;
-		for (const frase of frases) {
-			if (fraseEhPerguntaDeNome(frase)) {
-				cortouAnterior = true;
-				continue;
-			}
-			if (cortouAnterior && JUSTIFICATIVA_DO_NOME.test(frase)) continue;
-			cortouAnterior = false;
-			mantidas.push(frase);
+	if (pedeONome(texto)) {
+		try {
+			publicarScores([{ name: "fala_pede_nome", value: 1, dataType: "BOOLEAN" }], "remendos-fala");
+		} catch {
+			// Observabilidade nunca derruba o turno.
 		}
-		const montada = mantidas.join(" ").trim();
-		if (montada) saida.push(montada);
 	}
-	return saida.join("\n\n");
+	return texto;
 }
 
 /** O agente ainda pode pedir o nome neste turno? `jaPedidos` vem do histórico (+ o que este turno

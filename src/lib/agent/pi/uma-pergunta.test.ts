@@ -1,7 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { contarPerguntas, manterUmaPergunta } from "./uma-pergunta";
+import { describe, expect, it, vi } from "vitest";
+import { publicarScores } from "@/lib/observability/sinais/publicar";
+import { contarPerguntas, manterUmaPergunta, semCitacoes } from "./uma-pergunta";
 
-describe("uma pergunta por mensagem", () => {
+vi.mock("@/lib/observability/sinais/publicar", () => ({ publicarScores: vi.fn() }));
+
+describe("uma pergunta por mensagem (medida, sem corte — P11)", () => {
 	it("conta pergunta fora de aspas", () => {
 		expect(
 			contarPerguntas("Você quer trocar o carro, ou é a primeira compra? E para quando?"),
@@ -10,47 +13,49 @@ describe("uma pergunta por mensagem", () => {
 		expect(contarPerguntas("Ótimo, Marcos!")).toBe(0);
 	});
 
-	it("com duas perguntas, mantém só a última e preserva o acolhimento", () => {
+	it("com duas perguntas, o texto passa inteiro e o sinal registra 2", () => {
 		const entrada =
 			"Ótimo! Carro é sempre uma alegria.\n\nVocê quer trocar o que tem agora, ou é a primeira compra? E para quando você está pensando nisso?";
-		const saida = manterUmaPergunta(entrada);
-		expect(contarPerguntas(saida)).toBe(1);
-		expect(saida).toContain("Carro é sempre uma alegria.");
-		expect(saida).toContain("para quando você está pensando nisso?");
-		expect(saida).not.toContain("primeira compra");
+		expect(manterUmaPergunta(entrada)).toBe(entrada);
+		expect(contarPerguntas(entrada)).toBe(2);
+		expect(publicarScores).toHaveBeenCalledWith(
+			[{ name: "fala_com_multiplas_perguntas", value: 2, dataType: "NUMERIC" }],
+			"remendos-fala",
+		);
 	});
 
-	it("pergunta + pergunta em frases coladas na mesma linha", () => {
-		const saida = manterUmaPergunta("Quanto separa por mês? Ou prefere que eu mostre as opções?");
-		expect(contarPerguntas(saida)).toBe(1);
-		expect(saida).toBe("Ou prefere que eu mostre as opções?");
+	it("duas perguntas na mesma linha: texto inteiro, sinal com o número certo", () => {
+		const fala = "Quanto separa por mês? Ou prefere que eu mostre as opções?";
+		expect(manterUmaPergunta(fala)).toBe(fala);
+		expect(publicarScores).toHaveBeenCalledWith(
+			[{ name: "fala_com_multiplas_perguntas", value: 2, dataType: "NUMERIC" }],
+			"remendos-fala",
+		);
 	});
 
-	it("uma pergunta só passa intacta, e pergunta citada não é cortada", () => {
+	it("uma pergunta só passa intacta, sem sinal, e pergunta citada não conta", () => {
+		vi.mocked(publicarScores).mockClear();
 		const um = "Perfeito! Qual o valor do carro?";
 		expect(manterUmaPergunta(um)).toBe(um);
 		const citada = 'Muita gente diz "será que dá?" — dá sim. Quando você quer começar?';
 		expect(manterUmaPergunta(citada)).toBe(citada);
+		expect(publicarScores).not.toHaveBeenCalled();
 	});
 
-	it("ponto de milhar não quebra a frase: o número sai íntegro (achado F3 do dev)", () => {
-		const entrada =
-			"Achei 4 opções! Eu escolheria a primeira, parcela de R$ 733. Prefere essa? Se preferir pagar antes, a terceira faz isso em 75 meses (parcela de R$ 1.010). Qual delas você quer?";
-		expect(manterUmaPergunta(entrada)).toBe(
-			"Achei 4 opções! Eu escolheria a primeira, parcela de R$ 733. Se preferir pagar antes, a terceira faz isso em 75 meses (parcela de R$ 1.010). Qual delas você quer?",
-		);
-	});
-
-	it("milhar e decimal dentro de frase preservada não quebram nada", () => {
-		for (const intacta of [
-			"O teto é de R$ 60.000. Posso simular pra você?",
-			"A parcela ficou em 1.038,61. Faz sentido pra você?",
-			"12.5% é o coeficiente. Posso simular?",
-		]) {
-			expect(manterUmaPergunta(intacta)).toBe(intacta);
-		}
-		// A frase com o número fica; só a pergunta do meio é cortada.
+	it("números com ponto de milhar contam certo (achado F3 do dev)", () => {
+		vi.mocked(publicarScores).mockClear();
 		const comDuas = "O teto é de R$ 60.000, certo? A parcela ficaria em 1.038,61. Posso simular?";
-		expect(manterUmaPergunta(comDuas)).toBe("A parcela ficaria em 1.038,61. Posso simular?");
+		expect(contarPerguntas(comDuas)).toBe(2);
+		expect(manterUmaPergunta(comDuas)).toBe(comDuas);
+		expect(publicarScores).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe("semCitacoes (medida)", () => {
+	it("preserva índices ao apagar o miolo de aspas", () => {
+		const texto = 'diz "será?" aqui';
+		const limpo = semCitacoes(texto);
+		expect(limpo.indexOf("aqui")).toBe(texto.indexOf("aqui"));
+		expect(limpo.includes("?")).toBe(false);
 	});
 });
