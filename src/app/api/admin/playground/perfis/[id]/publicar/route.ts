@@ -5,6 +5,7 @@
  */
 import { z } from "zod";
 import { labelDaCaixa, lerCaixa, publicarCaixa } from "@/lib/agent/box/caixa";
+import { espelharCaixaDePrompt } from "@/lib/observability/espelho-prompt";
 import { aplicarBloco, compilarConduta, compilarPerfil } from "@/lib/playground/compilar-perfil";
 import { ehEnvelope, ler } from "@/lib/playground/orientacao-em-partes";
 import { carimbarCaixaVersao, obterPerfil } from "@/lib/playground/repo";
@@ -52,5 +53,8 @@ export async function POST(req: Request, { params }: Ctx) {
 
 	const { versao } = await publicarCaixa({ texto, label, publicadoPor: g.email });
 	await carimbarCaixaVersao(id, perfil.versao, versao);
+	// Espelho no Langfuse (B13): nunca derruba a publicação — falha só loga, dentro
+	// do módulo. Fire-and-forget: a resposta da publicação não espera o Langfuse.
+	void espelharCaixaDePrompt();
 	return Response.json({ caixaVersao: versao });
 }
