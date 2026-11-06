@@ -1,4 +1,4 @@
-import { generateObject } from "ai";
+import { generateObject, generateText } from "ai";
 import { createGatewayAnthropic } from "@/lib/llm/gateway-anthropic";
 import { registrarUsoDeIa } from "@/lib/observability/sinais/publicar";
 import { normalizarUsoDoSdk } from "@/lib/observability/sinais/uso-do-sdk";
@@ -22,6 +22,60 @@ export class JudgeError extends Error {
 		this.name = "JudgeError";
 		this.cause = cause;
 	}
+}
+
+/** Teto de saída do juiz: transcript longo (21 turnos) truncava o JSON e o schema não casava. */
+export const JUDGE_MAX_OUTPUT_TOKENS = 8000;
+
+/** Detalhe de diagnóstico de erro do SDK (NoObjectGeneratedError): finishReason e uso. */
+export function detalheDoErroDoJuiz(err: unknown): string {
+	if (!(err instanceof Error)) return "unknown error";
+	const e = err as Error & { finishReason?: unknown; usage?: unknown };
+	const extras: string[] = [];
+	if (e.finishReason) extras.push(`finishReason=${String(e.finishReason)}`);
+	if (e.usage) {
+		try {
+			extras.push(`usage=${JSON.stringify(e.usage)}`);
+		} catch {
+			// uso não serializável: segue sem ele
+		}
+	}
+	return extras.length > 0 ? `${err.message} [${extras.join(" ")}]` : err.message;
+}
+
+/**
+ * Sonda do juiz: UMA chamada mínima antes do dataset run. `chamar` é injetada
+ * (o caller passa a chamada real pelo mesmo caminho do juiz). Falha → `ok:false`
+ * com a mensagem pronta; o caller aborta com exit 4.
+ */
+export async function sondarJuiz(
+	chamar: () => Promise<unknown>,
+	modelo: string = JUDGE_MODEL,
+): Promise<{ ok: true } | { ok: false; mensagem: string }> {
+	try {
+		await chamar();
+		return { ok: true };
+	} catch (e) {
+		return {
+			ok: false,
+			mensagem: `JUIZ INDISPONÍVEL: modelo ${modelo} recusado pelo gateway (${e instanceof Error ? e.message : String(e)}). Defina JUDGE_MODEL com um modelo servido.`,
+		};
+	}
+}
+
+/** Chamada mínima real ao modelo do juiz (mesmo caminho: createGatewayAnthropic + JUDGE_MODEL). */
+export async function chamadaMinimaDoJuiz(): Promise<void> {
+	const anthropic = createGatewayAnthropic();
+	await generateText({ model: anthropic(JUDGE_MODEL), prompt: "ok", maxOutputTokens: 8 });
+}
+
+export type CoberturaDoJuiz = { julgados: number; tentados: number; falhas: string[] };
+
+/** Linha final + decisão: juiz morto (tentou e nada julgou) → exit 4; parcial é só hipótese. */
+export function resumoDaCoberturaDoJuiz(c: CoberturaDoJuiz): { linha: string; morto: boolean } {
+	const morto = c.tentados > 0 && c.julgados === 0;
+	const linha = `JUIZ: ${c.julgados} de ${c.tentados} cenários com nota (${c.falhas.length} falhas${c.falhas.length > 0 ? `: ${c.falhas.join(", ")}` : ""})`;
+	return { linha: morto ? `${linha}\nJUIZ MORTO` : linha, morto };
 }
 
 export type JudgeResponse = {
@@ -88,6 +142,7 @@ export async function judgeConversation(args: JudgeArgs): Promise<JudgeResponse>
 				schema: judgeResultSchema,
 				system: RUBRIC_SYSTEM_PROMPT,
 				prompt,
+				maxOutputTokens: JUDGE_MAX_OUTPUT_TOKENS,
 				// `temperature` OMITIDO: o gateway (litellm 1.93) rejeita o parâmetro
 				// para claude-sonnet-5 (invalid_request_error: "deprecated").
 			});
@@ -123,7 +178,7 @@ export async function judgeConversation(args: JudgeArgs): Promise<JudgeResponse>
 	}
 
 	throw new JudgeError(
-		`judge failed after 2 attempts: ${lastError instanceof Error ? lastError.message : "unknown error"}`,
+		`judge failed after 2 attempts: ${detalheDoErroDoJuiz(lastError)}`,
 		lastError,
 	);
 }

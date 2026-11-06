@@ -272,6 +272,13 @@ function sinaisDeItem(args: {
 	};
 }
 
+// Cobertura do juiz offline: julgados × tentados (falha do juiz segue hipótese, mas à vista).
+const coberturaDoJuiz: { julgados: number; tentados: number; falhas: string[] } = {
+	julgados: 0,
+	tentados: 0,
+	falhas: [],
+};
+
 async function scoresDoItem(args: {
 	item: ItemDoRun;
 	falhasDeTrajetoria: string[];
@@ -336,6 +343,7 @@ async function scoresDoItem(args: {
 	// Juiz offline — 5 dimensões da rubrica. Hipótese, nunca gate: falha de juiz
 	// só some as dimensões, o veredito do eval vem dos asserts.
 	if (item.turns.length > 0) {
+		coberturaDoJuiz.tentados++;
 		try {
 			// Import preguiçoso: o juiz puxa `@/db` via `publicar.ts`.
 			const { judgeConversation } = await import("@/lib/eval/judge");
@@ -389,7 +397,9 @@ async function scoresDoItem(args: {
 					comment: d.assertividade.reasoning,
 				},
 			);
+			coberturaDoJuiz.julgados++;
 		} catch (e) {
+			coberturaDoJuiz.falhas.push(item.cenario);
 			console.error(
 				`[dataset-run] juiz offline falhou em ${item.cenario} (dimensões não gravadas — hipótese, nunca gate): ${e instanceof Error ? e.message : e}`,
 			);
@@ -432,6 +442,16 @@ async function main(): Promise<void> {
 	if (golden.length === 0) {
 		console.log(`⚠️  nenhum cenário${only ? ` com --only ${only}` : ""} em ${GOLDEN_DIR}`);
 		process.exit(3);
+	}
+
+	// Sonda do juiz: modelo recusado pelo gateway mata o run à vista, antes dos cenários.
+	if (comDatasetRun) {
+		const { sondarJuiz, chamadaMinimaDoJuiz } = await import("@/lib/eval/judge");
+		const s = await sondarJuiz(chamadaMinimaDoJuiz);
+		if (!s.ok) {
+			console.error(`\n${s.mensagem}\n`);
+			process.exit(4);
+		}
 	}
 
 	const sonda: Sonda = escolherSonda(BASE, process.env.EVAL_SONDA);
@@ -585,6 +605,27 @@ async function main(): Promise<void> {
 		);
 	}
 
+	let juizMorto = false;
+	if (gravador) {
+		const { resumoDaCoberturaDoJuiz } = await import("@/lib/eval/judge");
+		const r = resumoDaCoberturaDoJuiz(coberturaDoJuiz);
+		juizMorto = r.morto;
+		console.log(r.linha);
+		try {
+			await gravador.agregado({
+				name: "juiz_cobertura",
+				value:
+					coberturaDoJuiz.tentados > 0 ? coberturaDoJuiz.julgados / coberturaDoJuiz.tentados : 0,
+				dataType: "NUMERIC",
+				comment: `${r.linha.replace("\n", " · ")}. sha ${sha}.`,
+			});
+		} catch (e) {
+			console.error(
+				`[dataset-run] agregado juiz_cobertura falhou (ignorado): ${e instanceof Error ? e.message : e}`,
+			);
+		}
+	}
+
 	// B10 — score agregado por run (pass rate da trajetória) antes do relatório local.
 	if (gravador) {
 		const executados = pass + fail;
@@ -635,6 +676,10 @@ async function main(): Promise<void> {
 	if (fail > 0) {
 		console.log("GATE REPROVADO — não promova a caixa para a label de produção.");
 		process.exit(1);
+	}
+	if (juizMorto) {
+		console.log("JUIZ MORTO — nenhum cenário recebeu nota do juiz (gate de conduta intacto).");
+		process.exit(4);
 	}
 	if (inconclusivos > 0) {
 		console.log("⚠️  cenários INCONCLUSIVOS por 429 — gate não verde (inconclusivo ≠ verde).");
