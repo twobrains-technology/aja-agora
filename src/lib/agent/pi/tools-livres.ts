@@ -78,6 +78,10 @@ import { celularDeFechamento } from "@/lib/whatsapp/identify-capture";
  * falou só em parcela. Com os dois, a parcela NÃO vence — ela vai para o resumo
  * para o modelo comparar com a carta. Embutido: a carta tem que ser MAIOR que o
  * bem, senão o cliente contempla com 70% do valor e falta dinheiro. */
+/** Fato do servidor, igual em todo retorno de sucesso do `mostrar_card`: a fala escrita antes da chamada já saiu. */
+export const FATO_TEXTO_JA_ENTREGUE =
+	"O texto que você escreveu antes desta chamada já está na tela do cliente: não repita a pergunta nem o pedido; depois do card, só escreva se tiver algo novo.";
+
 export function paramsDaBusca(args: {
 	categoria: Category;
 	valorDoBem?: number;
@@ -1057,7 +1061,7 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 				const escolha = cardDeEscolha(args.tipo, payload, ctx.gruposRevelados);
 				if (!escolha.ok) return escolha.erro;
 				ctx.cards.push(escolha.card);
-				return `[Card ${escolha.card.type} na tela. Ele aparece para o cliente agora — não repita as opções na sua fala.]`;
+				return `[Card ${escolha.card.type} na tela. Ele aparece para o cliente agora — não repita as opções na sua fala. ${FATO_TEXTO_JA_ENTREGUE}]`;
 			}
 
 			// O CARD DE WHATSAPP SAI UMA VEZ POR CONVERSA (ordem do líder, 28/10 05:05). Repetido, ele
@@ -1109,9 +1113,9 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 			// Com o celular já guardado o card é só a CONFIRMAÇÃO do número (um clique): a fala não
 			// manda digitar nada.
 			if (card.card.type === "whatsapp_optin" && ctx.telefoneMascarado) {
-				return `[Card whatsapp_optin na tela, só para confirmar o número que o cliente já passou (${ctx.telefoneMascarado}). Não peça número nem mande digitar: diga que te chama nesse número, se ele topar.]`;
+				return `[Card whatsapp_optin na tela, só para confirmar o número que o cliente já passou (${ctx.telefoneMascarado}). Não peça número nem mande digitar: diga que te chama nesse número, se ele topar. ${FATO_TEXTO_JA_ENTREGUE}]`;
 			}
-			return `[Card ${card.card.type} na tela. Ele aparece para o cliente agora — os números vieram da carta real, não os repita com outros valores.]`;
+			return `[Card ${card.card.type} na tela. Ele aparece para o cliente agora — os números vieram da carta real, não os repita com outros valores. ${FATO_TEXTO_JA_ENTREGUE}]`;
 		},
 	});
 
