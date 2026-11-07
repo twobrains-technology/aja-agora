@@ -5,7 +5,7 @@
 // `**Lance livre:**` e `**Lance embutido:**` dentro, e o cliente lia textão. `picarEmBaloes` é a
 // peça pura que quebra o texto do beat em bolhas curtas na hora de emitir a fala.
 import { describe, expect, it } from "vitest";
-import { picarEmBaloes } from "./baloes";
+import { MAX_CHARS, picarEmBaloes } from "./baloes";
 
 /** O parágrafo do print 07 (`.orientacao/prints-ux/07-toque-responde-a-pergunta-do-turno.png`),
  * transcrito da tela: foi assim que o cliente recebeu a explicação de lance inteira num balão. */
@@ -22,9 +22,10 @@ describe("(print 07) a explicação de lance não sai num bloco só", () => {
 		expect(baloes.length).toBeGreaterThanOrEqual(2);
 		expect(baloes.length).toBeLessThanOrEqual(3);
 		for (const balao of baloes) {
-			// 537 caracteres em 3 balões dão ~180 por balão; o mínimo possível respeitando fim de
-			// frase é 194 (as frases têm 83/55/54/43/77/71/107/40 caracteres). 200 é o teto real.
-			expect(balao.length, balao).toBeLessThanOrEqual(200);
+			// O teto de cada bolha é `MAX_CHARS`, o teto da casa — 537 caracteres em 3 balões
+			// equilibrados dão 238/257/40. Nenhum balão passa dele: textão é o defeito que este
+			// arquivo existe para evitar.
+			expect(balao.length, balao).toBeLessThanOrEqual(MAX_CHARS);
 		}
 	});
 
@@ -59,14 +60,19 @@ describe("texto curto fica como está", () => {
 });
 
 describe("cinco frases: no máximo 3 balões e nenhum caractere perdido", () => {
+	const CINCO_FRASES =
+		"A parcela fica em R$ 1.176,39 por mês, em 96 meses. O prazo do grupo é de 96 meses. A taxa de administração é de 20,8% diluída. O lance embutido usa parte da própria carta. Você tem alguma reserva para dar lance?";
+
 	it("a soma dos balões é o texto original", () => {
-		const texto =
-			"A parcela fica em R$ 1.176,39 por mês, em 96 meses. O prazo do grupo é de 96 meses. A taxa de administração é de 20,8% diluída. O lance embutido usa parte da própria carta. Você tem alguma reserva para dar lance?";
-		const baloes = picarEmBaloes(texto);
+		const baloes = picarEmBaloes(CINCO_FRASES);
 		expect(baloes.length).toBeLessThanOrEqual(3);
-		expect(baloes.length).toBeGreaterThanOrEqual(2);
+		// Cinco frases de 212 caracteres cabem em UM balão: texto dentro do teto da casa não é
+		// picado (27/10 — bolha picada em texto curto é pior). O invariante que importa é este:
+		// nada se perde e nenhum balão passa de `MAX_CHARS`.
+		expect(baloes.length).toBeGreaterThanOrEqual(1);
+		for (const balao of baloes) expect(balao.length, balao).toBeLessThanOrEqual(MAX_CHARS);
 		// "Nunca perder texto": os balões, na ordem, são o texto inteiro.
-		expect(semEspacoSobrando(baloes.join(" "))).toBe(semEspacoSobrando(texto));
+		expect(semEspacoSobrando(baloes.join(" "))).toBe(semEspacoSobrando(CINCO_FRASES));
 	});
 });
 

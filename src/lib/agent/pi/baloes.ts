@@ -21,7 +21,7 @@
 
 /** O teto de um balão de conversa: duas linhas curtas no celular. */
 // 04/11 (Kairo): fala de duas frases é UMA mensagem; só bloco longo vira bolhas.
-const MAX_CHARS = 260;
+export const MAX_CHARS = 260;
 
 /** Um turno com mais de três bolhas seguidas já é o parágrafo de volta. */
 const MAX_BALOES = 3;
