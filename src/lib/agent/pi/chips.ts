@@ -49,7 +49,6 @@ import {
 } from "@/lib/agent/pi/sugestoes";
 import { CREDIT_BOUNDS } from "@/lib/agent/qualify-config";
 import type { ValuePickerPayload } from "@/lib/chat/types";
-import { publicarScores } from "@/lib/observability/sinais/publicar";
 
 /** O card já É a escolha: um segundo menu por cima duplicaria a mesma decisão. */
 const CARD_DE_ESCOLHA = ["quick_reply", "value_picker", "topic_picker"];
@@ -236,6 +235,9 @@ export function garantirChip(args: {
 	falaDoCliente?: string;
 	/** Categoria do bem já declarada — é ela que autoriza o `value_picker` do valor. */
 	categoriaDoBem?: Category;
+	/** Chamado quando a lista marcada é detectada no texto. Quem mede (sinal `lista_no_texto`)
+	 * é o servidor: este módulo entra no bundle do cliente e não pode importar o banco. */
+	aoDetectarListaMarcada?: () => void;
 }): {
 	texto: string;
 	chip: CardGerado | null;
@@ -252,7 +254,7 @@ export function garantirChip(args: {
 	const util = opcoes.length >= 2 && !opcoes.some((o) => o.includes(","));
 	if (util) {
 		if (veioDaLista) {
-			publicarScores([{ name: "lista_no_texto", value: 1, dataType: "BOOLEAN" }], "remendos-fala");
+			args.aoDetectarListaMarcada?.();
 		}
 		return { texto: args.texto, chip: chipDe(opcoes) };
 	}

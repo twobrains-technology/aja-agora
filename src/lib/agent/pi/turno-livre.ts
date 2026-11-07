@@ -244,6 +244,11 @@ export function montarTrechoDeSaida(args: {
 			...(args.canal ? { canal: args.canal } : {}),
 			...(args.falaDoCliente ? { falaDoCliente: args.falaDoCliente } : {}),
 			...(args.categoriaDoBem ? { categoriaDoBem: args.categoriaDoBem } : {}),
+			aoDetectarListaMarcada: () =>
+				publicarScores(
+					[{ name: "lista_no_texto", value: 1, dataType: "BOOLEAN" }],
+					"remendos-fala",
+				),
 		}).texto,
 	};
 }

@@ -91,15 +91,21 @@ describe("pergunta fechada vira chip, não lista escrita no texto", () => {
 	});
 
 	it("lista marcada detectada emite o sinal `lista_no_texto` (P11: medida, não corte)", () => {
-		const log = vi.spyOn(console, "log").mockImplementation(() => {});
+		const aoDetectar = vi.fn();
 		garantirChip({
 			texto: "Pra quando?\n1) Agora\n2) Depois",
 			cardsDoTurno: [],
+			aoDetectarListaMarcada: aoDetectar,
 		});
-		const linha = log.mock.calls.map((c) => String(c[0])).find((l) => l.includes("[sinal]"));
-		expect(linha).toContain("lista_no_texto");
-		expect(linha).toContain("remendos-fala");
-		log.mockRestore();
+		expect(aoDetectar).toHaveBeenCalledTimes(1);
+
+		const semLista = vi.fn();
+		garantirChip({
+			texto: "Você prefere parcela menor ou prazo mais curto?",
+			cardsDoTurno: [],
+			aoDetectarListaMarcada: semLista,
+		});
+		expect(semLista).not.toHaveBeenCalled();
 	});
 
 	it("cada opção nasce com replyId — é por ele que o clique é consumido (L26)", () => {
