@@ -38,7 +38,7 @@ function parsePasso(raw: string | null): PassoDoPercurso | null {
 }
 
 export async function GET(request: Request, { params }: { params: Promise<{ tipo: string }> }) {
-	const { error, session } = await requireRole("admin");
+	const { error, session } = await requireRole("admin", "viewer");
 	if (error) return error;
 
 	const { tipo } = await params;
