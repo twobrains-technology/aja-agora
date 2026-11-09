@@ -7,21 +7,21 @@ const resumo = (items: ReturnType<typeof closingPresentation>) =>
 	items.map((i) => (i.kind === "text" ? "texto" : i.type));
 
 describe("closingPresentation (fecho enxuto)", () => {
-	it("web: proposta → parabéns → card do WhatsApp, sem o textão", () => {
+	it("web: UM card só (atendimento_handoff), com a proposta dentro e sem texto solto", () => {
 		const items = closingPresentation(res, { channel: "web", propostaUrl: "https://x/p" });
-		expect(resumo(items)).toEqual(["signature_handoff", "texto", "atendimento_handoff"]);
-		const textos = items.filter((i) => i.kind === "text").map((i) => (i as { text: string }).text);
-		expect(textos).toEqual(["Parabéns! Agora você está oficialmente mais perto da sua conquista!"]);
+		expect(resumo(items)).toEqual(["atendimento_handoff"]);
+		const card = items[0];
+		expect(card.kind === "artifact" && card.payload.proposalUrl).toBe("https://x/p");
 	});
 
-	it("sem URL da proposta não há card da proposta", () => {
-		expect(resumo(closingPresentation(res, { channel: "web" }))).toEqual([
-			"texto",
-			"atendimento_handoff",
-		]);
+	it("web sem URL da proposta: o mesmo card, sem proposalUrl", () => {
+		const items = closingPresentation(res, { channel: "web" });
+		expect(resumo(items)).toEqual(["atendimento_handoff"]);
+		const card = items[0];
+		expect(card.kind === "artifact" && "proposalUrl" in card.payload).toBe(false);
 	});
 
-	it("whatsapp: parabéns + aviso do atendente, nunca 'reservada' nem prazo", () => {
+	it("whatsapp (inalterado): parabéns + aviso do atendente, nunca 'reservada' nem prazo", () => {
 		const items = closingPresentation(res, { channel: "whatsapp" });
 		expect(resumo(items)).toEqual(["texto", "texto"]);
 		const todo = items.map((i) => (i.kind === "text" ? i.text : "")).join(" ");

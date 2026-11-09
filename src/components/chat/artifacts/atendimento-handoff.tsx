@@ -1,9 +1,56 @@
 "use client";
 
+import { ExternalLink } from "lucide-react";
+import { motion } from "motion/react";
+import { useEffect, useState } from "react";
 import { WhatsappGlyph } from "@/components/icons/whatsapp-glyph";
 import { Button } from "@/components/ui/button";
 import { carimbarOrigem, lerCodigoDeOrigemDoCookie } from "@/lib/attribution/codigo-de-origem";
 import type { AtendimentoHandoffPayload } from "@/lib/chat/types";
+
+// Card ÚNICO de finalização (web): parabéns com confete, o aviso de que um
+// atendente vai chamar (sem prazo, D-0004) e a proposta como ação secundária.
+
+const CORES_CONFETE = ["#E5322D", "#F5B700", "#25D366", "#3B82F6", "#A855F7", "#FFFFFF"];
+const PECAS = Array.from({ length: 18 }, (_, i) => {
+	const ang = (i / 18) * Math.PI * 2;
+	const raio = 70 + (i % 3) * 22;
+	return {
+		x: Math.cos(ang) * raio,
+		y: Math.sin(ang) * raio - 20,
+		cor: CORES_CONFETE[i % CORES_CONFETE.length],
+		giro: (i % 2 ? 1 : -1) * (180 + i * 20),
+	};
+});
+
+/** Confete decorativo: uma explosão só, ao montar. Sem movimento quando o
+ * usuário pede (prefers-reduced-motion) — o parabéns vive no texto. */
+function Confete() {
+	const [ativo, setAtivo] = useState(false);
+	useEffect(() => {
+		setAtivo(!window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+	}, []);
+	if (!ativo) return null;
+	return (
+		<div
+			data-testid="confete"
+			aria-hidden="true"
+			className="pointer-events-none absolute left-1/2 top-6 size-0"
+		>
+			{PECAS.map((p, i) => (
+				<motion.span
+					// biome-ignore lint/suspicious/noArrayIndexKey: lista estática
+					key={i}
+					className="absolute h-[8px] w-[5px] rounded-[1px]"
+					style={{ backgroundColor: p.cor, boxShadow: "0 0 0 1px rgba(0,0,0,0.15)" }}
+					initial={{ x: 0, y: 0, opacity: 1, rotate: 0 }}
+					animate={{ x: p.x, y: p.y + 60, opacity: 0, rotate: p.giro }}
+					transition={{ duration: 1.4, ease: "easeOut" }}
+				/>
+			))}
+		</div>
+	);
+}
 
 // O ÚLTIMO passo da jornada: dizer, com clareza, o que acontece depois do
 // fechamento. Antes isso era um parágrafo corrido no fim de um balão gigante
@@ -22,7 +69,11 @@ function waLink(numero: string, texto?: string): string {
 export function AtendimentoHandoff({ payload }: { payload: AtendimentoHandoffPayload }) {
 	const administradora = payload.administradora?.trim();
 	return (
-		<div className="w-full max-w-sm rounded-[12px] border border-[color:var(--border-strong)] bg-card p-[18px] shadow-lg flex flex-col gap-[14px]">
+		<div className="relative w-full max-w-sm overflow-hidden rounded-[12px] border border-[color:var(--border-strong)] bg-card p-[18px] shadow-lg flex flex-col gap-[14px]">
+			<Confete />
+			<p className="text-base font-semibold leading-snug text-foreground">
+				Parabéns! Agora você está oficialmente mais perto da sua conquista!
+			</p>
 			<div className="flex flex-col gap-[2px]">
 				<div className="flex items-center gap-2">
 					<WhatsappGlyph className="size-[17px] text-[#25D366]" />
@@ -73,6 +124,20 @@ export function AtendimentoHandoff({ payload }: { payload: AtendimentoHandoffPay
 			<p className="text-[11px] leading-relaxed text-muted-foreground">
 				Mandar um "oi" por lá agora deixa nosso contato salvo e adianta o atendimento.
 			</p>
+
+			{payload.proposalUrl ? (
+				<Button
+					type="button"
+					variant="ghost"
+					size="sm"
+					className="self-center h-8 gap-1.5 rounded-full border border-border bg-white px-3 text-xs font-medium text-foreground hover:bg-muted"
+					data-testid="signature-link"
+					onClick={() => window.open(payload.proposalUrl, "_blank", "noopener,noreferrer")}
+				>
+					<ExternalLink className="size-3.5" />
+					Ver minha proposta
+				</Button>
+			) : null}
 		</div>
 	);
 }

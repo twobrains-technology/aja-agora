@@ -193,30 +193,37 @@ export function closingPresentation(
 	// card com botão de WhatsApp (o cliente precisa de um lugar pra clicar, não
 	// de um número no meio de um parágrafo); no WhatsApp é uma frase, porque a
 	// conversa já está no canal certo.
-	const handoffBeat: ClosingItem[] =
-		opts.channel === "whatsapp"
-			? [
-					{
-						kind: "text",
-						text: `Em breve um atendente da Aja Agora te chama por aqui mesmo, neste número, pra fazer a adesão na ${administradora}. Ele cuida dos documentos e do cadastro — você não precisa enviar nada agora, é só ficar de olho.`,
-					},
-				]
-			: [
-					{
-						kind: "artifact",
-						type: "atendimento_handoff",
-						payload: {
-							numero: WHATSAPP_OFICIAL_DIGITOS,
-							numeroFormatado: WHATSAPP_OFICIAL_EXIBICAO,
-							administradora: res.administradora ?? "",
-							mensagemInicial: `Oi! Acabei de fechar minha proposta${
-								res.administradora ? ` da ${res.administradora}` : ""
-							} pelo site da Aja Agora.`,
-						},
-					},
-				];
+	// WEB (Kairo, 2026-11-09, card-de-finalizacao): UM card de finalização no
+	// lugar de proposta + bolha + handoff. Parabéns (com confete, é UI), o aviso
+	// "um atendente vai te chamar" e "Ver minha proposta" como ação secundária
+	// dentro dele. Sem URL da proposta, o payload sai sem `proposalUrl` e o card
+	// não desenha o botão. O número e a URL vêm do servidor (P11).
+	if (opts.channel !== "whatsapp") {
+		return [
+			{
+				kind: "artifact",
+				type: "atendimento_handoff",
+				payload: {
+					numero: WHATSAPP_OFICIAL_DIGITOS,
+					numeroFormatado: WHATSAPP_OFICIAL_EXIBICAO,
+					administradora: res.administradora ?? "",
+					mensagemInicial: `Oi! Acabei de fechar minha proposta${
+						res.administradora ? ` da ${res.administradora}` : ""
+					} pelo site da Aja Agora.`,
+					...(opts.propostaUrl ? { proposalUrl: opts.propostaUrl } : {}),
+				},
+			},
+		];
+	}
+	// WhatsApp: o fecho continua em TEXTO (a conversa já está no canal certo).
+	const handoffBeat: ClosingItem[] = [
+		{
+			kind: "text",
+			text: `Em breve um atendente da Aja Agora te chama por aqui mesmo, neste número, pra fazer a adesão na ${administradora}. Ele cuida dos documentos e do cadastro — você não precisa enviar nada agora, é só ficar de olho.`,
+		},
+	];
 	return [
-		// A NOSSA proposta. Sem ela, nenhum card — nunca o link da administradora.
+		// A NOSSA proposta. Sem ela, nenhum item — nunca o link da administradora.
 		...(opts.propostaUrl
 			? [
 					{

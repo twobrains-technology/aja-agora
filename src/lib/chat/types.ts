@@ -383,6 +383,9 @@ export interface AtendimentoHandoffPayload {
 	administradora?: string;
 	/** Texto pré-preenchido do wa.me — abre a janela de 24h já com contexto. */
 	mensagemInicial?: string;
+	/** URL da NOSSA proposta. Presente → "Ver minha proposta" como ação
+	 * secundária dentro do card; ausente → sem botão. */
+	proposalUrl?: string;
 }
 
 /** Upload de documento no chat (RG/CNH frente+verso). Os links são o fallback se
