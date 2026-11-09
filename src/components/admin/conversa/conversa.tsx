@@ -111,6 +111,7 @@ const ROTULOS_DE_CARD: Record<string, string> = {
 	contract_form: "Abriu o formulário de contrato",
 	document_upload: "Pediu o envio de documento",
 	whatsapp_optin: "Pediu a autorização do WhatsApp",
+	name_prompt: "Pediu o nome",
 	decision_prompt: "Pediu a decisão do cliente",
 	real_offer: "Apresentou a carta da oferta",
 	signature_handoff: "Encaminhou para a assinatura",

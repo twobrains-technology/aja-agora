@@ -256,18 +256,20 @@ describe("R5.4 — a lista de cards oferecida depende do CANAL", () => {
 		expect(web.mostrar_card.description).toContain("value_picker");
 	});
 
-	it("os 15 cards de FATO continuam todos oferecidos, nos dois canais", () => {
+	it("os 16 cards de FATO continuam oferecidos (o `name_prompt` só na web)", () => {
 		const fatoEsperado = Object.entries(DESTINO_DOS_CARDS)
 			.filter(([, d]) => d.classe === "emitivel" && d.origem === "fato")
 			.map(([tipo]) => tipo);
 		// `scenarios` é card de FATO montado de `cenarios.ts` e TEM renderer nos dois
 		// canais (web: components/chat/artifacts/scenarios.tsx; WhatsApp:
 		// whatsapp/formatter.ts → scenariosToWhatsApp), então não some por canal.
-		expect(fatoEsperado).toHaveLength(15);
+		expect(fatoEsperado).toHaveLength(16);
 		expect(fatoEsperado).toContain("scenarios");
-		for (const channel of ["web", "whatsapp"] as const) {
-			expect(tiposDeCardDoCanal(channel).fato.sort()).toEqual(fatoEsperado.sort());
-		}
+		// O card de NOME é campo de digitar do site: no WhatsApp o nome é conversa.
+		expect(tiposDeCardDoCanal("web").fato.sort()).toEqual(fatoEsperado.sort());
+		expect(tiposDeCardDoCanal("whatsapp").fato.sort()).toEqual(
+			fatoEsperado.filter((tipo) => tipo !== "name_prompt").sort(),
+		);
 	});
 });
 

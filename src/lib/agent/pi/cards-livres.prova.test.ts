@@ -136,7 +136,7 @@ function tipoDoCard(ctx: ContextoDasTools, indice = 0): ArtifactType | undefined
 	return ctx.cards[indice]?.type;
 }
 
-describe("os 22 tipos têm destino, e cada destino tem como ser cumprido", () => {
+describe("os 23 tipos têm destino, e cada destino tem como ser cumprido", () => {
 	it("imprime a contagem da prova (é ela que vai para o diário do chefe)", () => {
 		const tipos = Object.keys(DESTINO_DOS_CARDS);
 		const emitiveis = tipos.filter(
@@ -149,8 +149,8 @@ describe("os 22 tipos têm destino, e cada destino tem como ser cumprido", () =>
 		console.log(
 			`prova de card: ${tipos.length} tipos · ${emitiveis.length} emitíveis · ${foraDoMotor.length} fora-do-motor`,
 		);
-		expect(tipos).toHaveLength(22);
-		expect(emitiveis).toHaveLength(18);
+		expect(tipos).toHaveLength(23);
+		expect(emitiveis).toHaveLength(19);
 		expect(foraDoMotor).toHaveLength(4);
 	});
 
@@ -491,6 +491,7 @@ describe("CARDS_QUE_REVELAM_OFERTA — todo card com número de oferta está no 
 		"lead_form",
 		"contract_form",
 		"whatsapp_optin",
+		"name_prompt",
 		"decision_prompt",
 	];
 
@@ -526,6 +527,6 @@ describe("CARDS_QUE_REVELAM_OFERTA — todo card com número de oferta está no 
 		expect([...Object.keys(MONTADORES_DE_CARD)].sort()).toEqual([...deFato].sort());
 		// E o tipo derivado do mapa não mente sobre o tamanho.
 		const emitiveis: TipoEmitivel[] = deFato as TipoEmitivel[];
-		expect(emitiveis).toHaveLength(15);
+		expect(emitiveis).toHaveLength(16);
 	});
 });

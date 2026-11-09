@@ -21,7 +21,12 @@ import {
 	TIPOS_DE_ESCOLHA,
 } from "./cards-livres";
 import { cenariosDaCarta } from "./cenarios";
-import { aplicarItensDoFecho, buildToolsLivres, type ContextoDasTools } from "./tools-livres";
+import {
+	aplicarItensDoFecho,
+	buildToolsLivres,
+	type ContextoDasTools,
+	tiposDeCardDoCanal,
+} from "./tools-livres";
 
 function ctxVazio(): ContextoDasTools {
 	return {
@@ -385,9 +390,9 @@ describe("fazer_proposta — o CPF nunca chega ao modelo", () => {
 	});
 });
 
-describe("DESTINO_DOS_CARDS — os 22 tipos têm destino declarado", () => {
-	it("tem exatamente 22 chaves", () => {
-		expect(Object.keys(DESTINO_DOS_CARDS)).toHaveLength(22);
+describe("DESTINO_DOS_CARDS — os 23 tipos têm destino declarado", () => {
+	it("tem exatamente 23 chaves", () => {
+		expect(Object.keys(DESTINO_DOS_CARDS)).toHaveLength(23);
 	});
 
 	it("todo card fora-do-motor diz por quê", () => {
@@ -692,5 +697,19 @@ describe("comparison_table — só as cartas que o agente pediu por ids", () => 
 		if (r.ok) return;
 		expect(r.erro).toContain("zzz");
 		expect(r.erro).toContain("a, b, c, d, e");
+	});
+});
+
+describe("card de NOME (09/11, bug 9): o campo de digitar sai quando o modelo o escolhe", () => {
+	it("name_prompt entra na tela sem dado nenhum e a tool manda gravar o nome com salvar_nome", async () => {
+		const ctx = ctxVazio();
+		const saida = await mostrarCard(ctx, "name_prompt", {});
+		expect(ctx.cards).toEqual([{ type: "name_prompt", payload: {} }]);
+		expect(saida).toMatch(/salvar_nome/);
+	});
+
+	it("o name_prompt é oferecido no site e não no WhatsApp", () => {
+		expect(tiposDeCardDoCanal("web").fato).toContain("name_prompt");
+		expect(tiposDeCardDoCanal("whatsapp").fato).not.toContain("name_prompt");
 	});
 });

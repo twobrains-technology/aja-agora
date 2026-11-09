@@ -10,7 +10,9 @@
 //  · 1 card no turno inteiro, e ele vem DEPOIS do último balão;
 //  · as opções são as da ÚLTIMA pergunta, não as da primeira (por isso cada cenário tem dois
 //    balões que pedem respostas DIFERENTES: é a única forma de ver de qual balão o toque saiu);
-//  · turno sem pergunta continua com próximo passo (ordem das 17:16).
+//  · 09/11 (P11, bugs 5/6/9/10): o servidor NÃO adivinha atalho. Só a lista que o modelo escreveu
+//    na fala vira toque; pergunta aberta, pedido de dado e turno sem pergunta saem SEM card de
+//    toque do servidor (o card de digitar é do modelo, via `mostrar_card`).
 import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
@@ -102,46 +104,41 @@ const indiceDaFala = (eventos: TurnEvent[], trecho: string) =>
 	eventos.findIndex((e) => e.type === "text-delta" && e.text.includes(trecho));
 
 describe("(print 07) o chip é UM por turno e sai no ÚLTIMO balão", () => {
-	it("dois beats perguntando coisas diferentes: 1 card, depois do segundo balão, com as opções do segundo", async () => {
+	const beatsComLista = [
+		{
+			text: "Quanto cabe na parcela por mês? Me diz que eu já busco as cartas.",
+			toolCalls: [{ name: "buscar_cartas", args: { categoria: "auto" } }],
+		},
+		{
+			toolCalls: [
+				{
+					name: "mostrar_card",
+					args: { tipo: "comparison_table", payload: { ids: ["grupo-canopus-1"] } },
+				},
+			],
+		},
+		{ text: "Você tem reserva guardada para dar lance?\n1) Tenho sim\n2) Agora não" },
+	];
+
+	it("dois beats: 1 card, depois do segundo balão, com a lista escrita no segundo", async () => {
 		const conversationId = await novaConversa();
 		const turno = await rodarTurno({
 			conversationId,
 			userText: "e como funciona esse lance? vale a pena dar lance?",
-			beats: [
-				{
-					text: "Quanto cabe na parcela por mês? Me diz que eu já busco as cartas.",
-					toolCalls: [{ name: "buscar_cartas", args: { categoria: "auto" } }],
-				},
-				{
-					toolCalls: [
-						{
-							name: "mostrar_card",
-							args: { tipo: "comparison_table", payload: { ids: ["grupo-canopus-1"] } },
-						},
-					],
-				},
-				{ text: "Você tem alguma reserva guardada para dar lance, ou prefere usar só o embutido?" },
-			],
+			beats: beatsComLista,
 		});
 		await turno.fechar();
 
 		const primeiroBalao = indiceDaFala(turno.eventos, "Quanto cabe na parcela por mês?");
-		const segundoBalao = indiceDaFala(turno.eventos, "Você tem alguma reserva guardada");
+		const segundoBalao = indiceDaFala(turno.eventos, "Você tem reserva guardada");
 		const chip = indiceDoChip(turno.eventos);
 
-		// UM card de toque em todo o turno.
 		expect(chips(turno.eventos)).toHaveLength(1);
-		// E ele vem DEPOIS do segundo balão, não atrás do primeiro.
 		expect(primeiroBalao).toBeGreaterThan(-1);
 		expect(segundoBalao).toBeGreaterThan(primeiroBalao);
 		expect(chip).toBeGreaterThan(segundoBalao);
-		// As opções respondem à ÚLTIMA pergunta (o lance que ele já tem) — antes vinham as da
-		// faixa de PARCELA, do primeiro balão, penduradas embaixo do segundo.
-		expect(chips(turno.eventos)[0]).toEqual([
-			"Tenho sim, consigo dar lance",
-			"Tenho pouco",
-			"Agora não tenho",
-		]);
+		// As opções são as ESCRITAS pelo modelo na última fala, nunca as da primeira pergunta.
+		expect(chips(turno.eventos)[0]).toEqual(["Tenho sim", "Agora não"]);
 	});
 
 	it("a ORDEM que fica no banco é a que o cliente vê: fala → card → fala → chips", async () => {
@@ -149,21 +146,7 @@ describe("(print 07) o chip é UM por turno e sai no ÚLTIMO balão", () => {
 		const turno = await rodarTurno({
 			conversationId,
 			userText: "e como funciona esse lance? vale a pena dar lance?",
-			beats: [
-				{
-					text: "Quanto cabe na parcela por mês? Me diz que eu já busco as cartas.",
-					toolCalls: [{ name: "buscar_cartas", args: { categoria: "auto" } }],
-				},
-				{
-					toolCalls: [
-						{
-							name: "mostrar_card",
-							args: { tipo: "comparison_table", payload: { ids: ["grupo-canopus-1"] } },
-						},
-					],
-				},
-				{ text: "Você tem alguma reserva guardada para dar lance, ou prefere usar só o embutido?" },
-			],
+			beats: beatsComLista,
 		});
 		await turno.fechar();
 
@@ -177,20 +160,19 @@ describe("(print 07) o chip é UM por turno e sai no ÚLTIMO balão", () => {
 			.map((l) =>
 				l.content.startsWith("[card: ") ? l.content.replace(/^\[card: |\]$/g, "") : "fala",
 			);
-		// A tabela de cartas sai no resultado da busca (P157); o toque, no FIM do turno.
 		expect(ordem).toEqual(["fala", "comparison_table", "fala", "quick_reply"]);
 	});
 });
 
-describe("(print 08) a pergunta final é a que ganha o toque", () => {
-	it("o card fica com o balão que pergunta qual carta seguir, não com o anterior", async () => {
+describe("(09/11) o servidor não adivinha atalho", () => {
+	it("pergunta final aberta com cartas na tela: nenhum card de toque do servidor (print 08, bug 10)", async () => {
 		const conversationId = await novaConversa();
 		const turno = await rodarTurno({
 			conversationId,
-			userText: "tenho uns 20 mil guardados. meu cpf e 111.444.777-35",
+			userText: "tenho uns 20 mil guardados",
 			beats: [
 				{
-					text: "Obrigado! Com R$ 20 mil de reserva, dá para usar como lance livre e ter mais chance de ser chamado cedo.",
+					text: "Obrigado! Com R$ 20 mil de reserva, dá para usar como lance livre.",
 					toolCalls: [{ name: "buscar_cartas", args: { categoria: "auto" } }],
 				},
 				{
@@ -202,33 +184,17 @@ describe("(print 08) a pergunta final é a que ganha o toque", () => {
 					],
 				},
 				{
-					text: "Qual dessas cartas você quer seguir? A Canopus de R$ 90 mil é a que eu recomendo para o seu caso.",
+					text: "Qual dessas cartas você quer seguir? A Canopus de R$ 90 mil é a que eu recomendo.",
 				},
 			],
 		});
 		await turno.fechar();
 
-		const anterior = indiceDaFala(turno.eventos, "Com R$ 20 mil de reserva");
-		const pergunta = indiceDaFala(turno.eventos, "Qual dessas cartas você quer seguir?");
-		const chip = indiceDoChip(turno.eventos);
-
-		expect(chips(turno.eventos)).toHaveLength(1);
-		expect(pergunta).toBeGreaterThan(anterior);
-		expect(chip).toBeGreaterThan(pergunta);
-		// A pergunta "qual dessas cartas você quer seguir?" chega COM toque do lado dela: antes o
-		// único card do turno respondia ao balão anterior (lance/entrada) e a pergunta ficava órfã.
-		// E os toques são os da PERGUNTA: escolher entre as cartas da tela (ordem do líder 18:08,
-		// item 3) — "Pode seguir" era resposta genérica para uma escolha entre cartas.
-		expect(chips(turno.eventos)[0]).toEqual([
-			"Quero essa",
-			"Ver outra opção",
-			"Como funciona o lance?",
-		]);
+		expect(indiceDaFala(turno.eventos, "Qual dessas cartas")).toBeGreaterThan(-1);
+		expect(chips(turno.eventos)).toEqual([]);
 	});
-});
 
-describe("(ordem das 17:16) turno sem pergunta continua com próximo passo", () => {
-	it("um balão sem '?' ganha 1 card de próximos passos, no fim", async () => {
+	it("turno sem pergunta: nenhum card de toque", async () => {
 		const conversationId = await novaConversa();
 		const turno = await rodarTurno({
 			conversationId,
@@ -237,76 +203,23 @@ describe("(ordem das 17:16) turno sem pergunta continua com próximo passo", () 
 		});
 		await turno.fechar();
 
-		const fala = indiceDaFala(turno.eventos, "já anotei tudo");
-		expect(chips(turno.eventos)).toEqual([["Quero ver as opções", "Tenho uma dúvida"]]);
-		expect(indiceDoChip(turno.eventos)).toBeGreaterThan(fala);
-	});
-});
-
-describe("(R21) o pedido de dado no BEAT ÚNICO — pedido e fecho na mesma resposta", () => {
-	// Defeito medido no SHA `e2461a52`: com o pedido de CPF/celular e o fecho na MESMA resposta do
-	// agente, o único card do turno saía genérico (`Pode seguir` · `Tenho uma dúvida`) ou de oferta
-	// (`Quero essa` · `Ver outra opção` · `Falar do lance`). A decisão olhava o texto inteiro ou só
-	// a última frase, e a frase que PEDE o dado podia ser a primeira.
-	it("pedido com '?' + fecho afirmativo no mesmo balão: o card é do DADO", async () => {
-		const conversationId = await novaConversa();
-		const turno = await rodarTurno({
-			conversationId,
-			userText: "pode ser a de 90 mil",
-			beats: [
-				{
-					text: "Pode me mandar o CPF e o celular escritos aqui mesmo? Se for a Canopus de 96 meses que eu recomendei, eu já gero a proposta no seu nome.",
-				},
-			],
-		});
-		await turno.fechar();
-
-		expect(chips(turno.eventos)).toHaveLength(1);
-		const opcoes = chips(turno.eventos)[0] as string[];
-		expect(opcoes.join(" | ")).toMatch(/cpf|celular/i);
-		expect(opcoes).not.toContain("Pode seguir");
-		expect(opcoes).not.toContain("Quero essa");
+		expect(chips(turno.eventos)).toEqual([]);
 	});
 
-	it("pedido + fecho sem '?' no mesmo balão: o card é do DADO, nunca 'Quero essa'", async () => {
-		const conversationId = await novaConversa();
-		const turno = await rodarTurno({
-			conversationId,
-			userText: "pode ser a de 90 mil",
-			beats: [{ text: "Pode me mandar o CPF e o celular. Vou gerar a proposta." }],
-		});
-		await turno.fechar();
-
-		expect(chips(turno.eventos)).toHaveLength(1);
-		const opcoes = chips(turno.eventos)[0] as string[];
-		expect(opcoes.join(" | ")).toMatch(/cpf|celular/i);
-		expect(opcoes).not.toContain("Quero essa");
-	});
-});
-
-describe("(R20) o toque sai do ÚLTIMO PEDIDO do turno, não do último balão", () => {
-	// Defeito medido no SHA `3236f59f` (auditoria independente da R20, 237 turnos): o pedido de
-	// CPF/celular saía num balão e o fecho ("Tudo bem, aguardo.") noutro. O toque nascia do fecho
-	// — que não pede nada — e saía `Quero essa` · `Ver outra opção` · `Falar do lance` embaixo de
-	// "me manda seu CPF e seu celular". Agora a derivação olha o TURNO INTEIRO, de trás pra
-	// frente, até o balão que pergunta ou pede um dado.
-	it("pedido de CPF num balão + fecho no seguinte: o chip é o do CPF, no FIM do turno", async () => {
-		const conversationId = await novaConversa();
-		const turno = await rodarTurno({
-			conversationId,
-			userText: "pode ser a de 90 mil",
-			beats: [
-				{ text: "Para fechar a proposta, me manda seu CPF e seu celular." },
-				{ text: "Tudo bem, aguardo." },
-			],
-		});
-		await turno.fechar();
-
-		expect(chips(turno.eventos)).toHaveLength(1);
-		const opcoes = chips(turno.eventos)[0] as string[];
-		expect(opcoes.join(" | ")).toMatch(/cpf|celular/i);
-		expect(opcoes).not.toContain("Quero essa");
-		// O card continua UM e no FIM: depois do fecho, como o cliente lê.
-		expect(indiceDoChip(turno.eventos)).toBeGreaterThan(indiceDaFala(turno.eventos, "aguardo"));
+	it("pedido de dado (valor, WhatsApp, CPF) em texto: sem atalho que responda outra pergunta", async () => {
+		for (const fala of [
+			"Pode me mandar o CPF e o celular escritos aqui mesmo? Se for a Canopus, eu já gero a proposta.",
+			"Para fechar a proposta, me manda seu CPF e seu celular.",
+			"Qual é o valor do carro que você está pensando em comprar?",
+		]) {
+			const conversationId = await novaConversa();
+			const turno = await rodarTurno({
+				conversationId,
+				userText: "pode ser a de 90 mil",
+				beats: [{ text: fala }],
+			});
+			await turno.fechar();
+			expect(chips(turno.eventos), fala).toEqual([]);
+		}
 	});
 });

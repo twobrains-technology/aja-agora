@@ -55,6 +55,7 @@ export const DESTINO_DOS_CARDS = {
 	lead_form: { classe: "emitivel", origem: "fato" },
 	contract_form: { classe: "emitivel", origem: "fato" },
 	whatsapp_optin: { classe: "emitivel", origem: "fato" },
+	name_prompt: { classe: "emitivel", origem: "fato" },
 	decision_prompt: { classe: "emitivel", origem: "fato" },
 	quick_reply: { classe: "emitivel", origem: "escolha" },
 	value_picker: { classe: "emitivel", origem: "escolha" },
@@ -853,6 +854,8 @@ export const MONTADORES_DE_CARD: Record<TipoDeFato, MontadorDeCard> = {
 			metaDoTurno: { contractFormDispatched: true },
 		};
 	},
+
+	name_prompt: () => ({ ok: true, card: { type: "name_prompt", payload: {} } }),
 
 	whatsapp_optin: (ctx) => ({
 		ok: true,

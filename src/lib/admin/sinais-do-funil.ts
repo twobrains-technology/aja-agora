@@ -460,6 +460,7 @@ export const CLASSIFICACAO_DOS_ARTIFACTS: Record<ArtifactType, boolean> = {
 	scenarios: false,
 	financing_comparison: false,
 	whatsapp_optin: false,
+	name_prompt: false,
 	decision_prompt: false,
 	contract_form: false,
 	signature_handoff: false,

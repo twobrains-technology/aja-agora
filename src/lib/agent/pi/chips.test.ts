@@ -76,9 +76,8 @@ describe("pergunta fechada vira chip, não lista escrita no texto", () => {
 		const r = garantirChip({ texto, cardsDoTurno: [] });
 		expect(r.texto).toBe(texto);
 		expect(opcoesDePerguntaFechada("Claro!\nFaz sentido pra você?")).toEqual([]);
-		// Inversão de critério (ordem do dono, 27/10 17:15): pergunta de sim/não agora
-		// responde sim/não casado com o verbo do pedido — antes eram os toques de tema.
-		expect(rotulos(r.chip)).toEqual(["Sim, pode", "Agora não"]);
+		// 09/11 (P11): o servidor não adivinha o atalho da pergunta de sim/não.
+		expect(r.chip).toBeNull();
 	});
 
 	it("a lista marcada vira botão e a fala fica inteira no balão (P11)", () => {
@@ -120,7 +119,7 @@ describe("pergunta fechada vira chip, não lista escrita no texto", () => {
 		expect(new Set(ids).size).toBe(2);
 	});
 
-	it("pergunta aberta não vira chip DO TEXTO, mas o turno ainda oferece toque", () => {
+	it("pergunta aberta não vira chip DO TEXTO nem do servidor (09/11)", () => {
 		// Inversão de critério registrada em `.orientacao/diario.md` (t13): a ordem do dono
 		// de 27/10 13:50 é que todo turno que espera resposta tenha opções de um toque. O
 		// texto continua não sendo picado — o chip vem do momento.
@@ -130,7 +129,8 @@ describe("pergunta fechada vira chip, não lista escrita no texto", () => {
 		});
 		expect(r.texto).toBe("Como você está vendo isso hoje?");
 		expect(opcoesDePerguntaFechada("Como você está vendo isso hoje?")).toEqual([]);
-		expect(rotulos(r.chip)).toEqual(["Pode seguir", "Tenho uma dúvida"]);
+		// 09/11 (P11): pergunta aberta fica sem atalho ("Pode seguir / Tenho uma dúvida" saiu).
+		expect(r.chip).toBeNull();
 	});
 
 	it("teto de 4 opções e rótulo curto", () => {

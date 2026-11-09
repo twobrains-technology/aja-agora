@@ -1,4 +1,11 @@
-// TODO TURNO TEM TOQUE — a garantia, e o que ela NÃO faz.
+// 09/11 (P11, bugs 5/6/9/10): O SERVIDOR NÃO ADIVINHA ATALHO. `garantirChip`/`chipDoTurno` só
+// emitem a lista que o modelo ESCREVEU; a derivação por "momento" (`sugestoes.ts`) saiu do turno —
+// ela respondia OUTRA pergunta (Carro/Moto/Imóvel depois de "para que o carro?"; "Pode seguir"
+// depois de "qual é o valor?"). Ela segue viva só para os avisos do servidor (`chips-dos-avisos`),
+// e os testes abaixo que usam `rotulos(...)` provam a derivação pura, não o turno. O contrato do
+// turno está no bloco "(09/11)" no fim do arquivo.
+//
+// TODO TURNO TEM TOQUE — o histórico (derivação pura de `sugestoes.ts`).
 //
 // Ordem do dono (27/10/2026, 13:35): *"sempre ter opcoes de responta automatica que facam sentido
 // com a dinamica da conversa"*. Linha de base medida no banco do dev antes desta mudança: **408 de
@@ -33,7 +40,7 @@ const rotulos = (
 		categoriaDoBem?: "auto" | "moto" | "imovel";
 		canal?: "web" | "whatsapp";
 	} = {},
-) => rotulosDoChip(garantirChip({ texto, cardsDoTurno: [], ...extra }).chip);
+) => sugestoesDaPergunta(texto, extra);
 
 const GENERICO = ["Pode seguir", "Tenho uma dúvida"];
 
@@ -76,11 +83,11 @@ describe("(a) pergunta feita ⇒ opções de um toque, derivadas do momento", ()
 		expect(rotulos("Faz sentido pra você?")).toEqual(["Sim, pode", "Agora não"]);
 	});
 
-	it("o balão NÃO é reescrito quando o chip vem do momento", () => {
+	it("o balão NÃO é reescrito (e não ganha atalho do servidor) numa pergunta aberta", () => {
 		const texto = "Temos 4 cartas boas aqui. Qual delas combina com você?";
-		const r = garantirChip({ texto, cardsDoTurno: [], temCartaNaTela: true });
+		const r = garantirChip({ texto, cardsDoTurno: [] });
 		expect(r.texto).toBe(texto);
-		expect(rotulosDoChip(r.chip).length).toBeGreaterThanOrEqual(2);
+		expect(r.chip).toBeNull();
 	});
 
 	it("card que já É a escolha não ganha outro por cima", () => {
@@ -113,67 +120,6 @@ describe("(a) pergunta feita ⇒ opções de um toque, derivadas do momento", ()
 			cardsDoTurno: [{ type: "contract_form" }],
 		});
 		expect(r.chip).toBeNull();
-	});
-
-	it("os outros cards saem ACOMPANHADOS da resposta ao pedido (prints 02 e 04 do dono)", () => {
-		// Antes o opt-in do WhatsApp e a oferta real matavam o balão: o turno terminava sem
-		// nada para tocar (ordem das 17:16). O turno continua com toque — e, desde a R20, o toque
-		// é a resposta ao PEDIDO do balão (o WhatsApp que ele pediu), não um próximo passo
-		// genérico.
-		const pedidoDoWhatsApp =
-			"Me passa seu WhatsApp no card aqui embaixo que eu te mando essa carta.";
-		for (const type of ["real_offer", "signature_handoff", "document_upload"]) {
-			const r = garantirChip({ texto: pedidoDoWhatsApp, cardsDoTurno: [{ type }] });
-			// As saídas do dado pedido foram esvaziadas em develop (drop invented chips):
-			// sem card de coleta, o toque é o do momento.
-			expect(rotulosDoChip(r.chip), type).toEqual(GENERICO);
-		}
-		// Com o card que COLETA o dado pedido, o card é a resposta: nada de chip do mesmo dado
-		// por cima dele (ordem da R20 — antes saíam os próximos passos ao lado do opt-in).
-		const comOptIn = garantirChip({
-			texto: pedidoDoWhatsApp,
-			cardsDoTurno: [{ type: "whatsapp_optin" }],
-		});
-		expect(comOptIn.chip).toBeNull();
-	});
-
-	it("a pergunta de valor sai no SLIDER quando a categoria do bem está no contexto", () => {
-		// Ordem da auditoria ("4 turnos pedindo valor saíram em texto puro") + ordem do dono das
-		// 13:50: a pergunta de valor tem card. Os números são os de `CREDIT_BOUNDS` (auto) — nada
-		// inventado aqui.
-		const r = garantirChip({
-			texto: "Quanto você pensa em gastar no carro?",
-			cardsDoTurno: [],
-			categoriaDoBem: "auto",
-		});
-		expect(r.chip).toEqual({
-			type: "value_picker",
-			payload: {
-				category: "auto",
-				fields: [
-					{
-						id: "valor-do-bem",
-						label: "Valor do bem",
-						min: 20_000,
-						max: 500_000,
-						step: 10_000,
-						default: 80_000,
-						format: "currency",
-					},
-				],
-			},
-		});
-		// Sem a categoria não há faixa real para o slider: as faixas viram botão — e no
-		// WhatsApp o `value_picker` não sai de jeito nenhum (FIX-109: lá o valor é conversa).
-		// Sem faixas inventadas (develop): sem categoria o toque é o do momento; no WhatsApp
-		// o `value_picker` não sai (FIX-109) e o toque também é o do momento.
-		expect(rotulos("Quanto você pensa em gastar no carro?")).toEqual(GENERICO);
-		expect(
-			rotulos("Quanto você pensa em gastar no carro?", {
-				categoriaDoBem: "auto",
-				canal: "whatsapp",
-			}),
-		).toEqual(GENERICO);
 	});
 });
 
@@ -374,23 +320,14 @@ describe("(c) a ORDEM das 17:15: o toque responde a ESTE turno, não ao tema", (
 		).not.toContain("Como funciona o lance?");
 	});
 
-	it("o turno passa fala do cliente e categoria do bem para o chip", () => {
+	it("o turno entrega ao chip só os balões e os cards: o servidor não decide pelo momento (09/11)", () => {
 		const fonte = readFileSync(new URL("./turno-livre.ts", import.meta.url).pathname, "utf8");
-		const corpo = fonte.slice(fonte.indexOf("const soltarTrecho"), fonte.indexOf("const executar"));
-		expect(corpo).toContain("temCartaNaTela: ctx.cartasNaTela.length > 0");
-		expect(corpo).toContain("canal: ctx.channel");
-		expect(corpo).toContain("falaDoCliente: falaDoClienteDoTurno");
-		expect(corpo).toContain("categoriaDoBem: estado.funnel.currentCategory");
-		// ORDEM DO LÍDER, 27/10 18:08: o card é UM por turno e sai no ÚLTIMO balão —
-		// não por trecho. O mesmo contexto (fala do cliente, categoria, carta na tela)
-		// alimenta a decisão do fim do turno.
 		const fim = fonte.slice(
 			fonte.indexOf("// O ÚNICO TOQUE DO TURNO"),
 			fonte.indexOf('emitirCardsNovos("todos")'),
 		);
 		expect(fim).toContain("baloes: baloesDoTurno");
-		expect(fim).toContain("falaDoCliente: falaDoClienteDoTurno");
-		expect(fim).toContain("categoriaDoBem: estado.funnel.currentCategory");
+		expect(fim).not.toContain("categoriaDoBem");
 		expect(fim).toContain("ctx.cards.push(toqueDoTurno");
 	});
 });
@@ -457,17 +394,8 @@ describe("(R21) o pedido de dado no BEAT ÚNICO — a frase que pede, não só a
 		expect(opcoes).not.toContain("Ver outra opção");
 	});
 
-	it("o TURNO de um balão só entrega o card do dado, não o do fecho", () => {
-		// O caminho real: `chipDoTurno` com um balão único. Antes o toque vinha do fecho.
-		const chip = chipDoTurno({
-			baloes: [BEAT_UNICO_COM_PERGUNTA],
-			cardsDoTurno: [],
-			temCartaNaTela: true,
-			categoriaDoBem: "auto",
-		});
-		const labels = rotulosDoChip(chip);
-		expect(labels.length).toBeGreaterThanOrEqual(2);
-		expect(ehDoDado(labels[0] ?? ""), labels.join(" | ")).toBe(true);
+	it("o TURNO de um balão só com pedido de dado NÃO ganha atalho do servidor (09/11)", () => {
+		expect(chipDoTurno({ baloes: [BEAT_UNICO_COM_PERGUNTA], cardsDoTurno: [] })).toBeNull();
 	});
 
 	it("os VERBOS novos do pedido são reconhecidos em qualquer posição da frase", () => {
@@ -583,5 +511,34 @@ describe("(auditoria 28/10) o pedido de contato e o de nome no turno de handoff"
 			temCartaNaTela: true,
 		});
 		expect(r.opcoes).toEqual(["Quero ver os números", "Agora não"]);
+	});
+});
+
+describe("(09/11) o servidor não adivinha atalho — só a opção escrita pelo modelo vira toque", () => {
+	const aberta = [
+		"Para que você está querendo trocar ou comprar esse carro?",
+		"Qual é o valor do carro que você está pensando em comprar?",
+		"Antes de eu te mostrar as opções, me passa seu WhatsApp?",
+		"Qual é o seu CPF?",
+		"Encontrei 4 opções na tela para um carro de R$ 90 mil.",
+	];
+
+	it("pergunta aberta, pedido de dado e turno sem pergunta ficam SEM atalho", () => {
+		for (const texto of aberta) {
+			expect(garantirChip({ texto, cardsDoTurno: [] }).chip, texto).toBeNull();
+			expect(chipDoTurno({ baloes: [texto], cardsDoTurno: [] }), texto).toBeNull();
+		}
+	});
+
+	it("a lista marcada e a alternativa escrita na fala continuam virando atalho", () => {
+		const lista = "Para quando?\n1) Agora\n2) Nos próximos meses";
+		expect(rotulosDoChip(garantirChip({ texto: lista, cardsDoTurno: [] }).chip)).toEqual([
+			"Agora",
+			"Nos próximos meses",
+		]);
+		expect(rotulosDoChip(chipDoTurno({ baloes: [lista], cardsDoTurno: [] }))).toEqual([
+			"Agora",
+			"Nos próximos meses",
+		]);
 	});
 });

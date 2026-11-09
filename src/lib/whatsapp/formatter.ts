@@ -1515,6 +1515,9 @@ export function artifactToWhatsApp(
 			return financingComparisonToWhatsApp(payload);
 		case "whatsapp_optin":
 			return whatsappOptinToWhatsApp();
+		case "name_prompt":
+			// No WhatsApp o nome é conversa; o tipo nem é oferecido ao modelo no canal.
+			return { type: "text", text: "Como posso te chamar?" };
 		case "decision_prompt":
 			return decisionPromptToWhatsApp(payload);
 		case "contract_form":

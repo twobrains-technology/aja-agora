@@ -9,6 +9,7 @@ import { EmbeddedBid } from "./artifacts/embedded-bid";
 import { FinancingComparison } from "./artifacts/financing-comparison";
 import { GroupCard } from "./artifacts/group-card";
 import { LeadForm } from "./artifacts/lead-form";
+import { NamePrompt } from "./artifacts/name-prompt";
 import { ProposalDoc } from "./artifacts/proposal-doc";
 import { QuickReply } from "./artifacts/quick-reply";
 import { RecommendationCard } from "./artifacts/recommendation-card";
@@ -70,6 +71,8 @@ function renderArtifact(artifact: Artifact, active: boolean) {
 			return <Scenarios payload={artifact.payload} />;
 		case "financing_comparison":
 			return <FinancingComparison payload={artifact.payload} />;
+		case "name_prompt":
+			return <NamePrompt active={active} />;
 		case "whatsapp_optin":
 			return <WhatsappOptin payload={artifact.payload} />;
 		case "decision_prompt":

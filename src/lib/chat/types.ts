@@ -257,6 +257,10 @@ export interface FinancingComparisonPayload {
 
 // Sem payload obrigatório — agent só sinaliza "mostre o card aqui".
 // O frontend resolve conversationId via context.
+/** O card de NOME (campo de digitar, foco no input). Sem dado nenhum: quem escolhe mostrá-lo é o
+ * modelo, na fala em que pergunta como a pessoa se chama; a cópia mora no componente. */
+export type NamePromptPayload = Record<string, never>;
+
 export interface WhatsappOptinPayload {
 	conversationId?: string;
 	/** FIX-27 — telefone MASCARADO já capturado (lead form/identify). Presença →
@@ -493,6 +497,7 @@ export type ArtifactByType =
 	| { type: "scenarios"; payload: ScenariosPayload }
 	| { type: "financing_comparison"; payload: FinancingComparisonPayload }
 	| { type: "whatsapp_optin"; payload: WhatsappOptinPayload }
+	| { type: "name_prompt"; payload: NamePromptPayload }
 	| { type: "decision_prompt"; payload: DecisionPromptPayload }
 	| { type: "contract_form"; payload: ContractFormPayload }
 	| { type: "real_offer"; payload: RealOfferPayload }

@@ -586,6 +586,7 @@ export function tiposDeCardDoCanal(channel: "web" | "whatsapp"): {
 	const fato = (Object.keys(DESTINO_DOS_CARDS) as Array<keyof typeof DESTINO_DOS_CARDS>).filter(
 		(tipo): tipo is TipoDeFato => {
 			const destino = DESTINO_DOS_CARDS[tipo];
+			if (channel === "whatsapp" && tipo === "name_prompt") return false;
 			return destino.classe === "emitivel" && destino.origem === "fato";
 		},
 	);
@@ -593,7 +594,7 @@ export function tiposDeCardDoCanal(channel: "web" | "whatsapp"): {
 }
 
 /** Os cards de FATO que NÃO precisam de carta: eles provam o estado da conversa. */
-const CARDS_DE_ESTADO = ["lead_form", "contract_form", "whatsapp_optin"] as const;
+const CARDS_DE_ESTADO = ["lead_form", "contract_form", "whatsapp_optin", "name_prompt"] as const;
 
 /** A descrição do `mostrar_card` NO CANAL: a lista de tipos oferecida ao modelo é
  * a que o canal renderiza (R5.4), e o resto da instrução é a mesma. */
@@ -609,7 +610,13 @@ function descricaoDoMostrarCard(channel: "web" | "whatsapp"): string {
 		channel === "whatsapp"
 			? ' Aqui NÃO há card de faixas de valor: o valor do bem é conversa — pergunte em texto ("quanto você pensa em gastar?").'
 			: "";
+	// Os cards de DIGITAR do site: o servidor não os adivinha (P11), só aparecem se VOCÊ os chamar.
+	const cardsDeDigitar =
+		channel === "web"
+			? "PEDIR NOME, WHATSAPP OU VALOR NO SITE É COM CARD, na mesma fala em que você pergunta (chame esta tool junto, antes de escrever a pergunta): `name_prompt` quando perguntar como a pessoa se chama; `whatsapp_optin` quando pedir o WhatsApp/celular; `value_picker` (payload { category }, com a categoria do bem que ela já disse; o card tem as abas Valor do bem e Valor da parcela) quando perguntar o valor do bem ou da parcela. Pergunta dessas só em texto deixa o cliente sem o campo para responder. "
+			: "";
 	return (
+		cardsDeDigitar +
 		"Quando fizer UMA pergunta com respostas curtas e previsíveis, chame esta tool antes de escrever a pergunta. As alternativas vão somente no card; não escreva lista ou menu equivalente na fala. Espere a resposta antes de fazer outra pergunta. " +
 		"Mostra na tela um card. Há dois caminhos, e nenhum aceita número de oferta seu.\n\n" +
 		`1) Card de ESCOLHA (o payload é seu): ${escolha.map((tipo) => SHAPE_DO_CARD_DE_ESCOLHA[tipo]).join(", ")}.` +
@@ -1115,6 +1122,9 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 			if (card.card.type === "whatsapp_optin" && ctx.telefoneMascarado) {
 				return `[Card whatsapp_optin na tela, só para confirmar o número que o cliente já passou (${ctx.telefoneMascarado}). Não peça número nem mande digitar: diga que te chama nesse número, se ele topar. ${FATO_TEXTO_JA_ENTREGUE}]`;
 			}
+			if (card.card.type === "name_prompt") {
+				return `[Card name_prompt na tela: o campo de digitar o nome aparece para o cliente agora. Pergunte como ele se chama, uma vez, e espere. Quando ele responder o nome, chame salvar_nome (o card só coleta, quem grava é a tool). ${FATO_TEXTO_JA_ENTREGUE}]`;
+			}
 			return `[Card ${card.card.type} na tela. Ele aparece para o cliente agora — os números vieram da carta real, não os repita com outros valores. ${FATO_TEXTO_JA_ENTREGUE}]`;
 		},
 	});
@@ -1212,7 +1222,9 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 			// se apresentava e a proposta seguinte saía sem a linha "Cliente" —
 			// a meta só é relida no turno seguinte (P144).
 			ctx.nomeDoCliente = r.name;
-			return `[Nome '${r.name}' salvo.]`;
+			// O próximo passo com o NOME EXATO do card: o servidor não adivinha o campo de digitar
+			// (P11), e o modelo que não o chama deixa o cliente sem onde responder.
+			return `[Nome '${r.name}' salvo.] Próximo passo: se a sua próxima fala pedir o valor do carro/imóvel/moto (do bem ou da parcela) ou o WhatsApp, chame mostrar_card NESSA fala: tipo value_picker (payload { category }) para o valor, tipo whatsapp_optin para o WhatsApp. Não pergunte esses dados só em texto.`;
 		},
 	});
 

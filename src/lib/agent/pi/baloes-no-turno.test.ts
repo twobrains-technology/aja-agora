@@ -110,12 +110,13 @@ describe("(print 07) um beat longo chega ao cliente em bolhas curtas", () => {
 		expect(normalizar(falados.join(" "))).toBe(normalizar(EXPLICACAO_DE_LANCE));
 	});
 
-	it("o toque do turno continua UM e no fim, depois do último balão", async () => {
+	it("o toque do turno continua UM e no fim, depois do último balão (quando a fala traz a lista)", async () => {
 		const conversationId = await novaConversa();
 		const turno = await rodarTurno({
 			conversationId,
 			userText: "e como funciona esse lance?",
-			beats: [{ text: EXPLICACAO_DE_LANCE }],
+			// 09/11 (P11): o servidor não adivinha atalho; só a lista escrita pelo modelo vira toque.
+			beats: [{ text: `${EXPLICACAO_DE_LANCE}\n1) Tenho sim\n2) Agora não` }],
 		});
 		await turno.fechar();
 

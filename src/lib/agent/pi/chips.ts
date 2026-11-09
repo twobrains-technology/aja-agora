@@ -40,14 +40,7 @@
 //    atalho escolhe — só existe quando o MODELO declarou a cota, e é conferido
 //    contra as cartas reais em `cards-livres.ts` (fail-closed da main).
 
-import type { Category } from "@/lib/agent/personas";
-import {
-	balaoPedeResposta,
-	frasesDe,
-	rotuloNaVozDoCliente,
-	sugestaoDoTurno,
-} from "@/lib/agent/pi/sugestoes";
-import { CREDIT_BOUNDS } from "@/lib/agent/qualify-config";
+import { balaoPedeResposta, frasesDe, rotuloNaVozDoCliente } from "@/lib/agent/pi/sugestoes";
 import type { ValuePickerPayload } from "@/lib/chat/types";
 
 /** O card já É a escolha: um segundo menu por cima duplicaria a mesma decisão. */
@@ -227,14 +220,6 @@ function toqueBloqueado(texto: string, cardsDoTurno: readonly { type: string }[]
 export function garantirChip(args: {
 	texto: string;
 	cardsDoTurno: readonly { type: string }[];
-	/** Fato do turno: já existe carta na tela desta conversa. Muda a resposta rápida de uma
-	 * pergunta aberta ("qual dessas fica melhor?") para as opções da oferta. */
-	temCartaNaTela?: boolean;
-	canal?: "web" | "whatsapp";
-	/** A última fala do cliente: o anti-eco do `sugestoes.ts` não repete o que ele disse. */
-	falaDoCliente?: string;
-	/** Categoria do bem já declarada — é ela que autoriza o `value_picker` do valor. */
-	categoriaDoBem?: Category;
 	/** Chamado quando a lista marcada é detectada no texto. Quem mede (sinal `lista_no_texto`)
 	 * é o servidor: este módulo entra no bundle do cliente e não pode importar o banco. */
 	aoDetectarListaMarcada?: () => void;
@@ -259,20 +244,12 @@ export function garantirChip(args: {
 		return { texto: args.texto, chip: chipDe(opcoes) };
 	}
 
-	// 2. A opção derivada do MOMENTO (ordem do dono, 27/10): pergunta feita sem toque é pergunta
-	//    perdida — e turno SEM pergunta também tem próximo passo (ordem das 17:16). Aqui o balão
-	//    NÃO muda: só ganha os botões.
-	const sugestao = sugestaoDoTurno(args.texto, {
-		temCartaNaTela: args.temCartaNaTela === true,
-		...(args.canal ? { canal: args.canal } : {}),
-		...(args.falaDoCliente ? { falaDoCliente: args.falaDoCliente } : {}),
-		...(args.categoriaDoBem ? { categoriaDoBem: args.categoriaDoBem } : {}),
-	});
-	if (sugestao.tipoDoCard === "value_picker" && args.categoriaDoBem) {
-		return { texto: args.texto, chip: sliderDoValor(args.categoriaDoBem) };
-	}
-	if (sugestao.opcoes.length < 2) return { texto: args.texto, chip: null };
-	return { texto: args.texto, chip: chipDe(sugestao.opcoes) };
+	// 2. NADA MAIS (P11, 09/11): o servidor não adivinha atalho. A opção derivada do "momento"
+	//    (CPF, bem, valor, próximo passo, genérico) respondia OUTRA pergunta — medido no app:
+	//    "Carro / Moto / Imóvel" depois de "para que você quer o carro?", "Pode seguir / Tenho uma
+	//    dúvida" depois de "qual é o valor?". Pergunta aberta fica sem atalho; o card de digitar
+	//    (nome, celular, valor) e as opções são do modelo, via `mostrar_card`.
+	return { texto: args.texto, chip: null };
 }
 
 /**
@@ -304,10 +281,6 @@ export function chipDoTurno(args: {
 	/** Os textos dos balões do turno, na ORDEM em que foram ao canal. */
 	baloes: readonly string[];
 	cardsDoTurno: readonly { type: string }[];
-	temCartaNaTela?: boolean;
-	canal?: "web" | "whatsapp";
-	falaDoCliente?: string;
-	categoriaDoBem?: Category;
 }): CardGerado | null {
 	const baloes = args.baloes.map((b) => b.trim()).filter(Boolean);
 	const ultimo = baloes[baloes.length - 1];
@@ -333,47 +306,8 @@ export function chipDoTurno(args: {
 	const daLista = listaDeOpcoes(pedido);
 	if (daLista) return chipDe(daLista.opcoes);
 
-	// 2. A resposta do que o agente acabou de perguntar/pedir.
-	const sugestao = sugestaoDoTurno(pedido, {
-		temCartaNaTela: args.temCartaNaTela === true,
-		...(args.canal ? { canal: args.canal } : {}),
-		...(args.falaDoCliente ? { falaDoCliente: args.falaDoCliente } : {}),
-		...(args.categoriaDoBem ? { categoriaDoBem: args.categoriaDoBem } : {}),
-	});
-	if (sugestao.tipoDoCard === "value_picker" && args.categoriaDoBem) {
-		return sliderDoValor(args.categoriaDoBem);
-	}
-	if (sugestao.opcoes.length < 2) return null;
-	return chipDe(sugestao.opcoes);
-}
-
-/**
- * O SLIDER DO VALOR DO BEM — o card `value_picker` com a faixa REAL da categoria.
- *
- * Ordem da auditoria ("4 turnos pedindo valor saíram em texto puro") e ordem do dono das 13:50:
- * a pergunta de valor tem card. Os números não são inventados: `min`/`max`/`step`/`default` vêm de
- * `CREDIT_BOUNDS`, a mesma régua do funil — e é por isso que sem a categoria na conversa o card
- * não sai (faixa de valor de categoria desconhecida seria número inventado).
- */
-function sliderDoValor(categoria: Category): CardGerado {
-	const { min, max, step, default: padrao } = CREDIT_BOUNDS[categoria];
-	return {
-		type: "value_picker",
-		payload: {
-			category: categoria,
-			fields: [
-				{
-					id: "valor-do-bem",
-					label: "Valor do bem",
-					min,
-					max,
-					step,
-					default: padrao,
-					format: "currency",
-				},
-			],
-		},
-	};
+	// 2. Nada mais: só a lista escrita pelo modelo vira toque (P11, ver `garantirChip`).
+	return null;
 }
 
 /** Cada opção nasce com `replyId` do SERVIDOR (nunca do modelo) — é ele que o clique consome. */

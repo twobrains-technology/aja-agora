@@ -240,10 +240,6 @@ export function montarTrechoDeSaida(args: {
 		texto: garantirChip({
 			texto,
 			cardsDoTurno: args.cardsDoTurno ?? [],
-			...(args.temCartaNaTela ? { temCartaNaTela: true } : {}),
-			...(args.canal ? { canal: args.canal } : {}),
-			...(args.falaDoCliente ? { falaDoCliente: args.falaDoCliente } : {}),
-			...(args.categoriaDoBem ? { categoriaDoBem: args.categoriaDoBem } : {}),
 			aoDetectarListaMarcada: () =>
 				publicarScores(
 					[{ name: "lista_no_texto", value: 1, dataType: "BOOLEAN" }],
@@ -1024,12 +1020,6 @@ export function createRunTurnLivre(deps?: {
 				const toqueDoTurno = chipDoTurno({
 					baloes: baloesDoTurno,
 					cardsDoTurno: ctx.cards,
-					temCartaNaTela: ctx.cartasNaTela.length > 0,
-					canal: ctx.channel,
-					...(falaDoClienteDoTurno ? { falaDoCliente: falaDoClienteDoTurno } : {}),
-					...(estado.funnel.currentCategory
-						? { categoriaDoBem: estado.funnel.currentCategory }
-						: {}),
 				});
 				if (toqueDoTurno) ctx.cards.push(toqueDoTurno as never);
 			}

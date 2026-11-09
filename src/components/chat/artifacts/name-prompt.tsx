@@ -16,7 +16,7 @@ import { ehNomeProprioPlausivel } from "@/lib/leads/nome-plausivel";
 // caminhos convergem na persistência do nome (route + saveContactName).
 
 export function NamePrompt({ active = true }: { active?: boolean }) {
-	const { sendAction, status } = useChatContext();
+	const { sendUserMessage, status } = useChatContext();
 	const isStreaming = status === "submitted" || status === "streaming";
 	const [name, setName] = useState("");
 	// Guard SÍNCRONO anti duplo-clique (padrão EC-7 do ContractForm/identify).
@@ -50,7 +50,8 @@ export function NamePrompt({ active = true }: { active?: boolean }) {
 		const primeiroToken = trimmed.split(/\s+/)[0] ?? "";
 		const pareceNome = /^[\p{L}'-]+$/u.test(primeiroToken) && ehNomeProprioPlausivel(primeiroToken);
 		const label = pareceNome ? `Pode me chamar de ${trimmed}` : trimmed;
-		void sendAction({ kind: "gate", gate: "name", value: { name: trimmed }, label }, label);
+		// Texto comum: o gate `name` saiu do route (20/10) e o turno livre lê a fala como qualquer outra.
+		void sendUserMessage(label);
 	};
 
 	if (submitted || !active) return null;
