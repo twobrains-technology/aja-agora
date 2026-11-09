@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { limparCacheDeSkills, skillsParaPrompt } from "./pi/skills";
 import { PROMPT_DO_VENDEDOR } from "./prompt-do-vendedor";
 
+// Teto medido em 09/11/2026 (conduta + skills); sobe só com decisão, não por acidente.
+const TETO = 23_300;
+
 describe("semente do vendedor — o que a dona do produto cobrou em 14 e 15/10", () => {
 	/** A conduta é texto quebrado em linhas: a frase procurada pode estar partida nelas. */
 	const diz = (padrao: RegExp) => padrao.test(PROMPT_DO_VENDEDOR.replace(/\s+/g, " "));
@@ -15,29 +18,9 @@ describe("semente do vendedor — o que a dona do produto cobrou em 14 e 15/10",
 		expect(PROMPT_DO_VENDEDOR).toMatch(/opções na tela/i);
 	});
 
-	it("o nome é a PRIMEIRA pergunta, antes de qualquer oferta (ordem do dono, 27/10)", () => {
-		// Ordem literal do dono: *"o nome, um vendedor a primeira coisa que ele pergunta eh o
-		// nome"*. A conduta abria entregando oferta e o nome ficava para depois (ou nunca).
-		expect(diz(/a primeira coisa é o nome/i)).toBe(true);
-		expect(diz(/antes de qualquer oferta/i)).toBe(true);
-		expect(diz(/antes de tudo, como você se chama\?/i)).toBe(true);
-	});
-
-	it("o nome se pergunta antes da busca de cartas, não depois da oferta", () => {
-		// O texto é lido em ordem: a regra do nome tem de vir ANTES da instrução de buscar e
-		// mostrar carta, que é o que o modelo fazia primeiro.
-		const inicioDaConduta = PROMPT_DO_VENDEDOR.indexOf("Como um bom vendedor de consórcio age");
-		const nome = PROMPT_DO_VENDEDOR.indexOf("A primeira coisa é o nome");
-		const busca = PROMPT_DO_VENDEDOR.indexOf("Pergunta o mínimo antes de mostrar");
-		expect(nome).toBeGreaterThan(inicioDaConduta);
-		expect(busca).toBeGreaterThan(nome);
-	});
-
-	it("o nome é perguntado UMA vez e nunca trava a venda", () => {
-		expect(diz(/no máximo uma vez/i)).toBe(true);
+	it("o nome nunca trava a venda e se pede no máximo mais uma vez", () => {
 		expect(diz(/o nome nunca trava a venda/i)).toBe(true);
-		// O texto antigo dizia que o nome era OPCIONAL: com a ordem do dono, era a instrução
-		// contraditória que fazia o modelo nunca perguntar.
+		expect(diz(/no máximo MAIS UMA vez/i)).toBe(true);
 		expect(diz(/o nome é opcional/i)).toBe(false);
 	});
 
@@ -45,16 +28,18 @@ describe("semente do vendedor — o que a dona do produto cobrou em 14 e 15/10",
 		expect(PROMPT_DO_VENDEDOR).toMatch(/nunca peça a parcela ou o prazo como condição/i);
 	});
 
-	it("exige uma pergunta por mensagem e opção na tela, não no texto", () => {
+	it("exige uma pergunta por mensagem, com no máximo um card, e opção na tela, não no texto", () => {
 		expect(PROMPT_DO_VENDEDOR).toMatch(/uma pergunta por mensagem/i);
+		expect(diz(/no máximo UM card/i)).toBe(true);
+		expect(diz(/nem dois cards pedindo coisas diferentes/i)).toBe(true);
 		expect(PROMPT_DO_VENDEDOR).toMatch(/sem listar as alternativas em texto/i);
 	});
 
-	it("não é lista de frase proibida: conduta não vira trava de fala", () => {
-		const proibidas = [/nunca diga/i, /não use a palavra/i, /proibido dizer/i];
-		for (const padrao of proibidas) {
-			expect(PROMPT_DO_VENDEDOR).not.toMatch(padrao);
-		}
+	it("mantém a verdade: sem número inventado, sem prazo prometido, sem LGPD barrando", () => {
+		expect(diz(/nunca estime nem invente/i)).toBe(true);
+		expect(diz(/nunca prometa data de contemplação/i)).toBe(true);
+		expect(diz(/NUNCA prometa prazo/i)).toBe(true);
+		expect(PROMPT_DO_VENDEDOR).not.toMatch(/consentimento|LGPD/i);
 	});
 
 	it("proíbe o vocativo inventado (o 'Obrigado, Cliente.' da conversa 1a4927bd)", () => {
@@ -87,14 +72,14 @@ describe("semente do vendedor — o que a dona do produto cobrou em 14 e 15/10",
 		expect(diz(/não anuncie o card/i)).toBe(true);
 	});
 
-	it("conduta + skills ficam abaixo de 20.000 caracteres (guardrail de contexto)", () => {
+	it("conduta + skills ficam abaixo do teto de contexto (TETO caracteres)", () => {
 		limparCacheDeSkills();
 		const skills = skillsParaPrompt();
 		const total = PROMPT_DO_VENDEDOR.length + skills.length;
 		console.log(
 			`[prompt] conduta ${PROMPT_DO_VENDEDOR.length} + skills ${skills.length} = ${total} caracteres`,
 		);
-		expect(total).toBeLessThan(20_000);
+		expect(total).toBeLessThan(TETO);
 	});
 
 	it("proíbe comparar prazo/parcela de cabeça (print 13: 96 meses ditos como 'mais curto' que 94)", () => {

@@ -613,11 +613,11 @@ function descricaoDoMostrarCard(channel: "web" | "whatsapp"): string {
 	// Os cards de DIGITAR do site: o servidor não os adivinha (P11), só aparecem se VOCÊ os chamar.
 	const cardsDeDigitar =
 		channel === "web"
-			? "PEDIR NOME, WHATSAPP OU VALOR NO SITE É COM CARD, na mesma fala em que você pergunta (o card aparece sempre DEPOIS da sua fala; a ordem de chamar a tool e escrever a pergunta não importa): `name_prompt` quando perguntar como a pessoa se chama; `whatsapp_optin` quando pedir o WhatsApp/celular; `value_picker` (payload { category }, com a categoria do bem que ela já disse; o card tem as abas Valor do bem e Valor da parcela) quando perguntar o valor do bem ou da parcela. Pergunta dessas só em texto deixa o cliente sem o campo para responder. "
+			? "UMA pergunta por fala, com no máximo UM card: nunca duas perguntas na mesma mensagem, nem dois cards pedindo coisas diferentes. Quando a pergunta for nome, WhatsApp ou valor, o card é o campo de responder, na mesma fala (o card aparece sempre DEPOIS da sua fala; a ordem de chamar a tool e escrever a pergunta não importa): `name_prompt` para o nome; `whatsapp_optin` para o WhatsApp/celular; `value_picker` (payload { category }, com a categoria do bem que ela já disse; o card tem as abas Valor do bem e Valor da parcela) para o valor do bem ou da parcela. Precisa de mais de um desses dados? Peça um, espere a resposta, depois o outro. "
 			: "";
 	return (
 		cardsDeDigitar +
-		"Quando fizer UMA pergunta com respostas curtas e previsíveis, chame esta tool na mesma fala (o card aparece depois do texto, em qualquer ordem). As alternativas vão somente no card; não escreva lista ou menu equivalente na fala. Espere a resposta antes de fazer outra pergunta. " +
+		"Quando fizer a UMA pergunta da fala com respostas curtas e previsíveis, chame esta tool uma vez (o card aparece depois do texto, em qualquer ordem). As alternativas vão somente no card; não escreva lista ou menu equivalente na fala. Espere a resposta antes de fazer outra pergunta. " +
 		"Mostra na tela um card. Há dois caminhos, e nenhum aceita número de oferta seu.\n\n" +
 		`1) Card de ESCOLHA (o payload é seu): ${escolha.map((tipo) => SHAPE_DO_CARD_DE_ESCOLHA[tipo]).join(", ")}.` +
 		semFaixasDeValor +
@@ -1224,7 +1224,7 @@ export function buildToolsLivres(ctx: ContextoDasTools, deps: DepsDasToolsLivres
 			ctx.nomeDoCliente = r.name;
 			// O próximo passo com o NOME EXATO do card: o servidor não adivinha o campo de digitar
 			// (P11), e o modelo que não o chama deixa o cliente sem onde responder.
-			return `[Nome '${r.name}' salvo.] Próximo passo: se a sua próxima fala pedir o valor do carro/imóvel/moto (do bem ou da parcela) ou o WhatsApp, chame mostrar_card NESSA fala: tipo value_picker (payload { category }) para o valor, tipo whatsapp_optin para o WhatsApp. Não pergunte esses dados só em texto.`;
+			return `[Nome '${r.name}' salvo.] Próximo passo: faça UMA pergunta só nessa fala e espere a resposta. Se for o valor do carro/imóvel/moto (do bem ou da parcela), chame mostrar_card com value_picker (payload { category }); se for o WhatsApp, com whatsapp_optin. Um dado por fala, um card por fala: não peça os dois juntos.`;
 		},
 	});
 

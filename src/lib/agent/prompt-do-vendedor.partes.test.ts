@@ -35,6 +35,10 @@ describe("repartição do prompt em partes (base e partes)", () => {
 			"O cliente não tem formulário.",
 			"Pergunta o mínimo antes de mostrar.",
 			"O contato é o que salva a conversa.",
+			"Faça no máximo UMA pergunta por mensagem.",
+			"Uma pergunta por mensagem, sempre",
+			"Quando chamar falar_com_humano",
+			"Se a pergunta tem alternativas",
 		];
 		const pulados = [...MOVIDOS, ...REESCRITOS];
 		const operacionais = legado
