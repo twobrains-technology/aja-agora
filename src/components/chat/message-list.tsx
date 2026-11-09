@@ -19,6 +19,7 @@ import { WELCOME_OPTIONS } from "@/lib/chat/welcome-options";
 import { WelcomeCategories } from "./artifacts/welcome-categories";
 import { AssistantAvatar, ChatMessage } from "./chat-message";
 import { nextStickState } from "./scroll-intent";
+import { StreamingDots } from "./streaming-dots";
 
 type Category = "imovel" | "auto" | "moto";
 
@@ -205,6 +206,11 @@ export function MessageList({ messages, isStreaming, hasError, onRetry }: Messag
 					});
 				})()}
 
+				{/* Enviou e o servidor ainda não abriu a mensagem do agente (status
+				    "submitted"): a última fala é a do lead e não há balão do assistente
+				    para hospedar o "digitando". Sem isto a tela ficava muda por segundos. */}
+				{isStreaming && visiveis.at(-1)?.role === "user" && <AguardandoAgente />}
+
 				{/* Bottom sentinel for IntersectionObserver + input clearance */}
 				<div ref={sentinelRef} className="h-20 shrink-0" aria-hidden="true" />
 			</div>
@@ -223,6 +229,20 @@ export function MessageList({ messages, isStreaming, hasError, onRetry }: Messag
 					</Button>
 				</div>
 			)}
+		</div>
+	);
+}
+
+/** "Digitando…" entre o envio e a 1ª palavra do agente. O rótulo é texto visível
+ * (não só animação nem cor). Some quando a mensagem do assistente entra na lista. */
+function AguardandoAgente() {
+	return (
+		<div className="flex w-full items-start gap-2 sm:gap-3" data-testid="aguardando-agente">
+			<AssistantAvatar />
+			<div className="flex items-center gap-2 rounded-2xl rounded-tl-[5px] border border-border bg-card px-[14px] py-[10px]">
+				<StreamingDots />
+				<span className="text-xs text-muted-foreground">Digitando…</span>
+			</div>
 		</div>
 	);
 }

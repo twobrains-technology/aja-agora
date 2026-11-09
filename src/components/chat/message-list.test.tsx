@@ -54,3 +54,27 @@ describe("MessageList — pergunta duplicada", () => {
 		expect(screen.getAllByText("oi")).toHaveLength(2);
 	});
 });
+
+describe("MessageList — feedback após enviar", () => {
+	it("mostra o 'Digitando…' quando o lead acabou de enviar e o agente ainda não respondeu", () => {
+		render(<MessageList messages={[user("Oi", "u1")]} isStreaming />);
+		expect(screen.getByText("Oi")).toBeTruthy();
+		expect(screen.getByText("Digitando…")).toBeTruthy();
+	});
+
+	it("não mostra o indicador fora do envio", () => {
+		render(<MessageList messages={[user("Oi", "u1")]} isStreaming={false} />);
+		expect(screen.queryByText("Digitando…")).toBeNull();
+	});
+
+	it("o indicador some quando o assistente já tem texto", () => {
+		const assistant = {
+			id: "a1",
+			role: "assistant",
+			parts: [{ type: "text", text: "Olá, tudo bem?" }],
+		} as unknown as AjaUIMessage;
+		render(<MessageList messages={[user("Oi", "u1"), assistant]} isStreaming />);
+		expect(screen.queryByText("Digitando…")).toBeNull();
+		expect(screen.getByText(/Olá, tudo bem/)).toBeTruthy();
+	});
+});
