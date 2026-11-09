@@ -24,7 +24,7 @@ function parsePasso(raw: string | null): PassoDoPercurso | null {
 }
 
 export async function GET(request: Request) {
-	const { error } = await requireRole("admin");
+	const { error } = await requireRole("admin", "viewer");
 	if (error) return error;
 
 	const { de, ate } = periodoDaRequisicao(request);
