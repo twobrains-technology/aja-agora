@@ -2,14 +2,13 @@ import { eq } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 
 import { db } from "@/db";
-import { conversations, leads, messages as messagesTable } from "@/db/schema";
+import { conversations, leads } from "@/db/schema";
 import { createLeadFromConversation } from "@/lib/admin/lead-stage-tracker";
 import { relinkOrphanProposals } from "@/lib/bevi/proposal-repo";
 import { maskPhoneForDisplay } from "@/lib/conversation/identity";
 import { metaOf, persistMeta } from "@/lib/conversation/meta";
 import { leadSchema } from "@/lib/lead/schema";
 import { checkRateLimit } from "@/lib/middleware/rate-limit";
-import { handoffToAgents } from "@/lib/whatsapp/proxy";
 
 export async function POST(req: NextRequest) {
 	// ---- Rate limiting ----
@@ -121,30 +120,11 @@ export async function POST(req: NextRequest) {
 			registrarLeadIdentificado(conversationId as string),
 		);
 
-		// Trigger handoff to vendor(s) via WhatsApp (non-blocking)
-		if (conv.channel === "web" && conv.status === "active") {
-			const recentMsgs = await db.query.messages.findMany({
-				where: eq(messagesTable.conversationId, conversationId as string),
-				orderBy: (m, { desc }) => [desc(m.createdAt)],
-				limit: 6,
-			});
-			const summary = recentMsgs
-				.reverse()
-				.map((m) => `${m.role === "user" ? "👤" : "🤖"} ${m.content.slice(0, 200)}`)
-				.join("\n");
-
-			try {
-				const emailLine = parsed.data.email ? `\n📧 ${parsed.data.email}` : "";
-				await handoffToAgents(
-					conversationId as string,
-					"", // no waId for web users
-					parsed.data.name,
-					`📱 *Lead via Web*${emailLine}\n📞 ${parsed.data.phone}\n\n${summary}`,
-				);
-			} catch (err) {
-				console.error("[leads] Handoff error:", err);
-			}
-		}
+		// Capturar o contato NÃO chama humano. Antes, este ponto rodava `handoffToAgents`,
+		// que grava `conversations.status = 'handed_off'` sem atendente: o agente calava
+		// na hora, o lead lia "Mensagem enviada para Consultor. Aguarde a resposta aqui."
+		// e a conversa morria (P0, P7). Chamar a fila é decisão do vendedor (tool
+		// `falar_com_humano`, P8); a mesa só recebe quem pede para fechar (P5).
 
 		return Response.json({ ok: true, leadId });
 	} catch (err) {
