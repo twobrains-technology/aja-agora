@@ -12,12 +12,12 @@ Regra: bug novo → card + `worker` em background → `reviewer` → status aqui
 | 6 | agente-nao-mostra-card-valor | alta | mesma correção do 5; causa: modelo não chama mostrar_card; component value-picker tem as abas (sem regressão) | worker e4909c56 | value_picker saiu 2/3, whatsapp_optin 0/3 após a mudança |
 | 9 | agente-nao-mostra-card-nome | alta | enviado ao worker f0d1626a (mesma família dos bugs 5 e 6) | worker f0d1626a | — |
 | 10 | chips-fora-de-contexto | alta | enviado ao worker f0d1626a (mesmo mecanismo: garantirChip) | worker f0d1626a | — |
-| 11 | indicador-duplicado | média | corrigido em 9bfffac3, deploy dev D3 despachado | worker e59ca33b, conferido pelo líder | 15 testes ok, typecheck ok; falta ver na tela |
+| 11 | indicador-duplicado | média | corrigido em 9bfffac3 e no dev (run 42658405860) | worker e59ca33b, conferido pelo líder | 15 testes ok, typecheck ok; falta ver na tela |
 | 8 | prompt-do-vendedor-testes-velhos | média | aberto: 5 testes falham no HEAD da develop e barram qualquer commit nesse arquivo | — | 4 testes de regra antiga (nome primeiro, nunca diga) + teto 20.000 (hoje 23.507) |
 | 7 | bevi-vitrine-env-compose | alta | feito no local, provado | líder | turno real: buscar_cartas com cartas do Banco do Brasil; pendente: script que gera o .env |
 | D1 | deploy-dev (c01fab6e + docs) | — | feito | worker 0cab5529, conferido pelo líder | run 42628832084 success, sha e01fc6dd, rollout ECS (serviço e worker) success; sem URL de health |
 | D2 | deploy-dev (95bea2e9 + docs) | — | feito | worker 21fb4394, conferido pelo líder | run 42630754091 success, sha 292715a2, rollout ECS (serviço e worker) success |
-| D3 | deploy-dev (9bfffac3 + docs) | — | despachado, em andamento | worker (deploy-dev 3) | push por SHA fixo, workflow_dispatch env=dev |
+| D3 | deploy-dev (9bfffac3 + docs) | — | feito | worker e812ced5, conferido pelo líder | run 42658405860 success, sha 8a5f6a9c, rollout ECS (serviço e worker) success |
 
 Regra (Kairo, 09/11): subir para o dev é demanda assíncrona, igual aos bugs: worker em background, líder confere pelo run e pelo ECS.
 
