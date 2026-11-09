@@ -19,7 +19,8 @@ Regra: bug novo → card + `worker` em background → `reviewer` → status aqui
 | 15 | card-sem-foco-e-atrasado | alta | na fila: junto com o 13, espera f0d1626a (name-prompt, artifact-renderer) | — | causa provável: disabled={isStreaming} + autoFocus em campo desabilitado |
 | 14 | clique-simular-obsoleto | alta | corrigido em a627f3f8 (web); WhatsApp (formatter.ts) fica para depois | worker cb0f7457, conferido pelo líder | 72 testes ok |
 | 17 | card-de-finalizacao | média | na fila: espera o commit do f0d1626a (types.ts, artifact-renderer.tsx). Resolve a dúvida da proposta no bug 12 | — | decisão do Kairo: UM card; confete; WhatsApp como está; proposta pequena e branca |
-| 19 | card-antes-da-pergunta | alta | despachado, worker em andamento | worker (bug 19) | — |
+| 19 | card-antes-da-pergunta | alta | despachado | worker (bug 19) | — |
+| 20 | consultor-calou-o-agente | alta | despachado | worker (bug 20) | — |
 | 18 | hook-pre-commit-sem-banco | média | aberto: o pre-commit roda testes de integração que precisam de Postgres em 127.0.0.1:5433, que não existe neste Mac (barrou 3 workers; o f0d1626a estourou 30 min). Contorno usado: banco descartável em aja-shared-pg.orb.local + VITEST_MAX_WORKERS=1 | — | commits de8b302e e a627f3f8 passaram assim |
 | 8 | prompt-do-vendedor-testes-velhos | média | aberto: 5 testes falham no HEAD da develop e barram qualquer commit nesse arquivo | — | 4 testes de regra antiga (nome primeiro, nunca diga) + teto 20.000 (hoje 23.507) |
 | 7 | bevi-vitrine-env-compose | alta | feito no local, provado | líder | turno real: buscar_cartas com cartas do Banco do Brasil; pendente: script que gera o .env |
