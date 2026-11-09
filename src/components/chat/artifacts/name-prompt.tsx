@@ -2,7 +2,11 @@
 
 import { ArrowRight } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { type FormEvent, useRef, useState } from "react";
+import {
+	useFocoAoMontar,
+	useRespondidoNaConversa,
+} from "@/components/chat/use-card-de-preenchimento";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -24,13 +28,11 @@ export function NamePrompt({ active = true }: { active?: boolean }) {
 	const [submitted, setSubmitted] = useState(false);
 	const inputRef = useRef<HTMLInputElement>(null);
 
-	// Foco ao aparecer (só quando ativo) — teclado abre no lugar certo no mobile,
-	// sem roubar foco de um card antigo re-renderizado no histórico.
-	useEffect(() => {
-		if (active && !submitted) inputRef.current?.focus();
-	}, [active, submitted]);
+	const respondidoNaConversa = useRespondidoNaConversa();
+	useFocoAoMontar(inputRef, active && !submitted && !respondidoNaConversa);
 
-	const submit = () => {
+	const submit = (e?: FormEvent) => {
+		e?.preventDefault();
 		if (submittingRef.current || isStreaming) return;
 		const trimmed = name.trim();
 		if (trimmed.length === 0) return;
@@ -54,7 +56,7 @@ export function NamePrompt({ active = true }: { active?: boolean }) {
 		void sendUserMessage(label);
 	};
 
-	if (submitted || !active) return null;
+	if (submitted || !active || respondidoNaConversa) return null;
 
 	return (
 		<motion.div
@@ -63,43 +65,36 @@ export function NamePrompt({ active = true }: { active?: boolean }) {
 			transition={{ type: "spring", stiffness: 320, damping: 28 }}
 		>
 			<Card className="w-full max-w-sm border-primary/20">
-				<CardContent className="flex items-end gap-2 p-3">
-					<div className="flex-1 space-y-1.5">
-						<label htmlFor="name-input" className="text-xs font-medium text-muted-foreground">
-							Como posso te chamar?
-						</label>
-						<Input
-							id="name-input"
-							ref={inputRef}
-							autoFocus
-							placeholder="Seu nome"
-							value={name}
-							maxLength={40}
-							autoComplete="given-name"
-							enterKeyHint="send"
-							disabled={isStreaming}
-							onChange={(e) => setName(e.target.value)}
-							onKeyDown={(e) => {
-								if (e.key === "Enter") {
-									e.preventDefault();
-									submit();
-								}
-							}}
-							className="min-h-[44px]"
-							data-testid="name-input"
-						/>
-					</div>
-					<Button
-						type="button"
-						size="icon"
-						className="min-h-[44px] min-w-[44px] shrink-0"
-						onClick={submit}
-						disabled={isStreaming || name.trim().length === 0}
-						aria-label="Confirmar nome"
-						data-testid="name-submit"
-					>
-						<ArrowRight className="size-4" />
-					</Button>
+				<CardContent className="p-3">
+					<form onSubmit={submit} className="flex items-end gap-2">
+						<div className="flex-1 space-y-1.5">
+							<label htmlFor="name-input" className="text-xs font-medium text-muted-foreground">
+								Como posso te chamar?
+							</label>
+							<Input
+								id="name-input"
+								ref={inputRef}
+								placeholder="Seu nome"
+								value={name}
+								maxLength={40}
+								autoComplete="given-name"
+								enterKeyHint="send"
+								onChange={(e) => setName(e.target.value)}
+								className="min-h-[44px]"
+								data-testid="name-input"
+							/>
+						</div>
+						<Button
+							type="submit"
+							size="icon"
+							className="min-h-[44px] min-w-[44px] shrink-0"
+							disabled={name.trim().length === 0}
+							aria-label="Confirmar nome"
+							data-testid="name-submit"
+						>
+							<ArrowRight className="size-4" />
+						</Button>
+					</form>
 				</CardContent>
 			</Card>
 		</motion.div>

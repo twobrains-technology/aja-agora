@@ -1,7 +1,12 @@
 "use client";
 
 import { motion } from "motion/react";
-import { useState } from "react";
+import { type FormEvent, useRef, useState } from "react";
+import {
+	CardRespondido,
+	useFocoAoMontar,
+	useRespondidoNaConversa,
+} from "@/components/chat/use-card-de-preenchimento";
 import { WhatsappGlyph } from "@/components/icons/whatsapp-glyph";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,7 +39,13 @@ function isValidPhone(digits: string): boolean {
 	return /^[1-9]{2}9?\d{8}$/.test(digits);
 }
 
-export function WhatsappOptin({ payload }: { payload?: WhatsappOptinPayload }) {
+export function WhatsappOptin({
+	payload,
+	active = true,
+}: {
+	payload?: WhatsappOptinPayload;
+	active?: boolean;
+}) {
 	const { sendAction } = useChatContext();
 	const [masked, setMasked] = useState("");
 	const [state, setState] = useState<"idle" | "accepted" | "declined">("idle");
@@ -47,7 +58,13 @@ export function WhatsappOptin({ payload }: { payload?: WhatsappOptinPayload }) {
 	const knownPhone = payload?.knownPhone;
 	const showConfirm = !!knownPhone && !collectMode;
 
-	const handleAccept = () => {
+	const respondidoNaConversa = useRespondidoNaConversa();
+	// Um ref só: o campo (coleta) ou o botão principal (confirmação) — só um existe.
+	const focoRef = useRef<HTMLInputElement & HTMLButtonElement>(null);
+	useFocoAoMontar(focoRef, active && state === "idle" && !respondidoNaConversa, showConfirm);
+
+	const handleAccept = (e?: FormEvent) => {
+		e?.preventDefault();
 		if (!valid || state !== "idle") return;
 		void sendAction({ kind: "whatsapp_optin", phone: digits }, "Quero receber pelo WhatsApp");
 		setState("accepted");
@@ -74,6 +91,9 @@ export function WhatsappOptin({ payload }: { payload?: WhatsappOptinPayload }) {
 	const secondaryBtn =
 		"flex-1 h-[46px] min-h-[44px] rounded-full border border-border bg-card text-sm font-semibold text-foreground hover:bg-muted";
 
+	// Respondido pela conversa sem ter usado o card: sela, com texto.
+	if (respondidoNaConversa && state === "idle") return <CardRespondido />;
+
 	return (
 		<motion.div {...anim}>
 			<div className="w-full max-w-sm rounded-[12px] border border-border bg-card p-[18px] shadow-lg flex flex-col gap-[14px]">
@@ -99,6 +119,7 @@ export function WhatsappOptin({ payload }: { payload?: WhatsappOptinPayload }) {
 						</p>
 						<div className="flex flex-col gap-[9px] sm:flex-row">
 							<Button
+								ref={focoRef}
 								type="button"
 								onClick={handleConfirmKnown}
 								disabled={state !== "idle"}
@@ -127,9 +148,11 @@ export function WhatsappOptin({ payload }: { payload?: WhatsappOptinPayload }) {
 						</div>
 					</>
 				) : (
-					<>
+					<form onSubmit={handleAccept} className="flex flex-col gap-[14px]" noValidate>
 						{/* phone input */}
 						<Input
+							ref={focoRef}
+							aria-label="Seu WhatsApp com DDD"
 							type="tel"
 							inputMode="numeric"
 							value={masked}
@@ -141,12 +164,7 @@ export function WhatsappOptin({ payload }: { payload?: WhatsappOptinPayload }) {
 
 						{/* actions */}
 						<div className="flex gap-[9px]">
-							<Button
-								type="button"
-								onClick={handleAccept}
-								disabled={!valid || state !== "idle"}
-								className={primaryBtn}
-							>
+							<Button type="submit" disabled={!valid || state !== "idle"} className={primaryBtn}>
 								{state === "accepted" ? "Anotado ✓" : "Quero receber"}
 							</Button>
 							<Button
@@ -159,7 +177,7 @@ export function WhatsappOptin({ payload }: { payload?: WhatsappOptinPayload }) {
 								{state === "declined" ? "Sem problema" : "Agora não"}
 							</Button>
 						</div>
-					</>
+					</form>
 				)}
 			</div>
 		</motion.div>

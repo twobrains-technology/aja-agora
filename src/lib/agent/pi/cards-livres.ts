@@ -84,6 +84,17 @@ export const DESTINO_DOS_CARDS = {
 
 export const TIPOS_DE_ESCOLHA = ["quick_reply", "value_picker", "topic_picker"] as const;
 
+/**
+ * Cards de PREENCHIMENTO: pedem um dado (nome, WhatsApp, formulários). A ordem é invariante de
+ * layout do servidor (P11): saem DEPOIS da fala do turno, nunca acima da pergunta que os explica.
+ */
+export const TIPOS_DE_PREENCHIMENTO = [
+	"lead_form",
+	"contract_form",
+	"whatsapp_optin",
+	"name_prompt",
+] as const;
+
 export type TipoDeEscolha = (typeof TIPOS_DE_ESCOLHA)[number];
 
 /** Teto de sanidade do `value_picker`: ali os números são a PERGUNTA (faixa de

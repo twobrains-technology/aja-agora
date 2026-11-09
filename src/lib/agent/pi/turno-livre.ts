@@ -20,7 +20,11 @@ import type { TurnEvent, TurnInput } from "@/lib/agent/orchestrator/types";
 import { passaFinal } from "@/lib/agent/orchestrator/vazamento";
 import type { Category } from "@/lib/agent/personas";
 import { picarEmBaloes } from "@/lib/agent/pi/baloes";
-import { type MetaDaEmissao, TIPOS_DE_ESCOLHA } from "@/lib/agent/pi/cards-livres";
+import {
+	type MetaDaEmissao,
+	TIPOS_DE_ESCOLHA,
+	TIPOS_DE_PREENCHIMENTO,
+} from "@/lib/agent/pi/cards-livres";
 import { chipDoTurno, garantirChip } from "@/lib/agent/pi/chips";
 import { corrigirComparacoes } from "@/lib/agent/pi/comparacao-de-prazo";
 import { executarBeat } from "@/lib/agent/pi/converse";
@@ -802,6 +806,8 @@ export function createRunTurnLivre(deps?: {
 		// texto → texto → card, e a tabela caía embaixo da pergunta que ela deveria
 		// responder. Agora sai onde nasceu, uma vez (dedupe por payload).
 		//
+		// EXCEÇÃO: o card de PREENCHIMENTO (nome, WhatsApp, formulários) segue a mesma regra do de
+		// escolha: sai depois do texto do turno, nunca acima da pergunta (BUG 19).
 		// EXCEÇÃO: o card de ESCOLHA (P136). Ele é a RESPOSTA de uma pergunta e sai
 		// DEPOIS da fala que a faz, como na `main` (o chip vinha no fim do balão). O
 		// modelo pede o card antes de escrever a pergunta (é o que a skill ensina),
@@ -814,7 +820,12 @@ export function createRunTurnLivre(deps?: {
 			// é o que a persistência grava antes de registrar o card.
 			estado = aplicarMetaDaEmissao(estado, ctx.metaDaEmissao);
 			for (const card of ctx.cards) {
-				if (quais === "fato" && TIPOS_DE_ESCOLHA.some((tipo) => tipo === card.type)) continue;
+				// Escolha e preenchimento esperam o fim do beat: o card vem depois da fala.
+				if (
+					quais === "fato" &&
+					([...TIPOS_DE_ESCOLHA, ...TIPOS_DE_PREENCHIMENTO] as string[]).includes(card.type)
+				)
+					continue;
 				const chave = `${card.type}:${JSON.stringify(card.payload)}`;
 				if (cardsJaEmitidos.has(chave)) continue;
 				cardsJaEmitidos.add(chave);

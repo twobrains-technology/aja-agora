@@ -1,7 +1,12 @@
 "use client";
 
 import { ShieldCheck } from "lucide-react";
-import { useRef, useState } from "react";
+import { type FormEvent, useRef, useState } from "react";
+import {
+	CardRespondido,
+	useFocoAoMontar,
+	useRespondidoNaConversa,
+} from "@/components/chat/use-card-de-preenchimento";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -41,9 +46,14 @@ export function ContractForm({ payload }: { payload: ContractFormPayload }) {
 	const cpfDigits = onlyDigits(cpf);
 	const phoneDigits = onlyDigits(phone);
 	const fieldsValid = useStored || (cpfDigits.length === 11 && phoneDigits.length >= 10);
-	const valid = fieldsValid && !isStreaming && !submitted;
+	const valid = fieldsValid && !submitted;
+	const respondidoNaConversa = useRespondidoNaConversa();
+	// Um ref só: o CPF (digitação) ou o botão (dados já na conta).
+	const focoRef = useRef<HTMLInputElement & HTMLButtonElement>(null);
+	useFocoAoMontar(focoRef, !submitted && !respondidoNaConversa, useStored);
 
-	const submit = () => {
+	const submit = (e?: FormEvent) => {
+		e?.preventDefault();
 		// Guard de corrida (ref, síncrono) — precede qualquer checagem de state.
 		if (submittingRef.current) return;
 		if (!fieldsValid || isStreaming) return;
@@ -57,8 +67,14 @@ export function ContractForm({ payload }: { payload: ContractFormPayload }) {
 		);
 	};
 
+	if (respondidoNaConversa && !submitted) return <CardRespondido />;
+
 	return (
-		<div className="w-full max-w-sm rounded-[12px] border border-[color:var(--border-strong)] bg-card p-[18px] shadow-lg flex flex-col gap-[14px]">
+		<form
+			onSubmit={submit}
+			noValidate
+			className="w-full max-w-sm rounded-[12px] border border-[color:var(--border-strong)] bg-card p-[18px] shadow-lg flex flex-col gap-[14px]"
+		>
 			{/* header */}
 			<div className="flex flex-col gap-[2px]">
 				<p className="text-sm font-semibold text-foreground">Vamos confirmar seu plano</p>
@@ -85,7 +101,6 @@ export function ContractForm({ payload }: { payload: ContractFormPayload }) {
 						type="button"
 						className="text-left text-[11px] text-muted-foreground underline underline-offset-2 bg-transparent border-none cursor-pointer p-0 w-fit font-[inherit] hover:text-foreground transition-colors"
 						onClick={() => setUseStored(false)}
-						disabled={isStreaming}
 						data-testid="contract-edit-identity"
 					>
 						Usar outros dados
@@ -103,9 +118,7 @@ export function ContractForm({ payload }: { payload: ContractFormPayload }) {
 							placeholder="000.000.000-00"
 							value={cpf}
 							onChange={(e) => setCpf(maskCpf(e.target.value))}
-							disabled={isStreaming}
-							// FIX-17: autofocus padronizado nos forms do funil (mobile-first).
-							autoFocus
+							ref={focoRef}
 							className="h-[46px] rounded-xl border-border bg-background px-[13px] text-base placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/20"
 							data-testid="contract-cpf"
 						/>
@@ -121,7 +134,6 @@ export function ContractForm({ payload }: { payload: ContractFormPayload }) {
 							placeholder="(11) 99999-9999"
 							value={phone}
 							onChange={(e) => setPhone(maskPhone(e.target.value))}
-							disabled={isStreaming}
 							className="h-[46px] rounded-xl border-border bg-background px-[13px] text-base placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/20"
 							data-testid="contract-phone"
 						/>
@@ -130,15 +142,15 @@ export function ContractForm({ payload }: { payload: ContractFormPayload }) {
 			)}
 
 			<Button
-				type="button"
+				ref={useStored ? focoRef : undefined}
+				type="submit"
 				className="w-full h-[46px] min-h-[44px] gap-2 rounded-full bg-primary text-sm font-semibold text-primary-foreground hover:brightness-105"
-				onClick={submit}
 				disabled={!valid}
 				data-testid="contract-submit"
 			>
 				<ShieldCheck className="size-4" />
-				Fazer a proposta
+				{submitted ? "Proposta enviada ✓" : "Fazer a proposta"}
 			</Button>
-		</div>
+		</form>
 	);
 }

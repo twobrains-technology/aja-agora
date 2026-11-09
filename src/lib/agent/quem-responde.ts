@@ -29,9 +29,10 @@
  * agente. Quem devolve a conversa é o "Encerrar atendimento", explicitamente.
  */
 
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { conversations } from "@/db/schema";
+import { conversations, mesaHandoffs } from "@/db/schema";
+import { ACTIVE_HANDOFF_STATUSES } from "@/lib/mesa/handoff";
 import { chaveTelefoneBR } from "@/lib/whatsapp/mesmo-numero";
 
 /**
@@ -86,15 +87,34 @@ export async function quemRespondePara(
 		// comparação cai na igualdade exata — o comportamento que já existia.
 		const bate = chave ? chaveTelefoneBR(conv.waId) === chave : conv.waId === identificador;
 
-		if (bate) {
-			return {
-				quem: "humano",
-				conversationId: conv.id,
-				handedOffUserId: conv.handedOffUserId ?? null,
-				semDestinatario: conv.handedOffUserId == null,
-			};
-		}
+		if (!bate) continue;
+
+		// `handed_off` sozinho NÃO cala o agente (P8): linha velha sem dono e sem
+		// caso na mesa é resíduo e não pode calar conversa nova. Só calam o claim
+		// de um atendente e o caso ATIVO na mesa (aberto ou em andamento).
+		const temDono = conv.handedOffUserId != null;
+		const temCasoNaMesa = temDono ? false : await temCasoAtivoNaMesa(conv.id);
+		if (!temDono && !temCasoNaMesa) continue;
+
+		return {
+			quem: "humano",
+			conversationId: conv.id,
+			handedOffUserId: conv.handedOffUserId ?? null,
+			semDestinatario: !temDono,
+		};
 	}
 
 	return { quem: "agente", motivo: "sem-atendimento-aberto" };
+}
+
+/** Caso da mesa ainda ativo (aberto ou em andamento) para esta conversa. */
+async function temCasoAtivoNaMesa(conversationId: string): Promise<boolean> {
+	const caso = await db.query.mesaHandoffs.findFirst({
+		where: and(
+			eq(mesaHandoffs.conversationId, conversationId),
+			inArray(mesaHandoffs.status, [...ACTIVE_HANDOFF_STATUSES]),
+		),
+		columns: { id: true },
+	});
+	return caso != null;
 }

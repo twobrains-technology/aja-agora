@@ -42,6 +42,10 @@ function user(text: string, id: string): AjaUIMessage {
 	return { id, role: "user", parts: [{ type: "text", text }] } as unknown as AjaUIMessage;
 }
 
+function assistant(id: string): AjaUIMessage {
+	return { id, role: "assistant", parts: [{ type: "text", text: "x" }] } as unknown as AjaUIMessage;
+}
+
 describe("ValuePicker — recolhe quando o cliente digita o valor na conversa (R5.5)", () => {
 	it("some depois que o cliente manda o valor pelo campo de texto do chat", () => {
 		ctx.messages = [];
@@ -56,7 +60,8 @@ describe("ValuePicker — recolhe quando o cliente digita o valor na conversa (R
 	});
 
 	it("continua na tela enquanto o cliente não respondeu nada", () => {
-		ctx.messages = [user("quero um carro", "u0")];
+		// O card vive na mensagem do agente, que é a última da conversa.
+		ctx.messages = [user("quero um carro", "u0"), assistant("a0")];
 		const { rerender } = render(<ValuePicker payload={PAYLOAD} />);
 		expect(screen.getByTestId("value-input-credit")).toBeTruthy();
 

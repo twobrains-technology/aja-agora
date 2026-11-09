@@ -2,7 +2,11 @@
 
 import { ArrowRight, Check } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
+import {
+	useFocoAoMontar,
+	useRespondidoNaConversa,
+} from "@/components/chat/use-card-de-preenchimento";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -80,7 +84,7 @@ export function ValuePicker({
 	onSubmit?: (values: Record<string, number>) => void;
 	active?: boolean;
 }) {
-	const { sendUserMessage, status, messages } = useChatContext();
+	const { sendUserMessage, status } = useChatContext();
 	const isStreaming = status === "submitted" || status === "streaming";
 	const field = pickAssetField(payload.fields);
 
@@ -96,28 +100,11 @@ export function ValuePicker({
 		: { min: field.min, max: field.max, step: field.step || VALUE_STEP, default: field.default };
 	const [submitted, setSubmitted] = useState(false);
 
-	// R5.5 — O CARD RECOLHE QUANDO O CLIENTE RESPONDE PELA CONVERSA.
-	//
-	// O value_picker não é o único caminho do valor: quem digita "uns 60 mil"
-	// no campo de texto está respondendo a mesma pergunta. Antes o card ficava
-	// na tela com o valor default (40.000) do lado da fala real do cliente —
-	// dois números diferentes para a mesma pergunta. Agora, qualquer fala nova
-	// do cliente depois que o card apareceu recolhe o card.
-	//
-	// A régua é "chegou fala nova", não "clicou": o clique já se resolvia
-	// sozinho em `submitted`. O snapshot do mount separa o histórico (que já
-	// existia quando o card montou) do que o cliente mandou DEPOIS dele.
-	const idsDeUsuarioAoMontar = useRef<string[] | null>(null);
-	const [respondidoNaConversa, setRespondidoNaConversa] = useState(false);
-	useEffect(() => {
-		const idsDeUsuario = messages.filter((m) => m.role === "user").map((m) => m.id);
-		if (idsDeUsuarioAoMontar.current === null) {
-			idsDeUsuarioAoMontar.current = idsDeUsuario;
-			return;
-		}
-		const conhecidos = idsDeUsuarioAoMontar.current;
-		if (idsDeUsuario.some((id) => !conhecidos.includes(id))) setRespondidoNaConversa(true);
-	}, [messages]);
+	// O card sela quando o cliente responde pela conversa (regra central em
+	// use-card-de-preenchimento): ver `useRespondidoNaConversa`.
+	const respondidoNaConversa = useRespondidoNaConversa();
+	const inputRef = useRef<HTMLInputElement>(null);
+	useFocoAoMontar(inputRef, active && !submitted && !respondidoNaConversa, modo);
 
 	// FIX-107/FIX-115: o slider (arraste) segue limitado à faixa da categoria —
 	// é o range real de grupos que o produto costuma oferecer.
@@ -167,13 +154,18 @@ export function ValuePicker({
 				: { prefixo: "por volta de", valor: cartaEst.carta }
 		: null;
 
-	const handleSubmit = () => {
+	const handleSubmit = (e?: FormEvent) => {
+		e?.preventDefault();
+		// O que está digitado vale, mesmo sem blur: Enter envia direto do campo.
+		if (submitted || isStreaming) return;
+		const final = parseValorDoBem(text) ?? value;
+		setValue(final);
 		setSubmitted(true);
 		if (onSubmit) {
-			onSubmit({ [ehParcela ? "parcela" : field.id]: value });
+			onSubmit({ [ehParcela ? "parcela" : field.id]: final });
 			return;
 		}
-		void sendUserMessage(textoDoPicker(modo, value));
+		void sendUserMessage(textoDoPicker(modo, final));
 	};
 
 	if (submitted || !active || respondidoNaConversa) return null;
@@ -185,129 +177,126 @@ export function ValuePicker({
 			transition={{ type: "spring", stiffness: 300, damping: 25 }}
 		>
 			<Card className="w-full max-w-[340px] rounded-[12px] shadow-lg border-[color:var(--border-strong)] overflow-hidden">
-				<CardContent className="space-y-4 p-[18px]">
-					{/* biome-ignore lint/a11y/useSemanticElements: o grupo alterna entre dois
+				<CardContent className="p-[18px]">
+					<form onSubmit={handleSubmit} className="space-y-4">
+						{/* biome-ignore lint/a11y/useSemanticElements: o grupo alterna entre dois
 					modos de escolha; trocar por <fieldset> muda a semântica visual do card. */}
-					<div
-						role="group"
-						aria-label="O que você quer definir"
-						className="grid grid-cols-2 gap-1 rounded-full bg-secondary p-1"
-					>
-						{("valor parcela".split(" ") as Modo[]).map((m) => (
-							<button
-								key={m}
-								type="button"
-								aria-pressed={modo === m}
-								data-testid={`modo-${m}`}
-								disabled={submitted}
-								onClick={() => setModo(m)}
-								className={`min-h-[36px] rounded-full px-2 text-xs font-medium ${
-									modo === m ? "bg-primary text-primary-foreground" : "text-muted-foreground"
-								}`}
-							>
-								{modo === m ? "✓ " : ""}
-								{m === "valor" ? "Valor do bem" : "Parcela por mês"}
-							</button>
-						))}
-					</div>
-					<div className="space-y-2">
-						<div className="flex items-baseline justify-between gap-2.5">
-							<span className="text-xs font-medium text-muted-foreground min-w-0">
-								{ehParcela ? "Parcela por mês" : field.label}
-							</span>
-							<span className="flex shrink-0 items-center gap-1 text-primary">
-								<span className="text-xs font-medium">R$</span>
-								<Input
-									value={text}
-									inputMode="numeric"
+						<div
+							role="group"
+							aria-label="O que você quer definir"
+							className="grid grid-cols-2 gap-1 rounded-full bg-secondary p-1"
+						>
+							{("valor parcela".split(" ") as Modo[]).map((m) => (
+								<button
+									key={m}
+									type="button"
+									aria-pressed={modo === m}
+									data-testid={`modo-${m}`}
 									disabled={submitted}
-									onChange={(e) => setText(e.target.value)}
-									onBlur={commitText}
-									onKeyDown={(e) => {
-										if (e.key === "Enter") {
-											e.preventDefault();
-											commitText();
-										}
-									}}
-									data-testid={`value-input-${ehParcela ? "parcela" : field.id}`}
-									aria-label={ehParcela ? "Parcela por mês" : field.label}
-									className="h-7 w-28 px-2 text-right text-sm font-bold text-figure tabular-nums"
-								/>
-							</span>
+									onClick={() => setModo(m)}
+									className={`min-h-[36px] rounded-full px-2 text-xs font-medium ${
+										modo === m ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+									}`}
+								>
+									{modo === m ? "✓ " : ""}
+									{m === "valor" ? "Valor do bem" : "Parcela por mês"}
+								</button>
+							))}
 						</div>
-						<Slider
-							value={[value]}
-							min={faixa.min}
-							max={faixa.max}
-							step={faixa.step}
-							onValueChange={(val) => {
-								if (!submitted) setValue(clampToSlider(Array.isArray(val) ? val[0] : val));
-							}}
-							disabled={submitted}
-						/>
-					</div>
+						<div className="space-y-2">
+							<div className="flex items-baseline justify-between gap-2.5">
+								<span className="text-xs font-medium text-muted-foreground min-w-0">
+									{ehParcela ? "Parcela por mês" : field.label}
+								</span>
+								<span className="flex shrink-0 items-center gap-1 text-primary">
+									<span className="text-xs font-medium">R$</span>
+									<Input
+										value={text}
+										inputMode="numeric"
+										disabled={submitted}
+										onChange={(e) => setText(e.target.value)}
+										onBlur={commitText}
+										ref={inputRef}
+										data-testid={`value-input-${ehParcela ? "parcela" : field.id}`}
+										aria-label={ehParcela ? "Parcela por mês" : field.label}
+										className="h-7 w-28 px-2 text-right text-sm font-bold text-figure tabular-nums"
+									/>
+								</span>
+							</div>
+							<Slider
+								value={[value]}
+								min={faixa.min}
+								max={faixa.max}
+								step={faixa.step}
+								onValueChange={(val) => {
+									if (!submitted) setValue(clampToSlider(Array.isArray(val) ? val[0] : val));
+								}}
+								disabled={submitted}
+							/>
+						</div>
 
-					{/* O SELO NÃO É ENFEITE. O invariante do projeto é que número de
+						{/* O SELO NÃO É ENFEITE. O invariante do projeto é que número de
 					    administradora sai de tool, nunca da cabeça do modelo nem da
 					    nossa. Esta conta é premissa de mercado documentada
 					    (`TYPICAL_ADMIN_FEE_PCT` / `TYPICAL_TERM_MONTHS`), e a tela tem
 					    que dizer isso na cara: sem o selo a estimativa vira promessa, e
 					    a oferta real que chega depois vira decepção. */}
-					{estimativa ? (
-						<div className="rounded-[10px] bg-secondary px-3 py-2.5">
-							<p data-testid="parcela-estimada" className="text-sm text-foreground">
-								Fica por volta de{" "}
-								<span className="font-semibold tabular-nums">
-									R$ {Math.round(estimativa.parcela).toLocaleString("pt-BR")}
-								</span>
-								<span className="text-muted-foreground">/mês</span>{" "}
-								<span className="text-muted-foreground">em {estimativa.prazoMeses}x</span>
-							</p>
-							<p
-								data-testid="parcela-estimada-selo"
-								className="mt-0.5 text-[11px] leading-[1.35] text-muted-foreground"
-							>
-								Estimativa de mercado — os valores reais vêm da busca nas administradoras.
-							</p>
-						</div>
-					) : null}
+						{estimativa ? (
+							<div className="rounded-[10px] bg-secondary px-3 py-2.5">
+								<p data-testid="parcela-estimada" className="text-sm text-foreground">
+									Fica por volta de{" "}
+									<span className="font-semibold tabular-nums">
+										R$ {Math.round(estimativa.parcela).toLocaleString("pt-BR")}
+									</span>
+									<span className="text-muted-foreground">/mês</span>{" "}
+									<span className="text-muted-foreground">em {estimativa.prazoMeses}x</span>
+								</p>
+								<p
+									data-testid="parcela-estimada-selo"
+									className="mt-0.5 text-[11px] leading-[1.35] text-muted-foreground"
+								>
+									Estimativa de mercado — os valores reais vêm da busca nas administradoras.
+								</p>
+							</div>
+						) : null}
 
-					{cartaEst && cartaMostrada ? (
-						<div className="rounded-[10px] bg-secondary px-3 py-2.5">
-							<p data-testid="carta-estimada" className="text-sm text-foreground">
-								Dá uma carta {cartaMostrada.prefixo}{" "}
-								<span className="font-semibold tabular-nums">
-									R$ {cartaMostrada.valor.toLocaleString("pt-BR")}
-								</span>{" "}
-								<span className="text-muted-foreground">em {cartaEst.prazoMeses}x</span>
-							</p>
-							<p
-								data-testid="carta-estimada-selo"
-								className="mt-0.5 text-[11px] leading-[1.35] text-muted-foreground"
-							>
-								Estimativa de mercado — os valores reais vêm da busca nas administradoras.
-							</p>
-						</div>
-					) : null}
+						{cartaEst && cartaMostrada ? (
+							<div className="rounded-[10px] bg-secondary px-3 py-2.5">
+								<p data-testid="carta-estimada" className="text-sm text-foreground">
+									Dá uma carta {cartaMostrada.prefixo}{" "}
+									<span className="font-semibold tabular-nums">
+										R$ {cartaMostrada.valor.toLocaleString("pt-BR")}
+									</span>{" "}
+									<span className="text-muted-foreground">em {cartaEst.prazoMeses}x</span>
+								</p>
+								<p
+									data-testid="carta-estimada-selo"
+									className="mt-0.5 text-[11px] leading-[1.35] text-muted-foreground"
+								>
+									Estimativa de mercado — os valores reais vêm da busca nas administradoras.
+								</p>
+							</div>
+						) : null}
 
-					<Button
-						onClick={handleSubmit}
-						disabled={submitted || isStreaming}
-						size="sm"
-						className="w-full gap-1.5 rounded-full min-h-[44px]"
-					>
-						{submitted ? (
-							<>
-								<Check className="size-3.5" />
-								Enviado
-							</>
-						) : (
-							<>
-								{ehParcela ? "Ver cartas nessa parcela" : "Ver cartas nesse valor"}
-								<ArrowRight className="size-3.5" />
-							</>
-						)}
-					</Button>
+						<Button
+							type="submit"
+							disabled={submitted}
+							size="sm"
+							className="w-full gap-1.5 rounded-full min-h-[44px]"
+						>
+							{submitted ? (
+								<>
+									<Check className="size-3.5" />
+									Enviado
+								</>
+							) : (
+								<>
+									{ehParcela ? "Ver cartas nessa parcela" : "Ver cartas nesse valor"}
+									<ArrowRight className="size-3.5" />
+								</>
+							)}
+						</Button>
+					</form>
 				</CardContent>
 			</Card>
 		</motion.div>

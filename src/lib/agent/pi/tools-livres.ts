@@ -613,11 +613,11 @@ function descricaoDoMostrarCard(channel: "web" | "whatsapp"): string {
 	// Os cards de DIGITAR do site: o servidor não os adivinha (P11), só aparecem se VOCÊ os chamar.
 	const cardsDeDigitar =
 		channel === "web"
-			? "PEDIR NOME, WHATSAPP OU VALOR NO SITE É COM CARD, na mesma fala em que você pergunta (chame esta tool junto, antes de escrever a pergunta): `name_prompt` quando perguntar como a pessoa se chama; `whatsapp_optin` quando pedir o WhatsApp/celular; `value_picker` (payload { category }, com a categoria do bem que ela já disse; o card tem as abas Valor do bem e Valor da parcela) quando perguntar o valor do bem ou da parcela. Pergunta dessas só em texto deixa o cliente sem o campo para responder. "
+			? "PEDIR NOME, WHATSAPP OU VALOR NO SITE É COM CARD, na mesma fala em que você pergunta (o card aparece sempre DEPOIS da sua fala; a ordem de chamar a tool e escrever a pergunta não importa): `name_prompt` quando perguntar como a pessoa se chama; `whatsapp_optin` quando pedir o WhatsApp/celular; `value_picker` (payload { category }, com a categoria do bem que ela já disse; o card tem as abas Valor do bem e Valor da parcela) quando perguntar o valor do bem ou da parcela. Pergunta dessas só em texto deixa o cliente sem o campo para responder. "
 			: "";
 	return (
 		cardsDeDigitar +
-		"Quando fizer UMA pergunta com respostas curtas e previsíveis, chame esta tool antes de escrever a pergunta. As alternativas vão somente no card; não escreva lista ou menu equivalente na fala. Espere a resposta antes de fazer outra pergunta. " +
+		"Quando fizer UMA pergunta com respostas curtas e previsíveis, chame esta tool na mesma fala (o card aparece depois do texto, em qualquer ordem). As alternativas vão somente no card; não escreva lista ou menu equivalente na fala. Espere a resposta antes de fazer outra pergunta. " +
 		"Mostra na tela um card. Há dois caminhos, e nenhum aceita número de oferta seu.\n\n" +
 		`1) Card de ESCOLHA (o payload é seu): ${escolha.map((tipo) => SHAPE_DO_CARD_DE_ESCOLHA[tipo]).join(", ")}.` +
 		semFaixasDeValor +

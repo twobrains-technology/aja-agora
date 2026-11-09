@@ -12,7 +12,10 @@ type Linha = {
 	metadata?: Record<string, unknown>;
 };
 
-const estado = vi.hoisted(() => ({ linhas: [] as unknown[] }));
+const estado = vi.hoisted(() => ({
+	linhas: [] as unknown[],
+	casos: [] as { conversationId: string }[],
+}));
 
 vi.mock("@/db", () => ({
 	db: {
@@ -21,6 +24,9 @@ vi.mock("@/db", () => ({
 				findMany: vi.fn(async () =>
 					(estado.linhas as { status: string }[]).filter((l) => l.status === "handed_off"),
 				),
+			},
+			mesaHandoffs: {
+				findFirst: vi.fn(async () => estado.casos[0] ?? undefined),
 			},
 		},
 	},
@@ -33,6 +39,7 @@ const WA_ID = "556292496793";
 describe("quemRespondePara — fila de vendedores e silêncio", () => {
 	beforeEach(() => {
 		estado.linhas = [];
+		estado.casos = [];
 	});
 
 	it("(a) conversa active com marcador da fila e sem dono: o agente segue falando", async () => {
@@ -78,8 +85,20 @@ describe("quemRespondePara — fila de vendedores e silêncio", () => {
 		expect(r).toMatchObject({ quem: "humano", conversationId: "conv-web" });
 	});
 
-	it("(c) caso na mesa (handed_off, sem dono): fala o humano, marcado sem destinatário", async () => {
+	it("(c) handed_off sem dono e sem caso na mesa: o agente segue (linha velha não cala)", async () => {
+		estado.linhas = [
+			{ id: "conv-velha", waId: WA_ID, status: "handed_off", handedOffUserId: null },
+		];
+
+		expect(await quemRespondePara(WA_ID)).toEqual({
+			quem: "agente",
+			motivo: "sem-atendimento-aberto",
+		});
+	});
+
+	it("(d) caso ativo na mesa (handed_off, sem dono): fala o humano, sem destinatário", async () => {
 		estado.linhas = [{ id: "conv-mesa", waId: WA_ID, status: "handed_off", handedOffUserId: null }];
+		estado.casos = [{ conversationId: "conv-mesa" }];
 
 		expect(await quemRespondePara(WA_ID)).toEqual({
 			quem: "humano",

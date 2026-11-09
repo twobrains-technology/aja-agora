@@ -546,9 +546,9 @@ export async function POST(req: NextRequest) {
 	// numa conversa de outro canal (o caso real foi o inverso: assumido na web,
 	// respondendo pelo WhatsApp). Perguntar só pelo `status` daqui deixava o
 	// agente falar por cima do atendente. Ver `quemRespondePara`.
-	const humanoNoCaso =
-		conv?.status === "handed_off" ||
-		(conv?.waId ? (await quemRespondePara(conv.waId)).quem === "humano" : false);
+	// `handed_off` na linha não basta (P8): sem dono e sem caso na mesa o agente
+	// segue. Quem decide é `quemRespondePara`.
+	const humanoNoCaso = conv?.waId ? (await quemRespondePara(conv.waId)).quem === "humano" : false;
 
 	if (humanoNoCaso && conv && !body.action) {
 		const userText = lastUserText(body.messages);

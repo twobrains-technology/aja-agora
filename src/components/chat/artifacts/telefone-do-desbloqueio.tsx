@@ -28,7 +28,12 @@
 
 import { ShieldCheck } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
+import {
+	CardRespondido,
+	useFocoAoMontar,
+	useRespondidoNaConversa,
+} from "@/components/chat/use-card-de-preenchimento";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useChatContext } from "@/lib/chat/provider";
@@ -81,6 +86,8 @@ export function TelefoneDoDesbloqueio({
 	active?: boolean;
 }) {
 	const { sendAction, status } = useChatContext();
+	const respondidoNaConversa = useRespondidoNaConversa();
+	const campoRef = useRef<HTMLInputElement>(null);
 	const variante = payload.variante;
 	const copia = variante === "A" ? COPIA_A : COPIA_B;
 	const [masked, setMasked] = useState("");
@@ -92,10 +99,13 @@ export function TelefoneDoDesbloqueio({
 	const valid = ehCelularValido(digits);
 	// Card do HISTÓRICO (`active === false`) é registro: mostra a cópia, mas não
 	// deixa preencher nem envia nada (mesmo padrão do GateIdentityForm/FIX-381).
-	const inerte = isStreaming || fase !== "pedindo" || !active;
+	// Habilitado ao montar: `isStreaming` só guarda o ENVIO (em `onSubmit`).
+	const inerte = fase !== "pedindo" || !active;
+	useFocoAoMontar(campoRef, !inerte && !respondidoNaConversa);
 
-	const onSubmit = () => {
-		if (!valid || inerte) return;
+	const onSubmit = (e?: FormEvent) => {
+		e?.preventDefault();
+		if (!valid || inerte || isStreaming) return;
 		setFase("liberado");
 		void sendAction(
 			{
@@ -137,12 +147,14 @@ export function TelefoneDoDesbloqueio({
 				onChange={(e) => setMasked(mascararCelular(e.target.value))}
 				placeholder="(11) 98765-4321"
 				disabled={inerte}
-				autoFocus={active && fase === "pedindo"}
+				ref={campoRef}
 				data-testid="desbloqueio-phone"
 				className="h-[46px] rounded-xl border-border bg-background px-[13px] text-base text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/20 w-full"
 			/>
 		</div>
 	);
+
+	if (respondidoNaConversa && fase === "pedindo" && active) return <CardRespondido />;
 
 	return (
 		<motion.div {...anim}>
@@ -165,12 +177,11 @@ export function TelefoneDoDesbloqueio({
 				<p className="text-xs leading-[1.45] text-muted-foreground">{copia.apoio}</p>
 
 				{fase === "pedindo" ? (
-					<>
+					<form onSubmit={onSubmit} className="flex flex-col gap-[14px]" noValidate>
 						{campo}
 						<Button
-							type="button"
+							type="submit"
 							data-testid="desbloqueio-enviar"
-							onClick={onSubmit}
 							disabled={!valid || inerte}
 							className="w-full h-[46px] min-h-[44px] rounded-full bg-primary text-sm font-semibold text-primary-foreground hover:brightness-105 disabled:opacity-40 disabled:cursor-not-allowed"
 						>
@@ -188,7 +199,7 @@ export function TelefoneDoDesbloqueio({
 								{copia.secundario}
 							</button>
 						) : null}
-					</>
+					</form>
 				) : (
 					// tabIndex=-1 no wrapper garante que o foco programático entre no
 					// conteúdo liberado — a pista de teclado/SR que substitui o blur.
