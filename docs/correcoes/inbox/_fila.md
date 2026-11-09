@@ -28,7 +28,8 @@ Regra: bug novo → card + `worker` em background → `reviewer` → status aqui
 | D2 | deploy-dev (95bea2e9 + docs) | — | feito | worker 21fb4394, conferido pelo líder | run 42630754091 success, sha 292715a2, rollout ECS (serviço e worker) success |
 | D3 | deploy-dev (9bfffac3 + docs) | — | feito | worker e812ced5, conferido pelo líder | run 42658405860 success, sha 8a5f6a9c, rollout ECS (serviço e worker) success |
 | D4 | deploy-dev (cards, fecho, clique de interesse) | — | feito | worker df054e6e, conferido pelo líder | run 42665542329 success, sha f90256a3, rollout ECS (serviço e worker) success |
-| D5 | deploy-dev db8b3748 | — | push feito (origin/develop=db8b3748); deploy FALHOU: incidente do GitHub Actions (abriu 18:12Z), job build não foi criado | worker 76f9bae4 | runs 42671959314 e 42672330903 sem build; repetir quando o GitHub se recuperar |
+| D5 | deploy-dev db8b3748 | — | falhou: incidente do GitHub Actions (build não criado); substituído pelo D6 | worker 76f9bae4 | runs 42671959314 e 42672330903 |
+| D6 | deploy-dev (cards, ordem, agente não calado, fecho) | — | feito | worker 6fcfbec9, conferido pelo líder | run 42677299730 success, sha 8a333721, job build e rollout ECS (serviço e worker) success |
 
 Regra (Kairo, 09/11): subir para o dev é demanda assíncrona, igual aos bugs: worker em background, líder confere pelo run e pelo ECS.
 
