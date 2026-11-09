@@ -19,7 +19,6 @@ import { WELCOME_OPTIONS } from "@/lib/chat/welcome-options";
 import { WelcomeCategories } from "./artifacts/welcome-categories";
 import { AssistantAvatar, ChatMessage } from "./chat-message";
 import { nextStickState } from "./scroll-intent";
-import { StreamingDots } from "./streaming-dots";
 
 type Category = "imovel" | "auto" | "moto";
 
@@ -240,7 +239,23 @@ function AguardandoAgente() {
 		<div className="flex w-full items-start gap-2 sm:gap-3" data-testid="aguardando-agente">
 			<AssistantAvatar />
 			<div className="flex items-center gap-2 rounded-2xl rounded-tl-[5px] border border-border bg-card px-[14px] py-[10px]">
-				<StreamingDots />
+				{/* Pontos próprios: o StreamingDots vira a pílula "Montando sua resposta"
+				    após 6s e duplicava o indicador junto com este rótulo. */}
+				<span className="flex items-center gap-[5px]" aria-hidden="true">
+					{[0, 1, 2].map((i) => (
+						<motion.span
+							key={i}
+							className="block size-[7px] rounded-full bg-[#c2cdda]"
+							animate={{ y: [0, -5, 0], opacity: [0.5, 1, 0.5] }}
+							transition={{
+								duration: 1,
+								repeat: Number.POSITIVE_INFINITY,
+								delay: i * 0.15,
+								ease: "easeInOut",
+							}}
+						/>
+					))}
+				</span>
 				<span className="text-xs text-muted-foreground">Digitando…</span>
 			</div>
 		</div>

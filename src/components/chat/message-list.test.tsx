@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AjaUIMessage } from "@/lib/chat/ui-message";
 
@@ -76,5 +76,48 @@ describe("MessageList — feedback após enviar", () => {
 		render(<MessageList messages={[user("Oi", "u1"), assistant]} isStreaming />);
 		expect(screen.queryByText("Digitando…")).toBeNull();
 		expect(screen.getByText(/Olá, tudo bem/)).toBeTruthy();
+	});
+});
+
+describe("MessageList — um indicador por vez", () => {
+	const assistantVazio = { id: "a1", role: "assistant", parts: [] } as unknown as AjaUIMessage;
+
+	it("(a) só o lead enviou: um 'Digitando…' e nenhuma pílula, mesmo após 7s", () => {
+		vi.useFakeTimers();
+		try {
+			render(<MessageList messages={[user("Oi", "u1")]} isStreaming />);
+			act(() => {
+				vi.advanceTimersByTime(7_000);
+			});
+			expect(screen.getAllByText("Digitando…")).toHaveLength(1);
+			expect(screen.queryByText("Montando sua resposta")).toBeNull();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("(b) assistente vazio em streaming: só a pílula, zero 'Digitando…'", () => {
+		vi.useFakeTimers();
+		try {
+			render(<MessageList messages={[user("Oi", "u1"), assistantVazio]} isStreaming />);
+			act(() => {
+				vi.advanceTimersByTime(7_000);
+			});
+			expect(screen.getAllByText("Montando sua resposta")).toHaveLength(1);
+			expect(screen.queryByText("Digitando…")).toBeNull();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("(c) assistente com texto: nenhum dos dois", () => {
+		const assistant = {
+			id: "a1",
+			role: "assistant",
+			parts: [{ type: "text", text: "Olá, tudo bem?" }],
+		} as unknown as AjaUIMessage;
+		render(<MessageList messages={[user("Oi", "u1"), assistant]} isStreaming />);
+		expect(screen.queryByText("Digitando…")).toBeNull();
+		expect(screen.queryByText("Montando sua resposta")).toBeNull();
 	});
 });
