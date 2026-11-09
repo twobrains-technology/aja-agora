@@ -16,6 +16,7 @@ import {
 	avisarServidorDoChatIniciado,
 	parametrosDaAberturaDoChat,
 } from "@/lib/analytics/meta-pixel";
+import { novoUuid } from "@/lib/utils/uuid";
 
 /** De onde a semente veio. `"digitada"` é fala REAL do cliente (o que ele
  * escreveu no composer); `"chip"` é uma frase de ENTRADA que o próprio produto
@@ -78,7 +79,7 @@ export function TheaterProvider({ children }: { children: ReactNode }) {
 		// dois — e é o caminho do servidor que sobrevive a bloqueador de anúncio
 		// e ao ITP do iOS, que é onde o sinal se perdia justamente no público
 		// que mais importa.
-		const eventId = crypto.randomUUID();
+		const eventId = novoUuid();
 		avisarServidorDoChatIniciado(eventId);
 		// O GTM só enxerga o que passa pelo dataLayer. O pixel acima dispara
 		// direto no `fbq`, então sem este push o contêiner fica sem nenhum
