@@ -1,7 +1,7 @@
 ---
 slug: crypto-randomuuid-http
 titulo: "Clicar no chip da landing quebra com `crypto.randomUUID is not a function` fora de contexto seguro"
-status: inbox
+status: corrigido     # commit c01fab6e, falta prova no navegador em http
 severidade: media
 projeto: aja-agora
 rodada: 2026-11-09
