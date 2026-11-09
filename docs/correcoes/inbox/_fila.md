@@ -19,12 +19,14 @@ Regra: bug novo → card + `worker` em background → `reviewer` → status aqui
 | 15 | card-sem-foco-e-atrasado | alta | na fila: junto com o 13, espera f0d1626a (name-prompt, artifact-renderer) | — | causa provável: disabled={isStreaming} + autoFocus em campo desabilitado |
 | 14 | clique-simular-obsoleto | alta | corrigido em a627f3f8 (web); WhatsApp (formatter.ts) fica para depois | worker cb0f7457, conferido pelo líder | 72 testes ok |
 | 17 | card-de-finalizacao | média | na fila: espera o commit do f0d1626a (types.ts, artifact-renderer.tsx). Resolve a dúvida da proposta no bug 12 | — | decisão do Kairo: UM card; confete; WhatsApp como está; proposta pequena e branca |
+| 19 | card-antes-da-pergunta | alta | despachado, worker em andamento | worker (bug 19) | — |
 | 18 | hook-pre-commit-sem-banco | média | aberto: o pre-commit roda testes de integração que precisam de Postgres em 127.0.0.1:5433, que não existe neste Mac (barrou 3 workers; o f0d1626a estourou 30 min). Contorno usado: banco descartável em aja-shared-pg.orb.local + VITEST_MAX_WORKERS=1 | — | commits de8b302e e a627f3f8 passaram assim |
 | 8 | prompt-do-vendedor-testes-velhos | média | aberto: 5 testes falham no HEAD da develop e barram qualquer commit nesse arquivo | — | 4 testes de regra antiga (nome primeiro, nunca diga) + teto 20.000 (hoje 23.507) |
 | 7 | bevi-vitrine-env-compose | alta | feito no local, provado | líder | turno real: buscar_cartas com cartas do Banco do Brasil; pendente: script que gera o .env |
 | D1 | deploy-dev (c01fab6e + docs) | — | feito | worker 0cab5529, conferido pelo líder | run 42628832084 success, sha e01fc6dd, rollout ECS (serviço e worker) success; sem URL de health |
 | D2 | deploy-dev (95bea2e9 + docs) | — | feito | worker 21fb4394, conferido pelo líder | run 42630754091 success, sha 292715a2, rollout ECS (serviço e worker) success |
 | D3 | deploy-dev (9bfffac3 + docs) | — | feito | worker e812ced5, conferido pelo líder | run 42658405860 success, sha 8a5f6a9c, rollout ECS (serviço e worker) success |
+| D4 | deploy-dev (cards, fecho, clique de interesse) | — | feito | worker df054e6e, conferido pelo líder | run 42665542329 success, sha f90256a3, rollout ECS (serviço e worker) success |
 
 Regra (Kairo, 09/11): subir para o dev é demanda assíncrona, igual aos bugs: worker em background, líder confere pelo run e pelo ECS.
 
