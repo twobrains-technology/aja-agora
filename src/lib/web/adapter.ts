@@ -4,7 +4,6 @@ import { artifacts as artifactsTable } from "@/db/schema";
 import { recordStageReached } from "@/lib/admin/lead-stage-tracker";
 import { runTurn, type TurnEvent } from "@/lib/agent/orchestrator";
 import { buildSearchSummaryDirective } from "@/lib/agent/orchestrator/directives";
-import { planTransition } from "@/lib/agent/orchestrator/transition";
 import type { Category, Persona } from "@/lib/agent/personas";
 import {
 	type Bounds,
@@ -408,49 +407,6 @@ export async function pipeDirectiveTurn(args: {
 		forceToolChoice,
 	});
 	return pipeOrchestratorToWriter(events, writer, conversationId);
-}
-
-export async function pipeTransitionTurn(args: {
-	conversationId: string;
-	fromPersona: Persona;
-	toCategory: Category;
-	expertiseHint?: string | null;
-	contactName: string | null;
-	writer: Writer;
-	userKey?: string | null;
-}): Promise<void> {
-	const { conversationId, fromPersona, toCategory, expertiseHint, contactName, writer, userKey } =
-		args;
-	const plan = await planTransition({
-		conversationId,
-		fromPersona,
-		toCategory,
-		expertiseHint,
-	});
-	if (plan.kind === "abort") {
-		const id = crypto.randomUUID();
-		writer.write({ type: "text-start", id });
-		writer.write({ type: "text-delta", id, delta: plan.apologyText });
-		writer.write({ type: "text-end", id });
-		return;
-	}
-	writer.write({
-		type: "data-transition",
-		id: crypto.randomUUID(),
-		data: {
-			toPersona: plan.toPersona,
-			toPersonaName: plan.toPersonaName,
-			toCategory: plan.toCategory,
-			bridgeText: plan.bridgeText,
-		},
-	});
-	await pipeDirectiveTurn({
-		conversationId,
-		directive: plan.directive,
-		contactName,
-		writer,
-		userKey,
-	});
 }
 
 export async function pipeSearchSummaryTurn(args: {

@@ -27,8 +27,8 @@ import {
 	buildTopicPickerBackDirective,
 	buildViewScenariosDirective,
 } from "@/lib/agent/orchestrator/directives";
-import { detectBackIntent, popNavState, pushNavState } from "@/lib/agent/orchestrator/navigation";
-import { type ConversationMetadata, type Persona, ROUTABLE_CATEGORIES } from "@/lib/agent/personas";
+import { detectBackIntent, popNavState } from "@/lib/agent/orchestrator/navigation";
+import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
 import { quemRespondePara } from "@/lib/agent/quem-responde";
 import { VISIT_COOKIE } from "@/lib/attribution/visit-cookie";
 import { resolveVisitIdFromCookie } from "@/lib/attribution/visit-store";
@@ -85,7 +85,7 @@ import {
 	persistSimulatorCookieKey,
 	withSimulatorClockIfNeeded,
 } from "@/lib/utils/simulator-clock-wrap";
-import { pipeDirectiveTurn, pipeTransitionTurn, pipeUserTurn } from "@/lib/web/adapter";
+import { pipeDirectiveTurn, pipeUserTurn } from "@/lib/web/adapter";
 import { relayWebUserToAgent } from "@/lib/whatsapp/proxy";
 
 export const maxDuration = 60;
@@ -683,30 +683,6 @@ export async function POST(req: NextRequest) {
 								});
 							}
 							await withSimulatorClockIfNeeded(conv ?? null, async () => {
-								if (body.action?.kind === "category") {
-									if (!(ROUTABLE_CATEGORIES as readonly string[]).includes(body.action.category))
-										return;
-									const fromPersona: Persona = meta.currentPersona ?? "concierge";
-									// Push snapshot do estado atual no nav stack pra suportar "voltar" (#06).
-									const nextStack = pushNavState(meta.navigationStack ?? [], {
-										persona: fromPersona,
-										category: meta.currentCategory ?? null,
-										expertiseLevel: meta.expertiseLevel,
-										experiencePrev: meta.experiencePrev ?? null,
-										qualifyAnswers: meta.qualifyAnswers,
-									});
-									await persistMeta(conversationId, { ...meta, navigationStack: nextStack });
-									await pipeTransitionTurn({
-										conversationId,
-										fromPersona,
-										toCategory: body.action.category,
-										contactName,
-										writer,
-										userKey,
-									});
-									return;
-								}
-
 								if (body.action?.kind === "select-group") {
 									const { groupId, administradora, creditValue, termMonths } = body.action;
 									// ANCORAR A ESCOLHA AQUI É O QUE FAZIA FALTA.

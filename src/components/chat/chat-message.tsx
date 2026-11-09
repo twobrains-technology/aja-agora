@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, Bike, Car, Headset, Home, type LucideIcon, RotateCcw } from "lucide-react";
+import { AlertCircle, Headset, RotateCcw } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useMemo } from "react";
 import ReactMarkdown from "react-markdown";
@@ -13,7 +13,6 @@ import type {
 	ArtifactPartData,
 	HandoffPartData,
 	ToolStatusPartData,
-	TransitionPartData,
 	WelcomePartData,
 } from "@/lib/chat/ui-message";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
@@ -43,7 +42,6 @@ const messageSpring = {
 
 export type RenderablePart =
 	| { kind: "text"; id: string; text: string }
-	| { kind: "transition"; id: string; data: TransitionPartData }
 	// `tool` é FRONTEIRA já resolvida no servidor, não conteúdo: o status da ferramenta não
 	// desenha nada, e o adapter fecha o balão antes dele (`closeTextIfOpen`) — por isso o
 	// texto que veio antes e o que veio depois chegam aqui como parts separadas, cada uma
@@ -60,10 +58,6 @@ function classifyParts(message: AjaUIMessage): RenderablePart[] {
 		const partId = `${message.id}-${i}`;
 		if (part.type === "text") {
 			out.push({ kind: "text", id: partId, text: part.text });
-			continue;
-		}
-		if (part.type === "data-transition") {
-			out.push({ kind: "transition", id: partId, data: part.data as TransitionPartData });
 			continue;
 		}
 		if (part.type === "data-tool") {
@@ -154,7 +148,7 @@ function latestToolName(message: AjaUIMessage): string | undefined {
 
 type RenderableSegment =
 	| { kind: "text"; id: string; text: string }
-	| Exclude<RenderablePart, { kind: "text" } | { kind: "transition" } | { kind: "tool" }>;
+	| Exclude<RenderablePart, { kind: "text" } | { kind: "tool" }>;
 
 /** FIX-184 — colapsa eco/degeneração da LLM ("Prazer, Mirella!Prazer, Mirella!")
  * no RENDER do cliente. O runner já aplica a MESMA guarda (`collapseEchoedSegments`)
@@ -201,7 +195,7 @@ function segmentosDoTurno(parts: RenderablePart[]): RenderableSegment[] {
 			out.push({ kind: "text", id: part.id, text });
 			continue;
 		}
-		if (part.kind === "transition" || part.kind === "tool") continue;
+		if (part.kind === "tool") continue;
 		anterior = "";
 		out.push(part);
 	}
@@ -267,12 +261,9 @@ export function ChatMessage({
 		);
 	}
 
-	const transitionParts = parts.filter(
-		(p): p is Extract<RenderablePart, { kind: "transition" }> => p.kind === "transition",
-	);
 	// `tool` fica na lista (é fronteira de agrupamento), mas não é conteúdo: não
 	// conta como "tem algo visual na tela" pro balão de "digitando".
-	const inlineSegments = parts.filter((p) => p.kind !== "transition");
+	const inlineSegments = parts;
 	const totalTextLength = inlineSegments.reduce(
 		(acc, s) => (s.kind === "text" ? acc + s.text.length : acc),
 		0,
@@ -293,30 +284,11 @@ export function ChatMessage({
 	// chips esperam clique. Quem cobre esse único momento é o `isStreamingEmpty`
 	// (o balão de dots logo abaixo), então este segundo indicador não deve existir.
 
-	const firstTransition = transitionParts[0]?.data;
-
 	return (
 		<motion.div {...animationProps} className="flex w-full flex-col gap-2">
-			{transitionParts.map((p) => (
-				<TransitionDivider key={p.id} data={p.data} />
-			))}
-
 			<div className="flex w-full items-start gap-2 sm:gap-3">
 				<AssistantAvatar category={activeCategory} />
 				<div className="flex min-w-0 flex-1 flex-col items-start gap-2">
-					{firstTransition && (
-						<motion.span
-							initial={{ opacity: 0, y: -2 }}
-							animate={{ opacity: 1, y: 0 }}
-							transition={{ duration: 0.25, delay: 0.1 }}
-							className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
-						>
-							{firstTransition.toPersonaName}
-							<span className="mx-1.5 opacity-50">·</span>
-							{CATEGORY_TRANSITION[firstTransition.toCategory].role}
-						</motion.span>
-					)}
-
 					{isStreamingEmpty && (
 						<div className="max-w-full rounded-2xl rounded-tl-[5px] border border-border bg-card px-[14px] py-[10px] shadow-[0_1px_2px_rgba(5,36,64,0.05),0_8px_20px_-14px_rgba(5,36,64,0.2)]">
 							<StreamingDots tool={currentTool} />
@@ -452,46 +424,6 @@ export function AssistantAvatar({ category }: { category?: Category | null } = {
 					aria-hidden="true"
 				/>
 			)}
-		</motion.div>
-	);
-}
-
-const CATEGORY_TRANSITION: Record<
-	"imovel" | "auto" | "moto",
-	{ icon: LucideIcon; short: string; role: string }
-> = {
-	imovel: { icon: Home, short: "imóveis", role: "Especialista em imóveis" },
-	auto: { icon: Car, short: "automóveis", role: "Especialista em automóveis" },
-	moto: { icon: Bike, short: "motos", role: "Especialista em motos" },
-};
-
-function TransitionDivider({ data }: { data: TransitionPartData }) {
-	const cat = data.toCategory as Category;
-	const catConfig = CATEGORY_TRANSITION[cat];
-	const badgeColor = CATEGORY_BADGE_COLOR[cat];
-
-	return (
-		<motion.div
-			initial={{ opacity: 0 }}
-			animate={{ opacity: 1 }}
-			transition={{ duration: 0.3 }}
-			className="flex w-full flex-col items-center gap-2 py-1"
-		>
-			{/* Divisor com texto centralizado */}
-			<div className="flex w-full items-center gap-[11px] text-muted-foreground">
-				<div className="h-px flex-1 bg-border" />
-				<span className="shrink-0 text-[11px]">{data.toPersonaName} entrou na conversa</span>
-				<div className="h-px flex-1 bg-border" />
-			</div>
-			{/* Rótulo de papel: uppercase + ponto colorido por categoria */}
-			<span className="inline-flex items-center gap-[7px] text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
-				<span
-					className="size-[7px] rounded-full shrink-0"
-					style={{ background: badgeColor }}
-					aria-hidden="true"
-				/>
-				{catConfig.role}
-			</span>
 		</motion.div>
 	);
 }

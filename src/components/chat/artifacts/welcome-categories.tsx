@@ -50,7 +50,7 @@ export function WelcomeCategories({
 	payload: WelcomePartData;
 	active?: boolean;
 }) {
-	const { sendAction, status } = useChatContext();
+	const { sendUserMessage, status } = useChatContext();
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const isStreaming = status === "submitted" || status === "streaming";
 	const reduced = useReducedMotion();
@@ -59,12 +59,9 @@ export function WelcomeCategories({
 		async (option: GatePartOption) => {
 			if (selectedId) return;
 			setSelectedId(option.value);
-			await sendAction(
-				{ kind: "category", category: option.value as "imovel" | "auto" | "moto" },
-				option.label,
-			);
+			await sendUserMessage(option.label);
 		},
-		[sendAction, selectedId],
+		[sendUserMessage, selectedId],
 	);
 
 	if (selectedId || !active) return null;

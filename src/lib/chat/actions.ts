@@ -1,4 +1,4 @@
-import type { Category, ExperiencePrev } from "@/lib/agent/personas";
+import type { ExperiencePrev } from "@/lib/agent/personas";
 import type { PlanIntent } from "@/lib/agent/qualify-config";
 import type { SimulationActionIntent } from "./types";
 import type { VarianteDoTelefone } from "./variante-da-visita";
@@ -53,7 +53,6 @@ export type ChatAction =
 			value: { cpf: string; celular: string; lgpd: boolean };
 			label: string;
 	  }
-	| { kind: "category"; category: Category }
 	// bloco-telefone-ab (FIX-395/396) — o telefone do desbloqueio da comparação.
 	// O campo é o MESMO celular do gate `identify` (máscara/validação em
 	// `@/lib/forms/mascaras`), só que sozinho e no ponto em que a pessoa vê a

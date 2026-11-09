@@ -14,13 +14,11 @@ import {
 } from "react";
 import { Em } from "@/components/kv/em";
 import { Button } from "@/components/ui/button";
-import type { AjaUIMessage, TransitionPartData } from "@/lib/chat/ui-message";
+import type { AjaUIMessage } from "@/lib/chat/ui-message";
 import { WELCOME_OPTIONS } from "@/lib/chat/welcome-options";
 import { WelcomeCategories } from "./artifacts/welcome-categories";
 import { AssistantAvatar, ChatMessage } from "./chat-message";
 import { nextStickState } from "./scroll-intent";
-
-type Category = "imovel" | "auto" | "moto";
 
 interface MessageListProps {
 	messages: AjaUIMessage[];
@@ -181,14 +179,9 @@ export function MessageList({ messages, isStreaming, hasError, onRetry }: Messag
 				{!hasMessages && <EmptyState />}
 
 				{(() => {
-					let activeCategory: Category | null = null;
 					return visiveis.map((message, index) => {
 						const isLast = index === visiveis.length - 1;
 						const showRetry = isLast && message.role === "assistant" && hasError && !!onRetry;
-						const transitionPart = message.parts.find((p) => p.type === "data-transition");
-						if (transitionPart) {
-							activeCategory = (transitionPart.data as TransitionPartData).toCategory;
-						}
 						return (
 							<Fragment key={message.id}>
 								<ChatMessage
@@ -197,7 +190,6 @@ export function MessageList({ messages, isStreaming, hasError, onRetry }: Messag
 									onRetry={showRetry ? onRetry : undefined}
 									isStreaming={isStreaming}
 									isLast={isLast}
-									activeCategory={activeCategory}
 								/>
 								{index === lastResumedIndex && <ResumeAnchor />}
 							</Fragment>
