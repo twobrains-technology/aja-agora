@@ -9,6 +9,7 @@ Regra: bug novo → card + `worker` em background → `reviewer` → status aqui
 | 3 | sem-loading-apos-enviar | alta | corrigido em 95bea2e9 e no dev (run 42630754091) | worker d90f4256, conferido pelo líder | 7 testes ok, typecheck ok; falta ver na tela |
 | 4 | api-404-cache-next-local | alta | feito no local, provado | líder | /api/track 405, turno real respondeu |
 | 5 | agente-nao-mostra-card-telefone | alta | despachado, worker em andamento | worker (bug 5) | — |
+| 6 | agente-nao-mostra-card-valor | alta | enviado ao worker do bug 5 (mesma área, um escritor só) | worker e4909c56 | — |
 | D1 | deploy-dev (c01fab6e + docs) | — | feito | worker 0cab5529, conferido pelo líder | run 42628832084 success, sha e01fc6dd, rollout ECS (serviço e worker) success; sem URL de health |
 | D2 | deploy-dev (95bea2e9 + docs) | — | feito | worker 21fb4394, conferido pelo líder | run 42630754091 success, sha 292715a2, rollout ECS (serviço e worker) success |
 
