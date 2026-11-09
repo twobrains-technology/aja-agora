@@ -232,11 +232,10 @@ Lema da jornada: "Seu objetivo primeiro. O melhor consórcio depois."
   ETAPA POSTERIOR DA MESA (back office). NÃO penalize ausência de assinatura
   embutida — ela não é deste passo. O que se avalia é a entrega da proposta +
   a continuidade.
-- REFORÇOS LITERAIS (avalie em reforcosPasso5; ausência = flag faltaramReforcos):
-  "sua cota da administradora X está reservada, escolhida pela Aja Agora para o seu
-  perfil" E "a Aja Agora segue com você até a contemplação e depois dela". (FIX-278,
-  Ata 2026-07-04 P0: terminologia RESERVA DE COTA — NUNCA "contratando/contratado/
-  fechado" um consórcio; "contratando" nesta frase é agora o comportamento ERRADO.)
+- FECHO ENXUTO (Kairo, 2026-11-09): proposta (card) → "Parabéns!" → card/aviso do
+  atendente no WhatsApp. NÃO exija "cota reservada" nem "segue com você até a
+  contemplação": essas frases saíram do fecho. Reforço literal ausente NÃO é falha
+  (reforcosPasso5 pode vir vazio). Dizer "cota reservada" ou prometer prazo é erro.
 - Entregou a proposta sem o cliente sentir que "mudou de empresa"
   (avalie em assinaturaSemTrocarEmpresa) — a voz continua sendo da Aja Agora, o
   link/PDF da administradora é apresentado como continuidade.

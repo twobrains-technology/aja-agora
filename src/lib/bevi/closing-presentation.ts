@@ -150,11 +150,14 @@ export function realOfferPresentation(
 	return items;
 }
 
-/** Passo 5.2 — confirmação: reforços literais → assinatura + documentos →
- * "Parabéns!". A ordem É a do docx (reforços antes, parabéns depois).
- *
- * FIX-278 (veredito r9, G2): terminologia RESERVA DE COTA (Ata 2026-07-04,
- * item 2/P0, SUPERSEDE o docx) — nunca "consórcio fechado/contratado".
+/** Passo 5.2 — confirmação. Fecho ENXUTO (Kairo, 2026-11-09: "ficou muito
+ * robótico… textão, proposta, parabéns, card do WhatsApp… muita info"):
+ * [card da proposta, discreto] → "Parabéns!" → [handoff pro WhatsApp].
+ * Saiu o textão "Perfeito! Sua cota da X está reservada…" — e com ele a
+ * exceção da copy "cota reservada" (decisão do Kairo nesta data, supera a
+ * FIX-278 neste ponto). O código só afirma o que é verdade (P11, D-0004): sem
+ * prazo, sem "reservada", sem promessa de contemplação. A celebração é uma
+ * linha fixa porque este caminho é determinístico (sem chamada de LLM).
  *
  * FIX-265 (menor #3, veredito Fable r5, N7): "acabei de te mandar uma
  * mensagenzinha no seu WhatsApp" era dito INCONDICIONALMENTE, mesmo quando o
@@ -213,25 +216,6 @@ export function closingPresentation(
 					},
 				];
 	return [
-		// Um beat só, sem repetir a mesma ideia. Antes eram dois textos + o card da
-		// proposta, e "escolhida pela Aja Agora pro seu perfil" / "segue com você até
-		// a contemplação" apareciam DUAS vezes no mesmo balão — costura de blocos,
-		// não fala. "Booking" também saiu: o texto é em português.
-		{
-			kind: "text",
-			text:
-				// PENDENTE-KAIRO (2026-07-21): um juiz de conversa classificou "cota
-				// reservada" como violação da regra "nada de cota reservada antes da
-				// contratação". MANTIDO como está porque é decisão de produto
-				// documentada e testada — FIX-278 / Ata 2026-07-04, terminologia
-				// oficial de reserva de cota (ver `hard-rules.ts` §1.9, que abre
-				// exceção explícita pra esta copy pós-fechamento, e o teste
-				// `closing-presentation.test.ts`). A copy sai DEPOIS do offer-confirm,
-				// não antes. Só mexer com decisão explícita do Kairo.
-				`Perfeito! Sua cota da ${administradora} está reservada, escolhida pela Aja Agora ` +
-				"para o seu perfil. A Aja Agora segue com você até a contemplação, e depois dela. " +
-				"Você não paga nada agora: a primeira parcela só vence quando o boleto chegar na sua casa.",
-		},
 		// A NOSSA proposta. Sem ela, nenhum card — nunca o link da administradora.
 		...(opts.propostaUrl
 			? [
