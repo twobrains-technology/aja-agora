@@ -14,13 +14,13 @@ Regra: bug novo → card + `worker` em background → `reviewer` → status aqui
 | 10 | chips-fora-de-contexto | alta | corrigido em de8b302e (servidor não adivinha atalho: P11) | worker f0d1626a | só a lista escrita pelo modelo vira toque |
 | 11 | indicador-duplicado | média | corrigido em 9bfffac3 e no dev (run 42658405860) | worker e59ca33b, conferido pelo líder | 15 testes ok, typecheck ok; falta ver na tela |
 | 12 | fechamento-robotico | média | corrigido em 5c76a3de (enxuto); evolui para o card único do item 17 | worker bef41ba3, conferido pelo líder | 3 testes ok, biome ok |
-| 13 | card-preenchimento-fica-velho | média | na fila: espera f0d1626a (mesmos arquivos); vai junto com o 15 num worker só | — | — |
-| 16 | card-enter-nao-envia | média | na fila: junto com 13 e 15 (mesmos componentes), espera f0d1626a | — | contract-form sem <form>/onKeyDown |
-| 15 | card-sem-foco-e-atrasado | alta | na fila: junto com o 13, espera f0d1626a (name-prompt, artifact-renderer) | — | causa provável: disabled={isStreaming} + autoFocus em campo desabilitado |
+| 13 | card-preenchimento-fica-velho | alta | corrigido em 6dbb9a44 (regra central de selado) | worker, conferido pelo líder | 14 testes falhavam antes; falta ver no navegador |
+| 16 | card-enter-nao-envia | alta | corrigido em 6dbb9a44 (<form onSubmit>) | worker | falta ver no navegador |
+| 15 | card-sem-foco-e-atrasado | alta | corrigido em 6dbb9a44 (foco ao montar, sem disabled por streaming) | worker | falta ver no navegador |
 | 14 | clique-simular-obsoleto | alta | corrigido em a627f3f8 (web); WhatsApp (formatter.ts) fica para depois | worker cb0f7457, conferido pelo líder | 72 testes ok |
 | 17 | card-de-finalizacao | média | na fila: espera o commit do f0d1626a (types.ts, artifact-renderer.tsx). Resolve a dúvida da proposta no bug 12 | — | decisão do Kairo: UM card; confete; WhatsApp como está; proposta pequena e branca |
-| 19 | card-antes-da-pergunta | alta | despachado | worker (bug 19) | — |
-| 20 | consultor-calou-o-agente | alta | despachado | worker (bug 20) | — |
+| 19 | card-antes-da-pergunta | alta | corrigido em 6dbb9a44 (card de preenchimento espera o fim do beat) | worker, conferido pelo líder | teste de ordem falhava antes e passa; prova viva: card depois da fala |
+| 20 | consultor-calou-o-agente | alta | corrigido em 6dbb9a44 (humano só com claim ou caso ativo na mesa) | worker, conferido pelo líder | prova viva: linha handed_off sem dono com o telefone do operador não cala mais o agente |
 | 18 | hook-pre-commit-sem-banco | média | aberto: o pre-commit roda testes de integração que precisam de Postgres em 127.0.0.1:5433, que não existe neste Mac (barrou 3 workers; o f0d1626a estourou 30 min). Contorno usado: banco descartável em aja-shared-pg.orb.local + VITEST_MAX_WORKERS=1 | — | commits de8b302e e a627f3f8 passaram assim |
 | 8 | prompt-do-vendedor-testes-velhos | média | aberto: 5 testes falham no HEAD da develop e barram qualquer commit nesse arquivo | — | 4 testes de regra antiga (nome primeiro, nunca diga) + teto 20.000 (hoje 23.507) |
 | 7 | bevi-vitrine-env-compose | alta | feito no local, provado | líder | turno real: buscar_cartas com cartas do Banco do Brasil; pendente: script que gera o .env |
