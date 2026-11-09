@@ -55,12 +55,6 @@ const CLIQUES: Array<{
 		groupId: GROUP_ID,
 	},
 	{
-		diretiva: "buildGroupSelectedDirective",
-		texto: () => buildGroupSelectedDirective("Canopus", GROUP_ID, 60000, 48),
-		tipo: "simulation_result",
-		groupId: GROUP_ID,
-	},
-	{
 		diretiva: "buildViewScenariosDirective",
 		texto: () => buildViewScenariosDirective({ administradora: "Canopus", groupId: GROUP_ID }),
 		tipo: "scenarios",
@@ -86,6 +80,18 @@ const CLIQUES: Array<{
 		groupId: GROUP_ID,
 	},
 ];
+
+describe("clique na carta (buildGroupSelectedDirective): direciona, não simula", () => {
+	const texto = buildGroupSelectedDirective("Canopus", GROUP_ID, 60000, 48);
+	it("não fala de simulação nem pede o card de simulação", () => {
+		expect(texto).not.toMatch(/simul/i);
+		expect(texto).not.toContain("simulation_result");
+	});
+	it("manda conduzir para a frente, sem prometer reserva ou prazo", () => {
+		expect(texto).toContain("Conduza para a frente");
+		expect(texto).toContain("não prometa prazo, reserva");
+	});
+});
 
 describe("cliques dos cards de cálculo pedem a tool do vendedor livre (L16)", () => {
 	it("mostrar_card é a tool que o vendedor livre recebe", () => {

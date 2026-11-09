@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const sendAction = vi.fn();
 vi.mock("@/lib/chat/provider", () => ({
 	useChatContext: () => ({
 		sendUserMessage: vi.fn(),
-		sendAction: vi.fn(),
+		sendAction,
 		status: "ready" as const,
 		messages: [],
 	}),
@@ -41,5 +42,16 @@ describe("ComparisonTable — carrossel de cartas", () => {
 		for (const chip of screen.getAllByTestId(/cartao-grupo-/)) {
 			expect(chip.className).toContain("snap-start");
 		}
+	});
+
+	it("o clique vira fala de interesse, sem a palavra simular", () => {
+		render(<ComparisonTable payload={{ groups: GROUPS }} />);
+		const chip = screen.getByTestId("cartao-grupo-g1");
+		expect(chip.getAttribute("aria-label")).not.toMatch(/simul/i);
+		fireEvent.click(chip);
+		expect(sendAction).toHaveBeenCalledWith(
+			expect.objectContaining({ kind: "select-group", groupId: "g1" }),
+			"Me interessei na ADM 1 de R$ 60 mil, prazo de 80 meses",
+		);
 	});
 });

@@ -1,6 +1,7 @@
 "use client";
 
 import { Check, Crown, Info } from "lucide-react";
+import { falaDeInteresseNaCarta } from "@/lib/chat/fala-de-interesse";
 import { useChatContext } from "@/lib/chat/provider";
 import type { ComparisonTablePayload, GroupCardPayload } from "@/lib/chat/types";
 import { cn } from "@/lib/utils";
@@ -39,7 +40,7 @@ export function ComparisonTable({ payload }: { payload: ComparisonTablePayload }
 	// FIX-196 — no reveal, o comparison_table vira SELETOR: tocar um chip troca a
 	// cota do hero CLIENT-SIDE (sem novo turno, sem reflow). Fora do reveal (fluxo
 	// "ver outras opções", que emite só o comparison_table), mantém o carrossel
-	// legado que dispara `select-group` (simula a cota escolhida).
+	// legado que dispara `select-group` (ancora a cota escolhida).
 	if (reveal.isReveal) {
 		return <QuotaSelector isStreaming={isStreaming} />;
 	}
@@ -49,7 +50,7 @@ export function ComparisonTable({ payload }: { payload: ComparisonTablePayload }
 
 	const handleSelect = (group: GroupCardPayload) => {
 		if (isStreaming) return;
-		const label = `Simular ${group.administradora} — ${formatBRL(group.creditValue)}`;
+		const label = falaDeInteresseNaCarta(group);
 		void sendAction(
 			{
 				kind: "select-group",
@@ -87,7 +88,7 @@ export function ComparisonTable({ payload }: { payload: ComparisonTablePayload }
 						type="button"
 						tabIndex={0}
 						data-testid={`cartao-grupo-${group.id}`}
-						aria-label={`Simular ${group.administradora}, parcela ${formatBRL2(group.monthlyPayment)} por mês`}
+						aria-label={`Tenho interesse na ${group.administradora}, parcela ${formatBRL2(group.monthlyPayment)} por mês`}
 						onClick={() => handleSelect(group)}
 						className={cn(
 							"shrink-0 snap-start w-[150px] rounded-[14px] p-[13px] text-left",

@@ -3,6 +3,7 @@
 import { ChevronRight } from "lucide-react";
 import { motion } from "motion/react";
 import { Button } from "@/components/ui/button";
+import { falaDeInteresseNaCarta } from "@/lib/chat/fala-de-interesse";
 import { useChatContext } from "@/lib/chat/provider";
 import type { GroupCardPayload } from "@/lib/chat/types";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
@@ -55,7 +56,7 @@ export function GroupCard({ payload }: { payload: GroupCardPayload }) {
 
 	const handleClick = () => {
 		if (isStreaming) return;
-		const label = `Simular ${payload.administradora} — ${formatBRL(payload.creditValue)}`;
+		const label = falaDeInteresseNaCarta(payload);
 		void sendAction(
 			{
 				kind: "select-group",
@@ -76,7 +77,7 @@ export function GroupCard({ payload }: { payload: GroupCardPayload }) {
 			transition={cardSpring}
 		>
 			{/* O card inteiro é clicável, mas NÃO pode ser um <button>: ele contém o
-			    botão "Simular esse", e botão dentro de botão é HTML inválido — o React
+			    botão "Tenho interesse", e botão dentro de botão é HTML inválido — o React
 			    acusava hydration error em toda tela com card de grupo. `role="button"`
 			    + teclado dá o mesmo comportamento sem quebrar a árvore. */}
 			{/* biome-ignore lint/a11y/useSemanticElements: <button> aqui aninharia botões (HTML inválido) */}
@@ -205,7 +206,7 @@ export function GroupCard({ payload }: { payload: GroupCardPayload }) {
 							handleClick();
 						}}
 					>
-						Simular esse
+						Tenho interesse
 						<ChevronRight className="size-3.5" />
 					</Button>
 				</div>

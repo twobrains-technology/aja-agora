@@ -318,7 +318,7 @@ export function buildGroupSelectedDirective(
 	creditValue: number,
 	termMonths: number,
 ): string {
-	return `Usuário selecionou o grupo "${administradora}" (creditValue=${creditValue}, prazo=${termMonths}m). FLUXO: (1) escreva 1-2 frases de introdução no SEU TOM tipo "Beleza, essa é a simulação da ${administradora}." — proibido "vou simular", "deixa eu calcular"; também proibido descrever números (parcela/taxa) em texto, isso é o trabalho do card. (2) ${chamadaDeCardDeFato("simulation_result", groupId)} — o servidor simula a carta real e monta o card. (3) UM card só: não repita o mesmo card neste turno. O card já tem botões "Tenho interesse!" e "Ajustar valor".`;
+	return `O lead demonstrou interesse na carta "${administradora}" (groupId=${groupId}, creditValue=${creditValue}, prazo=${termMonths}m); a escolha já está ancorada no servidor. Conduza para a frente: reconheça a escolha em uma ou duas frases e leve a venda ao próximo passo a partir dessa carta, sem voltar a perguntar o que já se sabe. Número só de ferramenta; não prometa prazo, reserva nem contemplação que a cota não mostra; não empurre fechamento que ele não pediu.`;
 }
 
 export function buildSimulateDirective(
