@@ -1,0 +1,4 @@
+ POST /api/chat 404 in 1913ms (next.js: 1392ms, application-code: 521ms)
+ POST /api/chat 404 in 477ms (next.js: 111ms, application-code: 366ms)
+ POST /api/track 404 in 3.1s (next.js: 2.4s, application-code: 692ms)
+ POST /api/track 404 in 1616ms (next.js: 211ms, application-code: 1405ms)
