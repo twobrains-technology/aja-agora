@@ -18,7 +18,7 @@ import { transitionLeadStage } from "@/lib/admin/lead-transitions";
 import { buildAdvanceToContractDirective } from "@/lib/agent/orchestrator/directives";
 import { recusaIsolada } from "@/lib/agent/orchestrator/yes-no";
 import type { ConversationMetadata } from "@/lib/agent/personas";
-import { quemRespondePara } from "@/lib/agent/quem-responde";
+import { type QuemResponde, quemRespondePara, rastroDaDecisao } from "@/lib/agent/quem-responde";
 import { publishMessage } from "@/lib/chat/message-bus";
 import { triggerEvalScoring } from "@/lib/eval/trigger";
 import { ehNomeProprioPlausivel } from "@/lib/leads/contact-capture";
@@ -704,44 +704,82 @@ export const filaDeVendedoresReal: FilaDeVendedores = {
 };
 
 /**
- * Este cliente está sendo atendido por gente?
+ * Quem responde este cliente agora — em TRÊS estados, não em dois.
  *
- * A pergunta é sobre a PESSOA, não sobre a linha da conversa. Quem assumiu o caso
- * pelo painel silencia a conversa web; o mesmo cliente responde pelo WhatsApp, que
- * é outra conversa, com o número em outro formato. Comparando `waId` por
- * igualdade — como era até 2026-08-10 — o agente não via a trava e respondia por
- * cima do atendente. Ver `quemRespondePara`.
+ * A pergunta é sobre a CONVERSA de entrada, e só sobre ela (decisão do dono,
+ * 12/11/2026): um `handed_off` de outra conversa do mesmo telefone não cala o
+ * agente aqui. O preço dessa troca está registrado em `quemRespondePara`.
  *
- * O `conversationId` devolvido é o do ATENDIMENTO (onde o humano está), não o do
- * canal de entrada: é lá que a mensagem do cliente precisa aparecer.
+ * O colapso em `isHandedOff: true/false` era o defeito: o caso ABERTO e sem dono
+ * virava "humano", o processor só relaya e nunca roda turno, e o cliente escreve
+ * para ninguém no WhatsApp (`processor.ts`) — o mesmo beco do chat web, com outra
+ * roupa. Por isso `isHandedOff` agora é true SÓ quando há dono de verdade, e o
+ * estado do meio vem em `semDono`.
+ *
+ * O `conversationId` devolvido é o da conversa que recebeu a fala (a mesma que
+ * `session.ts` resolve por `waId`): é lá que a mensagem do cliente precisa aparecer.
  */
-export async function getHandoffState(waId: string): Promise<{
+export type EstadoDoHandoff = {
+	/** true SÓ quando há DONO humano (vendedor que assumiu, ou mesa em andamento
+	 * com atendente). Caso aberto sem dono NÃO é atendimento humano. */
 	isHandedOff: boolean;
 	conversationId?: string;
 	handedOffUserId?: string | null;
+	/** O nome REAL de quem assumiu — nunca um placeholder. */
+	dono?: { tipo: "vendedor" | "mesa"; nome: string };
+	/** Atendimento existe e ninguém assumiu: a conversa não pode morrer aqui (P0). */
+	semDono?: { conversationId: string; handoffId: string };
 	contactName?: string;
 	isSimulated?: boolean;
-} | null> {
-	const decisao = await quemRespondePara(waId);
+	/** A decisão crua, já tomada aqui. Existe para quem precisa dos helpers que
+	 * falam sobre ela (`agenteCalaAposRelay`) sem repetir a consulta — uma segunda
+	 * cópia da regra de calar é como as duas pontas passam a discordar. */
+	decisao: QuemResponde;
+};
+
+export async function getHandoffState(waId: string): Promise<EstadoDoHandoff | null> {
+	// A conversa do número PRIMEIRO: a decisão é sobre ela. É a mesma busca que o
+	// resto do caminho de WhatsApp faz (`session.ts`) — a linha que recebeu a fala.
+	const conv = await db.query.conversations.findFirst({
+		where: eq(conversations.waId, waId),
+	});
+	const decisao = await quemRespondePara(conv);
 
 	if (decisao.quem === "humano") {
-		// Metadados de exibição saem da conversa do atendimento, que é a que o
-		// atendente tem aberta na tela.
-		const conv = await db.query.conversations.findFirst({
-			where: eq(conversations.id, decisao.conversationId),
-		});
+		// Uma linha de rastro por decisão: sem ela o próximo incidente começa do zero.
+		rastroDaDecisao(decisao, { canal: "whatsapp", conversationId: decisao.conversationId });
 		return {
 			isHandedOff: true,
 			conversationId: decisao.conversationId,
 			handedOffUserId: decisao.handedOffUserId,
+			dono: { tipo: decisao.dono.tipo, nome: decisao.dono.nome },
 			contactName: conv?.contactName ?? undefined,
 			isSimulated: conv?.isSimulated,
+			decisao,
 		};
 	}
 
-	const conv = await db.query.conversations.findFirst({
-		where: eq(conversations.waId, waId),
-	});
+	if (decisao.quem === "atendimento-sem-dono") {
+		rastroDaDecisao(decisao, { canal: "whatsapp", conversationId: decisao.conversationId });
+		return {
+			// Ninguém assumiu: o agente NÃO cala — ele acolhe (P0/P8).
+			isHandedOff: false,
+			conversationId: decisao.conversationId,
+			// Sem dono é sem dono: não há `handedOffUserId` a apontar.
+			handedOffUserId: null,
+			semDono: { conversationId: decisao.conversationId, handoffId: decisao.handoffId },
+			contactName: conv?.contactName ?? undefined,
+			isSimulated: conv?.isSimulated,
+			decisao,
+		};
+	}
+
+	// O rastro sai mesmo sem conversa: a decisão foi tomada, e "não achei" também
+	// é resposta que precisa existir no log.
+	rastroDaDecisao(decisao, { canal: "whatsapp", conversationId: conv?.id ?? "sem-conversa" });
+	// Sem conversa para este número não há atendimento a respeitar: `null` diz a
+	// mesma coisa que `isHandedOff: false` a quem chama (`processor.ts`,
+	// `relayUserToAgent`), e não inventa um id de conversa que não existe.
 	if (!conv) return null;
 	return {
 		isHandedOff: false,
@@ -749,6 +787,7 @@ export async function getHandoffState(waId: string): Promise<{
 		handedOffUserId: conv.handedOffUserId ?? null,
 		contactName: conv.contactName ?? undefined,
 		isSimulated: conv.isSimulated,
+		decisao,
 	};
 }
 
@@ -931,12 +970,13 @@ export async function handleAgentMessage(agentWaId: string, text: string): Promi
 	);
 	if (claimedByOther?.handedOffUserId) {
 		const owner = await getAttendantById(claimedByOther.handedOffUserId);
-		const ownerName = owner?.name ?? "Outro consultor";
-		await sendToAttendant(
-			agentWaId,
-			`⏳ *${ownerName}* já está atendendo *${claimedByOther.contactName ?? "o cliente"}*.`,
-			{ simulated: claimedByOther.isSimulated },
-		);
+		// Sem o nome real, a frase NÃO inventa um: "Outro consultor" era gente que
+		// não existe — mesma classe do "Consultor" da web. Quem lê é um atendente
+		// que só precisa saber que o cliente já tem dono.
+		const corpo = owner?.name
+			? `⏳ *${owner.name}* já está atendendo *${claimedByOther.contactName ?? "o cliente"}*.`
+			: `⏳ Este cliente já está em atendimento com outra pessoa do time. *${claimedByOther.contactName ?? "o cliente"}* já tem responsável — não é preciso responder por aqui.`;
+		await sendToAttendant(agentWaId, corpo, { simulated: claimedByOther.isSimulated });
 		return true;
 	}
 
@@ -970,8 +1010,8 @@ function comNome(userName: string | null, text: string): string {
  *
  * O agente não respondia, o atendente não recebia nada, e o cliente lia uma
  * promessa de entrega que nunca aconteceu. Agora as duas pontas fazem a MESMA
- * pergunta — a da pessoa — e o atendimento é procurado na conversa onde ele
- * realmente vive, que nem sempre é a do canal de entrada.
+ * pergunta — a da CONVERSA, e sobre a mesma conversa: se a decisão é "o agente",
+ * não há atendimento a avisar aqui.
  */
 export async function relayWebUserToAgent(
 	conversationId: string,
@@ -986,22 +1026,16 @@ export async function relayWebUserToAgent(
 	});
 	if (!conv) return false;
 
-	// A conversa de entrada pode não ser a do atendimento. Resolve pela pessoa —
-	// mesma pergunta que o `route.ts` faz pra decidir calar o agente.
-	let atendimento = conv;
-	if (conv.status !== "handed_off") {
-		const quem = await quemRespondePara(conv.waId);
-		if (quem.quem !== "humano") return false;
-		const outra = await db.query.conversations.findFirst({
-			where: eq(conversations.id, quem.conversationId),
-		});
-		if (!outra) return false;
-		atendimento = outra;
-		console.log(
-			`[whatsapp-proxy] WebUser→Attendant: atendimento vive em outra conversa da pessoa (${conversationId} → ${outra.id})`,
-		);
-	}
+	// Mesma pergunta que o `route.ts` faz para decidir calar o agente — e sobre a
+	// conversa de ENTRADA: a trava não atravessa mais o telefone (12/11/2026), então
+	// o atendimento nunca "vive em outra conversa da pessoa".
+	const quem = await quemRespondePara(conv);
+	// `atendimento-sem-dono` também tem destino: o caso existe e a fila precisa ver a
+	// mensagem mesmo sem ninguém ter assumido. O que NÃO vale é inventar dono — sem
+	// `handedOffUserId` o aviso vai para todos os atendentes.
+	if (quem.quem === "agente") return false;
 
+	const atendimento = conv;
 	const isSimulated = atendimento.isSimulated;
 
 	if (atendimento.handedOffUserId) {
@@ -1029,17 +1063,27 @@ export async function relayWebUserToAgent(
 	return attendants.length > 0;
 }
 
-/** Relay a message from user to the claimed attendant (or all, if unclaimed). */
+/** Relay a message from user to the claimed attendant (or all, if unclaimed).
+ *
+ * Aceita os DOIS estados de atendimento: com dono (o atendente que assumiu, ou o
+ * aviso para todos se ele não está mais na lista) e SEM dono — o caso aberto que
+ * ninguém assumiu. No segundo, a fala do cliente é gravada e publicada na conversa
+ * do atendimento e a fila inteira é avisada; é tentativa, não decisão: quem decide
+ * se o agente cala é `agenteCalaAposRelay`, no chamador. Nunca inventa dono.
+ */
 export async function relayUserToAgent(userWaId: string, text: string): Promise<boolean> {
 	const state = await getHandoffState(userWaId);
-	if (!state?.isHandedOff || !state.conversationId) {
+	if (!state?.isHandedOff && !state?.semDono) {
 		return false;
 	}
+	// Onde o caso vive: com dono é a conversa do atendimento; sem dono é a do caso.
+	const conversationId = state.semDono?.conversationId ?? state.conversationId;
+	if (!conversationId) return false;
 
 	const userName = state.contactName ?? "Cliente";
 	const isSimulated = state.isSimulated ?? false;
 
-	await saveMessage(state.conversationId, "user", text);
+	await saveMessage(conversationId, "user", text);
 
 	// A TELA do atendente precisa saber que chegou.
 	//
@@ -1047,7 +1091,7 @@ export async function relayUserToAgent(userWaId: string, text: string): Promise<
 	// atendente, mas o painel só descobria se alguém recarregasse a página —
 	// quem atendia pelo modal ficava olhando uma conversa parada enquanto o
 	// cliente escrevia (relatado em 2026-08-10).
-	publishMessage(state.conversationId, {
+	publishMessage(conversationId, {
 		id: crypto.randomUUID(),
 		role: "user",
 		content: text,
@@ -1061,30 +1105,28 @@ export async function relayUserToAgent(userWaId: string, text: string): Promise<
 			console.log(
 				`[whatsapp-proxy] User→Attendant: ${userWaId} → ${attendant.phone} | "${text.slice(0, 50)}" simulated=${isSimulated}`,
 			);
-		} else {
-			console.warn(
-				`[whatsapp-proxy] Claimed attendant ${state.handedOffUserId} not found in active list`,
-			);
+			return true;
 		}
-	} else {
-		const attendants = await getAttendantList();
-		for (const a of attendants) {
-			await sendToAttendant(a.phone, `*${userName}:*\n${text}`, { simulated: isSimulated });
-		}
-		// `entregues` explícito porque a linha sem ele MENTE: com a lista vazia o
-		// log dizia "User→AllAttendants" tendo mandado para ninguém, e ao investigar
-		// o sumiço da mídia (18/08) essa linha sugeria uma entrega que não houve. A
-		// conversa continua viva pelo painel, mas o log tem que dizer a verdade.
-		console.log(
-			`[whatsapp-proxy] User→AllAttendants: ${userWaId} | "${text.slice(0, 50)}" simulated=${isSimulated} entregues=${attendants.length}`,
+		console.warn(
+			`[whatsapp-proxy] Claimed attendant ${state.handedOffUserId} not found in active list`,
 		);
-		// Lista vazia é entrega que não aconteceu — mesmo contrato de
-		// `relayWebUserToAgent` e do relay de mídia. Quem chamar não pode prometer
-		// ao cliente uma mensagem que ninguém recebeu.
-		return attendants.length > 0;
 	}
 
-	return true;
+	const attendants = await getAttendantList();
+	for (const a of attendants) {
+		await sendToAttendant(a.phone, `*${userName}:*\n${text}`, { simulated: isSimulated });
+	}
+	// `entregues` explícito porque a linha sem ele MENTE: com a lista vazia o
+	// log dizia "User→AllAttendants" tendo mandado para ninguém, e ao investigar
+	// o sumiço da mídia (18/08) essa linha sugeria uma entrega que não houve. A
+	// conversa continua viva pelo painel, mas o log tem que dizer a verdade.
+	console.log(
+		`[whatsapp-proxy] User→AllAttendants: ${userWaId} | "${text.slice(0, 50)}" simulated=${isSimulated} semDono=${Boolean(state.semDono)} entregues=${attendants.length}`,
+	);
+	// Lista vazia é entrega que não aconteceu — mesmo contrato de
+	// `relayWebUserToAgent` e do relay de mídia. Quem chamar não pode prometer
+	// ao cliente uma mensagem que ninguém recebeu.
+	return attendants.length > 0;
 }
 
 /**

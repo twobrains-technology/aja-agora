@@ -11,6 +11,7 @@ import { artifacts as artifactsTable, conversations, leads } from "@/db/schema";
 import { BeviConfigError, MinCreditError } from "@/lib/adapters/bevi/bevi-errors";
 import { getLeadIdForConversation } from "@/lib/admin/lead-stage-tracker";
 import { aplicarAceiteEstruturado } from "@/lib/agent/aceite";
+import { avisoDeEncaminhamento } from "@/lib/agent/aviso-de-encaminhamento";
 import {
 	resolveChosenOffer,
 	resolveOfferForAdministradora,
@@ -29,7 +30,12 @@ import {
 } from "@/lib/agent/orchestrator/directives";
 import { detectBackIntent, popNavState } from "@/lib/agent/orchestrator/navigation";
 import type { ConversationMetadata, Persona } from "@/lib/agent/personas";
-import { quemRespondePara } from "@/lib/agent/quem-responde";
+import {
+	agenteCalaAposRelay,
+	type QuemResponde,
+	quemRespondePara,
+	rastroDaDecisao,
+} from "@/lib/agent/quem-responde";
 import { VISIT_COOKIE } from "@/lib/attribution/visit-cookie";
 import { resolveVisitIdFromCookie } from "@/lib/attribution/visit-store";
 import {
@@ -74,6 +80,7 @@ import { nomeUtilizavel } from "@/lib/leads/nome-plausivel";
 import { normalizePhoneBR } from "@/lib/leads/phone";
 import { registrarFalhaDoLlm } from "@/lib/llm/alerta-do-llm";
 import { COOKIE_MAX_AGE_SECONDS, COOKIE_NAME, generateCookieValue } from "@/lib/memory/identity";
+import { buildAcolhidaSemDonoDirective, marcarAcolhidaInline } from "@/lib/mesa/acolhida-n1";
 import { checkRateLimit, type RateLimitResult } from "@/lib/middleware/rate-limit";
 import { registrarBotaoFantasma } from "@/lib/observability/sinais/funil-scores";
 import { comTraceDoTurno } from "@/lib/observability/trace-local";
@@ -87,6 +94,7 @@ import {
 } from "@/lib/utils/simulator-clock-wrap";
 import { pipeDirectiveTurn, pipeUserTurn } from "@/lib/web/adapter";
 import { relayWebUserToAgent } from "@/lib/whatsapp/proxy";
+import { propostaDaConversa } from "@/lib/workers/acolhida-n1-cycle";
 
 export const maxDuration = 60;
 
@@ -448,9 +456,10 @@ export async function POST(req: NextRequest) {
 	const conv = providedId
 		? await db.query.conversations.findFirst({
 				where: eq(conversations.id, providedId),
-				with: {
-					handedOffUser: { columns: { name: true, phone: true } },
-				},
+				// O NOME de quem atende não vem mais daqui (`handedOffUser`): quem sabe o
+				// dono de verdade — vendedor em `users.name` ou mesa em
+				// `mesa_attendants.nome` — é `quemRespondePara`, logo abaixo. Esta relação
+				// só existia para o `?? "Consultor"`.
 			})
 		: undefined;
 
@@ -542,15 +551,25 @@ export async function POST(req: NextRequest) {
 		conversationId = created.id;
 	}
 
-	// A trava é da PESSOA, não desta linha. O mesmo cliente pode ter sido assumido
-	// numa conversa de outro canal (o caso real foi o inverso: assumido na web,
-	// respondendo pelo WhatsApp). Perguntar só pelo `status` daqui deixava o
-	// agente falar por cima do atendente. Ver `quemRespondePara`.
+	// A trava é da CONVERSA, não da pessoa: quem assumiu ESTA conversa cala o agente
+	// nela (P11). Um `handed_off` de outra conversa — mesmo do mesmo telefone — não
+	// cala mais: era o registro velho que matava a conversa nova do cliente
+	// (decisão do dono, 12/11/2026). Ver `quemRespondePara`.
 	// `handed_off` na linha não basta (P8): sem dono e sem caso na mesa o agente
 	// segue. Quem decide é `quemRespondePara`.
-	const humanoNoCaso = conv?.waId ? (await quemRespondePara(conv.waId)).quem === "humano" : false;
+	//
+	// A DECISÃO, não o booleano: ela tem três estados e cada um pede um turno
+	// diferente. Colapsada em `quem === "humano"`, o estado "atendimento aberto e
+	// ninguém assumiu" caía no turno normal do agente — que então calava e deixava
+	// o cliente sem resposta (o beco de 2026-11, P0/P8).
+	const decisao: QuemResponde = conv
+		? await quemRespondePara(conv)
+		: { quem: "agente", motivo: "sem-atendimento-aberto" };
+	// Sem esta linha o próximo incidente é arqueologia: quem calou o agente, com
+	// que dono e por qual motivo.
+	rastroDaDecisao(decisao, { canal: "web", conversationId });
 
-	if (humanoNoCaso && conv && !body.action) {
+	if (decisao.quem === "humano" && conv && !body.action) {
 		const userText = lastUserText(body.messages);
 		if (!userText) {
 			return new Response("No user message in payload", { status: 400 });
@@ -572,18 +591,23 @@ export async function POST(req: NextRequest) {
 		// mesma pessoa (ele começa no WhatsApp, volta pela web) — o cliente lia
 		// "aguarde a resposta aqui", ninguém recebia nada, e a conversa morria ali.
 		// Sem entrega, o agente segue o fluxo normal em vez de mandar esperar por
-		// alguém que não foi avisado.
-		if (entregue) {
-			const agentName = conv.handedOffUser?.name ?? "Consultor";
+		// alguém que não foi avisado. Mesa cala sempre (o caso é dela e o painel é
+		// onde o dono vê a conversa): quem responde isso é `agenteCalaAposRelay`.
+		if (agenteCalaAposRelay(decisao, entregue)) {
+			// O nome é o de quem ASSUMIU de verdade (`decisao.dono.nome`), nunca um
+			// placeholder: era `conv.handedOffUser?.name ?? "Consultor"`, e a mesa deixa
+			// `handedOffUserId` nulo de propósito — o cliente lia "Mensagem enviada para
+			// Consultor" com ninguém do outro lado.
+			const aviso = avisoDeEncaminhamento(decisao.dono.nome);
+			// GRAVA ANTES DE MANDAR: o aviso é a única resposta que o cliente recebe
+			// neste turno. Sem a linha no banco ele sumia ao recarregar, e a fala do
+			// cliente ficava sem nenhuma resposta no histórico entregue ao modelo.
+			await saveMessage(conversationId, "assistant", aviso, "web", meta.currentPersona);
 			const stream = createUIMessageStream<AjaUIMessage>({
 				execute: ({ writer }) => {
 					const id = crypto.randomUUID();
 					writer.write({ type: "text-start", id });
-					writer.write({
-						type: "text-delta",
-						id,
-						delta: `_Mensagem enviada para ${agentName}. Aguarde a resposta aqui._`,
-					});
+					writer.write({ type: "text-delta", id, delta: aviso });
 					writer.write({ type: "text-end", id });
 				},
 				// FIX-110: onError uniforme em TODO stream do route (helper único).
@@ -610,6 +634,126 @@ export async function POST(req: NextRequest) {
 		},
 		userKey,
 	);
+
+	// ── ATENDIMENTO SEM DONO — o caso existe e NINGUÉM assumiu ───────────────
+	//
+	// É o beco medido: o cliente escreve, o agente cala porque há atendimento
+	// aberto, e não há atendente do outro lado. Antes daqui, a única coisa que
+	// saía era "Mensagem enviada para Consultor" sem ninguém — contra P0 ("a
+	// conversa não morre... nem quando ninguém da fila atende") e P8.
+	//
+	// O turno acontece, mas na VOZ DA ACOLHIDA: o directive diz que ninguém
+	// assumiu, que o pedido já está com a mesa, a hora de agora (de madrugada
+	// ninguém atende, e o agente precisa saber disso) e a proposta registrada, se
+	// houver. Continua sendo o modelo quem escolhe as palavras.
+	//
+	// Com `body.action` este braço não roda de propósito: a ação segue o fluxo de
+	// hoje. É dívida conhecida (relatório do bloco), não descuido.
+	if (decisao.quem === "atendimento-sem-dono" && conv && !body.action) {
+		const userText = lastUserText(body.messages);
+		if (!userText) {
+			return new Response("No user message in payload", { status: 400 });
+		}
+		await saveMessage(conversationId, "user", userText, "web");
+		// Avisar a fila continua valendo — só NÃO decide nada aqui. O resultado vai
+		// para o log: se um vendedor assumir durante o turno, é a linha de
+		// `quemRespondePara` do próximo request que cala o agente.
+		const entregueAFila = await relayWebUserToAgent(
+			conversationId,
+			userText,
+			nomeUtilizavel(conv.contactName),
+		).catch((err) => {
+			console.error(
+				`[chat] relay para a fila falhou no atendimento sem dono (conv ${conversationId}):`,
+				err,
+			);
+			return false;
+		});
+		publishMessage(conversationId, {
+			id: lastUserMessageId(body.messages) ?? crypto.randomUUID(),
+			role: "user",
+			content: userText,
+			createdAt: simulatorNow().toISOString(),
+		});
+		console.info(
+			`[chat] atendimento sem dono — turno de acolhida (conv ${conversationId}, fila avisada: ${entregueAFila ? "sim" : "não"})`,
+		);
+
+		const proposta = await propostaDaConversa(conversationId).catch(() => null);
+		const directive = buildAcolhidaSemDonoDirective(meta, { proposta, agora: new Date() });
+
+		// GRAVA ANTES DE DISPARAR (mesma doutrina do ciclo N1): o worker não repete
+		// esta acolhida três minutos depois. Se o turno morrer no meio, perder uma
+		// acolhida é barato; acolher duas vezes seguidas não é.
+		await persistMeta(conversationId, marcarAcolhidaInline(meta, new Date()));
+
+		const stream = createUIMessageStream<AjaUIMessage>({
+			// Mesmo caminho de trace do turno de texto: a acolhida aparece no Langfuse
+			// como qualquer outro turno do canal.
+			execute: async ({ writer: rawWriter }) => {
+				const trace = new TurnTrace({
+					conversationId,
+					channel: "web",
+					persona: meta.currentPersona ?? null,
+					falaDoCliente: userText,
+				});
+				await comTraceDoTurno(
+					{
+						conversationId,
+						channel: "web",
+						isSimulated: conv.isSimulated === true,
+						persona: meta.currentPersona ?? null,
+						userId: userKey ?? null,
+						userText,
+					},
+					async (lfTurn) => {
+						const { writer, getText } = collectAgentText(instrumentWriter(rawWriter, trace));
+						if (lfTurn.traceId) {
+							writer.write({
+								type: "data-trace",
+								data: { traceId: lfTurn.traceId },
+								transient: true,
+							});
+						}
+						try {
+							await withSimulatorClockIfNeeded(conv, async () => {
+								await pipeDirectiveTurn({
+									conversationId,
+									directive,
+									contactName,
+									writer,
+									userKey,
+								});
+							});
+							// P0 não admite turno vazio: a acolhida é a única coisa que este
+							// cliente recebe neste turno. Mesmo guard do turno de texto-livre.
+							if (isTurnEmpty(trace.toRecord())) {
+								await writeAndSaveText(
+									writer,
+									conversationId,
+									meta.currentPersona ?? null,
+									pickEmptyTurnFallback(false),
+								);
+								trace.setFinish("empty-turn-fallback");
+							} else if (!trace.hasFinish()) {
+								trace.setFinish("ok");
+							}
+						} finally {
+							const falaFinal = getText();
+							if (falaFinal) lfTurn.setOutput(falaFinal);
+							trace.finalize();
+						}
+					},
+				);
+			},
+			// FIX-110: onError uniforme em TODO stream do route (helper único).
+			onError: onErrorDoStream,
+		});
+		return createUIMessageStreamResponse({
+			stream,
+			headers: { "X-Conversation-Id": conversationId },
+		});
+	}
 
 	if (body.action) {
 		// Persiste a mensagem do user (texto do botão clicado) UMA vez aqui no

@@ -7,23 +7,39 @@
  *
  * ## Por que existe
  *
- * A trava do agente era gravada na LINHA da conversa (`conversations.status =
- * 'handed_off'`) e consultada por igualdade exata de `waId`. Só que quem é
- * atendido é a PESSOA, e uma pessoa tem várias conversas — uma por canal — com o
- * telefone gravado em formatos diferentes em cada uma.
+ * A trava do agente nasceu gravada na LINHA da conversa (`conversations.status =
+ * 'handed_off'`) e consultada por igualdade exata de `waId`. Entre 2026-08-10 e
+ * 12/11/2026 ela passou a valer para a PESSOA (qualquer conversa `handed_off` do
+ * mesmo telefone calava todas as outras, para sempre); ver "A inversão" abaixo,
+ * que voltou ao escopo da conversa por decisão do dono.
  *
- * Em prod (2026-08-10) isso apareceu do pior jeito: o atendente assumiu o caso
- * pelo painel (conversa web, `62992496793`, marcada `handed_off`), o cliente
- * respondeu pelo WhatsApp (conversa `556292496793`, ainda `active`), e o AGENTE
- * respondeu por cima do humano que estava atendendo.
+ * O incidente que empurrou a regra para o telefone: em prod (2026-08-10) o
+ * atendente assumiu o caso pelo painel (conversa web, `62992496793`, marcada
+ * `handed_off`), o cliente respondeu pelo WhatsApp (conversa `556292496793`, ainda
+ * `active`), e o AGENTE respondeu por cima do humano que estava atendendo.
  *
- * ## A inversão
+ * ## A inversão (12/11/2026)
  *
- * Antes: "esta conversa está bloqueada?" — blocklist, incompleta por construção;
- * sempre falta o canal/formato que ninguém previu.
+ * A pergunta é sobre a CONVERSA, nunca sobre a pessoa: "nesta conversa, alguém
+ * assumiu?" Um `handed_off` de outra conversa — mesmo do mesmo telefone — não
+ * cala o agente aqui.
  *
- * Agora: "o agente está autorizado a falar com esta pessoa?" — allowlist. Havendo
- * atendimento humano ABERTO para ela, a resposta é não, em canal nenhum.
+ * A decisão por telefone foi REMOVIDA em 12/11/2026 por decisão do dono (Kairo:
+ * *"tira essa regra do handed_off, se o cara entrar ele continua conversando sem
+ * problema"*). Ela era a allowlist por pessoa ("havendo atendimento humano aberto
+ * para ela, a resposta é não, em canal nenhum"), e o preço era o oposto do que se
+ * queria: um registro velho perseguia o cliente. Em produção (09/11) a conversa
+ * web `62992496793` ficou `handed_off` com um caso de mesa; três dias depois o
+ * cliente voltou, pediu carta de R$ 250 mil e o agente não respondeu — "Mensagem
+ * enviada para Consultor", sem ninguém do outro lado. A conversa morreu por causa
+ * de um registro velho. O dono decidiu: a trava vale para a conversa onde o
+ * humano atende, e a conversa nova é do agente.
+ *
+ * O que se perde com isso, registrado sem omissão: o caso de 2026-08-10 — humano
+ * atendendo no WhatsApp e cliente voltando pela WEB — agora fala com o agente. Era
+ * o incidente que justificou a regra por telefone; deixou de ser o comportamento
+ * desejado. P11 continua valendo dentro da conversa: onde um humano assumiu, o
+ * agente não fala por cima.
  *
  * ## Dono, nome real e o estado sem dono
  *
@@ -50,7 +66,6 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations, mesaHandoffs } from "@/db/schema";
 import { ACTIVE_HANDOFF_STATUSES } from "@/lib/mesa/handoff";
-import { chaveTelefoneBR } from "@/lib/whatsapp/mesmo-numero";
 
 /** Quem assumiu o atendimento — com o NOME de quem atende, que é o que o cliente lê. */
 export type DonoDoAtendimento =
@@ -70,7 +85,8 @@ export type MotivoDoAgente = "sem-atendimento-aberto";
 export type QuemResponde =
 	| {
 			quem: "humano";
-			/** Conversa onde o atendimento vive — nem sempre a do canal de entrada. */
+			/** A conversa onde o atendimento vive — a própria conversa de entrada: a
+			 * trava não atravessa mais o telefone. */
 			conversationId: string;
 			/** Nome REAL de quem atende (`users.name` ou `mesa_attendants.nome`). */
 			dono: DonoDoAtendimento;
@@ -85,79 +101,61 @@ export type QuemResponde =
 	| { quem: "agente"; motivo: MotivoDoAgente };
 
 /**
- * Resolve pelo telefone, cobrindo todos os formatos do mesmo número.
+ * Quem responde NESTA conversa: o agente, um humano com nome, ou um atendimento
+ * aberto e sem dono.
  *
- * `identificador` é o wa_id de quem falou (ou o telefone da conversa web).
+ * `conv` é a conversa de ENTRADA — a que recebeu a fala do cliente. É só ela que
+ * entra na conta: nada de varrer as conversas do mesmo telefone. Sem conversa
+ * (ou sem id), não há atendimento aberto a respeitar.
  */
 export async function quemRespondePara(
-	identificador: string | null | undefined,
+	conv: { id: string; waId: string | null } | null | undefined,
 ): Promise<QuemResponde> {
-	if (!identificador) return { quem: "agente", motivo: "sem-atendimento-aberto" };
+	if (!conv?.id) return { quem: "agente", motivo: "sem-atendimento-aberto" };
 
-	// Só as conversas entregues a gente — são poucas, e é o único estado que pode
-	// calar o agente. Filtrar aqui evita varrer a tabela pra comparar chave. O dono
-	// vem junto (`handedOffUser`): consultar por linha custaria uma ida ao banco
-	// para cada candidata.
-	const emAtendimento = await db.query.conversations.findMany({
-		where: eq(conversations.status, "handed_off"),
-		columns: { id: true, waId: true, handedOffUserId: true },
+	// Uma linha, a da conversa de entrada. O dono vem junto (`handedOffUser`): o
+	// nome real de quem assumiu é o que o cliente lê.
+	const conversa = await db.query.conversations.findFirst({
+		where: eq(conversations.id, conv.id),
+		columns: { id: true, status: true, handedOffUserId: true },
 		with: { handedOffUser: { columns: { id: true, name: true } } },
 	});
-
-	if (emAtendimento.length === 0) return { quem: "agente", motivo: "sem-atendimento-aberto" };
-
-	const chave = chaveTelefoneBR(identificador);
-	const casam = emAtendimento.filter((conv) => {
-		// Sem chave utilizável (número fora do padrão BR, id simulado), a
-		// comparação cai na igualdade exata — o comportamento que já existia.
-		return chave ? chaveTelefoneBR(conv.waId) === chave : conv.waId === identificador;
-	});
-	if (casam.length === 0) return { quem: "agente", motivo: "sem-atendimento-aberto" };
-
-	// Uma consulta só para os casos ativos de TODAS as conversas da pessoa,
-	// já com o atendente de mesa pendurado.
-	const casosDaPessoa = await db.query.mesaHandoffs.findMany({
-		where: and(
-			inArray(
-				mesaHandoffs.conversationId,
-				casam.map((c) => c.id),
-			),
-			inArray(mesaHandoffs.status, [...ACTIVE_HANDOFF_STATUSES]),
-		),
-		columns: { id: true, conversationId: true, status: true, mesaAttendantId: true },
-		with: { mesaAttendant: { columns: { id: true, nome: true } } },
-	});
-
-	// Caso sem conversa é caso de lead, não de atendimento: não há onde falar com
-	// o cliente, então não serve para decidir quem fala.
-	const casos = casosDaPessoa.flatMap((caso) =>
-		caso.conversationId ? [{ ...caso, conversationId: caso.conversationId }] : [],
-	);
+	if (!conversa) return { quem: "agente", motivo: "sem-atendimento-aberto" };
 
 	// A ordem dos braços é a regra: DONO VENCE SEM-DONO, E SEM-DONO VENCE AGENTE.
-	// Parar na primeira linha sem dono devolveria o estado errado enquanto outra
-	// conversa da mesma pessoa tem dono.
 
-	// 1. Claim de vendedor (`handedOffUserId`). Sem o registro em `users` (FK
-	// quebrada) não há nome real: não serve como dono, e o motivo vai ao rastro.
-	for (const conv of casam) {
-		if (conv.handedOffUserId == null) continue;
-		const nome = conv.handedOffUser?.name?.trim();
-		if (!nome) {
-			registrarFkQuebrada({
-				origem: "conversations.handed_off_user_id",
-				conversationId: conv.id,
-				referencia: conv.handedOffUserId,
-			});
-			continue;
+	// 1. Claim de vendedor (`handedOffUserId`). O `status` faz parte da conta de
+	// propósito: "Encerrar atendimento" (`mesa/handoff.ts`) devolve a conversa ao
+	// agente com `status = active` e NÃO limpa `handed_off_user_id` — sem este par,
+	// o resíduo da coluna calaria o agente para sempre na conversa encerrada. Sem o
+	// registro em `users` (FK quebrada) não há nome real: não serve como dono, e o
+	// motivo vai ao rastro.
+	if (conversa.status === "handed_off" && conversa.handedOffUserId != null) {
+		const nome = conversa.handedOffUser?.name?.trim();
+		if (nome) {
+			return {
+				quem: "humano",
+				conversationId: conversa.id,
+				dono: { tipo: "vendedor", userId: conversa.handedOffUserId, nome },
+				handedOffUserId: conversa.handedOffUserId,
+			};
 		}
-		return {
-			quem: "humano",
-			conversationId: conv.id,
-			dono: { tipo: "vendedor", userId: conv.handedOffUserId, nome },
-			handedOffUserId: conv.handedOffUserId,
-		};
+		registrarFkQuebrada({
+			origem: "conversations.handed_off_user_id",
+			conversationId: conversa.id,
+			referencia: conversa.handedOffUserId,
+		});
 	}
+
+	// Os casos da mesa DESTA conversa, já com o atendente pendurado.
+	const casos = await db.query.mesaHandoffs.findMany({
+		where: and(
+			eq(mesaHandoffs.conversationId, conversa.id),
+			inArray(mesaHandoffs.status, [...ACTIVE_HANDOFF_STATUSES]),
+		),
+		columns: { id: true, status: true, mesaAttendantId: true },
+		with: { mesaAttendant: { columns: { id: true, nome: true } } },
+	});
 
 	// 2. Caso EM ANDAMENTO com atendente de mesa: este assumiu de verdade.
 	for (const caso of casos) {
@@ -166,14 +164,14 @@ export async function quemRespondePara(
 		if (!nome) {
 			registrarFkQuebrada({
 				origem: "mesa_handoffs.mesa_attendant_id",
-				conversationId: caso.conversationId,
+				conversationId: conversa.id,
 				referencia: caso.mesaAttendantId,
 			});
 			continue;
 		}
 		return {
 			quem: "humano",
-			conversationId: caso.conversationId,
+			conversationId: conversa.id,
 			dono: {
 				tipo: "mesa",
 				attendantId: caso.mesaAttendantId,
@@ -191,7 +189,7 @@ export async function quemRespondePara(
 	if (semDono) {
 		return {
 			quem: "atendimento-sem-dono",
-			conversationId: semDono.conversationId,
+			conversationId: conversa.id,
 			handoffId: semDono.id,
 		};
 	}

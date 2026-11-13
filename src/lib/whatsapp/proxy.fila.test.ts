@@ -40,8 +40,11 @@ vi.mock("@/db", () => ({
 	},
 }));
 
+// `getHandoffState` registra o rastro da decisão (`proxy.ts`) — o dublê precisa
+// cobrir o que o código sob teste usa, senão o mock vira o defeito.
 vi.mock("@/lib/agent/quem-responde", () => ({
 	quemRespondePara: vi.fn(async () => ({ quem: "agente", motivo: "sem-atendimento-aberto" })),
+	rastroDaDecisao: vi.fn(),
 }));
 vi.mock("@/lib/admin/lead-stage-tracker", () => ({ applyTrackedStageToLead: vi.fn() }));
 vi.mock("@/lib/admin/lead-transitions", () => ({ transitionLeadStage: vi.fn() }));

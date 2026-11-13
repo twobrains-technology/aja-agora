@@ -726,8 +726,12 @@ async function handleQuickReplyTap(ctx: Ctx): Promise<boolean> {
 	// `handleInterest` e `handleDecisionEspecialista` já fazem. Sem isto, um
 	// botão antigo na tela viraria escolha de cota no meio de um atendimento
 	// humano.
+	//
+	// ATENDIMENTO SEM DONO também cai no fluxo normal (`false`): ninguém assumiu,
+	// então um toque antigo não pode ancorar cota em nome de ninguém. O fallback do
+	// dispatcher trata o toque como texto, e é ali que o processor acolhe.
 	const handoff = await getHandoffState(from);
-	if (handoff?.isHandedOff) return false;
+	if (handoff?.isHandedOff || handoff?.semDono) return false;
 
 	const { ultimoQuickReply } = await import("@/lib/conversation/cards");
 	const payload = await ultimoQuickReply(conversationId).catch(() => null);
@@ -969,9 +973,12 @@ async function handleDecisionEspecialista(ctx: Ctx): Promise<boolean> {
 
 async function handleInterest(ctx: Ctx): Promise<boolean> {
 	const { from, conversationId } = ctx;
-	// Conversa já com atendente humano: não dispara o funil — o relay cuida.
+	// Conversa com atendente humano: não dispara o funil — o relay cuida.
+	// Sem dono (caso aberto e ninguém assumiu), o clique também não avança o
+	// funil: não há venda a fechar por cima de um atendimento que já existe, e o
+	// caminho de texto acolhe o cliente em vez de anunciar interesse em nome dele.
 	const handoff = await getHandoffState(from);
-	if (handoff?.isHandedOff) return false;
+	if (handoff?.isHandedOff || handoff?.semDono) return false;
 
 	// FIX-117 (paridade FIX-38, route.ts:485-499 — "whatsapp precisa ser
 	// exatamente igual a web"): "Tenho interesse" pós-reveal é AVANÇO DIRETO ao

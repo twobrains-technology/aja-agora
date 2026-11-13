@@ -14,6 +14,13 @@ services:
     image: postgres:16-alpine
     container_name: aja-shared-pg
     restart: unless-stopped
+    # 5433 no host: é o que o `.env.local` e os testes de integração esperam
+    # (`DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5433/...`). Sem esta
+    # publicação o Postgres só existia dentro da `tb-local-net` e TODA a suíte de
+    # integração morria em ECONNREFUSED — 86 falhas de ambiente que pareciam
+    # regressão de código.
+    ports:
+      - "5433:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}

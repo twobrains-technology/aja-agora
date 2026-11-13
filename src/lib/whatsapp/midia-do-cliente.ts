@@ -21,7 +21,7 @@
 
 import { and, eq, gte } from "drizzle-orm";
 import { db } from "@/db";
-import { conversations, messages } from "@/db/schema";
+import { messages } from "@/db/schema";
 import { capturarIdentidadeDoTexto } from "@/lib/agent/pi/turno-livre";
 import { quemRespondePara } from "@/lib/agent/quem-responde";
 import { publishMessage } from "@/lib/chat/message-bus";
@@ -231,17 +231,13 @@ export async function receberMidiaDoCliente(
 	/** Vídeo e figurinha nunca foram RG: entram no histórico, não no KYC. */
 	const podeSerDocumentoDeIdentidade = input.tipo === "image" || input.tipo === "document";
 
-	const decisao = await quemRespondePara(from);
+	// A conversa DESTE número primeiro (`conversaDoNumero`, nunca a string crua do
+	// webhook), e a decisão é sobre ela: a trava vale para a conversa onde o humano
+	// atende, nunca para a pessoa (decisão do dono, 12/11/2026). Sem conversa a
+	// decisão é do agente — e o ramo de KYC abaixo continua fazendo o seu trabalho.
+	const conv = await conversaDoNumero(from);
+	const decisao = await quemRespondePara(conv);
 	const humanoAtende = decisao.quem === "humano";
-
-	// Com humano no caso, a mídia pertence à conversa DO ATENDIMENTO — que nem
-	// sempre é a do canal de entrada (a pessoa começa na web e volta pelo
-	// WhatsApp). É a mesma resolução que `relayUserToAgent` faz para o texto.
-	const conv = humanoAtende
-		? ((await db.query.conversations.findFirst({
-				where: eq(conversations.id, decisao.conversationId),
-			})) ?? null)
-		: await conversaDoNumero(from);
 
 	if (!conv) {
 		// Sem conversa não há onde guardar nem a quem entregar. O agente ainda

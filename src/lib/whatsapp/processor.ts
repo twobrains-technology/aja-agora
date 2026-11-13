@@ -4,10 +4,13 @@ import { contacts, conversations, remarketingTouches } from "@/db/schema";
 import { detectBackIntent, popNavState } from "@/lib/agent/orchestrator/navigation";
 import { scrubCpf } from "@/lib/agent/orchestrator/vazamento";
 import type { ConversationMetadata } from "@/lib/agent/personas";
-import { metaOf, persistMeta } from "@/lib/conversation/meta";
+import { agenteCalaAposRelay } from "@/lib/agent/quem-responde";
+import { metaOf, persistMeta, reloadMeta } from "@/lib/conversation/meta";
 import { registrarFalhaDoLlm } from "@/lib/llm/alerta-do-llm";
+import { buildAcolhidaSemDonoDirective, marcarAcolhidaInline } from "@/lib/mesa/acolhida-n1";
 import { withSimulatorClockIfNeeded } from "@/lib/utils/simulator-clock-wrap";
-import { processWithOrchestrator } from "./adapter";
+import { propostaDaConversa } from "@/lib/workers/acolhida-n1-cycle";
+import { processWithOrchestrator, runDirectiveWithOrchestrator } from "./adapter";
 import { sendTextMessage, sendTypingIndicator } from "./api";
 import { withConversationLock } from "./conversation-lock";
 import { dispatchInteractiveReply } from "./interactive-handlers";
@@ -168,9 +171,53 @@ async function processTextMessageSerialized(
 		if (await tratarOptoutDeRemarketing(from, text)) return;
 
 		const handoff = await getHandoffState(from);
+
+		// ALGUÉM ASSUMIU (de verdade, com nome): a fala vai para o atendente e o
+		// agente cala — mas só DEPOIS de a mensagem SAIR. Vendedor que não foi
+		// avisado não é atendimento: calar ali é deixar o cliente falando sozinho
+		// (OC-31), então o turno segue o fluxo normal, igual à web. A regra de
+		// quando calar é uma só (`agenteCalaAposRelay`), nunca uma cópia aqui.
 		if (handoff?.isHandedOff) {
-			// Relay to human — don't fake AI typing.
-			await relayUserToAgent(from, text);
+			const entregue = await relayUserToAgent(from, text);
+			if (agenteCalaAposRelay(handoff.decisao, entregue)) return;
+			console.warn(
+				`[whatsapp-processor] atendimento de ${handoff.dono?.tipo ?? "?"} sem entrega (conv ${handoff.conversationId}) — o agente assume o turno e segue o fluxo normal`,
+			);
+		} else if (handoff?.semDono) {
+			// ATENDIMENTO SEM DONO — o caso existe e NINGUÉM assumiu.
+			//
+			// Era o beco medido: `isHandedOff` engolia este estado, o processor só
+			// relaya e nunca rodava turno, e o cliente escrevia para ninguém (o
+			// worker N1 acolhe no máximo duas vezes, com 6 h entre elas). Contra P0,
+			// a conversa não morre aqui: o turno acontece na VOZ DA ACOLHIDA, e a
+			// fila continua sendo avisada — quem assume é gente, não o código.
+			const atendimento = handoff.semDono.conversationId;
+
+			// (i) Tentativa de entrega à fila. A fala do cliente é gravada na conversa
+			// do ATENDIMENTO (onde o caso vive), não na do canal de entrada.
+			const entregue = await relayUserToAgent(from, text);
+			console.warn(
+				`[whatsapp-processor] atendimento sem dono (conv ${atendimento}, handoff ${handoff.semDono.handoffId}) — fila avisada: ${entregue ? "sim" : "não"}; turno de acolhida`,
+			);
+
+			const meta = await reloadMeta(atendimento);
+			const agora = new Date();
+			// GRAVA ANTES DE DISPARAR (mesma doutrina do ciclo N1): o worker não repete
+			// esta acolhida três minutos depois. Se o turno morrer no meio, perder uma
+			// acolhida é barato; acolher duas vezes seguidas não é.
+			await persistMeta(atendimento, marcarAcolhidaInline(meta, agora));
+
+			// (ii) O turno da acolhida. `guardEmptyTurn` porque um turno mudo aqui é o
+			// silêncio de novo — o guard manda o fallback honesto em vez de nada.
+			await runDirectiveWithOrchestrator({
+				from,
+				conversationId: atendimento,
+				directive: buildAcolhidaSemDonoDirective(meta, {
+					proposta: await propostaDaConversa(atendimento).catch(() => null),
+					agora,
+				}),
+				guardEmptyTurn: true,
+			});
 			return;
 		}
 
