@@ -1,7 +1,7 @@
 ---
 slug: consultor-calou-o-agente
 titulo: "Mensagem enviada para Consultor: o agente se cala sem humano ter assumido; tem que seguir"
-status: inbox
+status: corrigido
 severidade: alta
 projeto: aja-agora
 rodada: 2026-11-09
@@ -30,3 +30,27 @@ AGENTS.md P8: chamar a fila NÃO silencia o agente; só o claim de um atendente 
 
 ## Direção
 Em `quemRespondePara`, `humano` só se `handedOffUserId` existe OU há caso ativo na mesa (`mesa_handoffs`) para aquela conversa. Ajustar o teste (c) ao contrato certo e provar com teste que falhava antes. Conferir se o webhook do WhatsApp usa a mesma função e ficou coerente.
+
+## Fechado em 12/11/2026 (`3c2a3236`, `d3b7cca2`)
+
+O caso voltou em produção e o motivo foi medido no banco: a conversa web `62992496793` ficou
+`handed_off` em 09/11 com caso de mesa `em_andamento` que ninguém encerrou, e a trava casava por
+**telefone** — toda conversa nova daquela pessoa nascia muda. Decisão do Kairo em 12/11: *"tira essa
+regra do handed_off, se o cara entrar ele continua conversando sem problema"*.
+
+O contrato virou três estados, por CONVERSA e nunca por pessoa:
+
+- `humano` — vendedor que assumiu (`conversations.handed_off_user_id`) ou atendente de mesa que
+  assumiu (`mesa_handoffs.mesa_attendant_id` em `em_andamento`), na própria conversa de entrada. O
+  nome sai do registro real (`users.name` / `mesa_attendants.nome`); o `"Consultor"` fixo morreu.
+- `atendimento-sem-dono` — caso ativo que ninguém assumiu: o turno acontece, na voz da acolhida, com
+  próximo passo (P0, P8). Antes o agente se calava e a tela prometia resposta.
+- `agente` — ninguém atendendo: conduz normal. Um `handed_off` velho de outra conversa não cala mais.
+
+O aviso de encaminhamento passou a ser gravado no histórico, e cada decisão deixa uma linha de log
+`source: "quem-responde"` com o motivo — foi a falta desse rastro que transformou este caso em
+arqueologia. O banco de dev foi limpo (23 conversas `handed_off` e 34 casos abertos, backup em
+`.orientacao/backup-dev-handoffs-2026-11-12/`).
+
+Fica aberto: o clique de card com humano dono ainda roda o turno do agente (P11); e a limpeza do
+banco de PRODUÇÃO, que não foi feita.
