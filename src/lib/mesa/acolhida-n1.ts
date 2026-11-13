@@ -57,6 +57,12 @@ export const BACKOFF_ACOLHIDA_N1_MS = 6 * 60 * 60_000;
  * como a fala do atendente — e por isso precisam ser excluídas na mão. */
 const PREFIXO_NOTA_DE_SISTEMA = "[sistema]";
 
+/** Prefixo do aviso de encaminhamento que o SERVIDOR grava no histórico do
+ * cliente ("Mensagem enviada para Fulano. Aguarde a resposta aqui."). Também é
+ * `assistant` sem persona: sem excluí-lo, o N1 acha que a mesa falou e nunca
+ * mais acolhe aquela conversa. */
+export const PREFIXO_AVISO_ENCAMINHAMENTO = "Mensagem enviada para";
+
 /**
  * Esta mensagem é fala de GENTE da mesa?
  *
@@ -72,7 +78,11 @@ export function ehFalaDaMesa(msg: {
 }): boolean {
 	if (msg.role !== "assistant") return false;
 	if (msg.personaId) return false; // tem persona = falou o agente
-	return !(msg.content ?? "").trimStart().startsWith(PREFIXO_NOTA_DE_SISTEMA);
+	const inicio = (msg.content ?? "").trimStart();
+	if (inicio.startsWith(PREFIXO_NOTA_DE_SISTEMA)) return false;
+	// O aviso de encaminhamento é fala do SERVIDOR: sem esta exclusão a conversa
+	// em que o cliente não foi atendido nunca mais recebe acolhida.
+	return !inicio.startsWith(PREFIXO_AVISO_ENCAMINHAMENTO);
 }
 
 export type MotivoDeNaoAcolher =
@@ -197,4 +207,109 @@ export function buildAcolhidaN1Directive(
 	);
 
 	return partes.join(" ");
+}
+
+const FUSO = "America/Sao_Paulo";
+
+/**
+ * Hora local do negócio, como FATO.
+ *
+ * P8: de madrugada ninguém atende, e o agente precisa saber a hora em que está
+ * para dizer isso e combinar o retorno. O que não entra é prazo — não existe
+ * expediente cadastrado em lugar nenhum do código, e prometer "amanhã de manhã"
+ * é inventar dado.
+ */
+function horaLocal(agora: Date): string {
+	const data = new Intl.DateTimeFormat("pt-BR", {
+		timeZone: FUSO,
+		weekday: "long",
+		day: "2-digit",
+		month: "2-digit",
+		year: "numeric",
+	}).format(agora);
+	const hora = new Intl.DateTimeFormat("pt-BR", {
+		timeZone: FUSO,
+		hour: "2-digit",
+		minute: "2-digit",
+		hourCycle: "h23",
+	}).format(agora);
+	return `${data}, ${hora} (${FUSO})`;
+}
+
+/**
+ * A diretiva do turno quando o atendimento existe e NINGUÉM assumiu.
+ *
+ * É a mesma voz do worker N1 (`buildAcolhidaN1Directive`), agora inline: o
+ * cliente que já foi passado para a mesa e escreve de novo recebe acolhida, não
+ * silêncio nem "Mensagem enviada para Consultor" — o beco de 2026-11 no dev, em
+ * que o agente calava e nenhum humano estava do outro lado (P0, P8).
+ *
+ * O que o servidor informa é só o que ele SABE: que ninguém assumiu, que o
+ * pedido já está com a mesa, a hora de agora e a proposta registrada. A frase
+ * continua sendo do modelo.
+ */
+export function buildAcolhidaSemDonoDirective(
+	meta: ConversationMetadata,
+	args: {
+		proposta: {
+			administradora?: string | null;
+			creditValue?: number | null;
+			monthlyPayment?: number | null;
+			termMonths?: number | null;
+		} | null;
+		agora: Date;
+	},
+): string {
+	const partes: string[] = [
+		"[instrução do sistema — o cliente NÃO vê este texto, não o repita]",
+		meta.contractClosed
+			? "Este cliente JÁ FECHOU a contratação e o pedido dele já está com a mesa de atendimento. " +
+				"NINGUÉM assumiu o caso ainda: não há atendente com ele neste momento, e ele não precisa " +
+				"ser encaminhado de novo — o pedido já está registrado lá."
+			: "Este cliente foi passado para a mesa de atendimento e NINGUÉM assumiu o caso ainda. " +
+				"Não há atendente com ele neste momento, e ele não precisa ser encaminhado de novo — " +
+				"o pedido já está com a mesa.",
+		`Hora agora: ${horaLocal(args.agora)}.`,
+	];
+
+	const p = args.proposta;
+	if (p?.creditValue) {
+		const parcela = p.monthlyPayment ? `, parcela de R$ ${brl(p.monthlyPayment)}` : "";
+		const prazo = p.termMonths ? `, em ${p.termMonths} meses` : "";
+		partes.push(
+			`A proposta dele está registrada e é real: carta de R$ ${brl(p.creditValue)} da ` +
+				`${p.administradora ?? "administradora"}${parcela}${prazo}. Pode confirmar que está tudo registrado.`,
+		);
+	} else {
+		partes.push(
+			"NÃO há proposta registrada no sistema para ele. Não afirme que existe, não " +
+				"invente número e não descreva status de contratação.",
+		);
+	}
+
+	partes.push(
+		"Sua tarefa neste turno é SÓ acolher: reconheça o que ele disse, no seu tom, e deixe " +
+			"claro que a mesa continua com o caso. Termine sempre com um próximo passo — por " +
+			"exemplo, seguir conversando com você enquanto a mesa não assume — para a conversa " +
+			"nunca ficar sem continuação. NÃO retome a venda, não ofereça cota nova, não peça " +
+			"dado e não faça pergunta de qualificação. NÃO diga há quanto tempo ele espera, NÃO " +
+			"prometa horário, prazo nem que alguém responde agora. NÃO chame o atendente por " +
+			"nome nem invente vocativo: sem nome próprio, fale com ele por \"você\".",
+	);
+
+	return partes.join(" ");
+}
+
+/**
+ * Meta com a acolhida inline contada, para o worker N1 não repetir a mesma
+ * acolhida. `attempts` NÃO incrementa aqui: quem conta acolhida é o worker.
+ */
+export function marcarAcolhidaInline(
+	meta: ConversationMetadata,
+	agora: Date,
+): ConversationMetadata {
+	return {
+		...meta,
+		acolhidaN1: { attempts: meta.acolhidaN1?.attempts ?? 0, lastAt: agora.getTime() },
+	};
 }
